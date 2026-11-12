@@ -67,6 +67,7 @@ import { ASLEEP_VIEW_TITLE } from "./chatswitch";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
+import { fallAsleepLabel, useFallingAsleep } from "./fallasleepstore";
 import { floatModeAtom, toggleFloat } from "./floatstore";
 import { agentGridAtom, currentGrid, eligibleIds, gridProjects, openInSplit, removeFromGrid } from "./gridstore";
 import { initiativeLinkPickerAtom, InitiativePopover, initiativePopoverAtom } from "./initiativepopover";
@@ -535,6 +536,10 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // a wake relaunching it: Close would kill the process it waits on, and the More menu's Interrupt and Redraw type
     // into the resuming TUI, so both are off until it is back (or the wake fails)
     const waking = useWaking(agent.id);
+    // a Sleep under way (the call, or the compaction before it): the same buttons stay off until it sleeps, Close aside
+    const falling = useFallingAsleep(agent.id, agent.sleeping != null);
+    const held = waking || falling != null;
+    const heldTitle = waking ? "Waking…" : falling != null ? fallAsleepLabel(falling) : undefined;
     // its last turn committed, you have read it and no run it started is still going: the header offers Close with the
     // session's token total, the figure its sidebar row shows (donesuggest.ts)
     const done = doneSuggestion(
@@ -569,7 +574,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const openHeaderMenu = (e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        if (waking) {
+        if (held) {
             return;
         }
         const items: ContextMenuItem[] = [];
@@ -903,8 +908,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         aria-haspopup="menu"
                         aria-label="More"
                         onClick={openHeaderMenu}
-                        disabled={waking}
-                        title={waking ? "Waking…" : "More: open a tool, redraw, interrupt, details"}
+                        disabled={held}
+                        title={heldTitle ?? "More: open a tool, redraw, interrupt, details"}
                         className={cn(ICON_BTN, ICON_BTN_OFF)}
                     >
                         <Ellipsis size={15} strokeWidth={1.8} aria-hidden />
@@ -932,7 +937,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 type="button"
                                 data-agent-header-ship={ship.kind}
                                 onClick={() => fireAndForget(() => shipAgent(agent, ship.kind))}
-                                disabled={waking}
+                                disabled={held}
                                 title={`${ship.title} (${formatChordString("Alt:s")})`}
                                 className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-accent/45 px-[9px] py-[5px] text-[12px] font-semibold text-accent hover:border-accent disabled:cursor-default disabled:opacity-40 disabled:hover:border-accent/45"
                             >
@@ -949,7 +954,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 type="button"
                                 data-agent-header-done
                                 onClick={closeTerminal}
-                                disabled={waking}
+                                disabled={held}
                                 title={`${DONE_TITLE} (${formatChordString("Alt:w")})`}
                                 className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-success/45 px-[9px] py-[5px] text-[12px] font-semibold text-success hover:border-success disabled:cursor-default disabled:opacity-40 disabled:hover:border-success/45"
                             >

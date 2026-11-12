@@ -20,9 +20,10 @@ import type { GridState } from "./agentgrid";
 import type { AgentsViewModel } from "./agents";
 import { formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { ramLabel } from "./consumers";
+import { fallingAsleepOf, setFallingAsleep } from "./fallasleepstore";
 import { agentGridAtom } from "./gridstore";
 import { viewingIds } from "./unreadagents";
-import { whileWaking } from "./wakingstore";
+import { setWakeFailure, whileWaking } from "./wakingstore";
 
 // the server holds a wake with a message until the resumed agent reports in, for up to 60 s; the call outlives that
 const WAKE_TIMEOUT_MS = 70_000;
@@ -137,6 +138,24 @@ export function viewingTabIds(
     return [...viewingIds(windowFocused, onAgentSurface, center, focusId, grid)].sort();
 }
 
+/** Pure: when an agent fell asleep, the time alone when it is today ("16:52"), with its day otherwise ("Nov 3 16:52"),
+ *  as for an agent opened asleep from an older session. */
+export function sleptAt(since: number, now = Date.now()): string {
+    const d = new Date(since);
+    const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    if (d.toDateString() === new Date(now).toDateString()) {
+        return time;
+    }
+    return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
+}
+
+/** Pure: the line that says a sleeping agent sleeps, `lead` ("Sleeping", "Asleep") then since when and what it freed:
+ *  "Asleep since 16:52 · freed 503 MB"; the size is left out when nothing was measured. */
+export function sleepingLine(lead: string, sleeping: NonNullable<AgentVM["sleeping"]>, now = Date.now()): string {
+    const freed = sleeping.freedBytes > 0 ? ` · freed ${ramLabel(sleeping.freedBytes)}` : "";
+    return `${lead} since ${sleptAt(sleeping.since, now)}${freed}`;
+}
+
 /** Pure: the toast after a sleep: "Put Lumen to sleep · freed 330 MB"; the size is left out when it was not measured. */
 export function sleepToastText(name: string, freedBytes: number | undefined): string {
     return freedBytes ? `Put ${name} to sleep · freed ${ramLabel(freedBytes)}` : `Put ${name} to sleep`;
@@ -158,13 +177,21 @@ export function backgroundConfirmText(name: string, labels: string[]): string {
  *  message, the server delivers it once the agent reports in. Resolves when the agent is back; rejects with the server's
  *  reason (the session file is gone, it did not report in within 60 s), which the caller shows. */
 export async function wakeAgent(tabId: string, opts: { message?: string; fresh?: boolean } = {}): Promise<void> {
-    await whileWaking(tabId, () =>
-        RpcApi.AgentsWakeCommand(
-            TabRpcClient,
-            { tab: tabId, message: opts.message, fresh: opts.fresh },
-            { timeout: WAKE_TIMEOUT_MS }
-        )
-    );
+    setFallingAsleep(tabId, null);
+    try {
+        await whileWaking(tabId, () =>
+            RpcApi.AgentsWakeCommand(
+                TabRpcClient,
+                { tab: tabId, message: opts.message, fresh: opts.fresh },
+                { timeout: WAKE_TIMEOUT_MS }
+            )
+        );
+    } catch (e) {
+        // kept for the sleeping card, which shows it whichever place started the wake
+        setWakeFailure(tabId, errorText(e));
+        throw e;
+    }
+    setWakeFailure(tabId, null);
 }
 
 function errorText(e: unknown): string {
@@ -180,7 +207,13 @@ export function wakeErrorToast(name: string | undefined, e: unknown): void {
     });
 }
 
+// The agent stays marked (fallasleepstore) from the press until the roster reads it asleep: through the call, and
+// through the compaction the server may run first. A Sleep that did nothing (asked first, or failed) drops the mark.
 async function sleepNow(agent: Pick<AgentVM, "id" | "name">, force: boolean): Promise<void> {
+    if (fallingAsleepOf(agent.id, false) != null) {
+        return;
+    }
+    setFallingAsleep(agent.id, "sleeping");
     try {
         const rtn = await RpcApi.AgentsSleepCommand(
             TabRpcClient,
@@ -188,6 +221,7 @@ async function sleepNow(agent: Pick<AgentVM, "id" | "name">, force: boolean): Pr
             { timeout: SLEEP_TIMEOUT_MS }
         );
         if (!force && rtn?.background?.length) {
+            setFallingAsleep(agent.id, null);
             // nothing slept: background work runs under it, which sleeping would stop
             modalsModel.pushModal("ConfirmModal", {
                 title: "Sleep agent",
@@ -199,11 +233,13 @@ async function sleepNow(agent: Pick<AgentVM, "id" | "name">, force: boolean): Pr
             return;
         }
         if (rtn?.compacting) {
+            setFallingAsleep(agent.id, "compacting");
             pushToast({ title: compactingToastText(agent.name), message: "", level: "info" });
             return;
         }
         pushToast({ title: sleepToastText(agent.name, rtn?.freedbytes), message: "", level: "info" });
     } catch (e) {
+        setFallingAsleep(agent.id, null);
         pushToast({ title: `Couldn't put ${agent.name} to sleep`, message: errorText(e), level: "error" });
     }
 }

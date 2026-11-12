@@ -26325,7 +26325,9 @@ const launcherResume = {
                 const cover = document.querySelector('[data-sleeping-transcript="${tabId}"]');
                 return {
                     moon: !!document.querySelector('[data-agent-row="${tabId}"] [data-agent-sleeping]'),
-                    card: (document.querySelector('[data-sleeping-card="${tabId}"]')?.textContent ?? '').trim(),
+                    // the chat box says it sleeps (the card over the terminal shows only for a failed wake)
+                    card: !!document.querySelector('[data-sleeping-card="${tabId}"]'),
+                    asleepNote: (document.querySelector('[data-sleeping-composer="${tabId}"] [data-chat-asleep]')?.textContent ?? '').trim(),
                     conversation: (cover?.textContent ?? '').includes(${JSON.stringify(LAUNCHER_RESUME_TASK)}),
                     // the conversation is chat's: your message as a bubble, from the transcript's one prompt
                     bubble: (cover?.querySelector('[data-chat-you]')?.textContent ?? '').trim(),
@@ -26336,9 +26338,9 @@ const launcherResume = {
         }
         await h.shot("cdp-shots/launcher-resume-6-asleep-agent.png");
         rec(
-            "6b. Open asleep from the Agent tree's Conversations menu makes the session a new agent row with the moon; its cell shows the conversation as a bubble, the Sleeping card and the box to wake it",
+            "6b. Open asleep from the Agent tree's Conversations menu makes the session a new agent row with the moon; its cell shows the conversation as a bubble and the box to wake it, which says Asleep since",
             appeared && tabId != null && cell?.moon && cell.conversation && cell.bubble === LAUNCHER_RESUME_TASK &&
-                cell.card.includes("Sleeping since") && /to wake it/.test(cell.composer ?? ""),
+                !cell.card && cell.asleepNote.includes("Asleep since") && /to wake it/.test(cell.composer ?? ""),
             JSON.stringify({ rowUp, appeared, tabId, cell })
         );
 
@@ -41617,7 +41619,7 @@ const consumersClosePicked = {
 // second layer above it answers agentssleep, agentswake and controllerinput, each call recorded in `calls`, by the mode a
 // step sets. Wake: "ok" resolves, "hold" keeps the call pending until the step releases it, "fail" rejects with the
 // server's reason. Sleep: "ok" answers the bytes freed, "background" answers a call without `force` with the tasks
-// running under the agent and a forced one with the bytes freed. The scenario never writes a setting: step 8 only reads
+// running under the agent and a forced one with the bytes freed, "compacting" answers that the server compacts first. The scenario never writes a setting: step 8 only reads
 // Settings > Agents. Teardown puts both RPC layers, the roster fixture and the page back.
 const AS_MOCK_KEY = "__arcAgentSleepMock";
 const AS_AWAKE_ID = "fx-as-awake";
@@ -41678,7 +41680,11 @@ async function installAgentSleepMock(h) {
         };
         const sleep = (data) =>
             Promise.resolve(
-                m.sleep === "background" && !data.force ? { background: [${JSON.stringify(AS_BACKGROUND)}] } : { freedbytes: ${AS_FREED} }
+                m.sleep === "compacting"
+                    ? { compacting: true }
+                    : m.sleep === "background" && !data.force
+                      ? { background: [${JSON.stringify(AS_BACKGROUND)}] }
+                      : { freedbytes: ${AS_FREED} }
             );
         api.setMockRpcClient({
             mockWshRpcCall(client, command, data, opts) {
@@ -41739,7 +41745,6 @@ const removeAgentSleepMock = (h) =>
     })()`);
 
 const asRow = (id) => `document.querySelector('[data-agent-row="${id}"]')`;
-const asCard = `document.querySelector("[data-sleeping-card]")`;
 const asEscape = (h) => h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
 // the composer of the sleeping agent, wherever the Cockpit draws it
 const AS_COMPOSER = `[...document.querySelectorAll("[data-agent-composer] textarea")].find((t) => t.placeholder === ${JSON.stringify(`message ${AS_SLEEPING_NAME}…`)})`;
@@ -41797,23 +41802,27 @@ const agentSleep = {
             JSON.stringify(row)
         );
 
-        // 2. focused, the sleeping agent's terminal has the card over it, and its conversation covers the terminal in its
-        // cell: the one chat pane (its root is the cover and the chat layer at once), which with the fixture's no transcript
-        // reads "No messages yet"; the awake agent's cell has no cover
+        // 2. focused, the sleeping agent's conversation covers the terminal in its cell: the one chat pane (its root is the
+        // cover and the chat layer at once), which with the fixture's no transcript reads "No messages yet"; its box says
+        // "Asleep since" where an awake box has its attach and mode, and Send reads Wake while the box is empty. No card
+        // sits over the terminal (it is left for a failed wake); the awake agent's cell has no cover
         await h.ev(`${asRow(AS_SLEEPING_ID)}?.click()`);
-        const cardUp = await polishWaitFor(h, `!!document.querySelector('[data-sleeping-card="${AS_SLEEPING_ID}"]')`, 5000);
+        const AS_BOX = `document.querySelector('[data-sleeping-composer="${AS_SLEEPING_ID}"]')`;
+        const AS_WAKE = `${AS_BOX}?.querySelector("[data-chat-send]")`;
+        const noteUp = await polishWaitFor(h, `!!${AS_BOX}?.querySelector("[data-chat-asleep]")`, 5000);
         const coverUp = await polishWaitFor(
             h,
             `!!document.querySelector('[data-agent-terminal="${AS_SLEEPING_ID}"] [data-sleeping-transcript="${AS_SLEEPING_ID}"]')`,
             5000
         );
         const card = await h.ev(`(() => {
-            const c = document.querySelector("[data-sleeping-card]");
             const cover = document.querySelector('[data-sleeping-transcript="${AS_SLEEPING_ID}"]');
             const r = cover?.getBoundingClientRect();
             return {
-                text: c?.textContent.trim() ?? null,
-                wake: c?.querySelector("[data-sleeping-wake]")?.textContent.trim() ?? null,
+                note: ${AS_BOX}?.querySelector("[data-chat-asleep]")?.textContent.trim() ?? null,
+                wake: ${AS_WAKE}?.textContent.trim() ?? null,
+                wakeDisabled: ${AS_WAKE}?.disabled ?? null,
+                card: !!document.querySelector("[data-sleeping-card]"),
                 cover: cover?.textContent.trim() ?? null,
                 coverIsChat: cover?.getAttribute("data-agent-chat") === ${JSON.stringify(AS_SLEEPING_ID)},
                 coverSize: r ? [Math.round(r.width), Math.round(r.height)] : null,
@@ -41822,38 +41831,40 @@ const agentSleep = {
         })()`);
         await h.shot("cdp-shots/agent-sleep-card.png");
         rec(
-            "2. focused, the card says \"Sleeping since\" and offers Wake, and the conversation (the chat pane, reading No messages yet) covers the terminal",
-            cardUp && (card.text ?? "").includes("Sleeping since") && card.wake === "Wake" &&
+            "2. focused, the chat box says \"Asleep since\" and its Send reads Wake, no card over the terminal, and the conversation (the chat pane, reading No messages yet) covers the terminal",
+            noteUp && (card.note ?? "").includes("Asleep since") && card.wake === "Wake" && card.wakeDisabled === false && !card.card &&
                 coverUp && (card.cover ?? "").includes("No messages yet") && card.coverIsChat &&
                 card.coverSize != null && card.coverSize[0] > 0 && card.coverSize[1] > 0 && !card.awakeCover,
             JSON.stringify(card)
         );
 
-        // 3. Wake reads Waking… and is disabled while the call is pending; the call names the tab
+        // 3. Wake in the empty box reads Waking… and is disabled while the call is pending; the call names the tab and
+        // carries no message
         await asMode(h, "wake", "hold");
-        await h.ev(`document.querySelector("[data-sleeping-wake]")?.click()`);
+        await h.ev(`${AS_WAKE}?.click()`);
         const waking = await polishWaitFor(
             h,
-            `(() => { const b = document.querySelector("[data-sleeping-wake]"); return !!b && b.textContent.trim() === "Waking…" && b.disabled; })()`,
+            `(() => { const b = ${AS_WAKE}; return !!b && b.textContent.trim() === "Waking…" && b.disabled; })()`,
             3000
         );
         const wakeCalls = await asCalls(h, "agentswake");
         await h.shot("cdp-shots/agent-sleep-waking.png");
         rec(
-            "3. Wake on the card reads Waking… and is disabled, and agentswake names the tab",
-            waking && wakeCalls.length === 1 && wakeCalls[0].data.tab === AS_SLEEPING_ID && wakeCalls[0].data.fresh == null && wakeCalls[0].data.message == null,
+            "3. Wake in the box reads Waking… and is disabled, and agentswake names the tab with no message",
+            waking && wakeCalls.length === 1 && wakeCalls[0].data.tab === AS_SLEEPING_ID && wakeCalls[0].data.fresh == null && !wakeCalls[0].data.message,
             JSON.stringify({ waking, wakeCalls })
         );
         await asRelease(h);
         await polishWaitFor(
             h,
-            `(() => { const b = document.querySelector("[data-sleeping-wake]"); return !!b && b.textContent.trim() === "Wake" && !b.disabled; })()`,
+            `(() => { const b = ${AS_WAKE}; return !!b && b.textContent.trim() === "Wake" && !b.disabled; })()`,
             3000
         );
 
-        // 4. a failed wake shows the server's reason with Start fresh and Close; Start fresh asks for a fresh start
+        // 4. a failed wake (here from the box) brings the card over the terminal with the server's reason, Start fresh and
+        // Close; Start fresh asks for a fresh start
         await asMode(h, "wake", "fail");
-        await h.ev(`document.querySelector("[data-sleeping-wake]")?.click()`);
+        await h.ev(`${AS_WAKE}?.click()`);
         const failed = await polishWaitFor(h, `!!document.querySelector("[data-sleeping-error]")`, 3000);
         const failure = await h.ev(`(() => ({
             reason: document.querySelector("[data-sleeping-error]")?.textContent.trim() ?? null,
@@ -41871,7 +41882,7 @@ const agentSleep = {
         );
         const freshCall = (await asCalls(h, "agentswake")).find((c) => c.data.fresh === true);
         rec(
-            "4. a failed wake shows the reason with Start fresh and Close, and Start fresh sends fresh: true",
+            "4. a failed wake from the box shows the card with the reason, Start fresh and Close, and Start fresh sends fresh: true",
             failed && failure.reason === AS_WAKE_FAIL && failure.fresh === "Start fresh" && failure.close === "Close" && !failure.wake &&
                 starting && freshCall?.data?.tab === AS_SLEEPING_ID,
             JSON.stringify({ failed, failure, starting, freshCall })
@@ -41930,6 +41941,55 @@ const agentSleep = {
                 sleepCalls.length === 2 && sleepCalls[1].data.tab === AS_AWAKE_ID && sleepCalls[1].data.force === true && freedToast,
             JSON.stringify({ menuItems, menuHasWake, confirm, sleepCalls, freedToast })
         );
+        await asMode(h, "sleep", "ok");
+
+        // 5b. a Sleep under way shuts what would undo it until the agent reads asleep (the fixture roster never does, so the
+        // step drops the mark itself). The confirmed Sleep above holds the awake row's menu at "Going to sleep…", disabled;
+        // a Sleep the server answers by compacting first holds it at "Compacting, then sleeping…", and the agent's Chat box
+        // says so in Asleep's place, with its editor read-only and its Send disabled
+        const AS_FALL = `const F = await mod("app/view/agents/fallasleepstore.ts");`;
+        const openAwakeMenu = () =>
+            h.ev(`(() => {
+                const el = ${asRow(AS_AWAKE_ID)};
+                const r = el.getBoundingClientRect();
+                el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 24, clientY: r.top + r.height / 2, button: 2 }));
+            })()`);
+        await asEscape(h);
+        await openAwakeMenu();
+        const goingUp = await polishWaitFor(h, caMenuHas("Going to sleep…"), 3000);
+        const goingItem = await h.ev(`(() => { const r = ${caMenuRow("Going to sleep…")}; return r ? { disabled: r.closest("[data-menu-item]")?.getAttribute("aria-disabled") === "true" } : null; })()`);
+        await asEscape(h);
+        await agentPageFixtures.agentPage(h, `${AS_FALL} F.setFallingAsleep(${JSON.stringify(AS_AWAKE_ID)}, null); return true;`);
+        await asMode(h, "sleep", "compacting");
+        await openAwakeMenu();
+        await polishWaitFor(h, caMenuHas("Sleep"), 3000);
+        await h.ev(caMenuClick("Sleep"));
+        const compactingToast = await polishWaitFor(h, consumersToastExpr("Compacting"), 3000);
+        // the Escapes that closed the menus also go back a surface: show the Agent surface again for the shot
+        await h.goto("agent");
+        await h.ev(`${asRow(AS_AWAKE_ID)}?.click()`);
+        const AWAKE_BOX = `document.querySelector('[data-agent-chat-composer="${AS_AWAKE_ID}"]')`;
+        const boxHeld = await polishWaitFor(h, `!!${AWAKE_BOX}?.querySelector('[data-chat-falling-asleep="compacting"]')`, 3000);
+        const box5b = await h.ev(`(() => {
+            const b = ${AWAKE_BOX};
+            return {
+                note: b?.querySelector("[data-chat-falling-asleep]")?.textContent.trim() ?? null,
+                readOnly: b?.querySelector("[data-chat-input]")?.isContentEditable === false,
+                send: b?.querySelector("[data-chat-send]")?.disabled ?? null,
+                stop: !!b?.querySelector("[data-chat-stop]"),
+            };
+        })()`);
+        await h.shot("cdp-shots/agent-sleep-falling.png");
+        await openAwakeMenu();
+        const compactingItem = await polishWaitFor(h, caMenuHas("Compacting, then sleeping…"), 3000);
+        await asEscape(h);
+        rec(
+            "5b. a Sleep under way holds the row menu at Going to sleep… (disabled), and one that compacts first at Compacting, then sleeping…, with the agent's Chat box saying so, read-only, its Send disabled and no Stop",
+            goingUp && goingItem?.disabled === true && compactingToast && boxHeld && box5b.note === "Compacting, then sleeping…" &&
+                box5b.readOnly && box5b.send === true && !box5b.stop && compactingItem,
+            JSON.stringify({ goingUp, goingItem, compactingToast, boxHeld, box5b, compactingItem })
+        );
+        await agentPageFixtures.agentPage(h, `${AS_FALL} F.setFallingAsleep(${JSON.stringify(AS_AWAKE_ID)}, null); return true;`);
         await asMode(h, "sleep", "ok");
 
         // 6. the Consumers panel: a Sleeping group with Wake, Sleep on the awake row (by RAM, as on macOS)
@@ -43263,7 +43323,7 @@ const agentChat = {
             rec(
                 "14. an asleep Claude agent is the one chat pane (the root is both the chat layer and the sleeping cover) with your bubble, the agent's prose and the wake box: the model as a label and Asleep, no model chip, no attach, no mode chip; the header's Chat | Terminal control shows Chat selected and usable, Terminal disabled and dimmed",
                 asleep && sleep14.you === "an earlier question" && sleep14.agent && sleep14.onePane &&
-                    (sleep14.placeholder ?? "").includes("to wake it") && sleep14.send === "Send" &&
+                    (sleep14.placeholder ?? "").includes("to wake it") && sleep14.send === "Wake" &&
                     sleep14.label === "opus" && !sleep14.modelChip && (sleep14.asleepNote ?? "").includes("Asleep") && !sleep14.modeChip && !sleep14.attach &&
                     sleep14.view?.map((b) => b.text).join("|") === "Chat|Terminal" && sleep14.view[0].pressed && !sleep14.view[1].pressed && viewDim,
                 sleep14

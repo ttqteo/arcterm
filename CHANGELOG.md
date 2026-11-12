@@ -43,6 +43,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Putting an agent to sleep now says so while it happens: its Chat box reads "Going to sleep…" (or "Compacting, then
+  sleeping…" when it compacts first) and stays shut, and Sleep, Stop and the header's More menu wait until it sleeps.
+  Asleep, the box itself says "Asleep since 16:52 · freed 503 MB" in place of the card above the conversation, and
+  Send reads Wake while the box is empty.
 - When a Claude agent asks you a question in Chat, only its question card shows: the extra "Wants to use AskUserQuestion" card with the raw question and Answer in Terminal is gone.
 - A sleeping Claude agent left on its Brainstorm, Canvas or Review can go back to its conversation: Chat stays clickable
   (and Alt+C reaches it) while the agent sleeps; only Terminal waits for it to wake.

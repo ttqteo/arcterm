@@ -5,59 +5,50 @@ import { cn, fireAndForget } from "@/util/util";
 import { Moon, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { confirmCloseSession } from "./agentactions";
-import { wakeAgent } from "./agentsleep";
+import { sleepingLine, wakeAgent } from "./agentsleep";
 import type { AgentVM } from "./agentsviewmodel";
-import { ramLabel } from "./consumers";
-import { useWaking } from "./wakingstore";
+import { failureOfSleep, useWakeFailure, useWaking } from "./wakingstore";
 
 const BTN =
     "shrink-0 cursor-pointer rounded-sm px-2 py-1 text-[12px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-60";
 const BTN_PRIMARY = cn(BTN, "text-accent-soft hover:text-accent-100");
 const BTN_QUIET = cn(BTN, "text-muted hover:text-primary");
 
-// the time alone when it is today; with its day otherwise, as for an agent opened asleep from an older session
-function since(ts: number): string {
-    const d = new Date(ts);
-    const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-    if (d.toDateString() === new Date().toDateString()) {
-        return time;
-    }
-    return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
-}
-
 // A sleeping agent's card over its terminal: its conversation shows below in the terminal's place
 // (chatpane.tsx for a Claude agent, sleepingtranscript.tsx for another harness), and the terminal itself takes no input
 // (its process is gone), so Wake is how to get it back. When the wake fails (here, or from another place: the server keeps
 // the agent asleep and sets the reason) the card says why and offers a fresh start or Close instead: --resume has
-// nothing to reopen.
-export function SleepingCard({ agent }: { agent: AgentVM }) {
-    // the wake this card started and is waiting on; the failure is tied to the sleep it came from, so it does not
-    // show on the next sleep of the same agent
+// nothing to reopen. `failureOnly`: the agent's Chat box already says it sleeps and wakes it on Send (chatcomposer.tsx),
+// so the card shows only for a failed wake.
+export function SleepingCard({ agent, failureOnly = false }: { agent: AgentVM; failureOnly?: boolean }) {
+    // the wake this card started and is waiting on
     const [pending, setPending] = useState<"wake" | "fresh" | null>(null);
-    const [failure, setFailure] = useState<{ since: number; reason: string } | null>(null);
-    // a wake started anywhere (the composer below, a row's menu) holds the card's buttons too
+    // a wake started anywhere (the composer below, a row's menu) holds the card's buttons too, and its failure shows here
     const waking = useWaking(agent.id);
+    const failure = useWakeFailure(agent.id);
     const busy = pending != null || waking;
     const sleeping = agent.sleeping;
     if (!sleeping) {
         return null;
     }
-    const reason = (failure?.since === sleeping.since ? failure.reason : undefined) ?? sleeping.wakeFailed;
+    const reason = failureOfSleep(failure, sleeping.since) ?? sleeping.wakeFailed;
     const wake = (fresh: boolean) => {
         setPending(fresh ? "fresh" : "wake");
         fireAndForget(async () => {
             try {
+                // wakeAgent keeps a failure in wakingstore, which this card reads
                 await wakeAgent(agent.id, fresh ? { fresh: true } : {});
-                setFailure(null);
-            } catch (e) {
-                setFailure({ since: sleeping.since, reason: e instanceof Error ? e.message : String(e) });
+            } catch {
+                // shown by the card itself
             } finally {
                 setPending(null);
             }
         });
     };
-    const freed = sleeping.freedBytes > 0 ? ` · freed ${ramLabel(sleeping.freedBytes)}` : "";
     const failed = reason != null || pending === "fresh";
+    if (failureOnly && !failed) {
+        return null;
+    }
     return (
         <div
             data-sleeping-card={agent.id}
@@ -96,10 +87,7 @@ export function SleepingCard({ agent }: { agent: AgentVM }) {
             ) : (
                 <>
                     <Moon size={14} strokeWidth={1.8} aria-hidden className="shrink-0 text-muted" />
-                    <span className="min-w-0 flex-1 truncate text-ink-mid">
-                        Sleeping since {since(sleeping.since)}
-                        {freed}
-                    </span>
+                    <span className="min-w-0 flex-1 truncate text-ink-mid">{sleepingLine("Sleeping", sleeping)}</span>
                     <button
                         type="button"
                         data-sleeping-wake

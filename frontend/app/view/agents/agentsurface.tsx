@@ -714,8 +714,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                 )}
                                 <DivergenceBanner decision={decision} onRejoin={rejoin} />
                                 <HeldAskBar agent={subject!} />
-                                {/* keyed: the card's pending wake and its failure belong to one agent */}
-                                <SleepingCard key={agent.id} agent={agent} />
+                                {/* keyed: the card's pending wake and its failure belong to one agent. A Claude agent
+                                    asleep draws Chat, whose box says it sleeps: the card is left for a failed wake */}
+                                <SleepingCard key={agent.id} agent={agent} failureOnly={chatCapable(agent)} />
                                 {showCompacted ? (
                                     <div
                                         data-brainstorm-compacted
