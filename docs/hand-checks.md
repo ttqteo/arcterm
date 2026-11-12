@@ -6,6 +6,16 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A sleeping agent goes back to its chat from a brainstorm: on a Claude agent asleep with its Brainstorm
+  (or Canvas) showing, click Chat in the header → the conversation shows; Alt+C walks Chat ↔ Brainstorm and never
+  Terminal, which stays dimmed and disabled; wake it → it opens in the Chat/Terminal mode it had before
+  (`agentheader.tsx`, `chatmode.ts` cellViewOptions, `agent:view-cycle`; CDP `agent-chat` steps 14/14a updated, not run).
+- [ ] (arcterm) A Chat message never joins the next one: on a dev app or build with `boxShowsTyped`, send a dozen
+  messages to an idle Claude from Chat (short, Vietnamese, ~200 characters, one with a line break, a `/model`, a
+  `! ls`) → each goes as its own prompt and its Sending… bubble goes, none stays in the terminal's box with a line
+  break after it; a `/command` and `! ls` go with no noticeable delay (a box the check cannot read waits up to 2 s).
+  Before, "…cũng hay" sat in the box and went out with the next message as "…cũng hay\ncó", leaving two Sending…
+  bubbles (`agentsubmit.ts` waitForEcho, `chattakeback.ts` boxShowsTyped).
 - [ ] (arcterm) Chat's compaction summary collapses from inside: in a Chat that compacted, click the Compacted pill
   → the summary shows a Collapse button at its top right and at its end; the top one closes it, the end one closes it
   and scrolls the Compacted pill back into view (`narrationtimeline.tsx` CompactionDivider). Since 2026-11-12 both

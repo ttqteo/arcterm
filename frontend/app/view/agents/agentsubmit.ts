@@ -2,17 +2,36 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The one way the cockpit types a line into an agent's TUI and submits it: the text (a paste when it has a line break or
-// is long), then Enter as a write of its own (chatpending.ts submitSteps says why). Every place that sends a prompt, a
+// is long), then, once the box shows it, Enter as a write of its own (chatpending.ts submitSteps says why). Every place that sends a prompt, a
 // slash command or a nudge goes through it, never a "text\r" in one write.
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { pasteIntoTerm } from "@/app/view/term/termpaste";
+import { pasteIntoTerm, readTermLines } from "@/app/view/term/termpaste";
 import { stringToBase64 } from "@/util/util";
-import { submitSteps } from "./chatpending";
+import { ECHO_WAIT_MAX_MS, submitSteps } from "./chatpending";
+import { boxShowsTyped } from "./chattakeback";
+
+const ECHO_POLL_MS = 40;
+const ECHO_SCREEN_ROWS = 40;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function typeRaw(blockId: string, data: string): Promise<void> {
     return RpcApi.ControllerInputCommand(TabRpcClient, { blockid: blockId, inputdata64: stringToBase64(data) });
+}
+
+// Waits until the agent's box shows `text`, at most ECHO_WAIT_MAX_MS. Returns at once when there is nothing to read (no
+// mounted terminal, no box on screen): the fixed wait before it is all a send has then.
+async function waitForEcho(blockId: string, text: string): Promise<void> {
+    const until = Date.now() + ECHO_WAIT_MAX_MS;
+    for (;;) {
+        const lines = readTermLines(blockId, ECHO_SCREEN_ROWS);
+        if (lines == null || boxShowsTyped(lines, text) !== false || Date.now() >= until) {
+            return;
+        }
+        await sleep(ECHO_POLL_MS);
+    }
 }
 
 /** Types `text` into the agent's terminal and presses Enter. A paste goes through the mounted terminal (which brackets it
@@ -29,7 +48,10 @@ export async function submitToAgent(blockId: string, text: string): Promise<void
                 }
                 break;
             case "wait":
-                await new Promise((resolve) => setTimeout(resolve, step.ms));
+                await sleep(step.ms);
+                if (step.echo != null) {
+                    await waitForEcho(blockId, step.echo);
+                }
                 break;
             case "enter":
                 await typeRaw(blockId, "\r");
