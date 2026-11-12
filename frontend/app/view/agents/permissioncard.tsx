@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { readTermLines } from "../term/termpaste";
 import type { AgentVM } from "./agentsviewmodel";
 import {
+    cardHead,
     cardShown,
     moreWaiting,
     permissionSummaryLine,
@@ -74,10 +75,19 @@ function useSecondChoice(blockId: string | undefined, headId: string | undefined
     return label;
 }
 
-export function PermissionCard({ agent, onOpenTerminal }: { agent: AgentVM; onOpenTerminal: () => void }) {
+export function PermissionCard({
+    agent,
+    askShown,
+    onOpenTerminal,
+}: {
+    agent: AgentVM;
+    // the chat draws the agent's AskUserQuestion choices under this card, so an AskUserQuestion head is theirs
+    askShown: boolean;
+    onOpenTerminal: () => void;
+}) {
     const oref = agent.blockId != null ? `block:${agent.blockId}` : undefined;
     const requests = usePermission(oref);
-    const head = requests[0];
+    const head = cardHead(requests, askShown);
     const { busy, error } = usePermissionRequestState(oref, head?.id);
     // A refusal outlives the request it refused (wavesrv refuses only one that has left the queue), so the card also
     // draws for the error line alone once the queue is empty.

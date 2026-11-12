@@ -49,6 +49,18 @@ export function cardShown(agent: Pick<AgentVM, "state" | "sleeping">): boolean {
     return agent.sleeping == null && agent.state !== "idle";
 }
 
+/** Pure: the request the card draws, or undefined. An AskUserQuestion at the head is also a permission request (Claude
+ *  Code raises one for the question dialog, and wavesrv keeps it to know when the question is over), but while the chat
+ *  shows the question's own choices (`askShown`) that card answers it: a second card with its input as raw JSON and only
+ *  "Answer in Terminal" would ask the same thing twice. */
+export function cardHead<T extends Pick<AgentPermissionRequest, "toolname">>(
+    requests: readonly T[],
+    askShown: boolean
+): T | undefined {
+    const head = requests[0];
+    return head != null && askShown && head.toolname === "AskUserQuestion" ? undefined : head;
+}
+
 /** Pure: the request's summary as the card prints it in mono: a Bash command gets a `$ ` prompt. */
 export function permissionSummaryLine(request: Pick<AgentPermissionRequest, "toolname" | "summary">): string {
     return request.toolname === "Bash" ? `$ ${request.summary}` : request.summary;
