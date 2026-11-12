@@ -788,6 +788,12 @@ func FindProjectFoldersCommand(w *wshutil.WshRpc, data wshrpc.CommandFindProject
 	return resp, err
 }
 
+// command "forkagentsession", wshserver.ForkAgentSessionCommand
+func ForkAgentSessionCommand(w *wshutil.WshRpc, data wshrpc.CommandForkAgentSessionData, opts *wshrpc.RpcOpts) (*wshrpc.CommandForkAgentSessionRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandForkAgentSessionRtnData](w, "forkagentsession", data, opts)
+	return resp, err
+}
+
 // command "getagenttranscript", wshserver.GetAgentTranscriptCommand
 func GetAgentTranscriptCommand(w *wshutil.WshRpc, data wshrpc.CommandGetAgentTranscriptData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetAgentTranscriptRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetAgentTranscriptRtnData](w, "getagenttranscript", data, opts)

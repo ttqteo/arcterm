@@ -1327,6 +1327,19 @@ declare global {
         folders: ProjectFolderData[];
     };
 
+    // wshrpc.CommandForkAgentSessionData
+    type CommandForkAgentSessionData = {
+        transcriptpath: string;
+        uuid?: string;
+        keep?: string;
+    };
+
+    // wshrpc.CommandForkAgentSessionRtnData
+    type CommandForkAgentSessionRtnData = {
+        command: string;
+        projectpath: string;
+    };
+
     // wshrpc.CommandGetAgentTranscriptData
     type CommandGetAgentTranscriptData = {
         path: string;

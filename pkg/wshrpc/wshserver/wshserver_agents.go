@@ -73,6 +73,15 @@ func (ws *WshServer) GetSessionPeekCommand(ctx context.Context, data wshrpc.Comm
 	}, nil
 }
 
+// ForkAgentSessionCommand answers Chat's Fork and Fork from here (agentsessions.ForkCommand). Any .jsonl path is read,
+// as GetAgentTranscriptCommand does: Claude accounts can live in more than one config dir.
+func (ws *WshServer) ForkAgentSessionCommand(ctx context.Context, data wshrpc.CommandForkAgentSessionData) (*wshrpc.CommandForkAgentSessionRtnData, error) {
+	if !strings.HasSuffix(data.TranscriptPath, ".jsonl") {
+		return nil, fmt.Errorf("not a Claude transcript (.jsonl): %q", data.TranscriptPath)
+	}
+	return nil, fmt.Errorf("fork: not built yet")
+}
+
 func (ws *WshServer) GetSubagentsCommand(ctx context.Context, data wshrpc.CommandGetSubagentsData) (*wshrpc.CommandGetSubagentsRtnData, error) {
 	infos, err := listSubagents(data.Path)
 	if err != nil {
