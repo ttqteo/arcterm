@@ -6,6 +6,24 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The brainstorm review cards in Chat draw and act: run `task verify:ui -- chat-brainstorm-review
+  chat-redesign agent-chat` on a dev app that boots. Both Final attempts of run f2306dc6 ended unverified on the
+  machine (a locked `cmd/wsh/cmd/claude-view-mod` copy, then a cold Vite still pre-bundling after 600 s under memory
+  pressure), so nothing below has been seen rendered. Check, against `.superpowers/design/chat-brainstorm-review/`:
+  - The Confirm the design card: guesses with New, the yours fold, Edit, That's right and Put mine back, Confirm all
+    or Check with a builder.
+  - The builder check card: reading with its clock, one question with Decide for me and an own-answer Send, the
+    failed state's Try again (still one ✓ Design confirmed row), and review with Approve opening the run launcher or
+    its reason.
+  - The run card with Open run, and the ✓ Run row once the run lands.
+  - The question card's Decided fold and the ✓ rows: design, builder question with no `brainstorm: builder answer:`
+    prefix, builder check.
+  - Action lines draw no bubble, while a hand-typed message stays a bubble.
+  - Every card turns static when the agent exits.
+
+  (`chatbrainstorm.ts` brainstormCard, `chatbrainstormconfirm.tsx`, `chatbrainstormcheck.tsx`,
+  `chatbrainstormrun.tsx`, `chatconversation.tsx`; unit-tested and typechecked only.)
+
 - [ ] (arcterm) Chat's Fork resumes in a real claude: in a Claude agent's Chat, ⋯ → Fork opens a session that knows
   the whole conversation; Fork from here on your second message, one that knows only the first exchange; on a reply,
   one that knows everything through that reply. The original session is unchanged (the scenario `chat-fork` covers
