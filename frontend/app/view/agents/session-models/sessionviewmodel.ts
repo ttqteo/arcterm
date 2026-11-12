@@ -1,5 +1,6 @@
 // Pure view-model logic for the session sidebar. No React, no Wave runtime imports.
 
+import type { PendingLaunch } from "../agentsviewmodel";
 import type { BuilderCheckRecord } from "../brainstormmodel";
 import { versionAfter } from "../modellabel";
 
@@ -441,4 +442,17 @@ export function buildDuplicateBlockMeta(sourceMeta: Record<string, any>): Record
         }
     }
     return meta;
+}
+
+/** Pure: the pending roster row a duplicated session shows until its reporter registers it. `agent` is the source
+ *  tab's session:agent, which names the runtime, so the booting header reads Claude (or Codex…) rather than Unknown. */
+export function duplicatePendingLaunch(
+    tabId: string,
+    blockId: string,
+    name: string,
+    agent: string,
+    project: string | undefined,
+    now: number
+): PendingLaunch {
+    return { tabId, blockId, name, project: project ?? "", ts: now, runtime: agent };
 }

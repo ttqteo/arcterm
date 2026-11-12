@@ -6,6 +6,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
 import {
+    archiveRetryDelay,
     dropFromArchive,
     filterByStatus,
     groupByRecency,
@@ -232,6 +233,41 @@ describe("loadSessionsArchive", () => {
         expect(scan).toHaveBeenCalledTimes(2);
         expect(globalStore.get(sessionsArchiveAtom)).toBe(good);
         expect(globalStore.get(sessionsErrorAtom)).toBe(true);
+    });
+});
+
+describe("loadSessionsArchive retry", () => {
+    it("waits longer after each failure in a row, then stops", () => {
+        expect([0, 1, 2, 3, 4].map(archiveRetryDelay)).toEqual([null, 5_000, 20_000, 60_000, null]);
+    });
+
+    it("retries a failed boot scan on its own, so the tree does not stay on No past conversations", async () => {
+        vi.useFakeTimers();
+        try {
+            const scan = vi.mocked(RpcApi.GetSessionsActivityCommand);
+            scan.mockReset();
+            // a good scan first, so the failures counted below start from none
+            scan.mockResolvedValueOnce({ sessions: [] });
+            await loadSessionsArchive();
+            globalStore.set(sessionsArchiveAtom, null);
+            scan.mockRejectedValueOnce(new Error("timeout past 30s"));
+            scan.mockResolvedValue({ sessions: [mk({ id: "back" })] });
+
+            await loadSessionsArchive();
+            expect(globalStore.get(sessionsErrorAtom)).toBe(true);
+            expect(globalStore.get(sessionsArchiveAtom)).toEqual([]);
+            expect(scan).toHaveBeenCalledTimes(2);
+
+            await vi.advanceTimersByTimeAsync(5_000);
+            expect(scan).toHaveBeenCalledTimes(3);
+            expect(globalStore.get(sessionsErrorAtom)).toBe(false);
+            expect(globalStore.get(sessionsArchiveAtom)?.map((s) => s.id)).toEqual(["back"]);
+            // the success started the count over: no further retry is pending
+            await vi.advanceTimersByTimeAsync(120_000);
+            expect(scan).toHaveBeenCalledTimes(3);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
 

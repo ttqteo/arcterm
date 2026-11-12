@@ -1,8 +1,31 @@
 // frontend/app/view/agents/reviewlist.test.ts
 import { describe, expect, it } from "vitest";
-import { FOLD_CONTEXT, ReviewRow, ReviewSection, reviewSections, rowsInRange } from "./reviewlist";
+import { FOLD_CONTEXT, ReviewRow, ReviewSection, reviewPatchRequest, reviewSections, rowsInRange } from "./reviewlist";
 
 const NONE: ReadonlySet<string> = new Set();
+
+describe("reviewPatchRequest", () => {
+    it("reads a landed run's working-tree row up to its tip, as its file list does", () => {
+        expect(reviewPatchRequest("/repo", "worktree", "base1", "tip1", 100)).toEqual({
+            cwd: "/repo",
+            base: "base1",
+            end: "tip1",
+            maxbytes: 100,
+        });
+    });
+    it("reads the working tree against base when there is no bound, and a commit by its hash", () => {
+        expect(reviewPatchRequest("/repo", "worktree", "base1", "", 100)).toEqual({
+            cwd: "/repo",
+            base: "base1",
+            maxbytes: 100,
+        });
+        expect(reviewPatchRequest("/repo", "abc123", "base1", "tip1", 100)).toEqual({
+            cwd: "/repo",
+            hash: "abc123",
+            maxbytes: 100,
+        });
+    });
+});
 
 // a full-context patch: one hunk holding the whole file
 function patch(path: string, header: string, body: string[], extra: string[] = []): string {

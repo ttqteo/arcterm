@@ -14,7 +14,9 @@ export type PeekMode = "preview" | "source" | "diff";
 export type PeekHead = { kind: "text"; text: string } | { kind: "absent" } | { kind: "error"; message: string };
 // `note` is gitstatus.ts's reason a change has no line counts to show (a binary file, a nested repository, a submodule)
 export type PeekChange = { adds: number; dels: number; note?: ChangeNote };
-export type PeekGit = { kind: "norepo" } | { kind: "repo"; head: PeekHead; change: PeekChange | null };
+// change: the file's entry in git's changes; null when git lists none (no changes), "unknown" when the read failed or
+// timed out, which must not read as no changes
+export type PeekGit = { kind: "norepo" } | { kind: "repo"; head: PeekHead; change: PeekChange | null | "unknown" };
 export type PeekFile =
     | { kind: "loading" }
     | { kind: "missing" }
@@ -69,12 +71,17 @@ function lineCount(text: string): number {
 }
 
 // numstat is the source, matching the details rail; an untracked file has no numstat entry, so a file new since HEAD
-// falls back to its own line count. A change git counts no lines of reads as uncounted, never as +0 −0
+// falls back to its own line count. A change git counts no lines of reads as uncounted, never as +0 −0, and a failed
+// changes read as unknown, never as no changes
 export function peekStat(file: PeekFile): { label: string; adds?: number; dels?: number } | null {
     if (file.kind !== "text" || file.git.kind !== "repo") {
         return null;
     }
-    const { head, change } = file.git;
+    const { head } = file.git;
+    if (head.kind !== "absent" && file.git.change === "unknown") {
+        return { label: "changes unknown" };
+    }
+    const change = file.git.change === "unknown" ? null : file.git.change;
     if (head.kind === "absent") {
         return { label: "new file", adds: change?.adds ? change.adds : lineCount(file.text) };
     }

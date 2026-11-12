@@ -235,14 +235,14 @@ describe("togglePeek", () => {
         expect(peek?.file).toMatchObject({ kind: "text", text: "second\n" });
     });
 
-    it("keeps the card when the change lookup fails", async () => {
+    it("keeps the card when the change lookup fails, its change unknown rather than none", async () => {
         rpc.GitChangesCommand.mockRejectedValue(new Error("git exploded"));
 
         await togglePeek(at("a.ts"));
 
         expect(globalStore.get(codePeekAtom)?.file).toMatchObject({
             kind: "text",
-            git: { kind: "repo", change: null },
+            git: { kind: "repo", change: "unknown" },
         });
     });
 

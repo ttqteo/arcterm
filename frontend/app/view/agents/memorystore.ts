@@ -140,13 +140,17 @@ export function ensureMemoryFeed(): void {
 // the projects with a change still to review: the Setup badge and the Memory tab's count
 export const memoryToReviewAtom = atom((get) => projectsToReview(get(memoryProjectsAtom) ?? []));
 
+// a move (a click, j/k, another project) clears the error alert: it spoke of the change or project you moved off, and it
+// stayed up over the next one until another action
 export function selectMemoryProject(name: string): void {
     globalStore.set(memorySelectedProjectAtom, name);
     globalStore.set(memorySelectedChangeAtom, null);
+    globalStore.set(memoryErrorAtom, null);
 }
 
 export function selectMemoryChange(id: string): void {
     globalStore.set(memorySelectedChangeAtom, id);
+    globalStore.set(memoryErrorAtom, null);
 }
 
 async function busy(fn: () => Promise<void>): Promise<void> {

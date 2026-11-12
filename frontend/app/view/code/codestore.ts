@@ -392,6 +392,9 @@ const indexCache = new Map<string, CodeIndex>();
 
 // guards a slow load against a newer one, same pattern as filesstore.ts
 const current = { indexToken: "", fileToken: "", statusToken: "", headToken: "", worktreesToken: "" };
+// numbers each openPath, so two opens of one path at once are two tokens: with the path alone, the first to land showed its
+// text and the other's pending placeholder timer then put Opening… over it
+let fileOpenSeq = 0;
 
 export async function selectProject(p: CodeProject | null): Promise<void> {
     globalStore.set(codeProjectAtom, p);
@@ -1127,7 +1130,7 @@ export async function openPath(rel: string, opts?: { pushHistory?: boolean; line
     } else if (globalStore.get(codePendingJumpAtom)?.path !== rel) {
         globalStore.set(codePendingJumpAtom, null);
     }
-    const token = `file:${rel}`;
+    const token = `file:${rel}:${++fileOpenSeq}`;
     current.fileToken = token;
     const abs = joinRepoPath(project.path, rel);
     // deferred until the path is known to be a file, so a folder leaves history and the save state alone

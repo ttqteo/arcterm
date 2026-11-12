@@ -43,6 +43,7 @@ import {
 } from "./agentrailmodel";
 import { RailResizeGrip, RailStats, RailTabStrip, useWideWidth } from "./agentrailpanel";
 import {
+    bgSessionLive,
     bgTaskStatusLabel,
     bgTaskStoppable,
     planAgentRail,
@@ -864,7 +865,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const cacheCountdown = isClaude ? formatCacheCountdown(cacheStatus, now) : "—";
     const branch = ended ? ended.branch : railState?.branch;
     const worktree = ended ? undefined : railState?.worktree;
-    const live = agent.blockId != null && !ended;
+    const live = bgSessionLive(agent.blockId, ended != null);
     const bgActivity = backgroundActivity(bgTasks, machineServers);
     const shownAgentState = shownState(agent.state, bgActivity);
     const action = sub ? null : railAction(agent.state, bgActivity, live);
@@ -1268,7 +1269,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         live={live}
                         onStop={
                             // the kill finds the task among the agent block's job object: Windows only
-                            isWindows() && agent.blockId != null && bgTaskStoppable(t, live)
+                            isWindows() && bgTaskStoppable(t, live)
                                 ? () => fireAndForget(() => stopBackgroundTask(agent.id, agent.blockId!, t))
                                 : undefined
                         }

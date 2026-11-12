@@ -30,6 +30,7 @@ import {
     type CommentBox,
 } from "./linecommentstore";
 import {
+    reviewPatchRequest,
     reviewSections,
     rowsInRange,
     type ReviewPatchFileLike,
@@ -98,13 +99,12 @@ function asReviewFile(f: ReviewPatchFile): ReviewPatchFileLike {
     return f;
 }
 
-async function loadReviewPatch(cwd: string, source: string, base: string): Promise<PatchLoad> {
+async function loadReviewPatch(cwd: string, source: string, base: string, end: string): Promise<PatchLoad> {
     await devFault();
-    const r = await RpcApi.GitReviewPatchCommand(TabRpcClient, {
-        cwd,
-        ...(source === "worktree" ? { base } : { hash: source }),
-        maxbytes: MAX_DIFF_BYTES,
-    });
+    const r = await RpcApi.GitReviewPatchCommand(
+        TabRpcClient,
+        reviewPatchRequest(cwd, source, base, end, MAX_DIFF_BYTES)
+    );
     return { status: "ok", isRepo: r.isrepo, files: (r.files ?? []).map(asReviewFile) };
 }
 
@@ -123,6 +123,7 @@ export function ReviewList({
     repoKey,
     source,
     base,
+    end,
     refreshKey,
     scrollTo,
     loading,
@@ -130,6 +131,7 @@ export function ReviewList({
     repoKey: string; // the Diff scope's cwd
     source: string; // "worktree" or a commit hash
     base: string; // FilesState.ref, for the working tree
+    end: string; // FilesState.end: a landed run's tip, which bounds the working-tree row at base..end ("" = none)
     // changes when the working tree does; a reload on it keeps the rows on screen
     refreshKey: string;
     // a file the commit pane's list asked for; n grows with each click
@@ -151,14 +153,14 @@ export function ReviewList({
     useEffect(() => {
         let alive = true;
         // a refresh of what is on screen keeps it; a new base or a retry shows the skeleton
-        const target = `${base}|${attempt}`;
+        const target = `${base}|${end}|${attempt}`;
         if (loadedFor.current !== target) {
             setLoad({ status: "loading" });
         }
         fireAndForget(async () => {
             let next: PatchLoad;
             try {
-                next = await loadReviewPatch(repoKey, source, base);
+                next = await loadReviewPatch(repoKey, source, base, end);
             } catch (e) {
                 console.error("review patch load failed", e);
                 next = { status: "error", error: String((e as Error)?.message ?? e) };
@@ -171,7 +173,7 @@ export function ReviewList({
         return () => {
             alive = false;
         };
-    }, [repoKey, source, base, attempt, refreshKey]);
+    }, [repoKey, source, base, end, attempt, refreshKey]);
 
     const files = load.status === "ok" ? load.files : null;
     const sections = useMemo(() => (files == null ? null : reviewSections(files, expanded)), [files, expanded]);

@@ -484,6 +484,24 @@ func TestGetChangesNotARepo(t *testing.T) {
 	}
 }
 
+// a corrupt .git/index is a failed read, never "not a repository": rev-parse still says the folder is a work tree, and
+// status fails, so the Diff surface shows its refresh-failed notice (or its error state) rather than "not a repository"
+func TestGetChangesCorruptIndexIsAnError(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "a.txt", "a\n")
+	commitAll(t, dir)
+	writeFile(t, dir, filepath.Join(".git", "index"), "this is not an index file, not even close to one")
+	for _, ref := range []string{"", "HEAD"} {
+		ch, err := GetChanges(context.Background(), dir, ref)
+		if err == nil {
+			t.Fatalf("ref %q: corrupt index read as %+v, want an error", ref, ch)
+		}
+		if !strings.Contains(err.Error(), "index") {
+			t.Errorf("ref %q: error %q does not name the index", ref, err)
+		}
+	}
+}
+
 // subdirRepoWithChange builds a monorepo whose changes live under services/foo/ (plus one root
 // file), returning the repo root. Models a "microservice" agent whose cwd is a subdirectory of the
 // git root — the case where paths from `status` (repo-root-relative) diverge from `git -C <cwd>`
@@ -2314,6 +2332,33 @@ func TestReviewPatchBaseBehindHead(t *testing.T) {
 	}
 	if len(res.Files) != 1 || !strings.Contains(res.Files[0].Diff, "+two\n") {
 		t.Fatalf("against base the committed change shows, got %+v", res.Files)
+	}
+}
+
+// a landed run's Review reads base..tip: the run's commits, not the checkout's later commits, its uncommitted edits or
+// its untracked files
+func TestReviewPatchToBoundsAtEnd(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "x.txt", "one\n")
+	commitAll(t, dir)
+	base := strings.TrimSpace(gitRun(t, dir, "rev-parse", "HEAD"))
+	writeFile(t, dir, "x.txt", "one\ntwo\n")
+	commitAll(t, dir)
+	tip := strings.TrimSpace(gitRun(t, dir, "rev-parse", "HEAD"))
+	writeFile(t, dir, "later.txt", "after the run\n")
+	commitAll(t, dir)
+	writeFile(t, dir, "x.txt", "one\ntwo\nuncommitted\n")
+	writeFile(t, dir, "new.txt", "untracked\n")
+
+	res, err := ReviewPatchTo(context.Background(), dir, base, tip, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reviewPaths(res); len(got) != 1 || got[0] != "x.txt" {
+		t.Fatalf("base..tip lists %v, want only x.txt", got)
+	}
+	if d := res.Files[0].Diff; !strings.Contains(d, "+two\n") || strings.Contains(d, "uncommitted") {
+		t.Fatalf("x.txt patch is not base..tip:\n%s", d)
 	}
 }
 

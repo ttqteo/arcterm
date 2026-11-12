@@ -30,7 +30,7 @@ import {
 import { BTN_SECONDARY } from "./setupstyles";
 import { useFileText } from "./usefiletext";
 
-export const TONE_DOT: Record<Tone, string> = { ok: "bg-success", warn: "bg-warning", none: "bg-ink-faint" };
+// the one tone-to-text-colour map for the Setup surface's rows and notes (setupsurface.tsx, setupskillsync.tsx)
 export const TONE_TEXT: Record<Tone, string> = { ok: "text-ink-mid", warn: "text-warning-soft", none: "text-muted" };
 
 // the lines of an outside edit the conflict notice lists before it says "+N more"

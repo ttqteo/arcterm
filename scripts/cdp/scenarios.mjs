@@ -16302,6 +16302,11 @@ async function installAhMock(h, sessions, apiUrl, probeId = "ah-1") {
             mockWshRpcCall(client, command, data, opts) {
                 if (command === "getsessionsactivity") {
                     state.calls++;
+                    // step 15 sets fail to have the next scans fail, as one past its deadline does
+                    if (state.fail > 0) {
+                        state.fail--;
+                        return Promise.reject(new Error("sessions scan timed out"));
+                    }
                     return Promise.resolve({ sessions });
                 }
                 return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
@@ -16866,6 +16871,49 @@ const agentHistory = {
                                   backOnAgent: republished.surface,
                               }),
                           }
+                );
+            }
+
+            // A scan that fails with nothing loaded (a boot scan past its deadline): the Conversations section says it could
+            // not read them, with a Retry, rather than "No past conversations", and the store retries on its own after 5 s.
+            if (modules.urls != null) {
+                const u = modules.urls;
+                await h.goto("agent");
+                const failed = await h.ev(`(async () => {
+                    const { globalStore } = await import(${JSON.stringify(u.store)});
+                    const A = await import(${JSON.stringify(u.archive)});
+                    window.${AH_MOCK_KEY}.state.fail = 1;
+                    globalStore.set(A.sessionsArchiveAtom, null);
+                    await A.loadSessionsArchive();
+                    return { error: globalStore.get(A.sessionsErrorAtom), archive: globalStore.get(A.sessionsArchiveAtom)?.length ?? null };
+                })()`);
+                const errorShown = await ahWait(h, `document.querySelector("[data-agent-conversations-error]") != null`, 4000);
+                const errorText = await h.ev(`document.querySelector("[data-agent-conversations-error]")?.textContent ?? null`);
+                const emptyText = await h.ev(`/No past conversations/.test(document.querySelector("[data-agent-conversations]")?.textContent ?? "")`);
+                await h.shot("cdp-shots/agent-history-scan-failed.png");
+                const recovered = await ahWait(
+                    h,
+                    `document.querySelector("[data-agent-conversations-error]") == null && window.${AH_MOCK_KEY}?.state.fail === 0`,
+                    12000
+                );
+                const after = await h.ev(`(async () => {
+                    const { globalStore } = await import(${JSON.stringify(u.store)});
+                    const A = await import(${JSON.stringify(u.archive)});
+                    return { error: globalStore.get(A.sessionsErrorAtom), archive: globalStore.get(A.sessionsArchiveAtom)?.length ?? null };
+                })()`);
+                await h.shot("cdp-shots/agent-history-scan-retried.png");
+                rec(
+                    "15. a failed scan shows 'Could not read past conversations' with Retry, not 'No past conversations', and retries on its own",
+                    failed?.error === true &&
+                        failed.archive === 0 &&
+                        errorShown === true &&
+                        /Could not read past conversations/.test(errorText ?? "") &&
+                        /Retry/.test(errorText ?? "") &&
+                        emptyText === false &&
+                        recovered === true &&
+                        after?.error === false &&
+                        after.archive > 0,
+                    JSON.stringify({ failed, errorShown, errorText, emptyText, recovered, after })
                 );
             }
         } catch (e) {
@@ -63059,8 +63107,10 @@ async function setupMemoryAssert(h, ctx) {
     );
 
     await run(
-        "9. Keys: j and k move the selection, a applies and lands on the next change to review, x keeps and u undoes",
+        "9. Keys: j and k move the selection (which clears step 8's error alert), a applies and lands on the next change to review, x keeps and u undoes",
         async () => {
+            // step 8's alert is still up here; the moves below (a project pick, a row click, j) clear it
+            const alertBefore = await text("[data-memory-error]");
             await selectProject(MEMORY_PROJECTS.own);
             await showView("table");
             // kind chips are tinted by what the change does: a removal, a bringing in, an edit in place
@@ -63077,8 +63127,7 @@ async function setupMemoryAssert(h, ctx) {
             await selectChange(own.trim.id);
             await press("j");
             const down = await waitSelected(own.delete.id);
-            // the changed-on-disk change has its Apply disabled, so a does nothing there. step 8's error alert is
-            // still up (it clears on the next action), so a new error is one that differs from it
+            // the changed-on-disk change has its Apply disabled, so a does nothing there: no new error alert
             const errorBefore = await text("[data-memory-error]");
             await press("a");
             await polishNap(500);
@@ -63112,6 +63161,8 @@ async function setupMemoryAssert(h, ctx) {
             await press("u");
             const reopened = await waitRowStatus(own.moveToDoc.id, "To review");
             const got = {
+                alertBefore,
+                alertAfterMove: errorBefore,
                 tones,
                 down,
                 held,
@@ -63130,6 +63181,8 @@ async function setupMemoryAssert(h, ctx) {
             };
             return {
                 ok:
+                    alertBefore !== "" &&
+                    errorBefore === "" &&
                     tones.delete === "remove" &&
                     tones.addToIndex === "add" &&
                     tones.trim === "edit" &&
