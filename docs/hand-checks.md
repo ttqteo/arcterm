@@ -9,8 +9,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Jarvis's hologram form: Settings → Jarvis & Office → Form → Hologram replaces Sprout with blue rings in
   the bottom-right corner, faint when calm and solid on hover; clicking it opens the peek and the bubble sits beside
   it. Start an agent and the core beats; once something waits on you it fades into the amber neural sphere, and back
-  when it is answered. Float and the fold still show Sprout. Rendering was checked in headless Chrome only, never in
-  WKWebView or in the app (ce48a18fa; `hologramview.tsx`).
+  when it is answered. Float and the fold still show Sprout. No milky disc or square around it, and Hologram size S / M
+  / L redraws it smaller with thinner lines, not a blown-out core. Placement, peek and the asking switch were checked
+  in the browser cockpit, the look in a live WKWebView window; never yet in the installed app since a20195495 and
+  975f3352d (`hologramview.tsx`, `hologramscene.ts`).
 - [ ] (arcterm) Chat's Fork resumes in a real claude: in a Claude agent's Chat, ⋯ → Fork opens a session that knows
   the whole conversation; Fork from here on your second message, one that knows only the first exchange; on a reply,
   one that knows everything through that reply. The original session is unchanged (the scenario `chat-fork` covers
