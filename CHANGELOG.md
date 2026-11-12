@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A run's follow-ups initiative is filed under the topic it belongs to (Chat, Council…) instead of at the top of the
+  initiatives list, and `wsh effort list --topics` lists those topics.
 - A run's row in the Agent sidebar shows the RAM the whole run holds (its lead and every worker together) instead of
   the lead's alone; hover it for the lead's own figure.
 - In a Chat box's bash mode (`!`), Tab now takes the grey command suggested from your history, as → does; with no
