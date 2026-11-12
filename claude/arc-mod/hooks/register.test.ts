@@ -51,6 +51,52 @@ describe("shell tool calls", () => {
             expect(spawned).toContainEqual(["__WSH_PATH__", "jobslot", "--", "task check:ts"]);
         });
     }
+
+    // Esc while the command waits its turn: wsh is let go (which frees its place) and the command never runs, even
+    // where the engine has not ended the stream yet
+    it("never runs a command interrupted while it waits in the queue", async () => {
+        const handlers = registered();
+        const stop = new AbortController();
+        let returned = false;
+        const $ = arcEngine([]);
+        const engine = {
+            ...$,
+            process: {
+                ...$.process,
+                spawn: () => {
+                    let pulls = 0;
+                    return {
+                        next: () =>
+                            pulls++ === 0
+                                ? Promise.resolve({
+                                      done: false,
+                                      value: { stream: "stdout", text: '{"queued":1,"behind":"task check:ts"}\n' },
+                                  })
+                                : new Promise(() => undefined), // queued for good
+                        return: async () => {
+                            returned = true;
+                            return { done: true, value: undefined };
+                        },
+                        [Symbol.asyncIterator]() {
+                            return this;
+                        },
+                    };
+                },
+            },
+        };
+        await handlers.get("session.start")!(engine, { cwd: "/repo" }, async () => undefined);
+        const next = Object.assign(
+            vi.fn(async () => "ran"),
+            { signal: stop.signal }
+        );
+        const out = handlers.get("tool.call:Bash")!(engine, { command: "task check:ts" }, next);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        stop.abort();
+        const result = (await out) as { deny?: string };
+        expect(next).not.toHaveBeenCalled();
+        expect(result.deny).toMatch(/interrupted/i);
+        expect(returned).toBe(true);
+    });
 });
 
 describe("a background Bash command", () => {
