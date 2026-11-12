@@ -113,18 +113,31 @@ export default function (kits) {
     const { git } = kits.code;
     const skipStep = (step, detail) => ({ step, skip: true, detail });
 
-    // hovers a linked path (off it first, so xterm resolves it fresh), waits for xterm to mark it as a link, then clicks it
-    // with the modifiers held. Resolves to false when the path is not in the viewport
-    async function clickLink(h, ctx, text, modifiers) {
+    // hovers a linked path the way a person does: off it first (so xterm resolves it fresh), then onto it, then waits for xterm to
+    // mark it as a link. xterm resolves a link asynchronously (the link provider checks the file and the agent's touched files
+    // over RPC, which wavesrv answers slowly in a fresh store's first minute) and calls the link's hover, which starts the
+    // tooltip's delay, only once it has: a hover is not over until xterm says so, however long that takes. Resolves to null when
+    // the path is not in the viewport, else to where it is, whether xterm marked it as a link, and how long that took
+    async function hoverLink(h, ctx, text, modifiers) {
         const at = await h.ev(`window.__arcTermPathLinks?.locate(${JSON.stringify(ctx.blockId)}, ${JSON.stringify(text)})`);
-        if (at == null) return false;
+        if (at == null) return null;
         const off = await inPage(h, `const r = screenOf(${JSON.stringify(ctx.blockId)})?.getBoundingClientRect(); return r ? { x: Math.round(r.right - 12) } : null;`);
         await mouse(h, "mouseMoved", off?.x ?? at.x + 200, at.y, modifiers);
         await polishNap(100);
         await mouse(h, "mouseMoved", at.x, at.y, modifiers);
-        await polishWaitFor(h, `!!window.__arcTerms?.[${JSON.stringify(ctx.blockId)}]?.terminal.element?.querySelector(".xterm-screen")?.classList.contains("xterm-cursor-pointer")`, 3000);
-        await mouse(h, "mousePressed", at.x, at.y, modifiers);
-        await mouse(h, "mouseReleased", at.x, at.y, modifiers);
+        const t0 = Date.now();
+        const marked = await polishWaitFor(h, `!!window.__arcTerms?.[${JSON.stringify(ctx.blockId)}]?.terminal.element?.querySelector(".xterm-screen")?.classList.contains("xterm-cursor-pointer")`, WAIT_MS);
+        return { at, marked, markedMs: Date.now() - t0 };
+    }
+
+    // hovers a linked path, then clicks it with the modifiers held. Resolves to false when the path is not in the viewport, or
+    // when xterm never marked it as a link (a click on text that is no link does nothing, and a step must not read that as a card
+    // that failed to open)
+    async function clickLink(h, ctx, text, modifiers) {
+        const hovered = await hoverLink(h, ctx, text, modifiers);
+        if (hovered == null || !hovered.marked) return false;
+        await mouse(h, "mousePressed", hovered.at.x, hovered.at.y, modifiers);
+        await mouse(h, "mouseReleased", hovered.at.x, hovered.at.y, modifiers);
         return true;
     }
 
@@ -233,18 +246,22 @@ export default function (kits) {
             if (!linked) return steps;
 
             // 1. the hover hint names both gestures
-            const hintAt = await h.ev(`window.__arcTermPathLinks?.locate(${JSON.stringify(ctx.blockId)}, ${JSON.stringify(ctx.paths.ts)})`);
+            // The tooltip is the terminal's: it shows 600 ms after xterm calls the link's hover and goes 2.2 s later, so it is read
+            // after xterm has marked the link (hoverLink) and polled for, not waited out from the first mouse move (a fixed 3 s
+            // from the move read no tooltip in Final's first run). The detail keeps how long the link and the tooltip took
+            const hovered = await hoverLink(h, ctx, ctx.paths.ts, 0);
             let hint = "";
-            if (hintAt) {
-                await mouse(h, "mouseMoved", hintAt.x - 60, hintAt.y + 120, 0);
-                await mouse(h, "mouseMoved", hintAt.x, hintAt.y, 0);
-                await polishWaitFor(h, `document.body.innerText.includes("click to open committed.ts")`, 3000);
+            let hintMs = null;
+            if (hovered?.marked) {
+                const t0 = Date.now();
+                const shown = await polishWaitFor(h, `[...document.querySelectorAll("[data-tooltip]")].some((t) => (t.textContent ?? "").includes("click to open committed.ts"))`, 6000);
+                hintMs = shown ? Date.now() - t0 : null;
                 hint = await h.ev(`[...document.querySelectorAll("[data-tooltip]")].map((t) => t.textContent).join(" | ")`);
             }
             rec(
                 "hovering a path names Ctrl+click to open it and Ctrl+Shift+click to peek",
                 /click to open committed\.ts/.test(hint) && /Shift-click to peek/.test(hint),
-                { hint }
+                { hint, linkMarked: hovered?.marked ?? null, linkMarkedMs: hovered?.markedMs ?? null, hintMs }
             );
 
             // 2. Ctrl+click is the open it always was: the agent's panel shows the file, and no card opens
