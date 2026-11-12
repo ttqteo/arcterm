@@ -21,15 +21,18 @@ export type CommentSide = "modified" | "original";
 // what the send needs to find its folder, its project and the run that started it.
 export interface BatchSource {
     key: string; // originKey(scope.repo.origin)
-    kind: "agent" | "run" | "project";
+    // a worktree is one checkout of a registered project: its comments go to a new agent in that checkout, not the
+    // project's main one, where the lines commented on are not
+    kind: "agent" | "run" | "project" | "worktree";
     label: string;
     // filesStateAtom.cwd when published; "" when the source no longer resolves one
     cwd: string;
     agentId?: string;
     // a run origin's id, or the source agent's AgentVM.runId
     runId?: string;
-    // a project origin's name, or the source agent's AgentVM.project
+    // a project origin's name, a worktree's project, or the source agent's AgentVM.project
     project?: string;
+    // a project origin's path, or a worktree origin's own checkout
     projectPath?: string;
 }
 
@@ -73,7 +76,7 @@ export const COMMENT_STORAGE_KEY = "diff.comments.pending";
 export const MAX_COMMENT_BATCHES = 50;
 export const MAX_QUOTE_LINES = 40;
 
-const SOURCE_KINDS: BatchSource["kind"][] = ["agent", "run", "project"];
+const SOURCE_KINDS: BatchSource["kind"][] = ["agent", "run", "project", "worktree"];
 
 function isObject(v: unknown): v is Record<string, unknown> {
     return v != null && typeof v === "object" && !Array.isArray(v);
@@ -449,5 +452,7 @@ export function batchSourceFor(
             return { ...base, kind: "run", runId: o.runId };
         case "project":
             return { ...base, kind: "project", project: o.name, projectPath: o.path };
+        case "worktree":
+            return { ...base, kind: "worktree", project: o.project, projectPath: o.path };
     }
 }

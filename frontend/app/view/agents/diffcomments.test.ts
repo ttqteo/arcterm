@@ -569,6 +569,23 @@ describe("batchSourceFor", () => {
         });
     });
 
+    it("maps a worktree origin to its own checkout and its project", () => {
+        expect(
+            batchSourceFor(
+                scope({ kind: "worktree", path: "/p/waveterm/.worktrees/x", project: "waveterm" }, "x"),
+                "/p/waveterm/.worktrees/x",
+                undefined
+            )
+        ).toEqual({
+            key: "worktree:/p/waveterm/.worktrees/x",
+            kind: "worktree",
+            label: "x",
+            cwd: "/p/waveterm/.worktrees/x",
+            project: "waveterm",
+            projectPath: "/p/waveterm/.worktrees/x",
+        });
+    });
+
     it("maps a run origin with its run id", () => {
         expect(
             batchSourceFor(
