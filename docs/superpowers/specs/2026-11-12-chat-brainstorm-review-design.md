@@ -138,3 +138,100 @@ Chat's UI strings stay English, as the rest of Chat (`Waiting on you`, `You pick
   the fold counts, and the `New` mark.
 - CDP: `agent-chat` steps that open each card and its folded ✓ row, and the `Decided` fold open and closed (the board
   `A-fold-in-card.dc.html` is the reference for the question card's footer).
+
+## Builder decisions
+
+Calls the run's lead made beyond the sections above (2026-11-12, autonomous run), each with why. Every task of the plan
+works from these and the DOM contract below.
+
+1. **One card model, `brainstormCard`.** `chatbrainstorm.ts` gains `brainstormCard(input): ChatCard | null` with
+   `ChatCard = QuestionCard | ConfirmCard | CheckCard | RunCard` (each with a `kind`), beside today's `openQuestion`,
+   which the wiring task then deletes with `PointerCard` and its pointer line. Why: one pure function decides which
+   card shows in each phase, so the phase table in Testing is one vitest file. Its input is the shown file
+   (`shownBrainstormFile`), the agent's send records, `exited`, the topic, the builder check view
+   (`builderCheckView`, computed as `brainstormpane.tsx` computes it) and the seen mark. Order of precedence: a run
+   (`file.run`) → a talk question (as `openQuestion` decides today) → a pending or failed builder check, or
+   `file.check` set, or a `check` line pending → the Confirm card (`done`, no question, no check, no run, and
+   something to do: `reviewHead`'s action set or at least one guess/changed row; `working` while the agent writes up a
+   review action, decision 2) → nothing. With parts still asked or open and nothing to confirm there is no card.
+2. **The Confirm card folds the moment `check` is sent.** The shown file then says the agent is writing
+   (`PENDING_CHECK`), and from then the check card shows in its reading stage, so nothing blank sits between the two.
+   The model reads that from the pending sent line's kind (`BrainstormState.sent.kind === "check"`). Any other line
+   the agent is writing up (a confirm, an edit, a keep) leaves the Confirm card in place in a `working` state (its
+   buttons off, the shown file's `working` text as its line) instead of removing it until the agent writes again, so a
+   click never makes the card vanish and come back. Between the send and Arc's builder check record (`brainstorm:check*`
+   on the tab) the check view is still `none`; the check card then reads as a reading check with the pending-check line
+   (`A builder is reading the design.`), and its clock shows only once `checkClock` has an elapsed time (a record
+   exists), as the tab's does.
+3. **The send record grows a `kind`** (`answer`, `builder-answer`, `design`, `builder`, `run`, `action`), recorded by
+   `sendBrainstorm` for every line it sends, from Chat or from the Brainstorm tab alike: both are lines Arc sent.
+   `design` is a `check` (counts: decisions); `builder` is `approved` or `keep-talking` (counts: questions, calls; and
+   which of the two); `run` is `brainstorm: run <id>` (its run id); `builder-answer` keeps the builder question's
+   number and part; every other action line is `action`. That includes `guess` and `skip` (`brainstorm: guess`,
+   `brainstorm: skip questions`), which section 5's list leaves out: they are action lines Arc sent, and the person's
+   answer was to hide those. An `answer` sent with no question open (pushback or a question back, typed in the tab's
+   line box) gets no record at all and stays a bubble: it is the user's own words, not an action. Records other than
+   `answer` and `builder-answer` store `n: 0` and `part: ""` (the stored shape still requires both). A `check` sent
+   while the agent's newest `design`/`builder` record of this topic is `design` (a Try again after a failed check) is
+   `action`, so a retry draws no second `✓ Design confirmed`. A stored record without `kind` reads as `answer`. Only
+   `answer` records count as answering a talk question (a `builder-answer` with `n` 1 must not hide talk question 1
+   after keep talking). The cap per agent rises from 50 to 200, since every action now leaves one. The type keeps its
+   name `SentAnswer` (renaming it touches every importer for no behaviour).
+4. **What each paired message draws:** `answer` → today's question ✓ row; `builder-answer` → `✓ Builder question N ·
+   <part> — <answer>`; `design` → `✓ Design confirmed · N decisions`; `builder` → `✓ Builder check · Q questions, C
+   calls` (`· kept talking` added for keep talking); `run` → nothing while the run is live (its card is at the end),
+   then `✓ Run · <name> · <stage>` once the run is landed, complete or cancelled; `action` → nothing at all (no
+   bubble, no row). A `brainstorm:` line the user typed has no record and stays a bubble.
+5. **One builder question at a time**, the first unanswered (`check.yours`), as the tab asks them; the ones answered
+   before it are ✓ rows in the timeline (decision 4). A builder question's card has its options (a pick sends
+   `builder-answer` with the option's label), `Decide for me`, and an inline field to answer in words (sends
+   `builder-answer`), since the message box sends plain text the agent would read as pushback. The box's placeholder
+   is left as it is while a builder question is open.
+6. **After the builder's questions, the check card lists what still needs the user**: the rows of `checkReview` whose
+   action is keep/restore or confirm, drawn with the same decision row as the Confirm card. `Approve` stays off with
+   `approveBlocker`'s reason beside it until none is left. Why: approving is refused by the same rule in the tab, and
+   showing the reason is better than a dead button.
+7. **`New` marks:** the poller already baselines every attached brainstorm on its first read
+   (`baselineBrainstormSeen`, `brainstormpoller.ts`), Chat or not. The Confirm card still calls the idempotent
+   `baselineBrainstormSeen` when it mounts, and calls `markBrainstormSeen` with the file it last drew when it unmounts
+   (the user leaves Chat or the card folds), as `brainstormpane.tsx` does.
+8. **Run card:** reads the run through `useRunInfo` (`runlineagestore.ts`) and `runStage`: name (`title`), kind
+   (`Quick run` when `mode` is `quick`, else `Orchestrator run`), the stage's label and tone. `Open run` opens it
+   through `openTarget`/`openAddress` (`frontend/app/view/jarvis/openref.ts`). Landed, complete or cancelled folds it
+   (decision 4).
+9. **Exited agent:** every card turns static: no amber dot (`Agent exited` in its place), every send button disabled,
+   `Open in Brainstorm` kept.
+10. **The check card's clock** reuses the tab's: `useCheckTimes` moves out of `brainstormpane.tsx` into
+    `brainstormchecktimes.ts` so both import it; `checkClock`/`checkSpan` are already pure; the ticking time is
+    `model.nowAtom`.
+11. **Scenario:** a new `chat-brainstorm-review` scenario (`scripts/cdp/scenarios-chat-brainstorm-review.mjs`), built
+    like `chat-redesign`'s brainstorm steps (one fixture Claude agent, its transcript, its `brainstorm.json` written and
+    revealed), in place of new steps in `agent-chat`. Why: the question card's steps already live in `chat-redesign`,
+    `agent-chat` sits in the 67k-line `scenarios.mjs` other plans edit, and a scenario of its own can be run alone.
+    `chat-redesign`'s step that asserted the pointer line at the builder check now asserts the check card. This
+    replaces the `agent-chat` steps named in section 6 and in Testing; `agent-chat` still runs in the Final, unchanged.
+12. **A run card that is done draws no end row at all** (no empty wrapper holding the column's gap): the end row for a
+    run card is a component that reads the run and returns nothing once it is landed, complete or cancelled.
+
+### DOM contract
+
+Every task uses these attributes exactly; the scenario is written against them.
+
+- Every card: the section carries `data-chat-bscard-kind` (`question`, `confirm`, `check`, `run`) and
+  `data-chat-bscard-state` (`waiting`, `weighing`, `working` or `static`); `[data-chat-bscard-open]` (Open in
+  Brainstorm) as today. The question card keeps `data-chat-bscard`, `data-chat-bscard-n` and its option attributes.
+- Folds: the toggle `[data-chat-bscard-fold="<name>"]` with `aria-expanded`, its list
+  `[data-chat-bscard-fold-list="<name>"]` drawn only when open; names `decided` (question card footer), `yours`
+  (Confirm card), `calls` and `spec` (check card).
+- Confirm card: `[data-chat-bscard-review-line]`; `[data-chat-bscard-confirm-all]` or `[data-chat-bscard-check]`;
+  decision rows `[data-chat-bscard-decision="<part id>"][data-view="guess|changed"]`, a `New` label
+  `[data-chat-bscard-new]`; buttons `[data-chat-bscard-right]`, `[data-chat-bscard-edit]`, `[data-chat-bscard-keep]`,
+  `[data-chat-bscard-restore]`; the inline editor `[data-chat-bscard-editor]` (a textarea and its Send).
+- Check card: `data-chat-bscard-stage` (`reading`, `taking-in`, `failed`, `asking`, `review`); `[data-chat-bscard-clock]`;
+  `[data-chat-bscard-check-reason]` and `[data-chat-bscard-retry]` when failed; the builder question
+  `[data-chat-bscard-builder="<n>"]` with `[data-chat-bscard-option]` rows, `[data-chat-bscard-decide]` and
+  `[data-chat-bscard-own]` (the words field and its Send); the review's decision rows as on the Confirm card;
+  `[data-chat-bscard-approve]`, `[data-chat-bscard-approve-reason]`, `[data-chat-bscard-keep-talking]`.
+- Run card: `data-chat-bscard-run-stage="<RunStageKey>"`, `[data-chat-bscard-run-open]`.
+- ✓ rows: questions keep `[data-chat-bscard-answered]`; a builder answer is `[data-chat-bscard-answered]
+  [data-kind="builder"]`; steps are `[data-chat-bscard-done="design|builder|run"]`.
