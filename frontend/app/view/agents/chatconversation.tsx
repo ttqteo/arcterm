@@ -24,7 +24,7 @@ import { MOTION, springReveal } from "@/app/element/motiontokens";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { cn } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
-import { ChevronDown, ChevronRight, Copy, GitFork } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronRight, Copy, GitFork } from "lucide-react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
@@ -62,6 +62,7 @@ import {
     TaskNotificationRow,
     ToolDetailBody,
 } from "./narrationtimeline";
+import { usePathOpener } from "./pathlinkcontext";
 import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
 import { firstItemBelow, keepTranscriptPlace, transcriptPlace } from "./transcriptplace";
 
@@ -538,7 +539,9 @@ function openedFor(opened: ReadonlySet<string>, itemKey: string): string {
     return out;
 }
 
-// the files a stretch of work edited, a chip each ("session.ts +4 −1"), each opening its diff under the row
+// the files a stretch of work edited, a chip each ("session.ts +4 −1"), each opening its diff under the row. The arrow at
+// a chip's end opens the file itself where a path link in the terminal would (the agent's File tab, which previews HTML
+// and markdown); a transcript with no agent around it has no opener, and its chips only open their diff.
 function FileChips({
     files,
     openPaths,
@@ -549,30 +552,49 @@ function FileChips({
     onToggle: (path: string) => void;
 }) {
     const opened = files.filter((f) => openPaths.has(f.path));
+    const opener = usePathOpener();
     return (
         <div data-chat-files className="flex flex-col gap-2">
             <div className="flex flex-wrap gap-[6px]">
                 {files.map((f) => {
                     const open = openPaths.has(f.path);
+                    const name = f.path.split(/[\\/]/).pop() || f.path;
                     return (
-                        <button
+                        <span
                             key={f.path}
-                            type="button"
-                            data-chat-file={f.path}
-                            aria-expanded={open}
-                            title={f.path}
-                            onClick={() => onToggle(f.path)}
                             className={cn(
-                                "flex cursor-pointer items-center gap-2 rounded-full border bg-surface px-[12px] py-[3px] text-[12px] hover:border-edge-strong",
+                                "flex items-center rounded-full border bg-surface text-[12px] hover:border-edge-strong",
                                 open ? "border-edge-strong" : "border-edge-mid"
                             )}
                         >
-                            <span className="max-w-[260px] truncate text-secondary">
-                                {f.path.split(/[\\/]/).pop() || f.path}
-                            </span>
-                            <span className="font-semibold tabular-nums text-diff-added">+{f.adds}</span>
-                            <span className="font-semibold tabular-nums text-diff-removed">−{f.dels}</span>
-                        </button>
+                            <button
+                                type="button"
+                                data-chat-file={f.path}
+                                aria-expanded={open}
+                                title={f.path}
+                                onClick={() => onToggle(f.path)}
+                                className={cn(
+                                    "flex cursor-pointer items-center gap-2 py-[3px] pl-[12px]",
+                                    opener != null ? "pr-[4px]" : "pr-[12px]"
+                                )}
+                            >
+                                <span className="max-w-[260px] truncate text-secondary">{name}</span>
+                                <span className="font-semibold tabular-nums text-diff-added">+{f.adds}</span>
+                                <span className="font-semibold tabular-nums text-diff-removed">−{f.dels}</span>
+                            </button>
+                            {opener != null ? (
+                                <button
+                                    type="button"
+                                    data-chat-file-open={f.path}
+                                    title={`Open ${name}`}
+                                    aria-label={`Open ${name}`}
+                                    onClick={() => opener.open(f.path)}
+                                    className="flex cursor-pointer items-center self-stretch rounded-r-full pl-[4px] pr-[10px] text-muted hover:text-primary"
+                                >
+                                    <ArrowUpRight size={13} strokeWidth={2.2} aria-hidden />
+                                </button>
+                            ) : null}
+                        </span>
                     );
                 })}
             </div>

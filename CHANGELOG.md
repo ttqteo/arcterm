@@ -38,6 +38,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   keep Sprout. <!-- big -->
 - Chat's permission card answers from the keyboard: with the chat box empty, ↑ and ↓ move between Allow, "Yes, and
   don't ask again" and Deny, and Enter picks the highlighted one, as in the terminal's own prompt.
+- A file chip under Chat's "Worked" row has an arrow that opens the file in the agent's File tab (an HTML page or
+  markdown opens as its preview), as clicking its path in the terminal does; the chip itself still opens its diff.
 
 ### Changed
 
