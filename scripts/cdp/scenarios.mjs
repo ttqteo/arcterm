@@ -15670,7 +15670,26 @@ function writeLeadTranscript(cwd) {
     const subs = join(cwd, "lead", "subagents");
     mkdirSync(subs, { recursive: true });
     const userTurn = (content) => JSON.stringify({ type: "user", message: { role: "user", content } }) + "\n";
-    writeFileSync(parent, userTurn("verify tree rail"));
+    // one earlier assistant turn with usage, so the lead's row carries a token total (132k) as a real lead's does: a
+    // lead's run line holds its tokens and age after the progress, which step 7 measures. The user turn stays last
+    const usageTurn =
+        JSON.stringify({
+            type: "assistant",
+            timestamp: new Date().toISOString(),
+            requestId: "req_fx_tree_rail",
+            message: {
+                id: "msg_fx_tree_rail",
+                role: "assistant",
+                model: "claude-opus-4-1",
+                usage: {
+                    input_tokens: 3000,
+                    output_tokens: 1000,
+                    cache_read_input_tokens: 120000,
+                    cache_creation_input_tokens: 8000,
+                },
+            },
+        }) + "\n";
+    writeFileSync(parent, usageTurn + userTurn("verify tree rail"));
     writeFileSync(join(subs, "agent-fxsub.jsonl"), userTurn(TREE_RAIL_SUBAGENT_PROMPT));
     return parent;
 }
@@ -15902,14 +15921,89 @@ const agentTreeRail = {
                 subGuides: guides(sub),
             };
         })()`);
+        // The line as a real lead draws it: its tokens (the fixture transcript's 132k), its age and the whole run's RAM
+        // (8fa946dac) after the progress, all flex-none. The fixture lead's block does not exist, so no reading names
+        // it: pin one (window.__resmonFixture) so the RAM span is on the line. The line is RunSubline's own @container;
+        // forcing its width stands in for dragging the tree wider. At the tree's default width the RAM must leave the
+        // line (LEAD_RAM_YIELDS) so the progress is never cut for it; wide enough, it shows beside the progress
+        const MB_BYTES = 1024 * 1024;
+        await h.ev(
+            `window.__resmonFixture.set(${JSON.stringify({
+                supported: true,
+                ready: true,
+                ts: Date.now(),
+                cpu: 5,
+                mem: 8 * 1024 * MB_BYTES,
+                totalmem: 16 * 1024 * MB_BYTES,
+                busycpu: false,
+                busymem: false,
+                groups: [
+                    {
+                        key: "g-lead",
+                        ownerkind: "block",
+                        ownerid: "fx-blk-lead",
+                        label: "lead",
+                        killable: true,
+                        cpu: 1,
+                        mem: Math.round(1.3 * 1024 * MB_BYTES),
+                        rows: [],
+                    },
+                ],
+            })})`
+        );
+        await polishWaitFor(h, `!!document.querySelector('[data-agent-ram="${TREE_RAIL_LEAD_ID}"]')`, 8000);
+        const runLine = await h.ev(`(async () => {
+            const tree = ${TREE};
+            const name = tree && [...tree.querySelectorAll("*")].find(
+                (d) => d.textContent.trim() === ${JSON.stringify(TREE_RAIL_LEAD)} && d.children.length === 0
+            );
+            const row = name ? name.closest(".relative") : null;
+            const line = row?.querySelector('button[aria-label="Hide workers"]')?.parentElement;
+            if (!line) return null;
+            const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+            const read = () => {
+                const progress = row.querySelector("span.truncate.text-muted");
+                const ram = row.querySelector("[data-agent-ram]");
+                const tokens = row.querySelector('span[class*="min-w-[34px]"]');
+                return {
+                    w: Math.round(line.getBoundingClientRect().width),
+                    whole: progress ? progress.scrollWidth <= progress.clientWidth : null,
+                    ram: ram ? (getComputedStyle(ram).display !== "none" ? ram.textContent.trim() : false) : null,
+                    tokens: tokens ? tokens.textContent.trim() : null,
+                    overflow: line.scrollWidth > line.clientWidth,
+                };
+            };
+            const out = { at: [read()] };
+            for (const w of [240, 280, 300, 320, 360, 420]) {
+                line.style.width = w + "px";
+                await frame();
+                out.at.push(read());
+            }
+            line.style.width = "";
+            await frame();
+            out.restored = read().w === out.at[0].w;
+            return out;
+        })()`);
+        await h.ev(`window.__resmonFixture.clear()`);
+        const runAt = runLine?.at ?? [];
         rec(
-            "7. the lead's run line carries its workers chip, unclipped progress and the task strip",
+            "7. the lead's run line carries its workers chip, unclipped progress and the task strip; with its tokens, age and the run's RAM on the line, the RAM leaves it on a narrow line and the progress is never cut",
             nested != null &&
                 /^\d+ of 3 tasks done/.test(nested.strip ?? "") &&
                 /workers?$/.test(nested.workersChip ?? "") &&
                 nested.progress != null &&
-                !nested.progress.clipped,
-            JSON.stringify(nested)
+                !nested.progress.clipped &&
+                runLine != null &&
+                runLine.restored === true &&
+                // the fixture is a real lead's line: tokens are there and a reading names the run's RAM
+                runAt.every((s) => s.tokens === "132k") &&
+                runAt.some((s) => typeof s.ram === "string" && s.ram !== "") &&
+                // the progress reads whole beside them at every width, and nothing spills out of the line
+                runAt.every((s) => s.whole === true && !s.overflow) &&
+                // narrow, the RAM is off the line; wide enough, it shows
+                runAt[0].ram === false &&
+                typeof runAt[runAt.length - 1].ram === "string",
+            JSON.stringify({ nested, runLine })
         );
         rec(
             "8. t-1's worker row sits under the lead with one guide line",
@@ -15970,7 +16064,11 @@ const agentTreeRail = {
         // non-lead parent row a name line over a meta line (its runtime glyph, branch, model and tokens), which are
         // ParentRow's two children (agenttree.tsx); Final measured one at 50.25px. The step used to bound a row at
         // one line (34px); it now bounds it at two (56px) and wants exactly those two children, so a third line
-        // still fails
+        // still fails.
+        // An agent row is found by its data-agent-row mark, not by a span.rounded-full inside it: f5de00a66 ("the sidebar
+        // ✳ carries an agent's state") moved the row's state dot onto its runtime glyph (a text span), so a plain row
+        // holds no dot any more and the old filter matched none. Worker and stage rows carry the mark too; the guide,
+        // Workflow and pl-[28px] tests below still leave them out, and the folder row has none
         const tree = await h.ev(`(() => {
             const tree = ${TREE};
             if (!tree) return null;
@@ -15978,7 +16076,7 @@ const agentTreeRail = {
             const plain = [...tree.querySelectorAll("[data-agent-active-rows] .cursor-pointer")].filter(
                 (r) =>
                     r.tagName !== "BUTTON" &&
-                    r.querySelector("span.rounded-full") &&
+                    r.hasAttribute("data-agent-row") &&
                     !r.querySelector("svg.lucide-workflow") &&
                     !r.querySelector(":scope > span.absolute") &&
                     !r.className.includes("pl-[28px]")
@@ -16005,6 +16103,10 @@ const agentTreeRail = {
                 tree.tallest <= 56,
             JSON.stringify(tree)
         );
+        // Changed on purpose by 7faed95b7 ("a project folder's click opens its Overview, its chevron folds it"): a click
+        // on a project's row opens its Overview in the centre, so the step presses the row's chevron button, the one
+        // control that folds. That commit moved the agent-history, tools-tree and project-overview scenarios onto the
+        // chevron and left this step on the row
         const fold = await h.ev(`(async () => {
             const tree = ${TREE};
             const g = tree && tree.querySelector('[data-agent-folder-section="active"][aria-expanded="true"]');
@@ -16012,10 +16114,13 @@ const agentTreeRail = {
             // the Active section's rows: the Conversations list is not under a project and can fill while this runs
             const rows = () => tree.querySelectorAll("[data-agent-active-rows] .cursor-pointer").length;
             const before = rows();
-            g.click();
+            // 7faed95b7: the row's own click opens the project's Overview; its chevron button folds it
+            const chevron = g.querySelector("[data-agent-folder-toggle]");
+            if (!chevron) return null;
+            chevron.click();
             await new Promise((r) => setTimeout(r, 600));
             const after = rows();
-            g.click();
+            chevron.click();
             await new Promise((r) => setTimeout(r, 600));
             return { before, after, back: rows() };
         })()`);

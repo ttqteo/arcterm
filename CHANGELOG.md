@@ -52,6 +52,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A lead's run line in the Agent sidebar no longer cuts its progress down to "Worki…": on a narrow sidebar the run's
+  RAM figure leaves the line (it shows again once the sidebar is wide enough for it), and "failed to start" for a lead
+  whose terminal could not start now sits at the end of its name line.
 - A brainstorm's judge or builder check that wrote its answer but could not hand it in before its 20 minutes ran out
   (on a busy machine) no longer ends as "The judge was lost": the answer it wrote is used.
 - Putting an agent to sleep now says so while it happens: its Chat box reads "Going to sleep…" (or "Compacting, then
