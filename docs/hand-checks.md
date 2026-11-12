@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm, Mac) A `/btw` in Chat is one card across Claude's column: send `/btw <a question>` from a Claude
+  agent's Chat; the card shows a btw tag and your question as its header, "Asking on the side…" with two pulsing lines,
+  and a footer "Not in the conversation"; when the answer lands only the body changes, with Copy in the header. Matches
+  board B1 of `.superpowers/design/chat-btw`. `25db49d8c`.
 - [ ] (arcterm, Mac) A new canvas lights the Canvas tab: have a Claude agent draw a canvas (`arc:design`) and reveal it
   while you stay on Chat; the agent header's Canvas tab shows its clay dot until you open it. `c8cd814d4`.
 - [ ] (arcterm, Mac) Inline code in Chat is lavender like the terminal's: open a Claude agent's Chat, find a reply
