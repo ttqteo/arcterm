@@ -175,6 +175,17 @@ recorded on the run's final stage.`, orchestrate.ReviewTimeout, orchestrate.Fina
 	RunE:    runsEndFinalRun,
 }
 
+var runsRelaunchLeadCmd = &cobra.Command{
+	Use:   "relaunch-lead <run-id>",
+	Short: "start a new lead for an orchestrator run whose lead is gone, as the cockpit's Relaunch lead does",
+	Long: `Start a new lead for an orchestrator run whose plan is submitted and whose lead's process is gone. The new
+lead is told what the run waits on (a resubmit after a failed plan review, a fix plan after a failed final stage)
+and the events the old one missed. A lead whose process still runs is not replaced.`,
+	Args:    cobra.ExactArgs(1),
+	PreRunE: preRunSetupRpcClient,
+	RunE:    runsRelaunchLeadRun,
+}
+
 var runsRerunFinalCmd = &cobra.Command{
 	Use:   "rerun-final <run-id>",
 	Short: "run a failed final stage again, in the same round, once what failed outside the code is fixed",
@@ -239,7 +250,7 @@ func init() {
 	f.Bool("queue", false, "queue the start: arcterm starts it when fewer than runs:maxactive runs are active")
 	f.String("after", "", "run id or queue entry id (a unique prefix of either) to wait for: starts once that run has landed; implies --queue")
 	f.Bool("json", false, "JSON output")
-	for _, c := range []*cobra.Command{runsStartCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsPauseCmd, runsResumeCmd, runsEndFinalCmd, runsRerunFinalCmd, runsLandCmd, runsAckCmd} {
+	for _, c := range []*cobra.Command{runsStartCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsPauseCmd, runsResumeCmd, runsEndFinalCmd, runsRerunFinalCmd, runsRelaunchLeadCmd, runsLandCmd, runsAckCmd} {
 		c.Flags().String("project", "", "project directory (default: the current directory)")
 		channelUsage := "channel id, instead of resolving the project"
 		if c == runsStartCmd {
@@ -257,7 +268,7 @@ func init() {
 	runsLandCmd.Flags().Bool("force", false, "land even though the final stage failed")
 	runsAckCmd.Flags().Bool("land", false, "dismiss the run's held land instead, as the cockpit's Dismiss does: the branch stays")
 	runsAttentionCmd.Flags().Bool("json", false, "JSON output")
-	runsCmd.AddCommand(runsStartCmd, runsStartNowCmd, runsRunNextCmd, runsDequeueCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsPauseCmd, runsResumeCmd, runsEndFinalCmd, runsRerunFinalCmd, runsLandCmd, runsAckCmd, runsAttentionCmd)
+	runsCmd.AddCommand(runsStartCmd, runsStartNowCmd, runsRunNextCmd, runsDequeueCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsPauseCmd, runsResumeCmd, runsEndFinalCmd, runsRerunFinalCmd, runsRelaunchLeadCmd, runsLandCmd, runsAckCmd, runsAttentionCmd)
 	rootCmd.AddCommand(runsCmd)
 }
 
@@ -1234,7 +1245,7 @@ func runsCancelRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	yes, _ := cmd.Flags().GetBool("yes")
-	live := runsLiveWorkers(run, runsDigest(ch.OID, run))
+	live := runsLiveWorkers(run, runsDigest(ch.OID, run), runsLiveTabs())
 	if live > 0 && !yes {
 		return fmt.Errorf("run %s (%s, %q) has %d live worker(s); cancelling stops them. Re-run with --yes to cancel", run.ID, run.Status, runsClip(run.Goal, runsGoalWidth), live)
 	}
@@ -1318,6 +1329,19 @@ func runsRerunFinalRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	fmt.Printf("rerunning run %s's final stage\n", run.ID)
+	return nil
+}
+
+func runsRelaunchLeadRun(cmd *cobra.Command, args []string) error {
+	ch, run, err := runsFind(cmd, args[0])
+	if err != nil {
+		return err
+	}
+	// the spawn creates a tab and starts a process, which can outlast a plain dag action's budget
+	if err := wshclient.DagActionCommand(RpcClient, wshrpc.CommandDagActionData{ChannelId: ch.OID, RunId: run.ID, Action: "relaunch-lead"}, &wshrpc.RpcOpts{Timeout: runsCancelTimeoutMs}); err != nil {
+		return err
+	}
+	fmt.Printf("relaunched run %s's lead\n", run.ID)
 	return nil
 }
 
@@ -1440,13 +1464,36 @@ func runsAck(channelId, runId string, land bool) error {
 	return wshclient.AckRunCommand(RpcClient, wshrpc.CommandAckRunData{ChannelId: channelId, RunId: runId, Land: land}, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
 }
 
-// runsLiveWorkers counts the workers a cancel would stop: the workers on a running phase plus an engine
-// run's running tasks. It can overcount a worker that has already exited, which only costs a --yes.
-func runsLiveWorkers(r *waveobj.Run, digest *wshrpc.CommandDagStatusRtnData) int {
+// runsLiveTabs is the tab oref of every agent whose process runs (`wsh agents list`, minus the sleeping), or nil when
+// the roster cannot be read, which counts every phase worker as live.
+func runsLiveTabs() map[string]bool {
+	rtn, err := wshclient.AgentsListCommand(RpcClient, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not read which workers run (%v); counting every worker as live\n", err)
+		return nil
+	}
+	live := map[string]bool{}
+	for _, a := range rtn.Agents {
+		if a.State != wshrpc.AgentsState_Sleeping {
+			live[waveobj.MakeORef(waveobj.OType_Tab, a.TabId).String()] = true
+		}
+	}
+	return live
+}
+
+// runsLiveWorkers counts the workers a cancel would stop: the workers on a running phase whose process runs, plus an
+// engine run's running tasks. live is the tabs whose process runs; nil counts every phase worker (run ca080f5c's dead
+// lead asked for --yes as "1 live worker").
+func runsLiveWorkers(r *waveobj.Run, digest *wshrpc.CommandDagStatusRtnData, live map[string]bool) int {
 	n := 0
 	for _, p := range r.Phases {
-		if p.State == jarvis.PhaseState_Running {
-			n += len(p.WorkerOrefs)
+		if p.State != jarvis.PhaseState_Running {
+			continue
+		}
+		for _, oref := range p.WorkerOrefs {
+			if live == nil || live[oref] {
+				n++
+			}
 		}
 	}
 	if digest != nil {

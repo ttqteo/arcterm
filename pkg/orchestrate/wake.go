@@ -694,11 +694,45 @@ func RelaunchLead(ctx context.Context, channelId, runId string) error {
 		}
 		return fmt.Errorf("run %s's lead is still running", runId)
 	}
+	g, err := wstore.GetDag(ctx, run.DagORef)
+	if err != nil {
+		return fmt.Errorf("loading dag: %w", err)
+	}
+	return replaceLead(ctx, channelId, runId, func(missed []string) string { return replacementLeadWake(g, missed) })
+}
+
+// relaunchLeadFresh launches runId's lead again for a lead whose session has no transcript: it never read its launch
+// text, so it gets that text again (the newest lead-launched row's), not a replacement's, and the events it missed
+// since ride after it. A run with no such row gets the replacement's text.
+func relaunchLeadFresh(ctx context.Context, channelId, runId string) error {
+	rows, err := wstore.QueryRunEventsByKind(ctx, channelId, runId, []string{waveobj.RunEventKindLeadLaunched}, 1)
+	if err != nil {
+		return fmt.Errorf("reading the lead's last launch: %w", err)
+	}
+	last := ""
+	if len(rows) > 0 {
+		var d struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(rows[0].Detail, &d); err != nil {
+			return fmt.Errorf("reading the lead's last launch: %w", err)
+		}
+		last = d.Text
+	}
+	if last == "" {
+		return RelaunchLead(ctx, channelId, runId)
+	}
+	return replaceLead(ctx, channelId, runId, func(missed []string) string { return withMissedEvents(last, missed) })
+}
+
+// replaceLead starts a new lead for runId with the wake wakeFor builds from what the old one missed. A failed spawn
+// leaves the lead marked dead, so its judgment keeps going to the human.
+func replaceLead(ctx context.Context, channelId, runId string, wakeFor func(missed []string) string) error {
 	missed, err := wakes.beginRelaunch(channelId, runId)
 	if err != nil {
 		return err
 	}
-	wake := replacementLeadWake(missed)
+	wake := wakeFor(missed)
 	// a phase that still names the dead lead's tab is skipped by EnsureWorkers, which is what spawns the new one
 	err = clearLeadTab(ctx, channelId, runId)
 	if err == nil {
@@ -706,6 +740,29 @@ func RelaunchLead(ctx context.Context, channelId, runId string) error {
 	}
 	wakes.endRelaunch(ctx, channelId, runId, wake, err)
 	return err
+}
+
+// LeadExited hands a dag run's lead whose process exited to the waker, which otherwise only notices a dead lead when
+// it has a wake to deliver: a dag waiting on the lead (a resubmit after a failed plan review, the report after Final)
+// posts none, so run ca080f5c sat 3h50m with no lead and nothing to press. The lead-wake-failed row it writes is what
+// offers Relaunch lead; an autonomous run relaunches its lead at once. A dag already done or cancelled, and a lead the
+// waker is already replacing, stopping or has given up on, change nothing.
+func LeadExited(ctx context.Context, channelId, runId string) {
+	run, err := wstore.GetRun(ctx, channelId, runId)
+	if err != nil || run.Mode != jarvis.RunMode_Orchestrator || run.DagORef == "" || runUnderPause(ctx, run) {
+		return
+	}
+	g, err := wstore.GetDag(ctx, run.DagORef)
+	if err != nil || g.RunID != runId || g.Status == DagStatus_Done || g.Status == DagStatus_Cancelled {
+		return
+	}
+	wakes.lock.Lock()
+	defer wakes.lock.Unlock()
+	rw := wakes.runLocked(channelId, runId)
+	if rw.dead || rw.launching || rw.hangStopping || rw.autoRelaunching {
+		return
+	}
+	wakes.leadDiedLocked(ctx, runId, rw, leadNotRunningNote)
 }
 
 func (w *waker) beginRelaunch(channelId, runId string) ([]string, error) {
@@ -740,14 +797,49 @@ func (w *waker) leadRestarted(channelId, runId string) {
 	w.runLocked(channelId, runId).launchedAt = wakeNow()
 }
 
-func replacementLeadWake(missed []string) string {
-	var b strings.Builder
-	b.WriteString("You are a replacement lead: the lead before you exited while the run was still going. The dag is already running, so do not resubmit the plan or redispatch tasks. Start with `wsh jarvis dag status`.")
-	if len(missed) > 0 {
-		b.WriteString("\nEvents that arrived while no lead was running:\n")
-		b.WriteString(strings.Join(missed, "\n"))
+// replacementLeadWake is a replacement lead's first message: what the dag waits on it for (leadAwaitedWake), or that it
+// is running and must not be resubmitted, then what the dead lead missed.
+func replacementLeadWake(g *waveobj.TaskGroup, missed []string) string {
+	const head = "You are a replacement lead: the lead before you exited while the run was still going. "
+	awaited := leadAwaitedWake(g)
+	if awaited == "" {
+		awaited = "The dag is already running, so do not resubmit the plan or redispatch tasks. Start with `wsh jarvis dag status`."
 	}
-	return b.String()
+	return withMissedEvents(head+awaited, missed)
+}
+
+// leadAwaitedWake is what a dag that waits on its lead needs a replacement to do, "" when it waits on nothing. A plan
+// review that did not pass waits on a resubmit, which "do not resubmit the plan" would forbid; a failed final stage
+// waits on a fix plan or the report, worded as its own wake is.
+func leadAwaitedWake(g *waveobj.TaskGroup) string {
+	if g == nil || g.Status == DagStatus_Done || g.Status == DagStatus_Cancelled {
+		return ""
+	}
+	if pr := g.PlanReview; pr != nil && pr.State == PlanReviewState_Failed {
+		read := fmt.Sprintf("The plan review did not pass in round %d: read `wsh jarvis dag status` and `%s`", pr.Round, planReviewFindingsCmd)
+		switch last := pr.Round >= MaxPlanReviewRounds; {
+		case last && g.Autonomous:
+			return fmt.Sprintf("%s. It was the last round. %s.", read, autonomousPastPlanReview)
+		case last:
+			return fmt.Sprintf("%s. It was the last round: put it to the human %s.", read, proceedPastPlanReview)
+		}
+		return read + ", revise the plan if it found something, and run `wsh jarvis dag submit` again."
+	}
+	if f := g.Final; f != nil && f.State == FinalState_Failed {
+		if f.Killed {
+			return finalKilledWake(f.Round, g.RunID, f.Detail, g.Autonomous)
+		}
+		return finalFailedWake(f.Round, g.RunID, f.Detail, f.Round >= MaxFinalRounds, g.Autonomous)
+	}
+	return ""
+}
+
+// withMissedEvents appends the events that arrived while no lead was running to a lead's launch text.
+func withMissedEvents(text string, missed []string) string {
+	if len(missed) == 0 {
+		return text
+	}
+	return text + "\nEvents that arrived while no lead was running:\n" + strings.Join(missed, "\n")
 }
 
 // clearLeadTab drops the run's stale lead tab oref, leaving the tab itself for the human to read.

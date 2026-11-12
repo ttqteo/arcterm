@@ -6,6 +6,15 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A dead lead is brought back (lead-dead recovery spec 2026-11-12): in a live Ask me run sitting in a
+  failed plan review, `/exit` its lead → the run's Cockpit card shows "Lead down" with Relaunch lead at once, and
+  `wsh runs relaunch-lead <run>` starts a lead whose first message says to revise and `wsh jarvis dag submit` again;
+  on an autonomous run the replacement starts by itself. Then pause a run whose lead was launched less than a minute
+  ago (before its first reply) and resume it → `waveapp.log` shows `had no transcript to resume; launched a fresh
+  lead`, not a `claude --resume` that prints "No conversation found". Unit tests stub the spawn and the process exit
+  (`pkg/orchestrate/leaddead_test.go`); the real exit hook, spawn and the Cockpit button with no failure row
+  (`leadProcessLive`, which only knows exits this window saw) were never run.
+
 - [ ] (arcterm) A run's hung lead is stopped and replaced (run a1d131bb t-2): in a live run, have its lead sit in one
   tool call that never returns (a command that only sleeps, so nothing under the lead uses CPU) while a worker
   finishes → after 30 min of held wakes `waveapp.log` shows `wake: run <id>'s lead held its wakes 30 min with an idle

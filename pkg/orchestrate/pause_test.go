@@ -154,7 +154,16 @@ func stubResume(t *testing.T, fn func(ctx context.Context, r reopened) error) *[
 		return fn(ctx, r)
 	}
 	restoreAfterStages(t, func() { jarvis.ResumeRunWorker = old })
+	stubTranscripts(t, true)
 	return &calls
+}
+
+// stubTranscripts makes every Claude session read as having a transcript to resume, or none.
+func stubTranscripts(t *testing.T, present bool) {
+	t.Helper()
+	old := claudeTranscriptFn
+	claudeTranscriptFn = func(string) bool { return present }
+	restoreAfterStages(t, func() { claudeTranscriptFn = old })
 }
 
 func TestRecomputeDagStatusReadsPausedWhilePausedTsIsSet(t *testing.T) {

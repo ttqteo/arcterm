@@ -91,6 +91,8 @@ func newPausedLead(t *testing.T) *pausedLead {
 	}
 
 	oldResume, oldSpawn, oldLaunch := jarvis.ResumeRunWorker, jarvis.SpawnRunWorker, orchestrate.LaunchLeadHook
+	// the lead had written its transcript before the pause: a session with none is started fresh, not resumed
+	t.Cleanup(orchestrate.SetTranscriptCheckForTest(func(string) bool { return true }))
 	t.Cleanup(func() {
 		jarvis.ResumeRunWorker, jarvis.SpawnRunWorker, orchestrate.LaunchLeadHook = oldResume, oldSpawn, oldLaunch
 	})

@@ -52,6 +52,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run whose lead dies while the run waits on it (after a failed plan review, or a failed final stage) now shows
+  Relaunch lead, and an autonomous run brings its lead back by itself, instead of sitting with no lead and nothing to
+  press. `wsh runs relaunch-lead <run>` does the same from a terminal.
+- Resuming a paused run no longer reopens a lead that was stopped before it wrote anything into an endless "No
+  conversation found": it starts that lead fresh. A pause no longer counts against a plan, task or final reviewer
+  either, so a resume does not throw away reviewers that were still working.
+- `wsh runs cancel` no longer asks for `--yes` because of a lead or worker whose process is already gone.
 - A run whose lead hangs in one command for 30 minutes (nothing running under it, every later report waiting behind it)
   now has the lead stopped and replaced, or its questions handed to you, instead of the run waiting forever.
 - A worker's question no longer goes missing when arcterm is slow: when the hook that reports it times out, the engine
