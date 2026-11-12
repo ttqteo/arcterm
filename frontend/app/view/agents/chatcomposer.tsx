@@ -15,8 +15,8 @@
 // as a picture; Ctrl+U, Cmd+U on a Mac, opens the file dialog), the `/` command menu (slashmenu.tsx) and the `@` file
 // picker (filemention.tsx), Stop, and the look. A text that starts with `!` is a bash command (chatmodel.ts `bashMode`): the
 // box draws it in a shell well under a "Bash" caption, with the newest `!` command of Claude Code's history that starts so
-// as grey ghost text, which → takes (chatbash.ts has the rules, chatbashstore.ts the history), and Tab completes the word
-// under the caret (commands, `$variables`, files) in a list over the box (bashcomplete.tsx). Callers key it by agent id:
+// as grey ghost text, which → or Tab takes (chatbash.ts has the rules, chatbashstore.ts the history); with no ghost text
+// Tab completes the word under the caret (commands, `$variables`, files) in a list over the box (bashcomplete.tsx). Callers key it by agent id:
 // its text and its attachments are local to the box.
 //
 // The text is a small Lexical editor (chateditor.tsx) that draws a file you @-mentioned as a pill, but the plain text
@@ -713,7 +713,8 @@ export function ChatComposer({
                         </span>
                         {ghost !== "" ? (
                             <span data-chat-bash-accept="" className="ml-auto flex-none text-ink-faint">
-                                <span className="font-mono text-muted">→</span> accept
+                                <span className="font-mono text-muted">→</span> or{" "}
+                                <span className="font-mono text-muted">Tab</span> accept
                             </span>
                         ) : null}
                     </div>
@@ -756,6 +757,29 @@ export function ChatComposer({
                             return e.defaultPrevented;
                         }}
                         onKeyDown={(e) => {
+                            // → or Tab at the end of a bash command with the ghost text showing takes it, as Claude Code's does;
+                            // the ghost is never shown while the Tab list is open, so this Tab is not a completion's
+                            if (
+                                ghost !== "" &&
+                                (e.key === "ArrowRight" || e.key === "Tab") &&
+                                !e.shiftKey &&
+                                !e.altKey &&
+                                !e.ctrlKey &&
+                                !e.metaKey &&
+                                !e.nativeEvent.isComposing
+                            ) {
+                                const box = e.currentTarget;
+                                if (
+                                    !box.readOnly &&
+                                    box.selectionStart === text.length &&
+                                    box.selectionEnd === text.length
+                                ) {
+                                    e.preventDefault();
+                                    recalled.current = { at: null, shown: "" };
+                                    setTextAt(text + ghost, text.length + ghost.length);
+                                    return;
+                                }
+                            }
                             // the Tab list's keys (bash mode), the `/` menu's and the `@` picker's (↑↓, Enter and Tab to pick,
                             // Escape to close) come first; at most one of them has a list open (the `/` and `@` lists are shut
                             // while the text starts with `!`)
@@ -784,28 +808,6 @@ export function ChatComposer({
                             ) {
                                 e.preventDefault();
                                 return;
-                            }
-                            // → at the end of a bash command with the ghost text showing takes it, as Claude Code's does
-                            if (
-                                ghost !== "" &&
-                                e.key === "ArrowRight" &&
-                                !e.shiftKey &&
-                                !e.altKey &&
-                                !e.ctrlKey &&
-                                !e.metaKey &&
-                                !e.nativeEvent.isComposing
-                            ) {
-                                const box = e.currentTarget;
-                                if (
-                                    !box.readOnly &&
-                                    box.selectionStart === text.length &&
-                                    box.selectionEnd === text.length
-                                ) {
-                                    e.preventDefault();
-                                    recalled.current = { at: null, shown: "" };
-                                    setTextAt(text + ghost, text.length + ghost.length);
-                                    return;
-                                }
                             }
                             // Ctrl+U (Cmd+U on a Mac, where Ctrl+U is the text field's own delete-to-line-start) is Add files; an
                             // open `/` or `@` list leaves it alone. Asleep it attaches too, though the + menu is not drawn.

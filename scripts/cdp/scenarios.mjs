@@ -44984,26 +44984,29 @@ const agentChat = {
             await acType(h, acBox(A), "!git s", false);
             const front76 = await polishWaitFor(h, `${composer76}?.querySelector("[data-chat-ghost]")?.textContent === "tash list"`, 3000);
             const ghostAfterSend76 = await h.ev(`${composer76}?.querySelector("[data-chat-ghost]")?.textContent ?? null`);
+            // Tab takes the ghost too, as → does (no Tab list opens: the ghost is what Tab means while it shows)
+            await acKey(h, acKeys.tab);
+            const tabTaken76 = await polishWaitFor(h, `${acVal(acBox(A))} === "!git stash list"`, 3000);
             await acClear(h, acBox(A));
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             const gone76 = await read76();
             rec(
-                "76. `!git l` in the main agent's box puts it in bash mode: a Bash caption (and no Bash mode chip) over a rounded well with a background, the editor in JetBrains Mono (not in a plain box), its `!` beside the editor (out of its text, 6px or more before the command) in the caption icon's accent colour and weight 600, the ghost og --oneline -5 right after the text (within 2 px) and the caption's → accept; → makes the box !git log --oneline -5 and the ghost and hint go; `!` alone has the well and the caption, no ghost, no hint, and the bash placeholder; Backspace at the start of `!ls` leaves ls in a plain box; `!ls @../` opens no @ list; a sent !git stash list (typed, then Enter) moves to the front, so `!git s` suggests tash list; an empty box has no caption, well or bang",
+                "76. `!git l` in the main agent's box puts it in bash mode: a Bash caption (and no Bash mode chip) over a rounded well with a background, the editor in JetBrains Mono (not in a plain box), its `!` beside the editor (out of its text, 6px or more before the command) in the caption icon's accent colour and weight 600, the ghost og --oneline -5 right after the text (within 2 px) and the caption's → or Tab accept; → makes the box !git log --oneline -5 and the ghost and hint go; `!` alone has the well and the caption, no ghost, no hint, and the bash placeholder; Backspace at the start of `!ls` leaves ls in a plain box; `!ls @../` opens no @ list; a sent !git stash list (typed, then Enter) moves to the front, so `!git s` suggests tash list, and Tab takes it; an empty box has no caption, well or bang",
                 ghosted76 && asked76.length >= 1 && asked76[0].data.cwd === ctx.dir.replace(/\\/g, "/") &&
                     typed76.mode === true && typed76.text === "!git l" && typed76.caption === "Bash" && typed76.chip === false &&
                     typed76.well != null && typed76.well.radius === "8px" && typed76.well.bg !== "rgba(0, 0, 0, 0)" &&
                     /JetBrains Mono/.test(typed76.font ?? "") && !/JetBrains Mono/.test(plainFont76 ?? "") &&
                     typed76.bang?.text === "!" && typed76.accent != null && typed76.bang.color === typed76.accent && typed76.bang.weight === "600" &&
                     typed76.bangOut === true && typed76.bangGap != null && typed76.bangGap >= 6 &&
-                    typed76.ghost === "og --oneline -5" && typed76.ghostGap != null && typed76.ghostGap <= 2 && typed76.accept === "→ accept" &&
+                    typed76.ghost === "og --oneline -5" && typed76.ghostGap != null && typed76.ghostGap <= 2 && typed76.accept === "→ or Tab accept" &&
                     taken76 && after76.ghost === null && after76.accept === null && after76.mode === true &&
                     bare76.mode === true && bare76.text === "!" && bare76.caption === "Bash" && bare76.bang?.text === "!" &&
                     bare76.ghost === null && bare76.accept === null && /agent's shell; Backspace leaves bash mode/.test(bare76.placeholder ?? "") &&
                     unbanged76 &&
                     mentions76 === 0 &&
-                    sent76.join("") === "!git stash list\r" && front76 && ghostAfterSend76 === "tash list" &&
+                    sent76.join("") === "!git stash list\r" && front76 && ghostAfterSend76 === "tash list" && tabTaken76 &&
                     gone76.mode === false && gone76.caption === null && gone76.well?.bg === "rgba(0, 0, 0, 0)" && gone76.bang === null,
-                { ghosted76, asked76, typed76, plainFont76, taken76, after76, bare76, unbanged76, mentions76, sent76, front76, ghostAfterSend76, gone76 }
+                { ghosted76, asked76, typed76, plainFont76, taken76, after76, bare76, unbanged76, mentions76, sent76, front76, ghostAfterSend76, tabTaken76, gone76 }
             );
 
             // 76b. The !git stash list step 76 sent runs with nothing of it in the transcript: Claude Code writes its <bash-input> row
@@ -45042,7 +45045,7 @@ const agentChat = {
             // first highlighted, a footer with the keys and the agent's folder. Tab asked for kind file and the word typed, in that folder,
             // and the focus stayed in the box. ↓ and ↑ move the highlight; Enter puts the highlighted file in place of the word with a
             // space after it and sends nothing; Escape closes the list and leaves the text and the focus; any other key closes it too.
-            // The ghost text and its hint step aside while the list is open and come back when it closes
+            // While a ghost text shows, Tab takes it instead (as → does) and asks no completion
             const cwd77 = ctx.dir.replace(/\\/g, "/");
             const word77 = "frontend/app/view/agents/chatp";
             const cmd77 = `!npx vitest run ${word77}`;
@@ -45123,25 +45126,23 @@ const agentChat = {
             await acKey(h, { key: "x", code: "KeyX", windowsVirtualKeyCode: 88 });
             const otherShut77 = await listGone77(3000);
             const other77 = await boxText77();
-            // the ghost text of `!git l` steps aside for the list and comes back with Escape
+            // with the ghost text of `!git l` showing, Tab takes it: no completion is asked and no list opens
             await acSetShell(h, ["lib/", "log.txt"]);
             await acClear(h, acBox(A));
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             await acType(h, acBox(A), "!git l", false);
             const ghostAt77 = `${composer76}?.querySelector("[data-chat-ghost]")?.textContent ?? null`;
             const ghostBefore77 = await polishWaitFor(h, `(${ghostAt77}) === "og --oneline -5"`, 3000);
+            const ghostAsks77 = (await acCalls(h, "shellcomplete")).length;
             await acKey(h, acKeys.tab);
-            const ghostListUp77 = await listUp77(5000);
-            await polishNap(250);
-            const ghostOpen77 = await h.ev(ghostAt77);
-            const hintOpen77 = await h.ev(`!!${composer76}?.querySelector("[data-chat-bash-accept]")`);
-            await acKey(h, acKeys.escape);
-            await listGone77(3000);
-            const ghostBack77 = await polishWaitFor(h, `(${ghostAt77}) === "og --oneline -5"`, 3000);
+            const ghostTaken77 = await polishWaitFor(h, `${acVal(acBox(A))} === "!git log --oneline -5"`, 3000);
+            await polishNap(400);
+            const ghostNoList77 = await h.ev(`!document.querySelector("[data-chat-bash-list]")`);
+            const ghostNoAsk77 = (await acCalls(h, "shellcomplete")).length === ghostAsks77;
             await acClear(h, acBox(A));
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             rec(
-                "77. Tab on `!npx vitest run frontend/app/view/agents/chatp` (the mock answers three files) asks for kind file and that word in the box's folder and opens a list above the box headed Files 3: the three rows in order in the mono font, the folder part of each muted (a folder keeps its trailing /), the first highlighted, a footer with Tab complete, Esc close and `in <folder>`; the focus stays in the box and the text is as typed; ↓ then ↑ move the highlight; Enter puts frontend/app/view/agents/chatpane.tsx and a space in place of the word, sends nothing and closes the list; Escape closes it and keeps the text and the focus; any other key closes it; the ghost text of `!git l` and its hint are gone while the list is open and back after Escape",
+                "77. Tab on `!npx vitest run frontend/app/view/agents/chatp` (the mock answers three files) asks for kind file and that word in the box's folder and opens a list above the box headed Files 3: the three rows in order in the mono font, the folder part of each muted (a folder keeps its trailing /), the first highlighted, a footer with Tab complete, Esc close and `in <folder>`; the focus stays in the box and the text is as typed; ↓ then ↑ move the highlight; Enter puts frontend/app/view/agents/chatpane.tsx and a space in place of the word, sends nothing and closes the list; Escape closes it and keeps the text and the focus; any other key closes it; with the ghost text of `!git l` showing, Tab takes it (!git log --oneline -5), asks no completion and opens no list",
                 opened77 && asked77.length === 1 && asked77[0].data.kind === "file" && asked77[0].data.word === word77 && asked77[0].data.cwd === cwd77 &&
                     list77 != null && list77.group === "Files" && list77.count === "3" &&
                     list77.rows.map((r) => r.key).join("|") === AC_SHELL_FILES.join("|") &&
@@ -45153,17 +45154,18 @@ const agentChat = {
                     movedDown77 && movedUp77 && picked77 && shutAfterPick77 && sentOnPick77 === 0 && afterPick77 === want77 &&
                     reopened77 && escShut77 && esc77.text === cmd77 && esc77.focused === true &&
                     reopenedAgain77 && otherShut77 && other77.startsWith(cmd77) &&
-                    ghostBefore77 && ghostListUp77 && ghostOpen77 === null && hintOpen77 === false && ghostBack77,
-                { opened77, asked77, list77, movedDown77, movedUp77, picked77, shutAfterPick77, sentOnPick77, afterPick77, reopened77, escShut77, esc77, reopenedAgain77, otherShut77, other77, ghostBefore77, ghostListUp77, ghostOpen77, hintOpen77, ghostBack77 }
+                    ghostBefore77 && ghostTaken77 && ghostNoList77 && ghostNoAsk77,
+                { opened77, asked77, list77, movedDown77, movedUp77, picked77, shutAfterPick77, sentOnPick77, afterPick77, reopened77, escShut77, esc77, reopenedAgain77, otherShut77, other77, ghostBefore77, ghostTaken77, ghostNoList77, ghostNoAsk77 }
             );
 
             // 78. One answer goes in at once, with no list, as a shell does (the mock answers one name): a file word (`!cat READ` ->
-            // `!cat README.md `), the first word asks for commands (`!gi` -> `!git `), a $word for variables, which the shell names without
+            // `!cat README.md `), the first word asks for commands (`!nod` -> `!node `), a $word for variables, which the shell names without
             // the $ and the box puts after the one typed (`!echo $HO` -> `!echo $HOME `). Each Tab asked for its kind and the word (a
             // variable's without its $) in the box's folder. No answer changes nothing, and Tab does not take the focus out of the box
             const cases78 = [
                 { typed: "!cat READ", answer: ["README.md"], kind: "file", word: "READ", want: "!cat README.md " },
-                { typed: "!gi", answer: ["git"], kind: "command", word: "gi", want: "!git " },
+                // not a start of the ! history (git …), which would show a ghost text for Tab to take instead
+                { typed: "!nod", answer: ["node"], kind: "command", word: "nod", want: "!node " },
                 { typed: "!echo $HO", answer: ["HOME"], kind: "variable", word: "HO", want: "!echo $HOME " },
             ];
             const res78 = [];
@@ -45193,7 +45195,7 @@ const agentChat = {
             await acClear(h, acBox(A));
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             rec(
-                "78. one answer is put in at once with no list: `!cat READ` + Tab (kind file, word READ) -> `!cat README.md `, `!gi` (kind command, word gi) -> `!git `, `!echo $HO` (kind variable, word HO) -> `!echo $HOME `, each asked once in the box's folder; an empty answer to `!cat zzz` changes nothing, opens no list and leaves the focus in the box",
+                "78. one answer is put in at once with no list: `!cat READ` + Tab (kind file, word READ) -> `!cat README.md `, `!nod` (kind command, word nod) -> `!node `, `!echo $HO` (kind variable, word HO) -> `!echo $HOME `, each asked once in the box's folder; an empty answer to `!cat zzz` changes nothing, opens no list and leaves the focus in the box",
                 res78.every(
                     (r) =>
                         r.text === r.want && r.list === false && r.asked.length === 1 &&

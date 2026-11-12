@@ -22,6 +22,13 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- In a Chat box's bash mode (`!`), Tab now takes the grey command suggested from your history, as → does; with no
+  suggestion showing, Tab still completes the word under the caret.
+
 ## 1.0.7 — 2026-11-12
 
 ### Added
