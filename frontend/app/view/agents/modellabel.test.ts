@@ -21,6 +21,15 @@ describe("prettyModel", () => {
     it("drops an 8-digit date suffix (not a minor version)", () => {
         expect(prettyModel("claude-opus-4-20250514")).toBe("Opus 4");
     });
+    it("reads the version before the family word in the older id scheme", () => {
+        expect(prettyModel("claude-3-7-sonnet-20250219")).toBe("Sonnet 3.7");
+        expect(prettyModel("claude-3-5-haiku-20241022")).toBe("Haiku 3.5");
+        expect(prettyModel("claude-3-opus-20240229")).toBe("Opus 3");
+        expect(prettyModel("claude-3-7-sonnet-latest")).toBe("Sonnet 3.7");
+    });
+    it("does not take a digit glued to a word before the family as a version", () => {
+        expect(prettyModel("v2-opus")).toBe("Opus");
+    });
     it("labels openai/codex families with fixed names", () => {
         expect(prettyModel("gpt-5.5")).toBe("GPT-5.5");
         expect(prettyModel("gpt-5")).toBe("GPT-5");
