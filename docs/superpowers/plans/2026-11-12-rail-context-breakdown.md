@@ -25,8 +25,9 @@ copy and figures this plan implements.
 ### Task 1: Parse `/context` output (`pkg/ctxbreakdown`)
 
 **Depends on:** none
+**Files:** `pkg/wshrpc/wshrpctypes_agents.go`, `pkg/ctxbreakdown/parse.go`, `pkg/ctxbreakdown/paths.go`, `pkg/ctxbreakdown/parse_test.go`, `pkg/ctxbreakdown/paths_test.go`
 
-**Files:**
+Files in detail:
 - Modify: `pkg/wshrpc/wshrpctypes_agents.go` (add the four wire types only, beside `CommandGetTranscriptUsageData`
   ~line 394; no command yet)
 - Create: `pkg/ctxbreakdown/parse.go`, `pkg/ctxbreakdown/paths.go`
@@ -423,8 +424,9 @@ git commit -m "feat(ctxbreakdown): parse Claude Code's /context report and resol
 ### Task 2: Read `/context` in wavesrv and serve it over wshrpc
 
 **Depends on:** Task 1
+**Files:** `pkg/ctxbreakdown/read.go`, `pkg/ctxbreakdown/read_test.go`, `pkg/wshrpc/wshrpctypes_agents.go`, `pkg/wshrpc/wshserver/wshserver_agents.go`, `pkg/wshrpc/wshclient/wshclient.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`
 
-**Files:**
+Files in detail:
 - Create: `pkg/ctxbreakdown/read.go`, test `pkg/ctxbreakdown/read_test.go`
 - Modify: `pkg/wshrpc/wshrpctypes_agents.go` (the command and its data type), `pkg/wshrpc/wshserver/wshserver_agents.go`
   (the handler, beside `GetTranscriptUsageCommand` ~line 267)
@@ -622,9 +624,7 @@ git commit -m "feat(ctxbreakdown): wavesrv reads /context per folder on demand (
 ### Task 3: The pure model (`ctxbreakdown.ts`)
 
 **Depends on:** none
-
-**Files:**
-- Create: `frontend/app/view/agents/ctxbreakdown.ts`, `frontend/app/view/agents/ctxbreakdown.test.ts`
+**Files:** `frontend/app/view/agents/ctxbreakdown.ts`, `frontend/app/view/agents/ctxbreakdown.test.ts`
 
 The model declares its own input shape (identical to the Go JSON above) so it does not wait for Task 2's generated
 types; the store passes the generated `ContextBreakdown` to it.
@@ -751,9 +751,10 @@ git commit -m "feat(rail): pure model for the context breakdown rows"
 
 ### Task 4: The rail's Context part, store, scenario
 
-**Depends on:** Task 2, Task 3
+**Depends on:** Task 2 (uses the wshrpc command and generated types it adds), Task 3 (uses the model it adds)
+**Files:** `frontend/app/view/agents/ctxbreakdownstore.ts`, `frontend/app/view/agents/sessionsection.tsx`, `frontend/app/view/agents/agentdetailsrail.tsx`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/hand-checks.md`
 
-**Files:**
+Files in detail:
 - Create: `frontend/app/view/agents/ctxbreakdownstore.ts`
 - Modify: `frontend/app/view/agents/sessionsection.tsx`, `frontend/app/view/agents/agentdetailsrail.tsx`
   (the `status` section ~line 1092 and the state row), `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`,
