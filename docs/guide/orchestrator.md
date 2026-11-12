@@ -426,6 +426,8 @@ Khác với đó, nếu **run của một worker bị hủy** (hủy tay run con
 - **Trước `dag submit`:** run sang **Blocked** với dòng **Lead exited**. Dùng **Resume** để chạy lại lead trong cùng session (cách bấm ở [App khởi động lại giữa run](#app-khởi-động-lại-giữa-run)), hoặc hủy run rồi bắt đầu lại. Đóng tab của lead trước khi nó submit plan cũng cho kết quả đó, với lý do `lead's tab was closed before it submitted a plan`.
 - **Sau `dag submit`:** engine tiếp tục merge và verify, timeline hiện **Lead wake failed**, và mọi sự kiện cần xét đoán cùng câu hỏi lead đang giữ đến tay bạn. Có ba chỗ bấm **Relaunch lead**: dòng **Lead wake failed** (chọn nó) trong rail Lifecycle của DAG view, banner đỏ trên thẻ lead ở Cockpit, và mục "Relaunch the lead" trong palette. Nó từ chối khi lead còn đang chạy mà chưa bị đánh dấu chết. Lead còn sống nhưng bị đánh dấu chết thì chỉ được hồi sinh và nhận các sự kiện bị lỡ; ngược lại một lead thay thế được mở, với prompt là các sự kiện mà lead chết đã bỏ lỡ chứ không phải plan gốc. Cho tới khi đó, hãy trả lời từ sheet và hành động bằng nút DAG hoặc `wsh jarvis dag`. Một task stalled mà không có lead sống được engine tự retry một lần, nên không còn chặn run; lần stall thứ hai đợi bạn.
 
+Một lead còn sống nhưng kẹt trong một lệnh cũng bị xử lý như lead chết: khi wake bị giữ sau trạng thái working của lead quá 30 phút (`LeadHungAfter`; lead đang đợi câu trả lời của bạn thì không tính) mà cây tiến trình của nó không dùng CPU, engine dừng lead (tab của nó vẫn còn để bạn đọc) rồi mở lead thay thế nếu run tự chủ, không thì chuyển câu hỏi lead đang giữ cho bạn; lead đang chạy một lệnh dài có dùng CPU thì được để yên và xét lại sau 30 phút nữa.
+
 ### App khởi động lại giữa run
 
 Khi app khởi động, engine đối chiếu các run còn dở:

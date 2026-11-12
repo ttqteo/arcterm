@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/agentask"
 	"github.com/wavetermdev/waveterm/pkg/agentctl"
@@ -1062,5 +1063,544 @@ func TestRelaunchRevivesALeadGivenUpOnWhoseProcessStillRuns(t *testing.T) {
 	}
 	if f.fake.countKind(waveobj.RunEventKindLeadRevived) != 1 {
 		t.Fatalf("want one lead-revived row, got %+v", f.fake.rows)
+	}
+}
+
+// hangScript scripts what a hung lead's hold reads and does: the lead's process-tree CPU, which a test moves, and a
+// stop that takes the lead's process down the way DestroyBlockController does.
+type hangScript struct {
+	cpu   int64
+	known bool
+	stops []string
+}
+
+func scriptHang(t *testing.T, f *fakeLead) *hangScript {
+	t.Helper()
+	h := &hangScript{cpu: 1000, known: true}
+	prevTree, prevStop := childTreeSample, stopLeadFn
+	childTreeSample = func(string) (treeSample, bool) { return treeSample{CPUMs: h.cpu}, h.known }
+	stopLeadFn = func(blockId string) {
+		h.stops = append(h.stops, blockId)
+		f.state.Alive = false
+	}
+	restoreAfterStages(t, func() { childTreeSample, stopLeadFn = prevTree, prevStop })
+	return h
+}
+
+// workingLead moves the scripted lead to the state a lead hung in one tool call reads: working, from PreToolUse.
+func workingLead(f *fakeLead) {
+	f.state.Alive, f.state.State, f.state.Hook = true, baseds.AgentState_Working, baseds.AgentHook_PreToolUse
+}
+
+// heldClock reads runId's hold clock.
+func heldClock(runId string) (since, cpu int64) {
+	wakes.lock.Lock()
+	defer wakes.lock.Unlock()
+	rw := wakes.runs[runId]
+	if rw == nil {
+		return 0, 0
+	}
+	return rw.heldSince, rw.heldCPUMs
+}
+
+// run 1cad2fd0: the lead's `dag merge` call never returned, and every wake after it waited behind the working state
+// for 2h30m. A lead stuck that long with an idle process tree is stopped and its work handed over; RelaunchLead
+// refuses nothing here because the process is gone by then, where a live lead would only be revived and hold again.
+func TestHungLeadIsStoppedAndReplaced(t *testing.T) {
+	f := newRelaunchFixture(t)
+	if err := wstore.UpdateDag(f.ctx, f.dagID, func(g *waveobj.TaskGroup) error {
+		g.Autonomous = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.fake.state = leadState{BlockId: wakeLeadBlock, TabId: "lead-tab"}
+	workingLead(f.fake)
+	h := scriptHang(t, f.fake)
+
+	PostWake(f.ctx, f.channel, f.ownerID, failedLine)
+	f.fake.now += LeadHungAfter.Milliseconds() - 1
+	tickWakes(f.ctx)
+	waitStages(t)
+	if len(h.stops) != 0 || f.spawns != 0 {
+		t.Fatalf("a lead held for less than %v is left alone, got stops %q, %d spawns", LeadHungAfter, h.stops, f.spawns)
+	}
+
+	f.fake.now++
+	tickWakes(f.ctx)
+	waitStages(t)
+
+	if len(h.stops) != 1 || h.stops[0] != wakeLeadBlock {
+		t.Fatalf("the hung lead's process is stopped once, got %q", h.stops)
+	}
+	var reasons []any
+	for _, r := range f.fake.rows {
+		if r["eventkind"] == waveobj.RunEventKindLeadWakeFailed {
+			reasons = append(reasons, r["reason"])
+		}
+	}
+	if len(reasons) != 1 || reasons[0] != leadHungNote {
+		t.Fatalf("want one lead-wake-failed row saying %q, got %v", leadHungNote, reasons)
+	}
+	if f.spawns != 1 || len(f.prompts) != 1 {
+		t.Fatalf("a replacement lead is started, not the old one revived, got %d spawns", f.spawns)
+	}
+	if !strings.Contains(f.prompts[0], "replacement lead") || !strings.Contains(f.prompts[0], failedLine) {
+		t.Fatalf("the replacement is told what the hung lead never read:\n%s", f.prompts[0])
+	}
+	if got := f.owner(t).Phases[0].WorkerOrefs; len(got) != 1 || got[0] != "tab:new-tab" {
+		t.Fatalf("the phase must name only the new tab, got %v", got)
+	}
+	if since, _ := heldClock(f.ownerID); since != 0 {
+		t.Fatalf("the hand-over clears the hold clock, got %d", since)
+	}
+
+	// the replacement is not the hung lead: a later tick must not stop it for the old hold
+	f.fake.state = leadState{BlockId: "new-block", TabId: "new-tab"}
+	workingLead(f.fake)
+	f.fake.now += 2 * LeadHungAfter.Milliseconds()
+	tickWakes(f.ctx)
+	waitStages(t)
+	if len(h.stops) != 1 {
+		t.Fatalf("the replacement lead was stopped for the old lead's hold: %q", h.stops)
+	}
+}
+
+func TestHungLeadNonAutonomousHandsQuestionsToThePerson(t *testing.T) {
+	f, ctx, dag := seedDeadLeadRun(t, false)
+	workingLead(f)
+	h := scriptHang(t, f)
+	calls := stubRelaunch(t, func() error { return nil })
+
+	PokeWake(ctx, dag.ChannelId, dag.RunID)
+	f.now += LeadHungAfter.Milliseconds()
+	tickWakes(ctx)
+	waitStages(t)
+
+	if len(h.stops) != 1 || h.stops[0] != wakeLeadBlock {
+		t.Fatalf("the hung lead is stopped, got %q", h.stops)
+	}
+	if *calls != 0 {
+		t.Fatalf("a run that asks the person is never relaunched by the engine, got %d", *calls)
+	}
+	p, _ := agentask.GlobalRegistry.Get("block:child-1")
+	if p.Owner != agentask.AskOwner_User || p.Note != leadHungNote {
+		t.Fatalf("the question goes to the person with the hang as its reason, got %+v", p)
+	}
+	if f.countKind(waveobj.RunEventKindTaskForwarded) != 1 || f.countKind(waveobj.RunEventKindLeadWakeFailed) != 1 {
+		t.Fatalf("want one task-forwarded and one lead-wake-failed row, got %+v", f.rows)
+	}
+}
+
+// a lead running a long command uses CPU: it is judged again one window later, not stopped
+func TestHeldWakeOnBusyLeadWaits(t *testing.T) {
+	f := newFakeLead(t)
+	ctx := context.Background()
+	workingLead(f)
+	h := scriptHang(t, f)
+	window := LeadHungAfter.Milliseconds()
+
+	PostWake(ctx, wakeChannel, wakeRun, finishedLine)
+	started := f.now
+	h.cpu += int64(float64(window) * IdleCPUShare * 2)
+	f.now += window
+	tickWakes(ctx)
+	waitStages(t)
+
+	if len(h.stops) != 0 || LeadDead(wakeRun) {
+		t.Fatalf("a lead whose tree used CPU is busy, not hung: stops %q, dead %v", h.stops, LeadDead(wakeRun))
+	}
+	if since, cpu := heldClock(wakeRun); since != started+window || cpu != h.cpu {
+		t.Fatalf("the clock restarts at now with the new reading, got since %d (want %d), cpu %d (want %d)", since, started+window, cpu, h.cpu)
+	}
+
+	f.now += window - 1
+	tickWakes(ctx)
+	waitStages(t)
+	if len(h.stops) != 0 {
+		t.Fatalf("the next judgment comes a whole window after the restart, got stops %q", h.stops)
+	}
+	f.now++
+	tickWakes(ctx)
+	waitStages(t)
+	if len(h.stops) != 1 {
+		t.Fatalf("an idle tree one window later is hung, got stops %q", h.stops)
+	}
+}
+
+// a falling total is a child that exited, which is activity (sampleWorkerCPU counts it the same way)
+func TestHeldWakeCountsAFallingCPUTotalAsBusy(t *testing.T) {
+	f := newFakeLead(t)
+	ctx := context.Background()
+	workingLead(f)
+	h := scriptHang(t, f)
+
+	PostWake(ctx, wakeChannel, wakeRun, finishedLine)
+	h.cpu -= 500
+	f.now += LeadHungAfter.Milliseconds()
+	tickWakes(ctx)
+	waitStages(t)
+
+	if len(h.stops) != 0 {
+		t.Fatalf("a tree whose CPU total fell had a child exit: busy, got stops %q", h.stops)
+	}
+}
+
+// a tree with no reading (the process is gone, or the controller has no pid) is not judged hung from nothing
+func TestHeldWakeWithoutACPUReadingStartsNoClock(t *testing.T) {
+	f := newFakeLead(t)
+	ctx := context.Background()
+	workingLead(f)
+	h := scriptHang(t, f)
+	h.known = false
+
+	PostWake(ctx, wakeChannel, wakeRun, finishedLine)
+	f.now += 2 * LeadHungAfter.Milliseconds()
+	tickWakes(ctx)
+	waitStages(t)
+	if since, _ := heldClock(wakeRun); since != 0 || len(h.stops) != 0 {
+		t.Fatalf("no reading, no clock: got since %d, stops %q", since, h.stops)
+	}
+
+	h.known = true
+	tickWakes(ctx)
+	if since, _ := heldClock(wakeRun); since != f.now {
+		t.Fatalf("the clock starts at the first reading, got %d want %d", since, f.now)
+	}
+}
+
+// a lead waiting on a person's answer is never counted, however long
+func TestHeldWakeWhileAskingNeverHangs(t *testing.T) {
+	f := newFakeLead(t)
+	ctx := context.Background()
+	h := scriptHang(t, f)
+	leadOref := waveobj.MakeORef(waveobj.OType_Block, wakeLeadBlock).String()
+	window := LeadHungAfter.Milliseconds()
+
+	// held for the lead's own question from the start
+	agentask.GlobalRegistry.Set(leadOref, agentask.PendingAsk{AskId: "lead-ask", BlockId: wakeLeadBlock})
+	f.state.State, f.state.Hook = baseds.AgentState_Asking, baseds.AgentHook_PreToolUse
+	PostWake(ctx, wakeChannel, wakeRun, finishedLine)
+	f.now += 2 * window
+	tickWakes(ctx)
+	waitStages(t)
+	if since, _ := heldClock(wakeRun); since != 0 || len(h.stops) != 0 {
+		t.Fatalf("a hold for the lead's question never starts the clock: since %d, stops %q", since, h.stops)
+	}
+
+	// working first, then asking: the question ends the count
+	agentask.GlobalRegistry.Drop(leadOref)
+	workingLead(f)
+	NoteLeadStatus(ctx, f.status(baseds.AgentState_Working))
+	tickWakes(ctx)
+	if since, _ := heldClock(wakeRun); since != f.now {
+		t.Fatalf("a lead working again starts the clock, got %d want %d", since, f.now)
+	}
+	agentask.GlobalRegistry.Set(leadOref, agentask.PendingAsk{AskId: "lead-ask-2", BlockId: wakeLeadBlock})
+	f.state.State = baseds.AgentState_Asking
+	f.now += 2 * window
+	tickWakes(ctx)
+	waitStages(t)
+	if since, _ := heldClock(wakeRun); since != 0 || len(h.stops) != 0 {
+		t.Fatalf("a lead that started asking is not hung: since %d, stops %q", since, h.stops)
+	}
+}
+
+func TestHeldSinceResetsOnPrompt(t *testing.T) {
+	f := newFakeLead(t)
+	ctx := context.Background()
+	workingLead(f)
+	scriptHang(t, f)
+
+	PostWake(ctx, wakeChannel, wakeRun, finishedLine)
+	if since, cpu := heldClock(wakeRun); since != f.now || cpu != 1000 {
+		t.Fatalf("a held wake starts the clock with the lead's CPU, got since %d, cpu %d", since, cpu)
+	}
+	f.now += 5_000
+	NoteLeadStatus(ctx, f.status(baseds.AgentState_Idle))
+	if len(f.sends) != 1 {
+		t.Fatalf("the lead at its prompt gets the wake, got %q", f.sends)
+	}
+	if since, _ := heldClock(wakeRun); since != 0 {
+		t.Fatalf("a delivered wake clears the clock, got %d", since)
+	}
+
+	NoteLeadStatus(ctx, f.status(baseds.AgentState_Working))
+	f.now += 5_000
+	PostWake(ctx, wakeChannel, wakeRun, failedLine)
+	if since, _ := heldClock(wakeRun); since != f.now {
+		t.Fatalf("a later hold is timed from its own start, got %d want %d", since, f.now)
+	}
+}
+
+// the stop takes seconds, and the lead's process is gone before it returns: a tick in that stretch must not read the
+// death as an ordinary one, or the run's row says the lead was not running instead of hung
+func TestHungLeadStopInFlightPausesTheHold(t *testing.T) {
+	f, ctx, dag := seedDeadLeadRun(t, false)
+	workingLead(f)
+	h := scriptHang(t, f)
+	entered, release := make(chan struct{}), make(chan struct{})
+	stopLeadFn = func(blockId string) {
+		h.stops = append(h.stops, blockId)
+		f.state.Alive = false
+		close(entered)
+		<-release
+	}
+	// a failed assertion below must not leave the stop blocked, or its stage outlives the test
+	var releaseOnce sync.Once
+	releaseStop := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseStop)
+
+	PokeWake(ctx, dag.ChannelId, dag.RunID)
+	f.now += LeadHungAfter.Milliseconds()
+	tickWakes(ctx)
+	<-entered
+	tickWakes(ctx)
+	PostWake(ctx, dag.ChannelId, dag.RunID, failedLine)
+
+	if LeadDead(dag.RunID) || f.countKind(waveobj.RunEventKindLeadWakeFailed) != 0 {
+		t.Fatalf("a lead mid-stop is not handed over as an ordinary death yet, got %+v", f.rows)
+	}
+	releaseStop()
+	waitStages(t)
+
+	if len(h.stops) != 1 || !LeadDead(dag.RunID) {
+		t.Fatalf("one stop, then the lead is handed over, got stops %q, dead %v", h.stops, LeadDead(dag.RunID))
+	}
+	var reasons []any
+	for _, r := range f.rows {
+		if r["eventkind"] == waveobj.RunEventKindLeadWakeFailed {
+			reasons = append(reasons, r["reason"])
+		}
+	}
+	if len(reasons) != 1 || reasons[0] != leadHungNote {
+		t.Fatalf("the hand-over names the hang, got %v", reasons)
+	}
+	if p, _ := agentask.GlobalRegistry.Get("block:child-1"); p.Owner != agentask.AskOwner_User || p.Note != leadHungNote {
+		t.Fatalf("the question goes to the person with the hang as its reason, got %+v", p)
+	}
+}
+
+// DestroyBlockController waits on the process with no timeout of its own, so a stop that never returns must not
+// strand the run: the lead's questions go to the person, and the lead is not replaced beside a process still running.
+func TestHungLeadStopThatNeverReturnsHandsQuestionsToThePerson(t *testing.T) {
+	f, ctx, dag := seedDeadLeadRun(t, true)
+	workingLead(f)
+	scriptHang(t, f)
+	calls := stubRelaunch(t, func() error { return nil })
+	block := make(chan struct{})
+	stopLeadFn = func(string) { <-block }
+	t.Cleanup(func() { close(block) })
+	oldWait := leadStopWait
+	leadStopWait = 20 * time.Millisecond
+	restoreAfterStages(t, func() { leadStopWait = oldWait })
+
+	PokeWake(ctx, dag.ChannelId, dag.RunID)
+	f.now += LeadHungAfter.Milliseconds()
+	tickWakes(ctx)
+	waitStages(t)
+
+	p, _ := agentask.GlobalRegistry.Get("block:child-1")
+	if p.Owner != agentask.AskOwner_User || !strings.Contains(p.Note, leadHungNote) {
+		t.Fatalf("a stop that does not finish hands the question to the person with the hang as its reason, got %+v", p)
+	}
+	if *calls != 0 || LeadDead(dag.RunID) {
+		t.Fatalf("a lead whose process still runs is not replaced: %d relaunches, dead %v", *calls, LeadDead(dag.RunID))
+	}
+	if since, _ := heldClock(dag.RunID); since != 0 {
+		t.Fatalf("the clock is cleared so the next flush restarts it, got %d", since)
+	}
+}
+
+// setRunPaused marks the dag's owner run paused, as a pause leaves the top-level run, or clears the mark as the resume does.
+func setRunPaused(t *testing.T, ctx context.Context, dag *waveobj.TaskGroup, paused bool) {
+	t.Helper()
+	if err := wstore.UpdateRun(ctx, dag.ChannelId, dag.RunID, func(r *waveobj.Run) error {
+		if paused {
+			jarvis.SetRunPause(r, &waveobj.RunPause{PausedTs: 1, By: "manual"})
+		} else {
+			jarvis.ClearRunPause(r, 2)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A pause ends the lead's process by design (jarvis.SuspendRunWorker). Judging that lead dead started a replacement lead
+// two seconds after the pause of run 1cad2fd0, and the replacement took the run's lead tab: the lead the resume then
+// reopened, in the old tab, had no run context.
+func TestAPausedRunsLeadIsNotDeclaredDeadOrReplaced(t *testing.T) {
+	f, ctx, dag := seedDeadLeadRun(t, true)
+	calls := stubRelaunch(t, func() error { return nil })
+	setRunPaused(t, ctx, dag, true)
+
+	PostWake(ctx, dag.ChannelId, dag.RunID, failedLine)
+	PokeWake(ctx, dag.ChannelId, dag.RunID)
+	f.now += WakeConfirmTimeout.Milliseconds()
+	tickWakes(ctx)
+	waitStages(t)
+
+	if *calls != 0 || LeadDead(dag.RunID) {
+		t.Fatalf("a lead its own pause stopped is not replaced: %d relaunches, dead %v", *calls, LeadDead(dag.RunID))
+	}
+	if n := f.countKind(waveobj.RunEventKindLeadWakeFailed); n != 0 {
+		t.Fatalf("a paused lead is not handed over as dead, got %d lead-wake-failed rows", n)
+	}
+	if p, _ := agentask.GlobalRegistry.Get("block:child-1"); p.Owner != agentask.AskOwner_Lead {
+		t.Fatalf("its question stays with the lead through the pause, got %+v", p)
+	}
+
+	// the resume reopens the lead; the next tick hands it what was held while it was away
+	setRunPaused(t, ctx, dag, false)
+	f.state.Alive, f.state.State = true, baseds.AgentState_Idle
+	tickWakes(ctx)
+	if len(f.sends) != 1 || !strings.Contains(f.sends[0], failedLine) {
+		t.Fatalf("the wake held through the pause is typed once the lead is back at its prompt, got %q", f.sends)
+	}
+}
+
+func TestAPausedRunsDeadLeadIsNotReplacedByAQuestion(t *testing.T) {
+	_, ctx, dag := seedDeadLeadRun(t, true)
+	calls := stubRelaunch(t, func() error { return nil })
+	wakes.lock.Lock()
+	wakes.runLocked(dag.ChannelId, dag.RunID).dead = true
+	wakes.lock.Unlock()
+	setRunPaused(t, ctx, dag, true)
+
+	PokeWake(ctx, dag.ChannelId, dag.RunID)
+	waitStages(t)
+
+	if *calls != 0 {
+		t.Fatalf("a question raised during a pause relaunches no lead, got %d relaunches", *calls)
+	}
+	if p, _ := agentask.GlobalRegistry.Get("block:child-1"); p.Owner != agentask.AskOwner_Lead {
+		t.Fatalf("the question stays where it is, got %+v", p)
+	}
+}
+
+// a wake typed just before the pause went to a process the pause ended: it is neither retried into the reopened lead as
+// a bare Enter nor held against that lead as unconfirmed, it is simply to be sent again
+func TestAWakeTypedBeforeAPauseIsSentAgainAfterTheResume(t *testing.T) {
+	f, ctx, dag := seedDeadLeadRun(t, true)
+	f.state.Alive, f.state.State = true, baseds.AgentState_Idle
+	calls := stubRelaunch(t, func() error { return nil })
+
+	PostWake(ctx, dag.ChannelId, dag.RunID, finishedLine)
+	if len(f.sends) != 1 {
+		t.Fatalf("the idle lead takes the wake at once, got %q", f.sends)
+	}
+	setRunPaused(t, ctx, dag, true)
+	f.state.Alive = false
+	for range 3 {
+		f.now += WakeConfirmTimeout.Milliseconds()
+		tickWakes(ctx)
+	}
+	waitStages(t)
+	if *calls != 0 || LeadDead(dag.RunID) || len(f.sends) != 1 {
+		t.Fatalf("an unconfirmed wake does not count against a paused lead: %d relaunches, dead %v, sends %q", *calls, LeadDead(dag.RunID), f.sends)
+	}
+
+	setRunPaused(t, ctx, dag, false)
+	f.state.Alive, f.state.State = true, baseds.AgentState_Idle
+	tickWakes(ctx)
+	if len(f.sends) != 2 || !strings.Contains(f.sends[1], finishedLine) {
+		t.Fatalf("the reopened lead is sent the wake again, whole, got %q", f.sends)
+	}
+}
+
+// the hang stop takes seconds, and a pause can land in them: the pause ends the lead's process on purpose, so the stop
+// finding it gone is not a hang to hand over. Handing it over replaced the lead under the pause (run 1cad2fd0).
+func TestAPauseDuringAHangStopKeepsTheLeadForTheResume(t *testing.T) {
+	f, ctx, dag := seedDeadLeadRun(t, true)
+	workingLead(f)
+	h := scriptHang(t, f)
+	calls := stubRelaunch(t, func() error { return nil })
+	entered, release := make(chan struct{}), make(chan struct{})
+	stopLeadFn = func(blockId string) {
+		h.stops = append(h.stops, blockId)
+		f.state.Alive = false
+		close(entered)
+		<-release
+	}
+	// a failed assertion below must not leave the stop blocked, or its stage outlives the test
+	var releaseOnce sync.Once
+	releaseStop := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseStop)
+
+	PokeWake(ctx, dag.ChannelId, dag.RunID)
+	PostWake(ctx, dag.ChannelId, dag.RunID, failedLine)
+	f.now += LeadHungAfter.Milliseconds()
+	tickWakes(ctx)
+	<-entered
+	setRunPaused(t, ctx, dag, true)
+	releaseStop()
+	waitStages(t)
+
+	if len(h.stops) != 1 {
+		t.Fatalf("the hung lead is stopped once, got %q", h.stops)
+	}
+	if *calls != 0 || LeadDead(dag.RunID) {
+		t.Fatalf("a lead the pause ended is not replaced: %d relaunches, dead %v", *calls, LeadDead(dag.RunID))
+	}
+	if n := f.countKind(waveobj.RunEventKindLeadWakeFailed); n != 0 {
+		t.Fatalf("a paused lead is not handed over as hung, got %d lead-wake-failed rows", n)
+	}
+	if p, _ := agentask.GlobalRegistry.Get("block:child-1"); p.Owner != agentask.AskOwner_Lead {
+		t.Fatalf("its question stays with the lead through the pause, got %+v", p)
+	}
+	if since, _ := heldClock(dag.RunID); since != 0 || len(f.sends) != 0 {
+		t.Fatalf("the clock is cleared and nothing is typed under the pause, got since %d, sends %q", since, f.sends)
+	}
+
+	// the resume reopens the lead; the next tick hands it what was held while it was away
+	setRunPaused(t, ctx, dag, false)
+	f.state.Alive, f.state.State = true, baseds.AgentState_Idle
+	tickWakes(ctx)
+	if len(f.sends) != 1 || !strings.Contains(f.sends[0], failedLine) {
+		t.Fatalf("the wake held through the pause is typed to the reopened lead, got %q", f.sends)
+	}
+}
+
+// the same for a launch: one that fails while the run is paused leaves the lead to the resume, with everything the
+// launch carried back on the queue, the question line included
+func TestAPauseDuringALeadLaunchKeepsItsLinesWhenTheLaunchFails(t *testing.T) {
+	f, ctx, dag := seedDeadLeadRun(t, true)
+	f.state = leadState{NoLead: true}
+	launched := stubLaunch(t)
+	calls := stubRelaunch(t, func() error { return nil })
+
+	PostWake(ctx, dag.ChannelId, dag.RunID, failedLine)
+	PostWake(ctx, dag.ChannelId, dag.RunID, finishedLine)
+	if len(*launched) != 1 {
+		t.Fatalf("the first judgment event launches the lead once, got %q", *launched)
+	}
+	setRunPaused(t, ctx, dag, true)
+	leadLaunched(ctx, dag.ChannelId, dag.RunID, errors.New("no route for pi"))
+	waitStages(t)
+
+	if *calls != 0 || LeadDead(dag.RunID) {
+		t.Fatalf("a launch that failed under a pause hands nothing over: %d relaunches, dead %v", *calls, LeadDead(dag.RunID))
+	}
+	if n := f.countKind(waveobj.RunEventKindLeadWakeFailed); n != 0 {
+		t.Fatalf("want no lead-wake-failed row, got %d", n)
+	}
+	if p, _ := agentask.GlobalRegistry.Get("block:child-1"); p.Owner != agentask.AskOwner_Lead {
+		t.Fatalf("its question stays with the lead, got %+v", p)
+	}
+	tickWakes(ctx)
+	if len(*launched) != 1 {
+		t.Fatalf("no lead is launched again under the pause, got %q", *launched)
+	}
+
+	setRunPaused(t, ctx, dag, false)
+	tickWakes(ctx)
+	if len(*launched) != 2 {
+		t.Fatalf("the next flush after the resume launches the lead again, got %q", *launched)
+	}
+	for _, want := range []string{failedLine, finishedLine, "question waiting"} {
+		if !strings.Contains((*launched)[1], want) {
+			t.Fatalf("the new launch carries %q, got:\n%s", want, (*launched)[1])
+		}
 	}
 }

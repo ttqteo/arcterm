@@ -32,6 +32,11 @@ const (
 	// MaxAutoRelaunches is how many times the engine brings back an autonomous run's dead lead by itself before
 	// its questions go to the human: a lead that keeps dying is not a flake.
 	MaxAutoRelaunches = 3
+	// LeadHungAfter is how long a lead may hold the run's wakes while working, with its process tree idle, before the
+	// engine calls it hung. Run 1cad2fd0's lead sat in one `dag merge` call for 2h30m with nothing under it, and every
+	// wake after it waited behind the working state. A lead running a long command uses CPU, so it is left alone and
+	// judged again one window later; a lead waiting on a person's answer is never counted.
+	LeadHungAfter = 30 * time.Minute
 )
 
 // why a lead stopped getting wakes; each lands on the lead-wake-failed row and on every ask it hands over.
@@ -40,6 +45,8 @@ const (
 	wakeUnconfirmedNote  = "lead did not respond to a wake"
 	leadDeadNote         = "lead is not taking wakes"
 	leadLaunchFailedNote = "lead could not be started"
+	leadHungNote         = "lead hung: working with an idle process for over 30 min"
+	leadUnstoppedNote    = leadHungNote + ", and its process could not be stopped"
 )
 
 // handoffInstructions is what a lead's compaction keeps once its plan is handed over (spec §7): what the
@@ -74,6 +81,13 @@ var sendWakeFn = sendWake
 var typeWakeFn = typeWake
 
 var wakeNow = func() int64 { return time.Now().UnixMilli() }
+
+// stopLeadFn ends a hung lead's process; its tab stays for the person to read. A var for tests.
+var stopLeadFn = blockcontroller.DestroyBlockController
+
+// leadStopWait bounds the wait for stopLeadFn: DestroyBlockController waits on the process with no timeout of its
+// own, so a lead that will not die would otherwise hold its run's hand-over for good. A var for tests.
+var leadStopWait = 30 * time.Second
 
 // LaunchLeadHook spawns runId's lead with prompt. Wired to wshserver at startup; the default refuses,
 // because wsh and the tests link this package without the server.
@@ -136,6 +150,40 @@ type runWake struct {
 	autoRelaunching bool
 	// held is why a wake is held for a lead not at its prompt, as last logged; "" once the lead can take one.
 	held string
+	// heldSince is the UnixMilli the wakes started waiting on a lead that is working (not asking), 0 when none is;
+	// heldCPUMs is the lead's process-tree CPU time (ms) then. tickWakes judges the lead hung once LeadHungAfter has
+	// passed with the tree idle.
+	heldSince int64
+	heldCPUMs int64
+	// hangStopping is a hung lead's stop in flight. The hold pauses meanwhile, so the death the stop causes is
+	// handed over as the hang, not as a lead that happened to exit.
+	hangStopping bool
+}
+
+func (rw *runWake) clearHoldClock() {
+	rw.heldSince, rw.heldCPUMs = 0, 0
+}
+
+// requeueSent takes back the unconfirmed wake: its text is held again, whole, for the next flush, and the handoff
+// compaction is queued again as such.
+func (rw *runWake) requeueSent() {
+	if rw.sent == HandoffCompact {
+		rw.handoff = true
+	} else if rw.sent != "" {
+		rw.lines = append([]string{rw.sent}, rw.lines...)
+	}
+	rw.sentAt, rw.sent, rw.retried = 0, "", false
+}
+
+// startHoldClock times a hold from now, with the lead's CPU as the baseline. No reading, no clock: the next flush
+// tries again, and a lead whose process is gone takes the not-alive path instead.
+func (rw *runWake) startHoldClock(blockId string) {
+	if rw.heldSince != 0 {
+		return
+	}
+	if s, ok := childTreeSample(blockId); ok {
+		rw.heldSince, rw.heldCPUMs = wakeNow(), s.CPUMs
+	}
 }
 
 type waker struct {
@@ -225,6 +273,10 @@ func PokeWake(ctx context.Context, channelId, runId string) {
 	defer wakes.lock.Unlock()
 	rw := wakes.runLocked(channelId, runId)
 	if rw.dead {
+		// a pause relaunches nothing; the resume ends it, and the lead's own status revives or replaces it from there
+		if leadPaused(ctx, channelId, runId) {
+			return
+		}
 		if wakes.autoRelaunchLocked(ctx, runId, rw) {
 			return
 		}
@@ -295,6 +347,13 @@ func tickWakes(ctx context.Context) {
 	for runId, rw := range wakes.runs {
 		if rw.sentAt == 0 {
 			wakes.flushLocked(ctx, runId, rw)
+			wakes.checkHungLocked(ctx, runId, rw, now)
+			continue
+		}
+		// the process the wake was typed to is the one the pause ended: it is to be sent again to the reopened lead, not
+		// retried as a bare Enter and then counted as a lead that did not answer
+		if leadPaused(ctx, rw.channelId, runId) {
+			rw.requeueSent()
 			continue
 		}
 		if now-rw.sentAt < WakeConfirmTimeout.Milliseconds() {
@@ -345,8 +404,16 @@ func leadAsking(blockId string) bool {
 	return asking || agentask.GlobalRegistry.AnswerInFlight(oref)
 }
 
+// leadPaused reports a run under a pause: its own, a parent's, or its dag's (runUnderPause). A pause ends the lead's
+// process on purpose (jarvis.SuspendRunWorker) and the resume reopens it in the same session, so a lead that is not
+// running then is not dead, and wakes wait for it. An unreadable run reads as not paused, as runUnderPause reads a dag.
+func leadPaused(ctx context.Context, channelId, runId string) bool {
+	run, err := wstore.GetRun(ctx, channelId, runId)
+	return err == nil && run != nil && runUnderPause(ctx, run)
+}
+
 func (w *waker) flushLocked(ctx context.Context, runId string, rw *runWake) {
-	if rw.sentAt != 0 || rw.dead || rw.launching {
+	if rw.sentAt != 0 || rw.dead || rw.launching || rw.hangStopping {
 		return
 	}
 	asks := leadAsks(runId)
@@ -357,15 +424,24 @@ func (w *waker) flushLocked(ctx context.Context, runId string, rw *runWake) {
 		}
 	}
 	if len(rw.lines) == 0 && !untold && !rw.handoff {
+		rw.clearHoldClock()
+		return
+	}
+	// held, not judged: the lead the pause stopped is reopened by the resume, and a replacement started now would take
+	// the run's lead tab from it (run 1cad2fd0: the reopened lead had no run context)
+	if leadPaused(ctx, rw.channelId, runId) {
+		rw.clearHoldClock()
 		return
 	}
 	st := leadStateFn(ctx, rw.channelId, runId)
 	rw.blockId, rw.tabId = st.BlockId, st.TabId
 	if st.NoLead {
+		rw.clearHoldClock()
 		w.launchLocked(ctx, runId, rw, asks, untold)
 		return
 	}
 	if !st.Alive {
+		rw.clearHoldClock()
 		// the spawn returns before the process runs, so a just-launched lead gets a wake-confirm timeout
 		// to start; the next tick looks again
 		if st.Starting && wakeNow()-rw.launchedAt < WakeConfirmTimeout.Milliseconds() {
@@ -377,9 +453,16 @@ func (w *waker) flushLocked(ctx context.Context, runId string, rw *runWake) {
 	asking := leadAsking(st.BlockId)
 	if !atPrompt(st.State) || asking {
 		rw.logHeld(runId, st, asking)
+		if asking {
+			// a lead waiting on a person's answer is never counted as hung
+			rw.clearHoldClock()
+		} else {
+			rw.startHoldClock(st.BlockId)
+		}
 		return
 	}
 	rw.held = ""
+	rw.clearHoldClock()
 	if rw.handoff {
 		// alone and first: a wake joined to it would be summarized away before the lead read it, so held
 		// lines wait for the idle report that ends the compaction
@@ -399,6 +482,85 @@ func (w *waker) flushLocked(ctx context.Context, runId string, rw *runWake) {
 		rw.told[askTold(p)] = true
 	}
 	appendRunEvent(ctx, rw.channelId, runId, waveobj.RunEventKindLeadWoken, nil, map[string]any{"text": text})
+}
+
+// checkHungLocked judges a lead whose wakes have waited LeadHungAfter behind its working state. Its process tree is
+// read again: CPU used over the window (or a total that fell, a child that exited) means a long command, so the
+// clock restarts and the lead is judged one window later; no CPU means it is stuck in one call. A hung lead is
+// stopped and handed over as dead, since RelaunchLead only revives a live one, which would hold again. The stop
+// waits on the process, so it and the hand-over run off the waker lock (hungLeadStopped retakes it).
+func (w *waker) checkHungLocked(ctx context.Context, runId string, rw *runWake, now int64) {
+	if rw.heldSince == 0 || rw.dead || rw.hangStopping || now-rw.heldSince < LeadHungAfter.Milliseconds() {
+		return
+	}
+	s, ok := childTreeSample(rw.blockId)
+	if !ok {
+		rw.clearHoldClock()
+		return
+	}
+	window := now - rw.heldSince
+	if delta := s.CPUMs - rw.heldCPUMs; delta < 0 || (delta > 0 && float64(delta) >= IdleCPUShare*float64(window)) {
+		rw.heldSince, rw.heldCPUMs = now, s.CPUMs
+		return
+	}
+	// the flush that ran just before this cleared the clock for a question; look once more before killing anything
+	if leadAsking(rw.blockId) {
+		rw.clearHoldClock()
+		return
+	}
+	channelId, blockId := rw.channelId, rw.blockId
+	rw.hangStopping = true
+	log.Printf("wake: run %s's lead held its wakes %d min with an idle process tree; stopping block %s and handing the run over", runId, window/60_000, blockId)
+	goStage("lead hung "+runId, func() {
+		lctx := context.WithoutCancel(ctx)
+		if !stopLeadBounded(blockId) {
+			log.Printf("wake: stopping run %s's hung lead (block %s) took over %v", runId, blockId, leadStopWait)
+		}
+		w.hungLeadStopped(lctx, channelId, runId)
+	})
+}
+
+// stopLeadBounded stops the lead's process and reports whether the stop returned within leadStopWait. One that
+// does not keeps its goroutine until it does.
+func stopLeadBounded(blockId string) bool {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		stopLeadFn(blockId)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(leadStopWait):
+		return false
+	}
+}
+
+// hungLeadStopped settles a hung lead's stop. A lead whose process is gone is handed over like any dead lead: an
+// autonomous run's is replaced, and otherwise its questions go to the person. One still running is not replaced
+// beside its process, so its questions go to the person, and the next flush restarts the clock.
+func (w *waker) hungLeadStopped(ctx context.Context, channelId, runId string) {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	rw := w.runLocked(channelId, runId)
+	rw.hangStopping = false
+	rw.clearHoldClock()
+	if rw.dead {
+		return
+	}
+	if leadStateFn(ctx, channelId, runId).Alive {
+		log.Printf("wake: run %s's hung lead still runs after the stop; its questions go to the person", runId)
+		for oref, p := range leadAsks(runId) {
+			forwardAskToUser(ctx, oref, p, leadUnstoppedNote)
+		}
+		return
+	}
+	// a pause that landed during the stop ended the process on purpose: the resume reopens the lead, so its wakes stay
+	// held (the hold clock is already cleared) and nothing is handed over, as flushLocked reads a paused run
+	if leadPaused(ctx, channelId, runId) {
+		return
+	}
+	w.leadDiedLocked(ctx, runId, rw, leadHungNote)
 }
 
 // logHeld says once what holds runId's wakes, again only when that changes: the state is in-memory only,
@@ -421,6 +583,7 @@ func (rw *runWake) logHeld(runId string, st leadState, asking bool) {
 func (w *waker) reviveLocked(ctx context.Context, runId string, rw *runWake) {
 	rw.lines = append(rw.missed, rw.lines...)
 	rw.missed, rw.sentAt, rw.retried, rw.dead = nil, 0, false, false
+	rw.clearHoldClock()
 	appendRunEvent(ctx, rw.channelId, runId, waveobj.RunEventKindLeadRevived, nil, map[string]any{})
 }
 
@@ -474,7 +637,8 @@ func nothingToLaunchFor(lines []string) bool {
 
 // leadLaunched settles a launch. A started lead took its first wake as its launch prompt, and events held
 // meanwhile are typed once it reports it is at its prompt. A lead that could not be started hands its
-// judgment to the human (G8).
+// judgment to the human (G8), unless the run is paused: the resume brings the lead back, so the launch's lines go
+// back on the queue, its questions are announced again with them, and the next flush after the resume launches again.
 func leadLaunched(ctx context.Context, channelId, runId string, err error) {
 	wakes.lock.Lock()
 	defer wakes.lock.Unlock()
@@ -482,7 +646,14 @@ func leadLaunched(ctx context.Context, channelId, runId string, err error) {
 	rw.launching = false
 	if err != nil {
 		rw.lines = append(rw.launchLines, rw.lines...)
-		wakes.leadDiedLocked(ctx, runId, rw, leadLaunchFailedNote+": "+err.Error())
+		if leadPaused(ctx, channelId, runId) {
+			for _, p := range leadAsks(runId) {
+				delete(rw.told, askTold(p))
+			}
+			rw.clearHoldClock()
+		} else {
+			wakes.leadDiedLocked(ctx, runId, rw, leadLaunchFailedNote+": "+err.Error())
+		}
 	} else {
 		rw.launchedAt = wakeNow()
 	}
@@ -557,6 +728,7 @@ func (w *waker) endRelaunch(ctx context.Context, channelId, runId, wake string, 
 		return
 	}
 	rw.dead, rw.missed, rw.sentAt, rw.retried, rw.launchedAt = false, nil, 0, false, wakeNow()
+	rw.clearHoldClock()
 	appendRunEvent(ctx, channelId, runId, waveobj.RunEventKindLeadLaunched, nil, map[string]any{"text": wake})
 }
 
@@ -600,6 +772,8 @@ func (w *waker) leadDiedLocked(ctx context.Context, runId string, rw *runWake, r
 	lines := rw.lines
 	rw.missed = append(rw.missed, lines...)
 	rw.lines, rw.sentAt, rw.retried, rw.dead, rw.handoff = nil, 0, false, true, false
+	// the hold ends with the lead: a replacement must not be stopped for the old one's clock
+	rw.clearHoldClock()
 	appendRunEvent(ctx, rw.channelId, runId, waveobj.RunEventKindLeadWakeFailed, nil, map[string]any{"reason": reason, "lines": lines})
 	if w.autoRelaunchLocked(ctx, runId, rw) {
 		return

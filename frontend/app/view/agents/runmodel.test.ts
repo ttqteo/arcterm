@@ -198,6 +198,55 @@ describe("dagProgressLabel", () => {
     it("counts done tasks while the plan executes", () => {
         expect(dagProgressLabel(info("running"), false).text).toBe("Working · 2/3");
     });
+    describe("a working run with tasks that are stuck", () => {
+        const task = (id: string, state: string) => ({ id, state });
+        const six = [
+            task("t-1", "done"),
+            task("t-2", "verify-failed"),
+            task("t-3", "stalled"),
+            task("t-4", "review-failed"),
+            task("t-5", "running"),
+            task("t-6", "pending"),
+        ] as TaskGroup["tasks"];
+        it("counts them in the line and names each in the tooltip, in task order", () => {
+            expect(dagProgressLabel(info("running", six), false)).toEqual({
+                text: "Working · 1/6 · 3 stuck",
+                title: "Working · 1/6 · 3 stuck · t-2 verify failed · t-3 stalled · t-4 review failed",
+            });
+        });
+        it("words a blocked merge and a failed task as the task list does", () => {
+            const two = [task("t-1", "blocked-merge"), task("t-2", "failed")] as TaskGroup["tasks"];
+            expect(dagProgressLabel(info("running", two), false)).toEqual({
+                text: "Working · 0/2 · 2 stuck",
+                title: "Working · 0/2 · 2 stuck · t-1 merge blocked · t-2 failed",
+            });
+        });
+        it("keeps the leadless note at the end of the tooltip", () => {
+            expect(dagProgressLabel(info("running", six, true), true)).toEqual({
+                text: "Working · 1/6 · 3 stuck",
+                title: "Working · 1/6 · 3 stuck · t-2 verify failed · t-3 stalled · t-4 review failed · lead closed",
+            });
+        });
+        it("leaves a run with none stuck as it was", () => {
+            expect(dagProgressLabel(info("running"), false)).toEqual({
+                text: "Working · 2/3",
+                title: "Working · 2/3",
+            });
+        });
+        it("does not count a task that is only waiting or at work", () => {
+            const moving = ["pending", "ready", "running", "reviewing", "verifying", "done", "skipped"].map(
+                (state, i) => task(`t-${i + 1}`, state)
+            ) as TaskGroup["tasks"];
+            expect(dagProgressLabel(info("running", moving), false).text).toBe("Working · 2/7");
+        });
+        it("says the run is paused, not what is stuck", () => {
+            const run: RunInfo = { ...info("running", six), status: "paused" };
+            expect(dagProgressLabel(run, false)).toEqual({
+                text: "Paused · resumes when memory frees",
+                title: "Paused · resumes when memory frees · 1/6 tasks done",
+            });
+        });
+    });
     it("does not read as done while the final stage verifies, even with every task done", () => {
         const allDone = [{ state: "done" }, { state: "done" }] as TaskGroup["tasks"];
         expect(dagProgressLabel(info("finalizing", allDone), false).text).toBe(

@@ -1157,6 +1157,41 @@ func TestReopenSessionResumesInANewTabWhenItsTabWasClosed(t *testing.T) {
 	}
 }
 
+// the restart returns before the process runs, so a lead the resume reopened gets the wake-confirm timeout to come up, as
+// a launched one does; without it the first wake finds the process "not running" and hands the run over as if the lead
+// had died
+func TestReopenSessionGivesALeadTimeToComeUp(t *testing.T) {
+	f := newPauseFixture(t, "t-0")
+	origWakes := wakes
+	wakes = newWaker()
+	restoreAfterStages(t, func() { wakes = origWakes })
+	stubResume(t, nil)
+	leadTab, workerTab := insertTab(t, f.ctx), insertTab(t, f.ctx)
+
+	worker := waveobj.PausedSession{RunId: f.workers["t-0"], WorkerORef: workerTab, Runtime: "claude", SessionId: "sess-t-0"}
+	if err := ReopenSession(f.ctx, worker, "carry on"); err != nil {
+		t.Fatal(err)
+	}
+	wakes.lock.Lock()
+	_, tracked := wakes.runs[f.workers["t-0"]]
+	wakes.lock.Unlock()
+	if tracked {
+		t.Fatal("a task's worker is not a lead: reopening it must not start a wake record")
+	}
+
+	lead := waveobj.PausedSession{RunId: f.ownerID, WorkerORef: leadTab, Runtime: "claude", SessionId: "lead-sess"}
+	before := time.Now().UnixMilli()
+	if err := ReopenSession(f.ctx, lead, "carry on"); err != nil {
+		t.Fatal(err)
+	}
+	wakes.lock.Lock()
+	rw := wakes.runs[f.ownerID]
+	wakes.lock.Unlock()
+	if rw == nil || rw.launchedAt < before {
+		t.Fatalf("a reopened lead is stamped as just restarted, got %+v", rw)
+	}
+}
+
 func TestReopenSessionRefusesASessionItsRunNoLongerHolds(t *testing.T) {
 	f := newPauseFixture(t, "t-0")
 	stubResume(t, nil)

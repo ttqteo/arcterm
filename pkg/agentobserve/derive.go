@@ -40,10 +40,11 @@ func DeriveState(s Snapshot) string {
 }
 
 type contentBlock struct {
-	Type      string `json:"type"`
-	ID        string `json:"id"`          // tool_use
-	Name      string `json:"name"`        // tool_use
-	ToolUseID string `json:"tool_use_id"` // tool_result
+	Type      string          `json:"type"`
+	ID        string          `json:"id"`          // tool_use
+	Name      string          `json:"name"`        // tool_use
+	Input     json.RawMessage `json:"input"`       // tool_use
+	ToolUseID string          `json:"tool_use_id"` // tool_result
 }
 
 type transcriptRecord struct {
@@ -99,24 +100,40 @@ func lastRecordTerminal(lines []string) bool {
 // AskUserQuestion whose id has no matching tool_result later in the tail. That is precisely the
 // window in which the agent is blocked waiting on the human.
 func pendingAsk(lines []string) bool {
-	askIDs := map[string]bool{}
+	_, _, ok := openAskCall(lines)
+	return ok
+}
+
+// openAskCall is the newest AskUserQuestion tool_use in lines that has no tool_result after it: its id and its raw
+// input. ok is false when every question has been answered or none was asked.
+func openAskCall(lines []string) (id string, input json.RawMessage, ok bool) {
+	open := map[string]json.RawMessage{}
+	var order []string
 	for _, line := range lines {
-		rec, ok := parseRecord(line)
-		if !ok {
+		rec, parsed := parseRecord(line)
+		if !parsed {
 			continue
 		}
 		for _, b := range blocksOf(rec) {
 			switch b.Type {
 			case "tool_use":
 				if b.Name == "AskUserQuestion" && b.ID != "" {
-					askIDs[b.ID] = true
+					if _, seen := open[b.ID]; !seen {
+						order = append(order, b.ID)
+					}
+					open[b.ID] = b.Input
 				}
 			case "tool_result":
-				delete(askIDs, b.ToolUseID)
+				delete(open, b.ToolUseID)
 			}
 		}
 	}
-	return len(askIDs) > 0
+	for i := len(order) - 1; i >= 0; i-- {
+		if in, still := open[order[i]]; still {
+			return order[i], in, true
+		}
+	}
+	return "", nil, false
 }
 
 // AskOpen reports whether the transcript at path holds an AskUserQuestion call with no result yet: the
@@ -128,4 +145,53 @@ func AskOpen(path string) (bool, error) {
 		return false, err
 	}
 	return pendingAsk(tail.Lines), nil
+}
+
+// OpenAsk is AskOpen with the question itself: the tool_use id of the newest AskUserQuestion call that has no result
+// yet, and its questions decoded from the call's input as the `wsh ask` hook would have sent them. A hook that was
+// cancelled before it registered the question leaves the transcript as the only place it is written down. ok is
+// false when no question is open, and when the open call carries no question a person could be shown.
+func OpenAsk(path string) (toolUseId string, questions []baseds.AgentAskQuestion, ok bool, err error) {
+	tail, err := ReadTail(path, 0)
+	if err != nil {
+		return "", nil, false, err
+	}
+	toolUseId, questions, ok = OpenAskLines(tail.Lines)
+	return toolUseId, questions, ok, nil
+}
+
+// OpenAskLines is OpenAsk for a transcript already read, so a caller that also reads something else out of the same
+// lines (the engine's stall check looks for a live background shell) pays one read of the file.
+func OpenAskLines(lines []string) (toolUseId string, questions []baseds.AgentAskQuestion, ok bool) {
+	id, input, open := openAskCall(lines)
+	if !open {
+		return "", nil, false
+	}
+	var in struct {
+		Questions []struct {
+			Question    string `json:"question"`
+			Header      string `json:"header"`
+			MultiSelect bool   `json:"multiSelect"`
+			Options     []struct {
+				Label       string `json:"label"`
+				Description string `json:"description"`
+				Preview     string `json:"preview"`
+			} `json:"options"`
+		} `json:"questions"`
+	}
+	if json.Unmarshal(input, &in) != nil || len(in.Questions) == 0 {
+		return "", nil, false
+	}
+	questions = make([]baseds.AgentAskQuestion, len(in.Questions))
+	for i, q := range in.Questions {
+		var opts []baseds.AgentAskOption
+		if len(q.Options) > 0 {
+			opts = make([]baseds.AgentAskOption, len(q.Options))
+		}
+		for j, o := range q.Options {
+			opts[j] = baseds.AgentAskOption{Label: o.Label, Description: o.Description, Preview: o.Preview}
+		}
+		questions[i] = baseds.AgentAskQuestion{Question: q.Question, Header: q.Header, MultiSelect: q.MultiSelect, Options: opts}
+	}
+	return id, questions, true
 }
