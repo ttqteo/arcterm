@@ -51,6 +51,11 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 				src.TabId = tabId
 			}
 		}
+		if data.GiveUpTs > 0 && time.Now().UnixMilli() > data.GiveUpTs {
+			// read after the caller stopped waiting: its command already runs without a slot
+			q.NoteBypass(job.Name, src)
+			return
+		}
 		slot, err := q.Acquire(ctx, jobqueue.Request{Name: job.Name, Bytes: job.Bytes, Source: src}, func(w jobqueue.Wait) {
 			// runs under the queue's lock: a full buffer drops the line, and the next place supersedes it
 			select {
@@ -143,6 +148,15 @@ func JobQueueData(s jobqueue.Snapshot) wshrpc.JobQueueData {
 		Mode:        s.Mode,
 		PausedUntil: unixMilli(s.PausedUntil),
 		Jobs:        make([]wshrpc.JobQueueJob, 0, len(s.Jobs)),
+		Bypassed:    s.Bypassed,
+	}
+	if s.Bypassed > 0 {
+		out.LastBypass = &wshrpc.JobQueueBypass{
+			Name:    s.LastBypass.Name,
+			Ts:      unixMilli(s.LastBypass.At),
+			BlockId: s.LastBypass.Source.BlockId,
+			TabId:   s.LastBypass.Source.TabId,
+		}
 	}
 	for _, j := range s.Jobs {
 		out.Jobs = append(out.Jobs, wshrpc.JobQueueJob{

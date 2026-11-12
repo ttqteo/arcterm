@@ -532,3 +532,26 @@ func TestOff(t *testing.T) {
 		t.Fatal("a past pause is not off")
 	}
 }
+
+// a command whose wsh jobslot stopped waiting ran without a slot: the count and the latest reach the cockpit
+func TestNoteBypassReachesTheSnapshot(t *testing.T) {
+	var snaps []Snapshot
+	q := New(Config{
+		Slots:     func() int { return 1 },
+		Available: func(context.Context) (uint64, error) { return 64 * gb, nil },
+		Now:       func() time.Time { return t0 },
+		OnChange:  func(s Snapshot) { snaps = append(snaps, s) },
+	})
+	q.NoteBypass("task check:ts", Source{BlockId: "b1"})
+	q.NoteBypass("npm test", Source{BlockId: "b2"})
+	s := q.Snapshot()
+	if s.Bypassed != 2 || s.LastBypass.Name != "npm test" || s.LastBypass.Source.BlockId != "b2" || !s.LastBypass.At.Equal(t0) {
+		t.Fatalf("snapshot = %+v", s)
+	}
+	if len(s.Jobs) != 0 {
+		t.Fatalf("a bypass queued %d jobs", len(s.Jobs))
+	}
+	if len(snaps) != 2 || snaps[1].Bypassed != 2 {
+		t.Fatalf("OnChange got %d snapshots (%+v), want one per bypass", len(snaps), snaps)
+	}
+}
