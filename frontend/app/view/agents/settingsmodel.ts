@@ -662,6 +662,13 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                     label: "Jarvis",
                     rows: [
                         {
+                            id: "appearance.petform",
+                            title: "Form",
+                            desc: "Sprout walks the footer. The hologram stays in the bottom-right corner: blue rings while all is calm, an amber neural sphere while something waits on you. It draws with WebGL, about 20–40 MB more. Float and the fold keep Sprout.",
+                            key: "jarvis.pet.form",
+                            scope: "local",
+                        },
+                        {
                             id: "appearance.petcharacter",
                             title: "Character",
                             desc: "Who walks the footer as Jarvis. The marks and the outfit work the same for each.",

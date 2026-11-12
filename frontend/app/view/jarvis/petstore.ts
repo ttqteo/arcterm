@@ -13,6 +13,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
+import { DEFAULT_PET_FORM, type PetForm } from "./hologrammodel";
 import type { PetActState } from "./petacts";
 import { DEFAULT_PET_CHARACTER } from "./petcharacter";
 import type { PetCorner } from "./petledge";
@@ -132,6 +133,13 @@ export const petCharacterAtom = atomWithStorage<PetCharacter>(
         getOnInit: true,
     }
 ) as PrimitiveAtom<PetCharacter>;
+
+// How Jarvis shows in the full window (Settings → Jarvis → Form): Sprout on the footer, or the hologram fixed in the
+// bottom-right corner (hologramview.tsx). Read through petForm, which turns a value that is not one of the two into
+// Sprout. Float and the fold keep Sprout either way.
+export const petFormAtom = atomWithStorage<PetForm>("jarvis.pet.form", DEFAULT_PET_FORM, undefined, {
+    getOnInit: true,
+}) as PrimitiveAtom<PetForm>;
 
 // Whether the pet says a quote now and then (petquotes.ts, Settings → Appearance), persisted like the outfit.
 export const DEFAULT_PET_QUOTES = true;

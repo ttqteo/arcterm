@@ -30,6 +30,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Fork from here, on any message or reply (beside Copy, or right-click), starts one with the conversation up to that
   point. From one of your messages, its text waits in the new session's box to edit and send. The session you forked
   stays as it was. Claude agents only.
+- Jarvis as a hologram: Settings → Jarvis & Office → Form → Hologram puts Jarvis in the window's bottom-right corner
+  instead of Sprout on the footer. Blue rings while all is calm (the core beats while agents work), an amber neural
+  sphere while something waits on you; click it for the same peek. Float and the fold keep Sprout. <!-- big -->
 
 ### Changed
 

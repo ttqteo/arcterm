@@ -5,12 +5,14 @@
 // Cockpit office's animation, work hours and sound.
 
 import { getSettingsKeyAtom } from "@/app/store/global";
+import { PET_FORM_NAME, petForm, type PetForm } from "@/app/view/jarvis/hologrammodel";
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { petOutfitChoice, type PetOutfitChoice } from "@/app/view/jarvis/petoutfit";
 import type { PetCharacter } from "@/app/view/jarvis/petsprite";
 import { PET_STAY_CHOICES, shownStayChoice, stayUntilLabel, type PetStayChoice } from "@/app/view/jarvis/petstay";
 import {
     petCharacterAtom,
+    petFormAtom,
     petOutfitChoiceAtom,
     petQuotesOnAtom,
     petStayAtom,
@@ -46,6 +48,7 @@ export function JarvisPage() {
     return (
         <>
             <SettingCard id="jarvis" label="Jarvis">
+                <PetFormRow />
                 <PetCharacterRow />
                 <PetOutfitRow />
                 <PetStayRow />
@@ -60,6 +63,20 @@ export function JarvisPage() {
                 <OfficeSoundRows />
             </SettingCard>
         </>
+    );
+}
+
+const PET_FORM_OPTIONS: { id: PetForm; label: string }[] = (["sprout", "hologram"] as const).map((id) => ({
+    id,
+    label: PET_FORM_NAME[id],
+}));
+
+function PetFormRow() {
+    const [form, setForm] = useAtom(petFormAtom);
+    return (
+        <SettingRow id="appearance.petform">
+            <Segmented<PetForm> options={PET_FORM_OPTIONS} value={petForm(form)} onChange={(id) => setForm(id)} />
+        </SettingRow>
     );
 }
 
