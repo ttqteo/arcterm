@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     HISTORY_PAGE_SIZE,
+    HISTORY_RPC_TIMEOUT_MS,
     NO_FILTERS,
     RESTORE_THRESHOLD_MS,
     SLOW_HISTORY_MS,
@@ -142,5 +143,14 @@ describe("slowSeconds", () => {
     });
     it("is silent when nothing is loading", () => {
         expect(slowSeconds(null, 99_000)).toBeNull();
+    });
+});
+
+describe("the history read's RPC budget", () => {
+    // gitinfo's own git timeout is 10 s: the RPC must outlast it so git's error, which names the command,
+    // ends a hung read instead of the RPC's bare 5 s default
+    it("outlasts git's 10 s timeout", () => {
+        expect(HISTORY_RPC_TIMEOUT_MS).toBe(15_000);
+        expect(HISTORY_RPC_TIMEOUT_MS).toBeGreaterThan(10_000);
     });
 });

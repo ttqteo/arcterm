@@ -6,7 +6,7 @@
 // rather than in the pane because the surface unmounts on a nav switch and the keybindings flip them
 // from outside it, and the mapping lives here because it is the only part worth a test.
 
-import { atom } from "jotai";
+import { atom, type PrimitiveAtom } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
 
 // below this the two editors are narrower than most lines in this repo, so the toggle is offered
@@ -23,6 +23,24 @@ export function paneHeaderLayout(width: number): { split: boolean; labelled: boo
 
 export const splitViewAtom = atom<boolean>(false);
 
+// Whether the pane is wide enough to draw split, written by the pane from paneHeaderLayout: Shift+D and the
+// removed-lines hint read it from outside the pane. False until the pane measures itself.
+export const splitAvailableAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
+
+// The unified view's hint on removed lines. Where the pane cannot draw split, naming Shift+D would send the reader to
+// a key that does nothing, so it names what makes room instead: hiding the panel (Shift+B) or a wider window.
+export function splitHintText(splitAvailable: boolean): string {
+    return splitAvailable
+        ? "Removed lines: switch to split (⇧D) to comment on them"
+        : "Removed lines: hide the panel (⇧B) or widen the window to use split view and comment on them";
+}
+
+// A new file (empty original) is one hunk that every line belongs to, so neither its + markers nor its bands
+// ([data-diff-new-file] in tailwindsetup.css) tell the reader anything.
+export function isNewFile(original: string, modified: string): boolean {
+    return original === "" && modified !== "";
+}
+
 // Monaco ignores leading and trailing whitespace by default, so a whitespace-only change draws as no
 // change at all while the counts in the same header read +2 -2 — the pane contradicting the list it
 // was opened from. Off by default so the two agree; on is the opt-in for reading through a reformat.
@@ -32,8 +50,15 @@ export const ignoreWsAtom = atom<boolean>(false);
 // Wrap itself is codewrap.ts's per-file choice, shared with Code and the agent panel's File tab.
 export const diffWrapPathAtom = atom<string>("");
 
-export function paneOptions(split: boolean, ignoreWs: boolean, wrap: boolean): MonacoTypes.editor.IDiffEditorOptions {
+// newFile (isNewFile) drops the per-line +/- markers; every other file keeps Monaco's default
+export function paneOptions(
+    split: boolean,
+    ignoreWs: boolean,
+    wrap: boolean,
+    newFile = false
+): MonacoTypes.editor.IDiffEditorOptions {
     return {
+        ...(newFile ? { renderIndicators: false } : {}),
         readOnly: true,
         originalEditable: false,
         renderSideBySide: split,
@@ -42,6 +67,8 @@ export function paneOptions(split: boolean, ignoreWs: boolean, wrap: boolean): M
         hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 3, revealLineCount: 20 },
         scrollBeyondLastLine: false,
         minimap: { enabled: false },
+        // the comment layer's + is a glyph-margin widget (diffcommentlayer.ts)
+        glyphMargin: true,
         fontSize: 12.5,
         fontFamily: "var(--font-mono)",
         // monaco defaults this off, which hides the joined glyphs JetBrains Mono and Fira Code draw (Hack has none)

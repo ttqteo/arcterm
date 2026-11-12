@@ -22,6 +22,7 @@ import { parseGitChanges, type GitChanges } from "./gitstatus";
 import {
     FILTER_DEBOUNCE_MS,
     HISTORY_PAGE_SIZE,
+    HISTORY_RPC_TIMEOUT_MS,
     NO_FILTERS,
     anyFilterActive,
     hasMorePages,
@@ -116,6 +117,9 @@ export const shownChangesAtom = atom<GitChanges | null>((get) =>
 );
 
 const current = { token: "" };
+// The scope key the selection was last settled for. A load for a different one is a new subject (a run link opened
+// over a project), so the remembered row gives way to the default; "" = none yet.
+const settled = { scope: "" };
 let filterTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Owned by diffscope.ts, where it is derived from the range; re-exported for the pane's convenience.
@@ -134,6 +138,7 @@ export function setHistoryOpts(opts: LoadHistoryOpts): void {
 // every return to the Diff surface used to land back at the top of an unfiltered list.
 export function resetHistory(): void {
     current.token = "";
+    settled.scope = "";
     if (filterTimer != null) {
         clearTimeout(filterTimer);
         filterTimer = null;
@@ -153,10 +158,15 @@ export function resetHistory(): void {
     globalStore.set(historyLoadStartedAtom, null);
 }
 
-// Deliberately excludes the anchor: GitHistoryCommand takes cwd, limit and filters, so two loads that
-// differ only in their divider label are the same read and must not blank the list between them.
-function loadToken(cwd: string, filters: HistoryFilters): string {
-    return historyKey(cwd, filters);
+// Deliberately excludes the anchor: git answers by cwd, filters and the ref it walks from, so two loads that differ
+// only in their divider label are the same read and must not blank the list between them.
+function loadToken(cwd: string, filters: HistoryFilters, ref?: string): string {
+    return historyKey(cwd, filters, ref ?? "");
+}
+
+// The ref the scope walks from (a landed run's tip), as GitHistoryCommand's own field; absent walks every ref.
+function refQuery(opts: LoadHistoryOpts): { ref?: string } {
+    return opts.ref ? { ref: opts.ref } : {};
 }
 
 function synthFailure(command: string, e: unknown): GitFailure {
@@ -183,7 +193,7 @@ export async function loadHistory(
         return;
     }
     const filters = globalStore.get(historyFiltersAtom);
-    const token = loadToken(cwd, filters);
+    const token = loadToken(cwd, filters, opts.ref);
     // Blanking the list to signal "loading" unmounts every row, which collapses the scroll container:
     // the browser then clamps the restored offset to zero, and the pane's one-shot restore is already
     // spent by the time the rows come back. A remount re-runs this load with an identical token, so
@@ -203,11 +213,11 @@ export async function loadHistory(
     globalStore.set(historyFailureAtom, null);
     globalStore.set(historyAppendAtom, "idle");
     try {
-        const h = await RpcApi.GitHistoryCommand(TabRpcClient, {
-            cwd,
-            limit,
-            ...toHistoryQuery(filters),
-        });
+        const h = await RpcApi.GitHistoryCommand(
+            TabRpcClient,
+            { cwd, limit, ...refQuery(opts), ...toHistoryQuery(filters) },
+            { timeout: HISTORY_RPC_TIMEOUT_MS }
+        );
         if (current.token !== token) {
             return;
         }
@@ -252,11 +262,29 @@ function settleSelection(cwd: string, scope?: string): void {
     const files = globalStore.get(filesStateAtom)?.changes?.files ?? [];
     const linked = scope ? consumeFileLink(scope, files.map((f) => f.path)) : undefined;
     if (linked) {
+        if (scope) {
+            settled.scope = scope;
+        }
         globalStore.set(selectedCommitAtom, WORKING_TREE);
         selectCommitFile(WORKING_TREE, linked);
         return;
     }
-    const prev = globalStore.get(selectedCommitAtom);
+    const moved = !!scope && !!settled.scope && settled.scope !== scope;
+    // The remount read lands while the new scope's change list is still loading: its synthetic row is missing only
+    // because the count is unknown, so choosing now would park on the tip. The read that follows the change list decides.
+    if (moved && globalStore.get(filesStateAtom) == null) {
+        return;
+    }
+    if (scope) {
+        settled.scope = scope;
+    }
+    const prev = moved ? null : globalStore.get(selectedCommitAtom);
+    // A source switch nulls the change list (beginLoad) while this read may still be in flight. The
+    // uncommitted row is then missing only because its count is unknown; moving off it would land on the
+    // tip, and keepSelection keeps the tip once the list is back.
+    if (prev === WORKING_TREE && globalStore.get(filesStateAtom) == null) {
+        return;
+    }
     const pick = keepSelection(rows, prev);
     if (pick == null) {
         return;
@@ -313,12 +341,17 @@ export async function loadMoreHistory(): Promise<void> {
     const token = current.token;
     globalStore.set(historyAppendAtom, "loading");
     try {
-        const h = await RpcApi.GitHistoryCommand(TabRpcClient, {
-            cwd,
-            limit: HISTORY_PAGE_SIZE,
-            skip: commits.length,
-            ...toHistoryQuery(globalStore.get(historyFiltersAtom)),
-        });
+        const h = await RpcApi.GitHistoryCommand(
+            TabRpcClient,
+            {
+                cwd,
+                limit: HISTORY_PAGE_SIZE,
+                skip: commits.length,
+                ...refQuery(globalStore.get(historyOptsAtom)),
+                ...toHistoryQuery(globalStore.get(historyFiltersAtom)),
+            },
+            { timeout: HISTORY_RPC_TIMEOUT_MS }
+        );
         if (current.token !== token) {
             return; // scope or filters moved on: this page belongs to a list that no longer exists
         }

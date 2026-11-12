@@ -242,3 +242,75 @@ describe("measuredAgainst", () => {
         expect(measuredAgainst({ range: compare("mergebase"), commit: "abcdef1234" })).toBe("in abcdef1");
     });
 });
+
+// A landed run is bounded at its own tip: the key, the default range and the history walk all carry it, and an
+// unbounded run reads exactly as it always has.
+describe("a landed run's tip", () => {
+    const landedOrigin = {
+        kind: "run",
+        runId: "r1",
+        cwd: "/repo",
+        baseCommit: "9f2c1de",
+        headCommit: "c0ffee1",
+    } as const;
+
+    // review marks persist by this key, so an unbounded run must keep the key it always had
+    it("keeps today's rangeKey for an unbounded run and appends the tip for a landed one", () => {
+        expect(rangeKey({ kind: "run", runId: "r1", baseCommit: "9f2c1de" })).toBe("run:r1:9f2c1de");
+        expect(rangeKey({ kind: "run", runId: "r1", baseCommit: "9f2c1de", headCommit: "c0ffee1" })).toBe(
+            "run:r1:9f2c1de:c0ffee1"
+        );
+        expect(rangeKey({ kind: "run", runId: "r1", baseCommit: "9f2c1de", headCommit: "" })).toBe("run:r1:9f2c1de");
+    });
+
+    it("carries the tip into the run's default range, and leaves it out when there is none", () => {
+        expect(defaultRangeFor(landedOrigin)).toEqual({
+            kind: "run",
+            runId: "r1",
+            baseCommit: "9f2c1de",
+            headCommit: "c0ffee1",
+        });
+        expect(defaultRangeFor({ kind: "run", runId: "r1", cwd: "/r", baseCommit: "9f2c1de" })).toStrictEqual({
+            kind: "run",
+            runId: "r1",
+            baseCommit: "9f2c1de",
+        });
+    });
+
+    it("gives a bounded run a scope key of its own", () => {
+        const bounded: DiffScope = {
+            repo: { origin: landedOrigin, label: "run" },
+            range: defaultRangeFor(landedOrigin),
+        };
+        expect(scopeKey(bounded)).not.toBe(scopeKey(runScope));
+    });
+
+    // --all would list the commits that landed after the run above its base; the run's own tip does not
+    it("walks a landed run's history from its tip", () => {
+        expect(historyOptsFor({ kind: "run", runId: "r1", baseCommit: "9f2c1de", headCommit: "c0ffee1" }, "")).toEqual({
+            anchor: "9f2c1de",
+            anchorLabel: "run base",
+            rowLabel: "Run changes",
+            ref: "c0ffee1",
+        });
+        expect(historyOptsFor({ kind: "run", runId: "r1", baseCommit: "", headCommit: "c0ffee1" }, "")).toEqual({
+            ref: "c0ffee1",
+        });
+    });
+
+    it("walks every ref for an unbounded run, a session, the working tree and a comparison", () => {
+        expect(historyOptsFor({ kind: "run", runId: "r1", baseCommit: "9f2c1de" }, "")).not.toHaveProperty("ref");
+        expect(historyOptsFor({ kind: "session", agentId: "a1" }, "base9")).not.toHaveProperty("ref");
+        expect(historyOptsFor({ kind: "working" }, "")).toStrictEqual({});
+    });
+});
+
+describe("historyKey with a ref", () => {
+    // walking every ref and walking from a tip are different answers from git
+    it("changes when the walked ref changes and keeps today's key when there is none", () => {
+        expect(historyKey("/repo", NO_FILTERS, "c0ffee1")).not.toBe(historyKey("/repo", NO_FILTERS));
+        expect(historyKey("/repo", NO_FILTERS, "c0ffee1")).not.toBe(historyKey("/repo", NO_FILTERS, "d00d123"));
+        expect(historyKey("/repo", NO_FILTERS, "")).toBe(historyKey("/repo", NO_FILTERS));
+        expect(historyKey("/repo", NO_FILTERS)).toBe(`/repo|${NO_FILTERS.author}|${NO_FILTERS.path}|${NO_FILTERS.text}`);
+    });
+});

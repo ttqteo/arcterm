@@ -33,6 +33,16 @@ export interface FilesState {
     upstream: string;
     upstreamAhead: number;
     upstreamBehind: number;
+    // a bounded run's tip (a landed run): the list stops there instead of HEAD and the working tree. "" or absent = live
+    end?: string;
+    // git's error when the files listed but `diff --numstat` failed: the list is valid, its line counts are not
+    numstatError?: string;
+}
+
+// Whether the shown list's +N −N can be drawn. The working tree's numstat can fail while its file list stands; its counts
+// are then unknown and drawn as absent, never as zeros. A commit or a comparison is counted by its own read.
+export function lineCountsKnown(state: FilesState | null, workingTreeShown: boolean): boolean {
+    return !workingTreeShown || !state?.numstatError;
 }
 
 // A registered project the Diff surface can scope to, resolved from the config registry (name -> path).
@@ -45,6 +55,16 @@ export const filesStateAtom = atom<FilesState | null>(null) as PrimitiveAtom<Fil
 export const filesSelectedPathAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 // true = the git load failed (distinct from "not a repo" — a failed RPC used to masquerade as isRepo:false).
 export const filesErrorAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
+// true = a refresh of a loaded scope failed and the state on screen is the last good read. Only the initial load
+// takes over the surface: one failed poll tick must not wipe the working-tree row.
+export const filesRefreshFailedAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
+
+// Each agent's last resolved folder, so an agent that has left the roster can still point at its changes.
+const agentCwds = new Map<string, string>();
+
+export function agentCwdOf(id: string): string | undefined {
+    return agentCwds.get(id);
+}
 
 // guards against a stale load overwriting a newer one; the token is scopeKey(scope), so switching
 // either the repository or the range cancels the in-flight load.
@@ -69,6 +89,8 @@ const EMPTY: FilesState = {
 interface LoadOpts {
     ref?: string;
     sessionStartTs?: number;
+    // with ref, list only ref..end (a landed run's own commits)
+    end?: string;
 }
 
 // Core: fetch branch + changes for a resolved cwd. The caller owns the guard token (set before any
@@ -87,6 +109,7 @@ async function loadChangesForCwd(token: string, cwd: string | null, opts: LoadOp
             cwd,
             ...(opts.ref ? { ref: opts.ref } : {}),
             ...(opts.sessionStartTs ? { sessionstartts: opts.sessionStartTs } : {}),
+            ...(opts.end ? { end: opts.end } : {}),
         });
         if (current.token !== token) {
             return;
@@ -105,8 +128,11 @@ async function loadChangesForCwd(token: string, cwd: string | null, opts: LoadOp
             upstream: ch.upstream ?? "",
             upstreamAhead: ch.upstreamahead ?? 0,
             upstreamBehind: ch.upstreambehind ?? 0,
+            ...(opts.end ? { end: opts.end } : {}),
+            ...(ch.numstaterror ? { numstatError: ch.numstaterror } : {}),
         });
         globalStore.set(filesErrorAtom, false);
+        globalStore.set(filesRefreshFailedAtom, false);
         if (isInitial) {
             // Deliberately always the first file: a deep link is claimed by the history store, which owns
             // the *visible* selection. Honouring it here as well would load one file's diff and then have
@@ -118,12 +144,19 @@ async function loadChangesForCwd(token: string, cwd: string | null, opts: LoadOp
         }
         // A refresh deliberately does nothing to the selection: never move it out from under the user.
         // The open file's content is re-read by the surface, which keys off this state's identity.
-    } catch {
-        if (current.token === token) {
-            // a failed git RPC is an error, not a clean "not a repo" — flag it so the surface says so.
-            globalStore.set(filesErrorAtom, true);
-            globalStore.set(filesStateAtom, { ...EMPTY, cwd });
+    } catch (e) {
+        if (current.token !== token) {
+            return;
         }
+        // a refresh of a good read keeps it on screen; with no good read yet there is nothing to keep
+        if (!isInitial && !globalStore.get(filesErrorAtom) && globalStore.get(filesStateAtom) != null) {
+            console.warn("refreshing the change list of", cwd, e);
+            globalStore.set(filesRefreshFailedAtom, true);
+            return;
+        }
+        // a failed git RPC is an error, not a clean "not a repo" — flag it so the surface says so.
+        globalStore.set(filesErrorAtom, true);
+        globalStore.set(filesStateAtom, { ...EMPTY, cwd });
     }
 }
 
@@ -133,8 +166,8 @@ export async function reloadChanges(cwd: string | null): Promise<void> {
     if (!current.token) return;
     // reuse the already-resolved concrete base (a sha for worktree/run modes, "" for live) so the
     // reload stays anchored to the same point the initial load picked.
-    const ref = globalStore.get(filesStateAtom)?.ref ?? "";
-    await loadChangesForCwd(current.token, cwd, { ref }, false);
+    const state = globalStore.get(filesStateAtom);
+    await loadChangesForCwd(current.token, cwd, { ref: state?.ref ?? "", end: state?.end ?? "" }, false);
 }
 
 // The Diff surface reads its change list once on mount and otherwise has no way to learn a file was
@@ -154,6 +187,7 @@ function beginLoad(token: string): void {
     globalStore.set(filesStateAtom, null);
     globalStore.set(filesSelectedPathAtom, null);
     globalStore.set(filesErrorAtom, false);
+    globalStore.set(filesRefreshFailedAtom, false);
 }
 
 export interface ScopeAgent {
@@ -169,6 +203,9 @@ export async function loadFilesForScope(scope: DiffScope, agent?: ScopeAgent): P
     const cwd = await resolveScopeCwd(scope.repo.origin, agent);
     if (current.token !== token) {
         return;
+    }
+    if (scope.repo.origin.kind === "agent" && cwd) {
+        agentCwds.set(scope.repo.origin.id, cwd);
     }
     const opts = await resolveRangeOpts(scope.range, agent?.transcriptPath);
     if (current.token !== token) {
@@ -190,7 +227,7 @@ async function resolveScopeCwd(origin: DiffOrigin, agent?: ScopeAgent): Promise<
 async function resolveRangeOpts(range: DiffRange, transcriptPath?: string): Promise<LoadOpts> {
     switch (range.kind) {
         case "run":
-            return { ref: range.baseCommit };
+            return range.headCommit ? { ref: range.baseCommit, end: range.headCommit } : { ref: range.baseCommit };
         case "session":
             // anchor on the session-start commit so committed work stays visible (a plain vs-HEAD
             // diff would collapse to nothing after the agent commits). Null degrades to the live diff.

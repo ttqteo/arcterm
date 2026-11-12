@@ -70,6 +70,12 @@ export async function refreshCardGit(id: string, transcriptPath: string | undefi
             setStats(id, null);
             return;
         }
+        if (ch.numstaterror) {
+            // the file list is there but its line counts are not: a +0 −0 chip would claim no edits
+            console.warn(`cardgit: line counts failed for agent ${id}`, ch.numstaterror);
+            setStats(id, null);
+            return;
+        }
         const stats = diffStatsFromChanges(parseGitChanges(ch.statusz, ch.numstat));
         setStats(id, stats.files > 0 ? stats : null);
     } catch {

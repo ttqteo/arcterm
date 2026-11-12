@@ -357,8 +357,12 @@ export function steerTarget(run: Run, agents: AgentVM[]): AgentVM | undefined {
 }
 
 // the tree a run works in: its own wave/<runId> tree when its lanes land there, else the project checkout.
-// Mirrors jarvis.LandPath.
-export function runTree(run: Pick<Run, "projectpath" | "landpath">): string {
+// Mirrors jarvis.LandPath, except that a landed run reads from the checkout: landing removes its tree (but keeps
+// landpath), and the --no-ff merge leaves every commit of it reachable there.
+export function runTree(run: Pick<Run, "projectpath" | "landpath" | "land">): string {
+    if (run.land?.state === "landed") {
+        return run.projectpath;
+    }
     return run.landpath || run.projectpath;
 }
 

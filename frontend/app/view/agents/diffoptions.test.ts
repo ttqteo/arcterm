@@ -3,11 +3,13 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    isNewFile,
     LABELLED_MIN_PX,
     optionItems,
     paneHeaderLayout,
     paneOptions,
     SPLIT_MIN_PX,
+    splitHintText,
     type OptionsState,
 } from "./diffoptions";
 
@@ -49,6 +51,14 @@ describe("the pane header's layout at a measured width", () => {
     });
     it("treats an unmeasured pane as narrow", () => {
         expect(paneHeaderLayout(0)).toEqual({ split: false, labelled: false });
+    });
+});
+
+describe("commenting", () => {
+    // the comment + is a glyph-margin widget, which Monaco only draws with the margin on
+    it("draws the glyph margin in both views", () => {
+        expect(paneOptions(false, false, false).glyphMargin).toBe(true);
+        expect(paneOptions(true, false, false).glyphMargin).toBe(true);
     });
 });
 
@@ -140,5 +150,38 @@ describe("the ⋯ menu's items", () => {
         for (const i of off.filter((x) => x.disabled)) {
             expect(i.reason).toBeTruthy();
         }
+    });
+});
+
+describe("the hint on removed lines in the unified view", () => {
+    it("points at the split toggle when the pane can draw split", () => {
+        expect(splitHintText(true)).toBe("Removed lines: switch to split (⇧D) to comment on them");
+    });
+    // ⇧D does nothing on a narrow pane, so naming it there would send the reader to a dead key
+    it("says how to make room for split when the pane is too narrow", () => {
+        expect(splitHintText(false)).toBe(
+            "Removed lines: hide the panel (⇧B) or widen the window to use split view and comment on them"
+        );
+    });
+});
+
+describe("a new file", () => {
+    // a new file is one all-lines hunk, so a + on every line says nothing
+    it("drops the per-line +/- markers only for a new file", () => {
+        expect(paneOptions(false, false, false).renderIndicators).not.toBe(false);
+        expect(paneOptions(false, false, false, false).renderIndicators).not.toBe(false);
+        expect(paneOptions(false, false, false, true).renderIndicators).toBe(false);
+    });
+
+    it("keeps every other option as it is for any file", () => {
+        const { renderIndicators: _, ...asNew } = paneOptions(true, true, true, true);
+        expect(asNew).toEqual(paneOptions(true, true, true));
+    });
+
+    it("is new only when the original is empty and the modified is not", () => {
+        expect(isNewFile("", "a\n")).toBe(true);
+        expect(isNewFile("", "")).toBe(false);
+        expect(isNewFile("a\n", "b\n")).toBe(false);
+        expect(isNewFile("a\n", "")).toBe(false);
     });
 });

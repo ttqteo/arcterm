@@ -4,11 +4,11 @@
 // A finished run's report, structured (design L508-537): the lead line, then each section with its count,
 // a commit hash that opens its diff, and the task tag. "raw markdown" shows the file as filed.
 
-import { diffScopeOfRun, openDiff } from "@/app/view/agents/agentdiffnav";
+import { openRunDiff } from "@/app/view/agents/agentdiffnav";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { InlineMarkdown } from "@/app/view/agents/inlinemarkdown";
 import { SectionLabel } from "@/app/view/agents/sectionlabel";
-import { cn } from "@/util/util";
+import { cn, fireAndForget } from "@/util/util";
 import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { briefUndo } from "./briefundo";
@@ -81,7 +81,7 @@ export function RunReportView({ model, run, compact }: { model: AgentsViewModel;
                                         <button
                                             type="button"
                                             title="Open this commit's diff"
-                                            onClick={() => openDiff(model, diffScopeOfRun(run))}
+                                            onClick={() => fireAndForget(() => openRunDiff(model, run))}
                                             className="w-16 flex-none cursor-pointer text-left font-mono text-[11px] text-accent-soft hover:underline"
                                         >
                                             {it.hash}
@@ -106,7 +106,7 @@ export function RunReportView({ model, run, compact }: { model: AgentsViewModel;
                     ))}
                     <button
                         type="button"
-                        onClick={() => openDiff(model, diffScopeOfRun(run))}
+                        onClick={() => fireAndForget(() => openRunDiff(model, run))}
                         className={cn(LINK, "inline-flex items-center gap-1 self-start")}
                     >
                         open the repository diff

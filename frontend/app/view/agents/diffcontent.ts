@@ -10,7 +10,9 @@
 export type CompareForm = "mergebase" | "tips";
 
 export type DiffSelection =
-    | { kind: "worktree"; anchorRef: string }
+    // head: the sha HEAD pointed at when the change list was read, "" with no commits. end: a bounded
+    // range's tip (a landed run), read in place of the file on disk
+    | { kind: "worktree"; anchorRef: string; head?: string; end?: string }
     | { kind: "commit"; hash: string }
     | { kind: "compare"; base: string; head: string; mergeBase: string; form: CompareForm };
 
@@ -24,8 +26,13 @@ export interface DiffPairRefs {
 
 export function pairRefsFor(sel: DiffSelection): DiffPairRefs {
     switch (sel.kind) {
+        // A comment made on this pair stores its refs and names them in the prompt; the symbolic HEAD
+        // would name a different commit once the agent commits, so an unanchored tree takes the sha.
         case "worktree":
-            return { original: { kind: "ref", ref: sel.anchorRef || "HEAD" }, modified: { kind: "worktree" } };
+            return {
+                original: { kind: "ref", ref: sel.anchorRef || sel.head || "HEAD" },
+                modified: sel.end ? { kind: "ref", ref: sel.end } : { kind: "worktree" },
+            };
         // "^" is the first parent, matching gitinfo.commitBase: for a merge that is the conventional
         // "what did this bring in", and for a root commit it simply misses, which the pane renders as
         // an addition — correct, since a root commit adds everything.

@@ -62,15 +62,17 @@ import {
     historyRowsAtom,
     historyScrollAtom,
     loadMoreHistory,
+    retryHistory,
     retrySelectedCommit,
     selectCommit,
     selectCommitFile,
     selectedCommitAtom,
     selectedFileAtom,
 } from "./githistorystore";
+import { GitFailureColumn } from "./gitstatepanels";
 import { HistoryPane } from "./historypane";
 import { countLabel } from "./historyquery";
-import { worktreeCaption } from "./historyrows";
+import { commitCount, worktreeCaption } from "./historyrows";
 import { RefPicker } from "./refpicker";
 import { SourcePicker } from "./sourcepicker";
 import { SyncBar, SyncFailure } from "./syncbar";
@@ -196,6 +198,7 @@ export function DiffPanel({
     onPickWorktree,
     onRevealFile,
     unreadable,
+    historyFailure = null,
     review,
 }: {
     // the sync failure's "Open a terminal here" launches through it
@@ -213,6 +216,9 @@ export function DiffPanel({
     onRevealFile: (path: string) => void;
     // the repository cannot be read: the surface says so beside the panel, and the tabs have nothing to list
     unreadable: boolean;
+    // the history read failed but the change list is good: the Log tab says so in place of the commit list, and the
+    // working tree, its list and the diff stay usable
+    historyFailure?: GitFailure | null;
     // the Log tab's lists' review subject (reviewmarks.ts); null draws no checks
     review: ReviewSubject | null;
 }) {
@@ -367,26 +373,36 @@ export function DiffPanel({
                                     onSelect={(id) => cwd && fireAndForget(() => selectCompareRow(cwd, id))}
                                 />
                             ) : (
-                                <HistoryPane
-                                    rows={historyRows ?? []}
-                                    selected={selectedCommit}
-                                    // a filtered set mostly lacks its own parents, so lane assignment would sprawl to
-                                    // the fold limit and draw edges to commits that are not there
-                                    graphOn={graphOn && !historyFiltered}
-                                    loading={historyRows == null}
-                                    countLabel={countLabel(
-                                        historyFilters,
-                                        historyRows?.length ?? 0,
-                                        historyRows == null
+                                // in place of the commit list when its read failed; the working-tree row is the only row
+                                // a failed read leaves, and with no row the pane would read "No commits", which is not
+                                // what happened
+                                <div className="flex min-h-0 flex-1 flex-col">
+                                    {historyFailure ? (
+                                        <GitFailureColumn failure={historyFailure} onRetry={retryHistory} />
+                                    ) : null}
+                                    {historyFailure && (historyRows?.length ?? 0) === 0 ? null : (
+                                        <HistoryPane
+                                            rows={historyRows ?? []}
+                                            selected={selectedCommit}
+                                            // a filtered set mostly lacks its own parents, so lane assignment would
+                                            // sprawl to the fold limit and draw edges to commits that are not there
+                                            graphOn={graphOn && !historyFiltered}
+                                            loading={historyRows == null}
+                                            countLabel={countLabel(
+                                                historyFilters,
+                                                commitCount(historyRows ?? []),
+                                                historyRows == null
+                                            )}
+                                            filtered={historyFiltered}
+                                            initialScroll={historyScroll}
+                                            hasMore={historyHasMore}
+                                            appendState={historyAppend}
+                                            onSelect={(hash) => cwd && fireAndForget(() => selectCommit(cwd, hash))}
+                                            onScroll={(top) => globalStore.set(historyScrollAtom, top)}
+                                            onLoadMore={() => fireAndForget(() => loadMoreHistory())}
+                                        />
                                     )}
-                                    filtered={historyFiltered}
-                                    initialScroll={historyScroll}
-                                    hasMore={historyHasMore}
-                                    appendState={historyAppend}
-                                    onSelect={(hash) => cwd && fireAndForget(() => selectCommit(cwd, hash))}
-                                    onScroll={(top) => globalStore.set(historyScrollAtom, top)}
-                                    onLoadMore={() => fireAndForget(() => loadMoreHistory())}
-                                />
+                                </div>
                             )}
                         </div>
                         <div

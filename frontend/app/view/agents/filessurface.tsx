@@ -15,11 +15,12 @@ import { useKeybindings } from "@/app/store/keybindings/store";
 import { joinRepoPath, sameRepoPath } from "@/util/paths";
 import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, RotateCw } from "lucide-react";
 import { MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { agentDiffScope, projectDiffScope } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
+import { CommentSendBar } from "./commentsendbar";
 import { commitListAtom, commitSelectedAtom, selectCommitTabFile } from "./commitstore";
 import { AGGREGATE, buildCompareRows, compareNavIds } from "./comparerows";
 import {
@@ -37,9 +38,10 @@ import {
     selectCompareFile,
     selectCompareRow,
 } from "./comparestore";
+import { activeCommentSourceAtom, batchSourceFor } from "./diffcomments";
 import type { CompareForm, DiffSelection } from "./diffcontent";
 import { clearDiffPair, loadDiffPair } from "./diffcontentstore";
-import { panelAppliedKeyAtom, panelDirtyCount, panelTabAtom, panelTabToApply } from "./difflayout";
+import { diffBody, panelAppliedKeyAtom, panelDirtyCount, panelTabAtom, panelTabToApply } from "./difflayout";
 import { DiffPane } from "./diffpane";
 import { DiffPanel } from "./diffpanel";
 import {
@@ -51,8 +53,18 @@ import {
     scopeKey,
     type DiffOrigin,
 } from "./diffscope";
-import { defaultFocusId, focusFollowAgent } from "./diffsource";
-import { filesErrorAtom, filesStateAtom, loadFilesForScope, startChangesPoll, type FilesProject } from "./filesstore";
+import { defaultFocusId, endedAgentScope, focusFollowAgent, subjectState } from "./diffsource";
+import {
+    agentCwdOf,
+    filesErrorAtom,
+    filesRefreshFailedAtom,
+    filesStateAtom,
+    lineCountsKnown,
+    loadFilesForScope,
+    reloadChanges,
+    startChangesPoll,
+    type FilesProject,
+} from "./filesstore";
 import { activeReviewAtom, reviewSubjectFor } from "./reviewmarks";
 import {
     activeChangesAtom,
@@ -95,6 +107,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
     const projects: FilesProject[] = useAtomValue(projectListAtom);
     const state = useAtomValue(filesStateAtom);
     const loadError = useAtomValue(filesErrorAtom);
+    const refreshFailed = useAtomValue(filesRefreshFailedAtom);
     const historyRows = useAtomValue(historyRowsAtom);
     const historyFailure = useAtomValue(historyFailureAtom);
     const fetchStates = useAtomValue(fetchStatesAtom);
@@ -363,6 +376,20 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
     }, [review, shownChanges, shownPath, compareOn, selectedCommit]);
     useEffect(() => () => globalStore.set(activeReviewAtom, null), []);
 
+    // the pane and the send bar comment on this source without reaching into the surface; an ended agent
+    // still publishes its key (cwd "") so its stored batch stays reachable. Keyed on the two roster
+    // fields the source copies: any other roster tick must not republish it.
+    const agentRunId = agent?.runId;
+    const agentProject = agent?.project;
+    const commentSource = useMemo(
+        () => batchSourceFor(scope, state?.cwd, agent),
+        [scope, state?.cwd, agent?.id, agentRunId, agentProject]
+    );
+    useEffect(() => {
+        globalStore.set(activeCommentSourceAtom, commentSource);
+    }, [commentSource]);
+    useEffect(() => () => globalStore.set(activeCommentSourceAtom, null), []);
+
     // publish the visible column's rows for global j/k list-nav. cursor == selection: moving selects,
     // which loads that row's files and first diff. Must run before the early return (hooks rules).
     const navIds = compareOn ? compareNavIds(compareRows) : (historyRows ?? []).map((r) => r.hash);
@@ -408,8 +435,9 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
         }
         // In compare mode only the aggregate row means "the whole comparison"; a commit row there is
         // still one commit against its parent, exactly as in history.
+        // a working-tree side carries the sha HEAD pointed at, so a comment made on it keeps naming that commit
         const sel: DiffSelection = commitMode
-            ? { kind: "worktree", anchorRef: "" }
+            ? { kind: "worktree", anchorRef: "", head: commitEntry?.head || state?.head || "" }
             : compareOn
               ? compareSelection === AGGREGATE
                   ? {
@@ -421,12 +449,20 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                     }
                   : { kind: "commit", hash: compareSelection ?? "" }
               : selectedCommit === WORKING_TREE
-                ? { kind: "worktree", anchorRef: state?.ref ?? "" }
+                ? // a landed run's row reads base vs the run's own tip, not whatever is on disk now
+                  {
+                      kind: "worktree",
+                      anchorRef: state?.ref ?? "",
+                      head: state?.head ?? "",
+                      ...(state?.end ? { end: state.end } : {}),
+                  }
                 : { kind: "commit", hash: selectedCommit ?? "" };
         fireAndForget(() => loadDiffPair(cwd, shownPath, sel));
     }, [
         state?.cwd,
         state?.ref,
+        state?.head,
+        state?.end,
         shownPath,
         compareOn,
         compareRefs?.base,
@@ -451,10 +487,20 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
         );
     }
 
-    // a broken read is checked first: it also reports isRepo:false, and showing it as an absent repository would hide
-    // the reason behind a screen that reads like normality
-    const notARepo = historyFailure == null && state?.isRepo === false && !!state?.cwd;
-    const unreadable = historyFailure != null || notARepo;
+    // what the body says for its subject: nothing picked yet, or an agent that has left the roster
+    const subject = subjectState(scope, agents, projects);
+    const endedScope =
+        subject === "ended" && origin?.kind === "agent" ? endedAgentScope(agentCwdOf(origin.id), projects) : null;
+    const endedPath = endedScope?.repo.origin.kind === "project" ? endedScope.repo.origin.path : "";
+    // a broken read is checked first (diffBody): it also reports isRepo:false, and showing it as an absent repository
+    // would hide the reason behind a screen that reads like normality. A history failure over a good change list stays
+    // in the panel's Log tab, so the working tree, its list and the diff stay usable; compare reads no history, so a
+    // history failure has nothing to replace there.
+    const body = diffBody(historyFailure != null, state);
+    const historyFailedInPanel = body === "history-failure-in-panel" && !compareOn;
+    const wholeBodyFailure = body === "whole-body-failure" && historyFailure != null;
+    const notARepo = body === "not-a-repo";
+    const unreadable = wholeBodyFailure || notARepo || subject === "pick" || subject === "ended";
     // the panel holds the source dropdown, so a screen that says "pick another source" keeps it on show
     const showPanel = !panelFolded || unreadable;
     const commitShown = compareOn
@@ -482,6 +528,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                         onPickWorktree={pickWorktree}
                         onRevealFile={revealFile}
                         unreadable={unreadable}
+                        historyFailure={historyFailedInPanel ? historyFailure : null}
                         review={review}
                     />
                 ) : null}
@@ -506,6 +553,35 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                                 onDismiss={() => state?.cwd && dismissFetchFailure(state.cwd)}
                             />
                         ) : null}
+
+                        {/* one failed poll tick keeps the last good read on screen; this says it is stale, and stays
+                            until a read succeeds */}
+                        {refreshFailed && subject === "ready" ? (
+                            <SurfaceBanner
+                                data-refresh-failed
+                                tone="neutral"
+                                icon={<RotateCw size={14} />}
+                                action={{
+                                    label: "Retry",
+                                    onClick: () => fireAndForget(() => reloadChanges(state?.cwd ?? null)),
+                                }}
+                            >
+                                <span className="min-w-0 flex-1 truncate text-ink-hi">
+                                    Couldn’t refresh · showing the last read
+                                </span>
+                            </SurfaceBanner>
+                        ) : null}
+
+                        {/* git listed the working tree's files but one it could not read failed every line count; the
+                            exit status is already inside git's text */}
+                        {state?.numstatError && subject === "ready" ? (
+                            <GitFailureNotice
+                                title="Line counts unavailable"
+                                note="the changed files are still listed"
+                                failure={{ command: "git diff --numstat", exitcode: -1, stderr: state.numstatError }}
+                                onRetry={() => fireAndForget(() => reloadChanges(state.cwd))}
+                            />
+                        ) : null}
                     </div>
 
                     {/* the detailed panel below says the same thing with git's own words behind it */}
@@ -513,7 +589,36 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                         <SurfaceError message="Couldn’t read this repository." />
                     ) : null}
 
-                    {historyFailure ? (
+                    {subject === "pick" ? (
+                        <SurfaceEmptyState
+                            title="Pick something to review"
+                            body="Choose an agent or a project to see its changes."
+                            action={{ label: "Choose a source", onClick: revealSourcePicker }}
+                        />
+                    ) : subject === "ended" ? (
+                        <div data-subject-ended className="flex min-h-0 flex-1 flex-col">
+                            <div className="min-h-0 flex-1">
+                                {endedScope ? (
+                                    <SurfaceEmptyState
+                                        title="This agent has ended"
+                                        body={`Its changes are in ${endedPath}.`}
+                                        action={{
+                                            label: "Open its folder",
+                                            onClick: () => globalStore.set(model.diffScopeAtom, endedScope),
+                                        }}
+                                    />
+                                ) : (
+                                    <SurfaceEmptyState
+                                        title="This agent has ended"
+                                        body="Its folder was never read. Choose an agent or a project to see its changes."
+                                        action={{ label: "Choose a source", onClick: revealSourcePicker }}
+                                    />
+                                )}
+                            </div>
+                            {/* an ended agent's pending comments are still its batch to send */}
+                            <CommentSendBar model={model} />
+                        </div>
+                    ) : wholeBodyFailure && historyFailure ? (
                         <GitFailurePanel failure={historyFailure} onRetry={() => retryHistory()} />
                     ) : notARepo && state?.cwd ? (
                         <NotARepoPanel path={state.cwd} onChooseSource={revealSourcePicker} />
@@ -551,6 +656,10 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                             }
                             folded={panelFolded}
                             onStepFile={selectShownFile}
+                            lineCounts={lineCountsKnown(
+                                state,
+                                !commitMode && !compareOn && selectedCommit === WORKING_TREE
+                            )}
                             review={
                                 commitMode
                                     ? {

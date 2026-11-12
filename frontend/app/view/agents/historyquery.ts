@@ -31,6 +31,9 @@ export const SCROLL_THROTTLE_MS = 150;
 export const NEAR_BOTTOM_PX = 200;
 // A first read slower than this gets a notice with a Retry, so a hung git log is not an endless skeleton.
 export const SLOW_HISTORY_MS = 10_000;
+// Above gitinfo's 10 s gitTimeout, so git's own budget ends a hung read and the failure names the git command,
+// rather than the RPC's 5 s default ending it with a bare timeout.
+export const HISTORY_RPC_TIMEOUT_MS = 15_000;
 
 const filled = (s: string): string => s.trim();
 

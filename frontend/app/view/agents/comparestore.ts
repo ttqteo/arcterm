@@ -49,6 +49,29 @@ export const compareSelectedFileAtom = atom<string | null>(null) as PrimitiveAto
 // A failed compare read, phrased with the refs in it so the column can name what did not resolve.
 export const compareErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 export const compareBranchesAtom = atom<BranchInfo[]>([]) as PrimitiveAtom<BranchInfo[]>;
+// whether the repository has any remote at all, which remote-tracking refs alone cannot say: a clone of a
+// never-fetched remote has a remote and no origin/* branches
+export const compareHasRemoteAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
+// The same fact per repository, for the sync bar: Fetch is on every source, not only inside a comparison. A repository
+// absent here has not been asked yet, which keeps Fetch on show; only a read that says "no remote" hides it.
+export const hasRemoteByRepoAtom = atom<Record<string, boolean>>({}) as PrimitiveAtom<Record<string, boolean>>;
+
+function setHasRemote(cwd: string, has: boolean): void {
+    const known = globalStore.get(hasRemoteByRepoAtom);
+    if (known[cwd] !== has) {
+        globalStore.set(hasRemoteByRepoAtom, { ...known, [cwd]: has });
+    }
+}
+
+// Asks git whether the repository has any remote; a failed read leaves it unknown rather than saying there is none.
+export async function loadHasRemote(cwd: string): Promise<void> {
+    try {
+        const rtn = await RpcApi.ListBranchesCommand(TabRpcClient, { projectpath: cwd });
+        setHasRemote(cwd, rtn.hasremote ?? false);
+    } catch {
+        // unknown stays unknown: Fetch stays on show
+    }
+}
 
 const commitChangesAtom = atom<GitChanges | null>(null) as PrimitiveAtom<GitChanges | null>;
 // What the selected compare commit's read is doing. commitChangesAtom is null both while it loads and
@@ -116,11 +139,34 @@ export async function loadCompareRefsMeta(cwd: string): Promise<string> {
         // backend's default branch now prefers the remote one (T2)
         const rtn = await RpcApi.ListBranchesCommand(TabRpcClient, { projectpath: cwd, includeremotes: true });
         globalStore.set(compareBranchesAtom, rtn.branches ?? []);
+        globalStore.set(compareHasRemoteAtom, rtn.hasremote ?? false);
+        setHasRemote(cwd, rtn.hasremote ?? false);
         return rtn.default ?? "";
     } catch {
         globalStore.set(compareBranchesAtom, []);
+        globalStore.set(compareHasRemoteAtom, false);
         return "";
     }
+}
+
+// The pair compare opens on. A remembered pair is the user's own choice and wins as it stands. Otherwise it is the
+// default branch against the checked-out one, and when those are the same branch (on main, the common case)
+// comparing a ref with itself shows nothing, so head becomes the most recently committed local branch instead
+// (branches arrive sorted by recency). With no other local branch it stays as it is and the picker is where to
+// change it.
+export function defaultComparePair(i: {
+    def: string;
+    current: string;
+    prev: CompareRefs | null;
+    branches: BranchInfo[];
+}): CompareRefs {
+    const base = i.prev?.base || i.def;
+    const head = i.prev?.head || i.current;
+    if (i.prev != null || head !== base) {
+        return { base, head };
+    }
+    const other = i.branches.find((b) => !b.remote && b.name !== base);
+    return { base, head: other?.name ?? head };
 }
 
 // Enter compare on the checked-out branch against the repo's default branch — the review question,
@@ -139,8 +185,12 @@ export async function enterCompare(cwd: string, currentBranch: string): Promise<
     globalStore.set(compareAggregateAtom, null);
     const def = await loadCompareRefsMeta(cwd);
     const prev = remembered.cwd === cwd ? globalStore.get(compareRefsAtom) : null;
-    const base = prev?.base || def;
-    const head = prev?.head || currentBranch;
+    const { base, head } = defaultComparePair({
+        def,
+        current: currentBranch,
+        prev,
+        branches: globalStore.get(compareBranchesAtom),
+    });
     globalStore.set(diffScopeAtom, { ...scope, range: { kind: "compare", base, head, form: "mergebase", from } });
     await setCompareRefs(cwd, base, head);
 }
@@ -200,6 +250,16 @@ export async function setCompareRefs(cwd: string, base: string, head: string): P
             globalStore.set(compareErrorAtom, `Couldn’t compare ${base} with ${head}.`);
         }
     }
+}
+
+// Re-reads the pair on screen, for the `r` key. The refs may have moved under it (a commit, a fetch from a
+// terminal), so this is the same read a typed pair gets.
+export async function refreshCompare(cwd: string): Promise<void> {
+    const refs = globalStore.get(compareRefsAtom);
+    if (refs == null) {
+        return;
+    }
+    await setCompareRefs(cwd, refs.base, refs.head);
 }
 
 // A form change is a different question about the same two refs, so it re-reads the aggregate and the

@@ -7,11 +7,13 @@
 
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
+import { useAtomValue } from "jotai";
 import { Copy, Loader2 } from "lucide-react";
 import { formatAgo } from "./agentsviewmodel";
 import { ChangedFileList, ReviewProgress, TreeModeToggle } from "./changedfilelist";
 import { type ChangesStatus } from "./changesstatus";
 import { filesListLabel } from "./fileslistlabel";
+import { filesStateAtom, lineCountsKnown } from "./filesstore";
 import { type GitChanges } from "./gitstatus";
 import { WORKING_TREE, refChipClass, type HistoryRow } from "./historyrows";
 import type { ReviewSubject } from "./reviewmarks";
@@ -89,6 +91,8 @@ export function CommitPane({
     // the working-tree row's "measured from what" line; worktreeCaption builds it
     caption?: string;
 }) {
+    // the working tree's list stands when git could not count its lines; its +N −N are then left out, never zeros
+    const filesState = useAtomValue(filesStateAtom);
     if (row == null) {
         return (
             <div className="flex h-full items-center justify-center px-[20px] text-center text-[12.5px] text-muted">
@@ -98,6 +102,7 @@ export function CommitPane({
     }
     const isWorkingTree = row.hash === WORKING_TREE;
     const label = filesListLabel(listStatus, changes);
+    const lineCounts = lineCountsKnown(filesState, isWorkingTree);
     return (
         <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex-none border-b border-edge-faint px-[12px] pb-[9px] pt-[8px]">
@@ -117,7 +122,7 @@ export function CommitPane({
                         {label.text}
                     </span>
                     <div className="flex-1" />
-                    {label.counts ? (
+                    {label.counts && lineCounts ? (
                         <>
                             <span className="text-[11px] font-semibold tabular-nums text-diff-added">
                                 +{changes?.adds ?? 0}
@@ -148,6 +153,7 @@ export function CommitPane({
                             selectedFile={selectedFile}
                             onSelectFile={onSelectFile}
                             review={review}
+                            lineCounts={lineCounts}
                         />
                 )}
             </div>

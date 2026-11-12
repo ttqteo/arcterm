@@ -26,7 +26,7 @@ import {
 import { GraphGutter } from "./graphgutter";
 import { HistoryFilterRow } from "./historyfilterrow";
 import { HISTORY_PAGE_SIZE, NEAR_BOTTOM_PX, SCROLL_THROTTLE_MS, noMatchSentence, slowSeconds } from "./historyquery";
-import { authorInitials, refChipClass, rowTitle, type HistoryRow } from "./historyrows";
+import { authorInitials, commitCount, refChipClass, rowTitle, type HistoryRow } from "./historyrows";
 
 const ROW_H = 28;
 const HASH_W = 48;
@@ -356,7 +356,7 @@ export function HistoryPane({
                             </button>
                         ) : appendState === "loading" ? (
                             <div className="flex h-[28px] items-center px-[8px] text-[11px] tabular-nums text-muted">
-                                {`loading commits ${rows.length + 1}–${rows.length + HISTORY_PAGE_SIZE}…`}
+                                {`loading commits ${commitCount(rows) + 1}–${commitCount(rows) + HISTORY_PAGE_SIZE}…`}
                             </div>
                         ) : null}
                     </div>

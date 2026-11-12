@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { DiffScope } from "./diffscope";
-import { defaultFocusId, focusFollowAgent } from "./diffsource";
+import { defaultFocusId, endedAgentScope, focusFollowAgent, subjectState } from "./diffsource";
 
 const agents = [
     { id: "a1", name: "jarvis-recall" },
@@ -53,6 +53,54 @@ describe("run beats project beats agent", () => {
     it("ignores a focus id no agent answers to", () => {
         expect(focusFollowAgent(agentScope("a1"), "gone", agents)).toBeNull();
         expect(focusFollowAgent(null, "", agents)).toBeNull();
+    });
+
+    // the Agent surface moves focus to the first agent when the focused one leaves, which must not carry the
+    // surface off the ended agent's state before it can be read
+    it("holds an agent scope whose agent has left the roster", () => {
+        expect(focusFollowAgent(agentScope("gone"), "a1", agents)).toBeNull();
+    });
+});
+
+describe("subjectState", () => {
+    it("is empty with no agents, no projects and no scope", () => {
+        expect(subjectState(null, [], [])).toBe("empty");
+    });
+
+    it("asks to pick when sources exist but nothing is scoped", () => {
+        expect(subjectState(null, agents, [])).toBe("pick");
+        expect(subjectState(null, [], [{ name: "waveterm" }])).toBe("pick");
+    });
+
+    it("is ended for an agent scope whose agent is not in the roster", () => {
+        expect(subjectState(agentScope("gone"), agents, [])).toBe("ended");
+    });
+
+    it("is ready for a live agent, a project, a worktree and a run", () => {
+        expect(subjectState(agentScope("a1"), agents, [])).toBe("ready");
+        expect(subjectState(projectScope, [], [])).toBe("ready");
+        expect(subjectState(worktreeScope, [], [])).toBe("ready");
+        expect(subjectState(runScope, [], [])).toBe("ready");
+    });
+});
+
+describe("endedAgentScope", () => {
+    const projects = [{ name: "waveterm", path: "D:\\repo\\waveterm" }];
+
+    it("re-scopes to the registered project at the agent's folder", () => {
+        const s = endedAgentScope("D:/repo/waveterm", projects);
+        expect(s?.repo.origin).toEqual({ kind: "project", name: "waveterm", path: "D:\\repo\\waveterm" });
+        expect(s?.range).toEqual({ kind: "working" });
+    });
+
+    it("falls back to the folder itself as a project named after it", () => {
+        const s = endedAgentScope("/work/scratch", projects);
+        expect(s?.repo.origin).toEqual({ kind: "project", name: "scratch", path: "/work/scratch" });
+    });
+
+    it("has nothing to re-scope to without a remembered folder", () => {
+        expect(endedAgentScope(undefined, projects)).toBeNull();
+        expect(endedAgentScope("", projects)).toBeNull();
     });
 });
 

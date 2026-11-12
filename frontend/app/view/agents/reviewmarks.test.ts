@@ -35,6 +35,7 @@ const pair = (path: string, original: string, modified: string): DiffPair => ({
     binary: false,
     tooLarge: false,
     size: 0,
+    refs: { original: { kind: "ref", ref: "HEAD" }, modified: { kind: "worktree" } },
 });
 const SUBJECT = "/repo|working";
 
