@@ -39,7 +39,10 @@ const TAU = Math.PI * 2;
 // past 1.5 the bloom's targets cost more than the softness they buy at this size (the study's cap)
 const MAX_DPR = 1.5;
 
-// Bloom replaces alpha; this hands it back from the light, so the glow has no rectangular edge on the app behind.
+// Bloom replaces alpha; this hands it back from the light (the study's formula), so the glow has no rectangular edge on
+// the app behind. The bloom spreads a faint haze to the canvas's edges, which on the app's lighter backgrounds than the
+// study's near-black read as a square: the light cut drops the haze, and the round fade keeps any rest of it off the
+// square's edge.
 const alphaFromLight = {
     uniforms: { tDiffuse: { value: null } },
     vertexShader: `varying vec2 vUv;
@@ -48,7 +51,9 @@ const alphaFromLight = {
         void main() {
             vec3 c = texture2D(tDiffuse, vUv).rgb;
             float light = max(max(c.r, c.g), c.b);
-            gl_FragColor = vec4(c, clamp((light - 0.008) / 0.992, 0.0, 1.0));
+            float edge = 1.0 - smoothstep(0.4, 0.49, distance(vUv, vec2(0.5)));
+            float a = clamp((light - 0.008) / 0.992, 0.0, 1.0) * smoothstep(0.02, 0.06, light) * edge;
+            gl_FragColor = vec4(c, a);
         }`,
 };
 
