@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A run's row in the Agent sidebar shows the RAM the whole run holds (its lead and every worker together) instead of
+  the lead's alone; hover it for the lead's own figure.
 - In a Chat box's bash mode (`!`), Tab now takes the grey command suggested from your history, as → does; with no
   suggestion showing, Tab still completes the word under the caret.
 - A session you start with a task is named after that task while Claude Code starts, instead of the project name,

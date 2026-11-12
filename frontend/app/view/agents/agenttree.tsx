@@ -278,7 +278,7 @@ import { ServerMark, StatusDot } from "./statusdot";
 import { clockTime } from "./monitortasks";
 import { backgroundTasksByIdAtom, focusSubagentAtom, monitorPeekAtom, subagentsByIdAtom } from "./subagentsstore";
 import { rowFieldsAtom } from "./rowfieldsstore";
-import { agentRamAtom, useAgentRamPoll } from "./agentramstore";
+import { agentRamAtom, runRamAtom, useAgentRamPoll } from "./agentramstore";
 import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
 import { attentionAtom, splitAttention } from "./attentionstore";
@@ -1193,7 +1193,11 @@ function ParentRow({
     const shownBranch = fields.branch ? notableBranch(branch) : undefined;
     const shownModel = fields.model ? agent.model : undefined;
     // what its processes hold now (agentram.ts); an asleep agent has none, whatever a reading still names
-    const ram = useAtomValue(agentRamAtom(agent.sleeping != null ? undefined : agent.blockId));
+    const ownRam = useAtomValue(agentRamAtom(agent.sleeping != null ? undefined : agent.blockId));
+    // a lead's row stands for its run, so it shows what the whole run holds: the lead, its workers, reviewers and
+    // stage sessions together, as the Resource Manager's run group adds them up
+    const runRam = useRunRam(model, lead?.run.runId);
+    const ram = lead != null ? runRam : ownRam;
     const focusId = useSelectedRowId(model);
     const now = useAtomValue(model.nowAtom);
     const oref = `block:${agent.blockId}`;
@@ -1396,7 +1400,11 @@ function ParentRow({
                     {fields.ram && ram ? (
                         <span
                             data-agent-ram={agent.id}
-                            title="RAM the agent and the commands it runs hold now"
+                            title={
+                                lead != null
+                                    ? `RAM the run's agents and the commands they run hold now (the lead alone: ${ownRam ?? "not read"})`
+                                    : "RAM the agent and the commands it runs hold now"
+                            }
                             className={RAM_COL}
                         >
                             {ram}
@@ -1642,6 +1650,8 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
     // drawn as a lead's row (ParentRow) is: a run reads the same whether or not its lead's tab is open, and only the
     // tokens a lead's session carries are missing
     const mark = leadMark(run, undefined);
+    const ramOn = useAtomValue(rowFieldsAtom).ram;
+    const ram = useRunRam(model, run.runId);
     return (
         <div
             onClick={() => show(false)}
@@ -1666,9 +1676,47 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
                 />
                 <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">{run.title}</span>
             </div>
-            <RunSubline model={model} run={run} open={open} live={live} leadless />
+            <RunSubline
+                model={model}
+                run={run}
+                open={open}
+                live={live}
+                leadless
+                trailing={
+                    ramOn && ram ? (
+                        <span
+                            data-run-ram={run.runId}
+                            title="RAM the run's agents and the commands they run hold now"
+                            className={RAM_COL}
+                        >
+                            {ram}
+                        </span>
+                    ) : undefined
+                }
+            />
         </div>
     );
+}
+
+// The RAM words for everything a run holds: its awake tabs' terminals (the lead, workers, reviewers, stage sessions)
+// summed. The block ids are picked into one string, so a row redraws when that set or the figure changes, not on every
+// roster update. Null with no run, or while no reading names any of them.
+function useRunRam(model: AgentsViewModel, runId: string | undefined): string | null {
+    const keyAtom = useMemo(
+        () =>
+            atom((get) =>
+                runId == null
+                    ? ""
+                    : runAgentsOf(get(model.lineageAtom), get(model.agentsAtom), runId)
+                          .filter((a) => a.blockId != null && a.sleeping == null)
+                          .map((a) => a.blockId)
+                          .sort()
+                          .join(",")
+            ),
+        [model, runId]
+    );
+    const key = useAtomValue(keyAtom);
+    return useAtomValue(runRamAtom(key));
 }
 
 // A task's worker under its run. A done task's worker opens as its read-only transcript, whether or not its tab

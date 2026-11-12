@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A run's row shows the whole run's RAM: with Settings → Appearance → Agent sidebar → RAM on and a run
+  working with its lead and two or more workers, the lead's row ends with the sum of the lead and its workers (about the
+  Resource Manager's run group added up, not the lead's figure alone); hover it → the tooltip names the lead's own
+  figure; a worker's row still shows its own; close the lead's tab → the lead-less run row shows the workers' sum
+  (`agenttree.tsx` useRunRam, `agentram.ts` runRamLabel; unit-tested only).
 - [ ] (arcterm) A sleeping agent goes back to its chat from a brainstorm: on a Claude agent asleep with its Brainstorm
   (or Canvas) showing, click Chat in the header → the conversation shows; Alt+C walks Chat ↔ Brainstorm and never
   Terminal, which stays dimmed and disabled; wake it → it opens in the Chat/Terminal mode it had before
