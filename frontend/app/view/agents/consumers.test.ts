@@ -6,6 +6,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import {
     buildConsumers,
     BURN_WARN_TOKENS,
+    canDrive,
     canPick,
     canSleep,
     closePickedConfirm,
@@ -262,6 +263,26 @@ describe("buildConsumers", () => {
         expect(canSleep(vm("a", { state: "idle", agent: undefined }))).toBe(false);
         expect(canSleep(vm("a", { state: "idle", runId: "r" }))).toBe(false);
         expect(canSleep(vm("a", { state: "working" }))).toBe(false);
+    });
+
+    it("canSleep takes kind agent as the sidebar's Sleep does, and refuses codex, a run's agent, a busy one and an asleep one", () => {
+        expect(canSleep(vm("a", { state: "idle", kind: "agent" }))).toBe(true);
+        expect(canSleep(vm("a", { state: "idle", kind: "agent", agent: "pi" }))).toBe(true);
+        expect(canSleep(vm("a", { state: "idle", kind: "agent", agent: "codex" }))).toBe(false);
+        expect(canSleep(vm("a", { state: "idle", agent: "codex" }))).toBe(false);
+        expect(canSleep(vm("a", { state: "idle", kind: "agent", runId: "r" }))).toBe(false);
+        expect(canSleep(vm("a", { state: "working", kind: "agent" }))).toBe(false);
+        expect(canSleep(vm("a", { state: "idle", sleeping: { since: 1, freedBytes: 0 } }))).toBe(false);
+    });
+
+    it("canDrive: an agent with a terminal block that is awake", () => {
+        expect(canDrive(vm("a", { blockId: "blk-a" }))).toBe(true);
+        expect(canDrive(vm("a", { blockId: "blk-a", state: "idle" }))).toBe(true);
+        // asleep: its process is gone, so what is typed lands on a dead PTY
+        expect(canDrive(vm("a", { blockId: "blk-a", sleeping: { since: 1, freedBytes: 0 } }))).toBe(false);
+        // no terminal block: nothing to type into
+        expect(canDrive(vm("a", { blockId: undefined }))).toBe(false);
+        expect(canDrive(vm("a"))).toBe(false);
     });
 
     it("never offers → Sonnet to a sleeping agent", () => {

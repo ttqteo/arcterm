@@ -6,13 +6,14 @@
 // (narrationtimeline.tsx), the compact read (compacttranscript.tsx) and chat (chatconversation.tsx); each marks its
 // prompts with data-user-prompt.
 // The scroll back is smooth, so the reply visibly runs back up to the prompt it answers, unless motion is reduced.
-// The band sticks at the scroller's padding edge, so a scroller that holds it has no top padding: content scrolling
-// past would show in the gap above the band.
+// A sticky row sticks below the scroller's top padding, which would leave a gap above the band that content scrolling
+// past shows in. So the bar covers the padding itself: it reads its scroller's padding-top, lifts the row by that much
+// and adds it to the band's top padding, and a scroller that holds it may have any top padding.
 
 import { cn } from "@/util/util";
 import { ArrowUp } from "lucide-react";
 import { useReducedMotion } from "motion/react";
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useState, type RefObject } from "react";
 import { pinnedPromptIndex, PROMPT_JUMP_EVENT } from "./pinnedprompt";
 
 const PROMPT_SELECTOR = "[data-user-prompt]";
@@ -68,6 +69,25 @@ export function usePinnedPrompt(rootRef: RefObject<HTMLElement>): number {
     return index;
 }
 
+/** The top padding, in px, of the scroller root sits in while `on`, kept as it changes: the padding is a style a resize or
+ *  a responsive class can change, and a change resizes the scroller's content box, which is what is observed. */
+function useScrollerPaddingTop(rootRef: RefObject<HTMLElement>, on: boolean): number {
+    const [pad, setPad] = useState(0);
+    useLayoutEffect(() => {
+        const scroller = on ? scrollParent(rootRef.current) : null;
+        if (scroller == null) {
+            setPad(0);
+            return;
+        }
+        const read = () => setPad(parseFloat(getComputedStyle(scroller).paddingTop) || 0);
+        read();
+        const ro = new ResizeObserver(read);
+        ro.observe(scroller);
+        return () => ro.disconnect();
+    }, [rootRef, on]);
+    return pad;
+}
+
 /** The pinned prompt: a zero-height sticky row, so showing it never moves the transcript under it. bg is the
  *  scroller's own background, which the row's band paints over what scrolls beneath it. className goes on the sticky
  *  row, for a parent that spaces its children (a flex gap) and so must cancel the gap the row would add. cardClassName
@@ -89,7 +109,9 @@ export function PinnedPromptBar({
     cardClassName?: string;
 }) {
     const reduce = useReducedMotion();
-    if (index < 0 || text == null) {
+    const shown = index >= 0 && text != null;
+    const pad = useScrollerPaddingTop(rootRef, shown);
+    if (!shown) {
         return null;
     }
     const jump = () => {
@@ -101,10 +123,19 @@ export function PinnedPromptBar({
         root.dispatchEvent(new Event(PROMPT_JUMP_EVENT, { bubbles: true }));
         target.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
     };
-    // with an earlier prompt above it, the bar reads as the top of a stack: one card's edge shows under it, never more
+    // with an earlier prompt above it, the bar reads as the top of a stack: one card's edge shows under it, never more.
+    // The row sticks below the scroller's top padding: `top` lifts it by the padding and the band's own top padding grows
+    // by the same, so the band paints the gap above the card and the card stays where it was
     return (
-        <div data-pinned-prompt className={cn("sticky top-0 z-10 h-0", className)}>
-            <div className={cn("pb-2 pt-1", bg)}>
+        <div
+            data-pinned-prompt
+            className={cn("sticky top-0 z-10 h-0", className)}
+            style={pad > 0 ? { top: -pad } : undefined}
+        >
+            <div
+                className={cn("pb-2 pt-1", bg)}
+                style={pad > 0 ? { paddingTop: `calc(0.25rem + ${pad}px)` } : undefined}
+            >
                 <div className={cn("relative", cardClassName)}>
                     {index > 0 ? (
                         <div

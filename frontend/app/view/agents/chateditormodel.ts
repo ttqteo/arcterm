@@ -37,8 +37,13 @@ export function mentionText(path: string): string {
 }
 
 /** Pure: `text` as runs of text and file pills, in order, with no empty run and no two text runs side by side. A mention
- *  the caret is in or at the end of (still being typed) stays text, as in `mentionTokens`. */
-export function segmentsOf(text: string, caret?: number): Segment[] {
+ *  the caret is in or at the end of (still being typed) stays text, as in `mentionTokens`. With `pills: false` (a bash
+ *  command: the shell knows no `@` mentions, and the ghost text mirrors the plain text) the text is one run and no pill is
+ *  made, whatever it holds. */
+export function segmentsOf(text: string, caret?: number, opts?: { pills?: boolean }): Segment[] {
+    if (opts?.pills === false) {
+        return text === "" ? [] : [{ kind: "text", text }];
+    }
     const out: Segment[] = [];
     const addText = (run: string) => {
         if (run === "") {

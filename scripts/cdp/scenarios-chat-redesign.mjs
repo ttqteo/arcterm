@@ -134,6 +134,7 @@ const lastFold = (id) => `[...(${layerOf(id)}?.querySelectorAll("[data-chat-work
 const KEYS = {
     escape: { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 },
     backspace: { key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 },
+    enter: { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 },
 };
 
 export default function (kit) {
@@ -704,6 +705,84 @@ export default function (kit) {
                     `${name}: at the builder check the card is [data-chat-bscard-kind="check"], there is no [data-chat-bscard-pointer] line, and no [data-chat-bscard-option] row is drawn`,
                     up && card.checkCard && !card.pointer && card.options === 0,
                     card
+                );
+            });
+
+            // 14c. a question typed back while the card waits is no answer: the card goes (the reply is the agent's to take),
+            // and comes back once the agent rewrites the file still asking it; the typed message's ✓ row says "You replied"
+            // and a clicked option's says "You picked"
+            await run("14c. brainstorm card typed reply", async (name) => {
+                const TYPED = "should the cap stay at 30 seconds?";
+                const questionCard = `${layerOf(A)}?.querySelector('[data-chat-bscard-kind="question"]')`;
+                // the answered rows as [text, label at the row's end], read from the page
+                const rows = () =>
+                    h.ev(`(() => {
+                        const flat = ${FLAT};
+                        return [...(${layerOf(A)}?.querySelectorAll("[data-chat-bscard-answered]") ?? [])].map((r) => ({
+                            text: flat(r),
+                            label: flat(r.lastElementChild),
+                        }));
+                    })()`);
+                // step 14 left an answer to question 1 on record; a file written since, asking 1, brings the card back
+                await writeBrainstorm(h, ctx, FILES_BRAINSTORM.open);
+                const waiting = await polishWaitFor(h, `${questionCard}?.getAttribute("data-chat-bscard-state") === "waiting"`, WAIT_MS);
+                await polishNap(600);
+                // 1. a question typed back in the box, sent
+                await clearBox(h, A);
+                await typeInBox(h, A, TYPED);
+                await key(h, KEYS.enter);
+                // the box empties once the message went (an empty editor reads "\\n")
+                const sentOk = await polishWaitFor(h, `((${inputOf(A)})?.innerText ?? "x").trim() === ""`, SHORT_MS);
+                // the message lands in the transcript the way the harness writes it
+                append(ctx, AC.userText(TYPED, ts(ctx)));
+                const hidden = await polishWaitFor(h, `${questionCard} == null`, WAIT_MS);
+                const replied = await polishWaitFor(
+                    h,
+                    `[...(${layerOf(A)}?.querySelectorAll("[data-chat-bscard-answered]") ?? [])].some((r) => (r.textContent ?? "").includes(${JSON.stringify(TYPED)}))`,
+                    WAIT_MS
+                );
+                await polishNap(500);
+                const whileHidden = await rows();
+                await shot(h, "14c-typed-reply-hidden");
+                // 2. the agent rewrites the file, still asking question 1, later than the record
+                await polishNap(400);
+                await writeBrainstorm(
+                    h,
+                    ctx,
+                    brainstormFile({ question: { ...Q1, why: "The cap is one constant either way, so keeping it at 30 seconds costs nothing." } })
+                );
+                // 3. the question card is drawn again
+                const back = await polishWaitFor(h, `${questionCard}?.getAttribute("data-chat-bscard-state") === "waiting"`, WAIT_MS);
+                await polishNap(600);
+                const whenBack = await rows();
+                await shot(h, "14c-typed-reply-back");
+                // 4. the typed message's row reads "You replied"; step 14's answer, a record with no flag, still "You picked"
+                // (reported in the detail, not judged here: that row belongs to step 14)
+                const typedRow = whenBack.find((r) => r.text.includes(TYPED));
+                const oldRow = whenBack.find((r) => r.text.includes(ANSWER));
+                // 5. a click on an option of the card the agent asked again: its row reads "You picked"
+                const OPTION = "Fixed delay";
+                const clicked = await h.ev(`(() => {
+                    const b = ${layerOf(A)}?.querySelector('[data-chat-bscard-kind="question"] [data-chat-bscard-option="1"]');
+                    if (!b || b.disabled) return false;
+                    b.click();
+                    return true;
+                })()`);
+                append(ctx, AC.userText(OPTION, ts(ctx)));
+                const picked = await polishWaitFor(
+                    h,
+                    `[...(${layerOf(A)}?.querySelectorAll("[data-chat-bscard-answered]") ?? [])].some((r) => (r.textContent ?? "").includes(${JSON.stringify(OPTION)}))`,
+                    WAIT_MS
+                );
+                await polishNap(500);
+                const whenPicked = await rows();
+                await shot(h, "14c-picked");
+                const pickedRow = whenPicked.find((r) => r.text.includes(OPTION));
+                rec(
+                    `${name}: a question typed in the box hides the card and its [data-chat-bscard-answered] row reads "You replied"; once the file is rewritten still asking question 1 [data-chat-bscard-kind="question"] is drawn again; a clicked option's row reads "You picked"`,
+                    waiting && sentOk && hidden && replied && back && typedRow?.label === "You replied" && clicked && picked &&
+                        pickedRow?.label === "You picked",
+                    { waiting, sentOk, hidden, replied, whileHidden, back, whenBack, oldRow, clicked, picked, whenPicked }
                 );
             });
 

@@ -108,7 +108,12 @@ describe("boxAnswerRecord", () => {
             text: "Fade",
             sentAt: now,
             seen: 1,
+            typed: true,
         });
+    });
+
+    it("marks what the box sent as typed: its ✓ row says You replied, not You picked", () => {
+        expect(boxAnswerRecord(card(), "t", "keep it as 2.2?", [], now)?.typed).toBe(true);
     });
 
     it("records while the judge weighs, an answer in words", () => {
@@ -118,6 +123,7 @@ describe("boxAnswerRecord", () => {
             n: 2,
             text: "go with the second",
             seen: 0,
+            typed: true,
         });
     });
 

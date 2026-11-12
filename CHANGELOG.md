@@ -37,6 +37,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A long live transcript keeps only its last screens drawn while you follow it, instead of drawing every message the
+  session has added since you opened it.
 - A working run's row in the Agent sidebar says how many of its tasks are stuck (`Working · 1/6 · 3 stuck`), and hover
   names each one (`t-2 verify failed · t-3 stalled`), instead of reading as if all were moving.
 - A run's follow-ups initiative is filed under the topic it belongs to (Chat, Council…) instead of at the top of the
@@ -61,6 +63,19 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Chat's brainstorm card comes back when you ask the agent a question back instead of answering it, and the agent asks
+  that question again.
+- A typed answer's row in Chat says "You replied" instead of "You picked".
+- In a Chat box's bash mode (`!`), Tab escapes names with spaces or symbols, so `my file.txt` stays one word.
+- In bash mode, the Tab list closes when you click away from the box.
+- In bash mode, the grey suggestion stays on a long command's last line instead of drifting off its text.
+- In bash mode, an `@path` in the middle of a command stays plain text instead of turning into a file pill.
+- An inline visual in Chat takes on a new theme at once, instead of keeping the colours it loaded with.
+- Interrupt, Compact, Clear and Nudge are no longer offered on a sleeping agent, where they did nothing.
+- The pinned prompt in the Transcript tab no longer lets a line of text show above it.
+- Jumping to an item in the Transcript tab, such as a compaction marker, lands it below the pinned prompt instead of
+  under it.
+- Conversation History of a long live session no longer shifts its drawn messages or open folds while the session grows.
 - An agent whose launch failed no longer counts as an unread turn on the Agent badge.
 - A duplicated session's header names its harness while it starts, instead of Unknown.
 - Opening Code from the palette leaves the keyboard on its file tree, so j/k and the arrows work with no click first.

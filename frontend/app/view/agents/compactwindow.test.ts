@@ -13,6 +13,7 @@ import {
     keyFor,
     RENDER_CAP,
     topAction,
+    trimmedAnchor,
     windowStart,
     type ItemSpan,
 } from "./compactwindow";
@@ -137,6 +138,60 @@ describe("windowStart", () => {
     it("draws nothing for no items", () => {
         expect(windowStart([], null)).toBe(0);
         expect(windowStart([], 5)).toBe(0);
+    });
+});
+
+describe("trimmedAnchor", () => {
+    it("trims a reader who follows the end back to the last RENDER_CAP items", () => {
+        // 650 items, 600 of them drawn (the window starts at item 50): the new anchor is the item RENDER_CAP from the end
+        const spans = messages(650);
+        const next = trimmedAnchor(spans, spans[50].start, true);
+        expect(next).toBe(spans[650 - RENDER_CAP].start);
+        expect(650 - windowStart(spans, next)).toBe(RENDER_CAP);
+    });
+
+    it("trims a window that grew by one appended item", () => {
+        const spans = messages(RENDER_CAP + 1);
+        expect(trimmedAnchor(spans, 0, true)).toBe(1);
+    });
+
+    it("keeps the anchor of a reader scrolled up, however many items are drawn", () => {
+        const spans = messages(650);
+        expect(trimmedAnchor(spans, spans[50].start, false)).toBe(spans[50].start);
+        expect(trimmedAnchor(spans, 0, false)).toBe(0);
+    });
+
+    it("keeps the anchor when RENDER_CAP or fewer items are drawn", () => {
+        const spans = messages(650);
+        const at = spans[650 - RENDER_CAP].start;
+        expect(trimmedAnchor(spans, at, true)).toBe(at);
+        expect(trimmedAnchor(spans, spans[600].start, true)).toBe(spans[600].start);
+        expect(trimmedAnchor(messages(RENDER_CAP), 0, true)).toBe(0);
+        expect(trimmedAnchor(messages(30), 0, true)).toBe(0);
+    });
+
+    it("keeps no anchor before the first render with items", () => {
+        expect(trimmedAnchor(messages(500), null, true)).toBeNull();
+        expect(trimmedAnchor([], null, true)).toBeNull();
+    });
+
+    it("trims by key, so it holds after entries were put in front", () => {
+        // 100 entries in front: every old item has a negative-or-shifted key, and the trim reads the key of the new first item
+        const spans = [...Array.from({ length: 100 }, (_, i) => ({ start: i - 100, end: i - 99 })), ...messages(500)];
+        const next = trimmedAnchor(spans, spans[100].start, true);
+        expect(next).toBe(spans[spans.length - RENDER_CAP].start);
+        expect(spans.length - windowStart(spans, next)).toBe(RENDER_CAP);
+    });
+
+    it("trims a work item's span by the key of its first entry", () => {
+        const spans: ItemSpan[] = [
+            { start: 0, end: 1 },
+            { start: 1, end: 2 },
+            { start: 2, end: 7 }, // a work item of five tool calls
+            ...Array.from({ length: RENDER_CAP - 1 }, (_, i) => ({ start: 7 + i, end: 8 + i })),
+        ];
+        // RENDER_CAP + 2 items: the last RENDER_CAP start at the work item, so the anchor is its first entry's key
+        expect(trimmedAnchor(spans, 0, true)).toBe(2);
     });
 });
 

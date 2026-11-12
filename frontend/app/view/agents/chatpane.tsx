@@ -432,6 +432,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
             sent: s?.sent?.kind ?? null,
             seen: s != null ? (seenMarks[s.path] ?? null) : null,
             starting: s?.starting ?? null,
+            modifiedMs: s?.modifiedMs ?? null,
         });
     }, [
         brainstormState,

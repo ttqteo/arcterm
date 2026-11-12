@@ -505,14 +505,21 @@ export interface ChatBrainstorm {
 function answerKey(a: PairedAnswer | undefined): string {
     return a == null
         ? ""
-        : [a.kind, a.n, a.part, a.text, a.decisions, a.questions, a.calls, a.outcome, a.runId].join("\n");
+        : [a.kind, a.n, a.part, a.text, a.decisions, a.questions, a.calls, a.outcome, a.runId, a.typed].join("\n");
 }
 
 // the row a message that Arc sent draws in place of its bubble, by what the line was (a hidden line never gets here)
 function PairedRow({ answer }: { answer: PairedAnswer }) {
     switch (answer.kind) {
         case "answer":
-            return <ChatBrainstormAnswered n={answer.n} part={answer.part} text={answeredText(answer.text)} />;
+            return (
+                <ChatBrainstormAnswered
+                    n={answer.n}
+                    part={answer.part}
+                    text={answeredText(answer.text)}
+                    typed={answer.typed}
+                />
+            );
         case "builder-answer":
             return <ChatBrainstormBuilderAnswered n={answer.n} part={answer.part} text={answer.text} />;
         case "design":

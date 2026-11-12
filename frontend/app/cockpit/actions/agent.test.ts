@@ -80,6 +80,29 @@ describe("agent actions", () => {
         expect(applies("agent:compact", thing({ ...idle, agent: "pi" }, { contextLevel: "hot" }))).toBe(false);
         expect(applies("agent:compact", thing({ ...idle, blockId: undefined }, { contextLevel: "hot" }))).toBe(false);
     });
+    describe("a sleeping agent", () => {
+        const slept = { since: 1, freedBytes: 0 };
+        const typing = ["agent:nudge", "agent:interrupt", "agent:compact", "agent:clear"];
+        it("is offered none of the actions that type into its dead terminal, and still Open in split", () => {
+            const asleep = available(thing({ state: "idle", sleeping: slept }, { contextLevel: "hot" }));
+            for (const id of typing) {
+                expect(asleep).not.toContain(id);
+            }
+            expect(asleep).toContain("agent:split");
+            expect(asleep).toContain("agent:open");
+        });
+        it("is offered all four awake, at a context level that offers a reset", () => {
+            const awake = available(thing({ state: "idle" }, { contextLevel: "hot" }));
+            for (const id of typing) {
+                expect(awake).toContain(id);
+            }
+            expect(awake).toContain("agent:split");
+        });
+        it("is not offered Interrupt asleep even while its last state read working", () => {
+            expect(applies("agent:interrupt", thing({ state: "working", sleeping: slept }))).toBe(false);
+            expect(applies("agent:interrupt", thing({ state: "working" }))).toBe(true);
+        });
+    });
     it("offers Review changes only when the card has a diff", () => {
         expect(applies("agent:review", thing({}, { hasDiff: true }))).toBe(true);
         expect(applies("agent:review", thing())).toBe(false);

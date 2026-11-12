@@ -77,6 +77,17 @@ export function windowStart(spans: ItemSpan[], anchor: number | null): number {
     return at < spans.length ? at : firstDrawn(spans.length, RENDER_CAP);
 }
 
+/** Pure: the anchor once items were appended at the end. A reader who follows the end (is at the bottom) keeps at most
+ *  RENDER_CAP items drawn, so a long live session's DOM does not grow without a cap: the window is trimmed back to the
+ *  last RENDER_CAP, its anchor the key of that first item. A reader scrolled up keeps the anchor, so the place they are
+ *  reading stays put, and a window of RENDER_CAP items or fewer is left as it is. */
+export function trimmedAnchor(spans: ItemSpan[], anchor: number | null, followsEnd: boolean): number | null {
+    if (!followsEnd || spans.length - windowStart(spans, anchor) <= RENDER_CAP) {
+        return anchor;
+    }
+    return spans[firstDrawn(spans.length, RENDER_CAP)].start;
+}
+
 /** Pure: the item holding the entry with this key, or -1 when no item does. */
 export function holdingItem(spans: ItemSpan[], key: number): number {
     const at = firstEndingAfter(spans, key);

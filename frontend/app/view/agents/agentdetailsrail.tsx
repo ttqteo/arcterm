@@ -64,6 +64,7 @@ import { useChatMode } from "./chatmodestore";
 import { ASK_OWNER_USER } from "./childaskmodel";
 import { RailTree } from "./christmasrailtreeview";
 import { commitListAtom, loadCommitList, showInLog } from "./commitstore";
+import { canDrive } from "./consumers";
 import { useDevServers } from "./devserversstore";
 import { FileTab } from "./filetab";
 import { finalRowFocusId, isFinalStageId } from "./finalstage";
@@ -866,12 +867,20 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const branch = ended ? ended.branch : railState?.branch;
     const worktree = ended ? undefined : railState?.worktree;
     const live = bgSessionLive(agent.blockId, ended != null);
+    // what types into its terminal (the Resume and Stop button, Compact and Clear) also needs it awake: a sleeping
+    // agent's process is gone, so its PTY is dead. `live` alone keeps feeding the background-task rows below.
+    const drivable = live && canDrive(agent);
     const bgActivity = backgroundActivity(bgTasks, machineServers);
     const shownAgentState = shownState(agent.state, bgActivity);
-    const action = sub ? null : railAction(agent.state, bgActivity, live);
+    const action = sub ? null : railAction(agent.state, bgActivity, drivable);
     const offerReset =
         ctxPct != null &&
-        offersContextReset({ isClaude, state: agent.state, level: contextLevel(ctxPct, usage?.contextmax), live });
+        offersContextReset({
+            isClaude,
+            state: agent.state,
+            level: contextLevel(ctxPct, usage?.contextmax),
+            live: drivable,
+        });
 
     const fileCount = ended ? ended.files.length : railState?.isRepo ? changes.length : null;
     const railInput = {

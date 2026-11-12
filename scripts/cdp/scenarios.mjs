@@ -42336,6 +42336,135 @@ const agentSleep = {
                 /^\d+$/.test(settings.minutes ?? "") && settings.decrease && settings.increase,
             JSON.stringify(settings)
         );
+
+        // 9. what types into an agent's terminal is not offered to a sleeping agent: its process is gone, so its PTY is
+        // dead. The fixture agent is awake first, at a context level that offers Compact and Clear (usage.contextpct 90):
+        // the palette's agent actions offer Interrupt, Compact, Clear, Nudge and Open in split, the header's More menu
+        // Redraw terminal and Interrupt turn, and the details rail Resume, Compact and Clear. Then the same roster puts it
+        // to sleep (the page's roster fixture: the file one is not touched): the four, Redraw and the rail's buttons are
+        // gone, Open in split stays, and the sidebar row's menu offers Wake.
+        const AS_TYPING = ["Interrupt", "Compact", "Clear", "Nudge"];
+        const asNow = Date.now();
+        const asRosterWith = (asleep) =>
+            agentSleepRoster(asNow).map((a) =>
+                a.id !== AS_AWAKE_ID
+                    ? a
+                    : {
+                          ...a,
+                          usage: { contextpct: 90 },
+                          ...(asleep ? { sleeping: { since: asNow - 5 * 60_000, freedBytes: AS_FREED } } : {}),
+                      }
+            );
+        const offers = (labels, label) => labels.some((l) => l.startsWith(label));
+        // the palette's rows once an agent's actions are open
+        const paletteActionLabels = async (name) => {
+            const found = await gridPaletteFind(h, name, true);
+            if (!found.ok) return { ok: false, why: found.why, labels: [] };
+            await h.ev(paletteKey("ArrowRight"));
+            const state = await paletteStateWhen(h, (s) => s.drill != null && s.groups.length > 0, 3000);
+            return { ok: state?.drill != null, why: null, drill: state?.drill ?? null, labels: (state?.groups ?? []).flatMap((g) => g.rows) };
+        };
+        const closePalette = async () => {
+            for (let i = 0; i < 3 && (await h.ev(`!!${PALETTE_INPUT}`)); i++) {
+                await h.ev(PEEKS_ESC);
+                await polishNap(250);
+            }
+        };
+        // the buttons of the details rail's session block: Resume or Stop by the state line, Compact and Clear under it
+        const railButtons = () =>
+            h.ev(`(() => {
+                const sess = document.querySelector('aside[aria-label="Agent details"] [data-rail-session]');
+                return sess ? [...sess.querySelectorAll("button")].map((b) => b.textContent.trim()).filter(Boolean) : null;
+            })()`);
+        // the menu closes on an Escape at the document (floating-ui's dismiss), which the window-level asEscape does not
+        // reach: closed until its panel is gone, so a panel left open cannot answer for the next menu
+        const closeMenu = async () => {
+            for (let i = 0; i < 3 && (await h.ev(`!!${CA_MENU_PANEL}`)); i++) {
+                await h.ev(PEEKS_ESC);
+                await polishNap(250);
+            }
+            return !(await h.ev(`!!${CA_MENU_PANEL}`));
+        };
+        // a menu on the agent's header or its sidebar row: every label in it
+        const menuOn = async (target) => {
+            await closeMenu();
+            await h.ev(`(() => {
+                const el = ${target};
+                const r = el.getBoundingClientRect();
+                el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 40, clientY: r.top + r.height / 2, button: 2 }));
+            })()`);
+            const up = await polishWaitFor(h, `!!${CA_MENU_PANEL}`, 3000);
+            const labels = up
+                ? await h.ev(`[...${CA_MENU_PANEL}.querySelectorAll("span.flex-1")].map((s) => s.textContent.trim())`)
+                : [];
+            return { up, labels };
+        };
+        // close the menu, and show the Agent surface and the agent again
+        const backToAgent = async (id) => {
+            await closeMenu();
+            await h.goto("agent");
+            await polishWaitFor(h, `!!${asRow(id)}`, 5000);
+            await h.ev(`${asRow(id)}?.click()`);
+            await polishWaitFor(h, `!!document.querySelector("[data-agent-header]")`, 5000);
+        };
+        const HEADER = `document.querySelector("[data-agent-header]")`;
+
+        // step 6c's Sleep in the panel left the awake agent marked as falling asleep (the fixture roster never reads it
+        // asleep), and the header opens no menu while it is: drop the mark, as 5b does
+        await agentPageFixtures.agentPage(h, `${AS_FALL} F.setFallingAsleep(${JSON.stringify(AS_AWAKE_ID)}, null); return true;`);
+        await agentPageFixtures.setRoster(h, asRosterWith(false));
+        await agentPageFixtures.agentPage(h, `const R = await mod("app/view/agents/railstore.ts"); globalStore.set(R.railVisibleAtom, true); return true;`);
+        await h.goto("agent");
+        await polishWaitFor(h, `!!${asRow(AS_AWAKE_ID)}`, 5000);
+        await h.ev(`${asRow(AS_AWAKE_ID)}?.click()`);
+        await polishWaitFor(h, `!!${HEADER} && !!document.querySelector('aside[aria-label="Agent details"] [data-rail-session]')`, 5000);
+        const railAwake = await railButtons();
+        const palAwake = await paletteActionLabels(AS_AWAKE_NAME);
+        await h.shot("cdp-shots/agent-sleep-actions-awake.png");
+        await closePalette();
+        const headAwake = await menuOn(HEADER);
+        await backToAgent(AS_AWAKE_ID);
+        rec(
+            "9a. awake, at a context level that offers a reset: the palette offers Interrupt, Compact, Clear, Nudge and Open in split, the header's More menu Redraw terminal and Interrupt turn, the details rail Resume, Compact and Clear",
+            palAwake.ok && AS_TYPING.every((l) => offers(palAwake.labels, l)) && offers(palAwake.labels, "Open in split") &&
+                headAwake.up && headAwake.labels.includes("Redraw terminal") && headAwake.labels.includes("Interrupt turn") &&
+                railAwake != null && ["Resume", "Compact", "Clear"].every((b) => railAwake.includes(b)),
+            JSON.stringify({ palAwake, headAwake, railAwake })
+        );
+
+        // put it to sleep: the row reads asleep
+        await agentPageFixtures.setRoster(h, asRosterWith(true));
+        const nowAsleep = await polishWaitFor(h, `!!${asRow(AS_AWAKE_ID)}?.querySelector("[data-agent-sleeping]")`, 5000);
+        await h.ev(`${asRow(AS_AWAKE_ID)}?.click()`);
+        await polishWaitFor(h, `!!${HEADER} && !!document.querySelector('aside[aria-label="Agent details"] [data-rail-session]')`, 5000);
+        const railAsleep = await railButtons();
+        const palAsleep = await paletteActionLabels(AS_AWAKE_NAME);
+        await h.shot("cdp-shots/agent-sleep-actions-asleep.png");
+        await closePalette();
+        rec(
+            "9b. asleep, the same palette offers none of Interrupt, Compact, Clear and Nudge, and still Open in split",
+            nowAsleep && palAsleep.ok && palAsleep.labels.length > 0 && !AS_TYPING.some((l) => offers(palAsleep.labels, l)) &&
+                offers(palAsleep.labels, "Open in split"),
+            JSON.stringify({ nowAsleep, palAsleep })
+        );
+        const headAsleep = await menuOn(HEADER);
+        await h.shot("cdp-shots/agent-sleep-actions-header-menu.png");
+        await backToAgent(AS_AWAKE_ID);
+        rec(
+            "9c. asleep, the header's More menu (which still opens) has no Redraw terminal or Interrupt turn, and the details rail no Resume, Stop, Compact or Clear",
+            headAsleep.up && headAsleep.labels.length > 0 && !headAsleep.labels.includes("Redraw terminal") &&
+                !headAsleep.labels.includes("Interrupt turn") && (headAsleep.labels.includes("Hide details") || headAsleep.labels.includes("Show details")) &&
+                railAsleep != null && !["Resume", "Stop", "Compact", "Clear"].some((b) => railAsleep.includes(b)),
+            JSON.stringify({ headAsleep, railAsleep })
+        );
+        const rowAsleep = await menuOn(asRow(AS_AWAKE_ID));
+        const rowClosed = await closeMenu();
+        rec(
+            "9d. asleep, its sidebar row's menu offers Wake and no Sleep",
+            rowAsleep.up && rowAsleep.labels.includes("Wake") && !rowAsleep.labels.includes("Sleep") && rowClosed,
+            JSON.stringify({ ...rowAsleep, rowClosed })
+        );
+        await agentPageFixtures.restoreRoster(h);
         return steps;
     },
     async teardown(h, ctx) {
@@ -42418,7 +42547,8 @@ const AC_BASH_HISTORY = ["git log --oneline -5", "git status -sb"];
 const AC_SHELL_FILES = ["frontend/app/view/agents/chatpane.tsx", "frontend/app/view/agents/chatpanes/", "frontend/app/view/agents/chatpending.ts"];
 // what the mocked GetClaudeLiveCommandsCommand answers for the main agent's block: the list Claude Code's own typeahead shows in
 // that session (the arc mod publishes it, pkg/claudecmds/live.go). 12 built-ins (the bundled skills `code-review`,
-// `security-review` and `simplify` among them), 2 skills, 4 plugin commands and 1 MCP prompt, in the groups' order. No other
+// `security-review` and `simplify` among them), 2 skills, 4 plugin commands and 1 MCP prompt, in the groups' order. The menu
+// lists `help`, the one built-in here that Chat answers itself (AC_IN_CHAT), in a group of its own ahead of the other 11. No other
 // agent has one, so their menu falls back to the built-ins plus AC_COMMANDS. The `/re` filter of step 51 and the `/co` of step
 // 23 are worked out from these names: change one and read both. `mcp` and `model` are in it because a bare /mcp and /model
 // flip the cell to Terminal only while the menu's own list names them (opensTui).
@@ -42443,6 +42573,9 @@ const AC_LIVE_COMMANDS = [
     { name: "superpowers:requesting-code-review", description: "Check the work against its requirements", source: "plugin", plugin: "superpowers" },
     { name: "mcp__docs__summarize", description: "Summarize a page from the docs server", source: "mcp" },
 ];
+// the built-ins Chat answers itself with a card or the Diff surface (chatlocal.ts ROUTES, answersInChat): the `/` menu lists them
+// first as In Chat (44f8bef08), and they never read "opens in Terminal". Steps 50 and 53 read the menu's groups against this list
+const AC_IN_CHAT = ["usage", "cost", "context", "tasks", "bashes", "stats", "skills", "help", "status", "diff"];
 // the screens Claude Code 2.1.319 drew (captured by the unit tests' fixtures): the step writes them to the fixture terminal
 const AC_SCREENS = JSON.parse(readFileSync(new URL("../../frontend/app/view/agents/tuiscreen.fixtures.json", import.meta.url), "utf8"));
 
@@ -42765,6 +42898,29 @@ const acInputs = async (h, blockId) =>
     (await acCalls(h, "controllerinput"))
         .filter((c) => c.data.blockid === blockId && c.data.input !== "" && !/^\x1b\[[IO]$/.test(c.data.input))
         .map((c) => c.data.input);
+// A send is two writes: its text, then its Enter, which waits up to ECHO_WAIT_MAX_MS (chatpending.ts, read from there so the two
+// stay one number) for Claude Code's box to show the text (agentsubmit.ts). From step 24 on the fixture terminal draws a box
+// that never shows it, so each send's Enter lands the whole wait after its text, in a later step's window. A step that takes a
+// mark of a block's inputs, or reads what a send typed, first waits for that Enter with this: until the block's last input is
+// "\r", or until no input has come for the wait and a second more. Answers the inputs then, so a caller takes its mark from them.
+const AC_ECHO_WAIT_MS =
+    Number(
+        /ECHO_WAIT_MAX_MS\s*=\s*([\d_]+)/
+            .exec(readFileSync(new URL("../../frontend/app/view/agents/chatpending.ts", import.meta.url), "utf8"))?.[1]
+            ?.replace(/_/g, "")
+    ) || 2000;
+const AC_ENTER_WAIT_MS = AC_ECHO_WAIT_MS + 1000;
+async function acSettled(h, blockId) {
+    let inputs = await acInputs(h, blockId);
+    let changedAt = Date.now();
+    while (inputs.length > 0 && inputs[inputs.length - 1] !== "\r" && Date.now() - changedAt < AC_ENTER_WAIT_MS) {
+        await polishNap(60);
+        const next = await acInputs(h, blockId);
+        if (next.length !== inputs.length) changedAt = Date.now();
+        inputs = next;
+    }
+    return inputs;
+}
 const acSetAnswer = (h, mode) => h.ev(`(() => { window.${AC_MOCK_KEY}.answer = ${JSON.stringify(mode)}; return true; })()`);
 // what the mocked ShellCompleteCommand answers from now on: the completions of the next Tab in bash mode
 const acSetShell = (h, items) => h.ev(`(() => { window.${AC_MOCK_KEY}.shell = ${JSON.stringify(items)}; return true; })()`);
@@ -43242,7 +43398,7 @@ const agentChat = {
             await AC.setRoster(h, acRoster(ctx, { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined }));
             const working = await polishWaitFor(h, `(${acLayer(A)}?.querySelector("[data-chat-working]")?.textContent ?? "").includes(${JSON.stringify(AC_ACTIVITY)}) && !!${acLayer(A)}?.querySelector("[data-chat-stop]")`, AC_WAIT_MS);
             await h.shot("cdp-shots/agent-chat-4-working.png");
-            const stopsBefore = (await acInputs(h, blockA)).length;
+            const stopsBefore = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-stop]")?.click()`);
             const stopped = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input === "\\x1b")`, 3000);
             const afterStop = (await acInputs(h, blockA)).slice(stopsBefore);
@@ -43830,7 +43986,7 @@ const agentChat = {
                 };
             })()`);
             await h.shot("cdp-shots/agent-chat-20-queued.png");
-            const sent20 = (await acInputs(h, blockA)).slice(before20.length);
+            const sent20 = (await acSettled(h, blockA)).slice(before20.length);
             acAppend(ctx.files.main, acQueuedLine(ctx.dir, S1));
             const landed20 = await polishWaitFor(h, `${youHas(S1)} === 1 && ${pendingOf}.length === 0`, 15000);
             rec(
@@ -43848,7 +44004,7 @@ const agentChat = {
             const holdOf = `${acLayer(A)}?.querySelector("[data-chat-hold]")`;
             await acQueue(h, orefA, [perm("perm-5", "Bash", "npm run lint")]);
             const card21 = await polishWaitFor(h, `!!${acCard(A)}`, 3000);
-            const before21 = await acInputs(h, blockA);
+            const before21 = await acSettled(h, blockA);
             await acType(h, acBox(A), S21, false);
             await polishWaitFor(h, `${holdOf}?.getAttribute("data-chat-hold") === "waiting"`, 3000);
             const hold21 = await h.ev(`(() => {
@@ -43865,7 +44021,7 @@ const agentChat = {
             await h.shot("cdp-shots/agent-chat-21-queued.png");
             await acQueue(h, orefA, []);
             const sent21ok = await polishWaitFor(h, `${acVal(acBox(A))} === "" && !${holdOf}`, 5000);
-            const sent21 = (await acInputs(h, blockA)).slice(before21.length);
+            const sent21 = (await acSettled(h, blockA)).slice(before21.length);
             rec(
                 "21. with a permission request pending a line over the box names the hold and Send stays live as Queue; Enter queues the message (Queued line, nothing typed, the text kept), and it is typed into the block once the card is gone",
                 card21 && hold21.disabled === false && hold21.label === "Queue" &&
@@ -43876,15 +44032,30 @@ const agentChat = {
                 { card21, hold21, queued21, line21, box21, before21, after21, sent21ok, sent21 }
             );
 
-            // 22. ↑ in the empty box puts back the last message sent from it (step 21's, sent once its card went)
+            // 22. ↑ in the empty box puts back the last message sent from it (step 21's, sent once its card went). While Claude
+            // works, ↑ in an empty box takes back a message Claude Code still holds queued before it recalls anything
+            // (chattakeback.ts takeBackPlan: a pending bubble captioned Queued, which step 21's is: it was sent while the agent
+            // worked). That is the take-back's key, and it ends nothing here: the fixture's Claude never writes the message's
+            // queued_command line, so the message would stay queued for good. The line lands first, as step 20's does for S1
+            // (Claude took the message at the turn's next gap): nothing is left to take back, and ↑ recalls the history
+            const pendingS21 = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-pending]") ?? [])].filter((p) => p.firstElementChild?.textContent.trim() === ${JSON.stringify(S21)})`;
+            acAppend(ctx.files.main, acQueuedLine(ctx.dir, S21));
+            const taken22 = await polishWaitFor(h, `${youHas(S21)} === 1 && ${pendingS21}.length === 0`, 15000);
+            const before22 = await acSettled(h, blockA);
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             await h.ev(`${acBox(A)}?.focus()`);
             await acKey(h, acKeys.up);
             const recalled22 = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify(S21)}`, 3000);
             const box22 = await h.ev(acVal(acBox(A)));
+            // a take-back writes ↑ to the block (ESC [ A) before it waits for the box: the recall types nothing
+            const typed22 = (await acInputs(h, blockA)).slice(before22.length);
             await h.shot("cdp-shots/agent-chat-22-recall.png");
             await acClear(h, acBox(A));
-            rec("22. ↑ in the empty box puts back the last message sent", recalled22 && box22 === S21, { box22 });
+            rec(
+                "22. ↑ in the empty box puts back the last message sent (once Claude took it, so no take-back claims the key), and types nothing into the block",
+                taken22 && recalled22 && box22 === S21 && typed22.length === 0,
+                { taken22, box22, typed22 }
+            );
 
             // 23. `/` as the box's first character lists the session's own commands (GetClaudeLiveCommandsCommand, mocked for this
             // agent's block: the bundled skill `code-review` is in it, which the disk list never holds, and `arc:council`);
@@ -43904,13 +44075,13 @@ const agentChat = {
             const fetched23 = await acCalls(h, "listclaudecommands");
             const live23 = await acCalls(h, "getclaudelivecommands");
             await acClear(h, acBox(A));
-            const beforeModel = (await acInputs(h, blockA)).length;
+            const beforeModel = (await acSettled(h, blockA)).length;
             await h.cdp("Input.insertText", { text: "/model" });
             await polishWaitFor(h, `!!document.querySelector("[data-chat-slash]")`, 3000);
             await acKey(h, acKeys.enter);
             const flipped23 = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "terminal" && !${acLayer(A)}`, 3000);
             const header23 = await acHeader(h);
-            const sentModel = (await acInputs(h, blockA)).slice(beforeModel);
+            const sentModel = (await acSettled(h, blockA)).slice(beforeModel);
             await h.shot("cdp-shots/agent-chat-23-model-terminal.png");
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
             await polishWaitFor(h, `!!${acBox(A)}`, 3000);
@@ -43938,7 +44109,7 @@ const agentChat = {
             const screen24 = await acWriteScreen(h, blockA, AC_SCREENS.mode3);
             const chipUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')`, 6000);
             await h.shot("cdp-shots/agent-chat-24-footer.png");
-            const beforeTab = (await acInputs(h, blockA)).length;
+            const beforeTab = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')?.click()`);
             const menuUp24 = await polishWaitFor(h, `${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')?.getAttribute("aria-expanded") === "true" && !!${acLayer(A)}?.querySelector('[role="menu"]')`, 3000);
             const typed24 = (await acInputs(h, blockA)).slice(beforeTab);
@@ -44134,13 +44305,13 @@ const agentChat = {
             await acKey(h, acKeys.escape);
             const closed28 = await polishWaitFor(h, `!${acMenu("Model")}`, 3000);
             const stayed28 = await h.ev(acOnScreen(A));
-            const before28 = (await acInputs(h, blockA)).length;
+            const before28 = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-model]")?.click()`);
             await polishWaitFor(h, `${acMenuRows("Model")}.length === 3`, 3000);
             await h.ev(`${acMenu("Model")}?.querySelector('[data-chat-model-choice="sonnet"]')?.click()`);
             const picked28 = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.blockid === ${JSON.stringify(blockA)} && c.data.input === "/model sonnet")`, 3000);
             const closedAfter28 = await polishWaitFor(h, `!${acMenu("Model")}`, 3000);
-            const typed28 = (await acInputs(h, blockA)).slice(before28);
+            const typed28 = (await acSettled(h, blockA)).slice(before28);
             rec(
                 "28. the model chip opens a menu of Opus, Sonnet and Haiku with the agent's model checked (aria-checked on one row), Escape closes it and the chat stays on screen, and picking Sonnet types /model sonnet into A's block and closes the menu",
                 up28 && JSON.stringify(menu28.rows.map((r) => r[0])) === JSON.stringify(["opus", "sonnet", "haiku"]) &&
@@ -44533,12 +44704,14 @@ const agentChat = {
 
             // 41. the page reads the app's colours: a click on #theme sends "theme:" and the page's --arc-background, which is the
             // app's --color-background, through the box (the bridge hands the colours over when the page says it is ready)
+            // The mark waits for the Enter of step 36's send (it lands the echo wait after its text, in this step's window), and the
+            // read below for the theme's own: it starts with theme: and ends with the Enter that is its own
             await acClear(h, acBox(A));
-            const before41 = (await acInputs(h, blockA)).length;
+            const before41 = (await acSettled(h, blockA)).length;
             const click41 = await acClickFrame(h, A, "chart.html", 76, 82);
             const theme41 = await acUntil(async () => {
                 const typed = (await typedSince(blockA, before41)).join("");
-                return typed.endsWith("\r") ? typed : null;
+                return typed.startsWith("theme:") && typed.endsWith("\r") ? typed : null;
             }, 6000);
             const appBg = await h.ev(`getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim()`);
             await h.shot("cdp-shots/agent-chat-41-visual-theme.png");
@@ -44554,13 +44727,16 @@ const agentChat = {
             const gone41 = 1650 - (Date.now() - (click41?.at ?? 0));
             if (gone41 > 0) await polishNap(gone41);
             await acClear(h, acBox(A));
-            const before42 = (await acInputs(h, blockA)).length;
+            const before42 = (await acSettled(h, blockA)).length;
             const click42 = await acClickFrame(h, A, "chart.html", 76, 34);
+            // The prompt's text goes in at the click and its Enter the echo wait later, so the second click is made once the text
+            // is in (well inside the 1.5 s gap), and the Enter is waited for after it
+            await acUntil(async () => ((await typedSince(blockA, before42)).join("").startsWith(ASK) ? true : null), 3000);
+            const click42b = await acClickFrame(h, A, "chart.html", 76, 34);
             const sent42 = await acUntil(async () => {
                 const typed = (await typedSince(blockA, before42)).join("");
-                return typed.endsWith("\r") ? typed : null;
+                return typed.startsWith(ASK) && typed.endsWith("\r") ? typed : null;
             }, 6000);
-            const click42b = await acClickFrame(h, A, "chart.html", 76, 34);
             await polishNap(500);
             const typed42 = (await typedSince(blockA, before42)).join("");
             const box42 = await boxValue(A);
@@ -44575,7 +44751,7 @@ const agentChat = {
             // 43. a page's own prompt without a click is dropped; a page taller than the cap shows at 640 px with an expand button that
             // grows the frame to the page and back; a missing page says so; a path outside the folder stays code, with the reason
             await acClear(h, acBox(A));
-            const before43 = (await acInputs(h, blockA)).length;
+            const before43 = (await acSettled(h, blockA)).length;
             await acShowVisual(h, A, "auto.html");
             const autoSrc43 = await polishWaitFor(h, `(${acVisualFrame(A, "auto.html")}?.getAttribute("src") ?? "") !== ""`, 8000);
             const autoSized43 = await polishWaitFor(h, acFrameBetween(A, "auto.html", 110, 130), 8000);
@@ -44647,10 +44823,11 @@ const agentChat = {
             );
 
             // 50. "Typing /": a `/` in the main agent's box lists the session's whole command list (the mocked live list: 12
-            // built-ins, 2 skills, 4 plugin commands, 1 MCP prompt), grouped in that order with each group's count, no cap, in a
-            // box at most 420 px tall whose rows scroll; the footer counts them and says "in this session"; a plugin's row has
+            // built-ins, 2 skills, 4 plugin commands, 1 MCP prompt), grouped with each group's count, no cap, in a box at most
+            // 420 px tall whose rows scroll. The group order is In Chat (the built-ins Chat answers itself: `help` here, 44f8bef08),
+            // Built-in (the other 11), Skills, Plugins, MCP. The footer counts them and says "in this session"; a plugin's row has
             // its chip (arc:council "arc", skim "skim"), and a bare built-in that draws a menu on Claude Code's own screen
-            // (model) says "opens in Terminal"
+            // (model) says "opens in Terminal", which one Chat answers itself (help) never does
             await showAgent(A);
             await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
             await acClear(h, acBox(A));
@@ -44674,25 +44851,27 @@ const agentChat = {
             })()`);
             const row50 = (name) => s50?.rows.find((r) => r.name === name);
             const want50 = [
-                ["Built-in", "builtin"],
-                ["Skills", "user"],
-                ["Plugins", "plugin"],
-                ["MCP", "mcp"],
-            ].map(([title, source]) => {
-                const rows = AC_LIVE_COMMANDS.filter((c) => c.source === source).map((c) => c.name);
+                ["In Chat", (c) => c.source === "builtin" && AC_IN_CHAT.includes(c.name)],
+                ["Built-in", (c) => c.source === "builtin" && !AC_IN_CHAT.includes(c.name)],
+                ["Skills", (c) => c.source === "user"],
+                ["Plugins", (c) => c.source === "plugin"],
+                ["MCP", (c) => c.source === "mcp"],
+            ].map(([title, is]) => {
+                const rows = AC_LIVE_COMMANDS.filter(is).map((c) => c.name);
                 return { title, count: String(rows.length), rows };
             });
             rec(
-                "50. / in the main agent's box lists the live list grouped Built-in 12, Skills 2, Plugins 4, MCP 1 with all 19 rows (no cap) in a box at most 420 px tall whose rows scroll, the footer reads 19 commands in this session, arc:council and skim show their plugin chips, model says opens in Terminal, and code-review sits in Built-in",
+                "50. / in the main agent's box lists the live list grouped In Chat 1 (help), Built-in 11, Skills 2, Plugins 4, MCP 1 with all 19 rows (no cap) in a box at most 420 px tall whose rows scroll, the footer reads 19 commands in this session, arc:council and skim show their plugin chips, model says opens in Terminal but help (In Chat) does not, and code-review sits in Built-in",
                 up50 && s50 != null && s50.live === "true" && s50.rows.length === total50 &&
                     JSON.stringify(s50.groups) === JSON.stringify(want50) &&
-                    JSON.stringify(s50.groups.map((g) => g.count)) === JSON.stringify(["12", "2", "4", "1"]) &&
+                    JSON.stringify(s50.groups.map((g) => g.count)) === JSON.stringify(["1", "11", "2", "4", "1"]) &&
                     s50.height >= 200 && s50.height <= 420.5 &&
                     s50.scroller?.overflowY === "auto" && s50.scroller.scroll > s50.scroller.client && moved50 > 0 &&
                     s50.footer === `${total50} commands in this session` &&
                     row50("arc:council")?.chip === "arc" && row50("skim")?.chip === "skim" && row50("clear")?.chip === null &&
-                    row50("model")?.tui === true && row50("release-notes")?.tui === false &&
-                    s50.groups[0].rows.includes("code-review"),
+                    row50("model")?.tui === true && row50("release-notes")?.tui === false && row50("help")?.tui === false &&
+                    s50.groups[0].title === "In Chat" && s50.groups[0].rows.join() === "help" &&
+                    s50.groups.find((g) => g.title === "Built-in")?.rows.includes("code-review") === true,
                 { up50, s50, moved50 }
             );
 
@@ -44755,10 +44934,11 @@ const agentChat = {
             await polishWaitFor(h, `!document.querySelector("[data-chat-slash]")`, 3000);
             await h.ev(`${plus52}?.click()`);
             await polishWaitFor(h, `!!document.querySelector("[data-chat-plus-menu]")`, 3000);
-            const beforeMcp52 = (await acInputs(h, blockA)).length;
+            const beforeMcp52 = (await acSettled(h, blockA)).length;
             await h.ev(`document.querySelector('[data-chat-plus-item="mcp"]')?.click()`);
             const flipped52 = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "terminal" && !${acLayer(A)}`, 3000);
-            const sentMcp52 = (await acInputs(h, blockA)).slice(beforeMcp52);
+            // the cell flips at the pick; the command's Enter follows the echo wait later
+            const sentMcp52 = (await acSettled(h, blockA)).slice(beforeMcp52);
             await h.shot("cdp-shots/agent-chat-52-plus-mcp-terminal.png");
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
             await polishWaitFor(h, `!!${acBox(A)}`, 3000);
@@ -44773,7 +44953,8 @@ const agentChat = {
             );
 
             // 53. an agent with no live list (the second one: wavesrv holds none for its block) falls back to the copied built-ins
-            // plus the disk list (the mocked ListClaudeCommandsCommand), and the footer says "found on disk"
+            // plus the disk list (the mocked ListClaudeCommandsCommand), and the footer says "found on disk". The built-ins Chat
+            // answers itself list first as In Chat (AC_IN_CHAT), the other built-ins under Built-in, the disk list's skill under Plugins
             await showAgent(B);
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(B)}, "chat")`);
             await polishWaitFor(h, `!!${acBox(B)}`, AC_WAIT_MS);
@@ -44787,13 +44968,16 @@ const agentChat = {
             await acClear(h, acBox(B));
             await polishWaitFor(h, `!document.querySelector("[data-chat-slash]")`, 3000);
             const found53 = /^(\d+) commands found on disk$/.exec(s53?.footer ?? "");
+            const group53 = (title) => s53?.groups.find((g) => g.title === title)?.rows ?? [];
             rec(
-                "53. in the second agent's box (no live list) / shows the built-ins plus the disk list with data-chat-slash-live false and a footer reading N commands found on disk",
+                "53. in the second agent's box (no live list) / shows the built-ins plus the disk list, grouped In Chat, Built-in, Plugins (In Chat holds only what Chat answers itself, Built-in none of it), with data-chat-slash-live false and a footer reading N commands found on disk, N the number of rows",
                 fallbackUp53 && disk53 && s53 != null && s53.live === "false" && found53 != null &&
                     Number(found53[1]) === s53.rows.length && s53.rows.length >= 23 &&
                     s53.rows.some((r) => r.name === "compact") && s53.rows.some((r) => r.name === "arc:council") &&
-                    s53.groups.map((g) => g.title).join("|") === "Built-in|Plugins",
-                { fallbackUp53, disk53, footer: s53?.footer, rows: s53?.rows.length, groups: s53?.groups.map((g) => [g.title, g.count]) }
+                    s53.groups.map((g) => g.title).join("|") === "In Chat|Built-in|Plugins" &&
+                    group53("In Chat").length > 0 && group53("In Chat").every((n) => AC_IN_CHAT.includes(n)) &&
+                    group53("Built-in").every((n) => !AC_IN_CHAT.includes(n)),
+                { fallbackUp53, disk53, footer: s53?.footer, rows: s53?.rows.length, groups: s53?.groups.map((g) => [g.title, g.count]), inChat: group53("In Chat") }
             );
 
             // 60. "Sent": a message with an @mention and a files block (the text the composer sends) draws without the block. The
@@ -45016,7 +45200,7 @@ const agentChat = {
                 };
             })()`);
             await h.shot("cdp-shots/agent-chat-70-pill.png");
-            const before70 = (await acInputs(h, blockA)).length;
+            const before70 = (await acSettled(h, blockA)).length;
             await acKey(h, acKeys.enter);
             let typed70 = [];
             for (let i = 0; i < 30 && !typed70.join("").endsWith("\r"); i++) {
@@ -45271,7 +45455,7 @@ const agentChat = {
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             await acType(h, acBox(A), "!git stash list", false);
             await polishWaitFor(h, `${acVal(acBox(A))} === "!git stash list"`, 3000);
-            const before76 = (await acInputs(h, blockA)).length;
+            const before76 = (await acSettled(h, blockA)).length;
             await acKey(h, acKeys.enter);
             let sent76 = [];
             for (let i = 0; i < 30 && !sent76.join("").endsWith("\r"); i++) {
@@ -45403,7 +45587,7 @@ const agentChat = {
             const movedDown77 = await selected77(AC_SHELL_FILES[1]);
             await acKey(h, acKeys.up);
             const movedUp77 = await selected77(AC_SHELL_FILES[0]);
-            const inputs77 = (await acInputs(h, blockA)).length;
+            const inputs77 = (await acSettled(h, blockA)).length;
             await acKey(h, acKeys.enter);
             const want77 = `!npx vitest run ${AC_SHELL_FILES[0]} `;
             const picked77 = await polishWaitFor(h, `${acVal(acBox(A))}.replace(/\\u00a0/g, " ") === ${JSON.stringify(want77)}`, 3000);
@@ -45563,6 +45747,305 @@ const agentChat = {
                 shown80 && top80 != null && opened80 && after80 != null && Math.abs(after80 - top80) <= 4,
                 { shown80, top80, opened80, after80 }
             );
+
+            // 81. Tab in bash mode puts a file whose name holds a space or a shell metacharacter in the box with a backslash before each of
+            // them, as a shell does when it completes, so the command the box sends is one word per file. The mocked ShellCompleteCommand
+            // answers `my file.txt` for `!cat my`: the one answer goes in at once as `!cat my\ file.txt `. `my\ fi` is one word for the next
+            // Tab (it asks for the word unescaped, `my fi`), and the pick takes the whole escaped word's place, nothing doubled. A folder
+            // `a b/` is `!cd a\ b/` with no space after it (its / stays bare, so the next Tab goes on into it); `$`, `&`, `;`, `'` and `(`
+            // are escaped too
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
+            const case81 = async (shell, typed, want) => {
+                await acSetShell(h, shell);
+                const n = (await acCalls(h, "shellcomplete")).length;
+                await tabOn77(typed);
+                let text = "";
+                for (let i = 0; i < 20 && text !== want; i++) {
+                    await polishNap(150);
+                    text = await boxText77();
+                }
+                return {
+                    typed,
+                    want,
+                    text,
+                    list: await h.ev(`!!document.querySelector("[data-chat-bash-list]")`),
+                    asked: (await acCalls(h, "shellcomplete")).slice(n).map((a) => a.data),
+                };
+            };
+            const res81 = [
+                await case81(["my file.txt"], "!cat my", "!cat my\\ file.txt "),
+                await case81(["my file.txt"], "!cat my\\ fi", "!cat my\\ file.txt "),
+                await case81(["a b/"], "!cd a", "!cd a\\ b/"),
+                await case81(["it's $x & (y);.txt"], "!rm it", "!rm it\\'s\\ \\$x\\ \\&\\ \\(y\\)\\;.txt "),
+            ];
+            await h.shot("cdp-shots/agent-chat-81-bash-escaped-pick.png");
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            rec(
+                "81. Tab in bash mode escapes a file's name: `!cat my` + Tab, the one answer `my file.txt` -> `!cat my\\ file.txt `; `!cat my\\ fi` + Tab asks for the word unescaped (`my fi`) and the pick replaces all of `my\\ fi` -> `!cat my\\ file.txt `; the folder `a b/` -> `!cd a\\ b/` with no space after it; `it's $x & (y);.txt` -> `!rm it\\'s\\ \\$x\\ \\&\\ \\(y\\)\\;.txt `; each asked once for kind file in the box's folder and opened no list",
+                res81.every((r) => r.text === r.want && r.list === false && r.asked.length === 1 && r.asked[0].kind === "file" && r.asked[0].cwd === cwd77) &&
+                    res81.map((r) => r.asked[0]?.word).join("|") === ["my", "my fi", "a", "it"].join("|"),
+                { res81 }
+            );
+
+            // 82. The Tab list closes when the box loses the focus to a click outside it, instead of staying over the chat until a key is
+            // pressed. With the list of step 77 open (three answers), a real click on an empty spot of the chat, which is neither the box nor
+            // the list, closes `[data-chat-bash-list]` and leaves the text as it was. A click on a row still picks it (its mousedown keeps
+            // the focus in the box, so nothing closes before the pick): the third row puts chatpending.ts and a space in place of the word
+            await acSetShell(h, AC_SHELL_FILES);
+            await tabOn77(cmd77);
+            const opened82 = await listUp77(5000);
+            await polishNap(250);
+            // an empty spot of the chat layer: not the box, not the list, and under no button, link or field (which would take the focus)
+            const spot82 = await h.ev(`(() => {
+                const r = ${acLayer(A)}?.getBoundingClientRect();
+                if (!r) return null;
+                for (let fy = 0.05; fy < 0.9; fy += 0.05) {
+                    for (let fx = 0.04; fx < 0.96; fx += 0.04) {
+                        const x = Math.round(r.left + r.width * fx);
+                        const y = Math.round(r.top + r.height * fy);
+                        const el = document.elementFromPoint(x, y);
+                        if (el && !el.closest('button, a, input, textarea, select, [contenteditable], [role="button"], [role="option"], [role="listbox"], [data-chat-bash-list], [data-agent-chat-composer]')) {
+                            return { x, y, tag: el.tagName };
+                        }
+                    }
+                }
+                return null;
+            })()`);
+            const mouse82 = async (pt) => {
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: pt.x, y: pt.y });
+                for (const type of ["mousePressed", "mouseReleased"]) {
+                    await h.cdp("Input.dispatchMouseEvent", { type, x: pt.x, y: pt.y, button: "left", clickCount: 1 });
+                }
+            };
+            if (spot82 != null) await mouse82(spot82);
+            const shut82 = await listGone77(3000);
+            await polishNap(250);
+            const away82 = { text: await boxText77(), focus: await acFocusIn(h, A) };
+            await h.shot("cdp-shots/agent-chat-82-bash-list-click-away.png");
+            // the control: a click on a row picks it
+            await tabOn77(cmd77);
+            const reopened82 = await listUp77(5000);
+            const row82 = await h.ev(`(() => {
+                const r = document.querySelector('[data-chat-bash-item="${AC_SHELL_FILES[2]}"]')?.getBoundingClientRect();
+                return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } : null;
+            })()`);
+            if (row82 != null) await mouse82(row82);
+            const want82 = `!npx vitest run ${AC_SHELL_FILES[2]} `;
+            const picked82 = await polishWaitFor(h, `${acVal(acBox(A))}.replace(/\\u00a0/g, " ") === ${JSON.stringify(want82)}`, 3000);
+            const shutPick82 = await listGone77(3000);
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            rec(
+                "82. with the Tab list of three answers open over `!npx vitest run frontend/app/view/agents/chatp`, a real click on an empty spot of the chat (outside the box and the list) closes `[data-chat-bash-list]` and the box's text is as typed; a click on the third row still picks it (chatpending.ts and a space in place of the word) and closes the list",
+                opened82 && spot82 != null && shut82 && away82.text === cmd77 &&
+                    reopened82 && row82 != null && picked82 && shutPick82,
+                { opened82, spot82, shut82, away82, reopened82, row82, picked82, shutPick82 }
+            );
+
+            // 83. The ghost text follows the editor's scroll. A `!` command of ten lines (one of them long enough to wrap), past the box's
+            // max height, is scrolled to its end: the editor scrolls, and the layer that draws the ghost scrolls with it (its scrollTop is
+            // the editor's), so the ghost text, a history command's rest, stands right after the text's last line (within 2 px, on the
+            // same line) and not at the top of the layer. Scrolling the editor moves the layer with it. The command is put at the front of
+            // the folder's history (the store the box's ghost text reads) with a rest after it
+            const lines83 = [
+                "echo one",
+                "echo two",
+                "echo three",
+                `echo ${"wrap ".repeat(40).trim()}`,
+                "echo five",
+                "echo six",
+                "echo seven",
+                "echo eight",
+                "echo nine",
+                "echo ten",
+            ];
+            const typed83 = lines83.join("\n");
+            const tail83 = " and the tail";
+            await AC.agentPage(
+                h,
+                `const S = await mod("app/view/agents/chatbashstore.ts"); S.noteBashRun(${JSON.stringify(cwd77)}, ${JSON.stringify(typed83 + tail83)}); return true;`
+            );
+            // where the editor's last line ends and where the ghost starts, and the scroll of both
+            const align83 = () =>
+                h.ev(`(() => {
+                    const c = ${composer76};
+                    const box = c?.querySelector("[data-chat-input]");
+                    const layer = c?.querySelector("[data-chat-ghost-layer]");
+                    const ghost = c?.querySelector("[data-chat-ghost]");
+                    if (!box || !ghost) return null;
+                    let last = null;
+                    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+                    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (/\\S/.test(n.data)) last = n;
+                    let tr = null;
+                    if (last) {
+                        const r = document.createRange();
+                        r.selectNodeContents(last);
+                        const rects = r.getClientRects();
+                        tr = rects.length ? rects[rects.length - 1] : null;
+                    }
+                    const gr = ghost.getClientRects()[0];
+                    const br = box.getBoundingClientRect();
+                    return {
+                        scrollTop: box.scrollTop,
+                        max: box.scrollHeight - box.clientHeight,
+                        height: box.clientHeight,
+                        layerTop: layer ? layer.scrollTop : null,
+                        textRight: tr ? tr.right : null,
+                        textTop: tr ? tr.top : null,
+                        ghostLeft: gr ? gr.left : null,
+                        ghostTop: gr ? gr.top : null,
+                        ghostText: ghost.textContent,
+                        inView: gr ? gr.top >= br.top - 1 && gr.bottom <= br.bottom + 1 : null,
+                    };
+                })()`);
+            const lined = (a) =>
+                a != null && a.textRight != null && a.ghostLeft != null && Math.abs(a.ghostLeft - a.textRight) <= 2 && Math.abs(a.ghostTop - a.textTop) <= 2;
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await h.ev(`(${acBox(A)})?.focus()`);
+            for (let i = 0; i < lines83.length; i++) {
+                if (i > 0) await acKey(h, { ...acKeys.enter, modifiers: 8 });
+                await h.cdp("Input.insertText", { text: (i === 0 ? "!" : "") + lines83[i] });
+            }
+            const typed83ok = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify("!" + typed83)}`, 5000);
+            const ghosted83 = await polishWaitFor(h, `${composer76}?.querySelector("[data-chat-ghost]")?.textContent === ${JSON.stringify(tail83)}`, 5000);
+            // to the end of the text, the way the caret scrolls it (and the layer is told by the editor's scroll event)
+            await h.ev(`(() => { const b = ${acBox(A)}; if (b) b.scrollTop = b.scrollHeight; return true; })()`);
+            await polishNap(400);
+            const end83 = await align83();
+            await h.shot("cdp-shots/agent-chat-83-bash-ghost-scrolled.png");
+            // scrolled up and back: the layer follows each time
+            await h.ev(`(() => { const b = ${acBox(A)}; if (b) b.scrollTop = 40; return true; })()`);
+            await polishNap(300);
+            const up83 = await align83();
+            await h.ev(`(() => { const b = ${acBox(A)}; if (b) b.scrollTop = b.scrollHeight; return true; })()`);
+            await polishNap(300);
+            const back83 = await align83();
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            rec(
+                "83. ten lines of `!echo …` (one wrapping) past the box's max height, with the history's rest ` and the tail` as the ghost: the editor is scrolled to its end (scrollTop above 0 and at its max), the ghost layer's scrollTop is the editor's (within 1 px), and `[data-chat-ghost]` starts within 2 px of the end of the text's last line, on its line, in view; scrolled to 40 px the layer is at 40 and back to the end it is at the end again, the ghost aligned again",
+                typed83ok && ghosted83 && end83 != null && end83.scrollTop > 0 && Math.abs(end83.scrollTop - end83.max) <= 1 && end83.ghostText === tail83 &&
+                    end83.layerTop != null && Math.abs(end83.layerTop - end83.scrollTop) <= 1 && lined(end83) && end83.inView === true &&
+                    up83 != null && Math.abs(up83.scrollTop - 40) <= 1 && up83.layerTop != null && Math.abs(up83.layerTop - up83.scrollTop) <= 1 &&
+                    back83 != null && Math.abs(back83.layerTop - back83.scrollTop) <= 1 && lined(back83),
+                { typed83ok, ghosted83, end83, up83, back83 }
+            );
+
+            // 84. No pill in a bash command. The history holds `ls @src/a.ts now` and `ls @src/a.ts now then more` (the first one newest).
+            // `!ls @src/a.ts` shows the ghost ` now`; → takes it, and the box redraws its text from outside. Before, the mention in the
+            // middle of the command, complete now, came back as a file pill, a different width from the plain text the ghost's layer mirrors
+            // (and a path in the command that is not the path of a file). Now the box holds no pill, its text is the command as it was
+            // (`!ls @src/a.ts now`), and the ghost that follows (` then more`) starts within 2 px of the end of the text's last line
+            await AC.agentPage(
+                h,
+                `const S = await mod("app/view/agents/chatbashstore.ts"); S.noteBashRun(${JSON.stringify(cwd77)}, "ls @src/a.ts now then more"); S.noteBashRun(${JSON.stringify(cwd77)}, "ls @src/a.ts now"); return true;`
+            );
+            await acType(h, acBox(A), "!ls @src/a.ts", false);
+            const first84 = await polishWaitFor(h, `${composer76}?.querySelector("[data-chat-ghost]")?.textContent === " now"`, 5000);
+            const pillsBefore84 = await acPills(h, acBox(A));
+            await acKey(h, acKeys.right);
+            const want84 = "!ls @src/a.ts now";
+            const taken84 = await polishWaitFor(h, `${acVal(acBox(A))}.replace(/\\u00a0/g, " ") === ${JSON.stringify(want84)}`, 3000);
+            const second84 = await polishWaitFor(h, `${composer76}?.querySelector("[data-chat-ghost]")?.textContent === " then more"`, 5000);
+            await polishNap(300);
+            const pills84 = await acPills(h, acBox(A));
+            const pillEls84 = await h.ev(`${composer76}?.querySelectorAll("[data-chat-pill]").length ?? null`);
+            const text84 = await boxText77();
+            const align84 = await align83();
+            await h.shot("cdp-shots/agent-chat-84-bash-no-pill.png");
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            rec(
+                "84. `!ls @src/a.ts` shows the ghost ` now`; → takes it: the box holds no file pill (none in it, none in the composer), its text is `!ls @src/a.ts now` as it was, and the next ghost ` then more` starts within 2 px of the end of the text's last line, on its line",
+                first84 && pillsBefore84.length === 0 && taken84 && second84 && pills84.length === 0 && pillEls84 === 0 && text84 === want84 &&
+                    align84 != null && align84.ghostText === " then more" && lined(align84),
+                { first84, pillsBefore84, taken84, second84, pills84, pillEls84, text84, align84 }
+            );
+
+            // 85. A drawn visual takes the new colours when the theme changes (docs/superpowers/specs/2026-11-12-chat-follow-ups-design.md,
+            // Inline visuals). chart.html is drawn and ready, so it holds the colours it was handed when it loaded. The page is at wavesrv's
+            // origin, which the app cannot read, so its colours are read as step 41 does: a click on #theme sends "theme:" and the page's
+            // --arc-background through the box. The cockpit's theme preset is switched to one with another background and the click is made
+            // again: it must carry the new --color-background. The preset is then put back, and the click carries the first value again,
+            // so the colours the frame was last handed moved with each change (the way back is a change too)
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, AC_WAIT_MS);
+            await acClear(h, acBox(A));
+            // the page of steps 40-42 is in the chat unless it was rewritten since; a reply naming it draws it again
+            const drawn85 = await h.ev(`!!${acVisual(A, "chart.html")}`);
+            if (!drawn85) acAppend(ctx.files.main, AC.assistantText(fence(`${vd}/chart.html`), stamp40()));
+            const figure85 = await polishWaitFor(h, `!!${acVisual(A, "chart.html")}`, 15000);
+            await acShowVisual(h, A, "chart.html");
+            const sized85 = await polishWaitFor(h, acFrameBetween(A, "chart.html", 290, 320), 8000);
+            const appBg85 = () => h.ev(`getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim()`);
+            let lastClick85 = null;
+            // What the page holds as --arc-background, as the text it sends. Two prompts from one frame inside the 1.5 s gap would put
+            // the second into the box, so each click waits the gap out. A click that sent nothing is made again, as step 44 does for
+            // its click (a run on a loaded machine lost the one made after the theme switch, with the box empty and the click on the
+            // button); `tries` keeps what each lost click left (the box, whether the frame had the focus), so a retry that hides
+            // something shows in the detail. A page that sent a value, even the old one, is not retried: that value is the answer
+            const pageBg85 = async () => {
+                const tries = [];
+                const end = Date.now() + 20_000;
+                for (;;) {
+                    const wait = 1650 - (Date.now() - (lastClick85?.at ?? 0));
+                    if (wait > 0) await polishNap(wait);
+                    await acClear(h, acBox(A));
+                    // the mark waits for the Enter of the send before it (the echo wait puts it after its text), and the read is the
+                    // page's own: theme: and its colour, then the Enter that is its own
+                    const n = (await acSettled(h, blockA)).length;
+                    lastClick85 = await acClickFrame(h, A, "chart.html", 76, 82);
+                    const typed =
+                        lastClick85 == null
+                            ? null
+                            : await acUntil(async () => {
+                                  const t = (await typedSince(blockA, n)).join("");
+                                  return t.startsWith("theme:") && t.endsWith("\r") ? t : null;
+                              }, 6000);
+                    if (typed != null) return { typed, tries };
+                    tries.push(
+                        await h.ev(`(() => ({
+                            clicked: ${lastClick85 != null},
+                            box: ${acVal(acBox(A))},
+                            frameFocused: document.activeElement === ${acVisualFrame(A, "chart.html")},
+                        }))()`)
+                    );
+                    if (lastClick85 == null) await polishNap(300);
+                    if (Date.now() >= end) return { typed: null, tries };
+                }
+            };
+            const setPreset85 = (id) =>
+                AC.agentPage(
+                    h,
+                    `const T = await mod("app/view/agents/themestore.ts"); globalStore.set(T.themePresetAtom, ${JSON.stringify(id)}); return true;`
+                );
+            // what the preset is now, and the raw stored value, which teardown puts back as it was
+            ctx.prevPreset = await AC.agentPage(
+                h,
+                `const T = await mod("app/view/agents/themestore.ts");
+                return { atom: globalStore.get(T.themePresetAtom), stored: localStorage.getItem("cockpit.theme.preset") };`
+            );
+            const next85 = ctx.prevPreset?.atom === "monokai" ? "graphite" : "monokai";
+            const bgBefore85 = await appBg85();
+            const before85 = figure85 && sized85 ? await pageBg85() : null;
+            await setPreset85(next85);
+            const switched85 = await polishWaitFor(h, `getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim() !== ${JSON.stringify(bgBefore85)}`, 5000);
+            const bgNext85 = await appBg85();
+            const after85 = switched85 ? await pageBg85() : null;
+            await h.shot("cdp-shots/agent-chat-85-visual-theme-switch.png");
+            await setPreset85(ctx.prevPreset?.atom ?? "claude");
+            const restored85 = await polishWaitFor(h, `getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim() === ${JSON.stringify(bgBefore85)}`, 5000);
+            const back85 = restored85 ? await pageBg85() : null;
+            rec(
+                "85. chart.html's #theme sends the page's --arc-background: before the switch it is the app's --color-background; after the cockpit's theme preset is switched (to one with another background) it is the new --color-background, and after the preset is put back it is the first one again",
+                figure85 && sized85 && bgBefore85 !== "" && before85?.typed === `theme:${bgBefore85}\r` &&
+                    switched85 && bgNext85 !== bgBefore85 && after85?.typed === `theme:${bgNext85}\r` &&
+                    restored85 && back85?.typed === `theme:${bgBefore85}\r`,
+                { figure85, sized85, drawn85, prevPreset: ctx.prevPreset, next85, bgBefore85, before85, switched85, bgNext85, after85, restored85, back85 }
+            );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
         }
@@ -45616,6 +46099,21 @@ const agentChat = {
             }
         });
         await step("forget the visuals folder", () => h.ev(`delete window.__chatVisualsDir`));
+        // step 85 switches the cockpit's theme preset and puts it back; a throw between left it switched. The atom is set first
+        // (it writes localStorage), then the stored value is put back as it was, the key removed only if it was absent
+        await step("restore the theme preset", () =>
+            ctx.prevPreset == null
+                ? null
+                : AC.agentPage(
+                      h,
+                      `const T = await mod("app/view/agents/themestore.ts");
+                      const prev = ${JSON.stringify(ctx.prevPreset)};
+                      globalStore.set(T.themePresetAtom, prev.atom);
+                      if (prev.stored == null) localStorage.removeItem("cockpit.theme.preset");
+                      else localStorage.setItem("cockpit.theme.preset", prev.stored);
+                      return true;`
+                  )
+        );
         await step("remove the mock", () => removeAgentChatMock(h));
         await step("restore the roster", () => AC.restoreRoster(h));
         await step("clear the permission queue", () =>

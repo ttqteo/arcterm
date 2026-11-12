@@ -6,6 +6,21 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The Brainstorm tab's own-words field is a "You replied" in Chat: on an agent with a brainstorm
+  question open, type an answer in that question's own-words field in the Brainstorm tab ("Answer in your own words…",
+  or "Or type your own answer…" under options) and send it with OK or Enter → the ✓ row for that question in the
+  agent's Chat reads "You replied", not "You picked"; an option clicked in the same tab still reads "You picked". No
+  scenario step sends through `useAnswer.sendDraft`; Chat's own message box is covered by `chat-redesign` 14c (commit
+  `b86ab9fa4`, run ebecc28f's branch `wave/ebecc28f-a804-4c1b-ab2d-88a4ffa8797a-t-9`; `brainstormui.tsx` `useAnswer`,
+  `chatbrainstorm.ts` `SentAnswer.typed`; the tab's send is unit-tested only).
+- [ ] (arcterm) The pinned prompt band sits right on the other `CompactTranscript` hosts: open a long session in
+  History's session detail, a sleeping agent's transcript overlay, and an ended agent's transcript, and scroll each
+  down past a few of your prompts → the band holding the prompt you are under sits flush at the top edge of the
+  scroller, with no clipped line of the transcript above it, and a jump to a prompt lands it just under the band, not
+  behind it. Only the rail transcript is covered, by `rail-transcript-tab` (commit `4671d8cea`, run ebecc28f's branch
+  `wave/ebecc28f-a804-4c1b-ab2d-88a4ffa8797a-t-9`; `compacttranscript.tsx`, `pinnedpromptbar.tsx`, hosted by
+  `sessionsdetail.tsx`, `sleepingtranscript.tsx`, `endedtranscript.tsx`).
+
 - [ ] (arcterm) The agents/backend and code/diff follow-up fixes of 2026-11-13 render: run `task verify:ui --
   code-changed-walk setup-memory agent-history diff-comments diff-scope` on a dev app (or `node
   scripts/cdp/final-verify.mjs` with those names). New or changed steps, never run: code-changed-walk's last step (a

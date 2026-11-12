@@ -220,8 +220,19 @@ export function ChatBrainstormCard({
 }
 
 /** An answered question as one ✓ row, drawn in place of the user's message that carried the answer, so it is never
- *  shown twice. */
-export function ChatBrainstormAnswered({ n, part, text }: { n: number; part: string; text: string }) {
+ *  shown twice. It ends "You replied" for words the user typed (`typed`) and "You picked" for an option they clicked,
+ *  which is also what a record stored before `typed` existed reads as. */
+export function ChatBrainstormAnswered({
+    n,
+    part,
+    text,
+    typed,
+}: {
+    n: number;
+    part: string;
+    text: string;
+    typed?: boolean;
+}) {
     return (
         <div
             data-chat-bscard-answered
@@ -233,7 +244,7 @@ export function ChatBrainstormAnswered({ n, part, text }: { n: number; part: str
             <span className="min-w-0 truncate font-medium text-primary" title={text}>
                 {text}
             </span>
-            <span className="ml-auto flex-none text-muted">You picked</span>
+            <span className="ml-auto flex-none text-muted">{typed ? "You replied" : "You picked"}</span>
         </div>
     );
 }

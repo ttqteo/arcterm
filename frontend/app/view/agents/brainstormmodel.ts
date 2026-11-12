@@ -582,7 +582,7 @@ export function treeLine(f: BrainstormFile, asking: boolean, runText?: string): 
 }
 
 export type BrainstormAction =
-    | { kind: "answer"; text: string }
+    | { kind: "answer"; text: string; typed?: true }
     | { kind: "guess" }
     | { kind: "skip" }
     | { kind: "confirm"; part: string }

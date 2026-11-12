@@ -31,19 +31,29 @@ export const STATE_DOT: Record<AgentState, string> = {
     idle: "bg-muted",
 };
 
-// the harnesses the server may put to sleep (agentsleep.Harnesses); codex never sleeps
-const SLEEP_HARNESSES: readonly string[] = ["claude", "pi", "agy"];
+// the harnesses the server may put to sleep (agentsleep.Harnesses); codex never sleeps. Here, not in agentsleep.ts (which
+// re-exports it): agentsleep.ts imports ramLabel from this file, and pulls in RpcApi and the store, which this pure file
+// stays clear of.
+export const SLEEPABLE_AGENTS: ReadonlySet<string> = new Set(["claude", "pi", "agy"]);
 
 /** Whether Sleep is offered for an agent: awake and idle, on a harness that resumes, and not working for a run (a run's
- *  lead and workers never sleep). The server decides again when asked. */
+ *  lead and workers never sleep). The server decides again when asked. The one rule behind the sidebar row's Sleep, the
+ *  Consumers panel and the palette. A kind of "agent" is an agent; a terminal or a background task is not. */
 export function canSleep(vm: AgentVM): boolean {
     return (
         vm.sleeping == null &&
         vm.state === "idle" &&
-        vm.kind == null &&
+        (vm.kind == null || vm.kind === "agent") &&
         vm.runId == null &&
-        SLEEP_HARNESSES.includes(vm.agent ?? "")
+        SLEEPABLE_AGENTS.has(vm.agent ?? "")
     );
+}
+
+/** Whether what types into an agent's terminal (Interrupt, /compact, /clear, the Resume nudge, the plan review's
+ *  continue) can reach it: it has a terminal block, and is awake. A sleeping agent's process has ended, so its PTY is
+ *  dead: Wake, or a message that wakes it, is the way in. */
+export function canDrive(vm: Pick<AgentVM, "blockId" | "sleeping">): boolean {
+    return vm.blockId != null && vm.sleeping == null;
 }
 
 // the group of sleeping agents: always the last, whatever else ranks above it

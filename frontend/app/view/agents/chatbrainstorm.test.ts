@@ -51,6 +51,17 @@ function rec(over: Partial<SentAnswer> = {}): SentAnswer {
 const msgs = (...texts: string[]) => texts.map((text, i) => ({ key: `u${i}`, text }));
 
 describe("pairAnswers", () => {
+    it("carries `typed` to the paired answer, and leaves it off for a record without it", () => {
+        const paired = pairAnswers(
+            [rec({ text: "keep it as 2.2?", typed: true }), rec({ n: 2, text: "Fade", sentAt: 2000 })],
+            msgs("keep it as 2.2?", "Fade"),
+            TOPIC
+        );
+        expect(paired.get("u0")).toEqual({ n: 1, part: "Scope", text: "keep it as 2.2?", kind: "answer", typed: true });
+        expect(paired.get("u1")).toEqual({ n: 2, part: "Scope", text: "Fade", kind: "answer" });
+        expect("typed" in paired.get("u1")!).toBe(false);
+    });
+
     it("pairs the message after the `seen` ones", () => {
         const paired = pairAnswers([rec({ text: "Fade", seen: 0 })], msgs("hello", "Fade", "later"), TOPIC);
         expect([...paired.keys()]).toEqual(["u1"]);
@@ -244,6 +255,28 @@ describe("the send record", () => {
             { ...base, text: "f", kind: "run" },
             { ...base, text: "g", kind: "design" },
         ]);
+    });
+
+    it("keeps `typed` only when it is the literal true", () => {
+        const base = { topic: TOPIC, n: 2, part: "Motion", sentAt: 5, seen: 0 };
+        const stored = [
+            { ...base, text: "a", typed: true },
+            { ...base, text: "b", typed: false },
+            { ...base, text: "c", typed: "true" },
+            { ...base, text: "d", typed: 1 },
+            { ...base, text: "e", typed: null },
+            { ...base, text: "f" },
+        ];
+        const read = parseSentStore(JSON.stringify({ a1: stored })).a1;
+        expect(read).toEqual([
+            { ...base, text: "a", typed: true },
+            { ...base, text: "b" },
+            { ...base, text: "c" },
+            { ...base, text: "d" },
+            { ...base, text: "e" },
+            { ...base, text: "f" },
+        ]);
+        expect("typed" in read[1]).toBe(false);
     });
 
     it.each([null, undefined, "", "{", "[]", "3"])("reads %j as no records", (raw) => {
@@ -461,6 +494,7 @@ function inp(over: Partial<CardInput> = {}): CardInput {
         sent: null,
         seen: null,
         starting: null,
+        modifiedMs: null,
         ...over,
     };
 }
@@ -639,6 +673,37 @@ describe("brainstormCard: the question", () => {
     it("counts a record from before kinds existed as an answer", () => {
         const old: SentAnswer = { topic: TOPIC, n: 2, part: "Motion", text: "Fade", sentAt: 1, seen: 0 };
         expect(brainstormCard(inp({ records: [old] }))).toBeNull();
+    });
+
+    it("stays hidden while the file is no newer than the record that answered it", () => {
+        const answered = rec({ n: 2, sentAt: 1000 });
+        expect(brainstormCard(inp({ records: [answered], modifiedMs: 900 }))).toBeNull();
+        // written the very moment the line went: nothing says the agent has written since
+        expect(brainstormCard(inp({ records: [answered], modifiedMs: 1000 }))).toBeNull();
+    });
+
+    it("shows again when the file was written after the record and still asks the same question", () => {
+        // a question typed back is no answer: the agent rewrote the file still asking n
+        const typedBack = rec({ n: 2, sentAt: 1000, typed: true });
+        expect(pick(brainstormCard(inp({ records: [typedBack], modifiedMs: 1001 })), "question").n).toBe(2);
+        // the same for a clicked answer: a file that asks n again is asking again
+        const clicked = rec({ n: 2, sentAt: 1000 });
+        expect(pick(brainstormCard(inp({ records: [clicked], modifiedMs: 5000 })), "question").state).toBe("waiting");
+    });
+
+    it("keeps today's hiding when the file has no time to compare", () => {
+        expect(brainstormCard(inp({ records: [rec({ n: 2, sentAt: 1000 })], modifiedMs: null }))).toBeNull();
+    });
+
+    it("is hidden by a record newer than the file even when an older record is passed", () => {
+        // the file was written after the first answer but before the second one went: the second hides it
+        const records = [rec({ n: 2, sentAt: 1000 }), rec({ n: 2, sentAt: 3000, text: "B" })];
+        expect(brainstormCard(inp({ records, modifiedMs: 2000 }))).toBeNull();
+    });
+
+    it("still hides a question that is being written up, however new the file", () => {
+        const writing = file({ working: "Taking in your change." });
+        expect(brainstormCard(inp({ file: writing, records: [rec({ n: 2 })], modifiedMs: 9000 }))).toBeNull();
     });
 
     it("is not hidden by a builder answer with the same number", () => {
@@ -959,7 +1024,24 @@ describe("sendRecord", () => {
         });
     });
 
+    it("copies `typed` from an answer action onto the record, and leaves it off when the action has none", () => {
+        const typed = send({ kind: "answer", text: "keep it as 2.2?", typed: true }, asking(), [], 1);
+        expect(typed).toEqual({
+            topic: TOPIC,
+            n: 2,
+            part: "Motion",
+            text: "keep it as 2.2?",
+            sentAt: 1000,
+            seen: 1,
+            typed: true,
+        });
+        const clicked = send({ kind: "answer", text: "Fade" }, asking(), [], 1);
+        expect(clicked).not.toBeNull();
+        expect("typed" in clicked!).toBe(false);
+    });
+
     it("keeps nothing for an answer typed with no question open, which stays a bubble", () => {
+        expect(send({ kind: "answer", text: "why not a fade?", typed: true }, review())).toBeNull();
         expect(send({ kind: "answer", text: "why not a fade?" }, review())).toBeNull();
         expect(send({ kind: "answer", text: "why not a fade?" }, null)).toBeNull();
     });
