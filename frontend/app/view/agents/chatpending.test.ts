@@ -144,14 +144,14 @@ describe("pendingStill", () => {
 });
 
 // The caption under a pending bubble is decided when the message is sent. Read from the agent's state as it drew, a
-// message sent to an idle agent flashed Sending…, then Queued with Send now as the turn it started set the agent
+// message sent to an idle agent flashed a caption, then Queued with Send now as the turn it started set the agent
 // working, then went as the transcript took it.
 describe("pendingMessage and its caption", () => {
     const entries: AgentEntry[] = [];
-    it("keeps a message sent to an idle agent at Sending… while the turn it started runs", () => {
+    it("gives a message sent to an idle agent no caption while the turn it started runs", () => {
         const p = pendingMessage("p1", "fix the chip", entries, 1_000, false);
         expect(p.queued).toBe(false);
-        expect(pendingCaption(p)).toBe("Sending…");
+        expect(pendingCaption(p)).toBeNull();
         expect(queuedBubbleUp([p])).toBe(false);
     });
     it("captions a message sent while the agent works Queued, which Send now can push", () => {

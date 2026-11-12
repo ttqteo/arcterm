@@ -49,9 +49,10 @@ export function pendingMessage(
 }
 
 /** The line under a pending message's bubble: the harness's starting line while a session starts, else Queued for one
- *  sent while the agent worked and Sending… for one sent to an idle agent, for as long as either waits. */
-export function pendingCaption(p: PendingMessage, starting?: string): string {
-    return starting ?? (p.queued === true ? "Queued" : "Sending…");
+ *  sent while the agent worked, for as long as it waits. One sent to an idle agent has none (null): the transcript takes
+ *  it in a moment, and a Sending… line there only blinked as the transcript's copy replaced the bubble. */
+export function pendingCaption(p: PendingMessage, starting?: string): string | null {
+    return starting ?? (p.queued === true ? "Queued" : null);
 }
 
 /** Whether a message bubble captioned Queued is up, which Ctrl+Enter in the empty box sends now. */

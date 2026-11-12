@@ -42,7 +42,7 @@ import { openQuestion } from "./chatbrainstorm";
 import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstormstore";
 import { boxAnswerRecord, boxPlaceholderOverride } from "./chatbrainstormwire";
 import { ChatComposer } from "./chatcomposer";
-import { ChatConversation } from "./chatconversation";
+import { ChatConversation, youBubbleBox } from "./chatconversation";
 import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
@@ -86,13 +86,14 @@ function useIdleSince(idle: boolean): number | null {
     return since;
 }
 
-// A message sent and not in the transcript yet: your bubble, dimmed, and under it "Queued" when it was sent while
-// Claude worked (Claude Code takes it at the next gap) or "Sending…" when it was sent to an idle Claude
-// (chatpending.ts pendingCaption: decided at the send, so the turn it starts never flips it to Queued); a session's
-// first message, the task it was launched on, reads
-// "Starting Claude Code…" (`starting`) while the harness starts. It goes when the transcript holds the text (pendingStill). It splits
-// the text the way your bubble in the transcript does (chatconversation.tsx YouBubble: @mentions as pills, files as cards
-// under it), so nothing changes when the transcript's copy replaces it.
+// A message sent and not in the transcript yet. Sent to an idle Claude it is simply your bubble, drawn as the transcript
+// will draw it and where (chatconversation.tsx YouBubble's box, spacing and letter spacing): the transcript takes it in a
+// moment, and a dimmed "Sending…" bubble swapped for the full one blinked and moved the lines under it. Sent while Claude
+// worked it is dimmed and captioned "Queued" (Claude Code takes it at the next gap), with Send now; a session's first
+// message, the task it was launched on, reads "Starting Claude Code…" (`starting`) while the harness starts
+// (chatpending.ts pendingCaption: decided at the send, so the turn it starts never flips it to Queued). It goes when the
+// transcript holds the text (pendingStill). It splits the text the way your bubble in the transcript does (@mentions as
+// pills, files as cards under it).
 // the turn's time and output tokens after the working line, as the TUI's "(1m 11s · ↓ 3.1k tokens)": its own component so
 // the second's tick redraws this alone
 function TurnStatsText({ stats }: { stats: TurnStats }) {
@@ -172,6 +173,31 @@ function PendingBubble({
     const body = said.text.trim();
     const chord = sendNowChord();
     const rises = useRisesFromBox(pending.sentAt);
+    const caption = pendingCaption(pending, starting);
+    if (caption == null) {
+        return (
+            <motion.div
+                data-chat-pending
+                variants={sentRise}
+                initial={rises ? "initial" : false}
+                animate="animate"
+                style={{ transformOrigin: "bottom right" }}
+                // where its transcript row lands: mt-2 over the conversation's pb-2 is the conversation's gap-4 above it,
+                // -mb-1 under the bubble's mb-1 leaves the tail's gap-3 as the row's mb-1 + pb-2 under it
+                className="-mb-1 mt-2 flex flex-col items-end tracking-[-0.01em]"
+            >
+                <div className="flex max-w-[75%] flex-col items-end gap-2">
+                    {body !== "" || said.images.length > 0 ? (
+                        <div className={youBubbleBox(said.files.length > 0)}>
+                            {body !== "" ? <TaggedPromptText text={body} /> : null}
+                            {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
+                        </div>
+                    ) : null}
+                    {said.files.length > 0 ? <ChatFileCards paths={said.files} /> : null}
+                </div>
+            </motion.div>
+        );
+    }
     return (
         <motion.div
             data-chat-pending
@@ -197,7 +223,7 @@ function PendingBubble({
                     {starting != null ? (
                         <span className="h-[6px] w-[6px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
                     ) : null}
-                    {pendingCaption(pending, starting)}
+                    {caption}
                 </span>
                 {starting == null && queued && onSendNow != null ? (
                     <button

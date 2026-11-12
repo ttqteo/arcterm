@@ -256,6 +256,16 @@ function BtwCard({ command, btw, onContextMenu }: { command: string; btw: BtwAns
     );
 }
 
+// your bubble's box, shared with the bubble that stands in for a message on its way (chatpane.tsx PendingBubble), so the
+// transcript's copy taking its place draws nothing new. The copy button hangs in the gap under the bubble: it leaves that
+// button room above the cards
+export function youBubbleBox(hasFiles: boolean): string {
+    return cn(
+        "max-w-full rounded-[16px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary",
+        hasFiles ? "mb-3" : "mb-1"
+    );
+}
+
 // your message: a bubble on the right, long ones clamped (PromptText, as userNeedsClamp says), what you pasted under it
 function YouBubble({
     item,
@@ -315,13 +325,7 @@ function YouBubble({
             className="flex max-w-[75%] flex-col items-end gap-2 self-end"
         >
             {text !== "" || hasPictures ? (
-                <div
-                    className={cn(
-                        "group relative max-w-full rounded-[16px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary",
-                        // the copy button hangs in the gap under the bubble: leave it room above the cards
-                        hasFiles ? "mb-3" : "mb-1"
-                    )}
-                >
+                <div className={cn("group relative", youBubbleBox(hasFiles))}>
                     {text !== "" ? <TaggedPromptText text={text} /> : null}
                     {hasPictures ? <PromptImages images={item.images} paths={said.images} /> : null}
                     {/* the whole message, files and all, as the context menu copies it */}
