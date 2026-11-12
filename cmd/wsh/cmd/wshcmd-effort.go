@@ -108,6 +108,9 @@ var effortListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if topics, _ := cmd.Flags().GetBool("topics"); topics {
+			rtn.Efforts = topicEfforts(rtn.Efforts)
+		}
 		if isJSON(cmd) {
 			return jsonOut(rtn)
 		}
@@ -116,6 +119,24 @@ var effortListCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// topicEfforts keeps the efforts another listed effort is linked under: the topics a new effort can join with
+// `create --parent`. A child whose parent is not in the list (archived, another project) makes no topic.
+func topicEfforts(list []wshrpc.EffortSummary) []wshrpc.EffortSummary {
+	parents := make(map[string]bool)
+	for _, s := range list {
+		if s.ParentOID != "" {
+			parents[s.ParentOID] = true
+		}
+	}
+	var out []wshrpc.EffortSummary
+	for _, s := range list {
+		if parents[strings.TrimPrefix(s.ORef, "effort:")] {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 var effortShowCmd = &cobra.Command{
@@ -613,6 +634,7 @@ func init() {
 	effortCreateCmd.Flags().Bool("json", false, "JSON output")
 	effortListCmd.Flags().String("project", "", "filter by project")
 	effortListCmd.Flags().Bool("archived", false, "include archived efforts")
+	effortListCmd.Flags().Bool("topics", false, "only the efforts others are linked under (the parents a new effort can join)")
 	effortListCmd.Flags().Bool("json", false, "JSON output")
 	effortShowCmd.Flags().Bool("json", false, "JSON output")
 	effortPinCmd.Flags().Bool("replace-oldest", false, "at the cap, unpin the oldest pin to make room")

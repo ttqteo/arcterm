@@ -184,3 +184,29 @@ func TestEffortChunkAddDueFlag(t *testing.T) {
 		t.Fatal("`effort chunk add --due` is not registered")
 	}
 }
+
+func TestTopicEffortsKeepsOnlyParents(t *testing.T) {
+	list := []wshrpc.EffortSummary{
+		{ORef: "effort:aaa", Title: "Chat"},
+		{ORef: "effort:bbb", Title: "Pin messages in Chat", ParentOID: "aaa"},
+		{ORef: "effort:ccc", Title: "Council"},
+		{ORef: "effort:ddd", Title: "Council memory: follow-ups", ParentOID: "ccc"},
+		{ORef: "effort:eee", Title: "Council memory v2", ParentOID: "ddd"},
+		{ORef: "effort:fff", Title: "Loose effort"},
+		{ORef: "effort:ggg", Title: "Child of an archived parent", ParentOID: "zzz"},
+	}
+	got := topicEfforts(list)
+	var titles []string
+	for _, s := range got {
+		titles = append(titles, s.Title)
+	}
+	if want := "Chat|Council|Council memory: follow-ups"; strings.Join(titles, "|") != want {
+		t.Fatalf("topicEfforts = %q, want %q", strings.Join(titles, "|"), want)
+	}
+}
+
+func TestEffortListHasTopicsFlag(t *testing.T) {
+	if effortListCmd.Flags().Lookup("topics") == nil {
+		t.Fatal("`effort list` has no --topics flag")
+	}
+}
