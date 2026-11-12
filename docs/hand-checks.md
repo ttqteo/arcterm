@@ -6,6 +6,9 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat's compaction summary collapses from inside: in a Chat that compacted, click the Compacted pill
+  → the summary shows a Collapse button at its top right and at its end; the top one closes it, the end one closes it
+  and scrolls the Compacted pill back into view (`narrationtimeline.tsx` CompactionDivider).
 - [ ] (arcterm) Chat's tool fold lines up: open a "Worked for …" line in Chat → its caret sits centred over the step
   icons (spinner or tool icon) below it, and "Worked for" starts where the step names start (`chatstepsview.tsx`
   FoldCaret and the fold button's `px-1.5 gap-2`, matching StepLine).

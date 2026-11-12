@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A compaction summary opened in Chat has a Collapse button at its top and at its end, so a long one closes without
+  scrolling back up to the Compacted line; the one at the end brings that line back on screen.
 - Ctrl+End (⌘End on a Mac) in Chat jumps back to the latest message, as the round ↓ above the box does; its tooltip
   names the key.
 - Take a message back in Chat: Esc while Claude works brings the messages that show Queued back into the box without
