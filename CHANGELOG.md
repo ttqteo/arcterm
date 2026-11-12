@@ -22,7 +22,7 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
+## 1.0.7 — 2026-11-12
 
 ### Added
 
@@ -181,6 +181,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **Usage keeps what it measured** (from the kaeltran16 fork): the daily chart of one project or initiative spans the
   whole held window, empty days included, and a failed switch of the range shows a panel with Retry over the held
   figures.
+- A background command that left a server running is named in the Agent tree by the server and its port
+  (`portal/web · 4310`) instead of the words the agent started it with; hover the row to read those.
+- The peek of a background command or Monitor opens at a set size and no longer stretches across the window to fit a
+  long line: drag its right edge, bottom edge or corner to make it larger, and it keeps that size the next time it
+  opens (double-click an edge for the default again).
+- A new session's Chat no longer reads "No messages yet" over a "Working…" line while it starts. A session launched
+  with a task shows that task at once as your first message, captioned "Starting Claude Code…"; one launched without
+  a task shows the agent's logo, "Starting Claude Code…" and the project it starts in. Once it is ready, it shows
+  "New conversation" with the model, the project and how to begin (`@` for a file, `/` for a command). An agent that
+  failed to start says so, with why.
 
 ### Fixed
 
@@ -267,20 +277,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **A closed tab's session stays under its initiative** (from the kaeltran16 fork): Usage counted a session under the
   initiative its tab carried only while the tab was open; it keeps it after the tab closes. A brainstorm judge's or
   check's session shows its role instead of reading as a plain session.
-### Changed
-
-- A background command that left a server running is named in the Agent tree by the server and its port
-  (`portal/web · 4310`) instead of the words the agent started it with; hover the row to read those.
-- The peek of a background command or Monitor opens at a set size and no longer stretches across the window to fit a
-  long line: drag its right edge, bottom edge or corner to make it larger, and it keeps that size the next time it
-  opens (double-click an edge for the default again).
-### Changed
-
-- A new session's Chat no longer reads "No messages yet" over a "Working…" line while it starts. A session launched
-  with a task shows that task at once as your first message, captioned "Starting Claude Code…"; one launched without
-  a task shows the agent's logo, "Starting Claude Code…" and the project it starts in. Once it is ready, it shows
-  "New conversation" with the model, the project and how to begin (`@` for a file, `/` for a command). An agent that
-  failed to start says so, with why.
 
 ## 1.0.6 — 2026-11-10
 
