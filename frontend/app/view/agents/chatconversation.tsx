@@ -14,10 +14,11 @@
 // A row that arrives at the tail, or a part that lands in a row already there, opens its height on the spring instead of
 // shoving what is above it (Arriving, chatarrival.ts); what is drawn at once (the first load, Show earlier, a restored place)
 // never animates.
-// The agent's brainstorm shows here as well (chatbrainstormcard.tsx): the question it waits on is a card after the last row,
-// which opens and leaves on the spring, and each of your messages that answered a question draws as that question's ✓ row in
-// place of its bubble (chatbrainstorm.ts pairs them by the record of what Arc sent). Chat never switches to the Brainstorm
-// tab for it; the card's button does that.
+// The agent's brainstorm shows here as well (chatbrainstormcard.tsx and its siblings): the card it ends with (the question it
+// waits on, Confirm the design, the builder check, the run) is a row after the last row, which opens and leaves on the
+// spring, and each of your messages that is a line Arc sent draws in place of its bubble by what the line was: an answer
+// or a step as its ✓ row, an action line (confirm, edit, keep…) as nothing at all (chatbrainstorm.ts pairs them by the
+// record of what Arc sent). Chat never switches to the Brainstorm tab for it; the card's button does that.
 
 import { CopyButton } from "@/app/element/copybutton";
 import { MOTION, springReveal } from "@/app/element/motiontokens";
@@ -36,10 +37,17 @@ import {
     type EditFile,
     type ShellResult,
 } from "./agentsviewmodel";
+import type { BrainstormState } from "./brainstormstore";
 import { arrivalFrom, tailArrivals } from "./chatarrival";
-import { pairAnswers, type OpenQuestion, type PairedAnswer, type SentAnswer } from "./chatbrainstorm";
-import { ChatBrainstormAnswered, ChatBrainstormCard } from "./chatbrainstormcard";
-import { answerMessages, answeredText } from "./chatbrainstormwire";
+import { pairAnswers, type ChatCard, type PairedAnswer, type SentAnswer } from "./chatbrainstorm";
+import {
+    ChatBrainstormAnswered,
+    ChatBrainstormBuilderAnswered,
+    ChatBrainstormCard,
+    ChatBrainstormStepDone,
+} from "./chatbrainstormcard";
+import { ChatBrainstormRunDone, ChatBrainstormRunRow, useDoneRuns } from "./chatbrainstormrun";
+import { answerMessages, answeredText, pairedHidden } from "./chatbrainstormwire";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { canForkInChat, forkPointOfProse, forkPointOfYou, type ForkPoint } from "./chatfork";
@@ -478,19 +486,48 @@ function Arriving({
 const NO_KEYS: ReadonlySet<string> = new Set();
 const NO_ANSWERS: ReadonlyMap<string, PairedAnswer> = new Map();
 
-/** The agent's brainstorm as the conversation draws it: `question` is what it waits on now (a card, or the one line that
- *  points to the Brainstorm tab), `answers` and `topic` are what Arc sent to its questions, which pair with your messages
- *  so each answered question draws as one ✓ row in place of your bubble. */
+/** The agent's brainstorm as the conversation draws it: `card` is what the conversation ends with now (the question it
+ *  waits on, the Confirm the design card, the builder check, or the run), `state` and `model` what its views read (the
+ *  brainstorm they were made from, the cockpit for the clock and the launcher); `answers` and `topic` are the lines Arc
+ *  sent, which pair with your messages so each draws as its ✓ row in place of your bubble, or draws nothing (an action
+ *  line). */
 export interface ChatBrainstorm {
     agent: AgentVM;
     topic: string;
     answers: readonly SentAnswer[];
-    question: OpenQuestion | null;
+    card: ChatCard | null;
+    state: BrainstormState | null;
+    model: AgentsViewModel;
 }
 
-// the one string an answered row is drawn from, for the item's kept element to be compared by
+// the one string a paired row is drawn from, for the item's kept element to be compared by: its kind and everything the
+// row of that kind shows
 function answerKey(a: PairedAnswer | undefined): string {
-    return a == null ? "" : `${a.n}\n${a.part}\n${a.text}`;
+    return a == null
+        ? ""
+        : [a.kind, a.n, a.part, a.text, a.decisions, a.questions, a.calls, a.outcome, a.runId].join("\n");
+}
+
+// the row a message that Arc sent draws in place of its bubble, by what the line was (a hidden line never gets here)
+function PairedRow({ answer }: { answer: PairedAnswer }) {
+    switch (answer.kind) {
+        case "answer":
+            return <ChatBrainstormAnswered n={answer.n} part={answer.part} text={answeredText(answer.text)} />;
+        case "builder-answer":
+            return <ChatBrainstormBuilderAnswered n={answer.n} part={answer.part} text={answer.text} />;
+        case "design":
+        case "builder":
+            return <ChatBrainstormStepDone answer={answer} />;
+        case "run":
+            return answer.runId != null ? <ChatBrainstormRunDone runId={answer.runId} /> : null;
+        case "action":
+            return null;
+    }
+}
+
+// the key the end row's wrapper animates a swap by: one per kind, and per question (n) for the question card
+function cardKey(card: Exclude<ChatCard, { kind: "run" }>): string {
+    return card.kind === "question" ? `question:${card.n}` : card.kind;
 }
 
 // an item's element as last drawn, and what it was drawn from (ChatConversation's drawnItems)
@@ -664,6 +701,22 @@ export function ChatConversation({
     }
     const visible = shownItems(items, Math.max(win.shown, Math.min(CHAT_RENDER_STEP, items.length)));
     const hidden = items.length - visible.length;
+    // A line Arc sent can draw nothing at all (an action line, or the line that started a run while the run is live):
+    // such an item gets no wrapper, so it leaves no empty slot in the column's gap. `drawnVisible` is what has an element,
+    // in order, which is what the place kept and restored below indexes (the drawn elements, not `visible`).
+    const runLines = useMemo(
+        () => [
+            ...new Set([...answers.values()].flatMap((a) => (a.kind === "run" && a.runId != null ? [a.runId] : []))),
+        ],
+        [answers]
+    );
+    const doneRuns = useDoneRuns(runLines);
+    const pairedOf = (item: ChatItem): PairedAnswer | undefined =>
+        item.kind === "you" && !("command" in item) ? answers.get(item.key) : undefined;
+    const drawnVisible = visible.filter((item) => {
+        const answer = pairedOf(item);
+        return answer == null || !pairedHidden(answer, doneRuns);
+    });
     // what the last commit drew, to tell what is new now: a row appended at the tail, or a part landing in a row that was
     // already there, opens on the spring (Arriving); a row the first load, Show earlier or a restored place draws does not.
     // Your own message is drawn at once too: its pending twin (chatpane.tsx) stood in the tail until it landed, and a twin
@@ -671,6 +724,12 @@ export function ChatConversation({
     const reduceMotion = useReducedMotion();
     // the card row's margin is no height or transform, so MotionConfig's reduced motion would still glide it: it jumps here
     const rowSpring = reduceMotion ? { duration: 0 } : MOTION.spring;
+    // the end row's gap opens and closes on it (the card brings its own height)
+    const endRow = {
+        initial: { marginTop: -ITEM_GAP },
+        animate: { marginTop: 0, transition: rowSpring },
+        exit: { marginTop: -ITEM_GAP, transition: rowSpring },
+    };
     const lastDrawn = useRef<{ items: string[]; parts: Set<string> }>({ items: [], parts: new Set() });
     const visibleKeys = visible.map((item) => item.key);
     const arrived = reduceMotion ? NO_KEYS : tailArrivals(lastDrawn.current.items, visibleKeys);
@@ -698,8 +757,8 @@ export function ChatConversation({
     // the scroll before "Show earlier" drew items in front, and the item that was first then
     const heightBeforeGrow = useRef<{ top: number; height: number; first: string | undefined } | null>(null);
     const placedFor = useRef<string | undefined>(undefined); // the placeId whose kept place was looked up
-    const live = useRef(visible);
-    live.current = visible;
+    const live = useRef(drawnVisible);
+    live.current = drawnVisible;
 
     const toggle = (key: string) =>
         setOpened((prev) => {
@@ -761,7 +820,12 @@ export function ChatConversation({
             return;
         }
         placedFor.current = placeId;
-        const el = rootRef.current?.querySelectorAll<HTMLElement>(":scope > [data-chat-item]")[at - hidden];
+        // the last drawn item starting at or before the kept entry: a line that draws nothing has no element to scroll to
+        const drawnAt = drawnVisible.filter((it) => keyIndex(it.key) <= place.key).length - 1;
+        const el =
+            drawnAt >= 0
+                ? rootRef.current?.querySelectorAll<HTMLElement>(":scope > [data-chat-item]")[drawnAt]
+                : undefined;
         const scroller = scrollParent(rootRef.current);
         if (el != null && scroller != null) {
             scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + place.offset;
@@ -908,13 +972,14 @@ export function ChatConversation({
     const drawItem = (item: ChatItem, last: boolean): ReactNode => {
         switch (item.kind) {
             case "you": {
-                // a message that answered a brainstorm question: the question's ✓ row in place of its bubble, so the
-                // answer is shown once
-                const answer = "command" in item ? undefined : answers.get(item.key);
+                // a message that is a line Arc sent to the brainstorm: its ✓ row in place of its bubble (a question's, a
+                // builder question's, a step's), so it is shown once. A line that draws nothing never gets here: `rows`
+                // gives it no wrapper (drawnVisible)
+                const answer = pairedOf(item);
                 if (answer != null) {
                     return (
                         <div className="min-w-0 self-stretch">
-                            <ChatBrainstormAnswered n={answer.n} part={answer.part} text={answeredText(answer.text)} />
+                            <PairedRow answer={answer} />
                         </div>
                     );
                 }
@@ -961,9 +1026,13 @@ export function ChatConversation({
     const drawnItems = useRef(new Map<string, DrawnItem>());
     const drawnNow = new Map<string, DrawnItem>();
     const rows = visible.map((item, i) => {
+        const paired = pairedOf(item);
+        if (paired != null && pairedHidden(paired, doneRuns)) {
+            return null;
+        }
         const last = i === visible.length - 1;
         const folds = openedFor(opened, item.key);
-        const answer = answerKey(answers.get(item.key));
+        const answer = answerKey(paired);
         const kept = drawnItems.current.get(item.key);
         const reuse =
             kept != null &&
@@ -1035,21 +1104,34 @@ export function ChatConversation({
             ) : null}
             {/* one wrapper per item, keyed by its first entry: the place kept and restored is found by it */}
             {rows}
-            {/* The question the brainstorm waits on, after the last row: a row kind of its own, not an item (it is no
-                data-chat-item, so the place kept and restored never counts it). The card opens its height on the spring
-                and leaves on it (the card's own variants); this wrapper does the same with the column's gap, which a
-                closed row would otherwise hold open, so nothing above it shoves. The first render draws it at once. */}
+            {/* The card the brainstorm ends with (the question it waits on, Confirm the design, the builder check, the
+                run), after the last row: a row kind of its own, not an item (it is no data-chat-item, so the place kept
+                and restored never counts it). The card opens its height on the spring and leaves on it (the card's own
+                variants); this wrapper does the same with the column's gap, which a closed row would otherwise hold
+                open, so nothing above it shoves. It is keyed by the card's kind (and a question's number), so a swap
+                from one card to the next animates. The first render draws it at once. The run card draws its own
+                wrapper (ChatBrainstormRunRow), which a run that is over leaves out altogether: no empty row holding
+                the column's gap. */}
             <AnimatePresence initial={false}>
-                {brainstorm?.question != null ? (
-                    <motion.div
-                        key={brainstorm.question.state === "pointer" ? "pointer" : `question:${brainstorm.question.n}`}
-                        data-chat-brainstorm-row
-                        initial={{ marginTop: -ITEM_GAP }}
-                        animate={{ marginTop: 0, transition: rowSpring }}
-                        exit={{ marginTop: -ITEM_GAP, transition: rowSpring }}
-                    >
-                        <ChatBrainstormCard agent={brainstorm.agent} question={brainstorm.question} />
-                    </motion.div>
+                {brainstorm?.card != null && brainstorm.state != null ? (
+                    brainstorm.card.kind === "run" ? (
+                        <ChatBrainstormRunRow
+                            key="run"
+                            agent={brainstorm.agent}
+                            model={brainstorm.model}
+                            card={brainstorm.card}
+                            rowProps={endRow}
+                        />
+                    ) : (
+                        <motion.div key={cardKey(brainstorm.card)} data-chat-brainstorm-row {...endRow}>
+                            <ChatBrainstormCard
+                                agent={brainstorm.agent}
+                                card={brainstorm.card}
+                                model={brainstorm.model}
+                                state={brainstorm.state}
+                            />
+                        </motion.div>
+                    )
                 ) : null}
             </AnimatePresence>
         </div>

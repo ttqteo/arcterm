@@ -15,6 +15,23 @@ does not, say what you saw and it becomes a bug row under Actionable.
   rewrites it. A worktree dev app leaves that file alone. Unit tests script the process table, the footprints, the
   roster and the store; the real Git Bash process tree on Windows (`ps -l` groups), the Mac's footprint and the live
   roster were never run together (`pkg/jobmeter`, `wshserver_jobpeaks.go`).
+- [ ] (arcterm) The brainstorm review cards in Chat draw and act: run `task verify:ui -- chat-brainstorm-review
+  chat-redesign agent-chat` on a dev app that boots. Both Final attempts of run f2306dc6 ended unverified on the
+  machine (a locked `cmd/wsh/cmd/claude-view-mod` copy, then a cold Vite still pre-bundling after 600 s under memory
+  pressure), so nothing below has been seen rendered. Check, against `.superpowers/design/chat-brainstorm-review/`:
+  - The Confirm the design card: guesses with New, the yours fold, Edit, That's right and Put mine back, Confirm all
+    or Check with a builder.
+  - The builder check card: reading with its clock, one question with Decide for me and an own-answer Send, the
+    failed state's Try again (still one ✓ Design confirmed row), and review with Approve opening the run launcher or
+    its reason.
+  - The run card with Open run, and the ✓ Run row once the run lands.
+  - The question card's Decided fold and the ✓ rows: design, builder question with no `brainstorm: builder answer:`
+    prefix, builder check.
+  - Action lines draw no bubble, while a hand-typed message stays a bubble.
+  - Every card turns static when the agent exits.
+
+  (`chatbrainstorm.ts` brainstormCard, `chatbrainstormconfirm.tsx`, `chatbrainstormcheck.tsx`,
+  `chatbrainstormrun.tsx`, `chatconversation.tsx`; unit-tested and typechecked only.)
 
 - [ ] (arcterm) A dead lead is brought back (lead-dead recovery spec 2026-11-12): in a live Ask me run sitting in a
   failed plan review, `/exit` its lead → the run's Cockpit card shows "Lead down" with Relaunch lead at once, and

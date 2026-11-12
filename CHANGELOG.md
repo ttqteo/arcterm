@@ -30,6 +30,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Fork from here, on any message or reply (beside Copy, or right-click), starts one with the conversation up to that
   point. From one of your messages, its text waits in the new session's box to edit and send. The session you forked
   stays as it was. Claude agents only.
+- Chat now carries a brainstorm past its questions: the design's review (Confirm the design), the builder check and the
+  run each show as a card in the conversation, and fold into a ✓ row once their step is done. The decisions made so far
+  fold into the question card's footer, and the `brainstorm: …` lines Arc sends for your clicks no longer show as
+  messages.
 
 ### Changed
 
