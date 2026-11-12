@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm, Mac) Chat's "Working…" line wears Jarvis's colours: while a Claude agent works, the dot is a small
+  core (bright centre, blue rim) that breathes, and the text is blue with a bright band sweeping left to right about
+  every 2 s, the "(24s)" after it still grey; with Reduce motion on, the text rests in plain blue. Checked only on a
+  static page in headless Chromium, never in WKWebView or the running app (cf811a54d: `chatpane.tsx`,
+  `tailwindsetup.css` .shimmer-jarvis, `pulse.ts`).
 - [ ] (arcterm, Mac) Text replacements fire in Chat's message box: type `sv ` (a Text Replacement in System Settings →
   Keyboard) and it turns into "sinh viên " and is sent as that; a Vietnamese word typed with Telex gets no red
   underline, and the terminal stays as before. Checked only in a WKWebView harness with real key events into a
