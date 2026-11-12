@@ -6,6 +6,14 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The rail's context breakdown reads a real /context: on a Claude agent with a context figure, open the
+  Agent rail's session breakdown and press Read the breakdown → the button reads "Reading… about 30 s", then the groups
+  show (Messages, System tools, Memory files, Skills…) with figures near `claude`'s own `/context`, and a memory file's
+  ↗ opens it in the File tab; no new `.jsonl` appears in `~/.claude/projects/<project>` (`--no-session-persistence`);
+  on Windows no console window flashes. The same on a Mac. And on an idle real agent with under 5 minutes of cache
+  left, the state row's `cache Nm left` is amber and `now rewrites ~X, later Y` ends the Compact/Clear row (the
+  scenario `rail-context-breakdown` seeds every state; `pkg/ctxbreakdown`, `sessionsection.tsx`,
+  `agentdetailsrail.tsx`).
 - [ ] (arcterm) Chat's Fork resumes in a real claude: in a Claude agent's Chat, ⋯ → Fork opens a session that knows
   the whole conversation; Fork from here on your second message, one that knows only the first exchange; on a reply,
   one that knows everything through that reply. The original session is unchanged (the scenario `chat-fork` covers

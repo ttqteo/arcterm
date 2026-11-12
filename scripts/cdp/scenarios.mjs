@@ -15675,17 +15675,9 @@ function writeLeadTranscript(cwd) {
     return parent;
 }
 
-async function arrangeTreeRail(h, ctx) {
-    await arrangeFixtureRun(h, ctx, "tree-rail", TREE_RAIL_LEAD, { transcriptPath: writeLeadTranscript(ctx.cwd) });
-    await h.rpc("dagsubmit", {
-        channelid: ctx.channelId,
-        runid: ctx.runId,
-        title: "verify tree-rail",
-        parallelism: 1,
-        tasks: RUN_SHEET_POLISH_TASKS,
-    });
-    // a queued task folds away, so t-1 has a worker row only once it dispatches
-    await waitForDispatch(h, ctx, "t-1");
+// reloads onto the fixture roster arrangeFixtureRun wrote, opens the Agent surface with the rail on, and clicks the
+// lead's row once its run has nested it (ctx.leadFocused says whether it did)
+async function focusFixtureLead(h, ctx, leadName) {
     // the rail is persisted, and the fixture roster is read once at boot
     await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
     // measure the defaults: sections at their default open state, every project expanded
@@ -15705,7 +15697,7 @@ async function arrangeTreeRail(h, ctx) {
         const leadRow = () => {
             const tree = document.querySelector("[data-agent-tree]");
             const name = tree && [...tree.querySelectorAll("*")].find(
-                (d) => d.textContent.trim() === ${JSON.stringify(TREE_RAIL_LEAD)} && d.children.length === 0
+                (d) => d.textContent.trim() === ${JSON.stringify(leadName)} && d.children.length === 0
             );
             return name ? name.closest("[data-agent-row]") : null;
         };
@@ -15721,6 +15713,20 @@ async function arrangeTreeRail(h, ctx) {
     })()`);
     // let the rail's width slide and the run section settle before the shot
     await new Promise((r) => setTimeout(r, 1200));
+}
+
+async function arrangeTreeRail(h, ctx) {
+    await arrangeFixtureRun(h, ctx, "tree-rail", TREE_RAIL_LEAD, { transcriptPath: writeLeadTranscript(ctx.cwd) });
+    await h.rpc("dagsubmit", {
+        channelid: ctx.channelId,
+        runid: ctx.runId,
+        title: "verify tree-rail",
+        parallelism: 1,
+        tasks: RUN_SHEET_POLISH_TASKS,
+    });
+    // a queued task folds away, so t-1 has a worker row only once it dispatches
+    await waitForDispatch(h, ctx, "t-1");
+    await focusFixtureLead(h, ctx, TREE_RAIL_LEAD);
 }
 
 const agentTreeRail = {
@@ -16027,6 +16033,471 @@ const agentTreeRail = {
                 await h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail));
                 await h.ev(restoreStorageKey(RAIL_SECTIONS_KEY, ctx.prevSections));
                 await h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed));
+            },
+        });
+    },
+};
+
+// --- rail-context-breakdown: what fills the context, in the Agent rail's session breakdown --------------------------
+// (docs/superpowers/specs/2026-11-12-rail-context-breakdown-design.md). A fixture lead (idle, 180k of a 1M window, a
+// 1-hour cache write 17 minutes old) in a real run held by deferstart, with no dagsubmit: no worker is dispatched. The
+// breakdown is never read from a real claude: the dev-only seam window.__arcCtxBreakdown seeds each state, and a real
+// read goes on the hand-check list (docs/hand-checks.md).
+const CTX_RAIL_LEAD = "ctx-rail lead";
+const CTX_RAIL_WINDOW = 1_000_000;
+const CTX_RAIL_LIB = `
+    const rail = () => document.querySelector('aside[aria-label="Agent details"]');
+    const $ = (sel) => rail()?.querySelector(sel) ?? null;
+    const $$ = (sel) => [...(rail()?.querySelectorAll(sel) ?? [])];
+    const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+    const until = async (fn, tries = 40) => {
+        for (let i = 0; i < tries && !fn(); i++) await nap(250);
+        return !!fn();
+    };
+    const text = (el) => (el ? el.textContent.replace(/\\s+/g, " ").trim() : null);
+`;
+
+// A Claude Code transcript of the shape extractClaude reads (pkg/usagestats): a user turn and two assistant records, the
+// last with a 1-hour cache write timestamped cacheWriteAgoMs ago. It gives the rail its folder (cwd), the session's
+// spend (so the breakdown's toggle shows) and the cache countdown (GetCacheStatusCommand reads the last cache write).
+function writeCtxTranscript(path, cwd, cacheWriteAgoMs) {
+    const at = (agoMs) => new Date(Date.now() - agoMs).toISOString();
+    const assistant = (n, agoMs, usage) => ({
+        type: "assistant",
+        timestamp: at(agoMs),
+        cwd,
+        requestId: `req_ctx_${n}`,
+        message: {
+            id: `msg_ctx_${n}`,
+            model: "claude-opus-5-5",
+            role: "assistant",
+            content: [{ type: "text", text: `reply ${n}` }],
+            usage,
+        },
+    });
+    const records = [
+        {
+            type: "user",
+            timestamp: at(cacheWriteAgoMs + 15 * 60_000),
+            cwd,
+            message: { role: "user", content: "verify the context breakdown" },
+        },
+        assistant(1, cacheWriteAgoMs + 5 * 60_000, {
+            input_tokens: 6,
+            output_tokens: 420,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 38_000,
+            cache_creation: { ephemeral_1h_input_tokens: 38_000 },
+        }),
+        assistant(2, cacheWriteAgoMs, {
+            input_tokens: 4,
+            output_tokens: 610,
+            cache_read_input_tokens: 38_000,
+            cache_creation_input_tokens: 142_000,
+            cache_creation: { ephemeral_1h_input_tokens: 142_000 },
+        }),
+    ];
+    writeFileSync(path, records.map((r) => JSON.stringify(r)).join("\n") + "\n");
+}
+
+// the breakdown ctxbreakdown.test.ts lays out (Opus, a 1M window), with the memory files at the paths given
+function ctxRailBreakdown(files) {
+    return {
+        model: "claude-opus-5-5",
+        windowtokens: CTX_RAIL_WINDOW,
+        readat: Date.now() - 2 * 60_000,
+        categories: [
+            { name: "System prompt", tokens: 2500 },
+            { name: "System tools", tokens: 10100 },
+            { name: "MCP tools", tokens: 676 },
+            { name: "MCP server instructions", tokens: 1100 },
+            { name: "MCP tools (deferred)", tokens: 32700, deferred: true },
+            { name: "System tools (deferred)", tokens: 17100, deferred: true },
+            { name: "Custom agents", tokens: 423 },
+            { name: "Memory files", tokens: 16000 },
+            { name: "Skills", tokens: 6500 },
+            { name: "Messages", tokens: 1600 },
+            { name: "Compact buffer", tokens: 3000 },
+            { name: "Free space", tokens: 958100 },
+        ],
+        memoryfiles: [
+            { name: "CLAUDE.md", source: "User", path: files.user, tokens: 275 },
+            { name: "AGENTS.md", source: "Project", path: files.project, tokens: 14800 },
+            { name: "MEMORY.md", source: "AutoMem", path: files.auto, tokens: 925 },
+        ],
+        skills: Array.from({ length: 9 }, (_, i) => ({ name: `s${i}`, source: "User", tokens: (i + 1) * 10 })),
+        agents: [
+            { name: "superpowers:code-reviewer", source: "Plugin", path: files.agent, tokens: 350 },
+        ],
+        mcpservers: [{ server: "stitch", tools: 18, tokens: 22900 }],
+    };
+}
+
+// the dev-only seam in ctxbreakdownstore.ts: any state, no claude spawned
+const seedCtx = (h, ctx, state) =>
+    h.ev(`(() => {
+        if (!window.__arcCtxBreakdown) return false;
+        window.__arcCtxBreakdown.seed(${JSON.stringify(ctx.cwd)}, ${JSON.stringify(state)});
+        return true;
+    })()`);
+
+// the breakdown's toggle, clicked only when it is not already in the wanted state
+const setCtxBreakdown = (h, open) =>
+    h.ev(`(async () => {
+        ${CTX_RAIL_LIB}
+        const toggle = $("[data-rail-breakdown-toggle]");
+        if (!toggle) return { ok: false, why: "no breakdown toggle" };
+        if ((toggle.getAttribute("aria-expanded") === "true") !== ${open}) toggle.click();
+        return { ok: await until(() => (${open}) === !!$("[data-rail-breakdown]")) };
+    })()`);
+
+const railContextBreakdown = {
+    name: "rail-context-breakdown",
+    surface: "agent",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-ctx-rail-"));
+        // a user memory file outside the agent's folder, to see the File tab open one
+        const outside = mkdtempSync(join(tmpdir(), "verify-ctx-rail-home-"));
+        const ctx = {
+            cwd,
+            outside,
+            prevRail: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`),
+            prevSections: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`),
+            prevCollapsed: await h.ev(`localStorage.getItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`),
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            ctx.files = {
+                project: join(cwd, "AGENTS.md"),
+                user: join(outside, "CLAUDE.md"),
+                auto: join(cwd, ".claude-memory", "MEMORY.md"),
+                agent: join(cwd, ".claude", "agents", "code-reviewer.md"),
+            };
+            writeFileSync(ctx.files.project, "# AGENTS\n\nThe project memory file the context breakdown opens.\n");
+            writeFileSync(ctx.files.user, "# CLAUDE\n\nA user memory file outside the agent's folder.\n");
+            ctx.transcript = join(cwd, "lead.jsonl");
+            writeCtxTranscript(ctx.transcript, cwd, 17 * 60_000);
+            ctx.leadExtra = {
+                state: "idle",
+                idleSince: Date.now() - 60_000,
+                transcriptPath: ctx.transcript,
+                usage: { contextpct: 18, contextmax: CTX_RAIL_WINDOW }, // 180k in context
+            };
+            await arrangeFixtureRun(h, ctx, "ctx-rail", CTX_RAIL_LEAD, ctx.leadExtra);
+            await focusFixtureLead(h, ctx, CTX_RAIL_LEAD);
+            ctx.breakdown = ctxRailBreakdown(ctx.files);
+            ctx.seeded = await seedCtx(h, ctx, { state: "ready", data: ctx.breakdown });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        rec(
+            "0. the idle lead is focused, its breakdown seeded as read",
+            ctx.arrangeError == null && ctx.leadFocused === true && ctx.seeded === true,
+            ctx.arrangeError ?? JSON.stringify({ leadFocused: ctx.leadFocused, seeded: ctx.seeded })
+        );
+
+        // 1. the breakdown opens on the Context part above the Spend part
+        const opened = await setCtxBreakdown(h, true);
+        const parts = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            await until(() => $("[data-rail-context]"));
+            const heading = (label) => $('[data-rail-part-heading="' + label + '"]');
+            return {
+                context: !!$("[data-rail-context]"),
+                contextFigure: text(heading("Context")?.lastElementChild),
+                spendFigure: text(heading("Spend")?.lastElementChild),
+                spendAfterContext:
+                    !!heading("Context") && !!heading("Spend") &&
+                    !!(heading("Context").compareDocumentPosition(heading("Spend")) & Node.DOCUMENT_POSITION_FOLLOWING),
+            };
+        })()`);
+        await h.shot("cdp-shots/rail-context-breakdown-open.png");
+        rec(
+            "1. opening the breakdown shows the Context part over the Spend part, the heading reading 180k of 1M",
+            opened.ok === true &&
+                parts.context &&
+                parts.contextFigure === "180k of 1M" &&
+                /processed$/.test(parts.spendFigure ?? "") &&
+                parts.spendAfterContext,
+            JSON.stringify({ opened, parts })
+        );
+
+        // 2. seven groups in order; Messages is the context in use minus the fixed part: 180,000 - 37,299 = 143k
+        const groups = await h.ev(`(() => {
+            ${CTX_RAIL_LIB}
+            const all = $$("[data-ctx-group]");
+            const messages = all.find((g) => g.dataset.ctxGroup === "messages");
+            // a name or tag cut to "M" or "Syst…" by the numbers beside it
+            const clipped = all
+                .filter((g) => [...g.querySelectorAll(".truncate")].some((s) => s.scrollWidth > s.clientWidth))
+                .map((g) => g.dataset.ctxGroup);
+            return {
+                ids: all.map((g) => g.dataset.ctxGroup),
+                messages: text(messages),
+                messagesTitle: messages?.title ?? null,
+                clipped,
+            };
+        })()`);
+        rec(
+            "2. seven groups, Messages first and MCP last, none with its name or tag clipped, Messages' figure 143k, estimated in its tooltip",
+            JSON.stringify(groups.ids) === JSON.stringify(["messages", "tools", "memory", "skills", "prompt", "agents", "mcp"]) &&
+                groups.clipped.length === 0 &&
+                /143k/.test(groups.messages ?? "") &&
+                /minus what loads every turn/.test(groups.messagesTitle ?? ""),
+            JSON.stringify(groups)
+        );
+
+        // 3. Memory files lists three files; a click on AGENTS.md opens it in the File tab, and so does one on a file
+        // outside the agent's folder. Opening a file replaces the rail's sections, so each trip ends on Overview
+        // ok: the File tab shows the path and its body holds the marker text, so the file was read, not refused
+        const openMemoryFile = (path, marker) =>
+            h.ev(`(async () => {
+                ${CTX_RAIL_LIB}
+                const group = $('[data-ctx-group="memory"]');
+                if (!group) return { ok: false, why: "no Memory files group" };
+                if (group.getAttribute("aria-expanded") !== "true") group.click();
+                await until(() => $$('[data-ctx-rows="memory"] [data-ctx-open-file]').length > 0);
+                const rows = $$('[data-ctx-rows="memory"] [data-ctx-open-file]');
+                const row = rows.find((r) => r.title === "Open " + ${JSON.stringify(path)});
+                if (!row) return { ok: false, rows: rows.length, why: "no row for the file" };
+                row.click();
+                const body = () => document.querySelector("[data-rail-file]");
+                const shown = await until(() => body()?.getAttribute("data-rail-file") === ${JSON.stringify(path)}, 60);
+                const read = shown && (await until(() => (body()?.innerText ?? "").includes(${JSON.stringify(marker)}), 40));
+                return {
+                    ok: shown && read,
+                    rows: rows.length,
+                    shown: body()?.getAttribute("data-rail-file") ?? null,
+                    head: (body()?.innerText ?? "").replace(/\\s+/g, " ").slice(0, 160),
+                };
+            })()`);
+        const backToOverview = () =>
+            h.ev(`(async () => {
+                ${CTX_RAIL_LIB}
+                const tab = document.querySelector('[data-rail-key="overview"]') ?? document.querySelector('button[aria-label="Overview"]');
+                if (!tab) return { ok: false, why: "no Overview tab" };
+                tab.click();
+                return { ok: await until(() => $("[data-rail-context]")) };
+            })()`);
+        const inFolder = await openMemoryFile(ctx.files.project, "The project memory file");
+        await h.shot("cdp-shots/rail-context-breakdown-file.png");
+        const backFromFolder = await backToOverview();
+        const outsideFolder = await openMemoryFile(ctx.files.user, "outside the agent's folder");
+        const backFromOutside = await backToOverview();
+        rec(
+            "3. Memory files lists three files with a link; AGENTS.md opens in the File tab, and so does a file outside the folder; Overview brings the Context part back",
+            inFolder.ok === true &&
+                inFolder.rows === 3 &&
+                outsideFolder.ok === true &&
+                backFromFolder.ok === true &&
+                backFromOutside.ok === true,
+            JSON.stringify({ inFolder, outsideFolder, backFromFolder, backFromOutside })
+        );
+
+        // 4. the cache is warm: the 1-hour write was 17 minutes ago, so ~43m are left (a few seconds have gone by)
+        const warm = await h.ev(`(() => {
+            ${CTX_RAIL_LIB}
+            return { line: text($("[data-ctx-cache-line]")), title: $("[data-ctx-cache-line]")?.title ?? null, warn: !!$("[data-rail-cache-warn]") };
+        })()`);
+        rec(
+            "4. the cache line reads Cache warm with the countdown and the 180k, and the state row has no cache warning",
+            /^Cache warm 4[0-3]m · after that the next turn rewrites these 180k$/.test(warm.line ?? "") &&
+                /rewrites ~180k/.test(warm.title ?? "") &&
+                warm.warn === false,
+            JSON.stringify(warm)
+        );
+
+        // 5. the views no other step opens: Skills (+3 more), System tools, Custom agents, MCP and the footer. Not
+        // Refresh: once the read is built it spawns a real claude
+        const views = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            const open = async (id) => {
+                const g = $('[data-ctx-group="' + id + '"]');
+                if (g && g.getAttribute("aria-expanded") !== "true") g.click();
+                await until(() => $('[data-ctx-rows="' + id + '"]'));
+                return $('[data-ctx-rows="' + id + '"]');
+            };
+            const rows = (box) => (box ? [...box.querySelectorAll("[data-ctx-row]")] : []);
+            const skills = await open("skills");
+            const skillNote = text(skills?.querySelector("p"));
+            const skillRowsBefore = rows(skills).length;
+            const more = skills?.querySelector("[data-ctx-more]");
+            const moreText = text(more);
+            more?.click();
+            await until(() => rows($('[data-ctx-rows="skills"]')).length > skillRowsBefore);
+            const skillRowsAfter = rows($('[data-ctx-rows="skills"]')).length;
+            const moreGone = !$('[data-ctx-rows="skills"] [data-ctx-more]');
+            const tools = await open("tools");
+            const agents = await open("agents");
+            const mcp = await open("mcp");
+            const mcpRows = rows(mcp);
+            const footer = $("[data-ctx-footer]");
+            // nothing in the Context part is under 10.5px
+            const small = [];
+            const root = $("[data-rail-context]");
+            const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+            for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+                if (!n.data.trim()) continue;
+                const px = parseFloat(getComputedStyle(n.parentElement).fontSize);
+                if (px < 10.5) small.push(n.data.trim().slice(0, 30) + " @" + px);
+            }
+            return {
+                skillNote, skillRowsBefore, moreText, skillRowsAfter, moreGone,
+                toolsNote: text(tools?.querySelector("p")),
+                agentRows: rows(agents).length,
+                mcpRows: mcpRows.map((r) => [...r.children].map((c) => text(c)).filter(Boolean)),
+                mcpLinks: mcp ? mcp.querySelectorAll("[data-ctx-open-file]").length : null,
+                footer: text(footer?.firstElementChild),
+                readAgo: text($("[data-ctx-read-ago]")),
+                refresh: !!$("[data-ctx-refresh]"),
+                small,
+            };
+        })()`);
+        await h.shot("cdp-shots/rail-context-breakdown-groups.png");
+        rec(
+            "5. Skills notes that only descriptions load and lists 6 rows, +3 more makes 9; System tools names its deferred 17.1k; one custom agent; MCP's stitch row has no link; the footer, and no text under 10.5px",
+            views.skillNote === "Only each skill's description is in context; its file loads when it runs." &&
+                views.skillRowsBefore === 6 &&
+                views.moreText === "+3 more" &&
+                views.skillRowsAfter === 9 &&
+                views.moreGone === true &&
+                views.toolsNote === "Built in. 17.1k more are deferred: a tool search loads them when needed." &&
+                views.agentRows === 1 &&
+                JSON.stringify(views.mcpRows) === JSON.stringify([["stitch", "18 tools · 22.9k when loaded"]]) &&
+                views.mcpLinks === 0 &&
+                views.footer === "Free 820k · autocompact keeps 3k" &&
+                /^(just now|\d+ min ago)$/.test(views.readAgo ?? "") &&
+                views.refresh === true &&
+                views.small.length === 0,
+            JSON.stringify(views)
+        );
+
+        // 6. not read yet: the empty bar, the line and the button; the cache line still shows
+        await seedCtx(h, ctx, { state: "idle" });
+        const idle = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            await until(() => $("[data-ctx-read]"));
+            const read = $("[data-ctx-read]");
+            return {
+                read: text(read), disabled: read?.disabled ?? null, emptyBar: !!$("[data-ctx-bar-empty]"),
+                groups: $$("[data-ctx-group]").length, cacheLine: !!$("[data-ctx-cache-line]"),
+                part: text($("[data-rail-context]")),
+            };
+        })()`);
+        await h.shot("cdp-shots/rail-context-breakdown-idle.png");
+        rec(
+            "6. not read yet: an empty bar, no groups, Read the breakdown enabled, and the cache line still showing",
+            idle.read === "Read the breakdown" &&
+                idle.disabled === false &&
+                idle.emptyBar === true &&
+                idle.groups === 0 &&
+                idle.cacheLine === true &&
+                /What fills the 180k is read from Claude Code's \/context\./.test(idle.part ?? ""),
+            JSON.stringify(idle)
+        );
+
+        // 7. reading, then failed
+        await seedCtx(h, ctx, { state: "reading" });
+        const reading = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            await until(() => /Reading/.test(text($("[data-ctx-read]")) ?? ""));
+            const read = $("[data-ctx-read]");
+            return { read: text(read), disabled: read?.disabled ?? null };
+        })()`);
+        await seedCtx(h, ctx, { state: "failed", error: "claude is not on PATH" });
+        const failed = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            await until(() => $("[data-ctx-retry]"));
+            return { part: text($("[data-rail-context]")), retry: text($("[data-ctx-retry]")), cacheLine: !!$("[data-ctx-cache-line]") };
+        })()`);
+        await h.shot("cdp-shots/rail-context-breakdown-failed.png");
+        rec(
+            "7. reading: the button is disabled and says Reading… about 30 s; failed: Couldn't read /context: claude is not on PATH. and a Try again button",
+            reading.read === "Reading… about 30 s" &&
+                reading.disabled === true &&
+                (failed.part ?? "").includes("Couldn't read /context: claude is not on PATH.") &&
+                failed.retry === "Try again" &&
+                failed.cacheLine === true,
+            JSON.stringify({ reading, failed })
+        );
+
+        // 8. the cache nearly out: the cache write 56 minutes ago. The rail re-reads the cache status every 15 s
+        // (USAGE_REFRESH_MS). The note prices the rewrite from a ready breakdown; with the breakdown folded the line and
+        // the note sit in the session block, as the States board's first state has them
+        await seedCtx(h, ctx, { state: "ready", data: ctx.breakdown });
+        writeCtxTranscript(ctx.transcript, ctx.cwd, 56 * 60_000);
+        const amber = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            const ok = await until(() => $("[data-rail-cache-warn]") && $("[data-rail-rewrite-note]"), 100);
+            return { ok, warn: text($("[data-rail-cache-warn]")), note: text($("[data-rail-rewrite-note]")) };
+        })()`);
+        const folded = await setCtxBreakdown(h, false);
+        const amberFolded = await h.ev(`(() => {
+            ${CTX_RAIL_LIB}
+            return {
+                warn: text($("[data-rail-cache-warn]")),
+                warnColor: $("[data-rail-cache-warn]") ? getComputedStyle($("[data-rail-cache-warn]")).color : null,
+                note: text($("[data-rail-rewrite-note]")),
+                breakdownOpen: !!$("[data-rail-breakdown]"),
+                state: text($("[data-rail-state]")),
+            };
+        })()`);
+        await h.shot("cdp-shots/rail-context-breakdown-amber.png");
+        rec(
+            "8. under 5 minutes of cache: the state row's cache Nm left is amber, and the note reads now rewrites ~39.3k, later 180k, with the breakdown folded",
+            amber.ok === true &&
+                /^cache [34]m left$/.test(amber.warn ?? "") &&
+                amber.note === "now rewrites ~39.3k, later 180k" &&
+                folded.ok === true &&
+                amberFolded.breakdownOpen === false &&
+                /^cache [34]m left$/.test(amberFolded.warn ?? "") &&
+                amberFolded.note === "now rewrites ~39.3k, later 180k" &&
+                /^idle .* · cache [34]m left/.test(amberFolded.state ?? ""),
+            JSON.stringify({ amber, folded, amberFolded })
+        );
+
+        // 9. not a Claude agent: the roster's lead becomes a pi agent, and the breakdown opens with no Context part
+        writeFileSync(
+            TREE_RAIL_FIXTURE,
+            JSON.stringify(treeRailRoster(ctx.runId, Date.now(), CTX_RAIL_LEAD, { ...ctx.leadExtra, agent: "pi" }), null, 2)
+        );
+        await focusFixtureLead(h, ctx, CTX_RAIL_LEAD);
+        const pi = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            await until(() => $("[data-rail-session]"));
+            const toggle = $("[data-rail-breakdown-toggle]");
+            if (toggle && toggle.getAttribute("aria-expanded") !== "true") toggle.click();
+            await nap(800);
+            return {
+                session: !!$("[data-rail-session]"),
+                toggle: !!toggle,
+                breakdownOpen: !!$("[data-rail-breakdown]"),
+                context: !!$("[data-rail-context]"),
+                cacheWarn: !!$("[data-rail-cache-warn]"),
+                rewrite: !!$("[data-rail-rewrite-note]"),
+            };
+        })()`);
+        await h.shot("cdp-shots/rail-context-breakdown-pi.png");
+        rec(
+            "9. a pi lead's rail has no Context part (and no rewrite note), with the breakdown opened when its toggle shows",
+            ctx.leadFocused === true && pi.session === true && pi.context === false && pi.rewrite === false,
+            JSON.stringify({ leadFocused: ctx.leadFocused, pi })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "rail-context-breakdown", {
+            what: "restore the rail and tree preferences",
+            fn: async () => {
+                await h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail));
+                await h.ev(restoreStorageKey(RAIL_SECTIONS_KEY, ctx.prevSections));
+                await h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed));
+                rmSync(ctx.outside, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 });
             },
         });
     },
@@ -67416,6 +67887,7 @@ export const SCENARIOS = [
     narrationFeed,
     notesWsh,
     agentTreeRail,
+    railContextBreakdown,
     agentTreeQuickReturn,
     agentHistory,
     agyHarness,
