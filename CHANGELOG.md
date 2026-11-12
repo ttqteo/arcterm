@@ -72,6 +72,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Highlights in Chat no longer vanish from one agent's replies while other Claude agents are running: each agent kept
+  overwriting the others' saved highlights, so switching away and back showed the reply plain.
 - On a Mac, text replacements (System Settings → Keyboard → Text Replacements, such as `sv` → sinh viên) work in
   Chat's message box again, still without red underlines under Vietnamese words.
 - A message you took back in Chat (Esc before Claude answered) and sent again no longer shows twice: Chat now shows

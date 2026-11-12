@@ -7,7 +7,9 @@ import {
     HIGHLIGHT_SECTION,
     inlineRuns,
     isAskInView,
+    isKept,
     keepMarks,
+    keepWithStored,
     layout,
     MAX_KEPT,
     parseMarks,
@@ -109,6 +111,40 @@ describe("hashText and keepMarks", () => {
         for (let i = 0; i <= MAX_KEPT; i++) many = keepMarks(many, `h${i}`, []);
         expect(many).toHaveLength(MAX_KEPT);
         expect(many[0][0]).toBe("h1");
+    });
+});
+
+describe("keepWithStored", () => {
+    it("adds to the store as read now, keeping what another session kept since this one started", () => {
+        const kept: [string, string[]][] = [["h1", ["a"]]];
+        const stored = [
+            ["h1", ["a"]],
+            ["other", ["theirs"]],
+        ];
+        expect(keepWithStored(stored, kept, [["h2", ["b"]]])).toEqual([
+            ["h1", ["a"]],
+            ["other", ["theirs"]],
+            ["h2", ["b"]],
+        ]);
+    });
+
+    it("falls back to this session's copy when the store is unset or not that shape", () => {
+        const kept: [string, string[]][] = [["h1", ["a"]]];
+        expect(keepWithStored(undefined, kept, [["h2", ["b"]]])).toEqual([
+            ["h1", ["a"]],
+            ["h2", ["b"]],
+        ]);
+        expect(keepWithStored({ nope: 1 }, kept, [["h2", ["b"]]])).toEqual([
+            ["h1", ["a"]],
+            ["h2", ["b"]],
+        ]);
+    });
+
+    it("tells a kept list from anything else", () => {
+        expect(isKept([["h", ["a"]]])).toBe(true);
+        expect(isKept([])).toBe(true);
+        expect(isKept([["h", "a"]])).toBe(false);
+        expect(isKept({ h: ["a"] })).toBe(false);
     });
 });
 

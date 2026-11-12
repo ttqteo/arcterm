@@ -12,7 +12,8 @@ import {
     hashText,
     HIGHLIGHT_SECTION,
     isAskInView,
-    keepMarks,
+    isKept,
+    keepWithStored,
     layout,
     parseMarks,
     rowsFromAsk,
@@ -59,13 +60,6 @@ let isAskOutOfView = false;
 let isComposed = false;
 let hasTold = false;
 let isInteractive = true;
-
-function isKept(value: unknown): value is [string, string[]][] {
-    return (
-        Array.isArray(value) &&
-        value.every((v) => Array.isArray(v) && typeof v[0] === "string" && Array.isArray(v[1]))
-    );
-}
 
 async function themeOf($: EngineInterface): Promise<unknown> {
     return (await $.config.list()).find((row) => row.key === "theme")?.value;
@@ -137,7 +131,7 @@ export const register: Register = (on) => {
         const content = [...e.message.content];
         // the row's last text, which says what the reply leaves waiting on the person
         let last: Ask | null | undefined;
-        let isChanged = false;
+        const added: [string, string[]][] = [];
         content.forEach((block, i) => {
             if (block.type !== "text" || typeof block.text !== "string") {
                 return;
@@ -147,12 +141,14 @@ export const register: Register = (on) => {
             const question = askOf(marks);
             last = question ? { hash, text: question } : null;
             if (marks.length > 0) {
-                isChanged = true;
-                kept = keepMarks(kept, hash, marks);
+                added.push([hash, marks]);
                 content[i] = { ...block, text: clean };
             }
         });
+        const isChanged = added.length > 0;
         if (isChanged) {
+            // read again first: $.store.get reads the file, so another session's replies written meanwhile stay
+            kept = keepWithStored(await $.store.get(STORE_KEY), kept, added);
             byHash = new Map(kept);
             await $.store.set(STORE_KEY, kept);
         }
