@@ -39,8 +39,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
-- Settings → Jarvis & Office lists Jarvis's settings as who it is (Character, Vietnam's colours), how it shows (Form,
-  Hologram size), then what it does (Pet roams, quotes).
+- Settings → Jarvis & Office groups Jarvis's settings into three short cards: Jarvis (character, Vietnam's colours),
+  Form (Sprout or hologram, and the hologram's size) and Behaviour (roams, quotes).
 - A run's follow-ups initiative is filed under the topic it belongs to (Chat, Council…) instead of at the top of the
   initiatives list, and `wsh effort list --topics` lists those topics.
 - A run's row in the Agent sidebar shows the RAM the whole run holds (its lead and every worker together) instead of

@@ -58,8 +58,12 @@ export function JarvisPage() {
             <SettingCard id="jarvis" label="Jarvis">
                 <PetCharacterRow />
                 <PetOutfitRow />
+            </SettingCard>
+            <SettingCard id="form" label="Form">
                 <PetFormRow />
                 <HologramSizeRow />
+            </SettingCard>
+            <SettingCard id="behaviour" label="Behaviour">
                 <PetStayRow />
                 <PetQuotesRow />
             </SettingCard>
