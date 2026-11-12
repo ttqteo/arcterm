@@ -2272,3 +2272,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   the changes → Diff says "This agent has ended" with Open its folder; compare in a repository with no remote shows no
   Fetch, and in one with a remote Fetch is there (`diffsource.ts` subjectState, `landedRunTip`, `ListBranches`
   hasremote; commit c40d7d075; the scenarios break the reads at the RPC client).
+- [ ] (arcterm) **A sent message rises into Chat from the box.** In an agent's Chat, send a message (to an idle agent,
+  then one while it works, then a `! ls`): its dimmed bubble rises in from the box in about a third of a second rather
+  than appearing at once, and the transcript's copy replacing it later does not move. Switch to another agent and back,
+  or to Terminal and back, while one is still Sending… or Queued: it shows at once, with no second rise. With the OS's
+  reduced motion on, it only fades (`chatpane.tsx` PendingBubble / PendingCommand, `chatsentrise.ts`; no scenario
+  catches the motion).
