@@ -616,10 +616,15 @@ export default function (kits) {
                 // 3. the ref picker's suggestions close when its field loses focus
                 if (await h.ev(`!!${q("[data-ref-pair]")}`)) await click(h, "[data-ref-pair]");
                 const editing = await until(h, `!!${q("[data-compare-bar] input")}`, 5000);
+                // Final's dev app window is often not the foreground one, where Chromium never fires
+                // focus events; emulate a focused page, and refocus so the field's onFocus runs.
+                await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
+                await h.ev(`document.activeElement?.blur()`);
                 await h.ev(`${q("[data-compare-bar] input")}?.focus()`);
                 const suggestions = await until(h, `!!${q("[data-ref-suggestion]")}`, 5000);
                 await h.ev(`document.activeElement?.blur()`);
                 const closed = await until(h, `!${q("[data-ref-suggestion]")}`, 5000);
+                await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: false }).catch(() => {});
                 await h.shot("cdp-shots/diff-compare-suggestions.png");
                 rec(
                     "3. the ref picker's suggestions open with the field and close when it loses focus",
