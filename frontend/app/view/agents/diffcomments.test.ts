@@ -23,6 +23,7 @@ import {
     quoteLines,
     relocate,
     relocateComments,
+    samePair,
     removeComments,
     sentNoteAtom,
     type BatchSource,
@@ -482,6 +483,19 @@ describe("relocateComments", () => {
         expect(ls.writes()).toBe(0);
     });
 
+    it("follows the working tree when HEAD moves under it, and takes the new pair once re-found", () => {
+        mockLocalStorage();
+        const atOld: DiffPairRefs = { original: { kind: "ref", ref: "sha-old" }, modified: { kind: "worktree" } };
+        const atNew: DiffPairRefs = { original: { kind: "ref", ref: "sha-new" }, modified: { kind: "worktree" } };
+        globalStore.set(commentStoreAtom, { "agent:a1": batch([comment({ refs: atOld })]) });
+        // an unrelated commit moved HEAD: the comment is still on this file of the tree
+        expect(commentsOnPair(globalStore.get(commentStoreAtom)["agent:a1"], "src/a.go", atNew)).toHaveLength(1);
+        relocateComments("agent:a1", "src/a.go", atNew, texts("x\none\ntwo"));
+        const c = globalStore.get(commentStoreAtom)["agent:a1"].comments[0];
+        expect(c).toMatchObject({ start: 3, refs: atNew });
+        expect(c.lost).toBeUndefined();
+    });
+
     it("marks every comment on a path lost when the file is emptied, then finds them again", () => {
         mockLocalStorage();
         globalStore.set(commentStoreAtom, { "agent:a1": batch([comment()]) });
@@ -503,6 +517,16 @@ describe("reading a batch", () => {
     it("pairKey tells pairs apart", () => {
         expect(pairKey(REFS)).not.toBe(pairKey(OTHER_REFS));
         expect(pairKey(REFS)).toBe(pairKey({ ...REFS }));
+    });
+
+    it("samePair holds across a moved base of the working tree, never across a fixed pair", () => {
+        const tree = (ref: string): DiffPairRefs => ({ original: { kind: "ref", ref }, modified: { kind: "worktree" } });
+        expect(samePair(tree("a"), tree("b"))).toBe(true);
+        expect(samePair(OTHER_REFS, { ...OTHER_REFS })).toBe(true);
+        expect(samePair(OTHER_REFS, { original: { kind: "ref", ref: "def^" }, modified: { kind: "ref", ref: "def" } })).toBe(
+            false
+        );
+        expect(samePair(tree("a"), OTHER_REFS)).toBe(false);
     });
 
     it("commentsOnPair filters by path and pair and excludes lost", () => {

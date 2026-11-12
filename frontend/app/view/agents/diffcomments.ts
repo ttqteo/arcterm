@@ -246,6 +246,14 @@ export function pairKey(refs: DiffPairRefs): string {
     return JSON.stringify(refs);
 }
 
+/** Whether a comment made on pair `a` belongs on pair `b`: the same pair, or two pairs whose modified side is the live
+ *  working tree. An unanchored tree's original side is HEAD's sha (pairRefsFor), so a commit, even of another file,
+ *  changes the pair while the comment's lines are still the tree's; it stays drawn and is re-found by its quote
+ *  (relocate), going lost, and coming back, as the text it quotes does. */
+export function samePair(a: DiffPairRefs, b: DiffPairRefs): boolean {
+    return pairKey(a) === pairKey(b) || (a.modified.kind === "worktree" && b.modified.kind === "worktree");
+}
+
 function splitLines(text: string): string[] {
     return text.split(/\r?\n/);
 }
@@ -405,10 +413,14 @@ export function relocateComments(
     const pair = pairKey(refs);
     let changed = false;
     const comments = batch.comments.map((c) => {
-        if (c.path !== path || pairKey(c.refs) !== pair) {
+        if (c.path !== path || !samePair(c.refs, refs)) {
             return c;
         }
-        const next = relocate(c, texts[c.side]);
+        let next = relocate(c, texts[c.side]);
+        // re-found on the tree's new base: its lines are now that pair's, which the prompt names
+        if (!next.lost && pairKey(next.refs) !== pair) {
+            next = { ...next, refs };
+        }
         changed ||= next !== c;
         return next;
     });
@@ -418,8 +430,7 @@ export function relocateComments(
 }
 
 export function commentsOnPair(batch: CommentBatch | undefined, path: string, refs: DiffPairRefs): PendingComment[] {
-    const pair = pairKey(refs);
-    return (batch?.comments ?? []).filter((c) => c.path === path && !c.lost && pairKey(c.refs) === pair);
+    return (batch?.comments ?? []).filter((c) => c.path === path && !c.lost && samePair(c.refs, refs));
 }
 
 // every pair, lost comments included: the file list's badge counts what will be sent
