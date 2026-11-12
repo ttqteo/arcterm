@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm, Mac) Text replacements fire in Chat's message box: type `sv ` (a Text Replacement in System Settings →
+  Keyboard) and it turns into "sinh viên " and is sent as that; a Vietnamese word typed with Telex gets no red
+  underline, and the terminal stays as before. Checked only in a WKWebView harness with real key events into a
+  Lexical editor, never in the installed app or through a Vietnamese input method (7a0f6d0a3: `main.rs`
+  `no_spelling_underlines`, `chateditor.tsx`).
 - [ ] (arcterm) Opening a compaction's summary at the end of Chat brings it into view: after a `/compact`, click the
   COMPACTED chip near the bottom; as the summary opens the conversation rises until the chip sits just under the
   pinned prompt bar, the summary's first lines showing below it, in one smooth move with no jump back. A chip already
