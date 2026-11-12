@@ -43,6 +43,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A brainstorm's judge or builder check that wrote its answer but could not hand it in before its 20 minutes ran out
+  (on a busy machine) no longer ends as "The judge was lost": the answer it wrote is used.
 - Putting an agent to sleep now says so while it happens: its Chat box reads "Going to sleep…" (or "Compacting, then
   sleeping…" when it compacts first) and stays shut, and Sleep, Stop and the header's More menu wait until it sleeps.
   Asleep, the box itself says "Asleep since 16:52 · freed 503 MB" in place of the card above the conversation, and
