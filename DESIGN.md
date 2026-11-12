@@ -362,6 +362,14 @@ Flexbox everywhere; grid only for card grids. The recurring chrome combo is
 `min-w-0` so they can shrink. Fixed widths belong to rails and sidebars only;
 content is always fluid.
 
+**Compact by default.** A view opens with one pane in focus and its extras
+folded (a strip, a switch in a header that already exists); a split, a second
+pane or an open bottom panel is on demand, never the default. In a mockup or
+spec, draw the compact default first and label the dense layout as the
+on-demand case, and reuse an existing header control before adding a region.
+(2026-10-13: an agent + lazygit split + open panel default was turned down as
+"chiếm nhiều thứ quá"; the compact one was taken.)
+
 - **App bar** — fixed 38px row, `data-tauri-drag-region` for window drag;
   left logo + switchers, center search (max 360px), right primary CTA +
   window controls.
