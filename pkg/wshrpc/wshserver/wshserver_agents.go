@@ -79,7 +79,11 @@ func (ws *WshServer) ForkAgentSessionCommand(ctx context.Context, data wshrpc.Co
 	if !strings.HasSuffix(data.TranscriptPath, ".jsonl") {
 		return nil, fmt.Errorf("not a Claude transcript (.jsonl): %q", data.TranscriptPath)
 	}
-	return nil, fmt.Errorf("fork: not built yet")
+	res, err := agentsessions.ForkCommand(data.TranscriptPath, data.UUID, data.Keep, wavebase.GetHomeDir())
+	if err != nil {
+		return nil, err
+	}
+	return &wshrpc.CommandForkAgentSessionRtnData{Command: res.Command, ProjectPath: res.ProjectPath}, nil
 }
 
 func (ws *WshServer) GetSubagentsCommand(ctx context.Context, data wshrpc.CommandGetSubagentsData) (*wshrpc.CommandGetSubagentsRtnData, error) {
