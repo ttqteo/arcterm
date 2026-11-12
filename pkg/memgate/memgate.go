@@ -69,13 +69,97 @@ func Solo(name string) bool {
 
 // Classify names the heaviest step of a shell command line, and false when no step is heavy.
 func Classify(command string) (Job, bool) {
+	return ClassifyWith(command, nil)
+}
+
+// ClassifyWith is Classify, plus any step whose unknown-program pattern (see Pattern) is in learned reads heavy as
+// Job{Name: pattern, Bytes: LearnedBytes}. A program memgate has a rule for keeps its verdict whatever learned holds,
+// so `go test -run X` stays light. The heaviest step wins as in Classify; a nil learned is Classify.
+func ClassifyWith(command string, learned map[string]bool) (Job, bool) {
 	var heaviest Job
 	for _, words := range steps(command) {
-		if job, ok := classifyStep(words); ok && job.Bytes > heaviest.Bytes {
+		if job, ok := classifyStep(words, learned); ok && job.Bytes > heaviest.Bytes {
 			heaviest = job
 		}
 	}
 	return heaviest, heaviest.Bytes > 0
+}
+
+// Pattern is the key a command's measured peak is kept under. known: its one working step is a heavy table job and
+// name is that job's Name. Otherwise name is the unknown step's pattern, its program's name and its first word that is
+// not a flag (`make build`, `gradle build`; a bare `make` is `make`). ok is false when no step works, when more than
+// one does (the tree's peak cannot be split between them), or when the one that does is a program memgate has a rule
+// for that it calls light (`go test -run X`): those keep the table's verdict and are never learned.
+//
+// Steps that do no work are dropped first (cd, echo, the pipeline tails: noWork), and a sh/bash/zsh -c step is not
+// a program of its own: its command line is read in its place, exactly where classifyStep recurses.
+func Pattern(command string) (name string, known bool, ok bool) {
+	work := workSteps(command, nil)
+	if len(work) != 1 {
+		return "", false, false
+	}
+	step := work[0]
+	if job, heavy, ruled := classifyProgram(step.name, step.args, nil); ruled {
+		if heavy {
+			return job.Name, true, true
+		}
+		return "", false, false
+	}
+	return unknownPattern(step.name, step.args), false, true
+}
+
+// a step that runs a program: its name (by any path, .exe trimmed) and args, past env assignments and wrappers
+type workStep struct {
+	name string
+	args []string
+}
+
+// stepProgram is a step's program and its args, past the env assignments and wrappers that only run it; an empty
+// name for a step that runs nothing (a bare assignment, `command -v x`).
+func stepProgram(words []string) (name string, args []string) {
+	words = program(words)
+	if len(words) == 0 {
+		return "", nil
+	}
+	return strings.TrimSuffix(path.Base(words[0]), ".exe"), words[1:]
+}
+
+// noWork are the programs a step runs without doing work a peak could be measured on: they change the shell's own
+// state, print, or end a pipeline (`make build 2>&1 | tail -5`).
+var noWork = map[string]bool{
+	"cd": true, "pushd": true, "popd": true, "export": true, "set": true, "source": true, ".": true, "echo": true,
+	"tail": true, "head": true, "grep": true, "tee": true, "wc": true, "sort": true, "less": true,
+}
+
+// workSteps appends to out the steps of command that do work, a sh/bash/zsh -c step replaced by the work steps of its
+// command line.
+func workSteps(command string, out []workStep) []workStep {
+	for _, words := range steps(command) {
+		name, args := stepProgram(words)
+		if name == "" || noWork[name] {
+			continue
+		}
+		if isShell(name) {
+			if line, dashC := shellOperand(args); dashC {
+				out = workSteps(line, out)
+				continue
+			}
+		}
+		out = append(out, workStep{name, args})
+	}
+	return out
+}
+
+// unknownPattern is the key of a step whose program memgate has no rule for: the program and its first word that is
+// not a flag. Empty for a step that does no work.
+func unknownPattern(name string, args []string) string {
+	if name == "" || noWork[name] {
+		return ""
+	}
+	if op, _ := firstOperand(args); op != "" {
+		return name + " " + op
+	}
+	return name
 }
 
 // Fits says whether the job can start on the RAM free now and still leave the headroom.
@@ -202,52 +286,94 @@ func has(words []string, any ...string) bool {
 	return false
 }
 
-func classifyStep(words []string) (Job, bool) {
-	words = program(words)
-	if len(words) == 0 {
+func classifyStep(words []string, learned map[string]bool) (Job, bool) {
+	name, args := stepProgram(words)
+	if name == "" {
 		return Job{}, false
 	}
-	name, args := strings.TrimSuffix(path.Base(words[0]), ".exe"), words[1:]
+	if job, heavy, ruled := classifyProgram(name, args, learned); ruled {
+		return job, heavy
+	}
+	// a program memgate has no rule for reads heavy only once a measured run has proved its pattern so
+	if len(learned) > 0 {
+		if pattern := unknownPattern(name, args); learned[pattern] {
+			return Job{Name: pattern, Bytes: LearnedBytes}, true
+		}
+	}
+	return Job{}, false
+}
+
+// classifyProgram is the one place that says which programs memgate has a rule for: ruled is false only for a
+// program no case below reads, and then Pattern keys it by its name and first operand. A rule that calls a command
+// light (go test -run X) is still a rule: ruled stays true, and the table's verdict is final.
+func classifyProgram(name string, args []string, learned map[string]bool) (job Job, heavy, ruled bool) {
 	switch name {
 	case "task":
-		return classifyTask(args)
+		job, heavy = classifyTask(args)
 	case "npm":
-		return classifyNpm(args)
+		job, heavy = classifyNpm(args)
 	case "pnpm":
-		return classifyPnpm(args)
+		job, heavy = classifyPnpm(args)
 	case "uv":
-		return classifyUv(args)
+		job, heavy = classifyUv(args)
 	case "python", "python3", "py":
 		if i := index(args, "-m"); i >= 0 && i+1 < len(args) && args[i+1] == "pytest" {
-			return pytest(args[i+2:])
+			job, heavy = pytest(args[i+2:])
 		}
-		return Job{}, false
 	case "sh", "bash", "zsh":
-		ops := operands(args)
-		if len(ops) == 0 {
-			return Job{}, false
-		}
-		// -c (alone or among short flags: -lc) makes the first operand a command line of its own
-		for _, a := range args {
-			if strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--") && strings.Contains(a[1:], "c") {
-				return Classify(ops[0])
-			}
-		}
-		// a script run by name
-		return classifyTool(path.Base(ops[0]), nil)
+		job, heavy = classifyShell(args, learned)
 	case "npx":
-		if len(args) == 0 {
-			return Job{}, false
+		if len(args) > 0 {
+			job, heavy = classifyTool(path.Base(args[0]), args[1:])
 		}
-		return classifyTool(path.Base(args[0]), args[1:])
 	case "node":
-		return classifyNode(args)
+		job, heavy = classifyNode(args)
 	case "cargo":
-		return classifyCargo(args)
+		job, heavy = classifyCargo(args)
 	case "go":
-		return classifyGo(args)
+		job, heavy = classifyGo(args)
+	default:
+		return classifyToolRule(name, args)
 	}
-	return classifyTool(name, args)
+	return job, heavy, true
+}
+
+func isShell(name string) bool {
+	return name == "sh" || name == "bash" || name == "zsh"
+}
+
+// the shells' options that take the next word as their value: bash -o pipefail -c '…'
+var shellValueFlags = []string{"-o", "+o", "-O", "+O", "--rcfile", "--init-file"}
+
+// shellOperand is what a shell step runs: its first word past the options, and whether -c (alone or among short
+// options: -lc) makes that word a command line of its own rather than a script's name.
+func shellOperand(args []string) (operand string, dashC bool) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case has(shellValueFlags, a):
+			i++
+		case strings.HasPrefix(a, "--"):
+		case strings.HasPrefix(a, "-"):
+			dashC = dashC || strings.Contains(a[1:], "c")
+		case strings.HasPrefix(a, "+"):
+		default:
+			return a, dashC
+		}
+	}
+	return "", false
+}
+
+func classifyShell(args []string, learned map[string]bool) (Job, bool) {
+	operand, dashC := shellOperand(args)
+	switch {
+	case dashC:
+		return ClassifyWith(operand, learned)
+	case operand == "":
+		return Job{}, false
+	}
+	// a script run by name
+	return classifyTool(path.Base(operand), nil)
 }
 
 func classifyTask(args []string) (Job, bool) {
@@ -345,33 +471,43 @@ func browserScript(name string) (Job, bool) {
 
 // a tool from node_modules/.bin, run bare or through npx
 func classifyTool(name string, args []string) (Job, bool) {
+	job, heavy, _ := classifyToolRule(name, args)
+	return job, heavy
+}
+
+// classifyToolRule is classifyTool, and whether memgate has a rule for the name at all: ruled is false for any
+// program that is none of the tools below and no *.sh script.
+func classifyToolRule(name string, args []string) (job Job, heavy, ruled bool) {
 	switch name {
 	case "vitest":
-		return vitest(args)
+		job, heavy = vitest(args)
 	case "vite":
 		if has(operands(args), "build") {
-			return jobViteBuild, true
+			job, heavy = jobViteBuild, true
 		}
 	case "tsc":
-		return jobTypecheck, true
+		job, heavy = jobTypecheck, true
 	case "tauri":
-		return tauriCLI(args)
+		job, heavy = tauriCLI(args)
 	case "pytest", "py.test":
-		return pytest(args)
+		job, heavy = pytest(args)
 	case "astro":
 		if has(operands(args), "build") {
-			return jobAstroBuild, true
+			job, heavy = jobAstroBuild, true
 		}
 	case "playwright":
 		if has(operands(args), "test") {
-			return jobE2E, true
+			job, heavy = jobE2E, true
 		}
+	default:
+		// a shell script run by name: scripts/e2e.sh, run-smoke.sh
+		if stem, ok := strings.CutSuffix(name, ".sh"); ok {
+			job, heavy = browserScript(stem)
+			return job, heavy, true
+		}
+		return Job{}, false, false
 	}
-	// a shell script run by name: scripts/e2e.sh, run-smoke.sh
-	if stem, ok := strings.CutSuffix(name, ".sh"); ok {
-		return browserScript(stem)
-	}
-	return Job{}, false
+	return job, heavy, true
 }
 
 // pnpm's flags that take a value, so the script name is found past them
@@ -423,7 +559,8 @@ func classifyUv(args []string) (Job, bool) {
 	if len(ops) < 2 || ops[0] != "run" {
 		return Job{}, false
 	}
-	return classifyStep(skipValueFlags(ops[1:], uvRunValueFlags))
+	// uv is a program memgate has a rule for, so what it runs keeps the table's verdict: nothing learned applies
+	return classifyStep(skipValueFlags(ops[1:], uvRunValueFlags), nil)
 }
 
 // skipValueFlags drops the leading flags, and the value after each one in valued; the rest is returned whole,

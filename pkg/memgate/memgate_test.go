@@ -269,3 +269,199 @@ func TestFormatGB(t *testing.T) {
 		}
 	}
 }
+
+func TestPattern(t *testing.T) {
+	cases := []struct {
+		command string
+		name    string
+		known   bool
+		ok      bool
+	}{
+		// an unknown program: its name and its first word that is not a flag
+		{"make build", "make build", false, true},
+		{"make", "make", false, true},
+		{"make -j4 build", "make build", false, true},
+		{"gradle build --info", "gradle build", false, true},
+		{"./gradlew build", "gradlew build", false, true},
+		{"/usr/bin/make.exe all", "make all", false, true},
+		{"env FOO=1 nice -n 5 gradle build --info", "gradle build", false, true},
+		{"time make build", "make build", false, true},
+		{"FOO=1 make build", "make build", false, true},
+		{"timeout 600 mvn package", "mvn package", false, true},
+		{"make build > build.log 2>&1", "make build", false, true},
+		// steps that do no work, and the pipeline tails, are dropped
+		{"cd web && make build 2>&1 | tail -5", "make build", false, true},
+		{"cd web; export CI=1; make build", "make build", false, true},
+		{"set -e && source env.sh && make build | tee build.log | grep -v warn", "make build", false, true},
+		{"make build && echo done", "make build", false, true},
+		{"(cd web && make build)", "make build", false, true},
+		{"pushd web && make build && popd", "make build", false, true},
+		// sh -c is not a program of its own: its command line is
+		{`bash -c "make build"`, "make build", false, true},
+		{`/bin/zsh -c -l "make build"`, "make build", false, true},
+		{"bash -lc 'cd web && make build'", "make build", false, true},
+		{"sh -c 'make build 2>&1 | tail -5'", "make build", false, true},
+		{"bash -o pipefail -c 'make build'", "make build", false, true},
+		{`bash -c "bash -c 'make build'"`, "make build", false, true},
+		// a command in the table: the table's name
+		{"task check:ts", "task check:ts", true, true},
+		{"cd frontend && npx vitest", "vitest (all)", true, true},
+		{"pnpm build", "vite build", true, true},
+		{"npm test", "vitest (all)", true, true},
+		{"export CI=1; task tauri:build 2>&1 | tail -20", "task tauri:build", true, true},
+		{"bash -c 'task check:ts'", "task check:ts", true, true},
+		{"cargo build --release", "cargo build", true, true},
+		{"sh scripts/e2e.sh", "e2e script", true, true},
+		// not one command: nothing to learn
+		{"make build && gradle test", "", false, false},
+		{"make build && pnpm test", "", false, false},
+		{"task check:ts && task check:ts", "", false, false},
+		{"npm install && task check:ts", "", false, false},
+		{"make build; make test", "", false, false},
+		{"echo hi", "", false, false},
+		{"cd web", "", false, false},
+		{"cd web && echo hi | tee log", "", false, false},
+		{"NODE_ENV=production", "", false, false},
+		{"command -v make", "", false, false},
+		{`echo "a && make build"`, "", false, false},
+		{"", "", false, false},
+		// a program memgate has a rule for, which it calls light: the table's verdict stands
+		{"go test ./pkg/x -run X", "", false, false},
+		{"go test ./pkg/x", "", false, false},
+		{"go vet ./pkg/x", "", false, false},
+		{"npx vitest run foo.test.ts", "", false, false},
+		{"npx eslint src", "", false, false},
+		{"npm run lint", "", false, false},
+		{"pnpm lint", "", false, false},
+		{"cargo fmt", "", false, false},
+		{"cargo check", "", false, false},
+		{"task --list", "", false, false},
+		{"node scripts/gen.mjs", "", false, false},
+		{"python script.py", "", false, false},
+		{"py -m pytest foo.py", "", false, false},
+		{"pytest -k x", "", false, false},
+		{"uv run make build", "", false, false},
+		{"sh scripts/deploy.sh", "", false, false},
+		{"./run.sh", "", false, false},
+		{"bash scripts/deploy.sh", "", false, false},
+		{"vite", "", false, false},
+		{"sh -c 'go test -run X'", "", false, false},
+		{"cd x && go test -run X && make build", "", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.command, func(t *testing.T) {
+			name, known, ok := Pattern(tc.command)
+			if name != tc.name || known != tc.known || ok != tc.ok {
+				t.Fatalf("Pattern(%q) = (%q, %v, %v); want (%q, %v, %v)", tc.command, name, known, ok, tc.name, tc.known, tc.ok)
+			}
+		})
+	}
+}
+
+// a command that is known is the table's heavy job under the table's name, whichever way it is written
+func TestPatternKnownNameIsTheTablesJobName(t *testing.T) {
+	for _, command := range []string{
+		"task check:ts", "npx tsc --noEmit", "cd x && task tauri:build", "cargo test", "pytest", "npm install",
+		"vitest run", "sh scripts/e2e.sh", "task dev", "bash -c 'npx astro build'",
+	} {
+		job, heavy := Classify(command)
+		name, known, ok := Pattern(command)
+		if !heavy || !ok || !known || name != job.Name {
+			t.Errorf("Pattern(%q) = (%q, %v, %v); Classify = %+v, %v; want the table's job name", command, name, known, ok, job, heavy)
+		}
+	}
+}
+
+// the one list of programs memgate has a rule for: a program the classifier reads is never an unknown pattern, so
+// Pattern cannot learn what Classify already decides
+func TestPatternNeverLearnsAProgramTheClassifierHasARuleFor(t *testing.T) {
+	for _, command := range []string{
+		"task x", "npm x", "pnpm x", "uv x", "python x", "python3 x", "py x", "npx x", "node x.mjs", "cargo x", "go x",
+		"vitest x", "vite x", "tsc x", "tauri x", "pytest x", "py.test x", "astro x", "playwright x", "x.sh",
+		"sh x", "bash x", "zsh x",
+	} {
+		if name, known, ok := Pattern(command); ok && !known {
+			t.Errorf("Pattern(%q) = %q, an unknown pattern for a program memgate has a rule for", command, name)
+		}
+	}
+}
+
+func TestClassifyWith(t *testing.T) {
+	learned := map[string]bool{"make build": true, "gradle build": true}
+	cases := []struct {
+		command string
+		learned map[string]bool
+		heavy   bool
+		name    string
+		bytes   uint64
+	}{
+		{"make build", learned, true, "make build", LearnedBytes},
+		{"cd x && make build", learned, true, "make build", LearnedBytes},
+		{"cd web && make build 2>&1 | tail -5", learned, true, "make build", LearnedBytes},
+		{"bash -c 'make build'", learned, true, "make build", LearnedBytes},
+		{`/bin/zsh -c -l "cd web && make build"`, learned, true, "make build", LearnedBytes},
+		{"bash -o pipefail -c 'make build'", learned, true, "make build", LearnedBytes},
+		{"env FOO=1 nice -n 5 gradle build --info", learned, true, "gradle build", LearnedBytes},
+		// any step may match, not only the one working step
+		{"make build && make test", learned, true, "make build", LearnedBytes},
+		{"make test && gradle build", learned, true, "gradle build", LearnedBytes},
+		{"make build; echo done", learned, true, "make build", LearnedBytes},
+		// not learned
+		{"make test", learned, false, "", 0},
+		{"make", learned, false, "", 0},
+		{"make build", nil, false, "", 0},
+		{"make build", map[string]bool{}, false, "", 0},
+		{"ls src", learned, false, "", 0},
+		{"echo make build", learned, false, "", 0},
+		{`echo "x && make build"`, learned, false, "", 0},
+		// steps that do no work never match, whatever the set holds
+		{"cd x", map[string]bool{"cd x": true}, false, "", 0},
+		{"echo hi", map[string]bool{"echo hi": true}, false, "", 0},
+		{"export A=1", map[string]bool{"export A=1": true}, false, "", 0},
+		// a program memgate has a rule for keeps the table's verdict, whatever the set holds
+		{"go test -run X", map[string]bool{"go test": true, "go": true, "go test -run": true}, false, "", 0},
+		{"go test ./pkg/x -run X", map[string]bool{"go test": true}, false, "", 0},
+		{"npx vitest run foo.test.ts", map[string]bool{"npx vitest": true, "npx": true}, false, "", 0},
+		{"pnpm lint", map[string]bool{"pnpm lint": true}, false, "", 0},
+		// the table's jobs are what Classify says; the heaviest step wins
+		{"task check:ts", learned, true, "task check:ts", 3 * gib},
+		{"make build && task check:ts", learned, true, "task check:ts", 3 * gib},
+		{"task check:ts && make build", learned, true, "task check:ts", 3 * gib},
+		{"npm install && make build", learned, true, "npm install", 1 * gib},
+		{"cd x && npx vitest run", learned, true, "vitest (all)", 2 * gib},
+	}
+	for _, tc := range cases {
+		t.Run(tc.command, func(t *testing.T) {
+			job, heavy := ClassifyWith(tc.command, tc.learned)
+			if heavy != tc.heavy || job.Name != tc.name || job.Bytes != tc.bytes {
+				t.Fatalf("ClassifyWith(%q) = %+v, %v; want {%s %d}, %v", tc.command, job, heavy, tc.name, tc.bytes, tc.heavy)
+			}
+		})
+	}
+}
+
+// with no learned set ClassifyWith is Classify, for every command the table classifies
+func TestClassifyWithNothingLearnedIsClassify(t *testing.T) {
+	for _, command := range []string{
+		"task check:ts", "make build", "go test -run X", "npm install && task check:ts", "bash -c 'cd x && npx vitest run'",
+		"ls", "", "task dev", "sh scripts/e2e.sh", "uv run pytest",
+	} {
+		wantJob, wantHeavy := Classify(command)
+		for _, learned := range []map[string]bool{nil, {}} {
+			if job, heavy := ClassifyWith(command, learned); job != wantJob || heavy != wantHeavy {
+				t.Errorf("ClassifyWith(%q, %v) = %+v, %v; Classify = %+v, %v", command, learned, job, heavy, wantJob, wantHeavy)
+			}
+		}
+	}
+}
+
+// a learned job is no dev server and no solo run: it queues like any other heavy command
+func TestClassifyWithLearnedJobIsAnOrdinaryJob(t *testing.T) {
+	job, heavy := ClassifyWith("make build", map[string]bool{"make build": true})
+	if !heavy || job.LongRunning() || Solo(job.Name) {
+		t.Fatalf("got %+v, %v; want an ordinary heavy job", job, heavy)
+	}
+	if job.Bytes != LearnedBytes {
+		t.Fatalf("bytes %d, want LearnedBytes", job.Bytes)
+	}
+}
