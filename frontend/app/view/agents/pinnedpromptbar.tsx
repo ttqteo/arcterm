@@ -183,13 +183,15 @@ function PinnedBand({
                     />
                 ) : null}
                 {/* the scroller's ground under the card, so the card behind does not show through it. The card is
-                    neutral, your message bubble's surface: an accent tint goes muddy over a coloured theme */}
+                    neutral, your message bubble's surface: an accent tint goes muddy over a coloured theme. It floats
+                    over the reply scrolling beneath, so it takes the strong edge and the 1px micro-shadow of floating
+                    chrome (DESIGN.md "Elevation & Depth"): with the mid edge it sank into the page in a small window */}
                 <div className={cn("relative rounded-[8px]", bg)}>
                     <button
                         type="button"
                         onClick={jump}
                         title="Back to this prompt"
-                        className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] border border-edge-mid bg-surface-raised px-3 py-[5px] text-left hover:border-edge-strong hover:bg-surface-hover"
+                        className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] border border-edge-strong bg-surface-raised px-3 py-[5px] text-left shadow-popover-line hover:bg-surface-hover"
                     >
                         <span className="min-w-0 flex-1 truncate text-[12.5px] text-primary">{text}</span>
                         <ArrowUp size={12} strokeWidth={2.2} aria-hidden className="flex-none text-muted" />

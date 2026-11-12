@@ -71,6 +71,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   only the message you sent, as the terminal does, and a conversation rewound to an earlier point drops what came after.
 - A subagent's report reaching Chat no longer shows as a message from you ("Agent message", pinned at the top as your
   prompt): it shows as the subagent's report row, which opens to the full report.
+- The prompt pinned to the top of Chat stands out from the reply scrolling under it, in a small or floating window too.
 - Opening a compaction's summary at the bottom of Chat scrolls it into view: the Compacted line rises to the top as the
   summary opens, instead of the summary opening out of sight below.
 - Chat no longer drops what Claude says between tool calls when Claude Code keeps only a summary of it (the lines the
