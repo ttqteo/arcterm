@@ -22,18 +22,20 @@ copy and figures this plan implements.
 
 ---
 
-### Task 1: Parse `/context` output (`pkg/ctxbreakdown`)
+### Task 1: The wire contract (types, command, handler, generated TS)
 
 **Depends on:** none
-**Files:** `pkg/wshrpc/wshrpctypes_agents.go`, `pkg/ctxbreakdown/parse.go`, `pkg/ctxbreakdown/paths.go`, `pkg/ctxbreakdown/parse_test.go`, `pkg/ctxbreakdown/paths_test.go`
+**Files:** `pkg/wshrpc/wshrpctypes_agents.go`, `pkg/wshrpc/wshserver/wshserver_agents.go`, `pkg/ctxbreakdown/read.go`, `pkg/wshrpc/wshclient/wshclient.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`
+
+Contract first, so the rail (Task 4) can start on the generated types while Task 2 builds the reading behind them.
 
 Files in detail:
-- Modify: `pkg/wshrpc/wshrpctypes_agents.go` (add the four wire types only, beside `CommandGetTranscriptUsageData`
-  ~line 394; no command yet)
-- Create: `pkg/ctxbreakdown/parse.go`, `pkg/ctxbreakdown/paths.go`
-- Test: `pkg/ctxbreakdown/parse_test.go`, `pkg/ctxbreakdown/paths_test.go`
-- Test data (already in the tree): `pkg/ctxbreakdown/testdata/context-opus-1m.md` — a real `/context` report,
-  local paths scrubbed
+- Modify: `pkg/wshrpc/wshrpctypes_agents.go` (the four wire types, the command's data type beside
+  `CommandGetTranscriptUsageData` ~line 394, the command beside `GetTranscriptUsageCommand` in the interface),
+  `pkg/wshrpc/wshserver/wshserver_agents.go` (the handler, beside `GetTranscriptUsageCommand` ~line 267)
+- Create: `pkg/ctxbreakdown/read.go` holding only the package comment and a `Read` that returns an error (Task 2
+  replaces its body)
+- Generated (never hand-edit): run `task generate`
 
 **Step 1: Add the wire types** to `wshrpctypes_agents.go`:
 
@@ -71,7 +73,77 @@ type ContextMcp struct {
 }
 ```
 
-**Step 2: Write the failing parse tests** (`parse_test.go`):
+**Step 2: Add the command.** In the interface, next to `GetTranscriptUsageCommand`:
+
+```go
+	GetContextBreakdownCommand(ctx context.Context, data CommandGetContextBreakdownData) (*ContextBreakdown, error)
+```
+
+and the data type beside `CommandGetTranscriptUsageData`:
+
+```go
+type CommandGetContextBreakdownData struct {
+	Cwd     string `json:"cwd"`
+	Refresh bool   `json:"refresh,omitempty"` // read again even when a cached breakdown is fresh
+}
+```
+
+**Step 3: The placeholder `Read`** in `pkg/ctxbreakdown/read.go`:
+
+```go
+// Package ctxbreakdown reads what Claude Code's /context reports for a folder: run headless, it measures a fresh
+// session there, which is what loads every turn (tools, memory files, skills, agents, MCP, the system prompt).
+package ctxbreakdown
+
+import (
+	"context"
+	"errors"
+
+	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+)
+
+// Read returns the breakdown for cwd. Task 2 of the rail-context-breakdown plan replaces this body.
+func Read(ctx context.Context, cwd string, refresh bool) (*wshrpc.ContextBreakdown, error) {
+	return nil, errors.New("reading /context is not built yet")
+}
+```
+
+**Step 4: The handler** in `wshserver_agents.go`:
+
+```go
+func (ws *WshServer) GetContextBreakdownCommand(ctx context.Context, data wshrpc.CommandGetContextBreakdownData) (*wshrpc.ContextBreakdown, error) {
+	if strings.TrimSpace(data.Cwd) == "" {
+		return nil, fmt.Errorf("no folder to read /context in")
+	}
+	return ctxbreakdown.Read(ctx, data.Cwd, data.Refresh)
+}
+```
+
+**Step 5:** `task generate`, then confirm `frontend/app/store/wshclientapi.ts` has `GetContextBreakdownCommand` and
+`frontend/types/gotypes.d.ts` has `ContextBreakdown`. `go build ./pkg/... ./cmd/...` succeeds; `gofmt -l pkg/ctxbreakdown
+pkg/wshrpc/wshrpctypes_agents.go pkg/wshrpc/wshserver/wshserver_agents.go` prints nothing.
+
+**Step 6: Commit** the Go files and every generated file `task generate` changed:
+
+```bash
+git add pkg/ctxbreakdown pkg/wshrpc frontend/app/store/wshclientapi.ts frontend/types/gotypes.d.ts
+git commit -m "feat(ctxbreakdown): GetContextBreakdownCommand contract and generated types"
+```
+
+### Task 2: Parse, resolve and read `/context` (`pkg/ctxbreakdown`)
+
+**Depends on:** Task 1
+**Files:** `pkg/ctxbreakdown/parse.go`, `pkg/ctxbreakdown/paths.go`, `pkg/ctxbreakdown/read.go`, `pkg/ctxbreakdown/hide_windows.go`, `pkg/ctxbreakdown/hide_other.go`, `pkg/ctxbreakdown/parse_test.go`, `pkg/ctxbreakdown/paths_test.go`, `pkg/ctxbreakdown/read_test.go`
+
+Files in detail:
+- Create: `pkg/ctxbreakdown/parse.go`, `pkg/ctxbreakdown/paths.go`, `pkg/ctxbreakdown/hide_windows.go`,
+  `pkg/ctxbreakdown/hide_other.go`
+- Modify: `pkg/ctxbreakdown/read.go` (replace Task 1's placeholder `Read`)
+- Test: `pkg/ctxbreakdown/parse_test.go`, `pkg/ctxbreakdown/paths_test.go`, `pkg/ctxbreakdown/read_test.go`
+- Test data (already in the tree): `pkg/ctxbreakdown/testdata/context-opus-1m.md` — a real `/context` report,
+  local paths scrubbed
+
+**Step 1: Write the failing parse tests** (`parse_test.go`):
 
 ```go
 package ctxbreakdown
@@ -154,16 +226,14 @@ func TestParseKeepsUnknownCategoryAndFailsWithoutTable(t *testing.T) {
 }
 ```
 
-**Step 3: Run them to see them fail**
+**Step 2: Run them to see them fail**
 
 Run (Bash): `CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu" go test ./pkg/ctxbreakdown -run 'TestParse' -v`
 Expected: FAIL — `undefined: ParseTokens`, `undefined: Parse`.
 
-**Step 4: Implement `parse.go`**
+**Step 3: Implement `parse.go`** (the package comment stays in `read.go`)
 
 ```go
-// Package ctxbreakdown reads what Claude Code's /context reports for a folder: run headless, it measures a fresh
-// session there, which is what loads every turn (tools, memory files, skills, agents, MCP, the system prompt).
 package ctxbreakdown
 
 import (
@@ -310,9 +380,9 @@ func Parse(md string) (*wshrpc.ContextBreakdown, error) {
 }
 ```
 
-**Step 5: Run the parse tests** — same command. Expected: PASS.
+**Step 4: Run the parse tests** — same command. Expected: PASS.
 
-**Step 6: Write the failing path tests** (`paths_test.go`): build a temp `home` and `cwd` with
+**Step 5: Write the failing path tests** (`paths_test.go`): build a temp `home` and `cwd` with
 `~/.claude/skills/paper/SKILL.md`, `<cwd>/.claude/skills/local/SKILL.md`, `~/.arc/claude-mod/skills/design/SKILL.md`,
 `~/.claude/plugins/cache/superpowers-marketplace/superpowers/4.0.3/skills/brainstorming/SKILL.md`,
 `~/.claude/plugins/cache/superpowers-marketplace/superpowers/4.0.3/agents/code-reviewer.md`, `~/.claude/agents/mine.md`.
@@ -332,7 +402,7 @@ ResolvePaths(b, cwd, home)
 
 and assert each `Path` is the file made above, and `gone`, `dataviz`, `docx` stay `""`.
 
-**Step 7: Run to see them fail**, then **implement `paths.go`**:
+**Step 6: Run to see them fail**, then **implement `paths.go`**:
 
 ```go
 package ctxbreakdown
@@ -411,28 +481,9 @@ func ResolvePaths(b *wshrpc.ContextBreakdown, cwd, home string) {
 }
 ```
 
-**Step 8: Run all of the package's tests** — `... go test ./pkg/ctxbreakdown -v`. Expected: PASS. Then
-`gofmt -l pkg/ctxbreakdown pkg/wshrpc/wshrpctypes_agents.go` prints nothing.
+**Step 7: Run all of the package's tests** — `... go test ./pkg/ctxbreakdown -v`. Expected: PASS.
 
-**Step 9: Commit**
-
-```bash
-git add pkg/ctxbreakdown pkg/wshrpc/wshrpctypes_agents.go
-git commit -m "feat(ctxbreakdown): parse Claude Code's /context report and resolve skill and agent files"
-```
-
-### Task 2: Read `/context` in wavesrv and serve it over wshrpc
-
-**Depends on:** Task 1
-**Files:** `pkg/ctxbreakdown/read.go`, `pkg/ctxbreakdown/read_test.go`, `pkg/wshrpc/wshrpctypes_agents.go`, `pkg/wshrpc/wshserver/wshserver_agents.go`, `pkg/wshrpc/wshclient/wshclient.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`
-
-Files in detail:
-- Create: `pkg/ctxbreakdown/read.go`, test `pkg/ctxbreakdown/read_test.go`
-- Modify: `pkg/wshrpc/wshrpctypes_agents.go` (the command and its data type), `pkg/wshrpc/wshserver/wshserver_agents.go`
-  (the handler, beside `GetTranscriptUsageCommand` ~line 267)
-- Generated (never hand-edit): run `task generate`
-
-**Step 1: Write the failing tests** (`read_test.go`). `read.go` exposes a seam the way `pkg/council/bench`'s
+**Step 8: Write the failing read tests** (`read_test.go`). `read.go` exposes a seam the way `pkg/council/bench`'s
 `runClaude` does: `var runContext = func(ctx context.Context, cwd string, env []string) (string, error)`. Tests swap it:
 
 - `TestReadCachesPerFolder`: a fake that counts calls and returns the testdata report; `Read(ctx, dirA, false)` twice
@@ -445,9 +496,9 @@ Files in detail:
 - `TestChildEnvDropsBlock`: `childEnv([]string{"PATH=x", "WAVETERM_BLOCKID=b", "WAVETERM_JWT=j", "HOME=h"})` →
   `[PATH=x HOME=h]`.
 
-**Step 2: Run** `... go test ./pkg/ctxbreakdown -run 'TestRead|TestChildEnv' -v` → FAIL (undefined).
+**Step 9: Run** `... go test ./pkg/ctxbreakdown -run 'TestRead|TestChildEnv' -v` → FAIL (undefined).
 
-**Step 3: Implement `read.go`**
+**Step 10: Implement `read.go`**, replacing Task 1's placeholder `Read` (keep the package comment)
 
 ```go
 package ctxbreakdown
@@ -483,6 +534,7 @@ var runContext = func(ctx context.Context, cwd string, env []string) (string, er
 	}
 	cmd := exec.CommandContext(ctx, bin, "-p", "--no-session-persistence", "/context")
 	cmd.Dir, cmd.Env = cwd, env
+	hideWindow(cmd) // wavesrv has no console: a console child would flash a window on Windows
 	out, err := cmd.Output()
 	if ctx.Err() != nil {
 		return "", errors.New("/context took longer than 90 s")
@@ -583,42 +635,36 @@ func fill(e *entry, cwd string) {
 (The run uses a background context so a caller that gives up — the rail closing — does not kill a read another caller
 waits on.)
 
-**Step 4: Run** the tests → PASS.
-
-**Step 5: Add the command.** In `wshrpctypes_agents.go`, next to `GetTranscriptUsageCommand` in the interface:
-
-```go
-	GetContextBreakdownCommand(ctx context.Context, data CommandGetContextBreakdownData) (*ContextBreakdown, error)
-```
-
-and the data type beside `CommandGetTranscriptUsageData`:
+**Step 11: Hide the child's console on Windows**, unconditionally (wavesrv is windowless, so a console child opens
+a window of its own), the way `pkg/shellcomplete/bash_windows.go` / `bash_other.go` split by build tag:
 
 ```go
-type CommandGetContextBreakdownData struct {
-	Cwd     string `json:"cwd"`
-	Refresh bool   `json:"refresh,omitempty"` // read again even when a cached breakdown is fresh
+//go:build windows
+
+package ctxbreakdown
+
+import (
+	"os/exec"
+	"syscall"
+
+	"golang.org/x/sys/windows"
+)
+
+func hideWindow(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
 }
 ```
 
-In `wshserver_agents.go`:
+and `hide_other.go` (`//go:build !windows`): `func hideWindow(cmd *exec.Cmd) {}`.
 
-```go
-func (ws *WshServer) GetContextBreakdownCommand(ctx context.Context, data wshrpc.CommandGetContextBreakdownData) (*wshrpc.ContextBreakdown, error) {
-	if strings.TrimSpace(data.Cwd) == "" {
-		return nil, fmt.Errorf("no folder to read /context in")
-	}
-	return ctxbreakdown.Read(ctx, data.Cwd, data.Refresh)
-}
-```
+**Step 12: Run** all of the package's tests → PASS; `go build ./pkg/... ./cmd/...` succeeds (also
+`GOOS=darwin go vet ./pkg/ctxbreakdown` for the other build tag); `gofmt -l pkg/ctxbreakdown` prints nothing.
 
-**Step 6:** `task generate`, then confirm `frontend/app/store/wshclientapi.ts` has `GetContextBreakdownCommand` and
-`frontend/types/gotypes.d.ts` has `ContextBreakdown`. `go build ./pkg/... ./cmd/...` succeeds.
-
-**Step 7: Commit** the Go files and every generated file `task generate` changed:
+**Step 13: Commit**
 
 ```bash
-git add pkg/ctxbreakdown pkg/wshrpc frontend/app/store/wshclientapi.ts frontend/types/gotypes.d.ts
-git commit -m "feat(ctxbreakdown): wavesrv reads /context per folder on demand (GetContextBreakdownCommand)"
+git add pkg/ctxbreakdown
+git commit -m "feat(ctxbreakdown): wavesrv parses and caches Claude Code's /context per folder, on demand"
 ```
 
 ### Task 3: The pure model (`ctxbreakdown.ts`)
@@ -626,7 +672,7 @@ git commit -m "feat(ctxbreakdown): wavesrv reads /context per folder on demand (
 **Depends on:** none
 **Files:** `frontend/app/view/agents/ctxbreakdown.ts`, `frontend/app/view/agents/ctxbreakdown.test.ts`
 
-The model declares its own input shape (identical to the Go JSON above) so it does not wait for Task 2's generated
+The model declares its own input shape (identical to the Go JSON above) so it does not wait for Task 1's generated
 types; the store passes the generated `ContextBreakdown` to it.
 
 **Step 1: Write the failing tests** (`ctxbreakdown.test.ts`), with a fixture built from the testdata report's numbers:
@@ -656,6 +702,7 @@ const B: CtxBreakdownData = {
     memoryfiles: [
         { name: "CLAUDE.md", source: "User", path: "C:\\Users\\me\\.claude\\CLAUDE.md", tokens: 275 },
         { name: "AGENTS.md", source: "Project", path: "D:\\work\\arcterm\\AGENTS.md", tokens: 14800 },
+        { name: "MEMORY.md", source: "AutoMem", path: "C:\\Users\\me\\.claude\\projects\\x\\memory\\MEMORY.md", tokens: 925 },
     ],
     skills: Array.from({ length: 9 }, (_, i) => ({ name: `s${i}`, source: "User", tokens: (i + 1) * 10 })),
     agents: [{ name: "superpowers:code-reviewer", source: "Plugin", path: "/x/code-reviewer.md", tokens: 350 }],
@@ -685,6 +732,9 @@ describe("contextGroups", () => {
         const m = g.find((x) => x.id === "memory")!.rows[1];
         expect(m).toMatchObject({ name: "AGENTS.md", detail: "Project · arcterm", path: "D:\\work\\arcterm\\AGENTS.md" });
     });
+    it("words /context's AutoMem type", () => {
+        expect(g.find((x) => x.id === "memory")!.rows[2].detail).toBe("Auto memory · memory");
+    });
     it("words an MCP server by its tools", () => {
         expect(g.find((x) => x.id === "mcp")!.rows[0]).toMatchObject({ name: "stitch", detail: "18 tools · 22.9k when loaded" });
     });
@@ -698,6 +748,7 @@ describe("contextGroups", () => {
 describe("figures", () => {
     it("formats tokens", () => {
         expect([fmtTok(231), fmtTok(9100), fmtTok(14_800), fmtTok(927_000)]).toEqual(["231", "9.1k", "14.8k", "927k"]);
+        expect([fmtTok(200_000), fmtTok(1_000_000), fmtTok(1_500_000)]).toEqual(["200k", "1M", "1.5M"]);
     });
     it("reads the cache countdown", () => {
         expect([cacheMinutes("43m left"), cacheMinutes("<1m left"), cacheMinutes("expired"), cacheMinutes("—")]).toEqual([43, 0, null, null]);
@@ -727,14 +778,16 @@ describe("figures", () => {
   `custom agents`, `memory files`, `skills`; skipped: `messages`, `free space`, `compact buffer`, any `deferred`.
   Anything else non-deferred sums into an `other` group ("Other", every turn), shown only when > 0.
 - `fixed` = the sum of the non-skipped categories; `messages = max(0, live − fixed)`; `pct` of `max(live, fixed)`.
-- Rows: memory files → `{name, detail: \`${source} · ${parentDirName(path)}\`, tokens, path}`; skills and agents
+- Rows: memory files → `{name, detail: \`${type} · ${parentDirName(path)}\`, tokens, path}`, `type` being the source
+  with `AutoMem` worded `Auto memory` (the canvas's word) and any other type as `/context` gives it; skills and agents
   sorted by tokens descending, `detail` = source, first 6 in `rows`, the rest in `more`; MCP servers →
   `{name: server, detail: \`${tools} tools · ${fmtTok(tokens)} when loaded\`}` (no tokens: the table mixes deferred
   tools in).
 - Notes: tools → `Built in.` plus ` ${fmtTok(deferred system tools)} more are deferred: a tool search loads them when
   needed.` when there are any; skills → `Only each skill's description is in context; its file loads when it runs.`
 - Groups with 0 tokens and no rows are dropped, Messages never.
-- `fmtTok(n)`: `< 1000` → `${n}`; `< 100_000` → one decimal with a trailing `.0` dropped + `k`; else rounded + `k`.
+- `fmtTok(n)`: `< 1000` → `${n}`; `< 100_000` → one decimal with a trailing `.0` dropped + `k`; `< 1_000_000` →
+  rounded + `k`; else millions to one decimal with a trailing `.0` dropped + `M` (`1M`, `1.5M`).
 - `cacheMinutes(countdown)`: `/^(\d+)m left$/` → the number, `<1m left` → 0, else null. `cacheWarn = m != null && m < 5`.
 - `rewriteNow(live, messages) = live − messages + 2000` (an assumed summary).
 - `freeTokens(window, live) = max(0, window − live)`, `compactBuffer(b)` = its category's tokens.
@@ -751,7 +804,10 @@ git commit -m "feat(rail): pure model for the context breakdown rows"
 
 ### Task 4: The rail's Context part, store, scenario
 
-**Depends on:** Task 2 (uses the wshrpc command and generated types it adds), Task 3 (uses the model it adds)
+**Depends on:** Task 1, Task 3
+
+It uses Task 1's wshrpc command and generated types and Task 3's model. Task 2 builds the real read in parallel: until it merges, the command answers "reading /context is not built yet", which is the Failed state, and the
+scenario seeds every state instead of reading.
 **Files:** `frontend/app/view/agents/ctxbreakdownstore.ts`, `frontend/app/view/agents/sessionsection.tsx`, `frontend/app/view/agents/agentdetailsrail.tsx`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/hand-checks.md`
 
 Files in detail:
@@ -795,15 +851,19 @@ export async function readCtxBreakdown(cwd: string, refresh: boolean): Promise<v
     }
 }
 
-// scenarios seed a breakdown without spawning claude
+// scenarios seed any state (idle, reading, ready, failed) without spawning claude; seeding bumps seq so a reply
+// still in flight cannot overwrite it
 declare global {
     interface Window {
-        __arcCtxBreakdown?: { seed: (cwd: string, data: ContextBreakdown | null) => void };
+        __arcCtxBreakdown?: { seed: (cwd: string, s: CtxState) => void };
     }
 }
 if (import.meta.env.DEV && typeof window !== "undefined") {
     window.__arcCtxBreakdown = {
-        seed: (cwd, data) => globalStore.set(ctxBreakdownAtom(cwd), data ? { state: "ready", data } : { state: "idle" }),
+        seed: (cwd, s) => {
+            seq.set(cwd, (seq.get(cwd) ?? 0) + 1);
+            globalStore.set(ctxBreakdownAtom(cwd), s);
+        },
     };
 }
 ```
@@ -849,36 +909,68 @@ canvas `Main.dc.html` exactly; classes from today's file:
   every state.
 
 **Step 3: `agentdetailsrail.tsx`.** Pass `context` to `SessionSection` only when `!sub && isClaude && ctxPct != null
-&& usage?.contextmax` and the agent has a folder (`railState?.cwd ?? agent.cwd`): `liveTokens =
+&& usage?.contextmax` and the agent has a folder (`agentCwd ?? agent.cwd`: `agentCwd` is the rail's per-agent
+`railCwdsAtom` value, ~line 693; never `railState?.cwd`, which is another agent's for a moment after a switch, so the
+breakdown would key on the wrong folder): `liveTokens =
 Math.round(ctxPct / 100 * contextmax)`, `cache = cacheCountdown`, `onOpenFile = (p) => openFileInPanel(model,
 agent.id, { abs: p, root: dirname(p) })` (`dirname`: the path up to its last `/` or `\`). Check in the dev app that
 the File tab opens a file outside the agent's folder (`~/.claude/CLAUDE.md`); if it refuses, pass `root: null`.
-In the state row, when `cacheWarn(cacheMinutes(cacheCountdown))`, draw `cache Nm left` in `text-warning font-semibold`
-(`data-rail-cache-warn`) and add `now rewrites ~X, later Y` (`text-[10.5px] text-muted`, right-aligned) at the end of
-the Compact/Clear row, X from `rewriteNow` with the Messages estimate (needs a ready breakdown; without one, leave the
-note out).
+In the state row, when `cacheWarn(cacheMinutes(cacheCountdown))`, compose the line in JSX (`railStatusLine` returns
+one string and stays as it is): `railStatusLine({ …, cache: "—" })` (the line without its cache part), then ` · ` and
+a `<span data-rail-cache-warn className="text-warning font-semibold">cache Nm left</span>`. And add
+`now rewrites ~X, later Y` (`data-rail-rewrite-note`, `text-[10.5px] text-muted`, right-aligned) at the end of the
+Compact/Clear row (`ResetActions`' row: it shows only when `offerReset`, i.e. idle with the context at 150k or more or
+nearly full), X = `rewriteNow(liveTokens, messages)` with the Messages group's estimate, Y = `liveTokens`, both via
+`fmtTok`. The note needs a ready breakdown (or `reading` with `prev`); without one, leave it out.
 
-**Step 4: Scenario** `rail-context-breakdown` in `scripts/cdp/scenarios.mjs`, built on `agent-tree-rail`'s arrange
-(a focused Claude agent with the rail open) and `docs/reference/cdp-run-fixtures.md`'s helpers. Seed through
-`window.__arcCtxBreakdown.seed(<the agent's cwd>, <fixture>)` with the fixture from Task 3's test. Steps:
+**Step 4: Scenario** `rail-context-breakdown` in `scripts/cdp/scenarios.mjs`. Not `arrangeTreeRail` (its lead is
+working, has no usage, a one-line user transcript, and its `dagsubmit` dispatches a real worker): use
+`arrangeFixtureRun` directly, as `docs/reference/cdp-run-fixtures.md` describes, with no `dagsubmit`.
 
-1. Click `[data-rail-breakdown-toggle]` → `[data-rail-context]` and the Spend heading both show; shot.
-2. Seven `[data-ctx-group]` in order messages … mcp; Messages' figure is the estimate.
-3. Click `[data-ctx-group="memory"]` → two `[data-ctx-open-file]` rows; click the AGENTS.md one → the rail's File tab
-   shows that path (seed it with a real file in the scenario's temp folder so it opens); shot.
-4. `[data-ctx-cache-line]` reads `Cache warm` (seed the cache status if the arrange has none).
-5. Seed `null` → `[data-ctx-read]` shows and the cache line still does; shot.
-6. Seed a cache status 4 minutes from expiry → `[data-rail-cache-warn]` shows; shot.
-Teardown restores what the arrange changed and seeds `null`.
+Arrange (a temp dir `ctx.cwd` from `mkdtempSync`, as `agent-tree-rail` makes one):
+- Write `join(ctx.cwd, "AGENTS.md")` (a few lines), so the ↗ has a real file to open.
+- Write the lead's transcript `join(ctx.cwd, "lead.jsonl")`: a user turn, then two assistant records in Claude Code's
+  shape (what `extractClaude`, `pkg/usagestats/usagestats.go:76`, reads: `type: "assistant"`, an ISO `timestamp`,
+  `cwd: ctx.cwd`, `requestId`, `message: { id, model: "claude-opus-5-5", role: "assistant", content, usage: {
+  input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, cache_creation: {
+  ephemeral_1h_input_tokens } } }`), the last one with a 1-hour cache write timestamped 17 minutes ago. That record
+  gives the rail its cwd (`agentcwd.ts` reads `cwd`), the session spend (so `[data-rail-breakdown-toggle]` shows) and
+  the cache countdown (`GetCacheStatusCommand` reads the last cache write: `43m left`). A helper
+  `writeCtxTranscript(path, cwd, cacheWriteAgoMs)` writes it, so step 7 can rewrite it.
+- `arrangeFixtureRun(h, ctx, "ctx-rail", CTX_RAIL_LEAD, { state: "idle", idleSince: Date.now() - 60_000,
+  transcriptPath, usage: { contextpct: 18, contextmax: 1_000_000 } })`: 180k in context, so `offersContextReset` holds
+  (idle, 150k or more, a block id) and Compact/Clear show; the context row shows `18%`.
+- The localStorage set/restore, reload and focus of the lead row as `arrangeTreeRail` does them: extract that part into
+  a helper `focusFixtureLead(h, ctx, leadName)` both scenarios call, so `agent-tree-rail` keeps its behaviour.
+- The fixture breakdown: Task 3's test fixture with the memory files' paths swapped for `join(ctx.cwd, "AGENTS.md")`
+  (and the other two pointing at files that need not exist), seeded with
+  `window.__arcCtxBreakdown.seed(ctx.cwd, { state: "ready", data })`.
+
+Steps (each a `rec` with its own assertion; a shot where marked):
+1. Click `[data-rail-breakdown-toggle]` → `[data-rail-context]` and the Spend heading both show, the heading reads
+   `180k of 1M`; shot.
+2. Seven `[data-ctx-group]` in order messages … mcp; Messages' figure is `143k` (180,000 − 37,299, via `fmtTok`).
+3. Click `[data-ctx-group="memory"]` → three `[data-ctx-open-file]` rows; click the AGENTS.md one → the rail's File tab
+   shows that path; shot.
+4. `[data-ctx-cache-line]` reads `Cache warm`, and `[data-rail-cache-warn]` is absent (43m left).
+5. Seed `{ state: "idle" }` → `[data-ctx-read]` shows, enabled, and the cache line still does; shot.
+6. Seed `{ state: "reading" }` → `[data-ctx-read]` is disabled and reads `Reading… about 30 s`; then seed
+   `{ state: "failed", error: "claude is not on PATH" }` → the part reads `Couldn't read /context: claude is not on
+   PATH.` and a **Try again** button shows; shot.
+7. Seed the ready breakdown again, rewrite the transcript with its cache write 56 minutes ago, and wait up to 20 s
+   (the rail re-reads the cache status every 15 s, `USAGE_REFRESH_MS`) → `[data-rail-cache-warn]` reads `cache 3m left`
+   or `cache 4m left`, and `[data-rail-rewrite-note]` reads `now rewrites ~39.3k, later 180k`; shot.
+8. Not a Claude agent: swap the fixture roster's lead to `agent: "pi"` (rewrite `active.json`, reload, refocus with
+   `focusFixtureLead`) → the rail shows no `[data-rail-context]`, with the breakdown opened when its toggle shows (a pi
+   lead may have no Spend, and then no toggle: the assertion is only that the Context part is absent).
+Teardown: `teardownFixtureRun` with the localStorage keys restored, as `agent-tree-rail`'s teardown passes them.
 
 Also update `agent-tree-rail` step 11 only if its assertion breaks (the breakdown still starts folded; it should not).
 
 **Step 5:** `npx vitest run frontend/app/view/agents/ctxbreakdown.test.ts`, `task check:ts` (~2 min: give it a 5 min
 timeout), `npx prettier --check` and `npx eslint` on the changed `.ts`/`.tsx` paths. Then the live check in the dev
-app: `task verify:ui -- rail-context-breakdown agent-tree-rail`, and press **Read the breakdown** on a real Claude agent
-once (expect ~30 s, then the groups; no new `.jsonl` in `~/.claude/projects/<project>`; no console window flashes on
-Windows — if one does, set `SysProcAttr.CreationFlags = windows.CREATE_NO_WINDOW` in `runContext` behind a
-`_windows.go` file, as `pkg/shellcomplete/bash_windows.go` does).
+app: `task verify:ui -- rail-context-breakdown agent-tree-rail`. A real read is not possible in this task's tree
+(Task 2's `Read` lands in parallel); it goes on the hand-check line (Step 7).
 
 **Step 6: CHANGELOG.md** — under `Unreleased` → `Added`:
 
@@ -887,8 +979,9 @@ Windows — if one does, set `SysProcAttr.CreationFlags = windows.CREATE_NO_WIND
   memory files, skills, MCP), each memory file and skill a click from opening, and how long the cache stays warm
 ```
 
-**Step 7: hand-checks.md** — one `- [ ] (arcterm) …` line for whatever the live check could not cover (a real read on a
-Mac; the amber cache note on a real idle agent), with the commit.
+**Step 7: hand-checks.md** — one `- [ ] (arcterm) …` line for what the scenario cannot cover: press **Read the
+breakdown** on a real Claude agent (expect ~30 s, then the groups; no new `.jsonl` in `~/.claude/projects/<project>`;
+no console window flashes on Windows), the same on a Mac, and the amber cache note on a real idle agent.
 
 **Step 8: Commit**
 
