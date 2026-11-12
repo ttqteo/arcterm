@@ -45928,6 +45928,397 @@ const chatAsleepAttachJump = {
     },
 };
 
+// --- chat-fork: Chat's two forks of a Claude session (chatfork.ts, forkagentsession). A sleeping Claude agent's Chat shows
+// three exchanges whose records carry uuids u1..u3 (yours) and a1..a3 (the replies). The fork RPC is mocked: it records
+// what it is asked and fails ("mock: no fork") until a step gives it an answer, so no transcript is cut and no claude runs.
+// 1. hovering your second message shows Copy and the fork button in one strip; 2. the button asks for a fork before u2, and
+// the failure shows as a toast; 3. a reply's button asks for a fork through a2; 4. the agent header's "…" menu offers Fork,
+// which asks for the whole transcript (no uuid, no keep); 5. right-click on your first message offers Fork from here (before
+// u1); 6. once the mock answers, a fork from your second message opens a tab named "Fix sync (fork)" whose box holds that
+// message; 7. a codex agent's Chat and its header menu offer no Fork. Teardown puts the RPC client, the roster, the grid and
+// the chat modes back, closes the fork's tab and drops its draft.
+const CF_MOCK_KEY = "__arcChatForkMock";
+const CF_NAME = "sync source";
+const CF_CODEX_NAME = "sync codex";
+const CF_TASK = "Fix sync";
+const CF_FAIL = "mock: no fork";
+const CF_WAIT_MS = 8000;
+const CF_QUESTIONS = ["why does the sync client drop a request?", "add a retry with backoff to it", "now log each attempt it makes"];
+const CF_REPLIES = [
+    "It gives up after one failed attempt, and says nothing.",
+    "Added three retries with exponential backoff.",
+    "Each attempt now logs what it sent and what came back.",
+];
+
+function cfRoster(ctx) {
+    const now = Date.now();
+    const base = { project: "arcterm", state: "idle", idleSince: now - 3_600_000 };
+    return [
+        {
+            ...base,
+            task: CF_TASK,
+            agent: "claude",
+            model: "opus",
+            id: ctx.tabs.main.tabId,
+            name: CF_NAME,
+            blockId: ctx.tabs.main.blockId,
+            transcriptPath: ctx.transcript,
+            sleeping: { since: now - 3_600_000, freedBytes: 0 },
+        },
+        {
+            ...base,
+            task: "",
+            agent: "codex",
+            model: "gpt-5",
+            id: ctx.tabs.codex.tabId,
+            name: CF_CODEX_NAME,
+            blockId: ctx.tabs.codex.blockId,
+            transcriptPath: ctx.codexTranscript,
+        },
+    ];
+}
+
+async function installCfMock(h) {
+    const resolved = await ahResolveModules(h);
+    if (resolved.error) return `unresolved: ${resolved.error}`;
+    return h.ev(`(async () => {
+        const api = (await import(${JSON.stringify(resolved.urls.api)})).RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${CF_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const m = { api, prev, answer: null, calls: [] };
+        api.setMockRpcClient({
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "forkagentsession") {
+                    m.calls.push(data);
+                    if (m.answer == null) return Promise.reject(new Error(${JSON.stringify(CF_FAIL)}));
+                    return Promise.resolve(m.answer);
+                }
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        });
+        window.${CF_MOCK_KEY} = m;
+        return "installed";
+    })()`);
+}
+
+// a real pointer moved onto the middle of an element (found by an expression), so :hover draws what a person would see
+async function cfHover(h, expr) {
+    const at = await h.ev(caCenter(expr));
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(at.x), y: Math.round(at.y) });
+    await polishNap(400);
+    return true;
+}
+
+// the fork request is what the mock saw: exactly these fields, with these values
+const cfIs = (call, want) =>
+    call != null &&
+    Object.keys(call).sort().join() === Object.keys(want).sort().join() &&
+    Object.entries(want).every(([k, v]) => call[k] === v);
+
+const chatFork = {
+    name: "chat-fork",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-fork-")),
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        let at = "writing the transcripts";
+        try {
+            const base = Date.now() - 7_200_000;
+            const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
+            const lines = [];
+            CF_QUESTIONS.forEach((q, i) => {
+                lines.push(AC.userText(q, { ...o(i * 10), uuid: `u${i + 1}` }));
+                lines.push(AC.assistantText(CF_REPLIES[i], { ...o(i * 10 + 2), uuid: `a${i + 1}` }));
+            });
+            ctx.transcript = AC.writeTranscript(ctx.dir, "fork-source", lines);
+            // the codex agent's own transcript is a .jsonl too: what keeps Fork off it is its harness, not its file
+            ctx.codexTranscript = AC.writeTranscript(ctx.dir, "fork-codex", [
+                AC.userText("codex question", { ...o(0), uuid: "cu1" }),
+                AC.assistantText("codex reply", { ...o(2), uuid: "ca1" }),
+            ]);
+            at = "resetting the grid";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tabs";
+            ctx.tabs = {
+                main: await acMakeTab(h, ctx, { label: CF_NAME }),
+                codex: await acMakeTab(h, ctx, { label: CF_CODEX_NAME }),
+            };
+            at = "setting the roster";
+            await AC.setRoster(h, cfRoster(ctx));
+            at = "installing the mock";
+            const mock = await installCfMock(h);
+            if (mock !== "installed") throw new Error(`mock: ${mock}`);
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agents, their transcripts and the mock", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const X = ctx.tabs.codex.tabId;
+        // the n-th of your messages and the n-th reply in the source agent's Chat, and the fork button inside one
+        const you = (n) => `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-you]')[${n}]`;
+        const prose = (n) => `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-prose]')[${n}]`;
+        const forkBtn = (el) => `(${el})?.querySelector("[data-chat-fork]")`;
+        const calls = () => h.ev(`window.${CF_MOCK_KEY}?.calls ?? []`);
+        // the request a click made: the one after the first `before`, waited for (null when none came)
+        const nextCall = async (before) => {
+            const came = await polishWaitFor(h, `(window.${CF_MOCK_KEY}?.calls.length ?? 0) > ${before}`, CF_WAIT_MS);
+            return came ? (await calls())[before] : null;
+        };
+        const click = (expr) => h.ev(`(() => { const el = ${expr}; el?.click(); return !!el; })()`);
+        const toastWith = (text) =>
+            `[...document.querySelectorAll("[data-notification-toast]")].some((t) => t.textContent.includes(${JSON.stringify(text)}))`;
+        // the failed forks leave toasts, which would stack over the bubbles the next steps hover
+        const dismissToasts = async () => {
+            await h.ev(`(() => { for (const b of document.querySelectorAll("[data-notification-close]")) b.click(); return true; })()`);
+            await polishNap(500);
+        };
+        const closeMenu = () => AC.agentPage(h, `const C = await mod("app/store/contextmenu.ts"); C.closeContextMenu(); return true;`);
+        // the sleeping agents' message-box drafts, by tab id
+        const drafts = () =>
+            AC.agentPage(
+                h,
+                `const S = await mod("app/view/agents/wakingstore.ts");
+                return Object.fromEntries(globalStore.get(S.wakeDraftsAtom));`
+            );
+        try {
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+            await AC.focusAgent(h, A);
+            const loaded = await polishWaitFor(
+                h,
+                `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-you]').length >= 3 && document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-prose]').length >= 3`,
+                15000
+            );
+            const asleep = await polishWaitFor(h, `!!document.querySelector('[data-sleeping-composer="${A}"] [data-chat-asleep]')`, CF_WAIT_MS);
+
+            // 1. hovering your second message shows Copy and the fork button, in one strip
+            const hovered = await cfHover(h, you(1));
+            const strip = await h.ev(`(() => {
+                const el = ${you(1)};
+                const copy = el?.querySelector("[data-chat-copy]") ?? null;
+                const fork = el?.querySelector("[data-chat-fork]") ?? null;
+                return {
+                    copy: !!copy,
+                    fork: !!fork,
+                    together: !!copy && !!fork && copy.contains(fork),
+                    opacity: copy ? Number(getComputedStyle(copy).opacity) : null,
+                    text: (el?.textContent ?? "").trim(),
+                };
+            })()`);
+            await h.shot("cdp-shots/chat-fork-1-hover.png");
+            rec(
+                "1. hovering your second message shows Copy and the fork button in one strip",
+                loaded && hovered && strip.copy && strip.fork && strip.together && strip.opacity > 0.9 && strip.text.includes(CF_QUESTIONS[1]),
+                { loaded, asleep, hovered, ...strip }
+            );
+
+            // 2. the fork button on your message asks for a fork before it; the failure shows as a toast
+            const before2 = (await calls()).length;
+            const clicked2 = await click(forkBtn(you(1)));
+            const call2 = await nextCall(before2);
+            const toast2 = await polishWaitFor(h, toastWith("Couldn't fork") + " && " + toastWith(CF_FAIL), CF_WAIT_MS);
+            await h.shot("cdp-shots/chat-fork-2-toast.png");
+            rec(
+                "2. the fork button on your second message asks to fork before u2, and the failure shows as a \"Couldn't fork\" toast",
+                clicked2 && cfIs(call2, { transcriptpath: ctx.transcript, uuid: "u2", keep: "before" }) && toast2,
+                { clicked2, call2, toast2 }
+            );
+            await dismissToasts();
+
+            // 3. the fork button on a reply asks for a fork through it
+            const hovered3 = await cfHover(h, prose(1));
+            const before3 = (await calls()).length;
+            const clicked3 = await click(forkBtn(prose(1)));
+            const call3 = await nextCall(before3);
+            rec(
+                "3. the fork button on the second reply asks to fork through a2",
+                hovered3 && clicked3 && cfIs(call3, { transcriptpath: ctx.transcript, uuid: "a2", keep: "through" }),
+                { hovered3, clicked3, call3 }
+            );
+            await dismissToasts();
+
+            // 4. the agent header's … menu offers Fork, which forks the whole transcript: no uuid, no keep
+            const before4 = (await calls()).length;
+            const opened4 = await ttMouse(h, "[data-agent-header-more]");
+            const row4 = await polishWaitFor(h, caMenuHas("Fork"), CF_WAIT_MS);
+            await h.shot("cdp-shots/chat-fork-4-header-menu.png");
+            const picked4 = row4 ? await h.ev(caMenuClick("Fork")) : false;
+            const call4 = picked4 ? await nextCall(before4) : null;
+            rec(
+                "4. the header's … menu has a Fork row, and it asks to fork the whole transcript (no uuid, no keep)",
+                opened4 && row4 && picked4 && cfIs(call4, { transcriptpath: ctx.transcript }),
+                { opened4, row4, picked4, call4 }
+            );
+            await closeMenu();
+            await dismissToasts();
+
+            // 5. right-click on your first message offers Fork from here, which forks before it
+            const before5 = (await calls()).length;
+            await h.ev(`(() => {
+                const el = ${you(0)};
+                el.scrollIntoView({ block: "nearest" });
+                const r = el.getBoundingClientRect();
+                el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 2 }));
+            })()`);
+            const row5 = await polishWaitFor(h, caMenuHas("Fork from here"), CF_WAIT_MS);
+            const copy5 = await h.ev(caMenuHas("Copy text"));
+            await h.shot("cdp-shots/chat-fork-5-context-menu.png");
+            const picked5 = row5 ? await h.ev(caMenuClick("Fork from here")) : false;
+            const call5 = picked5 ? await nextCall(before5) : null;
+            rec(
+                "5. right-click on your first message offers Fork from here beside Copy text, and it asks to fork before u1",
+                row5 && copy5 && picked5 && cfIs(call5, { transcriptpath: ctx.transcript, uuid: "u1", keep: "before" }),
+                { row5, copy5, picked5, call5 }
+            );
+            await closeMenu();
+            await dismissToasts();
+
+            // 6. once the fork answers, forking before your second message opens a "(fork)" tab with that message in its box.
+            // The roster is the fixture's, so the new tab is not a row: it is found by its draft (the drafts store is keyed by the
+            // id launchAgent returns), and its name read from the tab's session:label.
+            await h.ev(`window.${CF_MOCK_KEY}.answer = ${JSON.stringify({ command: "echo fork", projectpath: ctx.dir })}`);
+            const had6 = Object.keys(await drafts());
+            const before6 = (await calls()).length;
+            const clicked6 = await click(forkBtn(you(1)));
+            const call6 = await nextCall(before6);
+            const landed = await AC.agentPage(
+                h,
+                `const S = await mod("app/view/agents/wakingstore.ts");
+                const had = ${JSON.stringify(had6)};
+                let id = null;
+                await until(() => {
+                    id = [...globalStore.get(S.wakeDraftsAtom).keys()].find((k) => !had.includes(k)) ?? null;
+                    return id != null;
+                }, 20000);
+                return id;`
+            );
+            if (landed != null) {
+                ctx.tabIds.push(landed);
+            }
+            const made = landed
+                ? await AC.agentPage(
+                      h,
+                      `const id = ${JSON.stringify(landed)};
+                      const tab = await WOS.reloadWaveObject(WOS.makeORef("tab", id));
+                      const model = agentsModel();
+                      const S = await mod("app/view/agents/wakingstore.ts");
+                      const pending = globalStore.get(model.pendingLaunchesAtom).find((p) => p.tabId === id);
+                      return {
+                          label: tab?.meta?.["session:label"] ?? null,
+                          pending: pending?.name ?? null,
+                          draft: globalStore.get(S.wakeDraftsAtom).get(id) ?? null,
+                          focus: globalStore.get(model.focusIdAtom),
+                      };`
+                  )
+                : null;
+            await polishNap(1000);
+            await h.shot("cdp-shots/chat-fork-6-new-tab.png");
+            rec(
+                "6. a fork from your second message opens a tab named \"Fix sync (fork)\" whose box holds that message",
+                clicked6 &&
+                    cfIs(call6, { transcriptpath: ctx.transcript, uuid: "u2", keep: "before" }) &&
+                    landed != null &&
+                    made?.label === `${CF_TASK} (fork)` &&
+                    made.draft === CF_QUESTIONS[1],
+                { clicked6, call6, tab: landed, ...made }
+            );
+
+            // 7. a codex agent's Chat has no fork button and its header menu no Fork row. The launch above focused the new tab,
+            // so the codex agent is focused first; the source agent's own Chat may stay mounted off screen, so only the buttons
+            // that are drawn count.
+            await AC.focusAgent(h, X);
+            // the header and the cells follow the same focus, so once the codex agent's cell is drawn the header is its own
+            const focused7 = await polishWaitFor(
+                h,
+                `(() => { const r = document.querySelector('[data-agent-terminal="${X}"]')?.getBoundingClientRect(); return !!r && r.width > 0 && r.height > 0; })()`,
+                CF_WAIT_MS
+            );
+            const focusId = await AC.agentPage(h, `return globalStore.get(agentsModel().focusIdAtom);`);
+            const opened7 = await ttMouse(h, "[data-agent-header-more]");
+            const menu7 = await polishWaitFor(h, `document.querySelectorAll("[data-menu-item]").length > 0`, CF_WAIT_MS);
+            const labels7 = await h.ev(`[...document.querySelectorAll("[data-menu-item]")].map((r) => r.getAttribute("data-menu-item"))`);
+            await h.shot("cdp-shots/chat-fork-7-codex.png");
+            const forks7 = await h.ev(`(() => {
+                const drawn = [...document.querySelectorAll("[data-chat-fork]")].filter((b) => {
+                    const r = b.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0;
+                });
+                return { drawn: drawn.length, inCodexChat: document.querySelector('[data-agent-chat="${X}"]')?.querySelectorAll("[data-chat-fork]").length ?? 0 };
+            })()`);
+            await closeMenu();
+            rec(
+                "7. a codex agent's Chat has no fork button and its header menu has no Fork row",
+                focused7 && focusId === X && opened7 && menu7 && !labels7.includes("Fork") && forks7.drawn === 0 && forks7.inCodexChat === 0,
+                { focused7, focusId, opened7, menu7, labels7, ...forks7 }
+            );
+        } catch (e) {
+            rec("the steps ran to the end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-fork teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("close the menu and the toasts", () =>
+            AC.agentPage(
+                h,
+                `const C = await mod("app/store/contextmenu.ts");
+                C.closeContextMenu();
+                for (const b of document.querySelectorAll("[data-notification-close]")) b.click();
+                return true;`
+            )
+        );
+        await step("drop the drafts", () =>
+            AC.agentPage(
+                h,
+                `const S = await mod("app/view/agents/wakingstore.ts");
+                for (const id of ${JSON.stringify(ctx.tabIds ?? [])}) S.setWakeDraft(id, "");
+                return true;`
+            )
+        );
+        await step("remove the mock", () =>
+            h.ev(`(() => { const m = window.${CF_MOCK_KEY}; if (!m) return "absent"; m.api.setMockRpcClient(m.prev); delete window.${CF_MOCK_KEY}; return "restored"; })()`)
+        );
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tabs and the fork's", () => acCloseTabs(h, ctx));
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        await step("remove the fixture transcripts", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- sidebar-agent-ram: an agent row in the sidebar shows the RAM its processes hold (agentram.ts), read from the Resource
 // Manager's snapshot, which the step pins (window.__resmonFixture) so the figures are known: 412 MB for the first agent,
 // 1.3 GB for the second, none for the third (no group). Settings → Appearance → Agent sidebar → RAM off hides them.
@@ -67071,6 +67462,7 @@ export const SCENARIOS = [
     agentChat,
     chatScrollKeep,
     chatAsleepAttachJump,
+    chatFork,
     ...chatRedesignScenarios(CR_KIT),
     sidebarAgentRam,
     machineServers,

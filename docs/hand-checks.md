@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat's Fork resumes in a real claude: in a Claude agent's Chat, ⋯ → Fork opens a session that knows
+  the whole conversation; Fork from here on your second message, one that knows only the first exchange; on a reply,
+  one that knows everything through that reply. The original session is unchanged (the scenario `chat-fork` covers
+  the menus, the tab and the draft with a mocked fork; this is the live claude replay; `pkg/agentsessions/fork.go`).
 - [ ] (arcterm) A real Sleep says so until the agent sleeps: on an idle Claude agent with a long, warm conversation
   (so the server compacts first), Sleep from its row menu → its Chat box reads "Compacting, then sleeping…", read-only,
   no Stop, the row menu shows that line disabled; once the summary lands (up to a minute later) the box reads "Asleep
