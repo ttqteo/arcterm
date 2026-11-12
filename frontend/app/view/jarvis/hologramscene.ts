@@ -40,20 +40,25 @@ const TAU = Math.PI * 2;
 const MAX_DPR = 1.5;
 
 // Bloom replaces alpha; this hands it back from the light (the study's formula), so the glow has no rectangular edge on
-// the app behind. The bloom spreads a faint haze to the canvas's edges, which on the app's lighter backgrounds than the
-// study's near-black read as a square: the light cut drops the haze, and the round fade keeps any rest of it off the
-// square's edge.
+// the app behind. It runs last, on display values (after OutputPass), and writes premultiplied colour into a
+// premultiplied canvas. The study's straight-alpha canvas (premultipliedAlpha: false) looks right in Chromium, but
+// WKWebView's live compositor shows its colour unweighted wherever alpha is above zero: the faint bloom haze, at
+// near-zero alpha, came out as a solid milky disc in the installed app (a WKWebView snapshot does not show it; a
+// screencapture of the window does). Premultiplied needs no conversion in either engine. The light cut drops that
+// haze, which on the app's lighter backgrounds than the study's near-black read as a square, and the round fade keeps
+// any rest of it off the square's edge.
 const alphaFromLight = {
     uniforms: { tDiffuse: { value: null } },
     vertexShader: `varying vec2 vUv;
         void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+        float linear(float v) { return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4); }
         void main() {
-            vec3 c = texture2D(tDiffuse, vUv).rgb;
-            float light = max(max(c.r, c.g), c.b);
+            vec3 shown = min(texture2D(tDiffuse, vUv).rgb, vec3(1.0));
+            float light = linear(max(max(shown.r, shown.g), shown.b));
             float edge = 1.0 - smoothstep(0.4, 0.49, distance(vUv, vec2(0.5)));
             float a = clamp((light - 0.008) / 0.992, 0.0, 1.0) * smoothstep(0.02, 0.06, light) * edge;
-            gl_FragColor = vec4(c, a);
+            gl_FragColor = vec4(shown * a, a);
         }`,
 };
 
@@ -368,7 +373,8 @@ export class HologramScene {
                 canvas,
                 antialias: true,
                 alpha: true,
-                premultipliedAlpha: false,
+                // premultiplied: alphaFromLight writes it, and WKWebView composites a straight-alpha canvas wrongly
+                premultipliedAlpha: true,
                 powerPreference: "low-power",
             });
         } catch {
@@ -385,8 +391,8 @@ export class HologramScene {
         composer.setSize(sizePx, sizePx);
         composer.addPass(new RenderPass(scene, camera));
         composer.addPass(new UnrealBloomPass(new Vector2(sizePx, sizePx), 0.35, 0.2, 0.4));
-        composer.addPass(new ShaderPass(alphaFromLight));
         composer.addPass(new OutputPass());
+        composer.addPass(new ShaderPass(alphaFromLight));
         const hudForm = hud(colours, dpr);
         const neuralForm = neural(colours, dpr);
         scene.add(hudForm.group, neuralForm.group);
