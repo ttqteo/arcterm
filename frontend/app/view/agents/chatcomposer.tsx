@@ -37,6 +37,7 @@ import { ArrowUp, FileDiff, Moon, Terminal, type LucideIcon } from "lucide-react
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { canStop, useAgentSend } from "./agentcomposer";
+import { sleepingLine, wakeAgent, wakeErrorToast } from "./agentsleep";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { AttachmentTray } from "./attachmenttray";
@@ -65,6 +66,7 @@ import { ChatPlusMenu } from "./chatplusmenu";
 import { mergeTaken, takeBackPlan } from "./chattakeback";
 import { takeBack } from "./chattakebackstore";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
+import { fallAsleepLabel } from "./fallasleepstore";
 import { useFileMention } from "./filemention";
 import { chatFilesRoot, recentMentionPaths } from "./launchermention";
 import { isPathsDrag, pathsFromDrop } from "./pathdrop";
@@ -161,20 +163,38 @@ export function ChatComposer({
     // wrote it), and the message reaches the agent once it is back. Their chips go only when the wake took the message,
     // so a wake that failed keeps them with the text. `wakeSent` is the chips that went with the wake in flight.
     const wakeSent = useRef<string[]>([]);
-    const { text, setText, message, canSend, waking, send } = useAgentSend(agent.blockId, agent, att.attachments, {
-        onWoken: () => {
-            for (const id of wakeSent.current) {
-                att.remove(id);
+    const { text, setText, message, canSend, waking, fallingAsleep, send } = useAgentSend(
+        agent.blockId,
+        agent,
+        att.attachments,
+        {
+            onWoken: () => {
+                for (const id of wakeSent.current) {
+                    att.remove(id);
+                }
+                wakeSent.current = [];
+            },
+            keepDraft: true,
+            // a /btw no mod took was typed into the terminal, where Claude Code answers it on its own screen: show that
+            onBtwTyped: (sent) => {
+                dropPending(agent.id, sent);
+                showTerminal();
+            },
+        }
+    );
+    // a Sleep under way (fallasleepstore): the box is shut until the agent sleeps, and says what is happening
+    const dozing = fallingAsleep != null;
+    // asleep with nothing to send, Send is Wake: it relaunches the agent with no message (the card over the terminal
+    // that offered it gave its place to this box)
+    const wakeOnly = asleep && !waking && message === "";
+    const wakeBare = () =>
+        fireAndForget(async () => {
+            try {
+                await wakeAgent(agent.id);
+            } catch (e) {
+                wakeErrorToast(agent.name, e);
             }
-            wakeSent.current = [];
-        },
-        keepDraft: true,
-        // a /btw no mod took was typed into the terminal, where Claude Code answers it on its own screen: show that
-        onBtwTyped: (sent) => {
-            dropPending(agent.id, sent);
-            showTerminal();
-        },
-    });
+        });
     // `!` first: Claude Code runs the text as a bash command, so the box says so as its own box does (chatmodel.ts)
     const bash = bashMode(text);
     const editorRef = useRef<EditorLike>(null);
@@ -373,6 +393,10 @@ export function ChatComposer({
             setHeldSend(agent.id, true);
             return;
         }
+        if (wakeOnly && att.attachments.length === 0) {
+            wakeBare();
+            return;
+        }
         if (!sendable) {
             return;
         }
@@ -427,7 +451,7 @@ export function ChatComposer({
     // question as Send does.
     const sendCommand = (command: string) => {
         const blockid = agent.blockId;
-        if (asleep || waking || blockid == null) {
+        if (asleep || waking || dozing || blockid == null) {
             return;
         }
         if (hold != null) {
@@ -602,13 +626,14 @@ export function ChatComposer({
         att.addPaths(paths);
         editorRef.current?.focus();
     };
-    const showStop = !asleep && agent.blockId != null && canStop(agent.state, agent.sleeping);
+    // not while a Sleep is under way: Esc would cut short the compaction the sleep waits on
+    const showStop = !asleep && !dozing && agent.blockId != null && canStop(agent.state, agent.sleeping);
     // Send is a word asleep and while the wake is in flight. The word stays what it last was while it fades out, so a
     // finished wake does not swap "Waking…" for "Send" under the eye.
     const showWord = asleep || waking;
     const sendWord = useRef("Send");
     if (showWord) {
-        sendWord.current = waking ? "Waking…" : "Send";
+        sendWord.current = waking ? "Waking…" : wakeOnly ? "Wake" : "Send";
     }
     // Stop takes Send's place while the agent works and there is nothing to send; a message ready to go brings Send back
     // beside it (a running agent queues what is sent), so a box with text never loses its way to send
@@ -725,7 +750,7 @@ export function ChatComposer({
                         ref={editorRef}
                         value={text}
                         outsideCaret={outsideCaret.current}
-                        readOnly={waking}
+                        readOnly={waking || dozing}
                         minHeight={bash ? ChatBashMinH : ChatMinH}
                         maxHeight={ChatMaxH}
                         placeholder={placeholder}
@@ -869,20 +894,30 @@ export function ChatComposer({
                                         onText={putText}
                                         onSend={sendCommand}
                                         onFocusBox={() => editorRef.current?.focus()}
-                                        disabled={waking}
+                                        disabled={waking || dozing}
                                     />
                                 </Fold>
                             )}
                         </AnimatePresence>
                         <AnimatePresence initial={false}>
-                            {asleep ? (
+                            {/* one part from the Sleep to the wake, so going to sleep and asleep swap words in place */}
+                            {asleep || dozing ? (
                                 <Fold key="asleep">
                                     <div
-                                        data-chat-asleep
+                                        data-chat-asleep={asleep ? "" : undefined}
+                                        data-chat-falling-asleep={dozing && !asleep ? fallingAsleep : undefined}
+                                        role="status"
                                         className="flex h-[28px] items-center gap-1.5 whitespace-nowrap pl-0.5 pr-1 text-[12px] text-muted"
                                     >
-                                        <Moon size={13} strokeWidth={1.8} aria-hidden />
-                                        Asleep
+                                        <Moon
+                                            size={13}
+                                            strokeWidth={1.8}
+                                            aria-hidden
+                                            className={cn(!asleep && "pulse-dot")}
+                                        />
+                                        {asleep
+                                            ? sleepingLine("Asleep", agent.sleeping!)
+                                            : fallAsleepLabel(fallingAsleep!)}
                                     </div>
                                 </Fold>
                             ) : null}
@@ -939,11 +974,13 @@ export function ChatComposer({
                                                     : `${hold}: Send queues your message until then`
                                                 : bash
                                                   ? "Run in the agent's shell"
-                                                  : "Send")
+                                                  : wakeOnly
+                                                    ? "Wake: relaunch the agent where its conversation left off"
+                                                    : "Send")
                                         }
                                         aria-label={hold != null ? "Queue" : showWord ? undefined : "Send"}
                                         onClick={submit}
-                                        disabled={!ready || held}
+                                        disabled={!(ready || wakeOnly) || held}
                                         style={turnTransition}
                                         className={cn(
                                             "relative flex h-[34px] flex-none cursor-pointer items-center justify-center overflow-hidden rounded-full bg-accent text-background shadow-inset-highlight transition-[width] hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised disabled:cursor-default disabled:opacity-40 disabled:hover:opacity-40 motion-reduce:transition-none",

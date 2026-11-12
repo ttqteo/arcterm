@@ -8,6 +8,7 @@ import { askBtw, submitToAgent } from "./agentsubmit";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
 import { btwQuestion } from "./chatpending";
 import { messageWithAttachments, type Attachment } from "./composerattachments";
+import { useFallingAsleep, type FallAsleepPhase } from "./fallasleepstore";
 import { setWakeDraft, useWakeDraft, useWaking } from "./wakingstore";
 
 // one line at 12px (rows={1}: the default two rows would set the floor instead); it grows as text wraps
@@ -67,6 +68,8 @@ export interface AgentSend {
     canSend: boolean;
     /** A wake is relaunching this agent, from this box or from anywhere else. */
     waking: boolean;
+    /** A Sleep is putting this agent to sleep (fallasleepstore): nothing is sent until it sleeps, then a send wakes it. */
+    fallingAsleep: FallAsleepPhase | undefined;
     /** Sends the box. Answers whether it did (false when `canSend` is not); the box's text is cleared by it, the
      *  attachments' tray is the caller's. */
     send: () => boolean;
@@ -103,8 +106,10 @@ export function useAgentSend(
     const [sending, setSending] = useState(false);
     // a wake started anywhere else (the card's Wake, a row's menu) holds the box too: a message now would be a second wake
     const waking = useWaking(agent?.id) || sending;
+    // a message now would undo the Sleep under way (or cut its compaction short): the box waits until it sleeps
+    const fallingAsleep = useFallingAsleep(agent?.id, agent?.sleeping != null);
     const message = messageWithAttachments(text.trim(), attachments ?? []);
-    const canSend = canSendComposer(message, blockId) && !waking;
+    const canSend = canSendComposer(message, blockId) && !waking && fallingAsleep == null;
     const send = (): boolean => {
         if (!canSend) {
             return false;
@@ -139,7 +144,7 @@ export function useAgentSend(
         setText("");
         return true;
     };
-    return { text, setText, message, canSend, waking, send };
+    return { text, setText, message, canSend, waking, fallingAsleep, send };
 }
 
 export const AgentComposer = forwardRef<

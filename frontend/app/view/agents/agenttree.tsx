@@ -79,6 +79,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { confirmCloseProject, confirmCloseRun, confirmCloseSession } from "./agentactions";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
+import { fallAsleepLabel, fallingAsleepOf } from "./fallasleepstore";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
 import { shortTabId } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
@@ -484,6 +485,12 @@ function sleepMenuItems(agent: AgentVM): ContextMenuItem[] {
                     }),
             },
         ];
+    }
+    // a Sleep already under way (the call, or the compaction before it, while the agent works) says so and takes no
+    // second press
+    const falling = fallingAsleepOf(agent.id, false);
+    if (falling != null) {
+        return [{ label: fallAsleepLabel(falling), icon: <Moon size={15} />, enabled: false }];
     }
     const sleepable =
         agent.state === "idle" &&

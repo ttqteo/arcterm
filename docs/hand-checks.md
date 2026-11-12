@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A real Sleep says so until the agent sleeps: on an idle Claude agent with a long, warm conversation
+  (so the server compacts first), Sleep from its row menu → its Chat box reads "Compacting, then sleeping…", read-only,
+  no Stop, the row menu shows that line disabled; once the summary lands (up to a minute later) the box reads "Asleep
+  since HH:MM · freed N MB" with Wake, and no card sits above the conversation; on a short conversation the box reads
+  "Going to sleep…" for the few seconds the process takes (`fallasleepstore.ts`, `chatcomposer.tsx`; CDP
+  `agent-sleep` 5b passes with a mocked server only).
 - [ ] (arcterm) A question in Chat shows one card: have a Claude agent call AskUserQuestion with Chat open → only the
   question card with its tabs and options shows, no "Wants to use AskUserQuestion" card with raw JSON and Answer in
   Terminal above it; answer it → the agent goes on; a Bash prompt it raises next still gets its Allow/Deny card
