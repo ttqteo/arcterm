@@ -6,6 +6,15 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The agents/backend and code/diff follow-up fixes of 2026-11-13 render: run `task verify:ui --
+  code-changed-walk setup-memory agent-history diff-comments diff-scope` on a dev app (or `node
+  scripts/cdp/final-verify.mjs` with those names). New or changed steps, never run: code-changed-walk's last step (a
+  palette pick of Code leaves focus on the file tree and ArrowDown moves its cursor), setup-memory step 9 (step 8's
+  error alert clears on the next move), agent-history step 15 (a failed scan shows "Could not read past conversations"
+  with Retry and retries on its own after 5 s), diff-comments step 6b (the Commit tab's rows badge the pending
+  comments), diff-scope steps 3b (Review on a landed run lists only the run's files) and 6b (a corrupt `.git/index`
+  reads as Couldn't refresh, not as not a repository). Only unit tests, the typecheck and `node --check` ran.
+
 - [ ] (arcterm) The job queue plans on measured peaks (spec 2026-11-12-measured-job-peaks), on Windows and on the Mac:
   in a Claude agent run `task check:ts` twice → the second run's row in the Jobs popover reads "measured" and its
   tooltip names the first run's peak, the row's figure being that peak × 1.2 rather than the table's 3 GB "est.". Then

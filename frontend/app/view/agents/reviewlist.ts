@@ -18,6 +18,22 @@ export interface ReviewPatchFileLike {
     size?: number;
 }
 
+/** Pure: the GitReviewPatchCommand request for a Review selection: a commit hash on its own, or the working tree against
+ *  `base`. `end` is the Diff state's bound for a landed run read up to its own tip: with it the working-tree row reads
+ *  base..end, as its file list does, not base against the checkout's working tree. */
+export function reviewPatchRequest(
+    cwd: string,
+    source: string,
+    base: string,
+    end: string,
+    maxbytes: number
+): { cwd: string; hash?: string; base?: string; end?: string; maxbytes: number } {
+    if (source !== "worktree") {
+        return { cwd, hash: source, maxbytes };
+    }
+    return { cwd, base, ...(end ? { end } : {}), maxbytes };
+}
+
 // A row is named by the side it is commented on: `new:42` is line 42 of the new file (an added or
 // context row), `old:12` line 12 of the old file (a removed row).
 export type ReviewRow =

@@ -665,6 +665,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                                     ? {
                                           source: "worktree",
                                           base: "",
+                                          end: "",
                                           refreshKey: liveChangesKey(
                                               commitEntry?.head ?? "",
                                               commitEntry?.changes.files
@@ -677,6 +678,8 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                                             source: selectedCommit === WORKING_TREE ? "worktree" : selectedCommit,
                                             // the file list's own base, so Review shows what the list shows
                                             base: state?.ref ?? "",
+                                            // a landed run is read up to its own tip, as its file list is
+                                            end: state?.end ?? "",
                                             refreshKey:
                                                 liveTick == null
                                                     ? ""

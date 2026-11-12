@@ -102,6 +102,34 @@ function reviewTitle(state: ReviewState, name: string): string {
     return state === "stale" ? `Changed since you reviewed it. Mark ${name} reviewed` : `Mark ${name} reviewed`;
 }
 
+/** The pending diff comments per path of the open comment source (lost ones included), for a file row's badge: the
+ *  Log tab's lists here and the Commit tab's rows (committab.tsx) read the same counts. */
+export function useCommentCounts(): Record<string, number> {
+    const commentKey = useAtomValue(activeCommentSourceAtom)?.key;
+    const commentStore = useAtomValue(commentStoreAtom);
+    return useMemo(
+        () => countsByPath(commentKey != null ? commentStore[commentKey] : undefined),
+        [commentKey, commentStore]
+    );
+}
+
+/** A file row's pending-comment count; nothing at 0. */
+export function CommentCountBadge({ count }: { count: number }) {
+    if (count <= 0) {
+        return null;
+    }
+    return (
+        <span
+            data-changed-file-comments={count}
+            title={count === 1 ? "1 pending comment" : `${count} pending comments`}
+            className="flex h-[18px] flex-none items-center gap-[3px] rounded-[5px] bg-accentbg px-[5px] font-mono text-[10.5px] font-bold text-accent-soft"
+        >
+            <MessageSquare size={11} strokeWidth={2.2} />
+            {count}
+        </span>
+    );
+}
+
 function FileRow({
     change,
     label,
@@ -159,16 +187,7 @@ function FileRow({
                 >
                     {label}
                 </span>
-                {comments > 0 ? (
-                    <span
-                        data-changed-file-comments={comments}
-                        title={comments === 1 ? "1 pending comment" : `${comments} pending comments`}
-                        className="flex h-[18px] flex-none items-center gap-[3px] rounded-[5px] bg-accentbg px-[5px] font-mono text-[10.5px] font-bold text-accent-soft"
-                    >
-                        <MessageSquare size={11} strokeWidth={2.2} />
-                        {comments}
-                    </span>
-                ) : null}
+                <CommentCountBadge count={comments} />
                 {change.note ? (
                     <span title={CHANGE_NOTE_TITLE[change.note]} className="flex-none text-[10.5px] text-muted">
                         {change.note}
@@ -343,12 +362,7 @@ export function ChangedFileList({
     const tree = useAtomValue(treeModeAtom);
     const collapsed = useAtomValue(collapsedDirsAtom);
     const marks = useAtomValue(reviewMarksAtom);
-    const commentKey = useAtomValue(activeCommentSourceAtom)?.key;
-    const commentStore = useAtomValue(commentStoreAtom);
-    const commentCounts = useMemo(
-        () => countsByPath(commentKey != null ? commentStore[commentKey] : undefined),
-        [commentKey, commentStore]
-    );
+    const commentCounts = useCommentCounts();
     const rows = useMemo(
         () => (changes != null && tree ? buildFileTree(changes.files, collapsed) : []),
         [changes, tree, collapsed]

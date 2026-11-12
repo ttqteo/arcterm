@@ -157,7 +157,14 @@ func (ws *WshServer) GitFileAtRefCommand(ctx context.Context, data wshrpc.Comman
 }
 
 func (ws *WshServer) GitReviewPatchCommand(ctx context.Context, data wshrpc.CommandGitReviewPatchData) (*wshrpc.CommandGitReviewPatchRtnData, error) {
-	r, err := gitinfo.ReviewPatch(ctx, data.Cwd, data.Hash, data.Base, data.MaxBytes)
+	review := gitinfo.ReviewPatch
+	if data.End != "" && data.Hash == "" {
+		end := data.End
+		review = func(ctx context.Context, cwd, _, base string, maxBytes int64) (*gitinfo.ReviewPatchResult, error) {
+			return gitinfo.ReviewPatchTo(ctx, cwd, base, end, maxBytes)
+		}
+	}
+	r, err := review(ctx, data.Cwd, data.Hash, data.Base, data.MaxBytes)
 	if err != nil {
 		return nil, err
 	}

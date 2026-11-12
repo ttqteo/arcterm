@@ -19,7 +19,6 @@ import { atom } from "jotai";
 import { showTerminal } from "../agentcenter";
 import { rosterStatus } from "../agentsleep";
 import type { AgentsViewModel } from "../agents";
-import type { PendingLaunch } from "../agentsviewmodel";
 import { getAgentStatusAtom, getSubagentExpandAtom } from "./agentstatusstore";
 import { sessionGroupLabelAtom } from "./sessiongroupstore";
 import {
@@ -29,6 +28,7 @@ import {
     buildSessionViewModel,
     builderCheckOf,
     cwdToServiceLabel,
+    duplicatePendingLaunch,
     findSessionTermBlock,
     reorderWithinGroup,
     sessionRunORef,
@@ -343,13 +343,7 @@ export function duplicateSession(model: AgentsViewModel, sourceTabId: string) {
         }
         // agent panel gets a pending roster row so the clone appears before the reporter registers it.
         if (agent != null) {
-            const pending: PendingLaunch = {
-                tabId: newTabId,
-                blockId: defaultBlockId,
-                name,
-                project: project ?? "",
-                ts: Date.now(),
-            };
+            const pending = duplicatePendingLaunch(newTabId, defaultBlockId, name, agent, project, Date.now());
             globalStore.set(model.pendingLaunchesAtom, [...globalStore.get(model.pendingLaunchesAtom), pending]);
         }
         // Focus into the Agent surface so the clone's terminal mounts and its controller starts.

@@ -45,9 +45,17 @@ type fmEntry struct {
 	text string
 }
 
+// lfText drops a leading UTF-8 BOM and turns CRLF into LF, so a SKILL.md or delta a Windows editor saved reads with
+// the "---\n" fences and "\n" line ends the frontmatter grammar here speaks.
+func lfText(s string) string {
+	return strings.ReplaceAll(strings.TrimPrefix(s, "\xef\xbb\xbf"), "\r\n", "\n")
+}
+
 // splitFrontmatter separates a leading YAML frontmatter block (without its fences) from the rest of
-// the document. ok is false when the file does not open with a fence, so it has none to merge into.
+// the document, both with LF line ends (lfText). ok is false when the file does not open with a fence, so it has
+// none to merge into.
 func splitFrontmatter(data string) (block, rest string, ok bool) {
+	data = lfText(data)
 	if !strings.HasPrefix(data, "---\n") {
 		return "", data, false
 	}
@@ -156,7 +164,7 @@ func deltaOverrides(skillDir, runtime string) ([]fmEntry, error) {
 		}
 		return nil, fmt.Errorf("reading the %s delta for %s: %w", runtime, filepath.Base(skillDir), err)
 	}
-	return parseFrontmatterEntries(string(data)), nil
+	return parseFrontmatterEntries(lfText(string(data))), nil
 }
 
 // ---- rendering ----

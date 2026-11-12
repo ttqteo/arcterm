@@ -1875,6 +1875,7 @@ declare global {
         cwd: string;
         hash?: string;
         base?: string;
+        end?: string;
         maxbytes: number;
     };
 
