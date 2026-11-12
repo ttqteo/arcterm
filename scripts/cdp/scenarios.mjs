@@ -43317,7 +43317,8 @@ const agentChat = {
                 const l = ${acLayer(E)};
                 const p = [...(l?.querySelectorAll("[data-chat-pending]") ?? [])].find((e) => e.firstElementChild?.textContent.trim() === ${JSON.stringify(FIRST)});
                 return {
-                    caption: p?.querySelector("[data-chat-pending-label]")?.textContent.trim() ?? null,
+                    // the line under the pending bubbles, its own row: it folds away after them as the transcript takes them
+                    caption: p ? (l?.querySelector("[data-chat-pending-line] [data-chat-pending-label]")?.textContent.trim() ?? null) : null,
                     empty: !!l?.querySelector("[data-chat-empty]"),
                     working: !!l?.querySelector("[data-chat-working]"),
                 };
@@ -43618,8 +43619,8 @@ const agentChat = {
             );
 
             // 20. a message sent while Claude works. A `queued_command` attachment line (a message queued in the terminal and
-            // taken mid-turn) draws as your bubble; one sent from the box shows at once as a dimmed bubble captioned "Queued",
-            // and goes when a line holding the same text lands in the transcript
+            // taken mid-turn) draws as your bubble; one sent from the box shows at once as your bubble with a "Queued" line
+            // under it, and goes when a line holding the same text lands in the transcript
             const Q1 = "queued from the terminal";
             const S1 = "and also handle timeouts";
             const workingA = { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined };
@@ -43639,8 +43640,10 @@ const agentChat = {
                 const mine = ${pendingOf};
                 return {
                     text: mine[0]?.firstElementChild?.textContent.trim() ?? null,
-                    // the caption's own text: a Send now button stands beside it while the message is queued
-                    caption: mine[0]?.lastElementChild?.firstElementChild?.textContent.trim() ?? null,
+                    // the line under the pending bubbles (its own row, which folds away after them): Queued, with a Send now
+                    // button beside it
+                    caption: mine.length > 0 ? (${acLayer(A)}?.querySelector("[data-chat-pending-line] [data-chat-pending-label]")?.textContent.trim() ?? null) : null,
+                    sendNow: !!${acLayer(A)}?.querySelector("[data-chat-pending-line] [data-chat-send-now]"),
                     pending: mine.length,
                     asYou: ${youHas(S1)},
                 };

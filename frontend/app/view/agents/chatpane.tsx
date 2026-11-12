@@ -18,14 +18,14 @@
 // can always rise above the box. Chat's jump-to-latest button (data-chat-jump) rides the dock, centred above the box.
 
 import { KeyCap } from "@/app/element/keycap";
-import { layerFade, sentRise, springPop } from "@/app/element/motiontokens";
+import { layerFade, MOTION, sentRise, springPop } from "@/app/element/motiontokens";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ArrowDown, Highlighter } from "lucide-react";
-import { AnimatePresence, motion, MotionConfig, useIsPresent } from "motion/react";
+import { AnimatePresence, motion, MotionConfig, useIsPresent, useReducedMotion, type Variants } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
 import { canStop } from "./agentcomposer";
@@ -53,7 +53,7 @@ import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
 import { chatCapable } from "./chatmode";
 import { canSendNow, SEND_NOW_KEYS, turnStatsLabel, workingText } from "./chatmodel";
 import { setChatMode, useChatMode } from "./chatmodestore";
-import { pendingCaption, pendingStill, queuedBubbleUp, type PendingKind, type PendingMessage } from "./chatpending";
+import { pendingLine, pendingStill, queuedBubbleUp, type PendingKind, type PendingMessage } from "./chatpending";
 import { usePending } from "./chatpendingstore";
 import { risesFromBox } from "./chatsentrise";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
@@ -86,14 +86,6 @@ function useIdleSince(idle: boolean): number | null {
     return since;
 }
 
-// A message sent and not in the transcript yet. Sent to an idle Claude it is simply your bubble, drawn as the transcript
-// will draw it and where (chatconversation.tsx YouBubble's box, spacing and letter spacing): the transcript takes it in a
-// moment, and a dimmed "Sending…" bubble swapped for the full one blinked and moved the lines under it. Sent while Claude
-// worked it is dimmed and captioned "Queued" (Claude Code takes it at the next gap), with Send now; a session's first
-// message, the task it was launched on, reads "Starting Claude Code…" (`starting`) while the harness starts
-// (chatpending.ts pendingCaption: decided at the send, so the turn it starts never flips it to Queued). It goes when the
-// transcript holds the text (pendingStill). It splits the text the way your bubble in the transcript does (@mentions as
-// pills, files as cards under it).
 // the turn's time and output tokens after the working line, as the TUI's "(1m 11s · ↓ 3.1k tokens)": its own component so
 // the second's tick redraws this alone
 function TurnStatsText({ stats }: { stats: TurnStats }) {
@@ -159,45 +151,15 @@ function PendingCommand({
     );
 }
 
-function PendingBubble({
-    pending,
-    onSendNow,
-    starting,
-}: {
-    pending: PendingMessage;
-    onSendNow?: () => void;
-    starting?: string;
-}) {
+// A message sent and not in the transcript yet: your bubble, drawn as the transcript will draw it and where
+// (chatconversation.tsx YouBubble's box, spacing and letter spacing; @mentions as pills, files as cards under it), so the
+// transcript's copy taking its place draws nothing new. What it waits on is PendingLine's, under the last of them. It
+// goes when the transcript holds the text (pendingStill). `first` is the conversation's first message (the task a
+// session was launched on), with no conversation above it to stand clear of.
+function PendingBubble({ pending, first }: { pending: PendingMessage; first: boolean }) {
     const said = splitAttachments(pending.text);
-    const queued = pending.queued === true;
     const body = said.text.trim();
-    const chord = sendNowChord();
     const rises = useRisesFromBox(pending.sentAt);
-    const caption = pendingCaption(pending, starting);
-    if (caption == null) {
-        return (
-            <motion.div
-                data-chat-pending
-                variants={sentRise}
-                initial={rises ? "initial" : false}
-                animate="animate"
-                style={{ transformOrigin: "bottom right" }}
-                // where its transcript row lands: mt-2 over the conversation's pb-2 is the conversation's gap-4 above it,
-                // -mb-1 under the bubble's mb-1 leaves the tail's gap-3 as the row's mb-1 + pb-2 under it
-                className="-mb-1 mt-2 flex flex-col items-end tracking-[-0.01em]"
-            >
-                <div className="flex max-w-[75%] flex-col items-end gap-2">
-                    {body !== "" || said.images.length > 0 ? (
-                        <div className={youBubbleBox(said.files.length > 0)}>
-                            {body !== "" ? <TaggedPromptText text={body} /> : null}
-                            {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
-                        </div>
-                    ) : null}
-                    {said.files.length > 0 ? <ChatFileCards paths={said.files} /> : null}
-                </div>
-            </motion.div>
-        );
-    }
     return (
         <motion.div
             data-chat-pending
@@ -205,39 +167,73 @@ function PendingBubble({
             initial={rises ? "initial" : false}
             animate="animate"
             style={{ transformOrigin: "bottom right" }}
-            className="flex flex-col items-end gap-1"
+            // where its transcript row lands: mt-2 over the conversation's pb-2 is the conversation's gap-4 above it,
+            // and -mb-1 under the bubble's mb-1 leaves the tail's gap-3 as the row's mb-1 + pb-2 under it
+            className={cn("-mb-1 flex flex-col items-end tracking-[-0.01em]", first ? undefined : "mt-2")}
         >
-            {body !== "" || said.images.length > 0 ? (
-                <div className="max-w-[75%] rounded-[12px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary opacity-60">
-                    {body !== "" ? <TaggedPromptText text={body} /> : null}
-                    {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
-                </div>
-            ) : null}
-            {said.files.length > 0 ? (
-                <div className="mt-1 max-w-[75%] opacity-60">
-                    <ChatFileCards paths={said.files} />
-                </div>
-            ) : null}
-            <div className="flex items-center gap-2">
-                <span data-chat-pending-label className="flex items-center gap-1.5 text-[11px] text-muted">
-                    {starting != null ? (
-                        <span className="h-[6px] w-[6px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
-                    ) : null}
-                    {caption}
-                </span>
-                {starting == null && queued && onSendNow != null ? (
-                    <button
-                        type="button"
-                        data-chat-send-now
-                        onClick={onSendNow}
-                        title={`Send it now (${chord} in the empty box): Claude moves its running tools to the background and reads your queued messages at once`}
-                        className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-secondary hover:text-primary"
-                    >
-                        Send now
-                        <kbd className="font-sans text-[10.5px] text-muted">{chord}</kbd>
-                    </button>
+            <div className="flex max-w-[75%] flex-col items-end gap-2">
+                {body !== "" || said.images.length > 0 ? (
+                    <div className={youBubbleBox(said.files.length > 0)}>
+                        {body !== "" ? <TaggedPromptText text={body} /> : null}
+                        {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
+                    </div>
                 ) : null}
+                {said.files.length > 0 ? <ChatFileCards paths={said.files} /> : null}
             </div>
+        </motion.div>
+    );
+}
+
+// the tail's gap above PendingLine, which its margin takes back as it folds
+const LINE_GAP = 12;
+
+// PendingLine opens and folds on the spring like a chat row (springReveal), and as it folds its margin takes back the
+// tail's gap above it, so what is under it closes up with no jump when it unmounts. At rest it sits 4px under the bubble
+function pendingLineVariants(reduce: boolean): Variants {
+    const shape = reduce ? { duration: 0 } : MOTION.spring;
+    const fade = { duration: MOTION.durMicro, ease: MOTION.easeFluid };
+    const t = { height: shape, marginTop: shape, opacity: fade };
+    return {
+        initial: { opacity: 0, height: 0, marginTop: -LINE_GAP },
+        animate: { opacity: 1, height: "auto", marginTop: -8, transition: t },
+        exit: { opacity: 0, height: 0, marginTop: -LINE_GAP, transition: t },
+    };
+}
+
+// What the pending messages wait on, under the last of them (chatpending.ts pendingLine): the harness's starting line
+// while a session starts, else Queued while Claude works (Claude Code takes them at the next gap), with Send now. One
+// line, not one per bubble, and its own row: the bubbles go the moment the transcript takes them, and this folds away
+// after them, so neither a dimmed bubble nor a caption under it blinks out as the transcript's copy replaces it.
+function PendingLine({ text, starting, onSendNow }: { text: string; starting: boolean; onSendNow?: () => void }) {
+    const reduce = useReducedMotion() ?? false;
+    const chord = sendNowChord();
+    return (
+        <motion.div
+            data-chat-pending-line
+            variants={pendingLineVariants(reduce)}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="flex flex-none items-center justify-end gap-2 overflow-hidden"
+        >
+            <span data-chat-pending-label className="flex items-center gap-1.5 text-[11px] text-muted">
+                {starting ? (
+                    <span className="h-[6px] w-[6px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
+                ) : null}
+                {text}
+            </span>
+            {!starting && onSendNow != null ? (
+                <button
+                    type="button"
+                    data-chat-send-now
+                    onClick={onSendNow}
+                    title={`Send it now (${chord} in the empty box): Claude moves its running tools to the background and reads your queued messages at once`}
+                    className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-secondary hover:text-primary"
+                >
+                    Send now
+                    <kbd className="font-sans text-[10.5px] text-muted">{chord}</kbd>
+                </button>
+            ) : null}
         </motion.div>
     );
 }
@@ -533,6 +529,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const opening = (loading || empty) && showsPending;
     const startingView = opening && !asleep ? chatEmptyView(agent) : null;
     const startingTitle = startingView?.phase === "starting" ? startingView.title : undefined;
+    const line = pendingLine(pending, startingTitle);
 
     // a message taken from the box: the chat scrolls to the end so its bubble lands in view, and while a question waits the
     // message is its answer, kept with how many same-text messages the transcript held before it (`entries` is what the
@@ -607,15 +604,20 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                         onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
                                     />
                                 ) : (
-                                    <PendingBubble
-                                        key={p.id}
-                                        pending={p}
-                                        onSendNow={sendNow}
-                                        starting={startingTitle}
-                                    />
+                                    <PendingBubble key={p.id} pending={p} first={opening} />
                                 )
                             )}
                         </AgentPathLinks>
+                        <AnimatePresence initial={false}>
+                            {line != null ? (
+                                <PendingLine
+                                    key="line"
+                                    text={line}
+                                    starting={startingTitle != null}
+                                    onSendNow={sendNow}
+                                />
+                            ) : null}
+                        </AnimatePresence>
                         {localCards.map((c) => (
                             <ChatLocalCard
                                 key={c.id}

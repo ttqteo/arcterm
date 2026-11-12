@@ -48,11 +48,20 @@ export function pendingMessage(
     };
 }
 
-/** The line under a pending message's bubble: the harness's starting line while a session starts, else Queued for one
- *  sent while the agent worked, for as long as it waits. One sent to an idle agent has none (null): the transcript takes
- *  it in a moment, and a Sending… line there only blinked as the transcript's copy replaced the bubble. */
-export function pendingCaption(p: PendingMessage, starting?: string): string | null {
-    return starting ?? (p.queued === true ? "Queued" : null);
+/** The one line under the pending messages' bubbles, or null: the harness's starting line while a session starts, else
+ *  Queued ("2 queued" for more) while messages sent as the agent worked wait. Messages sent to an idle agent have none:
+ *  the transcript takes them in a moment, and a Sending… line there only blinked as the transcript's copy replaced the
+ *  bubble. A command's card (a /btw, a panel, a `! cmd`) says what it waits on itself. */
+export function pendingLine(pending: PendingMessage[], starting?: string): string | null {
+    const messages = pending.filter((p) => p.kind == null);
+    if (messages.length === 0) {
+        return null;
+    }
+    if (starting != null) {
+        return starting;
+    }
+    const queued = messages.filter((p) => p.queued === true).length;
+    return queued === 0 ? null : queued === 1 ? "Queued" : `${queued} queued`;
 }
 
 /** Whether a message bubble captioned Queued is up, which Ctrl+Enter in the empty box sends now. */

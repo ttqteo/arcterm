@@ -9,8 +9,8 @@ import {
     holdLine,
     isSendNowKey,
     pastesBody,
-    pendingCaption,
     pendingKind,
+    pendingLine,
     pendingMessage,
     pendingStill,
     pendsAsBubble,
@@ -143,26 +143,43 @@ describe("pendingStill", () => {
     });
 });
 
-// The caption under a pending bubble is decided when the message is sent. Read from the agent's state as it drew, a
-// message sent to an idle agent flashed a caption, then Queued with Send now as the turn it started set the agent
-// working, then went as the transcript took it.
-describe("pendingMessage and its caption", () => {
+// Whether a message is queued is decided when it is sent. Read from the agent's state as it drew, a message sent to an
+// idle agent flashed a caption, then Queued with Send now as the turn it started set the agent working, then went as the
+// transcript took it.
+describe("pendingMessage and the line under it", () => {
     const entries: AgentEntry[] = [];
-    it("gives a message sent to an idle agent no caption while the turn it started runs", () => {
+    it("gives a message sent to an idle agent no line while the turn it started runs", () => {
         const p = pendingMessage("p1", "fix the chip", entries, 1_000, false);
         expect(p.queued).toBe(false);
-        expect(pendingCaption(p)).toBeNull();
+        expect(pendingLine([p])).toBeNull();
         expect(queuedBubbleUp([p])).toBe(false);
     });
-    it("captions a message sent while the agent works Queued, which Send now can push", () => {
+    it("reads Queued under a message sent while the agent works, which Send now can push", () => {
         const p = pendingMessage("p2", "and the tray", entries, 1_000, true);
-        expect(pendingCaption(p)).toBe("Queued");
+        expect(pendingLine([p])).toBe("Queued");
         expect(queuedBubbleUp([p])).toBe(true);
     });
+    it("counts the queued messages in one line", () => {
+        const ps = [
+            pendingMessage("p5", "one", entries, 1_000, true),
+            pendingMessage("p6", "two", entries, 1_100, true),
+            pendingMessage("p7", "three", entries, 1_200, false),
+        ];
+        expect(pendingLine(ps)).toBe("2 queued");
+    });
     it("lets the harness's starting line stand in for either", () => {
-        expect(pendingCaption(pendingMessage("p3", "go", entries, 1_000, true), "Starting Claude Code…")).toBe(
+        expect(pendingLine([pendingMessage("p3", "go", entries, 1_000, true)], "Starting Claude Code…")).toBe(
             "Starting Claude Code…"
         );
+        expect(pendingLine([pendingMessage("p8", "go", entries, 1_000, false)], "Starting Claude Code…")).toBe(
+            "Starting Claude Code…"
+        );
+    });
+    it("has no line for commands alone, nor for nothing pending", () => {
+        expect(
+            pendingLine([pendingMessage("p9", "/btw why", entries, 1_000, true)], "Starting Claude Code…")
+        ).toBeNull();
+        expect(pendingLine([])).toBeNull();
     });
     it("counts no command card as a queued bubble", () => {
         const p = pendingMessage("p4", "/btw why", entries, 1_000, true);
