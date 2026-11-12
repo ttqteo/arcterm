@@ -347,14 +347,21 @@ func TestRunsLiveWorkers(t *testing.T) {
 		{State: jarvis.PhaseState_Done, WorkerOrefs: []string{"tab:a"}},
 		{State: jarvis.PhaseState_Running, WorkerOrefs: []string{"tab:b", "tab:c"}},
 	}}
-	if got := runsLiveWorkers(run, nil); got != 2 {
+	if got := runsLiveWorkers(run, nil, nil); got != 2 {
 		t.Fatalf("running phase workers = %d, want 2", got)
 	}
 	digest := &wshrpc.CommandDagStatusRtnData{Digest: wshrpc.DagStatusDigest{Counts: wshrpc.DagStatusCounts{Running: 3}}}
-	if got := runsLiveWorkers(run, digest); got != 5 {
+	if got := runsLiveWorkers(run, digest, nil); got != 5 {
 		t.Fatalf("with running tasks = %d, want 5", got)
 	}
-	if got := runsLiveWorkers(&waveobj.Run{}, nil); got != 0 {
+	// run ca080f5c: a lead whose process is gone is not a worker a cancel stops
+	if got := runsLiveWorkers(run, nil, map[string]bool{"tab:c": true, "tab:a": true}); got != 1 {
+		t.Fatalf("only workers whose process runs = %d, want 1", got)
+	}
+	if got := runsLiveWorkers(run, nil, map[string]bool{}); got != 0 {
+		t.Fatalf("a run whose workers are all gone = %d, want 0 so cancel needs no --yes", got)
+	}
+	if got := runsLiveWorkers(&waveobj.Run{}, nil, nil); got != 0 {
 		t.Fatalf("idle run = %d, want 0 so cancel needs no --yes", got)
 	}
 }

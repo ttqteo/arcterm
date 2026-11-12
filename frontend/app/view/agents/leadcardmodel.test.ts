@@ -276,6 +276,30 @@ describe("isLeadDown", () => {
         expect(isLeadDown([ev("lead-wake-failed", 10), ev("lead-launched", 20)])).toBe(false);
         expect(isLeadDown([ev("lead-launched", 5), ev("lead-wake-failed", 10)])).toBe(true);
     });
+
+    // run ca080f5c: the dag waited on a resubmit, the lead was gone, and no lead-wake-failed row was ever written
+    it("is down when the dag waits on its lead and the lead is not live, with no row", () => {
+        const failedReview = {
+            status: "executing",
+            dag: { status: "plan-review", planreview: { state: "failed", round: 1 } } as TaskGroup,
+        };
+        const failedFinal = {
+            status: "executing",
+            dag: { status: "blocked", final: { state: "failed", round: 1 } } as TaskGroup,
+        };
+        expect(isLeadDown([], failedReview, false)).toBe(true);
+        expect(isLeadDown([], failedFinal, false)).toBe(true);
+        expect(isLeadDown([], failedReview, true)).toBe(false);
+        // a dag that waits on nothing the lead does, a paused run and a finished one are not down
+        const reviewing = {
+            status: "executing",
+            dag: { status: "plan-review", planreview: { state: "reviewing", round: 1 } } as TaskGroup,
+        };
+        expect(isLeadDown([], reviewing, false)).toBe(false);
+        expect(isLeadDown([], { ...failedReview, pausedBy: "auto" }, false)).toBe(false);
+        expect(isLeadDown([], { ...failedFinal, dag: { ...failedFinal.dag, status: "done" } }, false)).toBe(false);
+        expect(isLeadDown([], undefined, false)).toBe(false);
+    });
 });
 
 describe("reviewFindings", () => {

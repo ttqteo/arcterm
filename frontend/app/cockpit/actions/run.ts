@@ -6,6 +6,7 @@
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { leadProcessLive } from "@/app/view/agents/agentcontrollerstore";
 import { openRunDiff } from "@/app/view/agents/agentdiffnav";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { steerWorker } from "@/app/view/agents/channelactions";
@@ -67,15 +68,17 @@ export interface RunThingExtra {
 
 export function buildRunThing(p: ProjectRun, agents: AgentVM[], lineage: Lineage, extra: RunThingExtra = {}): RunThing {
     const { run } = p;
+    const info = lineage.runs[run.id];
+    const lead = sheetLead(run, agents);
     return {
         channelId: p.channelId,
         run,
-        info: lineage.runs[run.id],
-        lead: sheetLead(run, agents),
+        info,
+        lead,
         steerLead: runSteerLead(run, agents),
         liveCount: runLiveWorkers(run, agents, lineage).length,
         survivors: cancelSurvivors(run, agents),
-        leadDown: isLeadDown(extra.events ?? []),
+        leadDown: isLeadDown(extra.events ?? [], info, leadProcessLive(lead)),
         cancelling: extra.cancelling ?? false,
         resumePhase: currentPhaseIndex(run),
         agents,
