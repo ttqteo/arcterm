@@ -13,8 +13,9 @@ import { SkeletonLine, SkeletonRows } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, ChevronDown, ChevronRight } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, MessageSquare } from "lucide-react";
 import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import { activeCommentSourceAtom, commentStoreAtom, countsByPath } from "./diffcomments";
 import { shownPaths, stepFile } from "./filestep";
 import { buildFileTree, collapsedDirsAtom, treeModeAtom, type FileTreeRow } from "./filetree";
 import { CHANGE_NOTE_TITLE, statusColor, type GitChange, type GitChanges } from "./gitstatus";
@@ -107,6 +108,8 @@ function FileRow({
     depth,
     selected,
     review,
+    comments = 0,
+    lineCounts = true,
     onSelect,
     onToggle,
 }: {
@@ -114,6 +117,10 @@ function FileRow({
     label: string;
     depth: number;
     selected: boolean;
+    // false when git listed the files but could not count their lines: +0 −0 would claim no edits
+    lineCounts?: boolean;
+    // pending diff comments on this path, lost ones included
+    comments?: number;
     // null when the list has no review subject, which draws no check
     review: ReviewState | null;
     onSelect: () => void;
@@ -152,11 +159,21 @@ function FileRow({
                 >
                     {label}
                 </span>
+                {comments > 0 ? (
+                    <span
+                        data-changed-file-comments={comments}
+                        title={comments === 1 ? "1 pending comment" : `${comments} pending comments`}
+                        className="flex h-[18px] flex-none items-center gap-[3px] rounded-[5px] bg-accentbg px-[5px] font-mono text-[10.5px] font-bold text-accent-soft"
+                    >
+                        <MessageSquare size={11} strokeWidth={2.2} />
+                        {comments}
+                    </span>
+                ) : null}
                 {change.note ? (
                     <span title={CHANGE_NOTE_TITLE[change.note]} className="flex-none text-[10.5px] text-muted">
                         {change.note}
                     </span>
-                ) : (
+                ) : lineCounts ? (
                     <>
                         <span
                             className={cn(
@@ -175,7 +192,7 @@ function FileRow({
                             −{change.dels}
                         </span>
                     </>
-                )}
+                ) : null}
             </button>
             {review != null ? (
                 <ReviewBox
@@ -193,6 +210,7 @@ function DirRow({
     row,
     collapsed,
     done,
+    lineCounts = true,
     onToggle,
     onReview,
 }: {
@@ -200,6 +218,8 @@ function DirRow({
     collapsed: boolean;
     // reviewed files under this directory; null when the list has no review subject
     done: number | null;
+    // false while the files' line counts are unknown
+    lineCounts?: boolean;
     onToggle: () => void;
     onReview: () => void;
 }) {
@@ -230,16 +250,26 @@ function DirRow({
                 <span className={cn("flex-none text-[10.5px] tabular-nums", partial ? "text-ink-mid" : "text-muted")}>
                     {partial ? `${done}/${row.files}` : row.files}
                 </span>
-                <span
-                    className={cn("flex-none text-[10.5px] tabular-nums", all ? "text-ink-faint" : "text-diff-added")}
-                >
-                    +{row.adds}
-                </span>
-                <span
-                    className={cn("flex-none text-[10.5px] tabular-nums", all ? "text-ink-faint" : "text-diff-removed")}
-                >
-                    −{row.dels}
-                </span>
+                {lineCounts ? (
+                    <>
+                        <span
+                            className={cn(
+                                "flex-none text-[10.5px] tabular-nums",
+                                all ? "text-ink-faint" : "text-diff-added"
+                            )}
+                        >
+                            +{row.adds}
+                        </span>
+                        <span
+                            className={cn(
+                                "flex-none text-[10.5px] tabular-nums",
+                                all ? "text-ink-faint" : "text-diff-removed"
+                            )}
+                        >
+                            −{row.dels}
+                        </span>
+                    </>
+                ) : null}
             </button>
             {done != null ? (
                 <ReviewBox
@@ -300,16 +330,25 @@ export function ChangedFileList({
     selectedFile,
     onSelectFile,
     review = null,
+    lineCounts = true,
 }: {
     changes: GitChanges | null;
     selectedFile: string | null;
     onSelectFile: (path: string) => void;
     // the list's review subject; null (or left out) draws no checks
     review?: ReviewSubject | null;
+    // false when git listed the files but could not count their lines: the rows then draw no +N −N
+    lineCounts?: boolean;
 }) {
     const tree = useAtomValue(treeModeAtom);
     const collapsed = useAtomValue(collapsedDirsAtom);
     const marks = useAtomValue(reviewMarksAtom);
+    const commentKey = useAtomValue(activeCommentSourceAtom)?.key;
+    const commentStore = useAtomValue(commentStoreAtom);
+    const commentCounts = useMemo(
+        () => countsByPath(commentKey != null ? commentStore[commentKey] : undefined),
+        [commentKey, commentStore]
+    );
     const rows = useMemo(
         () => (changes != null && tree ? buildFileTree(changes.files, collapsed) : []),
         [changes, tree, collapsed]
@@ -359,6 +398,8 @@ export function ChangedFileList({
             depth={depth}
             selected={change.path === selectedFile}
             review={review != null ? markState(subjectMarks, change) : null}
+            comments={commentCounts[change.path] ?? 0}
+            lineCounts={lineCounts}
             onSelect={() => onSelectFile(change.path)}
             onToggle={() => review != null && toggleReviewed(review, change)}
         />
@@ -388,6 +429,7 @@ export function ChangedFileList({
                               row={r}
                               collapsed={collapsed.has(r.id)}
                               done={done}
+                              lineCounts={lineCounts}
                               // a new Set every time: jotai compares by reference, so mutating one would
                               // change the value without telling anybody
                               onToggle={() => {

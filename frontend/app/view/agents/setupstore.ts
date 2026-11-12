@@ -4,6 +4,7 @@
 // Setup surface state and its agentsync loaders. Module-level atoms because every surface but Agent
 // unmounts on a switch: the shared-doc draft must survive one, and the rest is cheap to keep.
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { openFileInCode } from "@/app/cockpit/openfilestore";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -19,9 +20,11 @@ import {
     editorTyped,
     EMPTY_EDITOR,
     saveBaseMtime,
+    syncPlan,
     type DocEditor,
+    type SyncPlan,
 } from "./setupmodel";
-import { adoptKeep, type SkillKeep } from "./skillsmatrix";
+import { adoptKeep, adoptResultText, adoptSkip, KEEP_LEAVE, type SkillKeep } from "./skillsmatrix";
 import type { ToolForm } from "./toolslibrarymodel";
 import { failedAtom, installingAtom } from "./toolsstore";
 
@@ -54,6 +57,22 @@ export const setupNewSkillAtom = atom<NewSkillForm | null>(null) as PrimitiveAto
 export const setupBusyAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
 export const setupErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
+// Sync now: the plan its dry run reported, while the write runs and after it. Null before the first one and
+// after the next read of Setup.
+export interface SyncResult {
+    phase: "writing" | "done";
+    plan: SyncPlan;
+}
+export const setupSyncAtom = atom<SyncResult | null>(null) as PrimitiveAtom<SyncResult | null>;
+// The shared doc as it is on disk after a save found it changed, for the conflict notice to list what the outside
+// edit did. null: no conflict read; text null: the read failed (Reload and Overwrite stay the way out). Only
+// meaningful while the shared editor has a conflict.
+export const setupSharedDiskAtom = atom<{ text: string | null } | null>(null) as PrimitiveAtom<{
+    text: string | null;
+} | null>;
+// the harness whose file the Instructions center previews read-only; null shows the shared editor
+export const setupHarnessPreviewAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+
 function errText(e: unknown): string {
     return e instanceof Error ? e.message : String(e);
 }
@@ -85,6 +104,8 @@ async function load(): Promise<void> {
 }
 
 export async function loadSetup(): Promise<void> {
+    // a Sync now result belongs to the visit it ran in
+    globalStore.set(setupSyncAtom, null);
     try {
         await load();
     } catch (e) {
@@ -100,13 +121,27 @@ export function typeShared(draft: string): void {
 
 export function discardShared(): void {
     globalStore.set(setupSharedAtom, editorDiscard(globalStore.get(setupSharedAtom)));
+    globalStore.set(setupSharedDiskAtom, null);
 }
 
 export function reloadShared(): Promise<void> {
     return busy(async () => {
         const r = await RpcApi.AgentSyncSteeringReadCommand(TabRpcClient, { timeout: READ_TIMEOUT_MS });
         globalStore.set(setupSharedAtom, editorReload(r.content ?? "", r.mtime ?? 0));
+        globalStore.set(setupSharedDiskAtom, null);
     });
+}
+
+// The doc as it is on disk, for the conflict notice to list what the outside edit changed. A failed read
+// leaves text null, which the notice says, so Reload and Overwrite stay the way out.
+async function readDiskAfterConflict(): Promise<void> {
+    try {
+        const r = await RpcApi.AgentSyncSteeringReadCommand(TabRpcClient, { timeout: READ_TIMEOUT_MS });
+        globalStore.set(setupSharedDiskAtom, { text: r.content ?? "" });
+    } catch (e) {
+        console.error("reading the shared doc after a save conflict:", e);
+        globalStore.set(setupSharedDiskAtom, { text: null });
+    }
 }
 
 // Write, then project at once: a doc the harnesses have not received is the stale state this exists to
@@ -120,11 +155,34 @@ export function saveShared(overwrite: boolean): Promise<void> {
             basemtime: saveBaseMtime(ed, overwrite),
         });
         globalStore.set(setupSharedAtom, editorSaved(globalStore.get(setupSharedAtom), written, res));
+        globalStore.set(setupSharedDiskAtom, null);
         if (res.conflict) {
+            await readDiskAfterConflict();
             return;
         }
         await RpcApi.AgentSyncApplyCommand(TabRpcClient, {});
         await load();
+    });
+}
+
+// Projects the saved doc into every harness without a save: the way to bring a stale or unwritten harness up to
+// date when there is nothing to edit. A dry run goes first, so the counts the person sees are what the apply
+// reports it will write, not a guess from the rows. A failed write still reads the rows again: part of it may
+// have landed.
+export function syncNow(): Promise<void> {
+    return busy(async () => {
+        const dry = await RpcApi.AgentSyncApplyCommand(TabRpcClient, { dryrun: true });
+        const plan = syncPlan(dry?.actions ?? []);
+        globalStore.set(setupSyncAtom, { phase: "writing", plan });
+        try {
+            await RpcApi.AgentSyncApplyCommand(TabRpcClient, { dryrun: false });
+        } catch (e) {
+            globalStore.set(setupSyncAtom, null);
+            await load().catch(() => {});
+            throw e;
+        }
+        await load();
+        globalStore.set(setupSyncAtom, { phase: "done", plan });
     });
 }
 
@@ -161,11 +219,25 @@ export function adoptSkills(): Promise<void> {
         if (data == null) {
             return;
         }
-        const keep = adoptKeep(data, globalStore.get(setupSkillKeepAtom));
+        const choices = globalStore.get(setupSkillKeepAtom);
+        const keep = adoptKeep(data, choices);
+        const skip = adoptSkip(data, choices);
         // a failed adopt may have moved some skills already, so the matrix is re-read either way
         try {
-            await RpcApi.AgentSyncAdoptCommand(TabRpcClient, { apply: true, keep });
-            globalStore.set(setupSkillKeepAtom, {});
+            const rtn = await RpcApi.AgentSyncAdoptCommand(TabRpcClient, {
+                apply: true,
+                keep,
+                ...(skip.length > 0 ? { skip } : {}),
+            });
+            // the toast counts what the reply says happened, not what the matrix showed before the click
+            pushToast({ title: adoptResultText(rtn ?? {}, { keep, skip }), message: "", level: "info" });
+            // a snapshot moved nothing, so every choice still stands; otherwise only "leave it" outlives the move
+            if (!rtn?.dryrun) {
+                globalStore.set(
+                    setupSkillKeepAtom,
+                    Object.fromEntries(Object.entries(choices).filter(([, c]) => c === KEEP_LEAVE))
+                );
+            }
         } finally {
             await loadSkills();
         }

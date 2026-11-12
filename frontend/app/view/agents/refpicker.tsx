@@ -47,7 +47,8 @@ function Suggestions({
                         {g.rows.map((b) => (
                             <button
                                 key={b.name}
-                                // mousedown, not click: the field's blur would tear the popover down first
+                                data-ref-suggestion={b.name}
+                                // mousedown, not click: it fires before the field's blur, which closes this popover
                                 onMouseDown={(e) => {
                                     e.preventDefault();
                                     onPick(b.name);
@@ -165,6 +166,7 @@ export function RefPicker({
                     value={draftBase}
                     onChange={(e) => setDraftBase(e.target.value)}
                     onFocus={() => setFocused("base")}
+                    onBlur={() => setFocused((f) => (f === "base" ? null : f))}
                     onKeyDown={keys}
                     placeholder="base ref"
                     // side colours come from comparerows, so the picker and the column cannot drift
@@ -188,6 +190,7 @@ export function RefPicker({
                     value={draftHead}
                     onChange={(e) => setDraftHead(e.target.value)}
                     onFocus={() => setFocused("head")}
+                    onBlur={() => setFocused((f) => (f === "head" ? null : f))}
                     onKeyDown={keys}
                     placeholder="head ref"
                     className={cn(field, SIDE_TEXT.head)}

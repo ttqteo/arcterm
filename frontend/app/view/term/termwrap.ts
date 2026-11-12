@@ -48,7 +48,7 @@ import {
 import { formatFitDiag, isStaleFit } from "./termfitdiag";
 import { nextMouseEncoding, withMouseEncoding } from "./termmodes";
 import { registerTermHandle } from "./termpaste";
-import { hintFor, makePathLinkProvider, trackForDev } from "./termpathlinks";
+import { hintFor, makePathLinkProvider, trackForDev, type PeekAnchor, type PeekHit } from "./termpathlinks";
 import { multiCharTextKey } from "./termtextkey";
 import {
     bufferLinesToText,
@@ -228,6 +228,9 @@ export class TermWrap {
     nodeModel: BlockNodeModel; // this can be null
     hoveredLinkUri: string | null = null;
     onLinkHover?: (uri: string | null, mouseX: number, mouseY: number, hint?: string) => void;
+    // the terminal Code peek's host, when this terminal has one (codepeekhost.tsx): it takes a Ctrl+Shift+click on a path
+    // link, and a link's hover hint names the gesture only while it is set
+    peekHandler: ((hit: PeekHit) => void) | null = null;
 
     // Paste deduplication
     // xterm.js paste() method triggers onData event, which can cause duplicate sends
@@ -319,7 +322,15 @@ export class TermWrap {
             },
             touched: (cwd: string | null, path: string) => touchedPathForBlock(this.blockId, cwd, path),
             activate: (ref: FileRef) => openPathFromTerminal(this.blockId, ref),
-            hover: (e: MouseEvent, ref: FileRef) => this.onLinkHover?.(ref.abs, e.clientX, e.clientY, hintFor(ref)),
+            peek: (ref: FileRef, at: PeekAnchor) => {
+                if (this.peekHandler == null) {
+                    return false;
+                }
+                this.peekHandler({ ref, ...at });
+                return true;
+            },
+            hover: (e: MouseEvent, ref: FileRef) =>
+                this.onLinkHover?.(ref.abs, e.clientX, e.clientY, hintFor(ref, this.peekHandler != null)),
             leave: () => this.onLinkHover?.(null, 0, 0),
         };
         this.toDispose.push(this.terminal.registerLinkProvider(makePathLinkProvider(this.terminal, pathHooks)));
@@ -730,6 +741,17 @@ export class TermWrap {
 
     addFocusListener(focusFn: () => void) {
         this.terminal.textarea.addEventListener("focus", focusFn);
+    }
+
+    setPeekHandler(handler: ((hit: PeekHit) => void) | null) {
+        this.peekHandler = handler;
+    }
+
+    // a marker on a buffer row (0-based, from the top of the scrollback), which follows the row as the buffer scrolls and
+    // trims; what the terminal Code peek's card and line band hang from
+    markLine(bufferLine: number): TermTypes.IMarker | undefined {
+        const buf = this.terminal.buffer.active;
+        return this.terminal.registerMarker(bufferLine - (buf.baseY + buf.cursorY));
     }
 
     handleNewFileSubjectData(msg: WSFileEventData) {

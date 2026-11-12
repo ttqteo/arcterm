@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { diffBaseOf, diffTargetLabel, headMatches, nextDiffStep } from "./codedifftarget";
+import { diffBaseOf, diffTargetLabel, diffUnchanged, headMatches, missingView, nextDiffStep } from "./codedifftarget";
 
 describe("nextDiffStep", () => {
     it("cycles off, HEAD, base, off when the base is usable", () => {
@@ -20,6 +20,11 @@ describe("nextDiffStep", () => {
     it("leaves the base whatever the base answers now", () => {
         expect(nextDiffStep("base", false)).toBe("off");
     });
+
+    it("d from disk returns to source", () => {
+        expect(nextDiffStep("disk", true)).toBe("off");
+        expect(nextDiffStep("disk", false)).toBe("off");
+    });
 });
 
 describe("diffTargetLabel", () => {
@@ -31,6 +36,10 @@ describe("diffTargetLabel", () => {
         expect(diffTargetLabel("base", { branch: "origin/main", sha: "abc1234def5678" })).toBe(
             "Against the merge-base with origin/main (abc1234)"
         );
+    });
+
+    it("names the copy on disk", () => {
+        expect(diffTargetLabel("disk")).toBe("Your edits against the copy on disk");
     });
 
     it("falls back to a generic name while the base is unknown", () => {
@@ -80,5 +89,32 @@ describe("headMatches", () => {
         expect(headMatches(head, "b.go", "HEAD")).toBe(false);
         expect(headMatches(head, "a.go", null)).toBe(false);
         expect(headMatches({ kind: "idle" }, "a.go", "HEAD")).toBe(false);
+    });
+});
+
+describe("diffUnchanged", () => {
+    const head = { kind: "text" as const, path: "a.go", ref: "HEAD", text: "one\ntwo\n" };
+
+    it("diffUnchanged is true for equal text and false while loading", () => {
+        expect(diffUnchanged(head, "one\ntwo\n")).toBe(true);
+        expect(diffUnchanged(head, "one\nTWO\n")).toBe(false);
+        expect(diffUnchanged({ kind: "loading", path: "a.go", ref: "HEAD" }, "one\ntwo\n")).toBe(false);
+        expect(diffUnchanged({ kind: "idle" }, "")).toBe(false);
+        expect(diffUnchanged({ kind: "absent", path: "a.go", ref: "HEAD" }, "")).toBe(false);
+    });
+
+    it("ignores line endings, which the diff editor does not show either", () => {
+        expect(diffUnchanged(head, "one\r\ntwo\r\n")).toBe(true);
+    });
+});
+
+describe("missingView", () => {
+    const status = (letter: string) => ({ status: letter, adds: 0, dels: 0 });
+
+    it("missingView is deleted for D in a repo and missing otherwise", () => {
+        expect(missingView(status("D"), false)).toBe("deleted");
+        expect(missingView(status("D"), true)).toBe("missing");
+        expect(missingView(status("M"), false)).toBe("missing");
+        expect(missingView(undefined, false)).toBe("missing");
     });
 });

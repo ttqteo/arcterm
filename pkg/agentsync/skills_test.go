@@ -5,8 +5,10 @@ package agentsync
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -583,5 +585,189 @@ func TestSeedRetiresARenamedSkillKeepingItsDelta(t *testing.T) {
 	}
 	if got := readFile(t, filepath.Join(root, "initiatives", skillFile)); got != "---\nname: initiatives\n---\nnew\n" {
 		t.Errorf("initiatives SKILL.md = %q", got)
+	}
+}
+
+// ---- links ----
+
+// makeJunction links link to target with a Windows directory junction, skipping where the OS refuses.
+func makeJunction(t *testing.T, link, target string) {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		t.Skip("junctions are Windows-only")
+	}
+	if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput(); err != nil {
+		t.Skipf("the OS refused a junction: %v %s", err, out)
+	}
+}
+
+// makeSymlink links link to target with a symlink, skipping where the OS refuses (Windows without
+// developer mode).
+func makeSymlink(t *testing.T, link, target string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("the OS refused a symlink: %v", err)
+	}
+}
+
+// makeDirLink links with whatever this OS creates without privileges: a junction on Windows.
+func makeDirLink(t *testing.T, link, target string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		makeJunction(t, link, target)
+		return
+	}
+	makeSymlink(t, link, target)
+}
+
+// linkedSkill makes a skill tree outside every harness and links it into dir under name.
+func linkedSkill(t *testing.T, p Paths, dir, name string) (link, target string) {
+	t.Helper()
+	target = filepath.Join(p.Home, "elsewhere", name)
+	writeFile(t, filepath.Join(target, skillFile), "---\nname: "+name+"\n---\nmine, linked\n")
+	link = filepath.Join(dir, name)
+	makeDirLink(t, link, target)
+	return link, target
+}
+
+func TestObserveSkillsLinkedEntry(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		link func(t *testing.T, link, target string)
+	}{{"junction", makeJunction}, {"symlink", makeSymlink}} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := testPaths(t, "", ".claude")
+			dir := filepath.Join(p.Home, ".claude", "skills")
+			target := filepath.Join(p.Home, "elsewhere", "graphify")
+			writeFile(t, filepath.Join(target, skillFile), "mine\n")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			tc.link(t, filepath.Join(dir, "graphify"), target)
+			observed, err := observeSkills(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(observed) != 1 {
+				t.Fatalf("observed = %+v, want the link", observed)
+			}
+			e := observed[0]
+			if !e.Linked || e.Managed || e.Target == "" {
+				t.Fatalf("entry = %+v, want linked, not managed, with its target", e)
+			}
+		})
+	}
+}
+
+// a junction left pointing at a folder that has since moved must fail nothing, and is no skill
+func TestObserveSkillsDanglingLink(t *testing.T) {
+	p := testPaths(t, "canonical\n", ".claude")
+	dir := filepath.Join(p.Home, ".claude", "skills")
+	link, target := linkedSkill(t, p, dir, "graphify")
+	if err := os.RemoveAll(target); err != nil {
+		t.Fatal(err)
+	}
+	observed, err := observeSkills(dir)
+	if err != nil {
+		t.Fatalf("a dangling link failed the read: %v", err)
+	}
+	for _, e := range observed {
+		if e.Name == "graphify" && (e.Managed || !e.Linked) {
+			t.Fatalf("entry = %+v: a dangling link is a link, never a skill", e)
+		}
+	}
+	// the vault has a skill of the same name: still no write through it, and nothing fails
+	seedSkill(t, p, "graphify")
+	if _, err := Status(p); err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if _, err := SkillRows(p); err != nil {
+		t.Fatalf("SkillRows: %v", err)
+	}
+	if plan, err := PlanAdopt(p, nil); err != nil || len(plan.Moves) != 0 {
+		t.Fatalf("PlanAdopt = %+v, %v: want no move and no error", plan, err)
+	}
+	if _, err := Apply(p, false); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("the reconcile recreated the link's target: %v", err)
+	}
+	if _, err := os.Lstat(link); err != nil {
+		t.Fatalf("the link itself was removed: %v", err)
+	}
+}
+
+func TestReconcileNeverWritesThroughLink(t *testing.T) {
+	p := testPaths(t, "canonical\n", ".claude")
+	seedSkill(t, p, "graphify")
+	_, target := linkedSkill(t, p, filepath.Join(p.Home, ".claude", "skills"), "graphify")
+	before := readFile(t, filepath.Join(target, skillFile))
+
+	acts, err := Apply(p, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var linked int
+	for _, a := range acts {
+		if a.Kind == ActionSkillWrite {
+			t.Fatalf("actions = %+v: a write through the link", acts)
+		}
+		if a.Kind == ActionSkillLinked {
+			linked++
+		}
+	}
+	if linked != 1 {
+		t.Fatalf("actions = %+v, want the link reported once", acts)
+	}
+	if got := readFile(t, filepath.Join(target, skillFile)); got != before {
+		t.Fatalf("the link target's SKILL.md changed: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(target, managedMarkName)); !os.IsNotExist(err) {
+		t.Error("the ownership mark was written through the link")
+	}
+}
+
+func TestSkillRowsLinkedState(t *testing.T) {
+	p := testPaths(t, "canonical\n", ".claude")
+	seedSkill(t, p, "graphify")
+	linkedSkill(t, p, filepath.Join(p.Home, ".claude", "skills"), "graphify")
+	rows, err := SkillRows(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].States["claude"] != stateLinked {
+		t.Fatalf("rows = %+v, want claude linked", rows)
+	}
+}
+
+func TestSkillLinksListsEveryLink(t *testing.T) {
+	p := testPaths(t, "canonical\n", ".claude", ".codex")
+	seedSkill(t, p, "graphify")
+	dir := filepath.Join(p.Home, ".claude", "skills")
+	vaultLink, vaultTarget := linkedSkill(t, p, dir, "graphify")
+	link, target := linkedSkill(t, p, dir, "notes")
+	writeFile(t, filepath.Join(p.Home, ".codex", "skills", "plain", skillFile), "mine\n")
+
+	links, err := SkillLinks(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 2 {
+		t.Fatalf("links = %+v, want claude's links graphify and notes", links)
+	}
+	want := []struct{ name, path, target string }{{"graphify", vaultLink, vaultTarget}, {"notes", link, target}}
+	for i, w := range want {
+		got := links[i]
+		if got.Runtime != "claude" || got.Name != w.name || got.Path != w.path {
+			t.Fatalf("links[%d] = %+v, want claude's %s at %s", i, got, w.name, w.path)
+		}
+		// a junction's target may read back with the \??\ NT prefix
+		if !strings.EqualFold(filepath.Clean(strings.TrimPrefix(got.Target, `\??\`)), filepath.Clean(w.target)) {
+			t.Fatalf("links[%d].Target = %q, want %q", i, got.Target, w.target)
+		}
 	}
 }

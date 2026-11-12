@@ -30,11 +30,41 @@ const INLINE_EXTS = new Set(
     )
 );
 
+// well-known file names with no extension, case-sensitive so "the makefile" in prose stays prose. A bare one is a
+// candidate like a bare name with an extension: it links only once the file is known to exist
+const EXTENSIONLESS_NAMES = new Set([
+    "Makefile",
+    "Dockerfile",
+    "Containerfile",
+    "Jenkinsfile",
+    "Gemfile",
+    "Rakefile",
+    "Procfile",
+    "Vagrantfile",
+    "LICENSE",
+    "CODEOWNERS",
+]);
+// Claude Code shortens a long path in the middle with an ellipsis ("…\servic…\QueryTest.java"), so what touches one
+// names no file
+const BEFORE_ELISION_RE = /…[\\/]?$/;
+const AFTER_ELISION_RE = /^[\\/]?…/;
+
+// the token at [start, end) runs straight into an ellipsis, with at most a separator between ("servic…\a.java", "a/…/b")
+function touchesElision(text: string, start: number, end: number): boolean {
+    return (
+        BEFORE_ELISION_RE.test(text.slice(Math.max(0, start - 2), start)) ||
+        AFTER_ELISION_RE.test(text.slice(end, end + 2))
+    );
+}
+
 function isPathToken(token: string): boolean {
     if (token.startsWith("-") || !/[A-Za-z]/.test(token)) {
         return false;
     }
     if (SEP_RE.test(token)) {
+        return true;
+    }
+    if (EXTENSIONLESS_NAMES.has(token)) {
         return true;
     }
     // a bare dot name (.gitignore, ".ts files") is more often talk about a kind of file than a path
@@ -49,6 +79,9 @@ export function findPathCandidates(line: string): PathCandidate[] {
         // a sentence's full stop is not part of the name
         const token = m[0].replace(/\.+$/, "");
         if (token === "" || !isPathToken(token)) {
+            continue;
+        }
+        if (touchesElision(masked, start, start + token.length)) {
             continue;
         }
         const after = token.length === m[0].length ? masked.slice(start + token.length) : "";
@@ -66,6 +99,19 @@ export function findPathCandidates(line: string): PathCandidate[] {
         });
     }
     return out;
+}
+
+/** Pure: what a click on a terminal path link does. The platform's modifier (Ctrl, or Cmd on a Mac) opens it, as a link
+ *  always did; with Shift held too it peeks, the terminal Code peek's gesture. Shift alone, or no modifier, does nothing
+ *  (a plain click is a selection, and it keeps being one). */
+export function linkGesture(
+    e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean },
+    mac: boolean
+): "open" | "peek" | null {
+    if (!(mac ? e.metaKey : e.ctrlKey)) {
+        return null;
+    }
+    return e.shiftKey ? "peek" : "open";
 }
 
 /** A terminal row's text, and whether xterm wrapped the row above into it. */

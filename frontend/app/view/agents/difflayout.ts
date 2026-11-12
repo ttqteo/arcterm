@@ -124,6 +124,25 @@ export function commitTabCount(state: { ref: string; changes: { files: unknown[]
     return state.changes.files.length;
 }
 
+export type DiffBody = "history-failure-in-panel" | "whole-body-failure" | "not-a-repo" | "body";
+
+// What the surface's body draws. A history failure takes over the whole body only when the change list has no good
+// read to keep: then the read that failed is also the one that would say whether this is a repo. With a good change
+// list the failure stays in the panel's Log tab and the working tree, its change list and the diff stay usable.
+export function diffBody(
+    historyFailed: boolean,
+    changeList: { cwd: string | null; isRepo: boolean; changes: unknown } | null
+): DiffBody {
+    if (historyFailed) {
+        const good = changeList?.isRepo === true && changeList.changes != null;
+        return good ? "history-failure-in-panel" : "whole-body-failure";
+    }
+    if (changeList?.isRepo === false && changeList.cwd) {
+        return "not-a-repo";
+    }
+    return "body";
+}
+
 // The dirty count panelTabToApply may judge by, or null while the read in hand cannot say. A working scope is judged by
 // a working-tree read (ref ""): just after a pick the store still holds the previous subject's read, and an agent's
 // session-anchored one lists committed work too, so counting it opens Commit on a clean project. A repository git could

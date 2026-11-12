@@ -28,6 +28,7 @@ import { useKeybindings } from "@/app/store/keybindings/store";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { CodePeekContext } from "@/app/view/code/codepeekhost";
 import { getLastCommandAtom, setLastCommand } from "@/app/view/term/lastcommand";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -823,7 +824,14 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                 mounted) without a pane ever changing parent; `contents` is no box at all */}
                                             <div className={stripped ? "hidden" : "contents"}>
                                                 {paneMounts.mounted.has(a.id) ? (
-                                                    <CockpitFocusPane blockId={a.blockId!} tabId={tabId} />
+                                                    // the terminal Code peek (codepeekhost.tsx): an agent's terminal
+                                                    // has it, a plain terminal's value is null. The provider wraps
+                                                    // the pane the same way for both, so no pane changes parent
+                                                    <CodePeekContext.Provider
+                                                        value={a.kind === "terminal" ? null : model}
+                                                    >
+                                                        <CockpitFocusPane blockId={a.blockId!} tabId={tabId} />
+                                                    </CodePeekContext.Provider>
                                                 ) : null}
                                             </div>
                                             {/* the conversation covers the terminal, the pane staying mounted under it at

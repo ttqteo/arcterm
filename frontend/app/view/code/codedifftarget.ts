@@ -5,9 +5,12 @@
 // The diff toggle's cycle and the header naming what the diff is against. Pure, so the cycle is
 // tested without a store; codestore.ts decides whether the base is usable and drives the atoms.
 
+import type { CodeStatus } from "./codestatus";
 import type { HeadText } from "./codestore";
 
-export type DiffStep = "off" | "head" | "base";
+// what the left side of the diff is: a commit, or the file on disk now (a refused save's comparison)
+export type DiffTarget = "head" | "base" | "disk";
+export type DiffStep = "off" | DiffTarget;
 
 export type DiffBase =
     | { kind: "usable"; branch: string; sha: string }
@@ -49,16 +52,44 @@ export function nextDiffStep(cur: DiffStep, baseUsable: boolean): DiffStep {
         case "head":
             return baseUsable ? "base" : "off";
         case "base":
+        case "disk":
             return "off";
     }
 }
 
-export function diffTargetLabel(target: "head" | "base", base?: { branch: string; sha: string }): string {
+export function diffTargetLabel(target: DiffTarget, base?: { branch: string; sha: string }): string {
     if (target === "head") {
         return "Against HEAD";
+    }
+    if (target === "disk") {
+        return "Your edits against the copy on disk";
     }
     if (base == null) {
         return "Against the branch base";
     }
     return `Against the merge-base with ${base.branch} (${base.sha.slice(0, SHORT_SHA)})`;
+}
+
+// Two identical columns say nothing, so an unchanged file gets a sentence instead. Line endings are
+// ignored because the diff editor normalizes them too: a CRLF checkout of an LF blob shows no change.
+export function diffUnchanged(head: HeadText, text: string): boolean {
+    const lf = (s: string) => s.replace(/\r\n/g, "\n");
+    return head.kind === "text" && lf(head.text) === lf(text);
+}
+
+export function noChangesLabel(target: DiffTarget): string {
+    switch (target) {
+        case "head":
+            return "No changes against HEAD";
+        case "base":
+            return "No changes against the branch base";
+        case "disk":
+            return "No changes against the copy on disk";
+    }
+}
+
+// A file git still tracks but the working tree lost is a deletion to show, not a stale index entry;
+// a plain folder has no status, so its missing file is only ever missing.
+export function missingView(status: CodeStatus | undefined, plain: boolean): "deleted" | "missing" {
+    return !plain && status?.status === "D" ? "deleted" : "missing";
 }

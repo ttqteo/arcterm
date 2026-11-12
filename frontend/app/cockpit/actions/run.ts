@@ -6,7 +6,7 @@
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { diffScopeOfRun, openDiff } from "@/app/view/agents/agentdiffnav";
+import { openRunDiff } from "@/app/view/agents/agentdiffnav";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { steerWorker } from "@/app/view/agents/channelactions";
 import { jumpToAgent } from "@/app/view/agents/channelsprimitives";
@@ -124,7 +124,7 @@ const RUN_ACTIONS: ThingAction<RunThing>[] = [
         label: "Open the diff",
         group: "open",
         applies: (t) => doneBodyHasDiff(t.run),
-        run: (t, { model }) => openDiff(model, diffScopeOfRun(t.run)),
+        run: (t, { model }) => openRunDiff(model, t.run),
     },
     {
         id: "run:lead-terminal",

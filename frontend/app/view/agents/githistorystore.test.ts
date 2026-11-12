@@ -170,6 +170,31 @@ describe("loadHistory selection settling", () => {
         expect(globalStore.get(selectedFileAtom)).toBe("pkg/jarvis/evidence.go");
     });
 
+    // A source switch nulls the change list while a history read is in flight; the uncommitted row is missing
+    // from the rows only because its count is unknown, and moving to the tip then stuck once the list landed.
+    it("keeps the uncommitted row selected through a read that lands while the change list reloads", async () => {
+        globalStore.set(selectedCommitAtom, WORKING_TREE);
+        globalStore.set(selectedFileAtom, "docs/open-issues.md");
+        globalStore.set(filesStateAtom, null);
+        await loadHistory(CWD, RUN_OPTS, RUN);
+        await settle();
+        expect(globalStore.get(selectedCommitAtom)).toBe(WORKING_TREE);
+        globalStore.set(filesStateAtom, {
+            cwd: CWD,
+            branch: "main",
+            isRepo: true,
+            changes: RUN_CHANGES as any,
+            ref: "base000",
+            head: "aaa1111",
+            upstream: "",
+            upstreamAhead: 0,
+            upstreamBehind: 0,
+        });
+        await loadHistory(CWD, RUN_OPTS, RUN);
+        await settle();
+        expect(globalStore.get(selectedCommitAtom)).toBe(WORKING_TREE);
+    });
+
     it("keeps a remembered commit selection when no deep link was followed", async () => {
         globalStore.set(selectedCommitAtom, "aaa1111");
         globalStore.set(selectedFileAtom, "x.ts");
@@ -597,5 +622,87 @@ describe("a commit's file list status", () => {
             await selectCommit(CWD, WORKING_TREE);
             expect((globalThis as any).window.__commitChangesFault).toBe("error");
         });
+    });
+});
+
+// A landed run walks from its own tip instead of every ref, and git gets a budget above its own timeout so its error,
+// which names the command, ends a hung read.
+describe("the ref a read walks from", () => {
+    const LANDED_OPTS = { anchor: "base000", rowLabel: "Run changes", ref: "c0ffee1" };
+
+    it("is sent to git only when the scope has one, with the history read's own timeout", async () => {
+        await loadHistory(CWD, RUN_OPTS, RUN);
+        expect(gitHistory.mock.calls[0][1]).not.toHaveProperty("ref");
+        expect(gitHistory.mock.calls[0][2]).toEqual({ timeout: 15_000 });
+
+        resetHistory();
+        gitHistory.mockClear();
+        await loadHistory(CWD, LANDED_OPTS, RUN);
+        expect(gitHistory.mock.calls[0][1]).toMatchObject({ cwd: CWD, ref: "c0ffee1" });
+        expect(gitHistory.mock.calls[0][2]).toEqual({ timeout: 15_000 });
+    });
+
+    it("is kept by the next page, which walks the same list", async () => {
+        gitHistory.mockResolvedValueOnce({
+            isrepo: true,
+            head: "aaa1111",
+            commits: Array.from({ length: 50 }, (_, i) => commit(`h${i}`, `commit ${i}`)),
+        });
+        await loadHistory(CWD, LANDED_OPTS, RUN);
+        gitHistory.mockClear();
+        await loadMoreHistory();
+        expect(gitHistory.mock.calls[0][1]).toMatchObject({ cwd: CWD, ref: "c0ffee1", skip: 50 });
+        expect(gitHistory.mock.calls[0][2]).toEqual({ timeout: 15_000 });
+    });
+
+    // walking every ref and walking from a tip are different lists: the first must not be taken for the second
+    it("blanks the list when the walked ref changes, since it is a different read", async () => {
+        await loadHistory(CWD, RUN_OPTS, RUN);
+        expect(globalStore.get(historyCommitsAtom)).not.toBeNull();
+        gitHistory.mockReturnValueOnce(new Promise(() => {}));
+        void loadHistory(CWD, LANDED_OPTS, RUN);
+        expect(globalStore.get(historyCommitsAtom)).toBeNull();
+    });
+});
+
+// A run link opened over a project is a new subject: the project's remembered row gives way to the run's default.
+describe("selection across a change of scope", () => {
+    const PROJECT = scopeKey({
+        repo: { origin: { kind: "project", name: "waveterm", path: CWD }, label: "waveterm" },
+        range: { kind: "working" },
+    });
+
+    it("drops the remembered commit for the new scope's default row", async () => {
+        await loadHistory(CWD, {}, PROJECT);
+        await settle();
+        globalStore.set(selectedCommitAtom, "bbb2222");
+        globalStore.set(selectedFileAtom, "x.ts");
+
+        await loadHistory(CWD, RUN_OPTS, RUN);
+        await settle();
+        // the run's synthetic row (its change list is in filesStateAtom) is the default pick
+        expect(globalStore.get(selectedCommitAtom)).toBe(WORKING_TREE);
+    });
+
+    it("keeps the remembered commit when the same scope is read again", async () => {
+        await loadHistory(CWD, RUN_OPTS, RUN);
+        await settle();
+        globalStore.set(selectedCommitAtom, "bbb2222");
+        await loadHistory(CWD, RUN_OPTS, RUN);
+        await settle();
+        expect(globalStore.get(selectedCommitAtom)).toBe("bbb2222");
+    });
+
+    // the read that lands while the new scope's change list is still loading cannot tell the synthetic row's
+    // absence from a clean tree, so it leaves the choice to the read that follows the change list
+    it("waits for the new scope's change list before choosing", async () => {
+        await loadHistory(CWD, {}, PROJECT);
+        await settle();
+        globalStore.set(selectedCommitAtom, "bbb2222");
+        globalStore.set(filesStateAtom, null);
+
+        await loadHistory(CWD, RUN_OPTS, RUN);
+        await settle();
+        expect(globalStore.get(selectedCommitAtom)).toBe("bbb2222");
     });
 });

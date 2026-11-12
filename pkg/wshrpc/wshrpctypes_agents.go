@@ -219,20 +219,33 @@ type CommandGetUsageStatsData struct {
 type CommandGetUsageStatsRtnData struct {
 	Buckets  []UsageBucket      `json:"buckets"`
 	Sessions []UsageSessionMeta `json:"sessions"`
+	Efforts  []UsageEffort      `json:"efforts,omitempty"` // the title of every effort a session names
+}
+
+// UsageEffort names an effort a usage session belongs to.
+type UsageEffort struct {
+	OID   string `json:"oid"` // no "effort:" prefix
+	Title string `json:"title"`
 }
 
 // UsageSessionMeta is the directory entry for one session that has usage in the window.
 type UsageSessionMeta struct {
-	Harness   string `json:"harness"`
-	Session   string `json:"session"`
-	Title     string `json:"title,omitempty"`
-	Project   string `json:"project,omitempty"` // repo root path
-	RunId     string `json:"runid,omitempty"`   // the owning top-level run
-	ChannelId string `json:"channelid,omitempty"`
-	RunGoal   string `json:"rungoal,omitempty"` // first line
-	RunMode   string `json:"runmode,omitempty"` // orchestrator | quick
-	Role      string `json:"role,omitempty"`    // lead | worker | reviewer | a stage role
-	TaskId    string `json:"taskid,omitempty"`
+	Harness     string `json:"harness"`
+	Session     string `json:"session"`
+	Title       string `json:"title,omitempty"`
+	Project     string `json:"project,omitempty"` // repo root path
+	RunId       string `json:"runid,omitempty"`   // the owning top-level run
+	ChannelId   string `json:"channelid,omitempty"`
+	RunGoal     string `json:"rungoal,omitempty"` // first line
+	RunMode     string `json:"runmode,omitempty"` // orchestrator | quick
+	Role        string `json:"role,omitempty"`    // lead | worker | reviewer | a stage role
+	TaskId      string `json:"taskid,omitempty"`
+	TaskTitle   string `json:"tasktitle,omitempty"`   // the dag task's label for TaskId
+	RunChunk    string `json:"runchunk,omitempty"`    // the owning run's effort chunk label
+	Effort      string `json:"effort,omitempty"`      // effort oid (no "effort:" prefix) the session belongs to
+	LeadHarness string `json:"leadharness,omitempty"` // harness of the brainstorming agent a builder check or judge served
+	LeadSession string `json:"leadsession,omitempty"` // session id of that brainstorming agent
+	ProjectName string `json:"projectname,omitempty"` // name of the registered project whose path is Project
 }
 
 // UsageSessionModel is one (model, subagent or not) slice of a session's tokens; CacheCreate1h is a

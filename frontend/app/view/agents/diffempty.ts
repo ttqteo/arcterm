@@ -7,7 +7,17 @@
 
 import type { ChangesStatus } from "./changesstatus";
 
-export type EmptyDiffKind = "nothing" | "nofile" | "nofiles" | "listfailed" | "toolarge" | "binary" | "unchanged";
+export type EmptyDiffKind =
+    | "nothing"
+    | "nofile"
+    | "nofiles"
+    | "listfailed"
+    | "failed"
+    | "toolarge"
+    | "binary"
+    | "newempty"
+    | "deletedempty"
+    | "unchanged";
 
 export interface EmptyDiff {
     kind: EmptyDiffKind;
@@ -17,7 +27,16 @@ export interface EmptyDiff {
 
 export interface EmptyDiffInput {
     path: string | null;
-    pair: { path: string; binary: boolean; tooLarge: boolean; original: string; modified: string } | null;
+    pair: {
+        path: string;
+        binary: boolean;
+        tooLarge: boolean;
+        original: string;
+        modified: string;
+        // the side the file does not exist on, so two empty texts read as an added or deleted empty file
+        originalMissing?: boolean;
+        modifiedMissing?: boolean;
+    } | null;
     // set when compare's aggregate is selected and lists no files
     nothingToCompare: { base: string; head: string } | null;
     // whether the file list beside the pane has loaded; with no path, a list that is still loading must not
@@ -25,6 +44,8 @@ export interface EmptyDiffInput {
     listStatus: ChangesStatus;
     // files in the list the pane picks from; null = there is no list at all (nothing selected yet)
     fileCount: number | null;
+    // why the open file's pair could not be read (diffcontentstore.diffPairFailureAtom)
+    failure?: string | null;
 }
 
 export function emptyDiffState(i: EmptyDiffInput): EmptyDiff | null {
@@ -56,6 +77,10 @@ export function emptyDiffState(i: EmptyDiffInput): EmptyDiff | null {
             body: "Choose one from the list, or move through it with the arrow keys.",
         };
     }
+    // a read that failed says so, with its reason, instead of leaving the skeleton up for good
+    if (i.failure) {
+        return { kind: "failed", title: "Couldn’t read this file", body: i.failure };
+    }
     if (i.pair == null || i.pair.path !== i.path) {
         return null;
     }
@@ -75,6 +100,13 @@ export function emptyDiffState(i: EmptyDiffInput): EmptyDiff | null {
         };
     }
     if (i.pair.original === i.pair.modified) {
+        // equal only because both are empty: the file was added or deleted with no content
+        if (i.pair.originalMissing) {
+            return { kind: "newempty", title: "New empty file", body: "It was added with no content." };
+        }
+        if (i.pair.modifiedMissing) {
+            return { kind: "deletedempty", title: "Deleted empty file", body: "It had no content." };
+        }
         return { kind: "unchanged", title: "Contents unchanged", body: "Only the name or the file mode changed." };
     }
     return null;

@@ -7,6 +7,7 @@ import {
     clampPanelWidth,
     commitTabCount,
     defaultPanelTab,
+    diffBody,
     PANEL_FOLD_PX,
     panelDirtyCount,
     panelTabToApply,
@@ -224,5 +225,31 @@ describe("commitTabCount", () => {
     it("has no count before a list has loaded", () => {
         expect(commitTabCount(null)).toBeNull();
         expect(commitTabCount({ ref: "", changes: null })).toBeNull();
+    });
+});
+
+describe("diffBody", () => {
+    const good = { cwd: "/repo", isRepo: true, changes: { files: [] } };
+
+    // the history read failed but the change list is good: the working tree, its list and the diff stay usable
+    it("keeps the failure in the panel while the change list is good", () => {
+        expect(diffBody(true, good)).toBe("history-failure-in-panel");
+    });
+
+    // no good change list: the read that failed is also the one that would say whether this is a repository
+    it("lets a history failure take over the body when there is no good change list", () => {
+        expect(diffBody(true, null)).toBe("whole-body-failure");
+        expect(diffBody(true, { cwd: "/repo", isRepo: false, changes: null })).toBe("whole-body-failure");
+        expect(diffBody(true, { cwd: "/repo", isRepo: true, changes: null })).toBe("whole-body-failure");
+    });
+
+    it("says not a repository only for a folder git read as one that is not", () => {
+        expect(diffBody(false, { cwd: "/tmp/x", isRepo: false, changes: null })).toBe("not-a-repo");
+        expect(diffBody(false, { cwd: null, isRepo: false, changes: null })).toBe("body");
+    });
+
+    it("draws the body otherwise", () => {
+        expect(diffBody(false, good)).toBe("body");
+        expect(diffBody(false, null)).toBe("body");
     });
 });

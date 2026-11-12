@@ -113,6 +113,8 @@ func (ws *WshServer) ListBranchesCommand(ctx context.Context, data wshrpc.Comman
 	// A repo with no resolvable default is not an error here — DefaultBranch returns "" and the
 	// picker's base field just opens empty.
 	rtn.Default, _ = gitinfo.DefaultBranch(ctx, data.ProjectPath)
+	// degrades to false like Default: the surface just offers no fetch
+	rtn.HasRemote, _ = gitinfo.HasRemote(ctx, data.ProjectPath)
 	return rtn, nil
 }
 
@@ -131,10 +133,18 @@ func (ws *WshServer) GitChangesCommand(ctx context.Context, data wshrpc.CommandG
 		// the commit that was HEAD when the agent's session began; "" degrades to the live HEAD diff.
 		ref, _ = gitinfo.CommitBefore(ctx, data.Cwd, data.SessionStartTs)
 	}
-	ch, err := gitinfo.GetChanges(ctx, data.Cwd, ref)
+	changes := gitinfo.GetChanges
+	if data.End != "" && ref != "" {
+		// a compare bounded at End lists only ref..End, but still reports the checkout's branch and head
+		end := data.End
+		changes = func(ctx context.Context, cwd, ref string) (*gitinfo.Changes, error) {
+			return gitinfo.GetChangesTo(ctx, cwd, ref, end)
+		}
+	}
+	ch, err := changes(ctx, data.Cwd, ref)
 	if err != nil {
 		return nil, fmt.Errorf("git changes: %w", err)
 	}
 	return &wshrpc.CommandGitChangesRtnData{Branch: ch.Branch, StatusZ: ch.StatusZ, Numstat: ch.Numstat, IsRepo: ch.IsRepo, Ref: ref, Head: ch.Head, BaseBranch: baseBranch,
-		Upstream: ch.Upstream, UpstreamAhead: ch.UpstreamAhead, UpstreamBehind: ch.UpstreamBehind}, nil
+		Upstream: ch.Upstream, UpstreamAhead: ch.UpstreamAhead, UpstreamBehind: ch.UpstreamBehind, NumstatError: ch.NumstatError}, nil
 }

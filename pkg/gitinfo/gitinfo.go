@@ -41,6 +41,10 @@ type Changes struct {
 	Upstream       string
 	UpstreamAhead  int
 	UpstreamBehind int
+	// Live mode only: why `diff --numstat` failed while status listed the files (one unreadable file
+	// fails the whole numstat). The list stays usable; Numstat's tracked rows then cannot be trusted.
+	// "" for a healthy read, a repository with no commits (where the diff fails by nature) and ref mode.
+	NumstatError string
 }
 
 // quotePath off: without -z, git octal-escapes a non-ASCII path ("t\303\252n.txt") in numstat, so its
@@ -66,6 +70,18 @@ func upstreamCounts(ctx context.Context, cwd string) (string, int, int) {
 	behind, _ := strconv.Atoi(f[0])
 	ahead, _ := strconv.Atoi(f[1])
 	return up, ahead, behind
+}
+
+// describeGitError names the command and carries git's own stderr, which run's bare exit status lacks.
+func describeGitError(args []string, err error) string {
+	msg := "git " + strings.Join(args, " ") + ": " + err.Error()
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		if stderr := strings.TrimSpace(string(ee.Stderr)); stderr != "" {
+			msg += ": " + stderr
+		}
+	}
+	return msg
 }
 
 func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
@@ -103,13 +119,21 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 	if ref == "" {
 		// live mode (unchanged): working tree vs HEAD, plus synthetic rows for untracked files.
 		// --relative scopes to cwd and prints cwd-relative paths, matching the stripped status above.
-		// `diff --numstat HEAD` errors on a repo with no commits yet; status is still meaningful.
-		numstat, _ := run(ctx, cwd, "diff", "--numstat", "--relative", "HEAD")
+		// `diff --numstat HEAD` errors on a repo with no commits yet; status is still meaningful. With a
+		// HEAD the error is a real failed read, but one unreadable file fails it for every file, so it is
+		// carried beside the list (NumstatError) rather than replacing it: the files stay listed and the
+		// counts are reported as unavailable, not as zero.
+		numstatArgs := []string{"diff", "--numstat", "--relative", "HEAD"}
+		numstat, nerr := run(ctx, cwd, numstatArgs...)
+		numstatError := ""
+		if nerr != nil && head != "" {
+			numstatError = describeGitError(numstatArgs, nerr)
+		}
 		// git diff omits untracked files (nothing in HEAD/index to diff), so a new file would show +0.
 		// Append synthetic numstat rows for untracked files so their added lines count in the totals.
 		numstat += untrackedNumstat(cwd, statusZ)
 		return &Changes{Branch: strings.TrimSpace(branch), StatusZ: statusZ, Numstat: numstat, IsRepo: true, Head: head,
-			Upstream: up, UpstreamAhead: ahead, UpstreamBehind: behind}, nil
+			Upstream: up, UpstreamAhead: ahead, UpstreamBehind: behind, NumstatError: numstatError}, nil
 	}
 	// ref mode: tracked changes come from the base diff (committed + uncommitted); untracked files
 	// are not in the base, so their ?? rows are carried over from status verbatim.
@@ -145,6 +169,36 @@ func GetRangeChanges(ctx context.Context, cwd, base, end string) (*Changes, erro
 		return nil, err
 	}
 	return &Changes{StatusZ: nameStatusToStatusZ(nameStatus), Numstat: numstat, IsRepo: true}, nil
+}
+
+// GetChangesTo is GetRangeChanges for a surface that stays open on the checkout: the list is bounded to
+// base..end, but Branch, Head and the upstream are the checkout's, so the surface still notices a commit
+// landing under it.
+func GetChangesTo(ctx context.Context, cwd, base, end string) (*Changes, error) {
+	ch, err := GetRangeChanges(ctx, cwd, base, end)
+	if err != nil || !ch.IsRepo {
+		return ch, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	branch, _ := run(ctx, cwd, "rev-parse", "--abbrev-ref", "HEAD")
+	ch.Branch = strings.TrimSpace(branch)
+	if out, herr := run(ctx, cwd, "rev-parse", "HEAD"); herr == nil {
+		ch.Head = strings.TrimSpace(out)
+	}
+	ch.Upstream, ch.UpstreamAhead, ch.UpstreamBehind = upstreamCounts(ctx, cwd)
+	return ch, nil
+}
+
+// HasRemote reports whether the repo has at least one remote.
+func HasRemote(ctx context.Context, cwd string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	out, err := run(ctx, cwd, "remote")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) != "", nil
 }
 
 // GetTrailerCommitsChanges is GetRangeChanges narrowed to the commits in from..to whose trailerKey
@@ -1109,6 +1163,42 @@ func FileAtRef(ctx context.Context, cwd, ref, path string, maxBytes int64) (*Fil
 		return &FileContent{IsRepo: true, Binary: true, Size: size, Data: []byte(out)}, nil
 	}
 	return &FileContent{IsRepo: true, Content: out, Size: size}, nil
+}
+
+// FileInWorktree is FileAtRef for the file on disk under cwd: the "after" side of a live diff, which a
+// blob read cannot give for an edit that is not committed (or staged). It answers the same states, and
+// also treats a NUL byte as binary, which git itself does for a worktree file. A path that leaves cwd is
+// Missing, as it is for a blob read, which git refuses outside the repo.
+func FileInWorktree(ctx context.Context, cwd, path string, maxBytes int64) (*FileContent, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	inside, err := run(ctx, cwd, "rev-parse", "--is-inside-work-tree")
+	if err != nil || strings.TrimSpace(inside) != "true" {
+		return &FileContent{IsRepo: false}, nil
+	}
+	file := filepath.Join(cwd, filepath.FromSlash(path))
+	if rel, rerr := filepath.Rel(cwd, file); rerr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return &FileContent{IsRepo: true, Missing: true}, nil
+	}
+	info, err := os.Stat(file)
+	if errors.Is(err, os.ErrNotExist) || (err == nil && info.IsDir()) {
+		return &FileContent{IsRepo: true, Missing: true}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	size := info.Size()
+	if maxBytes > 0 && size > maxBytes {
+		return &FileContent{IsRepo: true, TooLarge: true, Size: size}, nil
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.IndexByte(data, 0) >= 0 || !utf8.Valid(data) {
+		return &FileContent{IsRepo: true, Binary: true, Size: size, Data: data}, nil
+	}
+	return &FileContent{IsRepo: true, Content: string(data), Size: size}, nil
 }
 
 // ReviewPatchFile is one file of a selection's patch, in the shape the Diff surface's Review mode

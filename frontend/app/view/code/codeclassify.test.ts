@@ -6,12 +6,16 @@ import { describe, expect, it } from "vitest";
 import {
     classifyFile,
     hasNulByte,
+    HEAD_BINARY,
+    HEAD_TOOLARGE,
     isHtmlPath,
+    isImagePath,
     isMarkdownPath,
     languageForPath,
     lineAtOffset,
     MAX_IMAGE_BYTES,
     MAX_VIEW_BYTES,
+    NOT_TRACKED,
     resolveViewMode,
     viewModesFor,
 } from "./codeclassify";
@@ -90,6 +94,40 @@ describe("classifyFile and images", () => {
     it("calls an image too large past the image cap, which the webview would decode whole", () => {
         expect(classifyFile(MAX_IMAGE_BYTES, "image/png")).toBe("image");
         expect(classifyFile(MAX_IMAGE_BYTES + 1, "image/png")).toBe("toolarge");
+    });
+});
+
+describe("classifyFile: the MIME is checked before the size (the fork's 19e16133d)", () => {
+    it("calls a large font or archive binary, not too large: a bigger limit would not open it", () => {
+        expect(classifyFile(MAX_VIEW_BYTES + 1, "font/woff2")).toBe("binary");
+        expect(classifyFile(MAX_VIEW_BYTES * 20, "application/zip")).toBe("binary");
+    });
+
+    it("still calls a large text file too large", () => {
+        expect(classifyFile(MAX_VIEW_BYTES + 1, "")).toBe("toolarge");
+        expect(classifyFile(MAX_VIEW_BYTES + 1, "application/json")).toBe("toolarge");
+    });
+});
+
+describe("isImagePath", () => {
+    it("accepts the viewable image extensions, case-insensitively", () => {
+        for (const p of ["a.png", "a/b.JPG", "x.jpeg", "x.gif", "x.webp", "x.svg", "x.bmp", "x.ico", "x.avif"]) {
+            expect(isImagePath(p)).toBe(true);
+        }
+    });
+
+    it("rejects other files", () => {
+        expect(isImagePath("a.png.txt")).toBe(false);
+        expect(isImagePath("png")).toBe(false);
+        expect(isImagePath("a.woff2")).toBe(false);
+    });
+});
+
+describe("the wording the Code surface and the terminal peek share", () => {
+    it("keeps the strings the Code store already shows", () => {
+        expect(NOT_TRACKED).toBe("Not a git repository — no change tracking");
+        expect(HEAD_BINARY).toBe("The committed copy is a binary blob.");
+        expect(HEAD_TOOLARGE).toBe("The committed copy is larger than the 2 MB view limit.");
     });
 });
 

@@ -185,15 +185,26 @@ export function rowTitle(row: HistoryRow): string | undefined {
     return `${who} · ${when}`;
 }
 
+// Commits loaded, which is every row but the synthetic uncommitted one: that row is not a commit, so a label that
+// counts rows would read one too many on a dirty tree.
+export function commitCount(rows: HistoryRow[]): number {
+    return rows.filter((r) => !r.workingTree).length;
+}
+
 // The working-tree pane's one-line answer to "measured from what". HEAD is not a branch, so a
-// detached checkout says so rather than printing "On HEAD".
+// detached checkout says so rather than printing "On HEAD". A session whose start has not resolved yet (ref "")
+// says it is measured from HEAD rather than naming no commit; a landed run is bounded at its tip.
 export function worktreeCaption(range: DiffRange, branch: string, head: string, ref: string): string {
     const on = branch && branch !== "HEAD" ? `On ${branch}` : "Detached HEAD";
     switch (range.kind) {
         case "session":
-            return `${on}, measured from session start ${ref.slice(0, 7)}`;
+            return ref
+                ? `${on}, measured from session start ${ref.slice(0, 7)}`
+                : `${on}, measured from HEAD (no session start yet)`;
         case "run":
-            return `${on}, measured from run base ${range.baseCommit.slice(0, 7)}`;
+            return range.headCommit
+                ? `${on}, measured from run base ${range.baseCommit.slice(0, 7)} to its landed tip ${range.headCommit.slice(0, 7)}`
+                : `${on}, measured from run base ${range.baseCommit.slice(0, 7)}`;
         default:
             return `${on}, measured from ${head.slice(0, 7)}`;
     }

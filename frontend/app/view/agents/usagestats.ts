@@ -116,6 +116,16 @@ function localDayKey(ms: number): string {
     return `${d.getFullYear()}-${m}-${day}`;
 }
 
+// The first local day a windowDays-day window covers: windowDays-1 days back from now's day (local
+// midnight steps, so DST is handled). 0 (all time) or no window has no start. The one source of a
+// window's start: the dev fixture cut and the chart's first column both read it.
+export function windowStartDay(windowDays: number | null, now: number): string | undefined {
+    if (windowDays == null || windowDays <= 0) return undefined;
+    const start = new Date(now);
+    start.setDate(start.getDate() - (windowDays - 1));
+    return localDayKey(start.getTime());
+}
+
 // Inclusive list of local day-keys from startKey to endKey ("YYYY-MM-DD" sorts chronologically).
 // Iterates via a local Date so month/DST rollovers are handled; bounded so a bad range can't spin.
 function enumerateDays(startKey: string, endKey: string): string[] {
@@ -172,8 +182,15 @@ function harnessesOf(buckets: UsageBucket[]): string[] {
 // totals stay date-filtered (today = current local day; week = rolling 7); the window totals, split,
 // daily series, and per-model breakdown fold the WHOLE loaded window (the window is chosen by the
 // loader's windowdays). Reported cost is summed only where a bucket reports it (present zero counts,
-// absent does not); API-equivalent spend always comes from the pricing table.
-export function aggregateBuckets(buckets: UsageBucket[], now: number, harnessFilter: HarnessFilter = "all"): UsageStats {
+// absent does not); API-equivalent spend always comes from the pricing table. `fromDay`, when given, is the
+// loaded window's first day: `daily` starts there, or at the oldest bucket when that is older, so a narrow
+// scope's chart still spans the whole window. Without it `daily` starts at the oldest bucket, as before.
+export function aggregateBuckets(
+    buckets: UsageBucket[],
+    now: number,
+    harnessFilter: HarnessFilter = "all",
+    fromDay?: string
+): UsageStats {
     const today = localDayKey(now);
     const weekStart = localDayKey(now - 6 * DAY_MS);
     const availableHarnesses = harnessesOf(buckets);
@@ -293,9 +310,10 @@ export function aggregateBuckets(buckets: UsageBucket[], now: number, harnessFil
     }));
 
     let daily: DailyUsage[] = [];
-    if (minDay != null) {
+    const startDay = fromDay != null && (minDay == null || fromDay < minDay) ? fromDay : minDay;
+    if (startDay != null) {
         const endKey = maxDay != null && maxDay > today ? maxDay : today;
-        daily = enumerateDays(minDay, endKey).map((day) => ({
+        daily = enumerateDays(startDay, endKey).map((day) => ({
             day,
             byHarness: byDay.get(day) ?? {},
         }));
@@ -383,6 +401,21 @@ export function pctStr(n: number): string {
     if (n >= 10) return Math.round(n) + "%";
     if (n < 0.1) return n <= 0 ? "0%" : "<0.1%";
     return +n.toFixed(1) + "%";
+}
+
+// pricing coverage, floored: a sliver of unpriced tokens never rounds up to a clean 100%
+export function coverageStr(pct: number): string {
+    if (pct >= 100) return "100%";
+    if (pct >= 99) return ">99%";
+    return Math.floor(pct) + "%";
+}
+
+// An API-equivalent estimate. Tokens with none of them priced have no estimate, not a $0.00 one; a real
+// cost under a cent reads "<$0.01" rather than $0.00. (usd itself is unchanged: its other callers keep
+// their text.)
+export function estimateStr(spendUsd: number, pricedTokens: number, tokens: number): string {
+    if (tokens > 0 && pricedTokens <= 0) return "unpriced";
+    return `≈ ${spendUsd > 0 && spendUsd < 0.005 ? "<$0.01" : usd(spendUsd)}`;
 }
 
 // Pure: the model-usage grid class. A single provider fills the full row (dropping lg:grid-cols-2, which

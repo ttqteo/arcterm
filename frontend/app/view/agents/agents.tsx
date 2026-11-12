@@ -37,8 +37,8 @@ import {
 } from "./runlineagestore";
 import { activeNavOrder } from "./activenav";
 import { AGENT_DIGITS } from "./agentsidebarmodel";
-import { usageBucketsAtom } from "./usagestore";
-import { aggregateBuckets, type HarnessFilter } from "./usagestats";
+import { usageBucketsAtom, usageHeldWindowAtom } from "./usagestore";
+import { aggregateBuckets, windowStartDay, type HarnessFilter } from "./usagestats";
 import { landOn } from "@/app/view/jarvis/returnsurface";
 
 export type SurfaceKey = "cockpit" | "jarvis" | "agent" | "radar" | "files" | "usage" | "code" | "setup" | "settings" | "app";
@@ -124,7 +124,11 @@ export class AgentsViewModel implements ViewModel {
     usageHarnessFilterAtom = atom<HarnessFilter>("all");
     // Usage surface: the harness-filtered derivation over the store's raw buckets. Reads
     // Date.now() at compute time, so it stays fresh when any bucket/filter dependency changes.
-    usageStatsAtom = atom((get) => aggregateBuckets(get(usageBucketsAtom), Date.now(), get(this.usageHarnessFilterAtom)));
+    usageStatsAtom = atom((get) => {
+        const now = Date.now();
+        const fromDay = windowStartDay(get(usageHeldWindowAtom), now);
+        return aggregateBuckets(get(usageBucketsAtom), now, get(this.usageHarnessFilterAtom), fromDay);
+    });
 
     // New Project / the New launcher / New initiative + command-palette visibility (gated overlays rendered from the
     // cockpit root). launcherAtom holds the door that opened the launcher (agent or run), null while it is closed.
@@ -132,6 +136,8 @@ export class AgentsViewModel implements ViewModel {
     launcherAtom = atom<LauncherKind | null>(null) as PrimitiveAtom<LauncherKind | null>;
     newInitiativeOpenAtom = atom(false);
     paletteOpenAtom = atom(false);
+    // the query the next open starts with, consumed by that open (Code's Ctrl+Shift+O seeds "@")
+    paletteSeedAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
     // handoff-parity filters + per-card layout (spec §State). Project scope is a single source bound to
     // both the app-bar switcher and the header button.

@@ -26,12 +26,17 @@ export interface TreeRow {
     ignored?: true; // excluded by .gitignore; absent otherwise
 }
 
-export function buildTree(paths: readonly string[], ignored: readonly string[] = []): TreeNode[] {
+// `extraDirs` are folders with no file under them (git lists files only), shown as empty folder rows
+export function buildTree(
+    paths: readonly string[],
+    ignored: readonly string[] = [],
+    extraDirs: Iterable<string> = []
+): TreeNode[] {
     const root: TreeNode = { name: "", path: "", isDir: true, ignored: false, children: [] };
     // path -> node, so a directory with thousands of siblings costs a lookup, not a scan
     const index = new Map<string, TreeNode>();
     // tracked paths first: a directory they create is not ignored, even when ignored files sit in it
-    const add = (p: string, isIgnored: boolean) => {
+    const add = (p: string, isIgnored: boolean, leafIsDir = false) => {
         const trailingDir = p.endsWith("/");
         const segs = p.split("/").filter((s) => s !== "");
         let parent = root;
@@ -39,7 +44,7 @@ export function buildTree(paths: readonly string[], ignored: readonly string[] =
             const path = parent.path === "" ? seg : `${parent.path}/${seg}`;
             let node = index.get(path);
             if (node == null) {
-                const isDir = i < segs.length - 1 || trailingDir;
+                const isDir = i < segs.length - 1 || trailingDir || leafIsDir;
                 // under an ignored directory everything is ignored
                 node = { name: seg, path, isDir, ignored: isIgnored || parent.ignored, children: [] };
                 parent.children.push(node);
@@ -50,6 +55,9 @@ export function buildTree(paths: readonly string[], ignored: readonly string[] =
     };
     for (const p of paths) {
         add(p, false);
+    }
+    for (const d of extraDirs) {
+        add(d, false, true);
     }
     for (const p of ignored) {
         add(p, true);

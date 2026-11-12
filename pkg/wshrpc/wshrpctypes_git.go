@@ -191,6 +191,8 @@ type CommandGitFileAtRefData struct {
 	MaxBytes int64 `json:"maxbytes,omitempty"`
 	// Raw sends a binary blob's bytes back in Data64 instead of dropping them.
 	Raw bool `json:"raw,omitempty"`
+	// Worktree reads the file on disk under Cwd instead of a blob; Ref is ignored.
+	Worktree bool `json:"worktree,omitempty"`
 }
 
 // Mirrors gitinfo.FileContent one field for one field: Binary, Missing and TooLarge are answers the

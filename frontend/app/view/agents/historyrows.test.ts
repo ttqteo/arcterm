@@ -7,6 +7,7 @@ import {
     authorInitials,
     buildRows,
     classifyRef,
+    commitCount,
     defaultSelection,
     keepSelection,
     refChipClass,
@@ -279,6 +280,33 @@ describe("worktreeCaption", () => {
         expect(worktreeCaption({ kind: "run", runId: "r", baseCommit: "b41d000aaaa" }, "wave/r", "x", "")).toBe(
             "On wave/r, measured from run base b41d000"
         );
+    });
+    it("says a session with no start yet is measured from HEAD", () => {
+        expect(worktreeCaption({ kind: "session", agentId: "a" }, "main", "3eaffac1234", "")).toBe(
+            "On main, measured from HEAD (no session start yet)"
+        );
+    });
+    it("bounds a landed run at its tip", () => {
+        expect(
+            worktreeCaption(
+                { kind: "run", runId: "r", baseCommit: "b41d000aaaa", headCommit: "c0ffee12345" },
+                "main",
+                "x",
+                ""
+            )
+        ).toBe("On main, measured from run base b41d000 to its landed tip c0ffee1");
+    });
+});
+
+describe("commitCount", () => {
+    it("ignores the synthetic working-tree row", () => {
+        const rows = buildRows([commit("aaa"), commit("bbb")], { head: "aaa", dirtyFileCount: 3, now: NOW });
+        expect(rows).toHaveLength(3);
+        expect(commitCount(rows)).toBe(2);
+    });
+    it("counts every row on a clean tree", () => {
+        expect(commitCount(buildRows([commit("aaa")], { head: "aaa", dirtyFileCount: 0, now: NOW }))).toBe(1);
+        expect(commitCount([])).toBe(0);
     });
 });
 

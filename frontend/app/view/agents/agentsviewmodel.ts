@@ -479,6 +479,20 @@ export function usageLevel(pct: number): "ok" | "warn" | "hot" {
     return "ok";
 }
 
+// the level -> color map for a quota meter that reads a quota under the warning line as the accent, not as a
+// status (the Usage surface's By work cards). The app bar's meters (usagemeters.tsx) and the Usage surface's
+// Live limits keep the maps they already draw with.
+export const USAGE_LEVEL_FILL: Record<ReturnType<typeof usageLevel>, string> = {
+    ok: "bg-accent",
+    warn: "bg-warning",
+    hot: "bg-error",
+};
+export const USAGE_LEVEL_TEXT: Record<ReturnType<typeof usageLevel>, string> = {
+    ok: "text-accent",
+    warn: "text-warning",
+    hot: "text-error",
+};
+
 /** Pure: a token count -> short label ("38k" / "142k" / "1.0M"). */
 export function formatTokens(n: number): string {
     if (n >= 1_000_000) {

@@ -12,6 +12,7 @@ import {
     findPathCandidates,
     findSpanningPaths,
     isBareName,
+    linkGesture,
     nearbyFolders,
     resolvePath,
     type RowCell,
@@ -20,11 +21,21 @@ import {
 import { PLATFORM, PlatformMacOS } from "@/util/platformutil";
 import type { IBufferRange, IDisposable, ILink, ILinkProvider, Terminal } from "@xterm/xterm";
 
+// where a clicked link sits in the terminal's buffer: its last row (0-based, so a card hung under it leaves a path that
+// wraps in view) and its first column (1-based). The pair names the link, and tells a second click on it from a click on
+// another
+export type PeekAnchor = { bufferLine: number; start: number };
+// what a peek is handed: the file a link names and where the link sits
+export type PeekHit = { ref: FileRef } & PeekAnchor;
+
 export interface PathLinkHooks {
     cwd: () => string | null;
     // the file the terminal's agent touched that a path it names from another folder than its cwd is the tail of
     touched: (cwd: string | null, path: string) => Promise<string | null>;
     activate: (ref: FileRef) => void;
+    // a Ctrl+Shift+click (Cmd+Shift on a Mac): the terminal Code peek. True when a peek took the click; absent, or false
+    // with no peek attached, the click is a Ctrl+click as it always was
+    peek?: (ref: FileRef, at: PeekAnchor) => boolean;
     hover: (e: MouseEvent, ref: FileRef) => void;
     leave: () => void;
 }
@@ -44,12 +55,14 @@ async function exists(abs: string): Promise<boolean> {
 }
 
 export function isOpenGesture(e: MouseEvent): boolean {
-    return PLATFORM === PlatformMacOS ? e.metaKey : e.ctrlKey;
+    return linkGesture(e, PLATFORM === PlatformMacOS) != null;
 }
 
-export function hintFor(ref: FileRef): string {
+// the tooltip reads "<Ctrl>-click to <hint>"; with a peek attached the hint names its gesture too
+export function hintFor(ref: FileRef, peekable = false): string {
     const name = ref.abs.split(/[\\/]/).pop() ?? ref.abs;
-    return `open ${name}${ref.line != null ? ` at line ${ref.line}` : ""}`;
+    const open = `open ${name}${ref.line != null ? ` at line ${ref.line}` : ""}`;
+    return peekable ? `${open}, ${PLATFORM === PlatformMacOS ? "Cmd" : "Ctrl"}+Shift-click to peek` : open;
 }
 
 type Touched = PathLinkHooks["touched"];
@@ -160,9 +173,17 @@ export function makePathLinkProvider(term: Terminal, hooks: PathLinkHooks): ILin
         text,
         decorations: { underline: true, pointerCursor: true },
         activate: (e) => {
-            if (isOpenGesture(e)) {
-                hooks.activate(ref);
+            const gesture = linkGesture(e, PLATFORM === PlatformMacOS);
+            if (gesture == null) {
+                return;
             }
+            if (
+                gesture === "peek" &&
+                hooks.peek?.(ref, { bufferLine: range.end.y - 1, start: range.start.x }) === true
+            ) {
+                return;
+            }
+            hooks.activate(ref);
         },
         hover: (e) => hooks.hover(e, ref),
         leave: () => hooks.leave(),

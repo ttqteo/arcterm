@@ -16,6 +16,29 @@ describe("pairRefsFor", () => {
         expect(pairRefsFor({ kind: "worktree", anchorRef: "" }).original).toEqual({ kind: "ref", ref: "HEAD" });
     });
 
+    // a comment anchored to the symbolic HEAD reads as "against HEAD", which names a different commit
+    // once the agent commits; the sha HEAD pointed at when the pair was read does not move
+    it("anchors an unanchored working tree to the HEAD sha it was read against", () => {
+        expect(pairRefsFor({ kind: "worktree", anchorRef: "", head: "f00dfeed" }).original).toEqual({
+            kind: "ref",
+            ref: "f00dfeed",
+        });
+    });
+
+    it("keeps an explicit anchor over the HEAD sha", () => {
+        expect(pairRefsFor({ kind: "worktree", anchorRef: "abc1234", head: "f00dfeed" }).original).toEqual({
+            kind: "ref",
+            ref: "abc1234",
+        });
+    });
+
+    it("falls back to HEAD in a repository with no commits", () => {
+        expect(pairRefsFor({ kind: "worktree", anchorRef: "", head: "" }).original).toEqual({
+            kind: "ref",
+            ref: "HEAD",
+        });
+    });
+
     // a commit's own change is measured against its first parent, which is what the caret means and
     // what the backend's commitBase already does for the change list
     it("diffs a commit against its first parent", () => {
@@ -48,6 +71,20 @@ describe("pairRefsFor", () => {
         expect(
             pairRefsFor({ kind: "compare", base: "main", head: "feature", mergeBase: "", form: "mergebase" }).original
         ).toEqual({ kind: "ref", ref: "main" });
+    });
+
+    // a landed run's working-tree row reads base vs the run's tip, not base vs whatever is on disk now
+    it("reads the modified side at the end ref when the range is bounded", () => {
+        expect(pairRefsFor({ kind: "worktree", anchorRef: "b41d000", end: "c0ffee1" })).toEqual({
+            original: { kind: "ref", ref: "b41d000" },
+            modified: { kind: "ref", ref: "c0ffee1" },
+        });
+    });
+
+    it("reads the file on disk when end is empty", () => {
+        expect(pairRefsFor({ kind: "worktree", anchorRef: "b41d000", end: "" }).modified).toEqual({
+            kind: "worktree",
+        });
     });
 });
 

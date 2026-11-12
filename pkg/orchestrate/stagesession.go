@@ -73,10 +73,12 @@ func stageSessionLost(ctx context.Context, g *waveobj.TaskGroup, runID string, s
 
 // JudgingSession is one judging session outside any task: a fresh session that reads Tree and ends with a verdict
 // command its Prompt names. DagORef is empty for a session no dag owns. Route must be resolved by the caller.
+// Lead is "<harness>:<session id>" of the brainstorming agent a builder check or judge serves, else empty.
 type JudgingSession struct {
 	ChannelId, WorkspaceId, DagORef string
 	Role, Label, Tree, Prompt       string
 	Route                           waveobj.RoutePin
+	Lead                            string
 }
 
 // LaunchJudgingSession starts s on its route and records its child run, which carries the session id and Role and
@@ -105,6 +107,7 @@ func LaunchJudgingSession(ctx context.Context, s JudgingSession) (string, error)
 	child.DagORef = s.DagORef
 	child.SessionId = sessionId
 	child.StageRole = s.Role
+	child.BrainstormLead = s.Lead
 	for i := range child.Phases {
 		if child.Phases[i].State == jarvis.PhaseState_Running {
 			child.Phases[i].WorkerOrefs = []string{oref}

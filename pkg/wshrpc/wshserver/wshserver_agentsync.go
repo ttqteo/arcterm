@@ -16,8 +16,11 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
+// defaultPaths is a seam: tests point the agentsync RPCs at a temp home.
+var defaultPaths = agentsync.DefaultPaths
+
 func (ws *WshServer) AgentSyncStatusCommand(ctx context.Context) (*wshrpc.CommandAgentSyncStatusRtnData, error) {
-	p := agentsync.DefaultPaths()
+	p := defaultPaths()
 	rows, err := agentsync.Status(p)
 	if err != nil {
 		return nil, fmt.Errorf("reading harness sync status: %w", err)
@@ -26,14 +29,14 @@ func (ws *WshServer) AgentSyncStatusCommand(ctx context.Context) (*wshrpc.Comman
 	for i, r := range rows {
 		out[i] = wshrpc.AgentSyncHarness{
 			Runtime: r.Runtime, Label: r.Label, Present: r.Present, Path: r.Path, Steering: r.Steering,
-			SkillsManaged: r.SkillsManaged, SkillsUnmanaged: r.SkillsUnmanaged, Note: r.Note,
+			SkillsManaged: r.SkillsManaged, SkillsUnmanaged: r.SkillsUnmanaged, Note: r.Note, NoteTone: r.NoteTone,
 		}
 	}
 	return &wshrpc.CommandAgentSyncStatusRtnData{Harnesses: out, SteeringDoc: p.SteeringDoc, SkillsRoot: p.SkillsRoot}, nil
 }
 
 func (ws *WshServer) AgentSyncApplyCommand(ctx context.Context, data wshrpc.CommandAgentSyncApplyData) (*wshrpc.CommandAgentSyncApplyRtnData, error) {
-	actions, err := agentsync.Apply(agentsync.DefaultPaths(), data.DryRun)
+	actions, err := agentsync.Apply(defaultPaths(), data.DryRun)
 	if err != nil {
 		return nil, fmt.Errorf("syncing harness config: %w", err)
 	}
@@ -45,8 +48,13 @@ func (ws *WshServer) AgentSyncApplyCommand(ctx context.Context, data wshrpc.Comm
 }
 
 func (ws *WshServer) AgentSyncAdoptCommand(ctx context.Context, data wshrpc.CommandAgentSyncAdoptData) (*wshrpc.CommandAgentSyncAdoptRtnData, error) {
-	plan, err := agentsync.Adopt(agentsync.DefaultPaths(), data.Apply, data.Keep)
-	rtn := &wshrpc.CommandAgentSyncAdoptRtnData{Moves: skillMoves(plan.Moves), Unresolved: plan.Unresolved}
+	// adopting moves skills out of the real harness homes, which a snapshot must leave alone: it plans only,
+	// and the reply says so
+	snapshot := wavebase.IsSnapshot()
+	plan, err := agentsync.Adopt(defaultPaths(), data.Apply && !snapshot, data.Keep, data.Skip...)
+	rtn := &wshrpc.CommandAgentSyncAdoptRtnData{
+		Moves: skillMoves(plan.Moves), Unresolved: plan.Unresolved, DryRun: data.Apply && snapshot,
+	}
 	if err != nil {
 		// a partial plan is data the caller must see, not just an error string
 		return rtn, fmt.Errorf("adopting harness skills: %w", err)
@@ -55,7 +63,7 @@ func (ws *WshServer) AgentSyncAdoptCommand(ctx context.Context, data wshrpc.Comm
 }
 
 func (ws *WshServer) AgentSyncSteeringReadCommand(ctx context.Context) (*wshrpc.CommandAgentSyncSteeringReadRtnData, error) {
-	path := agentsync.DefaultPaths().SteeringDoc
+	path := defaultPaths().SteeringDoc
 	content, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("reading the shared steering doc: %w", err)
@@ -68,7 +76,7 @@ func (ws *WshServer) AgentSyncSteeringReadCommand(ctx context.Context) (*wshrpc.
 }
 
 func (ws *WshServer) AgentSyncSteeringWriteCommand(ctx context.Context, data wshrpc.CommandAgentSyncSteeringWriteData) (*wshrpc.CommandAgentSyncSteeringWriteRtnData, error) {
-	res, err := agentsync.WriteSteering(agentsync.DefaultPaths(), data.Content, data.BaseMtime)
+	res, err := agentsync.WriteSteering(defaultPaths(), data.Content, data.BaseMtime)
 	if err != nil {
 		return nil, fmt.Errorf("writing the shared steering doc: %w", err)
 	}
@@ -80,14 +88,14 @@ func skillMoves(moves []agentsync.SkillMove) []wshrpc.AgentSyncSkillMove {
 	for _, m := range moves {
 		out = append(out, wshrpc.AgentSyncSkillMove{
 			Runtime: m.Runtime, Name: m.Name, From: m.From, Seed: m.Seed,
-			Keys: m.Keys, Files: m.Files, BodyDiff: m.BodyDiff,
+			Keys: m.Keys, Files: m.Files, BodyDiff: m.BodyDiff, Vault: m.Vault,
 		})
 	}
 	return out
 }
 
 func (ws *WshServer) AgentSyncSkillsCommand(ctx context.Context) (*wshrpc.CommandAgentSyncSkillsRtnData, error) {
-	p := agentsync.DefaultPaths()
+	p := defaultPaths()
 	rows, err := agentsync.SkillRows(p)
 	if err != nil {
 		return nil, fmt.Errorf("reading canonical skills: %w", err)
@@ -107,13 +115,22 @@ func (ws *WshServer) AgentSyncSkillsCommand(ctx context.Context) (*wshrpc.Comman
 	if err != nil {
 		return nil, fmt.Errorf("planning skill adoption: %w", err)
 	}
+	links, err := agentsync.SkillLinks(p)
+	if err != nil {
+		return nil, fmt.Errorf("listing linked skills: %w", err)
+	}
+	// never a nil slice: the wire field is omitted when empty, but a reader must not meet null
+	linked := make([]wshrpc.AgentSyncSkillLink, 0, len(links))
+	for _, l := range links {
+		linked = append(linked, wshrpc.AgentSyncSkillLink{Runtime: l.Runtime, Name: l.Name, Path: l.Path, Target: l.Target})
+	}
 	unresolved := plan.Unresolved
 	if unresolved == nil {
 		unresolved = []string{}
 	}
 	return &wshrpc.CommandAgentSyncSkillsRtnData{
 		Skills: out, Columns: cols, SkillsRoot: p.SkillsRoot,
-		Unmanaged: skillMoves(plan.Moves), Unresolved: unresolved,
+		Unmanaged: skillMoves(plan.Moves), Unresolved: unresolved, Linked: linked,
 	}, nil
 }
 

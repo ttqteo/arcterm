@@ -30,6 +30,7 @@ import { PathTail } from "./pathtail";
 import { ProjectContextHeader, ProjectContextTab } from "./projectcontexttab";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
+import { ConflictDiskChanges, HarnessNote, HarnessPreview, isSaveKey, SyncNow } from "./setupinstructionsync";
 import { MemoryHeader, MemoryTab } from "./setupmemory";
 import {
     changedLineCount,
@@ -62,6 +63,7 @@ import {
     setSkillKeep,
     setupBusyAtom,
     setupErrorAtom,
+    setupHarnessPreviewAtom,
     setupNewSkillAtom,
     setupSharedAtom,
     setupSharedPathAtom,
@@ -85,6 +87,7 @@ import {
     INPUT,
     SECTION_HEAD,
 } from "./setupstyles";
+import { LeaveChoice, LinkedLinks, PiSkillsLine, StrayChoice } from "./setupskillsync";
 import {
     additionsChip,
     adoptCount,
@@ -207,14 +210,17 @@ function HeaderStatus() {
     }
     const s = headerStatus(rows);
     return (
-        <div
-            className={cn(
-                "flex items-center gap-2 text-[12px]",
-                s.tone === "warn" ? "text-warning-soft" : "text-ink-mid"
-            )}
-        >
-            <Dot tone={s.tone} size={7} />
-            {s.text}
+        <div className="flex items-center gap-3">
+            <SyncNow />
+            <div
+                className={cn(
+                    "flex items-center gap-2 text-[12px]",
+                    s.tone === "warn" ? "text-warning-soft" : "text-ink-mid"
+                )}
+            >
+                <Dot tone={s.tone} size={7} />
+                {s.text}
+            </div>
         </div>
     );
 }
@@ -224,14 +230,23 @@ function HeaderStatus() {
 function FileList({ rows }: { rows: AgentSyncHarness[] }) {
     const shared = useAtomValue(setupSharedAtom);
     const status = useAtomValue(setupStatusAtom);
-    const rowClass = "flex w-full items-start gap-2.5 rounded px-2.5 py-[9px]";
+    // the harness whose file the center previews; null: the shared editor
+    const preview = useAtomValue(setupHarnessPreviewAtom);
+    const rowClass = "flex w-full items-start gap-2.5 rounded px-2.5 py-[9px] text-left";
+    const picked = "bg-surface-selected text-primary ring-1 ring-edge-strong ring-inset";
     return (
         <aside
             aria-label="Instruction files"
             className="flex w-[264px] flex-none flex-col gap-1 overflow-y-auto border-r border-border bg-surface px-2.5 py-3.5"
         >
             <div className={cn(SECTION_HEAD, "px-2 pb-1.5")}>Shared</div>
-            <div className={cn(rowClass, "bg-surface-selected text-primary ring-1 ring-edge-strong ring-inset")}>
+            <button
+                type="button"
+                data-shared-row
+                aria-pressed={preview == null}
+                onClick={() => globalStore.set(setupHarnessPreviewAtom, null)}
+                className={cn(rowClass, "cursor-pointer border-0 bg-transparent", preview == null ? picked : "text-secondary hover:bg-surface-hover")}
+            >
                 <span className="flex h-5 w-5 flex-none items-center justify-center rounded-[5px] bg-accentbg text-accent-soft">
                     <Share2 size={12} strokeWidth={2.2} />
                 </span>
@@ -248,15 +263,30 @@ function FileList({ rows }: { rows: AgentSyncHarness[] }) {
                     </span>
                     <span className="text-[10.5px] text-muted">vault/steering/AGENTS.md</span>
                 </span>
-            </div>
+            </button>
 
             <div className={cn(SECTION_HEAD, "px-2 pb-1.5 pt-4")}>Harness files</div>
             {status == null ? <div className="px-2 text-[12px] text-muted">Reading…</div> : null}
             {rows.map((r) => {
                 const state = harnessRowState(r);
                 const tone = harnessRowTone(state);
+                // a row picks its file to read; one whose harness is not set up has no file to show
                 return (
-                    <div key={r.runtime} className={cn(rowClass, "text-secondary", !r.present && "opacity-50")}>
+                    <button
+                        type="button"
+                        key={r.runtime}
+                        data-harness-row={r.runtime}
+                        aria-pressed={preview === r.runtime}
+                        disabled={!r.present}
+                        onClick={() => globalStore.set(setupHarnessPreviewAtom, r.runtime)}
+                        className={cn(
+                            rowClass,
+                            "border-0 bg-transparent",
+                            r.present ? "cursor-pointer" : "cursor-default opacity-50",
+                            preview === r.runtime ? picked : "text-secondary",
+                            r.present && preview !== r.runtime && "hover:bg-surface-hover"
+                        )}
+                    >
                         <HarnessMark runtime={r.runtime} />
                         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                             <span className="text-[13px] font-medium">{r.label}</span>
@@ -265,8 +295,9 @@ function FileList({ rows }: { rows: AgentSyncHarness[] }) {
                                 <Dot tone={tone} />
                                 {harnessRowLabel(state)}
                             </span>
+                            <HarnessNote row={r} />
                         </span>
-                    </div>
+                    </button>
                 );
             })}
         </aside>
@@ -310,12 +341,15 @@ function LineEditor({
     path,
     placeholder,
     label,
+    onSave,
 }: {
     ed: DocEditor;
     onChange: (v: string) => void;
     path: string;
     placeholder: string;
     label: string;
+    // Ctrl+S (Cmd+S on a Mac) in the editor; an editor without one leaves the key alone
+    onSave?: () => void;
 }) {
     const lines = ed.draft.split("\n");
     return (
@@ -365,6 +399,16 @@ function LineEditor({
                         rows={1}
                         placeholder={placeholder}
                         onChange={(e) => onChange(e.target.value)}
+                        onKeyDown={
+                            onSave == null
+                                ? undefined
+                                : (e) => {
+                                      if (isSaveKey(e)) {
+                                          e.preventDefault();
+                                          onSave();
+                                      }
+                                  }
+                        }
                         style={{ gridColumn: 2, gridRow: "1 / -1" }}
                         className="h-full resize-none overflow-hidden border-0 bg-transparent p-0 text-secondary outline-none placeholder:text-muted"
                     />
@@ -418,10 +462,16 @@ function SharedEditor({ rows }: { rows: AgentSyncHarness[] }) {
                     onOverwrite={() => fireAndForget(() => saveShared(true))}
                 />
             </PaneReveal>
+            <ConflictDiskChanges ed={ed} />
             <LineEditor
                 ed={ed}
                 path={path}
                 onChange={typeShared}
+                onSave={() => {
+                    if (dirty && !busy && n > 0) {
+                        fireAndForget(() => saveShared(false));
+                    }
+                }}
                 label="Instructions for every harness"
                 placeholder="The instructions every harness should follow. Saving writes them into each harness's file."
             />
@@ -483,6 +533,9 @@ function InstructionsTab() {
     const rows = useRows();
     const error = useAtomValue(setupErrorAtom);
     const status = useAtomValue(setupStatusAtom);
+    // a picked harness row shows its file here, read-only; the shared editor's draft waits in its atom
+    const previewRuntime = useAtomValue(setupHarnessPreviewAtom);
+    const previewRow = rows.find((r) => r.runtime === previewRuntime && r.present);
     return (
         <div className="flex min-h-0 flex-1">
             <FileList rows={rows} />
@@ -493,7 +546,7 @@ function InstructionsTab() {
                         <div className="flex flex-1 items-center justify-center text-[13px] text-muted">Reading…</div>
                     ) : (
                         <>
-                            <SharedEditor rows={rows} />
+                            {previewRow != null ? <HarnessPreview row={previewRow} /> : <SharedEditor rows={rows} />}
                             <SharedRail rows={rows} />
                         </>
                     )}
@@ -524,6 +577,7 @@ function SkillsHeader() {
     // Manage only has work when a harness holds a skill outside the vault; at zero it would read as a dead control
     return (
         <>
+            <PiSkillsLine />
             <span className="text-[12px] text-ink-mid">{skillsSummary(data)}</span>
             <button
                 type="button"
@@ -906,6 +960,8 @@ function SkillRail({
                                     </div>
                                 ))}
                             </>
+                        ) : row.kind === "linked" ? (
+                            <LinkedLinks row={row} />
                         ) : (
                             row.copies.map((c) => (
                                 <div key={c.runtime} className={card}>
@@ -938,6 +994,8 @@ function SkillRail({
                         </div>
                     ) : null}
                     {row.needsKeep ? <KeepChoice row={row} /> : null}
+                    <LeaveChoice row={row} />
+                    <StrayChoice row={row} />
                     <div className="flex flex-col gap-2">
                         <div className="flex items-baseline gap-2">
                             <span className={SECTION_HEAD}>SKILL.md</span>

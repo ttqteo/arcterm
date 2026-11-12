@@ -15,7 +15,7 @@ import type { AgentsViewModel } from "./agents";
 import { formatAge, projectOf, type AgentVM } from "./agentsviewmodel";
 import { quickTerminal } from "./agenttree";
 import { workingAgents } from "./commitstore";
-import { fetchStateOf, fetchStatesAtom } from "./comparestore";
+import { fetchStateOf, fetchStatesAtom, hasRemoteByRepoAtom, loadHasRemote } from "./comparestore";
 import type { DiffScope } from "./diffscope";
 import type { FilesState } from "./filesstore";
 import { SyncFailureNotice } from "./gitstatepanels";
@@ -187,6 +187,15 @@ export function SyncBar({ agents, state }: { agents: AgentVM[]; state: FilesStat
     // a pull asked about one worktree must not be answered for the next one the source switches to
     useEffect(() => setConfirming(false), [cwd]);
 
+    // a repository with no remote has nothing to fetch: ask once per repository, and keep Fetch on show until git says so
+    const noRemote = useAtomValue(hasRemoteByRepoAtom)[cwd ?? ""] === false;
+    const isRepo = state?.isRepo === true;
+    useEffect(() => {
+        if (cwd != null && isRepo) {
+            fireAndForget(() => loadHasRemote(cwd));
+        }
+    }, [cwd, isRepo]);
+
     if (cwd == null || !state?.isRepo) {
         return null;
     }
@@ -204,7 +213,9 @@ export function SyncBar({ agents, state }: { agents: AgentVM[]; state: FilesStat
     return (
         <>
             <SyncCounts state={state} />
-            <SyncIconButton kind="fetch" button={view.fetch} onClick={() => fireAndForget(() => fetchNow(cwd))} />
+            {noRemote ? null : (
+                <SyncIconButton kind="fetch" button={view.fetch} onClick={() => fireAndForget(() => fetchNow(cwd))} />
+            )}
             <span ref={pullRef} className="flex flex-none">
                 <SyncIconButton
                     kind="pull"

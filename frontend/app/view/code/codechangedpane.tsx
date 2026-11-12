@@ -10,13 +10,36 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { CHANGE_NOTE_TITLE } from "@/app/view/agents/gitstatus";
 import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
+import { useState, type KeyboardEvent } from "react";
+import { stepRow } from "./codesearch";
 import { statusGlyph } from "./codestatus";
 import { codeProjectAtom, codeStatusAtom, codeStatusErrorAtom, loadStatus, openInCode } from "./codestore";
+
+const ROW_SELECTOR = "[data-code-changed-row]";
+
+// rows are buttons, so Enter opens one and Tab leaves the list; there is no input above the rows, so ArrowUp
+// from the first row stays on it
+function walkRows(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") {
+        return;
+    }
+    const rows = [...e.currentTarget.querySelectorAll<HTMLElement>(ROW_SELECTOR)];
+    const at = rows.indexOf(document.activeElement as HTMLElement);
+    if (at === -1) {
+        return;
+    }
+    e.preventDefault();
+    const next = stepRow(at, e.key === "ArrowDown" ? 1 : -1, rows.length);
+    if (next !== -1) {
+        rows[next].focus();
+    }
+}
 
 export function CodeChangedPane({ model }: { model: AgentsViewModel }) {
     const project = useAtomValue(codeProjectAtom);
     const status = useAtomValue(codeStatusAtom);
     const error = useAtomValue(codeStatusErrorAtom);
+    const [cursor, setCursor] = useState<string | null>(null);
 
     if (error != null) {
         return (
@@ -43,23 +66,28 @@ export function CodeChangedPane({ model }: { model: AgentsViewModel }) {
             </div>
         );
     }
+    // roving tabindex: one stop in the list, on the row last focused (the first until one is)
+    const stop = rows.some(([path]) => path === cursor) ? cursor : rows[0][0];
     return (
-        <div className="h-full overflow-y-auto border-r border-border py-1">
+        <div className="h-full overflow-y-auto border-r border-border py-1" onKeyDown={walkRows}>
             {rows.map(([path, s]) => {
                 const g = statusGlyph(s.status);
                 const cut = path.lastIndexOf("/");
                 const dir = cut === -1 ? "" : path.slice(0, cut + 1);
                 const name = cut === -1 ? path : path.slice(cut + 1);
                 return (
-                    <div
+                    <button
                         key={path}
+                        type="button"
                         data-code-changed-row={path}
+                        tabIndex={path === stop ? 0 : -1}
+                        onFocus={() => setCursor(path)}
                         onClick={() => {
                             if (project != null) {
                                 fireAndForget(() => openInCode(model, { projectPath: project.path, rel: path }));
                             }
                         }}
-                        className="flex cursor-pointer items-center gap-2 px-3 py-[3px] text-[11.5px] hover:bg-accent/10"
+                        className="flex w-full cursor-pointer items-center gap-2 px-3 py-[3px] text-left text-[11.5px] hover:bg-accent/10 focus-visible:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                     >
                         <span title={g.label} className={`w-[10px] flex-none text-[10.5px] ${g.className}`}>
                             {g.letter}
@@ -80,7 +108,7 @@ export function CodeChangedPane({ model }: { model: AgentsViewModel }) {
                                 </span>
                             </>
                         )}
-                    </div>
+                    </button>
                 );
             })}
         </div>

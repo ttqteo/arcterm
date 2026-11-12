@@ -15,7 +15,10 @@ vi.mock("./agentsessionstore", () => ({ ensureSessionStart: (...a: any[]) => ens
 
 import { scopeKey, type DiffScope } from "./diffscope";
 import {
+    agentCwdOf,
     consumeFileLink,
+    filesErrorAtom,
+    filesRefreshFailedAtom,
     filesSelectedPathAtom,
     filesStateAtom,
     loadFilesForScope,
@@ -24,6 +27,7 @@ import {
     selectFile,
     startChangesPoll,
 } from "./filesstore";
+import { lineCountsKnown } from "./filesstore";
 
 const runScopeVal = (id: string, cwd = "/repo", base = "abc123"): DiffScope => ({
     repo: { origin: { kind: "run", runId: id, cwd, baseCommit: base }, label: `run ${base}` },
@@ -207,6 +211,76 @@ describe("reloadChanges", () => {
     });
 });
 
+// a landed run is bounded at its own tip: the list stops there, and a later refresh keeps asking for the same bound
+describe("loadFilesForScope, a landed run", () => {
+    const landedScope = (): DiffScope => ({
+        repo: {
+            origin: { kind: "run", runId: "run-9", cwd: "/repo", baseCommit: "abc123", headCommit: "c0ffee1" },
+            label: "run abc123",
+        },
+        range: { kind: "run", runId: "run-9", baseCommit: "abc123", headCommit: "c0ffee1" },
+    });
+
+    it("sends the tip as end and records it, and a refresh keeps the bound", async () => {
+        gitChanges.mockResolvedValue({ isrepo: true, branch: "main", statusz: "M  x.ts\0", numstat: "1\t0\tx.ts\n" });
+
+        await loadFilesForScope(landedScope());
+        await new Promise((r) => setTimeout(r, 0));
+        expect(gitChanges).toHaveBeenLastCalledWith({}, { cwd: "/repo", ref: "abc123", end: "c0ffee1" });
+        expect(globalStore.get(filesStateAtom)?.end).toBe("c0ffee1");
+
+        await reloadChanges("/repo");
+        expect(gitChanges).toHaveBeenLastCalledWith({}, { cwd: "/repo", ref: "abc123", end: "c0ffee1" });
+    });
+
+    it("sends no end for an unbounded run", async () => {
+        gitChanges.mockResolvedValue({ isrepo: true, branch: "main", statusz: "", numstat: "" });
+        await loadFilesForScope(runScopeVal("run-1"));
+        expect(gitChanges).toHaveBeenLastCalledWith({}, { cwd: "/repo", ref: "abc123" });
+        expect(globalStore.get(filesStateAtom)).not.toHaveProperty("end");
+    });
+});
+
+// one failed poll tick must not wipe the working-tree row; only a scope's first read takes over the surface
+describe("a failed refresh", () => {
+    it("keeps the last good read on screen and flags that it is stale", async () => {
+        gitChanges.mockResolvedValueOnce({ isrepo: true, branch: "main", statusz: "M  a.ts\0", numstat: "1\t0\ta.ts\n" });
+        await loadFilesForScope(projectScopeVal("proj"));
+        const good = globalStore.get(filesStateAtom);
+        expect(good?.changes?.files).toHaveLength(1);
+
+        gitChanges.mockRejectedValueOnce(new Error("git timed out"));
+        await reloadChanges("/repo");
+
+        expect(globalStore.get(filesStateAtom)).toBe(good);
+        expect(globalStore.get(filesErrorAtom)).toBe(false);
+        expect(globalStore.get(filesRefreshFailedAtom)).toBe(true);
+
+        gitChanges.mockResolvedValueOnce({ isrepo: true, branch: "main", statusz: "M  a.ts\0", numstat: "2\t0\ta.ts\n" });
+        await reloadChanges("/repo");
+        expect(globalStore.get(filesRefreshFailedAtom)).toBe(false);
+    });
+
+    it("takes over the surface when the first read of a scope fails", async () => {
+        gitChanges.mockRejectedValueOnce(new Error("not readable"));
+        await loadFilesForScope(projectScopeVal("proj"));
+        expect(globalStore.get(filesErrorAtom)).toBe(true);
+        expect(globalStore.get(filesRefreshFailedAtom)).toBe(false);
+        expect(globalStore.get(filesStateAtom)).toMatchObject({ cwd: "/repo", isRepo: false, changes: null });
+    });
+});
+
+describe("an agent's remembered folder", () => {
+    it("is kept once the agent's scope resolves, so an ended agent can still point at its changes", async () => {
+        resolveCwd.mockResolvedValue("/work/agent-tree");
+        ensureSessionStart.mockResolvedValue(null);
+        gitChanges.mockResolvedValue({ isrepo: true, branch: "main", statusz: "", numstat: "" });
+        expect(agentCwdOf("ended-1")).toBeUndefined();
+        await loadFilesForScope(agentScopeVal("ended-1"), { transcriptPath: "/t.jsonl" });
+        expect(agentCwdOf("ended-1")).toBe("/work/agent-tree");
+    });
+});
+
 describe("startChangesPoll", () => {
     beforeEach(() => vi.useFakeTimers());
     afterEach(() => vi.useRealTimers());
@@ -308,5 +382,39 @@ describe("scoped file deep link", () => {
     it("an absent scope claims nothing", () => {
         requestFileLink(scopeKey(agentScopeVal("a1")), "pkg/jarvis/evidence.go");
         expect(consumeFileLink("", AVAILABLE)).toBeUndefined();
+    });
+});
+
+describe("a working tree whose line counts git could not read", () => {
+    const listed = { isrepo: true, branch: "main", statusz: " M src/old.py\0", numstat: "" };
+    const numstaterror = "git diff --numstat --relative HEAD: exit status 128: fatal: cannot hash src/old.py";
+
+    it("keeps the change list and carries the numstat failure beside it, not as a failed read", async () => {
+        gitChanges.mockResolvedValue({ ...listed, numstaterror });
+        await loadFilesForScope(projectScopeVal("proj"));
+
+        const state = globalStore.get(filesStateAtom);
+        expect(state?.changes?.files.map((f) => f.path)).toEqual(["src/old.py"]);
+        expect(state?.numstatError).toBe(numstaterror);
+        expect(globalStore.get(filesErrorAtom)).toBe(false);
+        expect(globalStore.get(filesRefreshFailedAtom)).toBe(false);
+
+        gitChanges.mockResolvedValue(listed);
+        await reloadChanges("/repo");
+        expect(globalStore.get(filesStateAtom)?.numstatError).toBeUndefined();
+    });
+
+    it("hides the counts only while the working tree is shown and its numstat failed", async () => {
+        gitChanges.mockResolvedValue({ ...listed, numstaterror });
+        await loadFilesForScope(projectScopeVal("proj"));
+        const failed = globalStore.get(filesStateAtom);
+        expect(lineCountsKnown(failed, true)).toBe(false);
+        // a commit or a comparison is counted by its own read
+        expect(lineCountsKnown(failed, false)).toBe(true);
+        expect(lineCountsKnown(null, true)).toBe(true);
+
+        gitChanges.mockResolvedValue(listed);
+        await reloadChanges("/repo");
+        expect(lineCountsKnown(globalStore.get(filesStateAtom), true)).toBe(true);
     });
 });

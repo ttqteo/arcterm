@@ -107,8 +107,8 @@ func walkPiFiles(root string, cutoff time.Time) []scanFile {
 			return nil
 		}
 		// a session file is <timestamp>_<id>.jsonl; its subagents' sessions sit under the same stem
-		stem, transcript := sessionStem(root, path)
-		files = append(files, scanFile{path: path, kind: scanPi, cutoff: cutoff, session: stem[strings.LastIndex(stem, "_")+1:], metaPath: transcript})
+		transcript := sessionTranscript(root, path)
+		files = append(files, scanFile{path: path, kind: scanPi, cutoff: cutoff, session: SessionIdOf(scanPi.harness(), transcript), metaPath: transcript})
 		return nil
 	})
 	return files

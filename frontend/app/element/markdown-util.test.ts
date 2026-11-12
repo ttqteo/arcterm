@@ -11,7 +11,35 @@ vi.mock("@/util/fetchutil", () => ({ fetch: vi.fn() }));
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { fetch } from "@/util/fetchutil";
-import { resolveRemoteFile } from "./markdown-util";
+import { fenceFrontMatter, resolveRemoteFile } from "./markdown-util";
+
+describe("fenceFrontMatter", () => {
+    it("fences a leading yaml block, comment lines included, and keeps the body after it", () => {
+        expect(fenceFrontMatter("---\ntitle: x\n# comment\n---\n# Body")).toBe(
+            "```yaml\ntitle: x\n# comment\n```\n# Body"
+        );
+    });
+
+    it("accepts ... as the closing line", () => {
+        expect(fenceFrontMatter("---\ntitle: x\n...\nbody")).toBe("```yaml\ntitle: x\n```\nbody");
+    });
+
+    it("leaves an unclosed opener and a block that is not on the first line unchanged", () => {
+        expect(fenceFrontMatter("---\nno close\n")).toBe("---\nno close\n");
+        expect(fenceFrontMatter("text\n---\na: b\n---")).toBe("text\n---\na: b\n---");
+    });
+
+    it("fences with more backticks than any run inside the front matter, so the block does not end early", () => {
+        const out = fenceFrontMatter("---\nnote: |\n  ```\n  x\n  ```\n---\nbody");
+        expect(out).toBe("````yaml\nnote: |\n  ```\n  x\n  ```\n````\nbody");
+    });
+
+    it("handles CRLF line endings like LF", () => {
+        expect(fenceFrontMatter("---\r\ntitle: x\r\n# comment\r\n---\r\n# Body")).toBe(
+            "```yaml\r\ntitle: x\r\n# comment\r\n```\r\n# Body"
+        );
+    });
+});
 
 afterEach(() => {
     vi.unstubAllGlobals();

@@ -25,7 +25,7 @@ import { useKeybindings } from "@/app/store/keybindings/store";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn } from "@/util/util";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { motion, MotionConfig } from "motion/react";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { showSession } from "./agentcenter";
@@ -79,6 +79,7 @@ import {
     type AggregateWindow,
     type UsageRailRow,
 } from "./usagerail";
+import { LIST_COLLAPSED_ROWS } from "./usageattribution";
 import { showUsageRefresh } from "./usagerefresh";
 import { UsageRefreshButton } from "./usagerefreshbutton";
 import { buildSessionRows, liveSessionTabs, visibleSessionRows, type SessionRow } from "./usagesessions";
@@ -87,17 +88,33 @@ import type { ClassUsage, ProviderUsage, UsageStats } from "./usagestats";
 import { aggregateBuckets, CLASS_FILL, fmt, foldModels, usd } from "./usagestats";
 import {
     allUsageStatsAtom,
+    forecastDailyAtom,
+    loadForecastHistory,
     loadUsage,
     usageBucketsAtom,
     usageErrorAtom,
+    usageLensAtom,
+    usageListShownAtom,
     usageLoadedAtom,
     usageMetricAtom,
     usageTabChosenAtom,
     usageWindowAtom,
+    usageWorkItemAtom,
+    usageWorkScopeAtom,
+    type UsageLens,
 } from "./usagestore";
+import { WorkLens } from "./usageworkview";
 import { formatProjectedDate, projectWeeklyExhaustion } from "./weeklyforecast";
+import { WorkflowLens } from "./workflowlensview";
 
 const ALL = "all";
+// the lens switch in the header: today's provider page, By work (usageworkview.tsx: what the usage paid for) and the
+// Workflow scan (workflowlensview.tsx)
+const LENS_OPTIONS: { key: UsageLens; label: string }[] = [
+    { key: "provider", label: "By provider" },
+    { key: "work", label: "By work" },
+    { key: "workflow", label: "Workflow" },
+];
 // daily, where it goes and models in one row of three cards (one column below the breakpoint); the cards in a row
 // stretch to the tallest
 const CHART_ROW = "grid grid-cols-1 gap-3.5 @6xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)]";
@@ -507,6 +524,29 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     // the selected tab and the historical scope filter are the same state, by construction
     const [sel, setSel] = useAtom(model.usageHarnessFilterAtom);
     const [tabChosen, setTabChosen] = useAtom(usageTabChosenAtom);
+    // The Workflow lens (workflowlensview.tsx) and By work (usageworkview.tsx) each own the page below the header; the
+    // provider lens is the page below, as before. Keys that act on that page (← / →, j / k, a) stand down while another
+    // lens is up.
+    const [lens, setLens] = useAtom(usageLensAtom);
+    const byWork = lens === "work";
+    const workflow = lens === "workflow";
+    const otherLens = workflow || byWork;
+    const setWorkScope = useSetAtom(usageWorkScopeAtom);
+    const setWorkItem = useSetAtom(usageWorkItemAtom);
+    const setListShown = useSetAtom(usageListShownAtom);
+    // opening By work starts on All usage with nothing drilled and the first eight rows
+    const pickLens = useCallback(
+        (next: UsageLens) => {
+            setLens(next);
+            if (next === "work") {
+                setWorkScope(ALL);
+                setWorkItem(null);
+                setListShown(LIST_COLLAPSED_ROWS);
+            }
+        },
+        [setLens, setWorkScope, setWorkItem, setListShown]
+    );
+    const forecastDaily = useAtomValue(forecastDailyAtom);
     // a click or a key is the person's choice; the default tab below stops following the busiest provider
     const pickTab = useCallback(
         (id: string) => {
@@ -522,6 +562,10 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
         const refresh = setInterval(() => void loadUsage(days), 60_000);
         return () => clearInterval(refresh);
     }, [usageWindow]);
+    // the weekly forecast reads its own fixed history, whatever the range; the loader keeps it to once an hour
+    useEffect(() => {
+        void loadForecastHistory(Date.now());
+    }, []);
 
     // The saved analysis loads with the window but not on the 60s tick above: a session scan reads every transcript
     // line by line. (The By session rows load below, with the quota windows.)
@@ -579,7 +623,10 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     }, [usageLoaded, tabChosen, rows, sel, setSel]);
 
     // the ids in the order the strip draws them; none when the strip is hidden for a lone provider
-    const tabIds = useMemo(() => (solo != null ? [] : [...tabRows(rows).map((r) => r.harness), ALL]), [solo, rows]);
+    const tabIds = useMemo(
+        () => (solo != null || otherLens ? [] : [...tabRows(rows).map((r) => r.harness), ALL]),
+        [solo, otherLens, rows]
+    );
 
     // Claude's sessions: rows for the By session table, the Insights card's state, and whether Analyze is held.
     // All of it is for the Claude tab only; elsewhere the lists stay empty and nothing is published to the list nav.
@@ -635,7 +682,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     // sessions to read, or while an analysis runs or is held. The `a` key reaches it through a ref, since the
     // bindings below are built once.
     const analyze = (lang = insightsLang) => {
-        if (!claude || sessionRows.length === 0 || insightsRunning || held != null) {
+        if (otherLens || !claude || sessionRows.length === 0 || insightsRunning || held != null) {
             return;
         }
         // the levers come from the same rows the digest numbers its sessions by, so their refs agree
@@ -686,7 +733,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
 
     // j / k / Enter drive the By session table on the Claude tab; the tabs are ← / →.
     const listNav = useMemo<ListNavController | null>(() => {
-        if (!claude || visibleRows.length === 0) {
+        if (otherLens || !claude || visibleRows.length === 0) {
             return null;
         }
         return {
@@ -701,7 +748,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                 }
             },
         };
-    }, [claude, visibleRows, sessionCursor, setSessionCursor, openSession]);
+    }, [otherLens, claude, visibleRows, sessionCursor, setSessionCursor, openSession]);
     useSurfaceListNav(listNav);
 
     // ← / → switch tabs. The bindings are built once; the handlers read the live ids and selection from a ref.
@@ -723,11 +770,23 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     }, []);
     useKeybindings(usageBindings);
 
+    // The weekly projection's day-of-week shape reads Claude's last 28 days (loadForecastHistory), whatever the range.
+    // Until that has loaded, or if it never does, it reads the loaded window's own series, as it always did.
+    const windowDaily = useMemo(
+        () =>
+            forecastDaily != null
+                ? null
+                : aggregateBuckets(buckets, Date.now(), "all").daily.map((d) => ({
+                      day: d.day,
+                      tokens: d.byHarness.claude?.tokens ?? 0,
+                  })),
+        [forecastDaily, buckets]
+    );
     const claudeRow = rows.find((r) => r.harness === "claude");
     const weeklyProjectionMs =
         claudeRow?.week.pct != null && claudeRow.week.reset != null
             ? projectWeeklyExhaustion(
-                  allStats.daily.map((d) => ({ day: d.day, tokens: d.byHarness.claude?.tokens ?? 0 })),
+                  forecastDaily ?? windowDaily ?? [],
                   claudeRow.week.pct,
                   claudeRow.week.reset,
                   now
@@ -812,6 +871,16 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                   },
               ];
 
+    const lensSwitch = (
+        <Segmented<UsageLens> value={lens} onChange={pickLens} role="group" ariaLabel="Lens" options={LENS_OPTIONS} />
+    );
+    if (workflow) {
+        return <WorkflowLens model={model} lensSwitch={lensSwitch} />;
+    }
+    if (byWork) {
+        return <WorkLens model={model} lensSwitch={lensSwitch} />;
+    }
+
     return (
         <MotionConfig reducedMotion="user">
             <div className="flex h-full min-h-0 flex-col bg-background">
@@ -840,14 +909,17 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                         )
                     }
                     actions={
-                        <Segmented<"7d" | "all">
-                            value={usageWindow}
-                            onChange={setUsageWindow}
-                            options={[
-                                { key: "7d", label: "7 days" },
-                                { key: "all", label: "All time" },
-                            ]}
-                        />
+                        <>
+                            {lensSwitch}
+                            <Segmented<"7d" | "all">
+                                value={usageWindow}
+                                onChange={setUsageWindow}
+                                options={[
+                                    { key: "7d", label: "7 days" },
+                                    { key: "all", label: "All time" },
+                                ]}
+                            />
+                        </>
                     }
                 />
 

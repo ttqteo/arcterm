@@ -19,6 +19,11 @@ const ILLEGAL_CHAR = /[<>:"|?*\u0000-\u001f]/;
 // the null device, and creating one fails at the filesystem rather than at git
 const RESERVED = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i;
 
+// an empty folder made this session is a row but not in the index, and mkdir fails on its name
+export function existingTreePaths(indexPaths: readonly string[], sessionDirs: readonly string[]): string[] {
+    return [...indexPaths, ...sessionDirs];
+}
+
 export function validateName(name: string, dir: string, existing: readonly string[]): NameError | null {
     const n = name.trim();
     if (n === "") {

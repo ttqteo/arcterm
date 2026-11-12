@@ -24,6 +24,7 @@
 // globalStore.get instrumented, and fails if a predicate reads an atom this list doesn't have, or if
 // this list has an atom no predicate reads. Keep that test passing rather than trusting this comment.
 
+import { escapeMenusOpenAtom } from "@/app/hook/useEscapeClose";
 import { globalStore } from "@/app/store/jotaiStore";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
@@ -41,6 +42,7 @@ import { dockedTerminalAtom } from "@/app/view/agents/railstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
+import { usageLensAtom, usageWorkItemAtom, usageWorkScopeAtom } from "@/app/view/agents/usagestore";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { councilSheetAtom } from "@/app/view/jarvis/councilsheetstore";
@@ -89,6 +91,10 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     initiativePopoverAtom, // buildAgentBindings: agentNav / agentNavStrict (every single-key Agent binding yields to the popover)
     reviewModeAtom, // buildJarvisBindings: jarvis:review and the review keys; buildListNavBindings: active; surface:back-home
     councilChatNavAtom, // buildCouncilBindings: every council:* key; buildAgentBindings: agent:leave-center
+    escapeMenusOpenAtom, // surface:back-home and usage:back: a hand-rolled dropdown (Code's project picker) owns Escape
+    usageLensAtom, // usage:back, and surface:back-home stands down to it
+    usageWorkScopeAtom, // usage:back, surface:back-home
+    usageWorkItemAtom, // usage:back, surface:back-home
 ];
 
 function bumpWhenVersion() {

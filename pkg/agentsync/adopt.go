@@ -31,7 +31,14 @@ type SkillMove struct {
 	// BodyDiff marks the one case adoption will not decide: two copies whose markdown bodies differ.
 	// The copy is left exactly where it is and the name is reported unresolved.
 	BodyDiff bool `json:"bodydiff"`
+	// Vault marks a copy whose name is already a vault skill: Keys, Files and BodyDiff are against the
+	// vault tree, and it stays where it is unless keep picks KeepVault for it.
+	Vault bool `json:"vault,omitempty"`
 }
+
+// KeepVault is the keep value that picks the vault copy over a vault skill's stray harness copies. It
+// equals wshrpc.AgentSyncKeepVault; agentsync imports no wshrpc, so a wshserver test holds them equal.
+const KeepVault = "vault"
 
 // replacedDirName sits beside the vault's skills root and holds the copies a keep choice discarded.
 const replacedDirName = "skills-replaced"
@@ -134,7 +141,7 @@ func unmanagedCopies(p Paths) ([]skillCopy, error) {
 		}
 		sort.Slice(observed, func(i, j int) bool { return observed[i].Name < observed[j].Name })
 		for _, e := range observed {
-			if !e.Managed && isSkillDir(dir, e.Name) {
+			if !e.Managed && !e.Linked && isSkillDir(dir, e.Name) {
 				out = append(out, skillCopy{runtime: spec.Runtime, name: e.Name, from: filepath.Join(dir, e.Name)})
 			}
 		}
@@ -146,7 +153,9 @@ func unmanagedCopies(p Paths) ([]skillCopy, error) {
 // contributes. Deterministic: harnesses in catalog order, skills sorted, so the first copy of a name
 // seeds the shared tree and later ones become deltas against it. keep maps a skill name to the
 // runtime whose copy seeds it instead; that name is never unresolved, since the choice settles it.
-func PlanAdopt(p Paths, keep map[string]string) (AdoptPlan, error) {
+// A copy of a vault skill is planned with Vault set and never seeds. A name in skip contributes
+// nothing, whatever keep says for it.
+func PlanAdopt(p Paths, keep map[string]string, skip ...string) (AdoptPlan, error) {
 	plan := AdoptPlan{}
 	canonical, err := canonicalSkills(p.SkillsRoot)
 	if err != nil {
@@ -154,20 +163,47 @@ func PlanAdopt(p Paths, keep map[string]string) (AdoptPlan, error) {
 	}
 	// where the shared tree for a name lives, or will live once this plan is applied
 	sharedDir := map[string]string{}
+	vault := map[string]bool{}
 	for _, name := range canonical {
 		sharedDir[name] = filepath.Join(p.SkillsRoot, name)
+		vault[name] = true
 	}
-	copies, err := unmanagedCopies(p)
+	all, err := unmanagedCopies(p)
 	if err != nil {
 		return plan, err
 	}
-	if err := claimKept(keep, copies, sharedDir); err != nil {
+	skipped := map[string]bool{}
+	for _, name := range skip {
+		skipped[name] = true
+	}
+	var copies []skillCopy
+	for _, c := range all {
+		if !skipped[c.name] {
+			copies = append(copies, c)
+		}
+	}
+	keeps := map[string]string{}
+	for name, choice := range keep {
+		if !skipped[name] {
+			keeps[name] = choice
+		}
+	}
+	if err := claimKept(keeps, copies, sharedDir, vault); err != nil {
 		return plan, err
 	}
 	unresolved := map[string]bool{}
 	for _, c := range copies {
 		move := SkillMove{Runtime: c.runtime, Name: c.name, From: c.from}
-		kept, isKept := keep[c.name]
+		if vault[c.name] {
+			move.Vault = true
+			move.Keys, move.Files, move.BodyDiff, err = deltaAgainst(sharedDir[c.name], c.from)
+			if err != nil {
+				return plan, err
+			}
+			plan.Moves = append(plan.Moves, move)
+			continue
+		}
+		kept, isKept := keeps[c.name]
 		_, claimed := sharedDir[c.name]
 		if (isKept && kept == c.runtime) || (!isKept && !claimed) {
 			move.Seed = true
@@ -192,21 +228,30 @@ func PlanAdopt(p Paths, keep map[string]string) (AdoptPlan, error) {
 }
 
 // claimKept points each kept name's shared tree at the kept copy, so every other copy is compared
-// against it. A keep that names no copy, or a skill the vault already owns, is refused outright.
-func claimKept(keep map[string]string, copies []skillCopy, sharedDir map[string]string) error {
+// against it. A keep that names no copy is refused outright, and so is a keep that does not fit the
+// name: a vault skill takes only KeepVault, any other name only a runtime.
+func claimKept(keep map[string]string, copies []skillCopy, sharedDir map[string]string, vault map[string]bool) error {
 	for name, runtime := range keep {
-		if _, canonical := sharedDir[name]; canonical {
-			return fmt.Errorf("cannot keep %s's copy of %q: the skill is already managed by arcterm", runtime, name)
+		if vault[name] != (runtime == KeepVault) {
+			if vault[name] {
+				return fmt.Errorf("cannot keep %s's copy of %q: the skill is already managed by arcterm", runtime, name)
+			}
+			return fmt.Errorf("cannot keep the vault copy of %q: the vault has no such skill", name)
 		}
 		found := false
 		for _, c := range copies {
-			if c.name == name && c.runtime == runtime {
-				sharedDir[name] = c.from
+			if c.name == name && (runtime == KeepVault || c.runtime == runtime) {
+				if runtime != KeepVault {
+					sharedDir[name] = c.from
+				}
 				found = true
 				break
 			}
 		}
 		if !found {
+			if runtime == KeepVault {
+				return fmt.Errorf("cannot keep the vault copy of %q: no harness holds a copy of its own", name)
+			}
 			return fmt.Errorf("cannot keep %s's copy of %q: %s holds no unmanaged copy of it", runtime, name, runtime)
 		}
 	}
@@ -217,9 +262,11 @@ func claimKept(keep map[string]string, copies []skillCopy, sharedDir map[string]
 // delta beside it and removed, and the reconcile then renders every harness from the vault. A skill
 // whose copies differ in body text is skipped entirely — nothing is moved and nothing is deleted —
 // unless keep picks a copy for it; then every other copy is set aside under skills-replaced, whole,
-// so what the choice discarded can still be recovered by hand.
-func Adopt(p Paths, apply bool, keep map[string]string) (AdoptPlan, error) {
-	plan, err := PlanAdopt(p, keep)
+// so what the choice discarded can still be recovered by hand. A vault skill's own copy stays where it
+// is unless keep names KeepVault for it; then it is set aside the same way and the reconcile writes the
+// vault copy in its place. A skipped name is left entirely alone.
+func Adopt(p Paths, apply bool, keep map[string]string, skip ...string) (AdoptPlan, error) {
+	plan, err := PlanAdopt(p, keep, skip...)
 	if err != nil || !apply {
 		return plan, err
 	}
@@ -250,6 +297,14 @@ func Adopt(p Paths, apply bool, keep map[string]string) (AdoptPlan, error) {
 	}
 	for _, m := range plan.Moves {
 		if m.Seed || blocked[m.Name] {
+			continue
+		}
+		if m.Vault {
+			if keep[m.Name] == KeepVault {
+				if err := setAside(p, m); err != nil {
+					return plan, err
+				}
+			}
 			continue
 		}
 		if _, kept := keep[m.Name]; kept {

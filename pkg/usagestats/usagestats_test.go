@@ -1134,3 +1134,15 @@ func TestCachedFileParseSharesInflightRead(t *testing.T) {
 		t.Fatalf("file read %d times, want 1", n)
 	}
 }
+
+func TestSessionIdOf(t *testing.T) {
+	for _, c := range []struct{ harness, path, want string }{
+		{"claude", filepath.Join("projects", "C--repo", "1f0c-uuid.jsonl"), "1f0c-uuid"},
+		{"pi", filepath.Join("sessions", "--repo--", "2026-11-05T01-02-03-000Z_9a1b-uuid.jsonl"), "9a1b-uuid"},
+		{"pi", filepath.Join("sessions", "--repo--", "plain.jsonl"), "plain"},
+	} {
+		if got := SessionIdOf(c.harness, c.path); got != c.want {
+			t.Errorf("SessionIdOf(%q, %q) = %q, want %q", c.harness, c.path, got, c.want)
+		}
+	}
+}

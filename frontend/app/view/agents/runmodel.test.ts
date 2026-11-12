@@ -510,6 +510,12 @@ describe("runTree", () => {
             "/p/.waveterm/worktrees/r"
         );
     });
+    it("is the project once the run has landed, since landing removes its tree", () => {
+        const landed = { projectpath: "/p", landpath: "/p/.waveterm/worktrees/r", land: { state: "landed" } } as Run;
+        expect(runTree(landed)).toBe("/p");
+        const held = { projectpath: "/p", landpath: "/p/.waveterm/worktrees/r", land: { state: "held" } } as Run;
+        expect(runTree(held)).toBe("/p/.waveterm/worktrees/r");
+    });
 });
 
 describe("resolveArtifactPath", () => {

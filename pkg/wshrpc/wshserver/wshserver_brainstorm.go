@@ -458,6 +458,7 @@ func launchSessionRun(ctx context.Context, s *brainstormSession) error {
 		Role: k.role, Label: k.labelHead + s.Title, Tree: s.Project,
 		Prompt: prompt,
 		Route:  k.route(ch, tab.Meta.GetString(waveobj.MetaKey_SessionAgent, "")),
+		Lead:   brainstormLeadOf(ctx, tab),
 	})
 	if err != nil {
 		return err
@@ -475,6 +476,18 @@ func launchSessionRun(ctx context.Context, s *brainstormSession) error {
 		return nil
 	}
 	return setBrainstormRecord(ctx, k, s.TabId, brainstormReading, s.StartedTs, s.RunId, s.ChannelId, "")
+}
+
+// brainstormLeadOf is "<harness>:<session id>" of the brainstorming agent in tab, so usage can fold the session's
+// tokens into that agent's. With no transcript on the agent yet it is empty and the launch goes ahead: the
+// session's usage then stays its own.
+func brainstormLeadOf(ctx context.Context, tab *waveobj.Tab) string {
+	harness, session, ok := tabAgentSession(ctx, tab)
+	if !ok {
+		log.Printf("brainstorm: the agent of tab %s names no session yet, so its usage is not folded into it", tab.OID)
+		return ""
+	}
+	return harness + ":" + session
 }
 
 // builderCheckRoute is the reviewer route of the run settings for ch, else the brainstorming agent's runtime when

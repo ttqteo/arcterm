@@ -15,12 +15,13 @@ import type { HistoryFilters } from "./historyquery";
 // when the run started, so both answer synchronously. An agent's directory is read from its live
 // transcript and can fail, so an agent origin carries only its id and the loader resolves the rest.
 // A worktree is one checkout of a registered project, picked from the Diff sidebar; `project` names
-// that project, since a linked worktree's own path is not registered.
+// that project, since a linked worktree's own path is not registered. A run's headCommit is its landed
+// tip; absent, the run is live and reads up to HEAD.
 export type DiffOrigin =
     | { kind: "agent"; id: string }
     | { kind: "project"; name: string; path: string }
     | { kind: "worktree"; path: string; project: string }
-    | { kind: "run"; runId: string; cwd: string; baseCommit: string };
+    | { kind: "run"; runId: string; cwd: string; baseCommit: string; headCommit?: string };
 
 export interface DiffRepo {
     origin: DiffOrigin;
@@ -30,7 +31,7 @@ export interface DiffRepo {
 export type DiffRange =
     | { kind: "working" }
     | { kind: "session"; agentId: string }
-    | { kind: "run"; runId: string; baseCommit: string }
+    | { kind: "run"; runId: string; baseCommit: string; headCommit?: string }
     // `from` is the range comparison interrupted. Escape restores it instead of guessing, which is
     // also what lets the old compareAnchorAtom and its invalidation effect go away. `form` is which
     // range form the aggregate uses: merge-base (what head introduced) or tip-to-tip (the full
@@ -44,11 +45,13 @@ export interface DiffScope {
 }
 
 // The history pane's divider label and the name of what its synthetic top row counts. Owned here
-// rather than in githistorystore because it is derived from the range and nothing else.
+// rather than in githistorystore because it is derived from the range and nothing else. `ref` is where
+// git log starts walking; absent walks every ref (--all), as it always has.
 export interface LoadHistoryOpts {
     anchor?: string;
     anchorLabel?: string;
     rowLabel?: string;
+    ref?: string;
 }
 
 export function originKey(o: DiffOrigin): string {
@@ -71,7 +74,9 @@ export function rangeKey(r: DiffRange): string {
         case "session":
             return `session:${r.agentId}`;
         case "run":
-            return `run:${r.runId}:${r.baseCommit}`;
+            // the tip is appended only when bounded, so an unbounded run keeps the key its review marks
+            // were saved under
+            return r.headCommit ? `run:${r.runId}:${r.baseCommit}:${r.headCommit}` : `run:${r.runId}:${r.baseCommit}`;
         case "compare":
             return `compare:${r.base}..${r.head}:${r.form}`;
     }
@@ -85,9 +90,12 @@ export function scopeKey(scope: DiffScope): string {
 
 // Deliberately range-free. git's commit list depends on the directory and the filters; the range only
 // labels a divider and the synthetic top row, both of which are derived from an atom. Folding the
-// range in here would blank the list and scroll to the top on every range change.
-export function historyKey(cwd: string, f: HistoryFilters): string {
-    return `${cwd}|${f.author}|${f.path}|${f.text}`;
+// range in here would blank the list and scroll to the top on every range change. The one thing of the
+// range that git answers differently is the ref the walk starts from (a landed run's tip), so it joins
+// the key, and only when set: a walk of every ref keeps the key it always had.
+export function historyKey(cwd: string, f: HistoryFilters, ref = ""): string {
+    const base = `${cwd}|${f.author}|${f.path}|${f.text}`;
+    return ref ? `${base}|${ref}` : base;
 }
 
 export function originCwd(o: DiffOrigin): string | null {
@@ -110,7 +118,9 @@ export function defaultRangeFor(o: DiffOrigin): DiffRange {
         case "worktree":
             return { kind: "working" };
         case "run":
-            return { kind: "run", runId: o.runId, baseCommit: o.baseCommit };
+            return o.headCommit
+                ? { kind: "run", runId: o.runId, baseCommit: o.baseCommit, headCommit: o.headCommit }
+                : { kind: "run", runId: o.runId, baseCommit: o.baseCommit };
     }
 }
 
@@ -120,10 +130,13 @@ export function historyOptsFor(range: DiffRange, resolvedRef: string): LoadHisto
             return resolvedRef
                 ? { anchor: resolvedRef, anchorLabel: "session start", rowLabel: "Since session start" }
                 : {};
-        case "run":
+        case "run": {
+            // a landed run walks from its own tip: --all would list the commits that landed after it above its base
+            const walk = range.headCommit ? { ref: range.headCommit } : {};
             return range.baseCommit
-                ? { anchor: range.baseCommit, anchorLabel: "run base", rowLabel: "Run changes" }
-                : {};
+                ? { anchor: range.baseCommit, anchorLabel: "run base", rowLabel: "Run changes", ...walk }
+                : walk;
+        }
         case "working":
         case "compare":
             return {};

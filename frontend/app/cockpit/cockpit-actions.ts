@@ -138,8 +138,14 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
     // renders as a bare terminal and the cockpit panel stays empty). Reload so the roster sees cmd.
     await WOS.reloadWaveObject(blockORef);
     // steering and skills are launch-time, for every runtime: a harness must never start against
-    // a stale region. fire-and-forget — a sync failure must not block the launch.
-    void RpcApi.AgentSyncApplyCommand(TabRpcClient, { dryrun: false }).catch(() => {});
+    // a stale region. fire-and-forget — a sync failure must not block the launch, but it must be seen.
+    void RpcApi.AgentSyncApplyCommand(TabRpcClient, { dryrun: false }).catch((e) =>
+        pushToast({
+            level: "warn",
+            title: "Instructions not synced",
+            message: `Harness sync failed: ${e instanceof Error ? e.message : String(e)}. Setup → Instructions has Sync now.`,
+        })
+    );
     const agentPanel = runtimeCreatesAgentPanel(opts.runtime);
     const tabMeta: MetaType = agentPanel
         ? { "session:agent": opts.runtime, "session:project": opts.projectName }

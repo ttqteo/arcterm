@@ -5,10 +5,11 @@
 // status, the save count, and the editor's conflict transitions. setupstore.ts feeds these the agentsync
 // RPC results; setupsurface.tsx renders them.
 
-export type HarnessRowState = "in-sync" | "out-of-date" | "not-written" | "not-set-up";
+export type HarnessRowState = "in-sync" | "out-of-date" | "not-written" | "blank" | "not-set-up";
 
-// "absent" covers a missing file, a file with no arcterm region, and a blank shared doc: in each case
-// the harness does not have the shared instructions yet.
+// "absent" covers a missing file and a file with no arcterm region: in each case the harness does not have
+// the shared instructions yet. "blank" is the backend's word for an empty shared doc: there is nothing to
+// write, whatever the harness file holds.
 export function harnessRowState(h: Pick<AgentSyncHarness, "present" | "steering">): HarnessRowState {
     if (!h.present) {
         return "not-set-up";
@@ -18,6 +19,9 @@ export function harnessRowState(h: Pick<AgentSyncHarness, "present" | "steering"
     }
     if (h.steering === "stale") {
         return "out-of-date";
+    }
+    if (h.steering === "blank") {
+        return "blank";
     }
     return "not-written";
 }
@@ -30,6 +34,8 @@ export function harnessRowLabel(state: HarnessRowState): string {
             return "Out of date";
         case "not-written":
             return "Not written yet";
+        case "blank":
+            return "Shared doc is empty";
         case "not-set-up":
             return "Not set up";
     }
@@ -64,11 +70,110 @@ export function headerStatus(rows: Pick<AgentSyncHarness, "present" | "steering"
     if (n === 0) {
         return { text: "No harnesses set up", tone: "none" };
     }
+    // an empty doc is not something a harness is behind: say so rather than count every row out of date
+    if (present.some((r) => r.steering === "blank")) {
+        return { text: "The shared doc is empty", tone: "none" };
+    }
     const behind = present.filter((r) => r.steering !== "current").length;
     if (behind === 0) {
         return { text: `${n} ${n === 1 ? "harness" : "harnesses"} up to date`, tone: "ok" };
     }
     return { text: `${behind} of ${n} harnesses out of date`, tone: "warn" };
+}
+
+// ---- Sync now ----
+
+type SteeringRow = Pick<AgentSyncHarness, "present" | "steering">;
+
+// Sync now has work to do: a present harness lacks the current doc, and the doc is not empty.
+export function needsSync(rows: SteeringRow[]): boolean {
+    const states = rows.map(harnessRowState);
+    return !states.includes("blank") && states.some((s) => s === "out-of-date" || s === "not-written");
+}
+
+// Out of date and not written yet are different things: the first follows an older doc, the second has not
+// received one. The header's own text lumps them, so the Sync now line breaks them apart.
+export function syncBreakdown(rows: SteeringRow[]): string | null {
+    const states = rows.map(harnessRowState);
+    if (states.includes("blank")) {
+        return null;
+    }
+    const stale = states.filter((s) => s === "out-of-date").length;
+    const unwritten = states.filter((s) => s === "not-written").length;
+    const parts = [];
+    if (stale > 0) {
+        parts.push(`${stale} out of date`);
+    }
+    if (unwritten > 0) {
+        parts.push(`${unwritten} not written yet`);
+    }
+    return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+// What an apply would do, counted from the actions its dry run returns. The kinds are agentsync's own:
+// steering-write is a harness file, skill-write and skill-remove a skill copy, and any other skill-* kind
+// (unmanaged, a link) is a copy the sync leaves alone. A kind this does not know counts for nothing.
+export interface SyncPlan {
+    harnessFiles: number;
+    skillCopies: number;
+    skillsRemoved: number;
+    leftAlone: number;
+}
+
+export function syncPlan(actions: (Pick<AgentSyncAction, "kind"> & Partial<AgentSyncAction>)[]): SyncPlan {
+    const plan: SyncPlan = { harnessFiles: 0, skillCopies: 0, skillsRemoved: 0, leftAlone: 0 };
+    for (const a of actions) {
+        if (a.kind === "steering-write") {
+            plan.harnessFiles++;
+        } else if (a.kind === "skill-write") {
+            plan.skillCopies++;
+        } else if (a.kind === "skill-remove") {
+            plan.skillsRemoved++;
+        } else if (a.kind.startsWith("skill-")) {
+            plan.leftAlone++;
+        }
+    }
+    return plan;
+}
+
+function planParts(plan: SyncPlan): string[] {
+    const parts: string[] = [];
+    if (plan.skillCopies > 0) {
+        parts.push(`${plan.skillCopies} skill ${plan.skillCopies === 1 ? "copy" : "copies"} updated`);
+    }
+    if (plan.skillsRemoved > 0) {
+        parts.push(`${plan.skillsRemoved} removed`);
+    }
+    if (plan.leftAlone > 0) {
+        parts.push(`${plan.leftAlone} left alone`);
+    }
+    return parts;
+}
+
+function harnessFiles(n: number): string {
+    return `${n} harness ${n === 1 ? "file" : "files"}`;
+}
+
+function writesNothing(plan: SyncPlan): boolean {
+    return plan.harnessFiles + plan.skillCopies + plan.skillsRemoved === 0;
+}
+
+// Shown between the dry run and the write, so the counts are the dry run's and not a guess from the rows.
+export function syncPlanText(plan: SyncPlan): string {
+    if (writesNothing(plan)) {
+        return ["Nothing to write", ...planParts(plan)].join(" · ");
+    }
+    const head = plan.harnessFiles > 0 ? [`Writing the doc into ${harnessFiles(plan.harnessFiles)}`] : [];
+    return [...head, ...planParts(plan)].join(" · ");
+}
+
+// Shown once the write is done, from the same plan.
+export function syncDoneText(plan: SyncPlan): string {
+    if (writesNothing(plan)) {
+        return ["Already in sync: nothing to write", ...planParts(plan)].join(" · ");
+    }
+    const head = plan.harnessFiles > 0 ? [`Synced ${harnessFiles(plan.harnessFiles)}`] : ["Synced"];
+    return [...head, ...planParts(plan)].join(" · ");
 }
 
 export function lineCount(text: string): number {
@@ -100,6 +205,34 @@ export function changedLineCount(base: string, draft: string): number {
         removed += left;
     }
     return Math.max(added, removed, 1);
+}
+
+// lines of `from` that `against` lacks, in order, as a multiset (the way changedLineCount counts)
+function linesMissing(from: string, against: string): string[] {
+    const pool = new Map<string, number>();
+    for (const l of against.split("\n")) {
+        pool.set(l, (pool.get(l) ?? 0) + 1);
+    }
+    const out: string[] = [];
+    for (const l of from.split("\n")) {
+        const left = pool.get(l) ?? 0;
+        if (left > 0) {
+            pool.set(l, left - 1);
+        } else {
+            out.push(l);
+        }
+    }
+    return out;
+}
+
+// What an outside edit did to the doc against what the editor loaded, listed in the conflict notice.
+// Blank lines are left out: an empty entry in the list tells the user nothing.
+export function diskChanges(base: string, disk: string): { added: string[]; dropped: string[] } {
+    const shown = (l: string) => l.trim() !== "";
+    return {
+        added: linesMissing(disk, base).filter(shown),
+        dropped: linesMissing(base, disk).filter(shown),
+    };
 }
 
 // ---- editor: draft, mtime guard, conflict ----

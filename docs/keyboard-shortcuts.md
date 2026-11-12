@@ -167,7 +167,7 @@ cancelled now, in All and in Commands, so it never starts a run named "cancel".
 | `j` / `k` (or `↓` / `↑`) | Move the cursor within the active region |
 | `Enter` | Open / activate the item under the cursor |
 | `Space` | Peek the item under the cursor in the avatar popup, without leaving the surface (see Peek below) |
-| `Esc` | On a deep surface (Jarvis, Radar, Files, Usage, Code), go back to the surface you jumped from (opening a run, file, diff or agent from elsewhere), else return to the Cockpit. In a composer or text field, leave Type posture first. |
+| `Esc` | On a deep surface (Jarvis, Radar, Files, Usage, Code), go back to the surface you jumped from (opening a run, file, diff or agent from elsewhere), else return to the Cockpit. On Usage's By work, first go back from an item to its scope, then from a project or initiative to All usage. In a composer or text field, leave Type posture first. |
 
 ## The avatar popup (what's waiting)
 
@@ -270,6 +270,8 @@ A link inside an item view does a full open, even with `Mod` held.
 | `Mod`+`F` | In the File tab: find in the file. In a markdown Preview a find bar opens with the selected words; `Enter` / `Shift`+`Enter` step to the next / previous match and `Esc` closes it. In Source and Diff, the editor's own find |
 | `c` | In the File tab's Preview of a markdown file, comment on the selected text |
 | `Mod`+`Enter` | In the File tab: add the comment being written; outside a comment box, send the comments to the agent |
+| `Ctrl`+`Shift`+click on a file path in an agent's terminal (`Cmd`+`Shift`+click on a Mac) | Peek at the file: a read-only card unfolds under the line with Preview (markdown), Source, Diff against HEAD and Open in Code. A plain `Ctrl`+click on the same path still opens it (the agent's panel, else Code). Only in an agent's terminal, not a plain one |
+| `Enter` / `Esc` in the Code peek card | Open the file in Code / close the card. The card owns both keys while focus is in it; with focus in the terminal `Esc` still reaches the agent |
 
 ### Agent: Conversation History
 
@@ -447,15 +449,22 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 |---|---|
 | `Alt`+`Z` | Toggle word wrap for the open file, also while typing in it. Every file wraps by default |
 | `Mod`+`\` | Open the file in a read-only side column (a `.tex` file on its PDF, a document on its preview), or close the side column. Dragging a file from the tree onto the right half of the editor does the same for that file |
-| `d` | Cycle the diff: HEAD, branch base, off |
-| `b` | Toggle the blame column; a click on an entry opens the run that landed it, or copies the sha |
+| `d` | Cycle the diff: HEAD, branch base, off. Needs a git repository: in a plain folder the key does nothing |
+| `b` | Toggle the blame column; a click on an entry opens the run that landed it, or copies the sha. From Preview or Diff it switches to Source first |
 | `r` | Refresh the file index |
-| `Alt`+`←` / `Alt`+`→` | Back / forward through opened files |
+| `Alt`+`←` / `Alt`+`→` | Back / forward through opened files and jumps, also while typing in the editor |
+| `Alt`+`M` | Comment on the selection, or the caret's line: `Enter` saves the note, `Esc` cancels. From Preview or Diff it switches to Source first; the editor's context menu has "Add review comment". Also while typing in the editor |
+| `Alt`+`Shift`+`M` | Send the review: open the toolbar's Send review, to pick an agent or copy it. Does nothing while the project has no comments. Also while typing in the editor |
+| `F12` | Go to the definition of the word at the caret: one match jumps there, several list in Search. Also while typing in the editor; the context menu has "Go to Definition in Project" |
+| `Shift`+`F12` | Find references to the word at the caret, in Search. Also while typing in the editor |
+| `Alt`+`O` | Go to a symbol in the open file: opens Search seeded with `@`, which lists the file's outline. Also while typing in the editor (`Mod`+`Shift`+`O` stays Open a tool) |
 | `Mod`+`S` | Save the open file |
 | `Mod`+`Shift`+`F` | Search file contents, also while typing in the editor |
 | `Alt`+`T` (or `Mod`+`Shift`+`E`, VS Code's Explorer key) | Focus the file tree, also from inside the editor |
 | `Alt`+`E` | Focus the editor |
 | `Delete` | In the file tree: delete the file or folder under the cursor (asks first) |
+| `↑` / `↓` in the Changed list | Walk the rows; `Enter` opens the file |
+| `Esc` | Close the open project picker or the unsaved-files list first; otherwise back, else to the Cockpit |
 
 ### Diff
 
@@ -472,10 +481,13 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `Shift`+`H` | Log tab |
 | `Shift`+`B` | Hide / show the left panel (it starts hidden in a narrow window; your choice is kept) |
 | `Shift`+`N` / `Shift`+`P` | Next / previous change in the open diff |
-| `Shift`+`D` | Split / unified |
+| `Shift`+`D` | Split / unified. Does nothing while the pane is too narrow to draw split (hide the panel with `Shift`+`B`, or widen the window) |
 | `Shift`+`W` | Ignore whitespace |
 | `Alt`+`Z` | Toggle word wrap for the open file (shared with Code) |
 | `v` | Mark the open file reviewed (or unmark it) and open the next unreviewed file |
+| `m` | Comment on the selected lines of the open diff, or the cursor's line (also from the editor, where `m` is the editor's own action). See [the Diff comments](diff-tab.md) |
+| `Ctrl`+`Enter` / `Esc` | In a diff comment's card: add / cancel the comment being written |
+| `Shift`+`Enter` | Send the pending diff comments to the agent, from the File view's send bar. Passes through when there is nothing to send, no bar, or the agent is asking a question |
 | `r` | Refresh changes, history and the source tree (in compare: the comparison, not history) |
 | `c` | In the log: compare refs (the Log tab's Compare…). In compare: change the compared refs |
 | `Shift`+`S` | Swap compare refs (in compare) |
@@ -491,7 +503,15 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `j` / `k` and `↓` / `↑` | On the Claude tab, move through the By session rows |
 | `Enter` | On the Claude tab, open the By session row under the cursor: its tab in Agent if it is still open, else its transcript |
 | `a` | On the Claude tab, Analyze: have Claude read the per-tab numbers and say where the quota goes. Does nothing while an analysis runs, with no Claude tabs in the window, or while Claude's 5-hour or weekly window is at 95% or more |
-| `Esc` | Back to the Cockpit |
+| `j` / `k` and `↓` / `↑` | By work: next / previous scope card (All usage, the projects, the initiatives), then on into the rows the list shows. Moving onto a card selects it; moving onto a row only marks it. The arrows between provider tabs, `a` and the list keys of the By provider page stand down while By work or Workflow is up |
+| `Enter` | By work: on a row, open it; on a card, move the cursor to its first row |
+| `Esc` | By work: from an item, back to the scope it was opened from; from a project or initiative, to All usage. On All usage, or on By provider, back to the Cockpit |
+
+### Setup: Instructions tab
+
+| Keys | Action |
+|---|---|
+| `Mod`+`S` | Save the shared doc to every harness, from the shared editor (a key handler of the editor, not a binding) |
 
 ### Setup: Memory tab
 

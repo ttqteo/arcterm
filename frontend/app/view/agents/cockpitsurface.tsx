@@ -120,6 +120,7 @@ import { StartupLoader } from "./startuploader";
 import { SURFACE_TITLE_CLASS } from "./surfacescaffold";
 import { openLauncher } from "./launcherstore";
 import { landOn } from "@/app/view/jarvis/returnsurface";
+import { agentDiffScope, openDiff as openAgentDiffScope } from "./agentdiffnav";
 
 // Status tabs (mockup A3): a tab's count takes its status color while it has any, the selected tab underlines
 const TAB_TONE: Record<ChipFilter, { text: string; line: string }> = {
@@ -482,10 +483,11 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         showTerminal();
     };
 
-    // open this agent's changed files in the Diff surface (which scopes to focusIdAtom)
+    // open this agent's changed files in the Diff surface, scoped to it as the palette action does: a project pinned
+    // there outranks the focus the surface follows, so setting focus alone left that project on screen
     const openDiff = (id: string) => {
         globalStore.set(model.focusIdAtom, id);
-        landOn(model.surfaceAtom, "files");
+        openAgentDiffScope(model, agentDiffScope(id, agents.find((a) => a.id === id)?.name ?? id));
     };
 
     const cursorIdRef = useRef(cursorId);

@@ -18,22 +18,38 @@ import { formatChordString } from "@/util/keysym";
 import { joinRepoPath, splitRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Ellipsis, FileText, PanelLeft } from "lucide-react";
+import {
+    Check,
+    ChevronDown,
+    ChevronLeft,
+    ChevronRight,
+    ChevronUp,
+    Ellipsis,
+    FileText,
+    PanelLeft,
+    RotateCw,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
+import { CommentSendBar } from "./commentsendbar";
 import { commitListAtom, commitShownPaths, unversionedOpenAtom } from "./commitstore";
+import { DiffCommentZones } from "./diffcommentcard";
+import { commentSplitAtom, mountCommentLayer } from "./diffcommentlayer";
+import { activeCommentSourceAtom, relocateComments } from "./diffcomments";
 import { firstDifferingLine } from "./diffcontent";
-import { diffPairAtom } from "./diffcontentstore";
+import { diffPairAtom, diffPairFailureAtom, retryDiffPair } from "./diffcontentstore";
 import { emptyDiffState, type EmptyDiff } from "./diffempty";
 import { commitTabCount, panelFoldedAtom, panelTabAtom, sourceTitle, type PanelTab } from "./difflayout";
 import { changePosition, clearDiffNav, diffNavPosAtom, gotoChange, setDiffNav } from "./diffnav";
 import {
     diffWrapPathAtom,
     ignoreWsAtom,
+    isNewFile,
     optionItems,
     paneHeaderLayout,
     paneOptions,
+    splitAvailableAtom,
     splitViewAtom,
     type OptionId,
     type OptionItem,
@@ -63,12 +79,26 @@ const stepBtn =
 
 function EmptyState({ empty }: { empty: EmptyDiff }) {
     return (
-        <div className="flex flex-1 flex-col items-center justify-center gap-[8px] px-[32px] text-center">
+        <div
+            data-diff-empty={empty.kind}
+            className="flex flex-1 flex-col items-center justify-center gap-[8px] px-[32px] text-center"
+        >
             <span className="flex h-[28px] w-[28px] items-center justify-center rounded-[8px] border border-edge-mid bg-surface text-muted">
                 <FileText size={16} />
             </span>
             <div className="text-[13px] font-semibold text-ink-hi">{empty.title}</div>
-            <div className="max-w-[360px] text-[12px] leading-[1.5] text-ink-mid">{empty.body}</div>
+            {/* a failed read's body is the reader's own message, which can hold a long unbroken path */}
+            <div className="max-w-[360px] break-words text-[12px] leading-[1.5] text-ink-mid">{empty.body}</div>
+            {empty.kind === "failed" ? (
+                <button
+                    data-diff-retry
+                    onClick={() => fireAndForget(retryDiffPair)}
+                    className={cn(headerBtn, "mt-[4px] text-ink-mid hover:text-ink-hi")}
+                >
+                    <RotateCw size={13} />
+                    Retry
+                </button>
+            ) : null}
         </div>
     );
 }
@@ -302,10 +332,13 @@ export function DiffPane({
     against,
     folded,
     onStepFile,
+    lineCounts = true,
 }: {
     path: string | null;
     adds: number;
     dels: number;
+    // false while git could not count the shown list's lines: the header then draws no counts rather than +0 −0
+    lineCounts?: boolean;
     editorCwd: string | null;
     repoCwd: string | null;
     model: AgentsViewModel;
@@ -321,6 +354,7 @@ export function DiffPane({
     review?: ReviewTarget | null;
 }) {
     const pair = useAtomValue(diffPairAtom);
+    const failure = useAtomValue(diffPairFailureAtom);
     // the file list this pane picks from: with no path selected, whether it is loading, failed or empty decides the words
     const listStatus = useAtomValue(activeChangesStatusAtom);
     const shownChanges = useAtomValue(shownChangesAtom);
@@ -370,20 +404,42 @@ export function DiffPane({
         }
     }, [pair, reviewSubject, reviewOpen]);
 
+    // Re-find pending comments on every load of the pair, the poll's included: a deleted, binary or emptied
+    // file loads with empty text and its comments go lost until text returns. A tooLarge pair is skipped,
+    // since its text was never read rather than gone.
+    const commentKey = useAtomValue(activeCommentSourceAtom)?.key;
+    useEffect(() => {
+        if (pair != null && commentKey != null && !pair.tooLarge) {
+            relocateComments(commentKey, pair.path, pair.refs, { original: pair.original, modified: pair.modified });
+        }
+    }, [pair, commentKey]);
+
     const openChange = active?.open != null && active.open === path ? active.files.find((c) => c.path === path) : null;
     const reviewed = openChange != null && markState(reviews[active.subject], openChange) === "ok";
     const reviewTitle = reviewed ? "Unmark this file (v)" : "Mark reviewed and open the next file (v)";
     const layout = paneHeaderLayout(width);
+    const splitShown = split && layout.split;
+    // a new file is drawn as "replace line 1 with everything": its markers and bands say nothing ([data-diff-new-file])
+    const newFile = pair != null && pair.path === path && isNewFile(pair.original, pair.modified);
     const options = useMemo(
-        () => paneOptions(split && layout.split, ignoreWs, wrap),
-        [split, layout.split, ignoreWs, wrap]
+        () => paneOptions(splitShown, ignoreWs, wrap, newFile),
+        [splitShown, ignoreWs, wrap, newFile]
     );
+    // the comment layer needs to know whether two editors are drawn: only then can it comment on removed lines
+    useEffect(() => {
+        globalStore.set(commentSplitAtom, splitShown);
+    }, [splitShown]);
+    // whether this pane could draw split at all: the removed-lines hint and Shift+D read it from outside the pane
+    useEffect(() => {
+        globalStore.set(splitAvailableAtom, layout.split);
+    }, [layout.split]);
     const empty = emptyDiffState({
         path,
         pair,
         nothingToCompare,
         listStatus,
         fileCount: shownChanges?.files.length ?? null,
+        failure,
     });
 
     const body = () => {
@@ -414,9 +470,11 @@ export function DiffPane({
                     original={pair.original}
                     modified={pair.modified}
                     options={options}
-                    // publishes the editor so Shift+N / Shift+P can walk its hunks without focusing it
-                    onMount={(diff) => {
+                    // publishes the editor so Shift+N / Shift+P can walk its hunks without focusing it,
+                    // and mounts the comment layer on it
+                    onMount={(diff, monacoApi) => {
                         setDiffNav(diff);
+                        const unmountComments = mountCommentLayer(diff, monacoApi);
                         const update = () =>
                             globalStore.set(
                                 diffNavPosAtom,
@@ -434,11 +492,13 @@ export function DiffPane({
                         ];
                         return () => {
                             subs.forEach((s) => s.dispose());
+                            unmountComments();
                             clearDiffNav(diff);
                             globalStore.set(diffNavPosAtom, null);
                         };
                     }}
                 />
+                <DiffCommentZones />
             </Suspense>
         );
     };
@@ -525,16 +585,32 @@ export function DiffPane({
         return (
             <div data-diff-header className={headerBar}>
                 {lead()}
-                <span className="flex min-w-0 items-baseline text-[12.5px]">
+                <span className="flex min-w-0 items-baseline overflow-hidden text-[12.5px]">
                     {/* rtl truncates from the left, but alone it would move the directory's trailing "/"
                         to its front; the bdi keeps the text itself left-to-right */}
                     <span className="min-w-0 truncate text-muted [direction:rtl]">
                         <bdi dir="ltr">{dir}</bdi>
                     </span>
-                    <span className="flex-none font-semibold text-ink-hi">{file}</span>
+                    {/* never wider than the wrapper, so the directory beside it shrinks to nothing first and the
+                        name truncates only once it is gone */}
+                    <span
+                        data-diff-filename
+                        title={file}
+                        className="min-w-0 max-w-full flex-none truncate font-semibold text-ink-hi"
+                    >
+                        {file}
+                    </span>
                 </span>
-                <span className="flex-none text-[11px] font-bold tabular-nums text-diff-added">+{adds}</span>
-                <span className="flex-none text-[11px] font-bold tabular-nums text-diff-removed">−{dels}</span>
+                {lineCounts ? (
+                    <>
+                        <span data-diff-adds className="flex-none text-[11px] font-bold tabular-nums text-diff-added">
+                            +{adds}
+                        </span>
+                        <span data-diff-dels className="flex-none text-[11px] font-bold tabular-nums text-diff-removed">
+                            −{dels}
+                        </span>
+                    </>
+                ) : null}
                 {empty?.kind === "toolarge" && pair != null ? (
                     <span className="flex-none text-[11px] tabular-nums text-muted">{fmtBytes(pair.size)}</span>
                 ) : null}
@@ -611,9 +687,12 @@ export function DiffPane({
             ref={hostRef}
             data-diff-pane
             data-diff-panel={folded ? "folded" : undefined}
+            data-diff-new-file={newFile && !reviewing ? "" : undefined}
         >
             {reviewing ? reviewHeader() : header()}
             {body()}
+            {/* File mode only: Review has its own tray, and its Ctrl+Enter, for the comments it makes */}
+            {reviewing ? null : <CommentSendBar model={model} />}
             {repoCwd ? <LineReviewTray repoKey={repoCwd} model={model} /> : null}
         </motion.div>
     );

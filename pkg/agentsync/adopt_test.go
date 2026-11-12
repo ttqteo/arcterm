@@ -277,3 +277,133 @@ func TestAdoptIgnoresDirectoriesThatAreNotSkills(t *testing.T) {
 		}
 	}
 }
+
+func TestPlanAdoptSkipsLinks(t *testing.T) {
+	p := testPaths(t, "", ".claude")
+	linkedSkill(t, p, filepath.Join(p.Home, ".claude", "skills"), "notes")
+	plan, err := PlanAdopt(p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Moves) != 0 {
+		t.Fatalf("plan = %+v: a linked skill is never moved", plan)
+	}
+}
+
+// strayCopy gives claude its own copy of the vault skill review, with a different body.
+func strayCopy(t *testing.T) (Paths, string) {
+	t.Helper()
+	p := testPaths(t, "", ".claude")
+	writeFile(t, filepath.Join(p.SkillsRoot, "review", skillFile), "---\nname: review\n---\nvault body\n")
+	copyDir := filepath.Join(p.Home, ".claude", "skills", "review")
+	writeFile(t, filepath.Join(copyDir, skillFile), "---\nname: review\ntool: claude\n---\nown body\n")
+	return p, copyDir
+}
+
+func TestPlanAdoptMarksVaultCopy(t *testing.T) {
+	p, _ := strayCopy(t)
+	plan, err := PlanAdopt(p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Moves) != 1 {
+		t.Fatalf("plan = %+v, want the stray copy", plan)
+	}
+	m := plan.Moves[0]
+	if !m.Vault || m.Seed || !m.BodyDiff || !reflect.DeepEqual(m.Keys, []string{"tool"}) {
+		t.Fatalf("move = %+v, want a vault copy with its delta against the vault tree", m)
+	}
+	if len(plan.Unresolved) != 0 {
+		t.Fatalf("unresolved = %#v: a vault copy is never unresolved", plan.Unresolved)
+	}
+}
+
+func TestAdoptLeavesVaultCopyByDefault(t *testing.T) {
+	p, copyDir := strayCopy(t)
+	if _, err := Adopt(p, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(copyDir, skillFile)); got != "---\nname: review\ntool: claude\n---\nown body\n" {
+		t.Fatalf("the own copy was touched: %q", got)
+	}
+	if got := readFile(t, filepath.Join(p.SkillsRoot, "review", skillFile)); got != "---\nname: review\n---\nvault body\n" {
+		t.Fatalf("the vault copy changed: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(p.SkillsRoot, "review", deltaDirName)); !os.IsNotExist(err) {
+		t.Error("a vault copy left alone must not become a delta")
+	}
+}
+
+func TestAdoptKeepVaultSetsCopyAside(t *testing.T) {
+	p, copyDir := strayCopy(t)
+	if _, err := Adopt(p, true, map[string]string{"review": KeepVault}); err != nil {
+		t.Fatal(err)
+	}
+	aside := filepath.Join(filepath.Dir(p.SkillsRoot), replacedDirName, "claude", "review")
+	if got := readFile(t, filepath.Join(aside, skillFile)); got != "---\nname: review\ntool: claude\n---\nown body\n" {
+		t.Fatalf("set-aside copy = %q", got)
+	}
+	if got := readFile(t, filepath.Join(copyDir, skillFile)); got != "---\nname: review\n---\nvault body\n" {
+		t.Fatalf("claude copy = %q, want the vault copy", got)
+	}
+	if _, err := os.Stat(filepath.Join(copyDir, managedMarkName)); err != nil {
+		t.Errorf("the vault copy in claude is not arcterm's: %v", err)
+	}
+}
+
+func TestClaimKeptVaultOnlyForVaultSkills(t *testing.T) {
+	p := bodyConflict(t)
+	if _, err := PlanAdopt(p, map[string]string{"review": KeepVault}); err == nil {
+		t.Error(`keep "vault" for a skill the vault does not have: want an error`)
+	}
+	p, _ = strayCopy(t)
+	if _, err := PlanAdopt(p, map[string]string{"review": "claude"}); err == nil {
+		t.Error("a runtime keep for a vault skill: want an error")
+	}
+	if _, err := PlanAdopt(p, map[string]string{"review": KeepVault}); err != nil {
+		t.Errorf(`keep "vault" for a vault skill: %v`, err)
+	}
+}
+
+func TestAdoptSkipList(t *testing.T) {
+	p := bodyConflict(t)
+	writeFile(t, filepath.Join(p.Home, ".claude", "skills", "graphify", skillFile), "---\nname: graphify\n---\nbody\n")
+
+	plan, err := Adopt(p, true, nil, "graphify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range plan.Moves {
+		if m.Name == "graphify" {
+			t.Fatalf("move %+v: a skipped name moves nothing", m)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(p.SkillsRoot, "graphify")); !os.IsNotExist(err) {
+		t.Error("a skipped skill reached the vault")
+	}
+	if _, err := os.Stat(filepath.Join(p.Home, ".claude", "skills", "graphify", managedMarkName)); !os.IsNotExist(err) {
+		t.Error("a skipped skill became arcterm's")
+	}
+
+	// skipped and kept: skipped wins, nothing of it moves or is set aside, and it is not unresolved
+	plan, err = Adopt(p, true, map[string]string{"review": "codex"}, "review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Unresolved) != 0 {
+		t.Fatalf("unresolved = %#v: a skipped name is not unresolved", plan.Unresolved)
+	}
+	for _, m := range plan.Moves {
+		if m.Name == "review" {
+			t.Fatalf("move %+v: a skipped name moves nothing even with a keep", m)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(p.SkillsRoot), replacedDirName)); !os.IsNotExist(err) {
+		t.Error("a skipped name was set aside")
+	}
+	for rt, body := range map[string]string{".claude": "claude body", ".codex": "codex body"} {
+		if got := readFile(t, filepath.Join(p.Home, rt, "skills", "review", skillFile)); got != "---\nname: review\n---\n"+body+"\n" {
+			t.Errorf("%s copy was touched: %q", rt, got)
+		}
+	}
+}

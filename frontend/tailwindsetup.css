@@ -516,6 +516,50 @@ svg [aria-label="tip"] g path {
     opacity: 0.4;
 }
 
+/* Diff pane comments (diffcommentlayer.ts): the + on the hovered line's glyph margin, and the bar on
+   a commented or drafted range. */
+.monaco-editor .diff-comment-plus {
+    cursor: pointer;
+}
+/* centered by absolute inset, since monaco writes display: block, size and position inline on the
+   widget node; 14px leaves a gap to the line numbers on either side of the 17px margin */
+.monaco-editor .diff-comment-plus > svg {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    background: var(--color-accent);
+    color: var(--color-background);
+}
+.monaco-editor .diff-comment-plus:hover > svg {
+    background: var(--color-accenthover);
+}
+/* A new file in the Diff pane: monaco draws an empty original as "replace line 1 with everything", so
+   every line wears the inserted line and text bands (stacked, which drowns the syntax colors) and line 1
+   the removed one. Each editor reads monaco's theme vars from its own .monaco-editor rule, hence both. */
+[data-diff-new-file] .monaco-diff-editor,
+[data-diff-new-file] .monaco-editor {
+    --vscode-diffEditor-insertedLineBackground: transparent;
+    --vscode-diffEditor-insertedTextBackground: transparent;
+    --vscode-diffEditor-removedLineBackground: transparent;
+    --vscode-diffEditor-removedTextBackground: transparent;
+    --vscode-diffEditorGutter-insertedLineBackground: transparent;
+    --vscode-diffEditorGutter-removedLineBackground: transparent;
+}
+/* the old side's line number for that removed, empty line 1 */
+[data-diff-new-file] .original-in-monaco-diff-editor .line-numbers {
+    visibility: hidden;
+}
+.monaco-editor .diff-comment-range {
+    box-shadow: inset 3px 0 0 var(--color-accent);
+}
+/* Code surface review comments (codeviewer.tsx): a bar in the line-decorations gutter. */
+.monaco-editor .code-comment-marker {
+    box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
 .ellipsis {
     display: block;
     white-space: nowrap;

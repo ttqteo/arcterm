@@ -279,6 +279,10 @@ func DeleteTab(ctx context.Context, workspaceId string, tabId string, recursive 
 	// close blocks (sends events + stops block controllers)
 	tab, _ := wstore.DBGet[*waveobj.Tab](ctx, tabId)
 	if tab != nil {
+		// before the blocks go: the first one names the agent's transcript, which keys the record
+		if err := wstore.RecordTabSessionEffort(ctx, tab); err != nil {
+			log.Printf("recording the initiative of tab %s's session: %v", tabId, err)
+		}
 		if WorkerTabCloseHook != nil {
 			WorkerTabCloseHook(ctx, tabId)
 		}

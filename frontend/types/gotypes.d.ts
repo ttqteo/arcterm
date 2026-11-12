@@ -127,6 +127,7 @@ declare global {
         skillsmanaged: number;
         skillsunmanaged: number;
         note?: string;
+        notetone?: string;
     };
 
     // wshrpc.AgentSyncSkill
@@ -147,6 +148,14 @@ declare global {
         path: string;
     };
 
+    // wshrpc.AgentSyncSkillLink
+    type AgentSyncSkillLink = {
+        runtime: string;
+        name: string;
+        path: string;
+        target: string;
+    };
+
     // wshrpc.AgentSyncSkillMove
     type AgentSyncSkillMove = {
         runtime: string;
@@ -156,6 +165,7 @@ declare global {
         keys?: string[];
         files?: string[];
         bodydiff: boolean;
+        vault?: boolean;
     };
 
     // wshrpc.AgentTranscriptUpdate
@@ -470,12 +480,14 @@ declare global {
     type CommandAgentSyncAdoptData = {
         apply?: boolean;
         keep?: {[key: string]: string};
+        skip?: string[];
     };
 
     // wshrpc.CommandAgentSyncAdoptRtnData
     type CommandAgentSyncAdoptRtnData = {
         moves?: AgentSyncSkillMove[];
         unresolved?: string[];
+        dryrun?: boolean;
     };
 
     // wshrpc.CommandAgentSyncApplyData
@@ -520,6 +532,7 @@ declare global {
         skillsroot: string;
         unmanaged: AgentSyncSkillMove[];
         unresolved: string[];
+        linked?: AgentSyncSkillLink[];
     };
 
     // wshrpc.CommandAgentSyncStatusRtnData
@@ -1600,6 +1613,7 @@ declare global {
     type CommandGetUsageStatsRtnData = {
         buckets: UsageBucket[];
         sessions: UsageSessionMeta[];
+        efforts?: UsageEffort[];
     };
 
     // wshrpc.CommandGetWindowTokensData
@@ -1646,6 +1660,7 @@ declare global {
         ref?: string;
         sessionstartts?: number;
         branchbase?: boolean;
+        end?: string;
     };
 
     // wshrpc.CommandGitChangesRtnData
@@ -1660,6 +1675,7 @@ declare global {
         upstream?: string;
         upstreamahead?: number;
         upstreambehind?: number;
+        numstaterror?: string;
     };
 
     // wshrpc.CommandGitCommitChangesData
@@ -1751,6 +1767,7 @@ declare global {
         path: string;
         maxbytes?: number;
         raw?: boolean;
+        worktree?: boolean;
     };
 
     // wshrpc.CommandGitFileAtRefRtnData
@@ -1984,6 +2001,7 @@ declare global {
     type CommandListBranchesRtnData = {
         branches: BranchInfo[];
         default?: string;
+        hasremote?: boolean;
     };
 
     // wshrpc.CommandListClaudeCommandsData
@@ -4392,6 +4410,7 @@ declare global {
         planfeedback?: string;
         workflowscan?: WorkflowScan;
         consultsessions?: ConsultSession[];
+        brainstormlead?: string;
         pause?: RunPause;
         pausedunder?: string;
         lastresumedts?: number;
@@ -5118,6 +5137,12 @@ declare global {
         msgs: number;
     };
 
+    // wshrpc.UsageEffort
+    type UsageEffort = {
+        oid: string;
+        title: string;
+    };
+
     // wshrpc.UsageInsights
     type UsageInsights = {
         markdown: string;
@@ -5195,6 +5220,12 @@ declare global {
         runmode?: string;
         role?: string;
         taskid?: string;
+        tasktitle?: string;
+        runchunk?: string;
+        effort?: string;
+        leadharness?: string;
+        leadsession?: string;
+        projectname?: string;
     };
 
     // wshrpc.UsageSessionModel

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { parseFinderQuery, rankPaths } from "./codefinder";
+import { parseFinderQuery, parsePathQuery, rankPaths } from "./codefinder";
 
 describe("rankPaths", () => {
     it("ranks a basename hit above a match scattered through directory names", () => {
@@ -141,5 +141,27 @@ describe("parseFinderQuery", () => {
 
     it("trims surrounding whitespace", () => {
         expect(parseFinderQuery("  a.ts:9  ")).toEqual({ text: "a.ts", line: 9 });
+    });
+
+    it("reads a leading @ as a symbol query, with no line", () => {
+        expect(parseFinderQuery("@openPath")).toEqual({ text: "openPath", symbol: true });
+        expect(parseFinderQuery("@ open:12")).toEqual({ text: "open:12", symbol: true });
+        expect(parseFinderQuery("@")).toEqual({ text: "", symbol: true });
+    });
+
+    it("does not read an @ inside a path as a symbol query", () => {
+        expect(parseFinderQuery("node_modules/@types/x.d.ts")).toEqual({ text: "node_modules/@types/x.d.ts" });
+    });
+});
+
+describe("parsePathQuery", () => {
+    it("reads a path and a trailing line, as parseFinderQuery did before the @ mode", () => {
+        expect(parsePathQuery("codestore.ts:152")).toEqual({ text: "codestore.ts", line: 152 });
+        expect(parsePathQuery("  a.ts:9  ")).toEqual({ text: "a.ts", line: 9 });
+    });
+
+    it("keeps a leading @ as part of the text, with no symbol mode", () => {
+        expect(parsePathQuery("@types/node:3")).toEqual({ text: "@types/node", line: 3 });
+        expect(parsePathQuery("@openPath")).toEqual({ text: "@openPath" });
     });
 });

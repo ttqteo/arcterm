@@ -25,14 +25,20 @@ import {
     compareActiveChangesAtom,
     compareActiveChangesStatusAtom,
     compareErrorAtom,
+    compareHasRemoteAtom,
     compareOnAtom,
     compareRefsAtom,
     compareSelectionAtom,
     compareSidesAtom,
+    defaultComparePair,
     enterCompare,
     fetchStateOf,
     fetchStatesAtom,
+    hasRemoteByRepoAtom,
     leaveCompare,
+    loadCompareRefsMeta,
+    loadHasRemote,
+    refreshCompare,
     retrySelectedCompareRow,
     runFetch,
     selectCompareRow,
@@ -397,5 +403,139 @@ describe("a compare commit's file list status", () => {
             expect(globalStore.get(compareActiveChangesStatusAtom)).toBe("loading");
             expect(commitChanges).not.toHaveBeenCalled();
         });
+    });
+});
+
+describe("the default pair", () => {
+    const branch = (name: string, remote = false): BranchInfo => ({ name, age: "1d", remote });
+
+    // a remembered pair is the user's own choice
+    it("keeps a remembered pair as it stands", () => {
+        expect(
+            defaultComparePair({
+                def: "main",
+                current: "main",
+                prev: { base: "dev", head: "dev" },
+                branches: [branch("feat")],
+            })
+        ).toEqual({ base: "dev", head: "dev" });
+    });
+
+    it("is the default branch against the checked-out one", () => {
+        expect(defaultComparePair({ def: "main", current: "feat", prev: null, branches: [] })).toEqual({
+            base: "main",
+            head: "feat",
+        });
+    });
+
+    // comparing main with main shows nothing, so on the default branch head becomes the most recently committed
+    // other local branch (branches arrive sorted by recency)
+    it("swaps the head for the most recent other local branch when it is the default branch", () => {
+        expect(
+            defaultComparePair({
+                def: "main",
+                current: "main",
+                prev: null,
+                branches: [branch("main"), branch("origin/feat", true), branch("feat/recent"), branch("feat/old")],
+            })
+        ).toEqual({ base: "main", head: "feat/recent" });
+    });
+
+    it("stays on the default branch when there is no other local branch", () => {
+        expect(
+            defaultComparePair({ def: "main", current: "main", prev: null, branches: [branch("main")] })
+        ).toEqual({ base: "main", head: "main" });
+    });
+});
+
+describe("entering compare on the default branch", () => {
+    it("opens on the default branch against the latest other local branch", async () => {
+        globalStore.set(diffScopeAtom, base);
+        listBranches.mockResolvedValue({
+            branches: [{ name: "main", age: "1h" }, { name: "feat/recent", age: "2d" }],
+            default: "main",
+        });
+        divergence.mockResolvedValue({ isrepo: true, ahead: [], behind: [], mergebase: "m1" });
+        compareChanges.mockResolvedValue({ isrepo: true, statusz: "", numstat: "" });
+
+        await enterCompare("/default-pair-repo", "main");
+
+        expect(globalStore.get(compareRefsAtom)).toEqual({ base: "main", head: "feat/recent" });
+    });
+});
+
+describe("refreshing the pair on screen", () => {
+    async function entered() {
+        globalStore.set(diffScopeAtom, base);
+        listBranches.mockResolvedValue({ branches: [], default: "main" });
+        divergence.mockResolvedValue({ isrepo: true, ahead: [], behind: [], mergebase: "m1" });
+        compareChanges.mockResolvedValue({ isrepo: true, statusz: "", numstat: "" });
+        await enterCompare("/repo", "feat");
+    }
+
+    it("re-reads the current pair, so a commit made since shows up", async () => {
+        await entered();
+        const before = divergence.mock.calls.length;
+        divergence.mockResolvedValue({
+            isrepo: true,
+            ahead: [{ hash: "new1", parents: [], author: "a", email: "", ts: 1, subject: "later" }],
+            behind: [],
+            mergebase: "m1",
+        });
+        await refreshCompare("/repo");
+        expect(divergence.mock.calls.length).toBe(before + 1);
+        expect(divergence).toHaveBeenLastCalledWith({}, { cwd: "/repo", base: "main", head: "feat" });
+        expect(globalStore.get(compareSidesAtom)?.ahead).toHaveLength(1);
+    });
+
+    it("does nothing before a pair has been set", async () => {
+        globalStore.set(compareRefsAtom, null);
+        await refreshCompare("/repo");
+        expect(divergence).not.toHaveBeenCalled();
+    });
+});
+
+describe("whether the repository has a remote", () => {
+    it("reads hasremote with the branches, and false when the branches cannot be read", async () => {
+        listBranches.mockResolvedValueOnce({ branches: [], default: "main", hasremote: true });
+        await loadCompareRefsMeta("/repo");
+        expect(globalStore.get(compareHasRemoteAtom)).toBe(true);
+
+        listBranches.mockResolvedValueOnce({ branches: [], default: "main" });
+        await loadCompareRefsMeta("/repo");
+        expect(globalStore.get(compareHasRemoteAtom)).toBe(false);
+
+        listBranches.mockResolvedValueOnce({ branches: [], default: "main", hasremote: true });
+        await loadCompareRefsMeta("/repo");
+        listBranches.mockRejectedValueOnce(new Error("boom"));
+        await loadCompareRefsMeta("/repo");
+        expect(globalStore.get(compareHasRemoteAtom)).toBe(false);
+    });
+
+    // Fetch is on every source, so the sync bar asks per repository; only a read that says "no remote" hides it
+    it("is kept per repository for the sync bar, and unknown until git has been asked", async () => {
+        globalStore.set(hasRemoteByRepoAtom, {});
+        expect(globalStore.get(hasRemoteByRepoAtom)["/with"]).toBeUndefined();
+
+        listBranches.mockResolvedValueOnce({ branches: [], default: "main", hasremote: true });
+        await loadHasRemote("/with");
+        listBranches.mockResolvedValueOnce({ branches: [], default: "main" });
+        await loadHasRemote("/without");
+        expect(globalStore.get(hasRemoteByRepoAtom)).toEqual({ "/with": true, "/without": false });
+        expect(listBranches).toHaveBeenLastCalledWith({}, { projectpath: "/without" });
+    });
+
+    it("leaves a repository unknown when the read fails, so Fetch stays on show", async () => {
+        globalStore.set(hasRemoteByRepoAtom, {});
+        listBranches.mockRejectedValueOnce(new Error("boom"));
+        await loadHasRemote("/repo");
+        expect(globalStore.get(hasRemoteByRepoAtom)["/repo"]).toBeUndefined();
+    });
+
+    it("is also learned by a comparison's branch read", async () => {
+        globalStore.set(hasRemoteByRepoAtom, {});
+        listBranches.mockResolvedValueOnce({ branches: [], default: "main", hasremote: true });
+        await loadCompareRefsMeta("/compared");
+        expect(globalStore.get(hasRemoteByRepoAtom)["/compared"]).toBe(true);
     });
 });

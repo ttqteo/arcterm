@@ -66,16 +66,28 @@ import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
 import briefActScenarios from "./scenarios-brief-act.mjs";
 import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
 import codeBlameDraftScenarios from "./scenarios-code-blame-draft.mjs";
+import codeFixesSessionScenarios from "./scenarios-code-fixes-session.mjs";
+import codeFixesViewScenarios from "./scenarios-code-fixes-view.mjs";
 import codeImageZoomScenarios from "./scenarios-code-imagezoom.mjs";
+import codeOutlineScenarios from "./scenarios-code-outline.mjs";
+import codeReviewScenarios from "./scenarios-code-review.mjs";
+import codePeekScenarios from "./scenarios-codepeek.mjs";
+import diffCommentsScenarios from "./scenarios-diff-comments.mjs";
 import diffFileKeysScenarios from "./scenarios-diff-file-keys.mjs";
+import diffScopeScenarios from "./scenarios-diff-scope.mjs";
+import diffStatesScenarios from "./scenarios-diff-states.mjs";
 import jarvisActivityScenarios from "./scenarios-jarvis-activity.mjs";
 import jarvisCardsScenarios from "./scenarios-jarvis-cards.mjs";
 import jarvisSheetScenarios from "./scenarios-jarvis-sheet.mjs";
+import kaelKeysScenarios from "./scenarios-kael-keys.mjs";
 import modalFocusHomeScenarios from "./scenarios-modal-focus-home.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
 import paletteBrainstormResumeScenarios from "./scenarios-palette-brainstorm-resume.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
+import setupInstructionsScenarios from "./scenarios-setup-instructions.mjs";
 import terminalStatusLineScenarios from "./scenarios-terminal-status-line.mjs";
+import usageLensScenarios from "./scenarios-usage-lens.mjs";
+import usageWorkScenarios from "./scenarios-usage-work.mjs";
 import { xmasTreeFixture, xmasTreeScenarios } from "./xmastreescenarios.mjs";
 import {
     arrangeSetupFixture,
@@ -57386,6 +57398,10 @@ const FILES_KIT = {
     reloadApp,
 };
 
+// what the scenario modules of the 2026-11-12 Kael sync (scenarios-code-outline.mjs … scenarios-kael-keys.mjs) take: one
+// object of the kits above, so a module reaches whichever it needs and this file stays untouched by each task
+const KAEL_KITS = { rt: RT_KIT, code: CODE_KIT, files: FILES_KIT, jarvis: JARVIS_KIT };
+
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
 // (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
 // nothing mocked. `runs:maxactive` is 1 and a run held by deferstart (it spawns nothing) is active, so no entry has room
@@ -67071,6 +67087,18 @@ export const SCENARIOS = [
     projectOverviewHistory,
     railTranslate,
     workflowScanEntry,
+    ...codeOutlineScenarios(KAEL_KITS),
+    ...codeReviewScenarios(KAEL_KITS),
+    ...codePeekScenarios(KAEL_KITS),
+    ...codeFixesViewScenarios(KAEL_KITS),
+    ...codeFixesSessionScenarios(KAEL_KITS),
+    ...diffCommentsScenarios(KAEL_KITS),
+    ...diffScopeScenarios(KAEL_KITS),
+    ...diffStatesScenarios(KAEL_KITS),
+    ...usageLensScenarios(KAEL_KITS),
+    ...usageWorkScenarios(KAEL_KITS),
+    ...setupInstructionsScenarios(KAEL_KITS),
+    ...kaelKeysScenarios(KAEL_KITS),
     // last: its fixture roster stands in for the live one until its teardown reloads
     agentComposer,
 ];

@@ -7,6 +7,7 @@
 // write that never goes through comparestore.ts's own enterCompare/leaveCompare (e.g. filessurface.tsx
 // flipping diffScopeAtom directly when the picker jumps to a different agent).
 
+import { escapeMenusOpenAtom } from "@/app/hook/useEscapeClose";
 import { globalStore } from "@/app/store/jotaiStore";
 import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
 import { attachBrainstorm, detachBrainstorm, setBrainstormMode } from "@/app/view/agents/brainstormstore";
@@ -19,6 +20,7 @@ import { activeReviewKeyAtom, lineReviewsAtom } from "@/app/view/agents/linecomm
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
+import { usageLensAtom, usageWorkItemAtom, usageWorkScopeAtom } from "@/app/view/agents/usagestore";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
@@ -288,5 +290,40 @@ describe("watchFocusedAgent", () => {
             syncDocReview("a1", undefined);
             syncDocReview("a2", undefined);
         }
+    });
+});
+
+// The Kael sync's guards: usage:back and surface:back-home read the By work lens, its scope and its item, and
+// surface:back-home (with usage:back) reads the count of open Escape menus.
+describe("whenVersionAtom: Usage's By work and Escape menus", () => {
+    afterEach(() => {
+        globalStore.set(usageLensAtom, "provider");
+        globalStore.set(usageWorkScopeAtom, "all");
+        globalStore.set(usageWorkItemAtom, null);
+        globalStore.set(escapeMenusOpenAtom, 0);
+    });
+
+    it("bumps when the Usage lens changes", () => {
+        const before = globalStore.get(whenVersionAtom);
+        globalStore.set(usageLensAtom, "work");
+        expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
+    });
+
+    it("bumps when the By work scope changes", () => {
+        const before = globalStore.get(whenVersionAtom);
+        globalStore.set(usageWorkScopeAtom, "effort:e1");
+        expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
+    });
+
+    it("bumps when a By work item opens", () => {
+        const before = globalStore.get(whenVersionAtom);
+        globalStore.set(usageWorkItemAtom, { key: "run:r1", back: "all" } as any);
+        expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
+    });
+
+    it("bumps when a dropdown that closes on Escape opens", () => {
+        const before = globalStore.get(whenVersionAtom);
+        globalStore.set(escapeMenusOpenAtom, 1);
+        expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
     });
 });

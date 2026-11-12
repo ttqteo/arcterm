@@ -208,6 +208,20 @@ describe("launchAgent", () => {
         });
     });
 
+    it("warns with a toast when the launch-time sync fails, and launches anyway", async () => {
+        agentSyncApply.mockRejectedValueOnce(new Error("boom"));
+        const opts = { runtime: "claude", startupCommand: "claude", task: "", projectPath: "C:/proj", projectName: "proj" };
+        await expect(launchAgent(fakeModel(), opts as any)).resolves.toBe("tab-1");
+        await vi.waitFor(() =>
+            expect(toast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    level: "warn",
+                    message: "Harness sync failed: boom. Setup → Instructions has Sync now.",
+                })
+            )
+        );
+    });
+
     it("preflights a missing Pi resumePath and refuses to create a tab", async () => {
         const missing = "C:\\Users\\Jane Doe\\.pi\\agent\\sessions\\gone.jsonl";
         fileInfo.mockRejectedValue(new Error("no such file"));

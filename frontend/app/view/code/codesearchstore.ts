@@ -23,15 +23,18 @@ export type SearchState =
     | { kind: "error"; query: string; message: string };
 
 // "changed" is the working tree's change list — a navigation aid, not a diff: a row opens the
-// editor, and the diff for the file you land on is one toggle away in the path bar.
-export const codeSearchModeAtom = atom<"files" | "search" | "changed">("files") as PrimitiveAtom<
-    "files" | "search" | "changed"
->;
+// editor, and the diff for the file you land on is one toggle away in the path bar. "symbols" is the
+// open file's outline.
+export type CodeColumnMode = "files" | "search" | "changed" | "symbols";
+export const codeSearchModeAtom = atom<CodeColumnMode>("files") as PrimitiveAtom<CodeColumnMode>;
 export const codeSearchQueryAtom = atom<string>("") as PrimitiveAtom<string>;
 export const codeSearchAtom = atom<SearchState>({ kind: "idle" }) as PrimitiveAtom<SearchState>;
 export const codeSearchOptsAtom = atom<SearchOpts>(DEFAULT_SEARCH_OPTS) as PrimitiveAtom<SearchOpts>;
 // beside the state rather than in it: an invalid pattern leaves the previous results on screen
 export const codeSearchInvalidAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
+// what a search the surface ran for you was asking — "Definitions of openPath" — so a list of
+// candidates reads as the answer rather than as a broken jump. Any search typed by hand clears it.
+export const codeSearchTitleAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
 // The RPC layer's DefaultTimeoutMs is 5s and it binds the SERVER-side context, so a search the
 // server would have finished gets killed under it. The reader self-limits at gitinfo's 10s
@@ -41,9 +44,19 @@ const GREP_RPC_TIMEOUT_MS = 20_000;
 // guards a slow search against a newer one, same pattern as codestore's index and file loads
 const current = { token: "" };
 
-export async function runSearch(project: { path: string }, query: string, opts: SearchOpts): Promise<void> {
+export function grepProject(projectPath: string, query: string, opts: SearchOpts): Promise<CommandGitGrepRtnData> {
+    return RpcApi.GitGrepCommand(TabRpcClient, grepData(projectPath, query, opts), { timeout: GREP_RPC_TIMEOUT_MS });
+}
+
+export async function runSearch(
+    project: { path: string },
+    query: string,
+    opts: SearchOpts,
+    title: string | null = null
+): Promise<void> {
     const q = query.trim();
     globalStore.set(codeSearchInvalidAtom, false);
+    globalStore.set(codeSearchTitleAtom, title);
     if (q === "") {
         globalStore.set(codeSearchAtom, { kind: "idle" });
         return;
@@ -54,9 +67,7 @@ export async function runSearch(project: { path: string }, query: string, opts: 
     const before = globalStore.get(codeSearchAtom);
     globalStore.set(codeSearchAtom, { kind: "searching", query: q });
     try {
-        const res = await RpcApi.GitGrepCommand(TabRpcClient, grepData(project.path, q, opts), {
-            timeout: GREP_RPC_TIMEOUT_MS,
-        });
+        const res = await grepProject(project.path, q, opts);
         if (current.token !== token) {
             return;
         }
@@ -85,11 +96,24 @@ export async function runSearch(project: { path: string }, query: string, opts: 
     }
 }
 
+// Puts a search the surface already ran into the pane, as if typed: the query and filters are left
+// in the inputs so the user can loosen them and press Enter. Supersedes any search still in flight.
+export function showSearch(r: { query: string; opts: SearchOpts; title: string; state: SearchState }): void {
+    current.token = "";
+    globalStore.set(codeSearchQueryAtom, r.query);
+    globalStore.set(codeSearchOptsAtom, r.opts);
+    globalStore.set(codeSearchInvalidAtom, false);
+    globalStore.set(codeSearchTitleAtom, r.title);
+    globalStore.set(codeSearchAtom, r.state);
+    globalStore.set(codeSearchModeAtom, "search");
+}
+
 export function resetSearch(): void {
     current.token = "";
     globalStore.set(codeSearchQueryAtom, "");
     globalStore.set(codeSearchAtom, { kind: "idle" });
     globalStore.set(codeSearchOptsAtom, DEFAULT_SEARCH_OPTS);
     globalStore.set(codeSearchInvalidAtom, false);
+    globalStore.set(codeSearchTitleAtom, null);
     globalStore.set(codeSearchModeAtom, "files");
 }

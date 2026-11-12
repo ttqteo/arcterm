@@ -3,7 +3,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { deleteWarning, nameErrorMessage, provisionalIndex, renamedPath, targetDir, validateName } from "./codemutate";
+import {
+    deleteWarning,
+    existingTreePaths,
+    nameErrorMessage,
+    provisionalIndex,
+    renamedPath,
+    targetDir,
+    validateName,
+} from "./codemutate";
 import type { TreeRow } from "./codetree";
 
 const EXISTING = ["src/a.ts", "src/util/b.ts", "README.md"];
@@ -68,6 +76,26 @@ describe("validateName", () => {
         expect(nameErrorMessage("illegal-char")).toBe('A name cannot contain < > : " | ? * or control characters.');
         expect(nameErrorMessage("reserved")).toBe("That is a reserved device name on Windows.");
         expect(nameErrorMessage("exists")).toBe("Something with that name is already here.");
+    });
+});
+
+describe("existingTreePaths", () => {
+    it("holds the index paths and the empty folders made this session", () => {
+        const paths = existingTreePaths(["src/a.ts"], ["src/empty"]);
+        expect(paths).toContain("src/a.ts");
+        expect(paths).toContain("src/empty");
+    });
+
+    it("makes an empty session folder collide with its name", () => {
+        expect(validateName("empty", "src", existingTreePaths(["src/a.ts"], ["src/empty"]))).toBe("exists");
+    });
+
+    it("makes an indexed file collide with its name", () => {
+        expect(validateName("a.ts", "src", existingTreePaths(["src/a.ts"], []))).toBe("exists");
+    });
+
+    it("lets a fresh name through", () => {
+        expect(validateName("fresh", "src", existingTreePaths(["src/a.ts"], ["src/empty"]))).toBeNull();
     });
 });
 

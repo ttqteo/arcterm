@@ -33,11 +33,12 @@ import {
     Trash2,
     X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { nameErrorMessage, provisionalIndex, validateName } from "./codemutate";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { projectDraftPaths } from "./codedraft";
+import { existingTreePaths, nameErrorMessage, provisionalIndex, validateName } from "./codemutate";
 import { pinsFor } from "./codepins";
 import { CODE_PATH_MIME, codeTreeDragAtom, openSide } from "./codeside";
-import { statusGlyph, type CodeStatus } from "./codestatus";
+import { changedDirs, statusGlyph, type CodeStatus } from "./codestatus";
 import {
     cancelEdit,
     checkStale,
@@ -52,6 +53,7 @@ import {
     codePlainAtom,
     codeProjectAtom,
     codeRowsAtom,
+    codeSessionDirsAtom,
     codeStatusAtom,
     codeStatusDirsAtom,
     codeTreeFocusedAtom,
@@ -91,6 +93,12 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
     const locate = useAtomValue(codeLocateAtom);
     const pinned = project == null ? [] : pinsFor(pins, project.path);
     const plain = useAtomValue(codePlainAtom);
+    const sessionDirs = useAtomValue(codeSessionDirsAtom);
+    // the folders holding a draft, for the collapsed-row dot: a draft's file may have left the index
+    const draftDirs = useMemo(
+        () => changedDirs(project == null ? [] : projectDraftPaths(drafts, project.path)),
+        [drafts, project]
+    );
     const openFile = file.kind === "none" ? null : file.path;
     const rowRefs = useRef(new Map<string, HTMLDivElement>());
     const treeRef = useRef<HTMLDivElement>(null);
@@ -103,13 +111,19 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
         }
     }, []);
 
+    // The tree unmounts while it may hold focus (the Changed, Search and Symbols tabs replace it), and an element that is
+    // removed fires no blur: without this the flag stays set and the tree's arrow, Enter and j/k bindings keep claiming keys for
+    // rows that are gone, so the list that took its place (the Changed pane's arrows) never sees them.
+    useEffect(() => () => void globalStore.set(codeTreeFocusedAtom, false), []);
+
     // an ignored directory git reported as one entry shows its contents once listed; this covers every
     // way a directory opens (click, keys, a reveal), and an opened one that a listing nested further
     useEffect(() => {
         fireAndForget(listIgnoredDirs);
     }, [expanded, index, ignoredListed]);
 
-    const paths = index?.paths ?? [];
+    // an empty folder made this session is a row but not in the index, and mkdir fails on its name
+    const paths = useMemo(() => existingTreePaths(index?.paths ?? [], [...sessionDirs]), [index, sessionDirs]);
     const provisional = edit?.kind === "create" ? provisionalIndex(rows, edit.dir) : -1;
     const provisionalDepth =
         edit?.kind === "create" && edit.dir !== "" ? (rows.find((r) => r.path === edit.dir)?.depth ?? -1) + 1 : 0;
@@ -284,6 +298,13 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                     <span
                         aria-label="Unsaved edits"
                         title="Unsaved edits"
+                        className="size-[6px] rounded-full bg-accent-soft"
+                    />
+                ) : null}
+                {row.kind === "dir" && !row.expanded && draftDirs.has(row.path) ? (
+                    <span
+                        aria-label="Contains unsaved edits"
+                        title="Contains unsaved edits"
                         className="size-[6px] rounded-full bg-accent-soft"
                     />
                 ) : null}

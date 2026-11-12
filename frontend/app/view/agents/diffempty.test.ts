@@ -92,4 +92,37 @@ describe("emptyDiffState", () => {
             ).toBeNull();
         });
     });
+
+    describe("a file that failed to read, or reads as empty", () => {
+        it("says why a file could not be read instead of loading forever", () => {
+            expect(emptyDiffState(input({ path: "a.ts", failure: "cannot stream directory" }))).toEqual({
+                kind: "failed",
+                title: "Couldn’t read this file",
+                body: "cannot stream directory",
+            });
+        });
+        it("has nothing that failed to read with no file open", () => {
+            expect(emptyDiffState(input({ failure: "x" }))?.kind).toBe("nofile");
+        });
+        it("names a new empty file rather than calling it a rename", () => {
+            const added = { ...pair({ original: "", modified: "" }), originalMissing: true };
+            expect(emptyDiffState(input({ path: "a.ts", pair: added }))).toEqual({
+                kind: "newempty",
+                title: "New empty file",
+                body: "It was added with no content.",
+            });
+        });
+        it("names a deleted empty file rather than calling it a rename", () => {
+            const deleted = { ...pair({ original: "", modified: "" }), modifiedMissing: true };
+            expect(emptyDiffState(input({ path: "a.ts", pair: deleted }))).toEqual({
+                kind: "deletedempty",
+                title: "Deleted empty file",
+                body: "It had no content.",
+            });
+        });
+        it("still calls equal text on both sides a rename or mode change", () => {
+            const both = { ...pair({ original: "", modified: "" }), originalMissing: false, modifiedMissing: false };
+            expect(emptyDiffState(input({ path: "a.ts", pair: both }))?.kind).toBe("unchanged");
+        });
+    });
 });

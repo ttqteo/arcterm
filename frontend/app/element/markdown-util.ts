@@ -39,6 +39,30 @@ function parseOptions(str: string): Record<string, any> {
     }
 }
 
+const FRONT_MATTER_OPEN = "---";
+const FRONT_MATTER_CLOSE = ["---", "..."];
+const MIN_FENCE_LEN = 3;
+
+// yaml front matter would otherwise render as a rule plus prose, its `# comment` lines as h1s. Fenced as a
+// yaml code block it reads as metadata; the fence outruns any backtick run inside so the block cannot end early.
+// A lone opening `---` with no closing line is a horizontal rule and is left alone. Opt-in, for a caller that
+// shows a whole file as a page (the terminal Code peek): the renderer itself leaves the text as given.
+export function fenceFrontMatter(text: string): string {
+    const eol = text.includes("\r\n") ? "\r\n" : "\n";
+    const lines = text.split(eol);
+    if (lines[0] !== FRONT_MATTER_OPEN) {
+        return text;
+    }
+    const close = lines.findIndex((line, i) => i > 0 && FRONT_MATTER_CLOSE.includes(line));
+    if (close < 0) {
+        return text;
+    }
+    const yaml = lines.slice(1, close);
+    const longestRun = Math.max(0, ...yaml.flatMap((line) => (line.match(/`+/g) ?? []).map((run) => run.length)));
+    const fence = "`".repeat(Math.max(MIN_FENCE_LEN, longestRun + 1));
+    return [fence + "yaml", ...yaml, fence, ...lines.slice(close + 1)].join(eol);
+}
+
 function makeMarkdownWaveBlockKey(block: MarkdownContentBlockType): string {
     return `${block.type}[${block.id}]`;
 }

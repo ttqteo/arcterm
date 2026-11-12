@@ -4,6 +4,7 @@
 import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
 import { peekClickLabel } from "@/app/cockpit/ctrlheld";
 import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
+import { escapeMenusOpenAtom } from "@/app/hook/useEscapeClose";
 import { anyModalOpen } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { activeNavOrder } from "@/app/view/agents/activenav";
@@ -57,6 +58,7 @@ import {
 import { paneState } from "@/app/view/agents/canvasmodel";
 import { focusedCanvas, focusedCanvasMode, setMarking, stepCanvasBoard } from "@/app/view/agents/canvasstore";
 import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
+import { sendPendingComments } from "@/app/view/agents/commentsend";
 import { sideJumpTarget, type CompareRow } from "@/app/view/agents/comparerows";
 import {
     compareOnAtom,
@@ -66,9 +68,10 @@ import {
     setCompareRefs,
     swapCompareRefs,
 } from "@/app/view/agents/comparestore";
+import { commentOnSelection } from "@/app/view/agents/diffcommentlayer";
 import { panelFoldedAtom, panelTabAtom } from "@/app/view/agents/difflayout";
 import { gotoChange } from "@/app/view/agents/diffnav";
-import { diffWrapPathAtom, ignoreWsAtom, splitViewAtom } from "@/app/view/agents/diffoptions";
+import { diffWrapPathAtom, ignoreWsAtom, splitAvailableAtom, splitViewAtom } from "@/app/view/agents/diffoptions";
 import { parseDocReview } from "@/app/view/agents/docreview";
 import { focusedDocReview, openReview, stepDocReviewTab } from "@/app/view/agents/docreviewstore";
 import { doneSuggestion } from "@/app/view/agents/donesuggest";
@@ -118,18 +121,27 @@ import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { runningBackgroundTasks } from "@/app/view/agents/transcriptprojection";
 import { toggleTranslate } from "@/app/view/agents/translatestore";
 import { unreadAgentsAtom } from "@/app/view/agents/unreadagentsstore";
+import { LIST_COLLAPSED_ROWS } from "@/app/view/agents/usageattribution";
+import { usageBackStep } from "@/app/view/agents/usagenav";
+import { usageLensAtom, usageListShownAtom, usageWorkItemAtom, usageWorkScopeAtom } from "@/app/view/agents/usagestore";
 import { panelShownFoldedAtom, refreshSidebar } from "@/app/view/agents/worktreesidebarstore";
 import { toggleBlame } from "@/app/view/code/codeblamestore";
+import { projectComments } from "@/app/view/code/codereview";
+import { codeReviewsAtom, codeReviewSendOpenAtom, startComment } from "@/app/view/code/codereviewstore";
 import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
 import {
+    caretWord,
     codeCursorAtom,
     codePlainAtom,
+    codeProjectAtom,
     codeRowsAtom,
     codeTreeFocusedAtom,
     confirmDelete,
     cycleDiff,
+    findReferences,
     goBack,
     goForward,
+    goToDefinition,
     openPath,
     refreshIndex,
     saveCurrent,
@@ -249,6 +261,51 @@ const navigateStrict = (ctx: KeyContext) => !ctx.editable && !ctx.modalOpen;
 // Deep (non-home) surfaces whose Escape returns to the Cockpit. Excludes cockpit (already home), agent
 // (owns Escape via buildAgentBindings: exit fullscreen / back), and settings.
 const ESC_HOME_SURFACES = new Set<SurfaceKey>(["jarvis", "radar", "files", "usage", "code"]);
+
+// Escape on a deep surface navigates (back, else home) only when nothing on screen owns it.
+// The autonomy panel owns Escape while it is open: closing an overlay is what the user means by
+// Escape there, and navigating home instead would leave the panel open behind the Cockpit. It
+// cannot claim the key itself, since this dispatcher runs on window capture, ahead of any
+// handler the panel could register.
+const escapeNavigates = (ctx: KeyContext): boolean =>
+    navigateStrict(ctx) &&
+    ESC_HOME_SURFACES.has(ctx.surface) &&
+    // any open ModalShell (the Brief's Profile window, its sheet) closes on Escape itself; going
+    // home instead unmounts it with its state still set, so it reopens on the way back
+    !anyModalOpen() &&
+    !globalStore.get(autonomyPanelOpenAtom) &&
+    // and the pet's peek, for the same reason again — it is global chrome, so it can be open
+    // on ANY of these surfaces, not just Jarvis
+    !globalStore.get(petPeekOpenAtom) &&
+    // the Diff surface's compare state owns Escape while it is on: leaving compare is what
+    // Escape means there, and going home instead would strand a two-ref read behind the Cockpit
+    !globalStore.get(compareOnAtom) &&
+    // and with filters active, Escape clears them — the history header says so ("Clear filters", esc)
+    !(ctx.surface === "files" && anyFilterActive(globalStore.get(historyFiltersAtom))) &&
+    // the Brief's record peek is a ModalShell and the Brief is where every record destination
+    // now lands: without this, one press closed the peek AND left the surface — and the peek's
+    // own state was never cleared, so coming back showed it open again
+    globalStore.get(briefPeekRecordAtom) == null &&
+    // the DAG modal takes Escape itself too, and the Brief mounts it as well as Channels
+    globalStore.get(dagModalStateAtom) == null &&
+    // and the plan-editing menu, the innermost rung of all
+    globalStore.get(trackerMenuAtom) == null &&
+    // and a review pass on the Brief: Escape leaves the pass, and going home too would do both
+    !(ctx.surface === "jarvis" && globalStore.get(reviewModeAtom) != null) &&
+    // and any hand-rolled dropdown (useEscapeClose, Code's project picker): it closes on Escape and returns focus
+    // itself, but only if this capture-phase handler leaves the key alone
+    globalStore.get(escapeMenusOpenAtom) === 0;
+
+// Usage's By work Back step while Usage shows, else null. The three atoms are read whatever they hold, so the
+// PREDICATE_ATOMS completeness sweep sees each of them.
+const usageBack = (ctx: KeyContext) => {
+    const step = usageBackStep(
+        globalStore.get(usageLensAtom),
+        globalStore.get(usageWorkScopeAtom),
+        globalStore.get(usageWorkItemAtom)
+    );
+    return ctx.surface === "usage" ? step : null;
+};
 
 // A key that clicks a control the surface already draws, rather than duplicating what the control knows.
 // No control on screen lets the key pass.
@@ -612,36 +669,25 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             keys: "Escape",
             group: "Navigation",
             label: "Back, else to Cockpit",
-            // the autonomy panel owns Escape while it is open: closing an overlay is what the user means by
-            // Escape there, and navigating home instead would leave the panel open behind the Cockpit. It
-            // cannot claim the key itself, since this dispatcher runs on window capture, ahead of any handler
-            // the panel could register.
-            when: (ctx) =>
-                navigateStrict(ctx) &&
-                ESC_HOME_SURFACES.has(ctx.surface) &&
-                // any open ModalShell (the Brief's Profile window, its sheet) closes on Escape itself; going
-                // home instead unmounts it with its state still set, so it reopens on the way back
-                !anyModalOpen() &&
-                !globalStore.get(autonomyPanelOpenAtom) &&
-                // and the pet's peek, for the same reason again — it is global chrome, so it can be open
-                // on ANY of these surfaces, not just Jarvis
-                !globalStore.get(petPeekOpenAtom) &&
-                // the Diff surface's compare state owns Escape while it is on: leaving compare is what
-                // Escape means there, and going home instead would strand a two-ref read behind the Cockpit
-                !globalStore.get(compareOnAtom) &&
-                // and with filters active, Escape clears them — the history header says so ("Clear filters", esc)
-                !(ctx.surface === "files" && anyFilterActive(globalStore.get(historyFiltersAtom))) &&
-                // the Brief's record peek is a ModalShell and the Brief is where every record destination
-                // now lands: without this, one press closed the peek AND left the surface — and the peek's
-                // own state was never cleared, so coming back showed it open again
-                globalStore.get(briefPeekRecordAtom) == null &&
-                // the DAG modal takes Escape itself too, and the Brief mounts it as well as Channels
-                globalStore.get(dagModalStateAtom) == null &&
-                // and the plan-editing menu, the innermost rung of all
-                globalStore.get(trackerMenuAtom) == null &&
-                // and a review pass on the Brief: Escape leaves the pass, and going home too would do both
-                !(ctx.surface === "jarvis" && globalStore.get(reviewModeAtom) != null),
+            // stands down while Usage's By work is drilled: usage:back takes the press there
+            when: (ctx) => escapeNavigates(ctx) && usageBack(ctx) == null,
             run: () => backOrHome(model),
+        },
+        {
+            id: "usage:back",
+            keys: "Escape",
+            group: "Navigation",
+            label: "Back to the scope, else All usage",
+            when: (ctx) => escapeNavigates(ctx) && usageBack(ctx) != null,
+            run: (ctx) => {
+                const step = usageBack(ctx);
+                if (step == null) {
+                    return false;
+                }
+                globalStore.set(usageWorkScopeAtom, step.scope);
+                globalStore.set(usageWorkItemAtom, step.item);
+                globalStore.set(usageListShownAtom, LIST_COLLAPSED_ROWS);
+            },
         },
     ];
 }
@@ -2402,7 +2448,12 @@ export function buildFilesBindings(): Binding[] {
             group: "Diff",
             label: "Split / unified",
             when: on,
-            run: () => globalStore.set(splitViewAtom, !globalStore.get(splitViewAtom)),
+            run: () => {
+                if (!globalStore.get(splitAvailableAtom)) {
+                    return false; // too narrow to draw split (or no pane yet): the pane stays unified
+                }
+                globalStore.set(splitViewAtom, !globalStore.get(splitViewAtom));
+            },
         },
         {
             id: "files:toggle-whitespace",
@@ -2486,6 +2537,25 @@ export function buildFilesBindings(): Binding[] {
             label: "Previous file",
             when: on,
             run: () => stepListFile(-1),
+        },
+        {
+            // with focus in the diff editor, `m` is the editor's own action (diffcommentlayer.ts)
+            id: "files:comment",
+            keys: "m",
+            group: "Diff",
+            label: "Comment on lines",
+            when: on,
+            // no editor mounted or no source to comment for — let the key pass
+            run: () => commentOnSelection(),
+        },
+        {
+            id: "files:send-comments",
+            keys: "Shift:Enter",
+            group: "Diff",
+            label: "Send comments",
+            when: on,
+            // no send bar, no comments, or a recipient that has to wait — let the key pass
+            run: () => sendPendingComments(),
         },
         {
             id: "files:toggle-history",
@@ -2656,8 +2726,12 @@ export function buildFilesBindings(): Binding[] {
     ];
 }
 
-export function buildCodeBindings(): Binding[] {
+// `model` is what the symbol chord needs to open the search palette (paletteSeedAtom, paletteOpenAtom); the
+// surface always passes it, and without one that chord has nothing to open and lets the key pass.
+export function buildCodeBindings(model?: AgentsViewModel): Binding[] {
     const on = (ctx: KeyContext) => ctx.surface === "code" && !ctx.editable && !ctx.modalOpen;
+    // from the editor (or any field) too: the same Code surface, where `on` stands down
+    const inField = (ctx: KeyContext) => ctx.surface === "code" && ctx.editable && !ctx.modalOpen;
     // Live whenever the tree pane holds focus. Focus is read from an atom, not the DOM:
     // store.test.ts evaluates every `when` in vitest's node environment, where document is
     // undefined. !editable matters because the inline name input lives INSIDE the tree — its
@@ -2705,6 +2779,30 @@ export function buildCodeBindings(): Binding[] {
                 void goForward();
             },
         },
+        // Alt+arrows are not editing keys, and the editor is where a jump starts: the same two actions while a field
+        // or the editor holds focus, where `on` above stands down. Complementary `when`s, so no two are live at once.
+        {
+            id: "code:back-from-field",
+            keys: "Alt:ArrowLeft",
+            group: "Code",
+            label: "Back (from the editor)",
+            paletteHidden: true, // duplicates code:back
+            when: inField,
+            run: () => {
+                void goBack();
+            },
+        },
+        {
+            id: "code:forward-from-field",
+            keys: "Alt:ArrowRight",
+            group: "Code",
+            label: "Forward (from the editor)",
+            paletteHidden: true, // duplicates code:forward
+            when: inField,
+            run: () => {
+                void goForward();
+            },
+        },
         {
             id: "code:refresh",
             keys: "r",
@@ -2722,6 +2820,10 @@ export function buildCodeBindings(): Binding[] {
             label: "Cycle the diff: HEAD, branch base, off",
             when: on,
             run: () => {
+                // a plain directory has no history to diff against, as its disabled Diff button says: let the key pass
+                if (globalStore.get(codePlainAtom)) {
+                    return false;
+                }
                 void cycleDiff();
             },
         },
@@ -2754,6 +2856,29 @@ export function buildCodeBindings(): Binding[] {
                 if (!globalStore.get(codePlainAtom)) {
                     toggleBlame();
                 }
+            },
+        },
+        {
+            id: "code:comment",
+            keys: "Alt:m",
+            group: "Code",
+            label: "Comment on the selection",
+            // from the editor too: a comment is on what the editor has selected
+            when: (ctx) => ctx.surface === "code" && !ctx.modalOpen,
+            run: () => startComment(),
+        },
+        {
+            id: "code:send-review",
+            keys: "Alt:Shift:m",
+            group: "Code",
+            label: "Send the review",
+            when: (ctx) => ctx.surface === "code" && !ctx.modalOpen,
+            run: () => {
+                const project = globalStore.get(codeProjectAtom);
+                if (project == null || projectComments(globalStore.get(codeReviewsAtom), project.path).length === 0) {
+                    return false; // no review to send, and so no toolbar to open it in
+                }
+                globalStore.set(codeReviewSendOpenAtom, true);
             },
         },
         {
@@ -2886,6 +3011,56 @@ export function buildCodeBindings(): Binding[] {
                 // the pane focuses its input only on mount: nothing remounts it when Search is already
                 // showing, and a collapsed sidebar mounts it hidden, where focus() does nothing
                 window.requestAnimationFrame(focusCodeSearchInput);
+            },
+        },
+        // F12 and Shift+F12 are Monaco's own chords for these two; this dispatcher runs on window capture, so these
+        // win while the caret is in the editor, which is where they are pressed — hence the surface gate rather than
+        // !editable. The symbol chord is Alt+O, not the VS Code Ctrl+Shift+O: Mod+Shift+O is "Open a tool" here.
+        {
+            id: "code:definition",
+            keys: "F12",
+            group: "Code",
+            label: "Go to the definition of the word at the caret",
+            when: (ctx) => ctx.surface === "code" && !ctx.modalOpen,
+            run: () => {
+                const at = caretWord();
+                if (at == null || model == null) {
+                    return false; // no editor, or no word under the caret — let the key pass
+                }
+                void goToDefinition(model, at.word, at.lang).then((listed) => {
+                    if (listed) {
+                        focusCodeSidebarOpener(); // a collapsed sidebar would hide the candidates
+                    }
+                });
+            },
+        },
+        {
+            id: "code:references",
+            keys: "Shift:F12",
+            group: "Code",
+            label: "Find references to the word at the caret",
+            when: (ctx) => ctx.surface === "code" && !ctx.modalOpen,
+            run: () => {
+                const at = caretWord();
+                if (at == null) {
+                    return false;
+                }
+                focusCodeSidebarOpener();
+                void findReferences(at.word);
+            },
+        },
+        {
+            id: "code:symbols",
+            keys: "Alt:o",
+            group: "Code",
+            label: "Go to a symbol in the open file",
+            when: (ctx) => ctx.surface === "code" && !ctx.modalOpen,
+            run: () => {
+                if (model == null) {
+                    return false;
+                }
+                globalStore.set(model.paletteSeedAtom, "@");
+                globalStore.set(model.paletteOpenAtom, true);
             },
         },
         {
