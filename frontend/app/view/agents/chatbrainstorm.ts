@@ -8,20 +8,35 @@
 
 import {
     brainstormPhase,
+    decisionParts,
     judgeWait,
     judgeWork,
     optionLetter,
+    partGist,
     partTitle,
     plural,
     type AnswerOption,
     type BrainstormFile,
+    type BrainstormQuestion,
+    type BuilderCheckView,
 } from "./brainstormmodel";
+import type { RunInfo } from "./runlineage";
+import { runStage, type RunStageView } from "./runstage";
 
-/** An answer Arc sent to an agent's brainstorm question, kept so the transcript's user message that carries it can be
- *  drawn as the question's ✓ row. `seen` is how many of the agent's user messages already held exactly `text` when it
- *  was sent (the rule chatpending.ts's PendingMessage.seen uses): the transcript projection keeps no timestamp on a
- *  user entry, so the answer is the (`seen` + 1)-th message with that text, never an earlier one. `part` is the title
- *  the card's header shows, not the part's id. */
+/** What a line Arc sent to the agent's brainstorm was, so the conversation can draw the message that carries it: an
+ *  `answer` to a talk question or a `builder-answer` to the builder's become ✓ rows, `design` (check), `builder`
+ *  (approved or keep talking) and `run` are the steps' rows, and an `action` (confirm, edit, keep, guess…) is hidden. */
+export type RecordKind = "answer" | "builder-answer" | "design" | "builder" | "run" | "action";
+
+export type BuilderOutcome = "approved" | "keep-talking";
+
+/** A line Arc sent to an agent's brainstorm, kept so the transcript's user message that carries it can be drawn as the
+ *  question's (or the step's) ✓ row, or hidden. `seen` is how many of the agent's user messages already held exactly
+ *  `text` when it was sent (the rule chatpending.ts's PendingMessage.seen uses): the transcript projection keeps no
+ *  timestamp on a user entry, so the line is the (`seen` + 1)-th message with that text, never an earlier one. `part`
+ *  is the title the card's header shows, not the part's id. `kind` is what the line was (a record without one is an
+ *  answer: the store held only answers once). A record other than an answer or a builder answer stores `n` 0 and `part`
+ *  "", and carries the counts its ✓ row shows, captured when it was sent. */
 export interface SentAnswer {
     topic: string;
     n: number;
@@ -29,6 +44,29 @@ export interface SentAnswer {
     text: string;
     sentAt: number;
     seen: number;
+    kind?: RecordKind;
+    /** design: the decisions the design held when it was confirmed */
+    decisions?: number;
+    /** builder: the questions the builder left for the user */
+    questions?: number;
+    /** builder: the decisions the agent made itself */
+    calls?: number;
+    outcome?: BuilderOutcome;
+    /** run: the run the brainstorm started */
+    runId?: string;
+}
+
+export function recordKind(r: Pick<SentAnswer, "kind">): RecordKind {
+    return r.kind ?? "answer";
+}
+
+const BUILDER_ANSWER_PREFIX = "brainstorm: builder answer:";
+
+/** The answer a builder-answer record's line carries: a record's text is the whole line Arc sent (pairing matches the
+ *  transcript), so the ✓ row strips its prefix. A text without the prefix comes back trimmed as it is. */
+export function builderAnswerText(line: string): string {
+    const text = line.trim();
+    return text.startsWith(BUILDER_ANSWER_PREFIX) ? text.slice(BUILDER_ANSWER_PREFIX.length).trim() : text;
 }
 
 export const MAX_ANSWERS_PER_AGENT = 50;
@@ -108,16 +146,40 @@ export function parseSentStore(raw: string | null | undefined): SentByAgent {
     return pruneAnswerAgents(out);
 }
 
-export interface PairedAnswer {
-    n: number;
-    part: string;
-    text: string;
+/** What a paired message draws: the record's kind and the fields its row shows. */
+export interface PairedAnswer extends Pick<
+    SentAnswer,
+    "n" | "part" | "text" | "decisions" | "questions" | "calls" | "outcome" | "runId"
+> {
+    kind: RecordKind;
 }
 
-/** The user messages that are answers to a brainstorm question, by message key. A record of `topic` takes the
- *  (`seen` + 1)-th message whose text equals its own (edge whitespace aside), so a message that matches an option label
- *  by chance before the send is never taken. Records go oldest first, and a message an earlier record took is skipped:
- *  two answers with the same text sent before the first reached the transcript (both `seen` 0) take one message each.
+// the fields a record carries, with a field it does not carry left off rather than set to undefined
+function pairedOf(r: SentAnswer): PairedAnswer {
+    const p: PairedAnswer = { n: r.n, part: r.part, text: r.text, kind: recordKind(r) };
+    if (r.decisions !== undefined) {
+        p.decisions = r.decisions;
+    }
+    if (r.questions !== undefined) {
+        p.questions = r.questions;
+    }
+    if (r.calls !== undefined) {
+        p.calls = r.calls;
+    }
+    if (r.outcome !== undefined) {
+        p.outcome = r.outcome;
+    }
+    if (r.runId !== undefined) {
+        p.runId = r.runId;
+    }
+    return p;
+}
+
+/** The user messages that are lines Arc sent (answers to a brainstorm question, and the step lines), by message key. A
+ *  record of `topic` takes the (`seen` + 1)-th message whose text equals its own (edge whitespace aside), so a message
+ *  that matches an option label by chance before the send is never taken. Records go oldest first, and a message an
+ *  earlier record took is skipped: two answers with the same text sent before the first reached the transcript (both
+ *  `seen` 0) take one message each.
  *  `userMessages` are the agent's user messages in transcript order. */
 export function pairAnswers(
     records: readonly SentAnswer[],
@@ -140,7 +202,7 @@ export function pairAnswers(
             if (paired.has(m.key)) {
                 continue;
             }
-            paired.set(m.key, { n: r.n, part: r.part, text: r.text });
+            paired.set(m.key, pairedOf(r));
             break;
         }
     }
@@ -151,6 +213,7 @@ export function pairAnswers(
  *  work on an approach question (no options yet); `static` is an agent that has exited (the card stays, without the
  *  amber dot, and still opens in Brainstorm). */
 export interface QuestionCard {
+    kind: "question";
     state: "waiting" | "weighing" | "static";
     n: number;
     /** the part's title as the file defines it (its id when the file defines none); empty when the question names none */
@@ -171,6 +234,97 @@ export interface QuestionCard {
     boards: number;
     /** some option carries pros and cons, which also stay there */
     reasons: boolean;
+    /** the decisions that are yours so far, in the design's order: the card's `Decided N ›` fold */
+    decided: Gist[];
+}
+
+/** One decision as a line of a fold: its title and the one line the design reads it as (`partGist`). */
+export type Gist = { id: string; title: string; gist: string };
+
+/** One decision that needs the user, as the Confirm card (and the check's review) draws a row: a guess, or a decision the
+ *  agent changed since the user confirmed it (`was`, `why`). `isNew` is a decision the user has not seen yet. */
+export type DecisionRowModel = {
+    id: string;
+    title: string;
+    gist: string;
+    view: "guess" | "changed";
+    was?: string;
+    why?: string;
+    isNew: boolean;
+};
+
+/** The design awaits review: the line and the one action `reviewHead` offers, a row per decision that needs the user,
+ *  and the ones already yours (folded into `N yours ›`). `working` is the agent writing up a click (its buttons off). */
+export type ConfirmCard = {
+    kind: "confirm";
+    state: "waiting" | "working" | "static";
+    line: string;
+    action: "confirm-all" | "check" | null;
+    guesses: number;
+    rows: DecisionRowModel[];
+    yours: Gist[];
+};
+
+/** The builder question the card asks now: the first one the builder left unanswered, `n` of `total`. */
+export type BuilderQuestionCard = {
+    n: number;
+    total: number;
+    part: string;
+    question: string;
+    why: string | null;
+    options: AnswerOption[];
+    pick: number | null;
+};
+
+/** The builder check: a builder reading, the agent taking its questions in, a failed check, a question for the user, or
+ *  the review once nothing is open (`rows` still need the user; `approveBlocker` says why Approve is off). */
+export type CheckCard = {
+    kind: "check";
+    state: "waiting" | "working" | "static";
+    stage: "reading" | "taking-in" | "failed" | "asking" | "review";
+    pending: Extract<BuilderCheckView, { kind: "pending" }> | null;
+    reason: string | null;
+    question: BuilderQuestionCard | null;
+    calls: string[];
+    spec: string[];
+    rows: DecisionRowModel[];
+    approveBlocker: string | null;
+};
+
+/** A run the brainstorm started; the run itself is read from the run store when the card draws. */
+export type RunCard = { kind: "run"; state: "waiting" | "static"; runId: string };
+
+export type ChatCard = QuestionCard | ConfirmCard | CheckCard | RunCard;
+
+/** What a run card (and its ✓ row) says of the run: its name, which kind of run it is, its stage (null while Arc does not
+ *  know the run), and whether it is over: landed, complete or cancelled. */
+export type RunCardView = {
+    name: string;
+    kind: "Orchestrator run" | "Quick run";
+    stage: RunStageView | null;
+    done: boolean;
+};
+
+const RUN_DONE_STAGES: ReadonlySet<string> = new Set(["landed", "complete", "cancelled"]);
+
+export function runCardView(info: RunInfo | undefined): RunCardView {
+    if (info == null) {
+        return { name: "", kind: "Orchestrator run", stage: null, done: false };
+    }
+    const stage = runStage(info);
+    return {
+        name: info.title,
+        kind: info.mode === "quick" ? "Quick run" : "Orchestrator run",
+        stage,
+        done: RUN_DONE_STAGES.has(stage.key),
+    };
+}
+
+/** The decisions that are yours, in the design's order (notes left out), each as its one line. */
+export function yoursGists(file: BrainstormFile): Gist[] {
+    return decisionParts(file)
+        .filter((p) => p.state === "yours")
+        .map((p) => ({ id: p.id, title: p.title, gist: partGist(file, p) }));
 }
 
 /** The brainstorm is past its questions: the builder check or the run stays in the Brainstorm tab, and the card is one
@@ -210,16 +364,22 @@ export function openQuestion(
         return null;
     }
     // the agent writing with a question still in the file is taking a change in: nothing to answer until it asks again
-    const judging = judgeWait(file, false);
-    if (file.working != null && !judging) {
+    if (file.working != null && !judgeWait(file, false)) {
         return null;
     }
+    return questionCard(file, q, exited);
+}
+
+/** The card for the question `q` of `file`, whatever else the file is doing: the caller decides whether it shows. */
+export function questionCard(file: BrainstormFile, q: BrainstormQuestion, exited: boolean): QuestionCard {
+    const judging = judgeWait(file, false);
     const options = q.options ?? [];
     const weighing = judging ? (q.approaches?.length ?? 0) : null;
     const pick = options.findIndex((o) => o.pick === true);
     const part = q.part !== "" ? partTitle(file, q.part) : "";
     const asked = file.parts.find((p) => p.id === q.part);
     return {
+        kind: "question",
         state: exited ? "static" : judging ? "weighing" : "waiting",
         n: q.n,
         part,
@@ -234,12 +394,36 @@ export function openQuestion(
         weighing,
         boards: file.canvas != null ? (asked?.boards?.length ?? 0) : 0,
         reasons: options.some((o) => o.pros != null || o.cons != null),
+        decided: yoursGists(file),
     };
 }
 
 /** "Question 2 · Motion", or "Question 2" when the question names no part: the card's header and the ✓ row's start. */
 export function questionHead(n: number, part: string): string {
     return part !== "" ? `Question ${n} · ${part}` : `Question ${n}`;
+}
+
+/** "Builder question 2 · Motion", or "Builder question 2" when the question names no part: the builder question card's
+ *  header and its ✓ row's start. */
+export function builderQuestionHead(n: number, part: string): string {
+    return part !== "" ? `Builder question ${n} · ${part}` : `Builder question ${n}`;
+}
+
+/** The ✓ row of a confirmed design: "Design confirmed · 9 decisions". */
+export function designDoneLine(decisions: number): string {
+    return `Design confirmed · ${plural(decisions, "decision", "decisions")}`;
+}
+
+/** The ✓ row of a finished builder check: "Builder check · 2 questions, 3 calls", with " · kept talking" when the
+ *  person went back to talking instead of approving. */
+export function builderDoneLine(questions: number, calls: number, outcome?: BuilderOutcome): string {
+    const counts = `${plural(questions, "question", "questions")}, ${plural(calls, "call", "calls")}`;
+    return `Builder check · ${counts}${outcome === "keep-talking" ? " · kept talking" : ""}`;
+}
+
+/** The ✓ row of a run that is over: "Run · <name> · <stage label>", leaving out a part the view does not have. */
+export function runDoneLine(v: RunCardView): string {
+    return ["Run", v.name, v.stage?.label ?? ""].filter((s) => s !== "").join(" · ");
 }
 
 /** The line the card shows while the judge weighs a question. */

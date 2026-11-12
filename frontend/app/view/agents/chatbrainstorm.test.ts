@@ -5,7 +5,11 @@ import { describe, expect, it } from "vitest";
 import type { BrainstormFile, BrainstormQuestion } from "./brainstormmodel";
 import {
     addAnswer,
+    builderAnswerText,
+    builderDoneLine,
+    builderQuestionHead,
     compareLine,
+    designDoneLine,
     MAX_ANSWERS_PER_AGENT,
     openQuestion,
     pairAnswers,
@@ -13,11 +17,15 @@ import {
     pruneAnswerAgents,
     questionHead,
     questionPlaceholder,
+    recordKind,
+    runCardView,
+    runDoneLine,
     weighingLine,
     type OpenQuestion,
     type QuestionCard,
     type SentAnswer,
 } from "./chatbrainstorm";
+import type { RunInfo } from "./runlineage";
 
 const TOPIC = "chat-redesign";
 
@@ -31,7 +39,61 @@ describe("pairAnswers", () => {
     it("pairs the message after the `seen` ones", () => {
         const paired = pairAnswers([rec({ text: "Fade", seen: 0 })], msgs("hello", "Fade", "later"), TOPIC);
         expect([...paired.keys()]).toEqual(["u1"]);
-        expect(paired.get("u1")).toEqual({ n: 1, part: "Scope", text: "Fade" });
+        expect(paired.get("u1")).toEqual({ n: 1, part: "Scope", text: "Fade", kind: "answer" });
+    });
+
+    it("carries a record's kind and its counts through to the message it takes", () => {
+        const records = [
+            rec({ n: 0, part: "", text: "brainstorm: check", kind: "design", decisions: 9, sentAt: 1000 }),
+            rec({
+                n: 0,
+                part: "",
+                text: "brainstorm: keep talking",
+                kind: "builder",
+                questions: 2,
+                calls: 3,
+                outcome: "keep-talking",
+                sentAt: 2000,
+            }),
+            rec({ n: 0, part: "", text: "brainstorm: run r-1", kind: "run", runId: "r-1", sentAt: 3000 }),
+            rec({
+                n: 2,
+                part: "Motion",
+                text: "brainstorm: builder answer: Fade",
+                kind: "builder-answer",
+                sentAt: 4000,
+            }),
+        ];
+        const paired = pairAnswers(
+            records,
+            msgs(
+                "brainstorm: check",
+                "brainstorm: keep talking",
+                "brainstorm: run r-1",
+                "brainstorm: builder answer: Fade"
+            ),
+            TOPIC
+        );
+        expect(paired.get("u0")).toEqual({
+            n: 0,
+            part: "",
+            text: "brainstorm: check",
+            kind: "design",
+            decisions: 9,
+        });
+        expect(paired.get("u1")).toEqual({
+            n: 0,
+            part: "",
+            text: "brainstorm: keep talking",
+            kind: "builder",
+            questions: 2,
+            calls: 3,
+            outcome: "keep-talking",
+        });
+        expect(paired.get("u2")).toMatchObject({ kind: "run", runId: "r-1" });
+        expect(paired.get("u3")).toMatchObject({ kind: "builder-answer", n: 2, part: "Motion" });
+        // a field the record does not carry is absent, not undefined
+        expect(Object.keys(paired.get("u2")!).sort()).toEqual(["kind", "n", "part", "runId", "text"]);
     });
 
     it("never takes a same-text message that was already there when the answer was sent", () => {
@@ -182,6 +244,45 @@ describe("openQuestion", () => {
         expect(q.options).toHaveLength(3);
     });
 
+    it("is a question card, and lists the decisions that are yours as it was asked", () => {
+        const q = card(
+            openQuestion(
+                file({
+                    parts: [
+                        { id: "builder", title: "Builder", state: "yours", gist: "Sonnet builds it", body: "" },
+                        { id: "motion", title: "Motion", state: "asked", body: "" },
+                        { id: "scope", title: "Scope", state: "yours", gist: "Chat only", body: "" },
+                        { id: "why", title: "Why", state: "yours", kind: "note", gist: "background", body: "" },
+                        { id: "tone", title: "Tone", state: "guess", gist: "Quiet", body: "" },
+                        { id: "icons", title: "Icons", state: "yours", gist: "", body: "Lucide. Kept small.\nMore." },
+                    ],
+                }),
+                [],
+                false,
+                TOPIC
+            )
+        );
+        expect(q.kind).toBe("question");
+        // design order (the builder part last), notes, guesses and the asked part left out, the gist as the design reads it
+        expect(q.decided).toEqual([
+            { id: "scope", title: "Scope", gist: "Chat only" },
+            { id: "icons", title: "Icons", gist: "Lucide." },
+            { id: "builder", title: "Builder", gist: "Sonnet builds it" },
+        ]);
+    });
+
+    it("has no decided entries while nothing is yours yet", () => {
+        const q = card(
+            openQuestion(
+                file({ parts: [{ id: "motion", title: "Motion", state: "asked", body: "" }] }),
+                [],
+                false,
+                TOPIC
+            )
+        );
+        expect(q.decided).toEqual([]);
+    });
+
     it("is null with no brainstorm attached, or with no question open in the talk", () => {
         expect(openQuestion(null, [], false, TOPIC)).toBeNull();
         expect(openQuestion(file({ question: null }), [], false, TOPIC)).toBeNull();
@@ -306,5 +407,113 @@ describe("the card's lines", () => {
     it("counts the boards to compare", () => {
         expect(compareLine(2)).toBe("Compare 2 boards in Brainstorm");
         expect(compareLine(1)).toBe("Compare 1 board in Brainstorm");
+    });
+
+    it("says the design is confirmed with its decisions counted", () => {
+        expect(designDoneLine(9)).toBe("Design confirmed · 9 decisions");
+        expect(designDoneLine(1)).toBe("Design confirmed · 1 decision");
+        expect(designDoneLine(0)).toBe("Design confirmed · 0 decisions");
+    });
+
+    it("says the builder check is done with its questions and calls counted", () => {
+        expect(builderDoneLine(2, 3)).toBe("Builder check · 2 questions, 3 calls");
+        expect(builderDoneLine(1, 1)).toBe("Builder check · 1 question, 1 call");
+        expect(builderDoneLine(0, 0, "approved")).toBe("Builder check · 0 questions, 0 calls");
+        expect(builderDoneLine(2, 3, "keep-talking")).toBe("Builder check · 2 questions, 3 calls · kept talking");
+        expect(builderDoneLine(1, 1, "keep-talking")).toBe("Builder check · 1 question, 1 call · kept talking");
+    });
+
+    it("heads a builder question with its part, or alone when it names none", () => {
+        expect(builderQuestionHead(2, "Motion")).toBe("Builder question 2 · Motion");
+        expect(builderQuestionHead(2, "")).toBe("Builder question 2");
+    });
+});
+
+describe("recordKind", () => {
+    it("reads a record without a kind as an answer", () => {
+        expect(recordKind(rec())).toBe("answer");
+        expect(recordKind({})).toBe("answer");
+    });
+
+    it("reads the kind a record carries", () => {
+        for (const kind of ["answer", "builder-answer", "design", "builder", "run", "action"] as const) {
+            expect(recordKind(rec({ kind }))).toBe(kind);
+        }
+    });
+});
+
+describe("builderAnswerText", () => {
+    it("strips the line's prefix, leaving the answer", () => {
+        expect(builderAnswerText("brainstorm: builder answer: Fade + scale")).toBe("Fade + scale");
+    });
+
+    it("trims what is left, and keeps a colon inside the answer", () => {
+        expect(builderAnswerText("brainstorm: builder answer:   Both: fade and scale \n")).toBe("Both: fade and scale");
+    });
+
+    it("gives a text without the prefix back trimmed", () => {
+        expect(builderAnswerText("  Fade  ")).toBe("Fade");
+        expect(builderAnswerText("brainstorm: check")).toBe("brainstorm: check");
+        expect(builderAnswerText("")).toBe("");
+    });
+});
+
+const dag = (status: string): TaskGroup => ({ status, tasks: [] }) as unknown as TaskGroup;
+
+function run(over: Partial<RunInfo> = {}): RunInfo {
+    return { runId: "r-1", channelId: "c-1", title: "Chat review cards", project: "arcterm", ...over };
+}
+
+describe("runCardView", () => {
+    it("names an orchestrator run at work, with its stage", () => {
+        const v = runCardView(run({ status: "executing", dag: dag("running") }));
+        expect(v).toMatchObject({ name: "Chat review cards", kind: "Orchestrator run", done: false });
+        expect(v.stage).toMatchObject({ key: "working", label: "Working" });
+    });
+
+    it("calls a run whose mode is quick a quick run", () => {
+        const v = runCardView(run({ mode: "quick", status: "executing" }));
+        expect(v).toMatchObject({ kind: "Quick run", done: false });
+        expect(v.stage?.key).toBe("working");
+    });
+
+    it("is done once the run landed, or finished with nothing to land", () => {
+        const landed = runCardView(run({ status: "done", land: { state: "landed" }, dag: dag("done") }));
+        expect(landed.done).toBe(true);
+        expect(landed.stage?.label).toBe("Landed");
+        const complete = runCardView(run({ status: "done", dag: dag("done") }));
+        expect(complete.done).toBe(true);
+        expect(complete.stage?.label).toBe("Complete");
+    });
+
+    it("is done once the run was cancelled", () => {
+        const v = runCardView(run({ status: "cancelled" }));
+        expect(v.done).toBe(true);
+        expect(v.stage?.label).toBe("Cancelled");
+    });
+
+    it("is not done while a landing waits or is held", () => {
+        expect(runCardView(run({ status: "done", land: { state: "queued" }, dag: dag("done") })).done).toBe(false);
+        expect(runCardView(run({ status: "done", land: { state: "held" }, dag: dag("done") })).done).toBe(false);
+    });
+
+    it("has no name, no stage and is not done for a run Arc does not know", () => {
+        expect(runCardView(undefined)).toEqual({ name: "", kind: "Orchestrator run", stage: null, done: false });
+    });
+});
+
+describe("runDoneLine", () => {
+    it("names the run and the stage it ended in", () => {
+        const v = runCardView(run({ status: "done", land: { state: "landed" }, dag: dag("done") }));
+        expect(runDoneLine(v)).toBe("Run · Chat review cards · Landed");
+        const cancelled = runCardView(run({ mode: "quick", status: "cancelled" }));
+        expect(runDoneLine(cancelled)).toBe("Run · Chat review cards · Cancelled");
+    });
+
+    it("leaves out a part it does not have", () => {
+        expect(runDoneLine(runCardView(undefined))).toBe("Run");
+        expect(runDoneLine({ name: "Review cards", kind: "Quick run", stage: null, done: false })).toBe(
+            "Run · Review cards"
+        );
     });
 });
