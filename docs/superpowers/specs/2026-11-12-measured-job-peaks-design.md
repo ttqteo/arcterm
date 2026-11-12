@@ -9,7 +9,7 @@ number per command in `pkg/memgate/memgate.go`, measured once on an 8 GB Mac and
 
 - **A known job claims too much.** `task check:ts` claims 3 GB on any repo, a small one included. Fewer jobs run at
   once than the machine allows.
-- **An unknown build never queues.** A command that is not in the table (`make`, `pnpm build`, `gradle build`…)
+- **An unknown build never queues.** A command that is not in the table (`make`, `gradle build`, `mvn package`…)
   reads as light: `wsh jobslot` answers it locally and wavesrv never sees it. Several of them from several agents run
   at once and the machine swaps.
 
@@ -60,9 +60,10 @@ cost the builder measures.
 - **Not measured:**
   - A foreground PowerShell-tool command cannot be matched, so it keeps the table's number.
   - Engine steps (Setup, Verify, Check, Final) keep the table's numbers in this change.
-  - Only Claude Code's commands are matched. pi, codex and agy commands are not measured: their slots keep the table's
-    numbers and their unknown commands are never learned. pi still reads the learned file, since it calls
-    `wsh jobslot`. (Agent's call, builder question 7.)
+  - Only Claude Code's commands are matched. pi, codex and agy commands are not measured, and their unknown commands
+    are never learned. Their slots still use the figure Claude Code's runs measured for the same pattern and project,
+    since `wsh jobslot` does not say which harness asks and the same command peaks the same either way. pi still reads
+    the learned file, since it calls `wsh jobslot`. (Agent's call, builder question 7; amended at plan review.)
 
 ### Which number the next run uses (answer 3)
 
@@ -79,8 +80,10 @@ cost the builder measures.
 ### Keys
 
 - **Command pattern.** A known command's pattern is its memgate job name (`task check:ts`). An unknown command's
-  pattern is its program plus its first word that is not a flag (`make build`, `pnpm build`), split the way memgate
-  splits commands: `steps` and `program`, which already drop wrappers, redirections and `sh -c`.
+  pattern is its program plus its first word that is not a flag (`make build`, `gradle build`), split the way memgate
+  splits commands: `steps` and `program`, which drop env assignments, wrappers and redirections. A `sh`/`bash`/`zsh -c`
+  step is not a pattern of its own: `Pattern` and the learned check recurse into its command line, as `classifyStep`
+  does.
 - **Only programs memgate has no rule for are learned.** A command whose program memgate classifies at all, heavy or
   light (`go`, `npx vitest`, `pytest`, `cargo`…), keeps the table's verdict. A `go test -run X` stays light, as
   AGENTS.md promises. (Agent's call, builder question 1.)
@@ -159,3 +162,49 @@ Context only.
 - **CDP scenario.** Open the Jobs popover with a measured job and an estimated one.
 - **CHANGELOG.** A line under Changed in the same commit.
 - **Hand check.** Add a line to `docs/hand-checks.md` for the live check on Windows and on the Mac.
+
+## Build decisions (2026-11-12, autonomous run)
+
+Calls the run's lead made beyond the brainstormed design, each with why. Where one narrows a line above, this section
+wins.
+
+- **One meter measures every matched command, slotted or not.** A single 2 s poll (`pkg/jobmeter`) finds each
+  Bash-tool shell under each agent and measures it from the poll that first sees it to the poll that sees it gone. It
+  does not hook into `JobSlotCommand`. Why: a slotted foreground command's shell starts after the slot is granted and
+  exits before the hook releases it, and a background command's `HoldPid` is that same shell (wsh's parent, which
+  evals the wrapped command), so the window is the same; one mechanism instead of three keeps one place to get right.
+- **A background command is unwrapped first.** The arc mod runs it as
+  `'<wsh>' jobslot --hold-parent -- '<cmd>'; [ $? -ne 75 ] || exit 75\n<cmd>` (`claude/arc-mod/hooks/jobslot-core.ts`
+  `heldInBackground`). The meter recovers `<cmd>` the way `heldOriginal` does before a pattern is taken. Why: otherwise
+  every background command would key on `wsh jobslot`.
+- **Project is the main checkout's root.** Walk up from the block's `cmd:cwd` to the first `.git`; a `.git` *file*
+  (a linked worktree) resolves through its `gitdir:` line to the main checkout that owns it. Read from the file system,
+  no git process, cached per cwd. Why: run workers work in `arc-wt/<id>` worktrees; keyed on each tree, nothing a run
+  measures would ever be reused.
+- **The store keeps only what can change a decision.** A known (table) command's run is always kept. An unknown
+  pattern's run enters the store only when it is 1 GB or more, or the pattern is already in the store (learned). An
+  unknown pattern whose kept peaks in every project are all under 1 GB leaves the store, and so the learned file. Why:
+  every `ls src` and `cat x` is an unknown pattern; storing their light runs would grow `jobpeaks.json` without bound
+  and decide nothing.
+- **The "largest peak in any project" is computed, not stored.** It is the max over the kept peaks of that pattern's
+  keys. Why: one source of truth; a separate per-pattern max could disagree with the keys it summarises.
+- **30-day expiry covers every key.** A key not run for 30 days leaves `jobpeaks.json` (a known command then falls back
+  to the table), checked at load and on each record; the learned file is rewritten when its set changes. Why: one rule;
+  a known command's month-old peak is as stale as an unknown one's.
+- **A command no poll sampled is not recorded.** A command that ends before the first 2 s poll has no peak worth
+  keeping. Why: a zero would read as light and drag a learned pattern back.
+- **Package defaults, like the queue.** `jobpeaks.Default` is wavesrv's store, nil in tests and in wsh, where
+  `JobSlotCommand` then behaves as today. Why: the repo's `jobqueue.Default` pattern; no plumbing through constructors.
+- **`jobqueue.Request` carries the figure's basis as a comparable value.** `jobqueue.Basis{Measured, Elsewhere bool;
+  Peaks [5]uint64}` (newest first, zero = none). Why: the queue compares snapshots with `slices.Equal`, so `Job` must
+  stay comparable, which a slice would break; the array's length is the "last 5" constant, so it is defined once.
+- **The learned file is memgate's.** `{"patterns": ["make build", …]}`; `memgate` reads and writes it (temp file and
+  rename), wsh and wavesrv both go through it. A learned step classifies as `Job{Name: pattern, Bytes: 1 GB}`; wavesrv
+  then replaces the bytes with the store's estimate. Why: wsh must read it without importing wavesrv packages.
+- **Popover wording.** The figure keeps its place; a muted word follows it: "measured" or "est.". The tooltip carries
+  the rule and the peaks: "2.1 GB: max of the last 3 runs × 1.2 (1.8, 1.2, 0.9 GB)", "2.1 GB: measured in another
+  project, max of its last 5 runs × 1.2 (…)", "3 GB: estimate (not measured yet)". Why: short in a crowded row, and
+  the tooltip answers "why this number".
+- **A new CDP scenario, `jobqueue-measured`,** injects one measured and one estimated job through
+  `window.__jobQueueInject` and opens the popover, instead of extending `jobqueue-chip`, which starts a fixture run.
+  Why: no run needed to check a label.
