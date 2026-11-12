@@ -555,6 +555,11 @@ func (w *waker) hungLeadStopped(ctx context.Context, channelId, runId string) {
 		}
 		return
 	}
+	// a pause that landed during the stop ended the process on purpose: the resume reopens the lead, so its wakes stay
+	// held (the hold clock is already cleared) and nothing is handed over, as flushLocked reads a paused run
+	if leadPaused(ctx, channelId, runId) {
+		return
+	}
 	w.leadDiedLocked(ctx, runId, rw, leadHungNote)
 }
 
@@ -632,7 +637,8 @@ func nothingToLaunchFor(lines []string) bool {
 
 // leadLaunched settles a launch. A started lead took its first wake as its launch prompt, and events held
 // meanwhile are typed once it reports it is at its prompt. A lead that could not be started hands its
-// judgment to the human (G8).
+// judgment to the human (G8), unless the run is paused: the resume brings the lead back, so the launch's lines go
+// back on the queue, its questions are announced again with them, and the next flush after the resume launches again.
 func leadLaunched(ctx context.Context, channelId, runId string, err error) {
 	wakes.lock.Lock()
 	defer wakes.lock.Unlock()
@@ -640,7 +646,14 @@ func leadLaunched(ctx context.Context, channelId, runId string, err error) {
 	rw.launching = false
 	if err != nil {
 		rw.lines = append(rw.launchLines, rw.lines...)
-		wakes.leadDiedLocked(ctx, runId, rw, leadLaunchFailedNote+": "+err.Error())
+		if leadPaused(ctx, channelId, runId) {
+			for _, p := range leadAsks(runId) {
+				delete(rw.told, askTold(p))
+			}
+			rw.clearHoldClock()
+		} else {
+			wakes.leadDiedLocked(ctx, runId, rw, leadLaunchFailedNote+": "+err.Error())
+		}
 	} else {
 		rw.launchedAt = wakeNow()
 	}

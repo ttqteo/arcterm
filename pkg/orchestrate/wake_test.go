@@ -1508,3 +1508,99 @@ func TestAWakeTypedBeforeAPauseIsSentAgainAfterTheResume(t *testing.T) {
 		t.Fatalf("the reopened lead is sent the wake again, whole, got %q", f.sends)
 	}
 }
+
+// the hang stop takes seconds, and a pause can land in them: the pause ends the lead's process on purpose, so the stop
+// finding it gone is not a hang to hand over. Handing it over replaced the lead under the pause (run 1cad2fd0).
+func TestAPauseDuringAHangStopKeepsTheLeadForTheResume(t *testing.T) {
+	f, ctx, dag := seedDeadLeadRun(t, true)
+	workingLead(f)
+	h := scriptHang(t, f)
+	calls := stubRelaunch(t, func() error { return nil })
+	entered, release := make(chan struct{}), make(chan struct{})
+	stopLeadFn = func(blockId string) {
+		h.stops = append(h.stops, blockId)
+		f.state.Alive = false
+		close(entered)
+		<-release
+	}
+	// a failed assertion below must not leave the stop blocked, or its stage outlives the test
+	var releaseOnce sync.Once
+	releaseStop := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseStop)
+
+	PokeWake(ctx, dag.ChannelId, dag.RunID)
+	PostWake(ctx, dag.ChannelId, dag.RunID, failedLine)
+	f.now += LeadHungAfter.Milliseconds()
+	tickWakes(ctx)
+	<-entered
+	setRunPaused(t, ctx, dag, true)
+	releaseStop()
+	waitStages(t)
+
+	if len(h.stops) != 1 {
+		t.Fatalf("the hung lead is stopped once, got %q", h.stops)
+	}
+	if *calls != 0 || LeadDead(dag.RunID) {
+		t.Fatalf("a lead the pause ended is not replaced: %d relaunches, dead %v", *calls, LeadDead(dag.RunID))
+	}
+	if n := f.countKind(waveobj.RunEventKindLeadWakeFailed); n != 0 {
+		t.Fatalf("a paused lead is not handed over as hung, got %d lead-wake-failed rows", n)
+	}
+	if p, _ := agentask.GlobalRegistry.Get("block:child-1"); p.Owner != agentask.AskOwner_Lead {
+		t.Fatalf("its question stays with the lead through the pause, got %+v", p)
+	}
+	if since, _ := heldClock(dag.RunID); since != 0 || len(f.sends) != 0 {
+		t.Fatalf("the clock is cleared and nothing is typed under the pause, got since %d, sends %q", since, f.sends)
+	}
+
+	// the resume reopens the lead; the next tick hands it what was held while it was away
+	setRunPaused(t, ctx, dag, false)
+	f.state.Alive, f.state.State = true, baseds.AgentState_Idle
+	tickWakes(ctx)
+	if len(f.sends) != 1 || !strings.Contains(f.sends[0], failedLine) {
+		t.Fatalf("the wake held through the pause is typed to the reopened lead, got %q", f.sends)
+	}
+}
+
+// the same for a launch: one that fails while the run is paused leaves the lead to the resume, with everything the
+// launch carried back on the queue, the question line included
+func TestAPauseDuringALeadLaunchKeepsItsLinesWhenTheLaunchFails(t *testing.T) {
+	f, ctx, dag := seedDeadLeadRun(t, true)
+	f.state = leadState{NoLead: true}
+	launched := stubLaunch(t)
+	calls := stubRelaunch(t, func() error { return nil })
+
+	PostWake(ctx, dag.ChannelId, dag.RunID, failedLine)
+	PostWake(ctx, dag.ChannelId, dag.RunID, finishedLine)
+	if len(*launched) != 1 {
+		t.Fatalf("the first judgment event launches the lead once, got %q", *launched)
+	}
+	setRunPaused(t, ctx, dag, true)
+	leadLaunched(ctx, dag.ChannelId, dag.RunID, errors.New("no route for pi"))
+	waitStages(t)
+
+	if *calls != 0 || LeadDead(dag.RunID) {
+		t.Fatalf("a launch that failed under a pause hands nothing over: %d relaunches, dead %v", *calls, LeadDead(dag.RunID))
+	}
+	if n := f.countKind(waveobj.RunEventKindLeadWakeFailed); n != 0 {
+		t.Fatalf("want no lead-wake-failed row, got %d", n)
+	}
+	if p, _ := agentask.GlobalRegistry.Get("block:child-1"); p.Owner != agentask.AskOwner_Lead {
+		t.Fatalf("its question stays with the lead, got %+v", p)
+	}
+	tickWakes(ctx)
+	if len(*launched) != 1 {
+		t.Fatalf("no lead is launched again under the pause, got %q", *launched)
+	}
+
+	setRunPaused(t, ctx, dag, false)
+	tickWakes(ctx)
+	if len(*launched) != 2 {
+		t.Fatalf("the next flush after the resume launches the lead again, got %q", *launched)
+	}
+	for _, want := range []string{failedLine, finishedLine, "question waiting"} {
+		if !strings.Contains((*launched)[1], want) {
+			t.Fatalf("the new launch carries %q, got:\n%s", want, (*launched)[1])
+		}
+	}
+}
