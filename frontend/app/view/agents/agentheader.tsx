@@ -38,6 +38,7 @@ import {
     Columns2,
     Ellipsis,
     GitCommitHorizontal,
+    GitFork,
     Link2,
     Maximize2,
     Minimize2,
@@ -62,6 +63,8 @@ import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { cellView, cellViewOptions, chatCapable, type CellView } from "./chatmode";
+import { canForkInChat } from "./chatfork";
+import { forkFromChat } from "./chatforkaction";
 import { selectCellView, useChatMode } from "./chatmodestore";
 import { ASLEEP_VIEW_TITLE } from "./chatswitch";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
@@ -592,6 +595,14 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 click: () => fireAndForget(() => shipAgent(agent, "commit")),
             });
             items.push({ type: "separator" });
+        }
+        if (canForkInChat(agent)) {
+            items.push({
+                label: "Fork",
+                sublabel: "a new session from this conversation",
+                icon: <GitFork size={15} />,
+                click: () => forkFromChat(model, agent),
+            });
         }
         if (linkFromMenu) {
             items.push({
