@@ -757,7 +757,7 @@ describe("brainstorm pane Escape", () => {
     const find = (id: string) => all().find((b) => b.id === id)!;
     // a board the canvas has loaded, which the rail draws widened
     const loadBoard = () => {
-        attachCanvas("a1", { topic: "oncall", dir: "C:\\p\\d", projectDir: "C:\\p", board: "Split.dc.html" }, 0);
+        attachCanvas("a1", { topic: "oncall", dir: "C:\\p\\d", projectDir: "C:\\p", board: "Split.dc.html" });
         updateCanvas("a1", (s) => ({ ...s, status: "ready" }));
     };
     const choosing: BrainstormFile = {
@@ -848,7 +848,7 @@ describe("brainstorm pane Escape", () => {
     });
 
     it("on the widened board, a drawn mark's note owns Esc (it drops the mark), even with its field unfocused", () => {
-        attachCanvas("a1", { topic: "oncall", dir: "C:\\p\\d", projectDir: "C:\\p", board: "Split.dc.html" }, 0);
+        attachCanvas("a1", { topic: "oncall", dir: "C:\\p\\d", projectDir: "C:\\p", board: "Split.dc.html" });
         openBrainstormBoard("a1", "Split.dc.html");
         setMarking("a1", true);
         expect(back().when!(nav)).toBe(true);
@@ -1786,7 +1786,7 @@ describe("chat mode keys", () => {
         expect(mode()).toBe("terminal");
         b.run(inTerm);
         expect(mode()).toBe("chat");
-        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" });
         setAgentView("a1", "canvas", 1);
         expect(canvasMode()).toBe("canvas");
         b.run(inTerm);
@@ -1814,7 +1814,7 @@ describe("chat mode keys", () => {
         expect(mode()).toBe("terminal");
         cycle.run(inTerm);
         expect(mode()).toBe("chat");
-        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" });
         cycle.run(inTerm);
         expect([mode(), canvasMode()]).toEqual(["terminal", "terminal"]);
         cycle.run(inTerm);
@@ -1837,7 +1837,7 @@ describe("chat mode keys", () => {
         // Chat alone: one usable option, so the key passes
         expect(cycle.run(inTerm)).toBe(false);
         // a canvas: the key walks Chat and the canvas, the way back from it included
-        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" });
         expect(cycle.run(inTerm)).not.toBe(false);
         expect([mode(), canvasMode()]).toEqual(["chat", "canvas"]);
         cycle.run(inTerm);
@@ -1932,7 +1932,7 @@ describe("agent canvas mode keys", () => {
 
     beforeEach(() => {
         model = { ...stubModel("a1"), surfaceAtom: atom<SurfaceKey>("agent") };
-        attachCanvas("a1", { topic: "t", dir: "C:\\p\\.superpowers\\design\\t", projectDir: "C:\\p" }, 0);
+        attachCanvas("a1", { topic: "t", dir: "C:\\p\\.superpowers\\design\\t", projectDir: "C:\\p" });
         updateCanvas("a1", (s) => ({
             ...s,
             status: "ready",
@@ -2131,7 +2131,7 @@ describe("agent review mode keys", () => {
         expect(getDocReview("a1")!.mode).toBe("terminal");
         expect(onKey("r")).toEqual(["agent:review"]);
 
-        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" });
         setAgentView("a1", "canvas", 1);
         expect(onKey("r")).toEqual(["agent:review"]);
         find("agent:review").run(nav);
@@ -2141,7 +2141,7 @@ describe("agent review mode keys", () => {
     });
 
     it("in review mode: [ ], c and Ctrl+Enter are the review's; the surface switch, canvas, rail, fullscreen and back keys stand down", () => {
-        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" });
         setAgentView("a1", "review", 1);
         expect(onKey("[")).toEqual(["agent:review-prev"]);
         expect(onKey("]")).toEqual(["agent:review-next"]);
@@ -2189,7 +2189,7 @@ describe("agent review mode keys", () => {
     });
 
     it("in canvas mode the review keys stand down and the canvas keeps its own", () => {
-        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" });
         expect(onKey("c")).toEqual(["agent:canvas-open"]);
         find("agent:canvas-open").run(nav);
         expect(getCanvas("a1")!.mode).toBe("canvas");
@@ -2354,7 +2354,7 @@ describe("Agent centre modes", () => {
 
     // a1 focused with a ready canvas, still in terminal mode
     const focusedWithCanvas = () => {
-        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" });
         updateCanvas("a1", (s) => ({
             ...s,
             status: "ready",
@@ -3349,7 +3349,7 @@ describe("brainstorm pane view keys", () => {
     });
 
     it("Alt+C walks Terminal, Brainstorm and Review in the header's order, the brainstorm in the canvas's slot", () => {
-        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" });
         const cycle = find("agent:view-cycle");
         const mode = () => ({
             brainstorm: getBrainstorm("a1")!.mode,
@@ -3366,7 +3366,7 @@ describe("brainstorm pane view keys", () => {
     });
 
     it("an agent with a brainstorm never shows its canvas, however the canvas is asked for", () => {
-        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" });
         setAgentView("a1", "canvas", 1);
         expect(getCanvas("a1")!.mode).toBe("terminal");
         expect(find("agent:canvas-open").when!(nav)).toBe(false);

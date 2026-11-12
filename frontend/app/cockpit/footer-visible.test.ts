@@ -69,7 +69,7 @@ describe("agent canvas mode chips", () => {
     const globals = () => visibleHints(rest, real, [], GLOBAL_HINTS).map((c) => `${c.glyph ?? c.keys} ${c.label}`);
 
     beforeEach(() => {
-        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" });
         updateCanvas("a1", (s) => ({ ...s, status: "ready", boards: [{ name: "Main.dc.html", x: 0, y: 0, w: 1440, h: 900 }] }));
     });
 
@@ -207,7 +207,7 @@ describe("agent brainstorm mode chips", () => {
 
     it("a widened board adds [ ] board to the pane's keys, the question's way back to the terminal stays, and marking drops the board keys", () => {
         setAgentView("a1", "brainstorm", 1);
-        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p", board: "Split.dc.html" }, 0);
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p", board: "Split.dc.html" });
         updateCanvas("a1", (s) => ({ ...s, status: "ready" }));
         try {
             expect(chips()).not.toContain("[ ] board");

@@ -51,8 +51,7 @@ export function updateCanvas(agentId: string, fn: (s: CanvasState) => CanvasStat
 
 export function attachCanvas(
     agentId: string,
-    a: { topic: string; dir: string; projectDir: string; board?: string },
-    now: number
+    a: { topic: string; dir: string; projectDir: string; board?: string }
 ): void {
     const prev = getCanvas(agentId);
     let next: CanvasState;
@@ -76,7 +75,9 @@ export function attachCanvas(
             base: null,
             status: "probing",
             lastModifiedMs: null,
-            lastViewedMs: now,
+            // never looked at: an agent's reveal comes after it wrote the boards, so a reveal time here would leave the
+            // Canvas tab's unseen dot off for a canvas nobody has opened. An open that shows it sets this at once
+            lastViewedMs: 0,
             marking: false,
             marks: [],
             reloadKey: 0,

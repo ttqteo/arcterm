@@ -44,7 +44,7 @@ const fail = async (): Promise<never> => {
 };
 
 beforeEach(() => {
-    attachCanvas("a1", { topic: "t", dir: DIR, projectDir: "/p", board: "States.dc.html" }, 0);
+    attachCanvas("a1", { topic: "t", dir: DIR, projectDir: "/p", board: "States.dc.html" });
     setCanvasMode("a1", "canvas", 1);
     updateCanvas("a1", (s) => ({
         ...s,

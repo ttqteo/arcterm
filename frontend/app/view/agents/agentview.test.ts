@@ -21,7 +21,7 @@ const DOC_ASK = {
 
 describe("setAgentView", () => {
     beforeEach(() => {
-        attachCanvas("a1", CANVAS, 0);
+        attachCanvas("a1", CANVAS);
         syncDocReview("a1", DOC_ASK);
     });
 
@@ -88,7 +88,7 @@ describe("nextAgentView", () => {
 
 describe("setAgentView with a brainstorm", () => {
     beforeEach(() => {
-        attachCanvas("a1", CANVAS, 0);
+        attachCanvas("a1", CANVAS);
         attachBrainstorm("a1", { topic: "t", cwd: "/p" }, 0);
         syncDocReview("a1", DOC_ASK);
     });

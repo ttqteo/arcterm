@@ -74,6 +74,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The Canvas tab in an agent's header now shows its dot when the agent draws a canvas you have not opened yet, not only
+  when it changes one you already looked at.
 - Highlights in Chat no longer vanish from one agent's replies while other Claude agents are running: each agent kept
   overwriting the others' saved highlights, so switching away and back showed the reply plain.
 - On a Mac, text replacements (System Settings → Keyboard → Text Replacements, such as `sv` → sinh viên) work in
