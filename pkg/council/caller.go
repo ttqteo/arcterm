@@ -87,7 +87,8 @@ func (ConsultCaller) Call(ctx context.Context, req CallReq) (CallRes, error) {
 		}
 		src := jobqueue.SourceFrom(ctx)
 		src.Label = "Council · " + req.Expert.Name
-		release, err := holdSlot(ctx, jobqueue.Request{Name: src.Label, Bytes: toolSlotBytes, Engine: true, Source: src})
+		// NoCPU: claude -p waits on the model, so Auto's CPU cap does not run a council's seats one by one
+		release, err := holdSlot(ctx, jobqueue.Request{Name: src.Label, Bytes: toolSlotBytes, Engine: true, NoCPU: true, Source: src})
 		if err != nil {
 			return CallRes{}, fmt.Errorf("waiting for a slot: %w", err)
 		}

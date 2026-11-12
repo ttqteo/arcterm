@@ -295,8 +295,10 @@ type CouncilBenchRtnData struct {
 // and per harness version and mode for the ratings, the newest version first, so one version's score is never read as
 // another's. Verdict is the go / no-go on the council against the agent team, read from the cases tagged for that pass;
 // it is left out when no case carries the tag, or the cases cannot be read. Results is every run line of the file, in
-// file order.
+// file order. Harness is the answering wavesrv's own council.HarnessVersion, the one a run started now would carry (set
+// on every answer, one with no runs yet included): a caller reads it to tell its rows from an older build's.
 type CouncilBenchResultsRtnData struct {
+	Harness string                        `json:"harness"`
 	Runs    []bench.CouncilBenchRow       `json:"runs"`
 	Results []bench.CouncilBenchResult    `json:"results"`
 	Ratings []bench.CouncilBenchRatingRow `json:"ratings"`

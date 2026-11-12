@@ -7,12 +7,12 @@
 // The data dir is %LOCALAPPDATA%\dev.arc.app\data on Windows and ~/Library/Application Support/dev.arc.app on a Mac.
 // Usage: node scripts/council-bench-cases.mjs [--data-dir <path>] [--dry-run]
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 // the pass's tag; it is bench.TeamPassTag in pkg/council/bench
 export const PASS_TAG = "team-bench-2026-11";
@@ -74,11 +74,16 @@ export const CASES = [
     },
 ];
 
-// a case's cases.json entry, in the field order the file's other entries use; paths are absolute with forward slashes
-export function caseEntry(c, dataDir) {
+// the data dir as an absolute path with forward slashes, the form cases.json holds its paths in
+export function dataBase(dataDir) {
     // a Windows absolute path (drive letter or share) stays as given: a Mac's resolve would prefix the current folder
     const abs = win32.isAbsolute(dataDir) && /^([A-Za-z]:[\\/]|[\\/]{2})/.test(dataDir) ? dataDir : resolve(dataDir);
-    const base = abs.replaceAll("\\", "/");
+    return abs.replaceAll("\\", "/");
+}
+
+// a case's cases.json entry, in the field order the file's other entries use; paths are absolute with forward slashes
+export function caseEntry(c, dataDir) {
+    const base = dataBase(dataDir);
     return {
         id: c.id,
         mode: "review",
@@ -99,7 +104,7 @@ export function renderKey(lines) {
 }
 
 // the regular files under root, as sorted forward-slash relative paths; a symlink or junction is neither read nor followed
-function walkFiles(root) {
+export function walkFiles(root) {
     const out = [];
     const visit = (dir, prefix) => {
         for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -163,34 +168,37 @@ function run(cmd, args, cwd) {
     return r.stdout.trim();
 }
 
-const git = (args) => run("git", args, ROOT);
+export const git = (args) => run("git", args, ROOT);
+
+// a commit as {hash, subject}
+export function resolveCommit(h) {
+    const [hash, subject] = git(["log", "-1", "--format=%H%n%s", h]).split("\n");
+    return { hash, subject };
+}
 
 // a case's snapshot as a full hash, and its fixes as {hash, subject}
 function resolveCase(c) {
     return {
         snapshot: git(["rev-parse", "--verify", `${c.snapshot}^{commit}`]),
-        fixes: c.fixes.map((h) => {
-            const [hash, subject] = git(["log", "-1", "--format=%H%n%s", h]).split("\n");
-            return { hash, subject };
-        }),
+        fixes: c.fixes.map(resolveCommit),
     };
 }
 
-// replaces dest with a `git archive` of the snapshot; the tar goes through a temp file and is read from its own folder,
-// so no path with a drive colon reaches tar's -f
-function archiveInto(snapshot, dest) {
+// replaces dest with a `git archive` of the snapshot; the tar is written into dest and extracted from there, so no path
+// with a drive colon reaches tar (GNU tar, which Git Bash runs, reads `C:` as a remote host; bsdtar does not)
+export function archiveInto(snapshot, dest) {
+    const tar = ".council-bench-snapshot.tar";
     rmSync(dest, { recursive: true, force: true });
     mkdirSync(dest, { recursive: true });
-    const tmp = mkdtempSync(join(tmpdir(), "council-bench-archive-"));
     try {
-        git(["archive", "--format=tar", "-o", join(tmp, "snapshot.tar"), snapshot]);
-        run("tar", ["-xf", "snapshot.tar", "-C", dest], tmp);
+        git(["archive", "--format=tar", "-o", join(dest, tar), snapshot]);
+        run("tar", ["-xf", tar], dest);
     } finally {
-        rmSync(tmp, { recursive: true, force: true });
+        rmSync(join(dest, tar), { force: true });
     }
 }
 
-function defaultDataDir() {
+export function defaultDataDir() {
     if (process.platform === "win32") {
         if (!process.env.LOCALAPPDATA) throw new Error("LOCALAPPDATA is not set; pass --data-dir");
         return join(process.env.LOCALAPPDATA, "dev.arc.app", "data");

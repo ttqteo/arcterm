@@ -9,10 +9,13 @@ import {
     holdLine,
     isSendNowKey,
     pastesBody,
+    pendingCaption,
     pendingKind,
+    pendingMessage,
     pendingStill,
     pendsAsBubble,
     pushSent,
+    queuedBubbleUp,
     recall,
     releasesHeld,
     sendHold,
@@ -137,6 +140,40 @@ describe("pendingStill", () => {
             2000
         );
         expect(out.map((x) => x.id)).toEqual(["a"]);
+    });
+});
+
+// The caption under a pending bubble is decided when the message is sent. Read from the agent's state as it drew, a
+// message sent to an idle agent flashed Sending…, then Queued with Send now as the turn it started set the agent
+// working, then went as the transcript took it.
+describe("pendingMessage and its caption", () => {
+    const entries: AgentEntry[] = [];
+    it("keeps a message sent to an idle agent at Sending… while the turn it started runs", () => {
+        const p = pendingMessage("p1", "fix the chip", entries, 1_000, false);
+        expect(p.queued).toBe(false);
+        expect(pendingCaption(p)).toBe("Sending…");
+        expect(queuedBubbleUp([p])).toBe(false);
+    });
+    it("captions a message sent while the agent works Queued, which Send now can push", () => {
+        const p = pendingMessage("p2", "and the tray", entries, 1_000, true);
+        expect(pendingCaption(p)).toBe("Queued");
+        expect(queuedBubbleUp([p])).toBe(true);
+    });
+    it("lets the harness's starting line stand in for either", () => {
+        expect(pendingCaption(pendingMessage("p3", "go", entries, 1_000, true), "Starting Claude Code…")).toBe(
+            "Starting Claude Code…"
+        );
+    });
+    it("counts no command card as a queued bubble", () => {
+        const p = pendingMessage("p4", "/btw why", entries, 1_000, true);
+        expect(p.kind).toBe("btw");
+        expect(queuedBubbleUp([p])).toBe(false);
+    });
+    it("records how often the transcript already held the text, and when it was sent", () => {
+        const held: AgentEntry[] = [{ kind: "user", text: "again" } as AgentEntry];
+        const p = pendingMessage("p5", "again", held, 42, false);
+        expect(p.seen).toBe(1);
+        expect(p.sentAt).toBe(42);
     });
 });
 

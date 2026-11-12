@@ -87,7 +87,13 @@ export function useAgentSend(
     // another agent or surface, which unmounts the box, keeps it; asleep it always does (the wake draft).
     // onBtwTyped: a /btw goes to the session's mod to answer on the side (askBtw); this runs, with the text sent, when
     // no mod took it and it was typed into the terminal instead
-    { keepDraft = false, onBtwTyped }: { keepDraft?: boolean; onBtwTyped?: (sent: string) => void } = {}
+    // onWoken: a wake this send started took its message (the agent is back and has it), so the caller can let go of
+    // what rode along; a wake that failed keeps the draft, and the caller keeps its attachments too
+    {
+        keepDraft = false,
+        onBtwTyped,
+        onWoken,
+    }: { keepDraft?: boolean; onBtwTyped?: (sent: string) => void; onWoken?: () => void } = {}
 ): AgentSend {
     const draftId = agent != null && (agent.sleeping || keepDraft) ? agent.id : undefined;
     const draft = useWakeDraft(draftId);
@@ -110,6 +116,7 @@ export function useAgentSend(
                 try {
                     await wakeAgent(id, { message });
                     setWakeDraft(id, "");
+                    onWoken?.();
                 } catch (e) {
                     wakeErrorToast(agent.name, e);
                 } finally {

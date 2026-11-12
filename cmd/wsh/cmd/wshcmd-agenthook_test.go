@@ -64,8 +64,12 @@ func TestPlanEmission(t *testing.T) {
 		{"session start after a clear is idle", ccHookEvent{HookEventName: "SessionStart", Source: "clear"}, baseds.AgentState_Idle, false},
 		{"session start on startup is idle at its prompt", ccHookEvent{HookEventName: "SessionStart", Source: "startup"}, baseds.AgentState_Idle, false},
 		{"session start on a resume is idle with its title", ccHookEvent{HookEventName: "SessionStart", Source: "resume"}, baseds.AgentState_Idle, true},
-		// Task now only keeps the parent "working"; the disk store (not a hook delta) tracks subagents.
-		{"pre task -> working", ccHookEvent{HookEventName: "PreToolUse", ToolName: "Task", ToolUseID: "t1", ToolInput: json.RawMessage(`{"subagent_type":"Explore"}`)}, baseds.AgentState_Working, true},
+		// Task now only keeps the parent "working"; the disk store (not a hook delta) tracks subagents. Where the gate
+		// hook asks first (any mode but bypassPermissions) the session waits on that dialog, and the key that answers it
+		// reads working again (wshserver_promptanswer.go)
+		{"pre task in bypassPermissions -> working", ccHookEvent{HookEventName: "PreToolUse", ToolName: "Task", ToolUseID: "t1", PermissionMode: "bypassPermissions", ToolInput: json.RawMessage(`{"subagent_type":"Explore"}`)}, baseds.AgentState_Working, true},
+		{"pre task the gate asks about -> waiting", ccHookEvent{HookEventName: "PreToolUse", ToolName: "Task", ToolUseID: "t1", PermissionMode: "default", ToolInput: json.RawMessage(`{"subagent_type":"Explore"}`)}, baseds.AgentState_Waiting, false},
+		{"pre agent the gate asks about -> waiting", ccHookEvent{HookEventName: "PreToolUse", ToolName: "Agent", ToolUseID: "t1", PermissionMode: "acceptEdits", ToolInput: json.RawMessage(`{"subagent_type":"Explore"}`)}, baseds.AgentState_Waiting, false},
 		{"subagent stop -> nothing", ccHookEvent{HookEventName: "SubagentStop", ToolUseID: "t1"}, "", false},
 		{"unknown event -> nothing", ccHookEvent{HookEventName: "SomeFutureEvent"}, "", false},
 	}
@@ -140,6 +144,33 @@ func TestPermissionRaiseFor(t *testing.T) {
 		if _, ok := permissionRaiseFor(c.ev, c.agent, c.shadow, "block:abc"); ok {
 			t.Errorf("%s: raised a request", name)
 		}
+	}
+}
+
+// The subagent dialog comes from the gate hook's ask, which fires no PermissionRequest: the PreToolUse report raises
+// the chat's card for it instead, wherever the gate asks (not in bypassPermissions, where it lets the call run).
+func TestPermissionRaiseForASubagentTheGateAsksAbout(t *testing.T) {
+	input := json.RawMessage(`{"description":"d","subagent_type":"Explore","prompt":"p"}`)
+	ev := ccHookEvent{HookEventName: "PreToolUse", ToolName: "Agent", ToolInput: input, PermissionMode: "default"}
+	got, ok := permissionRaiseFor(ev, "claude", "", "block:abc")
+	if !ok || got.ToolName != "Agent" || string(got.ToolInput) != string(input) {
+		t.Fatalf("raise = %+v, %v; want the Agent call raised", got, ok)
+	}
+	task := ev
+	task.ToolName = "Task"
+	if _, ok := permissionRaiseFor(task, "claude", "", "block:abc"); !ok {
+		t.Error("a Task call (the tool's old name) raised nothing")
+	}
+	bypass := ev
+	bypass.PermissionMode = "bypassPermissions"
+	bash := ccHookEvent{HookEventName: "PreToolUse", ToolName: "Bash", ToolInput: json.RawMessage(`{"command":"ls"}`)}
+	for name, e := range map[string]ccHookEvent{"bypassPermissions": bypass, "another tool's PreToolUse": bash} {
+		if _, ok := permissionRaiseFor(e, "claude", "", "block:abc"); ok {
+			t.Errorf("%s: raised a request", name)
+		}
+	}
+	if _, ok := permissionRaiseFor(ev, "claude", "/x/shadow.json", "block:abc"); ok {
+		t.Error("a shadow report raised a request")
 	}
 }
 

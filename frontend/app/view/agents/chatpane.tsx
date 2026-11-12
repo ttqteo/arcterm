@@ -47,12 +47,13 @@ import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
+import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
 import { ChatLocalCard } from "./chatlocalcards";
 import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
 import { chatCapable } from "./chatmode";
 import { canSendNow, SEND_NOW_KEYS, turnStatsLabel, workingText } from "./chatmodel";
 import { setChatMode, useChatMode } from "./chatmodestore";
-import { pendingStill, type PendingKind } from "./chatpending";
+import { pendingCaption, pendingStill, queuedBubbleUp, type PendingKind, type PendingMessage } from "./chatpending";
 import { usePending } from "./chatpendingstore";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import { TaggedPromptText } from "./chattagblock";
@@ -84,8 +85,10 @@ function useIdleSince(idle: boolean): number | null {
     return since;
 }
 
-// A message sent and not in the transcript yet: your bubble, dimmed, and under it "Queued" while Claude works (Claude Code
-// takes it at the next gap) or "Sending…" otherwise; a session's first message, the task it was launched on, reads
+// A message sent and not in the transcript yet: your bubble, dimmed, and under it "Queued" when it was sent while
+// Claude worked (Claude Code takes it at the next gap) or "Sending…" when it was sent to an idle Claude
+// (chatpending.ts pendingCaption: decided at the send, so the turn it starts never flips it to Queued); a session's
+// first message, the task it was launched on, reads
 // "Starting Claude Code…" (`starting`) while the harness starts. It goes when the transcript holds the text (pendingStill). It splits
 // the text the way your bubble in the transcript does (chatconversation.tsx YouBubble: @mentions as pills, files as cards
 // under it), so nothing changes when the transcript's copy replaces it.
@@ -137,17 +140,16 @@ function PendingCommand({
 }
 
 function PendingBubble({
-    text,
-    queued,
+    pending,
     onSendNow,
     starting,
 }: {
-    text: string;
-    queued: boolean;
+    pending: PendingMessage;
     onSendNow?: () => void;
     starting?: string;
 }) {
-    const said = splitAttachments(text);
+    const said = splitAttachments(pending.text);
+    const queued = pending.queued === true;
     const body = said.text.trim();
     const chord = sendNowChord();
     return (
@@ -168,7 +170,7 @@ function PendingBubble({
                     {starting != null ? (
                         <span className="h-[6px] w-[6px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
                     ) : null}
-                    {starting ?? (queued ? "Queued" : "Sending…")}
+                    {pendingCaption(pending, starting)}
                 </span>
                 {starting == null && queued && onSendNow != null ? (
                     <button
@@ -355,6 +357,20 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     // where the reader left the conversation, kept while the cell shows the terminal or another agent
     const placeId = `chat:${agent.id}:${path}`;
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries, placeId);
+    // the jump-to-latest key (agent:chat-jump-latest) presses the ↓ below, and passes while the ↓ is not drawn
+    const jumpState = useRef({ atBottom, jumpToBottom });
+    jumpState.current = { atBottom, jumpToBottom };
+    useEffect(
+        () =>
+            registerChatJump(agent.id, () => {
+                if (jumpState.current.atBottom) {
+                    return false;
+                }
+                jumpState.current.jumpToBottom();
+                return true;
+            }),
+        [agent.id]
+    );
 
     // The live stream only says the file grew: each stamp asks for an append read (the RailTranscript pattern). It runs
     // while the Agent surface is the one seen, and what was written while it was not is read when it is seen again. A
@@ -448,8 +464,9 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                       })
                   )
             : undefined;
-    // a message bubble captioned Queued is up (PendingBubble's queued): Ctrl+Enter in the empty box is its Send now
-    const queuedShown = agent.state !== "idle" && pending.some((p) => p.kind == null);
+    // a message bubble captioned Queued is up (sent while the agent worked, which it still does): Ctrl+Enter in the
+    // empty box is its Send now
+    const queuedShown = agent.state !== "idle" && queuedBubbleUp(pending);
     useEffect(() => {
         if (!showsPending) {
             return;
@@ -536,8 +553,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                 ) : (
                                     <PendingBubble
                                         key={p.id}
-                                        text={p.text}
-                                        queued={agent.state !== "idle"}
+                                        pending={p}
                                         onSendNow={sendNow}
                                         starting={startingTitle}
                                     />
@@ -613,7 +629,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                         exit="exit"
                                         style={{ transformOrigin: "bottom" }}
                                         onClick={jumpToBottom}
-                                        title="Jump to latest"
+                                        title={`Jump to latest (${formatChordString(CHAT_JUMP_KEYS)})`}
                                         aria-label="Jump to latest"
                                         className="flex size-[32px] cursor-pointer items-center justify-center rounded-full border border-edge-strong bg-surface-raised text-secondary shadow-popover-sm hover:border-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                                     >

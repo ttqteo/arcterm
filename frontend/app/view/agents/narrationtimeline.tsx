@@ -627,8 +627,27 @@ export function CompactionDivider({
         }
         setOpen((v) => !v);
     };
+    // a long summary ends far below the divider: closing it from its foot brings the divider back on screen, so the
+    // reader is not left wherever the feed lands once the summary's height is gone
+    const rootRef = useRef<HTMLDivElement>(null);
+    const collapse = (fromFoot: boolean) => {
+        setOpen(false);
+        if (fromFoot) {
+            rootRef.current?.scrollIntoView({ block: "nearest" });
+        }
+    };
+    const collapseButton = (fromFoot: boolean) => (
+        <button
+            type="button"
+            onClick={() => collapse(fromFoot)}
+            className="inline-flex cursor-pointer items-center gap-1 rounded-[5px] px-1.5 py-0.5 text-[10.5px] text-muted hover:bg-hover hover:text-ink-mid"
+        >
+            <ChevronUp size={11} strokeWidth={2.2} aria-hidden />
+            Collapse
+        </button>
+    );
     return (
-        <div className="mt-3.5" data-compaction-divider>
+        <div ref={rootRef} className="mt-3.5" data-compaction-divider>
             <button type="button" disabled={!canExpand} onClick={toggle} className={cn("flex w-full items-center gap-2.5", canExpand ? "cursor-pointer" : "cursor-default")}>
                 <span className="h-px flex-1 bg-edge-mid" />
                 <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-accent/30 bg-accent/[0.07] px-2.5 py-0.5 text-[10.5px] tabular-nums leading-[1.6]">
@@ -667,10 +686,14 @@ export function CompactionDivider({
                         exit="exit"
                         className="my-2 overflow-hidden rounded-[8px] border border-edge-mid bg-surface-code px-3.5 py-3"
                     >
-                        <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted">
-                            Summary — kept context
+                        <div className="mb-1.5 flex items-center justify-between gap-2">
+                            <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted">
+                                Summary — kept context
+                            </span>
+                            {collapseButton(false)}
                         </div>
                         <MarkdownMessage text={summary} />
+                        <div className="mt-2 flex justify-end">{collapseButton(true)}</div>
                     </motion.div>
                 ) : null}
             </AnimatePresence>

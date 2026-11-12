@@ -22,6 +22,7 @@ import {
     fromLive,
     insertSlash,
     mergeCommands,
+    pickAction,
     slashGroups,
     slashMatches,
     slashQueryAt,
@@ -68,7 +69,9 @@ export async function fetchSlashCommands(
 // commands are read from there on the fallback), "" when unknown; `blockId` is the agent's terminal block, the key of its
 // live list. `off` keeps the menu closed (a recalled message sits in the box). `setText` takes the caret a pick puts
 // the text's caret at, for a box that draws the text again (the chat editor places it as it does). `look` and `frame` are
-// the frosted panel and the element it stands over (the message box).
+// the frosted panel and the element it stands over (the message box). `inChat` names the built-ins the box answers
+// itself (chatlocal.ts): they list first, as In Chat, and never read "opens in Terminal"; a click or Enter on one calls
+// `onRun` with its name instead of putting it in the box (Tab still does).
 export function useSlashMenu({
     text,
     setText,
@@ -78,6 +81,8 @@ export function useSlashMenu({
     off = false,
     look,
     frame,
+    inChat,
+    onRun,
 }: {
     text: string;
     setText: (text: string, caret?: number) => void;
@@ -87,6 +92,8 @@ export function useSlashMenu({
     off?: boolean;
     look?: PickerLook;
     frame?: RefObject<HTMLElement | null>;
+    inChat?: (name: string) => boolean;
+    onRun?: (name: string) => void;
 }): SlashMenuState {
     const [caret, setCaret] = useState(0);
     const [pick, setPick] = useState(0);
@@ -113,7 +120,7 @@ export function useSlashMenu({
             stale = true;
         };
     }, [open, cwd, blockId]);
-    const grouped = open ? slashGroups(slashMatches(query, known.commands)) : [];
+    const grouped = open ? slashGroups(slashMatches(query, known.commands), inChat) : [];
     const matches = grouped.flatMap((g) => g.items);
     const groups: PickerGroup[] = [];
     let start = 0;
@@ -124,7 +131,12 @@ export function useSlashMenu({
     const shown = matches.length > 0;
     const at = Math.min(pick, Math.max(matches.length - 1, 0));
 
-    const choose = (c: SlashCommand) => {
+    const choose = (c: SlashCommand, how: "pick" | "complete" = "pick") => {
+        if (onRun != null && pickAction(c, how, inChat) === "run") {
+            setPick(0);
+            onRun(c.name);
+            return;
+        }
         const next = insertSlash(text, caret, c.name);
         setText(next.text, next.caret);
         setCaret(next.caret);
@@ -160,7 +172,7 @@ export function useSlashMenu({
             }
             e.preventDefault();
             e.stopPropagation();
-            choose(matches[at]);
+            choose(matches[at], e.key === "Tab" ? "complete" : "pick");
         }
     };
     // a keystroke or a click that moves the caret starts the list from its best match again; ↑↓ do not, and neither does a
@@ -230,7 +242,7 @@ export function useSlashMenu({
                             {c.plugin}
                         </span>
                     ) : null}
-                    {c.tui ? (
+                    {c.tui && inChat?.(c.name) !== true ? (
                         <span
                             title="Opens a menu on Claude Code's own screen"
                             className="shrink-0 text-[11px] text-ink-faint"

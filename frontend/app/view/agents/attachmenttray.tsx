@@ -1,11 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Presentational pieces for the New run goal's attachments: the chip tray (image thumbnails / file icons with
-// per-chip remove + retry) and the `+` that opens the native file dialog. State + behavior live in
-// useComposerAttachments (composerattachments.ts); these are pure props-in views.
+// Presentational pieces for the composer's attachments: the chip tray (image thumbnails / file icons with
+// per-chip remove + retry; an image's thumbnail and name open it full size) and the `+` that opens the native file
+// dialog. State + behavior live in useComposerAttachments (composerattachments.ts); these are props-in views.
 
+import { ImageZoom, type ZoomImage } from "@/app/element/imagezoom";
 import { File as FileIcon, Loader2, Plus, RotateCw, X } from "lucide-react";
+import { useState } from "react";
 import { isOversize, type Attachment } from "./composerattachments";
 
 export function fmtSize(bytes: number): string {
@@ -22,10 +24,12 @@ function Chip({
     att,
     onRemove,
     onRetry,
+    onOpen,
 }: {
     att: Attachment;
     onRemove: (id: string) => void;
     onRetry: (id: string) => void;
+    onOpen: (image: ZoomImage) => void;
 }) {
     const isError = att.status === "error";
     const isUploading = att.status === "uploading";
@@ -43,11 +47,22 @@ function Chip({
             className={shell}
         >
             {att.kind === "image" && att.previewUrl ? (
-                <img src={att.previewUrl} alt="" className="h-7 w-7 rounded object-cover" />
+                <button
+                    type="button"
+                    data-attachment-open=""
+                    title="Open full size"
+                    onClick={() => onOpen({ src: att.previewUrl, alt: att.name })}
+                    className="flex min-w-0 cursor-zoom-in items-center gap-1.5 rounded hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    <img src={att.previewUrl} alt="" className="h-7 w-7 rounded object-cover" />
+                    <span className="max-w-[120px] truncate">{att.name}</span>
+                </button>
             ) : (
-                <FileIcon size={13} className="shrink-0 text-muted" />
+                <>
+                    <FileIcon size={13} className="shrink-0 text-muted" />
+                    <span className="max-w-[120px] truncate">{att.name}</span>
+                </>
             )}
-            <span className="max-w-[120px] truncate">{att.name}</span>
             {att.kind !== "image" && att.size != null ? <span className="text-muted">{fmtSize(att.size)}</span> : null}
             {isUploading ? (
                 <Loader2 size={12} className="shrink-0 animate-spin motion-reduce:animate-none text-muted" />
@@ -83,14 +98,16 @@ export function AttachmentTray({
     onRemove: (id: string) => void;
     onRetry: (id: string) => void;
 }) {
+    const [zoomed, setZoomed] = useState<ZoomImage | null>(null);
     if (items.length === 0) {
         return null;
     }
     return (
         <div className="flex min-w-0 flex-wrap gap-1.5">
             {items.map((a) => (
-                <Chip key={a.id} att={a} onRemove={onRemove} onRetry={onRetry} />
+                <Chip key={a.id} att={a} onRemove={onRemove} onRetry={onRetry} onOpen={setZoomed} />
             ))}
+            <ImageZoom image={zoomed} onClose={() => setZoomed(null)} />
         </div>
     );
 }

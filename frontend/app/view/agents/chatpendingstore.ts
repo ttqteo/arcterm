@@ -7,7 +7,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, useAtomValue } from "jotai";
 import type { AgentEntry } from "./agentsviewmodel";
-import { PENDING_QUEUED_MAX_MS, pendingKind, pushSent, userTextCount, type PendingMessage } from "./chatpending";
+import { PENDING_QUEUED_MAX_MS, pendingMessage, pushSent, type PendingMessage } from "./chatpending";
 
 const NONE: PendingMessage[] = [];
 const NO_HISTORY: string[] = [];
@@ -21,16 +21,9 @@ const sentByAgent = new Map<string, string[]>();
 let nextId = 0;
 
 /** Records `text` as sent to the agent just now, with how many times the `entries` (the transcript as drawn at this
- *  moment) already hold it. */
-export function addPending(agentId: string, text: string, entries: AgentEntry[]): void {
-    const kind = pendingKind(text);
-    const p: PendingMessage = {
-        id: `pending-${++nextId}`,
-        text,
-        sentAt: Date.now(),
-        seen: userTextCount(entries, text),
-        ...(kind != null ? { kind } : {}),
-    };
+ *  moment) already hold it, and whether the agent was `busy` (not idle), which makes it Queued (chatpending.ts). */
+export function addPending(agentId: string, text: string, entries: AgentEntry[], busy: boolean): void {
+    const p = pendingMessage(`pending-${++nextId}`, text, entries, Date.now(), busy);
     const m = new Map(globalStore.get(pendingAtom));
     // the ones the transcript has long since caught up with go too, so the list never grows over a long session
     m.set(agentId, [...(m.get(agentId) ?? NONE).filter((q) => Date.now() - q.sentAt < PENDING_QUEUED_MAX_MS), p]);
@@ -77,6 +70,25 @@ export function useHeldSend(agentId: string): boolean {
 /** The agent's messages sent and not yet confirmed by the transcript, oldest first (filter with `pendingStill`). */
 export function usePending(agentId: string): PendingMessage[] {
     return useAtomValue(pendingAtom).get(agentId) ?? NONE;
+}
+
+/** The agent's pending messages as they stand, for a key handler (`usePending` is the drawing's). */
+export function getPending(agentId: string): PendingMessage[] {
+    return globalStore.get(pendingAtom).get(agentId) ?? NONE;
+}
+
+/** Drops the agent's pending messages with these ids: messages taken back into the box (chattakeback.ts). */
+export function dropPendingIds(agentId: string, ids: string[]): void {
+    const list = globalStore.get(pendingAtom).get(agentId) ?? NONE;
+    if (ids.length === 0 || !list.some((p) => ids.includes(p.id))) {
+        return;
+    }
+    const m = new Map(globalStore.get(pendingAtom));
+    m.set(
+        agentId,
+        list.filter((p) => !ids.includes(p.id))
+    );
+    globalStore.set(pendingAtom, m);
 }
 
 /** What was sent from the agent's box, newest last (at most 20). */

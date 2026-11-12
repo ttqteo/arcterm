@@ -229,14 +229,14 @@ func TestAppendAfterTornLine(t *testing.T) {
 }
 
 func TestSummarizeByHarness(t *testing.T) {
-	done := func(h, variant string, recall, keys, kept, wrong int, tokens int64) CouncilBenchResult {
-		return CouncilBenchResult{Harness: h, Case: "c", Variant: variant, Run: 1, State: "done", Recall: recall, Keys: keys, Kept: kept, Wrong: wrong, Tokens: tokens}
+	done := func(h, variant string, recall, keys, wrong int, tokens int64) CouncilBenchResult {
+		return CouncilBenchResult{Harness: h, Case: "c", Variant: variant, Run: 1, State: "done", Recall: recall, Keys: keys, Wrong: wrong, Tokens: tokens}
 	}
 	results := []CouncilBenchResult{
-		done("2026-10-20.1", VariantCouncil, 1, 5, 0, 1, 1_000_000),
-		done("2026-10-22.1", VariantCouncil, 2, 5, 1, 0, 1_500_000),
-		done("2026-10-22.1", VariantSolo, 1, 5, 0, 0, 500_000),
-		done("2026-10-22.1", VariantCouncil, 3, 6, 1, 2, 1_500_000),
+		done("2026-10-20.1", VariantCouncil, 1, 5, 1, 1_000_000),
+		done("2026-10-22.1", VariantCouncil, 2, 5, 0, 1_500_000),
+		done("2026-10-22.1", VariantSolo, 1, 5, 0, 500_000),
+		done("2026-10-22.1", VariantCouncil, 3, 6, 2, 1_500_000),
 		// a council that failed: it spent tokens but scored nothing, and its denominator does not count either
 		{Harness: "2026-10-22.1", Case: "c", Variant: VariantCouncil, Run: 2, State: "failed", Tokens: 500_000},
 		{Harness: "2026-10-22.1", Case: "c", Variant: VariantCouncil, Run: 3, State: "stopped", Tokens: 100_000, Recall: 4, Keys: 5},
@@ -256,9 +256,9 @@ func TestSummarizeByHarness(t *testing.T) {
 	if council.Runs != 4 || council.Scored != 2 {
 		t.Errorf("council runs = %d, scored = %d, want 4 and 2", council.Runs, council.Scored)
 	}
-	if council.Recall != 5 || council.Keys != 11 || council.Kept != 2 || council.Wrong != 2 {
-		t.Errorf("council recall = %d/%d, kept = %d, wrong = %d, want 5/11, 2, 2 (failed and stopped rows add none)",
-			council.Recall, council.Keys, council.Kept, council.Wrong)
+	if council.Recall != 5 || council.Keys != 11 || council.Wrong != 2 {
+		t.Errorf("council recall = %d/%d, wrong = %d, want 5/11, 2 (failed and stopped rows add none)",
+			council.Recall, council.Keys, council.Wrong)
 	}
 	if council.Tokens != 3_600_000 {
 		t.Errorf("council tokens = %d, want 3,600,000 (every run's)", council.Tokens)
@@ -448,6 +448,53 @@ func TestSummarizeSumsBrainstormFieldsOverScoredRunsOnly(t *testing.T) {
 	}
 	if r.Tokens != 16_000_000 || r.Mode != council.ModeBrainstorm || r.Skill != "s" {
 		t.Errorf("row = %+v, want every run's 16M tokens, its mode and its skill", r)
+	}
+}
+
+func TestSummarizeSumsRecall3AndJudged(t *testing.T) {
+	brainstorm := func(state string, recall, recall3, judged int) CouncilBenchResult {
+		return CouncilBenchResult{Harness: "h", Case: "c", Mode: council.ModeBrainstorm, Variant: VariantBrainstorm, Skill: "s",
+			State: state, Recall: recall, Recall3: recall3, Keys: 5, Judged: judged, Wrong: 1, Tokens: 1_000_000}
+	}
+	rows := Summarize([]CouncilBenchResult{
+		brainstorm("done", 4, 2, 9),
+		brainstorm("done", 3, 1, 7),
+		// a run that did not finish adds neither, even when its line carries some
+		brainstorm("failed", 2, 2, 5),
+	}, nil)
+	if len(rows) != 1 {
+		t.Fatalf("rows = %+v, want one", rows)
+	}
+	r := rows[0]
+	if r.Runs != 3 || r.Scored != 2 || r.Recall != 7 || r.Keys != 10 {
+		t.Errorf("row = %+v, want 3 runs, 2 scored, recall 7/10", r)
+	}
+	if r.Recall3 != 3 || r.Judged != 16 {
+		t.Errorf("row recall3 = %d, judged = %d, want 3 and 16 (the two done runs'; the failed run's 2 and 5 stay out)", r.Recall3, r.Judged)
+	}
+	// RecallPerM stays recall@all per million tokens, over every run's tokens
+	if want := 7 / 3.0; r.RecallPerM != want {
+		t.Errorf("RecallPerM = %v, want %v (recall@all per million tokens)", r.RecallPerM, want)
+	}
+}
+
+func TestLoadResultsReadsAnOldBrainstormLineWithKept(t *testing.T) {
+	dir := t.TempDir()
+	// a Brainstorm line of a harness before 2026-11-12.1: its council was cut at 3 items and its wild ideas judged apart
+	old := `{"kind":"run","date":"2026-11-10T10:00:00Z","harness":"2026-11-06.1","case":"run-pause","variant":"council","run":1,"council":"c0","state":"done","recall":2,"keys":5,"kept":1,"wrong":1,"tokens":10,"minutes":1,"messages":2,"matches":{"K1":1,"K2":3},"keptmatches":{"K4":1},"mode":"brainstorm"}` + "\n"
+	if err := os.WriteFile(resultsPath(dir), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runs, _, err := LoadResults(dir)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("runs = %+v, err = %v, want 1", runs, err)
+	}
+	r := runs[0]
+	if r.Kept != 1 || r.KeptMatches["K4"] != 1 || r.Recall != 2 || r.Matches["K2"] != 3 {
+		t.Errorf("old line = %+v, want it read whole, kept and keptmatches included", r)
+	}
+	if r.Recall3 != 0 || r.Judged != 0 {
+		t.Errorf("old line = %+v, want recall3 and judged at 0: the harness that wrote it had neither", r)
 	}
 }
 

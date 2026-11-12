@@ -470,6 +470,22 @@ func TestRunBrainstormDone(t *testing.T) {
 	if out.Final.Recall() != 2 || out.Final.Wrong() != 1 || out.AtDone.Recall() != 1 || out.AtDone.Wrong() != 0 {
 		t.Errorf("final recall %d wrong %d, done recall %d wrong %d; want 2, 1 and 1, 0", out.Final.Recall(), out.Final.Wrong(), out.AtDone.Recall(), out.AtDone.Wrong())
 	}
+	if out.Final.Judged != 4 || out.AtDone.Judged != 3 {
+		t.Errorf("judged %d items at the final mark and %d at the done mark, want 4 and 3: every decision, the builder part left out", out.Final.Judged, out.AtDone.Judged)
+	}
+	// the items each mark was judged on come with a done outcome, in the design's part order
+	if len(out.FinalItems) != 4 || len(out.DoneItems) != 3 {
+		t.Errorf("final items %d, done items %d, want 4 and 3: what the two marks were judged on", len(out.FinalItems), len(out.DoneItems))
+	} else {
+		for i, it := range out.FinalItems {
+			if it.Rank != i+1 || strings.TrimSpace(it.Title) == "" {
+				t.Errorf("final item %d = %+v, want rank %d and a title", i, it, i+1)
+			}
+		}
+		if out.DoneItems[0].Title != out.FinalItems[0].Title {
+			t.Errorf("the done mark's first item %q is not the final mark's first %q", out.DoneItems[0].Title, out.FinalItems[0].Title)
+		}
+	}
 	if out.Minutes < 0 || out.Minutes > 1 {
 		t.Errorf("minutes = %v", out.Minutes)
 	}
@@ -617,6 +633,9 @@ func TestRunBrainstormKeyReadFailsADoneRun(t *testing.T) {
 	}
 	if out.Final.Recall() != 0 || len(out.Final.Items) != 0 || len(out.AtDone.Items) != 0 || out.Decisions != 0 {
 		t.Errorf("a run that read the key was scored: %+v", out)
+	}
+	if len(out.FinalItems) != 0 || len(out.DoneItems) != 0 {
+		t.Errorf("a run that read the key carries items to save: %+v", out)
 	}
 	if out.Tokens != 8500 || out.JudgeTokens != 140 || out.Turns != 8 {
 		t.Errorf("the spend of a failed run still counts: tokens %d, judge tokens %d, turns %d", out.Tokens, out.JudgeTokens, out.Turns)

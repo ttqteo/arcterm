@@ -1,0 +1,69 @@
+{
+    "id": "held-services",
+    "snapshot": "33d3bc63a^",
+    "feature_commits": [
+        "33d3bc63a",
+        "38cd9e667",
+        "3a7ed906c",
+        "edb920cad",
+        "77c5b63a3",
+        "7188e51e7",
+        "737259a3b",
+        "9e20be8d1",
+        "2086c62c8",
+        "525db96e9",
+        "235ddbb58",
+        "7542142e2",
+        "d3d30638a",
+        "ef8d01f15",
+        "a7b03126d",
+        "7461cf338",
+        "bb0cd554a"
+    ],
+    "feature": "Pinned apps' servers held by arcterm",
+    "question": "A pinned app (a tool of mine with a page, like the dashboard I start with `npm run dash`) lives and dies with the terminal tab that runs its command: close the tab and its server is gone, restart arcterm and nothing starts it again, and a crash goes unseen. arcterm should hold these servers itself. I run arcterm on a Mac. A server should run with no tab or page of it open, and when it crashes arcterm should start it again on its own a few times and then say it gave up. Its output stays readable in a live terminal where I can type to it. Servers belong to arcterm: they end when it quits, and the ones I mark to start with arcterm run again whenever it opens, except one I stopped myself, which stays stopped until I start it. Stopping or restarting a server must leave nothing behind holding its port. If I end a server myself, from arcterm or by pressing Ctrl+C in its own terminal, that is a stop, not a crash. How should that work?",
+    "files": [
+        "frontend/app/view/agents/appmodel.ts",
+        "frontend/app/view/agents/appstore.ts",
+        "frontend/app/view/agents/toolsstore.ts",
+        "pkg/arctools/catalog.go",
+        "pkg/wconfig/settingsconfig.go",
+        "pkg/blockcontroller/blockcontroller.go",
+        "pkg/blockcontroller/shellcontroller.go",
+        "pkg/wcore/workspace.go",
+        "cmd/server/main-server.go",
+        "pkg/devservers/devservers.go"
+    ],
+    "key": [
+        {
+            "text": "A service cannot run the way a pinned app's terminal runs its command today, as a shell block's `cmd:firstcommand`: the block clears that command the first time it types it, so a restart would bring back an empty shell, not the server, while a `cmd` controller block keeps its command in `cmd` and runs it again on every start.",
+            "at": "pkg/blockcontroller/firstcommand.go:96",
+            "shows": "waveobj.MetaKey_CmdFirstCommand: nil"
+        },
+        {
+            "text": "Stop has to run the leftover sweep itself: `stopLeftovers`, which ends a block's processes by their `WAVETERM_BLOCKID`, is called only from the block-close handler and a stopped service keeps its block, while the controller's own kill signals only the pid it started, so a child of the command, such as the `node` under `npm run dash`, can outlive it and keep the port.",
+            "at": "pkg/blockcontroller/blockcontroller.go:208",
+            "shows": "stopLeftovers(blockId)"
+        },
+        {
+            "text": "The leftover sweep finds a service's stray processes by the `WAVETERM_BLOCKID` in their environment, and a command run with `-c` gets that variable only when its block sets `cmd:jwt`, because the swap-token environment (the block id, and the block's `cmd:env` with it) is injected into a non-interactive process only then, so a service block without `cmd:jwt` is invisible to the sweep.",
+            "at": "pkg/shellexec/shellexec.go:189",
+            "shows": "if jwtToken != \"\" && cmdOpts.ForceJwt {"
+        },
+        {
+            "text": "The person's own stop in the service's terminal looks like a crash to the controller's exit callback, which is told only the exit code, so a Ctrl+C has to be caught where input enters: every keystroke typed into a block takes the one `sendInput` path, so the supervisor can note a Ctrl+C there and read an exit shortly after it as a stop.",
+            "at": "pkg/blockcontroller/blockcontroller.go:383",
+            "shows": "return controller.SendInput(inputUnion)"
+        },
+        {
+            "text": "A quit stops every running service and each exit would read as a crash and queue a restart, unless crash detection hangs off the controller's exit hook, which `exitHook()` already holds back once `StopAllBlockControllersForShutdown` sets `shuttingDown`; the controller's status events are not held back and fire during a quit too.",
+            "at": "pkg/blockcontroller/blockcontroller.go:392",
+            "shows": "if shuttingDown.Load() {"
+        },
+        {
+            "text": "A service's block must set `cmd:runonstart` to false: it defaults to true, a terminal pane's first fit resyncs the controller and so starts a block whose controller is gone, and showing a stopped service's log mounts such a pane, so otherwise opening the log would start the server the person stopped.",
+            "at": "pkg/blockcontroller/shellcontroller.go:307",
+            "shows": "runOnStart := getBoolFromMeta(blockMeta, waveobj.MetaKey_CmdRunOnStart, true)"
+        }
+    ]
+}

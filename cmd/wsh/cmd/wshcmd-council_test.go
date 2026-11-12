@@ -905,23 +905,30 @@ func tableFields(table string) [][]string {
 	return lines
 }
 
-// benchBrainstormNote is the line under the Brainstorm section: the council is read through its top 3 items, a
-// brainstorm design through every decision, so the two columns are not the same measure.
-const benchBrainstormNote = "note: council items are cut at 3, while brainstorm scores every decision"
+// benchBrainstormNote is the line under the Brainstorm section: both sides are judged on their whole list from harness
+// 2026-11-12.1 on, and a row before it was scored the old way, a council cut at 3.
+const benchBrainstormNote = "note: council and brainstorm are both judged on their whole list; rows of a harness before 2026-11-12.1 were scored the old way (a council cut at 3)"
 
 func TestCouncilBenchResultsTable(t *testing.T) {
 	const skill = "3f9a01bc superpowers@4.0.3"
 	runs := []bench.CouncilBenchResult{
 		{Harness: "2026-10-22.1", Mode: council.ModeReview, Variant: bench.VariantSolo, State: "done", Recall: 2, Keys: 6, Wrong: 1, Tokens: 550_000},
+		// a Review line of an earlier harness that carries kept: Summarize drops it, and the table has no column for it
 		{Harness: "2026-10-22.1", Mode: council.ModeReview, Variant: bench.VariantCouncil, State: "done", Recall: 3, Keys: 6, Kept: 1, Tokens: 1_400_000},
 		{Harness: "2026-10-22.1", Mode: council.ModeReview, Variant: bench.VariantCouncil, State: "failed", Tokens: 600_000},
 		{Harness: "2026-10-23.2", Mode: council.ModeReview, Variant: bench.VariantCouncil, State: "done", Recall: 4, Keys: 6, Tokens: 1_000_000},
 		{Harness: "", Mode: council.ModeReview, Variant: bench.VariantSolo, State: "done", Recall: 1, Keys: 6, Tokens: 500_000},
-		// the Brainstorm cases: a council beside the brainstorm skill, which also shows its done mark and its design
+		// the Brainstorm cases of an earlier harness: no recall3 and no judged, so recall@3 prints a dash and wrong is a
+		// count alone. A council beside the brainstorm skill, which also shows its done mark and its design
 		{Harness: "2026-10-23.2", Mode: council.ModeBrainstorm, Variant: bench.VariantCouncil, State: "done", Recall: 1, Keys: 4, Tokens: 1_000_000},
 		{Harness: "2026-10-23.2", Mode: council.ModeBrainstorm, Variant: bench.VariantBrainstorm, Skill: skill, State: "done",
 			Recall: 3, Keys: 4, RecallDone: 2, Wrong: 1, Decisions: 6, Questions: 9, Tokens: 4_000_000},
 		{Harness: "2026-10-23.2", Mode: council.ModeBrainstorm, Variant: bench.VariantBrainstorm, Skill: skill, State: "failed", Tokens: 1_000_000},
+		// the round-2 rows: recall@3 beside recall@all, and wrong against the items the judge was shown
+		{Harness: "2026-11-12.1", Mode: council.ModeBrainstorm, Variant: bench.VariantCouncil, State: "done",
+			Recall: 3, Recall3: 2, Keys: 4, Judged: 8, Wrong: 2, Tokens: 6_000_000},
+		{Harness: "2026-11-12.1", Mode: council.ModeBrainstorm, Variant: bench.VariantBrainstorm, Skill: skill, State: "done",
+			Recall: 3, Recall3: 1, Keys: 4, RecallDone: 2, Judged: 6, Wrong: 1, Decisions: 6, Questions: 9, Tokens: 5_000_000},
 	}
 	ratings := []bench.CouncilBenchRating{
 		{Harness: "2026-10-22.1", Mode: council.ModeReview, Council: "c1", Rating: bench.RatingUseful},
@@ -932,20 +939,23 @@ func TestCouncilBenchResultsTable(t *testing.T) {
 
 	// a Review section and a Brainstorm section, each with a heading; in each the newest harness first, a council from
 	// before the version was recorded last; a failed run counts in Runs and in its tokens, not in the recall it is read
-	// against. The Brainstorm section adds the skill, the done mark's recall, the decisions and the questions, with a dash
-	// where a variant has none, and the note under it
+	// against. The Review section has no kept column. The Brainstorm section adds the skill, recall@3 beside recall@all,
+	// the done mark's recall, wrong against the items judged, the decisions and the questions, with a dash where a variant
+	// has none (and in recall@3, wrong's denominator, for a row of a harness that counted neither), and the note under it
 	want := [][]string{
 		{"Review"},
-		{"harness", "variant", "scored/runs", "recall", "kept", "wrong", "tokens", "recall/M", "tokens"},
-		{"2026-10-23.2", "council", "1/1", "4/6", "0", "0", "1M", "4.0"},
-		{"2026-10-22.1", "solo", "1/1", "2/6", "0", "1", "0.6M", "3.6"},
-		{"2026-10-22.1", "council", "1/2", "3/6", "1", "0", "2M", "1.5"},
-		{"unknown", "solo", "1/1", "1/6", "0", "0", "0.5M", "2.0"},
+		{"harness", "variant", "scored/runs", "recall", "wrong", "tokens", "recall/M", "tokens"},
+		{"2026-10-23.2", "council", "1/1", "4/6", "0", "1M", "4.0"},
+		{"2026-10-22.1", "solo", "1/1", "2/6", "1", "0.6M", "3.6"},
+		{"2026-10-22.1", "council", "1/2", "3/6", "0", "2M", "1.5"},
+		{"unknown", "solo", "1/1", "1/6", "0", "0.5M", "2.0"},
 		{},
 		{"Brainstorm"},
-		{"harness", "variant", "skill", "scored/runs", "recall", "recall@done", "kept", "wrong", "decisions", "questions", "tokens", "recall/M", "tokens"},
-		{"2026-10-23.2", "council", "-", "1/1", "1/4", "-", "0", "0", "-", "-", "1M", "1.0"},
-		append([]string{"2026-10-23.2", "brainstorm"}, append(strings.Fields(skill), "1/2", "3/4", "2/4", "0", "1", "6", "9", "5M", "0.6")...),
+		{"harness", "variant", "skill", "scored/runs", "recall@3", "recall@all", "recall@done", "wrong", "decisions", "questions", "tokens", "recall@all/M", "tokens"},
+		{"2026-11-12.1", "council", "-", "1/1", "2/4", "3/4", "-", "2/8", "-", "-", "6M", "0.5"},
+		append([]string{"2026-11-12.1", "brainstorm"}, append(strings.Fields(skill), "1/1", "1/4", "3/4", "2/4", "1/6", "6", "9", "5M", "0.6")...),
+		{"2026-10-23.2", "council", "-", "1/1", "-", "1/4", "-", "0", "-", "-", "1M", "1.0"},
+		append([]string{"2026-10-23.2", "brainstorm"}, append(strings.Fields(skill), "1/2", "-", "3/4", "2/4", "1", "6", "9", "5M", "0.6")...),
 		strings.Fields(benchBrainstormNote),
 		{},
 		{"harness", "mode", "useful", "not", "really"},

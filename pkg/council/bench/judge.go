@@ -17,12 +17,16 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/council"
 )
 
-// How many of a report's items are judged: the same cut for every variant, so a variant that writes a longer list gains
-// nothing by it.
+// How many of a Review's items are judged. A Brainstorm is judged whole, every item of its one list; TopBrainstorm is how
+// many items a Brainstorm's team lead is told to keep (teamprompt.go) and the figure `wsh council bench results` names
+// in its note on rows of earlier harnesses, which cut a council's report there.
 const (
 	TopReview     = 5
 	TopBrainstorm = 3
 )
+
+// recallCut is the rank a Brainstorm row's Recall3 counts up to: a key line matched by an item ranked 1 to 3.
+const recallCut = 3
 
 // judgeModel is opus even though the councils are Claude too (the spec's call).
 const judgeModel = "opus"
@@ -44,23 +48,31 @@ type ItemVerdict struct {
 	Verdict string `json:"verdict"`
 }
 
-// Verdict is what the judge said of one report. Matches and Kept hold only the key lines something matched, each with
-// the rank of the item that matched it (a null in the judge's answer is no match); both are cut down to what the report
-// can hold, so a rank past the cut or a key line the case does not have is not counted.
+// Verdict is what the judge said of one report. Matches holds only the key lines something matched, each with the lowest
+// rank of the items that matched it (a null in the judge's answer is no match); it is cut down to what the report can
+// hold, so a rank past the items shown or a key line the case does not have is not counted.
 type Verdict struct {
-	Matches map[string]int // key line id -> rank among the top items
-	Kept    map[string]int // Brainstorm: key line id -> rank among the wild ideas kept aside
-	Items   []ItemVerdict  // one per top item
+	Matches map[string]int // key line id -> rank of the first item that names it, among the items shown
+	Items   []ItemVerdict  // one per item the judge gave a verdict
+	Judged  int            // the items the judge was shown: the denominator of Wrong
 	Tokens  int64          // what the judge's call consumed, so a bench's spend counts it
 }
 
-// Recall is the key lines the top items matched.
+// Recall is the key lines any item shown matched: recall@all.
 func (v Verdict) Recall() int { return len(v.Matches) }
 
-// KeptMatched is the key lines the wild ideas kept aside matched. They sit in a column of their own, outside recall.
-func (v Verdict) KeptMatched() int { return len(v.Kept) }
+// RecallAt is the key lines matched by an item ranked n or better.
+func (v Verdict) RecallAt(n int) int {
+	count := 0
+	for _, rank := range v.Matches {
+		if rank <= n {
+			count++
+		}
+	}
+	return count
+}
 
-// Wrong is the top items the judge called wrong.
+// Wrong is the items the judge called wrong.
 func (v Verdict) Wrong() int {
 	n := 0
 	for _, it := range v.Items {
@@ -71,23 +83,17 @@ func (v Verdict) Wrong() int {
 	return n
 }
 
-// topItems is how many of a case's report items are judged.
-func topItems(c Case) int {
-	if c.Mode == council.ModeBrainstorm {
-		return TopBrainstorm
-	}
-	return TopReview
-}
-
-// judgedItems is the report's items the judge scores, cut at topItems: the directions, then for a Review its Also
+// judgedItems is the report's items the judge scores. A Brainstorm is judged whole: its directions, then its wild ideas
+// kept aside, as the one list a design's decisions make, with nothing cut, so a variant that writes a longer list is not
+// marked down for it and both sides are scored alike. A Review is cut at TopReview: the directions, then its Also
 // raised, which holds the directions past the first three, so a Review is judged on the same five items as before the
-// cap. A Brainstorm's Kept is judged apart.
+// cap.
 func judgedItems(c Case, s *council.CouncilSummary) []council.CouncilDirection {
-	items := s.Directions
-	if c.Mode != council.ModeBrainstorm {
-		items = append(slices.Clone(s.Directions), s.Kept...)
+	items := append(slices.Clone(s.Directions), s.Kept...)
+	if c.Mode == council.ModeBrainstorm {
+		return items
 	}
-	return items[:min(topItems(c), len(items))]
+	return items[:min(TopReview, len(items))]
 }
 
 // Judge scores a done council's report against the case's key with one opus call and no tools. A call that fails, and a
@@ -107,25 +113,27 @@ func Judge(ctx context.Context, c Case, report *council.Council) (Verdict, error
 }
 
 // JudgeDesign scores a Brainstorm design's decisions against the case's key with one opus call and no tools, through
-// the prompt and parser Judge uses. Every item given is judged: there is no cut at TopBrainstorm and no Kept list, so a
-// design that makes more decisions is not marked down for it and a match at any rank counts. No items is an error
-// (there is nothing to judge); so are a failed call and a reply with no verdict, and the returned Verdict carries the
-// call's Tokens even then.
+// the prompt and parser Judge uses, and shown the same way a Brainstorm council's report is: one list, every item
+// judged. There is no cut, so a design that makes more decisions is not marked down for it and a match at any rank
+// counts. No items is an error (there is nothing to judge); so are a failed call and a reply with no verdict, and the
+// returned Verdict carries the call's Tokens even then.
 func JudgeDesign(ctx context.Context, c Case, items []council.CouncilDirection) (Verdict, error) {
 	if len(items) == 0 {
 		return Verdict{}, errors.New("the design has no items to judge")
 	}
-	in := judgeInput{
-		cut:   fmt.Sprintf("judge all %d items", len(items)),
-		items: items,
-	}
-	reply, tokens, err := askJudge(ctx, buildJudgePrompt(c, in))
+	reply, tokens, err := askJudge(ctx, buildJudgePrompt(c, wholeList(items)))
 	if err != nil {
 		return Verdict{Tokens: tokens}, err
 	}
-	v, err := readVerdict(reply, c, len(items), 0)
+	v, err := readVerdict(reply, c, len(items))
 	v.Tokens = tokens
 	return v, err
+}
+
+// wholeList is the judge's input for items judged as one list with nothing cut and no text around them: a design's
+// decisions, and a Brainstorm council's directions and kept ideas.
+func wholeList(items []council.CouncilDirection) judgeInput {
+	return judgeInput{cut: fmt.Sprintf("judge all %d items", len(items)), items: items}
 }
 
 // askJudge is the one call to the judge model: no tools, and a folder of nobody's, so the judge reads the prompt and
@@ -141,36 +149,30 @@ func askJudge(ctx context.Context, prompt string) (string, int64, error) {
 	return reply, tokens, nil
 }
 
-// judgeInput is what one judging call shows the judge, apart from the key: a council's report (Judge) and a design's
-// decisions (JudgeDesign) both come down to this.
+// judgeInput is what one judging call shows the judge, apart from the key: a Review's report (Judge) and a list of items
+// judged whole (wholeList) both come down to this.
 type judgeInput struct {
-	answer string                     // the report's answer, ahead of its items; a design has none
-	text   string                     // the report's text, after the answer; a design has none
+	answer string                     // the report's answer, ahead of its items; a list judged whole has none
+	text   string                     // the report's text, after the answer; a list judged whole has none
 	cut    string                     // how many items the judge is told to judge, as the heading words it
 	items  []council.CouncilDirection // what is judged, by rank in this list
-	kept   []council.CouncilDirection // wild ideas judged apart from items, by rank in this list
-	// askKept asks for a "kept" answer: a Brainstorm council's judge is asked for one even when nothing was kept, a
-	// design's never
-	askKept bool
 }
 
-// judgePrompt is the whole of the judge's input for a council's report: the rubric, the key, the report cut to its top
-// items (judgedItems), and for a Brainstorm the Kept list apart from them. The report is built as Phase 0 built it: the
-// Summary's answer and text, then each direction's rank, title and reasoning.
+// judgePrompt is the whole of the judge's input for a council's report: the rubric, the key and the report's items
+// (judgedItems). A Brainstorm's are one list with no text around them, as a design's are; a Review's are its top five,
+// built as Phase 0 built them: the Summary's answer and text, then each direction's rank, title and reasoning.
 func judgePrompt(c Case, report *council.Council) string {
 	s := report.Summary
-	brainstorm := c.Mode == council.ModeBrainstorm
-	in := judgeInput{
-		answer:  s.Answer,
-		text:    s.Text,
-		cut:     fmt.Sprintf("judge its first %d items only", topItems(c)),
-		items:   judgedItems(c, s),
-		askKept: brainstorm,
+	items := judgedItems(c, s)
+	if c.Mode == council.ModeBrainstorm {
+		return buildJudgePrompt(c, wholeList(items))
 	}
-	if brainstorm {
-		in.kept = s.Kept
-	}
-	return buildJudgePrompt(c, in)
+	return buildJudgePrompt(c, judgeInput{
+		answer: s.Answer,
+		text:   s.Text,
+		cut:    fmt.Sprintf("judge its first %d items only", TopReview),
+		items:  items,
+	})
 }
 
 // buildJudgePrompt writes the judge's prompt: the rubric, the key, then what in holds, then the shape of the reply.
@@ -195,25 +197,12 @@ func buildJudgePrompt(c Case, in judgeInput) string {
 	for i, d := range in.items {
 		writeJudged(&b, i+1, d)
 	}
-	if len(in.kept) > 0 {
-		b.WriteString("\nWild ideas kept aside (not part of the items above; judge them apart, by their rank in this list):\n")
-		for i, d := range in.kept {
-			writeJudged(&b, i+1, d)
-		}
-	}
 
 	b.WriteString("\nReply with one JSON object and nothing else. ")
-	b.WriteString(`"matches" maps every key line to the rank of the item that names its problem, or null when none does. `)
+	b.WriteString(`"matches" maps every key line to the rank of the first item that names its problem, or null when none does. `)
 	b.WriteString(`"items" gives one verdict per item.`)
-	if in.askKept {
-		b.WriteString(` "kept" does what "matches" does for the wild ideas kept aside, by their rank in that list, and holds only the key lines one of them names.`)
-	}
 	b.WriteString("\n")
-	if in.askKept {
-		b.WriteString(`{"matches": {"K1": 1, "K2": null}, "kept": {"K3": 1}, "items": [{"rank": 1, "verdict": "key:K1"}, {"rank": 2, "verdict": "valid"}, {"rank": 3, "verdict": "wrong"}]}`)
-	} else {
-		b.WriteString(`{"matches": {"K1": 1, "K2": null}, "items": [{"rank": 1, "verdict": "key:K1"}, {"rank": 2, "verdict": "valid"}, {"rank": 3, "verdict": "wrong"}]}`)
-	}
+	b.WriteString(`{"matches": {"K1": 1, "K2": null}, "items": [{"rank": 1, "verdict": "key:K1"}, {"rank": 2, "verdict": "valid"}, {"rank": 3, "verdict": "wrong"}]}`)
 	b.WriteString("\n")
 	return b.String()
 }
@@ -229,7 +218,6 @@ func writeJudged(b *strings.Builder, n int, d council.CouncilDirection) {
 // verdictJSON is the shape of the judge's answer. A rank is a pointer so a null reads as no match.
 type verdictJSON struct {
 	Matches map[string]*int `json:"matches"`
-	Kept    map[string]*int `json:"kept"`
 	Items   []ItemVerdict   `json:"items"`
 }
 
@@ -257,43 +245,52 @@ func decodeVerdict(reply string) (verdictJSON, bool) {
 
 // parseVerdict reads the judge's reply to a council's report and keeps only what the case and the report can hold.
 func parseVerdict(reply string, c Case, report *council.Council) (Verdict, error) {
-	keptShown := 0 // only a Brainstorm report has a Kept list to judge
-	if c.Mode == council.ModeBrainstorm {
-		keptShown = len(report.Summary.Kept)
-	}
-	return readVerdict(reply, c, len(judgedItems(c, report.Summary)), keptShown)
+	return readVerdict(reply, c, len(judgedItems(c, report.Summary)))
 }
 
-// readVerdict reads the judge's reply and keeps only what the case and the prompt can hold: a key line the case has, a
-// rank among the shown items and, for a kept match, among the keptShown ideas judged apart (none: no kept match counts).
-func readVerdict(reply string, c Case, shown, keptShown int) (Verdict, error) {
+// readVerdict reads the judge's reply and keeps only what the case and the prompt can hold: a key line the case has and a
+// rank among the shown items. A key line is matched at the lowest rank among the "matches" map and the items whose
+// verdict is `key:<Kn>`, in any case, so a reply whose map and item list disagree still counts the earliest match.
+func readVerdict(reply string, c Case, shown int) (Verdict, error) {
 	raw, ok := decodeVerdict(reply)
 	if !ok {
 		return Verdict{}, fmt.Errorf("the judge's reply holds no verdict JSON (an object with a \"matches\" map): %s", abbreviate(reply))
 	}
-	known := map[string]bool{}
+	known := map[string]string{} // lower-cased key line id -> the id as the case writes it
 	for _, k := range c.KeyLines {
-		known[k.Id] = true
+		known[strings.ToLower(k.Id)] = k.Id
 	}
 
-	v := Verdict{Matches: map[string]int{}, Kept: map[string]int{}}
-	for id, rank := range raw.Matches {
-		if rank != nil && known[id] && *rank >= 1 && *rank <= shown {
-			v.Matches[id] = *rank
+	v := Verdict{Matches: map[string]int{}, Judged: shown}
+	match := func(id string, rank int) {
+		key, ok := known[strings.ToLower(strings.TrimSpace(id))]
+		if !ok || rank < 1 || rank > shown {
+			return
+		}
+		if have, seen := v.Matches[key]; !seen || rank < have {
+			v.Matches[key] = rank
 		}
 	}
-	for id, rank := range raw.Kept {
-		if rank != nil && known[id] && *rank >= 1 && *rank <= keptShown {
-			v.Kept[id] = *rank
+	for id, rank := range raw.Matches {
+		if rank != nil {
+			match(id, *rank)
 		}
 	}
 	for _, it := range raw.Items {
-		if it.Rank >= 1 && it.Rank <= shown {
-			v.Items = append(v.Items, ItemVerdict{Rank: it.Rank, Verdict: strings.TrimSpace(it.Verdict)})
+		if it.Rank < 1 || it.Rank > shown {
+			continue
+		}
+		verdict := strings.TrimSpace(it.Verdict)
+		v.Items = append(v.Items, ItemVerdict{Rank: it.Rank, Verdict: verdict})
+		if len(verdict) >= len(keyVerdictPrefix) && strings.EqualFold(verdict[:len(keyVerdictPrefix)], keyVerdictPrefix) {
+			match(verdict[len(keyVerdictPrefix):], it.Rank)
 		}
 	}
 	return v, nil
 }
+
+// keyVerdictPrefix starts the verdict of an item that names a key line: `key:K1`.
+const keyVerdictPrefix = "key:"
 
 // abbreviate is a reply cut to one line for an error message.
 func abbreviate(s string) string {

@@ -1,0 +1,59 @@
+{
+  "id": "heavy-job-queue",
+  "snapshot": "5ed9cdb6b^",
+  "feature_commits": [
+    "5ed9cdb6b",
+    "d4cc5737b",
+    "8567c9a2d",
+    "0e926e31a",
+    "e5717ae55",
+    "73c43963f",
+    "5d6ec5a91",
+    "d98e1f1cb"
+  ],
+  "feature": "A queue for heavy commands",
+  "question": "Two or three runs at once start their builds, typechecks and whole test suites at the same moment, and this 6-core Windows PC stalls: the RAM readout still shows several GB free while the disk is pinned. Today arcterm only checks, for each command on its own, whether that command's RAM peak fits what is free right now. I want every heavy command, from any agent and from any run, to wait its turn and start only when the machine can take it: one at a time by default, with a setting for more. A command that waits should simply wait as long as it takes, with no card to answer and no time limit. I should be able to see in the app what runs, what waits, and why. How should this work?",
+  "files": [
+    "pkg/memgate/memgate.go",
+    "pkg/memgate/card.go",
+    "cmd/wsh/cmd/wshcmd-memgate.go",
+    "cmd/wsh/cmd/wshcmd-memgate-decide.go",
+    "claude/arc-mod/hooks/register.ts",
+    "pi/extensions/waveterm-tools.ts",
+    "pkg/orchestrate/plancmd.go",
+    "pkg/orchestrate/verify.go",
+    "frontend/app/cockpit/app-bar.tsx"
+  ],
+  "key": [
+    {
+      "text": "The free-RAM figure leaves out RAM that processes just started are about to take: the worker-capacity maths holds back the room live workers may still grow into, but memgate's fit test reads the raw available figure, so with more than one slot two jobs admitted back to back both see the same free RAM unless the queue counts each just-started job's whole peak against it until it has had time to grow into it.",
+      "at": "pkg/workercap/workercap.go:133",
+      "shows": "reserve += perWorker - rss"
+    },
+    {
+      "text": "agy runs its shell commands through the same memgate decision from its PreToolUse hook, a separate short-lived `wsh agy-hook` process per event that answers once and exits before the command starts, so for agy the queue can only order when commands start and never hold a slot through their run; that hook also gives up after 60 minutes and lets the command run.",
+      "at": "cmd/wsh/cmd/wshcmd-agyhook.go:144",
+      "shows": "memgateDecide(ctx, em.Command"
+    },
+    {
+      "text": "A new task tree's Setup runs inside the schedule tick while it holds the dag's mutation lock, with a 2-minute SetupTimeout, so a Setup that waited in an endless queue would freeze every write to that dag: Setup should wait in the queue only when its own command is heavy, and a light one (this repo's only makes junctions) must run at once.",
+      "at": "pkg/orchestrate/engine.go:634",
+      "shows": "Setup runs under the dag mutation lock"
+    },
+    {
+      "text": "The engine reaches the shell by several paths (Setup in the schedule tick, the base-tree and land re-checks, Verify and its bisect, and Final, whose runFinalCommand calls execPlanCommandEnv directly instead of the stubbable runPlanCommand hook), so the one place to take a slot for all of them is inside execPlanCommandEnv, not at each call site and not in runPlanCommand.",
+      "at": "pkg/orchestrate/final.go:749",
+      "shows": "execPlanCommandEnv(ctx, tree, cmd"
+    },
+    {
+      "text": "The engine's own Verify and Final commands are plan text that memgate's command table does not reliably name (it knows `node scripts/verify.mjs` and the typecheck, but not final-verify.mjs, which starts a whole dev app), so the queue must treat those engine steps as heavy by their role, with a peak assigned to each role, rather than by classifying the command line.",
+      "at": "pkg/memgate/memgate.go:229",
+      "shows": "case a == \"scripts/verify.mjs\""
+    },
+    {
+      "text": "A command can queue behind long jobs and then holds its slot for as long as it runs, but every wsh request to wavesrv carries a timeout and the longest the gate uses today is 30 minutes (askWaitTimeout, like memgate's 30-minute wait limit), so the queue's stream needs a ceiling longer than any wait plus run, or the hold ends while the command is still running.",
+      "at": "cmd/wsh/cmd/wshcmd-ask.go:26",
+      "shows": "const askWaitTimeout = 30 * time.Minute"
+    }
+  ]
+}

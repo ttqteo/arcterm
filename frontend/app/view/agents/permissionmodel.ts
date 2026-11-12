@@ -15,6 +15,9 @@ const TITLES: Record<string, string> = {
     NotebookEdit: "Wants to edit a notebook",
     WebFetch: "Wants to fetch a page",
     WebSearch: "Wants to search the web",
+    // the subagent dialog arcterm's gate hook puts up (Task is the tool's old name)
+    Agent: "Wants to start a subagent",
+    Task: "Wants to start a subagent",
 };
 
 /** Pure: the card's heading for the tool that asks. */

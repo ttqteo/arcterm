@@ -34,7 +34,8 @@ const summaryMax = 300
 
 // answerable is the tools whose permission prompt is the plain three-choice one, where `1` is Allow and Esc is
 // Deny. Anything else (ExitPlanMode's plan menu, an MCP tool, AskUserQuestion) has other choices, so the chat only
-// points at the terminal. The table lives here alone and rides each request as a field.
+// points at the terminal. The table lives here alone and rides each request as a field. Agent (Task before it) is
+// the subagent dialog arcterm's gate hook puts up with its ask: Yes is `1`, Esc is No.
 var answerable = map[string]bool{
 	"Bash":         true,
 	"Edit":         true,
@@ -43,6 +44,8 @@ var answerable = map[string]bool{
 	"NotebookEdit": true,
 	"WebFetch":     true,
 	"WebSearch":    true,
+	"Agent":        true,
+	"Task":         true,
 }
 
 // Answerable reports whether the chat may answer toolName's permission prompt with Allow.
@@ -76,9 +79,15 @@ func ToolKey(toolName string, toolInput json.RawMessage) string {
 }
 
 // Summary is the one line the chat card shows for a request: Bash its command, the file tools their path,
-// WebFetch its URL, WebSearch its query; anything else (or a missing field) the tool name and its input as compact
-// JSON, cut at summaryMax runes.
+// WebFetch its URL, WebSearch its query, a subagent what it is for with its type and model (never its prompt, which
+// runs to pages); anything else (or a missing field) the tool name and its input as compact JSON, cut at summaryMax
+// runes.
 func Summary(toolName string, toolInput json.RawMessage) string {
+	if toolName == "Agent" || toolName == "Task" {
+		if s := subagentSummary(toolInput); s != "" {
+			return s
+		}
+	}
 	field := ""
 	switch toolName {
 	case "Bash":
@@ -108,6 +117,27 @@ func Summary(toolName string, toolInput json.RawMessage) string {
 		out = string(r[:summaryMax])
 	}
 	return out
+}
+
+// subagentSummary is "Scan the docs (Explore on haiku)": the call's description, its subagent type (general-purpose
+// when unset) and its model when set; "" without a description
+func subagentSummary(toolInput json.RawMessage) string {
+	var in struct {
+		Description  string `json:"description"`
+		SubagentType string `json:"subagent_type"`
+		Model        string `json:"model"`
+	}
+	if json.Unmarshal(toolInput, &in) != nil || in.Description == "" {
+		return ""
+	}
+	what := in.SubagentType
+	if what == "" {
+		what = "general-purpose"
+	}
+	if in.Model != "" {
+		what += " on " + in.Model
+	}
+	return in.Description + " (" + what + ")"
 }
 
 // compactJSON is raw without insignificant whitespace; a missing input or a null one is "".

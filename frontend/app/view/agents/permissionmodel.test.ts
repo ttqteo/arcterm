@@ -27,6 +27,8 @@ describe("permissionTitle", () => {
         expect(permissionTitle("NotebookEdit")).toBe("Wants to edit a notebook");
         expect(permissionTitle("WebFetch")).toBe("Wants to fetch a page");
         expect(permissionTitle("WebSearch")).toBe("Wants to search the web");
+        expect(permissionTitle("Agent")).toBe("Wants to start a subagent");
+        expect(permissionTitle("Task")).toBe("Wants to start a subagent");
     });
 
     it("falls back to the tool's own name", () => {

@@ -13,8 +13,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unsafe"
 
+	"github.com/shirou/gopsutil/v4/process"
 	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
+	"golang.org/x/sys/windows"
 )
 
 const (
@@ -116,5 +119,45 @@ func TestTickPutsCommandAndPortsOnRows(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no row for pid %d", self)
+	}
+}
+
+// A row's memory is the private working set, the Consumers panel's and Task Manager's figure: it grows by what
+// the process touches and stays under the whole working set, which also counts the DLL pages every process shares.
+func TestReadStatMemIsThePrivateWorkingSet(t *testing.T) {
+	self := os.Getpid()
+	before := readStat(self)
+	if !before.ok || before.mem < 0 {
+		t.Fatalf("readStat(self) = %+v, want its memory read", before)
+	}
+	// fresh pages from the OS: a Go slice can land on heap an earlier run (-count) already touched, and not grow
+	const held = 64 << 20
+	addr, err := windows.VirtualAlloc(0, held, windows.MEM_COMMIT|windows.MEM_RESERVE, windows.PAGE_READWRITE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.VirtualFree(addr, 0, windows.MEM_RELEASE)
+	// the pages are outside Go's heap, so reading the address back as a pointer is safe
+	buf := unsafe.Slice(*(**byte)(unsafe.Pointer(&addr)), held)
+	for i := 0; i < len(buf); i += 4096 {
+		buf[i] = 1
+	}
+	after := readStat(self)
+	if after.mem < before.mem+held*9/10 {
+		t.Errorf("mem grew %d MB holding 64 MB", (after.mem-before.mem)>>20)
+	}
+	p, err := process.NewProcess(int32(self))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := p.MemoryInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// a Go test binary shares ~8 MB of system DLL pages (ntdll, kernel32…); the whole working set read a hair apart
+	// from mem lands within a few hundred KB of it
+	const sharedFloor = 4 << 20
+	if uint64(after.mem)+sharedFloor > m.RSS {
+		t.Errorf("mem %d KB is within 4 MB of the whole working set %d KB: the shared pages are counted", after.mem>>10, m.RSS>>10)
 	}
 }

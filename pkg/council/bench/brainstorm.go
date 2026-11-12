@@ -117,6 +117,7 @@ type brainstormRun struct {
 
 	// the marks, set when the run is done
 	final, atDone Verdict
+	finalItems    []council.CouncilDirection // what final was judged on; doneItems is what atDone was judged on
 	decisions     int
 	questions     int
 }
@@ -168,6 +169,7 @@ func runBrainstorm(ctx context.Context, c Case, opts brainstormOptions) (Brainst
 	switch state {
 	case TeamDone:
 		out.Final, out.AtDone, out.Decisions, out.Questions = r.final, r.atDone, r.decisions, r.questions
+		out.FinalItems, out.DoneItems = r.finalItems, r.doneItems
 	case TeamTimedOut:
 		log.Printf("[council-bench] case %s brainstorm timed out: %s", c.Id, reason)
 	default:
@@ -700,7 +702,7 @@ func (r *brainstormRun) finish(s brainstormState) (*brainstormEnd, error) {
 		}
 		return failEnd("judging the finished design failed: %v", err), nil
 	}
-	r.atDone, r.final = atDone, final
+	r.atDone, r.final, r.finalItems = atDone, final, items
 	r.decisions, r.questions = len(items), answeredQuestions(s)
 	return &brainstormEnd{state: TeamDone}, nil
 }

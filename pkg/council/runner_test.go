@@ -5327,7 +5327,8 @@ func TestConsultCallerGivesToolsAndASlotToTheCallsThatReadCode(t *testing.T) {
 	if len(held) != 1 || released != 1 || !slotInUse {
 		t.Errorf("slots held %d, released %d, held while running %v, want one slot held for the call and released after", len(held), released, slotInUse)
 	}
-	if r := held[0]; r.Name != "Council · UX" || r.Bytes != toolSlotBytes || !r.Engine || r.Source.Label != "Council · UX" {
+	// a call waits on the model, not the CPU: Auto's CPU cap leaves it out
+	if r := held[0]; r.Name != "Council · UX" || r.Bytes != toolSlotBytes || !r.Engine || !r.NoCPU || r.Source.Label != "Council · UX" {
 		t.Errorf("slot request = %+v", r)
 	}
 	if until := time.Until(deadline); until > callTimeout || until < callTimeout-time.Minute {

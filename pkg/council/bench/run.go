@@ -5,10 +5,13 @@ package bench
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/wavetermdev/waveterm/pkg/council"
@@ -42,6 +45,10 @@ type BrainstormOutcome struct {
 	Decisions   int     // decision parts at the final mark
 	Final       Verdict // the final mark
 	AtDone      Verdict // the done mark
+
+	// the items each mark was judged on, so SaveJudgedItems can keep them for a later rejudge; set only when it is done
+	FinalItems []council.CouncilDirection
+	DoneItems  []council.CouncilDirection
 }
 
 // BrainstormFunc runs one Brainstorm case through Arc's brainstorm skill and says how it ended. Its error is ctx's only,
@@ -105,7 +112,7 @@ func Run(ctx context.Context, dataDir string, opts Options, f Funcs) error {
 			log.Printf("[council-bench] the token cap is reached: %d tokens spent of %d, %d of %d items not run", spent, limit, len(items)-i, len(items))
 			return nil
 		}
-		row, err := runItem(ctx, byId[item.Case], item, f)
+		row, err := runItem(ctx, dataDir, byId[item.Case], item, f)
 		if err != nil {
 			return err
 		}
@@ -137,24 +144,26 @@ func describeRow(r CouncilBenchResult) string {
 
 // runItem is one item of the plan, as a row. Its error is ctx's, the one thing that stops the bench: every other
 // failure becomes a failed row, because an item that did not finish is a result, and one case's trouble must not end
-// the bench for the rest.
-func runItem(ctx context.Context, c Case, item CouncilBenchPlanItem, f Funcs) (CouncilBenchResult, error) {
+// the bench for the rest. dataDir is where a brainstorm item saves the items it was judged on.
+func runItem(ctx context.Context, dataDir string, c Case, item CouncilBenchPlanItem, f Funcs) (CouncilBenchResult, error) {
 	// an item that never began has no harness version of its own: it is the one this binary runs
 	row := CouncilBenchResult{Harness: council.HarnessVersion, Case: item.Case, Variant: item.Variant, Run: item.Run, State: string(council.StateFailed), Mode: c.Mode}
 	switch item.Variant {
 	case VariantTeam:
 		return runTeamItem(ctx, c, item, f, row)
 	case VariantBrainstorm:
-		return runBrainstormItem(ctx, c, item, f, row)
+		return runBrainstormItem(ctx, dataDir, c, item, f, row)
 	}
 	return runCouncilItem(ctx, c, item, f, row)
 }
 
 // runBrainstormItem is a brainstorm item as a row. A nil f.Brainstorm and an outcome that is not done are rows with no
 // scores (the outcome's state, failed when it names none, and what it spent); a done one takes its marks as the runner
-// judged them: Recall, Matches and Wrong from the final mark, RecallDone and MatchesDone from the done mark. Like a
-// team's, BrainstormFunc's error ends the bench only when it is ctx's.
-func runBrainstormItem(ctx context.Context, c Case, item CouncilBenchPlanItem, f Funcs, row CouncilBenchResult) (CouncilBenchResult, error) {
+// judged them: Recall (recall@all), Recall3, Judged, Matches and Wrong from the final mark, RecallDone and MatchesDone
+// from the done mark. A done one also saves the items its marks were judged on (SaveJudgedItems) before the row is
+// returned; a save that fails is logged and the row is still returned: the score is the result, the file only allows a
+// rejudge. Like a team's, BrainstormFunc's error ends the bench only when it is ctx's.
+func runBrainstormItem(ctx context.Context, dataDir string, c Case, item CouncilBenchPlanItem, f Funcs, row CouncilBenchResult) (CouncilBenchResult, error) {
 	name := itemName(item)
 	if f.Brainstorm == nil {
 		log.Printf("[council-bench] %s not run: the bench has no brainstorm runner", name)
@@ -184,11 +193,59 @@ func runBrainstormItem(ctx context.Context, c Case, item CouncilBenchPlanItem, f
 	row.Keys = len(c.KeyLines)
 	row.Decisions = out.Decisions
 	row.Recall = out.Final.Recall()
+	row.Recall3 = out.Final.RecallAt(recallCut)
+	row.Judged = out.Final.Judged
 	row.Matches = out.Final.Matches
 	row.Wrong = out.Final.Wrong()
 	row.RecallDone = out.AtDone.Recall()
 	row.MatchesDone = out.AtDone.Matches
+
+	saved := JudgedItems{Case: c.Id, Harness: row.Harness, Session: out.Session, Final: out.FinalItems, Done: out.DoneItems}
+	if err := SaveJudgedItems(dataDir, saved); err != nil {
+		log.Printf("[council-bench] %s: the judged items were not saved, the row is kept: %v", name, err)
+	}
 	return row, nil
+}
+
+// ItemsFolder is the folder under the data dir where each done brainstorm run saves the items it was judged on.
+const ItemsFolder = "council-bench-items"
+
+// JudgedItems is the file a done brainstorm run saves, <data dir>/council-bench-items/<session>.json: the two lists of
+// items its marks were judged on (the design at its done mark and at its final mark), so a later change of key or scoring
+// can judge the run again. Nothing else keeps them: the run's temporary copy of the project is deleted.
+type JudgedItems struct {
+	Case    string                     `json:"case"`
+	Harness string                     `json:"harness"`
+	Session string                     `json:"session"`
+	Final   []council.CouncilDirection `json:"final"`
+	Done    []council.CouncilDirection `json:"done"`
+}
+
+// SaveJudgedItems writes a run's judged items to <dataDir>/council-bench-items/<session>.json, creating the folder. The
+// error names the file.
+func SaveJudgedItems(dataDir string, saved JudgedItems) error {
+	if saved.Session == "" {
+		return errors.New("saving the judged items: the run has no session to name the file by")
+	}
+	// a list with nothing in it is saved as [], not null
+	if saved.Final == nil {
+		saved.Final = []council.CouncilDirection{}
+	}
+	if saved.Done == nil {
+		saved.Done = []council.CouncilDirection{}
+	}
+	path := filepath.Join(dataDir, ItemsFolder, saved.Session+".json")
+	raw, err := json.MarshalIndent(saved, "", "  ")
+	if err != nil {
+		return fmt.Errorf("saving the judged items to %s: %w", path, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("saving the judged items to %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, append(raw, '\n'), 0o644); err != nil {
+		return fmt.Errorf("saving the judged items to %s: %w", path, err)
+	}
+	return nil
 }
 
 // runTeamItem is a team item as a row. A nil f.Team and an outcome that is not done are rows with no scores (the
@@ -272,9 +329,10 @@ func runCouncilItem(ctx context.Context, c Case, item CouncilBenchPlanItem, f Fu
 }
 
 // judgeRow judges a done item's report and puts the verdict's scores in its row, with which key lines matched and at
-// what rank (Matches, KeptMatches), and what the judge's call spent (the bench's cap counts it). A judge that fails
-// leaves the row failed with no scores and no matches: done but unscored is not a result to read as done with nothing
-// found. Its error is ctx's.
+// what rank (Matches), and what the judge's call spent (the bench's cap counts it). A Brainstorm case's row also takes
+// Recall3 (the matches ranked 1 to 3) and Judged (the items the judge was shown), and its Recall is recall@all, since a
+// Brainstorm report is judged whole. A judge that fails leaves the row failed with no scores and no matches: done but
+// unscored is not a result to read as done with nothing found. Its error is ctx's.
 func judgeRow(ctx context.Context, f Funcs, c Case, name string, report *council.Council, row *CouncilBenchResult) error {
 	verdict, err := f.Judge(ctx, c, report)
 	row.JudgeTokens = verdict.Tokens // spent whether or not the reply could be read
@@ -288,10 +346,12 @@ func judgeRow(ctx context.Context, f Funcs, c Case, name string, report *council
 	}
 	row.Keys = len(c.KeyLines)
 	row.Recall = verdict.Recall()
-	row.Kept = verdict.KeptMatched()
+	if c.Mode == council.ModeBrainstorm {
+		row.Recall3 = verdict.RecallAt(recallCut)
+		row.Judged = verdict.Judged
+	}
 	row.Wrong = verdict.Wrong()
 	row.Matches = verdict.Matches
-	row.KeptMatches = verdict.Kept
 	return nil
 }
 

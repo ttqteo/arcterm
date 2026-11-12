@@ -26,6 +26,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A compaction summary opened in Chat has a Collapse button at its top and at its end, so a long one closes without
+  scrolling back up to the Compacted line; the one at the end brings that line back on screen.
+- Ctrl+End (⌘End on a Mac) in Chat jumps back to the latest message, as the round ↓ above the box does; its tooltip
+  names the key.
+- Take a message back in Chat: Esc while Claude works brings the messages that show Queued back into the box without
+  stopping the turn, or, with none queued, the message Claude has not answered yet (that turn stops). ↑ in an empty
+  box takes back queued messages too, as in Claude Code's own box. Edit them and send again.
 - Each agent in the Agent sidebar shows the RAM it and the commands it runs hold now, beside its tokens. Settings →
   Appearance → Agent sidebar → RAM turns it off.
 - In Chat, a `!` command you send shows at once with Running… until it finishes, instead of nothing until its output
@@ -92,8 +99,23 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Chat's box takes pictures and files while its agent is asleep: paste, drop or Ctrl+U attach them, and they go with
+  the message that wakes it.
 - In Chat's bash mode the `!` sits beside the command as a marker with a gap after it, as in Claude Code's own box,
   instead of running into the first word; Backspace at the start of the command leaves bash mode.
+- The Graphite theme is closer to Antigravity: brighter, near-white text, a touch lighter background, and code blocks
+  in Chat sit as a lighter card instead of a darker well.
+- Google Sans Flex, Antigravity's interface font, is a choice in Settings → Appearance → Fonts, with Vietnamese.
+  <!-- try: go:settings -->
+- In Chat, the / menu lists the commands Chat answers with its own card (/usage, /context, /tasks, /status…) first,
+  under In Chat, and a click or Enter on one runs it at once instead of only filling the box.
+- Auto in the heavy-job queue watches the CPU as well as the RAM: one heavy job per 6 CPU threads runs at once (2 on a
+  12-thread PC, 1 on an 8-core Mac), so several agents' typechecks and builds no longer run side by side and lag the
+  machine while the RAM still fits. A council's experts don't count, and the next job waits with "CPU busy".
+- Chat is calmer: your pinned message at the top is a plain card like your message bubble instead of an orange one,
+  Show the diff and Open the terminal are two small icons beside Stop instead of a row of chips, and a folded "Worked
+  for …" line no longer shows a red failed count (a failed step stays red when you open it). Click a pasted image in
+  the box to see it full size.
 - Chat has a new look and moves more smoothly: the message box floats over the conversation as a rounded pill that
   changes shape while the agent works or files are dragged onto it, a stretch of tools shows one compact line per step
   and folds into "Worked for …" when the agent moves on, and a brainstorm question draws in the conversation as a card
@@ -162,8 +184,27 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- In Chat, the caret of a "Worked for …" line and the icons of the steps under it now sit in one column, and its text
+  lines up with the step names.
+- On Windows, an agent's RAM in the sidebar and in Resource Manager now matches the RAM popover and Task Manager: it
+  no longer counts the system pages every process shares, which put each agent about 170 MB too high.
+- A reply scrolling under your pinned message in Chat no longer shows through beside it, under the Skim button.
+- When Claude wants to start a subagent and arcterm asks you first, Chat shows the card (what the subagent is for, its
+  type and model, with Allow and Deny) instead of leaving the question to the terminal, and the agent reads waiting
+  on you until you answer.
+- A message you send in Chat while Claude is idle reads Sending… until it lands, instead of flashing Queued with a Send
+  now button as the turn it starts gets going; one sent while Claude works still reads Queued.
 - An agent's shell commands no longer freeze while arcterm is busy: an ordinary command never waits on the heavy-job
   queue, and a build or test suite waits at most 5 seconds for the queue to answer before it runs anyway.
+- A whole test suite an agent runs with its output sent to a file or a pipe (`npm test 2>&1 | tail`,
+  `npx vitest run > out.txt`) waits its turn in the heavy-job queue; before, the redirection read as a test file name
+  and the suite ran at once beside every other heavy job.
+- A build or test suite an agent runs behind `nice -n 10`, `time -p`, `/usr/bin/time -l`, `env -u X`, `nohup`,
+  `caffeinate -i` or `gtimeout` waits its turn in the heavy-job queue too, where the wrapper's flags hid the command.
+- The heavy-job queue also holds a Final an agent runs by hand (`node scripts/cdp/final-verify.mjs`, which starts a dev
+  app and a browser), `node scripts/release-build.mjs`, `go build ./...`, `go vet ./...`, a command inside
+  `bash -c '…'` or `zsh -c '…'`, and npm with its flags anywhere (`npm --prefix web run build`, `npm -w web test`).
+  Another project's `npm run build` shows in Jobs as itself instead of `task tauri:build`.
 - Chat no longer shows "Could not read the transcript: … cannot find the path specified" for a run's lead or worker
   that has not written its first message yet
 - In Chat, the "Worked for …" line of what the agent is doing now folds when you click it; before, it stayed open

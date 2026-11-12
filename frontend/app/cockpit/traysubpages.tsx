@@ -119,7 +119,7 @@ export function FreeUpPage({ s, send, back }: { s: TraySnapshot; send: Send; bac
             <span className="px-0.5 text-[10.5px] text-muted">
                 {level === "high" || level === "critical"
                     ? "While pressure is high, new heavy jobs wait their turn on their own."
-                    : "New heavy jobs start as RAM allows."}
+                    : "New heavy jobs start as RAM and CPU allow."}
             </span>
         </div>
     );

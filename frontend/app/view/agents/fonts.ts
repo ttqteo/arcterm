@@ -14,6 +14,7 @@ export interface FontDef {
 
 export const SANS_FONTS: FontDef[] = [
     { id: "inter", label: "Inter", stack: '"Inter", system-ui, sans-serif' },
+    { id: "googlesans", label: "Google Sans Flex", stack: '"Google Sans Flex", system-ui, sans-serif' },
     { id: "hanken", label: "Hanken Grotesk", stack: '"Hanken Grotesk", system-ui, sans-serif' },
     { id: "system", label: "System UI", stack: "system-ui, sans-serif" },
 ];

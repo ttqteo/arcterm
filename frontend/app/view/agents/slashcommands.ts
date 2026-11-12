@@ -117,13 +117,17 @@ export function fromLive(
     });
 }
 
-export type SlashGroup = "Built-in" | "Skills" | "Plugins" | "MCP";
+export type SlashGroup = "In Chat" | "Built-in" | "Skills" | "Plugins" | "MCP";
 
-const GROUP_ORDER: SlashGroup[] = ["Built-in", "Skills", "Plugins", "MCP"];
+const GROUP_ORDER: SlashGroup[] = ["In Chat", "Built-in", "Skills", "Plugins", "MCP"];
 
-/** Pure: the menu group a command sits in. The disk fallback's `skill` and `command` entries have no plugin field: a
+/** Pure: the menu group a command sits in. A built-in that `inChat` names (the ones Chat draws a card for itself,
+ *  chatlocal.ts) is In Chat, first in the menu. The disk fallback's `skill` and `command` entries have no plugin field: a
  *  name with a `:` is a plugin's (`superpowers:brainstorming`), one without is the person's own. */
-export function groupOf(c: SlashCommand): SlashGroup {
+export function groupOf(c: SlashCommand, inChat?: (name: string) => boolean): SlashGroup {
+    if (c.source === "builtin" && inChat?.(c.name) === true) {
+        return "In Chat";
+    }
     switch (c.source) {
         case "builtin":
             return "Built-in";
@@ -138,12 +142,15 @@ export function groupOf(c: SlashCommand): SlashGroup {
     }
 }
 
-/** Pure: `items` split into the menu's groups, in the order Built-in, Skills, Plugins, MCP, each in the input's order,
- *  the empty ones dropped. A group's count is its `items.length`. */
-export function slashGroups(items: SlashCommand[]): { title: SlashGroup; items: SlashCommand[] }[] {
+/** Pure: `items` split into the menu's groups, in the order In Chat, Built-in, Skills, Plugins, MCP, each in the input's
+ *  order, the empty ones dropped. A group's count is its `items.length`. `inChat` as groupOf's. */
+export function slashGroups(
+    items: SlashCommand[],
+    inChat?: (name: string) => boolean
+): { title: SlashGroup; items: SlashCommand[] }[] {
     const by = new Map<SlashGroup, SlashCommand[]>();
     for (const c of items) {
-        const g = groupOf(c);
+        const g = groupOf(c, inChat);
         const list = by.get(g);
         if (list == null) {
             by.set(g, [c]);
@@ -152,6 +159,17 @@ export function slashGroups(items: SlashCommand[]): { title: SlashGroup; items: 
         }
     }
     return GROUP_ORDER.filter((g) => by.has(g)).map((g) => ({ title: g, items: by.get(g)! }));
+}
+
+/** Pure: what picking `c` in the menu does. A click or Enter on a command Chat answers itself (`inChat`, chatlocal.ts) runs
+ *  it at once, as it takes no argument; any other pick, and Tab on any command, puts `/<name> ` in the box to go on
+ *  typing. */
+export function pickAction(
+    c: SlashCommand,
+    how: "pick" | "complete",
+    inChat?: (name: string) => boolean
+): "run" | "insert" {
+    return how === "pick" && groupOf(c, inChat) === "In Chat" ? "run" : "insert";
 }
 
 // `/` as the box's first character, then the command's name up to the caret; a `/` anywhere else ("and/or", "src/app",

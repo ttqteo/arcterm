@@ -2379,6 +2379,9 @@ func TestCouncilBenchResultsGroupsByHarness(t *testing.T) {
 	if err != nil || empty.Runs == nil || empty.Results == nil || empty.Ratings == nil || len(empty.Runs)+len(empty.Results)+len(empty.Ratings) != 0 {
 		t.Fatalf("results with no file = %+v, %v, want empty lists the frontend can map over", empty, err)
 	}
+	if empty.Harness != council.HarnessVersion {
+		t.Errorf("results with no file: harness = %q, want this wavesrv's %q", empty.Harness, council.HarnessVersion)
+	}
 
 	lines := []bench.CouncilBenchResult{
 		{Date: "2026-10-22T10:00:00Z", Harness: "2026-10-22.1", Case: "alpha", Variant: bench.VariantSolo, Run: 1, State: "done", Recall: 1, Keys: 2, Tokens: 500_000,
@@ -2429,6 +2432,10 @@ func TestCouncilBenchResultsGroupsByHarness(t *testing.T) {
 	}
 	if got.Verdict != nil {
 		t.Errorf("verdict = %+v, want none: no case in this results file is built for the team pass", got.Verdict)
+	}
+	// the answering wavesrv's own version, not any line's: the driver reads it to know which harness a run it starts is
+	if got.Harness != council.HarnessVersion {
+		t.Errorf("harness = %q, want this wavesrv's %q (the lines carry other versions)", got.Harness, council.HarnessVersion)
 	}
 }
 
@@ -2609,6 +2616,9 @@ func TestCouncilBenchResultsLeavesTheVerdictOut(t *testing.T) {
 	if err != nil || got.Verdict != nil || len(got.Runs) != 1 {
 		t.Errorf("unreadable cases.json: results = %+v, %v, want the row, no verdict and no error", got, err)
 	}
+	if got.Harness != council.HarnessVersion {
+		t.Errorf("unreadable cases.json: harness = %q, want this wavesrv's %q on this path too", got.Harness, council.HarnessVersion)
+	}
 	if !strings.Contains(logged.String(), "[council-bench]") || !strings.Contains(logged.String(), "not a JSON list of cases") {
 		t.Errorf("log = %q, want the cases error logged", logged.String())
 	}
@@ -2631,6 +2641,9 @@ func TestCouncilBenchResultsWithNoCasesFileLogsNothing(t *testing.T) {
 	log.SetOutput(prev)
 	if err != nil || got.Verdict != nil || len(got.Runs) != 1 {
 		t.Errorf("no cases.json: results = %+v, %v, want the row, no verdict and no error", got, err)
+	}
+	if got.Harness != council.HarnessVersion {
+		t.Errorf("no cases.json: harness = %q, want this wavesrv's %q on this path too", got.Harness, council.HarnessVersion)
 	}
 	if logged.Len() != 0 {
 		t.Errorf("log = %q, want nothing for a missing cases.json", logged.String())

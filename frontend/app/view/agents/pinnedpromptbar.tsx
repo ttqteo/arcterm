@@ -70,19 +70,23 @@ export function usePinnedPrompt(rootRef: RefObject<HTMLElement>): number {
 
 /** The pinned prompt: a zero-height sticky row, so showing it never moves the transcript under it. bg is the
  *  scroller's own background, which the row's band paints over what scrolls beneath it. className goes on the sticky
- *  row, for a parent that spaces its children (a flex gap) and so must cancel the gap the row would add. */
+ *  row, for a parent that spaces its children (a flex gap) and so must cancel the gap the row would add. cardClassName
+ *  goes on the card inside the band, for room beside it (a button in the corner): the band still spans the row, so
+ *  nothing scrolling beneath shows in that room. */
 export function PinnedPromptBar({
     rootRef,
     index,
     text,
     bg,
     className,
+    cardClassName,
 }: {
     rootRef: RefObject<HTMLElement>;
     index: number;
     text: string | undefined;
     bg: string;
     className?: string;
+    cardClassName?: string;
 }) {
     const reduce = useReducedMotion();
     if (index < 0 || text == null) {
@@ -101,20 +105,21 @@ export function PinnedPromptBar({
     return (
         <div data-pinned-prompt className={cn("sticky top-0 z-10 h-0", className)}>
             <div className={cn("pb-2 pt-1", bg)}>
-                <div className="relative">
+                <div className={cn("relative", cardClassName)}>
                     {index > 0 ? (
                         <div
                             aria-hidden
-                            className="absolute inset-x-2.5 -bottom-1 h-4 rounded-[8px] border border-accent/20 bg-accent/[0.06]"
+                            className="absolute inset-x-2.5 -bottom-1 h-4 rounded-[8px] border border-edge-mid bg-surface"
                         />
                     ) : null}
-                    {/* the scroller's ground under the tinted card, so the card behind does not show through it */}
+                    {/* the scroller's ground under the card, so the card behind does not show through it. The card is
+                        neutral, your message bubble's surface: an accent tint goes muddy over a coloured theme */}
                     <div className={cn("relative rounded-[8px]", bg)}>
                         <button
                             type="button"
                             onClick={jump}
                             title="Back to this prompt"
-                            className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] border border-accent/30 bg-accent/10 px-3 py-[5px] text-left hover:border-accent/50"
+                            className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] border border-edge-mid bg-surface-raised px-3 py-[5px] text-left hover:border-edge-strong hover:bg-surface-hover"
                         >
                             <span className="min-w-0 flex-1 truncate text-[12.5px] text-primary">{text}</span>
                             <ArrowUp size={12} strokeWidth={2.2} aria-hidden className="flex-none text-muted" />

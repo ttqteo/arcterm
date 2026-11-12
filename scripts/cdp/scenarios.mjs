@@ -45588,6 +45588,277 @@ const chatScrollKeep = {
     },
 };
 
+// --- chat-asleep-attach-jump: Chat's box takes a pasted picture while its agent is asleep, the picture rides the message
+// that wakes it, and its chip goes only once the wake took the message (a failed wake keeps it); and Ctrl+End jumps a
+// Chat read scrolled up back to the latest message, from the conversation and from the box, as the round ↓ does, whose
+// tooltip names the key. One fixture Claude agent, asleep, over a real tab with a long transcript; a mock answers the
+// wake (ok, hold or fail) and the temp-file write a paste makes, so nothing reaches a process or the disk.
+const CAA_NAME = "attach asleep";
+const CAA_MOCK_KEY = "__arcChatAsleepAttachMock";
+const CAA_WAKE_FAIL = "it exited (code 1) before it came back";
+const CAA_WAIT_MS = 8000;
+
+function caaRoster(ctx) {
+    const now = Date.now();
+    return [
+        {
+            project: "arcterm",
+            task: "",
+            agent: "claude",
+            model: "opus",
+            state: "idle",
+            idleSince: now - 3_600_000,
+            id: ctx.tab.tabId,
+            name: CAA_NAME,
+            blockId: ctx.tab.blockId,
+            transcriptPath: ctx.transcript,
+            sleeping: { since: now - 3_600_000, freedBytes: 0 },
+        },
+    ];
+}
+
+async function installCaaMock(h, pastedPath) {
+    const resolved = await ahResolveModules(h);
+    if (resolved.error) return `unresolved: ${resolved.error}`;
+    return h.ev(`(async () => {
+        const api = (await import(${JSON.stringify(resolved.urls.api)})).RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${CAA_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const m = { api, prev, wake: "ok", held: [], calls: [] };
+        api.setMockRpcClient({
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "agentswake") {
+                    m.calls.push({ command, data });
+                    if (m.wake === "hold") return new Promise((resolve, reject) => m.held.push({ resolve, reject }));
+                    if (m.wake === "fail") return Promise.reject(new Error(${JSON.stringify(CAA_WAKE_FAIL)}));
+                    return Promise.resolve(null);
+                }
+                if (command === "writetempfile") {
+                    m.calls.push({ command, data: { filename: data?.filename } });
+                    return Promise.resolve(${JSON.stringify(pastedPath)});
+                }
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        });
+        window.${CAA_MOCK_KEY} = m;
+        return "installed";
+    })()`);
+}
+
+const caaMode = (h, mode) => h.ev(`(() => { const m = window.${CAA_MOCK_KEY}; if (!m) return false; m.wake = ${JSON.stringify(mode)}; return true; })()`);
+const caaRelease = (h) =>
+    h.ev(`(() => { const m = window.${CAA_MOCK_KEY}; const held = m ? m.held.splice(0) : []; for (const p of held) p.resolve(null); return held.length; })()`);
+const caaCalls = (h, command) => h.ev(`(window.${CAA_MOCK_KEY}?.calls ?? []).filter((c) => c.command === ${JSON.stringify(command)})`);
+
+const chatAsleepAttachJump = {
+    name: "chat-asleep-attach-jump",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-asleep-attach-")),
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        ctx.pasted = join(ctx.dir, "pasted.png");
+        let at = "writing the transcript";
+        try {
+            const base = Date.now() - 7_200_000;
+            const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
+            const para = (n) => `Reply ${n}. ` + "The sync client retries with backoff, and each attempt logs what it sent. ".repeat(8);
+            const lines = [];
+            for (let i = 0; i < 30; i++) {
+                lines.push(AC.userText(`question ${i}: how does part ${i} work?`, o(i * 10)));
+                lines.push(AC.assistantText(para(i), o(i * 10 + 2)));
+            }
+            ctx.transcript = AC.writeTranscript(ctx.dir, "attach-asleep", lines);
+            at = "resetting the grid";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tab";
+            ctx.tab = await acMakeTab(h, ctx, { label: CAA_NAME });
+            ctx.tabs = { main: ctx.tab };
+            at = "setting the roster";
+            await AC.setRoster(h, caaRoster(ctx));
+            at = "installing the mock";
+            const mock = await installCaaMock(h, ctx.pasted);
+            if (mock !== "installed") throw new Error(`mock: ${mock}`);
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent, its transcript and the mock", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tab.tabId;
+        const scroller = `document.querySelector('[data-agent-chat="${A}"] .overflow-y-auto')`;
+        const box = `document.querySelector('[data-agent-chat="${A}"] [data-chat-input]')`;
+        const chips = `[...document.querySelectorAll('[data-agent-chat="${A}"] [data-attachment-chip]')]`;
+        const atEnd = `(() => { const s = ${scroller}; return !!s && s.scrollHeight - s.scrollTop - s.clientHeight < 8; })()`;
+        const scrollUp = () =>
+            h.ev(`(async () => {
+                const s = ${scroller};
+                if (s == null) return null;
+                s.scrollTop = 0;
+                s.dispatchEvent(new Event("scroll"));
+                await new Promise((r) => setTimeout(r, 600));
+                return Math.round(s.scrollTop);
+            })()`);
+        const key = async (k, code, vk, modifiers = 0) => {
+            for (const type of ["keyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key: k, code, windowsVirtualKeyCode: vk, modifiers });
+            }
+        };
+        const ctrlEnd = () => key("End", "End", 35, 2);
+        const enter = () => key("Enter", "Enter", 13);
+        const paste = (hue) =>
+            h.ev(`(async () => {
+                const c = document.createElement("canvas");
+                c.width = 32;
+                c.height = 32;
+                const g = c.getContext("2d");
+                g.fillStyle = "hsl(${hue}, 70%, 50%)";
+                g.fillRect(0, 0, 32, 32);
+                const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+                const dt = new DataTransfer();
+                dt.items.add(new File([blob], "shot-${hue}.png", { type: "image/png" }));
+                const b = ${box};
+                b.focus();
+                b.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+                return true;
+            })()`);
+        try {
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+            await AC.focusAgent(h, A);
+            const loaded = await polishWaitFor(h, `(${acLayer(A)}?.querySelectorAll("[data-chat-item]").length ?? 0) >= 10`, 15000);
+            const asleep = await polishWaitFor(h, `!!document.querySelector('[data-sleeping-composer="${A}"] [data-chat-asleep]')`, CAA_WAIT_MS);
+
+            // J1. scrolled up, the round ↓ shows, and its tooltip names the key
+            const top1 = await scrollUp();
+            const jumpUp = await polishWaitFor(h, `!!document.querySelector('[data-agent-chat="${A}"] [data-chat-jump]')`, 3000);
+            const title = await h.ev(`document.querySelector('[data-agent-chat="${A}"] [data-chat-jump]')?.getAttribute("title") ?? null`);
+            await h.shot("cdp-shots/chat-asleep-jump-button.png");
+            rec(
+                "J1. the sleeping agent's Chat shows its conversation; scrolled up, the ↓ shows with \"Jump to latest (Ctrl+End)\"",
+                loaded && asleep && top1 === 0 && jumpUp && title === "Jump to latest (Ctrl+End)",
+                { loaded, asleep, top1, jumpUp, title }
+            );
+
+            // J2. the focus out of the box (in the conversation), Ctrl+End goes to the end and the ↓ leaves
+            await h.ev(`(() => { document.activeElement?.blur?.(); ${scroller}?.focus?.(); return true; })()`);
+            await ctrlEnd();
+            const end2 = await polishWaitFor(h, atEnd, 3000);
+            const jumpGone2 = await polishWaitFor(h, `!document.querySelector('[data-agent-chat="${A}"] [data-chat-jump]')`, 3000);
+            rec("J2. Ctrl+End from the conversation jumps to the latest message and the ↓ leaves", end2 && jumpGone2, { end2, jumpGone2 });
+
+            // J3. scrolled up again with text in the box, Ctrl+End from the box jumps too, and the text stays
+            const top3 = await scrollUp();
+            await h.ev(`${box}.focus()`);
+            await h.cdp("Input.insertText", { text: "draft" });
+            await ctrlEnd();
+            const end3 = await polishWaitFor(h, atEnd, 3000);
+            const text3 = await h.ev(`${box}?.textContent ?? null`);
+            rec("J3. Ctrl+End from the chat box jumps to the latest message, and the box keeps its text", top3 === 0 && end3 && text3 === "draft", {
+                top3,
+                end3,
+                text3,
+            });
+            await acClear(h, box);
+
+            // A1. asleep, a pasted picture becomes a chip in the box (the mock answers the temp-file write)
+            await paste(200);
+            const chip1 = await polishWaitFor(h, `${chips}.length === 1`, 5000);
+            const writes = await caaCalls(h, "writetempfile");
+            const chipPath = await h.ev(`${chips}[0]?.querySelector("[data-attachment-path]")?.getAttribute("data-attachment-path") ?? ${chips}[0]?.getAttribute("data-attachment-path") ?? null`);
+            await h.shot("cdp-shots/chat-asleep-attach-chip.png");
+            rec("A1. asleep, a picture pasted into the box shows as a chip", chip1 && writes.length >= 1, { chip1, writes, chipPath });
+
+            // A2. Enter wakes the agent with the text and the picture; while the wake is held the chip stays
+            await caaMode(h, "hold");
+            const wakesBefore = (await caaCalls(h, "agentswake")).length;
+            await h.ev(`${box}.focus()`);
+            await h.cdp("Input.insertText", { text: "look at this" });
+            await enter();
+            const called = await polishWaitFor(h, `(window.${CAA_MOCK_KEY}?.calls ?? []).filter((c) => c.command === "agentswake").length > ${wakesBefore}`, 3000);
+            const wake = (await caaCalls(h, "agentswake")).slice(wakesBefore)[0];
+            const chipsWhileWaking = await h.ev(`${chips}.length`);
+            await h.shot("cdp-shots/chat-asleep-attach-waking.png");
+            const msg = wake?.data?.message ?? "";
+            rec(
+                "A2. Enter wakes the agent with the text and the picture's path in its message; the chip stays while the wake runs",
+                called && wake?.data?.tab === A && msg.includes("look at this") && msg.includes(ctx.pasted) && chipsWhileWaking === 1,
+                { called, wake, chipsWhileWaking }
+            );
+
+            // A3. the wake took the message: the chip goes, and the box is empty
+            await caaRelease(h);
+            const chipGone = await polishWaitFor(h, `${chips}.length === 0`, 3000);
+            const textAfter = await h.ev(`${box}?.textContent ?? null`);
+            rec("A3. once the wake took the message, the chip goes and the box is empty", chipGone && textAfter === "", { chipGone, textAfter });
+
+            // A4. a wake that fails keeps the chip and the text, to send again
+            await caaMode(h, "fail");
+            await paste(20);
+            const chip4 = await polishWaitFor(h, `${chips}.length === 1`, 5000);
+            const failsBefore = (await caaCalls(h, "agentswake")).length;
+            await h.ev(`${box}.focus()`);
+            await h.cdp("Input.insertText", { text: "again" });
+            await enter();
+            const failed = await polishWaitFor(h, `(window.${CAA_MOCK_KEY}?.calls ?? []).filter((c) => c.command === "agentswake").length > ${failsBefore}`, 3000);
+            await new Promise((r) => setTimeout(r, 800));
+            const kept = await h.ev(`({ chips: ${chips}.length, text: ${box}?.textContent ?? null })`);
+            await h.shot("cdp-shots/chat-asleep-attach-failed.png");
+            rec("A4. a wake that fails keeps the chip and the text", chip4 && failed && kept.chips === 1 && kept.text === "again", { chip4, failed, kept });
+        } catch (e) {
+            rec("the steps ran to the end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-asleep-attach-jump teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the box", () => (ctx.tab ? acClear(h, `document.querySelector('[data-agent-chat="${ctx.tab.tabId}"] [data-chat-input]')`) : null));
+        await step("drop the chips", () =>
+            AC.agentPage(
+                h,
+                `const S = await mod("app/view/agents/composerattachments.ts"); const m = new Map(globalStore.get(S.attachmentDraftsAtom)); m.delete(${JSON.stringify(ctx.tab?.tabId ?? "")}); globalStore.set(S.attachmentDraftsAtom, m); return true;`
+            )
+        );
+        await step("remove the mock", () =>
+            h.ev(`(() => { const m = window.${CAA_MOCK_KEY}; if (!m) return "absent"; for (const p of m.held.splice(0)) p.resolve(null); m.api.setMockRpcClient(m.prev); delete window.${CAA_MOCK_KEY}; return "restored"; })()`)
+        );
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tab", () => acCloseTabs(h, ctx));
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        await step("remove the fixture transcript", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- sidebar-agent-ram: an agent row in the sidebar shows the RAM its processes hold (agentram.ts), read from the Resource
 // Manager's snapshot, which the step pins (window.__resmonFixture) so the figures are known: 412 MB for the first agent,
 // 1.3 GB for the second, none for the third (no group). Settings → Appearance → Agent sidebar → RAM off hides them.
@@ -50971,11 +51242,11 @@ const jobqueueChip = {
         const off = await pickPace("off");
         await h.shot("cdp-shots/jobqueue-chip-pace-off.png");
         rec(
-            "6b. Auto and Off are saved to jobs:mode, stay picked, and the chip's tooltip says as RAM allows / queue off",
+            "6b. Auto and Off are saved to jobs:mode, stay picked, and the chip's tooltip says as RAM and CPU allow / queue off",
             auto.picked &&
                 auto.mode === "auto" &&
                 auto.shown &&
-                String(auto.title).includes("as RAM allows") &&
+                String(auto.title).includes("as RAM and CPU allow") &&
                 off.picked &&
                 off.mode === "off" &&
                 off.shown &&
@@ -66730,6 +67001,7 @@ export const SCENARIOS = [
     agentSleep,
     agentChat,
     chatScrollKeep,
+    chatAsleepAttachJump,
     ...chatRedesignScenarios(CR_KIT),
     sidebarAgentRam,
     machineServers,
