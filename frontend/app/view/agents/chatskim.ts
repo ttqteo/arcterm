@@ -16,15 +16,9 @@ import { VISUAL_LANG } from "./chatvisual";
 // a fenced block an agent drew a visual in (chatvisual.ts): ```arc-visual at the start of a line
 const VISUAL_FENCE = new RegExp(`^\\s*\`\`\`${VISUAL_LANG}\\b`, "m");
 
-// FNV-1a over the stored text, the key the marks are kept under once the reply is stored without them
-export function hashText(text: string): string {
-    let h = 0x811c9dc5;
-    for (let i = 0; i < text.length; i++) {
-        h ^= text.charCodeAt(i);
-        h = Math.imul(h, 0x01000193);
-    }
-    return (h >>> 0).toString(16).padStart(8, "0") + text.length.toString(16);
-}
+// FNV-1a over the stored text, the key the marks are kept under once the reply is stored without them (it lives in
+// texthash.ts, shared with chatinitiative.ts, and is re-exported here so this file's importers do not change)
+export { hashText } from "./texthash";
 
 // the stored marks of every reply, by hash: each file's `highlightMarks` entries that are a [string, string[]] pair, a
 // later file winning a hash two share; a file that is not JSON or not that shape adds nothing
