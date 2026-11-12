@@ -3,13 +3,16 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    addBlocker,
     addedRecord,
     blockDraftKey,
     blockKey,
     canAdd,
     cardPhase,
     cardStatic,
+    chipProgress,
     chunkLinesOf,
+    chunkOptions,
     clipLabel,
     coerceCards,
     coerceDraft,
@@ -23,6 +26,7 @@ import {
     foldRowLabel,
     foldRowParts,
     hasInitiativeBlock,
+    isFreshMessageCard,
     kindLabel,
     messageDraftKey,
     parseInitiativeBlock,
@@ -31,17 +35,20 @@ import {
     readStoredMap,
     resultLine,
     settleCard,
+    startsInEditor,
     stripResultLines,
     takeLines,
     topicsOf,
     verbOf,
     waitingDot,
     withDraft,
+    withEffort,
     withHandled,
     withKind,
     withMessageCard,
     withoutKey,
     withResultLines,
+    withTopic,
     type CardPhase,
     type HandledRecord,
     type InitiativeBlock,
@@ -361,6 +368,82 @@ describe("fitBytes and chunkLinesOf", () => {
     it("reads one chunk per line, drops blanks and repeats", () => {
         expect(chunkLinesOf("one\n\n  two  \none\n")).toEqual(["one", "two"]);
         expect(chunkLinesOf("")).toEqual([]);
+    });
+});
+
+describe("what the card view decides", () => {
+    const base = draftFromMessage("Spec chốt.", ctx);
+
+    it("reopens in the editor for a message card, or when the body was edited", () => {
+        expect(startsInEditor("message", base, base)).toBe(true);
+        expect(startsInEditor("agent", base, base)).toBe(false);
+        expect(startsInEditor("agent", { ...base, text: "Trimmed." }, base)).toBe(true);
+        expect(startsInEditor("agent", { ...base, kind: "chunk" }, base)).toBe(true);
+        expect(startsInEditor("agent", { ...base, title: "T" }, base)).toBe(true);
+        expect(startsInEditor("agent", { ...base, chunks: "a\nb" }, base)).toBe(true);
+    });
+
+    it("does not count a changed target as an edit of the body", () => {
+        expect(startsInEditor("agent", { ...base, effort: OTHER, chunk: "Other one", parent: TOPIC }, base)).toBe(
+            false
+        );
+    });
+
+    it("picks an initiative: the agent's own keeps its chunk, another one asks for a chunk", () => {
+        const picked = withEffort(base, OTHER, ctx);
+        expect(picked.effort).toBe(OTHER);
+        expect(picked.chunk).toBeNull();
+        expect(picked.text).toBe(base.text);
+        const back = withEffort(picked, "7655bf18", ctx);
+        expect(back.effort).toBe(AGENT);
+        expect(back.chunk).toBe("Chat: add to an initiative");
+        expect(withEffort(base, "effort:7655bf18", { ...ctx, agentChunk: null }).chunk).toBeNull();
+    });
+
+    it("picks and clears a topic", () => {
+        expect(withTopic(base, "70b1c000").parent).toBe(TOPIC);
+        expect(withTopic(base, TOPIC).parent).toBe(TOPIC);
+        expect(withTopic({ ...base, parent: TOPIC }, null).parent).toBeNull();
+    });
+
+    it("numbers the chunks from 1 and marks the agent's own", () => {
+        expect(chunkOptions(["A", "B", "C"], "B")).toEqual([
+            { n: 1, label: "A", mine: false },
+            { n: 2, label: "B", mine: true },
+            { n: 3, label: "C", mine: false },
+        ]);
+        expect(chunkOptions(["A"], null)).toEqual([{ n: 1, label: "A", mine: false }]);
+        expect(chunkOptions([], "A")).toEqual([]);
+    });
+
+    it("says what Add waits on, and nothing once it can run", () => {
+        expect(addBlocker(base)).toBeNull();
+        expect(addBlocker({ ...base, effort: null, chunk: null })).toBe("Pick an initiative first");
+        expect(addBlocker({ ...base, chunk: null })).toBe("Pick a chunk first");
+        expect(addBlocker({ ...base, text: "  " })).toBe("Write the note first");
+        expect(addBlocker({ ...base, kind: "chunk", chunk: null })).toBeNull();
+        expect(addBlocker({ ...base, kind: "chunk", text: "" })).toBe("Write the chunk first");
+        expect(addBlocker({ ...base, kind: "initiative", title: " " })).toBe("Give it a title first");
+        expect(addBlocker({ ...base, kind: "initiative", title: "T", effort: null })).toBeNull();
+        for (const d of [base, { ...base, chunk: null }, { ...base, kind: "initiative" as const, title: "" }]) {
+            expect(addBlocker(d) == null).toBe(canAdd(d));
+        }
+    });
+
+    it("tells a message card the person just opened from one a reload brings back", () => {
+        // openMessageCard's id: "m" + Date.now() in base 36 + four random characters
+        const at = 1_800_000_000_000;
+        const id = `m${at.toString(36)}ab12`;
+        expect(isFreshMessageCard(id, at + 500)).toBe(true);
+        expect(isFreshMessageCard(id, at + 5000)).toBe(false);
+        expect(isFreshMessageCard(id, at - 10_000)).toBe(false);
+        expect(isFreshMessageCard("not-an-id", at)).toBe(false);
+        expect(isFreshMessageCard("", at)).toBe(false);
+    });
+
+    it("words the chip's count as done/total over the plan", () => {
+        expect(chipProgress({ done: 1, remaining: 8 })).toBe("1/9");
+        expect(chipProgress({ done: 0, remaining: 0 })).toBe("0/0");
     });
 });
 

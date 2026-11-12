@@ -269,6 +269,20 @@ export function canAdd(draft: InitiativeDraft): boolean {
     }
 }
 
+/** Pure: what a disabled Add waits on, in a few words for its tooltip; null once `canAdd`. */
+export function addBlocker(draft: InitiativeDraft): string | null {
+    if (draft.kind === "initiative") {
+        return draft.title.trim() === "" ? "Give it a title first" : null;
+    }
+    if (draft.effort == null) {
+        return "Pick an initiative first";
+    }
+    if (draft.kind === "note" && draft.chunk == null) {
+        return "Pick a chunk first";
+    }
+    return draft.text.trim() === "" ? `Write the ${draft.kind} first` : null;
+}
+
 /** The button that adds, by kind. */
 export function verbOf(kind: InitiativeKind): string {
     return kind === "note" ? "Add note" : kind === "chunk" ? "Add chunk" : "Create initiative";
@@ -277,6 +291,69 @@ export function verbOf(kind: InitiativeKind): string {
 /** The kind switch's label, by kind. */
 export function kindLabel(kind: InitiativeKind): string {
     return kind === "note" ? "Note" : kind === "chunk" ? "New chunk" : "New initiative";
+}
+
+// ---- what the card view decides ----
+
+/** Where a card came from: the agent proposed it with a block, or the person opened it from a message. */
+export type CardOrigin = "agent" | "message";
+
+/** Pure: whether a card opens in its editor: one from a message always does; one the agent proposed does once the person
+ *  edited its body (kind, text, title or first chunks), so a switch to Terminal and back, or a reload, keeps the editor
+ *  they were in. A changed target (initiative, chunk, topic) alone is no edit: the compact card has those controls too. */
+export function startsInEditor(origin: CardOrigin, draft: InitiativeDraft, initial: InitiativeDraft): boolean {
+    return (
+        origin === "message" ||
+        draft.kind !== initial.kind ||
+        draft.text !== initial.text ||
+        draft.title !== initial.title ||
+        draft.chunks !== initial.chunks
+    );
+}
+
+// openMessageCard's id: "m", Date.now() in base 36, four random characters
+const MESSAGE_CARD_ID = /^m([0-9a-z]+)[0-9a-z]{4}$/;
+
+/** Pure: whether a message card was opened a moment ago (its id carries the time), so its editor takes focus: the person
+ *  just asked for it. One a reload or a switch back to Chat brings back must not take focus from the box. */
+export function isFreshMessageCard(id: string, now: number, windowMs = 2000): boolean {
+    const m = MESSAGE_CARD_ID.exec(id);
+    if (m == null) {
+        return false;
+    }
+    const age = now - parseInt(m[1], 36);
+    return age >= 0 && age <= windowMs;
+}
+
+/** Pure: the draft aimed at another initiative (`Change…`). The agent's own initiative keeps the chunk the agent holds; any
+ *  other asks for a chunk, so a note is never filed on a chunk that initiative may not have. */
+export function withEffort(
+    draft: InitiativeDraft,
+    oref: string,
+    agent: Pick<InitiativeCtx, "agentEffortId" | "agentChunk">
+): InitiativeDraft {
+    const effort = effortOref(oref);
+    const own = agent.agentEffortId != null && effortOref(agent.agentEffortId) === effort;
+    return { ...draft, effort, chunk: own ? (agent.agentChunk ?? null) : null };
+}
+
+/** Pure: the draft with another topic for a new initiative, or none (null). */
+export function withTopic(draft: InitiativeDraft, oref: string | null): InitiativeDraft {
+    return { ...draft, parent: oref == null ? null : effortOref(oref) };
+}
+
+/** One row of the `Chunk` dropdown: its place in the initiative (from 1), its label, and whether it is the chunk the agent
+ *  holds (marked `· this agent's`). */
+export type ChunkOption = { n: number; label: string; mine: boolean };
+
+/** Pure: the dropdown's rows from an initiative's chunk labels, in plan order. */
+export function chunkOptions(labels: readonly string[], mine: string | null): ChunkOption[] {
+    return labels.map((label, i) => ({ n: i + 1, label, mine: mine != null && label === mine }));
+}
+
+/** Pure: the initiative chip's count, as the picker words it: done over done plus remaining. */
+export function chipProgress(card: { done: number; remaining: number }): string {
+    return `${card.done}/${card.done + card.remaining}`;
 }
 
 // ---- the card's phases ----
