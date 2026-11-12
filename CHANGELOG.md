@@ -41,6 +41,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   reaching arcterm took a few seconds: it gets 15 s to connect, then 5 s for an answer. A command that still ran
   without waiting its turn is counted at the bottom of the Jobs popover, with the latest one, even when arcterm could
   not be reached at all; for 30 minutes after one, the Jobs chip stays in the app bar ("2 ran unqueued") to say so.
+- Pressing Esc while an agent's heavy command waits its turn in the job queue now drops it for good: it no longer
+  runs anyway once the wait ends.
 
 ## 1.0.7 — 2026-11-12
 
