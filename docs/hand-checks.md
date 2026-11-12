@@ -6,9 +6,6 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
-- [ ] (arcterm) Chat's jump-to-latest names its key: in a Chat, scroll up → the button above the box is a pill reading
-  `↓ Ctrl+End` (32px high, centred); Ctrl+End or a click returns to the end and it pops out (`chatpane.tsx`
-  data-chat-jump; scenario check updated in `scenarios-chat-redesign.mjs`).
 - [ ] (arcterm) Chat's compaction summary collapses from inside: in a Chat that compacted, click the Compacted pill
   → the summary shows a Collapse button at its top right and at its end; the top one closes it, the end one closes it
   and scrolls the Compacted pill back into view (`narrationtimeline.tsx` CompactionDivider). Since 2026-11-12 both
