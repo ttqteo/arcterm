@@ -24,9 +24,11 @@ Date: 2026-11-12. Trigger: run `1cad2fd0` (Kael sync small fixes) sat 2h30m at 1
    `leadDiedLocked` with a "lead hung" reason, which relaunches an autonomous run's lead and otherwise hands its
    questions to the person. A lead running a long command uses CPU and is left alone; the clock restarts and it is
    judged again one window later.
-2. **A worker's open question is recovered from its transcript.** The liveness pass, for a running or stalled dag task
-   with no registered ask, reads the worker transcript with `AskOpen`; an open question is registered as the hook
-   would have registered it, so it reaches the lead's `dag asks` and the digest shows `ask:`.
+2. **A worker's open question is recovered from its transcript.** The liveness pass, for a running task about to be
+   marked stalled (quiet past the stall threshold, tree CPU idle) with no registered ask, reads the worker transcript
+   for an open `AskUserQuestion`; the read is gated this way because it reads the whole file under the dag lock. An
+   open question keeps the task from stalling and is registered, after the dag lock is released, as the hook would
+   have registered it, so it reaches the lead's `dag asks` and the digest shows `ask:`.
 3. **Plan commands run through Git's launcher bash.** A PATH hit in `<git>\usr\bin` resolves to `<git>\bin\bash.exe`
    when that exists. `term:gitbashpath` still wins.
 4. **The run row says what is stuck.** A working run with tasks in `stalled`, `verify-failed`, `review-failed`,
