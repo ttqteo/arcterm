@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/brainstormcheck"
 	"github.com/wavetermdev/waveterm/pkg/harness"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
@@ -77,7 +76,7 @@ type sessionKind struct {
 	busy       string // the refusal while one is reading
 	role       string
 	labelHead  string
-	reportFile string // the session's report file in the temp dir, a Sprintf pattern for a uuid
+	reportFile string // the session's report file in the temp dir, a Sprintf pattern for sessionReportPath's key
 	route      func(ch *waveobj.Channel, agent string) waveobj.RoutePin
 	prompt     func(s brainstormSession, reportPath string) (string, error)
 	// decide judges the run; on sessionDeliver it returns the bytes to write to resultPath
@@ -448,8 +447,7 @@ func launchSessionRun(ctx context.Context, s *brainstormSession) error {
 	if workspaceId == "" {
 		return fmt.Errorf("tab %s is in no workspace", s.TabId)
 	}
-	reportPath := filepath.Join(os.TempDir(), fmt.Sprintf(k.reportFile, uuid.NewString()))
-	prompt, err := k.prompt(*s, reportPath)
+	prompt, err := k.prompt(*s, sessionReportPath(k, s.TabId, s.StartedTs))
 	if err != nil {
 		return err
 	}
@@ -521,7 +519,20 @@ func tickBrainstormSession(ctx context.Context, s brainstormSession, now int64) 
 	if run == nil || run.Status != jarvis.RunStatus_Done {
 		lost, _ = orchestrate.JudgingSessionLost(ctx, s.ChannelId, s.RunId, s.StartedTs, now)
 	}
+	hung := run
+	if lost != "" {
+		// the session may have written its report and then hung before `wsh jarvis complete` got through (a starved
+		// machine, a stuck RPC): the report on disk is its verdict, judged as if the run had finished with it
+		if report, err := os.ReadFile(sessionReportPath(k, s.TabId, s.StartedTs)); err == nil && strings.TrimSpace(string(report)) != "" {
+			log.Printf("%s: session %s was lost (%s); delivering the report it wrote", k.what, s.RunId, lost)
+			run, lost = &waveobj.Run{ID: s.RunId, Status: jarvis.RunStatus_Done, Report: string(report)}, ""
+		}
+	}
 	action, out := k.decide(run, lost)
+	if hung != nil && hung.Status != jarvis.RunStatus_Done && run != hung {
+		// the recovered session's process is still stuck in its complete: stop it whatever the report turns out to be
+		stopStageSession(*hung)
+	}
 	switch action.Kind {
 	case sessionDeliver:
 		path := k.resultPath(s.File)
@@ -535,13 +546,19 @@ func tickBrainstormSession(ctx context.Context, s brainstormSession, now int64) 
 		}
 		return true
 	case sessionFail:
-		if run != nil && run.Status != jarvis.RunStatus_Done {
+		if run != nil && run.Status != jarvis.RunStatus_Done && run == hung {
 			stopStageSession(*run)
 		}
 		failBrainstormSession(ctx, s, action.Reason)
 		return true
 	}
 	return false
+}
+
+// sessionReportPath is where a session writes its report: fixed by the tab and the record's start time, both kept in
+// the tab's meta, so a watcher re-armed after a restart can still find the report of a session that was lost.
+func sessionReportPath(k *sessionKind, tabId string, startedTs int64) string {
+	return filepath.Join(os.TempDir(), fmt.Sprintf(k.reportFile, fmt.Sprintf("%s-%d", tabId, startedTs)))
 }
 
 // ResumeBrainstormSessions re-arms the watcher of every builder check and judge that was reading when wavesrv
