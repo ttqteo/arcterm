@@ -42499,7 +42499,8 @@ const AC_BASH_HISTORY = ["git log --oneline -5", "git status -sb"];
 const AC_SHELL_FILES = ["frontend/app/view/agents/chatpane.tsx", "frontend/app/view/agents/chatpanes/", "frontend/app/view/agents/chatpending.ts"];
 // what the mocked GetClaudeLiveCommandsCommand answers for the main agent's block: the list Claude Code's own typeahead shows in
 // that session (the arc mod publishes it, pkg/claudecmds/live.go). 12 built-ins (the bundled skills `code-review`,
-// `security-review` and `simplify` among them), 2 skills, 4 plugin commands and 1 MCP prompt, in the groups' order. No other
+// `security-review` and `simplify` among them), 2 skills, 4 plugin commands and 1 MCP prompt, in the groups' order. The menu
+// lists `help`, the one built-in here that Chat answers itself (AC_IN_CHAT), in a group of its own ahead of the other 11. No other
 // agent has one, so their menu falls back to the built-ins plus AC_COMMANDS. The `/re` filter of step 51 and the `/co` of step
 // 23 are worked out from these names: change one and read both. `mcp` and `model` are in it because a bare /mcp and /model
 // flip the cell to Terminal only while the menu's own list names them (opensTui).
@@ -42524,6 +42525,9 @@ const AC_LIVE_COMMANDS = [
     { name: "superpowers:requesting-code-review", description: "Check the work against its requirements", source: "plugin", plugin: "superpowers" },
     { name: "mcp__docs__summarize", description: "Summarize a page from the docs server", source: "mcp" },
 ];
+// the built-ins Chat answers itself with a card or the Diff surface (chatlocal.ts ROUTES, answersInChat): the `/` menu lists them
+// first as In Chat (44f8bef08), and they never read "opens in Terminal". Steps 50 and 53 read the menu's groups against this list
+const AC_IN_CHAT = ["usage", "cost", "context", "tasks", "bashes", "stats", "skills", "help", "status", "diff"];
 // the screens Claude Code 2.1.319 drew (captured by the unit tests' fixtures): the step writes them to the fixture terminal
 const AC_SCREENS = JSON.parse(readFileSync(new URL("../../frontend/app/view/agents/tuiscreen.fixtures.json", import.meta.url), "utf8"));
 
@@ -42846,6 +42850,29 @@ const acInputs = async (h, blockId) =>
     (await acCalls(h, "controllerinput"))
         .filter((c) => c.data.blockid === blockId && c.data.input !== "" && !/^\x1b\[[IO]$/.test(c.data.input))
         .map((c) => c.data.input);
+// A send is two writes: its text, then its Enter, which waits up to ECHO_WAIT_MAX_MS (chatpending.ts, read from there so the two
+// stay one number) for Claude Code's box to show the text (agentsubmit.ts). From step 24 on the fixture terminal draws a box
+// that never shows it, so each send's Enter lands the whole wait after its text, in a later step's window. A step that takes a
+// mark of a block's inputs, or reads what a send typed, first waits for that Enter with this: until the block's last input is
+// "\r", or until no input has come for the wait and a second more. Answers the inputs then, so a caller takes its mark from them.
+const AC_ECHO_WAIT_MS =
+    Number(
+        /ECHO_WAIT_MAX_MS\s*=\s*([\d_]+)/
+            .exec(readFileSync(new URL("../../frontend/app/view/agents/chatpending.ts", import.meta.url), "utf8"))?.[1]
+            ?.replace(/_/g, "")
+    ) || 2000;
+const AC_ENTER_WAIT_MS = AC_ECHO_WAIT_MS + 1000;
+async function acSettled(h, blockId) {
+    let inputs = await acInputs(h, blockId);
+    let changedAt = Date.now();
+    while (inputs.length > 0 && inputs[inputs.length - 1] !== "\r" && Date.now() - changedAt < AC_ENTER_WAIT_MS) {
+        await polishNap(60);
+        const next = await acInputs(h, blockId);
+        if (next.length !== inputs.length) changedAt = Date.now();
+        inputs = next;
+    }
+    return inputs;
+}
 const acSetAnswer = (h, mode) => h.ev(`(() => { window.${AC_MOCK_KEY}.answer = ${JSON.stringify(mode)}; return true; })()`);
 // what the mocked ShellCompleteCommand answers from now on: the completions of the next Tab in bash mode
 const acSetShell = (h, items) => h.ev(`(() => { window.${AC_MOCK_KEY}.shell = ${JSON.stringify(items)}; return true; })()`);
@@ -43323,7 +43350,7 @@ const agentChat = {
             await AC.setRoster(h, acRoster(ctx, { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined }));
             const working = await polishWaitFor(h, `(${acLayer(A)}?.querySelector("[data-chat-working]")?.textContent ?? "").includes(${JSON.stringify(AC_ACTIVITY)}) && !!${acLayer(A)}?.querySelector("[data-chat-stop]")`, AC_WAIT_MS);
             await h.shot("cdp-shots/agent-chat-4-working.png");
-            const stopsBefore = (await acInputs(h, blockA)).length;
+            const stopsBefore = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-stop]")?.click()`);
             const stopped = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input === "\\x1b")`, 3000);
             const afterStop = (await acInputs(h, blockA)).slice(stopsBefore);
@@ -43911,7 +43938,7 @@ const agentChat = {
                 };
             })()`);
             await h.shot("cdp-shots/agent-chat-20-queued.png");
-            const sent20 = (await acInputs(h, blockA)).slice(before20.length);
+            const sent20 = (await acSettled(h, blockA)).slice(before20.length);
             acAppend(ctx.files.main, acQueuedLine(ctx.dir, S1));
             const landed20 = await polishWaitFor(h, `${youHas(S1)} === 1 && ${pendingOf}.length === 0`, 15000);
             rec(
@@ -43929,7 +43956,7 @@ const agentChat = {
             const holdOf = `${acLayer(A)}?.querySelector("[data-chat-hold]")`;
             await acQueue(h, orefA, [perm("perm-5", "Bash", "npm run lint")]);
             const card21 = await polishWaitFor(h, `!!${acCard(A)}`, 3000);
-            const before21 = await acInputs(h, blockA);
+            const before21 = await acSettled(h, blockA);
             await acType(h, acBox(A), S21, false);
             await polishWaitFor(h, `${holdOf}?.getAttribute("data-chat-hold") === "waiting"`, 3000);
             const hold21 = await h.ev(`(() => {
@@ -43946,7 +43973,7 @@ const agentChat = {
             await h.shot("cdp-shots/agent-chat-21-queued.png");
             await acQueue(h, orefA, []);
             const sent21ok = await polishWaitFor(h, `${acVal(acBox(A))} === "" && !${holdOf}`, 5000);
-            const sent21 = (await acInputs(h, blockA)).slice(before21.length);
+            const sent21 = (await acSettled(h, blockA)).slice(before21.length);
             rec(
                 "21. with a permission request pending a line over the box names the hold and Send stays live as Queue; Enter queues the message (Queued line, nothing typed, the text kept), and it is typed into the block once the card is gone",
                 card21 && hold21.disabled === false && hold21.label === "Queue" &&
@@ -43957,15 +43984,30 @@ const agentChat = {
                 { card21, hold21, queued21, line21, box21, before21, after21, sent21ok, sent21 }
             );
 
-            // 22. ↑ in the empty box puts back the last message sent from it (step 21's, sent once its card went)
+            // 22. ↑ in the empty box puts back the last message sent from it (step 21's, sent once its card went). While Claude
+            // works, ↑ in an empty box takes back a message Claude Code still holds queued before it recalls anything
+            // (chattakeback.ts takeBackPlan: a pending bubble captioned Queued, which step 21's is: it was sent while the agent
+            // worked). That is the take-back's key, and it ends nothing here: the fixture's Claude never writes the message's
+            // queued_command line, so the message would stay queued for good. The line lands first, as step 20's does for S1
+            // (Claude took the message at the turn's next gap): nothing is left to take back, and ↑ recalls the history
+            const pendingS21 = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-pending]") ?? [])].filter((p) => p.firstElementChild?.textContent.trim() === ${JSON.stringify(S21)})`;
+            acAppend(ctx.files.main, acQueuedLine(ctx.dir, S21));
+            const taken22 = await polishWaitFor(h, `${youHas(S21)} === 1 && ${pendingS21}.length === 0`, 15000);
+            const before22 = await acSettled(h, blockA);
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             await h.ev(`${acBox(A)}?.focus()`);
             await acKey(h, acKeys.up);
             const recalled22 = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify(S21)}`, 3000);
             const box22 = await h.ev(acVal(acBox(A)));
+            // a take-back writes ↑ to the block (ESC [ A) before it waits for the box: the recall types nothing
+            const typed22 = (await acInputs(h, blockA)).slice(before22.length);
             await h.shot("cdp-shots/agent-chat-22-recall.png");
             await acClear(h, acBox(A));
-            rec("22. ↑ in the empty box puts back the last message sent", recalled22 && box22 === S21, { box22 });
+            rec(
+                "22. ↑ in the empty box puts back the last message sent (once Claude took it, so no take-back claims the key), and types nothing into the block",
+                taken22 && recalled22 && box22 === S21 && typed22.length === 0,
+                { taken22, box22, typed22 }
+            );
 
             // 23. `/` as the box's first character lists the session's own commands (GetClaudeLiveCommandsCommand, mocked for this
             // agent's block: the bundled skill `code-review` is in it, which the disk list never holds, and `arc:council`);
@@ -43985,13 +44027,13 @@ const agentChat = {
             const fetched23 = await acCalls(h, "listclaudecommands");
             const live23 = await acCalls(h, "getclaudelivecommands");
             await acClear(h, acBox(A));
-            const beforeModel = (await acInputs(h, blockA)).length;
+            const beforeModel = (await acSettled(h, blockA)).length;
             await h.cdp("Input.insertText", { text: "/model" });
             await polishWaitFor(h, `!!document.querySelector("[data-chat-slash]")`, 3000);
             await acKey(h, acKeys.enter);
             const flipped23 = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "terminal" && !${acLayer(A)}`, 3000);
             const header23 = await acHeader(h);
-            const sentModel = (await acInputs(h, blockA)).slice(beforeModel);
+            const sentModel = (await acSettled(h, blockA)).slice(beforeModel);
             await h.shot("cdp-shots/agent-chat-23-model-terminal.png");
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
             await polishWaitFor(h, `!!${acBox(A)}`, 3000);
@@ -44019,7 +44061,7 @@ const agentChat = {
             const screen24 = await acWriteScreen(h, blockA, AC_SCREENS.mode3);
             const chipUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')`, 6000);
             await h.shot("cdp-shots/agent-chat-24-footer.png");
-            const beforeTab = (await acInputs(h, blockA)).length;
+            const beforeTab = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')?.click()`);
             const menuUp24 = await polishWaitFor(h, `${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')?.getAttribute("aria-expanded") === "true" && !!${acLayer(A)}?.querySelector('[role="menu"]')`, 3000);
             const typed24 = (await acInputs(h, blockA)).slice(beforeTab);
@@ -44215,13 +44257,13 @@ const agentChat = {
             await acKey(h, acKeys.escape);
             const closed28 = await polishWaitFor(h, `!${acMenu("Model")}`, 3000);
             const stayed28 = await h.ev(acOnScreen(A));
-            const before28 = (await acInputs(h, blockA)).length;
+            const before28 = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-model]")?.click()`);
             await polishWaitFor(h, `${acMenuRows("Model")}.length === 3`, 3000);
             await h.ev(`${acMenu("Model")}?.querySelector('[data-chat-model-choice="sonnet"]')?.click()`);
             const picked28 = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.blockid === ${JSON.stringify(blockA)} && c.data.input === "/model sonnet")`, 3000);
             const closedAfter28 = await polishWaitFor(h, `!${acMenu("Model")}`, 3000);
-            const typed28 = (await acInputs(h, blockA)).slice(before28);
+            const typed28 = (await acSettled(h, blockA)).slice(before28);
             rec(
                 "28. the model chip opens a menu of Opus, Sonnet and Haiku with the agent's model checked (aria-checked on one row), Escape closes it and the chat stays on screen, and picking Sonnet types /model sonnet into A's block and closes the menu",
                 up28 && JSON.stringify(menu28.rows.map((r) => r[0])) === JSON.stringify(["opus", "sonnet", "haiku"]) &&
@@ -44614,12 +44656,14 @@ const agentChat = {
 
             // 41. the page reads the app's colours: a click on #theme sends "theme:" and the page's --arc-background, which is the
             // app's --color-background, through the box (the bridge hands the colours over when the page says it is ready)
+            // The mark waits for the Enter of step 36's send (it lands the echo wait after its text, in this step's window), and the
+            // read below for the theme's own: it starts with theme: and ends with the Enter that is its own
             await acClear(h, acBox(A));
-            const before41 = (await acInputs(h, blockA)).length;
+            const before41 = (await acSettled(h, blockA)).length;
             const click41 = await acClickFrame(h, A, "chart.html", 76, 82);
             const theme41 = await acUntil(async () => {
                 const typed = (await typedSince(blockA, before41)).join("");
-                return typed.endsWith("\r") ? typed : null;
+                return typed.startsWith("theme:") && typed.endsWith("\r") ? typed : null;
             }, 6000);
             const appBg = await h.ev(`getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim()`);
             await h.shot("cdp-shots/agent-chat-41-visual-theme.png");
@@ -44635,13 +44679,16 @@ const agentChat = {
             const gone41 = 1650 - (Date.now() - (click41?.at ?? 0));
             if (gone41 > 0) await polishNap(gone41);
             await acClear(h, acBox(A));
-            const before42 = (await acInputs(h, blockA)).length;
+            const before42 = (await acSettled(h, blockA)).length;
             const click42 = await acClickFrame(h, A, "chart.html", 76, 34);
+            // The prompt's text goes in at the click and its Enter the echo wait later, so the second click is made once the text
+            // is in (well inside the 1.5 s gap), and the Enter is waited for after it
+            await acUntil(async () => ((await typedSince(blockA, before42)).join("").startsWith(ASK) ? true : null), 3000);
+            const click42b = await acClickFrame(h, A, "chart.html", 76, 34);
             const sent42 = await acUntil(async () => {
                 const typed = (await typedSince(blockA, before42)).join("");
-                return typed.endsWith("\r") ? typed : null;
+                return typed.startsWith(ASK) && typed.endsWith("\r") ? typed : null;
             }, 6000);
-            const click42b = await acClickFrame(h, A, "chart.html", 76, 34);
             await polishNap(500);
             const typed42 = (await typedSince(blockA, before42)).join("");
             const box42 = await boxValue(A);
@@ -44656,7 +44703,7 @@ const agentChat = {
             // 43. a page's own prompt without a click is dropped; a page taller than the cap shows at 640 px with an expand button that
             // grows the frame to the page and back; a missing page says so; a path outside the folder stays code, with the reason
             await acClear(h, acBox(A));
-            const before43 = (await acInputs(h, blockA)).length;
+            const before43 = (await acSettled(h, blockA)).length;
             await acShowVisual(h, A, "auto.html");
             const autoSrc43 = await polishWaitFor(h, `(${acVisualFrame(A, "auto.html")}?.getAttribute("src") ?? "") !== ""`, 8000);
             const autoSized43 = await polishWaitFor(h, acFrameBetween(A, "auto.html", 110, 130), 8000);
@@ -44728,10 +44775,11 @@ const agentChat = {
             );
 
             // 50. "Typing /": a `/` in the main agent's box lists the session's whole command list (the mocked live list: 12
-            // built-ins, 2 skills, 4 plugin commands, 1 MCP prompt), grouped in that order with each group's count, no cap, in a
-            // box at most 420 px tall whose rows scroll; the footer counts them and says "in this session"; a plugin's row has
+            // built-ins, 2 skills, 4 plugin commands, 1 MCP prompt), grouped with each group's count, no cap, in a box at most
+            // 420 px tall whose rows scroll. The group order is In Chat (the built-ins Chat answers itself: `help` here, 44f8bef08),
+            // Built-in (the other 11), Skills, Plugins, MCP. The footer counts them and says "in this session"; a plugin's row has
             // its chip (arc:council "arc", skim "skim"), and a bare built-in that draws a menu on Claude Code's own screen
-            // (model) says "opens in Terminal"
+            // (model) says "opens in Terminal", which one Chat answers itself (help) never does
             await showAgent(A);
             await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
             await acClear(h, acBox(A));
@@ -44755,25 +44803,27 @@ const agentChat = {
             })()`);
             const row50 = (name) => s50?.rows.find((r) => r.name === name);
             const want50 = [
-                ["Built-in", "builtin"],
-                ["Skills", "user"],
-                ["Plugins", "plugin"],
-                ["MCP", "mcp"],
-            ].map(([title, source]) => {
-                const rows = AC_LIVE_COMMANDS.filter((c) => c.source === source).map((c) => c.name);
+                ["In Chat", (c) => c.source === "builtin" && AC_IN_CHAT.includes(c.name)],
+                ["Built-in", (c) => c.source === "builtin" && !AC_IN_CHAT.includes(c.name)],
+                ["Skills", (c) => c.source === "user"],
+                ["Plugins", (c) => c.source === "plugin"],
+                ["MCP", (c) => c.source === "mcp"],
+            ].map(([title, is]) => {
+                const rows = AC_LIVE_COMMANDS.filter(is).map((c) => c.name);
                 return { title, count: String(rows.length), rows };
             });
             rec(
-                "50. / in the main agent's box lists the live list grouped Built-in 12, Skills 2, Plugins 4, MCP 1 with all 19 rows (no cap) in a box at most 420 px tall whose rows scroll, the footer reads 19 commands in this session, arc:council and skim show their plugin chips, model says opens in Terminal, and code-review sits in Built-in",
+                "50. / in the main agent's box lists the live list grouped In Chat 1 (help), Built-in 11, Skills 2, Plugins 4, MCP 1 with all 19 rows (no cap) in a box at most 420 px tall whose rows scroll, the footer reads 19 commands in this session, arc:council and skim show their plugin chips, model says opens in Terminal but help (In Chat) does not, and code-review sits in Built-in",
                 up50 && s50 != null && s50.live === "true" && s50.rows.length === total50 &&
                     JSON.stringify(s50.groups) === JSON.stringify(want50) &&
-                    JSON.stringify(s50.groups.map((g) => g.count)) === JSON.stringify(["12", "2", "4", "1"]) &&
+                    JSON.stringify(s50.groups.map((g) => g.count)) === JSON.stringify(["1", "11", "2", "4", "1"]) &&
                     s50.height >= 200 && s50.height <= 420.5 &&
                     s50.scroller?.overflowY === "auto" && s50.scroller.scroll > s50.scroller.client && moved50 > 0 &&
                     s50.footer === `${total50} commands in this session` &&
                     row50("arc:council")?.chip === "arc" && row50("skim")?.chip === "skim" && row50("clear")?.chip === null &&
-                    row50("model")?.tui === true && row50("release-notes")?.tui === false &&
-                    s50.groups[0].rows.includes("code-review"),
+                    row50("model")?.tui === true && row50("release-notes")?.tui === false && row50("help")?.tui === false &&
+                    s50.groups[0].title === "In Chat" && s50.groups[0].rows.join() === "help" &&
+                    s50.groups.find((g) => g.title === "Built-in")?.rows.includes("code-review") === true,
                 { up50, s50, moved50 }
             );
 
@@ -44836,10 +44886,11 @@ const agentChat = {
             await polishWaitFor(h, `!document.querySelector("[data-chat-slash]")`, 3000);
             await h.ev(`${plus52}?.click()`);
             await polishWaitFor(h, `!!document.querySelector("[data-chat-plus-menu]")`, 3000);
-            const beforeMcp52 = (await acInputs(h, blockA)).length;
+            const beforeMcp52 = (await acSettled(h, blockA)).length;
             await h.ev(`document.querySelector('[data-chat-plus-item="mcp"]')?.click()`);
             const flipped52 = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "terminal" && !${acLayer(A)}`, 3000);
-            const sentMcp52 = (await acInputs(h, blockA)).slice(beforeMcp52);
+            // the cell flips at the pick; the command's Enter follows the echo wait later
+            const sentMcp52 = (await acSettled(h, blockA)).slice(beforeMcp52);
             await h.shot("cdp-shots/agent-chat-52-plus-mcp-terminal.png");
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
             await polishWaitFor(h, `!!${acBox(A)}`, 3000);
@@ -44854,7 +44905,8 @@ const agentChat = {
             );
 
             // 53. an agent with no live list (the second one: wavesrv holds none for its block) falls back to the copied built-ins
-            // plus the disk list (the mocked ListClaudeCommandsCommand), and the footer says "found on disk"
+            // plus the disk list (the mocked ListClaudeCommandsCommand), and the footer says "found on disk". The built-ins Chat
+            // answers itself list first as In Chat (AC_IN_CHAT), the other built-ins under Built-in, the disk list's skill under Plugins
             await showAgent(B);
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(B)}, "chat")`);
             await polishWaitFor(h, `!!${acBox(B)}`, AC_WAIT_MS);
@@ -44868,13 +44920,16 @@ const agentChat = {
             await acClear(h, acBox(B));
             await polishWaitFor(h, `!document.querySelector("[data-chat-slash]")`, 3000);
             const found53 = /^(\d+) commands found on disk$/.exec(s53?.footer ?? "");
+            const group53 = (title) => s53?.groups.find((g) => g.title === title)?.rows ?? [];
             rec(
-                "53. in the second agent's box (no live list) / shows the built-ins plus the disk list with data-chat-slash-live false and a footer reading N commands found on disk",
+                "53. in the second agent's box (no live list) / shows the built-ins plus the disk list, grouped In Chat, Built-in, Plugins (In Chat holds only what Chat answers itself, Built-in none of it), with data-chat-slash-live false and a footer reading N commands found on disk, N the number of rows",
                 fallbackUp53 && disk53 && s53 != null && s53.live === "false" && found53 != null &&
                     Number(found53[1]) === s53.rows.length && s53.rows.length >= 23 &&
                     s53.rows.some((r) => r.name === "compact") && s53.rows.some((r) => r.name === "arc:council") &&
-                    s53.groups.map((g) => g.title).join("|") === "Built-in|Plugins",
-                { fallbackUp53, disk53, footer: s53?.footer, rows: s53?.rows.length, groups: s53?.groups.map((g) => [g.title, g.count]) }
+                    s53.groups.map((g) => g.title).join("|") === "In Chat|Built-in|Plugins" &&
+                    group53("In Chat").length > 0 && group53("In Chat").every((n) => AC_IN_CHAT.includes(n)) &&
+                    group53("Built-in").every((n) => !AC_IN_CHAT.includes(n)),
+                { fallbackUp53, disk53, footer: s53?.footer, rows: s53?.rows.length, groups: s53?.groups.map((g) => [g.title, g.count]), inChat: group53("In Chat") }
             );
 
             // 60. "Sent": a message with an @mention and a files block (the text the composer sends) draws without the block. The
@@ -45097,7 +45152,7 @@ const agentChat = {
                 };
             })()`);
             await h.shot("cdp-shots/agent-chat-70-pill.png");
-            const before70 = (await acInputs(h, blockA)).length;
+            const before70 = (await acSettled(h, blockA)).length;
             await acKey(h, acKeys.enter);
             let typed70 = [];
             for (let i = 0; i < 30 && !typed70.join("").endsWith("\r"); i++) {
@@ -45352,7 +45407,7 @@ const agentChat = {
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             await acType(h, acBox(A), "!git stash list", false);
             await polishWaitFor(h, `${acVal(acBox(A))} === "!git stash list"`, 3000);
-            const before76 = (await acInputs(h, blockA)).length;
+            const before76 = (await acSettled(h, blockA)).length;
             await acKey(h, acKeys.enter);
             let sent76 = [];
             for (let i = 0; i < 30 && !sent76.join("").endsWith("\r"); i++) {
@@ -45484,7 +45539,7 @@ const agentChat = {
             const movedDown77 = await selected77(AC_SHELL_FILES[1]);
             await acKey(h, acKeys.up);
             const movedUp77 = await selected77(AC_SHELL_FILES[0]);
-            const inputs77 = (await acInputs(h, blockA)).length;
+            const inputs77 = (await acSettled(h, blockA)).length;
             await acKey(h, acKeys.enter);
             const want77 = `!npx vitest run ${AC_SHELL_FILES[0]} `;
             const picked77 = await polishWaitFor(h, `${acVal(acBox(A))}.replace(/\\u00a0/g, " ") === ${JSON.stringify(want77)}`, 3000);
@@ -45891,15 +45946,17 @@ const agentChat = {
                     const wait = 1650 - (Date.now() - (lastClick85?.at ?? 0));
                     if (wait > 0) await polishNap(wait);
                     await acClear(h, acBox(A));
-                    const n = (await acInputs(h, blockA)).length;
+                    // the mark waits for the Enter of the send before it (the echo wait puts it after its text), and the read is the
+                    // page's own: theme: and its colour, then the Enter that is its own
+                    const n = (await acSettled(h, blockA)).length;
                     lastClick85 = await acClickFrame(h, A, "chart.html", 76, 82);
                     const typed =
                         lastClick85 == null
                             ? null
                             : await acUntil(async () => {
                                   const t = (await typedSince(blockA, n)).join("");
-                                  return t.endsWith("\r") ? t : null;
-                              }, 4000);
+                                  return t.startsWith("theme:") && t.endsWith("\r") ? t : null;
+                              }, 6000);
                     if (typed != null) return { typed, tries };
                     tries.push(
                         await h.ev(`(() => ({
