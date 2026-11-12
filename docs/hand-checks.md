@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A question in Chat shows one card: have a Claude agent call AskUserQuestion with Chat open → only the
+  question card with its tabs and options shows, no "Wants to use AskUserQuestion" card with raw JSON and Answer in
+  Terminal above it; answer it → the agent goes on; a Bash prompt it raises next still gets its Allow/Deny card
+  (`permissionmodel.ts` cardHead, `permissioncard.tsx`; unit-tested only).
 - [ ] (arcterm) A run's row shows the whole run's RAM: with Settings → Appearance → Agent sidebar → RAM on and a run
   working with its lead and two or more workers, the lead's row ends with the sum of the lead and its workers (about the
   Resource Manager's run group added up, not the lead's figure alone); hover it → the tooltip names the lead's own

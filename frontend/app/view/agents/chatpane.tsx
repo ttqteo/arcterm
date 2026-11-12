@@ -613,7 +613,11 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                 {turn != null ? <TurnStatsText stats={turn} /> : null}
                             </div>
                         ) : null}
-                        <PermissionCard agent={agent} onOpenTerminal={() => setChatMode(agent.id, "terminal")} />
+                        <PermissionCard
+                            agent={agent}
+                            askShown={asking}
+                            onOpenTerminal={() => setChatMode(agent.id, "terminal")}
+                        />
                         {asking ? (
                             <div data-chat-ask={agent.id}>
                                 <AskRow model={model} agent={agent} alert />

@@ -37,6 +37,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- When a Claude agent asks you a question in Chat, only its question card shows: the extra "Wants to use AskUserQuestion" card with the raw question and Answer in Terminal is gone.
 - A sleeping Claude agent left on its Brainstorm, Canvas or Review can go back to its conversation: Chat stays clickable
   (and Alt+C reaches it) while the agent sleeps; only Terminal waits for it to wake.
 - An agent's row in the Agent tree no longer shows a stray "14/14"-style chip picked from any n/m in its last message;
