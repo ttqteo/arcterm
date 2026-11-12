@@ -17,6 +17,7 @@ import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app
 import { setAgentView, type AgentView } from "@/app/view/agents/agentview";
 import { cellView, cellViewOptions, chatCapable, nextCellView } from "@/app/view/agents/chatmode";
 import { focusChatBox } from "@/app/view/agents/chatinsert";
+import { CHAT_JUMP_KEYS, jumpChatToLatest } from "@/app/view/agents/chatjump";
 import { getChatMode, selectCellView } from "@/app/view/agents/chatmodestore";
 import {
     checkMain,
@@ -1879,6 +1880,26 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                     return false;
                 }
                 return focusChatBox(agent.id) ? undefined : false;
+            },
+        },
+        {
+            // Chat's round ↓ on a key: back to the end of the conversation, awake or asleep, from the box too. It passes
+            // when the agent shows no Chat or Chat already shows its end; typing in the box, Ctrl+End still takes the
+            // caret to the end of the text, so the key does both there.
+            id: "agent:chat-jump-latest",
+            keys: CHAT_JUMP_KEYS,
+            group: "Agent",
+            label: "Jump to the latest message (in Chat)",
+            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && centerAtRest(),
+            run: (ctx) => {
+                const agent = claudeAgent();
+                if (agent == null || slotView() !== "terminal" || getChatMode(agent) !== "chat") {
+                    return false;
+                }
+                if (!jumpChatToLatest(agent.id)) {
+                    return false;
+                }
+                return ctx.editable ? false : undefined;
             },
         },
         {
