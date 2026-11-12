@@ -6,6 +6,16 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The job queue plans on measured peaks (spec 2026-11-12-measured-job-peaks), on Windows and on the Mac:
+  in a Claude agent run `task check:ts` twice → the second run's row in the Jobs popover reads "measured" and its
+  tooltip names the first run's peak, the row's figure being that peak × 1.2 rather than the table's 3 GB "est.". Then
+  have the agent run a `make`-style build that peaks over 1 GB (`make build`, `gradle build`) twice → after the first,
+  `~/.arc/jobslot-learned.json` lists its pattern and the second takes a slot and queues like a table command; a
+  `waveapp.log` line `[jobpeaks] cannot write …` means the file was held open at that instant (Windows) and the next run
+  rewrites it. A worktree dev app leaves that file alone. Unit tests script the process table, the footprints, the
+  roster and the store; the real Git Bash process tree on Windows (`ps -l` groups), the Mac's footprint and the live
+  roster were never run together (`pkg/jobmeter`, `wshserver_jobpeaks.go`).
+
 - [ ] (arcterm) A dead lead is brought back (lead-dead recovery spec 2026-11-12): in a live Ask me run sitting in a
   failed plan review, `/exit` its lead → the run's Cockpit card shows "Lead down" with Relaunch lead at once, and
   `wsh runs relaunch-lead <run>` starts a lead whose first message says to revise and `wsh jarvis dag submit` again;

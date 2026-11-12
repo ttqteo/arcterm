@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/baseds"
+	"github.com/wavetermdev/waveterm/pkg/jobpeaks"
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshutil"
@@ -455,6 +456,137 @@ func TestJobSlotPastItsGiveUpTimeCountsABypass(t *testing.T) {
 	requireRun(t, nextSlotUpdate(t, ok))
 	if got := q.Snapshot().Bypassed; got != 1 {
 		t.Fatalf("bypassed = %d after an answer in time, want 1", got)
+	}
+}
+
+func openJobSlotIn(ctx context.Context, command, blockId string) chan wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate] {
+	return (&WshServer{}).JobSlotCommand(ctx, wshrpc.CommandJobSlotData{Command: command, BlockId: blockId})
+}
+
+// holdJobSlot opens a slot for command from blockId, waits for its go, and returns the one job it holds in the queue;
+// the slot is released when the test ends
+func holdJobSlot(t *testing.T, q *jobqueue.Queue, command, blockId string) jobqueue.Job {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	requireRun(t, nextSlotUpdate(t, openJobSlotIn(ctx, command, blockId)))
+	jobs := q.Snapshot().Jobs
+	if len(jobs) != 1 {
+		t.Fatalf("jobs = %+v, want the one for %q", jobs, command)
+	}
+	return jobs[0]
+}
+
+// the measured figure replaces the table's number: the largest kept peak of the command in the block's project × 1.2
+func TestJobSlotMeasuredFigureReplacesTheTable(t *testing.T) {
+	q := installQueue(t, 4)
+	store := installPeaks(t)
+	projectP := repoAt(t)
+	store.Record("task check:ts", projectP, true, testGB)
+
+	inP := holdJobSlot(t, q, "task check:ts", blockWithCwd(t, projectP))
+	if want := testGB + testGB/5; inP.Name != "task check:ts" || inP.Bytes != want || !inP.Basis.Measured || inP.Basis.Elsewhere || inP.Basis.Peaks[0] != testGB {
+		t.Fatalf("job in the measured project = %+v, want 1.2 GB measured from a 1 GB peak", inP)
+	}
+}
+
+// no entry for the command in this project, or no store at all: the table's number, not measured
+func TestJobSlotMeasuredFallsBackToTheTable(t *testing.T) {
+	q := installQueue(t, 4)
+	store := installPeaks(t)
+	projectP, projectQ := repoAt(t), repoAt(t)
+	store.Record("task check:ts", projectP, true, testGB)
+
+	// a known command measured elsewhere still gets the table's figure here
+	inQ := holdJobSlot(t, q, "task check:ts", blockWithCwd(t, projectQ))
+	if inQ.Bytes != 3*testGB || inQ.Basis.Measured || inQ.Basis.Elsewhere {
+		t.Fatalf("job in a project with no entry = %+v, want the table's 3 GB, not measured", inQ)
+	}
+}
+
+func TestJobSlotMeasuredWithoutAStoreIsTheTable(t *testing.T) {
+	q := installQueue(t, 4)
+	saved := jobpeaks.Default
+	jobpeaks.Default = nil
+	t.Cleanup(func() { jobpeaks.Default = saved })
+
+	job := holdJobSlot(t, q, "task check:ts", blockWithCwd(t, repoAt(t)))
+	if job.Bytes != 3*testGB || job.Basis.Measured {
+		t.Fatalf("job with no store = %+v, want the table's 3 GB, not measured", job)
+	}
+	// and a command the table calls light stays light
+	ch := openJobSlot(context.Background(), "make build")
+	requireRun(t, nextSlotUpdate(t, ch))
+	requireStreamClosed(t, ch)
+}
+
+// a caller that sent no block, and so no project, reads the no-project key
+func TestJobSlotMeasuredWithNoBlockUsesTheNoProjectKey(t *testing.T) {
+	q := installQueue(t, 4)
+	store := installPeaks(t)
+	store.Record("task check:ts", "", true, 2*testGB)
+	job := holdJobSlot(t, q, "task check:ts", "")
+	if want := 2*testGB + 2*testGB/5; job.Bytes != want || !job.Basis.Measured {
+		t.Fatalf("job with no block = %+v, want %d measured", job, want)
+	}
+}
+
+// a pattern learned from the store gets a slot like a command in the table; one that is not learned runs at once
+func TestJobSlotMeasuredLearnedUnknownPatternQueues(t *testing.T) {
+	q := installQueue(t, 4)
+	store := installPeaks(t)
+	projectP := repoAt(t)
+	store.Record("make build", projectP, false, 2*testGB)
+
+	// not learned: no slot, no job
+	ch := openJobSlotIn(context.Background(), "make test", blockWithCwd(t, projectP))
+	requireRun(t, nextSlotUpdate(t, ch))
+	requireStreamClosed(t, ch)
+	if n := len(q.Snapshot().Jobs); n != 0 {
+		t.Fatalf("%d jobs queued for make test, which was never learned", n)
+	}
+
+	// learned, in the project that measured it: its own figure
+	job := holdJobSlot(t, q, "make build", blockWithCwd(t, projectP))
+	if want := 2*testGB + 2*testGB/5; job.Name != "make build" || job.Bytes != want || !job.Basis.Measured || job.Basis.Elsewhere {
+		t.Fatalf("learned job = %+v, want make build at %d measured", job, want)
+	}
+}
+
+// a learned pattern that never ran in this project estimates from the project that did, and the row says so
+func TestJobSlotMeasuredLearnedPatternElsewhere(t *testing.T) {
+	q := installQueue(t, 4)
+	store := installPeaks(t)
+	projectP, projectQ := repoAt(t), repoAt(t)
+	store.Record("make build", projectP, false, 2*testGB)
+
+	job := holdJobSlot(t, q, "make build", blockWithCwd(t, projectQ))
+	if want := 2*testGB + 2*testGB/5; job.Bytes != want || !job.Basis.Measured || !job.Basis.Elsewhere {
+		t.Fatalf("job in another project = %+v, want %d measured elsewhere", job, want)
+	}
+}
+
+// the learned check is looser than the pattern: any step of a compound that is learned makes the whole command heavy
+func TestJobSlotMeasuredLearnedStepInACompoundQueues(t *testing.T) {
+	q := installQueue(t, 4)
+	store := installPeaks(t)
+	store.Record("make build", "", false, 2*testGB)
+	job := holdJobSlot(t, q, "make build && make test", "")
+	if job.Name != "make build" || !job.Basis.Measured {
+		t.Fatalf("job = %+v, want the learned step make build", job)
+	}
+}
+
+// a command the table calls light keeps its verdict whatever the store holds
+func TestJobSlotMeasuredLightProgramStaysLight(t *testing.T) {
+	q := installQueue(t, 4)
+	store := installPeaks(t)
+	store.Record("make build", "", false, 2*testGB)
+	ch := openJobSlot(context.Background(), "go test -run TestX ./pkg/x")
+	requireRun(t, nextSlotUpdate(t, ch))
+	requireStreamClosed(t, ch)
+	if n := len(q.Snapshot().Jobs); n != 0 {
+		t.Fatalf("%d jobs queued for a go test of one test", n)
 	}
 }
 

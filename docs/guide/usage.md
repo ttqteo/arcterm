@@ -219,7 +219,7 @@ Popover xếp lệnh đang chạy lên trước (lệnh chạy lâu nhất ở t
 
 | Thành phần | Ý nghĩa |
 |---|---|
-| Dòng đầu | Chấm accent (đang chạy) hoặc số thứ tự trong hàng; tên lệnh (`task check:ts`); đỉnh RAM ước tính; thời gian đã chạy, hoặc `waiting 20s` với lệnh đang chờ. |
+| Dòng đầu | Chấm accent (đang chạy) hoặc số thứ tự trong hàng; tên lệnh (`task check:ts`); đỉnh RAM hàng đợi tính cho lệnh, kèm `measured` (đo từ các lần chạy trước) hoặc `est.` (ước lượng theo bảng); thời gian đã chạy, hoặc `waiting 20s` với lệnh đang chờ. |
 | Dòng thứ hai | Nguồn của lệnh: tên agent (`an agent` khi chưa biết tên), hoặc `Run 700db4 · Verify` cho một bước của run. Lệnh đang chờ có thêm lý do: `slot busy` (mọi chỗ đang bận) hoặc `needs 3 GB, 1.1 GB free` (chưa đủ RAM). |
 | ↗ | Mở agent hoặc run đó. |
 | **Run now** | Bắt đầu ngay, bỏ qua cả số chỗ lẫn RAM. Máy có thể swap và chậm đi. |
@@ -251,7 +251,7 @@ Antigravity và lệnh Claude chạy nền (`run_in_background`) không báo lú
 
 ### Lệnh nào là nặng
 
-Lệnh được coi là nặng (ước lượng đỉnh RAM tính trên Mac Apple silicon 8 GB; đây cũng là RAM mà hàng đợi tính cho từng lệnh):
+Lệnh được coi là nặng, kèm ước lượng đỉnh RAM tính trên Mac Apple silicon 8 GB. Bảng này chỉ là số **dự phòng**: hàng đợi dùng nó cho một lệnh chưa được đo, còn khi đã đo thì số đo thay thế (xem "Hàng đợi tự học đỉnh RAM" bên dưới):
 
 | Lệnh | RAM ước tính |
 |---|---|
@@ -263,6 +263,18 @@ Lệnh được coi là nặng (ước lượng đỉnh RAM tính trên Mac Appl
 | `npm install` (và `task init`) | 1 GB |
 
 Một file test đơn lẻ hoặc lọc theo tên (`-run`, `-t`) là nhẹ và không bao giờ xếp hàng. Bảng lệnh nằm trong `pkg/memgate/memgate.go`.
+
+### Hàng đợi tự học đỉnh RAM
+
+Số trong bảng là một lần đo trên một máy, nên `task check:ts` tính 3 GB cả trên repo nhỏ, còn `make build` hay `gradle build` không có trong bảng thì không bao giờ xếp hàng. Vì vậy arcterm học đỉnh RAM thật của từng lệnh:
+
+- **Đo.** Khi một lệnh Bash của agent Claude chạy, wavesrv cộng RAM của cả cây tiến trình của lệnh đó mỗi ~2 giây và giữ số lớn nhất làm đỉnh của lần chạy. Lệnh kết thúc trước lần đo đầu tiên thì không được ghi.
+- **Dùng số đo.** Với mỗi cặp (lệnh, dự án), arcterm giữ đỉnh của 5 lần chạy gần nhất; lần sau hàng đợi tính **số lớn nhất trong đó × 1,2**. Lấy số lớn nhất chứ không lấy trung bình, vì tính thiếu thì máy swap, còn tính thừa chỉ chờ lâu hơn một chút. Chưa đo lần nào thì dùng số trong bảng. Dự án là thư mục git gốc của agent; worktree của một run tính về checkout chính, nên các lần chạy của run dùng lại số đã đo.
+- **Lệnh ngoài bảng.** Lệnh có chương trình mà bảng không có quy tắc (`make build`, `gradle build`, `mvn package`; khóa là chương trình cùng từ đầu tiên không phải cờ) mà một lần chạy đo được **từ 1 GB trở lên** thì từ lần sau xếp hàng như lệnh trong bảng; wavesrv ghi danh sách đó vào `~/.arc/jobslot-learned.json` để `wsh jobslot` biết mà không phải hỏi từng lệnh. Lệnh học được mà 5 lần chạy gần nhất ở mọi dự án đều dưới 1 GB, hoặc 30 ngày không chạy, thì trở lại nhẹ. Dự án chưa chạy lệnh đó lần nào dùng số lớn nhất đo được ở dự án khác. Lệnh mà chương trình đã có trong bảng (`go test -run X`) giữ nguyên kết luận của bảng.
+- **Lệnh trong bảng luôn xếp hàng**, dù số đo nhỏ đến đâu: ở chế độ Auto hàng đợi còn giới hạn số lệnh nặng theo CPU, mà các lệnh này ngốn nhiều CPU.
+- **Popover cho biết nguồn của số.** Sau RAM của mỗi hàng là `measured` (số đo) hoặc `est.` (ước lượng theo bảng); rê chuột vào RAM để xem quy tắc và các lần chạy đã đo.
+- **Không đo được.** Lệnh của pi và Antigravity không được đo (chỉ lệnh Bash của Claude Code được đo), nhưng chúng vẫn dùng số Claude đã đo cho cùng lệnh và dự án; Codex và OpenCode không đi qua hàng đợi. Lệnh ghép nhiều bước nặng (`make build && pnpm test`) không được ghi vì không chia được đỉnh của cây tiến trình; lệnh qua công cụ PowerShell và các bước Setup, Verify, Final của run vẫn dùng số trong bảng.
+- **Nơi lưu.** Đỉnh nằm trong `jobpeaks.json` ở thư mục dữ liệu của app. Chỉ app đã cài hook toàn cục mới ghi `~/.arc/jobslot-learned.json`; app dev (worktree) giữ những gì nó học trong thư mục dữ liệu riêng.
 
 Ngoài hàng đợi, arcterm cảnh báo sớm hơn: hộp thoại **New** ghi rõ khi RAM trống không đủ cho thêm một agent hay worker (vẫn cho chạy), và các bộ chỉnh số worker của run cảnh báo khi bạn chọn nhiều hơn số RAM chứa được.
 

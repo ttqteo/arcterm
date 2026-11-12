@@ -49,6 +49,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   empty days back to the window's start (By work still spans the window); Blame (`b` or its button) in Preview or Diff
   no longer switches the file to Source; a path just before an ellipsis ("Editing src/foo.ts…") is a link again; and
   an `@` typed into Ctrl+P on Code searches paths again — Alt+O still opens the open file's symbols.
+- The heavy-job queue learns what a job really takes. Once a Claude agent has run `task check:ts` or another heavy
+  command, the queue plans its next run on the largest of its last 5 peaks plus 20%, in that project, instead of a fixed
+  estimate, so a small repo no longer claims 3 GB. A build the queue did not know (`make build`, `gradle build`) that
+  peaks at 1 GB or more starts queueing from its next run. The Jobs popover says whether a row's RAM is measured or an
+  estimate (est.), and its tooltip names the runs behind it.
 
 ### Fixed
 

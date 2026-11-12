@@ -78,7 +78,12 @@ Other useful commands:
   exits; the permission check still reads the command as written. The engine's Verify,
   Final and heavy Setup queue too. A command the person skipped from the Jobs popover comes back "Not run: …": don't
   retry it — carry on and report it skipped. The commands and their RAM estimates are one table in
-  `pkg/memgate/memgate.go`; a single test file or `-run` filter is light and never queues.
+  `pkg/memgate/memgate.go`, the fallback: wavesrv measures each Claude Bash command's process-tree peak
+  (`pkg/jobmeter`), keeps the last 5 per command pattern and project in `jobpeaks.json` in the data dir
+  (`pkg/jobpeaks`) and admits the next run on the largest × 1.2, so a measured peak replaces the table's number; an
+  unknown command (`make build`) measured at 1 GB or more queues too, which wavesrv tells `wsh jobslot` through
+  `~/.arc/jobslot-learned.json` (written only by a wavesrv that installs the global hooks, not a dev app). A single test
+  file or `-run` filter is light and never queues.
 - **A subagent or workflow spawn can come back "Not run: …".** The Claude mod asks `wsh tokengate` before every
   `Agent`, `Task` or `Workflow` call; a costly one (a big share of the 5h window, a full window, 3+ agents, a
   workflow) waits on a Token burn card. A refusal is the person's call for the rest of that prompt: don't retry
