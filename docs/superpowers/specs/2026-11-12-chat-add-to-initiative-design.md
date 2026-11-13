@@ -84,9 +84,13 @@ picker: the project's come first and typing filters them all.
 - **From a message: the editor, open.** The whole message is filled in and nearly always needs trimming, so the card
   opens straight in the editor, kind `Note`, with `Add note` and `Cancel`.
 - Agent's call (builder question 2): a card started from a message is anchored where it opened, after the last
-  transcript entry at that moment, and stays there as the agent goes on replying; its ✓ or Dismissed row takes that
-  place. Several can be open at once, one per `Add to initiative…`. Its draft (kind, text, target) persists in
+  transcript entry at that moment, and stays there as the agent goes on replying; its ✓ row takes that place once it
+  is added. Several can be open at once, one per `Add to initiative…`. Its draft (kind, text, target) persists in
   `localStorage` with its record, so a reload or a switch between Chat, Terminal and Brainstorm keeps the trimmed text.
+- Builder decision (plan decision 7): Cancel on a card opened from a message removes it: no row, no result line, its
+  draft dropped. The agent never proposed it, so telling it "dismissed" is noise, and a faint row for something the
+  person changed their mind about clutters the conversation. Only Added folds such a card to its ✓ row (and queues
+  its line). A card the agent proposed keeps its Dismiss, which leaves the faint row and queues the line (section 6).
 - Builder question 3 (the person's answer): a waiting card raises no new signal outside Chat. The turn that carried
   it already marks the agent unread (the Agent nav badge, `unreadagents.ts`), so nothing is wired into `navrail.tsx`
   or the cockpit's Needs you.
@@ -116,19 +120,35 @@ nothing is added to wavesrv. Outside Chat (the terminal view) the block reads as
 
 ### 6. Folded rows (answer 4; board `fold-rows.dc.html`)
 
-- After Add the card folds, on the spring, into one ✓ row at its place: `✓ Note added · <initiative> › <chunk> —
-  <text clipped>` (or `Chunk added`, `Initiative created`), with `Open ↗`. A click opens the initiative through
-  `openref.ts`.
-- After Dismiss it leaves one faint row: `✕ Dismissed · <kind> for <initiative>` (for a new initiative, its title and
-  topic).
-- Both stay in the conversation.
+- After Add the card folds, on the spring, into one ✓ row at its place, with `Open ↗`. A click opens the initiative
+  through `openref.ts`. Builder decision (plan decision 8): the wording follows the board `fold-rows.dc.html`:
+  `Note added · <initiative> › <chunk number> — <text>`, `Chunk added · <initiative> › <new chunk's number> —
+  <label>`, `Initiative created · “<title>” under <topic>` (not on a board; `under …` is left out with no topic). The
+  text after `—` is clipped by CSS to one line.
+- After Dismiss it leaves one faint row: `✕ Dismissed · <note|chunk> for <initiative>`, or, for a new initiative,
+  `✕ Dismissed · new initiative “<title>” under <topic>` (same decision).
+- Builder decision (plan decision 7): Cancel on a card opened from a message leaves no row and sends no line
+  (section 3). Only a card the agent proposed has a Dismissed row.
+- Both rows stay in the conversation.
 
 ### 7. How the agent learns the outcome (answer 7)
 
 Arc does not send anything at Add or Dismiss, which would wake an idle agent for a turn. It keeps the outcome and
-prepends one line to the next message the person sends that agent: `initiative: added note to <initiative> ›
-<chunk>`, or `initiative: dismissed <kind> for <initiative>`, one line per card handled since the last message. Chat
-strips these lines from the person's bubble. If the person sends nothing more, the agent never hears, which is fine.
+prepends one line per card handled since the last message to the next message the person sends that agent, then one
+blank line, then the person's text. Builder decision (plan decision 6): the formats, one line each, in the order
+handled:
+
+- `initiative: added note to <title> (effort:<oid>) › <chunk>`
+- `initiative: added chunk "<label>" to <title> (effort:<oid>)`
+- `initiative: created initiative <title> (effort:<new oid>) under <topic title>` (the `under` part is left out with
+  no topic)
+- `initiative: dismissed <note|chunk|initiative> for <title>` (the initiative's title, or the new one's title)
+
+The oid lets the agent act on the initiative with `wsh effort` without searching. Chat strips from the person's
+bubble a leading run of lines matching `^initiative: (added|created|dismissed) ` plus the blank line after it, nothing
+else. A message carrying lines is a multi-line message, so Claude Code stores it wrapped whole in `<pasted_content>`:
+the stripper unwraps that paste first, then strips. If the person sends nothing more, the agent never hears, which is
+fine.
 
 Agent's call (builder question 1): only a plain message sent from Chat's box carries the line, so the hook sits in
 `chatcomposer.tsx`, not in `useAgentSend`. A slash command (`/compact`…), `/btw`, a wake send, and a brainstorm answer
@@ -156,10 +176,15 @@ holds), and a line in front of a slash command breaks the command.
   its hover buttons. It opens the card at the end of the conversation, in the editor, kind Note, the text clipped to
   200 characters if the kind is switched to chunk.
 - Added / Dismissed and the pending result lines persist in `localStorage` (as `chat.brainstorm.sent` does), so folded
-  rows survive a reload and a handled card never comes back. Agent's call (builder question 4): a block's handled
-  record is keyed by a hash of the block's content and its position in the transcript, not by agent id. A fork made
-  with Fork from here then sees the cards it copied as already handled, and never writes them a second time. The
-  pending result lines stay keyed by agent id.
+  rows survive a reload and a handled card never comes back. Builder decision (plan decision 1, replacing "content and
+  its position in the transcript" of the agent's call on builder question 4): a block's handled record is keyed by a
+  hash of the block's content alone (the parsed object re-serialised with sorted keys, so whitespace does not split a
+  key), not by agent id. The reason for the key is that a fork made with Fork from here must see the cards it copied as
+  handled, and never write them a second time. A position does not survive a fork (wavesrv cuts the transcript and
+  Claude's `--fork-session` writes a new session file, so neither the entry index nor, provably, the record uuid is
+  the same) nor a Chat window that loads earlier entries; content does. The cost: an agent that writes the very same
+  block again (after a Dismiss, say) sees it drawn as the handled row and is not told again, so the skill tells it to
+  word a new proposal differently. The pending result lines stay keyed by agent id.
 - A failed write (wavesrv refuses it) shows its reason on the card with `Try again`; the card does not fold.
 - An agent that has exited turns a waiting card static (no amber dot); its Add still works, since the write needs no
   agent.
@@ -169,6 +194,17 @@ holds), and a line in front of a slash command breaks the command.
 
 Chat's UI strings stay English, as the rest of Chat: `Add to initiative`, `Waiting on you`, `Change…`, `Add note`,
 `Edit`, `Dismiss`, `Note added`, `Dismissed`. The user's content (titles, labels, notes) shows as written.
+
+## Deviations
+
+Controls the build added that the boards do not show (builder decisions, recorded by the run's lead):
+
+- **Cancel in the editor of a card the agent proposed** (beside the verb and Dismiss). It is the only way back from
+  `Edit`: it closes the editor to the compact card the agent proposed and drops the edited draft. Without it, a person
+  who opened Edit to look could only add or dismiss. A card opened from a message keeps its own Cancel (§3: it goes,
+  leaving no row).
+- **`No topic` in the `Under` row**, shown once a topic is chosen. It is the only way to undo a topic choice and create
+  an initiative with no parent, which §6's row already words for (`under …` is left out with no topic).
 
 ## Testing
 

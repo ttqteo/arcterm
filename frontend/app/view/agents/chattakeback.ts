@@ -9,6 +9,7 @@
 // The keys and the screen are chattakebackstore.ts's; these are the rules.
 
 import type { AgentEntry, AgentState } from "./agentsviewmodel";
+import { stripResultLines } from "./chatinitiative";
 import type { PendingMessage } from "./chatpending";
 
 /** What a key takes back: `queued`, the messages sent while Claude worked (↑ in Claude Code's box); `interrupt`, the
@@ -46,7 +47,8 @@ export function takeBackPlan(
     }
     const last = entries?.[entries.length - 1];
     if (last?.kind === "user") {
-        return { kind: "interrupt", ids: [], texts: [last.text] };
+        // what comes back into the box is what the person wrote: the result lines Arc put in front of it are not theirs
+        return { kind: "interrupt", ids: [], texts: [stripResultLines(last.text)] };
     }
     return null;
 }

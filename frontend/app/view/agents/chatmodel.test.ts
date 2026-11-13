@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AgentActionEntry, AgentEntry, EditFile } from "./agentsviewmodel";
+import { withResultLines } from "./chatinitiative";
 import {
     bashMode,
     canSendNow,
@@ -74,6 +75,18 @@ describe("chatItems", () => {
 
     it("turns an empty transcript into no items", () => {
         expect(chatItems([])).toEqual([]);
+    });
+
+    it("shows only what the person wrote when their message carried initiative result lines (result line)", () => {
+        const sent = withResultLines(["initiative: added note to Auth (effort:ab12) › 2"], "now the tests");
+        const wrapped = `<pasted_content id="45ce">\n${sent}\n</pasted_content id="45ce">`;
+        for (const text of [sent, wrapped]) {
+            const items = chatItems([{ kind: "user", text, uuid: "u1" }, says("ok")]);
+            expect(items[0]).toMatchObject({ kind: "you", text: "now the tests", uuid: "u1" });
+        }
+        // a message that only mentions `initiative:` mid-text is left alone
+        const mention = "see below\ninitiative: added by hand";
+        expect(chatItems([you(mention)])[0]).toMatchObject({ kind: "you", text: mention });
     });
 
     it("gives a plain exchange one 'you' and one agent group of prose, work, files, prose", () => {

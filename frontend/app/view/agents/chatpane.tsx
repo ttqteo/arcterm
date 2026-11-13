@@ -725,6 +725,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                             onBoxState={setBoxNow}
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
                             onSendNow={queuedShown ? sendNow : undefined}
+                            questionWaits={boxPlaceholderOverride(card) != null}
                             onLocal={(route) => {
                                 if ("open" in route) {
                                     openDiff(model, agentDiffScope(agent.id, agent.name));
