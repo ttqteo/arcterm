@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tuiMode, tuiPermissionOptions } from "./tuiscreen";
+import { tuiEffort, tuiMode, tuiPermissionOptions } from "./tuiscreen";
 import fixtures from "./tuiscreen.fixtures.json";
 
 // every screen here was captured off Claude Code 2.1.319 (tuiscreen.fixtures.json), not written by hand
@@ -34,6 +34,29 @@ describe("tuiMode", () => {
     });
     it("matches case-insensitively", () => {
         expect(tuiMode(["❯", "  ⏸ PLAN MODE ON (shift+tab to cycle)"])).toBe("plan");
+    });
+});
+
+describe("tuiEffort", () => {
+    it("reads the effort line over the input box", () => {
+        expect(tuiEffort(fixtures.bypass)).toBe("medium");
+    });
+    it("is null when the line does not show", () => {
+        expect(tuiEffort(fixtures.idle)).toBeNull();
+        expect(tuiEffort([])).toBeNull();
+    });
+    it("reads every level by its glyph's line", () => {
+        for (const [glyph, level] of [
+            ["○", "low"],
+            ["●", "high"],
+            ["◉", "xhigh"],
+            ["◈", "max"],
+        ]) {
+            expect(tuiEffort([`        ${glyph} ${level} · /effort`, "─".repeat(40), "❯", "─".repeat(40)])).toBe(level);
+        }
+    });
+    it("ignores an effort line quoted mid-row in the conversation", () => {
+        expect(tuiEffort(["it showed ◐ medium · /effort then", "❯"])).toBeNull();
     });
 });
 

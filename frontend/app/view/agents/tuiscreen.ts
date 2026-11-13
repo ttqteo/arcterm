@@ -1,8 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Reads two things off the rows of Claude Code's own screen (the xterm that stays mounted under the chat view):
-// the permission mode its footer names, and the numbered options of a permission dialog. Pure: the rows come in as
+// Reads three things off the rows of Claude Code's own screen (the xterm that stays mounted under the chat view):
+// the permission mode its footer names, the effort its effort line names, and the numbered options of a permission
+// dialog. Pure: the rows come in as
 // strings, the caller (the chat's footer and permission card) reads them with readTermLines.
 //
 // Every marker below is a string captured from Claude Code 2.1.319 (tuiscreen.fixtures.json), never written from
@@ -10,6 +11,8 @@
 // last mode it read.
 
 export type ClaudeMode = "default" | "acceptEdits" | "plan" | "auto" | "bypassPermissions";
+
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface TuiOption {
     n: number;
@@ -44,6 +47,27 @@ export function tuiMode(lines: string[]): ClaudeMode | null {
         const m = modeFooter.exec(lines[i]);
         if (m) {
             return modeByWords[m[1].toLowerCase()];
+        }
+    }
+    return null;
+}
+
+// The effort line Claude Code draws over the input box for a while after the effort changes, right-aligned: a glyph
+// per level (○ low, ◐ medium, ● high, ◉ xhigh, ◈ max, from Claude Code 2.1.323's own table), the level, then
+// "· /effort" (e.g. "◐ medium · /effort"). Anchored at the row's end, so a line quoted mid-row never counts.
+const effortLine = /[○◐●◉◈]\s+(low|medium|high|xhigh|max)\b[^·]*·\s*\/effort\s*$/i;
+
+// the effort the line over the box names, or null when it does not show
+export function tuiEffort(lines: string[]): EffortLevel | null {
+    let seen = 0;
+    for (let i = lines.length - 1; i >= 0 && seen < footerRows; i--) {
+        if (lines[i].trim() === "") {
+            continue;
+        }
+        seen++;
+        const m = effortLine.exec(lines[i]);
+        if (m) {
+            return m[1].toLowerCase() as EffortLevel;
         }
     }
     return null;

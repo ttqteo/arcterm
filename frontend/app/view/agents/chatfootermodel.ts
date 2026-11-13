@@ -4,7 +4,7 @@
 // The words of the chat box's footer: the agent's model, how full its context is, and the permission mode Claude Code
 // shows on its own footer (read by tuiscreen.ts). Pure; chatfooter.tsx draws them.
 
-import type { ClaudeMode } from "./tuiscreen";
+import type { ClaudeMode, EffortLevel } from "./tuiscreen";
 
 const modeLabels: Record<ClaudeMode, string> = {
     default: "Default",
@@ -48,21 +48,43 @@ export function footerParts(
     return parts;
 }
 
-// The model menu's choices: Claude Code's `/model <alias>` switches without opening its own menu.
-export const MODEL_CHOICES: { alias: string; label: string }[] = [
-    { alias: "opus", label: "Opus" },
-    { alias: "sonnet", label: "Sonnet" },
-    { alias: "haiku", label: "Haiku" },
+// The model menu's choices, newest family first. A pick types `/model <id>` with the full model id, which Claude Code
+// switches to without opening its own menu (a family alias like `fable` may not exist in every Claude Code version).
+export type ModelFamily = "fable" | "opus" | "sonnet" | "haiku";
+
+export const MODEL_CHOICES: { alias: ModelFamily; id: string; label: string; note: string }[] = [
+    { alias: "fable", id: "claude-fable-5-2", label: "Fable 5.2", note: "Newest, for the hardest work" },
+    { alias: "opus", id: "claude-opus-5-5", label: "Opus 5.5", note: "Deep reasoning, long tasks" },
+    { alias: "sonnet", id: "claude-sonnet-5-5", label: "Sonnet 5.5", note: "Fast and capable, everyday work" },
+    { alias: "haiku", id: "claude-haiku-5-5", label: "Haiku 5.5", note: "Fastest, for light tasks" },
 ];
 
-/** The alias of the model the agent runs, read off its model name, or null when none matches. */
-export function currentModelAlias(model: string | undefined): string | null {
+/** The family of the model the agent runs, read off its model name, or null when none matches. */
+export function currentModelAlias(model: string | undefined): ModelFamily | null {
     const m = (model ?? "").toLowerCase();
     return MODEL_CHOICES.find((c) => m.includes(c.alias))?.alias ?? null;
 }
 
-export function modelCommand(alias: string): string {
-    return `/model ${alias}`;
+export function modelCommand(id: string): string {
+    return `/model ${id}`;
+}
+
+// The effort menu's choices, with the glyph Claude Code draws for each. A pick types `/effort <level>`; a level the
+// model does not take is answered by Claude Code itself.
+export const EFFORT_CHOICES: { level: EffortLevel; label: string; glyph: string; note: string }[] = [
+    { level: "low", label: "Low", glyph: "○", note: "Quick answers, fewest tokens" },
+    { level: "medium", label: "Medium", glyph: "◐", note: "Balanced speed and depth" },
+    { level: "high", label: "High", glyph: "●", note: "Thinks longer on hard steps" },
+    { level: "xhigh", label: "Extra high", glyph: "◉", note: "Deeper reasoning, slower" },
+    { level: "max", label: "Max", glyph: "◈", note: "The most thinking it allows" },
+];
+
+export function effortChoice(level: EffortLevel) {
+    return EFFORT_CHOICES.find((c) => c.level === level)!;
+}
+
+export function effortCommand(level: EffortLevel | "auto"): string {
+    return `/effort ${level}`;
 }
 
 // The modes the menu offers. Bypass permissions is left out: Claude Code puts it in the cycle only when it was enabled.

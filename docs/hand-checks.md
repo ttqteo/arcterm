@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The model menu in Chat: click the model chip under a Claude agent's chat box → four rows (Fable 5.2,
+  Opus 5.5, Sonnet 5.5, Haiku 5.5), each with a tinted icon and a note, a check on the running one; pick Fable →
+  Claude Code gets `/model claude-fable-5-2` and the chip turns to the sparkles icon. Agent surface, Chat.
+- [ ] (arcterm) The Effort chip in Chat: beside the model chip, click Effort → Low…Max and Auto, each with a bar meter;
+  pick High → Claude Code gets `/effort high`, the chip reads High with three of its five bars lit, and stays High after the
+  `◐ … · /effort` line over Claude Code's box goes away. Agent surface, Chat.
 - [ ] (arcterm) Esc stops a Claude agent's turn in Chat: while it works, press Esc in the chat box → the turn stops
   (as Esc in Claude Code); again with a message showing Queued → the turn stops and the message comes back into the
   box; again with the focus out of the box (click in the conversation) → the turn stops, no jump to the Cockpit; once
