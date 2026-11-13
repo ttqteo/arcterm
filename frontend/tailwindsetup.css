@@ -750,10 +750,16 @@ svg [aria-label="tip"] g path {
     opacity: 0.28;
 }
 
-/* While a triple-click's button is down in rendered Markdown (selectiontrim.ts holdTripleClick), no selection is
-   painted: WebKit has picked the paragraph and its break already, and the release trims it before it shows. */
-html[data-picking-paragraph] ::selection {
+/* Rendered Markdown draws its own text selection (selectionpaint.ts): while the selection takes any of it in, the
+   engine paints none, since WebKit fills the margins, the line ends and the list markers it passes over. A band is
+   one line of selected text at the line's full height, laid over the text. */
+html[data-md-selection] ::selection,
+html[data-md-selection]::selection {
     background-color: transparent;
+}
+.md-selection-band {
+    position: absolute;
+    background-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
 }
 
 /* Agents-view narration markdown (see markdownmessage.tsx). Neutral overlays, not palette hex. */

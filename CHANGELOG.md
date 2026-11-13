@@ -31,6 +31,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A resume of a past session picked in New is held too while the machine is busy, and Start now picks the same
   session up. Every held agent now says so in a toast, with Open to go to it.
 
+### Fixed
+
+- Selecting text in Chat on a Mac highlights only the text you pick, one band per line as on Windows: no fill running
+  to the column's edge or across the gaps between paragraphs, no boxes around list numbers and bullets, and no dark
+  strips between the lines of a wrapped paragraph.
+
 ## 1.1.2 — 2026-11-14
 
 ### Added
