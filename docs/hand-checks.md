@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Hologram amber only on a question: with Settings → Jarvis → Form on Hologram, leave a gate or a run to
+  land in Jarvis's queue and no agent asking → the corner keeps its rings; have an agent ask (`wsh ask`, or a
+  permission prompt) → it turns to the amber sphere, and back once answered (`frontend/app/view/jarvis/hologramview.tsx`,
+  bb05a685b).
 - [ ] (arcterm) Mac shortcut labels: on a Mac, hover Code's wrap button (⌥Z) and Send review (⌥⇧M), a Claude agent's
   Chat brainstorm card (Open in Brainstorm ⌥C), the Diff commit button (⌘⏎), the chat + menu (Add files ⌘U), the
   tool picker on a missing tool (⌘I), the brainstorm hint strip (⌃⇧B) and the Jarvis tour's Initiatives steps (⌥↑ /
