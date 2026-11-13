@@ -567,7 +567,10 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 		}()
 		for ic := range shellInputCh {
 			if len(ic.InputData) > 0 {
-				shellProc.Cmd.Write(ic.InputData)
+				// a failed or short write loses typed input with no other trace (the RPC that queued it has returned)
+				if nw, err := shellProc.Cmd.Write(ic.InputData); err != nil || nw < len(ic.InputData) {
+					log.Printf("[input] block %s: pty write %d of %d bytes: %v\n", bc.BlockId, nw, len(ic.InputData), err)
+				}
 			}
 			if ic.TermSize != nil {
 				updateTermSize(shellProc, bc.BlockId, *ic.TermSize)

@@ -6,6 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A Chat send that never reaches Claude Code comes back: while a Claude agent works, send a message from
+  Chat → it shows Queued and, once the turn ends, lands in the conversation (the normal path, unchanged). To see the
+  failure path, make the PTY refuse input (stop the agent's process from Task Manager, then send) → a "Message to … not
+  sent" toast, no Queued bubble, the text and its file chips back in the box, and a `[chat-send] fail` line in
+  `waveapp.log`. Watch for a false failure: a message that does show in the Terminal's box but was toasted as not sent
+  (`typedEcho` read the box as empty for 8 s). Agent surface, Chat. Unit-tested and typechecked only (`agentsubmit.ts`,
+  `chatpending.ts` `echoStep`/`sendFailure`, `chattakeback.ts` `typedEcho`).
 - [ ] (arcterm) The model menu in Chat: click the model chip under a Claude agent's chat box → four rows (Fable 5.2,
   Opus 5.5, Sonnet 5.5, Haiku 5.5), each with a tinted icon and a note, a check on the running one; pick Fable →
   Claude Code gets `/model claude-fable-5-2` and the chip turns to the sparkles icon. Agent surface, Chat.

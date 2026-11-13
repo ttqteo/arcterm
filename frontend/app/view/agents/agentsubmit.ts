@@ -5,12 +5,13 @@
 // is long), then, once the box shows it, Enter as a write of its own (chatpending.ts submitSteps says why). Every place that sends a prompt, a
 // slash command or a nudge goes through it, never a "text\r" in one write.
 
+import { getApi } from "@/app/store/global";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { pasteIntoTerm, readTermLines } from "@/app/view/term/termpaste";
 import { stringToBase64 } from "@/util/util";
-import { ECHO_WAIT_MAX_MS, submitSteps } from "./chatpending";
-import { boxShowsTyped } from "./chattakeback";
+import { echoStep, sendFailLogLine, sendFailure, SubmitError, submitSteps, type SubmitStage } from "./chatpending";
+import { typedEcho } from "./chattakeback";
 
 const ECHO_POLL_MS = 40;
 const ECHO_SCREEN_ROWS = 40;
@@ -21,42 +22,72 @@ function typeRaw(blockId: string, data: string): Promise<void> {
     return RpcApi.ControllerInputCommand(TabRpcClient, { blockid: blockId, inputdata64: stringToBase64(data) });
 }
 
-// Waits until the agent's box shows `text`, at most ECHO_WAIT_MAX_MS. Returns at once when there is nothing to read (no
-// mounted terminal, no box on screen): the fixed wait before it is all a send has then.
+// a step's error as the SubmitError of its stage
+async function atStage(stage: SubmitStage, run: () => Promise<void> | void): Promise<void> {
+    try {
+        await run();
+    } catch (e) {
+        throw e instanceof SubmitError ? e : new SubmitError(stage, e instanceof Error ? e.message : String(e));
+    }
+}
+
+// Waits until the agent's box shows `text` (chatpending.ts echoStep): Enter at once when it does or when there is
+// nothing to read (no mounted terminal, no box on screen), after ECHO_WAIT_MAX_MS on a box holding something else, and
+// a failure, with no Enter, when the box stays empty: the text never reached Claude Code.
 async function waitForEcho(blockId: string, text: string): Promise<void> {
-    const until = Date.now() + ECHO_WAIT_MAX_MS;
+    const start = Date.now();
     for (;;) {
-        const lines = readTermLines(blockId, ECHO_SCREEN_ROWS);
-        if (lines == null || boxShowsTyped(lines, text) !== false || Date.now() >= until) {
+        const step = echoStep(typedEcho(readTermLines(blockId, ECHO_SCREEN_ROWS), text), Date.now() - start);
+        if (step === "enter") {
             return;
+        }
+        if (step === "fail") {
+            throw new SubmitError("echo", "Claude Code's box stayed empty");
         }
         await sleep(ECHO_POLL_MS);
     }
 }
 
+function logFailure(blockId: string, text: string, e: unknown): void {
+    try {
+        getApi().sendLog(sendFailLogLine(blockId, text, sendFailure(e)));
+    } catch {
+        // a log line must never hide the send's own error
+    }
+}
+
 /** Types `text` into the agent's terminal and presses Enter. A paste goes through the mounted terminal (which brackets it
- *  when the program asked for that); with none mounted it is bracketed here, as the backend's typeWake does. */
+ *  when the program asked for that); with none mounted it is bracketed here, as the backend's typeWake does. Rejects with
+ *  a SubmitError naming the step that failed, written to waveapp.log first: a caller that only fires and forgets still
+ *  leaves a trace. */
 export async function submitToAgent(blockId: string, text: string): Promise<void> {
-    for (const step of submitSteps(text)) {
-        switch (step.kind) {
-            case "type":
-                await typeRaw(blockId, step.text);
-                break;
-            case "paste":
-                if (!pasteIntoTerm(blockId, step.text)) {
-                    await typeRaw(blockId, "\x1b[200~" + step.text + "\x1b[201~");
-                }
-                break;
-            case "wait":
-                await sleep(step.ms);
-                if (step.echo != null) {
-                    await waitForEcho(blockId, step.echo);
-                }
-                break;
-            case "enter":
-                await typeRaw(blockId, "\r");
-                break;
+    try {
+        for (const step of submitSteps(text)) {
+            switch (step.kind) {
+                case "type":
+                    await atStage("type", () => typeRaw(blockId, step.text));
+                    break;
+                case "paste":
+                    await atStage("type", async () => {
+                        if (!pasteIntoTerm(blockId, step.text)) {
+                            await typeRaw(blockId, "\x1b[200~" + step.text + "\x1b[201~");
+                        }
+                    });
+                    break;
+                case "wait":
+                    await sleep(step.ms);
+                    if (step.echo != null) {
+                        await waitForEcho(blockId, step.echo);
+                    }
+                    break;
+                case "enter":
+                    await atStage("enter", () => typeRaw(blockId, "\r"));
+                    break;
+            }
         }
+    } catch (e) {
+        logFailure(blockId, text, e);
+        throw e;
     }
 }
 

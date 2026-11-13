@@ -1,16 +1,19 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { pushToast } from "@/app/cockpit/notificationstore";
+import { globalStore } from "@/app/store/jotaiStore";
 import { cn, fireAndForget } from "@/util/util";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { wakeAgent, wakeErrorToast } from "./agentsleep";
 import { askBtw, submitToAgent } from "./agentsubmit";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
 import { withResultLines } from "./chatinitiative";
-import { btwQuestion } from "./chatpending";
+import { btwQuestion, sendFailure, type SendFailure } from "./chatpending";
+import { mergeTaken } from "./chattakeback";
 import { messageWithAttachments, type Attachment } from "./composerattachments";
 import { useFallingAsleep, type FallAsleepPhase } from "./fallasleepstore";
-import { setWakeDraft, useWakeDraft, useWaking } from "./wakingstore";
+import { setWakeDraft, useWakeDraft, useWaking, wakeDraftsAtom } from "./wakingstore";
 
 // one line at 12px (rows={1}: the default two rows would set the floor instead); it grows as text wraps
 const ComposerMinH = 32;
@@ -73,8 +76,11 @@ export interface AgentSend {
     fallingAsleep: FallAsleepPhase | undefined;
     /** Sends the box. Answers whether it did (false when `canSend` is not); the box's text is cleared by it, the
      *  attachments' tray is the caller's. `lines`, when given, go in front of the message on the wire (chatinitiative.ts
-     *  withResultLines): the box, and everything the caller keeps of the message, stay the person's own text. */
-    send: (lines?: readonly string[]) => boolean;
+     *  withResultLines): the box, and everything the caller keeps of the message, stay the person's own text. A send that
+     *  fails after it was taken (submitToAgent rejects) is toasted, and its text put back ahead of what the box holds
+     *  when none of it reached Claude Code (chatpending.ts sendFailure); `onFailed` then tells the caller, which puts back
+     *  what it let go of (the pending bubble, the attachments, the result lines). */
+    send: (lines?: readonly string[], onFailed?: (f: SendFailure) => void) => boolean;
 }
 
 // Sends free text to an agent's terminal block (submitToAgent: the text, then Enter on its own). A sleeping agent has no process to type into: given
@@ -112,7 +118,15 @@ export function useAgentSend(
     const fallingAsleep = useFallingAsleep(agent?.id, agent?.sleeping != null);
     const message = messageWithAttachments(text.trim(), attachments ?? []);
     const canSend = canSendComposer(message, blockId) && !waking && fallingAsleep == null;
-    const send = (lines?: readonly string[]): boolean => {
+    // a failed send's text back in the box, ahead of what was typed since (read from the store, not this render's text)
+    const putBack = (t: string) => {
+        if (draftId != null) {
+            setWakeDraft(draftId, mergeTaken([t], globalStore.get(wakeDraftsAtom).get(draftId) ?? ""));
+        } else {
+            setLocalText((cur) => mergeTaken([t], cur));
+        }
+    };
+    const send = (lines?: readonly string[], onFailed?: (f: SendFailure) => void): boolean => {
         if (!canSend) {
             return false;
         }
@@ -142,7 +156,24 @@ export function useAgentSend(
             });
         } else {
             // the wire text carries the result lines; `message` stays the person's own (a /btw never has any)
-            fireAndForget(() => submitToAgent(target, withResultLines(lines ?? [], message)));
+            const own = text.trim();
+            const name = agent?.name;
+            fireAndForget(async () => {
+                try {
+                    await submitToAgent(target, withResultLines(lines ?? [], message));
+                } catch (e) {
+                    const f = sendFailure(e);
+                    if (f.restore && own !== "") {
+                        putBack(own);
+                    }
+                    pushToast({
+                        title: name ? `Message to ${name} not sent` : "Message not sent",
+                        message: f.message,
+                        level: "error",
+                    });
+                    onFailed?.(f);
+                }
+            });
         }
         setText("");
         return true;

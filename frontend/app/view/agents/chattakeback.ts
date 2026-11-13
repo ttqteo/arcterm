@@ -115,6 +115,27 @@ export function boxShowsTyped(lines: string[], text: string): boolean | null {
     return tail === "" || box.includes(tail);
 }
 
+/** What Claude Code's box shows of a text a send just typed: `shown`, all of it (boxShowsTyped); `absent`, the box is on
+ *  screen and empty, so none of it has reached Claude Code yet; `other`, the box holds something that is not the text
+ *  (part of it, a draft, a bash-mode prompt drawn its own way); `unknown`, no screen or no box to read. Only `absent`
+ *  says the text is missing: anything else in the box may be how it draws the text. */
+export type TypedEcho = "shown" | "absent" | "other" | "unknown";
+
+export function typedEcho(lines: string[] | null, text: string): TypedEcho {
+    if (lines == null) {
+        return "unknown";
+    }
+    const shows = boxShowsTyped(lines, text);
+    if (shows == null) {
+        return "unknown";
+    }
+    if (shows) {
+        return "shown";
+    }
+    const rows = inputBoxRows(lines) ?? [];
+    return squash(rows.map((r) => r.replace(/^\s*❯/, "")).join("")) === "" ? "absent" : "other";
+}
+
 /** The chat box after a take-back: the messages first, one per line, then what the box held, as Claude Code's box puts
  *  them back ahead of your draft. */
 export function mergeTaken(texts: string[], box: string): string {
