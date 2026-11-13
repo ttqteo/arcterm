@@ -41,6 +41,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A message you send in Chat while the agent works shows dimmed under Queued until the agent reads it, then turns
+  full strength as the conversation takes it.
 - The buttons on Chat's brainstorm cards ease into their hover colour, and a card's folds (Agent's calls, Decided,
   a ✓ row's detail) slide open and closed instead of popping.
 - The Jarvis hologram turns amber only while an agent is asking you something; gates, plans to review and runs to

@@ -207,9 +207,12 @@ function PendingCommand({
 
 // A message sent and not in the transcript yet: your bubble, drawn as the transcript will draw it and where
 // (chatconversation.tsx YouBubble's box, spacing and letter spacing; @mentions as pills, files as cards under it), so the
-// transcript's copy taking its place draws nothing new. What it waits on is PendingLine's, under the last of them. It
-// goes when the transcript holds the text (pendingStill). `first` is the conversation's first message (the task a
-// session was launched on), with no conversation above it to stand clear of.
+// transcript's copy taking its place draws nothing new. What it waits on is PendingLine's, under the last of them. A
+// Queued one (sent while Claude works) is dimmed until Claude Code takes it: it waits for minutes, and the full-strength
+// transcript row taking its place is the news that it was read. One sent to an idle agent stays full strength, since the
+// transcript takes it in a moment and a dim bubble would only blink. It goes when the transcript holds the text
+// (pendingStill). `first` is the conversation's first message (the task a session was launched on), with no
+// conversation above it to stand clear of.
 function PendingBubble({ pending, first }: { pending: PendingMessage; first: boolean }) {
     const said = splitAttachments(pending.text);
     const body = said.text.trim();
@@ -225,7 +228,10 @@ function PendingBubble({ pending, first }: { pending: PendingMessage; first: boo
             // and -mb-1 under the bubble's mb-1 leaves the tail's gap-3 as the row's mb-1 + pb-2 under it
             className={cn("-mb-1 flex flex-col items-end tracking-[-0.01em]", first ? undefined : "mt-2")}
         >
-            <div className="flex max-w-[75%] flex-col items-end gap-2">
+            <div
+                data-chat-pending-queued={pending.queued === true ? "" : undefined}
+                className={cn("flex max-w-[75%] flex-col items-end gap-2", pending.queued === true && "opacity-55")}
+            >
                 {body !== "" || said.images.length > 0 ? (
                     <div className={youBubbleBox(said.files.length > 0)}>
                         {body !== "" ? <TaggedPromptText text={body} /> : null}

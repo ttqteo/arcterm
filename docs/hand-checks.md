@@ -6,6 +6,9 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Queued bubble dims: in an agent's Chat, send a message while Claude works → its bubble shows at ~55%
+  under Queued · Send now; when Claude takes it, the transcript row replaces it at full strength. A message sent to an
+  idle agent stays full strength. Commit: fix(chat) dim a queued bubble (`chatpane.tsx` PendingBubble).
 - [ ] (arcterm) No folder in the New dialog: open New → Claude Code → the Project column's last row reads No folder
   (0), with `~/.arc/no-folder` in its tooltip. Pick it and launch → Claude Code starts in that folder with no trust
   prompt and no ask-only line, and the agent sits in the tree's No folder folder. Launch there again → the Session
