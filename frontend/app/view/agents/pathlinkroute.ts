@@ -7,6 +7,7 @@
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { isUnderRoot } from "@/app/cockpit/openfileroute";
+import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -199,6 +200,17 @@ export async function openAgentPath(agent: AgentVM, path: string, line?: number)
         return;
     }
     openFileInPanel(model, agent.id, { abs, root: cwd, ...(line != null ? { line } : {}) });
+}
+
+// a transcript link's Show in Explorer: the file it names, found as a click finds it, selected in the file manager
+export async function revealAgentPath(agent: AgentVM, path: string): Promise<void> {
+    const cwd = await resolveCwd(agent.transcriptPath, agent.blockId);
+    const abs = await locateAgentPath(agent, cwd, path);
+    if (abs == null) {
+        pushToast({ title: `File not found: ${path}`, message: "", level: "warn" });
+        return;
+    }
+    getApi().revealPath(abs);
 }
 
 // a palette pick: the focused agent's panel when the Agent surface shows it and the file is under its directory
