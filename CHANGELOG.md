@@ -46,6 +46,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run whose Verify, Setup or Final waits in the heavy-job queue now says so in the Agent sidebar: the run's line
+  shows "queued #N" (or "N queued") even when folded, and the task's row reads "verify queued #N" instead of a
+  Verify clock that ran before the command had started.
 - Changing an initiative (from the app or `wsh effort`) no longer stalls or fails with a timeout while the vault
   syncs over the network; it waits only for the vault's quick local commit.
 - A Chat message that never reaches Claude Code no longer sits under "Queued" for good: arcterm tells you it was not

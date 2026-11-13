@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/process"
@@ -163,6 +164,14 @@ func (ws *WshServer) JobQueueSkipCommand(ctx context.Context, data wshrpc.Comman
 	return nil
 }
 
+// splitTasks is a step's comma-joined task ids (jobqueue.Source.Tasks) as the wire's list; nil for none.
+func splitTasks(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
+}
+
 // JobQueueData is the snapshot as the cockpit and the jobqueue event carry it: times in Unix ms, never a null
 // job list.
 func JobQueueData(s jobqueue.Snapshot) wshrpc.JobQueueData {
@@ -200,6 +209,7 @@ func JobQueueData(s jobqueue.Snapshot) wshrpc.JobQueueData {
 			TabId:     j.Source.TabId,
 			RunId:     j.Source.RunId,
 			Label:     j.Source.Label,
+			TaskIds:   splitTasks(j.Source.Tasks),
 		})
 	}
 	return out

@@ -373,7 +373,7 @@ func judgeBatch(ctx context.Context, batch []batchTip, ordered bool, output stri
 	first := batch[len(batch)/2-1].commit
 	// the run id travels in the ctx, for the Setup withDetachedTree runs; the tree's Setup is the batch's, named by
 	// its first tip as the batch's Verify was; each step is its tip's
-	treeCtx := withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: run.runID}), run.runID, PlanCmd_Verify, batch[0].id)
+	treeCtx := withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: run.runID, Tasks: strings.Join(tipIDs(batch), ",")}), run.runID, PlanCmd_Verify, batch[0].id)
 	stepErr := withDetachedTree(treeCtx, run.project, run.runID+"-bisect", "bisect tree", first, run.setup, func(wt string) error {
 		// verifyPrefix runs Verify in the tree moved to the first n tips; a step error is a verdict, a treeStepError not
 		verifyPrefix := func(n int) (string, []string, error) {
@@ -385,7 +385,7 @@ func judgeBatch(ctx context.Context, batch []batchTip, ordered bool, output stri
 				run.progress(fmt.Sprintf("verify: bisecting: testing %s at %.8s", strings.Join(tipIDs(batch[:n]), ", "), commit))
 			}
 			env := changedFilesEnv(ctx, wt, batch[0].commit+"^", commit, run.dagID+"/bisect")
-			stepCtx := withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: run.runID, Label: "Verify · bisect", Always: true}), run.runID, PlanCmd_Verify, batch[n-1].id)
+			stepCtx := withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: run.runID, Label: "Verify · bisect", Tasks: strings.Join(tipIDs(batch[:n]), ","), Always: true}), run.runID, PlanCmd_Verify, batch[n-1].id)
 			steps++
 			stepOut, stepFlaky, err := runVerifyCommand(stepCtx, wt, run.command, env, run.progress)
 			if err != nil {
@@ -525,7 +525,7 @@ func startVerify(channelID, dagID, runID, projectPath, command string, l *landin
 		}
 		env := batchScopeEnv(bg, dagID, projectPath, batch)
 		// a batch's Verify is its first tip's, the id its TaskVerifyStarted event reports
-		output, flaky, verr := runVerifyCommand(withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: runID, Label: stepLabel, Always: true}), runID, PlanCmd_Verify, first), projectPath, command, env, progress)
+		output, flaky, verr := runVerifyCommand(withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: runID, Label: stepLabel, Tasks: strings.Join(tipIDs(batch), ","), Always: true}), runID, PlanCmd_Verify, first), projectPath, command, env, progress)
 		run := batchRunner{channelID: channelID, dagID: dagID, runID: runID, project: project, tree: projectPath,
 			setup: setup, command: command, progress: progress}
 		// judged on the claim's context, so a cancelled dag also stops whatever judging runs

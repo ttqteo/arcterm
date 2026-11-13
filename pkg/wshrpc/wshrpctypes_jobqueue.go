@@ -59,6 +59,9 @@ type JobQueueJob struct {
 	TabId     string `json:"tabid,omitempty"`
 	RunId     string `json:"runid,omitempty"`
 	Label     string `json:"label,omitempty"`
+	// TaskIds are the run's tasks an engine step is for (a task's Setup or Verify, a merge batch's Verify); none for
+	// a step of the whole run (Final, land) or an agent's command
+	TaskIds []string `json:"taskids,omitempty"`
 	// Measured is whether Bytes comes from peaks wavesrv measured for this command, not the memgate table's
 	// estimate; Elsewhere, that they were measured only in another project; Peaks are the recent ones that figure
 	// rests on, newest first (the non-zero ones)

@@ -821,7 +821,7 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask, r
 				setupStart := time.Now()
 				// no progress sink: Setup runs under the dag mutation lock, so nothing can read a
 				// partial tail while it holds the lock anyway
-				setupCtx := jobqueue.WithSource(context.WithoutCancel(ctx), jobqueue.Source{RunId: owner.ID, Label: taskStepLabel("Setup", g, taskID)})
+				setupCtx := jobqueue.WithSource(context.WithoutCancel(ctx), jobqueue.Source{RunId: owner.ID, Label: taskStepLabel("Setup", g, taskID), Tasks: taskID})
 				// a pause cuts Setup off at once (PauseDag): it holds this lock, which the pause waits on
 				setupCtx, endSetup := dagSetupCtx(setupCtx, g.OID)
 				var serr error

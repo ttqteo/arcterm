@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A run's queued engine steps show in the Agent tree: during a run on a busy machine (or with
+  `jobs:mode` `slots` and `jobs:slots` 1 while another heavy command runs), let a task merge → the run's line shows
+  "queued #N" (also folded; "N queued" with several), its tooltip names "Verify · <task>", and the task's row reads
+  "t-N · verify queued #N" until the Verify starts, then "verifying" with its clock. The CDP scenario
+  `jobqueue-run-tag` checks it on an injected queue only; the engine's `taskids` on a real job are not seen live
+  (branch `fix/run-queued-jobs`).
 - [ ] (arcterm) Topics leave Ideas: open Jarvis → the Ideas column no longer lists the topics (`wsh effort list
   --topics`: Chat, Misc, Kael sync…); each shows in All initiatives with "+N sub", no bar or count, its
   sub-initiatives indented under it, and "Link to…" lists it with "topic" in place of 0/0. Unit-tested only

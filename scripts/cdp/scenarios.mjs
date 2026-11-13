@@ -54319,6 +54319,166 @@ const jobqueueAgentTag = {
     },
 };
 
+// --- jobqueue-run-tag: an engine step of a run (a task's merge Verify) waits in the job queue under no agent's block, so
+// it used to show nowhere in the Agent tree: the task's row read "verifying 2m" while its Verify had not started, and a
+// folded run said nothing. agent-tree-rail's fixture run (a lead, t-1 dispatched) carries it; its jobs are set through
+// window.__jobQueueInject with the run's id and t-1, so no real Verify runs.
+const JQR_TREE = `document.querySelector("[data-agent-tree]")`;
+const jqrSnapshot = (runId, jobs) => `window.__jobQueueInject({ slots: 1, mode: "auto", jobs: ${jobs(runId)} })`;
+const jqrVerify = (runId, extra = "") => `[
+    { id: "jqr-verify", name: "scripts/verify.mjs", bytes: 3221225472, position: 1, reason: "needs 3.0 GB, 1.2 GB free",
+      queuedts: Date.now() - 20_000, runid: ${JSON.stringify(runId)}, taskids: ["t-1"], label: "Verify · noop" }${extra}
+]`;
+
+const jobqueueRunTag = {
+    name: "jobqueue-run-tag",
+    surface: "agent",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-jq-run-"));
+        const ctx = {
+            cwd,
+            prevRail: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`),
+            prevSections: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`),
+            prevCollapsed: await h.ev(`localStorage.getItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`),
+        };
+        try {
+            await arrangeTreeRail(h, ctx);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        rec(
+            "0. the fixture run's lead nested and t-1 dispatched",
+            ctx.arrangeError == null && ctx.leadFocused === true && ctx.dispatched === true,
+            ctx.arrangeError ?? JSON.stringify({ runId: ctx.runId, dispatched: ctx.dispatched })
+        );
+        if (ctx.arrangeError != null) {
+            return steps;
+        }
+        const RUN_TAG = `[data-run-queued="${ctx.runId}"]`;
+        const read = () =>
+            h.ev(`(() => {
+                const tree = ${JQR_TREE};
+                const runTag = tree?.querySelector(${JSON.stringify(RUN_TAG)});
+                // t-1's worker row is titled by its task's label; a worker the roster does not list has no
+                // data-agent-row, so the row is found from its title's column, which holds its second line
+                const title = tree && [...tree.querySelectorAll("div")].find(
+                    (d) => d.textContent.trim() === "noop" && d.children.length === 0
+                );
+                const col = title?.parentElement;
+                const sub = col?.querySelector("span.truncate");
+                const workerTag = col?.querySelector("[data-agent-queued]");
+                return {
+                    run: runTag ? { text: runTag.textContent.trim(), title: runTag.title } : null,
+                    worker: col
+                        ? {
+                              sub: sub?.textContent.trim() ?? null,
+                              subTitle: sub?.title ?? null,
+                              clipped: sub ? sub.scrollWidth > sub.clientWidth + 1 : null,
+                              tag: workerTag?.textContent.trim() ?? null,
+                          }
+                        : null,
+                };
+            })()`);
+        await h.goto("agent");
+
+        // 1. the run's Verify for t-1 waits: the run's line and t-1's row both say so, and t-1 reads verify queued
+        await h.ev(jqrSnapshot(ctx.runId, jqrVerify));
+        await polishWaitFor(h, `!!${JQR_TREE}?.querySelector(${JSON.stringify(RUN_TAG)})`, 3000);
+        const one = await read();
+        await h.shot("cdp-shots/jobqueue-run-tag.png");
+        rec(
+            // a worker row's words truncate at the tree's width (its fixed columns take the rest): the state leads, so
+            // a truncation cuts the lane first, and the tooltip holds the whole line. `clipped` is reported, not judged
+            "1. the run's line says queued #1 naming Verify · noop, and t-1's row reads verify queued #1 in words (whole in its tooltip), with no tag of its own",
+            one.run?.text === "queued #1" &&
+                one.run.title.startsWith("Verify · noop: scripts/verify.mjs waits its turn") &&
+                /^t-1 · verify queued #1/.test(one.worker?.sub ?? "") &&
+                one.worker?.subTitle === one.worker?.sub &&
+                one.worker?.tag == null,
+            JSON.stringify(one)
+        );
+
+        // 2. folded, the run still says it waits
+        const folded = await h.ev(`(async () => {
+            const tree = ${JQR_TREE};
+            // the run's own line holds both its fold chip and its tag
+            const line = () => tree?.querySelector(${JSON.stringify(RUN_TAG)})?.parentElement ?? null;
+            const chip = line()?.querySelector('[aria-label="Hide workers"]');
+            chip?.click();
+            for (let i = 0; i < 20 && line()?.querySelector('[aria-label="Hide workers"]'); i++) await new Promise((r) => setTimeout(r, 100));
+            return {
+                clicked: !!chip,
+                folded: !!line()?.querySelector('[aria-label="Show workers"]'),
+                tag: tree?.querySelector(${JSON.stringify(RUN_TAG)})?.textContent.trim() ?? null,
+            };
+        })()`);
+        await h.shot("cdp-shots/jobqueue-run-tag-folded.png");
+        rec(
+            "2. folded, the run's line keeps its queued #1",
+            folded.clicked && folded.folded && folded.tag === "queued #1",
+            JSON.stringify(folded)
+        );
+        await h.ev(
+            `${JQR_TREE}?.querySelector(${JSON.stringify(RUN_TAG)})?.parentElement?.querySelector('[aria-label="Show workers"]')?.click()`
+        );
+
+        // 3. two of its jobs wait: the run reads 2 queued, both named in its tooltip
+        await h.ev(
+            jqrSnapshot(ctx.runId, (id) =>
+                jqrVerify(
+                    id,
+                    `, { id: "jqr-final", name: "final-verify", bytes: 6442450944, position: 2, queuedts: Date.now() - 10_000, runid: ${JSON.stringify(id)}, label: "Final" }`
+                )
+            )
+        );
+        await polishWaitFor(
+            h,
+            `${JQR_TREE}?.querySelector(${JSON.stringify(RUN_TAG)})?.textContent.trim() === "2 queued"`,
+            3000
+        );
+        const two = await read();
+        rec(
+            "3. with its Verify and its Final waiting, the run's line says 2 queued and names both",
+            two.run?.text === "2 queued" && two.run.title.includes("Verify · noop") && two.run.title.includes("Final"),
+            JSON.stringify(two)
+        );
+
+        // 4. once the Verify runs and the Final is gone, no tag is left and t-1 no longer reads verify queued
+        await h.ev(`window.__jobQueueInject({ slots: 1, mode: "auto", jobs: [
+            { id: "jqr-verify", name: "scripts/verify.mjs", bytes: 3221225472, running: true, queuedts: Date.now() - 30_000,
+              startedts: Date.now(), runid: ${JSON.stringify(ctx.runId)}, taskids: ["t-1"], label: "Verify · noop" },
+        ] })`);
+        await polishWaitFor(h, `!${JQR_TREE}?.querySelector(${JSON.stringify(RUN_TAG)})`, 3000);
+        const ran = await read();
+        rec(
+            "4. once its step runs, neither the run nor t-1 carries a tag, and t-1 no longer reads verify queued",
+            ran.run == null && ran.worker?.tag == null && !/verify queued/.test(ran.worker?.sub ?? ""),
+            JSON.stringify(ran)
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        try {
+            await h.ev("window.__jobQueueInject?.({ slots: 1, jobs: [] })");
+        } catch (e) {
+            console.error(`jobqueue-run-tag teardown: clear the injected snapshot failed: ${e?.message ?? e}`);
+        }
+        await teardownFixtureRun(h, ctx, "jobqueue-run-tag", {
+            what: "restore the rail and tree preferences",
+            fn: async () => {
+                await h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail));
+                await h.ev(restoreStorageKey(RAIL_SECTIONS_KEY, ctx.prevSections));
+                await h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed));
+            },
+        });
+    },
+};
+
 // --- jobqueue-measured: each row of the Jobs popover says whether its RAM figure is measured or the table's estimate
 // (docs/superpowers/specs/2026-11-12-measured-job-peaks-design.md). No run and no real job: one running measured job and
 // one queued estimated one are set through the dev hook window.__jobQueueInject, the popover is opened from the app bar's
@@ -69900,6 +70060,7 @@ export const SCENARIOS = [
     notifyToast,
     jobqueueChip,
     jobqueueAgentTag,
+    jobqueueRunTag,
     jobqueueMeasured,
     floatMini,
     floatNote,
