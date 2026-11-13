@@ -525,3 +525,130 @@ func TestTaskFilesReadsADirectoryEntry(t *testing.T) {
 		t.Fatalf("TaskFiles = %v, want %v", got, want)
 	}
 }
+
+// Kael sync 11-13 (dc1c00b4a): a fence opened on a list item ("- ```bash") is a fence, so its indented closer must not
+// open a phantom one that hides every later task heading
+func TestParsePlanFenceOpenedOnAListItem(t *testing.T) {
+	for name, opener := range map[string]string{
+		"dash":    "- ```bash\n  go test ./pkg/x\n  ```\n",
+		"ordered": "1. ```bash\n   go test ./pkg/x\n   ```\n",
+		"tilde":   "- ~~~bash\n  go test ./pkg/x\n  ~~~\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			src := "### Task 1: a\n- run:\n" + opener + "\n### Task 2: b\n**Depends on:** none\n\n### Task 3: c\n"
+			p := mustParsePlan(t, src)
+			if want := []string{"t-1:", "t-2:", "t-3:t-2"}; !reflect.DeepEqual(depLists(p.Tasks), want) {
+				t.Fatalf("the list item's closing fence must not open a new one, got %v, want %v", depLists(p.Tasks), want)
+			}
+		})
+	}
+	// a heading inside a list item's fence stays text
+	src := "### Task 1: a\n- ```md\n  ### Task 2: sample\n  ```\n\n### Task 2: real\n"
+	p := mustParsePlan(t, src)
+	if len(p.Tasks) != 2 || p.Tasks[1].Label != "real" || !strings.Contains(p.Tasks[0].Description, "### Task 2: sample") {
+		t.Fatalf("got %v, want the fenced sample heading kept as text", depLists(p.Tasks))
+	}
+}
+
+// an inner ``` block inside a ```` fence is content: only a run at least as long closes the outer one
+func TestParsePlanFenceClosesOnlyOnALongEnoughRun(t *testing.T) {
+	src := "### Task 1: a\n````markdown\n```md\n### Task 9: sample\n```\n````\n\n### Task 2: b\n"
+	p := mustParsePlan(t, src)
+	if want := []string{"t-1:", "t-2:t-1"}; !reflect.DeepEqual(depLists(p.Tasks), want) {
+		t.Fatalf("an inner ``` block must not close a ```` fence, got %v, want %v", depLists(p.Tasks), want)
+	}
+	if !strings.Contains(p.Tasks[0].Description, "### Task 9: sample") {
+		t.Fatalf("fenced lines stay in the task text, got %q", p.Tasks[0].Description)
+	}
+}
+
+// Kael sync 11-13 (725085b17): a quoted document's own same-length ```bash block does not close the ```markdown block
+// around it, and an inline span on a list item opens no fence
+func TestParsePlanFenceShapes(t *testing.T) {
+	for name, src := range map[string]string{
+		"nested same-length fences":  "### Task 1: a\n```markdown\n# Doc\n```bash\ngo test\n```\n```\n\n### Task 2: b\n\n### Task 3: c\n",
+		"inline span on a list item": "### Task 1: a\n- ```go test ./...``` must pass\n\n### Task 2: b\n\n### Task 3: c\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := mustParsePlan(t, src)
+			if want := []string{"t-1:", "t-2:t-1", "t-3:t-2"}; !reflect.DeepEqual(depLists(p.Tasks), want) {
+				t.Fatalf("got %v, want %v", depLists(p.Tasks), want)
+			}
+		})
+	}
+}
+
+// a fence with no inner block reads as before, and one left open that hid nothing still parses (0e9d917d8)
+func TestParsePlanFenceShapesKeepTheOldReading(t *testing.T) {
+	plain := "### Task 1: a\n```go\nfunc x() {}\n```\n\n### Task 2: b\n"
+	if p := mustParsePlan(t, plain); len(p.Tasks) != 2 {
+		t.Fatalf("got %v", depLists(p.Tasks))
+	}
+	tail := "### Task 1: a\ndo a\n- ```go\n  func x() {}\n"
+	if p, err := ParsePlan(tail); err != nil || len(p.Tasks) != 1 {
+		t.Fatalf("a list-item fence left open at the end with nothing after it parses, got %v, %v", p.Tasks, err)
+	}
+}
+
+// a fence left open over a task heading is refused, naming where it opened
+func TestParsePlanRefusesAnUnclosedFence(t *testing.T) {
+	src := "### Task 1: a\n```bash\ngo test\n\n### Task 2: b\n"
+	if _, err := ParsePlan(src); err == nil || !strings.Contains(err.Error(), "never closed") {
+		t.Fatalf("want an unclosed-fence error, got %v", err)
+	}
+	src = "### Task 1: a\n- ```bash\n  go test\n\n### Task 2: b\n"
+	if _, err := ParsePlan(src); err == nil || !strings.Contains(err.Error(), "never closed") {
+		t.Fatalf("a list-item fence left open over a heading is refused too, got %v", err)
+	}
+}
+
+// Kael sync 11-13 (a2c52d70e): a BOM before the first line hid the title and the plan-level lines
+func TestParsePlanStripsABOM(t *testing.T) {
+	p := mustParsePlan(t, "\xef\xbb\xbf**Verify:** `go test ./...`\n\n### Task 1: a\nbody\n")
+	if p.Verify != "go test ./..." || p.Preamble != "" {
+		t.Fatalf("got verify %q, preamble %q", p.Verify, p.Preamble)
+	}
+	p = mustParsePlan(t, "\xef\xbb\xbf# The plan\n\n### Task 1: a\nbody\n")
+	if p.Title != "The plan" || p.Preamble != "" {
+		t.Fatalf("got title %q, preamble %q", p.Title, p.Preamble)
+	}
+}
+
+// Kael sync 11-13 (19be11b27): a near-miss heading would otherwise fold the task into the one before it
+func TestParsePlanRefusesANearMissTaskHeading(t *testing.T) {
+	for _, heading := range []string{"### Task 3 - c", "#### Task 3: c", " ### Task 3: c", "### task 3: c"} {
+		t.Run(heading, func(t *testing.T) {
+			_, err := ParsePlan("### Task 1: a\nx\n### Task 2: b\ny\n" + heading + "\nz\n")
+			if err == nil || !strings.Contains(err.Error(), "not a task heading") {
+				t.Fatalf("got err %v, want %q refused", err, heading)
+			}
+		})
+	}
+}
+
+// engine F5 (65f44bce3): a task heading written with one # folds into the task before it
+func TestParsePlanRefusesASingleHashTaskHeading(t *testing.T) {
+	src := "### Task 1: a\ndo a\n\n# Task 2: b\n**Depends on:** none\ndo b\n"
+	if _, err := ParsePlan(src); err == nil || !strings.Contains(err.Error(), "is not a task heading") {
+		t.Fatalf("want the near-miss heading error, got %v", err)
+	}
+}
+
+// Kael sync 11-13 (6c55c3aef): the plan's own "# <title>" may start with "Task <n>"; only that one line is spared
+func TestParsePlanTitleMayStartWithTask(t *testing.T) {
+	p := mustParsePlan(t, "# Task 3 follow-ups: sessions find\n\n### Task 1: a\ndo a\n")
+	if p.Title != "Task 3 follow-ups: sessions find" || len(p.Tasks) != 1 {
+		t.Fatalf("want the title read and one task, got title %q, %d tasks", p.Title, len(p.Tasks))
+	}
+	if _, err := ParsePlan("# Plan\n# Task 1: a\ndo a\n"); err == nil || !strings.Contains(err.Error(), "is not a task heading") {
+		t.Fatalf("want the near-miss heading error, got %v", err)
+	}
+}
+
+// a heading inside a fence is text, near-miss or not
+func TestParsePlanNearMissHeadingInAFenceIsText(t *testing.T) {
+	p := mustParsePlan(t, "### Task 1: a\n```md\n#### Task 3: sample\n# Task 2 - sample\n```\n\n### Task 2: b\n")
+	if len(p.Tasks) != 2 || !strings.Contains(p.Tasks[0].Description, "#### Task 3: sample") {
+		t.Fatalf("got %v", depLists(p.Tasks))
+	}
+}

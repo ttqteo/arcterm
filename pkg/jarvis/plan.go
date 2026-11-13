@@ -177,6 +177,46 @@ func (f planFence) closes(open planFence) bool {
 	return f.char == open.char && f.n >= open.n && strings.TrimSpace(f.rest) == ""
 }
 
+// codeFence tracks whether the lines of a markdown text sit inside a fenced code block, for ParsePlan and
+// ParseWorkerReport alike. It reads fences as planFence does, with two additions: an opener may follow a list marker
+// ("- ```bash"), and inside a block a run as long as the opener with an info string opens a nested block that its own
+// bare closer closes, so a quoted document's own ```bash block does not close the ```markdown block around it.
+type codeFence struct {
+	open   planFence // the opener; n is 0 while no fence is open
+	depth  int       // nested blocks open inside it
+	opener string    // the opener's line, trimmed, to name in an error
+}
+
+var fenceListMarkerRe = regexp.MustCompile(`^(?:[-*+]|\d+[.)])[ \t]+`)
+
+func (c *codeFence) isOpen() bool { return c.open.n > 0 }
+
+// step feeds the next line. It reports whether the line belongs to a fence: its opener, its closer, or a line inside.
+func (c *codeFence) step(line string) bool {
+	if c.isOpen() {
+		if f, ok := readPlanFence(line); ok {
+			switch {
+			case f.closes(c.open) && c.depth > 0:
+				c.depth--
+			case f.closes(c.open):
+				c.open = planFence{}
+			case f.char == c.open.char && f.n >= c.open.n && f.opens():
+				c.depth++
+			}
+		}
+		return true
+	}
+	if f, ok := readPlanFence(fenceListMarkerRe.ReplaceAllString(strings.TrimLeft(line, " \t"), "")); ok && f.opens() {
+		c.open, c.depth, c.opener = f, 0, strings.TrimSpace(line)
+		return true
+	}
+	return false
+}
+
+// planNearTaskHeadingRe matches a heading meant as a task that planTaskHeadingRe misses, which would otherwise fold
+// into the task before it.
+var planNearTaskHeadingRe = regexp.MustCompile(`(?i)^\s*#+\s*Task\s*\d+`)
+
 // ParsePlan reads a plan in PlanFormat. Lines inside code fences are task text only, so a plan that
 // quotes a sample plan does not grow the sample's tasks.
 func ParsePlan(src string) (Plan, error) {
@@ -189,7 +229,7 @@ func ParsePlan(src string) (Plan, error) {
 	bare := map[int][]int{}
 	// the open fence, where it opened (1-based line, and the task it sits in, 0 for the preamble), and the task
 	// headings it has hidden since: an unclosed fence is refused below, naming them
-	var fence *planFence
+	var fence codeFence
 	fenceLine, fenceTask, fenceHidden := 0, 0, 0
 	inTaskHead, dependsAllowed := false, false
 	flush := func() {
@@ -205,21 +245,17 @@ func ParsePlan(src string) (Plan, error) {
 			body = append(body, line)
 		}
 	}
+	// a BOM would keep the first line from matching the title or a plan-level line
+	src = strings.TrimPrefix(src, utf8BOM)
 	for i, line := range strings.Split(strings.ReplaceAll(src, "\r\n", "\n"), "\n") {
-		if f, ok := readPlanFence(line); ok && (fence == nil && f.opens() || fence != nil && f.closes(*fence)) {
-			if fence == nil {
-				fence, fenceLine, fenceTask, fenceHidden = &f, i+1, len(p.Tasks), 0
-			} else {
-				fence = nil
-			}
-			inTaskHead = false
-			preambleLine(line)
-			continue
-		}
-		if fence != nil {
-			if planTaskHeadingRe.MatchString(line) {
+		wasOpen := fence.isOpen()
+		if fence.step(line) {
+			if !wasOpen {
+				fenceLine, fenceTask, fenceHidden = i+1, len(p.Tasks), 0
+			} else if planTaskHeadingRe.MatchString(line) {
 				fenceHidden++
 			}
+			inTaskHead = false
 			preambleLine(line)
 			continue
 		}
@@ -239,6 +275,11 @@ func ParsePlan(src string) (Plan, error) {
 			p.Tasks = append(p.Tasks, task)
 			inTaskHead, dependsAllowed = true, true
 			continue
+		}
+		// the plan's own "# <title>" may start with "Task <n>"; readPlanPreamble takes it as the title
+		isTitle := len(p.Tasks) == 0 && p.Title == "" && planTitleRe.MatchString(line)
+		if !isTitle && planNearTaskHeadingRe.MatchString(line) {
+			return Plan{}, fmt.Errorf("plan heading %q is not a task heading: write it as \"### Task %d: <title>\", at the start of the line under ## or ###", strings.TrimSpace(line), len(p.Tasks)+1)
 		}
 		if len(p.Tasks) == 0 {
 			consumed, err := readPlanPreamble(&p, line)
@@ -307,13 +348,13 @@ func ParsePlan(src string) (Plan, error) {
 	flush()
 	// a fence left open at the very end only runs the last task's text to the end of the file; one that hides a task
 	// heading drops those tasks from the dag without a word, which run 911b6d3a's plan did to Tasks 7 to 13
-	if fence != nil && fenceHidden > 0 {
+	if fence.isOpen() && fenceHidden > 0 {
 		where := "the preamble"
 		if fenceTask > 0 {
 			where = fmt.Sprintf("task %d", fenceTask)
 		}
 		return Plan{}, fmt.Errorf("the code fence %s opened in %s (line %d) is never closed, so the rest of the plan reads as its text and its %d task headings are lost: close it with a line of %s, or if the line was inline code in prose, do not start the line with it",
-			strings.Repeat(string(fence.char), fence.n), where, fenceLine, fenceHidden, strings.Repeat(string(fence.char), fence.n))
+			strings.Repeat(string(fence.open.char), fence.open.n), where, fenceLine, fenceHidden, strings.Repeat(string(fence.open.char), fence.open.n))
 	}
 	if len(p.Tasks) == 0 {
 		return Plan{}, fmt.Errorf("plan has no tasks: expected headings like \"### Task 1: <title>\"")

@@ -63,9 +63,8 @@ const WorkerReportTemplate = `## Done
 
 const (
 	reportHeadingPrefix = "## "
-	reportFence         = "```"
 	reportNone          = "none"
-	reportBOM           = "\xef\xbb\xbf"
+	utf8BOM             = "\xef\xbb\xbf"
 	strayQuoteMaxRunes  = 60
 )
 
@@ -117,25 +116,32 @@ func quoteStray(s string) string {
 // ParseWorkerReport splits a report into its five sections. Every problem is named in one error so a single
 // retry can fix the report.
 func ParseWorkerReport(text string) (WorkerReport, error) {
-	text = strings.TrimPrefix(text, reportBOM)
+	text = strings.TrimPrefix(text, utf8BOM)
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 
 	var (
-		rep      WorkerReport
-		stray    []string
-		unknown  []string
-		dupes    []string
-		bodies   = map[string][]string{}
-		seen     = map[string]bool{}
-		cur      string // key of the section being read; "" before the first heading, "?" under an unknown one
-		inFence  bool
-		started  bool
-		preamble []string
+		rep         WorkerReport
+		stray       []string
+		unknown     []string
+		dupes       []string
+		bodies      = map[string][]string{}
+		seen        = map[string]bool{}
+		cur         string // key of the section being read; "" before the first heading, "?" under an unknown one
+		fence       codeFence
+		fenceHidden int // headings the open fence has hidden since it opened
+		started     bool
+		preamble    []string
 	)
 	for _, line := range strings.Split(text, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), reportFence) {
-			inFence = !inFence
-		} else if !inFence && strings.HasPrefix(line, reportHeadingPrefix) {
+		wasOpen := fence.isOpen()
+		inFence := fence.step(line)
+		switch {
+		case !wasOpen && inFence:
+			fenceHidden = 0
+		case wasOpen && strings.HasPrefix(line, reportHeadingPrefix):
+			fenceHidden++
+		}
+		if !inFence && strings.HasPrefix(line, reportHeadingPrefix) {
 			started = true
 			name := strings.TrimSpace(strings.TrimPrefix(line, reportHeadingPrefix))
 			sec, ok := sectionByHeading(name)
@@ -194,6 +200,12 @@ func ParseWorkerReport(text string) (WorkerReport, error) {
 		problems = append(problems, "empty (write None): "+strings.Join(empty, ", "))
 	}
 	problems = append(problems, stray...)
+	// a fence left open over a heading reads every later section as its text; one that hid no heading still parses,
+	// as an unclosed fence in a plan does
+	if fence.isOpen() && fenceHidden > 0 {
+		problems = append(problems, fmt.Sprintf("code fence %q is never closed, so the %d heading(s) after it read as its text: close it with a line of %s",
+			fence.opener, fenceHidden, strings.Repeat(string(fence.open.char), fence.open.n)))
+	}
 	if len(problems) > 0 {
 		return WorkerReport{}, fmt.Errorf("%s", strings.Join(problems, "; "))
 	}
