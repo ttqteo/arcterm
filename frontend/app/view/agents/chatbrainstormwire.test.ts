@@ -187,6 +187,18 @@ describe("pairedHidden", () => {
         expect(pairedHidden(paired({ kind: "run" }), new Set(["run-1"]))).toBe(true);
     });
 
+    it("hides the line a verdict card sent: the card folds into its own ✓ row, where it was", () => {
+        const sent = paired({
+            kind: "verdict",
+            verdictKey: "verdict:3",
+            verdictOutcome: "fix",
+            fixed: 2,
+            text: "Fix these review findings:",
+        });
+        expect(pairedHidden(sent, none)).toBe(true);
+        expect(pairedHidden(sent, new Set(["run-1"]))).toBe(true);
+    });
+
     it("draws an answer, a builder answer and the design and builder steps", () => {
         for (const kind of ["answer", "builder-answer", "design", "builder"] as const) {
             expect(pairedHidden(paired({ kind, n: 1 }), none)).toBe(false);
