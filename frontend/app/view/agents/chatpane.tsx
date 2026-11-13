@@ -46,6 +46,8 @@ import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstorms
 import { boxAnswerRecord, boxPlaceholderOverride } from "./chatbrainstormwire";
 import { ChatComposer } from "./chatcomposer";
 import { BtwCard, ChatConversation, youBubbleBox } from "./chatconversation";
+import { isDocReviewAsk } from "./chatdocreview";
+import { ChatDocReviewCard } from "./chatdocreviewcard";
 import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
@@ -125,14 +127,23 @@ function TurnStatsText({ stats }: { stats: TurnStats }) {
     );
 }
 
-// The agent's live ask under the conversation: the plan handoff (an AskUserQuestion with header `Handoff`) as its card,
-// every other ask as its plain choices. A row of the card answers with the index of the agent's own option, through the
-// answer path the cockpit's bars share (askanswer.ts), which locks the ask against a second click; the rows go dead once
-// the answer is sent, and for an exited agent, whose card is static. Words typed in the box answer the ask as for any ask.
+// The agent's live ask under the conversation: the plan handoff (an AskUserQuestion with header `Handoff`) and a Doc review
+// (header `Doc review`, over a `.md` or `.tex` file) as their cards, every other ask as its plain choices. A row of the
+// handoff card answers with the index of the agent's own option, through the answer path the cockpit's bars share
+// (askanswer.ts), which locks the ask against a second click; the rows go dead once the answer is sent, and for an exited
+// agent, whose card is static. The Doc review card answers its Approve the same way and locks it the same way (it reads
+// the lock itself); its Review opens the review view, where Request changes is made. Words typed in the box answer the
+// ask as for any ask.
 function ChatAsk({ model, agent, exited }: { model: AgentsViewModel; agent: AgentVM; exited: boolean }) {
     const sentIds = useAtomValue(model.sentIdsAtom);
-    const question = agent.ask?.questions[0];
-    if (question == null || !isHandoffAsk(agent.ask?.questions)) {
+    const questions = agent.ask?.questions;
+    const question = questions?.[0];
+    if (question != null && isDocReviewAsk(questions)) {
+        return (
+            <ChatDocReviewCard question={question} state={exited ? "static" : "waiting"} agent={agent} model={model} />
+        );
+    }
+    if (question == null || !isHandoffAsk(questions)) {
         return <AskRow model={model} agent={agent} alert />;
     }
     const sent = sentIds.has(askSentKey(agent) ?? "");
