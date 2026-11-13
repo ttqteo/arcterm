@@ -366,10 +366,18 @@ func (ws *WshServer) DagSubmitCommand(ctx context.Context, data wshrpc.CommandDa
 		proposed.PlanReview = orchestrate.NewPlanReview()
 		orchestrate.RecomputeDagStatus(&proposed)
 	}
-	// a revision of a plan whose review has run its last round is refused before the landing tree is touched:
-	// ReplacePlanReviewProposal refuses it too, but only after SnapshotDocs committed the refused plan onto
-	// wave/<run>, where accepting the old proposal would then cut its tasks from
-	if run.DagORef != "" && data.PlanPath != "" {
+	// decided before the landing tree is touched, since engine merges may be running there. A first submit the
+	// run's status refuses must not run Setup. A revision of a plan whose review has run its last round is
+	// refused here: ReplacePlanReviewProposal refuses it too, but only after SnapshotDocs committed the refused
+	// plan onto wave/<run>, where accepting the old proposal would then cut its tasks from. A resubmit onto a dag
+	// it cannot replace can only be accepted as a retry of the same proposal, whose docs the first submit already
+	// committed, so it commits nothing.
+	retryOnly := false
+	if run.DagORef == "" {
+		if err := checkDagSubmittable(run); err != nil {
+			return nil, err
+		}
+	} else if data.PlanPath != "" {
 		stored, err := wstore.GetDag(ctx, run.DagORef)
 		if err != nil {
 			return nil, err
@@ -378,6 +386,8 @@ func (ws *WshServer) DagSubmitCommand(ctx context.Context, data wshrpc.CommandDa
 			if err := orchestrate.PlanReviewRoundsSpent(stored); err != nil {
 				return nil, err
 			}
+		} else {
+			retryOnly = true
 		}
 	}
 	// the landing tree is where Verify runs, and the plan's Setup line is first known here. A run that
@@ -394,21 +404,21 @@ func (ws *WshServer) DagSubmitCommand(ctx context.Context, data wshrpc.CommandDa
 	// a branch-landed run commits its spec and plan before any lane is cut, so every task reads the version
 	// it was submitted with and the docs land with the run; the dag keeps their repo-relative paths
 	if run.LandPath != "" && data.PlanPath != "" {
-		rels, err := orchestrate.SnapshotDocs(ctx, run.LandPath, run.ID, data.Title, data.SpecPath, data.PlanPath)
+		var rels []string
+		var err error
+		if retryOnly {
+			rels, err = orchestrate.DocPaths(ctx, run.LandPath, data.SpecPath, data.PlanPath)
+		} else {
+			rels, err = orchestrate.SnapshotDocs(ctx, run.LandPath, run.ID, data.Title, data.SpecPath, data.PlanPath)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("committing the spec and plan to wave/%s: %w", run.ID, err)
 		}
 		proposed.SpecPath, proposed.PlanPath = rels[0], rels[1]
 	}
 	stored, created, err := wstore.CreateDagForRun(ctx, data.ChannelId, data.RunId, &proposed, func(run *waveobj.Run) error {
-		if run.Mode != jarvis.RunMode_Orchestrator {
-			return fmt.Errorf("dag requires an orchestrator-mode run")
-		}
-		// accept both a deferred planning run and a live lead run that publishes its dag mid-run
-		// (the adaptive orchestrator flow starts the orchestrate phase immediately). CreateDagForRun
-		// rejects a run that already links a dag, so allowing executing cannot double-publish.
-		if run.Status != jarvis.RunStatus_Planning && run.Status != jarvis.RunStatus_Executing {
-			return fmt.Errorf("dag run %s is %s, want planning or executing", run.ID, run.Status)
+		if err := checkDagSubmittable(run); err != nil {
+			return err
 		}
 		run.Status = jarvis.RunStatus_Executing
 		return nil
@@ -449,6 +459,20 @@ func (ws *WshServer) DagSubmitCommand(ctx context.Context, data wshrpc.CommandDa
 		return fresh, nil
 	}
 	return stored, nil
+}
+
+// checkDagSubmittable refuses a run that cannot take its first dag. It accepts both a deferred planning run
+// and a live lead run that publishes its dag mid-run (the adaptive orchestrator flow starts the orchestrate
+// phase immediately); CreateDagForRun rejects a run that already links a dag, so allowing executing cannot
+// double-publish.
+func checkDagSubmittable(run *waveobj.Run) error {
+	if run.Mode != jarvis.RunMode_Orchestrator {
+		return fmt.Errorf("dag requires an orchestrator-mode run")
+	}
+	if run.Status != jarvis.RunStatus_Planning && run.Status != jarvis.RunStatus_Executing {
+		return fmt.Errorf("dag run %s is %s, want planning or executing", run.ID, run.Status)
+	}
+	return nil
 }
 
 // submitFixRound appends a fix plan's tasks to the run's dag after its final stage finished. Only the tasks are

@@ -659,6 +659,147 @@ func TestIgnoredSpecIsRefusedBeforePlanning(t *testing.T) {
 	})
 }
 
+// a submit is decided before it touches the landing tree, where engine merges may be running: a refused one
+// commits no docs there and runs no Setup. A checkout-landed run has no tree to touch, and is refused with the same
+// errors.
+func TestDagSubmitRefusedLeavesTheLandingTreeAlone(t *testing.T) {
+	ctx := context.Background()
+	newRun := func(t *testing.T, status string, checkout bool) (waveobj.Run, string, string, func(...string) string) {
+		t.Helper()
+		projectDir, execGit := newLandingRepo(t)
+		ch, err := wstore.CreateChannel(ctx, "landing-refused", projectDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		run := jarvis.NewRun("g", "ws", projectDir, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+		run.Status = status
+		tree := projectDir
+		if !checkout {
+			if tree, err = orchestrate.CreateRunWorktree(ctx, projectDir, run.ID, ""); err != nil {
+				t.Fatal(err)
+			}
+			run.LandPath = tree
+		}
+		if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+			t.Fatal(err)
+		}
+		return run, ch.OID, tree, execGit
+	}
+	writePlanIn := func(t *testing.T, tree, body string) string {
+		t.Helper()
+		plan := filepath.Join(tree, "docs", "plans", "p.md")
+		if err := os.MkdirAll(filepath.Dir(plan), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(plan, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return plan
+	}
+
+	t.Run("a conflicting resubmit commits nothing", func(t *testing.T) {
+		run, channelId, tree, execGit := newRun(t, jarvis.RunStatus_Planning, false)
+		plan := writePlanIn(t, tree, "### Task 1: input\n")
+		submit := func() error {
+			_, err := (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: channelId, RunId: run.ID, PlanPath: plan})
+			return err
+		}
+		if err := submit(); err != nil {
+			t.Fatal(err)
+		}
+		branch := "wave/" + run.ID
+		tip := execGit("rev-parse", branch)
+
+		writePlanIn(t, tree, "### Task 1: input\n\n### Task 2: output\n")
+		if err := submit(); err == nil || !strings.Contains(err.Error(), "dag conflict") {
+			t.Fatalf("resubmit err = %v, want a dag conflict", err)
+		}
+		if got := execGit("rev-parse", branch); got != tip {
+			t.Fatalf("the refused resubmit committed on %s: %s -> %s", branch, tip, got)
+		}
+	})
+
+	t.Run("an identical resubmit is a retry that commits nothing and keeps the docs' paths", func(t *testing.T) {
+		run, channelId, tree, execGit := newRun(t, jarvis.RunStatus_Planning, false)
+		plan := writePlanIn(t, tree, "### Task 1: input\n")
+		submit := func() (*waveobj.TaskGroup, error) {
+			return (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: channelId, RunId: run.ID, PlanPath: plan})
+		}
+		first, err := submit()
+		if err != nil {
+			t.Fatal(err)
+		}
+		branch := "wave/" + run.ID
+		tip := execGit("rev-parse", branch)
+		second, err := submit()
+		if err != nil {
+			t.Fatalf("retry err = %v, want the same proposal accepted", err)
+		}
+		if second.OID != first.OID || second.PlanPath != first.PlanPath || second.PlanPath != "docs/plans/p.md" {
+			t.Fatalf("retry dag %s plan %q, want dag %s plan %q at its repo-relative path", second.OID, second.PlanPath, first.OID, first.PlanPath)
+		}
+		if got := execGit("rev-parse", branch); got != tip {
+			t.Fatalf("the retry committed on %s: %s -> %s", branch, tip, got)
+		}
+	})
+
+	t.Run("a run that cannot take a dag runs no setup", func(t *testing.T) {
+		run, channelId, tree, execGit := newRun(t, jarvis.RunStatus_Done, false)
+		plan := writePlanIn(t, tree, "**Setup:** `echo ok > prepared.txt`\n\n### Task 1: input\n")
+		tip := execGit("rev-parse", "wave/"+run.ID)
+		_, err := (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: channelId, RunId: run.ID, PlanPath: plan})
+		if err == nil || !strings.Contains(err.Error(), "want planning or executing") {
+			t.Fatalf("submit err = %v, want the status refusal", err)
+		}
+		if _, err := os.Stat(filepath.Join(tree, "prepared.txt")); err == nil {
+			t.Fatal("setup ran for a submit that was refused")
+		}
+		if got := execGit("rev-parse", "wave/"+run.ID); got != tip {
+			t.Fatalf("the refused submit committed its docs: %s -> %s", tip, got)
+		}
+	})
+
+	t.Run("a checkout run that cannot take a dag is refused with the status error", func(t *testing.T) {
+		run, channelId, tree, execGit := newRun(t, jarvis.RunStatus_Done, true)
+		plan := writePlanIn(t, tree, "**Setup:** `echo ok > prepared.txt`\n\n### Task 1: input\n")
+		head := execGit("rev-parse", "HEAD")
+		_, err := (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: channelId, RunId: run.ID, PlanPath: plan})
+		if err == nil || !strings.Contains(err.Error(), "want planning or executing") {
+			t.Fatalf("submit err = %v, want the status refusal", err)
+		}
+		if _, err := os.Stat(filepath.Join(tree, "prepared.txt")); err == nil {
+			t.Fatal("setup ran for a submit that was refused")
+		}
+		if got := execGit("rev-parse", "HEAD"); got != head {
+			t.Fatalf("the checkout moved: %s -> %s", head, got)
+		}
+		if stored, err := wstore.GetRun(ctx, channelId, run.ID); err != nil || stored.DagORef != "" {
+			t.Fatalf("run = %+v, %v, want no dag", stored, err)
+		}
+	})
+
+	t.Run("a checkout run's conflicting resubmit is still a dag conflict", func(t *testing.T) {
+		run, channelId, tree, execGit := newRun(t, jarvis.RunStatus_Planning, true)
+		plan := writePlanIn(t, tree, "### Task 1: input\n")
+		submit := func() error {
+			_, err := (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: channelId, RunId: run.ID, PlanPath: plan})
+			return err
+		}
+		if err := submit(); err != nil {
+			t.Fatal(err)
+		}
+		head := execGit("rev-parse", "HEAD")
+
+		writePlanIn(t, tree, "### Task 1: input\n\n### Task 2: output\n")
+		if err := submit(); err == nil || !strings.Contains(err.Error(), "dag conflict") {
+			t.Fatalf("resubmit err = %v, want a dag conflict", err)
+		}
+		if got := execGit("rev-parse", "HEAD"); got != head {
+			t.Fatalf("the checkout moved: %s -> %s", head, got)
+		}
+	})
+}
+
 // a fix round's plan is committed on the run's branch like the run's own, but only once the round is accepted:
 // the landing tree may be running the final stage
 func TestDagSubmitRoundCommitsTheFixPlanOnTheRunsBranch(t *testing.T) {

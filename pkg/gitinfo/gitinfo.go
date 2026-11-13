@@ -411,6 +411,17 @@ func HeadCommit(ctx context.Context, cwd string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// ResolveCommit returns the SHA rev names in cwd. Errors when rev names no commit.
+func ResolveCommit(ctx context.Context, cwd, rev string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	out, err := run(ctx, cwd, "rev-parse", "--verify", "-q", rev+"^{commit}")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // CurrentBranch returns the branch checked out in cwd, or "" on a detached HEAD. Errors when cwd is not
 // a repo or HEAD is unborn.
 func CurrentBranch(ctx context.Context, cwd string) (string, error) {

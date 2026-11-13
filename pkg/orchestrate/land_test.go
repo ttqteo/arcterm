@@ -1163,6 +1163,42 @@ func TestLandRecognizesAHandMergedBranch(t *testing.T) {
 	}
 }
 
+// the land deletes wave/<runId>, so the commit it merged is kept on the land: the evidence seal proves the merge is
+// the run's by it
+func TestLandRecordsTheBranchTipItMerged(t *testing.T) {
+	f, _ := landFixture(t)
+	tip := gitCmd(t, f.project, "rev-parse", "wave/"+f.ownerID)
+	land := f.landRun(t, false)
+	if land == nil || land.State != LandState_Landed {
+		t.Fatalf("land = %+v, want landed", land)
+	}
+	if land.Tip != tip {
+		t.Fatalf("land tip %q, want the merged branch tip %s", land.Tip, tip)
+	}
+	if got := f.owner(t).Land; got == nil || got.Tip != tip {
+		t.Fatalf("stored land = %+v, want its tip %s", got, tip)
+	}
+	if branchExists(f.project, "wave/"+f.ownerID) {
+		t.Fatal("the run's branch was not deleted")
+	}
+}
+
+// a branch merged by hand while it still exists is recorded by its tip too, read before the land removes it
+func TestLandRecordsTheTipOfAHandMergedBranch(t *testing.T) {
+	f, _ := landFixture(t)
+	tip := gitCmd(t, f.project, "rev-parse", "wave/"+f.ownerID)
+	gitCmd(t, f.project, "merge", "--no-ff", "-m", "merged by hand", "wave/"+f.ownerID)
+	head := gitCmd(t, f.project, "rev-parse", "HEAD")
+
+	land := f.landRun(t, false)
+	if land == nil || land.State != LandState_Landed || land.Commit != head {
+		t.Fatalf("land = %+v, want landed on the human's merge %s", land, head)
+	}
+	if land.Tip != tip {
+		t.Fatalf("land tip %q, want the merged branch tip %s", land.Tip, tip)
+	}
+}
+
 // run 1409ee43: another session's edits held the land, that session then committed them, and the run sat held
 // until the human asked how to land it. A hold made only by uncommitted changes retries once they are gone.
 func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
