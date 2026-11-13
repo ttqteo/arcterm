@@ -45,6 +45,8 @@ export function liveFile(home: string | undefined, sessionId: string): string | 
 export class LiveGather {
     private readonly blocks = new Map<number, LiveBlock>();
     private lastWrite = -Infinity;
+    // text arrived since the last write
+    private unwritten = false;
 
     constructor(
         readonly turn: string,
@@ -62,6 +64,7 @@ export class LiveGather {
         } else {
             block.text += text;
         }
+        this.unwritten = true;
     }
 
     /** Whether any block has text: a step that only called tools writes nothing. */
@@ -69,14 +72,25 @@ export class LiveGather {
         return this.blocks.size > 0;
     }
 
-    /** Whether a write is due at `now`: there is text, and the last write is LIVE_WRITE_MS old. */
+    /** Whether a write is due at `now`: text arrived since the last write, and that write is LIVE_WRITE_MS old. */
     due(now: number): boolean {
-        return this.hasText() && now - this.lastWrite >= LIVE_WRITE_MS;
+        return this.unwritten && now - this.lastWrite >= LIVE_WRITE_MS;
+    }
+
+    /** In how many ms the text not yet written is due, or null when it is all written. A chunk only writes when it is
+     *  due, so the last text of a block that lands inside the window waits on this: a tool call's input can stream for
+     *  seconds after it with no text chunk, and Chat would hold the block cut mid-word ("Writ") until the step ends. */
+    flushIn(now: number): number | null {
+        if (!this.unwritten) {
+            return null;
+        }
+        return Math.max(0, this.lastWrite + LIVE_WRITE_MS - now);
     }
 
     /** The file's content at `now`, which counts as a write. */
     payload(done: boolean, now: number): string {
         this.lastWrite = now;
+        this.unwritten = false;
         const reply: LiveReply = {
             v: 1,
             turn: this.turn,
