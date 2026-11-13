@@ -681,7 +681,7 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
                     </SettingRow>
                 ) : null}
                 {hasPage ? (
-                    <SettingRow label="On the rail" sub="Up to three apps, under Radar">
+                    <SettingRow label="On the rail" sub="Up to three apps, under Diff">
                         <Toggle
                             data-tool-rail-pin
                             on={rail.on}

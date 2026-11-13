@@ -161,7 +161,7 @@ Nav rail bên trái có bảy surface đánh số (`Ctrl+1`…`Ctrl+7`, theo th�
 | **Usage** | `Ctrl+4`, `Ctrl+G` `u` | Quota 5 giờ/tuần, token và chi phí ước tính, phân tích nơi quota đi | [Usage](usage.md) |
 | **Code** | `Ctrl+5`, `Ctrl+G` `b` | Duyệt và sửa file của project | [Code](code.md) |
 | **Diff** | `Ctrl+6`, `Ctrl+G` `f` | Lịch sử git, file đã đổi và diff, chỉ đọc | [Diff](diff.md) |
-| **Radar** | `Ctrl+7`, `Ctrl+G` `r` | Phát hiện từ audit các commit sửa lỗi, biến thành việc | [Radar](radar.md) |
+| **Radar** | `Ctrl+G` `r` (không còn trên rail) | Phát hiện từ audit các commit sửa lỗi, biến thành việc | [Radar](radar.md) |
 | **Setup** | `Ctrl+G` `.` | Instructions và skills dùng chung cho mọi harness | [Setup](setup.md) |
 | **Settings** | `Ctrl+G` `,` | Tài khoản Claude, route của run, giao diện, terminal, AI nền | [Settings](settings.md) |
 

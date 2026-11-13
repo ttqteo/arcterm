@@ -57,7 +57,7 @@ const ICON: Record<SurfaceKey, LucideIcon> = {
     app: AppWindow,
 };
 
-// the surfaces used all day, then the tools reached for now and then; Ctrl+1..7 follow this order (SURFACE_ORDER)
+// the surfaces used all day, then the tools reached for now and then; Ctrl+1..6 follow this order (SURFACE_ORDER)
 export const CORE_ITEMS: { key: SurfaceKey; label: string }[] = [
     { key: "cockpit", label: "Cockpit" },
     { key: "jarvis", label: "Jarvis" },
@@ -68,7 +68,6 @@ export const CORE_ITEMS: { key: SurfaceKey; label: string }[] = [
 export const TOOL_ITEMS: { key: SurfaceKey; label: string }[] = [
     { key: "code", label: "Code" },
     { key: "files", label: "Diff" },
-    { key: "radar", label: "Radar" },
 ];
 
 export const ITEMS = [...CORE_ITEMS, ...TOOL_ITEMS];
@@ -167,7 +166,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     const [active, setActive] = useAtom(model.surfaceAtom);
     // Three disjoint "needs you" badges from one server-computed list: Cockpit counts the agents that need you
     // (its cards), Jarvis the rest of what waits on you (gates, runs to confirm or land, escalations: its Brief
-    // queue), Radar the projects with untriaged findings. Each sits on the surface that clears it. Agent counts
+    // queue). Each sits on the surface that clears it. Agent counts
     // the agents that finished a turn you have not looked at yet (unreadagents.ts). Setup, at the bottom, counts the
     // projects whose memory has a change to review (memorystore.ts).
     const attention = useAtomValue(attentionAtom);
@@ -181,7 +180,6 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
         cockpit: cockpitWaiting,
         jarvis: split.jarvis.length,
         agent: unread.size, // agents with something unread, not turns: the rows carry each agent's count
-        radar: split.radar.length,
     };
     const working = workingCount(agents);
     // On Agent itself the badge is a shortcut: it opens the agent that finished last, as choosing its row does, and
@@ -197,9 +195,9 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
         globalStore.set(focusSubagentAtom, null);
         showTerminal();
     };
-    // while Ctrl is held each surface shows the digit Ctrl+1..7 jumps to (ITEMS is SURFACE_ORDER; digithints.ts)
+    // while Ctrl is held each surface shows the digit Ctrl+1..6 jumps to (ITEMS is SURFACE_ORDER; digithints.ts)
     const ctrlHeld = useAtomValue(digitHintAtom) === "ctrl";
-    // the apps pinned under Radar: the pins that still name a held service, at most three (railapps.ts)
+    // the apps pinned under Diff: the pins that still name a held service, at most three (railapps.ts)
     const services = useAtomValue(servicesAtom);
     const pinIds = useAtomValue(railPinsAtom);
     const pinned = services == null ? [] : railPins(pinIds, services);

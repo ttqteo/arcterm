@@ -3,17 +3,22 @@ import { SURFACE_ORDER } from "./agents";
 import { CORE_ITEMS, ITEMS, TOOL_ITEMS } from "./navrail";
 
 describe("SURFACE_ORDER", () => {
-    it("has exactly 7 entries so Ctrl+1..7 covers every one — no surface is unreachable by chord", () => {
-        expect(SURFACE_ORDER).toHaveLength(7);
+    it("has exactly 6 entries so Ctrl+1..6 covers every one — no surface is unreachable by chord", () => {
+        expect(SURFACE_ORDER).toHaveLength(6);
     });
 
     it("has no Sessions surface: past conversations are a centre mode of Agent", () => {
         expect(SURFACE_ORDER).not.toContain("sessions");
     });
 
-    it("puts Usage on Ctrl+4 and the tools Code, Diff, Radar on Ctrl+5..7", () => {
+    it("puts Usage on Ctrl+4 and the tools Code, Diff on Ctrl+5..6", () => {
         expect(SURFACE_ORDER.indexOf("usage") + 1).toBe(4);
-        expect(SURFACE_ORDER.slice(4)).toEqual(["code", "files", "radar"]);
+        expect(SURFACE_ORDER.slice(4)).toEqual(["code", "files"]);
+    });
+
+    it("keeps Radar off the rail and the chords while it is being retired", () => {
+        expect(SURFACE_ORDER).not.toContain("radar");
+        expect(ITEMS.map((i) => i.key)).not.toContain("radar");
     });
 
     it("no longer carries the merged-away or removed surfaces", () => {
@@ -34,7 +39,7 @@ describe("SURFACE_ORDER", () => {
 
     it("groups the rail: the surfaces used all day, then the tools", () => {
         expect(CORE_ITEMS.map((i) => i.key)).toEqual(["cockpit", "jarvis", "agent", "usage"]);
-        expect(TOOL_ITEMS.map((i) => i.key)).toEqual(["code", "files", "radar"]);
+        expect(TOOL_ITEMS.map((i) => i.key)).toEqual(["code", "files"]);
         expect(ITEMS).toEqual([...CORE_ITEMS, ...TOOL_ITEMS]);
     });
 

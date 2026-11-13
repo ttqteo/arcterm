@@ -59,6 +59,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Radar is off the nav rail and the number chords while it waits to be removed: `Cmd`+`1`…`6` (`Ctrl` on Windows)
+  now go from Cockpit to Diff, pinned apps sit under Diff, and `Cmd`+`G` `r` still opens Radar until then.
 - Jarvis's Since you looked is split by kind: the runs that moved, one row per initiative for the whole stretch
   (not one per day), five at a time, and the records folded into one row you open. It also stops listing every
   record first and counting raw events in its "+N more". Ideas and For later moved under the initiatives, side by

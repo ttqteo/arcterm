@@ -176,7 +176,7 @@ async function channelRuns(h, channelId) {
 // arrange needed; a populated-roster visual still relies on the manual inject-live-agents path.
 // Channels/Graph/Tasks merged into Jarvis and have no nav button left, so listing one here would make
 // h.goto throw before any step is recorded.
-const SMOKE_SURFACES = ["cockpit", "jarvis", "radar", "usage", "files", "settings", "code", "setup"];
+const SMOKE_SURFACES = ["cockpit", "jarvis", "usage", "files", "settings", "code", "setup"];
 
 const surfaceSmoke = {
     name: "surface-smoke",
@@ -15373,7 +15373,7 @@ const resourceLinking = {
             const surface = await h.activeSurfaceLabel();
             rec(
                 "5. a finding address lands on that finding on a first Radar visit",
-                result?.ok === true && shown && surface === SURFACE_LABEL.radar,
+                result?.ok === true && shown,
                 JSON.stringify({ result, shown, surface, olderThanNewest: !ctx.radar.newest, toasts: await toastText() })
             );
         }
@@ -16793,8 +16793,8 @@ const agentTreeQuickReturn = {
 // The Agent surface after the Sessions merge (docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md): the sidebar's Active section
 // (the live agents) over its Conversations section of ended sessions in a folder per project (Show more pages a folder), both sections and
 // the folders folding, the app bar's project switcher narrowing the sidebar, the session pane with Resume, Conversation History, Esc back
-// to the terminal, `g s`, History's list cursor leaving with the surface, and a rail with no Sessions item (Radar on
-// Ctrl+7). One live fixture agent gives the Active section a project folder; GetSessionsActivity is answered in-page (see installAhMock). The
+// to the terminal, `g s`, History's list cursor leaving with the surface, and a rail with no Sessions item (Diff on
+// Ctrl+6). One live fixture agent gives the Active section a project folder; GetSessionsActivity is answered in-page (see installAhMock). The
 // ghost's project is registered for the run, since the switcher offers registered projects only. Resume is asserted present, never clicked:
 // it would start a real agent. Keys are synthetic keydowns at the focused element, as docReviewEscape sends them.
 const AH_LIVE_ID = "fx-ah-live";
@@ -17474,14 +17474,15 @@ const agentHistory = {
             await ahNap(400);
 
             const nav = await h.ev(`[...document.querySelectorAll("nav button")].map((b) => b.getAttribute("aria-label"))`);
-            await ahKey(h, "7", "Digit7", MOD_KEY);
+            await ahKey(h, "6", "Digit6", MOD_KEY);
             await ahNap(800);
             const afterChord = await h.activeSurfaceLabel();
             rec(
-                "12. the rail has seven surfaces in two groups and no Sessions, and Ctrl+7 opens Radar",
+                "12. the rail has six surfaces in two groups and no Sessions or Radar, and Ctrl+6 opens Diff",
                 !nav.includes("Sessions") &&
-                    JSON.stringify(nav.slice(0, 7)) === JSON.stringify(["Cockpit", "Jarvis", "Agent", "Usage", "Code", "Diff", "Radar"]) &&
-                    afterChord === "Radar",
+                    !nav.includes("Radar") &&
+                    JSON.stringify(nav.slice(0, 6)) === JSON.stringify(["Cockpit", "Jarvis", "Agent", "Usage", "Code", "Diff"]) &&
+                    afterChord === "Diff",
                 JSON.stringify({ nav, afterChord })
             );
 
@@ -17516,7 +17517,7 @@ const agentHistory = {
                 const reopened = await ahWait(h, `document.querySelector("[data-agent-history]")`, 4000);
                 await ahNap(300);
                 const owner = await ahListNavSurface(h, modules.urls);
-                await ahKey(h, "7", "Digit7", MOD_KEY);
+                await ahKey(h, "6", "Digit6", MOD_KEY);
                 await ahNap(800);
                 const elsewhere = await h.activeSurfaceLabel();
                 const withdrawn = await ahListNavSurface(h, modules.urls);
@@ -17535,7 +17536,7 @@ const agentHistory = {
                               ok:
                                   reopened === true &&
                                   owner.surface === "agent" &&
-                                  elsewhere === "Radar" &&
+                                  elsewhere === "Diff" &&
                                   withdrawn.surface !== "agent" &&
                                   kept === true &&
                                   republished.surface === "agent",
@@ -17543,7 +17544,7 @@ const agentHistory = {
                                   reopened,
                                   onAgent: owner.surface,
                                   elsewhere,
-                                  onRadar: withdrawn.surface,
+                                  onDiff: withdrawn.surface,
                                   historyKept: kept,
                                   backOnAgent: republished.surface,
                               }),
@@ -23289,8 +23290,7 @@ const FINAL_SHOTS_CAPTURES = {
         "jarvis-peek-empty",
         "resource-linking",
     ],
-    radar: ["surface-radar", "receipt"],
-    usage: ["surface-usage", "checkout-filled"],
+    usage: ["surface-usage", "checkout-filled", "receipt"],
     files: ["surface-files"],
     settings: ["surface-settings", "checkout-empty"],
     code: ["surface-code"],
@@ -23312,11 +23312,10 @@ const FS_S = "skip";
 const FINAL_SHOTS_BOARD = [
     {
         name: "surface-smoke",
-        shots: ["surface-smoke", "surface-cockpit", "surface-jarvis", "surface-radar", "surface-usage", "surface-files", "surface-settings", "surface-code", "surface-setup"],
+        shots: ["surface-smoke", "surface-cockpit", "surface-jarvis", "surface-usage", "surface-files", "surface-settings", "surface-code", "surface-setup"],
         steps: [
             [FS_P, 'goto cockpit -> active nav "Cockpit", content non-empty', "active=Cockpit contentLen=1643"],
             [FS_P, 'goto jarvis -> active nav "Jarvis", content non-empty', "active=Jarvis contentLen=1378"],
-            [FS_P, 'goto radar -> active nav "Radar", content non-empty', "active=Radar contentLen=1775"],
             [FS_P, 'goto usage -> active nav "Usage", content non-empty', "active=Usage contentLen=1909"],
             [FS_P, 'goto files -> active nav "Diff", content non-empty', "active=Diff contentLen=1349"],
             [FS_P, 'goto settings -> active nav "Settings", content non-empty', "active=Settings contentLen=2036"],
@@ -23670,7 +23669,7 @@ const finalShotsScenario = {
                 v.tabs[0].on &&
                 v.tabs[0].text.startsWith("surface-smoke") &&
                 v.img?.loaded === true &&
-                v.film.length === 9 &&
+                v.film.length === 8 &&
                 v.film[0].on &&
                 (v.path ?? "").endsWith("/2/cdp-shots/surface-smoke.png") &&
                 v.steps?.expanded === "false" &&
@@ -31279,8 +31278,13 @@ const RADAR_REMOVED_TEXT = [
 const RADAR_PARTIAL_FAILED = ["7927fb68", "9caee0d3"];
 const RADAR_AUDIT_ERROR = "Timed out after 10 minutes.";
 
+// Radar is off the nav rail while it is being retired (docs/superpowers/plans/2026-11-13-retire-radar.md), so h.goto
+// cannot click it: the go-to leader still reaches it.
 const radarOpen = async (h) => {
-    await h.goto("radar");
+    await h.goto("cockpit");
+    await h.ev("document.activeElement?.blur?.()");
+    await ahKey(h, "g", "KeyG", MOD_KEY);
+    await ahKey(h, "r", "KeyR");
     return polishWaitFor(h, `typeof window.__setRadarScenario === 'function'`, 8000);
 };
 
@@ -31403,7 +31407,7 @@ async function radarOpenDismissMenu(h) {
 
 const radarReport = {
     name: "radar-report",
-    surface: "radar",
+    surface: "cockpit",
     async arrange(h) {
         const ctx = { cwd: process.cwd() };
         // a throw past this point still returns ctx, so teardown removes whatever was already made
@@ -31774,7 +31778,7 @@ const radarReport = {
 
 const radarScanStates = {
     name: "radar-scan-states",
-    surface: "radar",
+    surface: "cockpit",
     async arrange() {
         return {};
     },
@@ -38134,7 +38138,7 @@ const agentRailTabs = {
         await h.shot("cdp-shots/agent-rail-tabs-nav.png");
         rec(
             "10. the nav lists the core surfaces, a divider, then shorter tool items, and Ctrl+4 opens Usage",
-            JSON.stringify(nav.map((n) => n.label)) === JSON.stringify(["Cockpit", "Jarvis", "Agent", "Usage", "Code", "Diff", "Radar", "Setup", "Settings"]) &&
+            JSON.stringify(nav.map((n) => n.label)) === JSON.stringify(["Cockpit", "Jarvis", "Agent", "Usage", "Code", "Diff", "Setup", "Settings"]) &&
                 divider &&
                 height("Code") < height("Usage") &&
                 afterChord === "Usage",
@@ -67162,7 +67166,7 @@ const LOOK_AMBIENT = {
 
 const ambientTags = {
     name: "ambient-tags",
-    surface: "radar",
+    surface: "cockpit",
     async arrange() {
         return {};
     },

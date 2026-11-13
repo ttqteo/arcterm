@@ -327,10 +327,10 @@ Chín mục, chia ba nhóm:
 | Nhóm | Mục | Phím nhảy |
 |---|---|---|
 | Dùng hằng ngày | **Cockpit**, **Jarvis**, **Agent**, **Usage** | `Ctrl+1` … `Ctrl+4` |
-| Công cụ | **Code**, **Diff**, **Radar** | `Ctrl+5` … `Ctrl+7` |
+| Công cụ | **Code**, **Diff** | `Ctrl+5` … `Ctrl+6` |
 | Đáy rail | **Setup**, **Settings** | `Ctrl+G` `.` và `Ctrl+G` `,` (không có `Ctrl+số`) |
 
-Phím `Ctrl+G` rồi: `c` Cockpit, `j` Jarvis, `a` Agent, `s` Conversation History, `u` Usage, `b` Code, `f` Diff, `r` Radar, `.` Setup, `,` Settings, `p` Search, `w` việc đang chờ (popup của Jarvis). `[` và `]` đi lùi/tiến qua các surface.
+Phím `Ctrl+G` rồi: `c` Cockpit, `j` Jarvis, `a` Agent, `s` Conversation History, `u` Usage, `b` Code, `f` Diff, `r` Radar (đã rời rail, đang chờ gỡ hẳn), `.` Setup, `,` Settings, `p` Search, `w` việc đang chờ (popup của Jarvis). `[` và `]` đi lùi/tiến qua các surface.
 
 Các huy hiệu trên rail:
 
@@ -338,13 +338,12 @@ Các huy hiệu trên rail:
 |---|---|
 | **Cockpit** | Số việc đang chờ bạn (câu hỏi, cổng duyệt, task bị chặn, run cần xác nhận hoặc land). Màu vàng |
 | **Agent** | Số agent có lượt đã xong mà bạn chưa đọc (màu accent; chỉ tính agent cấp trên, không tính worker của run). Khi bạn đang ở surface khác, còn có chấm xanh nhấp nháy cùng số agent đang làm; rê chuột để đọc bằng chữ |
-| **Radar** | Số project có phát hiện chưa triage |
 
 Trên macOS, tổng huy hiệu Agent và Cockpit cũng hiện trên biểu tượng Dock. Khi cửa sổ hẹp hơn 900 px, rail thu thành cột biểu tượng không có nhãn.
 
 ### Ứng dụng ghim trên rail
 
-Dưới **Radar**, sau một vạch chia thứ hai, rail giữ tối đa ba service (tool có trang, như dashboard hay dev server) mà bạn ghim. Bấm vào một cái để mở nó thành surface riêng: header của service ở trên, trang lấp đầy phần còn lại. Đó vẫn là khung trang mà Agent hiện, nên chuyển qua lại không tải lại trang. Service đang ngủ sẽ thức khi surface của nó hiện: trong lúc nó khởi động, surface hiện một thẻ chờ. Khi service crash, cổng bị chiếm hay không có trang, surface hiện một thẻ với nút chính **Restart** và **Open its log**. **Log** trên header mở log của nó ở Agent.
+Dưới **Diff**, sau một vạch chia thứ hai, rail giữ tối đa ba service (tool có trang, như dashboard hay dev server) mà bạn ghim. Bấm vào một cái để mở nó thành surface riêng: header của service ở trên, trang lấp đầy phần còn lại. Đó vẫn là khung trang mà Agent hiện, nên chuyển qua lại không tải lại trang. Service đang ngủ sẽ thức khi surface của nó hiện: trong lúc nó khởi động, surface hiện một thẻ chờ. Khi service crash, cổng bị chiếm hay không có trang, surface hiện một thẻ với nút chính **Restart** và **Open its log**. **Log** trên header mở log của nó ở Agent.
 
 Một ứng dụng chỉ chạy khi bạn dùng nó trong arcterm: rời khỏi nó (sang surface khác, hoặc sang tab khác ở trung tâm) thì một phút sau nó ngủ, và mở lại là nó khởi động lại. arcterm không bao giờ cắt ngang việc đang làm: nếu trong cây tiến trình của ứng dụng còn thứ gì nó khởi động sau khi trang đã trả lời (một câu trả lời của chat, một script) thì arcterm chờ thêm một phút rồi hỏi lại, cho tới khi xong mới cho ngủ. Ứng dụng có việc riêng theo giờ thì bật **Keep running** ở Setup → Tools: nó khởi động cùng arcterm và không bao giờ ngủ.
 

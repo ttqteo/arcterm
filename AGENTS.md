@@ -175,7 +175,7 @@ before working in an area you don't already know.
   `showHistory` / `showSession`, and `showTerminal` whenever a route chooses an agent). The Office (floors, rooms, the
   notice board) is a view of the Cockpit surface (`cockpitoffice.tsx`), unrelated to Jarvis. The nav badges are
   disjoint (`navrail.tsx`): Cockpit counts the agents that need you, Jarvis the rest that waits on you (gates, runs
-  to confirm or land, escalations), Radar the projects with untriaged findings, Agent the agents with an unread turn,
+  to confirm or land, escalations), Agent the agents with an unread turn,
   Setup the projects whose memory has a change to review.
 
 Load-bearing rules:
@@ -221,7 +221,7 @@ Load-bearing rules:
   page header and Setup → Tools row from the pure `servicesmodel.ts`. The Agent tree lists a service only while it is up
   or in trouble; Setup → Tools manages the apps (state, Pin, Keep running, Stop, Restart, Open), and the footer's Servers
   names a service's server `app · <name>`. There is no Services chip or popover in the app bar. A service can also be
-  pinned to the nav rail (up to three, under Radar; `railapps.ts` is the pure model, `railappsstore.ts` the
+  pinned to the nav rail (up to three, under Diff; `railapps.ts` is the pure model, `railappsstore.ts` the
   localStorage `apps.rail` list and the shown service): it opens as the `app` surface (`appsurface.tsx`), whose body
   publishes the app slot, so the one page frame moves there through the shell's `AppFrames` without a reload.
 - **Opening an item on another surface goes through the one router**, `frontend/app/view/jarvis/openref.ts`

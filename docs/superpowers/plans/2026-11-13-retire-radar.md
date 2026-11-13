@@ -10,6 +10,13 @@ diverged from the fork: different migration numbers, no `pkg/jarvisbackfill`, a 
 section, and `AttentionItem.ORef` used by kinds other than radar triage. Frontend, Go and scenarios/docs are removed
 side by side; one last task regenerates the bindings once the frontend and Go are both gone.
 
+**Already done before the run** (commit "feat(navrail): take Radar off the nav rail ahead of its removal",
+2026-11-13): `radar` is out of `SURFACE_ORDER`, `TOOL_ITEMS` and the nav badges; `coerceStartupSurface` boots anything
+off `SURFACE_ORDER` on the cockpit (Task 1 Steps 1, 2 and 4); `radarnav.test.ts` is deleted; the docs and `AGENTS.md`
+lines about the rail and `Ctrl+1..6` are updated; and the scenarios that read the rail (`surface-smoke`,
+`agent-history`, `agent-rail-tabs`, the final-shots fixtures, `resource-linking` step 5) no longer expect Radar, while
+the Radar scenarios reach it with `Ctrl+G r`. Each task skips what it finds done.
+
 **Tech Stack:** Go (wavesrv, wsh, sqlite migrations), React 19 + jotai + vitest, CDP scenarios (`scripts/cdp`).
 
 **Spec:** none. The decision (the owner's, 2026-11-13) and its numbers are under Why below.

@@ -14,7 +14,7 @@ diff với `HEAD` hay base của branch), [Cockpit](cockpit.md), [Orchestrator](
 
 | Cách | Kết quả |
 |---|---|
-| Nav rail → **Diff** | Mục thứ hai trong nhóm công cụ (Code, Diff, Radar) |
+| Nav rail → **Diff** | Mục thứ hai trong nhóm công cụ (Code, Diff) |
 | `Ctrl+6` (`Cmd+6` trên Mac) | Nhảy theo vị trí trong nav rail |
 | `Ctrl+G` rồi `f` | Chuỗi "go to" |
 

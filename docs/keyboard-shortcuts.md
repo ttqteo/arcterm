@@ -41,7 +41,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 
 | Keys | Action |
 |---|---|
-| `Mod`+`1`…`7` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Usage, Code, Diff, Radar. Hold `Mod` a moment to see the numbers on the rail |
+| `Mod`+`1`…`6` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Usage, Code, Diff. Hold `Mod` a moment to see the numbers on the rail |
 | `Mod`+`P` | Search — opens on the Files scope on Code (see below) |
 | `Mod`+`N` | New agent: opens the New dialog on an agent row |
 | `Mod`+`Shift`+`R` | New run: opens the New dialog on a run row |
@@ -115,7 +115,7 @@ agent's header `…` menu, and Search → Commands → "Open a tool…". The sea
 | `Mod`+`G` `c` | Cockpit (home) |
 | `Mod`+`G` `a` | Agent |
 | `Mod`+`G` `j` | Jarvis — channels, records, recall |
-| `Mod`+`G` `r` | Radar |
+| `Mod`+`G` `r` | Radar (off the rail and the number chords while it is retired; this is the way in) |
 | `Mod`+`G` `s` | Conversation History (in the Agent surface) |
 | `Mod`+`G` `v` | Canvas gallery — every project's design canvases (in the Agent surface) |
 | `Mod`+`G` `o` | Councils — every project's councils, closed ones too (in the Agent surface) |

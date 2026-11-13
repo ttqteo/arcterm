@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pinned apps on the nav rail (spec 2026-10-20-rail-apps-design.md): which held services sit under Radar, what the rail
+// Pinned apps on the nav rail (spec 2026-10-20-rail-apps-design.md): which held services sit under Diff, what the rail
 // item's dot and title say, which service the app surface shows, and the words of its card. Pure: the store keeps the
 // pins in localStorage, wavesrv owns the service state. `nowMs` is a parameter, as in servicesmodel.ts.
 

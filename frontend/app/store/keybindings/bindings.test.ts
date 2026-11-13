@@ -380,7 +380,7 @@ describe("Ctrl+Tab switcher", () => {
 });
 
 describe("surface switch [ / ]", () => {
-    it("cycles SURFACE_ORDER forward/back with wrap and reaches radar", () => {
+    it("cycles SURFACE_ORDER forward/back with wrap, past Diff back to the cockpit", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
         const bindings = buildGlobalBindings(model);
         const next = bindings.find((b) => b.id === "surface:next")!;
@@ -392,8 +392,8 @@ describe("surface switch [ / ]", () => {
         expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
 
         globalStore.set(model.surfaceAtom, "files");
-        next.run(ctx()); // files (Diff) -> radar (radar follows it in SURFACE_ORDER)
-        expect(globalStore.get(model.surfaceAtom)).toBe("radar");
+        next.run(ctx()); // files (Diff) is last now that Radar is off the rail: it wraps to the cockpit
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
 
         globalStore.set(model.surfaceAtom, SURFACE_ORDER[SURFACE_ORDER.length - 1]);
         next.run(ctx()); // wrap forward to first
@@ -403,7 +403,7 @@ describe("surface switch [ / ]", () => {
         expect(globalStore.get(model.surfaceAtom)).toBe(SURFACE_ORDER[SURFACE_ORDER.length - 1]);
     });
 
-    it("binds Mod+1..7 to SURFACE_ORDER, so Usage is Mod+4 and Radar is Mod+7", () => {
+    it("binds Mod+1..6 to SURFACE_ORDER, so Usage is Mod+4 and Diff is Mod+6", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
         const chords = buildGlobalBindings(model).filter(
             (b) => /^Mod:\d$/.test(b.keys) && b.id.startsWith("surface:")
@@ -415,12 +415,11 @@ describe("surface switch [ / ]", () => {
             "Mod:4",
             "Mod:5",
             "Mod:6",
-            "Mod:7",
         ]);
         chords.find((b) => b.keys === "Mod:4")!.run(ctx());
         expect(globalStore.get(model.surfaceAtom)).toBe("usage");
-        chords.find((b) => b.keys === "Mod:7")!.run(ctx());
-        expect(globalStore.get(model.surfaceAtom)).toBe("radar");
+        chords.find((b) => b.keys === "Mod:6")!.run(ctx());
+        expect(globalStore.get(model.surfaceAtom)).toBe("files");
     });
 
     it("binds Alt+1..9 to the Active list's agents on the Agent surface, inside a terminal too", () => {

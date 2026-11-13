@@ -35,10 +35,14 @@ export function rememberSurface(surface: SurfaceKey): SurfaceKey | null {
 
 // A persisted "activity" or "sessions" (retired surfaces: Activity folded into Sessions, Sessions into Agent's Conversation
 // History) coerces to "agent", so a stored legacy startup value boots into the Agent surface (the Settings picker then
-// shows no highlighted option for it). Callers that seed surfaceAtom from the stored value must route through this so a
-// stale key never renders a blank surface.
+// shows no highlighted option for it). Anything else off the rail order (Radar, taken off the rail while it is retired)
+// boots on the cockpit. Callers that seed surfaceAtom from the stored value must route through this so a stale key never
+// renders a blank surface.
 export function coerceStartupSurface(k: SurfaceKey | "activity" | "sessions"): SurfaceKey {
-    return (k as string) === "activity" || (k as string) === "sessions" ? "agent" : (k as SurfaceKey);
+    if ((k as string) === "activity" || (k as string) === "sessions") {
+        return "agent";
+    }
+    return SURFACE_ORDER.includes(k as SurfaceKey) ? (k as SurfaceKey) : "cockpit";
 }
 
 // Pure: the surface a launch opens on. "last" reopens the remembered surface; whatever is stored there is read, not

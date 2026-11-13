@@ -48,7 +48,9 @@ describe("startupMenuEntries", () => {
 describe("bootSurface", () => {
     it("reopens the remembered surface when the choice is last", () => {
         expect(bootSurface("last", "agent")).toBe("agent");
-        expect(bootSurface("last", "radar")).toBe("radar");
+    });
+    it("boots on the cockpit when the remembered surface is Radar, now off the rail", () => {
+        expect(bootSurface("last", "radar")).toBe("cockpit");
     });
     it("falls back to the cockpit for a remembered value that is not a surface", () => {
         expect(bootSurface("last", "nope")).toBe("cockpit");
@@ -125,7 +127,11 @@ describe("coerceStartupSurface", () => {
         expect(coerceStartupSurface("activity")).toBe("agent");
     });
     it("leaves a current surface alone", () => {
-        expect(coerceStartupSurface("radar")).toBe("radar");
+        expect(coerceStartupSurface("files")).toBe("files");
         expect(coerceStartupSurface("cockpit")).toBe("cockpit");
+    });
+    it("sends a stored Radar startup surface, now off the rail, to the cockpit", () => {
+        expect(coerceStartupSurface("radar")).toBe("cockpit");
+        expect(bootSurface("radar", "agent")).toBe("cockpit");
     });
 });

@@ -115,7 +115,7 @@ Trang **About**, thẻ **Coding agents** liệt kê mỗi harness đã cài vớ
 
 | Thẻ | Mục | Ghi chú |
 |---|---|---|
-| **Startup** | **Startup surface** | Surface mở khi khởi động. **Last opened** (mặc định) mở lại surface bạn rời; hoặc Cockpit, Jarvis, Usage, Code, Diff, Radar. |
+| **Startup** | **Startup surface** | Surface mở khi khởi động. **Last opened** (mặc định) mở lại surface bạn rời; hoặc Cockpit, Jarvis, Usage, Code, Diff. |
 | | **Show details rail by default** | Rail chi tiết của từng agent trên Agent (file đổi, artifact, upload, terminal). |
 | **Menu bar** | **Menu bar icon** (`app:tray`) | Biểu tượng của arcterm cạnh đồng hồ: việc đang chờ bạn, bộ nhớ, CPU và đĩa, một cú bấm là mở. |
 | | **Free memory beside the icon** (`app:traymemory`) | Dung lượng RAM còn trống, như thẻ Memory của popover đọc, cạnh biểu tượng (trên macOS), hoặc trong tooltip của biểu tượng khay (nơi khác). Theo kịp trong 10 giây. |

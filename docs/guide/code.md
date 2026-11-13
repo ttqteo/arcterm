@@ -10,7 +10,7 @@ Muốn xem một commit hay một khoảng lịch sử đã đổi gì, dùng [D
 
 | Cách | Kết quả |
 |---|---|
-| Nav rail → **Code** | Mục đầu của nhóm công cụ (Code, Diff, Radar) |
+| Nav rail → **Code** | Mục đầu của nhóm công cụ (Code, Diff) |
 | `Ctrl+5` (`Cmd+5` trên Mac) | Nhảy theo vị trí trong nav rail |
 | `Ctrl+G` rồi `b` | Chuỗi "go to": b là browse source |
 | `[` / `]` | Chuyển sang surface trước / sau |
