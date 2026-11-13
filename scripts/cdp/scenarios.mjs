@@ -15970,6 +15970,9 @@ const agentTreeRail = {
                 return {
                     w: Math.round(line.getBoundingClientRect().width),
                     whole: progress ? progress.scrollWidth <= progress.clientWidth : null,
+                    // how much of it shows, and whether its tooltip holds it whole
+                    shown: progress ? Math.round(progress.clientWidth) : null,
+                    titled: progress ? progress.title.length > 0 : null,
                     ram: ram ? (getComputedStyle(ram).display !== "none" ? ram.textContent.trim() : false) : null,
                     tokens: tokens ? tokens.textContent.trim() : null,
                     overflow: line.scrollWidth > line.clientWidth,
@@ -15989,20 +15992,24 @@ const agentTreeRail = {
         await h.ev(`window.__resmonFixture.clear()`);
         const runAt = runLine?.at ?? [];
         rec(
-            "7. the lead's run line carries its workers chip, unclipped progress and the task strip; its tokens, age and the run's RAM stay on the line at every width, the progress reads whole at the tree's own width, and nothing spills out of the line",
+            // the spec (2026-11-13-sidebar-declutter-design, "Bố cục dòng"): the words left of the columns shrink and cut
+            // with …, never the columns. At the tree's own 280px the three columns leave "Working · 0/3" about 40px, so
+            // it is cut there, but it shows, its tooltip has it whole, and it reads whole once the line has room
+            "7. the lead's run line carries its workers chip, its progress and the task strip; its tokens, age and the run's RAM stay on the line at every width; the progress shows at the tree's own width (whole in its tooltip) and reads whole from 300px; nothing spills out of the line",
             nested != null &&
                 /^\d+ of 3 tasks done/.test(nested.strip ?? "") &&
                 /workers?$/.test(nested.workersChip ?? "") &&
                 nested.progress != null &&
-                !nested.progress.clipped &&
                 runLine != null &&
                 runLine.restored === true &&
                 // the fixture is a real lead's line: tokens are there and a reading names the run's RAM
                 runAt.every((s) => s.tokens === "132k") &&
                 // the RAM keeps its column at every width
                 runAt.every((s) => typeof s.ram === "string" && s.ram !== "") &&
-                // the progress reads whole at the tree's own width, and nothing spills out of the line at any
-                runAt[0].whole === true &&
+                // the progress shows at the tree's own width, its tooltip whole; from 300px it reads whole
+                (runAt[0].shown ?? 0) >= 20 &&
+                runAt[0].titled === true &&
+                runAt.filter((s) => s.w >= 300).every((s) => s.whole === true) &&
                 runAt.every((s) => !s.overflow),
             JSON.stringify({ nested, runLine })
         );
@@ -54278,6 +54285,26 @@ const jobqueueAgentTag = {
             })()`);
         await h.goto("agent");
         await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${JQT_AGENT}"]')`, 8000);
+        // the fixture's block is not a real one, so its pane's controller start fails ("error getting block: not
+        // found") and the row says failed to start, which rightly wins over a queued tag. The agent this scenario is
+        // about is a working one: clear that refusal, once the pane has had its try
+        await new Promise((r) => setTimeout(r, 1500));
+        const started = await lookEval(h, `
+            const { globalStore } = await mod("app/store/jotaiStore.ts");
+            const { getStartErrorAtom } = await mod("app/view/agents/agentcontrollerstore.ts");
+            globalStore.set(getStartErrorAtom(${JSON.stringify(JQT_BLOCK)}), undefined);
+            return true;
+        `);
+        const startedShown = await polishWaitFor(
+            h,
+            `!(document.querySelector('[data-agent-row="${JQT_AGENT}"]')?.textContent ?? "").includes("failed to start")`,
+            3000
+        );
+        rec(
+            "0. the fixture agent reads as started (its fake block's start refusal cleared)",
+            started === true && startedShown,
+            JSON.stringify({ started, startedShown })
+        );
 
         // 1. the waiting agent's row reads queued #1, why in its tooltip
         await h.ev(jqtSnapshot(20_000));
@@ -54416,6 +54443,8 @@ const jobqueueRunTag = {
                               subTitle: sub?.title ?? null,
                               clipped: sub ? sub.scrollWidth > sub.clientWidth + 1 : null,
                               tag: workerTag?.textContent.trim() ?? null,
+                              tagTitle: workerTag?.title ?? null,
+                              tagWhole: workerTag ? workerTag.scrollWidth <= workerTag.clientWidth + 1 : null,
                           }
                         : null,
                 };
@@ -54428,14 +54457,17 @@ const jobqueueRunTag = {
         const one = await read();
         await h.shot("cdp-shots/jobqueue-run-tag.png");
         rec(
-            // a worker row's words truncate at the tree's width (its fixed columns take the rest): the state leads, so
-            // a truncation cuts the lane first, and the tooltip holds the whole line. `clipped` is reported, not judged
-            "1. the run's line says queued #1 naming Verify · noop, and t-1's row reads verify queued #1 in words (whole in its tooltip), with no tag of its own",
+            // the sidebar-declutter spec: a status tag such as QueuedJobTag stays whole beside the columns, and the words
+            // left of it shrink. So t-1's row carries the tag, whole, and its words (whole in their tooltip) say verify
+            // queued; at the tree's width they are mostly cut. `clipped` is reported, not judged
+            "1. the run's line says queued #1 naming Verify · noop; t-1's row carries a whole queued #1 tag naming it, and its words say verify queued (whole in their tooltip)",
             one.run?.text === "queued #1" &&
                 one.run.title.startsWith("Verify · noop: scripts/verify.mjs waits its turn") &&
-                /^t-1 · verify queued #1/.test(one.worker?.sub ?? "") &&
-                one.worker?.subTitle === one.worker?.sub &&
-                one.worker?.tag == null,
+                one.worker?.tag === "queued #1" &&
+                one.worker.tagWhole === true &&
+                one.worker.tagTitle.startsWith("Verify · noop: scripts/verify.mjs waits its turn") &&
+                /^t-1 · verify queued/.test(one.worker.sub ?? "") &&
+                one.worker.subTitle === one.worker.sub,
             JSON.stringify(one)
         );
 

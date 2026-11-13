@@ -63,8 +63,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   and its labels no longer wrap when a scrollbar appears; a Context group (Skills, Memory files…) now folds open and
   shut smoothly.
 - A run whose Verify, Setup or Final waits in the heavy-job queue now says so in the Agent sidebar: the run's line
-  shows "queued #N" (or "N queued") even when folded, and the task's row reads "verify queued #N" instead of a
-  Verify clock that ran before the command had started.
+  shows "queued #N" (or "N queued") even when folded, and the task's row carries its own "queued #N" tag and reads
+  "verify queued" instead of a Verify clock that ran before the command had started.
+- An agent that failed to start says so at the end of its name in the Agent sidebar, as a lead does, so its second
+  line no longer runs past the row when it also shows the runs it started.
 - Changing an initiative (from the app or `wsh effort`) no longer stalls or fails with a timeout while the vault
   syncs over the network; it waits only for the vault's quick local commit.
 - A Chat message that never reaches Claude Code no longer sits under "Queued" for good: arcterm tells you it was not
