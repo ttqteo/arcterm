@@ -67,6 +67,8 @@ type WshRpc struct {
 	DebugName          string
 	ServerDone         bool
 	orderedReqCh       chan orderedRequest
+	// a request holds it to send on OutputCh, and runServer takes it alone to close OutputCh
+	outputLock sync.RWMutex
 }
 
 // Requests whose order is their meaning, run one at a time in arrival order instead of each on its own
@@ -305,6 +307,8 @@ func (w *WshRpc) cancelRequest(reqId string) {
 // entered on the given link. Used to reclaim streaming RPCs (goroutine + fsnotify watcher) when the
 // originating websocket connection tears down. close() invokes the handler's contextCancelFn, which
 // for a streaming handler fires its <-ctx.Done() finalize path.
+// pkg/web/ws.go no longer calls it: the router's UnregisterLink cancels a gone link's requests itself.
+// wavesrv still hooks it to DomainLinkClosedHook.
 func (w *WshRpc) CancelRequestsForLink(linkId baseds.LinkId) {
 	w.Lock.Lock()
 	handlers := make([]*RpcResponseHandler, 0)
@@ -425,8 +429,12 @@ func (w *WshRpc) runServer() {
 	defer func() {
 		panichandler.PanicHandler("wshrpc.runServer", recover())
 		close(w.orderedReqCh)
-		close(w.OutputCh)
 		w.setServerDone()
+		// failing the pending calls cancels their contexts, which frees a request blocked on a full OutputCh
+		w.failPendingRpcs(errors.New("rpc connection closed"))
+		w.outputLock.Lock()
+		close(w.OutputCh)
+		w.outputLock.Unlock()
 	}()
 outer:
 	for {
@@ -514,9 +522,14 @@ func (w *WshRpc) SetServerImpl(serverImpl ServerImpl) {
 	w.ServerImpl = serverImpl
 }
 
-func (w *WshRpc) registerRpc(handler *RpcRequestHandler, command string, route string, reqId string) chan *RpcMessage {
+// registerRpc refuses once the server is done: failPendingRpcs has run or is about to, and nothing else
+// would answer the call.
+func (w *WshRpc) registerRpc(handler *RpcRequestHandler, command string, route string, reqId string) (chan *RpcMessage, error) {
 	w.Lock.Lock()
 	defer w.Lock.Unlock()
+	if w.ServerDone {
+		return nil, errServerDone
+	}
 	rpcCh := make(chan *RpcMessage, RespChSize)
 	w.RpcMap[reqId] = &rpcData{
 		Handler: handler,
@@ -531,7 +544,7 @@ func (w *WshRpc) registerRpc(handler *RpcRequestHandler, command string, route s
 		<-handler.ctx.Done()
 		w.retrySendTimeout(reqId)
 	}()
-	return rpcCh
+	return rpcCh, nil
 }
 
 func (w *WshRpc) unregisterRpc(reqId string, err error) {
@@ -557,6 +570,20 @@ func (w *WshRpc) unregisterRpc(reqId string, err error) {
 	delete(w.RpcMap, reqId)
 	close(rd.ResCh)
 	rd.Handler.callContextCancelFn()
+}
+
+// a reply can only arrive through the input, so once it is gone every waiting call would otherwise
+// block on its response channel forever: the timeout path stands down when the server is done
+func (w *WshRpc) failPendingRpcs(err error) {
+	w.Lock.Lock()
+	reqIds := make([]string, 0, len(w.RpcMap))
+	for reqId := range w.RpcMap {
+		reqIds = append(reqIds, reqId)
+	}
+	w.Lock.Unlock()
+	for _, reqId := range reqIds {
+		w.unregisterRpc(reqId, err)
+	}
 }
 
 // no response
@@ -746,13 +773,29 @@ func (handler *RpcResponseHandler) SendResponse(data any, done bool) error {
 	}
 	barr, err := json.Marshal(msg)
 	if err != nil {
+		// the caller must still hear back: once done, Finalize sends nothing and it would wait out its timeout
+		handler.SendResponseError(fmt.Errorf("cannot encode %q response: %w", handler.command, err))
 		return err
+	}
+	if !handler.sendToOutput(barr) {
+		return fmt.Errorf("timeout sending response")
+	}
+	return nil
+}
+
+// tries a free OutputCh first: once ctx is done, a select over both would pick at random and could drop
+// the final response, which is what clears the rpc's routing entry in the router
+func (handler *RpcResponseHandler) sendToOutput(barr []byte) bool {
+	select {
+	case handler.w.OutputCh <- barr:
+		return true
+	default:
 	}
 	select {
 	case handler.w.OutputCh <- barr:
-		return nil
+		return true
 	case <-handler.ctx.Done():
-		return fmt.Errorf("timeout sending response")
+		return false
 	}
 }
 
@@ -772,10 +815,7 @@ func (handler *RpcResponseHandler) SendResponseError(err error) {
 		Error: err.Error(),
 	}
 	barr, _ := json.Marshal(msg) // will never fail
-	select {
-	case handler.w.OutputCh <- barr:
-	case <-handler.ctx.Done():
-	}
+	handler.sendToOutput(barr)
 }
 
 func (handler *RpcResponseHandler) IsCanceled() bool {
@@ -808,9 +848,14 @@ func (handler *RpcResponseHandler) IsDone() bool {
 	return handler.done.Load()
 }
 
+var errServerDone = errors.New("server is no longer running, cannot send new requests")
+
 func (w *WshRpc) SendComplexRequest(command string, data any, opts *wshrpc.RpcOpts) (rtnHandler *RpcRequestHandler, rtnErr error) {
+	// held through the send below, so OutputCh cannot close between this check and the send
+	w.outputLock.RLock()
+	defer w.outputLock.RUnlock()
 	if w.IsServerDone() {
-		return nil, errors.New("server is no longer running, cannot send new requests")
+		return nil, errServerDone
 	}
 	if opts == nil {
 		opts = &wshrpc.RpcOpts{}
@@ -846,7 +891,11 @@ func (w *WshRpc) SendComplexRequest(command string, data any, opts *wshrpc.RpcOp
 	if err != nil {
 		return nil, err
 	}
-	handler.respCh = w.registerRpc(handler, command, opts.Route, handler.reqId)
+	handler.respCh, err = w.registerRpc(handler, command, opts.Route, handler.reqId)
+	if err != nil {
+		handler.callContextCancelFn()
+		return nil, err
+	}
 	select {
 	case w.OutputCh <- barr:
 		return handler, nil
