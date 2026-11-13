@@ -655,7 +655,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
         {
             id: "jarvis",
             name: "Jarvis & Office",
-            blurb: "Who Jarvis is, when the window folds into it, and how the Office looks and sounds.",
+            blurb: "Who Jarvis is, how it shows and behaves, when the window folds into it, and how the Office looks and sounds.",
             cards: [
                 {
                     id: "jarvis",
@@ -664,28 +664,54 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         {
                             id: "appearance.petcharacter",
                             title: "Character",
-                            desc: "Who walks the footer as Jarvis. The marks and the outfit work the same for each.",
+                            desc: "Who walks the footer. The marks and the outfit work the same for each.",
                             key: "jarvis.pet.character",
                             scope: "local",
                         },
                         {
                             id: "appearance.petoutfit",
-                            title: "Jarvis in Vietnam's colours",
-                            desc: "The flag shirt, or the flag in its hand. On 30/4, 1/5 and 2/9 it wears the shirt even when this is off.",
+                            title: "Vietnam's colours",
+                            desc: "On 30/4, 1/5 and 2/9 it wears the flag shirt even when this is off.",
                             key: "jarvis.pet.outfit",
                             scope: "local",
                         },
+                    ],
+                },
+                {
+                    id: "form",
+                    label: "Form",
+                    rows: [
+                        {
+                            id: "appearance.petform",
+                            title: "Shows as",
+                            desc: "Sprout walks the footer. The hologram sits bottom-right, blue when calm, amber when something waits on you (WebGL, about 20–40 MB more). Float and the fold keep Sprout.",
+                            key: "jarvis.pet.form",
+                            scope: "local",
+                        },
+                        {
+                            id: "appearance.petholosize",
+                            title: "Hologram size",
+                            desc: "L is 132 px. Sprout keeps its size.",
+                            key: "jarvis.pet.hologramsize",
+                            scope: "local",
+                        },
+                    ],
+                },
+                {
+                    id: "behaviour",
+                    label: "Behaviour",
+                    rows: [
                         {
                             id: "appearance.petstay",
-                            title: "Pet roams",
+                            title: "Roams",
                             desc: "Keep Jarvis at its spot for a while, or until you let it roam again.",
                             key: "wave:pet.stay",
                             scope: "local",
                         },
                         {
                             id: "appearance.petquotes",
-                            title: "Jarvis quotes",
-                            desc: "Now and then, when nothing waits on you, Jarvis says a well-known line about programming. Spider-Man has a few of his own.",
+                            title: "Quotes",
+                            desc: "Now and then, when nothing waits on you, a well-known line about programming.",
                             key: "jarvis.pet.quotes",
                             scope: "local",
                         },

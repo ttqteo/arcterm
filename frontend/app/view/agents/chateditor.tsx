@@ -20,6 +20,7 @@
 // beside it, a gap before the command, as Claude Code's own box does (chateditormodel.ts `bangSkip`); every text and offset
 // the editor takes or gives is mapped across it, and Backspace at the command's start takes the `!` away, leaving bash mode.
 
+import { isMacOS } from "@/util/platformutil";
 import { cn } from "@/util/util";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
@@ -717,8 +718,11 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                                 role="textbox"
                                 aria-multiline="true"
                                 aria-label="Message"
-                                // the webview's English checker underlines every Vietnamese word, as the app's other boxes
-                                spellCheck={false}
+                                // off on Windows, where WebView2's English checker would underline every Vietnamese
+                                // word, as the app's other boxes do; on a Mac it stays on, since WebKit runs Text
+                                // Replacement (sv → sinh viên) only where spellcheck is on, and the host turns the
+                                // underlines off there instead (main.rs no_spelling_underlines)
+                                spellCheck={isMacOS()}
                                 onBlur={(e) => props.current.onBlur?.(e.nativeEvent)}
                                 className="block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent"
                                 style={{ minHeight: p.minHeight, maxHeight: p.maxHeight }}

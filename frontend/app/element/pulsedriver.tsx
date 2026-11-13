@@ -10,7 +10,7 @@
 // stops pulsing gets its own opacity back and restarts from the top if it pulses again.
 
 import { useEffect } from "react";
-import { PULSES, pulseOpacity, pulseStart, type PulseSpec } from "./pulse";
+import { PULSES, pulseStart, pulseValue, type PulseSpec } from "./pulse";
 
 const PULSE_FRAME_MS = 1_000 / 12;
 const DEFAULT_PROP = "opacity";
@@ -57,7 +57,7 @@ export function PulseDriver() {
                         start = pulseStart(now, spec, el.dataset.pulseLag);
                         startedAt.set(el, start);
                     }
-                    const value = pulseOpacity(spec, now - start).toFixed(3);
+                    const value = pulseValue(spec, now - start).toFixed(3);
                     // an unchanged write would still invalidate the dot's style
                     if (shown.get(el) !== value) {
                         const prop = spec.prop ?? DEFAULT_PROP;

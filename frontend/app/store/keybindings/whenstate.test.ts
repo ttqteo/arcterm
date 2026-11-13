@@ -161,8 +161,8 @@ describe("watchFocusedAgent", () => {
             focusIdAtom: atom<string | undefined>("a1") as PrimitiveAtom<string | undefined>,
             agentsAtom: atom([]),
         } as any;
-        attachCanvas("a1", A, 0);
-        attachCanvas("a2", A, 0);
+        attachCanvas("a1", A);
+        attachCanvas("a2", A);
         const stop = watchFocusedAgent(model);
         try {
             let before = globalStore.get(whenVersionAtom);

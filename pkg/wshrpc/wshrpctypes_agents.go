@@ -33,6 +33,7 @@ type AgentCommands interface {
 	FindProjectFoldersCommand(ctx context.Context, data CommandFindProjectFoldersData) (*CommandFindProjectFoldersRtnData, error)
 	RemoveBackgroundAgentCommand(ctx context.Context, data CommandRemoveBackgroundAgentData) error                                        // dismiss a background agent: delete its ~/.claude/jobs record (transcript kept)
 	StreamAgentTranscriptCommand(ctx context.Context, data CommandStreamAgentTranscriptData) chan RespOrErrorUnion[AgentTranscriptUpdate] // stream the transcript tail; new lines pushed as appended
+	StreamAgentLiveReplyCommand(ctx context.Context, data CommandStreamAgentLiveReplyData) chan RespOrErrorUnion[AgentLiveReplyUpdate]    // stream the reply a Claude session is writing, as its arc mod keeps it beside the session
 	AgentControlCommand(ctx context.Context, data CommandAgentControlData) chan RespOrErrorUnion[AgentControlMsg]                         // stream the cockpit's prompts for a block's agent session to its harness mod
 	AgentsListCommand(ctx context.Context) (*CommandAgentsListRtnData, error)                                                             // the live claude and pi agent tabs
 	AgentsSendCommand(ctx context.Context, data CommandAgentsSendData) (*CommandAgentsSendRtnData, error)                                 // hand a prompt from one agent to another's live session
@@ -543,6 +544,18 @@ type CommandStreamAgentTranscriptData struct {
 
 type AgentTranscriptUpdate struct {
 	Lines []string `json:"lines"`
+}
+
+// CommandStreamAgentLiveReplyData names a Claude session by its transcript path; the reply it is writing is kept in
+// ~/.arc/live/<the transcript's base name>.json by the arc mod's turn.step hook.
+type CommandStreamAgentLiveReplyData struct {
+	Path string `json:"path"`
+}
+
+// AgentLiveReplyUpdate is the live reply file's whole content, JSON as the arc mod wrote it (live-core.ts LiveReply),
+// sent each time it changes; "" when there is no file.
+type AgentLiveReplyUpdate struct {
+	Text string `json:"text"`
 }
 
 type CommandAgentControlData struct {

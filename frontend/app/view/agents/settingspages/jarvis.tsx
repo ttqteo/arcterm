@@ -5,12 +5,22 @@
 // Cockpit office's animation, work hours and sound.
 
 import { getSettingsKeyAtom } from "@/app/store/global";
+import {
+    HOLOGRAM_SIZE_NAME,
+    hologramSize,
+    PET_FORM_NAME,
+    petForm,
+    type HologramSize,
+    type PetForm,
+} from "@/app/view/jarvis/hologrammodel";
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { petOutfitChoice, type PetOutfitChoice } from "@/app/view/jarvis/petoutfit";
 import type { PetCharacter } from "@/app/view/jarvis/petsprite";
 import { PET_STAY_CHOICES, shownStayChoice, stayUntilLabel, type PetStayChoice } from "@/app/view/jarvis/petstay";
 import {
     petCharacterAtom,
+    petFormAtom,
+    petHologramSizeAtom,
     petOutfitChoiceAtom,
     petQuotesOnAtom,
     petStayAtom,
@@ -48,6 +58,12 @@ export function JarvisPage() {
             <SettingCard id="jarvis" label="Jarvis">
                 <PetCharacterRow />
                 <PetOutfitRow />
+            </SettingCard>
+            <SettingCard id="form" label="Form">
+                <PetFormRow />
+                <HologramSizeRow />
+            </SettingCard>
+            <SettingCard id="behaviour" label="Behaviour">
                 <PetStayRow />
                 <PetQuotesRow />
             </SettingCard>
@@ -60,6 +76,38 @@ export function JarvisPage() {
                 <OfficeSoundRows />
             </SettingCard>
         </>
+    );
+}
+
+const PET_FORM_OPTIONS: { id: PetForm; label: string }[] = (["sprout", "hologram"] as const).map((id) => ({
+    id,
+    label: PET_FORM_NAME[id],
+}));
+
+function PetFormRow() {
+    const [form, setForm] = useAtom(petFormAtom);
+    return (
+        <SettingRow id="appearance.petform">
+            <Segmented<PetForm> options={PET_FORM_OPTIONS} value={petForm(form)} onChange={(id) => setForm(id)} />
+        </SettingRow>
+    );
+}
+
+const HOLOGRAM_SIZE_OPTIONS: { id: HologramSize; label: string }[] = (["s", "m", "l"] as const).map((id) => ({
+    id,
+    label: HOLOGRAM_SIZE_NAME[id],
+}));
+
+function HologramSizeRow() {
+    const [size, setSize] = useAtom(petHologramSizeAtom);
+    return (
+        <SettingRow id="appearance.petholosize">
+            <Segmented<HologramSize>
+                options={HOLOGRAM_SIZE_OPTIONS}
+                value={hologramSize(size)}
+                onChange={(id) => setSize(id)}
+            />
+        </SettingRow>
     );
 }
 

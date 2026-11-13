@@ -22,11 +22,14 @@
 
 import { CopyButton } from "@/app/element/copybutton";
 import { MOTION, springReveal } from "@/app/element/motiontokens";
+import { SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { cn } from "@/util/util";
-import { ChevronDown, ChevronRight, Copy, Flag, GitFork } from "lucide-react";
+import { atom, useAtomValue, type Atom } from "jotai";
+import { ArrowUpRight, ChevronDown, ChevronRight, Copy, EyeOff, Flag, GitFork } from "lucide-react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
 import type { AgentsViewModel } from "./agents";
 import {
     conversationText,
@@ -55,7 +58,9 @@ import { forkFromChat } from "./chatforkaction";
 import { ChatInitiativeHost, InitiativeMessageCards } from "./chatinitiativecard";
 import { openMessageCard, useMessageCards } from "./chatinitiativestore";
 import { sameChatItem } from "./chatitemeq";
+import { liveTexts, withLiveReply, type LiveReply } from "./chatlive";
 import { CHAT_RENDER_STEP, chatItems, shownItems, type AgentPart, type ChatItem, type ChatMarker } from "./chatmodel";
+import { btwQuestion } from "./chatpending";
 import { withMarks } from "./chatskim";
 import { useSkimFold } from "./chatskimstore";
 import { ChatSteps } from "./chatstepsview";
@@ -69,6 +74,7 @@ import {
     TaskNotificationRow,
     ToolDetailBody,
 } from "./narrationtimeline";
+import { usePathOpener } from "./pathlinkcontext";
 import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
 import { firstItemBelow, keepTranscriptPlace, transcriptPlace } from "./transcriptplace";
 
@@ -152,7 +158,9 @@ function BubbleCopy({
 // runs per part. The copy button and the context menu keep the text as stored, without marks. With the toggle and
 // Settings → Appearance → Chat's fold switch on, a long reply folds as the skim mod folds it in the terminal (chatFold):
 // its verdict and marked sentences, then Show more.
-function ProseText({ text }: { text: string }) {
+// memo: a reply still being written redraws its group on each tick, and the stored replies above it in the group have
+// not changed
+const ProseText = memo(function ProseText({ text }: { text: string }) {
     const { marks, fold, open, toggle } = useSkimFold(text);
     const full = useMemo(() => withMarks(text, marks), [text, marks]);
     const folded = fold != null && !open;
@@ -173,6 +181,16 @@ function ProseText({ text }: { text: string }) {
             ) : null}
         </>
     );
+});
+
+// a reply still being written (chatlive.ts): its marks are still in it, so they are read from it rather than from the
+// skim mod's store, which keeps them only once the reply is stored; never folded, since it is still growing
+function LiveProseText({ text }: { text: string }) {
+    const full = useMemo(() => {
+        const { clean, marks } = parseMarks(text);
+        return withMarks(clean, marks);
+    }, [text]);
+    return <CouncilText text={full} className={PROSE} />;
 }
 
 // the context menu of one bubble: Copy text and Copy conversation, with `initiative` (the text an initiative card opens
@@ -260,35 +278,79 @@ function CommandCard({
     );
 }
 
-// a /btw you asked from Chat: the question, then the side answer the arc mod's fork of the session gave, as Markdown, under
-// a label saying it is no part of the conversation (Claude never reads it), or why there is none. Copy takes the answer.
-function BtwCard({ command, btw, onContextMenu }: { command: string; btw: BtwAnswer; onContextMenu: CopyMenu }) {
-    const copyText = "answer" in btw ? btw.answer : btw.failure;
+// the arc mod's failure reasons are lowercase clauses (btw-core.ts forkFailure); the card shows one as a sentence
+function asSentence(text: string): string {
+    const t = text.trim();
+    const capped = t.charAt(0).toUpperCase() + t.slice(1);
+    return /[.!?]$/.test(capped) ? capped : `${capped}.`;
+}
+
+// a /btw you asked from Chat, as one card in Claude's column, since it is mostly an answer: your question as its header,
+// the side answer the arc mod's fork of the session gave as Markdown under it, or why there is none, and a footer saying
+// Claude never reads it. `btw` null is the card while the fork still asks (chatpane.tsx PendingCommand), so the
+// transcript's copy that takes its place changes only the body.
+export function BtwCard({
+    question,
+    btw,
+    onContextMenu,
+}: {
+    question: string;
+    btw: BtwAnswer | null;
+    onContextMenu?: CopyMenu;
+}) {
+    const copyText = btw == null ? null : "answer" in btw ? btw.answer : btw.failure;
     return (
         <div
-            data-chat-you
             data-chat-command
             data-chat-btw
-            onContextMenu={onContextMenu(copyText)}
-            className="group relative mb-1 max-w-[75%] min-w-[220px] self-end"
+            data-chat-btw-state={btw == null ? "asking" : "answer" in btw ? "answered" : "failed"}
+            onContextMenu={copyText != null && onContextMenu != null ? onContextMenu(copyText) : undefined}
+            className="mb-1 flex min-w-0 flex-col self-stretch overflow-hidden rounded-[12px] border border-edge-mid bg-surface-raised"
         >
-            <div className="flex flex-col overflow-hidden rounded-[12px] border border-edge-mid bg-surface-raised">
-                <div className="px-[14px] py-[8px] font-mono text-[12.5px] text-primary [overflow-wrap:anywhere]">
-                    {command}
-                </div>
-                <div className="flex flex-col gap-1 border-t border-edge-faint px-[14px] py-[9px]">
-                    <span className="text-[11px] text-muted">side answer · not in the conversation</span>
-                    {"answer" in btw ? (
-                        <CouncilText text={btw.answer} className="text-[13.5px] leading-[1.6] text-ink-hi" />
-                    ) : (
-                        <span data-chat-btw-failure className="text-[12.5px] text-muted">
-                            No side answer: {btw.failure}
-                        </span>
-                    )}
-                </div>
+            <div className="flex min-h-[38px] items-center gap-2 py-[6px] pr-[10px] pl-[16px]">
+                <span className="flex-none rounded-[5px] border border-edge-strong bg-pill px-1.5 text-[11px] leading-[17px] font-medium text-muted">
+                    btw
+                </span>
+                <span className="min-w-0 flex-1 text-[13.5px] font-medium text-primary [overflow-wrap:anywhere]">
+                    {question}
+                </span>
+                {btw != null && "answer" in btw ? (
+                    <CopyButton title="Copy the side answer" content={btw.answer} className="p-1 text-[12px]" />
+                ) : null}
             </div>
-            <BubbleCopy text={copyText} align="right" />
+            <div className="flex flex-col gap-3 border-t border-edge-faint px-[16px] pt-[12px] pb-[16px]">
+                {btw == null ? (
+                    <>
+                        <span className="text-[12px] text-muted">Asking on the side…</span>
+                        <div className="flex flex-col gap-[9px]">
+                            <SkeletonLine className="h-[10px] w-[92%] rounded-[4px]" />
+                            <SkeletonLine className="h-[10px] w-[70%] rounded-[4px]" />
+                        </div>
+                    </>
+                ) : "answer" in btw ? (
+                    <CouncilText text={btw.answer} className="text-[13.5px] leading-[1.6] text-ink-hi" />
+                ) : (
+                    <div data-chat-btw-failure className="flex flex-col gap-1">
+                        <span className="text-[12.5px] font-medium text-secondary">No side answer</span>
+                        <span className="text-[12.5px] leading-[1.55] text-muted">{asSentence(btw.failure)}</span>
+                    </div>
+                )}
+            </div>
+            <div className="flex items-center gap-[7px] border-t border-edge-faint px-[16px] py-[8px] text-[11.5px] text-muted">
+                <EyeOff size={12} strokeWidth={2} aria-hidden className="flex-none" />
+                <span>Not in the conversation: Claude doesn't read side answers</span>
+            </div>
         </div>
+    );
+}
+
+// your bubble's box, shared with the bubble that stands in for a message on its way (chatpane.tsx PendingBubble), so the
+// transcript's copy taking its place draws nothing new. The copy button hangs in the gap under the bubble: it leaves that
+// button room above the cards
+export function youBubbleBox(hasFiles: boolean): string {
+    return cn(
+        "max-w-full rounded-[16px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary",
+        hasFiles ? "mb-3" : "mb-1"
     );
 }
 
@@ -313,7 +375,13 @@ function YouBubble({
         return <CommandCard command={item.command.slice(2)} bash shell={item.shell} onContextMenu={onContextMenu} />;
     }
     if ("command" in item && item.btw != null) {
-        return <BtwCard command={item.command} btw={item.btw} onContextMenu={onContextMenu} />;
+        return (
+            <BtwCard
+                question={btwQuestion(item.command) ?? item.command}
+                btw={item.btw}
+                onContextMenu={onContextMenu}
+            />
+        );
     }
     if ("command" in item && (item.shell != null || item.terminal)) {
         return (
@@ -356,13 +424,7 @@ function YouBubble({
             className="flex max-w-[75%] flex-col items-end gap-2 self-end"
         >
             {text !== "" || hasPictures ? (
-                <div
-                    className={cn(
-                        "group relative max-w-full rounded-[16px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary",
-                        // the copy button hangs in the gap under the bubble: leave it room above the cards
-                        hasFiles ? "mb-3" : "mb-1"
-                    )}
-                >
+                <div className={cn("group relative", youBubbleBox(hasFiles))}>
                     {text !== "" ? <TaggedPromptText text={text} /> : null}
                     {hasPictures ? <PromptImages images={item.images} paths={said.images} /> : null}
                     {/* the whole message, files and all, as the context menu copies it */}
@@ -518,6 +580,7 @@ function Arriving({
 }
 
 const NO_KEYS: ReadonlySet<string> = new Set();
+const NO_LIVE_REPLY: Atom<LiveReply | null> = atom<LiveReply | null>(null);
 const NO_ANSWERS: ReadonlyMap<string, PairedAnswer> = new Map();
 
 /** The agent's brainstorm as the conversation draws it: `card` is what the conversation ends with now (the question it
@@ -597,7 +660,9 @@ function openedFor(opened: ReadonlySet<string>, itemKey: string): string {
     return out;
 }
 
-// the files a stretch of work edited, a chip each ("session.ts +4 −1"), each opening its diff under the row
+// the files a stretch of work edited, a chip each ("session.ts +4 −1"), each opening its diff under the row. The arrow at
+// a chip's end opens the file itself where a path link in the terminal would (the agent's File tab, which previews HTML
+// and markdown); a transcript with no agent around it has no opener, and its chips only open their diff.
 function FileChips({
     files,
     openPaths,
@@ -608,30 +673,49 @@ function FileChips({
     onToggle: (path: string) => void;
 }) {
     const opened = files.filter((f) => openPaths.has(f.path));
+    const opener = usePathOpener();
     return (
         <div data-chat-files className="flex flex-col gap-2">
             <div className="flex flex-wrap gap-[6px]">
                 {files.map((f) => {
                     const open = openPaths.has(f.path);
+                    const name = f.path.split(/[\\/]/).pop() || f.path;
                     return (
-                        <button
+                        <span
                             key={f.path}
-                            type="button"
-                            data-chat-file={f.path}
-                            aria-expanded={open}
-                            title={f.path}
-                            onClick={() => onToggle(f.path)}
                             className={cn(
-                                "flex cursor-pointer items-center gap-2 rounded-full border bg-surface px-[12px] py-[3px] text-[12px] hover:border-edge-strong",
+                                "flex items-center rounded-full border bg-surface text-[12px] hover:border-edge-strong",
                                 open ? "border-edge-strong" : "border-edge-mid"
                             )}
                         >
-                            <span className="max-w-[260px] truncate text-secondary">
-                                {f.path.split(/[\\/]/).pop() || f.path}
-                            </span>
-                            <span className="font-semibold tabular-nums text-diff-added">+{f.adds}</span>
-                            <span className="font-semibold tabular-nums text-diff-removed">−{f.dels}</span>
-                        </button>
+                            <button
+                                type="button"
+                                data-chat-file={f.path}
+                                aria-expanded={open}
+                                title={f.path}
+                                onClick={() => onToggle(f.path)}
+                                className={cn(
+                                    "flex cursor-pointer items-center gap-2 py-[3px] pl-[12px]",
+                                    opener != null ? "pr-[4px]" : "pr-[12px]"
+                                )}
+                            >
+                                <span className="max-w-[260px] truncate text-secondary">{name}</span>
+                                <span className="font-semibold tabular-nums text-diff-added">+{f.adds}</span>
+                                <span className="font-semibold tabular-nums text-diff-removed">−{f.dels}</span>
+                            </button>
+                            {opener != null ? (
+                                <button
+                                    type="button"
+                                    data-chat-file-open={f.path}
+                                    title={`Open ${name}`}
+                                    aria-label={`Open ${name}`}
+                                    onClick={() => opener.open(f.path)}
+                                    className="flex cursor-pointer items-center self-stretch rounded-r-full pl-[4px] pr-[10px] text-muted hover:text-primary"
+                                >
+                                    <ArrowUpRight size={13} strokeWidth={2.2} aria-hidden />
+                                </button>
+                            ) : null}
+                        </span>
                     );
                 })}
             </div>
@@ -676,6 +760,8 @@ function Marker({ item }: { item: ChatMarker }) {
 
 export function ChatConversation({
     entries,
+    liveReply,
+    liveNarrates,
     placeId,
     onLoadEarlier,
     active,
@@ -687,6 +773,10 @@ export function ChatConversation({
     className,
 }: {
     entries: AgentEntry[];
+    // the reply Claude is writing (chatlive.ts, chatlivestore.ts): drawn at the end until the transcript holds its blocks,
+    // its thinking blocks too when `liveNarrates`. Read here, not by the caller, so its ticks redraw only the conversation
+    liveReply?: Atom<LiveReply | null>;
+    liveNarrates?: boolean;
     // keeps where the reader is under this id (transcriptplace.ts) and opens there again; a caller that sticks to the
     // end (useStickToBottom) passes it the same id, so it does not pin over a kept place
     placeId?: string;
@@ -711,7 +801,12 @@ export function ChatConversation({
     className?: string;
 }) {
     const toolsLive = working ?? !!active;
-    const items = useMemo(() => chatItems(entries), [entries]);
+    const stored = useMemo(() => chatItems(entries), [entries]);
+    const reply = useAtomValue(liveReply ?? NO_LIVE_REPLY);
+    const items = useMemo(
+        () => withLiveReply(stored, liveTexts(reply, !!liveNarrates), entries.length),
+        [stored, reply, liveNarrates, entries.length]
+    );
     // the cards the person opened from messages (Add to initiative…), by the item they were opened after
     const canAddInitiative = !!model && !!agent;
     const messageCards = useMessageCards(canAddInitiative ? agent!.id : "");
@@ -724,8 +819,8 @@ export function ChatConversation({
         () =>
             sentAnswers == null || sentAnswers.length === 0 || sentTopic == null
                 ? NO_ANSWERS
-                : pairAnswers(sentAnswers, answerMessages(items), sentTopic),
-        [items, sentAnswers, sentTopic]
+                : pairAnswers(sentAnswers, answerMessages(stored), sentTopic),
+        [stored, sentAnswers, sentTopic]
     );
     // how many of the last items are drawn. Entries arriving at the end are drawn on top of it, so the first drawn item
     // stays put while the agent works; entries the caller put in front (onLoadEarlier) are drawn a step of once asked for
@@ -997,6 +1092,14 @@ export function ChatConversation({
             // what the agent said: a document column, no bubble and no avatar (only your messages are bubbles); its tools
             // and files sit between the paragraphs, and the copy button hangs in the gap under the text
             case "prose": {
+                // a reply still being written: drawn as the stored one will be, but with no fold, copy or fork yet
+                if (part.live) {
+                    return (
+                        <div data-chat-prose data-chat-live className="relative mb-3 min-w-0 max-w-full self-stretch">
+                            <LiveProseText text={part.text} />
+                        </div>
+                    );
+                }
                 const fork = canFork ? forkPointOfProse(part) : null;
                 return (
                     <div

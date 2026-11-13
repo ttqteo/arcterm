@@ -36,6 +36,8 @@ import {
 } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { HOLOGRAM_SIZE_PX, hologramPose, hologramSize, petForm } from "./hologrammodel";
+import { HologramView, useNeedsYouCount } from "./hologramview";
 import { openTarget } from "./openref";
 import { closePeek, openPetPeek, peekChordActive } from "./peekstore";
 import { PetBubble } from "./petbubble";
@@ -78,9 +80,12 @@ import {
 import { isStaying, stayEndsInMs } from "./petstay";
 import {
     clearExpiredPetStay,
+    hologramLoadersShownAtom,
     petBubbleAtom,
     petCharacterAtom,
     petEventsAtom,
+    petFormAtom,
+    petHologramSizeAtom,
     petHomeAtom,
     petOfficeBossAtom,
     petOfficeCornerAtom,
@@ -323,8 +328,18 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     const entering = useAtomValue(petOfficeEnteringAtom);
     // one Jarvis: in the office the boss is the creature; folded, the folded Sprout is its own (sprout-mini.tsx)
     const inOffice = officeBoss != null && !folded;
+    // the hologram form, in the full window only: Float's small window and the fold keep Sprout. A GL failure falls back
+    // to Sprout too, until the form is picked again.
+    const form = petForm(useAtomValue(petFormAtom));
+    const [hologramFailed, setHologramFailed] = useState(false);
+    useEffect(() => setHologramFailed(false), [form]);
+    const hologram = form === "hologram" && !hologramFailed && !floating && !folded;
+    // the startup loader is drawing Jarvis in the middle: no second one in the corner until it is done
+    const loaderHologram = useAtomValue(hologramLoadersShownAtom) > 0;
+    const hologramPx = HOLOGRAM_SIZE_PX[hologramSize(useAtomValue(petHologramSizeAtom))];
+    const needsYou = useNeedsYouCount(model);
     const shownAnchor = inOffice ? officeBoss : anchor;
-    const shownCorner = inOffice ? officeCorner : corner;
+    const shownCorner = inOffice ? officeCorner : hologram ? "bottom-right" : corner;
 
     // Push once per event (pet spec §4 decision 8). Advancing the watermark re-runs this effect, which then
     // finds nothing new — so the loop settles after one push rather than repeating it.
@@ -411,7 +426,19 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     return (
         <>
             {/* in the office the boss is the creature, so no footer sprite; this component stays mounted for its voice */}
-            {inOffice ? null : (
+            {inOffice || (hologram && loaderHologram) ? null : hologram ? (
+                <HologramView
+                    key={hologramPx}
+                    sizePx={hologramPx}
+                    pose={hologramPose({ waiting: needsYou, working, speaking: bubble != null, peekOpen })}
+                    unread={unread}
+                    peekOpen={peekOpen}
+                    reduce={reduce}
+                    setAnchor={setAnchor}
+                    openPeek={openPeek}
+                    onFail={() => setHologramFailed(true)}
+                />
+            ) : (
                 <PetSprite
                     expression={expression.kind}
                     posture={posture}

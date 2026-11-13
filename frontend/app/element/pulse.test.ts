@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cubicBezier, pulseOpacity, PULSES, pulseStart, type PulseSpec } from "./pulse";
+import { cubicBezier, pulseOpacity, PULSES, pulseStart, pulseValue, type PulseSpec } from "./pulse";
 
 describe("cubicBezier", () => {
     it("pins the endpoints", () => {
@@ -78,6 +78,35 @@ describe("pulse-blink", () => {
         const start = pulseStart(5_000, blink, half);
         expect(pulseOpacity(blink, 5_000 - start)).toBeCloseTo(blink.low, 5);
         expect(pulseOpacity(blink, 5_000 + blink.periodMs / 2 - start)).toBeCloseTo(1, 5);
+    });
+});
+
+describe("pulseValue", () => {
+    const shimmer = PULSES["shimmer-jarvis"];
+
+    it("sweeps the working line's shimmer 0 to 1 at an even pace, then starts again from 0", () => {
+        expect(shimmer).toMatchObject({ periodMs: 2000, prop: "--sweep", sweep: true });
+        expect(pulseValue(shimmer, 0)).toBeCloseTo(0, 5);
+        expect(pulseValue(shimmer, 500)).toBeCloseTo(0.25, 5);
+        expect(pulseValue(shimmer, 1500)).toBeCloseTo(0.75, 5);
+        expect(pulseValue(shimmer, 1999)).toBeLessThan(1);
+        expect(pulseValue(shimmer, 2000)).toBeCloseTo(0, 5);
+        expect(pulseValue(shimmer, 500 + 2000 * 3600)).toBeCloseTo(0.25, 5);
+    });
+
+    it("reads a negative or non-finite elapsed time as the start of a sweep", () => {
+        expect(pulseValue(shimmer, -50)).toBe(0);
+        expect(pulseValue(shimmer, Number.NaN)).toBe(0);
+    });
+
+    it("is the breath's opacity for every pulse that is not a sweep", () => {
+        for (const [cls, spec] of Object.entries(PULSES)) {
+            if (cls === "shimmer-jarvis") {
+                continue;
+            }
+            expect(spec.sweep).toBeFalsy();
+            expect(pulseValue(spec, 300)).toBe(pulseOpacity(spec, 300));
+        }
     });
 });
 

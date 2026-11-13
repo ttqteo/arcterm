@@ -13,14 +13,19 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect } from "react";
 import {
     answerFailureMessage,
+    choiceAnswer,
     headIdOf,
+    keptChoice,
+    moveChoice,
     REFUSAL_MS,
     refusalClears,
     requestsGone,
+    type PermissionChoice,
     type Refusal,
 } from "./permissionmodel";
 
@@ -198,6 +203,69 @@ export async function answerPermission(
             globalStore.set(permissionInFlightAtom, next);
         }
     }
+}
+
+/** The card the chat box's keys answer, per agent block (ORef): the head it shows, its choices and the highlighted one.
+ *  The card publishes it while it can answer its head and takes it back when it no longer can; the chat box reads it for
+ *  ↑ ↓ Enter (permissionBoxKey), so the keys reach only a card on screen. */
+export type CardKeys = { headId: string; choices: PermissionChoice[]; current: PermissionChoice };
+
+export const permissionCardKeysAtom = atom<ReadonlyMap<string, CardKeys>>(new Map<string, CardKeys>()) as PrimitiveAtom<
+    ReadonlyMap<string, CardKeys>
+>;
+
+function setCardKeys(oref: string, keys: CardKeys | null): void {
+    const next = new Map(globalStore.get(permissionCardKeysAtom));
+    if (keys == null) {
+        next.delete(oref);
+    } else {
+        next.set(oref, keys);
+    }
+    globalStore.set(permissionCardKeysAtom, next);
+}
+
+/** The card for `oref` shows request `headId` with these choices. A new head starts on Allow, as the prompt's own list
+ *  does; the same head keeps its highlighted choice (keptChoice). */
+export function publishCardKeys(oref: string, headId: string, choices: PermissionChoice[]): void {
+    const prev = globalStore.get(permissionCardKeysAtom).get(oref);
+    const current = prev?.headId === headId ? keptChoice(choices, prev.current) : "allow";
+    if (prev?.headId === headId && prev.current === current && prev.choices.join() === choices.join()) {
+        return;
+    }
+    setCardKeys(oref, { headId, choices, current });
+}
+
+/** The card for `oref` no longer answers request `headId` (answered, gone, or the card left the screen). */
+export function dropCardKeys(oref: string, headId: string): void {
+    if (globalStore.get(permissionCardKeysAtom).get(oref)?.headId === headId) {
+        setCardKeys(oref, null);
+    }
+}
+
+/** ↑ or ↓ moves the highlight on the card for `oref`, Enter sends the highlighted choice. False when no card there takes
+ *  keys, so the key keeps its old job. */
+export function permissionCardKey(oref: string, action: "up" | "down" | "pick"): boolean {
+    const keys = globalStore.get(permissionCardKeysAtom).get(oref);
+    if (keys == null) {
+        return false;
+    }
+    if (action === "pick") {
+        fireAndForget(() => answerPermission(oref, keys.headId, choiceAnswer(keys.current)));
+        return true;
+    }
+    setCardKeys(oref, { ...keys, current: moveChoice(keys.choices, keys.current, action === "up" ? -1 : 1) });
+    return true;
+}
+
+/** The highlighted choice on the card for `oref` now, outside a render. */
+export function pickedCardChoice(oref: string): PermissionChoice | undefined {
+    return globalStore.get(permissionCardKeysAtom).get(oref)?.current;
+}
+
+/** The highlighted choice on the card for `oref` while it takes keys. */
+export function usePermissionCardChoice(oref: string | undefined): PermissionChoice | undefined {
+    const all = useAtomValue(permissionCardKeysAtom);
+    return oref != null ? all.get(oref)?.current : undefined;
 }
 
 // DEV only: lets a CDP scenario put a fixture queue on an agent's card without a Claude process behind it.

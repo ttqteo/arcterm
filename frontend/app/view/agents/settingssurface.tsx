@@ -11,12 +11,15 @@
 
 import { MOTION } from "@/app/element/motiontokens";
 import { atoms } from "@/app/store/global";
+import { DEFAULT_HOLOGRAM_SIZE, DEFAULT_PET_FORM, hologramSize, petForm } from "@/app/view/jarvis/hologrammodel";
 import { DEFAULT_PET_CHARACTER, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { DEFAULT_PET_OUTFIT, petOutfitChoice } from "@/app/view/jarvis/petoutfit";
 import { shownStayChoice } from "@/app/view/jarvis/petstay";
 import {
     DEFAULT_PET_QUOTES,
     petCharacterAtom,
+    petFormAtom,
+    petHologramSizeAtom,
     petOutfitChoiceAtom,
     petQuotesOnAtom,
     petStayAtom,
@@ -104,6 +107,8 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
     const [mono, setMono] = useAtom(fontMonoAtom);
     const [startup, setStartup] = useAtom(startupSurfaceAtom);
     const [rail, setRail] = useAtom(railVisibleAtom);
+    const [form, setForm] = useAtom(petFormAtom);
+    const [holoSize, setHoloSize] = useAtom(petHologramSizeAtom);
     const [character, setCharacter] = useAtom(petCharacterAtom);
     const [outfit, setOutfit] = useAtom(petOutfitChoiceAtom);
     const stay = useAtomValue(petStayAtom);
@@ -131,6 +136,14 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
             revert: () => setStartup(DEFAULT_STARTUP_SURFACE),
         },
         "general.rail": { changed: rail !== DEFAULT_RAIL_VISIBLE, revert: () => setRail(DEFAULT_RAIL_VISIBLE) },
+        "appearance.petform": {
+            changed: petForm(form) !== DEFAULT_PET_FORM,
+            revert: () => setForm(DEFAULT_PET_FORM),
+        },
+        "appearance.petholosize": {
+            changed: hologramSize(holoSize) !== DEFAULT_HOLOGRAM_SIZE,
+            revert: () => setHoloSize(DEFAULT_HOLOGRAM_SIZE),
+        },
         "appearance.petcharacter": {
             changed: petCharacter(character) !== DEFAULT_PET_CHARACTER,
             revert: () => setCharacter(DEFAULT_PET_CHARACTER),

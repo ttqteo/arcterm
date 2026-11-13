@@ -29,6 +29,7 @@ import {
     isAskStale,
     isEditAction,
     isNearBottom,
+    revealScrollTop,
     isQuiet,
     isRecentlyIdle,
     latestMessageText,
@@ -96,6 +97,26 @@ describe("sortAgents", () => {
         const input = [mk("a", "idle"), mk("b", "asking")];
         sortAgents(input);
         expect(input.map((a) => a.id)).toEqual(["a", "b"]);
+    });
+});
+
+describe("revealScrollTop", () => {
+    // a 400px region scrolled to 600 of 1400: the end is at 1000
+    const m = { scrollTop: 600, scrollHeight: 1400, clientHeight: 400 };
+    it("brings a fold's head low in the view up to the margin", () => {
+        // head 350px below the region's top, margin 48 -> scroll down 302
+        expect(revealScrollTop(m, 350, 48)).toBe(902);
+    });
+    it("stops at the end while the fold has not grown enough to reach the margin", () => {
+        // the summary has grown only 100px past the view: 600 + 390 - 48 = 942, but the end is 1300 - 400 = 900
+        expect(revealScrollTop({ scrollTop: 600, scrollHeight: 1300, clientHeight: 400 }, 390, 48)).toBe(900);
+    });
+    it("leaves a head already at or above the margin where it is", () => {
+        expect(revealScrollTop(m, 48, 48)).toBeNull();
+        expect(revealScrollTop(m, 20, 48)).toBeNull();
+    });
+    it("leaves a region already at its end where it is", () => {
+        expect(revealScrollTop({ scrollTop: 1000, scrollHeight: 1400, clientHeight: 400 }, 350, 48)).toBeNull();
     });
 });
 

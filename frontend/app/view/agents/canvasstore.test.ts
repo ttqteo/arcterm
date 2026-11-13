@@ -4,6 +4,7 @@
 import { atom } from "jotai";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Mark } from "./canvasmarks";
+import { isUnseen } from "./canvasmodel";
 import {
     attachCanvas,
     canvasOwner,
@@ -39,7 +40,7 @@ afterEach(() => {
 
 describe("attachCanvas", () => {
     it("starts in terminal mode, probing, with nothing marked", () => {
-        attachCanvas("a1", A, 100);
+        attachCanvas("a1", A);
         expect(getCanvas("a1")).toEqual({
             ...A,
             mode: "terminal",
@@ -49,23 +50,40 @@ describe("attachCanvas", () => {
             base: null,
             status: "probing",
             lastModifiedMs: null,
-            lastViewedMs: 100,
+            lastViewedMs: 0,
             marking: false,
             marks: [],
             reloadKey: 0,
         });
     });
 
+    it("is unseen once its boards are read, though they were written before the reveal", () => {
+        attachCanvas("a1", A);
+        updateCanvas("a1", (s) => ({ ...s, status: "ready", lastModifiedMs: 90 }));
+        expect(isUnseen(getCanvas("a1")!)).toBe(true);
+        setCanvasMode("a1", "canvas", 120);
+        setCanvasMode("a1", "terminal", 130);
+        expect(isUnseen(getCanvas("a1")!)).toBe(false);
+    });
+
+    it("keeps when it was last looked at across a reveal of the same canvas", () => {
+        attachCanvas("a1", A);
+        setCanvasMode("a1", "canvas", 120);
+        setCanvasMode("a1", "terminal", 130);
+        attachCanvas("a1", A);
+        expect(getCanvas("a1")!.lastViewedMs).toBe(120);
+    });
+
     it("takes the board it was given", () => {
-        attachCanvas("a1", { ...A, board: "States.dc.html" }, 100);
+        attachCanvas("a1", { ...A, board: "States.dc.html" });
         expect(getCanvas("a1").board).toBe("States.dc.html");
     });
 
     it("resets the board and marks for a new topic", () => {
-        attachCanvas("a1", { ...A, board: "States.dc.html" }, 100);
+        attachCanvas("a1", { ...A, board: "States.dc.html" });
         withMarks("a1");
         updateCanvas("a1", (s) => ({ ...s, base: BASE }));
-        attachCanvas("a1", { topic: "u", dir: "/p/.superpowers/design/u", projectDir: "/p" }, 200);
+        attachCanvas("a1", { topic: "u", dir: "/p/.superpowers/design/u", projectDir: "/p" });
         const s = getCanvas("a1");
         expect(s.board).toBeNull();
         expect(s.marks).toEqual([]);
@@ -73,10 +91,10 @@ describe("attachCanvas", () => {
     });
 
     it("keeps the base and the current board for the same topic", () => {
-        attachCanvas("a1", { ...A, board: "States.dc.html" }, 100);
+        attachCanvas("a1", { ...A, board: "States.dc.html" });
         withMarks("a1");
         updateCanvas("a1", (s) => ({ ...s, base: BASE }));
-        attachCanvas("a1", A, 200);
+        attachCanvas("a1", A);
         const s = getCanvas("a1");
         expect(s.base).toBe(BASE);
         expect(s.board).toBe("States.dc.html");
@@ -84,23 +102,23 @@ describe("attachCanvas", () => {
     });
 
     it("drops the base when the same topic is re-attached from another project", () => {
-        attachCanvas("a1", A, 100);
+        attachCanvas("a1", A);
         updateCanvas("a1", (s) => ({ ...s, base: BASE }));
-        attachCanvas("a1", { topic: A.topic, dir: "/q/.superpowers/design/t", projectDir: "/q" }, 200);
+        attachCanvas("a1", { topic: A.topic, dir: "/q/.superpowers/design/t", projectDir: "/q" });
         expect(getCanvas("a1").base).toBeNull();
     });
 });
 
 describe("setCanvasMode", () => {
     it("marks the canvas viewed on entering it", () => {
-        attachCanvas("a1", A, 100);
+        attachCanvas("a1", A);
         setCanvasMode("a1", "canvas", 500);
         expect(getCanvas("a1").mode).toBe("canvas");
         expect(getCanvas("a1").lastViewedMs).toBe(500);
     });
 
     it("drops marking and marks on leaving it", () => {
-        attachCanvas("a1", A, 100);
+        attachCanvas("a1", A);
         setCanvasMode("a1", "canvas", 500);
         withMarks("a1");
         setCanvasMode("a1", "terminal", 600);
@@ -111,8 +129,8 @@ describe("setCanvasMode", () => {
     });
 
     it("changes only the agent it names", () => {
-        attachCanvas("a1", A, 100);
-        attachCanvas("a2", A, 100);
+        attachCanvas("a1", A);
+        attachCanvas("a2", A);
         setCanvasMode("a2", "canvas", 500);
         setCanvasMode("a1", "canvas", 500);
         setCanvasMode("a1", "terminal", 600);
@@ -129,7 +147,7 @@ describe("setCanvasMode", () => {
 
 describe("board switches", () => {
     it("steps the board and drops the marks", () => {
-        attachCanvas("a1", A, 100);
+        attachCanvas("a1", A);
         withMarks("a1");
         stepCanvasBoard("a1", 1);
         expect(getCanvas("a1").board).toBe("States.dc.html");
@@ -137,7 +155,7 @@ describe("board switches", () => {
     });
 
     it("selects a board and drops the marks", () => {
-        attachCanvas("a1", A, 100);
+        attachCanvas("a1", A);
         withMarks("a1");
         selectCanvasBoard("a1", "States.dc.html");
         expect(getCanvas("a1").board).toBe("States.dc.html");
@@ -145,7 +163,7 @@ describe("board switches", () => {
     });
 
     it("opens on the first board's own tab, and All keeps the selected board", () => {
-        attachCanvas("a1", A, 100);
+        attachCanvas("a1", A);
         withMarks("a1");
         expect(getCanvas("a1").all).toBe(false);
         selectCanvasBoard("a1", "States.dc.html");
@@ -157,7 +175,7 @@ describe("board switches", () => {
     });
 
     it("picking a board on the All canvas keeps the All view", () => {
-        attachCanvas("a1", A, 100);
+        attachCanvas("a1", A);
         withMarks("a1");
         selectCanvasTab("a1", "all");
         selectCanvasBoard("a1", "States.dc.html");
@@ -165,7 +183,7 @@ describe("board switches", () => {
     });
 
     it("steps from the last board to All and on to the first", () => {
-        attachCanvas("a1", { ...A, board: "States.dc.html" }, 100);
+        attachCanvas("a1", { ...A, board: "States.dc.html" });
         withMarks("a1");
         stepCanvasBoard("a1", 1);
         expect(getCanvas("a1")).toMatchObject({ all: true, marks: [] });
@@ -174,18 +192,18 @@ describe("board switches", () => {
     });
 
     it("a reveal naming a board opens its tab; one naming none keeps the view", () => {
-        attachCanvas("a1", A, 100);
+        attachCanvas("a1", A);
         selectCanvasTab("a1", "all");
-        attachCanvas("a1", A, 200);
+        attachCanvas("a1", A);
         expect(getCanvas("a1").all).toBe(true);
-        attachCanvas("a1", { ...A, board: "States.dc.html" }, 300);
+        attachCanvas("a1", { ...A, board: "States.dc.html" });
         expect(getCanvas("a1")).toMatchObject({ all: false, board: "States.dc.html" });
     });
 });
 
 describe("marking", () => {
     it("drops the marks when marking ends", () => {
-        attachCanvas("a1", A, 100);
+        attachCanvas("a1", A);
         withMarks("a1");
         setMarking("a1", false);
         expect(getCanvas("a1").marking).toBe(false);
@@ -193,7 +211,7 @@ describe("marking", () => {
     });
 
     it("clears the marks and keeps marking on", () => {
-        attachCanvas("a1", A, 100);
+        attachCanvas("a1", A);
         withMarks("a1");
         clearMarks("a1");
         expect(getCanvas("a1").marking).toBe(true);
@@ -203,7 +221,7 @@ describe("marking", () => {
 
 describe("ownership", () => {
     it("finds the agent holding a topic, and forgets it on detach", () => {
-        attachCanvas("a2", A, 100);
+        attachCanvas("a2", A);
         expect(canvasOwner("t")).toBe("a2");
         expect(canvasOwner("u")).toBeNull();
         detachCanvas("a2");
@@ -216,8 +234,8 @@ describe("focused canvas", () => {
     const model = { focusIdAtom: atom("a1") } as any;
 
     it("reads the focused agent's canvas, and only in canvas mode for focusedCanvasMode", () => {
-        attachCanvas("a1", A, 100);
-        attachCanvas("a2", A, 100);
+        attachCanvas("a1", A);
+        attachCanvas("a2", A);
         setCanvasMode("a2", "canvas", 500);
         expect(focusedCanvas(model)?.topic).toBe("t");
         expect(focusedCanvasMode(model)).toBeNull();
@@ -226,7 +244,7 @@ describe("focused canvas", () => {
     });
 
     it("is null with nothing focused", () => {
-        attachCanvas("a1", A, 100);
+        attachCanvas("a1", A);
         expect(focusedCanvas({ focusIdAtom: atom(undefined) } as any)).toBeNull();
     });
 });

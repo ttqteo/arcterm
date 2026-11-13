@@ -28,6 +28,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - The Agent rail's breakdown shows what fills the context: the conversation apart from what loads every turn (tools,
   memory files, skills, MCP), each memory file and skill a click from opening, and how long the cache stays warm
+- Chat shows Claude's reply as it is written, word by word as in the terminal, instead of each paragraph appearing
+  only once it is done. Claude agents started after the update.
 - Fork a session from Chat: Fork in the agent header's ⋯ menu starts a new session with the whole conversation, and
   Fork from here, on any message or reply (beside Copy, or right-click), starts one with the conversation up to that
   point. From one of your messages, its text waits in the new session's box to edit and send. The session you forked
@@ -47,6 +49,22 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   session has added since you opened it.
 - A working run's row in the Agent sidebar says how many of its tasks are stuck (`Working · 1/6 · 3 stuck`), and hover
   names each one (`t-2 verify failed · t-3 stalled`), instead of reading as if all were moving.
+- Jarvis as a hologram: Settings → Jarvis & Office → Form → Hologram puts Jarvis in the window's bottom-right corner
+  instead of Sprout on the footer. Blue rings while all is calm (the core beats while agents work), an amber neural
+  sphere while something waits on you; click it for the same peek. Hologram size picks S, M or L. Float and the fold
+  keep Sprout. <!-- big -->
+- Chat's permission card answers from the keyboard: with the chat box empty, ↑ and ↓ move between Allow, "Yes, and
+  don't ask again" and Deny, and Enter picks the highlighted one, as in the terminal's own prompt.
+- A file chip under Chat's "Worked" row has an arrow that opens the file in the agent's File tab (an HTML page or
+  markdown opens as its preview), as clicking its path in the terminal does; the chip itself still opens its diff.
+
+### Changed
+
+- Settings → Jarvis & Office groups Jarvis's settings into three short cards: Jarvis (character, Vietnam's colours),
+  Form (Sprout or hologram, and the hologram's size) and Behaviour (roams, quotes).
+- With Jarvis set to the hologram, arcterm now starts up with Jarvis in the middle of the screen, its rings lighting up
+  one by one and then turning until your agents load, instead of Sprout running; the corner hologram appears once
+  loading is done.
 - A run's follow-ups initiative is filed under the topic it belongs to (Chat, Council…) instead of at the top of the
   initiatives list, and `wsh effort list --topics` lists those topics.
 - A run's row in the Agent sidebar shows the RAM the whole run holds (its lead and every worker together) instead of
@@ -55,8 +73,20 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   suggestion showing, Tab still completes the word under the caret.
 - A session you start with a task is named after that task while Claude Code starts, instead of the project name,
   until Claude Code's own title for it arrives.
+- A `/btw` side question in Chat is now one card across Claude's column: your question as its header (no longer the raw
+  command in monospace), the side answer under it with its own Copy button, and a footer saying Claude doesn't read
+  it. While it asks, the same card shows placeholder lines, so nothing jumps when the answer lands.
+- Inline code in Chat and other markdown is now lavender, as in Claude Code's terminal, instead of gold, so it no
+  longer blends into a highlighted sentence.
 - Chat's jump-to-latest button now shows its shortcut (Ctrl+End) beside the ↓, not only in its tooltip.
+- Chat's "Working…" line now takes Jarvis's colours: its dot is a small blue core and the text shimmers, a bright band
+  sweeping across it as Claude Code's spinner does, instead of a plain dot in the accent colour.
 - A message you send in Chat now rises into the conversation from the box, instead of appearing there at once.
+- A message you send in Chat shows as your normal bubble at once, no longer dimmed, and Claude taking it no longer
+  makes it blink or shift the conversation: there is no "Sending…" line, and a message sent while the agent works has
+  one Queued line under it (with Send now) that folds away once Claude takes it.
+- The prompt pinned to the top of Chat and of the transcript now fades in and out instead of popping, and the next
+  prompt pushes it up as you scroll to it.
 - Back as before 1.0.7: Usage's By provider Daily chart starts at your first day of use again rather than padding
   empty days back to the window's start (By work still spans the window); Blame (`b` or its button) in Preview or Diff
   no longer switches the file to Source; a path just before an ellipsis ("Editing src/foo.ts…") is a link again; and
@@ -117,6 +147,23 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   its `wsh jarvis` commands keep working.
 - A run's task no longer reads as stalled while its worker waits on a command of its own that runs in the background (a
   long typecheck, say).
+- The Canvas tab in an agent's header now shows its dot when the agent draws a canvas you have not opened yet, not only
+  when it changes one you already looked at.
+- Highlights in Chat no longer vanish from one agent's replies while other Claude agents are running: each agent kept
+  overwriting the others' saved highlights, so switching away and back showed the reply plain.
+- On a Mac, text replacements (System Settings → Keyboard → Text Replacements, such as `sv` → sinh viên) work in
+  Chat's message box again, still without red underlines under Vietnamese words.
+- A message you took back in Chat (Esc before Claude answered) and sent again no longer shows twice: Chat now shows
+  only the message you sent, as the terminal does, and a conversation rewound to an earlier point drops what came after.
+- Allowing a subagent from Chat's card no longer leaves a second "Wants to start a subagent" card behind, whose Allow
+  typed a stray `1` into Claude's box, ahead of the next message you sent ("1có…").
+- A subagent's report reaching Chat no longer shows as a message from you ("Agent message", pinned at the top as your
+  prompt): it shows as the subagent's report row, which opens to the full report.
+- The prompt pinned to the top of Chat stands out from the reply scrolling under it, in a small or floating window too.
+- Opening a compaction's summary at the bottom of Chat scrolls it into view: the Compacted line rises to the top as the
+  summary opens, instead of the summary opening out of sight below.
+- Chat no longer drops what Claude says between tool calls when Claude Code keeps only a summary of it (the lines the
+  terminal marks "· summary"): the summary shows as Claude's reply.
 - A brainstorm's judge or builder check that wrote its answer but could not hand it in before its 20 minutes ran out
   (on a busy machine) no longer ends as "The judge was lost": the answer it wrote is used.
 - Putting an agent to sleep now says so while it happens: its Chat box reads "Going to sleep…" (or "Compacting, then

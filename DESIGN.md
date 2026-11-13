@@ -88,7 +88,7 @@ colors:
   syntax-comment: "#6b7178"
   syntax-punct: "#8b939d"
   syntax-ident: "#cdd3da"
-  code-inline: "#d7b981"
+  code-inline: "#b1b9f9"
   # a file a council message cites
   link: "#1d9bd1"
   # git diff added/removed lines and +N/-N counts
@@ -275,8 +275,9 @@ green, `mem-feedback` amber, `mem-user` purple), **jarvis graph node kinds**
 
 - **Syntax tokens** (`syntax-keyword` `#aebfff`, `syntax-string` `#7fd6ab`,
   `syntax-number` `#e6b450`, `syntax-comment` `#6b7178`, `syntax-punct`,
-  `syntax-ident`) color transcript code blocks. **`code-inline` `#d7b981`**
-  (a warm gold) colors inline code in markdown and transcript narration. **`link` `#1d9bd1`**, a
+  `syntax-ident`) color transcript code blocks. **`code-inline` `#b1b9f9`**
+  (Claude Code's own inline-code lavender, so Chat reads as the terminal does and code stands apart from a skim
+  highlight's warm ground) colors inline code in markdown and transcript narration. **`link` `#1d9bd1`**, a
   Slack-like blue, colors the files a council message cites (a small chip per file, its lines after it in
   `muted`, two at most and the rest folded into `+N files`), so a source reads apart from the clay a thread's reply
   link and the CTAs take; other links stay

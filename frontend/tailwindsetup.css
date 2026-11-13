@@ -346,8 +346,10 @@
     --color-syntax-comment: #6b7178;
     --color-syntax-punct: #8b939d;
     --color-syntax-ident: #cdd3da;
-    /* inline code in markdown + transcript narration (Antigravity's warm gold); theme-agnostic like syntax */
-    --color-code-inline: #d7b981;
+    /* inline code in markdown + transcript narration: Claude Code's own inline-code lavender (its dark theme's
+       `permission`), so Chat matches the terminal and code stands apart from a skim highlight's warm ground;
+       theme-agnostic like syntax */
+    --color-code-inline: #b1b9f9;
     /* a file a council message cites (councilsourcespanel.tsx): a Slack-like link blue, so a source reads apart from the
        clay accent the thread's reply link and the CTAs take; theme-agnostic like syntax (not mirrored in themes.ts) */
     --color-link: #1d9bd1;
@@ -583,6 +585,29 @@ svg [aria-label="tip"] g path {
 .pulse-typing {
     opacity: var(--typing, 0.6);
     translate: 0 calc((var(--typing, 0.35) - 0.35) / 0.65 * -3px);
+}
+
+/* Chat's working line (chatpane.tsx) in Jarvis's working colours, the hologram's blue and its hot core
+   (hologramscene.ts readHologramColours; its gold means something waits on you, so it stays out), shimmering as
+   Claude Code's spinner verb does: pulsedriver.tsx sets --sweep (0 to 1, then again) at 12fps and the hot band
+   crosses the text left to right. Without the driver (reduced motion) the text rests in the blue. */
+.shimmer-jarvis {
+    --shimmer-at: calc(var(--sweep, -1) * 160% - 30%);
+    background-image: linear-gradient(
+        90deg,
+        var(--color-conn-1) calc(var(--shimmer-at) - 22%),
+        var(--color-accent-100) var(--shimmer-at),
+        var(--color-conn-1) calc(var(--shimmer-at) + 22%)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+/* the working line's dot: a small Jarvis core, hot in the middle and blue at the rim, breathing with pulse-dot */
+.jarvis-dot {
+    background: radial-gradient(circle, var(--color-accent-100) 0 28%, var(--color-conn-1) 72%);
+    box-shadow: 0 0 5px color-mix(in oklab, var(--color-conn-1) 55%, transparent);
 }
 
 /* Asking attention (moment 3): a slow, persistent amber breathing glow. drop-shadow

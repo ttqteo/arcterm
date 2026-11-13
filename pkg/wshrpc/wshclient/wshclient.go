@@ -1728,6 +1728,11 @@ func StopRunWorkerCommand(w *wshutil.WshRpc, data wshrpc.CommandStopRunWorkerDat
 	return err
 }
 
+// command "streamagentlivereply", wshserver.StreamAgentLiveReplyCommand
+func StreamAgentLiveReplyCommand(w *wshutil.WshRpc, data wshrpc.CommandStreamAgentLiveReplyData, opts *wshrpc.RpcOpts) chan wshrpc.RespOrErrorUnion[wshrpc.AgentLiveReplyUpdate] {
+	return sendRpcRequestResponseStreamHelper[wshrpc.AgentLiveReplyUpdate](w, "streamagentlivereply", data, opts)
+}
+
 // command "streamagenttranscript", wshserver.StreamAgentTranscriptCommand
 func StreamAgentTranscriptCommand(w *wshutil.WshRpc, data wshrpc.CommandStreamAgentTranscriptData, opts *wshrpc.RpcOpts) chan wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate] {
 	return sendRpcRequestResponseStreamHelper[wshrpc.AgentTranscriptUpdate](w, "streamagenttranscript", data, opts)

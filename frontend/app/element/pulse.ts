@@ -14,6 +14,9 @@ export interface PulseSpec {
     ease: (t: number) => number;
     /** the style property the driver writes the curve to; opacity unless set */
     prop?: string;
+    /** a sweep instead of a breath: the value climbs 0 to 1 at an even pace each period, then starts again from 0
+     *  (low and ease unused) */
+    sweep?: boolean;
 }
 
 /** CSS cubic-bezier(x1, y1, x2, y2) as a function of progress, solved by bisection on x. */
@@ -51,6 +54,9 @@ export const PULSES: Record<string, PulseSpec> = {
     // the Christmas lights under the app bar while an agent asks (christmaslights.tsx): every other bulb lags half a
     // period (data-pulse-lag), so the string chases; lit and still otherwise, with no class and no frames
     "pulse-blink": { periodMs: 1_200, low: 0.25, ease: cubicBezier(0.42, 0, 0.58, 1) },
+    // Chat's working line (chatpane.tsx), as Claude Code's spinner verb shimmers: tailwindsetup.css's .shimmer-jarvis
+    // reads --sweep as where a band of Jarvis's hot core crosses text drawn in its blue, left to right, every 2s
+    "shimmer-jarvis": { periodMs: 2_000, low: 0, ease: (t) => t, prop: "--sweep", sweep: true },
 };
 
 /** When a pulse that runs `lag` ms (an element's data-pulse-lag) behind one seen at `now` started: already that far
@@ -71,4 +77,16 @@ export function pulseOpacity(spec: PulseSpec, elapsedMs: number): number {
     const phase = (elapsedMs % spec.periodMs) / spec.periodMs;
     const depth = 1 - spec.low;
     return phase < 0.5 ? 1 - depth * spec.ease(phase * 2) : spec.low + depth * spec.ease((phase - 0.5) * 2);
+}
+
+/** What the driver writes `elapsedMs` into a pulse: a sweep's place in its period (0 to just under 1), or a breath's
+ *  opacity (pulseOpacity). */
+export function pulseValue(spec: PulseSpec, elapsedMs: number): number {
+    if (!spec.sweep) {
+        return pulseOpacity(spec, elapsedMs);
+    }
+    if (!Number.isFinite(elapsedMs) || elapsedMs < 0) {
+        return 0;
+    }
+    return (elapsedMs % spec.periodMs) / spec.periodMs;
 }

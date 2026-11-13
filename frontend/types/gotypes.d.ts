@@ -73,6 +73,11 @@ declare global {
         title?: string;
     };
 
+    // wshrpc.AgentLiveReplyUpdate
+    type AgentLiveReplyUpdate = {
+        text: string;
+    };
+
     // baseds.AgentPermissionData
     type AgentPermissionData = {
         oref: string;
@@ -2452,6 +2457,11 @@ declare global {
         delay?: number;
         cancel?: boolean;
         error?: string;
+    };
+
+    // wshrpc.CommandStreamAgentLiveReplyData
+    type CommandStreamAgentLiveReplyData = {
+        path: string;
     };
 
     // wshrpc.CommandStreamAgentTranscriptData

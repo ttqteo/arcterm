@@ -174,13 +174,12 @@ func claudeHookReport(agent, shadow string) bool {
 
 // permissionRaiseFor is the request a Claude PermissionRequest hook queues for the chat's permission card, with
 // the tool's input as Claude sent it. oref is the block the status is reported on. A subagent dispatch the gate hook
-// puts to the person (subagentNeedsApproval) is one too: its dialog comes from that hook's ask, which fires no
-// PermissionRequest, so its PreToolUse report raises the card, and the chat no longer leaves it to the terminal.
+// puts to the person (subagentNeedsApproval) is raised the same way: the dialog its ask puts up fires PermissionRequest
+// like any other (Claude Code 2.1.322, default and auto modes). Its PreToolUse report raises nothing: a second request
+// for the one call outlived the dialog (Allow drops one, and the call's PostToolUse is then spent on the answered
+// note), and its Allow typed `1` into Claude Code's box, ahead of the next message.
 func permissionRaiseFor(ev ccHookEvent, agent, shadow, oref string) (wshrpc.CommandAgentPermissionRaiseData, bool) {
-	if ev.ToolName == "" || !claudeHookReport(agent, shadow) {
-		return wshrpc.CommandAgentPermissionRaiseData{}, false
-	}
-	if ev.HookEventName != "PermissionRequest" && !subagentNeedsApproval(ev) {
+	if ev.HookEventName != "PermissionRequest" || ev.ToolName == "" || !claudeHookReport(agent, shadow) {
 		return wshrpc.CommandAgentPermissionRaiseData{}, false
 	}
 	return wshrpc.CommandAgentPermissionRaiseData{ORef: oref, ToolName: ev.ToolName, ToolInput: ev.ToolInput}, true
@@ -896,11 +895,9 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 	}
 	_ = publishAgentStatusData(oref, data, 1)
 	// after the status, so the waiting it reports is already out when the card's request arrives. Best-effort like
-	// the rest: a request that does not reach wavesrv leaves the prompt to be answered in the terminal
-	// a subagent past the session's cap gets the gate's deny, not its dialog: no card for it (the ledger keeps one
-	// answer per call, whichever hook appends first)
-	if raise, ok := permissionRaiseFor(ev, agentHookAgent, agentHookShadow, oref.String()); ok &&
-		(!isSubagentDispatch(ev) || subagentCallAllowed(subagentLedgerDir(), ev.SessionID, ev.ToolUseID, jarvis.MaxSubagents)) {
+	// the rest: a request that does not reach wavesrv leaves the prompt to be answered in the terminal. A subagent
+	// past the session's cap gets the gate's deny, not its dialog, so no PermissionRequest and no card for it
+	if raise, ok := permissionRaiseFor(ev, agentHookAgent, agentHookShadow, oref.String()); ok {
 		err := wshclient.AgentPermissionRaiseCommand(RpcClient, raise, &wshrpc.RpcOpts{Timeout: agentStatusPublishTimeoutMs})
 		if err != nil {
 			hookDebugLine("permission raise failed tool=" + raise.ToolName + " err=" + err.Error())

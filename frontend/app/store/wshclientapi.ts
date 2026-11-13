@@ -1734,6 +1734,12 @@ export class RpcApiType {
         return client.wshRpcCall("stoprunworker", data, opts);
     }
 
+    // command "streamagentlivereply" [responsestream]
+	StreamAgentLiveReplyCommand(client: WshClient, data: CommandStreamAgentLiveReplyData, opts?: RpcOpts): AsyncGenerator<AgentLiveReplyUpdate, void, boolean> {
+        if (this.mockClient) return this.mockClient.mockWshRpcStream(client, "streamagentlivereply", data, opts);
+        return client.wshRpcStream("streamagentlivereply", data, opts);
+    }
+
     // command "streamagenttranscript" [responsestream]
 	StreamAgentTranscriptCommand(client: WshClient, data: CommandStreamAgentTranscriptData, opts?: RpcOpts): AsyncGenerator<AgentTranscriptUpdate, void, boolean> {
         if (this.mockClient) return this.mockClient.mockWshRpcStream(client, "streamagenttranscript", data, opts);

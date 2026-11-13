@@ -148,6 +148,28 @@ export function keepMarks(kept: [string, string[]][], hash: string, marks: strin
     return [...kept.filter(([h]) => h !== hash), [hash, marks] as [string, string[]]].slice(-MAX_KEPT);
 }
 
+export function isKept(value: unknown): value is [string, string[]][] {
+    return (
+        Array.isArray(value) &&
+        value.every((v) => Array.isArray(v) && typeof v[0] === "string" && Array.isArray(v[1]))
+    );
+}
+
+// what a reply's marks are written as: the store as read just before the write, so the replies other sessions kept
+// since this one started stay (every session writes one shared list, and a copy read at session.start would drop
+// them), with this reply's added after it; this session's own copy where the store is unset or not that shape
+export function keepWithStored(
+    stored: unknown,
+    kept: [string, string[]][],
+    added: readonly [string, string[]][]
+): [string, string[]][] {
+    let out = isKept(stored) ? stored : kept;
+    for (const [hash, marks] of added) {
+        out = keepMarks(out, hash, marks);
+    }
+    return out;
+}
+
 // isLead: the bold that opens the line, which stays bright under skim as a heading does
 export type Run = {
     text: string;
