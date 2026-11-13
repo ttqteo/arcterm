@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Triple-click in Chat on a Mac: after a build, triple-click a short list item, a short paragraph and a
+  heading in an agent's reply → each highlights only its text, with no band on to the column's right edge, and Copy
+  pastes the line with no trailing line break. A drag across several paragraphs still selects them all. Checked only in
+  a WKWebView harness with the same module, not in the app. Commit: fix(chat) a triple-click selects the line's text
 - [ ] (arcterm) Compacting in Chat: after a build with the new `wsh`, type `/compact` in a Claude agent's Chat → under
   the last message it reads Compacting… with no `(…)` timer, then the line goes away when the summary lands. A
   compaction Claude starts on its own mid-turn still reads Working…. Commit: fix(chat) a /compact reads Compacting…
