@@ -10,7 +10,7 @@
 
 import { cn } from "@/util/util";
 import { ChevronDown, Lightbulb, PanelsTopLeft } from "lucide-react";
-import type { MouseEvent } from "react";
+import { useLayoutEffect, useRef, useState, type MouseEvent, type RefObject } from "react";
 import type { AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
 import type { BrainstormBandModel } from "./brainstormband";
@@ -118,10 +118,37 @@ export function BrainstormLine({
     );
 }
 
+/** How far right of the body's own left edge the brainstorm part's content starts on the line: the part's left plus its
+ *  own padding, both measured, so the body's columns sit under the part however far the initiative part beside it has
+ *  shrunk (it is `flex-[0_1_380px]`, and gives way in a band under ~710px). Re-measured when the body or the part
+ *  changes size; null until the first measurement, which lands before the first paint. Used only beside an initiative
+ *  part: a brainstorm-only body and a narrow one have fixed paddings. */
+function useContentLeft(bodyRef: RefObject<HTMLElement | null>, enabled: boolean): number | null {
+    const [left, setLeft] = useState<number | null>(null);
+    useLayoutEffect(() => {
+        const body = bodyRef.current;
+        const part = body?.closest("[data-chat-band]")?.querySelector<HTMLElement>("[data-brainstorm-band]");
+        if (!enabled || body == null || part == null) {
+            return;
+        }
+        const measure = () => {
+            const pad = parseFloat(getComputedStyle(part).paddingLeft) || 0;
+            const next = Math.round(part.getBoundingClientRect().left - body.getBoundingClientRect().left + pad);
+            setLeft((was) => (was === next ? was : next));
+        };
+        measure();
+        const ro = new ResizeObserver(measure);
+        ro.observe(body);
+        ro.observe(part);
+        return () => ro.disconnect();
+    }, [enabled]);
+    return left;
+}
+
 /** The expanded part, in two columns (one in a narrow cell): `Decided N` (a title, then its gist, per decision that is
  *  yours, in the design's order) and `Boards N` (a button per board: the board icon, its file name with `new` when it is
  *  new, the part it illustrates; then one `Open in Brainstorm (b)` link). The rows are buttons reached with Tab; there is
- *  no arrow-key cursor. */
+ *  no arrow-key cursor. Beside an initiative part the columns start where this part's content starts on the line. */
 export function BrainstormBody({
     agent,
     bs,
@@ -133,12 +160,17 @@ export function BrainstormBody({
     narrow: boolean;
     only: boolean;
 }) {
+    const bodyRef = useRef<HTMLDivElement>(null);
+    const beside = !narrow && !only;
+    const left = useContentLeft(bodyRef, beside);
     return (
         <div
+            ref={bodyRef}
             data-bsband-body
+            style={beside && left != null ? { paddingLeft: left } : undefined}
             className={cn(
                 "grid gap-x-6 gap-y-3 border-t border-edge-mid pb-4 pr-4 pt-[14px]",
-                narrow ? "grid-cols-1 pl-4" : only ? "grid-cols-2 pl-[39px]" : "grid-cols-2 pl-[395px]"
+                narrow ? "grid-cols-1 pl-4" : only ? "grid-cols-2 pl-[39px]" : "grid-cols-2"
             )}
         >
             <div className="flex min-w-0 flex-col gap-[2px]">

@@ -255,7 +255,7 @@ function LinkToInitiative({ agent, project, keyHint }: { agent: AgentVM; project
             <button
                 ref={setAnchor}
                 type="button"
-                data-initiative-link
+                data-initiative-link={agent.id}
                 aria-haspopup="dialog"
                 aria-expanded={open}
                 onClick={() => setOpen(!open)}

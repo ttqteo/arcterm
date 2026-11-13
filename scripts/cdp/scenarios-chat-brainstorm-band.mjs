@@ -40,6 +40,11 @@ const NARROW_PX = 640;
 const NARROW_WANT = 540;
 const NARROW_PASSES = 6;
 const NARROW_TOLERANCE = 24;
+// the mid-width step: wide (not narrow), yet under the ~710px where the initiative part still holds its 380px basis
+const MID_MIN = 640;
+const MID_MAX = 700;
+const MID_WANT = 660;
+const MID_TOLERANCE = 12;
 
 // the initiative the first agent works on: it holds the first chunk
 const TITLE = "Band: boards in Chat";
@@ -266,6 +271,27 @@ export default function (kit) {
             prev = now;
         }
         return prev;
+    }
+
+    // The window resized until the band is about `want` wide (the band follows the window while the layout holds); the
+    // window's size is kept in ctx.viewport for the step to put back, and the band as it was before is returned.
+    async function fitBandWidth(h, ctx, id, want, tolerance) {
+        ctx.viewport ??= await h.ev("({ width: window.innerWidth, height: window.innerHeight })");
+        const wide = await readBand(h, id);
+        let width = ctx.viewport.width;
+        let bandW = wide?.width ?? 0;
+        for (let pass = 0; pass < NARROW_PASSES && Math.abs(bandW - want) > tolerance; pass++) {
+            width += want - bandW;
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width, height: ctx.viewport.height, deviceScaleFactor: 1, mobile: false });
+            await polishNap(700);
+            bandW = (await readBand(h, id))?.width ?? 0;
+        }
+        return wide;
+    }
+    async function restoreViewport(h, ctx) {
+        await h.cdp("Emulation.clearDeviceMetricsOverride", {});
+        ctx.viewport = null;
+        await polishNap(700);
     }
 
     const scenario = {
@@ -614,24 +640,13 @@ export default function (kit) {
                 await AC.focusAgent(h, A);
                 await setBandPart(h, A, null);
                 await chatShown(A);
-                ctx.viewport ??= await h.ev("({ width: window.innerWidth, height: window.innerHeight })");
-                const wide = await readBand(h, A);
-                // the window narrowed until the band is about NARROW_WANT wide; the band follows the window while the layout holds
-                let width = ctx.viewport.width;
-                let bandW = wide?.width ?? 0;
-                for (let pass = 0; pass < NARROW_PASSES && Math.abs(bandW - NARROW_WANT) > NARROW_TOLERANCE; pass++) {
-                    width += NARROW_WANT - bandW;
-                    await h.cdp("Emulation.setDeviceMetricsOverride", { width, height: ctx.viewport.height, deviceScaleFactor: 1, mobile: false });
-                    await polishNap(700);
-                    bandW = (await readBand(h, A))?.width ?? 0;
-                }
+                // the window narrowed until the band is about NARROW_WANT wide
+                const wide = await fitBandWidth(h, ctx, A, NARROW_WANT, NARROW_TOLERANCE);
                 await polishWaitFor(h, `${bandOf(A)}?.hasAttribute("data-band-narrow") === true`, SHORT_MS);
                 await polishNap(400);
                 const narrow = await readBand(h, A);
                 await shot(h, "7-narrow");
-                await h.cdp("Emulation.clearDeviceMetricsOverride", {});
-                ctx.viewport = null;
-                await polishNap(700);
+                await restoreViewport(h, ctx);
                 rec(
                     `${name}: with the band under ${NARROW_PX}px it has data-band-narrow and no chunk label ([data-band-on] reads only "On <n>"); the brainstorm part keeps [data-bsband-boards] and [data-bsband-new] (the dot) and [data-bsband-decided], all inside the band`,
                     narrow != null &&
@@ -645,6 +660,50 @@ export default function (kit) {
                         narrow.fits === true &&
                         wide?.narrow === false,
                     { wide: { width: wide?.width, narrow: wide?.narrow, on: wide?.on }, narrow: { width: narrow?.width, narrow: narrow?.narrow, on: narrow?.on, boards: narrow?.boardsText, newText: narrow?.newText, decided: narrow?.decidedText, fits: narrow?.fits } }
+                );
+            });
+
+            // 8. between the narrow cell and a roomy one, the initiative part has given way and the body follows the brainstorm part
+            await run("8. mid-width-body", async (name) => {
+                await AC.focusAgent(h, A);
+                await setBandPart(h, A, null);
+                await chatShown(A);
+                await fitBandWidth(h, ctx, A, MID_WANT, MID_TOLERANCE);
+                await polishNap(400);
+                await setBandPart(h, A, "brainstorm");
+                await polishWaitFor(h, `!!${bandOf(A)}?.querySelector("[data-bsband-body]")`, SHORT_MS);
+                const got = await settled(h, A);
+                // where the part's content starts on the line (its lightbulb, after the part's own padding) against where the
+                // body's first column starts; `old` is where the fixed 395px offset this replaced would have put the column
+                const geo = await h.ev(`(() => {
+                    const band = ${bandOf(A)};
+                    const part = band?.querySelector("[data-brainstorm-band]");
+                    const bulb = part?.querySelector("svg");
+                    const column = band?.querySelector("[data-bsband-body]")?.firstElementChild;
+                    const initiative = band?.querySelector("[data-band-line]");
+                    if (!band || !part || !bulb || !column || !initiative) return null;
+                    const left = (el) => el.getBoundingClientRect().left;
+                    return {
+                        contentLeft: Math.round(left(bulb) * 10) / 10,
+                        columnLeft: Math.round(left(column) * 10) / 10,
+                        old: Math.round((left(band) + 395) * 10) / 10,
+                        initiativeWidth: Math.round(initiative.getBoundingClientRect().width),
+                    };
+                })()`);
+                await shot(h, "8-mid-width-body");
+                await restoreViewport(h, ctx);
+                rec(
+                    `${name}: with the band ${MID_MIN}-${MID_MAX}px wide (not data-band-narrow), both parts drawn, the initiative part narrower than its 380px basis and the brainstorm part open, the left of [data-bsband-body]'s first column is within 2px of the left of the brainstorm part's content on the line`,
+                    got != null &&
+                        got.width >= MID_MIN &&
+                        got.width < MID_MAX &&
+                        got.narrow === false &&
+                        got.initiativeRoot === true &&
+                        got.open === "brainstorm" &&
+                        geo != null &&
+                        geo.initiativeWidth < 375 &&
+                        Math.abs(geo.columnLeft - geo.contentLeft) <= 2,
+                    { width: got?.width, narrow: got?.narrow, open: got?.open, ...geo, off: geo != null ? Math.round((geo.columnLeft - geo.contentLeft) * 10) / 10 : null, wasOff: geo != null ? Math.round((geo.old - geo.contentLeft) * 10) / 10 : null }
                 );
             });
 

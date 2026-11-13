@@ -71,7 +71,12 @@ import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { bandPartsAtom } from "@/app/view/agents/initiativebandstore";
-import { initiativeLinkPickerAtom, initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
+import {
+    initiativeLinkPickerAtom,
+    initiativePopoverAtom,
+    linkChipSelector,
+    openInitiativeLinkPicker,
+} from "@/app/view/agents/initiativepopover";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { briefPeekRecordAtom, briefSheetOpenAtom, chunkMoveAtom } from "@/app/view/jarvis/jarvisstore";
 import { initiativeSheetAtom, sheetChunkMoveAtom } from "@/app/view/jarvis/initiativesheetstore";
@@ -3038,10 +3043,45 @@ describe("agent:initiative", () => {
             },
         });
         expect(find(model, "agent:initiative").run(nav)).not.toBe(false);
-        expect(seen).toEqual(["[data-initiative-link]"]);
+        // this agent's own chip: the chip's attribute carries its agent's id
+        expect(seen).toEqual(['[data-initiative-link="a1"]']);
         expect(globalStore.get(initiativeLinkPickerAtom)).toBe("a1");
         expect(globalStore.get(initiativePopoverAtom)).toBeNull();
         expect(globalStore.get(bandPartsAtom)).toEqual([]);
+        globalStore.set(initiativeLinkPickerAtom, null);
+    });
+
+    it("does not open the picker for an agent whose own header has no chip, while another agent's chip is on the page", () => {
+        // a split: a2's header carries the Link to initiative chip, a1's (an ended session, a run's worker) does not
+        vi.stubGlobal("document", {
+            activeElement: null,
+            querySelector: (sel: string) => (sel === '[data-initiative-link="a2"]' ? {} : null),
+        });
+        const withoutChip = modelWith("a1", [agent("a1"), agent("a2")]);
+        expect(find(withoutChip, "agent:initiative").run(nav)).toBe(false);
+        expect(globalStore.get(initiativeLinkPickerAtom)).toBeNull();
+        // the one with the chip still gets its picker
+        const withChip = modelWith("a2", [agent("a1"), agent("a2")]);
+        expect(find(withChip, "agent:initiative").run(nav)).not.toBe(false);
+        expect(globalStore.get(initiativeLinkPickerAtom)).toBe("a2");
+        globalStore.set(initiativeLinkPickerAtom, null);
+    });
+
+    it("asks for the chip by the agent's id, escaped, and opens the picker only when it is there (the Chat band's i)", () => {
+        const seen: string[] = [];
+        vi.stubGlobal("document", {
+            activeElement: null,
+            querySelector: (sel: string) => {
+                seen.push(sel);
+                return sel === '[data-initiative-link="t\\"x\\\\y"]' ? {} : null;
+            },
+        });
+        expect(linkChipSelector('t"x\\y')).toBe('[data-initiative-link="t\\"x\\\\y"]');
+        expect(openInitiativeLinkPicker("other")).toBe(false);
+        expect(globalStore.get(initiativeLinkPickerAtom)).toBeNull();
+        expect(openInitiativeLinkPicker('t"x\\y')).toBe(true);
+        expect(globalStore.get(initiativeLinkPickerAtom)).toBe('t"x\\y');
+        expect(seen).toEqual(['[data-initiative-link="other"]', '[data-initiative-link="t\\"x\\\\y"]']);
         globalStore.set(initiativeLinkPickerAtom, null);
     });
 

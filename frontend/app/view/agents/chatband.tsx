@@ -15,7 +15,6 @@
 // stands down in here and the part's `Open in Brainstorm (b)` hint would otherwise be dead exactly when it shows.
 
 import { springReveal } from "@/app/element/motiontokens";
-import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { AnimatePresence, motion } from "motion/react";
@@ -31,7 +30,7 @@ import { NARROW_BAND_PX } from "./initiativeband";
 import { setBandPart, useBandPart } from "./initiativebandstore";
 import { useInitiativePart } from "./initiativebandview";
 import { CURSOR_RING } from "./initiativechunkmenu";
-import { initiativeLinkPickerAtom } from "./initiativepopover";
+import { openInitiativeLinkPicker } from "./initiativepopover";
 
 /** The band for `agent`, or nothing when it has neither an initiative nor a brainstorm whose file has been read. */
 export function ChatBand({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
@@ -138,10 +137,9 @@ function ChatBandRoot({ model, agent }: { model: AgentsViewModel; agent: AgentVM
                 setBandPart(agent.id, null);
             } else if (ini.active && part === "brainstorm") {
                 setBandPart(agent.id, "initiative");
-            } else if (!ini.active && document.querySelector("[data-initiative-link]") != null) {
-                // a brainstorm-only band: `i` is the link picker's, as outside the band (agent:initiative)
-                globalStore.set(initiativeLinkPickerAtom, agent.id);
-            } else {
+            } else if (ini.active || !openInitiativeLinkPicker(agent.id)) {
+                // a brainstorm-only band: `i` is the link picker's when this agent's own header has the chip, as outside
+                // the band (agent:initiative); otherwise the key goes back to the message box
                 leave();
             }
         } else if (e.key === "m" && ini.active) {

@@ -88,7 +88,7 @@ import {
 } from "@/app/view/agents/githistorystore";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
 import { toggleBandPart } from "@/app/view/agents/initiativebandstore";
-import { initiativeLinkPickerAtom, initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
+import { initiativePopoverAtom, openInitiativeLinkPicker } from "@/app/view/agents/initiativepopover";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
 import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
@@ -1824,11 +1824,9 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                     return false;
                 }
                 if (agent.effortId == null) {
-                    if (document.querySelector("[data-initiative-link]") == null) {
-                        return false;
-                    }
-                    globalStore.set(initiativeLinkPickerAtom, agent.id);
-                    return;
+                    // this agent's own chip, not any on the page: in a split another agent's chip says nothing about
+                    // this one (an ended session or a run's worker has none)
+                    return openInitiativeLinkPicker(agent.id) ? undefined : false;
                 }
                 const bandSelector = `[data-initiative-band="${agent.id.replace(/["\\]/g, "\\$&")}"]`;
                 if (document.querySelector(bandSelector) != null) {
