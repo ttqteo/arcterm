@@ -36,6 +36,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   chat box; a queued message comes back into the box. It no longer sends you back to the Cockpit mid-turn.
 - Right-clicking a file path in Chat opens a menu of its own: Open beside the agent, Show in Explorer (Reveal in
   Finder on a Mac) and Copy path.
+- A finished run files its leftover issues on the initiatives that already gather them (flaky tests, hand checks, a
+  topic's bugs and polish) and notes an issue that is already there, instead of opening a new "follow-ups (run X)"
+  initiative each time.
 
 ### Fixed
 
