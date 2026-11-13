@@ -6,6 +6,7 @@ import type { AgentEntry } from "./agentsviewmodel";
 import {
     chatChips,
     endsWithQuestion,
+    initiativeChips,
     lastReply,
     recentPrompts,
     ruleChips,
@@ -135,6 +136,51 @@ describe("chatChips", () => {
             chatChips({ question: false, rules: [commit], model: { status: "done", replies: ["Commit đi"] } })
         ).toEqual([commit]);
         expect(chatChips({ question: false, rules: [commit], model: { status: "loading" } })).toEqual([commit]);
+    });
+});
+
+describe("initiativeChips", () => {
+    const me = { kind: "agent", oref: "agent:t1" };
+    const other = { kind: "agent", oref: "agent:t2" };
+    const plan = (...chunks: { label: string; status: string; workrefs?: { kind: string; oref: string }[] }[]) => ({
+        chunks,
+    });
+
+    it("offers to tick the chunk the agent holds once a turn committed", () => {
+        const effort = plan(
+            { label: "Build", status: "active", workrefs: [me] },
+            { label: "Scenario", status: "pending" }
+        );
+        expect(initiativeChips(effort, "t1", true, true)).toEqual([
+            { text: "xong: Build", kind: "done", source: "rule", chunk: "Build" },
+        ]);
+        expect(initiativeChips(effort, "t1", true, false)[0].text).toBe("done: Build");
+        expect(initiativeChips(effort, "t1", false, true)).toEqual([]);
+    });
+
+    it("stands the active chunk in for an agent that holds none", () => {
+        const effort = plan({ label: "Decide", status: "done" }, { label: "Build", status: "active" });
+        expect(initiativeChips(effort, "t1", true, true).map((c) => c.chunk)).toEqual(["Build"]);
+    });
+
+    it("offers the next chunk once the agent's are settled, skipping one someone else is on", () => {
+        const effort = plan(
+            { label: "Build", status: "done", workrefs: [me] },
+            { label: "Polish", status: "active", workrefs: [other] },
+            { label: "Blocked", status: "blocked" },
+            { label: "Scenario", status: "pending" }
+        );
+        expect(initiativeChips(effort, "t1", false, true)).toEqual([
+            { text: "làm tiếp: Scenario", kind: "next", source: "rule", chunk: "Scenario" },
+        ]);
+    });
+
+    it("offers nothing after the last chunk, with no initiative, or on a proposed chunk", () => {
+        expect(initiativeChips(plan({ label: "Build", status: "done", workrefs: [me] }), "t1", true, true)).toEqual([]);
+        expect(initiativeChips(undefined, "t1", true, true)).toEqual([]);
+        expect(initiativeChips(plan({ label: "Idea", status: "proposed", workrefs: [me] }), "t1", true, true)).toEqual(
+            []
+        );
     });
 });
 

@@ -38,8 +38,10 @@ import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import {
+    ArrowRight,
     ArrowUp,
     ArrowUpFromLine,
+    Check,
     CornerDownLeft,
     FileDiff,
     GitCommitHorizontal,
@@ -154,6 +156,7 @@ export function ChatComposer({
     onBoxState,
     onShowDiff,
     chips,
+    onMarkDone,
     onLocal,
     onSendNow,
     questionWaits,
@@ -176,6 +179,8 @@ export function ChatComposer({
     /** the replies suggested once the turn ended (chatsuggest.ts chatChips), drawn as chips while the box is empty; a
      *  click sends one. Left out, none. */
     chips?: ChatChip[];
+    /** a chunk's done chip: ticks it on the agent's initiative. Left out, that chip is not drawn. */
+    onMarkDone?: (chunk: string) => void;
     /** a bare /usage, /tasks, /diff… typed in the box (chatlocal.ts): Chat answers it instead of sending it. Left out,
      *  every command is sent. */
     onLocal?: (route: LocalRoute) => void;
@@ -1019,7 +1024,7 @@ export function ChatComposer({
                     {showStop ? (
                         <ActionChips key="actions" onShowDiff={onShowDiff} onOpenTerminal={showTerminal} />
                     ) : suggested.length > 0 ? (
-                        <SuggestChips key="suggest" chips={suggested} onSend={sendSuggested} />
+                        <SuggestChips key="suggest" chips={suggested} onSend={sendSuggested} onMarkDone={onMarkDone} />
                     ) : null}
                 </AnimatePresence>
                 {/* one row through a sleep and a wake: its parts fold and crossfade in place (reduced motion snaps them) */}
@@ -1183,26 +1188,45 @@ const SUGGEST_ICONS: Record<ChipKind, LucideIcon> = {
     commit: GitCommitHorizontal,
     push: ArrowUpFromLine,
     reply: CornerDownLeft,
+    done: Check,
+    next: ArrowRight,
 };
 
-// The finished turn's suggested replies (chatsuggest.ts), a click sends one as typed. A chip the model adds a few
-// seconds after the rules' fades in beside them.
-function SuggestChips({ chips, onSend }: { chips: ChatChip[]; onSend: (text: string) => void }) {
+// The finished turn's suggested replies (chatsuggest.ts), a click sends one as typed; a chunk's done chip ticks it on
+// the initiative instead, as the header popover's Mark done does. A chip the model adds a few seconds after the rules'
+// fades in beside them.
+function SuggestChips({
+    chips,
+    onSend,
+    onMarkDone,
+}: {
+    chips: ChatChip[];
+    onSend: (text: string) => void;
+    onMarkDone?: (chunk: string) => void;
+}) {
     const part = usePartMotion(microFade);
     return (
         <motion.div {...part} data-chat-suggest="" className="flex flex-wrap items-center gap-1.5">
             <AnimatePresence initial={false}>
-                {chips.map((c) => (
-                    <motion.div key={c.text} {...part}>
-                        <Chip
-                            icon={SUGGEST_ICONS[c.kind]}
-                            label={c.text}
-                            title={`Send “${c.text}”`}
-                            onClick={() => onSend(c.text)}
-                            data={{ "data-chat-suggest-chip": c.source }}
-                        />
-                    </motion.div>
-                ))}
+                {chips.map((c) => {
+                    const ticks = c.kind === "done" && c.chunk != null;
+                    if (ticks && onMarkDone == null) {
+                        return null;
+                    }
+                    return (
+                        <motion.div key={c.text} {...part} className="min-w-0">
+                            <Chip
+                                icon={SUGGEST_ICONS[c.kind]}
+                                label={c.text}
+                                title={
+                                    ticks ? `Mark “${c.chunk}” done and move on to the next chunk` : `Send “${c.text}”`
+                                }
+                                onClick={() => (ticks ? onMarkDone!(c.chunk!) : onSend(c.text))}
+                                data={{ "data-chat-suggest-chip": c.source, "data-chat-suggest-kind": c.kind }}
+                            />
+                        </motion.div>
+                    );
+                })}
             </AnimatePresence>
         </motion.div>
     );
@@ -1227,10 +1251,10 @@ function Chip({
             {...data}
             title={title}
             onClick={onClick}
-            className="flex h-[28px] max-w-full cursor-pointer items-center gap-1.5 rounded-full border border-edge-mid bg-surface px-[11px] text-[12.5px] text-secondary transition-colors hover:border-edge-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+            className="flex h-[28px] max-w-[340px] cursor-pointer items-center gap-1.5 rounded-full border border-edge-mid bg-surface px-[11px] text-[12.5px] text-secondary transition-colors hover:border-edge-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
         >
             <Icon size={13} strokeWidth={1.8} aria-hidden className="flex-none" />
-            <span className="truncate">{label}</span>
+            <span className="min-w-0 truncate">{label}</span>
         </button>
     );
 }

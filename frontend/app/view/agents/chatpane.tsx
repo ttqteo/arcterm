@@ -17,10 +17,12 @@
 // lines run out without a hard edge, and the scroller's bottom padding follows the dock's measured height so the last line
 // can always rise above the box. Chat's jump-to-latest button (data-chat-jump) rides the dock, centred above the box.
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { KeyCap } from "@/app/element/keycap";
 import { layerFade, MOTION, sentRise, springPop } from "@/app/element/motiontokens";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
@@ -72,6 +74,7 @@ import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import {
     chatChips,
     endsWithQuestion,
+    initiativeChips,
     lastReply,
     recentPrompts,
     ruleChips,
@@ -79,7 +82,7 @@ import {
     wantsModelSuggest,
     writesVietnamese,
 } from "./chatsuggest";
-import { requestModelSuggest, useModelSuggest } from "./chatsuggeststore";
+import { markChunkDone, requestModelSuggest, useEffortDetail, useModelSuggest } from "./chatsuggeststore";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatVisualHost } from "./chatvisualview";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
@@ -683,11 +686,43 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
         }
         // the key stands for the reply, and the question with it; the person's messages before it change with the reply
     }, [askModel, turnKey]);
+    // The initiative the agent works on, read again at each turn's end (the agent may have ticked its chunk with
+    // `wsh effort` meanwhile; the stamp makes an older read stale): its chunk chips (chatsuggest.ts initiativeChips).
+    const effortOref = agent.effortId ? `effort:${agent.effortId}` : null;
+    const effort = useEffortDetail(effortOref);
+    const turnEnded = agent.state === "idle" ? agent.idleSince : undefined;
+    useEffect(() => {
+        if (effortOref != null && turnEnded != null) {
+            loadEffortDetail(effortOref, turnEnded).catch(() => {});
+        }
+    }, [effortOref, turnEnded]);
+    const markDone = (chunk: string) => {
+        if (effortOref == null) {
+            return;
+        }
+        fireAndForget(async () => {
+            try {
+                await markChunkDone(effortOref, chunk);
+            } catch (e) {
+                pushToast({
+                    title: "Could not mark it done",
+                    message: e instanceof Error ? e.message : String(e),
+                    level: "error",
+                });
+            }
+        });
+    };
     // a cell in a split shows the chips too, from the rules and from an answer already in
+    const vi = writesVietnamese(recent);
     const chips = wantsModelSuggest({ ...turnOpen, seen: true })
         ? chatChips({
               question,
-              rules: question ? [] : ruleChips(agent, shipGit, writesVietnamese(recent)),
+              rules: question
+                  ? []
+                  : [
+                        ...ruleChips(agent, shipGit, vi),
+                        ...initiativeChips(effort, agent.id, agent.committed === true, vi),
+                    ],
               model: modelSuggest,
           })
         : undefined;
@@ -877,6 +912,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                             onBoxState={setBoxNow}
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
                             chips={chips}
+                            onMarkDone={markDone}
                             onSendNow={queuedShown ? sendNow : undefined}
                             questionWaits={questionWaits}
                             onLocal={(route) => {

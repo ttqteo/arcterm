@@ -32,6 +32,10 @@ const TOPIC = "sync-retry-policy";
 const SENT_KEY = "chat.brainstorm.sent";
 const HINTS_KEY = "brainstorm.hintsSeen";
 const WAIT_MS = 15000;
+// step 19's initiative and its two chunks
+const EFFORT_TITLE = "verify chat-redesign chunk chips";
+const EFFORT_C1 = "Build the chips";
+const EFFORT_C2 = "Run the scenario";
 const SHORT_MS = 5000;
 
 // the frame-timing step: how many blocks, how far apart, and the bar
@@ -977,6 +981,45 @@ export default function (kit) {
                 );
             });
 
+            // 19. the initiative chips: a turn that committed while the agent holds a chunk offers to tick it done; the
+            // click ticks it on the initiative (advance), and the next chunk is offered as a message to go on with
+            await run("19. initiative chips", async (name) => {
+                await h.ev(`(() => { window.__chatSuggestFake = () => []; return true; })()`);
+                const created = await h.rpc("effortcreate", {
+                    title: EFFORT_TITLE,
+                    chunks: [{ label: EFFORT_C1 }, { label: EFFORT_C2 }],
+                });
+                ctx.effortOid = created.effortoid;
+                await h.rpc("effortmutate", {
+                    effortoid: ctx.effortOid,
+                    author: "you",
+                    ops: [
+                        { op: "setChunkStatus", chunk: EFFORT_C1, status: "active" },
+                        { op: "attachWork", chunk: EFFORT_C1, kind: "agent", oref: `agent:${A}` },
+                    ],
+                });
+                append(
+                    ctx,
+                    AC.userText("commit đi", ts(ctx, 1500)),
+                    AC.assistantText("Đã commit 1a2b3c4: hàng chip gợi ý trong ô nhập.", ts(ctx, 2000))
+                );
+                await setRoster({ idleSince: Date.now() + 2000, effortId: ctx.effortOid, committed: true });
+                const chipOf = (kind) => `${layerOf(A)}?.querySelector('[data-chat-suggest-kind="${kind}"]')`;
+                const done = await polishWaitFor(h, `${FLAT}(${chipOf("done")}) === ${JSON.stringify(`xong: ${EFFORT_C1}`)}`, WAIT_MS);
+                await polishNap(300);
+                await shot(h, "19-initiative-done");
+                await h.ev(`${chipOf("done")}?.click()`);
+                const next = await polishWaitFor(h, `${FLAT}(${chipOf("next")}) === ${JSON.stringify(`làm tiếp: ${EFFORT_C2}`)}`, WAIT_MS);
+                const after = (await h.rpc("effortget", { effortoid: ctx.effortOid }))?.effort?.chunks?.map((c) => `${c.label}:${c.status}`) ?? [];
+                await polishNap(300);
+                await shot(h, "19-initiative-next");
+                rec(
+                    `${name}: a committed turn on a held chunk offers [data-chat-suggest-kind="done"] "xong: ${EFFORT_C1}"; its click ticks it done and makes the next active, and [data-chat-suggest-kind="next"] offers "làm tiếp: ${EFFORT_C2}"`,
+                    done && next && after.join(" · ") === `${EFFORT_C1}:done · ${EFFORT_C2}:active`,
+                    { done, next, after }
+                );
+            });
+
             return steps;
         },
 
@@ -1006,6 +1049,9 @@ export default function (kit) {
                 );
             }
             await step("restore the roster", () => AC.restoreRoster(h));
+            if (ctx.effortOid != null) {
+                await step("delete step 19's initiative", () => h.rpc("effortdelete", { effortoid: ctx.effortOid }));
+            }
             await step("close the fixture tab", () => closeTabs(h, ctx));
             if (ctx.project != null) {
                 // deleteproject leaves the channel createproject made, so that goes too

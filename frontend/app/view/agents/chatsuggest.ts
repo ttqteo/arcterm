@@ -6,7 +6,9 @@
 // send next, in their own words ("commit đi", not "Commit"), and a click sends one. They come from two places:
 //
 // - rules over what Chat already knows, shown at once: the turn left its edits uncommitted ("commit đi") or its commits
-//   unpushed ("push đi"), from the header's one git read (shipmodel.ts, shipstore.ts);
+//   unpushed ("push đi"), from the header's one git read (shipmodel.ts, shipstore.ts); and the initiative the agent
+//   works on: a turn that committed while it holds a chunk offers to tick that chunk done (an action, as the header
+//   popover's Mark done, not a message), and once its chunks are settled the next one is offered ("làm tiếp: …");
 // - one haiku call (pkg/chatsuggest), a few seconds later, that reads the end of the reply: the answers to the question
 //   it ends on, or the one next step only the reply shows ("vẽ tôi xem" after a layout told in words).
 //
@@ -18,13 +20,21 @@
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { shipOffer, type ShipGit } from "./shipmodel";
 
-export type ChipKind = "commit" | "push" | "reply";
+export type ChipKind = "commit" | "push" | "reply" | "done" | "next";
 
-/** One suggested reply: `text` is both what the chip says and what a click sends. */
+/** One suggested reply: `text` is both what the chip says and what a click sends, except a `done` chip's, whose click
+ *  ticks `chunk` done on the agent's initiative and sends nothing. */
 export interface ChatChip {
     text: string;
     kind: ChipKind;
     source: "rule" | "model" | "fallback";
+    /** a `done` or `next` chip's chunk, by its exact label */
+    chunk?: string;
+}
+
+/** The part of an initiative the initiative rule reads. */
+export interface ChipEffort {
+    chunks?: { label: string; status: string; workrefs?: { kind: string; oref: string }[] }[];
 }
 
 /** The model's answer for one turn, as the store holds it. */
@@ -112,6 +122,55 @@ export function ruleChips(
         return [{ text: vi ? "push đi" : "push it", kind: "push", source: "rule" }];
     }
     return [];
+}
+
+const settled = (status: string) => status === "done" || status === "skipped";
+
+/** Pure: the initiative rule's chip for a turn that does not end in a question, on the initiative the agent works on.
+ *  The chunk it is on is the one its tab holds and has not settled, or, when it holds none at all, the active one (it
+ *  was started on the initiative, not on a chunk), as the header popover reads it (initiativepopovermodel.ts
+ *  agentChunk). A turn that ended on a commit offers to tick that chunk done: the work landed, and whether it is the
+ *  whole chunk stays the person's call. Once every chunk the agent held is settled, the next one after them that no
+ *  other agent holds is offered as a message to go on with. A proposed chunk is nobody's work yet. */
+export function initiativeChips(
+    effort: ChipEffort | null | undefined,
+    tabId: string,
+    committed: boolean,
+    vi: boolean
+): ChatChip[] {
+    const chunks = (effort?.chunks ?? []).filter((c) => c.status !== "proposed");
+    if (chunks.length === 0) {
+        return [];
+    }
+    const ref = "agent:" + tabId;
+    const holds = (c: (typeof chunks)[number]) => (c.workrefs ?? []).some((w) => w.oref === ref);
+    const mine = chunks.filter(holds);
+    const on =
+        mine.find((c) => c.status === "active") ??
+        mine.find((c) => !settled(c.status)) ??
+        (mine.length === 0 ? chunks.find((c) => c.status === "active") : undefined);
+    if (on != null) {
+        return committed
+            ? [{ text: (vi ? "xong: " : "done: ") + on.label, kind: "done", source: "rule", chunk: on.label }]
+            : [];
+    }
+    if (mine.length === 0) {
+        return [];
+    }
+    const after = chunks.indexOf(mine[mine.length - 1]) + 1;
+    // another agent or a run is on it
+    const othersHold = (c: (typeof chunks)[number]) => (c.workrefs ?? []).some((w) => w.oref !== ref);
+    const next = chunks.slice(after).find((c) => (c.status === "active" || c.status === "pending") && !othersHold(c));
+    return next == null
+        ? []
+        : [
+              {
+                  text: (vi ? "làm tiếp: " : "go on with: ") + next.label,
+                  kind: "next",
+                  source: "rule",
+                  chunk: next.label,
+              },
+          ];
 }
 
 /** Pure: whether Chat asks the model about this turn: the agent is back at its prompt, awake, with a reply to read and

@@ -37,6 +37,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   to a question it ended on (the one it recommends first, spelled out, such as "B, ẩn thẻ Pin"), or a next step its
   reply calls for, such as "vẽ tôi xem". The answers come from a small Haiku call a few seconds after the turn ends,
   made only for the agent you have open.
+- An agent working on an initiative offers its chunk in the chat box: after a turn that ends on a commit, "xong:
+  <chunk>" ticks the chunk done (as Mark done in the header's initiative popover does), then "làm tiếp: <chunk>"
+  sends the agent on to the next one.
 - Jarvis has a For later list beside Ideas, under its initiatives: every session you marked for later, in every
   project, newest mark first. Click one to open its conversation (or its agent, if it is still running), Resume an
   ended one, or press Done to clear the mark; a mark whose session is gone still shows, so you can clear it.

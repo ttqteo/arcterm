@@ -11,7 +11,6 @@ import { PopoverReveal } from "@/app/element/popoverreveal";
 import { globalStore } from "@/app/store/jotaiStore";
 import { SegmentBar } from "@/app/view/jarvis/briefrowviews";
 import {
-    advanceChunk,
     appendChunkNote,
     effortDetailAtom,
     loadEffortDetail,
@@ -36,6 +35,7 @@ import { Check, Pencil } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { AgentsViewModel } from "./agents";
 import { formatAgo, type AgentVM } from "./agentsviewmodel";
+import { markChunkDone } from "./chatsuggeststore";
 import {
     CHUNK_RENAME,
     chunkMenuItems,
@@ -148,23 +148,12 @@ function PopoverBody({
         }
     };
 
-    // From the active chunk it is `advance` (done, and the next one active). From any other chunk the agent is on it
-    // marks that chunk done, and moves on only when nothing is active, since `advance` would finish another chunk.
+    // the one Mark done Chat's initiative chip uses too (chatsuggeststore.ts)
     const markDone = () => {
         if (mine == null) {
             return;
         }
-        void run(async () => {
-            if (mine.status === "active") {
-                await advanceChunk(oref);
-                return;
-            }
-            await setChunkStatus(oref, refOf(mine.label), "done");
-            const after = globalStore.get(effortDetailAtom).get(oref);
-            if (!(after?.chunks ?? []).some((c) => c.status === "active")) {
-                await advanceChunk(oref);
-            }
-        });
+        void run(() => markChunkDone(oref, mine.label));
     };
     const pickStatus = (label: string, status: string) => {
         setSub(null);
