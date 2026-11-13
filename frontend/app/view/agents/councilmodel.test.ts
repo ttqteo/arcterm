@@ -20,6 +20,7 @@ import {
     draftFromCouncil,
     draftWithAgents,
     draftsWaitWord,
+    elapsedMs,
     emptyCouncilDraft,
     estimateLabel,
     estimateTokens,
@@ -55,6 +56,7 @@ import {
     score,
     sentProposals,
     sentReplies,
+    shownState,
     summarizeHold,
     summaryFacts,
     synthesisRound,
@@ -2458,6 +2460,47 @@ describe("glanceFigures", () => {
     it("says expert for a panel of one", () => {
         const one = council({ experts: [council().experts[0]] });
         expect(glanceFigures(one, started)[0]).toEqual({ value: "1", label: "expert" });
+    });
+});
+
+describe("elapsedMs", () => {
+    const started = 1_000_000;
+
+    it("adds the runs' total to the run going now", () => {
+        const c = council({ started, ranms: 11 * MIN, runstarted: started + 20 * MIN });
+        expect(elapsedMs(c, started + 22 * MIN)).toBe(13 * MIN);
+    });
+
+    it("counts only the runs for a council that is not running now", () => {
+        expect(elapsedMs(council({ state: "done", started, ranms: 6 * MIN + 40_000 }), started + 99 * MIN)).toBe(
+            6 * MIN + 40_000
+        );
+    });
+
+    it("times an older file from its start to where its clock stops", () => {
+        const running = council({ started });
+        expect(elapsedMs(running, started + 2 * MIN + 14_000)).toBe(2 * MIN + 14_000);
+        const done = council({
+            state: "done",
+            started,
+            updated: started + 40 * MIN,
+            summary: { text: "", directions: [], outcomes: {}, at: started + 11 * MIN },
+        });
+        expect(elapsedMs(done, started + 99 * MIN)).toBe(11 * MIN);
+        // never negative, and nothing before it started
+        expect(elapsedMs(running, started - 5)).toBe(0);
+        expect(elapsedMs(council({ state: "not-run", round: 0 }), started)).toBe(0);
+    });
+});
+
+describe("shownState", () => {
+    it("reads a stopped council that holds its summary as done, and any other state as it is", () => {
+        const summary = { text: "", directions: [], outcomes: {}, at: 1 };
+        expect(shownState(council({ state: "stopped", summary }))).toBe("done");
+        expect(shownState(council({ state: "stopped" }))).toBe("stopped");
+        expect(shownState(council({ state: "failed", summary }))).toBe("failed");
+        expect(shownState(council({ state: "running", summary }))).toBe("running");
+        expect(shownState(council({ state: "awaiting-you" }))).toBe("awaiting-you");
     });
 });
 

@@ -886,8 +886,8 @@ function endMs(c: Council, nowMs: number): number {
 
 // the time the council ran: the runs' total (`ranms`) plus the run going now (`runstarted`), so a council started
 // yesterday and chatted in today counts only its runs. A council that keeps neither (an older file) is timed from
-// `started` to where its clock stops.
-function elapsedMs(c: Council, nowMs: number): number {
+// `started` to where its clock stops. Exported for the Chat cards, which time a council as the Discussion does.
+export function elapsedMs(c: Council, nowMs: number): number {
     const ran = c.ranms ?? 0;
     const since = c.runstarted ?? 0;
     if (ran > 0 || since > 0) {
@@ -936,8 +936,9 @@ function stepWord(c: Council): string {
 
 // the state a council is worded by: a stopped council that has its summary reads as done. It was stopped after its
 // rounds (in a follow-up, or a retry), and a follow-up asked of it ends back on that state, so a council that just
-// answered would otherwise read `Stopped` as if it broke off mid-round.
-function shownState(c: Council): string {
+// answered would otherwise read `Stopped` as if it broke off mid-round. Exported so the Chat cards read a council's end
+// by this one rule.
+export function shownState(c: Council): string {
     return c.state === "stopped" && c.summary != null ? "done" : c.state;
 }
 

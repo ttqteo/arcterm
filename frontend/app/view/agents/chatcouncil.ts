@@ -2,9 +2,26 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The pure half of the council cards Chat draws for a council the agent started
-// (docs/superpowers/specs/2026-11-14-chat-council-design.md): which `wsh council start` call started which council.
-// Where each card sits, and what it says, follow in this file; the cards draw in chatcouncilcard.tsx and the
-// conversation (chatconversation.tsx) places them.
+// (docs/superpowers/specs/2026-11-14-chat-council-design.md): which `wsh council start` call started which council,
+// where each council's card sits, and what the card and the row it folds into say. Every state word and number is
+// councilmodel.ts's (the Discussion's own), never a second reading of a council; the cards draw in chatcouncilcard.tsx,
+// the councils are read in chatcouncilstore.ts and the conversation (chatconversation.tsx) places them.
+
+import {
+    askedParts,
+    authorName,
+    canRemoveCouncil,
+    duration,
+    elapsedMs,
+    headerChip,
+    panel,
+    roundsOf,
+    sentProposals,
+    sentReplies,
+    shownState,
+    synthesisRound,
+    UNTITLED_COUNCIL,
+} from "./councilmodel";
 
 /** What a `wsh council start` call's output names: a council that began, one the queue holds (another council runs),
  *  or one the Token burn gate refused, which was saved as not run. */
@@ -66,4 +83,214 @@ export function councilStartAnchor(command: string, output: string): CouncilAnch
     }
     found.sort((a, b) => a.index - b.index);
     return found[0]?.anchor ?? null;
+}
+
+// ---- where a council draws ----
+
+/** Whether the council has ended once in this conversation (spec Builder decision 3): its anchor is a not-run line, it is
+ *  in an ended state (done, stopped, failed, not run: the states nothing works on, `canRemoveCouncil`), it holds a
+ *  summary (a follow-up after done runs a council that had one), or this app session saw it ended (`seenEnded`, which
+ *  covers a stopped or failed council resumed since). Such a council stays a row at its call for good, whatever it does
+ *  next; one that never ended is a card at the end of the conversation. */
+export function councilEndedOnce(c: Council | null, anchor: CouncilAnchor, seenEnded: boolean): boolean {
+    return anchor.kind === "notrun" || seenEnded || (c != null && (canRemoveCouncil(c) || c.summary != null));
+}
+
+/** Where each council of the conversation draws. `atCall` maps a `councilstart` part's key to the id of the council whose
+ *  row draws there (one that ended once); `trailing` is the live councils' ids, oldest call first, for the end of the
+ *  conversation. `anchors` are the conversation's `councilstart` parts, `order` growing with the conversation;
+ *  `endedOnce` holds the ids `councilEndedOnce` says so of. A council is drawn once: the first call (by `order`) that
+ *  names it keeps it. A council the store does not know (null, or missing) draws nothing, except one a not-run line
+ *  names: its row is the anchor's own words and needs no council. */
+export function placeCouncilCards(i: {
+    anchors: readonly { key: string; anchor: CouncilAnchor; order: number }[];
+    councils: ReadonlyMap<string, Council | null>;
+    endedOnce: ReadonlySet<string>;
+}): { atCall: Map<string, string>; trailing: string[] } {
+    const atCall = new Map<string, string>();
+    const trailing: string[] = [];
+    const drawn = new Set<string>();
+    for (const { key, anchor } of [...i.anchors].sort((a, b) => a.order - b.order)) {
+        const id = anchor.councilId;
+        const notRun = anchor.kind === "notrun";
+        if (drawn.has(id) || (!notRun && i.councils.get(id) == null)) {
+            continue;
+        }
+        drawn.add(id);
+        if (notRun || i.endedOnce.has(id)) {
+            atCall.set(key, id);
+        } else {
+            trailing.push(id);
+        }
+    }
+    return { atCall, trailing };
+}
+
+// ---- what a card and a row say ----
+
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+// the mode the head names: Go reads an empty mode as review
+const modeOf = (c: Council) => (c.mode === "brainstorm" ? "brainstorm" : "review");
+
+// the time the council ran, as the Discussion words it; empty when nothing was timed (a council that never started)
+function ranFor(c: Council, nowMs: number): string {
+    const ms = elapsedMs(c, nowMs);
+    return ms > 0 ? duration(ms) : "";
+}
+
+/** A seat's dot on the card: `working` while the council's `activity` has the seat, `done` once it sent in the current
+ *  round, else `waiting`. */
+export type SeatState = "done" | "working" | "waiting";
+
+/** The panel's seats (never the coordinator) with the name the council shows and the state of the seat's dot. Round 1 is
+ *  the ideas: a seat sent when one of its ideas reached the others (a held draft did not). A later round is the replies:
+ *  a seat sent when a reply of its own, sent in that round, is there. In the summary's round the seats are read by the
+ *  last round they answered; a follow-up's own round is read as it is. */
+export function seatStates(c: Council): { id: string; name: string; state: SeatState }[] {
+    const round = c.round === synthesisRound(c) ? roundsOf(c) : c.round;
+    const sent = new Set(
+        round <= 1
+            ? sentProposals(c).map((p) => p.author)
+            : sentReplies(c)
+                  .filter((r) => r.round === round)
+                  .map((r) => r.author)
+    );
+    return panel(c).map((e) => ({
+        id: e.id,
+        name: authorName(c, e.id),
+        state: c.activity?.[e.id] != null ? "working" : sent.has(e.id) ? "done" : "waiting",
+    }));
+}
+
+/** What the live card draws for a council that is queued, running or waiting on the person. `state` is the card's own
+ *  (`data-chat-council-state`); `tag` is the header's state word; `line` is the waiting card's sentence; `estimate` is the
+ *  cost the start line quoted. */
+export interface CouncilCardView {
+    state: "running" | "awaiting" | "queued";
+    head: string;
+    title: string;
+    question: string;
+    tag: string;
+    seats: { id: string; name: string; state: SeatState }[];
+    elapsed: string;
+    estimate?: string;
+    line?: string;
+}
+
+// the queued card's header word, from the council it waits for (null: not known, or not loaded yet)
+function queuedTag(holder: Council | null): string {
+    return holder == null
+        ? "Queued · starts by itself"
+        : `Queued after "${holder.feature.trim() || UNTITLED_COUNCIL}" · starts by itself`;
+}
+
+/** The card of a council that has not ended once. `holder` is the council a queued one waits for, `nowMs` the clock. The
+ *  step word is the Discussion's header chip (`Round 2 of 3`, `Writing the summary`, `Follow-up`); there is no round name. */
+export function councilCardView(
+    c: Council,
+    anchor: CouncilAnchor,
+    holder: Council | null,
+    nowMs: number
+): CouncilCardView {
+    const state = c.state === "awaiting-you" ? "awaiting" : c.state === "queued" ? "queued" : "running";
+    // a council the agent started never holds drafts, so awaiting-you is the pause after round 1: who sent what
+    const panelIds = new Set(panel(c).map((e) => e.id));
+    const ideas = sentProposals(c).filter((p) => panelIds.has(p.author));
+    const paused = `Paused after round 1 · ${count(new Set(ideas.map((p) => p.author)).size, "expert", "experts")} sent ${count(ideas.length, "idea", "ideas")}. Read them in the room, or go on.`;
+    return {
+        state,
+        head: `Council · ${modeOf(c)}`,
+        title: c.feature.trim() || UNTITLED_COUNCIL,
+        question: askedParts(c.question).question,
+        tag: state === "queued" ? queuedTag(holder) : headerChip(c),
+        seats: seatStates(c),
+        elapsed: ranFor(c, nowMs),
+        ...(anchor.kind === "started" && anchor.estimate != null ? { estimate: anchor.estimate } : {}),
+        ...(state === "awaiting" ? { line: paused } : {}),
+    };
+}
+
+/** What the one-line row of a council that ended once says. `mark` is the glyph drawn in place of the ✓ (`working` is the
+ *  green dot of a council running again); `head` and `text` are the row's muted start and its bold, cut-short part; `action`
+ *  is the link at its right end: the report of a done council, else the council's room. */
+export interface CouncilRowView {
+    end: "done" | "stopped" | "failed" | "not-run" | "running";
+    mark: "✓" | "■" | "!" | "–" | "working";
+    head: string;
+    text?: string;
+    action: "report" | "open";
+}
+
+// one line of a reason: its words on a single line, nothing if there are none
+const oneLine = (s: string | undefined) => (s ?? "").replace(/\s+/g, " ").trim() || undefined;
+
+// the gate's refusal for the person: its first sentence, without the `Not run:` prefix (the rest speaks to the agent)
+function refusalOf(anchor: CouncilAnchor): string | undefined {
+    if (anchor.kind !== "notrun") {
+        return undefined;
+    }
+    const first = anchor.reason.replace(/^\s*Not run:?\s*/i, "").split(/\.\s/)[0];
+    return oneLine(first.replace(/\.$/, ""));
+}
+
+/** The row a council that has ended once folds into, at the call that started it. `c` is null only for a not-run line the
+ *  store does not know: the row then reads the anchor alone. A stopped council that holds its summary reads as done
+ *  (`shownState`); one that is running, queued or waiting again after it ended is a working row with its header chip. */
+export function councilRowView(c: Council | null, anchor: CouncilAnchor, nowMs: number): CouncilRowView {
+    if (c == null) {
+        return { end: "not-run", mark: "–", head: "Council · not run", text: refusalOf(anchor), action: "open" };
+    }
+    const state = shownState(c);
+    const round = Math.max(1, c.round);
+    switch (state) {
+        case "done": {
+            const noun = c.mode === "brainstorm" ? ["idea", "ideas"] : ["direction", "directions"];
+            const head = [
+                "Council",
+                modeOf(c),
+                c.summary != null ? count(c.summary.directions.length, noun[0], noun[1]) : "",
+                ranFor(c, nowMs),
+            ];
+            return {
+                end: "done",
+                mark: "✓",
+                head: head.filter((s) => s !== "").join(" · "),
+                text: oneLine(c.feature),
+                action: "report",
+            };
+        }
+        case "stopped":
+            return {
+                end: "stopped",
+                mark: "■",
+                head: `Council · stopped in round ${round}`,
+                text: oneLine(c.error) ?? "The rounds that finished are kept",
+                action: "open",
+            };
+        case "failed":
+            return {
+                end: "failed",
+                mark: "!",
+                head: `Council · failed in round ${round}`,
+                text: oneLine(c.error),
+                action: "open",
+            };
+        case "not-run":
+            return {
+                end: "not-run",
+                mark: "–",
+                head: "Council · not run",
+                text: refusalOf(anchor) ?? oneLine(c.error),
+                action: "open",
+            };
+        default:
+            return {
+                end: "running",
+                mark: "working",
+                head: "Council · running again",
+                text: headerChip(c),
+                action: "open",
+            };
+    }
 }
