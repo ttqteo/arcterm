@@ -2623,3 +2623,11 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   or to Terminal and back, while one is still Sending… or Queued: it shows at once, with no second rise. With the OS's
   reduced motion on, it only fades (`chatpane.tsx` PendingBubble / PendingCommand, `chatsentrise.ts`; no scenario
   catches the motion).
+- [ ] (arcterm) **The hologram folds into the asking sphere.** With the hologram as Jarvis, have an agent ask you
+  something (a permission prompt): over about a second the HUD's rings wind in and draw down into the core while the
+  amber sphere grows out of it, a touch past its size, with a flare of light at the crossing; answering it plays the
+  same back. Hover the hologram: solid; leave: faint, also while the sphere shows. Click it → the crossed eye → Hide 1
+  hour: the peek closes and Jarvis collapses to a line, flares and goes; Ctrl+P → Show Jarvis: it opens from a line
+  back into the HUD. Try it once on a Mac too (WKWebView draws the canvas's alpha its own way) and with the OS's
+  reduced motion on, where it only fades (`hologrammodel.ts` morphPose, `hologramscene.ts` draw, `hologramview.tsx`
+  POWER_ON / POWER_DOWN; the jarvis-hide scenario shoots the power-down and power-on, no scenario catches the morph).

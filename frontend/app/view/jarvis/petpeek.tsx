@@ -63,6 +63,7 @@ import { EventLabel, eventTone } from "./petbubble";
 import { conditionLine, type PetExpression, type PetSignals } from "./petcondition";
 import { PetErrand } from "./peterrand";
 import { resolveDestination } from "./peterrandmodel";
+import { PetHideButton } from "./pethidemenu";
 import type { PetCorner } from "./petledge";
 import {
     dedupeUpdates,
@@ -1313,6 +1314,7 @@ export function PetPeek({
                                                         </>
                                                     ) : (
                                                         <>
+                                                            <PetHideButton onHidden={close} />
                                                             <button
                                                                 type="button"
                                                                 aria-label="Open full Jarvis view"

@@ -15,6 +15,7 @@ import {
     hologramPose,
     hologramRetry,
     hologramSize,
+    morphPose,
     petForm,
     stepMix,
 } from "./hologrammodel";
@@ -49,19 +50,19 @@ describe("hologramPose", () => {
     });
 
     it("turns to the neural sphere while an agent asks you something", () => {
-        expect(hologramPose({ ...calm, asking: 1 })).toEqual({ sphere: 1, busy: false, quiet: false });
+        expect(hologramPose({ ...calm, asking: 1 })).toEqual({ sphere: 1, busy: false, quiet: true });
     });
 
     it("beats the HUD's core while agents work or Jarvis speaks, without leaving the HUD", () => {
-        expect(hologramPose({ ...calm, working: 2 })).toEqual({ sphere: 0, busy: true, quiet: false });
-        expect(hologramPose({ ...calm, speaking: true })).toEqual({ sphere: 0, busy: true, quiet: false });
+        expect(hologramPose({ ...calm, working: 2 })).toEqual({ sphere: 0, busy: true, quiet: true });
+        expect(hologramPose({ ...calm, speaking: true })).toEqual({ sphere: 0, busy: true, quiet: true });
     });
 
     it("a question outranks work: the sphere shows, and the core still counts as busy", () => {
-        expect(hologramPose({ ...calm, asking: 1, working: 3 })).toEqual({ sphere: 1, busy: true, quiet: false });
+        expect(hologramPose({ ...calm, asking: 1, working: 3 })).toEqual({ sphere: 1, busy: true, quiet: true });
     });
 
-    it("is not faint while the peek is open", () => {
+    it("stays faint while agents work or ask, and is solid only while the peek is open", () => {
         expect(hologramPose({ ...calm, peekOpen: true }).quiet).toBe(false);
     });
 });
@@ -147,5 +148,27 @@ describe("hologramRetry", () => {
     it("forgets losses older than the window, so a loss now and then always comes back", () => {
         const now = 5_000 + HOLOGRAM_FAIL_WINDOW_MS;
         expect(hologramRetry([1_000, 5_000], now)).toEqual({ fails: [now], retry: true });
+    });
+});
+
+describe("morphPose", () => {
+    it("rests at either end: the HUD whole at 0, the sphere whole at 1, no flare", () => {
+        expect(morphPose(0)).toEqual({ hudScale: 1, hudTwist: 0, sphereScale: 0.38, flare: 1 });
+        const end = morphPose(1);
+        expect(end.hudScale).toBeCloseTo(0.38);
+        expect(end.sphereScale).toBeCloseTo(1);
+        expect(end.flare).toBeCloseTo(1);
+    });
+
+    it("flares and overshoots at the crossing", () => {
+        const mid = morphPose(0.5);
+        expect(mid.flare).toBeCloseTo(3.4);
+        expect(mid.sphereScale).toBeGreaterThan(0.38 + 0.62 * 0.5);
+        expect(mid.hudScale).toBeCloseTo(0.69);
+    });
+
+    it("clamps a mix outside 0..1", () => {
+        expect(morphPose(-1)).toEqual(morphPose(0));
+        expect(morphPose(2)).toEqual(morphPose(1));
     });
 });

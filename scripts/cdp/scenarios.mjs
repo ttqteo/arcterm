@@ -54483,22 +54483,26 @@ const hologramRecovers = {
     },
 };
 
-// --- jarvis-hide: right-click Jarvis (Sprout or the hologram) and hide it for a while; jarvis:hiddenuntil keeps it off
-// screen, the palette's Show Jarvis brings it back early (docs/superpowers/specs/2026-11-13-jarvis-snooze-design.md). The
-// menu offers its three hides; the Hide for… box reads a typed time; hidden, neither the sprite nor the hologram's canvas
-// is in the page; in Float the waiting count keeps Sprout's place on the floor; Show Jarvis is listed only while hidden.
+// --- jarvis-hide: click Jarvis (Sprout or the hologram) for its peek, and its header's Hide puts Jarvis away for a while;
+// jarvis:hiddenuntil keeps it off screen, the palette's Show Jarvis brings it back early
+// (docs/superpowers/specs/2026-11-13-jarvis-snooze-design.md). The hologram is faint until hovered; a right-click opens no
+// menu; Hide offers an hour, 8:00 and a typed time; hidden, the hologram powers down and neither the sprite nor its canvas
+// is left in the page; in Float the waiting count keeps Sprout's place on the floor; Show Jarvis is listed only while
+// hidden.
 const JARVIS_HIDE_KEY = "jarvis:hiddenuntil";
 const JARVIS_HIDE_PROJECT = "verify-jarvis-hide";
 const JH_SHOWN = `!!(document.querySelector("[data-pet-sprite]") || document.querySelector("[data-pet-hologram] canvas"))`;
 const JH_GONE = `!document.querySelector("[data-pet-sprite]") && !document.querySelector("[data-pet-hologram] canvas")`;
-// a real right-click on whichever Jarvis shows; true when there was one to click
-const jhRightClick = `(() => {
-    const el = document.querySelector("[data-pet-sprite]") ?? document.querySelector("[data-pet-hologram]");
-    if (!el) return false;
-    const r = el.getBoundingClientRect();
-    el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 2 }));
-    return true;
-})()`;
+// a click on whichever Jarvis shows opens its peek; then the header's Hide opens its menu. true when the menu is up
+const jhOpenHide = async (h) => {
+    if (!(await h.ev(`!!document.querySelector("[data-pet-hide-button]")`))) {
+        await h.ev(`(document.querySelector("[data-pet-hologram]") ?? document.querySelector("[data-pet-sprite]"))?.click()`);
+        await polishWaitFor(h, `!!document.querySelector("[data-pet-hide-button]")`, 4000);
+    }
+    await h.ev(`document.querySelector("[data-pet-hide-button]")?.click()`);
+    return polishWaitFor(h, `document.querySelectorAll("[data-pet-hide]").length === 2`, 3000);
+};
+const jhPeekOpen = `!!document.querySelector("[data-pet-peek-header]")`;
 const jhMenuRows = `[...document.querySelectorAll("[data-pet-hide]")].map((r) => ({ key: r.dataset.petHide, label: r.dataset.menuItem }))`;
 const jhSetting = async (h) => (await h.rpc("getfullconfig", null))?.settings?.[JARVIS_HIDE_KEY] ?? null;
 // the RAM watch's reading (docs/open-issues.md): the JS heap after a GC, and the main thread's busy share over 5 s, which
@@ -54555,45 +54559,75 @@ const jarvisHide = {
         rec("1. with the hologram form picked, the hologram shows", shown, JSON.stringify({ shown, ...shownMetrics }));
         if (!shown) return steps;
 
-        // 2. the right-click menu holds the three hides
-        await h.ev(jhRightClick);
-        await polishWaitFor(h, `document.querySelectorAll("[data-pet-hide]").length === 3`, 3000);
-        const rows = await h.ev(jhMenuRows);
-        await h.shot("cdp-shots/jarvis-hide-1-menu.png");
+        // 1b. faint at rest, solid under the pointer; a right-click opens nothing
+        const holoProbe = `(() => {
+            const el = document.querySelector("[data-pet-hologram]");
+            const r = el.getBoundingClientRect();
+            return { opacity: Number(getComputedStyle(el).opacity), x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        })()`;
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 5, y: 5 });
+        await h.ev("new Promise((r) => setTimeout(r, 900))");
+        const atRest = await h.ev(holoProbe);
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: atRest.x, y: atRest.y });
+        await h.ev("new Promise((r) => setTimeout(r, 700))");
+        const hovered = await h.ev(holoProbe);
+        await h.shot("cdp-shots/jarvis-hide-0-hover.png");
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 5, y: 5 });
+        await h.ev(`(() => {
+            const el = document.querySelector("[data-pet-hologram]");
+            const r = el.getBoundingClientRect();
+            el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 2 }));
+        })()`);
+        await h.ev("new Promise((r) => setTimeout(r, 400))");
+        const rightMenu = await h.ev(`document.querySelectorAll("[data-pet-hide], [data-menu-item]").length`);
+        await h.ev(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
         rec(
-            "2. a right-click on Jarvis opens a menu with Hide for 1 hour, Hide till 8:00 and Hide for…",
-            JSON.stringify(rows.map((r) => r.key)) === JSON.stringify(["hour", "morning", "for"]),
-            JSON.stringify(rows)
+            "1b. the hologram is faint at rest and solid under the pointer, and a right-click on it opens no menu",
+            atRest.opacity < 0.6 && hovered.opacity > 0.95 && rightMenu === 0,
+            JSON.stringify({ atRest, hovered, rightMenu })
         );
 
-        // 3. Hide for… opens a box that reads a typed time and says when the hide would end
-        await h.ev(`document.querySelector('[data-pet-hide="for"]')?.click()`);
-        const boxOpen = await polishWaitFor(h, `!!document.querySelector("[data-pet-hide-input]")`, 3000);
+        // 2. a click opens the peek, and its header's Hide opens a menu: an hour, till 8:00, and a box for a typed time
+        const menuUp = await jhOpenHide(h);
+        const rows = await h.ev(jhMenuRows);
+        const boxIn = await h.ev(`!!document.querySelector("[data-pet-hide-menu] [data-pet-hide-input]")`);
+        await h.shot("cdp-shots/jarvis-hide-1-menu.png");
+        rec(
+            "2. a click on Jarvis opens the peek; its header's Hide opens Hide for 1 hour, Hide till 8:00 and a typed-time box",
+            menuUp && JSON.stringify(rows.map((r) => r.key)) === JSON.stringify(["hour", "morning"]) && boxIn,
+            JSON.stringify({ menuUp, rows, boxIn })
+        );
+
+        // 3. the box reads a typed time and says when the hide would end; Escape shuts the menu and leaves the peek open
         await h.ev(setInputExpr(`document.querySelector("[data-pet-hide-input]")`, "2h"));
         await polishWaitFor(h, `(document.querySelector("[data-pet-hide-until]")?.textContent ?? "").startsWith("Hidden until")`, 2000);
         const until = await h.ev(`document.querySelector("[data-pet-hide-until]")?.textContent ?? null`);
         await h.shot("cdp-shots/jarvis-hide-2-box.png");
         await h.ev(`document.querySelector("[data-pet-hide-input]")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
-        const boxShut = await polishWaitFor(h, `!document.querySelector("[data-pet-hide-box]")`, 2000);
+        const boxShut = await polishWaitFor(h, `document.querySelectorAll("[data-pet-hide]").length === 0`, 2000);
+        const peekStays = await h.ev(jhPeekOpen);
         rec(
-            "3. Hide for… opens a box; 2h reads as Hidden until …, and Escape puts it away with Jarvis still shown",
-            boxOpen && (until ?? "").startsWith("Hidden until") && boxShut && (await h.ev(JH_SHOWN)),
-            JSON.stringify({ boxOpen, until, boxShut })
+            "3. 2h reads as Hidden until …, and Escape shuts the menu with the peek still open and Jarvis still shown",
+            (until ?? "").startsWith("Hidden until") && boxShut && peekStays && (await h.ev(JH_SHOWN)),
+            JSON.stringify({ until, boxShut, peekStays })
         );
 
-        // 4. Hide for 1 hour writes jarvis:hiddenuntil an hour ahead, and neither the sprite nor the hologram's canvas is left
-        await h.ev(jhRightClick);
-        await polishWaitFor(h, `!!document.querySelector('[data-pet-hide="hour"]')`, 3000);
+        // 4. Hide for 1 hour writes jarvis:hiddenuntil an hour ahead, closes the peek, and the hologram powers down: a
+        // shot partway through, then neither the sprite nor the hologram's canvas is left
+        await jhOpenHide(h);
         const before = Date.now();
         await h.ev(`document.querySelector('[data-pet-hide="hour"]')?.click()`);
+        await h.ev("new Promise((r) => setTimeout(r, 140))");
+        await h.shot("cdp-shots/jarvis-hide-3a-powering-down.png");
         const gone = await polishWaitFor(h, JH_GONE, 5000);
         const written = await jhSetting(h);
         await h.shot("cdp-shots/jarvis-hide-3-hidden.png");
         const hiddenMetrics = gone ? await jhMetrics(h) : null;
+        const peekShut = !(await h.ev(jhPeekOpen));
         rec(
-            "4. Hide for 1 hour writes jarvis:hiddenuntil about an hour ahead, and no [data-pet-sprite] or hologram canvas is left",
-            gone && typeof written === "number" && written > before + 55 * 60_000 && written < before + 65 * 60_000,
-            JSON.stringify({ gone, written, before, shown: shownMetrics, hidden: hiddenMetrics })
+            "4. Hide for 1 hour writes jarvis:hiddenuntil about an hour ahead, closes the peek, and no [data-pet-sprite] or hologram canvas is left",
+            gone && peekShut && typeof written === "number" && written > before + 55 * 60_000 && written < before + 65 * 60_000,
+            JSON.stringify({ gone, peekShut, written, before, shown: shownMetrics, hidden: hiddenMetrics })
         );
         if (!gone) return steps;
 
@@ -54637,6 +54671,10 @@ const jarvisHide = {
         await h.shot("cdp-shots/jarvis-hide-5-palette.png");
         await h.ev(paletteKey("Enter"));
         const back = await polishWaitFor(h, JH_SHOWN, 8000);
+        // the projection switching on: a line opening out into the form
+        await h.ev("new Promise((r) => setTimeout(r, 200))");
+        await h.shot("cdp-shots/jarvis-hide-6a-powering-on.png");
+        await h.ev("new Promise((r) => setTimeout(r, 900))");
         const cleared = await jhSetting(h);
         await h.shot("cdp-shots/jarvis-hide-6-back.png");
         rec(

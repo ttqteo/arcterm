@@ -28,6 +28,7 @@ import { useWorkerCapacity } from "@/app/view/agents/workercapacitystore";
 import { useAtomValue } from "jotai";
 import {
     animate,
+    AnimatePresence,
     motion,
     useMotionValue,
     useReducedMotion,
@@ -51,7 +52,6 @@ import { PetBubble } from "./petbubble";
 import { petCharacter } from "./petcharacter";
 import { expressionFor, postureFor, type PetExpression, type PetPosture, type PetSignals } from "./petcondition";
 import { landing, ledgeShift, webLanding, type LedgeAt } from "./petfall";
-import { HideForBox, showHideMenu } from "./pethidemenu";
 import { jarvisHiddenAtom, useJarvisHideTimer } from "./pethidestore";
 import { bubbleClick } from "./petjoin";
 import {
@@ -469,9 +469,45 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     // a quote is not news: clicking it only puts it away, and it leaves no unread marker behind
     const openPeek = useCallback(() => openPetBubble(model), [model]);
 
-    if (hidden) {
-        return (
-            <>
+    // in the office the boss is the creature, so no footer sprite; this component stays mounted for its voice
+    const creature =
+        inOffice || (hologram && loaderHologram) ? null : hologram ? (
+            <HologramView
+                // a new size or a retry mounts a fresh canvas: a lost context cannot be had again from the old one
+                key={`hologram:${hologramPx}:${hologramTry}`}
+                sizePx={hologramPx}
+                pose={hologramPose({ asking, working, speaking: bubble != null, peekOpen })}
+                unread={unread}
+                peekOpen={peekOpen}
+                reduce={reduce}
+                setAnchor={setAnchor}
+                openPeek={openPeek}
+                onFail={onHologramFail}
+            />
+        ) : (
+            <PetSprite
+                key="sprite"
+                expression={expression.kind}
+                posture={posture}
+                utterance={bubble?.id ?? null}
+                peekOpen={peekOpen}
+                unread={unread}
+                reduce={reduce}
+                layout={`${surface}${floating ? " float" : ""}${folded ? " folded" : ""}`}
+                setAnchor={setAnchor}
+                onCorner={setCorner}
+                openPeek={openPeek}
+                chip={floating && waiting > 0 ? waiting : null}
+                working={floating && working > 0 ? working : null}
+            />
+        );
+
+    return (
+        <>
+            {/* one presence for hiding and showing: a hide plays the creature's exit (the hologram powers down to a line,
+                Sprout shrinks away), a show its entrance */}
+            <AnimatePresence>{hidden ? null : creature}</AnimatePresence>
+            {hidden ? (
                 <div
                     ref={setHiddenAnchor}
                     aria-hidden
@@ -479,50 +515,13 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                     className="pointer-events-none fixed bottom-[40px] right-[18px]"
                     style={{ width: hologramPx, height: hologramPx }}
                 />
-                {/* Float has no nav badge: what waits and what works keep their place on the floor, without Sprout */}
-                {floating && !folded && (waiting > 0 || working > 0) ? (
-                    <FloatMarks waiting={waiting} working={working} />
-                ) : null}
-                {folded ? null : <PetPeek model={model} anchor={shownAnchor} corner={shownCorner} signals={signals} />}
-            </>
-        );
-    }
-
-    return (
-        <>
-            {/* in the office the boss is the creature, so no footer sprite; this component stays mounted for its voice */}
-            {inOffice || (hologram && loaderHologram) ? null : hologram ? (
-                <HologramView
-                    // a new size or a retry mounts a fresh canvas: a lost context cannot be had again from the old one
-                    key={`${hologramPx}:${hologramTry}`}
-                    sizePx={hologramPx}
-                    pose={hologramPose({ asking, working, speaking: bubble != null, peekOpen })}
-                    unread={unread}
-                    peekOpen={peekOpen}
-                    reduce={reduce}
-                    setAnchor={setAnchor}
-                    openPeek={openPeek}
-                    onContextMenu={showHideMenu}
-                    onFail={onHologramFail}
-                />
-            ) : (
-                <PetSprite
-                    expression={expression.kind}
-                    posture={posture}
-                    utterance={bubble?.id ?? null}
-                    peekOpen={peekOpen}
-                    unread={unread}
-                    reduce={reduce}
-                    layout={`${surface}${floating ? " float" : ""}${folded ? " folded" : ""}`}
-                    setAnchor={setAnchor}
-                    onCorner={setCorner}
-                    openPeek={openPeek}
-                    chip={floating && waiting > 0 ? waiting : null}
-                    working={floating && working > 0 ? working : null}
-                />
-            )}
+            ) : null}
+            {/* Float has no nav badge: hidden, what waits and what works keep their place on the floor, without Sprout */}
+            {hidden && floating && !folded && (waiting > 0 || working > 0) ? (
+                <FloatMarks waiting={waiting} working={working} />
+            ) : null}
             {/* the bubble waits out the boss's entrance */}
-            {folded || (inOffice && entering) ? null : (
+            {hidden || folded || (inOffice && entering) ? null : (
                 <PetBubble
                     event={bubble}
                     agents={agents}
@@ -535,7 +534,6 @@ export function PetView({ model }: { model: AgentsViewModel }) {
             {/* the peek derives its own ranked condition LIST from the same signals — expressionFor is
                 the creature's single face, and passing it here would cap the panel at one condition */}
             {folded ? null : <PetPeek model={model} anchor={shownAnchor} corner={shownCorner} signals={signals} />}
-            <HideForBox />
         </>
     );
 }
@@ -993,12 +991,33 @@ function PetSprite({
             dragMomentum={false}
             // the walker owns left and top; motion's drag owns only the transform, reset on release. Spider-Man's margin
             // takes his hit box up to the app bar with him, so a hover on him there cuts his hang
-            style={{ left: step.x, top: ledge.top - PET_PX - step.lift, marginTop: hangY, x: dragX, y: dragY }}
-            initial={reduce ? false : { opacity: 0 }}
-            animate={{ opacity: quiet && !teleporting && !keyHint ? 0.4 : 1 }}
-            // opacity only: a scaled sprite would no longer stand on the ledge, and would smear its cells
+            // scaled from its feet, so it stands on the ledge while it grows in or shrinks away
+            style={{
+                left: step.x,
+                top: ledge.top - PET_PX - step.lift,
+                marginTop: hangY,
+                x: dragX,
+                y: dragY,
+                originY: 1,
+            }}
+            // the scale is only the entrance and the exit (shown again, hidden for a while): at rest it is 1, since a
+            // scaled sprite smears its cells
+            initial={reduce ? false : { opacity: 0, scale: 0.4 }}
+            animate={{ opacity: quiet && !teleporting && !keyHint ? 0.4 : 1, scale: 1 }}
+            exit={
+                reduce
+                    ? { opacity: 0, transition: { duration: 0 } }
+                    : {
+                          opacity: 0,
+                          scale: 0.3,
+                          filter: "blur(2px)",
+                          transition: { duration: MOTION.durExit, ease: MOTION.easeFluid },
+                      }
+            }
             whileHover={{ opacity: 1 }}
-            transition={reduce ? { duration: 0 } : { opacity: { duration: 0.3 } }}
+            transition={
+                reduce ? { duration: 0 } : { opacity: { duration: 0.3 }, scale: { ...MOTION.spring, bounce: 0.3 } }
+            }
             onHoverStart={() => {
                 // the cursor on him ends his hang: he comes down, and stays down until the hang would have been over
                 if (frame?.step.hang != null) {
@@ -1094,7 +1113,6 @@ function PetSprite({
                     }
                 });
             }}
-            onContextMenu={showHideMenu}
             onClick={() => {
                 if (draggedRef.current) {
                     draggedRef.current = false;

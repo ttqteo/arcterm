@@ -35,9 +35,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   subagent's conversation, and stop a task.
 - Every board in a canvas has a Copy button above its right edge: it puts a screenshot of the board, as it shows on
   screen, on the clipboard, ready to paste into a chat or a doc. In an agent's canvas and in the Canvas gallery.
-- Right-click Jarvis (Sprout, the hologram or the Office's boss) to hide it for an hour, till 8:00, or for a time you
-  type ("2h", "14:30"). It comes back by itself when the time is up, and says nothing while it is away; Ctrl+P → Show
-  Jarvis brings it back early.
+- Click Jarvis and press the Hide button (the crossed eye) in its peek to hide it for an hour, till 8:00, or for a time
+  you type ("2h", "14:30"). It powers down as it goes and powers back on when the time is up, and says nothing while
+  it is away; Ctrl+P → Show Jarvis brings it back early.
 
 ### Changed
 
@@ -47,6 +47,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   a ✓ row's detail) slide open and closed instead of popping.
 - The Jarvis hologram turns amber only while an agent is asking you something; gates, plans to review and runs to
   land wait in Jarvis's badge and queue and leave it on its usual rings.
+- The Jarvis hologram stays faint over the corner of your screen even while agents work or ask, and turns solid when
+  you hover it or open its peek. Right-clicking Jarvis no longer opens a menu.
+- When an agent asks you something, the hologram's rings wind in and fold into the amber sphere with a flare of light,
+  instead of a plain crossfade.
 - Hovering a queued plan in the Agent sidebar opens a card to its right: the plan's file name above its folder, the
   whole reason when it is blocked, the lead and workers it will run with, and when it was queued.
 - Every agent, run and worker row in the Agent sidebar ends with the same three columns, RAM · tokens · age, lined up
