@@ -50,6 +50,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   syncs over the network; it waits only for the vault's quick local commit.
 - A Chat message that never reaches Claude Code no longer sits under "Queued" for good: arcterm tells you it was not
   sent and puts it back in the chat box with its files, so you can send it again.
+- Topics (an initiative others are filed under, such as "Chat" or "Misc") no longer fill Jarvis's Ideas column: they
+  sit in All initiatives with their sub-initiatives under them, with no 0/0 bar, and stay out of Review.
 - In Chat, the ring beside a running step ("Ran", "Read"…) turns in place instead of wobbling off its centre.
 - A paused run's progress strip no longer blinks: the task and stage it stopped on hold still in grey until you
   resume it.

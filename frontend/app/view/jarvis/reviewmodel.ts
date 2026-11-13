@@ -221,8 +221,9 @@ export function sessionNext(
 // --- what the views read ----------------------------------------------------------------------------------
 
 // The trackers with what a queue needs that a card does not carry: whether somebody is on one (a workref in the
-// summaries) and whether something waits on the person for it (attention, agents).
-export function reviewCards<T extends Omit<ReviewCard, "working" | "asking">>(
+// summaries) and whether something waits on the person for it (attention, agents). A topic (buildEffortCards) is left
+// out: it moves only through its sub-initiatives, which are reviewed themselves, so it would only ever read as idle.
+export function reviewCards<T extends Omit<ReviewCard, "working" | "asking"> & { topic?: boolean }>(
     trackers: T[],
     summaries: Pick<EffortSummary, "oref" | "chunks">[],
     attention: Pick<AttentionItem, "effortoid">[],
@@ -230,7 +231,9 @@ export function reviewCards<T extends Omit<ReviewCard, "working" | "asking">>(
 ): (T & { working: boolean; asking: boolean })[] {
     const working = workingOrefs(summaries);
     const asking = askingOrefs(attention, agents);
-    return trackers.map((t) => ({ ...t, working: working.has(t.oref), asking: asking.has(t.oref) }));
+    return trackers
+        .filter((t) => t.topic !== true)
+        .map((t) => ({ ...t, working: working.has(t.oref), asking: asking.has(t.oref) }));
 }
 
 // the head of the "Since you reviewed" block: when the mark was, or the cursor an unreviewed one reads from

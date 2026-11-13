@@ -157,6 +157,8 @@ export function quietCount(cards: EffortCardModel[], now: number): number {
     return cards.filter(
         (c) =>
             !isIdea(c) &&
+            // a topic moves only through its sub-initiatives, so its own date says nothing
+            c.topic !== true &&
             c.status !== "archived" &&
             c.status !== "paused" &&
             c.status !== "done" &&
@@ -167,8 +169,9 @@ export function quietCount(cards: EffortCardModel[], now: number): number {
 
 // An initiative is a tracker once it has a plan. Until then it is a title written down to come back to —
 // an idea — and a 0/0 bar beside it, or an "active" state, would claim progress it cannot have.
+// A topic (buildEffortCards) is not one: it has no plan because its sub-initiatives hold the work.
 export function isIdea(card: EffortCardModel): boolean {
-    return card.status !== "archived" && card.done + card.remaining + card.skipped === 0;
+    return card.status !== "archived" && card.topic !== true && card.done + card.remaining + card.skipped === 0;
 }
 
 // The meta line under a tracker's title: where it sits. A sub-initiative says what it is part of in place of its own
@@ -252,7 +255,11 @@ export function initiativeLine(card: EffortCardModel & Partial<Nesting>): BriefL
         meta: trackerMeta(card),
         state,
         stateTone,
-        progress: { done: card.done, total: card.done + card.remaining, pct: card.progressPct },
+        // a topic with no chunks of its own has no progress to show: a 0/0 bar would claim it stalled
+        progress:
+            card.topic === true && card.done + card.remaining === 0
+                ? null
+                : { done: card.done, total: card.done + card.remaining, pct: card.progressPct },
         segments: card.segments,
         target: { oref: card.oref },
         why: "",

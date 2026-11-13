@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isIdea } from "./briefrows";
 import {
     buildEffortCard,
+    buildEffortCards,
     chunkTone,
     effortDeltaRow,
     effortFacts,
@@ -450,5 +451,34 @@ describe("groupChunksByStage fractions", () => {
     it("leaves a proposed chunk out of the denominator, as the initiative's own count does", () => {
         const [g] = groupChunksByStage([row("A", "done"), row("A", "pending"), row("A", "proposed")]);
         expect(g.fraction).toBe("1/2");
+    });
+});
+
+describe("buildEffortCards", () => {
+    const sum = (oid: string, over: Partial<EffortSummary> = {}) =>
+        ({ oref: "effort:" + oid, title: oid, status: "active", done: 0, total: 0, updatedts: 1, ...over }) as EffortSummary;
+
+    it("marks an initiative another one is linked under as a topic, and nothing else", () => {
+        const cards = buildEffortCards([sum("top"), sum("child", { parentoid: "top" }), sum("alone")]);
+        expect(cards.map((c) => [c.oref, c.topic === true])).toEqual([
+            ["effort:top", true],
+            ["effort:child", false],
+            ["effort:alone", false],
+        ]);
+    });
+
+    it("keeps a topic with no chunks out of the ideas", () => {
+        const [top, child] = buildEffortCards([sum("top"), sum("child", { parentoid: "top" })]);
+        expect(isIdea(top)).toBe(false);
+        expect(isIdea(child)).toBe(true);
+    });
+
+    it("makes no topic from a self-link or from an archived child alone", () => {
+        const cards = buildEffortCards([
+            sum("self", { parentoid: "self" }),
+            sum("old"),
+            sum("gone", { parentoid: "old", status: "archived" }),
+        ]);
+        expect(cards.filter((c) => c.topic === true)).toEqual([]);
     });
 });

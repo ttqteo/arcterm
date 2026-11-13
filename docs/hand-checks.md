@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Topics leave Ideas: open Jarvis → the Ideas column no longer lists the topics (`wsh effort list
+  --topics`: Chat, Misc, Kael sync…); each shows in All initiatives with "+N sub", no bar or count, its
+  sub-initiatives indented under it, and "Link to…" lists it with "topic" in place of 0/0. Unit-tested only
+  (`buildEffortCards`, branch `fix/brief-topics-not-ideas`).
 - [ ] (arcterm) Initiative writes no longer queue behind a vault sync: with a vault remote set, run a burst of
   `wsh effort chunk add/note` (a few hundred, as a cleanup script does) → none comes back `EC-TIME: timeout waiting for
   response`; before, about 1 in 120 did, each time the sync fetched or pushed. Unit-tested only (`pkg/wavevault`
