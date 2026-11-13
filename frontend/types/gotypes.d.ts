@@ -4110,6 +4110,10 @@ declare global {
         runtime: string;
         command?: string;
         branch?: string;
+        args?: string[];
+        resumeof?: string;
+        resumepath?: string;
+        resumetitle?: string;
         task: string;
         images?: string[];
         ts: number;

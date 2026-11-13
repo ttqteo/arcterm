@@ -22,6 +22,13 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- A resume of a past session picked in New is held too while the machine is busy, and Start now picks the same
+  session up. Every held agent now says so in a toast, with Open to go to it.
+
 ## 1.1.2 — 2026-11-14
 
 ### Added

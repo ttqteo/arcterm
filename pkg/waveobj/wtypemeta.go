@@ -125,6 +125,10 @@ type ParkedLaunch struct {
 	Runtime     string   `json:"runtime"`               // the agent row it was held from ("claude", "pi", ...)
 	Command     string   `json:"command,omitempty"`     // the startup command with the dialog's flags, so Start now runs what New would have
 	Branch      string   `json:"branch,omitempty"`      // the worktree branch it was to start on; empty starts in the project folder
+	Args        []string `json:"args,omitempty"`        // an exact argv (pi's resume path), used in place of Command's words
+	ResumeOf    string   `json:"resumeof,omitempty"`    // the transcript of the session it resumes; empty starts a new one
+	ResumePath  string   `json:"resumepath,omitempty"`  // pi's session file, checked before the tab is made
+	ResumeTitle string   `json:"resumetitle,omitempty"` // the resumed session's title, which names a held resume with no task
 	Task        string   `json:"task"`
 	Images      []string `json:"images,omitempty"` // the pasted or dropped images, kept under ~/.arc/attachments
 	Ts          int64    `json:"ts"`               // UnixMilli it was held

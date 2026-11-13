@@ -62,13 +62,16 @@ export function withoutParked(list: readonly ParkedLaunch[], id: string): Parked
     return list.filter((p) => p.id !== id);
 }
 
-/** Pure: the row's name: the task's first line, or the agent's when it was parked with no task. */
+/** Pure: the row's name: the task's first line; with no task, the session it resumes, else the agent. */
 export function parkedTitle(p: ParkedLaunch): string {
     const line = p.task
         .split(/\r?\n/)
         .map((l) => l.trim())
         .find((l) => l !== "");
-    return line ?? `New ${p.runtime} agent`;
+    if (line != null) {
+        return line;
+    }
+    return p.resumeof ? `Resume ${p.resumetitle || "session"}` : `New ${p.runtime} agent`;
 }
 
 /** Pure: what held it, as a row says it: "RAM" for memory pressure, "CPU" for a pegged CPU. */
@@ -80,9 +83,20 @@ function imagesWord(n: number): string[] {
     return n === 0 ? [] : [n === 1 ? "1 image" : `${n} images`];
 }
 
-/** Pure: the row's second line, "held for RAM · 2 images"; its age sits apart at the row's end. */
+/** Pure: the row's second line, "held for RAM · resume · 2 images"; its age sits apart at the row's end. */
 export function parkedMeta(p: ParkedLaunch): string {
-    return [`held for ${heldFor(p)}`, ...imagesWord(p.images?.length ?? 0)].join(" · ");
+    return [`held for ${heldFor(p)}`, ...(p.resumeof ? ["resume"] : []), ...imagesWord(p.images?.length ?? 0)].join(
+        " · "
+    );
+}
+
+/** Pure: the toast that says an agent was held, so a launch that started nothing is never silent. */
+export function heldToast(p: ParkedLaunch): { title: string; message: string } {
+    const why = p.reason ? `: ${p.reason.toLowerCase()}` : "";
+    return {
+        title: `${p.resumeof ? "Resume" : "Agent"} held${why}`,
+        message: `${parkedTitle(p)}. It waits in its project's folder until you start it.`,
+    };
 }
 
 /** Pure: how long it has been held, as the agent rows say an age ("3h", "<1m"). */
