@@ -8,8 +8,10 @@
 //   folds       [data-chat-bscard-fold="decided|yours|calls|spec"] (aria-expanded) and [data-chat-bscard-fold-list="…"]
 //   confirm     [data-chat-bscard-review-line], [data-chat-bscard-confirm-all] or [data-chat-bscard-check],
 //               [data-chat-bscard-decision="<part>"][data-view="guess|changed"], [data-chat-bscard-new],
-//               [data-chat-bscard-right|edit|keep|restore], [data-chat-bscard-editor]
-//   check       [data-chat-bscard-stage="reading|taking-in|failed|asking|review"], [data-chat-bscard-clock],
+//               [data-chat-bscard-right|edit|keep|restore], [data-chat-bscard-editor]; a changed row also draws what
+//               changed as the Brainstorm tab's review does: [data-diff-line="removed|added"] (one per sentence that left
+//               or came in), [data-chat-bscard-why] and, when its part came from an answered question, [data-brainstorm-said]
+//   check      [data-chat-bscard-stage="reading|taking-in|failed|asking|review"], [data-chat-bscard-clock],
 //               [data-chat-bscard-check-reason], [data-chat-bscard-retry], [data-chat-bscard-builder="<n>"],
 //               [data-chat-bscard-option], [data-chat-bscard-decide], [data-chat-bscard-own], [data-chat-bscard-approve],
 //               [data-chat-bscard-approve-reason], [data-chat-bscard-keep-talking]
@@ -66,6 +68,7 @@ const TEXT = {
         more: "Long enough to trace a weekend outage.",
         was: "Keep retry logs for three days.",
         why: "Your answer about paging means the logs are read in the field, so they stay longer.",
+        from: "your answer 3",
     },
     limits: {
         title: "Retry limits",
@@ -73,6 +76,7 @@ const TEXT = {
         more: "A flaky link needs more tries.",
         was: "Three attempts.",
         why: "You said a flaky link needs more tries.",
+        from: "your answer 2",
     },
     timeout: {
         title: "Request timeout",
@@ -87,7 +91,8 @@ const EDITED = "Each attempt and its outcome, kept for the audit.";
 const BOARDS = ["Main.dc.html", "Alt.dc.html"];
 
 // how a decision is drawn in a file: yours; yours as before the agent changed it (`was`); the agent's guess; a guess that
-// changed a decision you had confirmed; asked (no text yet); yours as the user edited it
+// changed a decision you had confirmed (its `from` names the answer that caused it, when the text gives one); asked (no
+// text yet); yours as the user edited it
 function part(id, view, extra = {}) {
     const t = TEXT[id];
     const base = { id, title: t.title, body: `${t.gist} ${t.more}`, gist: t.gist };
@@ -99,7 +104,7 @@ function part(id, view, extra = {}) {
         case "guess":
             return { ...base, state: "guess", from: "agent's call", ...extra };
         case "changed":
-            return { ...base, state: "guess", from: "agent's call", was: t.was, why: t.why, ...extra };
+            return { ...base, state: "guess", from: t.from ?? "agent's call", was: t.was, why: t.why, ...extra };
         case "asked":
             return { id, title: t.title, state: "asked", body: "", ...extra };
         case "edited":
@@ -122,6 +127,16 @@ const Q1 = {
     ],
 };
 
+// the two answers a changed decision came from, as the file's history ties them to it (`into` names the part, and the
+// part's `from` names the answer's n): the Confirm card and the check's review draw each as an answer line. The files
+// that still ask a question have none: a design that is still being asked has no answer behind its changes
+const ANSWER_LIMITS = "A flaky link needs more tries than three.";
+const ANSWER_RETENTION = "The logs are read in the field, a few days after.";
+const HISTORY = [
+    { kind: "question", n: 2, q: "How should the client cope with a flaky link?", a: ANSWER_LIMITS, into: ["limits"] },
+    { kind: "question", n: 3, q: "Who reads the retry logs, and when?", a: ANSWER_RETENTION, into: ["retention"] },
+];
+
 const designFile = (views, over = {}, extras = {}) => ({
     v: 1,
     title: "Sync client retries",
@@ -130,7 +145,7 @@ const designFile = (views, over = {}, extras = {}) => ({
     question: null,
     working: null,
     parts: ORDER.filter((id) => id in views).map((id) => part(id, views[id], extras[id] ?? {})),
-    history: [],
+    history: HISTORY,
     done: true,
     check: null,
     run: null,
@@ -147,7 +162,7 @@ const V5 = { ...V4, limits: "yours" }; // after Keep the change on limits
 const V6 = { ...V5, timeout: "was" }; // after Put mine back on timeout
 const V7 = { ...V6, policy: "yours", retention: "yours" }; // after Confirm all 2 guesses: every decision is yours
 const DECISIONS = Object.keys(V7).length;
-const F1 = designFile(V1, { question: Q1, done: false }, { policy: { boards: BOARDS } });
+const F1 = designFile(V1, { question: Q1, done: false, history: [] }, { policy: { boards: BOARDS } });
 const F2 = designFile(V2);
 const F3 = designFile(V3);
 const F4 = designFile(V4);
@@ -193,7 +208,7 @@ const C2 = withCheck(checkOf([ANSWER1, ANSWER2])); // question 3 open
 const C3 = withCheck(checkOf([ANSWER1, ANSWER2, ANSWER3]), { ...V7, retention: "changed" }); // all answered, one decision changed by them
 const C4 = withCheck(checkOf([ANSWER1, ANSWER2, ANSWER3])); // settled
 // keep talking sets `check` back to null and the agent asks again: the same n as the builder question the user answered
-const F13 = designFile(V7, { question: Q1, done: false });
+const F13 = designFile(V7, { question: Q1, done: false, history: [] });
 
 const GOALS = {
     orchestrator: "verify chat-brainstorm-review: the orchestrator fixture run",
@@ -527,6 +542,27 @@ export default function (kit) {
                 return got;
             };
             const rowOf = (card, id) => card.rows.find((r) => r.id === id);
+            // what a decision row of a card draws of its change: the sentences that left and came in (without their − / +),
+            // the cause, the answer line, and whether any `Was:` text is left
+            const readChange = (kind, id) =>
+                h.ev(`(() => {
+                    ${HELP}
+                    const row = ${cardOf(A, kind)}?.querySelector('[data-chat-bscard-decision="${id}"]');
+                    const lines = (k) => [...(row?.querySelectorAll('[data-diff-line="' + k + '"]') ?? [])].map((e) => flat(e).replace(/^[+\\u2212]\\s*/, ""));
+                    return {
+                        row: !!row,
+                        view: row?.getAttribute("data-view") ?? null,
+                        removed: lines("removed"),
+                        added: lines("added"),
+                        why: flat(row?.querySelector("[data-chat-bscard-why]")),
+                        said: flat(row?.querySelector("[data-brainstorm-said]")),
+                        saidCount: row?.querySelectorAll("[data-brainstorm-said]").length ?? 0,
+                        wasText: /\\bWas:/.test(flat(row)),
+                    };
+                })()`);
+            const sameList = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+            // a changed decision as its row must draw it: the old sentence removed, the new body's sentences added, the cause
+            const drewChange = (c, id) => c.view === "changed" && sameList(c.removed, [TEXT[id].was]) && sameList(c.added, [TEXT[id].gist, TEXT[id].more]) && c.why === `Why: ${TEXT[id].why}` && !c.wasText;
             // the layer's text typed into a field the way a person does: focus, select what is there, type over it
             const typeInto = async (selector, text) => {
                 const ok = await h.ev(`(() => {
@@ -605,6 +641,43 @@ export default function (kit) {
                 );
             });
 
+            // 2a. a changed decision draws what changed, as the Brainstorm tab's review does: the − / + sentence lines, the
+            // cause, and the answer it came from (limits came from answer 2, timeout from the agent's own change)
+            await run("2a. confirm card: changed decisions", async (name) => {
+                await put(F2);
+                const up = await waitCard("confirm", "waiting");
+                await polishNap(600);
+                await scrollEnd();
+                const limits = await readChange("confirm", "limits");
+                const timeout = await readChange("confirm", "timeout");
+                const guess = await readChange("confirm", "logging");
+                // the limits row from its top (under the pane's sticky first message), so the shot holds its answer line
+                // and both changed rows
+                await h.ev(`(() => {
+                    const s = ${scrollerOf(A)};
+                    const r = ${cardOf(A, "confirm")}?.querySelector('[data-chat-bscard-decision="limits"]');
+                    if (s && r) { r.scrollIntoView({ block: "start" }); s.scrollTop -= 56; }
+                    return !!r;
+                })()`);
+                await polishNap(300);
+                await shot("2a-confirm-diff");
+                rec(
+                    `${name}: the changed limits and timeout rows draw [data-diff-line="removed"] with the old sentence, [data-diff-line="added"] with the new body's sentences, [data-chat-bscard-why] with the cause and no Was: text; limits, which came from answer 2, also draws [data-brainstorm-said]; timeout and a guess row draw none, and the guess draws no diff or why`,
+                    up &&
+                        drewChange(limits, "limits") &&
+                        limits.saidCount === 1 &&
+                        limits.said === `answer 2: “${ANSWER_LIMITS}”` &&
+                        drewChange(timeout, "timeout") &&
+                        timeout.saidCount === 0 &&
+                        guess.view === "guess" &&
+                        guess.removed.length === 0 &&
+                        guess.added.length === 0 &&
+                        guess.why === "" &&
+                        guess.saidCount === 0,
+                    { up, limits, timeout, guess }
+                );
+            });
+
             // 2b. That's right on a guess sends confirm <id>
             await run("2b. That's right", async (name) => {
                 await put(F2);
@@ -613,15 +686,18 @@ export default function (kit) {
                 const sent = await sendVia('[data-chat-bscard-decision="cache"] [data-chat-bscard-right]');
                 const line = "brainstorm: confirm cache";
                 const taken = await turn(line, { file: F3 });
-                await polishNap(600);
+                // a row leaves on a spring height collapse (the rows sit in an AnimatePresence), so it stays in the page for
+                // some hundred ms after the card has taken the new file: wait for it to go, not a fixed time
+                const gone = await polishWaitFor(h, `!${cardOf(A, "confirm")}?.querySelector('[data-chat-bscard-decision="cache"]')`, WAIT_MS);
+                await polishNap(200);
                 const card = await readCard("confirm");
                 const thread = await readThread(line);
                 await scrollEnd();
                 await shot("2b-thats-right");
                 rec(
                     `${name}: That's right on cache records "${line}"; once the agent has it the line draws no bubble and the cache row is gone`,
-                    sent.clicked === "clicked" && sent.text === line && taken && thread.bubbles === 0 && card.card && !rowOf(card, "cache"),
-                    { sent, taken, bubbles: thread.bubbles, rows: card.rows.map((r) => r.id) }
+                    sent.clicked === "clicked" && sent.text === line && taken && thread.bubbles === 0 && card.card && gone && !rowOf(card, "cache"),
+                    { sent, taken, bubbles: thread.bubbles, gone, rows: card.rows.map((r) => r.id) }
                 );
             });
 
@@ -972,6 +1048,22 @@ export default function (kit) {
                         card.spec.list?.lines === SPEC_ANSWERED.length &&
                         SPEC_ANSWERED.every((t) => card.spec.list.text.includes(t)),
                     { closedCalls: closed.calls, closedSpec: closed.spec, calls: card.calls, spec: card.spec }
+                );
+            });
+
+            // 12a. the builder check's review draws a changed decision the same way: the − / + lines, the cause, and the
+            // answer retention came from (answer 3)
+            await run("12a. review: changed decision", async (name) => {
+                await put(C3, { record: { state: "answered" }, ends: true });
+                const review = (await waitStage("review")) && (await polishWaitFor(h, `!!${cardOf(A, "check")}?.querySelector('[data-chat-bscard-decision="retention"]')`, WAIT_MS));
+                await polishNap(600);
+                await scrollEnd();
+                const retention = await readChange("check", "retention");
+                await shot("12a-review-diff");
+                rec(
+                    `${name}: the check's review draws the changed retention row with [data-diff-line="removed"] for the old sentence, [data-diff-line="added"] for the new body's sentences, [data-chat-bscard-why] with the cause, no Was: text and [data-brainstorm-said] for answer 3`,
+                    review && drewChange(retention, "retention") && retention.saidCount === 1 && retention.said === `answer 3: “${ANSWER_RETENTION}”`,
+                    { review, retention }
                 );
             });
 
