@@ -6,6 +6,15 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) No folder in the New dialog: open New → Claude Code → the Project column's last row reads No folder
+  (0), with `~/.arc/no-folder` in its tooltip. Pick it and launch → Claude Code starts in that folder with no trust
+  prompt and no ask-only line, and the agent sits in the tree's No folder folder. Launch there again → the Session
+  column lists the first session and resumes it. Terminal and a Tool on No folder open in the same folder. Then pick
+  a project with sessions and click one → the dialog keeps its height going into the session step and back (←), and
+  the two fade into each other. `task verify:ui -- launcher launcher-resume tools-launcher tools-tree` could not boot
+  its dev app under memory pressure. Commit: feat(launcher) No folder replaces Home (`launchermodal.tsx`,
+  `pkg/jarvis/nofolder.go`).
+
 - [ ] (arcterm) Hidden Jarvis in the Office and at launch: open Cockpit → Office, right-click the boss → Hide for 1
   hour → the boss and its ring go, its desk stays empty and no Sprout appears on the footer; Ctrl+P → Show Jarvis →
   the boss comes back with its entrance (the teleport, or Spider-Man's swing). Hide again, then quit and reopen
