@@ -3,9 +3,9 @@
 //
 // The Brief: the queue-first Jarvis surface (spec 2026-11-05-jarvis-revamp-design.md, board Main.dc.html). A main
 // column — the Waiting strip, then Initiatives: the pinned cards and every other initiative as one compact list — beside
-// a side column of Activity (runs and councils), Since you looked, Shipped and Ideas, over the briefing snapshot, under
-// a header whose fleet line comes off the live agent roster. An initiative opens in the sheet (initiativesheet.tsx),
-// never in place; a council in the sheet too (councilsheet.tsx).
+// a side column of Activity (runs and councils), Since you looked, Shipped, Ideas and For later, over the briefing
+// snapshot, under a header whose fleet line comes off the live agent roster. An initiative opens in the sheet
+// (initiativesheet.tsx), never in place; a council in the sheet too (councilsheet.tsx).
 //
 // Two rules shape every region. Absence is a written sentence, never a heading over an empty frame: a region renders
 // rows or it says what is not there. And every count printed is the number of rows rendered beneath it, with whatever
@@ -28,16 +28,26 @@ import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindin
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { showSession } from "@/app/view/agents/agentcenter";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { formatAgeShort } from "@/app/view/agents/agentsviewmodel";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { channelsAtom, createChannel, loadChannels, runAtom } from "@/app/view/agents/channelsstore";
 import { useCouncils } from "@/app/view/agents/councilstore";
+import { clearLaterMark, laterMarksAtom } from "@/app/view/agents/laterstore";
 import { openLauncher } from "@/app/view/agents/launcherstore";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
 import { RollingCount } from "@/app/view/agents/rollingcount";
 import { pendingRunDraftAtom, resumePausedRun, resumingRunIdsAtom } from "@/app/view/agents/runactions";
 import { leadAsker } from "@/app/view/agents/runmodel";
 import { queuedRowsAtom, useRunQueueFeed } from "@/app/view/agents/runqueuestore";
+import {
+    lookupSessions,
+    overlayLive,
+    sessionLookupAtom,
+    type LiveSession,
+} from "@/app/view/agents/sessionsarchivestore";
+import { runSessionPrimary } from "@/app/view/agents/sessionsdetail";
 import { DagModal } from "@/app/view/orchestrate/dagmodal";
 import { setDagModalAgentsContext } from "@/app/view/orchestrate/dagmodalstate";
 import { formatChordString } from "@/util/keysym";
@@ -92,6 +102,7 @@ import {
     type ListItem,
 } from "./briefcards";
 import { briefFleet } from "./brieffleet";
+import { filterLaterRows, LATER_CAP, laterDoneKey, laterRows, type LaterRow } from "./briefforlater";
 import { BRIEFING_FIXTURES } from "./briefingfixtures";
 import {
     ackableRuns,
@@ -182,6 +193,7 @@ import {
     togglePin,
     unarchiveEffort,
 } from "./effortstore";
+import { ForLaterRegion } from "./forlaterregion";
 import { freshKeys } from "./freshrows";
 import { InitiativeCards } from "./initiativecards";
 import { useInitiativeEdits } from "./initiativeedits";
@@ -495,10 +507,10 @@ function showInitiativeMenu(
 const briefCursorAtom = atom<string | undefined>(undefined) as PrimitiveAtom<string | undefined>;
 
 // Which regions the user has opened past their window: the Waiting strip's Show all, the initiatives list's
-// "+N more", Since you looked's and Ideas'. Module scope for the cursor's reason: the Brief unmounts on every surface
-// switch, and a region that silently re-collapsed while you were reading a record would be worse than one that never
-// opened.
-type FoldId = "waiting" | "initiatives" | "behind" | "ideas";
+// "+N more", Since you looked's, Ideas' and For later's. Module scope for the cursor's reason: the Brief unmounts on
+// every surface switch, and a region that silently re-collapsed while you were reading a record would be worse than one
+// that never opened.
+type FoldId = "waiting" | "initiatives" | "behind" | "ideas" | "later";
 const briefExpandedAtom = atom<Partial<Record<FoldId, boolean>>>({});
 
 // Activity's own folds (Earlier past five lines, the runs quiet for a week) and Shipped's rows past the cap; module
@@ -804,6 +816,66 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         () => capRegion(effortGroups.ideas, IDEA_CAP, foldOpen(ideasOpen, query)),
         [effortGroups, ideasOpen, query]
     );
+    const [storedCursor, setStoredCursor] = useAtom(briefCursorAtom);
+    // For later (briefforlater.ts): every marked session, looked up by id whatever its age, so the mark of a session
+    // older than History's week still names it. A Done waiting out its undo window hides its row at once.
+    const laterMarks = useAtomValue(laterMarksAtom);
+    const laterLookup = useAtomValue(sessionLookupAtom);
+    const roster = useAtomValue(model.agentsAtom);
+    // keyed on the set of ids, so a write that leaves them as they were asks nothing again
+    const laterIdsKey = useMemo(() => JSON.stringify(Object.keys(laterMarks).sort()), [laterMarks]);
+    useEffect(() => {
+        fireAndForget(() => lookupSessions(JSON.parse(laterIdsKey) as string[]));
+    }, [laterIdsKey]);
+    const laterAll = useMemo(
+        () =>
+            filterLaterRows(
+                laterRows(
+                    laterMarks,
+                    overlayLive(laterLookup.sessions, roster, 0),
+                    laterLookup.ids,
+                    pendingDeletes,
+                    Date.now(),
+                    formatAgeShort
+                ),
+                query
+            ),
+        [laterMarks, laterLookup, roster, pendingDeletes, query]
+    );
+    const laterOpen = expanded.later === true;
+    const laterWindow = useMemo(
+        () => capRegion(laterAll, LATER_CAP, foldOpen(laterOpen, query)),
+        [laterAll, laterOpen, query]
+    );
+    // a live session's agent, an ended one's transcript; never a launch
+    const openLater = useCallback(
+        (r: LaterRow<LiveSession>) => {
+            const s = r.session;
+            if (s == null) {
+                return;
+            }
+            setStoredCursor(r.navId);
+            if (s.live) {
+                runSessionPrimary(model, s);
+            } else {
+                showSession(model, `${s.runtime}:${s.id}`);
+            }
+        },
+        [model, setStoredCursor]
+    );
+    const resumeLater = useCallback(
+        (r: LaterRow<LiveSession>) => {
+            if (r.session != null) {
+                runSessionPrimary(model, r.session);
+            }
+        },
+        [model]
+    );
+    // the mark is cleared only when the undo window closes, so Undo leaves it with its first time
+    const doneLater = useCallback((r: LaterRow<LiveSession>) => {
+        const name = r.state === "found" ? `“${r.title}”` : "a mark";
+        briefUndo.schedule([laterDoneKey(r.key)], `Done: ${name}`, () => clearLaterMark(r.key));
+    }, []);
     // moment 1: which ideas are new to YOU (the Since you looked region is new by construction, so it is not marked)
     const cursorTs = snapshot?.actualCursor ?? 0;
     const freshIdeas = useMemo(
@@ -1099,7 +1171,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const reviewing = pass != null;
 
     // j/k walks the rows in the order they are drawn (briefnav.ts): the strip's item (its rows with Show all open), the
-    // cards row by row, the list, Activity, then Since you looked, Shipped and Ideas
+    // cards row by row, the list, Activity, then Since you looked, Shipped, Ideas and For later
     const activityShown = useMemo(
         () => [...activity.live, ...activity.earlier, ...(foldOpen(staleOpen, query) ? activity.older : [])],
         [activity, staleOpen, query]
@@ -1120,6 +1192,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 behind: only == null ? behindLines.map((l) => l.id) : [],
                 shipped: only == null ? shippedLines.map((l) => l.id) : [],
                 ideas: only == null ? ideaLines.map((l) => l.id) : [],
+                later: only == null ? laterWindow.rows.map((r) => r.navId) : [],
             }),
         [
             mainShown,
@@ -1133,10 +1206,10 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             behindLines,
             shippedLines,
             ideaLines,
+            laterWindow,
         ]
     );
 
-    const [storedCursor, setStoredCursor] = useAtom(briefCursorAtom);
     const cursor = resolveBriefCursor(navIds, storedCursor);
     const setCursor = useCallback((id: string) => setStoredCursor(id), [setStoredCursor]);
 
@@ -1220,6 +1293,14 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             openCouncilSheet(council);
             return;
         }
+        // Enter on a For later row opens its session, as its click does
+        const later = laterWindow.rows.find((r) => r.navId === cursor);
+        if (later != null) {
+            if (later.canOpen) {
+                openLater(later);
+            }
+            return;
+        }
         // Enter on a blocked chunk's row lands on the chunk, as its click does
         const waiting = lines.waiting.find((l) => l.id === cursor);
         if (waiting != null && queueOf(waiting)?.chunk != null) {
@@ -1229,7 +1310,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         if (cursorTarget != null) {
             openLine(cursorTarget);
         }
-    }, [cursor, navTarget, cursorTarget, openLine, lines.waiting, queueOf, openWaiting]);
+    }, [cursor, navTarget, cursorTarget, openLine, lines.waiting, queueOf, openWaiting, laterWindow, openLater]);
     const runList = useAtomValue(briefRunListAtom);
     // With a run sheet open on a run of the published list, j/k step the sheet through that list (design
     // L1830): the rows are the ones its n / N counts, and landing on one opens it. The cursor is still the
@@ -2320,6 +2401,19 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                             onToggle={() => toggleRegion("ideas")}
                                                         />
                                                     </section>
+                                                ) : null}
+                                                {laterAll.length > 0 || !filtering ? (
+                                                    <ForLaterRegion
+                                                        rows={laterWindow.rows}
+                                                        total={laterAll.length}
+                                                        more={laterWindow.more}
+                                                        expanded={laterOpen}
+                                                        onToggle={() => toggleRegion("later")}
+                                                        cursor={cursor}
+                                                        onOpen={openLater}
+                                                        onResume={resumeLater}
+                                                        onDone={doneLater}
+                                                    />
                                                 ) : null}
                                             </>
                                         ) : null}

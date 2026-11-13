@@ -614,6 +614,81 @@ describe("extractTasks", () => {
         expect(extractTasks(lines)).toBeUndefined();
         expect(extractTasks([todoUse([{ content: "kept" }]), ...lines])).toEqual([{ text: "kept", done: false }]);
     });
+
+    const assistant = (...content: unknown[]) => JSON.stringify({ type: "assistant", message: { content } });
+    const taskCreate = (id: string, subject: string) =>
+        assistant({ type: "tool_use", id, name: "TaskCreate", input: { subject } });
+    const created = (id: string, n: number, subject: string) =>
+        JSON.stringify({
+            type: "user",
+            message: {
+                content: [
+                    { type: "tool_result", tool_use_id: id, content: `Task #${n} created successfully: ${subject}` },
+                ],
+            },
+        });
+    const taskUpdate = (taskId: string, status: string) =>
+        assistant({ type: "tool_use", id: `u${taskId}${status}`, name: "TaskUpdate", input: { taskId, status } });
+    const stepsText = (...lines: string[]) =>
+        assistant({ type: "text", text: ["On it.", "```arc-steps", ...lines, "```"].join("\n") });
+
+    it("reads TaskCreate and TaskUpdate by task id, dropping a deleted task", () => {
+        const out = extractTasks([
+            taskCreate("c1", "Read the test"),
+            created("c1", 1, "Read the test"),
+            taskCreate("c2", "Patch it"),
+            created("c2", 2, "Patch it"),
+            taskCreate("c3", "Drop me"),
+            created("c3", 3, "Drop me"),
+            taskUpdate("1", "completed"),
+            taskUpdate("2", "in_progress"),
+            taskUpdate("3", "deleted"),
+            taskUpdate("9", "completed"),
+        ]);
+        expect(out).toEqual([
+            { text: "Read the test", done: true },
+            { text: "Patch it", done: false },
+        ]);
+    });
+
+    it("counts a TaskCreate only once its result says it was created", () => {
+        const failed = JSON.stringify({
+            type: "user",
+            message: { content: [{ type: "tool_result", tool_use_id: "c1", content: "Error: no", is_error: true }] },
+        });
+        expect(extractTasks([taskCreate("c1", "A"), failed])).toBeUndefined();
+        expect(extractTasks([taskCreate("c1", "A")])).toBeUndefined();
+    });
+
+    it("reads the latest arc-steps block: [x] done, [>] and [ ] not", () => {
+        const out = extractTasks([stepsText("[ ] A", "[ ] B"), stepsText("[x] A", "[>] B", "[ ] C", "junk")]);
+        expect(out).toEqual([
+            { text: "A", done: true },
+            { text: "B", done: false },
+            { text: "C", done: false },
+        ]);
+    });
+
+    it("ignores an arc-steps block that lists no step, and one in your message", () => {
+        const yours = JSON.stringify({
+            type: "user",
+            message: { content: [{ type: "text", text: "```arc-steps\n[x] mine\n```" }] },
+        });
+        expect(extractTasks([stepsText("nothing here"), yours])).toBeUndefined();
+    });
+
+    it("takes whichever list was written last", () => {
+        const todo = todoUse([{ content: "todo", status: "completed" }]);
+        const steps = stepsText("[>] step");
+        expect(extractTasks([todo, steps])).toEqual([{ text: "step", done: false }]);
+        expect(extractTasks([steps, todo])).toEqual([{ text: "todo", done: true }]);
+        expect(extractTasks([steps, taskCreate("c1", "tool"), created("c1", 1, "tool")])).toEqual([
+            { text: "tool", done: false },
+        ]);
+        expect(extractTasks([taskCreate("c1", "tool"), created("c1", 1, "tool"), steps])).toEqual([
+            { text: "step", done: false },
+        ]);
+    });
 });
 
 describe("projectTranscript thinking blocks", () => {

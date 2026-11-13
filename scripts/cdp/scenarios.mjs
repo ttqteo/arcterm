@@ -58,6 +58,7 @@ import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
 import sidebarColumnsScenarios from "./scenarios-sidebar-columns.mjs";
 import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
 import chatBgTasksScenarios from "./scenarios-chat-bg-tasks.mjs";
+import chatStepsScenarios from "./scenarios-chat-steps.mjs";
 import agentSubagentsScenarios from "./scenarios-agent-subagents.mjs";
 import brainstormBoardPickScenarios from "./scenarios-brainstorm-board-pick.mjs";
 import brainstormBuilderScenarios from "./scenarios-brainstorm-builder.mjs";
@@ -82,6 +83,7 @@ import diffScopeScenarios from "./scenarios-diff-scope.mjs";
 import diffStatesScenarios from "./scenarios-diff-states.mjs";
 import jarvisActivityScenarios from "./scenarios-jarvis-activity.mjs";
 import jarvisCardsScenarios from "./scenarios-jarvis-cards.mjs";
+import jarvisLaterScenarios from "./scenarios-jarvis-later.mjs";
 import jarvisSheetScenarios from "./scenarios-jarvis-sheet.mjs";
 import kaelAskKeysScenarios from "./scenarios-kael-ask-keys.mjs";
 import kaelKeysScenarios from "./scenarios-kael-keys.mjs";
@@ -13457,7 +13459,7 @@ async function primitiveSteps(h, ctx, rec, styles, take) {
         return;
     }
     await take("copy.button", COPY);
-    await take("copy.icon", `${COPY}?.querySelector('i')`);
+    await take("copy.icon", `${COPY}?.querySelector('svg')`);
     const hovered = await primitiveForceHover(h, COPY, true);
     await take("copy.button.hover", COPY);
     await primitiveForceHover(h, COPY, false);
@@ -13470,9 +13472,9 @@ async function primitiveSteps(h, ctx, rec, styles, take) {
     await primitiveForceHover(h, CODEBLOCK, true);
     await h.shot("cdp-shots/element-primitives-copy.png");
     await h.ev(`${COPY}?.click()`);
-    const copied = await polishWaitFor(h, `!!${COPY}?.querySelector('i.fa-check')`, 1500);
+    const copied = await polishWaitFor(h, `!!${COPY}?.querySelector('svg.lucide-check')`, 1500);
     await take("copy.button.copied", COPY);
-    await take("copy.icon.copied", `${COPY}?.querySelector('i')`);
+    await take("copy.icon.copied", `${COPY}?.querySelector('svg')`);
     const success = await h.ev(`(() => {
         const probe = document.createElement('i');
         probe.style.color = 'var(--color-success)';
@@ -44078,6 +44080,18 @@ const agentChat = {
             await AC.setRoster(h, acRoster(ctx, { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined }));
             const working = await polishWaitFor(h, `(${acLayer(A)}?.querySelector("[data-chat-working]")?.textContent ?? "").includes(${JSON.stringify(AC_ACTIVITY)}) && !!${acLayer(A)}?.querySelector("[data-chat-stop]")`, AC_WAIT_MS);
             await h.shot("cdp-shots/agent-chat-4-working.png");
+            // the working dot is a small Jarvis hologram: pulsedriver turns its rings (--spin) and flashes its sparks
+            const HOLO = `${acLayer(A)}?.querySelector("[data-chat-working] svg.holo-spin")`;
+            const spin0 = await h.ev(`${HOLO}?.style.getPropertyValue("--spin") ?? null`);
+            await polishNap(400);
+            const holo = await h.ev(`(() => { const s = ${HOLO}; return s == null ? null : {
+                spin: s.style.getPropertyValue("--spin"), sparks: s.querySelectorAll("polyline").length,
+                size: Math.round(s.getBoundingClientRect().width) }; })()`);
+            rec(
+                "4a. the working line's dot is the hologram: its rings turn and it carries three sparks",
+                holo != null && holo.sparks === 3 && holo.size === 14 && holo.spin !== "" && holo.spin !== spin0,
+                { spin0, holo }
+            );
             const stopsBefore = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-stop]")?.click()`);
             const stopped = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input === "\\x1b")`, 3000);
@@ -44873,7 +44887,7 @@ const agentChat = {
             const stayed24 = await h.ev(acOnScreen(A));
             rec(
                 "24. the footer shows the model chip and the context as a ring reading 42% (title Context 42%); with the captured plan-mode screen on the terminal a chip with data-chat-mode=plan appears, and clicking it opens the mode menu and types nothing into the block; Escape closes the menu and the chat stays on screen",
-                footerUp && /opus/.test(footerText ?? "") && ring24.text === "42%" && ring24.title === "Context 42%" && ring24.svg &&
+                footerUp && /opus/i.test(footerText ?? "") && ring24.text === "42%" && ring24.title === "Context 42%" && ring24.svg &&
                     !/ctx/.test(footerText ?? "") && chipBefore === false && screen24?.ok === true && chipUp &&
                     menuUp24 && typed24.length === 0 && menuDown24 && stayed24,
                 { footerText, ring24, chipBefore, screen24, chipUp, menuUp24, typed24, menuDown24, stayed24 }
@@ -45052,7 +45066,8 @@ const agentChat = {
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-model]")?.click()`);
             const up28 = await polishWaitFor(h, `${acMenuRows("Model")}.length === 4`, 3000);
             const menu28 = await h.ev(`(() => ({
-                rows: ${acMenuRows("Model")}.map((r) => [r.getAttribute("data-chat-model-choice"), r.getAttribute("aria-checked"), r.textContent.trim()]),
+                // a row's first span is its name; the last holds the check or its number key
+                rows: ${acMenuRows("Model")}.map((r) => [r.getAttribute("data-chat-model-choice"), r.getAttribute("aria-checked"), r.querySelector("span")?.textContent.trim()]),
                 expanded: ${acLayer(A)}?.querySelector("[data-chat-model]")?.getAttribute("aria-expanded") ?? null,
             }))()`);
             await h.shot("cdp-shots/agent-chat-28-model-menu.png");
@@ -45073,6 +45088,50 @@ const agentChat = {
                     menu28.rows.filter((r) => r[1] === "true").map((r) => r[0]).join() === "opus" && menu28.expanded === "true" &&
                     closed28 && stayed28 && picked28 && JSON.stringify(typed28) === JSON.stringify(["/model claude-sonnet-5-5", "\r"]) && closedAfter28,
                 { menu28, closed28, stayed28, picked28, typed28, closedAfter28 }
+            );
+
+            // 28b. effort lives in the model chip, as Claude Desktop has it: the menu ends with Effort and More models, each
+            // opening a submenu beside it (Effort's five levels and Auto, More models' earlier ids); picking High types
+            // /effort high and the chip then reads "… High"; picking Opus 4.8 types its id; with the menu open, 3 picks Sonnet
+            const chipQ28b = `${acLayer(A)}?.querySelector("[data-chat-model]")`;
+            const subRows28b = (label) => `[...(document.querySelector('[role="menu"][aria-label="${label}"]')?.querySelectorAll('[role="menuitemradio"]') ?? [])]`;
+            await h.ev(`${chipQ28b}?.click()`);
+            await polishWaitFor(h, `${acMenuRows("Model")}.length === 4`, 3000);
+            const openers28b = await h.ev(`[...(${acMenu("Model")}?.querySelectorAll("[data-opens-sub]") ?? [])].map((r) => r.getAttribute("data-opens-sub"))`);
+            await h.ev(`${acMenu("Model")}?.querySelector('[data-opens-sub="effort"]')?.click()`);
+            const effortUp28b = await polishWaitFor(h, `${subRows28b("Effort")}.length === 6`, 3000);
+            const effortRows28b = await h.ev(`${subRows28b("Effort")}.map((r) => r.getAttribute("data-chat-effort-choice"))`);
+            await h.shot("cdp-shots/agent-chat-28b-effort-sub.png");
+            const beforeE28b = (await acSettled(h, blockA)).length;
+            await h.ev(`document.querySelector('[role="menu"][aria-label="Effort"] [data-chat-effort-choice="high"]')?.click()`);
+            const effortPicked28b = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.blockid === ${JSON.stringify(blockA)} && c.data.input === "/effort high")`, 3000);
+            const effortClosed28b = await polishWaitFor(h, `!${acMenu("Model")}`, 3000);
+            const chipText28b = await h.ev(`${chipQ28b}?.textContent.trim() ?? null`);
+            const typedE28b = (await acSettled(h, blockA)).slice(beforeE28b);
+            await h.ev(`${chipQ28b}?.click()`);
+            await polishWaitFor(h, `${acMenuRows("Model")}.length === 4`, 3000);
+            await h.ev(`${acMenu("Model")}?.querySelector('[data-opens-sub="more"]')?.click()`);
+            const moreUp28b = await polishWaitFor(h, `${subRows28b("More models")}.length === 9`, 3000);
+            const moreRows28b = await h.ev(`${subRows28b("More models")}.map((r) => r.getAttribute("data-chat-model-choice"))`);
+            await h.shot("cdp-shots/agent-chat-28b-more-models.png");
+            await h.ev(`document.querySelector('[role="menu"][aria-label="More models"] [data-chat-model-choice="claude-opus-4-8"]')?.click()`);
+            const morePicked28b = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.blockid === ${JSON.stringify(blockA)} && c.data.input === "/model claude-opus-4-8")`, 3000);
+            await polishWaitFor(h, `!${acMenu("Model")}`, 3000);
+            await h.ev(`${chipQ28b}?.click()`);
+            await polishWaitFor(h, `${acMenuRows("Model")}.length === 4`, 3000);
+            const sonnetCalls28b = await h.ev(`window.${AC_MOCK_KEY}.calls.filter((c) => c.command === "controllerinput" && c.data.input === "/model claude-sonnet-5-5").length`);
+            await acKey(h, { key: "3", code: "Digit3", windowsVirtualKeyCode: 51, text: "3" });
+            const digit28b = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.filter((c) => c.command === "controllerinput" && c.data.input === "/model claude-sonnet-5-5").length > ${sonnetCalls28b}`, 3000);
+            const digitClosed28b = await polishWaitFor(h, `!${acMenu("Model")}`, 3000);
+            const noEffortChip28b = await h.ev(`${acLayer(A)}?.querySelectorAll("[data-chat-effort]").length ?? -1`);
+            rec(
+                "28b. the model chip's menu ends with Effort and More models; Effort opens a submenu of low…max and Auto, picking High types /effort high, closes the menu and the chip reads its model then High; More models lists the nine earlier ids and picking Opus 4.8 types /model claude-opus-4-8; with the menu open the 3 key picks Sonnet; the effort has no chip of its own",
+                JSON.stringify(openers28b) === JSON.stringify(["effort", "more"]) && effortUp28b &&
+                    JSON.stringify(effortRows28b) === JSON.stringify(["low", "medium", "high", "xhigh", "max", "auto"]) &&
+                    effortPicked28b && effortClosed28b && JSON.stringify(typedE28b) === JSON.stringify(["/effort high", "\r"]) &&
+                    /High$/.test(chipText28b ?? "") && moreUp28b && moreRows28b.length === 9 && moreRows28b.includes("claude-opus-4-8") &&
+                    morePicked28b && digit28b && digitClosed28b && noEffortChip28b === 1,
+                { openers28b, effortRows28b, effortPicked28b, effortClosed28b, chipText28b, typedE28b, moreRows28b, morePicked28b, digit28b, digitClosed28b, noEffortChip28b }
             );
 
             // 29. the mode chip opens a menu of the four modes with a note each and the current one checked; Escape closes it; picking
@@ -51553,7 +51612,8 @@ const RADAR_AUDIT_PANEL = `document.querySelector('[aria-label="Available routes
 // or row until ListHarnessesCommand answers; twice its client timeout (CATALOG_RPC_TIMEOUT_MS, harnessstore.ts)
 const RADAR_AUDIT_CATALOG_WAIT_MS = 60_000;
 const RADAR_AUDIT_CATALOG_UP = `${RADAR_AUDIT_PANEL}?.querySelector('[data-testid^="route-harness-"], [data-testid^="route-option-"]') != null`;
-const RADAR_CLASSIFY_INPUT = `${RADAR_AUDIT_ROW}?.querySelector('input[type="text"]')`;
+// the classifier is its own row under the audit route's (backgroundai.tsx)
+const RADAR_CLASSIFY_INPUT = `${RADAR_AUDIT_PANE}?.querySelector('[data-setting-row="headless.radarclassify"] input[type="text"]')`;
 const radarAuditFace = (h) => h.ev(`(${RADAR_AUDIT_TRIGGER}?.textContent || "").trim()`);
 const radarClassifyField = (h) =>
     h.ev(`(() => { const i = ${RADAR_CLASSIFY_INPUT}; return i ? { value: i.value, placeholder: i.placeholder } : null; })()`);
@@ -51565,9 +51625,19 @@ const settingsRadarAudit = {
         const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
         const prev = Object.fromEntries(RADAR_AUDIT_KEYS.map((k) => [k, settings[k] ?? null]));
         await h.rpc("setconfig", Object.fromEntries(RADAR_AUDIT_KEYS.map((k) => [k, null])));
-        return { prev };
+        // the catalog is answered in-page, so steps 4-6 do not hang on pi being installed (a Windows box without pi
+        // offered only Claude): claude and pi, plus agy and codex for the picker to leave out
+        const modules = await ahResolveModules(h);
+        const mock = modules.urls
+            ? await installCatalogMock(h, modules.urls, [
+                  ...routePickerFlatCatalog(),
+                  agyHarnessRow("agy", "Antigravity", { leadcapable: false, models: ["gemini-3-pro"] }),
+                  agyHarnessRow("codex", "Codex", { leadcapable: false, models: ["gpt-5.5-codex"] }),
+              ])
+            : `no-module-url (${modules.error})`;
+        return { prev, mock };
     },
-    async assert(h) {
+    async assert(h, ctx) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
 
@@ -51615,7 +51685,7 @@ const settingsRadarAudit = {
             "4. the picker offers claude and pi and no other runtime",
             JSON.stringify(offered) === JSON.stringify(["claude", "pi"]),
             catalogUp
-                ? `offered=${JSON.stringify(offered)} catalog=${catalogMs}ms`
+                ? `offered=${JSON.stringify(offered)} catalog=${catalogMs}ms mock=${ctx.mock}`
                 : `offered=${JSON.stringify(offered)} no routes after ${catalogMs}ms, panel reads "${emptyText}"`
         );
         await h.shot("cdp-shots/settings-radar-audit-open.png");
@@ -51687,6 +51757,11 @@ const settingsRadarAudit = {
         return steps;
     },
     async teardown(h, ctx) {
+        try {
+            await removeCatalogMock(h);
+        } catch (e) {
+            console.error(`settings-radar-audit teardown: remove the catalog mock failed: ${e?.message ?? e}`);
+        }
         await h.rpc("setconfig", ctx.prev);
         await h.goto("cockpit");
     },
@@ -52788,12 +52863,12 @@ const settingsVaultSync = {
 // app share the vault's settings.json, and a write can lose a rename race with the other's.
 const SP_PAGES = [
     { id: "general", cards: ["startup", "menubar", "notifications"] },
-    { id: "appearance", cards: ["theme", "colors", "fonts", "agentrows"] },
+    { id: "appearance", cards: ["theme", "colors", "fonts", "agentrows", "chat"] },
     { id: "agents", cards: ["claudeaccount", "sleep", "flags"] },
     { id: "runs", cards: ["runs", "whilework", "tokenburn"] },
     { id: "terminal", cards: ["text", "cursor", "behavior"] },
     { id: "headless", cards: ["runtime", "openrouter", "radar"] },
-    { id: "jarvis", cards: ["jarvis", "folding", "office"] },
+    { id: "jarvis", cards: ["jarvis", "form", "behaviour", "folding", "office"] },
     {
         id: "storage",
         cards: ["vault", "runworktrees", "sessions", "housekeeping", "buildoutput", "packagecaches", "canvases", "autoclean"],
@@ -52946,7 +53021,8 @@ const settingsPages = {
         const menu = await h.ev(`(() => {
             const panel = ${SP_MENU_PANEL};
             if (!panel) return null;
-            return [...panel.children].map((c) =>
+            // the rows sit in the PopoverReveal panel inside the positioned element
+            return [...(panel.firstElementChild ?? panel).children].map((c) =>
                 c.classList.contains("h-px")
                     ? { separator: true }
                     : {
@@ -52975,7 +53051,7 @@ const settingsPages = {
             `menu=${JSON.stringify(menu)} closed=${menuGone}`
         );
 
-        // appearance-detail: nine theme chips with one selected; each font option drawn in its own face
+        // appearance-detail: ten theme chips (themes.ts) with one selected; each font option drawn in its own face
         await spOpen(h, "appearance");
         await polishWaitFor(h, `${spRow("fonts.mono")} != null`, 5000);
         const chips = await h.ev(`(() => {
@@ -52988,8 +53064,8 @@ const settingsPages = {
         await polishNap(200);
         await h.shot("cdp-shots/settings-pages-appearance-detail.png");
         rec(
-            "appearance-detail: nine theme chips, one selected; Fonts options each in their own face",
-            chips.count === 9 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
+            "appearance-detail: ten theme chips, one selected; Fonts options each in their own face",
+            chips.count === 10 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
             `chips=${JSON.stringify(chips)} sans=${JSON.stringify(sansFaces)} mono=${JSON.stringify(monoFaces)}`
         );
 
@@ -70463,12 +70539,14 @@ export const SCENARIOS = [
     ...agentStartFailedScenarios(RT_KIT),
     ...agentStreamsScenarios(RT_KIT),
     ...chatBgTasksScenarios(RT_KIT),
+    ...chatStepsScenarios(RT_KIT),
     ...agentSubagentsScenarios(RT_KIT),
     ...modalFocusHomeScenarios(RT_KIT),
     ...terminalStatusLineScenarios(RT_KIT),
     ...jarvisCardsScenarios(JARVIS_KIT),
     ...jarvisActivityScenarios(JARVIS_KIT),
     ...jarvisSheetScenarios(JARVIS_KIT),
+    ...jarvisLaterScenarios(JARVIS_KIT),
     agentRailWorktreeFiles,
     agentRailChangesCommits,
     agentRailCommitMode,

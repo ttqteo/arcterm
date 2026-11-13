@@ -59,6 +59,50 @@ export const MODEL_CHOICES: { alias: ModelFamily; id: string; label: string }[] 
     { alias: "haiku", id: "claude-haiku-5-5", label: "Haiku 5.5" },
 ];
 
+// More models: the earlier models Claude Code still takes by id, newest first within each family.
+export const MORE_MODEL_CHOICES: { id: string; label: string }[] = [
+    { id: "claude-fable-5-1", label: "Fable 5.1" },
+    { id: "claude-fable-5", label: "Fable 5" },
+    { id: "claude-opus-5", label: "Opus 5" },
+    { id: "claude-opus-4-8", label: "Opus 4.8" },
+    { id: "claude-opus-4-7", label: "Opus 4.7" },
+    { id: "claude-opus-4-6", label: "Opus 4.6" },
+    { id: "claude-sonnet-5", label: "Sonnet 5" },
+    { id: "claude-sonnet-4-6", label: "Sonnet 4.6" },
+    { id: "claude-haiku-4-5", label: "Haiku 4.5" },
+];
+
+// a model name or id reduced to its family and version digits: "opus 5.5", "Opus 5.5" and "claude-opus-5-5[1m]" all
+// read "opus55", and "Opus 5" reads "opus5", so a version never matches a longer one
+function modelKey(s: string): string {
+    return s
+        .toLowerCase()
+        .replace(/\[[^\]]*\]|\([^)]*\)/g, "")
+        .replace(/claude/g, "")
+        .replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * The id of the exact model the agent runs, from the main list or More models, or null when none matches. A bare
+ * family ("opus", Claude Code's alias for its newest) reads as that family's row in the main list.
+ */
+export function currentModelId(model: string | undefined): string | null {
+    const k = modelKey(model ?? "");
+    if (k === "") {
+        return null;
+    }
+    const all = [...MODEL_CHOICES, ...MORE_MODEL_CHOICES];
+    const exact = all.find((c) => modelKey(c.label) === k || modelKey(c.id) === k);
+    return exact?.id ?? MODEL_CHOICES.find((c) => c.alias === k)?.id ?? null;
+}
+
+/** The chip's name for the model: the menu's label for a known one ("Opus 5.5"), else the name as the agent gave it. */
+export function modelChipLabel(model: string | undefined): string {
+    const id = currentModelId(model);
+    const known = [...MODEL_CHOICES, ...MORE_MODEL_CHOICES].find((c) => c.id === id);
+    return known?.label ?? (model || "Model");
+}
+
 /** The family of the model the agent runs, read off its model name, or null when none matches. */
 export function currentModelAlias(model: string | undefined): ModelFamily | null {
     const m = (model ?? "").toLowerCase();

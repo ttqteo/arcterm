@@ -70,6 +70,17 @@ does not, say what you saw and it becomes a bug row under Actionable.
   run has none, so only the "Session ended · read-only transcript" banner was checked). Commit: dbd4023d6
   (`finalstagepane.tsx`, `runlineage.ts` `verifierStepTarget`).
 
+- [ ] (arcterm) Jarvis For later on real sessions: mark a session older than a week for later (History → its menu →
+  Mark for later), and one of a running agent → open Jarvis: For later, at the bottom of the side column, names both
+  with their project and the mark's age, newest mark first. Click the running one → Agent opens on that agent. Resume
+  on the old one → it resumes in a new tab (no second tab if one already holds it). `jarvis-brief-later` covers the
+  rows, Done/Undo and opening a transcript, on injected sessions only. Commit: feat(jarvis) For later region
+  (`forlaterregion.tsx`, `briefforlater.ts`, `pkg/agentsessions/scanpage.go` Ids).
+- [ ] (arcterm) A spinning idle Claude sleeps: with Sleep idle agents on, leave a Claude agent idle and off screen
+  while its `claude.exe` burns CPU (Task Manager) → once it holds over 1.5 GB it sleeps about 5 minutes after its last
+  turn (a smaller one at After idle for), with a "Put 1 agent to sleep" notice; Wake brings it back. An agent working
+  with its status stuck at idle stays up while its transcript grows. Commit: fix(agentsleep) sleep agents that spin
+  while idle (`pkg/agentsleep`, `wshserver_agentsleeploop.go`).
 - [ ] (arcterm) Queued bubble dims: in an agent's Chat, send a message while Claude works → its bubble shows at ~55%
   under Queued · Send now; when Claude takes it, the transcript row replaces it at full strength. A message sent to an
   idle agent stays full strength. Commit: fix(chat) dim a queued bubble (`chatpane.tsx` PendingBubble).
@@ -87,6 +98,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   creature again. Then have a Claude agent ask a permission in Chat → the highlighted button (Allow at first) carries an
   Enter key chip; ↓ moves the ring and the chip together to the second choice and Deny. `app-bar.tsx` HologramGlyph,
   `permissioncard.tsx` enterKey.
+- [ ] (arcterm) Copy button's check and the working hologram in the real app: in Chat click Copy under a reply → the
+  outline copy icon turns into a green check, then back (headless Chrome's clipboard refused it, so the CDP step never
+  saw the check); while a Claude agent works, its working line's dot turns its rings and flashes sparks, and with
+  Windows' animation effects off it stands still. Branch feat/model-effort-chip.
 - [ ] (arcterm) Hidden Jarvis in the Office and at launch: open Cockpit → Office, right-click the boss → Hide for 1
   hour → the boss and its ring go, its desk stays empty and no Sprout appears on the footer; Ctrl+P → Show Jarvis →
   the boss comes back with its entrance (the teleport, or Spider-Man's swing). Hide again, then quit and reopen
@@ -2695,3 +2710,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   back into the HUD. Try it once on a Mac too (WKWebView draws the canvas's alpha its own way) and with the OS's
   reduced motion on, where it only fades (`hologrammodel.ts` morphPose, `hologramscene.ts` draw, `hologramview.tsx`
   POWER_ON / POWER_DOWN; the jarvis-hide scenario shoots the power-down and power-on, no scenario catches the morph).
+- [ ] (arcterm) **A Chat send waits for Claude Code's box.** Send a few messages from an agent's Chat (a short one, a
+  long one that wraps, one with a line break), also while Claude works and with the machine busy: each goes out on its
+  own, none waits in Claude Code's box with an empty row under it. `waveapp.log` no longer shows
+  `[chat-send] enter-unechoed … echo=unknown` for every send (it read so 36 of 36 times before), and an
+  `enter-linebreak … retry=1` line, when one shows, is followed by the message going out. While Claude works, ↑ in an
+  empty Chat box takes the queued messages back (`chattakeback.ts` splitRules; no scenario runs a live Claude Code).

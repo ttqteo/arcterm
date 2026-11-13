@@ -57,6 +57,13 @@ export const PULSES: Record<string, PulseSpec> = {
     // Chat's working line (chatpane.tsx), as Claude Code's spinner verb shimmers: tailwindsetup.css's .shimmer-jarvis
     // reads --sweep as where a band of Jarvis's hot core crosses text drawn in its blue, left to right, every 2s
     "shimmer-jarvis": { periodMs: 2_000, low: 0, ease: (t) => t, prop: "--sweep", sweep: true },
+    // the hologram dot at the head of that line (workingglyph.tsx): tailwindsetup.css's .holo-ring-out / -in read
+    // --spin as one turn of the outer ring and two the other way of the inner, every 4s
+    "holo-spin": { periodMs: 4_000, low: 0, ease: (t) => t, prop: "--spin", sweep: true },
+    // and its sparks: .holo-spark reads --spark as a flash at the top of each period that dies within a fifth of it;
+    // two periods, so the three sparks flash out of step
+    "holo-spark": { periodMs: 1_100, low: 0, ease: (t) => t, prop: "--spark", sweep: true },
+    "holo-spark-slow": { periodMs: 1_700, low: 0, ease: (t) => t, prop: "--spark", sweep: true },
 };
 
 /** When a pulse that runs `lag` ms (an element's data-pulse-lag) behind one seen at `now` started: already that far

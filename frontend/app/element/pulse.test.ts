@@ -99,9 +99,18 @@ describe("pulseValue", () => {
         expect(pulseValue(shimmer, Number.NaN)).toBe(0);
     });
 
+    it("sweeps the working dot's rings and sparks, each sparks' period its own", () => {
+        expect(PULSES["holo-spin"]).toMatchObject({ periodMs: 4000, prop: "--spin", sweep: true });
+        expect(PULSES["holo-spark"]).toMatchObject({ prop: "--spark", sweep: true });
+        expect(PULSES["holo-spark-slow"]).toMatchObject({ prop: "--spark", sweep: true });
+        expect(PULSES["holo-spark"].periodMs).not.toBe(PULSES["holo-spark-slow"].periodMs);
+        expect(pulseValue(PULSES["holo-spin"], 1000)).toBeCloseTo(0.25, 5);
+    });
+
     it("is the breath's opacity for every pulse that is not a sweep", () => {
+        const sweeps = new Set(["shimmer-jarvis", "holo-spin", "holo-spark", "holo-spark-slow"]);
         for (const [cls, spec] of Object.entries(PULSES)) {
-            if (cls === "shimmer-jarvis") {
+            if (sweeps.has(cls)) {
                 continue;
             }
             expect(spec.sweep).toBeFalsy();

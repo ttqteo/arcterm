@@ -187,3 +187,21 @@ headless Chromium on the cockpit ~940 MB, `tsc --noEmit` ~3.1 GB for about 55 s.
 - The same day added Jarvis to the warning: a ram-full condition (the tired look) at `+0`, and a warning notice
   when a new run or a live run's Adjust picks more workers than fit (`jarvis/petcapacity.ts`).
 
+## Revision 2026-11: the engine does hold workers back
+
+Decision 1 ("never block") and the out-of-scope line on the engine refusing a spawn no longer hold. The worker
+gate in `pkg/orchestrate/workerslots.go` sits in each dag's dispatch:
+
+- **One cap across runs.** `MaxLiveWorkers` (= `MaxParallelism`, 8) counts the live workers of every nonterminal
+  dag, plus the workers another dag's dispatch has granted itself and not yet persisted (`workerClaims`).
+- **Fair share.** While other dags wait, a dag refills only to its share (`workerGrant`): the dag whose worker
+  just finished ticks first and would otherwise take every freed place (a run starved for two hours on
+  2026-11-04).
+- **Memory pressure.** It reads the same OS pressure the heavy-job queue gates each command by (`memoryShort`):
+  at warn or critical a run starts no worker beside one of its own, so the machine drains first, but a run with
+  none live still starts one. No reading (or `jobs:mode off`, or a pause) holds nothing back.
+- Each heavy command a worker runs still waits in the heavy-job queue
+  (`2026-10-09-heavy-job-queue-design.md`, its 2026-11-13 revisions), and run workers run below normal priority.
+
+The chip and stepper warnings above are unchanged: they still inform, and the gate decides.
+

@@ -105,3 +105,36 @@ connection) the hook lets the command run and logs at debug. A wavesrv restart e
 - Hooks: `jobslot-core.ts` line parsing and refusal text, vitest, in both the Claude mod and pi.
 - Frontend: `jobqueue.test.ts` for the chip label, wait reasons and the warning threshold.
 - UI: a `jobqueue-chip` scenario in `scripts/cdp/scenarios.mjs` seeds a queue and shoots the chip and popover.
+
+## Revisions, as of 2026-11-13
+
+What shipped since has changed several decisions above; the code is the reference, this is the map.
+
+- **Modes, not one slot (decision 1).** `jobs:mode` is `auto` (the default), `slots` or `off`
+  (`pkg/jobqueue/jobqueue.go`, `ModeAuto`…`ModeOff`). `jobs:slots` (default 1, 1–4) applies only in `slots`.
+  `auto` has no slot count: the head starts when RAM allows, capped at `max(1, CPUs/6)` heavy jobs at once
+  (`autoCap`; 2 on the 12-thread Windows box, 1 on the 8-core Mac), with the reason "CPU busy, N at a time". A
+  council expert's `claude -p` is `NoCPU`: it neither counts against that cap nor waits on it. `jobs:pauseuntil`
+  runs the queue as `off` until a time.
+- **RAM is read as pressure where the OS has one.** macOS reads `kern.memorystatus_vm_pressure_level`; Windows
+  reads the commit charge against the RAM (`PressureFromCommit`). At warn or critical a job starts only once
+  nothing runs, so jobs go one at a time; at normal, a job beside one still ramping up must fit the free RAM.
+  With no reading, free RAM ≥ peak + headroom decides, as first designed. Two browser runs (`memgate.Solo`) never
+  run at once.
+- **A job's peak is measured** (`2026-11-12-measured-job-peaks-design.md`): wavesrv samples each Claude Bash
+  command's process tree, keeps the last 5 peaks per command pattern and project in `jobpeaks.json`, and admits
+  the next run on the largest × 1.2; the memgate table is the fallback. An unknown command measured at 1 GB or
+  more queues too.
+- **Background commands keep their slot (decision 2's accepted gap).** The Claude mod puts
+  `wsh jobslot --hold-parent` in front of a `run_in_background` command: it waits inside the command's own shell
+  and hands the slot to that shell, which wavesrv holds it for until the shell exits.
+- **A stuck queue never holds a command (decision 5).** `wsh jobslot` gives the connect 15 s and wavesrv's first
+  line 5 s more (`cmd/wsh/cmd/wshcmd-jobslot.go`); past either it runs the command, and wavesrv counts a request
+  it reads late as a bypass ("N ran unqueued" on the chip).
+- **Cancelled while queued.** pi kills `wsh jobslot` on `ctx.signal`; the Claude mod denies the call once
+  `next.signal` aborts. Neither leaves a slot taken by a command that will not run.
+- **Engine steps.** A lane's Setup waits at most `SetupSlotWait` (2 min) for a slot, since the wait holds the
+  dag lock; past it the task stays pending and a later tick queues it again (`pkg/orchestrate/plancmd.go`).
+  Setup, Verify and Final run below normal priority (nice 10 on a Mac), as do run agents (`cmd:lowpriority`),
+  so a full queue yields the CPU to what the person is doing.
+- **Workers are gated too.** See the 2026-11 revision of `2026-10-06-worker-ram-capacity-design.md`.

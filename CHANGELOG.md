@@ -26,6 +26,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Jarvis has a For later list at the bottom of its side column: every session you marked for later, in every
+  project, newest mark first. Click one to open its conversation (or its agent, if it is still running), Resume an
+  ended one, or press Done to clear the mark; a mark whose session is gone still shows, so you can clear it.
+  <!-- try: go:jarvis -->
+- Chat shows a Claude agent's plan as a checklist in its reply, as Claude Desktop does: done steps are ticked, the
+  step being worked on pulses green, and the rest wait in a dashed ring. The list updates in place as the agent works,
+  and the agent card's done/total chip counts it too. <!-- big -->
 - Chat draws a reviewer's verdict as a card: each finding with its severity and a file link, a tick on the ones to
   fix, and Fix N selected or Skip the review, which send one line to the agent. The plan handoff is four lettered
   choices, and every run the agent starts is a card at the call that started it, kept up to date until it lands. Each
@@ -50,6 +57,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A message you send in Chat while the agent works shows dimmed under Queued until the agent reads it, then turns
   full strength as the conversation takes it.
+- The chat box's model and effort are one chip, as in Claude Desktop ("Opus 5.5 High"): its menu lists the four
+  current models (1–4 pick one), then Effort and More models, where Fable 5.1 down to Haiku 4.5 can be picked.
+- Copy buttons draw an outline icon, as the Flag and Fork beside them do, instead of a solid one.
+- Chat's working line starts with a small Jarvis hologram: two rings turning around a hot core, with sparks
+  crackling out while the agent works (still under reduced motion).
 - The buttons on Chat's brainstorm cards ease into their hover colour, and a card's folds (Agent's calls, Decided,
   a ✓ row's detail) slide open and closed instead of popping.
 - The Jarvis hologram turns amber only while an agent is asking you something; gates, plans to review and runs to
@@ -112,6 +124,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Idle Claude agents go to sleep again when Claude Code keeps a CPU core busy on its own while idle: that made them
+  look busy, so they never slept and their RAM grew past 2 GB each. An idle one that has grown past 1.5 GB now sleeps
+  after a minute instead of waiting for After idle for.
 - With Jarvis set to the hologram, the fold button at the right of the app bar shows the hologram instead of Sprout.
 - A permission card in Chat shows the Enter key on the button ↑ ↓ have picked, so you can see what Enter will send.
 - Chat no longer stops mid-word ("Writ") while Claude writes a file: the sentence it says before a tool call shows
@@ -126,9 +141,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   skip from the Jobs popover no longer counts as a tiny run that lowers its next estimate.
 - Jarvis's hologram comes back by itself a few seconds after the graphics card drops it (a GPU reset, or many open
   terminals); before, it turned into Sprout until you picked the form again. It stays Sprout only if it keeps failing.
-- A Chat message no longer sits unsent in Claude Code's box when the machine is short of memory: if Claude Code takes
-  its Enter as a line break, arcterm removes the break and presses Enter again, and tells you when you have to press it
-  yourself.
+- A Chat message no longer sits unsent in Claude Code's box with a line break after it: arcterm now presses Enter only
+  once Claude Code's box shows the whole message, and if Claude Code still takes the Enter as a line break, it removes
+  the break and presses Enter again, and tells you when you have to press it yourself. Taking queued messages back
+  with ↑ or Esc in Chat reads Claude Code's box again too.
 - An agent whose end-of-turn report was lost (Claude Code gave up on it on a slow machine) no longer reads "Working…"
   for good: within about 30 seconds arcterm sees in the conversation that the turn ended and shows the agent idle.
 - On a Mac, shortcut hints no longer name keys a Mac does not have: the Open in Brainstorm button, the wrap and

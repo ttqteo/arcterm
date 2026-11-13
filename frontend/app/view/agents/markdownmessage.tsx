@@ -15,6 +15,8 @@ import type { PluggableList } from "unified";
 import { FilePill } from "./chatfilepill";
 import { INITIATIVE_LANG } from "./chatinitiative";
 import { InitiativeBlockView } from "./chatinitiativecard";
+import { STEPS_LANG } from "./chatsteplist";
+import { StepsBlock } from "./chatsteplistview";
 import { VISUAL_LANG } from "./chatvisual";
 import { VisualBlock } from "./chatvisualview";
 import { CodeBlock } from "./codeblock";
@@ -88,7 +90,8 @@ const MD_COMPONENTS: Components = {
 // The extras a caller opts into: `marks` draws ==…== (remark-mark.ts) as a <mark> in the accent's tint the terminal draws a
 // skim highlight in, `diagrams` draws a ```mermaid block as its diagram instead of its code and an ```arc-visual block
 // as the page it names where a visual host provides one (Chat's, chatvisualview.tsx), as code elsewhere (an ```arc-initiative
-// block the same way: the card an agent proposes where Chat's initiative host provides one, chatinitiativecard.tsx), and `mentions`
+// block the same way: the card an agent proposes where Chat's initiative host provides one, chatinitiativecard.tsx, and an
+// ```arc-steps block as its turn's checklist where Chat's steps host provides one, chatsteplistview.tsx), and `mentions`
 // draws an `@path` (remarkfilemention.ts) as a file pill (chatfilepill.tsx). They combine: each adds its plugin and its
 // component to the same map. A council's messages take marks and diagrams, your bubble in Chat takes mentions; an
 // agent's transcript takes none, so it never loads mermaid.
@@ -111,6 +114,10 @@ const DIAGRAM_COMPONENT: Components = {
         const { lang, raw } = fencedOf(children);
         if (lang === VISUAL_LANG) {
             return <VisualBlock raw={raw} />;
+        }
+        // the turn's step checklist (chatsteplistview.tsx); outside Chat's host it is the code block
+        if (lang === STEPS_LANG) {
+            return <StepsBlock raw={raw} />;
         }
         // the card an agent proposes (chatinitiativecard.tsx); outside Chat's host it is the code block
         if (lang === INITIATIVE_LANG) {

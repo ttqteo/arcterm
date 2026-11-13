@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,7 +106,7 @@ func jobProject(ctx context.Context, blockId string) string {
 	if cwd == "" {
 		return "" // expanded, "" would read as ".": wavesrv's own working directory
 	}
-	cwd = wavebase.ExpandHomeDirSafe(cwd)
+	cwd = upperDrive(wavebase.ExpandHomeDirSafe(cwd))
 	if !filepath.IsAbs(cwd) {
 		return ""
 	}
@@ -114,10 +115,20 @@ func jobProject(ctx context.Context, blockId string) string {
 	}
 	project := ""
 	if root := nearestGitRoot(cwd); root != "" {
-		project = jarvis.MainCheckout(root)
+		project = upperDrive(jarvis.MainCheckout(root))
 	}
 	jobProjects.Store(cwd, project)
 	return project
+}
+
+// upperDrive writes a Windows path's drive letter in upper case. The letter comes either way (a block's cwd typed
+// "d:\…", a worktree's gitdir file written "d:/…" while the main checkout's block reads "D:\…"), and the project is a
+// key, so one checkout would otherwise keep its peaks under two. Elsewhere a path has no volume name and is unchanged.
+func upperDrive(p string) string {
+	if v := filepath.VolumeName(p); len(v) == 2 && v[1] == ':' {
+		return strings.ToUpper(v) + p[2:]
+	}
+	return p
 }
 
 // nearestGitRoot is the nearest folder from dir up that holds a `.git` (a directory, or the file of a linked worktree);

@@ -16,8 +16,10 @@ import {
     loadSessionsArchive,
     overlayLive,
     resolveSelectedSession,
+    sessionLookupAtom,
     sessionsArchiveAtom,
     sessionsErrorAtom,
+    withLookedUp,
 } from "./sessionsarchivestore";
 import { SoloDetail } from "./sessionsdetail";
 import { TranscriptSkeleton } from "./transcriptskeleton";
@@ -25,6 +27,8 @@ import { TranscriptSkeleton } from "./transcriptskeleton";
 export function SessionPane({ model }: { model: AgentsViewModel }) {
     const sel = useAtomValue(model.sessionsSelAtom);
     const archive = useAtomValue(sessionsArchiveAtom);
+    // a session opened from Jarvis's For later may be older than every page the archive has loaded
+    const lookedUp = useAtomValue(sessionLookupAtom).sessions;
     const loadError = useAtomValue(sessionsErrorAtom);
     const roster = useAtomValue(model.agentsAtom);
     // Back returns where the session was opened from: a project's Overview, History, else the terminal
@@ -40,8 +44,11 @@ export function SessionPane({ model }: { model: AgentsViewModel }) {
     }, [archiveMissing]);
     // the overlay never reads the clock, so the 1s now-tick is not a dependency
     const session = useMemo(
-        () => (archive == null ? undefined : resolveSelectedSession(overlayLive(archive, roster, 0), sel)),
-        [archive, roster, sel]
+        () =>
+            archive == null
+                ? undefined
+                : resolveSelectedSession(overlayLive(withLookedUp(archive, lookedUp), roster, 0), sel),
+        [archive, lookedUp, roster, sel]
     );
     return (
         <div data-agent-session className="flex min-h-0 min-w-0 flex-1 flex-col px-8 pb-[22px] pt-[14px]">
