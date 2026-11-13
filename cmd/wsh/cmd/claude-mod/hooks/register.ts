@@ -19,6 +19,7 @@ import { absolutePath, editTarget, foreignReason, needsAsk, parentDirs, repoKey,
 import { denial, isEngineTree } from "./guard-core";
 import { heavyArgs, heldInBackground, heldOriginal, jobslotArgs, jobslotLine } from "./jobslot-core";
 import { claudeConfigDir, memoryDir, transcriptFile } from "./claudepaths-core";
+import { LiveGather, liveFile, serialWriter } from "./live-core";
 import { lintContext, lintMemory, parseMemory, referencedPaths, shouldReport, taskNames } from "./memlint-core";
 import type { Ran } from "./mention-core";
 import { leadingMention, mentionRefusal, sendArgs, sendOutcome } from "./mention-core";
@@ -576,6 +577,17 @@ async function waitInFlight($: EngineInterface, until: Promise<unknown>): Promis
     await until;
 }
 
+// the session's live reply file (live-core.ts), null when there is no home to put it under
+async function liveFileOf($: EngineInterface): Promise<string | null> {
+    try {
+        const home = (await $.env.get("USERPROFILE")) || (await $.env.get("HOME"));
+        return liveFile(home, await $.session.id());
+    } catch (err) {
+        $.ui.log(`arc: working out the live reply file failed: ${String(err)}`, { to: "debug" });
+        return null;
+    }
+}
+
 async function configDirOf($: EngineInterface): Promise<string | null> {
     return claudeConfigDir({
         configDir: await $.env.get("CLAUDE_CONFIG_DIR"),
@@ -712,6 +724,37 @@ export const register: Register = (on) => {
         turn.isOpen = true;
         await update($, cacheMiss, () => null);
         return next(e);
+    });
+
+    // the reply as it streams, for Chat (live-core.ts): every chunk passes on as it came, and the text is written beside
+    // the session as it grows. the main loop only, and only inside arcterm; a failed write stops the writes, never the
+    // stream
+    on("turn.step", async function* ($, e, next) {
+        const file = active && e.agentId === undefined ? await liveFileOf($) : null;
+        if (file === null) {
+            return yield* next(e);
+        }
+        const live = new LiveGather(e.turnId, e.index);
+        const out = serialWriter(
+            (text) => $.fs.write(file, text),
+            (err) => $.ui.log(`arc: writing the live reply failed: ${String(err)}`, { to: "debug" })
+        );
+        try {
+            for await (const chunk of next(e)) {
+                if (chunk.kind === "text" || chunk.kind === "thinking") {
+                    live.add(chunk.kind, chunk.index, chunk.text);
+                    const now = Date.now();
+                    if (live.due(now)) {
+                        out.write(live.payload(false, now));
+                    }
+                }
+                yield chunk;
+            }
+        } finally {
+            if (live.hasText()) {
+                out.write(live.payload(true, Date.now()));
+            }
+        }
     });
 
     // the goal's row, then a cache miss, in the one band; a met or stopped goal goes once you send a prompt after it
