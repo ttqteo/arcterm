@@ -1,7 +1,9 @@
 # Sidecar: a Cockpit wall on a second screen
 
 Status: design, 2026-11-13. Brainstorm: `.superpowers/brainstorm/cockpit-window/brainstorm.json`. Boards:
-`.superpowers/design/cockpit-window/project/` (`D-fit-by-count.dc.html`, `E-strain-band.dc.html`).
+`.superpowers/design/cockpit-window/project/` (`D-fit-by-count.dc.html`, `E-strain-band.dc.html`,
+`F-small-asks.dc.html`). Revised the same day: the small form, the S button and free resizing (section 1a); a
+Jarvis-style HUD was weighed and dropped (Out of scope).
 
 ## Goal
 
@@ -36,8 +38,9 @@ terminal.
 ### 1. The window
 
 - Built by the Tauri host (`src-tauri/src/sidecar.rs`) as label `sidecar`, page `sidecar.html`, `decorations(false)`
-  (the page draws its own title bar, like the main window), `min_inner_size(1100, 700)` logical px. A Ctrl+P row,
-  "Open Sidecar", invokes a Tauri command that opens it or brings it forward.
+  (the page draws its own title bar, like the main window), resizable freely down to `min_inner_size(340, 440)`
+  logical px (the small form, section 1a). A Ctrl+P row, "Open Sidecar", invokes a Tauri command that opens it or
+  brings it forward.
 - First open: on a screen other than the main window's when there is one (positioned in physical px after the build,
   since screens of different scale make a logical position ambiguous), then maximized; with one screen, centred.
 - F11, or the full-screen button on its title bar, toggles full screen on the screen it is on (verified in the
@@ -45,10 +48,29 @@ terminal.
 - It closes when the main window is destroyed (it would otherwise keep the app running with no terminals to open its
   agents in). A main window hidden to the tray icon leaves it open.
 - **Reopens as last time:** if Sidecar was open when arcterm closed, the next launch reopens it on the same screen, at
-  the same position and size, full screen if it was. Persist it the way `src-tauri/src/winframe.rs` keeps the main
-  window's frame (`restore_and_track`, `save`). If the remembered screen is gone, open it on the main screen.
+  the same position and size, full screen if it was, in the small form and pinned if it was (with the frame the S
+  button returns to). Persist it the way `src-tauri/src/winframe.rs` keeps the main window's frame
+  (`restore_and_track`, `save`). If the remembered screen is gone, open it on the main screen.
 - Its own capability file (`src-tauri/capabilities/sidecar.json`): `core:event:default` plus the window permissions
-  its title bar uses (start-dragging, minimize, toggle-maximize, close, set-fullscreen, is-fullscreen). Nothing else.
+  its title bar uses (start-dragging, minimize, toggle-maximize, close, set-fullscreen, is-fullscreen, and for the S
+  button set-size, set-position, set-always-on-top), or the S button is a host command instead. Nothing else.
+
+### 1a. Free resizing, the S button and the small form
+
+Board `F-small-asks.dc.html`.
+
+- The person drags Sidecar to any size down to 340×440. No fixed size modes.
+- **The layout follows the window's width:** from ~1100 px wide it is the wall (section 3); narrower, it is the small
+  form. Both are the same page fed the same snapshot, so a resize never reloads anything and costs no extra RAM.
+- **The small form** shows what waits on you: the counts (need you, working, idle, the same words as the wall's title
+  bar), then one card per ask, oldest first: name, project, age, the question, its options as 1–9 buttons (an ask the
+  tile cannot answer says Enter answers it in the main window). Nothing else: no working or idle tiles, no band (the
+  title bar's counts stay). With nothing waiting it says so in one line.
+- **The S button** on the title bar shrinks Sidecar to 340×440 in place and pins it on top of other windows
+  (always on top); pressed again, it returns to the size, position and full-screen state it had before. In the small
+  form a pin button turns always-on-top off and on. Dragging the window narrower than ~1100 px also shows the small
+  form, but does not pin it.
+- The 1100 px switch point and the 340×440 size are proposals; the builder tunes them against the boards.
 
 ### 2. How it is built: a slim page fed a snapshot
 
@@ -146,13 +168,16 @@ there after a day on screen. The prototype measured ~80 MB on a dev build. Measu
   band reads resmon, whose grouping is already tested (`pkg/resmon/group_test.go`).
 - Vitest for the transcript-tail read of an agent that is not streamed (last 2 messages, kept after its stream stops).
 - A CDP scenario (`scripts/cdp/scenarios.mjs`) that opens Sidecar through the host and screenshots its page with a
-  fixture roster (4, 12 and 20 agents) and with the band at amber and red. Sidecar's page is a separate CDP target on
+  fixture roster (4, 12 and 20 agents), with the band at amber and red, and in the small form after the S button
+  (and back). Vitest for the width → wall-or-small-form switch and the S button's frame memory. Sidecar's page is a separate CDP target on
   the same port (the prototype's `cdpeval` found it by its `sidecar.html` url). It needs the Tauri host: mark it
   `host: true`.
 - Measure RAM as above before merging.
 
 ## Out of scope
 
+- A Jarvis-style HUD (an agent ring in the centre, a cyan HUD theme, live graphs and gauges): drawn and dropped
+  ("nhìn gớm quá"). Sidecar keeps DESIGN.md's Claude palette.
 - Office, Jarvis or any other surface on Sidecar; a terminal on Sidecar.
 - Token burn warnings (the 5-hour window): `pkg/tokengate` already gates costly spawns.
 - An app bar button or a dedicated shortcut for Sidecar: Ctrl+P and the reopen cover it.
