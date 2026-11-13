@@ -7,6 +7,7 @@
 import { parseBtwNotice } from "../../../../claude/arc-mod/hooks/btw-core";
 import type { AgentEntry, CardTask, ReportedFinding, SubagentCall } from "./agentsviewmodel";
 import { parseAnsiLines } from "./ansitext";
+import { lastStepsOf } from "./chatsteplist";
 import { answerAsk, askQuestions, buildEditDiff, parseGrep, sliceRead, toolResultText } from "./tooldetail";
 
 const READ_MODAL_MAX_LINES = 400; // bound stored Read body (modal view); inline uses the per-kind budget
@@ -630,32 +631,12 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
     return entries;
 }
 
-/** Pure: the task list from the LATEST TodoWrite tool_use in the transcript, or undefined if the
- *  agent never wrote a todo list. `completed` -> done; every other status is not-done. Malformed
- *  todo entries (missing/non-string content) are skipped; an empty todo list yields []. */
-export function extractTasks(lines: string[]): CardTask[] | undefined {
-    let latest: unknown[] | undefined;
-    for (const line of lines) {
-        let rec: any;
-        try {
-            rec = JSON.parse(line);
-        } catch {
-            continue;
-        }
-        if (rec?.type !== "assistant" || !Array.isArray(rec?.message?.content)) {
-            continue;
-        }
-        for (const block of rec.message.content) {
-            if (block?.type === "tool_use" && block.name === "TodoWrite" && Array.isArray(block.input?.todos)) {
-                latest = block.input.todos;
-            }
-        }
-    }
-    if (latest == null) {
-        return undefined;
-    }
+// "Task #3 created successfully: Patch the handler", what TaskCreate answers (pi's pi-tasks answers the same)
+export const TASK_CREATED_RE = /^Task #(\d+) created successfully: (.+)$/;
+
+function todoTasks(todos: unknown[]): CardTask[] {
     const tasks: CardTask[] = [];
-    for (const todo of latest) {
+    for (const todo of todos) {
         const t = todo as any;
         if (typeof t?.content !== "string") {
             continue;
@@ -663,6 +644,79 @@ export function extractTasks(lines: string[]): CardTask[] | undefined {
         tasks.push({ text: t.content, done: t.status === "completed" });
     }
     return tasks;
+}
+
+/** Pure: the card's task list from whichever of three lists the agent wrote last, or undefined if it wrote none: the
+ *  LATEST TodoWrite tool_use (`completed` -> done, every other status not-done; malformed todos skipped, an empty list
+ *  []); the TaskCreate / TaskUpdate tools, matched by task id (a TaskUpdate to `deleted` drops the task); or the latest
+ *  ```arc-steps block in a reply (chatsteplist.ts: `[x]` done, `[>]` and `[ ]` not). */
+export function extractTasks(lines: string[]): CardTask[] | undefined {
+    let latest: CardTask[] | undefined;
+    // the TaskCreate / TaskUpdate list, by task id in creation order; the subject each pending TaskCreate call asked for
+    const byId = new Map<string, CardTask>();
+    const creating = new Map<string, string>();
+    // a copy, so a later TaskUpdate does not change a list already handed out
+    const snapshot = (): CardTask[] => [...byId.values()].map((t) => ({ ...t }));
+    for (const line of lines) {
+        let rec: any;
+        try {
+            rec = JSON.parse(line);
+        } catch {
+            continue;
+        }
+        const content = rec?.message?.content;
+        if (!Array.isArray(content)) {
+            continue;
+        }
+        if (rec.type === "user") {
+            for (const block of content) {
+                const subject = block?.type === "tool_result" ? creating.get(block.tool_use_id) : undefined;
+                if (subject == null) {
+                    continue;
+                }
+                creating.delete(block.tool_use_id);
+                const m = TASK_CREATED_RE.exec(toolResultText(block.content).trim());
+                if (m != null && !byId.has(m[1])) {
+                    byId.set(m[1], { text: subject !== "" ? subject : m[2].trim(), done: false });
+                    latest = snapshot();
+                }
+            }
+            continue;
+        }
+        if (rec.type !== "assistant") {
+            continue;
+        }
+        for (const block of content) {
+            if (block?.type === "text" && typeof block.text === "string") {
+                const steps = lastStepsOf(block.text);
+                if (steps != null) {
+                    latest = steps.map((s) => ({ text: s.text, done: s.state === "done" }));
+                }
+                continue;
+            }
+            if (block?.type !== "tool_use") {
+                continue;
+            }
+            if (block.name === "TodoWrite" && Array.isArray(block.input?.todos)) {
+                latest = todoTasks(block.input.todos);
+            } else if (block.name === "TaskCreate" && typeof block.id === "string") {
+                creating.set(block.id, typeof block.input?.subject === "string" ? block.input.subject.trim() : "");
+            } else if (block.name === "TaskUpdate" && typeof block.input?.status === "string") {
+                const id = String(block.input.taskId ?? "");
+                const task = byId.get(id);
+                if (task == null) {
+                    continue;
+                }
+                if (block.input.status === "deleted") {
+                    byId.delete(id);
+                } else {
+                    task.done = block.input.status === "completed";
+                }
+                latest = snapshot();
+            }
+        }
+    }
+    return latest;
 }
 
 /** Pure: the most recent ai-title in the transcript, or undefined. Claude Code emits multiple
