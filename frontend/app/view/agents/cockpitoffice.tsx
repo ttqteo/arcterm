@@ -16,7 +16,6 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { closePeek } from "@/app/view/jarvis/peekstore";
 import { petCharacter } from "@/app/view/jarvis/petcharacter";
 import { expressionFor, postureFor, type PetExpression, type PetPosture } from "@/app/view/jarvis/petcondition";
-import { showHideMenu } from "@/app/view/jarvis/pethidemenu";
 import { jarvisHiddenAtom } from "@/app/view/jarvis/pethidestore";
 import { cornerFor } from "@/app/view/jarvis/petledge";
 import { petOutfit, petOutfitChoice } from "@/app/view/jarvis/petoutfit";
@@ -3446,10 +3445,6 @@ function BossPet({
                     } else {
                         openPetBubble(model);
                     }
-                }}
-                onContextMenu={(e) => {
-                    bumpBossInput();
-                    showHideMenu(e);
                 }}
                 data-office-boss=""
                 data-office-boss-pet={character}

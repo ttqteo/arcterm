@@ -34,7 +34,10 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { assembleReveal } from "./hologrammodel";
+import { assembleReveal, morphPose } from "./hologrammodel";
+
+// the bloom pass's resting strength; the morph between the forms flares it (morphPose)
+const BLOOM = 0.35;
 
 const TAU = Math.PI * 2;
 // past 1.5 the bloom's targets cost more than the softness they buy at this size (the study's cap)
@@ -388,6 +391,7 @@ export class HologramScene {
         private scene: Scene,
         private hudForm: Form,
         private neuralForm: Form,
+        private bloom: UnrealBloomPass,
         private onLost: (ev: Event) => void
     ) {}
 
@@ -423,7 +427,8 @@ export class HologramScene {
         composer.setPixelRatio(dpr);
         composer.setSize(sizePx, sizePx);
         composer.addPass(new RenderPass(scene, camera));
-        composer.addPass(new UnrealBloomPass(new Vector2(sizePx, sizePx), 0.35, 0.2, 0.4));
+        const bloom = new UnrealBloomPass(new Vector2(sizePx, sizePx), BLOOM, 0.2, 0.4);
+        composer.addPass(bloom);
         composer.addPass(new OutputPass());
         composer.addPass(new ShaderPass(alphaFromLight));
         const scale = sizePx / STUDY_PX;
@@ -435,7 +440,7 @@ export class HologramScene {
             onLost();
         };
         canvas.addEventListener("webglcontextlost", lost);
-        return new HologramScene(canvas, renderer, composer, scene, hudForm, neuralForm, lost);
+        return new HologramScene(canvas, renderer, composer, scene, hudForm, neuralForm, bloom, lost);
     }
 
     /** t in seconds; sphere 0 is all HUD, 1 all neural sphere (already eased). */
@@ -444,6 +449,13 @@ export class HologramScene {
         fade(this.neuralForm, sphere);
         this.hudForm.update(t, busy);
         this.neuralForm.update(t, busy);
+        // the morph between the two (hologrammodel morphPose): the HUD's rings wind in and draw down into the core while
+        // the sphere grows out of it, a touch past its size before it settles, with a flare of light at the crossing
+        const m = morphPose(sphere);
+        this.hudForm.group.scale.setScalar(m.hudScale);
+        this.hudForm.group.rotation.z = m.hudTwist;
+        this.neuralForm.group.scale.setScalar(m.sphereScale);
+        this.bloom.strength = BLOOM * m.flare;
         this.composer.render();
     }
 

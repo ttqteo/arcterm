@@ -51,7 +51,8 @@ export interface HologramPose {
     sphere: 0 | 1;
     // the HUD's core beats
     busy: boolean;
-    // faint: nothing to express, as Sprout is faint at rest
+    // faint: it sits over the corner of whatever is on screen, so it stays faint while agents work or ask (the form
+    // and the beat say that) and is solid only under the pointer (hologramview) or while its peek is open
     quiet: boolean;
 }
 
@@ -61,12 +62,35 @@ export function hologramPose(i: HologramInputs): HologramPose {
     return {
         sphere: asking ? 1 : 0,
         busy,
-        quiet: !asking && !busy && !i.peekOpen,
+        quiet: !i.peekOpen,
     };
 }
 
-// The crossfade between the two forms, in ms
-export const HOLOGRAM_FADE_MS = 700;
+// The morph between the two forms, in ms: long enough to watch the HUD fold into the sphere, under a second and a half
+export const HOLOGRAM_FADE_MS = 1100;
+
+export interface MorphPose {
+    // the HUD's group: drawn down toward its core as the sphere comes
+    hudScale: number;
+    // the HUD's extra turn about its axis, winding in as it goes (radians)
+    hudTwist: number;
+    // the sphere's group: grown out of the core, a touch past full size midway through before it settles
+    sphereScale: number;
+    // the bloom's strength against its resting value: a flare at the crossing, 1 at either end
+    flare: number;
+}
+
+/** How the two forms stand at an eased mix (easeMix): 0 is the HUD at rest, 1 the sphere at rest. */
+export function morphPose(mix: number): MorphPose {
+    const m = Math.min(1, Math.max(0, mix));
+    const crossing = Math.sin(Math.PI * m);
+    return {
+        hudScale: 1 - 0.62 * m,
+        hudTwist: 1.6 * m,
+        sphereScale: 0.38 + 0.62 * m + 0.1 * crossing,
+        flare: 1 + 2.4 * crossing * crossing,
+    };
+}
 
 /** One step of the crossfade from `mix` toward `target`, linear, never past it. */
 export function stepMix(mix: number, target: number, dtMs: number, fadeMs = HOLOGRAM_FADE_MS): number {

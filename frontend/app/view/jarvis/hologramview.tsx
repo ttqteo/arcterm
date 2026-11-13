@@ -6,19 +6,49 @@
 // opens the same peek and carries the same bubble as Sprout; PetView decides which of the two is shown. The frame loop
 // is useHologramCanvas, which the startup loader (startuploader.tsx) draws its own hologram with.
 
+import { MOTION } from "@/app/element/motiontokens";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom, cockpitWaitingCount, splitAttention } from "@/app/view/agents/attentionstore";
 import { channelMessagesAtom } from "@/app/view/agents/channelsstore";
 import { answeredAskIdsAcross } from "@/app/view/agents/jarvisderive";
 import { useAtomValue } from "jotai";
-import { motion } from "motion/react";
-import { useEffect, useMemo, useRef, type MouseEvent, type RefObject } from "react";
+import { motion, type TargetAndTransition, type Transition } from "motion/react";
+import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { easeMix, hologramFps, stepMix, type HologramPose } from "./hologrammodel";
 import type { HologramScene } from "./hologramscene";
 import { closePeek } from "./peekstore";
 
 // Reduced motion holds the forms at this moment rather than at 0, where every ring starts aligned
 const STILL_T = 12;
+
+// Shown (a mount, or back from a hide) the projection switches on: a thin bright line opens out sideways, then up into
+// the form, the glare settling as it does. Hidden it powers down the other way: the form draws into a line that flares,
+// then shrinks to a point and goes. The sharp ease-in of the exit is the snap of a projector switched off.
+const POWERED_OFF: TargetAndTransition = {
+    opacity: 0,
+    scaleX: 0.12,
+    scaleY: 0.03,
+    filter: "blur(4px) brightness(2.4)",
+};
+const POWER_ON: Transition = {
+    opacity: { duration: 0.3 },
+    scaleX: { duration: 0.24, ease: MOTION.easeFluid },
+    scaleY: { delay: 0.18, duration: MOTION.durMacro, ease: MOTION.easeFluid },
+    filter: { delay: 0.18, duration: 0.5, ease: MOTION.easeFluid },
+};
+const SNAP: [number, number, number, number] = [0.4, 0, 1, 1];
+const POWER_DOWN: TargetAndTransition = {
+    opacity: 0,
+    scaleX: 0,
+    scaleY: 0.03,
+    filter: "blur(3px) brightness(2.4)",
+    transition: {
+        scaleY: { duration: 0.2, ease: SNAP },
+        filter: { duration: 0.2 },
+        scaleX: { delay: 0.17, duration: 0.18, ease: SNAP },
+        opacity: { delay: 0.28, duration: 0.08 },
+    },
+};
 
 /** The agents asking you something, as the Cockpit's badge counts them. Only a question turns the hologram to the
  * sphere: gates, runs to land and the rest of Jarvis's queue leave it on the HUD. */
@@ -134,7 +164,6 @@ export function HologramView({
     reduce,
     setAnchor,
     openPeek,
-    onContextMenu,
     onFail,
 }: {
     sizePx: number;
@@ -144,8 +173,6 @@ export function HologramView({
     reduce: boolean;
     setAnchor: (el: HTMLDivElement | null) => void;
     openPeek: () => void;
-    // the right-click's menu: hide Jarvis for a while (pethidemenu.tsx)
-    onContextMenu: (e: MouseEvent) => void;
     // no GL context, or it was lost: PetView shows Sprout instead of an empty corner
     onFail: () => void;
 }) {
@@ -161,17 +188,18 @@ export function HologramView({
             // the name Sprout carries (petview.tsx): the CDP harness and a screen reader find Jarvis by it
             aria-label="Jarvis condition"
             onClick={() => (peekOpen ? closePeek() : openPeek())}
-            onContextMenu={onContextMenu}
             onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     openPeek();
                 }
             }}
-            initial={reduce ? false : { opacity: 0 }}
-            animate={{ opacity: pose.quiet ? 0.4 : 1 }}
+            initial={reduce ? false : POWERED_OFF}
+            animate={{ opacity: pose.quiet ? 0.4 : 1, scaleX: 1, scaleY: 1, filter: "blur(0px) brightness(1)" }}
+            exit={reduce ? { opacity: 0, transition: { duration: 0 } } : POWER_DOWN}
             whileHover={{ opacity: 1 }}
-            transition={reduce ? { duration: 0 } : { opacity: { duration: 0.3 } }}
+            whileFocus={{ opacity: 1 }}
+            transition={reduce ? { duration: 0 } : POWER_ON}
             // round, so the corner of the terminal outside the form still takes clicks
             className="fixed bottom-[40px] right-[18px] z-[60] cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
             style={{ width: sizePx, height: sizePx }}
