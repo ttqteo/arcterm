@@ -29,7 +29,7 @@
 // and unfolds into the list (chatbgline.tsx).
 
 import { pushToast } from "@/app/cockpit/notificationstore";
-import { microFade, MOTION, turnTransition } from "@/app/element/motiontokens";
+import { microFade, MOTION, springReveal, turnTransition } from "@/app/element/motiontokens";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -43,10 +43,12 @@ import {
     ArrowUpFromLine,
     Check,
     CornerDownLeft,
+    Diamond,
     FileDiff,
     GitCommitHorizontal,
     Moon,
     Terminal,
+    X,
     type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
@@ -64,7 +66,14 @@ import { ChatBgLine } from "./chatbgline";
 import { boxState, type BoxState } from "./chatboxstate";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold, usePartMotion } from "./chatfooter";
-import { putBackResultLines, takeResultLines } from "./chatinitiativestore";
+import {
+    dropSwitchLine,
+    holdSwitchLine,
+    putBackResultLines,
+    takeResultLines,
+    usePendingSwitch,
+    useSwitchLineHeld,
+} from "./chatinitiativestore";
 import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
 import { answersInChat, localCommand, type LocalRoute } from "./chatlocal";
 import { clearLocalCards } from "./chatlocalstore";
@@ -146,7 +155,56 @@ const INTERRUPT_SETTLE_MS = 1_500;
 // the box's content height while it is a drop zone: the board's dashed zone is 120px high in an 8px margin
 const DropMinH = 136;
 
-export function ChatComposer({
+/** The box, with the line that waits over it after the initiative band moved the agent to another chunk. The line is not
+ *  in the box: the box's height is its content's, and this line is no part of what the box holds. */
+export function ChatComposer(props: Parameters<typeof ComposerBox>[0]) {
+    return (
+        <>
+            <SwitchLine agent={props.agent} />
+            <ComposerBox {...props} />
+        </>
+    );
+}
+
+// The switched line (chatinitiativestore.ts) goes in front of the next plain message, which is the person's next send, so
+// it shows over the box until then; ✕ drops it and leaves the switch in place. A wake send leaves the waiting lines for the
+// next message (takeResultLines in ComposerBox), so an asleep box says nothing yet. A `go on with:` click switches the chunk
+// and sends the chip's text at once, so its line is held back (holdSwitchLine) and never draws on that path.
+function SwitchLine({ agent }: { agent: AgentVM }) {
+    const switched = usePendingSwitch(agent.id);
+    const held = useSwitchLineHeld(agent.id);
+    const part = usePartMotion(springReveal);
+    return (
+        <AnimatePresence initial={false}>
+            {switched != null && !held && agent.sleeping == null ? (
+                <motion.div key="switch" {...part} className="overflow-hidden">
+                    <div
+                        data-chat-switch-line=""
+                        role="status"
+                        className="flex items-center gap-2 pb-2 pl-[18px] pr-3 text-[12px] text-muted"
+                    >
+                        <Diamond size={12} strokeWidth={1.8} aria-hidden className="flex-none" />
+                        <span className="min-w-0 truncate">
+                            Goes with your next message: switched to chunk {switched.n} {switched.label}
+                        </span>
+                        <button
+                            type="button"
+                            data-chat-switch-drop=""
+                            aria-label="Drop the switch line"
+                            title="Drop it: the agent is not told of the switch"
+                            onClick={() => dropSwitchLine(agent.id)}
+                            className="flex size-[20px] flex-none cursor-pointer items-center justify-center rounded-[5px] border-0 bg-transparent p-0 text-ink-mid hover:text-primary"
+                        >
+                            <X size={12} strokeWidth={1.8} aria-hidden />
+                        </button>
+                    </div>
+                </motion.div>
+            ) : null}
+        </AnimatePresence>
+    );
+}
+
+function ComposerBox({
     model,
     agent,
     placeholder,
@@ -157,6 +215,7 @@ export function ChatComposer({
     onShowDiff,
     chips,
     onMarkDone,
+    onGoOn,
     onLocal,
     onSendNow,
     questionWaits,
@@ -181,6 +240,9 @@ export function ChatComposer({
     chips?: ChatChip[];
     /** a chunk's done chip: ticks it on the agent's initiative. Left out, that chip is not drawn. */
     onMarkDone?: (chunk: string) => void;
+    /** a "go on with: <chunk>" chip: moves the agent to the chunk, then sends the chip's text (the caller does both, so a
+     *  switch that fails sends nothing). Left out, that chip is sent as typed. */
+    onGoOn?: (chunk: string, text: string) => void;
     /** a bare /usage, /tasks, /diff… typed in the box (chatlocal.ts): Chat answers it instead of sending it. Left out,
      *  every command is sent. */
     onLocal?: (route: LocalRoute) => void;
@@ -369,6 +431,9 @@ export function ChatComposer({
                     }
                     if (sent === latest.current.text) {
                         submitRef.current();
+                        // the send was tried: a `go on with:` click's hold on the waiting line ends (a line the send did
+                        // not take is the one that waits for the next message)
+                        holdSwitchLine(agent.id, false);
                         return true;
                     }
                     submitNext.current = true;
@@ -510,6 +575,7 @@ export function ChatComposer({
         if (submitNext.current) {
             submitNext.current = false;
             submit();
+            holdSwitchLine(agent.id, false);
         }
     }, [text]);
     // the queued message goes as soon as its prompt is answered; a box emptied meanwhile has nothing left to queue
@@ -1024,7 +1090,13 @@ export function ChatComposer({
                     {showStop ? (
                         <ActionChips key="actions" onShowDiff={onShowDiff} onOpenTerminal={showTerminal} />
                     ) : suggested.length > 0 ? (
-                        <SuggestChips key="suggest" chips={suggested} onSend={sendSuggested} onMarkDone={onMarkDone} />
+                        <SuggestChips
+                            key="suggest"
+                            chips={suggested}
+                            onSend={sendSuggested}
+                            onMarkDone={onMarkDone}
+                            onGoOn={onGoOn}
+                        />
                     ) : null}
                 </AnimatePresence>
                 {/* one row through a sleep and a wake: its parts fold and crossfade in place (reduced motion snaps them) */}
@@ -1193,16 +1265,18 @@ const SUGGEST_ICONS: Record<ChipKind, LucideIcon> = {
 };
 
 // The finished turn's suggested replies (chatsuggest.ts), a click sends one as typed; a chunk's done chip ticks it on
-// the initiative instead, as the header popover's Mark done does. A chip the model adds a few seconds after the rules'
-// fades in beside them.
+// the initiative instead, as the band's Mark done does, and a go on with: chip moves the agent to its chunk first, then
+// sends its text (onGoOn). A chip the model adds a few seconds after the rules' fades in beside them.
 function SuggestChips({
     chips,
     onSend,
     onMarkDone,
+    onGoOn,
 }: {
     chips: ChatChip[];
     onSend: (text: string) => void;
     onMarkDone?: (chunk: string) => void;
+    onGoOn?: (chunk: string, text: string) => void;
 }) {
     const part = usePartMotion(microFade);
     return (
@@ -1213,15 +1287,22 @@ function SuggestChips({
                     if (ticks && onMarkDone == null) {
                         return null;
                     }
+                    const goes = c.kind === "next" && c.chunk != null && onGoOn != null;
                     return (
                         <motion.div key={c.text} {...part} className="min-w-0">
                             <Chip
                                 icon={SUGGEST_ICONS[c.kind]}
                                 label={c.text}
                                 title={
-                                    ticks ? `Mark “${c.chunk}” done and move on to the next chunk` : `Send “${c.text}”`
+                                    ticks
+                                        ? `Mark “${c.chunk}” done and move on to the next chunk`
+                                        : goes
+                                          ? `Move this agent to “${c.chunk}” and send “${c.text}”`
+                                          : `Send “${c.text}”`
                                 }
-                                onClick={() => (ticks ? onMarkDone!(c.chunk!) : onSend(c.text))}
+                                onClick={() =>
+                                    ticks ? onMarkDone!(c.chunk!) : goes ? onGoOn!(c.chunk!, c.text) : onSend(c.text)
+                                }
                                 data={{ "data-chat-suggest-chip": c.source, "data-chat-suggest-kind": c.kind }}
                             />
                         </motion.div>

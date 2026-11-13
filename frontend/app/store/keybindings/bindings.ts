@@ -87,6 +87,7 @@ import {
     refreshHistory,
 } from "@/app/view/agents/githistorystore";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
+import { toggleBand } from "@/app/view/agents/initiativebandstore";
 import { initiativeLinkPickerAtom, initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
 import { openNewCouncil } from "@/app/view/agents/newcouncil";
@@ -1807,10 +1808,14 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "i",
             group: "Agent",
             label: "The agent's initiative",
-            // Opens the popover on the focused agent's initiative, or the Link to initiative picker when it has none.
-            // The focused agent is in the model's atoms, which a when() cannot read (whenstate.ts), so run() looks
-            // it up and lets the key pass when there is nothing to open. Open, the popover's own keys take over
-            // (agentNav yields), and `i` there closes it.
+            // The focused agent's initiative, where the view shows it. In Chat that is the band under the header, which
+            // `i` expands or collapses (`[data-initiative-band]` is on screen only for a linked agent's Chat); a linked
+            // agent in Terminal gets the popover instead; an agent with none gets the Link to initiative picker, when
+            // the header carries its chip (Chat's lean header and Terminal's both do). The focused agent is in the
+            // model's atoms, which a when() cannot read (whenstate.ts), so run() looks it up and lets the key pass
+            // when there is nothing to open. Open, the band's and the popover's own keys take over: the band is
+            // data-owns-keys, so the dispatcher reads focus inside it as typing and this binding stands down (and the
+            // band's own handler closes it on `i`); the popover is yielded to in agentNav.
             when: nav,
             run: () => {
                 const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
@@ -1818,11 +1823,15 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                     return false;
                 }
                 if (agent.effortId == null) {
-                    // the header offers a link (its chip, or in Chat its "…" menu): open the one picker both share
-                    if (document.querySelector("[data-initiative-link], [data-initiative-link-menu]") == null) {
+                    if (document.querySelector("[data-initiative-link]") == null) {
                         return false;
                     }
                     globalStore.set(initiativeLinkPickerAtom, agent.id);
+                    return;
+                }
+                const bandSelector = `[data-initiative-band="${agent.id.replace(/["\\]/g, "\\$&")}"]`;
+                if (document.querySelector(bandSelector) != null) {
+                    toggleBand(agent.id);
                     return;
                 }
                 globalStore.set(initiativePopoverAtom, agent.id);

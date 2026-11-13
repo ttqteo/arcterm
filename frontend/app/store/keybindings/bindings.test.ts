@@ -70,6 +70,7 @@ import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
+import { bandOpenAtom } from "@/app/view/agents/initiativebandstore";
 import { initiativeLinkPickerAtom, initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { briefPeekRecordAtom, briefSheetOpenAtom, chunkMoveAtom } from "@/app/view/jarvis/jarvisstore";
@@ -2950,6 +2951,7 @@ describe("agent:initiative", () => {
     afterEach(() => {
         vi.unstubAllGlobals();
         globalStore.set(initiativePopoverAtom, null);
+        globalStore.set(bandOpenAtom, []);
     });
 
     it("is i on the Agent surface, in navigate posture", () => {
@@ -2967,11 +2969,43 @@ describe("agent:initiative", () => {
         expect(globalStore.get(initiativePopoverAtom)).toBe("a2");
     });
 
+    it("toggles the band, not the popover, when the focused agent's band is on screen (Chat)", () => {
+        const model = modelWith("a2", [agent("a1", "e1"), agent("a2", "e2")]);
+        const seen: string[] = [];
+        vi.stubGlobal("document", {
+            activeElement: null,
+            querySelector: (sel: string) => {
+                seen.push(sel);
+                return sel === '[data-initiative-band="a2"]' ? {} : null;
+            },
+        });
+        const b = find(model, "agent:initiative");
+        expect(b.run(nav)).not.toBe(false);
+        expect(seen).toContain('[data-initiative-band="a2"]');
+        expect(globalStore.get(bandOpenAtom)).toEqual(["a2"]);
+        expect(globalStore.get(initiativePopoverAtom)).toBeNull();
+        // i again collapses it
+        expect(b.run(nav)).not.toBe(false);
+        expect(globalStore.get(bandOpenAtom)).toEqual([]);
+        expect(globalStore.get(initiativePopoverAtom)).toBeNull();
+    });
+
+    it("opens the popover when only another agent's band is on screen (a linked agent in Terminal)", () => {
+        const model = modelWith("a1", [agent("a1", "e1"), agent("a2", "e2")]);
+        vi.stubGlobal("document", {
+            activeElement: null,
+            querySelector: (sel: string) => (sel === '[data-initiative-band="a2"]' ? {} : null),
+        });
+        expect(find(model, "agent:initiative").run(nav)).not.toBe(false);
+        expect(globalStore.get(bandOpenAtom)).toEqual([]);
+        expect(globalStore.get(initiativePopoverAtom)).toBe("a1");
+    });
+
     it("opens the Link to initiative picker for an agent with none, else lets the key pass", () => {
         const model = modelWith("a1", [agent("a1")]);
-        expect(find(model, "agent:initiative").run(nav)).toBe(false); // no chip and no "…" row on screen
+        expect(find(model, "agent:initiative").run(nav)).toBe(false); // no chip on screen
         expect(globalStore.get(initiativeLinkPickerAtom)).toBeNull();
-        // the header's chip, or in Chat its "…" button that holds the row: either opens the one picker
+        // the header's chip (Chat's lean header and Terminal's both carry it) opens the one picker
         const seen: string[] = [];
         vi.stubGlobal("document", {
             activeElement: null,
@@ -2981,9 +3015,10 @@ describe("agent:initiative", () => {
             },
         });
         expect(find(model, "agent:initiative").run(nav)).not.toBe(false);
-        expect(seen[0]).toContain("[data-initiative-link-menu]");
+        expect(seen).toEqual(["[data-initiative-link]"]);
         expect(globalStore.get(initiativeLinkPickerAtom)).toBe("a1");
         expect(globalStore.get(initiativePopoverAtom)).toBeNull();
+        expect(globalStore.get(bandOpenAtom)).toEqual([]);
         globalStore.set(initiativeLinkPickerAtom, null);
     });
 
