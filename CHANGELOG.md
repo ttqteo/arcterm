@@ -94,6 +94,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Idle Claude agents go to sleep again when Claude Code keeps a CPU core busy on its own while idle: that made them
   look busy, so they never slept and their RAM grew past 2 GB each. An idle one that has grown past 1.5 GB now sleeps
+- A file path in an agent's reply in Chat can be selected and copied with the text around it. It used to drop out of
+  every selection; a click still opens the file.
   after a minute instead of waiting for After idle for.
 - With Jarvis set to the hologram, the fold button at the right of the app bar shows the hologram instead of Sprout.
 - A permission card in Chat shows the Enter key on the button ↑ ↓ have picked, so you can see what Enter will send.

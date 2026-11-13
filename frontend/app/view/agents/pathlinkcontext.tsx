@@ -37,8 +37,16 @@ export function AgentPathLinks({ agent, children }: { agent: AgentVM; children: 
     return <PathLinkContext.Provider value={opener}>{children}</PathLinkContext.Provider>;
 }
 
+// a drag that ends on the link selects text and also fires a click: a selection reaching into it means the person was
+// selecting, not opening
+function selectingInto(el: Element): boolean {
+    const sel = window.getSelection();
+    return sel != null && !sel.isCollapsed && sel.containsNode(el, true);
+}
+
 // a path as a link when an agent is in context, else its children as they are. Its right-click menu, in place of the
-// message's: open it beside the agent, show it in the file manager, copy the path as written
+// message's: open it beside the agent, show it in the file manager, copy the path as written. A span acting as a button,
+// not a <button>: WebKit selects no text in a <button>, so a path drawn as one dropped out of every drag-select and copy
 export function PathLink({
     path,
     line,
@@ -55,14 +63,24 @@ export function PathLink({
         return <span className={className}>{children}</span>;
     }
     return (
-        <button
-            type="button"
+        <span
+            role="button"
+            tabIndex={0}
             data-path-link={path}
             title={`Open ${path}${line != null ? `:${line}` : ""} beside the agent`}
             onClick={(e) => {
                 // the row around it opens the tool detail
                 e.stopPropagation();
-                opener.open(path, line);
+                if (!selectingInto(e.currentTarget)) {
+                    opener.open(path, line);
+                }
+            }}
+            onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    opener.open(path, line);
+                }
             }}
             onContextMenu={(e) =>
                 ContextMenuModel.getInstance().showContextMenu(
@@ -87,12 +105,13 @@ export function PathLink({
                     e
                 )
             }
+            // inline-block as the <button> was, so `truncate` still cuts a long path to an ellipsis
             className={cn(
-                "min-w-0 cursor-pointer truncate border-0 bg-transparent p-0 text-left hover:text-accent-soft hover:underline",
+                "inline-block min-w-0 cursor-pointer truncate select-text hover:text-accent-soft hover:underline",
                 className
             )}
         >
             {children}
-        </button>
+        </span>
     );
 }
