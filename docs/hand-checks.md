@@ -2734,3 +2734,10 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   `[chat-send] enter-unechoed … echo=unknown` for every send (it read so 36 of 36 times before), and an
   `enter-linebreak … retry=1` line, when one shows, is followed by the message going out. While Claude works, ↑ in an
   empty Chat box takes the queued messages back (`chattakeback.ts` splitRules; no scenario runs a live Claude Code).
+- [ ] (arcterm) **The initiative band on a live Claude agent and on a Mac.** Link a real Claude agent to an initiative,
+  let a turn end on a chunk, then click its `go on with: <label>` chip: the band moves to that chunk at once, the
+  waiting line never draws over the box, and the agent's next prompt starts with
+  `initiative: switched you to chunk <n> <label>`. Mark done from the band: the agent moves to the next chunk. Press
+  `i` from the message box: the band opens and `m`, `n`, `w` and the arrows work without a click. Once on a Mac
+  (`task dev:browser`, then `task verify:ui -- chat-initiative-band initiative-popover initiative-link`): the scenarios
+  ran only on WebView2 in run 175af141, with fixture agents (`initiativebandview.tsx`, `chatpane.tsx` goOn).
