@@ -80,18 +80,21 @@ export function StateTag({ state }: { state: CardState }) {
     );
 }
 
-export type CardKind = "question" | "confirm" | "check" | "run";
+export type CardKind = "question" | "confirm" | "check" | "run" | "verdict" | "handoff";
 
 /** The section every card is: its motion wrapper (enters and leaves on springReveal), the kind and state attributes the
- *  scenarios read, and the header row (icon, head, the state tag, Open in Brainstorm). `label` is the section's aria-label
- *  (the head when left out); `extra` carries the attributes only one card has (the question card's `data-chat-bscard` and
- *  `data-chat-bscard-n`). */
+ *  scenarios read, and the header row (icon, head, the state tag, then the header's right end). `label` is the section's
+ *  aria-label (the head when left out); `extra` carries the attributes only one card has (the question card's
+ *  `data-chat-bscard` and `data-chat-bscard-n`). The right end holds `action`, a card's own link (Open the review, Open
+ *  the plan, Open run), and Open in Brainstorm beside it when an `agent` is passed: a brainstorm card passes the agent
+ *  and no action, a verdict, handoff or generic run card passes an action and no agent. */
 export function CardShell({
     kind,
     state,
     head,
     icon,
     agent,
+    action,
     label,
     extra,
     stage,
@@ -101,7 +104,8 @@ export function CardShell({
     state: CardState;
     head: string;
     icon?: ReactNode;
-    agent: AgentVM;
+    agent?: AgentVM;
+    action?: ReactNode;
     label?: string;
     extra?: { "data-chat-bscard"?: boolean; "data-chat-bscard-n"?: number };
     stage?: string;
@@ -129,9 +133,12 @@ export function CardShell({
                         {head}
                     </span>
                     <StateTag state={state} />
-                    <span className="ml-auto flex-none">
-                        <OpenButton agent={agent} />
-                    </span>
+                    {action != null || agent != null ? (
+                        <span className="ml-auto flex flex-none items-center gap-[8px]">
+                            {action}
+                            {agent != null ? <OpenButton agent={agent} /> : null}
+                        </span>
+                    ) : null}
                 </div>
                 {children}
             </section>
@@ -448,26 +455,32 @@ export function OptionRows({
 
 /** The ✓ row a finished step folds into: `head` in the muted start, `text` the bold part that may be cut short, and
  *  `trailing` the muted end. A builder answer is `data-chat-bscard-answered` with `data-kind="builder"`, a step
- *  `data-chat-bscard-done="<design|builder|run>"`; a question's answer is ChatBrainstormAnswered's. */
+ *  `data-chat-bscard-done="<design|builder|run|verdict|handoff>"`; a question's answer is ChatBrainstormAnswered's.
+ *  With a `detail` the row is a button with a caret (`aria-expanded`) that opens the detail text under it, pre-wrapped
+ *  and muted, closed by default and local to the row, since a fold is a glance; a run row's button is
+ *  `data-chat-run-ended` and its text `data-chat-run-ended-text` (the `[arc] Run` message, as written). */
 export function DoneRow({
     kind,
     head,
     text,
     trailing,
     n,
+    detail,
 }: {
-    kind: "builder-answer" | "design" | "builder" | "run";
+    kind: "builder-answer" | "design" | "builder" | "run" | "verdict" | "handoff";
     head: string;
     text?: string;
     trailing?: string;
     n?: number;
+    detail?: string;
 }) {
+    const [open, setOpen] = useState(false);
     const marks =
         kind === "builder-answer"
             ? { "data-chat-bscard-answered": "", "data-kind": "builder", "data-chat-bscard-n": n }
             : { "data-chat-bscard-done": kind };
-    return (
-        <div {...marks} className={DONE_ROW}>
+    const inner = (
+        <>
             <Check size={14} strokeWidth={2.2} className="flex-none text-muted" aria-hidden />
             <span
                 className={cn("min-w-0 truncate", text != null ? "flex-none text-muted" : "font-medium text-primary")}
@@ -484,6 +497,52 @@ export function DoneRow({
                 </>
             ) : null}
             {trailing != null ? <span className="ml-auto flex-none text-muted">{trailing}</span> : null}
+            {detail != null ? (
+                <ChevronRight
+                    size={12}
+                    strokeWidth={2.2}
+                    aria-hidden
+                    style={turnTransition}
+                    className={cn(
+                        "flex-none text-muted transition-transform motion-reduce:transition-none",
+                        trailing == null && "ml-auto",
+                        open && "rotate-90"
+                    )}
+                />
+            ) : null}
+        </>
+    );
+    if (detail == null) {
+        return (
+            <div {...marks} className={DONE_ROW}>
+                {inner}
+            </div>
+        );
+    }
+    return (
+        <div className="flex min-w-0 flex-col gap-[6px]">
+            <button
+                type="button"
+                {...marks}
+                {...(kind === "run" ? { "data-chat-run-ended": "" } : null)}
+                aria-expanded={open}
+                onClick={() => setOpen(!open)}
+                className={cn(
+                    DONE_ROW,
+                    "w-full cursor-pointer text-left hover:border-edge-strong hover:bg-surface-hover",
+                    FOCUS_RING
+                )}
+            >
+                {inner}
+            </button>
+            {open ? (
+                <div
+                    {...(kind === "run" ? { "data-chat-run-ended-text": "" } : null)}
+                    className="whitespace-pre-wrap break-words rounded-[10px] border border-edge-mid bg-surface px-[14px] py-[9px] text-[12px] leading-[1.5] text-muted"
+                >
+                    {detail}
+                </div>
+            ) : null}
         </div>
     );
 }
