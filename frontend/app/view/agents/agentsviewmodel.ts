@@ -1191,7 +1191,8 @@ export function topFiveHourPct(agents: AgentVM[]): number | undefined {
 
 // --- card data types --------------------------------------------------------
 // Real sources: diff stats from cardgitstore.ts (GitChangesCommand per card); task list from the
-// transcript's latest TodoWrite (transcriptprojection.extractTasks, streamed via
+// transcript's latest list: a TodoWrite, the TaskCreate/TaskUpdate tools or an ```arc-steps block
+// (transcriptprojection.extractTasks, streamed via
 // livetranscript.tasksByIdAtom).
 
 export interface DiffStats {

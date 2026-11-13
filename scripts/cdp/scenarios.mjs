@@ -58,6 +58,7 @@ import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
 import sidebarColumnsScenarios from "./scenarios-sidebar-columns.mjs";
 import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
 import chatBgTasksScenarios from "./scenarios-chat-bg-tasks.mjs";
+import chatStepsScenarios from "./scenarios-chat-steps.mjs";
 import agentSubagentsScenarios from "./scenarios-agent-subagents.mjs";
 import brainstormBoardPickScenarios from "./scenarios-brainstorm-board-pick.mjs";
 import brainstormBuilderScenarios from "./scenarios-brainstorm-builder.mjs";
@@ -70512,6 +70513,7 @@ export const SCENARIOS = [
     ...agentStartFailedScenarios(RT_KIT),
     ...agentStreamsScenarios(RT_KIT),
     ...chatBgTasksScenarios(RT_KIT),
+    ...chatStepsScenarios(RT_KIT),
     ...agentSubagentsScenarios(RT_KIT),
     ...modalFocusHomeScenarios(RT_KIT),
     ...terminalStatusLineScenarios(RT_KIT),

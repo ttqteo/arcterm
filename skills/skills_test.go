@@ -78,6 +78,24 @@ func TestVisualSkill(t *testing.T) {
 	}
 }
 
+// TestStepsSkill pins what the steps skill teaches: the arc-steps fence and its three markers (Chat's parser,
+// chatsteplist.ts, reads them by these exact words), the three-step threshold, the rewrite of the whole block, and that a
+// pi or codex agent keeps its own list tool.
+func TestStepsSkill(t *testing.T) {
+	doc, err := fs.ReadFile(FS, "steps/SKILL.md")
+	if err != nil {
+		t.Fatalf("steps/SKILL.md is not embedded: %v", err)
+	}
+	if got := frontmatterName(t, string(doc)); got != "steps" {
+		t.Errorf("steps frontmatter name = %q, want steps", got)
+	}
+	for _, want := range []string{"```arc-steps", "[x]", "[>]", "[ ]", "three or more steps", "whole block", "update_plan", "TaskCreate"} {
+		if !strings.Contains(string(doc), want) {
+			t.Errorf("steps/SKILL.md does not mention %q", want)
+		}
+	}
+}
+
 func TestShippedSkills(t *testing.T) {
 	doc, err := fs.ReadFile(FS, "doc-review/SKILL.md")
 	if err != nil {
