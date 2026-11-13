@@ -16,6 +16,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/bgagents"
 	"github.com/wavetermdev/waveterm/pkg/claudeaccount"
 	"github.com/wavetermdev/waveterm/pkg/claudequota"
+	"github.com/wavetermdev/waveterm/pkg/ctxbreakdown"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/projectscan"
@@ -287,6 +288,13 @@ func (ws *WshServer) GetTranscriptUsageCommand(ctx context.Context, data wshrpc.
 		out[i] = usageBucketToWire(b)
 	}
 	return &wshrpc.CommandGetTranscriptUsageRtnData{Buckets: out}, nil
+}
+
+func (ws *WshServer) GetContextBreakdownCommand(ctx context.Context, data wshrpc.CommandGetContextBreakdownData) (*wshrpc.ContextBreakdown, error) {
+	if strings.TrimSpace(data.Cwd) == "" {
+		return nil, fmt.Errorf("no folder to read /context in")
+	}
+	return ctxbreakdown.Read(ctx, data.Cwd, data.Refresh)
 }
 
 func (ws *WshServer) GetCacheStatusCommand(ctx context.Context, data wshrpc.CommandGetCacheStatusData) (*wshrpc.CommandGetCacheStatusRtnData, error) {

@@ -1322,6 +1322,20 @@ function ParentRow({
               }
             : undefined;
 
+    // the words of a controller that refused to start. A lead's go at the end of its name line, like its subagents
+    // chip: on its second line they took 67px of the 197 that also hold the workers chip, the progress and the age,
+    // and the progress read "Worki…" (agent-tree-rail step 7)
+    const failedBadge =
+        startError != null && !review && !asking ? (
+            <span
+                data-agent-start-failed={agent.id}
+                title={startError}
+                className="flex-none whitespace-nowrap text-[10.5px] font-semibold text-error"
+            >
+                failed to start
+            </span>
+        ) : null;
+
     // the state: words when it wants something, else tokens and age. They end the row's second line (a lead's after
     // its workers chip and progress), so the name keeps the first line's full width
     const badges = (
@@ -1361,13 +1375,10 @@ function ParentRow({
                         Close a finished one offers. A controller that refused to start says so in words, as an ask does:
                         it waits on you to fix it */}
                     {startError != null ? (
-                        <span
-                            data-agent-start-failed={agent.id}
-                            title={startError}
-                            className="flex-none whitespace-nowrap text-[10.5px] font-semibold text-error"
-                        >
-                            failed to start
-                        </span>
+                        // a lead's is on its name line (failedBadge)
+                        lead ? null : (
+                            failedBadge
+                        )
                     ) : queued ? (
                         <QueuedJobTag job={queued} />
                     ) : done ? (
@@ -1395,7 +1406,7 @@ function ParentRow({
                                     ? `RAM the run's agents and the commands they run hold now (the lead alone: ${ownRam ?? "not read"})`
                                     : "RAM the agent and the commands it runs hold now"
                             }
-                            className={RAM_COL}
+                            className={cn(RAM_COL, lead != null && LEAD_RAM_YIELDS)}
                         >
                             {ram}
                         </span>
@@ -1479,6 +1490,7 @@ function ParentRow({
                         {/* a lead's second line already holds its workers chip, progress and badges */}
                         {lead ? subsChip : null}
                         {lead ? tasksChip : null}
+                        {lead ? failedBadge : null}
                     </div>
                 )}
                 {lead ? (
@@ -2064,6 +2076,12 @@ const CONVERSATION_META = "flex min-w-0 items-center gap-[5px] text-[10.5px] tab
 const RAM_COL = "min-w-[40px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-ink-faint";
 const TOKENS_COL = "min-w-[34px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-muted";
 const AGE_COL = "min-w-[24px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-ink-faint";
+// A lead's run line holds its workers chip, the progress, then its RAM (the whole run's), tokens and age, all of the
+// last three flex-none, so on a narrow line the progress is what gets cut ("Worki…", agent-tree-rail step 7). Below
+// this width of RunSubline's @container the RAM leaves the line (the figure stays in the Resource Manager and the
+// rail), as the workers chip's word does: the progress is never cut for it. Wide enough for the chip with its word
+// (@[250px]), the progress, and the RAM, tokens and age beside it
+const LEAD_RAM_YIELDS = "@max-[300px]:hidden";
 // a second line starts under the title, past the runtime glyph and the gap after it
 const UNDER_GLYPH = "pl-[18px]";
 

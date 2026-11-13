@@ -18,6 +18,7 @@ type AgentCommands interface {
 	GetSessionsActivityCommand(ctx context.Context, data CommandGetSessionsActivityData) (*CommandGetSessionsActivityRtnData, error)
 	GetProjectActivityCommand(ctx context.Context, data CommandGetProjectActivityData) (*CommandGetProjectActivityRtnData, error) // a project's per-day tokens, sessions, runs and councils for the Overview's Activity card
 	GetTranscriptUsageCommand(ctx context.Context, data CommandGetTranscriptUsageData) (*CommandGetTranscriptUsageRtnData, error)
+	GetContextBreakdownCommand(ctx context.Context, data CommandGetContextBreakdownData) (*ContextBreakdown, error) // what /context reports loads in a fresh Claude session in a folder, for the Agent rail's breakdown
 	GetWindowTokensCommand(ctx context.Context, data CommandGetWindowTokensData) (*CommandGetWindowTokensRtnData, error)
 	GetSessionBurnCommand(ctx context.Context, data CommandGetSessionBurnData) (*CommandGetSessionBurnRtnData, error)                   // a spawn's weighing for the Token burn card
 	GetSubagentCostsCommand(ctx context.Context) (*CommandGetSubagentCostsRtnData, error)                                               // what finished subagents cost, by type (Usage)
@@ -397,6 +398,43 @@ type CommandGetTranscriptUsageData struct {
 
 type CommandGetTranscriptUsageRtnData struct {
 	Buckets []UsageBucket `json:"buckets"`
+}
+
+type CommandGetContextBreakdownData struct {
+	Cwd     string `json:"cwd"`
+	Refresh bool   `json:"refresh,omitempty"` // read again even when a cached breakdown is fresh
+}
+
+// ContextBreakdown is what Claude Code's /context reports for a fresh session in a folder: what loads every turn
+// there (pkg/ctxbreakdown). It is not the agent's own session: its Messages row is the /context call itself.
+type ContextBreakdown struct {
+	Model        string            `json:"model"`
+	WindowTokens int               `json:"windowtokens"`
+	Categories   []ContextCategory `json:"categories"`  // in /context's order
+	MemoryFiles  []ContextItem     `json:"memoryfiles"` // Source is the Type column (User, AutoMem, Project, …)
+	Skills       []ContextItem     `json:"skills"`
+	Agents       []ContextItem     `json:"agents"`
+	McpServers   []ContextMcp      `json:"mcpservers"` // the MCP Tools table summed per server, deferred tools included
+	ReadAt       int64             `json:"readat"`     // unix ms
+}
+
+type ContextCategory struct {
+	Name     string `json:"name"`
+	Tokens   int    `json:"tokens"`
+	Deferred bool   `json:"deferred,omitempty"` // "(deferred)" in its name: not in the context until a tool search
+}
+
+type ContextItem struct {
+	Name   string `json:"name"`
+	Source string `json:"source"`
+	Path   string `json:"path,omitempty"` // the file to open; "" when there is none (built in, claude.ai sync, unresolved)
+	Tokens int    `json:"tokens"`
+}
+
+type ContextMcp struct {
+	Server string `json:"server"`
+	Tools  int    `json:"tools"`
+	Tokens int    `json:"tokens"`
 }
 
 type CommandGetWindowTokensData struct {

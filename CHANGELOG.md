@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- The Agent rail's breakdown shows what fills the context: the conversation apart from what loads every turn (tools,
+  memory files, skills, MCP), each memory file and skill a click from opening, and how long the cache stays warm
 - Fork a session from Chat: Fork in the agent header's ⋯ menu starts a new session with the whole conversation, and
   Fork from here, on any message or reply (beside Copy, or right-click), starts one with the conversation up to that
   point. From one of your messages, its text waits in the new session's box to edit and send. The session you forked
@@ -67,6 +69,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A lead's run line in the Agent sidebar no longer cuts its progress down to "Worki…": on a narrow sidebar the run's
+  RAM figure leaves the line (it shows again once the sidebar is wide enough for it), and "failed to start" for a lead
+  whose terminal could not start now sits at the end of its name line.
 - Chat's brainstorm card comes back when you ask the agent a question back instead of answering it, and the agent asks
   that question again.
 - A typed answer's row in Chat says "You replied" instead of "You picked".

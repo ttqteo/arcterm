@@ -6,6 +6,14 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The rail's context breakdown reads a real /context: on a Claude agent with a context figure, open the
+  Agent rail's session breakdown and press Read the breakdown → the button reads "Reading… about 30 s", then the groups
+  show (Messages, System tools, Memory files, Skills…) with figures near `claude`'s own `/context`, and a memory file's
+  ↗ opens it in the File tab; no new `.jsonl` appears in `~/.claude/projects/<project>` (`--no-session-persistence`);
+  on Windows no console window flashes. The same on a Mac. And on an idle real agent with under 5 minutes of cache
+  left, the state row's `cache Nm left` is amber and `now rewrites ~X, later Y` ends the Compact/Clear row (the
+  scenario `rail-context-breakdown` seeds every state; `pkg/ctxbreakdown`, `sessionsection.tsx`,
+  `agentdetailsrail.tsx`).
 - [ ] (arcterm) A real Claude agent files a follow-up through a card and reads its outcome (Add to an initiative from
   Chat, spec 2026-11-12-chat-add-to-initiative-design): in a Claude agent's Chat that you started yourself (not one an
   Arc run started), after an app launch has synced the updated `arc:initiatives` skill, ask it to file a follow-up

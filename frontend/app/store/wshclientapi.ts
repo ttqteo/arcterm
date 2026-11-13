@@ -870,6 +870,12 @@ export class RpcApiType {
         return client.wshRpcCall("getconsumers", null, opts);
     }
 
+    // command "getcontextbreakdown" [call]
+    GetContextBreakdownCommand(client: WshClient, data: CommandGetContextBreakdownData, opts?: RpcOpts): Promise<ContextBreakdown> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getcontextbreakdown", data, opts);
+        return client.wshRpcCall("getcontextbreakdown", data, opts);
+    }
+
     // command "getdossier" [call]
     GetDossierCommand(client: WshClient, data: CommandGetDossierData, opts?: RpcOpts): Promise<DossierDetail> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getdossier", data, opts);
