@@ -4,9 +4,12 @@
 // The hologram form of Jarvis (Settings → Jarvis → Form): what it shows and how fast it draws. Pure; the pixels are
 // hologramscene.ts's and the corner it sits in is hologramview.tsx's.
 //
-// Two forms of one presence, from the 2026-09-11 avatar study (jarvis-avatar-comparison): the orbital HUD, and the
-// neural sphere while an agent asks you something. Gates, escalations and runs to land stay on the HUD: they wait in
-// Jarvis's queue and badge, not on the hologram. The HUD's core beats while agents work or Jarvis is speaking.
+// Two forms of one presence: the HUD (hologramhud.ts, the kaeltran16 fork's avatar), and the neural sphere of the
+// 2026-09-11 avatar study (jarvis-avatar-comparison) while an agent asks you something. Gates, escalations and runs to
+// land stay on the HUD: they wait in Jarvis's queue and badge, not on the hologram. While agents work the HUD breathes
+// faster and pulses run in along its struts; when Jarvis speaks it turns square-on and sweeps.
+
+import { activityLevel } from "./hologramhud";
 
 export type PetForm = "sprout" | "hologram";
 
@@ -49,10 +52,14 @@ export interface HologramInputs {
 export interface HologramPose {
     // 0 is the HUD, 1 the neural sphere: the target the crossfade eases toward
     sphere: 0 | 1;
-    // the HUD's core beats
+    // agents work or Jarvis speaks: the form moves, so it draws at the live rate
     busy: boolean;
+    // 0..1 load from the working count (hologramhud activityLevel)
+    activity: number;
+    // a bubble is up
+    speaking: boolean;
     // faint: it sits over the corner of whatever is on screen, so it stays faint while agents work or ask (the form
-    // and the beat say that) and is solid only under the pointer (hologramview) or while its peek is open
+    // and its motion say that) and is solid only under the pointer (hologramview) or while its peek is open
     quiet: boolean;
 }
 
@@ -62,6 +69,8 @@ export function hologramPose(i: HologramInputs): HologramPose {
     return {
         sphere: asking ? 1 : 0,
         busy,
+        activity: activityLevel(i.working),
+        speaking: i.speaking,
         quiet: !i.peekOpen,
     };
 }
@@ -107,16 +116,16 @@ export function easeMix(mix: number): number {
     return m * m * (3 - 2 * m);
 }
 
-// The startup loader (startuploader.tsx) builds the HUD before it turns: the core lights first, then the four rings
-// from the inside out, each fading and growing into place. Seconds on the scene's clock, which starts at its first frame.
+// The startup loader (startuploader.tsx) builds the HUD before it turns: the core lights first, then the front ring,
+// the blades, the struts and the outer ring (hologramhud HUD_PARTS), each fading and growing into place. Seconds on the scene's clock, which starts at its first frame.
 export const ASSEMBLE_START_S = 0.1;
 export const ASSEMBLE_STAGGER_S = 0.2;
 export const ASSEMBLE_PART_S = 0.5;
-// the core and the four rings
+// the HUD's layers (hologramhud HUD_PARTS)
 export const ASSEMBLE_PARTS = 5;
 export const ASSEMBLE_DONE_S = ASSEMBLE_START_S + (ASSEMBLE_PARTS - 1) * ASSEMBLE_STAGGER_S + ASSEMBLE_PART_S;
 
-/** How far part `part` (0 the core, 1 to 4 the rings from the inside out) is into its entrance `t` seconds in: 0 not
+/** How far part `part` (0 the core, 1 to 4 the layers from the inside out) is into its entrance `t` seconds in: 0 not
  * shown yet, 1 in place, eased out so it settles rather than stops. */
 export function assembleReveal(t: number, part: number): number {
     const p = (t - ASSEMBLE_START_S - part * ASSEMBLE_STAGGER_S) / ASSEMBLE_PART_S;
@@ -126,7 +135,8 @@ export function assembleReveal(t: number, part: number): number {
     return p >= 1 ? 1 : 1 - (1 - p) ** 3;
 }
 
-// Frames a second: a calm HUD needs few; the sphere's pulses, a beating core and a crossfade need more
+// Frames a second: a calm HUD (a slow sway and breath) needs few; the sphere's pulses, a HUD at work and a crossfade
+// need more
 export const HOLOGRAM_IDLE_FPS = 15;
 export const HOLOGRAM_LIVE_FPS = 30;
 

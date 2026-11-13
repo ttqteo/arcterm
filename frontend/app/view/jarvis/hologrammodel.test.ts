@@ -46,20 +46,29 @@ describe("hologramSize", () => {
 
 describe("hologramPose", () => {
     it("is the quiet HUD when nothing runs and nothing waits", () => {
-        expect(hologramPose(calm)).toEqual({ sphere: 0, busy: false, quiet: true });
+        expect(hologramPose(calm)).toEqual({ sphere: 0, busy: false, activity: 0, speaking: false, quiet: true });
     });
 
     it("turns to the neural sphere while an agent asks you something", () => {
-        expect(hologramPose({ ...calm, asking: 1 })).toEqual({ sphere: 1, busy: false, quiet: true });
+        expect(hologramPose({ ...calm, asking: 1 })).toMatchObject({ sphere: 1, busy: false, quiet: true });
     });
 
-    it("beats the HUD's core while agents work or Jarvis speaks, without leaving the HUD", () => {
-        expect(hologramPose({ ...calm, working: 2 })).toEqual({ sphere: 0, busy: true, quiet: true });
-        expect(hologramPose({ ...calm, speaking: true })).toEqual({ sphere: 0, busy: true, quiet: true });
+    it("sets the HUD to work while agents work or Jarvis speaks, without leaving the HUD", () => {
+        const working = hologramPose({ ...calm, working: 2 });
+        expect(working).toMatchObject({ sphere: 0, busy: true, speaking: false, quiet: true });
+        expect(working.activity).toBeGreaterThan(0);
+        expect(working.activity).toBeLessThan(1);
+        expect(hologramPose({ ...calm, speaking: true })).toEqual({
+            sphere: 0,
+            busy: true,
+            activity: 0,
+            speaking: true,
+            quiet: true,
+        });
     });
 
-    it("a question outranks work: the sphere shows, and the core still counts as busy", () => {
-        expect(hologramPose({ ...calm, asking: 1, working: 3 })).toEqual({ sphere: 1, busy: true, quiet: true });
+    it("a question outranks work: the sphere shows, and the form still counts as busy", () => {
+        expect(hologramPose({ ...calm, asking: 1, working: 3 })).toMatchObject({ sphere: 1, busy: true, quiet: true });
     });
 
     it("stays faint while agents work or ask, and is solid only while the peek is open", () => {

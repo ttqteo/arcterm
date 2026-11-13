@@ -587,7 +587,7 @@ svg [aria-label="tip"] g path {
     translate: 0 calc((var(--typing, 0.35) - 0.35) / 0.65 * -3px);
 }
 
-/* Chat's working line (chatpane.tsx) in Jarvis's working colours, the hologram's blue and its hot core
+/* Chat's working line (chatpane.tsx) in Jarvis's working colours, the hologram's blue and a pale highlight
    (hologramscene.ts readHologramColours; its gold means something waits on you, so it stays out), shimmering as
    Claude Code's spinner verb does: pulsedriver.tsx sets --sweep (0 to 1, then again) at 12fps and the hot band
    crosses the text left to right. Without the driver (reduced motion) the text rests in the blue. */

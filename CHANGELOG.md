@@ -45,6 +45,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Jarvis's hologram takes the avatar's shape from the Kael fork: three rings stacked in depth around a hollow
+  core, swaying slowly. Its centre no longer glows into a white blob; while agents work, light runs in along its six
+  struts, and when Jarvis speaks it turns to face you and sweeps.
 - A message you send in Chat while the agent works shows dimmed under Queued until the agent reads it, then turns
   full strength as the conversation takes it.
 - The chat box's model and effort are one chip, as in Claude Desktop ("Opus 5.5 High"): its menu lists the four

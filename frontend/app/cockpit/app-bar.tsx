@@ -55,8 +55,8 @@ function foldSprites(outfit: "santa-hat" | null) {
 const FOLD_SPRITE = foldSprites(null);
 const FOLD_SPRITE_HAT = foldSprites("santa-hat");
 
-// Jarvis in its hologram form (Settings → Jarvis → Form), still, at the button's size: the HUD's rings around its hot
-// core, in the hologram's own tokens (hologramscene.ts readHologramColours). No GL canvas for 18px.
+// Jarvis in its hologram form (Settings → Jarvis → Form), still, at the button's size: rings around a lit centre, in the
+// hologram's blue (hologramscene.ts readHologramColours) and a pale highlight. No GL canvas for 18px.
 function HologramGlyph() {
     return (
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden className="pointer-events-none">

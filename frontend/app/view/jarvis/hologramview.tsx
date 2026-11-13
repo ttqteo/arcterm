@@ -15,7 +15,7 @@ import { useAtomValue } from "jotai";
 import { motion, type TargetAndTransition, type Transition } from "motion/react";
 import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { easeMix, hologramFps, stepMix, type HologramPose } from "./hologrammodel";
-import type { HologramScene } from "./hologramscene";
+import type { HologramScene, HudFrame } from "./hologramscene";
 import { closePeek } from "./peekstore";
 
 // Reduced motion holds the forms at this moment rather than at 0, where every ring starts aligned
@@ -60,6 +60,10 @@ export function useAskingCount(model: AgentsViewModel): number {
         const answered = answeredAskIdsAcross(Object.values(messages));
         return cockpitWaitingCount(splitAttention(attention).cockpit, agents, answered);
     }, [attention, agents, messages]);
+}
+
+function hudFrame(pose: HologramPose, still: boolean): HudFrame {
+    return { activity: pose.activity, speaking: pose.speaking, quiet: pose.quiet, still };
 }
 
 export interface HologramCanvasInputs {
@@ -120,10 +124,11 @@ export function useHologramCanvas(canvasRef: RefObject<HTMLCanvasElement | null>
             if (still) {
                 // no motion: the form the pose asks for, drawn once per change
                 mix = p.sphere;
-                const key = `${p.sphere}`;
+                // the still HUD dims when quiet, so a change of either draws it again
+                const key = `${p.sphere}|${p.quiet}`;
                 if (key !== stillKey) {
                     stillKey = key;
-                    scene.draw(STILL_T, false, mix);
+                    scene.draw(STILL_T, hudFrame(p, true), mix);
                 }
                 return;
             }
@@ -136,7 +141,7 @@ export function useHologramCanvas(canvasRef: RefObject<HTMLCanvasElement | null>
             const step = Math.min(dt, 100);
             t += step / 1000;
             mix = stepMix(mix, p.sphere, step);
-            scene.draw(t, p.busy, easeMix(mix));
+            scene.draw(t, hudFrame(p, false), easeMix(mix));
         };
         import("./hologramscene")
             .then((loaded) => {

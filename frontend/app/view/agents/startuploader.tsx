@@ -6,8 +6,8 @@
 // panes, which after a reinstall sat blank long enough to read as a hang.
 // - Sprout: the pet the person picked running back and forth over a floor line, drawn at 12fps by a timer, not a CSS
 //   animation, which would hold the page at display rate (pulse.ts).
-// - Hologram: Jarvis's HUD a size up from its corner, built part by part (the core, then the rings from the inside out),
-//   then turning with its core beating until the roster is read. While it shows, the corner hologram stands down
+// - Hologram: Jarvis's HUD a size up from its corner, built layer by layer (the core, then the rings from the inside out),
+//   then swaying with pulses running in along its struts until the roster is read. While it shows, the corner hologram stands down
 //   (hologramLoadersShownAtom). Float's small window keeps Sprout, as the corner does, and so does a GL failure.
 // With reduced motion either stands still. While Jarvis is hidden (pethide.ts) neither shows, only the line, so a hidden
 // Jarvis makes no WebGL context even at launch.
@@ -33,8 +33,8 @@ const PET_PX = PET_GRID * CELL_PX;
 const TRACK_PX = 440;
 // a size up from the corner's largest (132 px), for the same reason
 const HOLOGRAM_PX = 176;
-// the HUD, its core beating: arcterm is at work, and nothing waits on you yet
-const LOADING_POSE: HologramPose = { sphere: 0, busy: true, quiet: false };
+// the HUD at work, pulses running in along its struts: arcterm is busy, and nothing waits on you yet
+const LOADING_POSE: HologramPose = { sphere: 0, busy: true, activity: 0.6, speaking: false, quiet: false };
 
 function useReducedMotion(): boolean {
     const [reduce, setReduce] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);

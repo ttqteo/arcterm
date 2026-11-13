@@ -1,15 +1,17 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The hologram's pixels: the orbital HUD and the neural sphere of the 2026-09-11 avatar study
-// (jarvis-avatar-comparison, "A presence, not a mascot"), ported at its corner size, in one canvas, with a crossfade
-// between them. What shows and when is hologrammodel.ts's. Loaded lazily by hologramview.tsx, so three.js costs
-// nothing while Jarvis is Sprout.
+// The hologram's pixels: the HUD (hologramhud.ts's form, the kaeltran16 fork's avatar) and the neural sphere of the
+// 2026-09-11 avatar study (jarvis-avatar-comparison, "A presence, not a mascot"), in one canvas, with a morph between
+// them. What shows and when is hologrammodel.ts's. Loaded lazily by hologramview.tsx, so three.js costs nothing while
+// Jarvis is Sprout.
 
 import {
     AdditiveBlending,
+    BufferAttribute,
     BufferGeometry,
     Color,
+    DoubleSide,
     Float32BufferAttribute,
     Group,
     IcosahedronGeometry,
@@ -20,9 +22,12 @@ import {
     Points,
     Scene,
     ShaderMaterial,
+    SRGBColorSpace,
     Vector2,
     Vector3,
     WebGLRenderer,
+    type InterleavedBuffer,
+    type InterleavedBufferAttribute,
     type Material,
     type Object3D,
 } from "three";
@@ -34,19 +39,46 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import {
+    breathFromPhase,
+    buildHudScene,
+    growCapacity,
+    HUD_MOTION_START,
+    HUD_PARTS,
+    hudColours,
+    hudFillTriangles,
+    hudOrbit,
+    packHudFills,
+    packHudLines,
+    stepHudMotion,
+    STROKE_WIDTHS,
+    STUDY_PX,
+    utteranceEnvelope,
+    type HudMotion,
+    type HudPart,
+    type Rgb,
+} from "./hologramhud";
 import { assembleReveal, morphPose } from "./hologrammodel";
 
-// the bloom pass's resting strength; the morph between the forms flares it (morphPose)
+// The bloom runs on display values, after OutputPass, as the fork's avatar does: in linear light its tail is lifted by
+// the sRGB encode that follows, and every lit stroke wore a wide haze. The HUD takes the fork's numbers (only the lit
+// core ring, the front arcs and the blades pass 0.4); the sphere was tuned in linear light, where its 0.4 is 0.665 in
+// display values. The morph flares the strength (morphPose).
 const BLOOM = 0.35;
+const BLOOM_THRESHOLD_HUD = 0.4;
+const BLOOM_THRESHOLD_SPHERE = 0.665;
 
-const TAU = Math.PI * 2;
 // past 1.5 the bloom's targets cost more than the softness they buy at this size (the study's cap)
 const MAX_DPR = 1.5;
-// the size every width and spark in the study was tuned at
-const STUDY_PX = 132;
+
+// The camera, and how far it sees either side of the centre on the plane z = 0. The HUD comes as a flat [-1,1] box
+// facing the camera, so scaling it to this half-width lands each stroke where an orthographic camera would.
+const CAMERA_Z = 6.3;
+const CAMERA_FOV = 36;
+const HALF_VIEW = CAMERA_Z * Math.tan(((CAMERA_FOV / 2) * Math.PI) / 180);
 
 // Bloom replaces alpha; this hands it back from the light (the study's formula), so the glow has no rectangular edge on
-// the app behind. It runs last, on display values (after OutputPass), and writes premultiplied colour into a
+// the app behind. It runs last, on display values (OutputPass and the bloom are behind it), and writes premultiplied colour into a
 // premultiplied canvas. The study's straight-alpha canvas (premultipliedAlpha: false) looks right in Chromium, but
 // WKWebView's live compositor shows its colour unweighted wherever alpha is above zero: the faint bloom haze, at
 // near-zero alpha, came out as a solid milky disc in the installed app (a WKWebView snapshot does not show it; a
@@ -70,29 +102,226 @@ const alphaFromLight = {
 
 export interface HologramColours {
     blue: Color;
-    blueHot: Color;
     gold: Color;
     goldHot: Color;
 }
 
-// The study's tokens. Read from the live custom properties, so a theme's own connection colours carry through.
+// Read from the live custom properties, so a theme's own connection colours carry through. The HUD's lit tone is its
+// blue lightened (hologramhud hudColours), not a token of its own: a near-white token there is what made the old core
+// blow out.
 export function readHologramColours(read: (name: string) => string): HologramColours {
     const token = (name: string, fallback: string) => new Color(read(`--color-${name}`) || fallback);
     return {
         blue: token("conn-1", "#53b4ea"),
-        blueHot: token("accent-100", "#efc6b8"),
         gold: token("conn-6", "#ffa24e"),
         goldHot: token("warning-soft", "#f0d79f"),
     };
 }
 
-// Everything a form draws fades through one of these: a material's opacity, or a point shader's fade uniform.
+/** What the HUD reads from the pose each frame. */
+export interface HudFrame {
+    // 0..1 load (hologramhud activityLevel): the breath quickens and pulses run in along the struts
+    activity: number;
+    // a bubble is up: the form turns square-on and sweeps as it comes up
+    speaking: boolean;
+    quiet: boolean;
+    // reduced motion
+    still: boolean;
+}
+
+// --- the HUD: hologramhud.ts's strokes and fills, rebuilt each frame into buffers that live across frames ---
+
+interface LineBatch {
+    material: LineMaterial;
+    lines: LineSegments2;
+    geometry: LineSegmentsGeometry;
+    // segments the geometry's buffers hold
+    capacity: number;
+    width: number;
+}
+
+function lineGeometry(capacity: number): LineSegmentsGeometry {
+    const geometry = new LineSegmentsGeometry();
+    geometry.setPositions(new Float32Array(capacity * 6));
+    geometry.setColors(new Float32Array(capacity * 6));
+    return geometry;
+}
+
+function fillGeometry(triangles: number): BufferGeometry {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(new Float32Array(triangles * 9), 3));
+    geometry.setAttribute("color", new BufferAttribute(new Float32Array(triangles * 9), 3));
+    return geometry;
+}
+
+// LineSegmentsGeometry keeps a segment's start and end in one interleaved buffer
+function interleaved(geometry: LineSegmentsGeometry, name: string): InterleavedBuffer {
+    return (geometry.getAttribute(name) as InterleavedBufferAttribute).data;
+}
+
+// uploads only the floats this frame wrote, not the buffer's whole capacity
+function upload(buffer: InterleavedBuffer | BufferAttribute, floats: number): void {
+    buffer.clearUpdateRanges();
+    buffer.addUpdateRange(0, floats);
+    buffer.needsUpdate = true;
+}
+
+class HudLayer {
+    readonly group = new Group();
+    private batches: LineBatch[];
+    private fillCapacity = growCapacity(0, 0);
+    private fillGeometry = fillGeometry(this.fillCapacity);
+    private fillMaterial: MeshBasicMaterial;
+    private fillMesh: Mesh;
+    private colours: { body: Rgb; hot: Rgb };
+    private motion: HudMotion = HUD_MOTION_START;
+    private lastNow: number | null = null;
+
+    // `scale`: the size against the study's 132 px, so a smaller hologram draws thinner strokes rather than the same
+    // pixels packed into less room
+    constructor(
+        private sizePx: number,
+        dpr: number,
+        body: Color,
+        private assemble: boolean
+    ) {
+        const scale = sizePx / STUDY_PX;
+        const srgb = body.getRGB({ r: 0, g: 0, b: 0 }, SRGBColorSpace);
+        this.colours = hudColours([srgb.r, srgb.g, srgb.b]);
+        // one batch per stroke weight: a fat line's width is a material uniform
+        this.batches = STROKE_WIDTHS.map((width) => {
+            const material = new LineMaterial({
+                vertexColors: true,
+                // pixels, not world units; the resolution is the drawing buffer's, hence the dpr
+                worldUnits: false,
+                linewidth: width * scale * dpr,
+                transparent: true,
+                blending: AdditiveBlending,
+                // additive summing is order-independent, so depth would only drop overlaps
+                depthTest: false,
+                depthWrite: false,
+            });
+            const capacity = growCapacity(0, 0);
+            const geometry = lineGeometry(capacity);
+            const lines = new LineSegments2(geometry, material);
+            // rebuilt every frame inside the camera's box: culling could only drop it on stale bounds
+            lines.frustumCulled = false;
+            this.group.add(lines);
+            return { material, lines, geometry, capacity, width };
+        });
+        this.fillMaterial = new MeshBasicMaterial({
+            vertexColors: true,
+            transparent: true,
+            blending: AdditiveBlending,
+            depthTest: false,
+            depthWrite: false,
+            // a quad tipped past edge-on winds the other way
+            side: DoubleSide,
+        });
+        this.fillMesh = new Mesh(this.fillGeometry, this.fillMaterial);
+        this.fillMesh.frustumCulled = false;
+        // the fills are what the strokes sit on
+        this.fillMesh.renderOrder = -1;
+        this.group.add(this.fillMesh);
+    }
+
+    fade(weight: number): void {
+        this.group.visible = weight > 0.002;
+        for (const batch of this.batches) {
+            batch.material.opacity = weight;
+        }
+        this.fillMaterial.opacity = weight;
+    }
+
+    update(t: number, frame: HudFrame): void {
+        const now = t * 1000;
+        const dt = this.lastNow == null ? 0 : now - this.lastNow;
+        this.lastNow = now;
+        this.motion = stepHudMotion(this.motion, now, dt, frame.activity, frame.speaking);
+        const orbit = hudOrbit(now);
+        let reveal: Partial<Record<HudPart, number>> | undefined;
+        if (this.assemble) {
+            reveal = {};
+            HUD_PARTS.forEach((part, i) => (reveal![part] = assembleReveal(t, i)));
+        }
+        const scene = buildHudScene({
+            size: this.sizePx,
+            now,
+            yaw: orbit.yaw,
+            pitch: orbit.pitch,
+            breath: breathFromPhase(this.motion.breathPhase),
+            utterance: utteranceEnvelope(now, this.motion.spokeAt),
+            quiet: frame.quiet,
+            still: frame.still,
+            activity: frame.activity,
+            pulseClock: this.motion.pulseClock,
+            reveal,
+        });
+
+        for (const batch of this.batches) {
+            const slice = scene.segments.filter((s) => s.width === batch.width);
+            batch.lines.visible = slice.length > 0;
+            if (slice.length === 0) {
+                continue;
+            }
+            const capacity = growCapacity(slice.length, batch.capacity);
+            if (capacity !== batch.capacity) {
+                const next = lineGeometry(capacity);
+                batch.geometry.dispose();
+                batch.geometry = next;
+                batch.lines.geometry = next;
+                batch.capacity = capacity;
+            }
+            const positions = interleaved(batch.geometry, "instanceStart");
+            const colors = interleaved(batch.geometry, "instanceColorStart");
+            const count = packHudLines(
+                slice,
+                this.sizePx,
+                this.colours,
+                positions.array as Float32Array,
+                colors.array as Float32Array
+            );
+            upload(positions, count * 6);
+            upload(colors, count * 6);
+            batch.geometry.instanceCount = count;
+        }
+
+        const triangles = hudFillTriangles(scene.fills);
+        this.fillMesh.visible = triangles > 0;
+        if (triangles > 0) {
+            const capacity = growCapacity(triangles, this.fillCapacity);
+            if (capacity !== this.fillCapacity) {
+                const next = fillGeometry(capacity);
+                this.fillGeometry.dispose();
+                this.fillGeometry = next;
+                this.fillMesh.geometry = next;
+                this.fillCapacity = capacity;
+            }
+            const positions = this.fillGeometry.getAttribute("position") as BufferAttribute;
+            const colors = this.fillGeometry.getAttribute("color") as BufferAttribute;
+            packHudFills(
+                scene.fills,
+                this.sizePx,
+                this.colours,
+                positions.array as Float32Array,
+                colors.array as Float32Array
+            );
+            upload(positions, triangles * 9);
+            upload(colors, triangles * 9);
+            this.fillGeometry.setDrawRange(0, triangles * 3);
+        }
+    }
+}
+
+// --- the neural sphere ---
+
+// Everything the sphere draws fades through one of these: a material's opacity, or a point shader's fade uniform.
 type Fader = { material: LineMaterial | MeshBasicMaterial; base: number } | { points: ShaderMaterial };
 
 interface Form {
     group: Group;
     faders: Fader[];
-    update: (t: number, busy: boolean) => void;
+    update: (t: number) => void;
 }
 
 function randomSequence(seed: number): () => number {
@@ -106,7 +335,7 @@ class Builder {
     faders: Fader[] = [];
 
     // scale: the size against the study's 132 px, so a smaller hologram draws thinner lines and smaller sparks
-    // rather than the same pixels packed into less room, which blew the core out into a blob at S and M
+    // rather than the same pixels packed into less room
     constructor(
         private dpr: number,
         private scale: number
@@ -129,25 +358,6 @@ class Builder {
         parent.add(line);
         this.faders.push({ material, base: opacity });
         return line;
-    }
-
-    arc(
-        parent: Object3D,
-        radius: number,
-        start: number,
-        length: number,
-        colour: Color,
-        width: number,
-        opacity: number
-    ) {
-        const positions: number[] = [];
-        const count = Math.max(4, Math.ceil(Math.abs(length) * 42));
-        for (let i = 0; i < count; i++) {
-            for (const angle of [start + (length * i) / count, start + (length * (i + 1)) / count]) {
-                positions.push(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
-            }
-        }
-        return this.segments(parent, positions, colour, width, opacity);
     }
 
     points(parent: Object3D, positions: number[], colour: Color, size: number): Points<BufferGeometry, ShaderMaterial> {
@@ -199,101 +409,6 @@ class Builder {
         this.faders.push({ material, base: opacity });
         return mesh;
     }
-}
-
-// Scales what a fader shows by `reveal`, after fade() has set it for the frame
-function dim(faders: Fader[], reveal: number): void {
-    for (const f of faders) {
-        if ("points" in f) {
-            f.points.uniforms.fade.value *= reveal;
-        } else {
-            f.material.opacity *= reveal;
-        }
-    }
-}
-
-// The orbital HUD: four tilted rings turning at their own pace around a lit core. Busy, the core beats. Assembling (the
-// startup loader), the core lights first and the rings fade and grow in from the inside out (assembleReveal).
-function hud(c: HologramColours, dpr: number, scale: number, assemble: boolean): Form {
-    const b = new Builder(dpr, scale);
-    const group = new Group();
-    group.rotation.x = 0.18;
-    group.rotation.y = -0.16;
-    const rings: Group[] = [];
-    // what each part draws, so it can enter on its own: [0] the core, [1..4] the rings from the inside out
-    const parts: Fader[][] = [];
-    for (let layer = 0; layer < 4; layer++) {
-        const firstFader = b.faders.length;
-        const ring = new Group();
-        ring.position.z = (layer - 1.5) * 0.12;
-        group.add(ring);
-        rings.push(ring);
-        const radius = 0.59 + layer * 0.3;
-        const count = layer === 3 ? 8 : 3;
-        for (let sector = 0; sector < count; sector++) {
-            const start = (sector * TAU) / count + layer * 0.31;
-            b.arc(
-                ring,
-                radius,
-                start,
-                (TAU / count) * (layer === 3 ? 0.68 : 0.82),
-                c.blue,
-                layer === 1 ? 1.9 : 1.05,
-                0.85
-            );
-            if (layer === 1 || layer === 3) {
-                b.arc(ring, radius - 0.05, start, (TAU / count) * 0.42, c.blueHot, 0.8, 0.4);
-            }
-        }
-        if (layer === 2 || layer === 3) {
-            const ticks: number[] = [];
-            const tickCount = 48;
-            for (let i = 0; i < tickCount; i++) {
-                const angle = (TAU * i) / tickCount;
-                const major = i % 4 === 0;
-                for (const r of [radius + 0.05, radius + (major ? 0.12 : 0.085)]) {
-                    ticks.push(Math.cos(angle) * r, Math.sin(angle) * r, 0);
-                }
-            }
-            b.segments(ring, ticks, c.blue, 0.8, 0.55);
-        }
-        parts[layer + 1] = b.faders.slice(firstFader);
-    }
-    const coreFirstFader = b.faders.length;
-    const core = new Group();
-    group.add(core);
-    b.arc(core, 0.33, 0, TAU, c.blueHot, 1.8, 0.9);
-    b.arc(core, 0.39, 0.2, Math.PI * 1.6, c.blue, 0.8, 0.8);
-    const paths: number[] = [];
-    const p = (r: number, a: number) => [Math.cos(a) * r, Math.sin(a) * r, 0];
-    for (let i = 0; i < 6; i++) {
-        const angle = (TAU * i) / 6;
-        paths.push(...p(0.13, angle), ...p(0.26, angle), ...p(0.43, angle), ...p(0.49, angle));
-        paths.push(...p(0.94, angle), ...p(1.03, angle), ...p(1.03, angle), ...p(1.1, angle + 0.05));
-    }
-    b.segments(core, paths, c.blueHot, 1, 0.65);
-    const sparks = b.points(core, [0, 0, 0.08], c.blueHot, 8);
-    const nucleus = b.wire(core, 0.11, c.blueHot, 0.65, false);
-    parts[0] = b.faders.slice(coreFirstFader);
-    const speeds = [0.075, -0.12, 0.045, -0.03];
-    return {
-        group,
-        faders: b.faders,
-        update: (t, busy) => {
-            const reveal = (part: number) => (assemble ? assembleReveal(t, part) : 1);
-            rings.forEach((ring, i) => {
-                ring.rotation.z = t * speeds[i];
-                ring.scale.setScalar(0.7 + 0.3 * reveal(i + 1));
-            });
-            core.scale.setScalar((busy ? 1.05 + Math.sin(t * 4) * 0.06 : 1) * (0.6 + 0.4 * reveal(0)));
-            if (assemble) {
-                parts.forEach((faders, part) => dim(faders, reveal(part)));
-            }
-            nucleus.rotation.set(t * 0.15, t * 0.22, 0);
-            sparks.material.uniforms.time.value = t;
-            sparks.material.uniforms.energy.value = busy ? 1.8 : 1;
-        },
-    };
 }
 
 // The neural sphere: amber filaments branching out of a wireframe nucleus, a pulse running out along them. It is the
@@ -389,14 +504,14 @@ export class HologramScene {
         private renderer: WebGLRenderer,
         private composer: EffectComposer,
         private scene: Scene,
-        private hudForm: Form,
+        private hud: HudLayer,
         private neuralForm: Form,
         private bloom: UnrealBloomPass,
         private onLost: (ev: Event) => void
     ) {}
 
     /** null when the GL context cannot be had: the caller shows Sprout instead of a blank corner. `assemble` builds the
-     * HUD part by part from the scene's first frame (the startup loader) instead of showing it whole. */
+     * HUD layer by layer from the scene's first frame (the startup loader) instead of showing it whole. */
     static create(
         canvas: HTMLCanvasElement,
         sizePx: number,
@@ -421,41 +536,41 @@ export class HologramScene {
         renderer.setPixelRatio(dpr);
         renderer.setSize(sizePx, sizePx, false);
         const scene = new Scene();
-        const camera = new PerspectiveCamera(36, 1, 0.1, 50);
-        camera.position.z = 6.3;
+        const camera = new PerspectiveCamera(CAMERA_FOV, 1, 0.1, 50);
+        camera.position.z = CAMERA_Z;
         const composer = new EffectComposer(renderer);
         composer.setPixelRatio(dpr);
         composer.setSize(sizePx, sizePx);
         composer.addPass(new RenderPass(scene, camera));
-        const bloom = new UnrealBloomPass(new Vector2(sizePx, sizePx), BLOOM, 0.2, 0.4);
-        composer.addPass(bloom);
         composer.addPass(new OutputPass());
+        const bloom = new UnrealBloomPass(new Vector2(sizePx, sizePx), BLOOM, 0.2, BLOOM_THRESHOLD_HUD);
+        composer.addPass(bloom);
         composer.addPass(new ShaderPass(alphaFromLight));
-        const scale = sizePx / STUDY_PX;
-        const hudForm = hud(colours, dpr, scale, assemble);
-        const neuralForm = neural(colours, dpr, scale);
-        scene.add(hudForm.group, neuralForm.group);
+        const hud = new HudLayer(sizePx, dpr, colours.blue, assemble);
+        const neuralForm = neural(colours, dpr, sizePx / STUDY_PX);
+        scene.add(hud.group, neuralForm.group);
         const lost = (ev: Event) => {
             ev.preventDefault();
             onLost();
         };
         canvas.addEventListener("webglcontextlost", lost);
-        return new HologramScene(canvas, renderer, composer, scene, hudForm, neuralForm, bloom, lost);
+        return new HologramScene(canvas, renderer, composer, scene, hud, neuralForm, bloom, lost);
     }
 
     /** t in seconds; sphere 0 is all HUD, 1 all neural sphere (already eased). */
-    draw(t: number, busy: boolean, sphere: number): void {
-        fade(this.hudForm, 1 - sphere);
+    draw(t: number, frame: HudFrame, sphere: number): void {
+        this.hud.fade(1 - sphere);
         fade(this.neuralForm, sphere);
-        this.hudForm.update(t, busy);
-        this.neuralForm.update(t, busy);
-        // the morph between the two (hologrammodel morphPose): the HUD's rings wind in and draw down into the core while
-        // the sphere grows out of it, a touch past its size before it settles, with a flare of light at the crossing
+        this.hud.update(t, frame);
+        this.neuralForm.update(t);
+        // the morph between the two (hologrammodel morphPose): the HUD winds in and draws down into its core while the
+        // sphere grows out of it, a touch past its size before it settles, with a flare of light at the crossing
         const m = morphPose(sphere);
-        this.hudForm.group.scale.setScalar(m.hudScale);
-        this.hudForm.group.rotation.z = m.hudTwist;
+        this.hud.group.scale.setScalar(HALF_VIEW * m.hudScale);
+        this.hud.group.rotation.z = m.hudTwist;
         this.neuralForm.group.scale.setScalar(m.sphereScale);
         this.bloom.strength = BLOOM * m.flare;
+        this.bloom.threshold = BLOOM_THRESHOLD_HUD + (BLOOM_THRESHOLD_SPHERE - BLOOM_THRESHOLD_HUD) * sphere;
         this.composer.render();
     }
 
