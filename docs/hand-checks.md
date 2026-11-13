@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Hidden Jarvis in the Office and at launch: open Cockpit → Office, right-click the boss → Hide for 1
+  hour → the boss and its ring go, its desk stays empty and no Sprout appears on the footer; Ctrl+P → Show Jarvis →
+  the boss comes back with its entrance (the teleport, or Spider-Man's swing). Hide again, then quit and reopen
+  arcterm → still hidden, and the startup screen shows only "Setting up arcterm", no Sprout or hologram. Fold the
+  window while hidden → the folded Sprout shows and says nothing until Show Jarvis. Commit: the Jarvis snooze
+  (`cockpitoffice.tsx` BossView, `startuploader.tsx`, `pethidestore.ts`).
 - [ ] (arcterm) Chat keeps up with a reply before a big Write: after a build with this arc mod installed, ask a Claude
   agent to write a ~100-line file and watch Chat → the line it says before the Write ("Writing the …") shows whole
   within a moment, not cut mid-word until the Write lands. `claude/arc-mod/hooks/register.ts` turn.step trailing write.

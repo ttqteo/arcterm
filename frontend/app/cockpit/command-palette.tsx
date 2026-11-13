@@ -60,6 +60,7 @@ import { workOnInitiative } from "@/app/view/jarvis/initiativeworkaction";
 import { openLauncher } from "@/app/view/agents/launcherstore";
 import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { openAddress, openTarget } from "@/app/view/jarvis/openref";
+import { jarvisHiddenAtom, showJarvis } from "@/app/view/jarvis/pethidestore";
 import { taskListAtom } from "@/app/view/jarvis/tasksstore";
 import { joinRepoPath, sameRepoPath } from "@/util/paths";
 import { isMacOS } from "@/util/platformutil";
@@ -526,6 +527,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         [brainstorms.list, model]
     );
 
+    const jarvisHidden = useAtomValue(jarvisHiddenAtom);
     // Registry-derived: the "Go to" bindings are the surfaces, everything else is a command.
     const { gotoItems, commandItems } = useMemo(() => {
         const drillMeta: Record<DrillId, string> = {
@@ -538,6 +540,8 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                 openNewProject: () => globalStore.set(model.newProjectOpenAtom, true),
                 openToolPicker: () => openToolPicker(model),
                 reloadWindow: () => window.location.reload(),
+                jarvisHidden,
+                showJarvis,
             }),
         ];
         const goto: PaletteItem[] = all
@@ -579,7 +583,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                 };
             });
         return { gotoItems: goto, commandItems: commands };
-    }, [bindings, surface, model, themeItems.length]);
+    }, [bindings, surface, model, themeItems.length, jarvisHidden]);
 
     // The Scan workflow row is there only with a home project. Unlike the rows that open a window, it does its work
     // before the palette closes: a start that fails keeps the palette open on the error, as a launch does, and

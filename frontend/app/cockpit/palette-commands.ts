@@ -76,13 +76,20 @@ export interface ExtraDeps {
     openNewProject: () => void;
     openToolPicker: () => void;
     reloadWindow: () => void;
+    // Jarvis is hidden for a while (pethide.ts): only then is there a Show Jarvis row
+    jarvisHidden: boolean;
+    showJarvis: () => void;
 }
 
 // The cockpit actions that have no chord to derive from. A drill opens a picker rather than
 // acting, so there is one "Switch theme…" row instead of one row per theme. Reload the window has no chord on
-// purpose: Ctrl+R and F5 reload a pinned app's page, or redraw, never the whole cockpit (pagekeys.rs).
+// purpose: Ctrl+R and F5 reload a pinned app's page, or redraw, never the whole cockpit (pagekeys.rs). Show Jarvis brings
+// a hidden Jarvis back before its time, and is listed only while it is hidden.
 export function buildExtraItems(deps: ExtraDeps): CommandItem[] {
     return [
+        ...(deps.jarvisHidden
+            ? [{ key: "cmd:show-jarvis", title: "Show Jarvis", group: "Global", run: deps.showJarvis }]
+            : []),
         { key: "cmd:new-project", title: "New project", group: "Global", run: deps.openNewProject },
         { key: "cmd:open-tool", title: "Open a tool…", group: "Global", run: deps.openToolPicker },
         { key: "cmd:reload-window", title: "Reload the window", group: "Global", run: deps.reloadWindow },

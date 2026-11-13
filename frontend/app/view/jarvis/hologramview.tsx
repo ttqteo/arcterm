@@ -12,7 +12,7 @@ import { channelMessagesAtom } from "@/app/view/agents/channelsstore";
 import { answeredAskIdsAcross } from "@/app/view/agents/jarvisderive";
 import { useAtomValue } from "jotai";
 import { motion } from "motion/react";
-import { useEffect, useMemo, useRef, type RefObject } from "react";
+import { useEffect, useMemo, useRef, type MouseEvent, type RefObject } from "react";
 import { easeMix, hologramFps, stepMix, type HologramPose } from "./hologrammodel";
 import type { HologramScene } from "./hologramscene";
 import { closePeek } from "./peekstore";
@@ -134,6 +134,7 @@ export function HologramView({
     reduce,
     setAnchor,
     openPeek,
+    onContextMenu,
     onFail,
 }: {
     sizePx: number;
@@ -143,6 +144,8 @@ export function HologramView({
     reduce: boolean;
     setAnchor: (el: HTMLDivElement | null) => void;
     openPeek: () => void;
+    // the right-click's menu: hide Jarvis for a while (pethidemenu.tsx)
+    onContextMenu: (e: MouseEvent) => void;
     // no GL context, or it was lost: PetView shows Sprout instead of an empty corner
     onFail: () => void;
 }) {
@@ -158,6 +161,7 @@ export function HologramView({
             // the name Sprout carries (petview.tsx): the CDP harness and a screen reader find Jarvis by it
             aria-label="Jarvis condition"
             onClick={() => (peekOpen ? closePeek() : openPeek())}
+            onContextMenu={onContextMenu}
             onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();

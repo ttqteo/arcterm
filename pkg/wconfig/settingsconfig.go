@@ -98,6 +98,10 @@ type SettingsType struct {
 	// WindowAutoSproutPauseUntil holds window:autosprout off until then (Unix ms): the folded Sprout's "Don't fold for"; 0 or past is no pause
 	WindowAutoSproutPauseUntil *int64 `json:"window:autosproutpauseuntil,omitempty"`
 
+	// JarvisHiddenUntil keeps Jarvis (Sprout or the hologram) off screen until then (Unix ms): right-click Jarvis →
+	// Hide; 0 or past is shown
+	JarvisHiddenUntil *int64 `json:"jarvis:hiddenuntil,omitempty"`
+
 	ConnClear                bool    `json:"conn:*,omitempty"`
 	ConnLocalHostnameDisplay *string `json:"conn:localhostdisplayname,omitempty"`
 

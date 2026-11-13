@@ -51,6 +51,8 @@ import { PetBubble } from "./petbubble";
 import { petCharacter } from "./petcharacter";
 import { expressionFor, postureFor, type PetExpression, type PetPosture, type PetSignals } from "./petcondition";
 import { landing, ledgeShift, webLanding, type LedgeAt } from "./petfall";
+import { HideForBox, showHideMenu } from "./pethidemenu";
+import { jarvisHiddenAtom, useJarvisHideTimer } from "./pethidestore";
 import { bubbleClick } from "./petjoin";
 import {
     avoidSpans,
@@ -97,6 +99,7 @@ import {
     petOfficeBossAtom,
     petOfficeCornerAtom,
     petOfficeEnteringAtom,
+    petOfficeOpenAtom,
     petOutfitChoiceAtom,
     petPeekOpenAtom,
     petQuotesOnAtom,
@@ -115,6 +118,7 @@ import {
     HANG_DOWN_MS,
     HANG_UP_MS,
     homeFraction,
+    homeX,
     initialWalker,
     nextTick,
     placeAt,
@@ -331,10 +335,18 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     // set by the sprite only when it crosses the window's middle, so the walk does not re-render the peek
     const [corner, setCorner] = useState<PetCorner>("bottom-right");
     const officeBoss = useAtomValue(petOfficeBossAtom);
+    const officeOpen = useAtomValue(petOfficeOpenAtom);
     const officeCorner = useAtomValue(petOfficeCornerAtom);
     const entering = useAtomValue(petOfficeEnteringAtom);
-    // one Jarvis: in the office the boss is the creature; folded, the folded Sprout is its own (sprout-mini.tsx)
-    const inOffice = officeBoss != null && !folded;
+    // one Jarvis: in the office the boss is the creature; folded, the folded Sprout is its own (sprout-mini.tsx). Still
+    // the office while it draws no boss (Jarvis hidden), so the footer never stands in for it
+    const inOffice = (officeBoss != null || officeOpen) && !folded;
+    // hidden for a while (pethide.ts): no creature and no bubble, here or in the office, until the time is up; the fold
+    // keeps its Sprout, the one way back to the window, but says nothing either
+    const hidden = useAtomValue(jarvisHiddenAtom);
+    useJarvisHideTimer();
+    // where the peek opens while hidden: the hologram's corner
+    const [hiddenAnchor, setHiddenAnchor] = useState<HTMLDivElement | null>(null);
     // the hologram form, in the full window only: Float's small window and the fold keep Sprout. A GL failure (a lost
     // context: a GPU reset, or Chromium dropping the oldest of too many, each terminal holding one) falls back to Sprout,
     // and the hologram comes back on a fresh canvas (a new key) after HOLOGRAM_RETRY_MS, unless it keeps failing
@@ -370,11 +382,13 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     const loaderHologram = useAtomValue(hologramLoadersShownAtom) > 0;
     const hologramPx = HOLOGRAM_SIZE_PX[hologramSize(useAtomValue(petHologramSizeAtom))];
     const asking = useAskingCount(model);
-    const shownAnchor = inOffice ? officeBoss : anchor;
-    const shownCorner = inOffice ? officeCorner : hologram ? "bottom-right" : corner;
+    const shownAnchor = hidden ? hiddenAnchor : inOffice ? officeBoss : anchor;
+    const shownCorner = hidden ? "bottom-right" : inOffice ? officeCorner : hologram ? "bottom-right" : corner;
 
     // Push once per event (pet spec §4 decision 8). Advancing the watermark re-runs this effect, which then
-    // finds nothing new — so the loop settles after one push rather than repeating it.
+    // finds nothing new — so the loop settles after one push rather than repeating it. While hidden the watermark moves
+    // on and the peek still reads what was heard, but nothing is said: no bubble, no unread mark, and nothing saved up
+    // to say once Jarvis is back.
     useEffect(() => {
         const speech = nextUtterance(events, watermark);
         if (speech.watermark == null) {
@@ -385,7 +399,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
         for (const event of [...speech.heard].reverse()) {
             rememberSaid(event);
         }
-        if (speech.utterance != null) {
+        if (speech.utterance != null && !globalStore.get(jarvisHiddenAtom)) {
             // the bubble itself is the notice, unless it is said once and so stands for nothing kept
             const unread = unreadAfterSaying(speech, globalStore.get(petBubbleAtom), globalStore.get(petUnreadAtom));
             globalStore.set(petBubbleAtom, speech.utterance);
@@ -407,7 +421,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
         focused,
     };
     useEffect(() => {
-        if (!quotesOn) {
+        if (!quotesOn || hidden) {
             return;
         }
         let timer: ReturnType<typeof setTimeout>;
@@ -428,7 +442,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
         };
         arm(quoteDelayMs(Math.random()));
         return () => clearTimeout(timer);
-    }, [quotesOn]);
+    }, [quotesOn, hidden]);
 
     // A timed stay ends by itself: at its end time the atom goes back to roam, which steps the sprite's walker (its own
     // subscription) so the pet roams again then, not at its next rest. Here and not in PetSprite, which is not mounted
@@ -455,6 +469,25 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     // a quote is not news: clicking it only puts it away, and it leaves no unread marker behind
     const openPeek = useCallback(() => openPetBubble(model), [model]);
 
+    if (hidden) {
+        return (
+            <>
+                <div
+                    ref={setHiddenAnchor}
+                    aria-hidden
+                    data-pet-hidden-anchor
+                    className="pointer-events-none fixed bottom-[40px] right-[18px]"
+                    style={{ width: hologramPx, height: hologramPx }}
+                />
+                {/* Float has no nav badge: what waits and what works keep their place on the floor, without Sprout */}
+                {floating && !folded && (waiting > 0 || working > 0) ? (
+                    <FloatMarks waiting={waiting} working={working} />
+                ) : null}
+                {folded ? null : <PetPeek model={model} anchor={shownAnchor} corner={shownCorner} signals={signals} />}
+            </>
+        );
+    }
+
     return (
         <>
             {/* in the office the boss is the creature, so no footer sprite; this component stays mounted for its voice */}
@@ -469,6 +502,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                     reduce={reduce}
                     setAnchor={setAnchor}
                     openPeek={openPeek}
+                    onContextMenu={showHideMenu}
                     onFail={onHologramFail}
                 />
             ) : (
@@ -501,7 +535,51 @@ export function PetView({ model }: { model: AgentsViewModel }) {
             {/* the peek derives its own ranked condition LIST from the same signals — expressionFor is
                 the creature's single face, and passing it here would cap the panel at one condition */}
             {folded ? null : <PetPeek model={model} anchor={shownAnchor} corner={shownCorner} signals={signals} />}
+            <HideForBox />
         </>
+    );
+}
+
+// Float's floor while Jarvis is hidden: the count of what waits (a click opens the peek, as a click on Sprout does) and
+// the working mark, at Sprout's home on the floor, where Sprout would wear them
+function FloatMarks({ waiting, working }: { waiting: number; working: number }) {
+    const [spot, setSpot] = useState<{ left: number; top: number } | null>(null);
+    useLayoutEffect(() => {
+        const place = () => {
+            const ledge = readLedge();
+            setSpot({ left: homeX(globalStore.get(petHomeAtom), ledge), top: ledge.top - PET_PX });
+        };
+        place();
+        // the float bar mounts after the window has shrunk, as PetSprite's settle measures allow for
+        const timers = SWITCH_SETTLE_MS.map((ms) => setTimeout(place, ms));
+        window.addEventListener("resize", place);
+        return () => {
+            timers.forEach(clearTimeout);
+            window.removeEventListener("resize", place);
+        };
+    }, []);
+    if (spot == null) {
+        return null;
+    }
+    return (
+        <div
+            data-pet-float-marks
+            className="pointer-events-none fixed z-[60]"
+            style={{ left: spot.left, top: spot.top, width: PET_PX, height: PET_PX }}
+        >
+            {waiting > 0 ? (
+                <button
+                    type="button"
+                    data-pet-float-chip
+                    aria-label={`${waiting} waiting on you`}
+                    onClick={openPetPeek}
+                    className="pointer-events-auto absolute -left-1 top-1 min-w-4 cursor-pointer rounded-full bg-warning px-1 text-center text-[10px] font-bold leading-4 text-on-warning tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    {waiting}
+                </button>
+            ) : null}
+            {working > 0 ? <WorkingDots count={working} className="absolute -right-2 -top-1" /> : null}
+        </div>
     );
 }
 
@@ -1016,6 +1094,7 @@ function PetSprite({
                     }
                 });
             }}
+            onContextMenu={showHideMenu}
             onClick={() => {
                 if (draggedRef.current) {
                     draggedRef.current = false;

@@ -54478,6 +54478,205 @@ const hologramRecovers = {
     },
 };
 
+// --- jarvis-hide: right-click Jarvis (Sprout or the hologram) and hide it for a while; jarvis:hiddenuntil keeps it off
+// screen, the palette's Show Jarvis brings it back early (docs/superpowers/specs/2026-11-13-jarvis-snooze-design.md). The
+// menu offers its three hides; the Hide for… box reads a typed time; hidden, neither the sprite nor the hologram's canvas
+// is in the page; in Float the waiting count keeps Sprout's place on the floor; Show Jarvis is listed only while hidden.
+const JARVIS_HIDE_KEY = "jarvis:hiddenuntil";
+const JARVIS_HIDE_PROJECT = "verify-jarvis-hide";
+const JH_SHOWN = `!!(document.querySelector("[data-pet-sprite]") || document.querySelector("[data-pet-hologram] canvas"))`;
+const JH_GONE = `!document.querySelector("[data-pet-sprite]") && !document.querySelector("[data-pet-hologram] canvas")`;
+// a real right-click on whichever Jarvis shows; true when there was one to click
+const jhRightClick = `(() => {
+    const el = document.querySelector("[data-pet-sprite]") ?? document.querySelector("[data-pet-hologram]");
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 2 }));
+    return true;
+})()`;
+const jhMenuRows = `[...document.querySelectorAll("[data-pet-hide]")].map((r) => ({ key: r.dataset.petHide, label: r.dataset.menuItem }))`;
+const jhSetting = async (h) => (await h.rpc("getfullconfig", null))?.settings?.[JARVIS_HIDE_KEY] ?? null;
+// the RAM watch's reading (docs/open-issues.md): the JS heap after a GC, and the main thread's busy share over 5 s, which
+// the hologram's requestAnimationFrame loop drives while it shows
+async function jhMetrics(h) {
+    await h.cdp("Performance.enable").catch(() => {});
+    await h.cdp("HeapProfiler.collectGarbage");
+    const read = async () => Object.fromEntries((await h.cdp("Performance.getMetrics")).metrics.map((x) => [x.name, x.value]));
+    const from = await read();
+    await h.ev("new Promise((r) => setTimeout(r, 5000))");
+    const to = await read();
+    return {
+        heapMB: Math.round((from.JSHeapUsedSize / (1024 * 1024)) * 100) / 100,
+        busyPct: Math.round(((to.TaskDuration - from.TaskDuration) / 5) * 1000) / 10,
+    };
+}
+
+const jarvisHide = {
+    name: "jarvis-hide",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { terminals: [] };
+        try {
+            ctx.prev = await jhSetting(h);
+            // shown to begin with, whatever an earlier run left
+            await h.rpc("setconfig", { [JARVIS_HIDE_KEY]: null });
+            // the hologram form, the heavier of the two (a WebGL canvas); read once at boot (atomWithStorage getOnInit)
+            ctx.prevForm = await h.ev(`localStorage.getItem(${JSON.stringify(HOLO_FORM_KEY)})`);
+            await h.ev(`localStorage.setItem(${JSON.stringify(HOLO_FORM_KEY)}, JSON.stringify("hologram"))`);
+            ctx.formSet = true;
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            await openRailTerminal(h, ctx, JARVIS_HIDE_PROJECT);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. arrange", false, ctx.arrangeError);
+            return steps;
+        }
+        await h.goto("agent");
+        // the startup loader draws Jarvis in the middle first; the corner hologram fades in once it is done
+        const shown = await polishWaitFor(h, `!!document.querySelector("[data-pet-hologram] canvas")`, 20_000);
+        await h.ev("new Promise((r) => setTimeout(r, 1500))");
+        const shownMetrics = shown ? await jhMetrics(h) : null;
+        rec("1. with the hologram form picked, the hologram shows", shown, JSON.stringify({ shown, ...shownMetrics }));
+        if (!shown) return steps;
+
+        // 2. the right-click menu holds the three hides
+        await h.ev(jhRightClick);
+        await polishWaitFor(h, `document.querySelectorAll("[data-pet-hide]").length === 3`, 3000);
+        const rows = await h.ev(jhMenuRows);
+        await h.shot("cdp-shots/jarvis-hide-1-menu.png");
+        rec(
+            "2. a right-click on Jarvis opens a menu with Hide for 1 hour, Hide till 8:00 and Hide for…",
+            JSON.stringify(rows.map((r) => r.key)) === JSON.stringify(["hour", "morning", "for"]),
+            JSON.stringify(rows)
+        );
+
+        // 3. Hide for… opens a box that reads a typed time and says when the hide would end
+        await h.ev(`document.querySelector('[data-pet-hide="for"]')?.click()`);
+        const boxOpen = await polishWaitFor(h, `!!document.querySelector("[data-pet-hide-input]")`, 3000);
+        await h.ev(setInputExpr(`document.querySelector("[data-pet-hide-input]")`, "2h"));
+        await polishWaitFor(h, `(document.querySelector("[data-pet-hide-until]")?.textContent ?? "").startsWith("Hidden until")`, 2000);
+        const until = await h.ev(`document.querySelector("[data-pet-hide-until]")?.textContent ?? null`);
+        await h.shot("cdp-shots/jarvis-hide-2-box.png");
+        await h.ev(`document.querySelector("[data-pet-hide-input]")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+        const boxShut = await polishWaitFor(h, `!document.querySelector("[data-pet-hide-box]")`, 2000);
+        rec(
+            "3. Hide for… opens a box; 2h reads as Hidden until …, and Escape puts it away with Jarvis still shown",
+            boxOpen && (until ?? "").startsWith("Hidden until") && boxShut && (await h.ev(JH_SHOWN)),
+            JSON.stringify({ boxOpen, until, boxShut })
+        );
+
+        // 4. Hide for 1 hour writes jarvis:hiddenuntil an hour ahead, and neither the sprite nor the hologram's canvas is left
+        await h.ev(jhRightClick);
+        await polishWaitFor(h, `!!document.querySelector('[data-pet-hide="hour"]')`, 3000);
+        const before = Date.now();
+        await h.ev(`document.querySelector('[data-pet-hide="hour"]')?.click()`);
+        const gone = await polishWaitFor(h, JH_GONE, 5000);
+        const written = await jhSetting(h);
+        await h.shot("cdp-shots/jarvis-hide-3-hidden.png");
+        const hiddenMetrics = gone ? await jhMetrics(h) : null;
+        rec(
+            "4. Hide for 1 hour writes jarvis:hiddenuntil about an hour ahead, and no [data-pet-sprite] or hologram canvas is left",
+            gone && typeof written === "number" && written > before + 55 * 60_000 && written < before + 65 * 60_000,
+            JSON.stringify({ gone, written, before, shown: shownMetrics, hidden: hiddenMetrics })
+        );
+        if (!gone) return steps;
+
+        // 5. Float: Sprout stays hidden, the waiting count keeps its place on the floor
+        const term = ctx.terminals[0];
+        await polishWaitFor(h, `!!document.querySelector('[data-tree-terminal-row="${term.tabId}"]')`, 8000);
+        await h.ev(`document.querySelector('[data-tree-terminal-row="${term.tabId}"]')?.click()`);
+        await h.ev(`new Promise((r) => setTimeout(r, 500))`);
+        if (!(await clickHeaderFloat(h))) {
+            await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
+            await floatNoteKey(h, "F");
+        }
+        const floated = await floatMiniWait(h, `!!document.querySelector("[data-float-bar]")`);
+        await h.ev(`globalThis.__wavePetStore?.setAttention([
+            { key: 'dag-gate:cdp-hide', kind: 'dag-gate', source: 'a gate', text: 'Approve the gate.', action: 'Review', waitingsince: Date.now() - 60000, channelid: '', runid: 'cdp-hide', phaseidx: 0 },
+        ])`);
+        const chip = await floatMiniWait(h, `document.querySelector("[data-pet-float-chip]")?.textContent === "1"`, 4000);
+        const floatProbe = await h.ev(`(() => {
+            const chip = document.querySelector("[data-pet-float-chip]")?.getBoundingClientRect();
+            const floor = document.querySelector("[data-pet-ledge]")?.getBoundingClientRect();
+            return {
+                sprite: !!document.querySelector("[data-pet-sprite]"),
+                onFloor: !!chip && !!floor && chip.left >= floor.left - 8 && chip.right <= floor.right + 8 && chip.bottom <= floor.bottom + 1,
+            };
+        })()`);
+        await h.shot("cdp-shots/jarvis-hide-4-float.png");
+        rec(
+            "5. in Float, hidden: no Sprout, and the waiting count stands on the floor where Sprout would",
+            floated && chip && !floatProbe.sprite && floatProbe.onFloor,
+            JSON.stringify({ floated, chip, ...floatProbe })
+        );
+        await h.ev(`globalThis.__wavePetStore?.setAttention([])`);
+        await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
+        await floatMiniWait(h, `!document.querySelector("[data-float-bar]")`, 5000);
+
+        // 6. the palette lists Show Jarvis while hidden; running it brings Jarvis back and clears the setting
+        await h.goto("agent");
+        const opened = await openPalette(h);
+        await h.ev(setInputExpr(PALETTE_INPUT, "Show Jarvis"));
+        const listed = await paletteStateWhen(h, (s) => (s.selected ?? "").includes("Show Jarvis"), 3000);
+        await h.shot("cdp-shots/jarvis-hide-5-palette.png");
+        await h.ev(paletteKey("Enter"));
+        const back = await polishWaitFor(h, JH_SHOWN, 8000);
+        const cleared = await jhSetting(h);
+        await h.shot("cdp-shots/jarvis-hide-6-back.png");
+        rec(
+            "6. Ctrl+P lists Show Jarvis while hidden; running it shows Jarvis again and writes jarvis:hiddenuntil 0",
+            opened && (listed?.selected ?? "").includes("Show Jarvis") && back && (cleared === 0 || cleared == null),
+            JSON.stringify({ opened, selected: listed?.selected, back, cleared })
+        );
+
+        // 7. shown again, the palette no longer lists it
+        const reopened = await openPalette(h);
+        await h.ev(setInputExpr(PALETTE_INPUT, "Show Jarvis"));
+        await h.ev(`new Promise((r) => setTimeout(r, 600))`);
+        const after = await h.ev(PALETTE_STATE);
+        await h.ev(PEEKS_ESC);
+        const rowsAfter = (after?.groups ?? []).flatMap((g) => g.rows);
+        rec(
+            "7. with Jarvis shown, the palette has no Show Jarvis row",
+            reopened && !rowsAfter.some((r) => r.includes("Show Jarvis")),
+            JSON.stringify({ reopened, rows: rowsAfter.slice(0, 6) })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`jarvis-hide teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the attention stub", () => h.ev(`globalThis.__wavePetStore?.setAttention([])`));
+        await step("leave float", () => h.ev(`document.querySelector("[data-float-exit]")?.click()`));
+        await step("restore jarvis:hiddenuntil", () => h.rpc("setconfig", { [JARVIS_HIDE_KEY]: ctx.prev ?? null }));
+        if (ctx.formSet) {
+            await step("restore the form", () => h.ev(restoreStorageKey(HOLO_FORM_KEY, ctx.prevForm)));
+            await step("reload", () => ahReload(h));
+        }
+        for (const t of ctx.terminals ?? []) {
+            await step(`close the terminal tab ${t.tabId}`, () =>
+                waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
+            );
+        }
+    },
+};
+
 // --- jobqueue-run-tag: an engine step of a run (a task's merge Verify) waits in the job queue under no agent's block, so
 // it used to show nowhere in the Agent tree: the task's row read "verifying 2m" while its Verify had not started, and a
 // folded run said nothing. agent-tree-rail's fixture run (a lead, t-1 dispatched) carries it; its jobs are set through
@@ -70228,6 +70427,7 @@ export const SCENARIOS = [
     jobqueueAgentTag,
     jobqueueRunTag,
     hologramRecovers,
+    jarvisHide,
     jobqueueMeasured,
     floatMini,
     floatNote,

@@ -250,6 +250,9 @@ export const petPeekOpenAtom = atom(false);
 // The Cockpit office's boss, drawn as the pet (office pet boss spec, "One Jarvis"): while it is set the footer creature
 // is not drawn, and the bubble and the peek hang off it. cockpitoffice.tsx sets it on mount and clears it on unmount.
 export const petOfficeBossAtom = atom<HTMLElement | null>(null) as PrimitiveAtom<HTMLElement | null>;
+// true while the Cockpit office is mounted, apart from petOfficeBossAtom: while Jarvis is hidden (pethide.ts) the office
+// draws no boss, and the footer must still not take its place, then or on the frame the boss comes back
+export const petOfficeOpenAtom = atom(false);
 // which half of the window the boss is in, so the bubble and the peek open the right way
 export const petOfficeCornerAtom = atom<PetCorner>("bottom-right") as PrimitiveAtom<PetCorner>;
 // true while the boss's entrance plays: the bubble waits for it

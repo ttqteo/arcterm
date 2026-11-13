@@ -35,6 +35,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   subagent's conversation, and stop a task.
 - Every board in a canvas has a Copy button above its right edge: it puts a screenshot of the board, as it shows on
   screen, on the clipboard, ready to paste into a chat or a doc. In an agent's canvas and in the Canvas gallery.
+- Right-click Jarvis (Sprout, the hologram or the Office's boss) to hide it for an hour, till 8:00, or for a time you
+  type ("2h", "14:30"). It comes back by itself when the time is up, and says nothing while it is away; Ctrl+P → Show
+  Jarvis brings it back early.
 
 ### Changed
 

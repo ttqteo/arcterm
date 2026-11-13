@@ -63,6 +63,8 @@ const (
 	ConfigKey_WindowAutoSprout               = "window:autosprout"
 	ConfigKey_WindowAutoSproutPauseUntil     = "window:autosproutpauseuntil"
 
+	ConfigKey_JarvisHiddenUntil              = "jarvis:hiddenuntil"
+
 	ConfigKey_ConnClear                      = "conn:*"
 	ConfigKey_ConnLocalHostnameDisplay       = "conn:localhostdisplayname"
 
