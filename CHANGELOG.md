@@ -94,9 +94,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   skip from the Jobs popover no longer counts as a tiny run that lowers its next estimate.
 - Jarvis's hologram comes back by itself a few seconds after the graphics card drops it (a GPU reset, or many open
   terminals); before, it turned into Sprout until you picked the form again. It stays Sprout only if it keeps failing.
-- A Chat message no longer sits unsent in Claude Code's box when the machine is short of memory: if Claude Code takes
-  its Enter as a line break, arcterm removes the break and presses Enter again, and tells you when you have to press it
-  yourself.
+- A Chat message no longer sits unsent in Claude Code's box with a line break after it: arcterm now presses Enter only
+  once Claude Code's box shows the whole message, and if Claude Code still takes the Enter as a line break, it removes
+  the break and presses Enter again, and tells you when you have to press it yourself. Taking queued messages back
+  with ↑ or Esc in Chat reads Claude Code's box again too.
 - An agent whose end-of-turn report was lost (Claude Code gave up on it on a slow machine) no longer reads "Working…"
   for good: within about 30 seconds arcterm sees in the conversation that the turn ended and shows the agent idle.
 - On a Mac, shortcut hints no longer name keys a Mac does not have: the Open in Brainstorm button, the wrap and

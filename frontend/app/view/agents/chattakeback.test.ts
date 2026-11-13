@@ -173,6 +173,35 @@ describe("enterEcho", () => {
     });
 });
 
+// the screen as the terminal reads it: each full-width rule is joined to the row drawn after it (a wrap to xterm), so no
+// rule stands alone; read from a live Claude Code 2.1.323 on 2026-11-13, where every send logged echo=unknown
+describe("a rule joined to the row after it", () => {
+    const joined = (...box: string[]) => [
+        "> earlier message",
+        "",
+        rule + (box[0] ?? ""),
+        ...box.slice(1),
+        rule + "  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt",
+    ];
+    const sent = "có, và ví dụ tôi muốn cockpit fullscreen ở màn 2 có được không?";
+    it("still finds the box", () => {
+        expect(inputBoxRows(joined("❯ "))).toEqual(["❯ "]);
+        expect(inputBoxRows(joined(`❯ ${sent}`, "  "))).toEqual([`❯ ${sent}`, "  "]);
+    });
+    it("reads the box's text, a line break and an empty box from it", () => {
+        expect(typedEcho(joined("❯ "), sent)).toBe("absent");
+        expect(typedEcho(joined(`❯ ${sent}`), sent)).toBe("shown");
+        expect(enterEcho(joined(`❯ ${sent}`), sent)).toBe("held");
+        expect(enterEcho(joined(`❯ ${sent}`, "  "), sent)).toBe("linebreak");
+        expect(enterEcho(joined("❯ "), sent)).toBe("gone");
+        expect(boxHolds(joined(`❯ ${sent}`), [sent])).toBe(true);
+    });
+    it("leaves a line that is a rule alone, and one that only starts with a short dash run", () => {
+        expect(inputBoxRows(["x", rule, "❯ a", rule])).toEqual(["❯ a"]);
+        expect(inputBoxRows(["──── not a rule", "❯ a"])).toBeNull();
+    });
+});
+
 describe("mergeTaken", () => {
     it("puts the taken-back messages ahead of what the box holds, one per line, as Claude Code does", () => {
         expect(mergeTaken(["first", "second"], "")).toBe("first\nsecond");

@@ -61,10 +61,25 @@ const isRule = (row: string): boolean => {
     return t.length >= 8 && /^─+$/.test(t);
 };
 
+// a rule at the front of a line, and what follows it
+const ruleHead = /^(\s*─{8,})(.*)$/;
+
+// Claude Code draws its rules the terminal's full width, so xterm marks the row after one as a wrap of it and the screen
+// reader (termutil.ts bufferLinesToText) joins the two: "────…────❯ text", "────…────⏵⏵ auto mode on". No rule stood
+// alone, no box was ever found, and every send pressed Enter at once with nothing to check it (2026-11-13: 36 of 36
+// sends logged echo=unknown). This splits the rule back off.
+function splitRules(lines: string[]): string[] {
+    return lines.flatMap((line) => {
+        const m = ruleHead.exec(line);
+        return m == null || m[2].trim() === "" ? [line] : [m[1], m[2]];
+    });
+}
+
 /** The rows of Claude Code's input box at the foot of the screen: between the last two rules. null when the screen shows
  *  no box (a dialog covers it). The conversation above holds your messages too, so only these rows say what the box
  *  holds. */
-export function inputBoxRows(lines: string[]): string[] | null {
+export function inputBoxRows(screen: string[]): string[] | null {
+    const lines = splitRules(screen);
     let bottom = -1;
     for (let i = lines.length - 1; i >= 0; i--) {
         if (!isRule(lines[i])) {
