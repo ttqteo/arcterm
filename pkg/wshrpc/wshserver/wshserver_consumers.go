@@ -14,6 +14,7 @@ import (
 
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/memusage"
 	"github.com/wavetermdev/waveterm/pkg/usagestats"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -36,12 +37,11 @@ var (
 	consumerSwap     = mem.SwapMemoryWithContext
 )
 
-// consumerDag is the dag task a run worker works on, nil for any other agent. run is the worker's own run, the
-// roster's ownerRun over the runs it already loaded; a dag child's run carries its dag (DagORef), and that dag the
-// task whose run it is. dags keeps each dag this reading read, so the workers of one run share a read. A dag that
-// cannot be read is logged and leaves the row without its task (the panel then offers the plain close); the next
-// reading tries it again.
-func consumerDag(ctx context.Context, dags map[string]*waveobj.TaskGroup, run *waveobj.Run) *wshrpc.ConsumerDag {
+// consumerLoadRunDag is the dag a run carries (DagORef), nil for a run with none. run is the agent's own run, the
+// roster's ownerRun over the runs it already loaded. dags keeps each dag this reading read, so the agents of one run
+// share a read. A dag that cannot be read is logged and reads as none (the row then offers the plain close and sits
+// outside its run's group); the next reading tries it again.
+func consumerLoadRunDag(ctx context.Context, dags map[string]*waveobj.TaskGroup, run *waveobj.Run) *waveobj.TaskGroup {
 	if run == nil || run.DagORef == "" {
 		return nil
 	}
@@ -54,6 +54,12 @@ func consumerDag(ctx context.Context, dags map[string]*waveobj.TaskGroup, run *w
 		}
 		dags[run.DagORef] = g
 	}
+	return g
+}
+
+// consumerDag is the dag task a run worker works on, nil for any other agent: the task of g whose run is the worker's
+// own. A reviewer's run is not its task's run, so a reviewer gets none.
+func consumerDag(g *waveobj.TaskGroup, run *waveobj.Run) *wshrpc.ConsumerDag {
 	if g == nil {
 		return nil
 	}
@@ -63,6 +69,27 @@ func consumerDag(ctx context.Context, dags map[string]*waveobj.TaskGroup, run *w
 		}
 	}
 	return nil
+}
+
+// consumerOwnerRun is the orchestrator run an agent works for and its goal: a lead's own run, before its plan is in
+// as after; a dag child's (worker, reviewer, plan reviewer, verifier) the run that owns g. Empty for any other agent,
+// a quick run's one worker included: a run of one agent would only add a row over it.
+func consumerOwnerRun(run *waveobj.Run, g *waveobj.TaskGroup, runs []*waveobj.Run) (string, string) {
+	if run == nil {
+		return "", ""
+	}
+	if run.Mode == jarvis.RunMode_Orchestrator {
+		return run.OID, run.Goal
+	}
+	if g == nil || g.RunID == "" {
+		return "", ""
+	}
+	for _, r := range runs {
+		if r.OID == g.RunID {
+			return r.OID, r.Goal
+		}
+	}
+	return g.RunID, ""
 }
 
 // GetConsumersCommand is one reading of the Consumers panel: every live agent's RAM and its tokens of the last
@@ -109,7 +136,10 @@ func (ws *WshServer) GetConsumersCommand(ctx context.Context) (*wshrpc.CommandGe
 	dags := map[string]*waveobj.TaskGroup{}
 	for i := range rows {
 		r := &rows[i]
-		a := wshrpc.ConsumerAgent{TabId: r.TabId, BlockId: r.blockId, Dag: consumerDag(ctx, dags, ownerRun(facts.Runs, r.TabId))}
+		run := ownerRun(facts.Runs, r.TabId)
+		g := consumerLoadRunDag(ctx, dags, run)
+		a := wshrpc.ConsumerAgent{TabId: r.TabId, BlockId: r.blockId, Dag: consumerDag(g, run)}
+		a.RunId, a.RunGoal = consumerOwnerRun(run, g, facts.Runs)
 		if n, ok := bd.Agents[r.blockId]; ok {
 			a.RamBytes = &n
 		}

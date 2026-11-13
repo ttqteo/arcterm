@@ -690,6 +690,10 @@ type ConsumerAgent struct {
 	Tokens     []UsageBucket    `json:"tokens,omitempty"`
 	Dag        *ConsumerDag     `json:"dag,omitempty"`
 	Heaviest   *ConsumerProcess `json:"heaviest,omitempty"` // its heaviest descendant; absent when it runs nothing but itself
+	// the orchestrator run the agent works for, which the panel groups it under: a lead's own, a worker's, reviewer's or
+	// stage agent's the run that owns its dag. Empty for every other agent; RunGoal is that run's goal.
+	RunId   string `json:"runid,omitempty"`
+	RunGoal string `json:"rungoal,omitempty"`
 }
 
 // ConsumerProcess is an agent's heaviest descendant process: what the tray's Free up offers to stop.

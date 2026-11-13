@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Consumers panel (spec 2026-10-08-consumers-panel-design.md): every live agent with its RAM and its tokens and
-// spend of the last 10 minutes, each run folded into one row of its sums that opens onto its lead and workers (the
-// agents you opened always first, so none reads as a run's), and Stop / → Sonnet per row; free RAM and the 5-hour
+// spend of the last 10 minutes, each run under a head row of its title and sums, its lead, workers and reviewers
+// under it until its chevron folds it (the agents you opened always first, so none reads as a run's), and Stop / → Sonnet per row; free RAM and the 5-hour
 // quota in the header, arcterm's own processes below. Opened from the RAM chip (ranked by RAM) and the plan-usage
 // meters (ranked by tokens). Where the Resource Manager runs (Windows) it is the compact panel instead: a one-line
 // header with Arc's CPU, and per agent its CPU, RAM, spend and the heaviest command it runs, every action (kill that
@@ -52,6 +52,7 @@ import {
     pickState,
     ramBar,
     ramLabel,
+    runRowName,
     SLEEPING_GROUP,
     sleepingByProject,
     staleLine,
@@ -188,11 +189,13 @@ function Row({
     model,
     pick,
     underProject,
+    inRun,
 }: {
     row: ConsumerRow;
     model: AgentsViewModel;
     pick: Picking;
     underProject?: boolean; // under its project's head in Sleeping, which names the project already
+    inRun?: boolean; // under its run's head, which names the run: the row names its role (runRowName)
 }) {
     // the call in flight; a sleep or a wake takes seconds, and a second press would only be refused by the server
     const [pending, setPending] = useState<"sleep" | "wake" | null>(null);
@@ -237,8 +240,8 @@ function Row({
                     row.sleeping ? "text-muted" : "text-primary"
                 )}
             >
-                {row.name}
-                {row.project && !underProject ? (
+                {inRun ? runRowName(row) : row.name}
+                {row.project && !underProject && !inRun ? (
                     <span className="ml-1.5 text-[11px] text-ink-faint">{row.project}</span>
                 ) : null}
             </button>
@@ -569,11 +572,13 @@ function CompactRow({
     model,
     ready,
     pick,
+    inRun,
 }: {
     row: ConsumerRow;
     model: AgentsViewModel;
     ready: boolean;
     pick: Picking;
+    inRun?: boolean; // under its run's head, which names the run: the row names its role (runRowName)
 }) {
     const note = useAtomValue(resmonNotesAtom)[row.id];
     const [sending, setSending] = useState(false);
@@ -613,7 +618,7 @@ function CompactRow({
                             row.sleeping ? "text-muted" : "text-primary"
                         )}
                     >
-                        {row.name}
+                        {inRun ? runRowName(row) : row.name}
                     </button>
                     {cmd != null ? (
                         <span
@@ -703,8 +708,8 @@ function CompactRow({
     );
 }
 
-// a run as one row, its sums in the columns its lead and workers fill when it is open; the chevron opens it, the arrow
-// opens the run itself
+// a run's head row: its title and its sums in the columns its lead and workers fill under it; the chevron folds it to
+// this row, the arrow opens the run itself
 function RunHead({
     group,
     open,
@@ -746,9 +751,9 @@ function RunHead({
                         aria-hidden
                     />
                 </span>
-                <span className="min-w-0 truncate text-[12.5px] text-primary">
+                <span className="min-w-0 truncate text-[12px] font-semibold text-secondary">
                     {group.label}
-                    <span className="ml-1.5 text-[11px] text-ink-faint">{words}</span>
+                    <span className="ml-1.5 text-[11px] font-normal text-ink-faint">{words}</span>
                 </span>
             </button>
             {compact ? (
@@ -976,12 +981,12 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
     }
     // the rows ticked to close together, forgotten when the panel closes
     const [picked, setPicked] = useState<Set<string>>(() => new Set());
-    // the runs opened onto their lead and workers; each opens folded, and all fold again when the panel closes
-    const [openRuns, setOpenRuns] = useState<Set<string>>(() => new Set());
+    // the runs folded to their head row; each shows its lead and workers, and all open again when the panel closes
+    const [foldedRuns, setFoldedRuns] = useState<Set<string>>(() => new Set());
     useEffect(() => {
         if (!open) {
             setPicked(new Set());
-            setOpenRuns(new Set());
+            setFoldedRuns(new Set());
         }
     }, [open]);
     const openUsage = () => {
@@ -1076,13 +1081,13 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                                         <div key={g.key}>
                                             <RunHead
                                                 group={g}
-                                                open={openRuns.has(g.key)}
-                                                onToggle={() => setOpenRuns((s) => toggleInSet(s, g.key))}
+                                                open={!foldedRuns.has(g.key)}
+                                                onToggle={() => setFoldedRuns((s) => toggleInSet(s, g.key))}
                                                 compact={compact}
                                                 ready={!!snap?.ready}
                                                 model={model}
                                             />
-                                            {openRuns.has(g.key) ? (
+                                            {!foldedRuns.has(g.key) ? (
                                                 // its lead and workers, set in under the run's chevron
                                                 <div
                                                     data-consumers-run-rows
@@ -1096,9 +1101,10 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                                                                 model={model}
                                                                 ready={!!snap?.ready}
                                                                 pick={pick}
+                                                                inRun
                                                             />
                                                         ) : (
-                                                            <Row key={r.id} row={r} model={model} pick={pick} />
+                                                            <Row key={r.id} row={r} model={model} pick={pick} inRun />
                                                         )
                                                     )}
                                                 </div>

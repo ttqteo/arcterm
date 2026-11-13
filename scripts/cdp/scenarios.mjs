@@ -41707,7 +41707,7 @@ const CONSUMERS_READING = {
     agents: [
         // 80K counted, and 9M cache reads that the count leaves out: no burn
         { tabid: "fx-consumers-mine", blockid: "fx-blk-mine", rambytes: 300 * 2 ** 20, tokensread: true, tokens: [consumersBucket("claude-sonnet-4-6", 80_000, 9_000_000)] },
-        { tabid: "fx-consumers-worker", blockid: "fx-blk-worker", rambytes: 2.5 * 2 ** 30, tokensread: true, tokens: [consumersBucket("claude-opus-4-8", 1_200_000)], dag: { channelid: "fx-ch", runid: "85548d0b-fx", taskid: "t-3" } },
+        { tabid: "fx-consumers-worker", blockid: "fx-blk-worker", rambytes: 2.5 * 2 ** 30, tokensread: true, tokens: [consumersBucket("claude-opus-4-8", 1_200_000)], dag: { channelid: "fx-ch", runid: "85548d0b-fx", taskid: "t-3" }, runid: "85548d0b-fx", rungoal: "Build Consumer lag alerts as specified in D:\\p\\docs\\lag.md." },
         { tabid: "fx-consumers-pi", blockid: "fx-blk-pi", rambytes: 200 * 2 ** 20, tokensread: false },
     ],
 };
@@ -41805,7 +41805,7 @@ const consumersResmon = (ready) => ({
 const consumersCells = (sel) =>
     `Object.fromEntries([...document.querySelectorAll("[data-consumer-row]")].map((r) => [r.dataset.consumerRow, r.querySelector(${JSON.stringify(sel)})?.textContent.trim() ?? null]))`;
 const consumersRowExpr = (id) => `document.querySelector('[data-consumer-row="${id}"]')`;
-// the run's folded row; the panel opens with it folded, so the worker's row needs the chevron first
+// the run's head row; the panel opens with it open, its worker under it until the chevron folds it
 const CONSUMERS_RUN = `document.querySelector('[data-consumers-run="85548d0b-fx"]')`;
 const CONSUMERS_OPEN_RUN = `(() => { const t = ${CONSUMERS_RUN}?.querySelector("[data-consumers-run-toggle]"); if (t?.getAttribute("aria-expanded") === "false") t.click(); })()`;
 const consumersDialogExpr = (text) =>
@@ -41904,7 +41904,7 @@ const consumersPopover = {
         );
 
         await consumersMode(h, "reading");
-        await polishWaitFor(h, `document.querySelectorAll("[data-consumer-row]").length === 3 && !!${CONSUMERS_RUN}`, 5000);
+        await polishWaitFor(h, `document.querySelectorAll("[data-consumer-row]").length === 4 && !!${CONSUMERS_RUN}`, 5000);
         const panelRows = `[...document.querySelectorAll("[data-consumers-panel] [data-consumer-row]")].map((r) => r.dataset.consumerRow)`;
         const ram = await h.ev(`(() => {
             const p = document.querySelector("[data-consumers-panel]");
@@ -41916,33 +41916,37 @@ const consumersPopover = {
                 inRam: p.querySelector("[data-consumers-in-ram]")?.textContent ?? "",
                 run: run?.textContent.replace(/\\s+/g, " ").trim() ?? null,
                 runAfterMine: !!run && !!(${consumersRowExpr("fx-consumers-mine")}?.compareDocumentPosition(run) & Node.DOCUMENT_POSITION_FOLLOWING),
+                worker: ${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-open]")?.textContent.trim() ?? null,
+                inRun: !!${consumersRowExpr("fx-consumers-worker")}?.closest("[data-consumers-run-rows]"),
                 ramCols: p.querySelectorAll("[data-consumer-ram]").length,
                 tokenCols: p.querySelectorAll("[data-consumer-tokens]").length,
             };
         })()`);
         await h.shot("cdp-shots/consumers-ram.png");
         rec(
-            "3. rows by RAM: the agents you opened first, then the run folded into one row of its sums (its 2.5 GB worker hidden), free RAM, the swap and the 5-hour quota in the header, arcterm's share by what it holds in RAM, each row's RAM and tokens side by side",
-            !!ram && JSON.stringify(ram.rows) === JSON.stringify(["fx-consumers-mine", "fx-consumers-pi", ctx.liveTabId]) &&
-                /^Run 85548d0b ?1 agent · 1 working ?2\.5 GB/.test(ram.run ?? "") && ram.runAfterMine &&
+            "3. rows by RAM: the agents you opened first, then the run under a head of its title and sums, its 2.5 GB worker under it as Task t-3, free RAM, the swap and the 5-hour quota in the header, arcterm's share by what it holds in RAM, each row's RAM and tokens side by side",
+            !!ram && JSON.stringify(ram.rows) === JSON.stringify(["fx-consumers-mine", "fx-consumers-pi", ctx.liveTabId, "fx-consumers-worker"]) &&
+                /^Build Consumer lag alerts ?1 agent · 1 working ?2\.5 GB/.test(ram.run ?? "") && ram.runAfterMine &&
+                ram.worker === "Task t-3" && ram.inRun &&
                 ram.header.includes("free of") && ram.header.includes("4.5 GB swap") && ram.header.includes("5h quota 62%") &&
-                /^arcterm 1\.9 GB in RAM · [\d.]+ GB with swap$/.test(ram.inRam) && ram.ramCols === 3 && ram.tokenCols === 3,
+                /^arcterm 1\.9 GB in RAM · [\d.]+ GB with swap$/.test(ram.inRam) && ram.ramCols === 4 && ram.tokenCols === 4,
             JSON.stringify(ram)
         );
 
-        await h.ev(CONSUMERS_OPEN_RUN);
-        await polishWaitFor(h, `!!${consumersRowExpr("fx-consumers-worker")}`, 2000);
-        const opened3 = await h.ev(`({
+        await h.ev(`${CONSUMERS_RUN}?.querySelector("[data-consumers-run-toggle]")?.click()`);
+        await polishWaitFor(h, `!${consumersRowExpr("fx-consumers-worker")}`, 2000);
+        const folded3 = await h.ev(`({
             rows: ${panelRows},
-            inRun: !!${consumersRowExpr("fx-consumers-worker")}?.closest("[data-consumers-run-rows]"),
             expanded: ${CONSUMERS_RUN}?.querySelector("[data-consumers-run-toggle]")?.getAttribute("aria-expanded"),
         })`);
-        await h.shot("cdp-shots/consumers-run-open.png");
+        await h.shot("cdp-shots/consumers-run-folded.png");
+        await h.ev(CONSUMERS_OPEN_RUN);
+        const runReopened = await polishWaitFor(h, `!!${consumersRowExpr("fx-consumers-worker")}`, 2000);
         rec(
-            "3b. the run's chevron opens it onto its worker, set in under the run row",
-            JSON.stringify(opened3.rows) === JSON.stringify(["fx-consumers-mine", "fx-consumers-pi", ctx.liveTabId, "fx-consumers-worker"]) &&
-                opened3.inRun && opened3.expanded === "true",
-            JSON.stringify(opened3)
+            "3b. the run's chevron folds it to its head row, and opens it again",
+            JSON.stringify(folded3.rows) === JSON.stringify(["fx-consumers-mine", "fx-consumers-pi", ctx.liveTabId]) &&
+                folded3.expanded === "false" && runReopened,
+            JSON.stringify({ ...folded3, runReopened })
         );
 
         const own = await h.ev(`[...document.querySelectorAll("[data-consumers-own]")].map((o) => [o.dataset.consumersOwn, o.textContent])`);
@@ -42338,10 +42342,10 @@ const consumersClosePicked = {
 
         const chipReady = await polishWaitFor(h, `!!document.querySelector("[data-worker-capacity]")`, 10000);
         await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
-        // the worker sits folded in its run's row
+        // the worker sits under its run's head
         const rows = await polishWaitFor(
             h,
-            `document.querySelectorAll("[data-consumer-row]").length === 5 && !!document.querySelector('[data-consumers-run="77aa11bb-fx"]')`,
+            `document.querySelectorAll("[data-consumer-row]").length === 6 && !!document.querySelector('[data-consumers-run="77aa11bb-fx"]')`,
             5000
         );
         const rest = await h.ev(`({

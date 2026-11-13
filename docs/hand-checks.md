@@ -6,6 +6,14 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The RAM popover groups a run's lead, workers and reviewers under one head row: with an orchestrator
+  run going (its lead, a worker on a task and a `review t-N` reviewer live), open the RAM chip → your own agents come
+  first, then one head row with the run's title (`Build …` cut before "as specified in"), its agent count and the sums
+  of CPU, RAM and spend, and under it `Lead` first, then `Task t-N` / `t-N · …` and `review t-N`; none of the three
+  sits loose at the top, and the chevron folds the run to its head row. Needs a rebuilt wavesrv: the run comes from
+  the server (`runid` / `rungoal`, `wshserver_consumers.go` `consumerOwnerRun`). Scenarios `consumers-popover` and
+  `consumers-close-picked` were updated but not run.
+
 - [ ] (arcterm) A lead that queued its plan's next part reads `plan queued #1` on its run line, not `queued #1`: while a
   run's lead has queued a second plan (`wsh runs start --plan … --after <its run>`), its row in the Agent tree shows the
   chip `plan queued #1` (`plan blocked` if the entry is blocked), whole on a narrow sidebar, beside the run's progress

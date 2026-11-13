@@ -27,6 +27,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Fixed
 
 - In Chat, the ring beside a running step ("Ran", "Read"…) turns in place instead of wobbling off its centre.
+- The RAM popover now groups each run's agents under one head row: the run's title and its total CPU, RAM and spend,
+  then its lead, workers and reviewers, each named by role ("Lead", "Task t-3", "review t-4"). Leads and reviewers no
+  longer sit loose among your own agents, which come first; the chevron folds a run to its head row.
 
 ## 1.1.0 — 2026-11-13
 
@@ -383,8 +386,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - In Chat, the caret of a "Worked for …" line and the icons of the steps under it now sit in one column, and its text
   lines up with the step names.
-- The RAM popover no longer lists your own agents under a run's heading: a run is one row of its lead and workers'
-  CPU, RAM and spend that opens onto them, after the agents you opened, and its lead now sits in it too.
 - On Windows, an agent's RAM in the sidebar and in Resource Manager now matches the RAM popover and Task Manager: it
   no longer counts the system pages every process shares, which put each agent about 170 MB too high.
 - A reply scrolling under your pinned message in Chat no longer shows through beside it, under the Skim button.
