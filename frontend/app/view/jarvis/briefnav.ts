@@ -50,7 +50,7 @@ export function listRowAt(id: string | null | undefined): string | null {
 
 // What the page draws, each part as the ids of its rows in drawn order (spec 2026-11-05-jarvis-revamp-design.md,
 // Keyboard): the Waiting strip's item (or its rows, with Show all open), the cards row by row, the list, Activity, then
-// the side column's Since you looked, Shipped and Ideas.
+// the side column's Since you looked, Shipped, Ideas and For later.
 export type BriefNavParts = {
     strip: string[];
     // effort orefs, in the grid's order: left to right, then the next row
@@ -61,6 +61,7 @@ export type BriefNavParts = {
     behind: string[];
     shipped: string[];
     ideas: string[];
+    later: string[];
 };
 
 /** The page's j/k order. */
@@ -73,5 +74,6 @@ export function briefNavIds(p: BriefNavParts): string[] {
         ...p.behind,
         ...p.shipped,
         ...p.ideas,
+        ...p.later,
     ];
 }

@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Jarvis For later on real sessions: mark a session older than a week for later (History → its menu →
+  Mark for later), and one of a running agent → open Jarvis: For later, at the bottom of the side column, names both
+  with their project and the mark's age, newest mark first. Click the running one → Agent opens on that agent. Resume
+  on the old one → it resumes in a new tab (no second tab if one already holds it). `jarvis-brief-later` covers the
+  rows, Done/Undo and opening a transcript, on injected sessions only. Commit: feat(jarvis) For later region
+  (`forlaterregion.tsx`, `briefforlater.ts`, `pkg/agentsessions/scanpage.go` Ids).
 - [ ] (arcterm) A spinning idle Claude sleeps: with Sleep idle agents on, leave a Claude agent idle and off screen
   while its `claude.exe` burns CPU (Task Manager) → once it holds over 1.5 GB it sleeps about 5 minutes after its last
   turn (a smaller one at After idle for), with a "Put 1 agent to sleep" notice; Wake brings it back. An agent working
