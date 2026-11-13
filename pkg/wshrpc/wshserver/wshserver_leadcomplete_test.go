@@ -297,6 +297,40 @@ func TestLeadCompleteReportsTheLandItWaitedOn(t *testing.T) {
 	}
 }
 
+// an advance that failed after the run went done still lands, and the handler returned the land beside the error:
+// the rpc adapter sends only the error, so the lead's complete never said its work had landed
+func TestLeadCompleteCarriesTheLandPastAFailedAdvance(t *testing.T) {
+	ctx := context.Background()
+	f := newLeadCompleteFixture(t)
+	tab := waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
+	if err := wstore.UpdateRun(ctx, f.channelId, f.owner.ID, func(r *waveobj.Run) error {
+		r.LandPath = f.projectDir
+		r.Phases[0].WorkerOrefs = []string{tab}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	landed := &waveobj.RunLand{State: orchestrate.LandState_Landed, Commit: "9910d928b72a3607e8b2a24e06460d097a551a9e"}
+	origLand := landRun
+	landRun = func(context.Context, string, string, bool) (*waveobj.RunLand, error) { return landed, nil }
+	// the continuity capture runs after the run is done and before the advance loads the channel
+	origCapture := captureAsync
+	captureAsync = func(func()) {
+		if err := wstore.DBDelete(ctx, waveobj.OType_Channel, f.channelId); err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { landRun, captureAsync = origLand, origCapture })
+
+	rtn, err := (&WshServer{}).ReportRunPhaseCommand(ctx, wshrpc.CommandReportRunPhaseData{ORef: tab, Action: jarvis.RunAction_Complete})
+	if err != nil {
+		t.Fatalf("ReportRunPhaseCommand returned the rpc error %q, which drops its land on the wire", err)
+	}
+	if rtn == nil || !reflect.DeepEqual(rtn.Land, landed) || !strings.Contains(rtn.Error, "loading channel") {
+		t.Fatalf("complete returned %+v, want the land %+v and the advance's error", rtn, landed)
+	}
+}
+
 // a task's worker lands through the engine's merge: its complete returns at once, with the seal left off-band for
 // its reviewer
 func TestWorkerCompleteDoesNotWaitOnALand(t *testing.T) {

@@ -262,4 +262,18 @@ describe("adoptSkills", () => {
         expect(toast).not.toHaveBeenCalled();
         expect(RpcApi.AgentSyncSkillsCommand).toHaveBeenCalled();
     });
+
+    // the reason rides in the reply, beside the plan it was applying: an rpc error reply carries no data
+    it("treats a reply carrying an error as a failed adopt: banner, no toast, choices kept", async () => {
+        globalStore.set(setupSkillKeepAtom, { helper: KEEP_VAULT, keepme: KEEP_LEAVE });
+        vi.mocked(RpcApi.AgentSyncAdoptCommand).mockResolvedValue({
+            moves: [move("claude", "helper")],
+            error: "adopting harness skills: disk full",
+        });
+        await adoptSkills();
+        expect(globalStore.get(setupErrorAtom)).toBe("adopting harness skills: disk full");
+        expect(toast).not.toHaveBeenCalled();
+        expect(globalStore.get(setupSkillKeepAtom)).toEqual({ helper: KEEP_VAULT, keepme: KEEP_LEAVE });
+        expect(RpcApi.AgentSyncSkillsCommand).toHaveBeenCalled();
+    });
 });

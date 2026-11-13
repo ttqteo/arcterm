@@ -56,8 +56,9 @@ func (ws *WshServer) AgentSyncAdoptCommand(ctx context.Context, data wshrpc.Comm
 		Moves: skillMoves(plan.Moves), Unresolved: plan.Unresolved, DryRun: data.Apply && snapshot,
 	}
 	if err != nil {
-		// a partial plan is data the caller must see, not just an error string
-		return rtn, fmt.Errorf("adopting harness skills: %w", err)
+		// a partial plan is data the caller must see, and the rpc adapter sends only the error when a handler
+		// returns one, so the reason rides in the reply beside the plan
+		rtn.Error = fmt.Sprintf("adopting harness skills: %v", err)
 	}
 	return rtn, nil
 }

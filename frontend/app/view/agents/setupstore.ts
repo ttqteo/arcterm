@@ -229,6 +229,11 @@ export function adoptSkills(): Promise<void> {
                 keep,
                 ...(skip.length > 0 ? { skip } : {}),
             });
+            // a failed apply reports its reason in the reply, beside the plan it was applying (an rpc error reply
+            // carries no data): it reads as the failure it always was, a banner and no toast
+            if (rtn?.error) {
+                throw new Error(rtn.error);
+            }
             // the toast counts what the reply says happened, not what the matrix showed before the click
             pushToast({ title: adoptResultText(rtn ?? {}, { keep, skip }), message: "", level: "info" });
             // a snapshot moved nothing, so every choice still stands; otherwise only "leave it" outlives the move

@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -76,6 +77,10 @@ var jarvisCompleteCmd = &cobra.Command{
 		fmt.Println("run phase marked complete; the engine takes it from here")
 		for _, line := range completeLandLines(rtn) {
 			fmt.Println(line)
+		}
+		// a failure after the run went done rides in the reply beside its land: print the land, then fail as before
+		if rtn != nil && rtn.Error != "" {
+			return errors.New(rtn.Error)
 		}
 		return nil
 	},
