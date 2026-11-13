@@ -24,6 +24,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- Chat draws a council the agent started as a card, like its runs and verdicts: while the council runs it sits at the
+  end of the conversation with the question, a chip for each expert, the step it is on and a Stop button; it asks
+  Continue or Stop when it pauses after round 1, and shows what it waits for when it is queued. Once it ends, the card
+  folds into one row where the agent started it (✓ with the count of directions or ideas and Open report, or ■ stopped,
+  ! failed, – not run with the reason), and Open council takes you to its room.
+- Chat draws a Doc review the agent asks for as a card: the file, what to look at and Review and Approve buttons
+  (Request changes stays in the review view, where each comment sits on its passage). Once you answer, it folds into
+  one row in place: "approved", or "changes requested" with the number of comments.
+
 ### Fixed
 
 - An app server an agent starts (`mvn spring-boot:run`, `./gradlew bootRun`, `uvicorn`, `next dev` and the like) no
