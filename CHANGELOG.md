@@ -22,13 +22,6 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
-
-### Changed
-
-- Hovering a queued plan in the Agent sidebar opens a card to its right: the plan's file name above its folder, the
-  whole reason when it is blocked, the lead and workers it will run with, and when it was queued.
-
 ## 1.1.0 — 2026-11-13
 
 ### Added
@@ -74,6 +67,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   initiatives list, and `wsh effort list --topics` lists those topics.
 - A run's row in the Agent sidebar shows the RAM the whole run holds (its lead and every worker together) instead of
   the lead's alone; hover it for the lead's own figure.
+- Hovering a queued plan in the Agent sidebar opens a card to its right: the plan's file name above its folder, the
+  whole reason when it is blocked, the lead and workers it will run with, and when it was queued.
 - In a Chat box's bash mode (`!`), Tab now takes the grey command suggested from your history, as → does; with no
   suggestion showing, Tab still completes the word under the caret.
 - A session you start with a task is named after that task while Claude Code starts, instead of the project name,
