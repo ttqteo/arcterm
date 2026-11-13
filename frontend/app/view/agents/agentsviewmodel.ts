@@ -44,6 +44,24 @@ export interface AskQuestionDetail {
     typed?: string;
 }
 
+/** One finding of a `ReportFindings` call (the tool `/code-review` reports through), from its input. `verdict` is the
+ *  verifier's CONFIRMED / PLAUSIBLE when the review checked it. */
+export interface ReportedFinding {
+    file: string;
+    line?: number;
+    summary: string;
+    verdict?: string;
+    category?: string;
+}
+
+/** The subagent a `Task` / `Agent` call started: its `description` (what a review's `arc-review` block names it by),
+ *  its `subagent_type`, and the tool call's id (which names its transcript). */
+export interface SubagentCall {
+    description: string;
+    subagentType?: string;
+    toolUseId?: string;
+}
+
 /** What a bash-mode command (`! cmd`) or a slash command printed, its ANSI codes dropped: stdout and stderr, either
  *  possibly empty. */
 export interface ShellResult {
@@ -79,6 +97,8 @@ export type AgentEntry =
           durationMs?: number; // tool_use → tool_result wall time, when timestamps present
           startedAt?: number; // UnixMilli of the tool_use record, when it carried a timestamp: a tool in flight counts from it
           detail?: ActionDetail; // rich, expandable detail; absent = bare line
+          findings?: ReportedFinding[]; // a ReportFindings call: what it reported, [] for a clean review; absent on any other call
+          subagent?: SubagentCall; // a Task / Agent call: the subagent it started; absent on any other call
       };
 
 export interface AgentAskOption {
