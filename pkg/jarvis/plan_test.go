@@ -20,6 +20,19 @@ func mustParsePlan(t *testing.T, src string) Plan {
 	return p
 }
 
+// fork ac548aa57: the plan reviewer is told which tasks have no Depends line, since reviewers read that as running at
+// the same time as the task before, when the engine makes it wait. An explicit line naming the task before is not the
+// default edge, though the two read the same.
+func TestParsePlanImplicitDeps(t *testing.T) {
+	p := mustParsePlan(t, "### Task 1: a\n### Task 2: b\n### Task 3: c\n**Depends on:** Task 2\n### Task 4: d\n**Depends on:** none\n### Task 5: e\n")
+	if want := []string{"t-2", "t-5"}; !reflect.DeepEqual(p.ImplicitDeps, want) {
+		t.Fatalf("ImplicitDeps = %v, want %v", p.ImplicitDeps, want)
+	}
+	if p := mustParsePlan(t, "### Task 1: a\n"); len(p.ImplicitDeps) != 0 {
+		t.Fatalf("the first task has no task before it to wait for, got %v", p.ImplicitDeps)
+	}
+}
+
 // depLists renders each task as "id:dep,dep" so nil and empty deps compare equal.
 func depLists(tasks []waveobj.TaskNode) []string {
 	out := make([]string, len(tasks))

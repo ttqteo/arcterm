@@ -93,8 +93,12 @@ const AutonomousOnWake = "wake: approvals for this run are now autonomous and th
 // AutonomousOffWake tells a running lead its run is back to asking the human.
 const AutonomousOffWake = "wake: approvals for this run are back to Ask me: from your next decision, put the decisions these rules give the human to the human again; calls you already made stand."
 
+// planCallersStep is the plan step round-1 plan reviews most often fail without: a task changed a signature and a
+// caller or test it breaks was on no task's Files line, so Check failed (runs 9eb0edaa, cad1a593, 5638249e and more).
+const planCallersStep = "Before you submit, for every symbol whose signature, type shape or name a task changes, grep its references across the repo, tests and `scripts/` included, and put each file that must change on that task's Files line. "
+
 // writePlanAndSubmit is the architectural path's plan step, shared by the asking and the autonomous launch.
-const writePlanAndSubmit = "write the plan with superpowers:writing-plans in the plan format below, except its complete-code rule: a task carries the design decisions it makes, the files it owns, any interface or signature another task relies on, and its acceptance criteria with the focused tests that prove them, but not the implementation, which its worker writes. Break it up by what can proceed independently: the engine runs those tasks at the same time, and a plan that is one serial chain gets none of that. Don't commit the spec or plan yourself (the engine commits the spec and plan to the run's branch at submit, and they land with the run) and don't execute the plan: run `wsh jarvis dag submit --plan <plan path> --spec <spec path>` with absolute paths and stop."
+const writePlanAndSubmit = "write the plan with superpowers:writing-plans in the plan format below, except its complete-code rule: a task carries the design decisions it makes, the files it owns, any interface or signature another task relies on, and its acceptance criteria with the focused tests that prove them, but not the implementation, which its worker writes. Break it up by what can proceed independently: the engine runs those tasks at the same time, and a plan that is one serial chain gets none of that. " + planCallersStep + "Don't commit the spec or plan yourself (the engine commits the spec and plan to the run's branch at submit, and they land with the run) and don't execute the plan: run `wsh jarvis dag submit --plan <plan path> --spec <spec path>` with absolute paths and stop."
 
 // writeLaunchPrompt is an engine lead's prompt for a goal run (spec §2). The lead brainstorms with the
 // human and the skill's classification picks the path; only an architectural goal reaches the engine,

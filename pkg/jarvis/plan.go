@@ -119,6 +119,9 @@ type Plan struct {
 	// scope rule, a shared constraint — reaches every task, not just whichever worker opened the plan.
 	Preamble string
 	Tasks    []waveobj.TaskNode
+	// ImplicitDeps is the ids of the tasks with no Depends line, which wait for the task before them by default.
+	// The plan reviewer is told so, since reviewers read a missing Depends line as running at the same time.
+	ImplicitDeps []string
 }
 
 var (
@@ -227,6 +230,8 @@ func ParsePlan(src string) (Plan, error) {
 	// give no reason, by dependency index; both live only for the checks below
 	files := map[int][]string{}
 	bare := map[int][]int{}
+	// explicit is each task index whose Depends line replaced the default edge to the task before it
+	explicit := map[int]bool{}
 	// the open fence, where it opened (1-based line, and the task it sits in, 0 for the preamble), and the task
 	// headings it has hidden since: an unclosed fence is refused below, naming them
 	var fence codeFence
@@ -303,6 +308,7 @@ func ParsePlan(src string) (Plan, error) {
 				}
 				task.Deps, dependsAllowed = deps, false
 				bare[len(p.Tasks)-1] = unexplained
+				explicit[len(p.Tasks)-1] = true
 				continue
 			}
 			if m := planChunkRe.FindStringSubmatch(line); m != nil {
@@ -371,6 +377,11 @@ func ParsePlan(src string) (Plan, error) {
 	}
 	if err := checkPlanDependsReasons(p.Tasks, files, bare); err != nil {
 		return Plan{}, err
+	}
+	for i := 1; i < len(p.Tasks); i++ {
+		if !explicit[i] {
+			p.ImplicitDeps = append(p.ImplicitDeps, p.Tasks[i].ID)
+		}
 	}
 	p.Preamble = strings.Join(trimBlankLines(preamble), "\n")
 	return p, nil

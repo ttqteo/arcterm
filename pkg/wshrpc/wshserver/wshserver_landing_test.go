@@ -331,6 +331,87 @@ func TestDagSubmitTakesTheSpecFromThePlansSpecLine(t *testing.T) {
 	}
 }
 
+// fork 09d6aef7c (backend F1): a replaceable dag whose review rounds are spent refuses a revised plan, and must
+// refuse it before the revision is committed onto the run's branch, or accepting the old proposal would cut its
+// tasks from a branch holding the refused, unreviewed plan
+func TestDagSubmitPastTheLastReviewRoundCommitsNothing(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct {
+		name       string
+		autonomous bool
+		spec       bool
+	}{
+		{name: "an asking run with no spec"},
+		{name: "an autonomous run", autonomous: true},
+		{name: "an asking run whose plan answers to a spec", spec: true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			projectDir, execGit := newLandingRepo(t)
+			ch, err := wstore.CreateChannel(ctx, "landing-spent-rounds", projectDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			run := jarvis.NewRun("g", "ws", projectDir, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+			run.Status = jarvis.RunStatus_Planning
+			run.Autonomous = c.autonomous
+			tree, err := orchestrate.CreateRunWorktree(ctx, projectDir, run.ID, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			run.LandPath = tree
+			if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+				t.Fatal(err)
+			}
+			plan := filepath.Join(tree, "docs", "plans", "coupons.md")
+			write := func(path, text string) {
+				t.Helper()
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			spec := ""
+			if c.spec {
+				spec = filepath.Join(projectDir, "docs", "specs", "coupons.md")
+				write(spec, "# spec\n")
+			}
+			write(plan, "# Coupons\n\n### Task 1: input\n")
+			submit := func() error {
+				_, err := (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: ch.OID, RunId: run.ID, PlanPath: plan, SpecPath: spec})
+				return err
+			}
+			if err := submit(); err != nil {
+				t.Fatal(err)
+			}
+			stored, err := wstore.GetRun(ctx, ch.OID, run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := wstore.UpdateDag(ctx, stored.DagORef, func(g *waveobj.TaskGroup) error {
+				g.PlanReview = &waveobj.PlanReviewStage{State: orchestrate.PlanReviewState_Failed, Round: orchestrate.MaxPlanReviewRounds}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			branch := "wave/" + run.ID
+			tip := execGit("rev-parse", branch)
+
+			write(plan, "# Coupons\n\n### Task 1: input\n\n### Task 2: output\n")
+			if err := submit(); err == nil || !strings.Contains(err.Error(), "the most it gets") {
+				t.Fatalf("resubmit err = %v, want the round limit", err)
+			}
+			if got := execGit("rev-parse", branch); got != tip {
+				t.Fatalf("the refused revision committed on %s: %s -> %s", branch, tip, got)
+			}
+			if g, err := wstore.GetDag(ctx, stored.DagORef); err != nil || len(g.Tasks) != 1 {
+				t.Fatalf("the refused revision must leave the stored plan alone, got %v, %v", g, err)
+			}
+		})
+	}
+}
+
 func TestDagSubmitCommitsTheSpecAndPlanOnTheRunsBranch(t *testing.T) {
 	ctx := context.Background()
 	projectDir, execGit := newLandingRepo(t)

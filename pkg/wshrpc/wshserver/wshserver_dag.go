@@ -366,6 +366,20 @@ func (ws *WshServer) DagSubmitCommand(ctx context.Context, data wshrpc.CommandDa
 		proposed.PlanReview = orchestrate.NewPlanReview()
 		orchestrate.RecomputeDagStatus(&proposed)
 	}
+	// a revision of a plan whose review has run its last round is refused before the landing tree is touched:
+	// ReplacePlanReviewProposal refuses it too, but only after SnapshotDocs committed the refused plan onto
+	// wave/<run>, where accepting the old proposal would then cut its tasks from
+	if run.DagORef != "" && data.PlanPath != "" {
+		stored, err := wstore.GetDag(ctx, run.DagORef)
+		if err != nil {
+			return nil, err
+		}
+		if orchestrate.PlanReviewReplaceable(stored) {
+			if err := orchestrate.PlanReviewRoundsSpent(stored); err != nil {
+				return nil, err
+			}
+		}
+	}
 	// the landing tree is where Verify runs, and the plan's Setup line is first known here. A run that
 	// already has a dag is a resubmit, whose merges may be running in that tree. Setup is bounded by its own
 	// timeout, not the caller's RPC deadline, and once it has run the submit finishes even if the caller

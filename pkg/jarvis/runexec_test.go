@@ -656,6 +656,100 @@ func TestRunWorkerSpecForCodexBaseArgs(t *testing.T) {
 	}
 }
 
+// fork ac548aa57: engine sessions start at ~40k tokens, so a judge drops the MCP and skills listings, a worker (which
+// may use skills) only the MCP one, and a lead neither. Both flags are claude's: pi has no MCP config or skills
+// listing, and agy and codex have neither flag.
+func TestRunWorkerSpecWithOptionsStartupTrim(t *testing.T) {
+	judge := RunWorkerOptions{StrictMCP: true, NoSlashCommands: true}
+	worker := RunWorkerOptions{StrictMCP: true}
+	tests := []struct {
+		name     string
+		runtime  string
+		opts     RunWorkerOptions
+		baseArgs []string
+	}{
+		{"claude judge", "claude", judge, []string{"--dangerously-skip-permissions", "--strict-mcp-config", "--disable-slash-commands"}},
+		{"claude worker", "claude", worker, []string{"--dangerously-skip-permissions", "--strict-mcp-config"}},
+		{"claude lead", "claude", RunWorkerOptions{}, []string{"--dangerously-skip-permissions"}},
+		{"pi judge", "pi", judge, []string{}},
+		{"pi worker", "pi", worker, []string{}},
+		{"agy judge", "agy", judge, []string{"--dangerously-skip-permissions"}},
+		{"codex judge", "codex", judge, []string{"--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cap, err := runroute.Resolve(waveobj.RoutePin{Runtime: tt.runtime})
+			if err != nil {
+				t.Fatal(err)
+			}
+			spec, ok := RunWorkerSpecWithOptions(cap, tt.opts, "do work")
+			if !ok {
+				t.Fatal("no spec")
+			}
+			// BaseArgs carries the flags too, so a resumed session keeps them
+			if !reflect.DeepEqual(append([]string{}, spec.BaseArgs...), tt.baseArgs) {
+				t.Errorf("BaseArgs = %v, want %v", spec.BaseArgs, tt.baseArgs)
+			}
+			wantArgs := append([]string{}, tt.baseArgs...)
+			if tt.runtime == "agy" {
+				wantArgs = append(wantArgs, "-i")
+			}
+			if want := append(wantArgs, "do work"); !reflect.DeepEqual(spec.Args, want) {
+				t.Errorf("Args = %v, want %v", spec.Args, want)
+			}
+		})
+	}
+}
+
+// the flags sit with the launch flags, before the session id and the prompt, and the old entry point is the same
+// launch with no options
+func TestRunWorkerSpecWithOptionsKeepsTheSessionIdAfterTheTrim(t *testing.T) {
+	cap, err := runroute.Resolve(waveobj.RoutePin{Runtime: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, ok := RunWorkerSpecWithOptions(cap, RunWorkerOptions{SessionId: "sess-1", StrictMCP: true}, "do work")
+	want := []string{"--dangerously-skip-permissions", "--strict-mcp-config", "--session-id", "sess-1", "do work"}
+	if !ok || !reflect.DeepEqual(spec.Args, want) {
+		t.Fatalf("args = %v, ok=%v, want %v", spec.Args, ok, want)
+	}
+	if strings.Contains(strings.Join(spec.BaseArgs, " "), "--session-id") {
+		t.Fatalf("a resume names its own session, so BaseArgs carries none: %v", spec.BaseArgs)
+	}
+	plain, _ := RunWorkerSpecFor(cap, "sess-1", "do work")
+	same, _ := RunWorkerSpecWithOptions(cap, RunWorkerOptions{SessionId: "sess-1"}, "do work")
+	if !reflect.DeepEqual(plain, same) {
+		t.Fatalf("RunWorkerSpecFor %+v differs from RunWorkerSpecWithOptions with no trim %+v", plain, same)
+	}
+}
+
+// a lead runs writing-plans and is typed /compact, so it keeps its MCP servers and slash commands
+func TestEnsureWorkersLeavesALeadsStartupContextUntrimmed(t *testing.T) {
+	old := SpawnRunWorker
+	defer func() { SpawnRunWorker = old }()
+	var got []RunWorkerOptions
+	SpawnRunWorker = func(_ context.Context, _ runroute.Capability, _, _, _, _ string, opts RunWorkerOptions) (string, error) {
+		got = append(got, opts)
+		return "tab:worker", nil
+	}
+	cap, err := runroute.Resolve(waveobj.RoutePin{Runtime: "pi"})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	orch := NewRun("orchestrate", "ws", "/p", nil, RunMode_Orchestrator, DefaultOrchestratorPlaybook(), 1)
+	if _, err := EnsureWorkers(context.Background(), &orch, cap, "project", ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 {
+		t.Fatal("no lead was launched")
+	}
+	for _, opts := range got {
+		if opts.StrictMCP || opts.NoSlashCommands {
+			t.Fatalf("a lead launches with its startup context trimmed: %+v", opts)
+		}
+	}
+}
+
 func TestWorkerSessionId(t *testing.T) {
 	for _, rt := range []string{"agy", "codex"} {
 		if got := WorkerSessionId(rt); got != "" {

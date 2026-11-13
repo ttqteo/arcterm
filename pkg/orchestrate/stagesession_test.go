@@ -59,6 +59,48 @@ func TestSpawnStageSessionRecordsARunWithItsRoleAndNoTask(t *testing.T) {
 	}
 }
 
+// fork da342d465 (P8): a stage session's tab is grouped under its run's project: the channel's name, not ""
+func TestSpawnStageSessionCarriesTheChannelsProjectName(t *testing.T) {
+	ctx, dag := seedPendingDag(t)
+	captureSpawns(t)
+	newFakeLead(t)
+	// wraps captureSpawns's stub, which its own cleanup restores
+	inner := spawnWorker
+	var projects []string
+	spawnWorker = func(ctx context.Context, cap runroute.Capability, workspaceId, project, cwd, prompt string, opts jarvis.RunWorkerOptions) (string, error) {
+		projects = append(projects, project)
+		return inner(ctx, cap, workspaceId, project, cwd, prompt, opts)
+	}
+	owner := dagOwner(t, ctx, dag)
+	if _, err := spawnStageSession(ctx, ctx, dag, owner, StageSession{Role: "verifier", Label: "final check", Tree: t.TempDir(), Prompt: "judge it"}); err != nil {
+		t.Fatal(err)
+	}
+	ch, err := wstore.DBMustGet[*waveobj.Channel](ctx, dag.ChannelId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projects) != 1 || ch.Name == "" || projects[0] != ch.Name {
+		t.Fatalf("stage session projects = %v, want the channel's name %q", projects, ch.Name)
+	}
+}
+
+// fork ac548aa57: a judge reads and gives its verdict: its prompt invokes no skill and no MCP tool, so both listings go
+func TestSpawnStageSessionTrimsTheJudgesStartupContext(t *testing.T) {
+	ctx, dag := seedPendingDag(t)
+	calls := captureSpawns(t)
+	newFakeLead(t)
+	owner := dagOwner(t, ctx, dag)
+	if _, err := spawnStageSession(ctx, ctx, dag, owner, StageSession{Role: "verifier", Label: "final check", Tree: t.TempDir(), Prompt: "judge it"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("want one spawn, got %d", len(*calls))
+	}
+	if opts := (*calls)[0].opts; !opts.StrictMCP || !opts.NoSlashCommands {
+		t.Fatalf("judge launches with its startup context untrimmed: %+v", opts)
+	}
+}
+
 // a judging session no dag owns (the brainstorm builder check) is a child run with its role and no dag
 func TestLaunchJudgingSessionOutsideADag(t *testing.T) {
 	ctx := context.Background()

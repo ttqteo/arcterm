@@ -107,6 +107,60 @@ func diffLines(t *testing.T, prompt string) []string {
 	return out
 }
 
+func TestResubmitKeepsPastRoundReviewers(t *testing.T) {
+	r := failRoundOne(t, false)
+	roundOne := []waveobj.PlanReviewer{
+		{Lens: "full", State: "failed", RunID: "run-a", Text: "name TestCoupons", StartedTs: 11},
+		{Lens: "second", State: "passed", RunID: "run-b", Text: "fine", StartedTs: 12},
+	}
+	if err := wstore.UpdateDag(r.ctx, r.dag.OID, func(g *waveobj.TaskGroup) error {
+		g.PlanReview.Reviewers = append([]waveobj.PlanReviewer(nil), roundOne...)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pr := r.resubmit(t).PlanReview
+	if pr.Round != 2 || len(pr.Reviewers) != 0 {
+		t.Fatalf("want round 2 with no reviewers yet, got %+v", pr)
+	}
+	want := []waveobj.PlanReviewRound{{Round: 1, Reviewers: roundOne}}
+	if fmt.Sprintf("%+v", pr.PastRounds) != fmt.Sprintf("%+v", want) {
+		t.Fatalf("got past rounds %+v\nwant %+v", pr.PastRounds, want)
+	}
+	if stored := loadDag(t, r.ctx, r.dag.OID).PlanReview; fmt.Sprintf("%+v", stored.PastRounds) != fmt.Sprintf("%+v", want) {
+		t.Fatalf("past rounds must be stored, got %+v", stored.PastRounds)
+	}
+	// the round cap is 2, so no third round exists to append after round 1
+}
+
+// fork 09d6aef7c: the round-limit refusal is asked on its own, with the words ReplacePlanReviewProposal gives for
+// each kind of run
+func TestPlanReviewRoundsSpentRefusesOnlyAfterTheLastRound(t *testing.T) {
+	last := func(autonomous bool, spec string) *waveobj.TaskGroup {
+		return &waveobj.TaskGroup{Autonomous: autonomous, SpecPath: spec, PlanReview: &waveobj.PlanReviewStage{State: PlanReviewState_Failed, Round: MaxPlanReviewRounds}}
+	}
+	if err := PlanReviewRoundsSpent(&waveobj.TaskGroup{}); err != nil {
+		t.Fatalf("a dag with no plan review has no round limit, got %v", err)
+	}
+	if err := PlanReviewRoundsSpent(&waveobj.TaskGroup{PlanReview: &waveobj.PlanReviewStage{State: PlanReviewState_Failed, Round: 1}}); err != nil {
+		t.Fatalf("round 1 may be revised, got %v", err)
+	}
+	for _, c := range []struct {
+		name string
+		g    *waveobj.TaskGroup
+		want string
+	}{
+		{"asking, no spec", last(false, ""), "put it to the human, and "},
+		{"autonomous", last(true, "docs/s.md"), autonomousPastPlanReview},
+		{"asking, with a spec", last(false, "docs/s.md"), jarvis.SpecPastPlanReview},
+	} {
+		err := PlanReviewRoundsSpent(c.g)
+		if err == nil || !strings.Contains(err.Error(), "the most it gets") || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: got %v, want the round limit with %q", c.name, err, c.want)
+		}
+	}
+}
+
 func TestResubmitKeepsRoundOneFindingsDocsAndPicks(t *testing.T) {
 	r := failRoundOne(t, false)
 	pr := r.resubmit(t).PlanReview
