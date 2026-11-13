@@ -6,6 +6,15 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) No folder in the New dialog: open New → Claude Code → the Project column's last row reads No folder
+  (0), with `~/.arc/no-folder` in its tooltip. Pick it and launch → Claude Code starts in that folder with no trust
+  prompt and no ask-only line, and the agent sits in the tree's No folder folder. Launch there again → the Session
+  column lists the first session and resumes it. Terminal and a Tool on No folder open in the same folder. Then pick
+  a project with sessions and click one → the dialog keeps its height going into the session step and back (←), and
+  the two fade into each other. `task verify:ui -- launcher launcher-resume tools-launcher tools-tree` could not boot
+  its dev app under memory pressure. Commit: feat(launcher) No folder replaces Home (`launchermodal.tsx`,
+  `pkg/jarvis/nofolder.go`).
+
 - [ ] (arcterm) Hologram fold button and the permission card's Enter key: Settings → Jarvis → Form → Hologram → the
   26px button left of the window controls shows blue rings around a light core, not Sprout; back to Sprout → the
   creature again. Then have a Claude agent ask a permission in Chat → the highlighted button (Allow at first) carries an

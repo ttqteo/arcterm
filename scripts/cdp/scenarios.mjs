@@ -26922,8 +26922,11 @@ const launcherResume = {
             JSON.stringify({ ours })
         );
 
+        // the dialog's height with the columns, which the step must keep
+        const columnsHeight = await h.ev(`Math.round(${LAUNCHER}?.getBoundingClientRect().height ?? 0)`);
         await h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')?.click()`);
         await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-step="resume"]')`, 3000);
+        const stepHeight = await h.ev(`Math.round(${LAUNCHER}?.getBoundingClientRect().height ?? 0)`);
         // the peek reads the session's last messages: its text holds the task the transcript's one prompt carries
         await polishWaitFor(h, `(${LAUNCHER}?.querySelector('[data-launcher-peek]')?.textContent ?? '').includes(${JSON.stringify(LAUNCHER_RESUME_TASK)})`, 8000);
         s = await state();
@@ -26939,10 +26942,12 @@ const launcherResume = {
         })()`);
         await h.shot("cdp-shots/launcher-resume-2-picked.png");
         // the step is the sessions at 272px and the read beside them, as tall as one another; the Start and Project columns
-        // are not drawn, and the title's two chips name them
+        // are not drawn, and the title's two chips name them. The dialog keeps the height it had with the columns
         rec(
-            "1c. a session picked: the columns give way to the resume step: the sessions at 272px and the session's Quick look beside them, the title's chips naming the agent and project",
-            s.picked === ctx.sessionId &&
+            "1c. a session picked: the columns give way to the resume step at the same dialog height: the sessions at 272px and the session's Quick look beside them, the title's chips naming the agent and project",
+            columnsHeight > 0 &&
+                Math.abs(stepHeight - columnsHeight) <= 1 &&
+                s.picked === ctx.sessionId &&
                 s.step &&
                 band.start == null &&
                 band.project == null &&
@@ -26955,7 +26960,7 @@ const launcherResume = {
                 s.crumbs.length === 2 &&
                 s.crumbs[1] === LAUNCHER_RESUME_PROJECT &&
                 s.back,
-            JSON.stringify({ picked: s.picked, step: s.step, peek: s.peek, crumbs: s.crumbs, back: s.back, band, stepBand })
+            JSON.stringify({ columnsHeight, stepHeight, picked: s.picked, step: s.step, peek: s.peek, crumbs: s.crumbs, back: s.back, band, stepBand })
         );
         const reads = await transcriptCount(h);
         await removeTranscriptCounter(h);
@@ -56940,7 +56945,7 @@ const toolsTree = {
         await ttClick(h, `[data-project-folder="${TT_PROJECT}"] [data-agent-folder-toggle]`);
 
         const homeKey = await h.ev(`(() => {
-            const f = [...document.querySelectorAll("[data-project-folder]")].find((el) => ${TT_FLAT}(el).startsWith("Home"));
+            const f = [...document.querySelectorAll("[data-project-folder]")].find((el) => ${TT_FLAT}(el).startsWith("No folder"));
             return f?.getAttribute("data-project-folder") ?? null;
         })()`);
         // Home is shared with the live store, which holds terminals of its own beside the two this scenario opened (the

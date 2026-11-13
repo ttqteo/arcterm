@@ -218,19 +218,23 @@ export function councilCentreProject(
     return rows.find((r) => r.path !== "" && councilProjectKey(r.path) === key)?.name ?? "";
 }
 
-// Home: the Project column's last row, which starts Claude Code (ask-only, askStartupCommand) or a terminal in the home
-// folder, outside any project. It is a pick key, not a registered project, and never the default: selectedProject only
-// falls back to registered rows, so a launch lands in Home only when Home was picked.
+// No folder: the Project column's last row, which starts an agent, a terminal or a tool outside any project, in an empty
+// folder of its own (~/.arc/no-folder, which wavesrv creates and marks trusted for Claude Code: jarvis.EnsureNoFolder).
+// It replaced Home, the home folder, where Claude Code asked to be trusted on every launch. It is a pick key, not a
+// registered project, and never the default: selectedProject only falls back to registered rows, so a launch lands
+// there only when it was picked. HOME_NAME stays the project name its tabs are filed under, which the tree and the
+// office key on; NO_FOLDER_LABEL is what the row reads.
 export const HOME_PICK = "~";
 export const HOME_NAME = "Home";
+export const NO_FOLDER_LABEL = "No folder";
 
-// Only an agent row that is safe outside a project starts there, and only once the home folder is known. A tool is a
-// plain terminal, so it is safe anywhere: Home is offered to every tool.
-export function homeOffered(kind: LauncherKind, runtime: Runtime, homePath: string): boolean {
+// Only an agent row that is safe outside a project starts there, and only once the No folder path is known. A tool is a
+// plain terminal, so it is safe anywhere: No folder is offered to every tool.
+export function homeOffered(kind: LauncherKind, runtime: Runtime, noFolderPath: string): boolean {
     if (kind === "tool") {
-        return homePath !== "";
+        return noFolderPath !== "";
     }
-    return kind === "agent" && (runtime === "claude" || runtime === "terminal") && homePath !== "";
+    return kind === "agent" && (runtime === "claude" || runtime === "terminal") && noFolderPath !== "";
 }
 
 // The tool on show: the remembered one while it is still listed, else the first; null only for an empty list.
@@ -239,7 +243,7 @@ export function pickedTool<T extends { id: string }>(tools: T[], remembered: str
 }
 
 // The folder a picked tool opens in: a pinned app's own folder (its dir) whatever is picked, Home for a tool that lives
-// there (its "opens in"), else the picked project, which is Home when Home was picked. An agent's own folder is not on
+// there (its "opens in"), else the picked project, which is No folder when No folder was picked. An agent's own folder is not on
 // offer here: nothing is in focus to name one.
 export function toolFolder(
     tool: Pick<ToolStatus, "opensin" | "dir"> | null,
@@ -293,19 +297,21 @@ export function toolAboutLine(tool: Pick<ToolStatus, "opensin" | "found" | "dir"
         where = tool.url
             ? "Runs in its own folder, whatever project is picked, and shows its page once it answers."
             : "Runs in its own folder, whatever project is picked.";
-    } else if (atHome || tool.opensin === "home") {
+    } else if (tool.opensin === "home") {
         where = "Runs in your home folder.";
+    } else if (atHome) {
+        where = "Runs in No folder, an empty folder of its own.";
     } else if (tool.opensin !== "root") {
         where = `${where} To open it in an agent's worktree, use Tool on that agent.`;
     }
     return tool.found ? where : `${where} Not found on PATH: Setup → Tools can install it or fix its command.`;
 }
 
-// The Project column's pick keys, top to bottom: the filtered projects, then Home while it is offered and its name
+// The Project column's pick keys, top to bottom: the filtered projects, then No folder while it is offered and its name
 // matches the filter. Digits and arrows walk this list.
 export function projectColumnPicks(visible: { name: string }[], homeShown: boolean, query: string): string[] {
     const q = query.trim().toLowerCase();
-    const home = homeShown && (q === "" || HOME_NAME.toLowerCase().includes(q));
+    const home = homeShown && (q === "" || NO_FOLDER_LABEL.toLowerCase().includes(q));
     return [...visible.map((p) => p.name), ...(home ? [HOME_PICK] : [])];
 }
 

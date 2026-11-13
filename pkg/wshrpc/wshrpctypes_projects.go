@@ -12,6 +12,12 @@ type ProjectCommands interface {
 	CreateWorktreeCommand(ctx context.Context, data CommandCreateWorktreeData) (CommandCreateWorktreeRtnData, error)
 	ListBranchesCommand(ctx context.Context, data CommandListBranchesData) (CommandListBranchesRtnData, error)
 	GitChangesCommand(ctx context.Context, data CommandGitChangesData) (*CommandGitChangesRtnData, error)
+	// the folder the launcher starts an agent or terminal in outside any project, created and trusted for Claude Code
+	EnsureNoFolderCommand(ctx context.Context) (CommandEnsureNoFolderRtnData, error)
+}
+
+type CommandEnsureNoFolderRtnData struct {
+	Path string `json:"path"`
 }
 
 type CommandCreateProjectData struct {

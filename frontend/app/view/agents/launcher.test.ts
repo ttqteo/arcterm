@@ -270,7 +270,7 @@ describe("Home", () => {
         const rows = [{ name: "arcterm" }, { name: "notes" }];
         expect(projectColumnPicks(rows, true, "")).toEqual(["arcterm", "notes", HOME_PICK]);
         expect(projectColumnPicks(rows, false, "")).toEqual(["arcterm", "notes"]);
-        expect(projectColumnPicks([], true, "HO")).toEqual([HOME_PICK]);
+        expect(projectColumnPicks([], true, "FOLD")).toEqual([HOME_PICK]);
         expect(projectColumnPicks([{ name: "notes" }], true, "the")).toEqual(["notes"]);
     });
 
@@ -644,7 +644,9 @@ describe("the Tool pick", () => {
         );
         expect(toolAboutLine({ opensin: "root", found: true }, false)).toBe("Runs in the project's root.");
         expect(toolAboutLine({ opensin: "home", found: true }, false)).toBe("Runs in your home folder.");
-        expect(toolAboutLine({ opensin: "agent", found: true }, true)).toBe("Runs in your home folder.");
+        expect(toolAboutLine({ opensin: "agent", found: true }, true)).toBe(
+            "Runs in No folder, an empty folder of its own."
+        );
         expect(
             toolAboutLine({ opensin: "agent", found: true, dir: "~/hong", url: "http://127.0.0.1:8386" }, true)
         ).toBe("Runs in its own folder, whatever project is picked, and shows its page once it answers.");

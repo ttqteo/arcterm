@@ -19,23 +19,12 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import {
-    ChevronDown,
-    ChevronRight,
-    Flag,
-    GitBranch,
-    Loader2,
-    Lock,
-    SquareTerminal,
-    TriangleAlert,
-    X,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Flag, GitBranch, Loader2, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState, type ClipboardEvent, type DragEvent, type RefObject } from "react";
 import { useFileMention } from "./filemention";
 import {
-    ASK_SETTINGS_ARG,
-    launcherFlagCatalog,
+    RUNTIME_FLAGS,
     runtimeShowsTask,
     runtimeStartupCommand,
     runtimeSupportsWorktree,
@@ -223,7 +212,7 @@ interface AgentFieldsProps {
     ramWarning: string | null;
     // the session picked to resume in the Session column (null: a new session)
     resume: SessionInfo | null;
-    // started in Home, the home folder outside any project: no worktree, and Claude Code runs ask-only
+    // started in No folder, outside any project: no worktree to make
     home: boolean;
     // the picked project's folder, whose files an `@` in the task lists; empty in Home (too big to walk) or with none
     filesRoot: string;
@@ -268,7 +257,7 @@ export function AgentFields({
     const setStartup = (value: string) =>
         globalStore.set(launcherCommandAtom, (prev) => ({ ...prev, [runtime]: value }));
     // flag state is per runtime: read and write only the picked runtime's record
-    const flagCatalog = launcherFlagCatalog(runtime, home);
+    const flagCatalog = RUNTIME_FLAGS[runtime];
     const runtimeFlags = naFlags[runtime] ?? {};
     // a resume runs the session's own command, which the field previews and does not take edits to
     const startup = resume
@@ -598,20 +587,10 @@ export function AgentFields({
                     ))}
                 </div>
             ) : null}
-            {home && runtime === "claude" ? (
-                <span data-launcher-ask className="flex items-start gap-1.5 text-[11.5px] leading-normal text-muted">
-                    <Lock size={12} strokeWidth={2} className="mt-[2px] shrink-0" />
-                    <span>
-                        Ask-only in Home: starts with{" "}
-                        <span className="font-mono text-ink-mid">--settings {ASK_SETTINGS_ARG}</span>. No file edits,
-                        every shell command asks first, secrets stay unreadable, and bypass and auto mode are off.
-                    </span>
-                </span>
-            ) : null}
             {runtime === "terminal" ? (
                 <span className="text-[11.5px] text-muted">
                     {home
-                        ? "A plain shell in your home folder. A command typed above runs in it when it opens."
+                        ? "A plain shell in No folder, an empty folder of its own. A command typed above runs in it when it opens."
                         : "A plain shell in the project folder. A command typed above runs in it when it opens."}
                 </span>
             ) : null}

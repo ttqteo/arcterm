@@ -2018,7 +2018,7 @@ describe("newCouncilRoot", () => {
 
 describe("projectLabel", () => {
     it("calls the terminals with no project Home, and names every other folder as it is", () => {
-        expect(projectLabel(HOME_PROJECT)).toBe("Home");
+        expect(projectLabel(HOME_PROJECT)).toBe("No folder");
         expect(projectLabel("arcterm")).toBe("arcterm");
         // the agents with no project keep their own folder and its own name
         expect(projectLabel(UNGROUPED_PROJECT)).toBe(UNGROUPED_PROJECT);
