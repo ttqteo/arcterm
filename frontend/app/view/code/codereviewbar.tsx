@@ -11,6 +11,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { MessageSquare, Send, Trash2, X } from "lucide-react";
@@ -160,7 +161,7 @@ export function CodeReviewBar({ model }: { model: AgentsViewModel }) {
                     ref={sendRef}
                     type="button"
                     data-code-review-send
-                    title="Send the review (Alt+Shift+M)"
+                    title={`Send the review (${formatChordString("Alt:Shift:m")})`}
                     onClick={() => {
                         setError(null);
                         setOpen(!open);

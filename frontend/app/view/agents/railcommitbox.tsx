@@ -7,6 +7,7 @@
 // tab) and commitselection.ts (the rules). No Space or ↑/↓ here: those stay the terminal's.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ArrowUpRight, RefreshCw } from "lucide-react";
@@ -219,7 +220,7 @@ export function RailCommitBox({
                     data-rail-commit-button
                     disabled={!ready}
                     onClick={() => void commit()}
-                    title="Commit the ticked files (Ctrl+Enter)"
+                    title={`Commit the ticked files (${formatChordString("Mod:Enter")})`}
                     className={cn(
                         "flex h-[32px] min-w-0 flex-1 items-center justify-center gap-[10px] rounded-[8px] text-[12px] font-semibold",
                         ready
@@ -229,7 +230,7 @@ export function RailCommitBox({
                 >
                     {run.running ? <RefreshCw size={13} className="flex-none animate-spin" /> : null}
                     <span className="truncate">{commitLabel(n, amend)}</span>
-                    <span className="flex-none font-mono text-[10px] opacity-70">Ctrl+Enter</span>
+                    <span className="flex-none font-mono text-[10px] opacity-70">{formatChordString("Mod:Enter")}</span>
                 </button>
             </div>
             {run.failure ? <CommitFailure failure={run.failure} onDismiss={() => dismissCommitFailure(cwd)} /> : null}

@@ -354,7 +354,7 @@ export function CodeSurface({ model }: { model: AgentsViewModel }) {
                             <FilePlus size={13} strokeWidth={1.8} />
                         </HeaderButton>
                         <HeaderButton
-                            label="New folder (Shift+N)"
+                            label={`New folder (${formatChordString("Shift:n")})`}
                             disabled={project == null}
                             onClick={() => startCreate(true)}
                         >

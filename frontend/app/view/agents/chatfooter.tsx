@@ -17,6 +17,7 @@ import { PopoverReveal } from "@/app/element/popoverreveal";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { readTermLines } from "@/app/view/term/termpaste";
+import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { Check, ChevronUp, Feather, Gem, Leaf, Lock, Sparkles, type LucideIcon } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
@@ -438,7 +439,7 @@ function ModeChip({ mode, onPick }: { mode: ClaudeMode; onPick: (target: ClaudeM
                     data-chat-mode={mode}
                     aria-haspopup="menu"
                     aria-expanded={m.open}
-                    title="Permission mode (Shift+Tab cycles it)"
+                    title={`Permission mode (${formatChordString("Shift:Tab")} cycles it)`}
                     onClick={() => m.setOpen(!m.open)}
                     className={cn(CHIP, "whitespace-nowrap", chipTone(m.open))}
                 >

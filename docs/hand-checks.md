@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Mac shortcut labels: on a Mac, hover Code's wrap button (⌥Z) and Send review (⌥⇧M), a Claude agent's
+  Chat brainstorm card (Open in Brainstorm ⌥C), the Diff commit button (⌘⏎), the chat + menu (Add files ⌘U), the
+  tool picker on a missing tool (⌘I), the brainstorm hint strip (⌃⇧B) and the Jarvis tour's Initiatives steps (⌥↑ /
+  ⌥↓, ⇧N) → no "Alt" or "Ctrl" left; on Windows they still read Alt+Z, Ctrl+Enter… Unit-tested and typechecked
+  only (`keysym.fillKeys`, branch `fix/mac-key-labels`).
 - [ ] (arcterm) Topics leave Ideas: open Jarvis → the Ideas column no longer lists the topics (`wsh effort list
   --topics`: Chat, Misc, Kael sync…); each shows in All initiatives with "+N sub", no bar or count, its
   sub-initiatives indented under it, and "Link to…" lists it with "topic" in place of 0/0. Unit-tested only

@@ -1,6 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { fillKeys } from "@/util/keysym";
+import { setPlatform } from "@/util/platformutil";
 import { describe, expect, it } from "vitest";
 import {
     HINT_LINES,
@@ -77,7 +79,10 @@ describe("brainstorm hints: the words", () => {
         expect(HINT_LINES[0]).toMatch(/Enter sends/);
         expect(HINT_LINES[1]).toMatch(/Guess for me/);
         expect(HINT_LINES[1]).toMatch(/That’s right/);
-        expect(HINT_LINES[2]).toMatch(/Ctrl\+Shift\+B/);
+        setPlatform("win32");
+        expect(fillKeys(HINT_LINES[2])).toBe("b or Ctrl+Shift+B: back to terminal");
+        setPlatform("darwin");
+        expect(fillKeys(HINT_LINES[2])).toBe("b or ⌃⇧B: back to terminal");
         expect(HINT_LINES[3]).toMatch(/Check with a builder/);
         expect(HINT_LINES[3]).toMatch(/Approve/);
     });

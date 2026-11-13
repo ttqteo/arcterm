@@ -14,11 +14,12 @@ export type HintStore = {
     setItem(key: string, value: string): void;
 };
 
-// four short parts, plain words, that the card runs together on one row
+// four short parts, plain words, that the card runs together on one row; a `{chord}` is labelled per platform when drawn
+// (keysym.fillKeys): ⌃⇧B on a Mac, Ctrl+Shift+B elsewhere
 export const HINT_LINES: readonly string[] = [
     "Enter sends your answer",
     "Not sure? “Guess for me”, then “That’s right”",
-    "b or Ctrl+Shift+B: back to terminal",
+    "b or {Ctrl:Shift:b}: back to terminal",
     "“Check with a builder”, then Approve runs it",
 ];
 
