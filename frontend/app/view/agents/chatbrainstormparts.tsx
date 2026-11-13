@@ -85,9 +85,10 @@ export type CardKind = "question" | "confirm" | "check" | "run" | "verdict" | "h
 /** The section every card is: its motion wrapper (enters and leaves on springReveal), the kind and state attributes the
  *  scenarios read, and the header row (icon, head, the state tag, then the header's right end). `label` is the section's
  *  aria-label (the head when left out); `extra` carries the attributes only one card has (the question card's
- *  `data-chat-bscard` and `data-chat-bscard-n`). The right end holds `action`, a card's own link (Open the review, Open
- *  the plan, Open run), and Open in Brainstorm beside it when an `agent` is passed: a brainstorm card passes the agent
- *  and no action, a verdict, handoff or generic run card passes an action and no agent. */
+ *  `data-chat-bscard` and `data-chat-bscard-n`, the verdict card's `data-chat-vcard`); `chip` is a card's pill between
+ *  the head and the state tag (the verdict card's Changes requested / Approved). The right end holds `action`, a card's
+ *  own link (Open the review, Open the plan, Open run), and Open in Brainstorm beside it when an `agent` is passed: a
+ *  brainstorm card passes the agent and no action, a verdict, handoff or generic run card passes an action and no agent. */
 export function CardShell({
     kind,
     state,
@@ -98,6 +99,7 @@ export function CardShell({
     label,
     extra,
     stage,
+    chip,
     children,
 }: {
     kind: CardKind;
@@ -107,8 +109,9 @@ export function CardShell({
     agent?: AgentVM;
     action?: ReactNode;
     label?: string;
-    extra?: { "data-chat-bscard"?: boolean; "data-chat-bscard-n"?: number };
+    extra?: Record<`data-${string}`, string | number | boolean | undefined>;
     stage?: string;
+    chip?: ReactNode;
     children: ReactNode;
 }) {
     return (
@@ -132,6 +135,7 @@ export function CardShell({
                     <span data-chat-bscard-head className="min-w-0 truncate">
                         {head}
                     </span>
+                    {chip}
                     <StateTag state={state} />
                     {action != null || agent != null ? (
                         <span className="ml-auto flex flex-none items-center gap-[8px]">
@@ -363,25 +367,31 @@ export function DecisionRow({ agent, row, disabled }: { agent: AgentVM; row: Dec
     );
 }
 
-// the box before a row's button on a question that takes more than one option: ticking only collects the row
+// the box before a row's button on a question that takes more than one option: ticking only collects the row. The verdict
+// card's finding rows use it too, with `attrs` in place of the brainstorm card's `data-chat-bscard-tick` and their own
+// `label`
 export function TickBox({
     i,
     on,
     disabled,
     onToggle,
+    attrs,
+    label,
 }: {
     i: number;
     on: boolean;
     disabled: boolean;
     onToggle: () => void;
+    attrs?: Record<`data-${string}`, string | number | boolean>;
+    label?: string;
 }) {
     return (
         <button
             type="button"
             role="checkbox"
             aria-checked={on}
-            aria-label={`Combine ${optionLetter(i)}`}
-            data-chat-bscard-tick={i}
+            aria-label={label ?? `Combine ${optionLetter(i)}`}
+            {...(attrs ?? { "data-chat-bscard-tick": i })}
             disabled={disabled}
             onClick={onToggle}
             className="flex flex-none cursor-pointer items-center border-0 bg-transparent pl-[12px] outline-none disabled:cursor-default"

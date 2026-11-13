@@ -52,6 +52,7 @@ export interface SubagentVM {
     state: SubagentState;
     model?: string;
     transcriptPath?: string; // disk-backed source: the child's own transcript file (undefined for the legacy hook path)
+    toolUseId?: string; // the Agent / Task call that started it, once a spawn matched its file (none for an orphan file)
 }
 
 /** Pure: whether the subagent `agentId` is working in `subs` (its parent's list). A missing list, a missing entry and
