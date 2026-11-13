@@ -70,6 +70,38 @@ const agents: AgentVM[] = [
     },
 ];
 
+const HOUR = 60 * 60 * 1000;
+// what an initiative's trail sends the timeline: a chunk event's detail is "<label> · <text>"
+const effortEvent = (ago: number, oref: string, title: string, kind: string, detail: string) => ({
+    ts: NOW - ago,
+    kind,
+    project: "waveterm",
+    title,
+    detail,
+    navtarget: oref,
+});
+const INITIATIVE_EVENTS = [
+    effortEvent(
+        HOUR,
+        "effort:scenario-gate",
+        "Scenario gate clearance",
+        "effort-note",
+        "B · Phase 5 waits on the encoder review."
+    ),
+    effortEvent(HOUR + 60_000, "effort:scenario-gate", "Scenario gate clearance", "chunk-done", "A · Phase 4 cleared"),
+    effortEvent(2 * HOUR, "effort:reflux", "Reflux state-layer migration", "chunk-added", "C · "),
+    effortEvent(
+        3 * HOUR,
+        "effort:radar-triage",
+        "Radar triage polish",
+        "effort-note",
+        "A · Findings sort by severity now."
+    ),
+    effortEvent(4 * HOUR, "effort:usage-colors", "Usage chart colors", "effort-created", "4 chunks"),
+    effortEvent(DAY + HOUR, "effort:council-export", "Council report export", "chunk-done", "B · Markdown export"),
+    effortEvent(DAY + 2 * HOUR, "effort:office-floors", "Office floor plan", "effort-status", "paused"),
+];
+
 const normalState: WorkState = {
     projects: [
         {
@@ -129,6 +161,15 @@ const normalState: WorkState = {
                     navtarget: "run:r-briefing-shipped",
                 },
                 { ts: NOW - 3 * DAY, kind: "decision", title: "chose sqlite over a second store" },
+                {
+                    ts: NOW - 5 * HOUR,
+                    kind: "dossier",
+                    title: "Unify the vault scope model",
+                    detail: "status: active",
+                    navtarget: "task:d-briefing-1",
+                },
+                // six initiatives' events, so Since you looked draws its Initiatives section past its five-row window
+                ...INITIATIVE_EVENTS,
             ],
         },
     ],

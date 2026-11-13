@@ -4,11 +4,11 @@
 // One row component per Brief region, each drawn to the design's own anatomy
 // (docs/prototype/jarvis-brief-editing.dc.html). The regions stopped sharing one LineRow because the
 // design gives them different anatomies: Waiting acts in place, an initiative row carries its segment bar,
-// Behind you is two lines under a wording column. Activity's runs and councils are cards (activityregion.tsx).
+// Since you looked is two lines under a wording column. Activity's runs and councils are cards (activityregion.tsx).
 
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
-import { ArrowLeft, ArrowRight, Ellipsis, Lightbulb } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronRight, Ellipsis, Lightbulb } from "lucide-react";
 import type { ReactNode } from "react";
 import type { QueueAct } from "./briefingmodel";
 import { initiativeLine, type BriefLine } from "./briefrows";
@@ -761,15 +761,25 @@ export function ReviewDone({ onBack }: { onBack: () => void }) {
     );
 }
 
+// bare: under a section heading that already names the kind (Initiatives, Records), the row drops its kind line and
+// puts the age beside the title, a line shorter
 export function DeltaRowView({
     line,
     focused,
+    bare = false,
     onOpen,
 }: {
     line: BriefLine;
     focused: boolean;
+    bare?: boolean;
     onOpen?: (e: React.MouseEvent) => void;
 }) {
+    const age = <span className="ml-auto flex-none text-[11px] tabular-nums text-ink-mid">{line.state}</span>;
+    const title = (
+        <span data-jarvis-delta-title title={line.title} className="min-w-0 truncate text-[13px] text-ink-hi">
+            {line.title}
+        </span>
+    );
     return (
         <div
             data-jarvis-brief-row="delta"
@@ -783,20 +793,70 @@ export function DeltaRowView({
                 focused && CURSOR_RING
             )}
         >
-            <div className="flex items-baseline gap-2">
-                <span
-                    data-jarvis-delta-kind
-                    className={cn("flex-none text-[10.5px] font-semibold", TONE_TEXT[line.kindTone])}
-                >
-                    {line.kind}
-                </span>
-                <span className="ml-auto flex-none text-[11px] tabular-nums text-ink-mid">{line.state}</span>
-            </div>
-            <span data-jarvis-delta-title title={line.title} className="truncate text-[13px] text-ink-hi">
-                {line.title}
-            </span>
+            {bare ? (
+                <div className="flex items-baseline gap-2">
+                    {title}
+                    {age}
+                </div>
+            ) : (
+                <>
+                    <div className="flex items-baseline gap-2">
+                        <span
+                            data-jarvis-delta-kind
+                            className={cn("flex-none text-[10.5px] font-semibold", TONE_TEXT[line.kindTone])}
+                        >
+                            {line.kind}
+                        </span>
+                        {age}
+                    </div>
+                    {title}
+                </>
+            )}
             {line.detail ? <span className={cn("truncate", FAINT_TEXT)}>{line.detail}</span> : null}
         </div>
+    );
+}
+
+// The records' one row: how many changed and their statuses. It opens the fold of the records under it, so it is a
+// button and turns its chevron, rather than a row that leaves for somewhere.
+export function RecordsSummaryRow({
+    line,
+    open,
+    focused,
+    onToggle,
+}: {
+    line: BriefLine;
+    open: boolean;
+    focused: boolean;
+    onToggle: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            data-jarvis-since-records-summary={open ? "open" : "closed"}
+            aria-expanded={open}
+            {...cursorAttrs(focused)}
+            onClick={onToggle}
+            className={cn(
+                "flex cursor-pointer items-center gap-2 py-1.5 text-left hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                ROW_BORDER,
+                focused && CURSOR_RING
+            )}
+        >
+            <ChevronRight
+                size={12}
+                aria-hidden
+                className={cn(
+                    "flex-none text-muted transition-transform duration-[140ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                    open && "rotate-90"
+                )}
+            />
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="truncate text-[13px] text-ink-hi">{line.title}</span>
+                {line.detail ? <span className={cn("truncate", FAINT_TEXT)}>{line.detail}</span> : null}
+            </span>
+            <span className="flex-none text-[11px] tabular-nums text-ink-mid">{line.state}</span>
+        </button>
     );
 }
 

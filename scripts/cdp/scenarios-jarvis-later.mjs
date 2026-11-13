@@ -61,7 +61,7 @@ const readRegion = (h) =>
             }),
             empty: flat(region.querySelector('[data-jarvis-brief-empty="later"]')) || null,
             more: flat(region.querySelector('[data-jarvis-brief-later-more]')) || null,
-            lastInSide: document.querySelector('[data-jarvis-brief-side]')?.contains(region) === true,
+            inMain: document.querySelector('[data-jarvis-brief-main]')?.contains(region) === true,
         };
     })()`);
 
@@ -168,7 +168,7 @@ export default function (kit) {
             );
 
             // 2. answered: newest mark first; the live one says live, the ended one offers Resume, the gone one is named
-            //    "(session not found)" with Done and no Resume; the region is in the side column, after Ideas
+            //    "(session not found)" with Done and no Resume; the region is in the main column, after Ideas
             await injectLookup(h, ids, SESSIONS);
             const found = await waitRegion(h, (r) => r.rows.length === 3 && r.rows[0].state !== "looking");
             await sideToRegion(h);
@@ -180,13 +180,13 @@ export default function (kit) {
                 { state: "missing", title: "(session not found)", resume: false, age: "30d" },
             ];
             const order = await h.ev(`(() => {
-                const side = document.querySelector('[data-jarvis-brief-side]');
-                const ideas = side?.querySelector('[data-jarvis-ideas]');
-                const later = side?.querySelector('[data-jarvis-brief-region="later"]');
+                const main = document.querySelector('[data-jarvis-brief-main]');
+                const ideas = main?.querySelector('[data-jarvis-ideas]');
+                const later = main?.querySelector('[data-jarvis-brief-region="later"]');
                 return ideas == null || later == null ? null : !!(ideas.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING);
             })()`);
             rec(
-                "2. rows newest mark first: live, ended with Resume, not found with Done only; after Ideas in the side column",
+                "2. rows newest mark first: live, ended with Resume, not found with Done only; after Ideas in the main column",
                 found != null &&
                     found.rows.length === 3 &&
                     want.every(
@@ -199,7 +199,7 @@ export default function (kit) {
                     ) &&
                     found.rows[0].detail === `${PROJECT} · live` &&
                     found.rows[1].detail === PROJECT &&
-                    found.lastInSide === true &&
+                    found.inMain === true &&
                     order === true,
                 JSON.stringify({ found, order })
             );

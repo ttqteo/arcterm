@@ -25,7 +25,7 @@ const PARTS: BriefNavParts = {
 };
 
 describe("briefNavIds", () => {
-    it("walks the strip, the cards row by row, the list, Activity, then the side column", () => {
+    it("walks the main column (strip, cards row by row, list, Ideas, For later), then the side column", () => {
         expect(briefNavIds(PARTS)).toEqual([
             "waiting:gate-1",
             "card:effort:c1",
@@ -34,12 +34,12 @@ describe("briefNavIds", () => {
             "card:effort:c4",
             "list:effort:l1",
             "list:effort:l2",
+            "initiatives:effort:i1",
+            "later:s1",
             "sessions:run:run:r1",
             "councils:k1",
             "behind:e1",
             "shipped:run:r0",
-            "initiatives:effort:i1",
-            "later:s1",
         ]);
     });
 

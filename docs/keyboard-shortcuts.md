@@ -420,7 +420,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `Shift`+`N` | New initiative |
 | `i` | With a live run sheet open: focus its composer |
 | `/` | Filter the Brief's rows (`Esc` clears) |
-| `j` / `k` | Move the Brief's cursor: the Waiting strip's item, the initiative cards row by row, the initiatives list, Activity, then Since you looked, Shipped and Ideas |
+| `j` / `k` | Move the Brief's cursor: the Waiting strip's item, the initiative cards row by row, the initiatives list, Ideas and For later, then Activity, Since you looked and Shipped |
 | `Enter` | Open the row under the cursor (an initiative opens in the sheet) |
 | `w` | Work on the initiative under the cursor in a new agent, or go to the agent already open on it |
 | `p` | Pin the initiative under the cursor to the cards, or unpin it (with an initiative open in the sheet: that one) |
