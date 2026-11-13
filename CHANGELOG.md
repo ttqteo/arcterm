@@ -24,6 +24,20 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- In Chat, an agent linked to an initiative shows it in a band under the header instead of a chip with a popover over
+  the conversation: the initiative's title, its progress and the chunk the agent is on, with Mark done beside it. Open
+  the band (click it, or press `i`) and it pushes the conversation down, never over it, to the chunks around the
+  agent's own, the latest note, Add note and Open in Jarvis. Work on this, on a chunk no one holds, moves the agent
+  there, and the agent is told with your next message (a line over the box says so, and ✕ drops it). An agent with no
+  initiative shows Link to initiative in the header. <!-- big -->
+
+### Changed
+
+- Mark done now moves the agent on to the next chunk, and an agent that holds no chunk is no longer treated as working
+  the initiative's active one: it shows "No chunk for this agent" until you pick one.
+
 ### Fixed
 
 - An app server an agent starts (`mvn spring-boot:run`, `./gradlew bootRun`, `uvicorn`, `next dev` and the like) no

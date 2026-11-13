@@ -52,6 +52,7 @@ import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
 import { isHandoffAsk } from "./chathandoff";
 import { ChatHandoffCard } from "./chathandoffcard";
+import { submitIntoChatBox } from "./chatinsert";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
 import { awaitsOwnMessage, narratesThinking, streamsLiveReply } from "./chatlive";
 import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chatlivestore";
@@ -85,6 +86,8 @@ import {
 import { markChunkDone, requestModelSuggest, useEffortDetail, useModelSuggest } from "./chatsuggeststore";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatVisualHost } from "./chatvisualview";
+import { switchAgentChunk } from "./initiativebandstore";
+import { InitiativeBand } from "./initiativebandview";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
 import { PromptImages, useNow } from "./narrationtimeline";
@@ -704,11 +707,35 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
             try {
                 await markChunkDone(effortOref, chunk, agent.id);
             } catch (e) {
+                // markChunkDone can fail after the chunk is done (the agent could not be moved on), so the title is no lie
                 pushToast({
-                    title: "Could not mark it done",
+                    title: "Mark done didn't finish",
                     message: e instanceof Error ? e.message : String(e),
                     level: "error",
                 });
+            }
+        });
+    };
+    // The go on with: chip: the agent moves to that chunk first, so the switched line rides in front of the chip's text
+    // (spec section 9); a switch that fails sends nothing. A second click while the switch is on its way finds it busy.
+    const goingOn = useRef(false);
+    const goOn = (chunk: string, text: string) => {
+        if (effortOref == null || goingOn.current) {
+            return;
+        }
+        goingOn.current = true;
+        fireAndForget(async () => {
+            try {
+                await switchAgentChunk(effortOref, agent.id, chunk);
+                submitIntoChatBox(agent.id, text);
+            } catch (e) {
+                pushToast({
+                    title: "Could not switch the chunk",
+                    message: e instanceof Error ? e.message : String(e),
+                    level: "error",
+                });
+            } finally {
+                goingOn.current = false;
             }
         });
     };
@@ -721,7 +748,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                   ? []
                   : [
                         ...ruleChips(agent, shipGit, vi),
-                        ...initiativeChips(effort, agent.id, agent.committed === true, vi),
+                        ...initiativeChips(effort, agent.id, agent.committed === true, vi, turnEnded),
                     ],
               model: modelSuggest,
           })
@@ -742,6 +769,10 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                 barred ? "top-[26px]" : "top-0"
             )}
         >
+            {/* The initiative band: above the scroller, not inside it, so opening it pushes the conversation down and never
+                covers it. The scroller keeps its scrollTop as it shrinks (a reader stays on the message at the top of the
+                view) and useStickToBottom re-pins a followed tail, so the reading position holds. */}
+            {agent.effortId != null ? <InitiativeBand model={model} agent={agent} /> : null}
             <div className="relative min-h-0 flex-1">
                 <div
                     ref={scrollRef}
@@ -913,6 +944,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
                             chips={chips}
                             onMarkDone={markDone}
+                            onGoOn={goOn}
                             onSendNow={queuedShown ? sendNow : undefined}
                             questionWaits={questionWaits}
                             onLocal={(route) => {
