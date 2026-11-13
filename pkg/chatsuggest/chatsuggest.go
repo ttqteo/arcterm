@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package chatsuggest is the model half of Chat's suggested replies: one no-tools haiku call reads the end of an
-// agent's last reply, with the person's own last messages for their words and language, and names the replies they
-// would likely send next. Chat draws them as chips in the message box beside its own rule chips
+// agent's last reply, with the person's own last messages for their words and language and the messages they send often
+// (habits.go), and names the replies they would likely send next. Chat draws them as chips in the message box beside its own rule chips
 // (frontend/app/view/agents/chatsuggest.ts has the rules and the merge).
 //
 // The call runs claude with no tools, no MCP servers and no settings (so no hooks and no plugins), its own short
@@ -56,6 +56,8 @@ type Request struct {
 	Recent []string
 	// the reply ends in a question: the replies answer it, and there can be three
 	Question bool
+	// the messages the person sends often (Habits), most used first: a reply that fits the turn is given as written
+	Habits []string
 }
 
 const systemPrompt = `You suggest what a person will send next to a coding agent, as one-tap replies in a chat app.
@@ -65,6 +67,8 @@ Write each reply the way this person writes: their language and their short, cas
 When the agent's reply ends with a question, give up to 3 replies that answer it. First the answer the agent recommends, spelled out in full when the question asks several things (for example "B, và ẩn thẻ Pin"), then the other options it named. Never a bare "ok" or "yes" when the question offers options.
 
 When it does not end with a question, give at most 1 reply, and only for a clear next step: one the agent offered, or a natural follow-up such as drawing a mockup of a layout it described in words, running the tests, or building. Never suggest commit or push: the app offers those itself. When no next step is clear, write NONE.
+
+You may be given messages this person sends often. When one of them is the right reply, give it exactly as written; never pick one only because it is listed.
 
 Output only the replies, one per line, with no numbering, quotes or commentary.`
 
@@ -80,6 +84,13 @@ func BuildPrompt(req Request) string {
 		if line := oneLine(r, recentRunes); line != "" {
 			lines = append(lines, line)
 		}
+	}
+	if habits := promptHabits(req.Habits); len(habits) > 0 {
+		b.WriteString("Messages this person sends often, most used first:\n")
+		for _, h := range habits {
+			b.WriteString("- " + h + "\n")
+		}
+		b.WriteString("\n")
 	}
 	if len(lines) > 0 {
 		b.WriteString("The person's last messages to the agent, oldest first:\n")
@@ -97,6 +108,23 @@ func BuildPrompt(req Request) string {
 		b.WriteString("The reply does not end with a question: give at most 1 reply, or NONE.")
 	}
 	return b.String()
+}
+
+// promptHabits is the habits the prompt lists: at most HabitMax, one line each, none that commits or pushes (the rules
+// offer those, and Parse would drop the reply).
+func promptHabits(habits []string) []string {
+	out := []string{}
+	for _, h := range habits {
+		line := oneLine(h, habitRunes)
+		if line == "" || commitPushRe.MatchString(line) {
+			continue
+		}
+		out = append(out, line)
+		if len(out) == HabitMax {
+			break
+		}
+	}
+	return out
 }
 
 // oneLine folds s to one line cut to max runes, with an ellipsis when cut.

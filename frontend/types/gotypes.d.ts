@@ -362,6 +362,13 @@ declare global {
         data?: string;
     };
 
+    // wshrpc.ChatHabit
+    type ChatHabit = {
+        text: string;
+        key: string;
+        uses: number;
+    };
+
     // waveobj.ChunkWorkRef
     type ChunkWorkRef = {
         kind: string;
@@ -740,6 +747,16 @@ declare global {
     type CommandCancelRunData = {
         channelid: string;
         runid: string;
+    };
+
+    // wshrpc.CommandChatHabitHideData
+    type CommandChatHabitHideData = {
+        key: string;
+    };
+
+    // wshrpc.CommandChatHabitsRtnData
+    type CommandChatHabitsRtnData = {
+        habits: ChatHabit[];
     };
 
     // wshrpc.CommandChatSuggestData

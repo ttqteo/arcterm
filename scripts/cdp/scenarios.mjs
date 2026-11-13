@@ -62950,6 +62950,7 @@ const setupSkillAdditions = {
 };
 
 // --- setup-learned: Setup → Learned, every accepted line grouped by skill and by project -----------------------------
+// (step 5: the usual replies, the short messages sent often that Chat suggests word for word)
 const SL_KEYS = { skill: "cdp-learned-skill", memory: "cdp-learned-memory" };
 const SL_TEXT = {
     skill: "Say cdp learned skill in every reply",
@@ -63071,6 +63072,25 @@ const setupLearned = {
             JSON.stringify({ file, existed, lineGone, fileLeft: existsSync(file) })
         );
         await shot("4-removed");
+
+        // 5. Your usual replies: the short messages sent often, read from the Claude Code transcripts (None yet on a
+        // machine with none), and x takes one out for good: the next read leaves it out
+        const HABITS = `document.querySelector("[data-learned-habits]")`;
+        const habitsRead = await polishWaitFor(h, `!!${HABITS}?.querySelector("[data-learned-habit], [data-learned-habits-empty]")`, 60000);
+        const habitsBefore = await h.ev(`[...(${HABITS}?.querySelectorAll("[data-learned-habit]") ?? [])].map((c) => c.dataset.learnedHabit)`);
+        await h.ev(`${HABITS}?.scrollIntoView({ block: "center" })`);
+        await shot("5-habits");
+        let habitGone = null;
+        if (habitsBefore.length > 0) {
+            await h.ev(`${HABITS}.querySelector("[data-learned-habit-remove]").click()`);
+            await polishNap(1500);
+            habitGone = await h.ev(`![...${HABITS}.querySelectorAll("[data-learned-habit]")].some((c) => c.dataset.learnedHabit === ${JSON.stringify(habitsBefore[0])})`);
+        }
+        rec(
+            "5. Your usual replies: listed from the sessions (or None yet), and x takes one out",
+            habitsRead && (habitsBefore.length === 0 || habitGone === true),
+            JSON.stringify({ habitsRead, habitsBefore, habitGone })
+        );
         return steps;
     },
     async teardown(h, ctx) {

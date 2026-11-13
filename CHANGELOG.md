@@ -24,6 +24,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- Chat's suggested replies learn the short messages you send often ("build đi", "pull về và build"): counted over your
+  Claude Code sessions of the last 30 days, one is offered word for word when it fits the turn. Setup → Learned lists
+  them under Your usual replies, where × takes one out for good.
+
 ### Fixed
 
 - Triple-clicking text in Chat on a Mac no longer flashes a wide highlight before it settles, and a paragraph or list
