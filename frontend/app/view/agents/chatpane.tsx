@@ -82,6 +82,7 @@ import { runtimeMeta } from "./runtimemeta";
 import { useStickToBottom } from "./sticktobottom";
 import { turnStats, type TurnStats } from "./transcriptprojection";
 import { TranscriptSkeleton } from "./transcriptskeleton";
+import { WorkingGlyph } from "./workingglyph";
 
 // Send now's key in the chat box (chatpending.ts isSendNowKey), as its button shows it
 // read per render: at module load setPlatform has not run yet, so the platform still reads as macOS (⌘⏎ on Windows)
@@ -745,10 +746,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                         {/* the empty conversation, or the first message's label, already says the harness is starting */}
                         {working != null && !empty && !opening ? (
                             <div data-chat-working className="flex items-center gap-2 text-[12px] text-muted">
-                                <span
-                                    className="h-[7px] w-[7px] flex-none rounded-full jarvis-dot pulse-dot"
-                                    aria-hidden
-                                />
+                                <WorkingGlyph />
                                 <span className="min-w-0 truncate shimmer-jarvis">{working}</span>
                                 {turn != null ? <TurnStatsText stats={turn} /> : null}
                             </div>

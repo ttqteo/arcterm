@@ -1,9 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The footer of the chat box, as pill chips: the agent's model (a menu of the model families by name only, as Claude
-// Code's own menu has them; a pick types `/model <id>`), its effort (a menu of Claude Code's levels drawn as a five-bar meter; a pick types
-// `/effort <level>`),
+// The footer of the chat box, as pill chips: the agent's model and effort in one chip, as Claude Desktop has them
+// ("Opus 5.5 High"; its menu lists the current models, a pick types `/model <id>`, then Effort, Claude Code's levels
+// drawn as a five-bar meter, a pick typing `/effort <level>`, and More models, the earlier ones, as submenus),
 // Claude Code's permission mode (a menu of the modes; a pick presses Shift+Tab until Claude Code's footer names that
 // mode) and, at the right, how full the context is as a small ring with its percent. The mode is read off the terminal
 // that stays mounted under the chat (tuiscreen.ts). A dialog or a menu covers Claude Code's footer for a while: the
@@ -19,22 +19,24 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { readTermLines } from "@/app/view/term/termpaste";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
-import { Check, ChevronUp, Lock } from "lucide-react";
+import { Check, ChevronRight, ChevronUp, Lock } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     contextWarn,
-    currentModelAlias,
+    currentModelId,
     EFFORT_CHOICES,
     effortChoice,
     effortCommand,
     MODE_CHOICES,
     MODEL_CHOICES,
     modeLabel,
+    modelChipLabel,
     modelCommand,
     modeStep,
+    MORE_MODEL_CHOICES,
     ringDash,
 } from "./chatfootermodel";
 import { tuiEffort, tuiMode, type ClaudeMode, type EffortLevel } from "./tuiscreen";
@@ -119,12 +121,30 @@ function useTuiMode(blockId: string | undefined): {
     return { mode, effort, setEffort, read };
 }
 
-// One chip's menu: its open state, the closes (a press outside, Escape, Tab out) and ↑ / ↓ between its rows. The
+// One chip's menu: its open state, the closes (a press outside, Escape, Tab out) and ↑ / ↓ between its rows. A menu
+// can hold submenus: a row with `data-opens-sub="<name>"` opens the panel marked `data-submenu="<name>"` (on hover, a
+// press, Enter or →), one at a time; ← or Escape folds it back to its row. ↑ / ↓ move within the panel in use. The
 // wrapper the caller renders takes `root`, `onKeyDown` and `onBlur`.
 function useChipMenu() {
-    const [open, setOpen] = useState(false);
+    const [open, setOpenState] = useState(false);
+    const [sub, setSub] = useState<string | null>(null);
+    // a submenu opened from the keyboard takes focus; one opened by hover leaves it where the pointer left it
+    const focusSub = useRef(false);
     const root = useRef<HTMLDivElement>(null);
-    const rows = () => Array.from(root.current?.querySelectorAll<HTMLElement>('[role="menuitemradio"]') ?? []);
+    const setOpen = (next: boolean) => {
+        setOpenState(next);
+        if (!next) {
+            setSub(null);
+        }
+    };
+    const rows = (level: string | null) =>
+        Array.from(root.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? []).filter(
+            (r) => (r.closest("[data-submenu]")?.getAttribute("data-submenu") ?? null) === level
+        );
+    const landOn = (level: string | null) => {
+        const all = rows(level);
+        (all.find((r) => r.getAttribute("aria-checked") === "true") ?? all[0])?.focus();
+    };
     useEffect(() => {
         if (!open) {
             return;
@@ -136,10 +156,31 @@ function useChipMenu() {
         };
         document.addEventListener("pointerdown", onDown, true);
         // the keyboard lands on the row in use, so ↑ / ↓ and Enter work at once
-        const all = rows();
-        (all.find((r) => r.getAttribute("aria-checked") === "true") ?? all[0])?.focus();
+        landOn(null);
         return () => document.removeEventListener("pointerdown", onDown, true);
     }, [open]);
+    useEffect(() => {
+        if (sub != null && focusSub.current) {
+            focusSub.current = false;
+            landOn(sub);
+        }
+    }, [sub]);
+    const openSub = (name: string | null, focus: boolean) => {
+        // focus inside the panel that is leaving would fall to the body and take the menu's keys with it
+        const from = (document.activeElement as HTMLElement | null)
+            ?.closest("[data-submenu]")
+            ?.getAttribute("data-submenu");
+        if (from != null && from !== name) {
+            root.current?.querySelector<HTMLElement>(`[data-opens-sub="${from}"]`)?.focus();
+        }
+        focusSub.current = focus && name != null;
+        setSub(name);
+    };
+    const foldSub = () => {
+        const from = sub;
+        setSub(null);
+        root.current?.querySelector<HTMLElement>(`[data-opens-sub="${from}"]`)?.focus();
+    };
     // the menu's rows unmount with it, and focus would fall to the body: it goes back to the chip
     const close = (refocus: boolean) => {
         setOpen(false);
@@ -151,14 +192,27 @@ function useChipMenu() {
         if (!open) {
             return;
         }
-        if (e.key === "Escape") {
+        if (e.key === "Escape" || (e.key === "ArrowLeft" && sub != null)) {
             e.preventDefault();
             e.stopPropagation();
-            close(true);
+            if (sub != null) {
+                foldSub();
+            } else {
+                close(true);
+            }
+            return;
+        }
+        if (e.key === "ArrowRight") {
+            const opens = (document.activeElement as HTMLElement | null)?.getAttribute("data-opens-sub");
+            if (opens != null) {
+                e.preventDefault();
+                e.stopPropagation();
+                openSub(opens, true);
+            }
             return;
         }
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-            const all = rows();
+            const all = rows(sub);
             if (all.length === 0) {
                 return;
             }
@@ -175,7 +229,7 @@ function useChipMenu() {
             setOpen(false);
         }
     };
-    return { open, setOpen, close, root, onKeyDown, onBlur };
+    return { open, setOpen, sub, openSub, close, root, onKeyDown, onBlur };
 }
 type ChipMenuState = ReturnType<typeof useChipMenu>;
 
@@ -194,17 +248,23 @@ const row = (on: boolean) =>
         on && "bg-surface-selected"
     );
 
-// a chip with a menu opening upward from it
+// a submenu's panel, beside its menu's right edge with their bottoms level
+const SUBMENU =
+    "absolute bottom-[-7px] left-[calc(100%+6px)] z-10 rounded-[10px] border border-edge-mid bg-surface-raised p-[6px] shadow-popover";
+
+// a chip with a menu opening upward from it; `onKey` sees a key first while the menu is open and answers whether it used it
 function ChipMenu({
     menuLabel,
     width,
     chip,
     menu,
+    onKey,
 }: {
     menuLabel: string;
     width: string;
     chip: (m: ChipMenuState) => ReactNode;
     menu: (m: ChipMenuState) => ReactNode;
+    onKey?: (e: KeyboardEvent<HTMLElement>, m: ChipMenuState) => boolean;
 }) {
     const m = useChipMenu();
     return (
@@ -214,7 +274,14 @@ function ChipMenu({
         <div
             ref={m.root}
             data-owns-keys={m.open ? "" : undefined}
-            onKeyDown={m.onKeyDown}
+            onKeyDown={(e) => {
+                if (m.open && onKey?.(e, m)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+                m.onKeyDown(e);
+            }}
             onBlur={m.onBlur}
             className="relative flex-none"
         >
@@ -228,8 +295,80 @@ function ChipMenu({
     );
 }
 
-function ModelChip({ agent }: { agent: AgentVM }) {
-    const current = currentModelAlias(agent.model);
+// A main-menu row that opens a submenu: its name, the value in use at the right, and a chevron. Hovering it, pressing it,
+// Enter or → opens the panel; a press from the keyboard (detail 0) also moves focus into it.
+function SubmenuRow({ name, label, value, m }: { name: string; label: string; value: string; m: ChipMenuState }) {
+    const on = m.sub === name;
+    return (
+        <button
+            type="button"
+            role="menuitem"
+            aria-haspopup="menu"
+            aria-expanded={on}
+            tabIndex={-1}
+            data-opens-sub={name}
+            onPointerEnter={() => m.openSub(name, false)}
+            onClick={(e) => m.openSub(name, e.detail === 0)}
+            className={row(on)}
+        >
+            <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+            {value !== "" ? <span className="flex-none text-[12px] text-muted">{value}</span> : null}
+            <ChevronRight size={13} aria-hidden className="flex-none text-muted" />
+        </button>
+    );
+}
+
+// one model row: its name, and at the right the check when it is in use, else its number key (main list only)
+function ModelRow({
+    id,
+    label,
+    choice,
+    on,
+    digit,
+    onPick,
+    m,
+}: {
+    id: string;
+    label: string;
+    choice: string;
+    on: boolean;
+    digit?: number;
+    onPick: (id: string) => void;
+    m: ChipMenuState;
+}) {
+    return (
+        <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={on}
+            tabIndex={-1}
+            data-chat-model-choice={choice}
+            // the pointer back on a plain row folds an open submenu, as a native menu does
+            onPointerEnter={m.sub != null && digit != null ? () => m.openSub(null, false) : undefined}
+            onClick={() => onPick(id)}
+            className={row(on)}
+        >
+            <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+            <span className="flex w-[14px] flex-none justify-center text-[12px] tabular-nums text-ink-faint">
+                {on ? <Check size={13} aria-hidden className="text-primary" /> : digit}
+            </span>
+        </button>
+    );
+}
+
+// The model chip, with the effort folded into it as Claude Desktop has them: the chip reads "Opus 5.5 High", and its
+// menu lists the four current models (1–4 pick one while it is open), then Effort and More models as submenus.
+function ModelChip({
+    agent,
+    effort,
+    onPickEffort,
+}: {
+    agent: AgentVM;
+    effort: EffortLevel | null;
+    onPickEffort: (level: EffortLevel | "auto", m: ChipMenuState) => void;
+}) {
+    const current = currentModelId(agent.model);
+    const olderLabel = MORE_MODEL_CHOICES.find((c) => c.id === current)?.label ?? "";
     const pick = (id: string, m: ChipMenuState) => {
         const blockid = agent.blockId;
         m.close(true);
@@ -241,58 +380,92 @@ function ModelChip({ agent }: { agent: AgentVM }) {
     return (
         <ChipMenu
             menuLabel="Model"
-            width="w-[200px]"
+            width="w-[232px]"
+            onKey={(e, m) => {
+                const n = Number(e.key);
+                if (m.sub != null || e.ctrlKey || e.metaKey || e.altKey || !Number.isInteger(n)) {
+                    return false;
+                }
+                const c = MODEL_CHOICES[n - 1];
+                if (c == null) {
+                    return false;
+                }
+                pick(c.id, m);
+                return true;
+            }}
             chip={(m) => (
                 <button
                     type="button"
                     data-chip-trigger
                     data-chat-model
+                    data-chat-effort={effort ?? ""}
                     aria-haspopup="menu"
                     aria-expanded={m.open}
-                    title="Model (sends /model)"
+                    title="Model and effort (sends /model, /effort)"
                     onClick={() => m.setOpen(!m.open)}
-                    className={cn(CHIP, chipTone(m.open))}
+                    className={cn(CHIP, "max-w-[240px]", chipTone(m.open))}
                 >
-                    <span className="min-w-0 truncate">{agent.model || "Model"}</span>
+                    <span className="min-w-0 truncate">{modelChipLabel(agent.model)}</span>
+                    {effort != null ? (
+                        <span className="flex-none whitespace-nowrap text-muted">{effortChoice(effort).label}</span>
+                    ) : null}
                     <ChevronUp size={11} strokeWidth={2.2} aria-hidden className="flex-none" />
                 </button>
             )}
             menu={(m) => (
                 <>
                     <div className={MENU_CAPTION}>Model</div>
-                    {MODEL_CHOICES.map((c) => (
-                        <button
-                            key={c.alias}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={c.alias === current}
-                            tabIndex={-1}
-                            data-chat-model-choice={c.alias}
-                            onClick={() => pick(c.id, m)}
-                            className={row(c.alias === current)}
-                        >
-                            <span className="min-w-0 flex-1 truncate text-left">{c.label}</span>
-                            <span className="flex w-[14px] flex-none justify-center">
-                                {c.alias === current ? <Check size={13} aria-hidden /> : null}
-                            </span>
-                        </button>
+                    {MODEL_CHOICES.map((c, i) => (
+                        <ModelRow
+                            key={c.id}
+                            id={c.id}
+                            label={c.label}
+                            choice={c.alias}
+                            on={c.id === current}
+                            digit={i + 1}
+                            onPick={(id) => pick(id, m)}
+                            m={m}
+                        />
                     ))}
+                    <div className="mx-2 my-[5px] h-px bg-edge-mid" />
+                    <SubmenuRow
+                        name="effort"
+                        label="Effort"
+                        value={effort == null ? "" : effortChoice(effort).label}
+                        m={m}
+                    />
+                    <SubmenuRow name="more" label="More models" value={olderLabel} m={m} />
+                    <PopoverReveal open={m.sub === "effort"} origin="bottom left" className={cn(SUBMENU, "w-[260px]")}>
+                        <div role="menu" aria-label="Effort" data-submenu="effort">
+                            <EffortRows effort={effort} onPick={(level) => onPickEffort(level, m)} />
+                        </div>
+                    </PopoverReveal>
+                    <PopoverReveal open={m.sub === "more"} origin="bottom left" className={cn(SUBMENU, "w-[200px]")}>
+                        <div role="menu" aria-label="More models" data-submenu="more">
+                            <div className={MENU_CAPTION}>More models</div>
+                            {MORE_MODEL_CHOICES.map((c) => (
+                                <ModelRow
+                                    key={c.id}
+                                    id={c.id}
+                                    label={c.label}
+                                    choice={c.id}
+                                    on={c.id === current}
+                                    onPick={(id) => pick(id, m)}
+                                    m={m}
+                                />
+                            ))}
+                        </div>
+                    </PopoverReveal>
                 </>
             )}
         />
     );
 }
 
-// Five bars rising left to right, the first `filled` in the accent: the effort level at a glance (0 = not known)
-function EffortMeter({ filled, size }: { filled: number; size: "chip" | "row" }) {
+// Five bars rising left to right, the first `filled` in the accent: an effort level at a glance (0 = none)
+function EffortMeter({ filled }: { filled: number }) {
     return (
-        <svg
-            width={size === "chip" ? 14 : 17}
-            height={size === "chip" ? 11 : 13}
-            viewBox="0 0 17 13"
-            aria-hidden
-            className="flex-none"
-        >
+        <svg width={17} height={13} viewBox="0 0 17 13" aria-hidden className="flex-none">
             {[0, 1, 2, 3, 4].map((i) => {
                 const bar = 4 + i * 2.25;
                 return (
@@ -311,82 +484,54 @@ function EffortMeter({ filled, size }: { filled: number; size: "chip" | "row" })
     );
 }
 
-function EffortChip({
-    effort,
-    onPick,
-}: {
-    effort: EffortLevel | null;
-    onPick: (level: EffortLevel | "auto", m: ChipMenuState) => void;
-}) {
-    const filled = effort == null ? 0 : EFFORT_CHOICES.findIndex((c) => c.level === effort) + 1;
+// the Effort submenu's rows: Claude Code's five levels, each with its meter and a note, then Auto
+function EffortRows({ effort, onPick }: { effort: EffortLevel | null; onPick: (level: EffortLevel | "auto") => void }) {
     return (
-        <ChipMenu
-            menuLabel="Effort"
-            width="w-[260px]"
-            chip={(m) => (
+        <>
+            <div className={MENU_CAPTION}>Effort</div>
+            {EFFORT_CHOICES.map((c, i) => (
                 <button
+                    key={c.level}
                     type="button"
-                    data-chip-trigger
-                    data-chat-effort={effort ?? ""}
-                    aria-haspopup="menu"
-                    aria-expanded={m.open}
-                    title="Effort (sends /effort)"
-                    onClick={() => m.setOpen(!m.open)}
-                    className={cn(CHIP, "whitespace-nowrap", chipTone(m.open))}
+                    role="menuitemradio"
+                    aria-checked={c.level === effort}
+                    tabIndex={-1}
+                    data-chat-effort-choice={c.level}
+                    onClick={() => onPick(c.level)}
+                    className={row(c.level === effort)}
                 >
-                    <EffortMeter filled={filled} size="chip" />
-                    <span>{effort == null ? "Effort" : effortChoice(effort).label}</span>
-                    <ChevronUp size={11} strokeWidth={2.2} aria-hidden className="flex-none" />
+                    <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[7px] bg-accent/10">
+                        <EffortMeter filled={i + 1} />
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col text-left">
+                        <span className="truncate">{c.label}</span>
+                        <span className="truncate text-[11.5px] text-muted">{c.note}</span>
+                    </span>
+                    <span className="flex w-[14px] flex-none justify-center">
+                        {c.level === effort ? <Check size={13} aria-hidden /> : null}
+                    </span>
                 </button>
-            )}
-            menu={(m) => (
-                <>
-                    <div className={MENU_CAPTION}>Effort</div>
-                    {EFFORT_CHOICES.map((c, i) => (
-                        <button
-                            key={c.level}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={c.level === effort}
-                            tabIndex={-1}
-                            data-chat-effort-choice={c.level}
-                            onClick={() => onPick(c.level, m)}
-                            className={row(c.level === effort)}
-                        >
-                            <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[7px] bg-accent/10">
-                                <EffortMeter filled={i + 1} size="row" />
-                            </span>
-                            <span className="flex min-w-0 flex-1 flex-col text-left">
-                                <span className="truncate">{c.label}</span>
-                                <span className="truncate text-[11.5px] text-muted">{c.note}</span>
-                            </span>
-                            <span className="flex w-[14px] flex-none justify-center">
-                                {c.level === effort ? <Check size={13} aria-hidden /> : null}
-                            </span>
-                        </button>
-                    ))}
-                    <button
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={false}
-                        tabIndex={-1}
-                        data-chat-effort-choice="auto"
-                        onClick={() => onPick("auto", m)}
-                        className={row(false)}
-                    >
-                        <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[7px] bg-surface-hover">
-                            <EffortMeter filled={0} size="row" />
-                        </span>
-                        <span className="flex min-w-0 flex-1 flex-col text-left">
-                            <span className="truncate">Auto</span>
-                            <span className="truncate text-[11.5px] text-muted">The model's own default</span>
-                        </span>
-                        <span className="w-[14px] flex-none" />
-                    </button>
-                    <div className={MENU_FOOT}>Sends /effort to Claude Code</div>
-                </>
-            )}
-        />
+            ))}
+            <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={false}
+                tabIndex={-1}
+                data-chat-effort-choice="auto"
+                onClick={() => onPick("auto")}
+                className={row(false)}
+            >
+                <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[7px] bg-surface-hover">
+                    <EffortMeter filled={0} />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col text-left">
+                    <span className="truncate">Auto</span>
+                    <span className="truncate text-[11.5px] text-muted">The model's own default</span>
+                </span>
+                <span className="w-[14px] flex-none" />
+            </button>
+            <div className={MENU_FOOT}>Sends /effort to Claude Code</div>
+        </>
     );
 }
 
@@ -576,18 +721,11 @@ export function ChatFooter({ agent }: { agent: AgentVM }) {
                         ) : null
                     ) : (
                         <motion.div key="chip" {...swap} className="col-start-1 row-start-1">
-                            <ModelChip agent={agent} />
+                            <ModelChip agent={agent} effort={effort} onPickEffort={pickEffort} />
                         </motion.div>
                     )}
                 </AnimatePresence>
             </div>
-            <AnimatePresence initial={false}>
-                {!asleep ? (
-                    <Fold key="effort">
-                        <EffortChip effort={effort} onPick={pickEffort} />
-                    </Fold>
-                ) : null}
-            </AnimatePresence>
             <AnimatePresence initial={false}>
                 {!asleep && mode != null ? (
                     <Fold key="mode">

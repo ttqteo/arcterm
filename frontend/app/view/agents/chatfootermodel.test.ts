@@ -6,6 +6,7 @@ import {
     contextLabel,
     contextWarn,
     currentModelAlias,
+    currentModelId,
     EFFORT_CHOICES,
     effortChoice,
     effortCommand,
@@ -13,8 +14,10 @@ import {
     MODE_CHOICES,
     MODEL_CHOICES,
     modeLabel,
+    modelChipLabel,
     modelCommand,
     modeStep,
+    MORE_MODEL_CHOICES,
     ringDash,
 } from "./chatfootermodel";
 
@@ -80,6 +83,41 @@ describe("model choices", () => {
     });
     it("types /model with the model id", () => {
         expect(modelCommand("claude-sonnet-5-5")).toBe("/model claude-sonnet-5-5");
+    });
+});
+
+describe("currentModelId", () => {
+    it("matches the exact model, in either list, from a label or an id", () => {
+        expect(currentModelId("opus 5.5")).toBe("claude-opus-5-5");
+        expect(currentModelId("Opus 5.5")).toBe("claude-opus-5-5");
+        expect(currentModelId("claude-opus-5-5[1m]")).toBe("claude-opus-5-5");
+        expect(currentModelId("opus 4.8")).toBe("claude-opus-4-8");
+        expect(currentModelId("claude-haiku-4-5")).toBe("claude-haiku-4-5");
+    });
+    it("never takes a version for a longer one", () => {
+        expect(currentModelId("fable 5")).toBe("claude-fable-5");
+        expect(currentModelId("opus 5")).toBe("claude-opus-5");
+        expect(currentModelId("fable 5.2")).toBe("claude-fable-5-2");
+    });
+    it("reads a bare family as its newest, and is null for anything else", () => {
+        expect(currentModelId("sonnet")).toBe("claude-sonnet-5-5");
+        expect(currentModelId("opus 3")).toBeNull();
+        expect(currentModelId("gpt-6")).toBeNull();
+        expect(currentModelId(undefined)).toBeNull();
+        expect(currentModelId("")).toBeNull();
+    });
+    it("lists More models with ids none of the main list has", () => {
+        const main = new Set(MODEL_CHOICES.map((c) => c.id));
+        for (const c of MORE_MODEL_CHOICES) {
+            expect(main.has(c.id)).toBe(false);
+            expect(currentModelId(c.label)).toBe(c.id);
+        }
+    });
+    it("names the chip by the menu's label, or the name as given", () => {
+        expect(modelChipLabel("opus 5.5")).toBe("Opus 5.5");
+        expect(modelChipLabel("opus 4.7")).toBe("Opus 4.7");
+        expect(modelChipLabel("gpt-6")).toBe("gpt-6");
+        expect(modelChipLabel(undefined)).toBe("Model");
     });
 });
 
