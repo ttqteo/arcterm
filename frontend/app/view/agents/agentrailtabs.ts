@@ -7,6 +7,7 @@
 
 import { isUnderRoot, toRel } from "@/app/cockpit/openfileroute";
 import { normalizeRepoPath } from "@/util/paths";
+import { AGENT_TREE_WIDE_PX } from "./rowfields";
 
 // "tree" is the Files tab, the agent's worktree (docs/superpowers/specs/2026-10-08-rail-worktree-files-design.md); it is
 // "tree" because "files" already names the Files changed count. "changes" is the Changes tab: the Files changed list on
@@ -81,7 +82,6 @@ export const RAIL_OVERVIEW_PX = 300;
 export const RAIL_WIDE_DEFAULT_PX = 520;
 export const RAIL_WIDE_MIN_PX = 360;
 const CENTRE_MIN_PX = 640; // DESIGN.md's stage-min
-const AGENT_TREE_PX = 280; // agenttree.tsx's column
 
 export function panelFor(panels: Record<string, PanelState>, agentId: string, defaultTab: RailTab): PanelState {
     // File, Files and Transcript are never defaults: an unseen agent has no file open, Files needs a cwd it may not have,
@@ -260,9 +260,10 @@ export function selectKey(p: PanelState, key: string, hasTree: boolean, hasTrans
         : selectTab(p, key as RailTab, hasTree, hasTranscript);
 }
 
-// the widest a wide tab may be: what leaves the centre its minimum beside the nav rail and the tree
-export function wideWidthMax(windowWidth: number, navWidth: number): number {
-    return Math.max(RAIL_WIDE_MIN_PX, windowWidth - navWidth - AGENT_TREE_PX - CENTRE_MIN_PX);
+// the widest a wide tab may be: what leaves the centre its minimum beside the nav rail and the tree, whose width follows
+// the row fields (agentTreeWidth in rowfields.ts)
+export function wideWidthMax(windowWidth: number, navWidth: number, treeWidth = AGENT_TREE_WIDE_PX): number {
+    return Math.max(RAIL_WIDE_MIN_PX, windowWidth - navWidth - treeWidth - CENTRE_MIN_PX);
 }
 
 // the panel tabs that take a dragged width: File (a page of text) and Transcript (the conversation), which share one

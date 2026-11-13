@@ -288,6 +288,7 @@ import { ServerMark, StatusDot } from "./statusdot";
 import { clockTime } from "./monitortasks";
 import { backgroundTasksByIdAtom, focusSubagentAtom, monitorPeekAtom, subagentsByIdAtom } from "./subagentsstore";
 import { rowFieldsAtom } from "./rowfieldsstore";
+import { AGENT_TREE_WIDE_PX, agentTreeWidth } from "./rowfields";
 import { agentRamAtom, runRamAtom, useAgentRamPoll } from "./agentramstore";
 import { rowCols, type RamReading, type RowCell, type RowColKey } from "./rowcols";
 import { runningBackgroundTasks } from "./transcriptprojection";
@@ -3747,6 +3748,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const collapsedList = useAtomValue(collapsedProjectsAtom);
     const center = useAtomValue(centerModeAtom);
     const overviewProject = useAtomValue(overviewProjectAtom);
+    // 280px only while RAM · tokens · age are all on; any of them off and the tree is back to 248px (rowfields.ts)
+    const wide = agentTreeWidth(useAtomValue(rowFieldsAtom)) === AGENT_TREE_WIDE_PX;
     // One tree per project: each project's live agents, a divider, then its terminals and tools (projectTree), a collapsed
     // project folding to its folder row. The ended conversations are the section under it (ConversationsSection).
     const filter = useAtomValue(model.projectFilterAtom);
@@ -3899,7 +3902,13 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     }, [idsKey]);
 
     return (
-        <div data-agent-tree className="relative isolate flex w-[280px] shrink-0 select-none flex-col border-r border-border bg-surface">
+        <div
+            data-agent-tree
+            className={cn(
+                "relative isolate flex shrink-0 select-none flex-col border-r border-border bg-surface",
+                wide ? "w-[280px]" : "w-[248px]"
+            )}
+        >
             <PanelWeb />
             <TreeSpider sensing={asking > 0} />
             <div className="flex flex-col gap-[4px] px-[8px] pb-[4px] pt-[10px]">
