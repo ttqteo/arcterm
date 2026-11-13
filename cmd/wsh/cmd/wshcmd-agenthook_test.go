@@ -99,6 +99,18 @@ func TestPlanEmissionStopFailure(t *testing.T) {
 	}
 }
 
+func TestPlanEmissionPreCompactSaysCompacting(t *testing.T) {
+	em := planEmission(ccHookEvent{HookEventName: "PreCompact", Trigger: "manual"})
+	if em.State != baseds.AgentState_Working || em.Detail != baseds.AgentDetail_Compacting {
+		t.Fatalf("manual compaction = %+v, want working with detail %q", em, baseds.AgentDetail_Compacting)
+	}
+	// the compaction's end reads idle with no detail, so "compacting" never outlives it
+	em = planEmission(ccHookEvent{HookEventName: "SessionStart", Source: "compact"})
+	if em.State != baseds.AgentState_Idle || em.Detail != "" {
+		t.Fatalf("after the compaction = %+v, want idle with no detail", em)
+	}
+}
+
 func TestPlanEmissionPermissionRequest(t *testing.T) {
 	tests := []struct {
 		name       string

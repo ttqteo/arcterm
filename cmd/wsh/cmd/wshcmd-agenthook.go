@@ -124,7 +124,7 @@ func planEmission(ev ccHookEvent) agentEmission {
 		if ev.Trigger == "auto" {
 			return agentEmission{}
 		}
-		return agentEmission{State: baseds.AgentState_Working}
+		return agentEmission{State: baseds.AgentState_Working, Detail: baseds.AgentDetail_Compacting}
 	case "SessionStart":
 		// the session is back at its prompt once the summary lands. an auto-compaction inside a turn reads
 		// idle only until that turn's next tool reports working, and a wake typed then queues behind it.

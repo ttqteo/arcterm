@@ -50,6 +50,10 @@ const (
 	AgentHook_StopFailure = "StopFailure"
 )
 
+// AgentDetail_Compacting is the Detail of a typed /compact's PreCompact report, which Chat reads as "Compacting…"
+// (COMPACTING_ACTIVITY in frontend/app/view/agents/chatmodel.ts); the SessionStart after the compaction clears it
+const AgentDetail_Compacting = "compacting"
+
 // StopFailureDetail_UsageLimit is the Detail of a StopFailure report whose error is the rate limit: the account hit
 // its usage limit. pkg/runpause pauses the run such a worker belongs to until the limit resets.
 const StopFailureDetail_UsageLimit = "Stopped at the usage limit"

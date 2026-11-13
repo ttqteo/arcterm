@@ -56,7 +56,7 @@ import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chat
 import { ChatLocalCard } from "./chatlocalcards";
 import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
 import { chatCapable } from "./chatmode";
-import { canSendNow, SEND_NOW_KEYS, turnStatsLabel, workingText } from "./chatmodel";
+import { canSendNow, compactingNow, SEND_NOW_KEYS, turnStatsLabel, workingText } from "./chatmodel";
 import { setChatMode, useChatMode } from "./chatmodestore";
 import {
     btwQuestion,
@@ -574,9 +574,10 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     }, [entries]);
 
     const working = workingText(agent.state, agent.activity, entries);
-    // the turn's time and output tokens, read back from the loaded lines to its prompt; only while it works
+    // the turn's time and output tokens, read back from the loaded lines to its prompt; only while it works, and not
+    // while it compacts, which is no turn of its own
     const lines = view?.win.lines;
-    const isWorking = working != null;
+    const isWorking = working != null && !compactingNow(agent.state, agent.activity);
     const turn = useMemo(() => (isWorking && lines != null ? turnStats(lines) : null), [isWorking, lines]);
     // the session's /goal, read from the same lines (goal-core.ts, shared with the arc mod's band in the TUI)
     const goal = useMemo(() => (lines != null ? goalFromLines(lines) : null), [lines]);

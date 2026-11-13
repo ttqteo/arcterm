@@ -411,10 +411,23 @@ export function canSendNow(state: AgentState): boolean {
     return state === "working";
 }
 
+/** The activity a typed /compact reports while it runs (baseds.AgentDetail_Compacting, from the PreCompact hook); the
+ *  SessionStart that follows the compaction reads idle and clears it. */
+export const COMPACTING_ACTIVITY = "compacting";
+
+/** Pure: whether the agent is compacting its conversation: no turn of its own is under way, so the working line says
+ *  Compacting… with no turn time, which would count from the last prompt. */
+export function compactingNow(state: AgentState, activity: string | undefined): boolean {
+    return state === "working" && activity?.trim() === COMPACTING_ACTIVITY;
+}
+
 /** Pure: the agent side's "working" line while the agent works, null otherwise. */
 export function workingLine(state: AgentState, activity: string | undefined): string | null {
     if (state !== "working") {
         return null;
+    }
+    if (compactingNow(state, activity)) {
+        return "Compacting…";
     }
     const what = activity?.trim();
     return what ? `Working · ${what}` : "Working…";
@@ -423,8 +436,8 @@ export function workingLine(state: AgentState, activity: string | undefined): st
 /** Pure: the working line, naming the running tool's own description when the last entry is a tool with no result yet. */
 export function workingText(state: AgentState, activity: string | undefined, entries: AgentEntry[]): string | null {
     const line = workingLine(state, activity);
-    if (line == null) {
-        return null;
+    if (line == null || compactingNow(state, activity)) {
+        return line;
     }
     const last = entries[entries.length - 1];
     if (last?.kind === "action" && last.outcome == null && last.target.trim() !== "") {

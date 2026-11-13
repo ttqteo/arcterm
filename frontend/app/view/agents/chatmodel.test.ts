@@ -12,6 +12,7 @@ import {
     canSendNow,
     CHAT_RENDER_STEP,
     chatItems,
+    compactingNow,
     SEND_NOW_KEYS,
     shownItems,
     turnStatsLabel,
@@ -458,6 +459,13 @@ describe("workingLine", () => {
         expect(workingLine("working", "Bash: npm test")).toBe("Working · Bash: npm test");
     });
 
+    it("says Compacting… while a compaction runs", () => {
+        expect(workingLine("working", "compacting")).toBe("Compacting…");
+        expect(compactingNow("working", "compacting")).toBe(true);
+        expect(compactingNow("working", "running ls")).toBe(false);
+        expect(compactingNow("idle", "compacting")).toBe(false);
+    });
+
     it("is null when the agent is not working", () => {
         expect(workingLine("idle", "Bash: npm test")).toBeNull();
         expect(workingLine("asking", "Bash: npm test")).toBeNull();
@@ -476,6 +484,11 @@ describe("workingText", () => {
         expect(workingText("working", "Bash: npm test", done)).toBe("Working · Bash: npm test");
         const said: AgentEntry[] = [action("ran", { target: "go build" }), { kind: "message", text: "done" }];
         expect(workingText("working", undefined, said)).toBe("Working…");
+    });
+
+    it("says Compacting… over a tool with no result", () => {
+        const entries: AgentEntry[] = [action("ran", { target: "go build ./..." })];
+        expect(workingText("working", "compacting", entries)).toBe("Compacting…");
     });
 
     it("is null when the agent is not working, whatever the entries", () => {
