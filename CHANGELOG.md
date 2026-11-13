@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Triple-clicking text in Chat on a Mac no longer flashes a wide highlight before it settles, and a paragraph or list
+  item that runs over several lines is highlighted as one solid block, without dark strips between its lines.
 - Chat's chip line no longer flickers. Show the diff and Open the terminal come once the agent has worked a second and
   leave half a second after it stops, so a turn the usage limit ends at once shows nothing, and the usage limit's line
   gets no suggested replies.

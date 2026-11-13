@@ -754,6 +754,12 @@ svg [aria-label="tip"] g path {
     opacity: 0.28;
 }
 
+/* While a triple-click's button is down in rendered Markdown (selectiontrim.ts holdTripleClick), no selection is
+   painted: WebKit has picked the paragraph and its break already, and the release trims it before it shows. */
+html[data-picking-paragraph] ::selection {
+    background-color: transparent;
+}
+
 /* Agents-view narration markdown (see markdownmessage.tsx). Neutral overlays, not palette hex. */
 .agent-md p {
     margin: 0 0 0.4em;
