@@ -28,6 +28,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Hovering a queued plan in the Agent sidebar opens a card to its right: the plan's file name above its folder, the
   whole reason when it is blocked, the lead and workers it will run with, and when it was queued.
+- The Agent sidebar is a little wider, and every agent, run and worker row ends with the same three columns, RAM ·
+  tokens · age, lined up down the list and in a quieter ink; a RAM figure of 1 GB or more turns amber. The unread
+  count moved up beside the name, and an agent asking you keeps its columns.
 
 ## 1.1.0 — 2026-11-13
 
