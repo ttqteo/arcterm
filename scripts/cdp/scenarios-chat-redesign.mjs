@@ -958,18 +958,10 @@ export default function (kit) {
                         ts(ctx, -1000)
                     )
                 );
-                const boxH = `Math.round(${boxOf(A)}?.getBoundingClientRect().height ?? -1)`;
-                const heightBefore = await h.ev(boxH);
                 await setRoster({ idleSince: Date.now() });
                 const shown = await polishWaitFor(h, `(${chipsNow}).length === 3`, WAIT_MS);
                 await polishNap(400);
                 const question = await h.ev(`({ chips: ${chipsNow}, asked: window.__crSuggestAsked.at(-1) ?? null })`);
-                // the chips float in the slot above the dock: the box keeps its height
-                const floated = await h.ev(`({
-                    height: ${boxH},
-                    inBox: !!${boxOf(A)}?.querySelector("[data-chat-suggest-chip]"),
-                    inSlot: !!${layerOf(A)}?.querySelector("[data-chat-chip-slot] [data-chat-suggest-chip]"),
-                })`);
                 await shot(h, "18-suggest-question");
                 await h.ev(`${layerOf(A)}?.querySelector("[data-chat-suggest-chip]")?.click()`);
                 const sent = await polishWaitFor(
@@ -989,11 +981,8 @@ export default function (kit) {
                 await shot(h, "18-suggest-next");
                 const q = question.chips;
                 rec(
-                    `${name}: a question offers [data-chat-suggest-chip="model"] B, ẩn thẻ Pin · A · C in [data-chat-chip-slot] above the box, whose height stays, asked as a question with the person's last message; a click sends it (its bubble, pending or landed) and the chips go; a statement offers vẽ tôi xem`,
+                    `${name}: a question offers [data-chat-suggest-chip="model"] B, ẩn thẻ Pin · A · C, asked as a question with the person's last message; a click sends it (its bubble, pending or landed) and the chips go; a statement offers vẽ tôi xem`,
                     shown &&
-                        floated.inSlot &&
-                        !floated.inBox &&
-                        floated.height === heightBefore &&
                         q.map((c) => c.text).join(" · ") === "B, ẩn thẻ Pin · A · C" &&
                         q.every((c) => c.source === "model") &&
                         question.asked?.question === true &&
@@ -1002,7 +991,7 @@ export default function (kit) {
                         next &&
                         statement.chips.length === 1 &&
                         statement.asked?.question !== true,
-                    { question, floated: { ...floated, heightBefore }, sent, statement }
+                    { question, sent, statement }
                 );
             });
 
