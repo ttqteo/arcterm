@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -161,6 +162,32 @@ func TestSetRunSettingsReviewerFields(t *testing.T) {
 	}
 	if live.ReviewerPicks || live.ReviewerRoute != nil {
 		t.Fatalf("a zero value must clear the group's: picks=%v reviewer=%+v", live.ReviewerPicks, live.ReviewerRoute)
+	}
+}
+
+// the global profile is validated like an override: a width out of range or a worker route that cannot
+// resolve, once stored, would refuse every later orchestrator launch that inherits it, blaming the launch
+func TestGlobalProfileSaveRefusesBadWidthAndWorkerRoute(t *testing.T) {
+	ctx := context.Background()
+	withConfigHome(t, t.TempDir())
+	ws := &WshServer{}
+
+	global := jarvis.BuiltinProfile()
+	global.Parallelism = orchestrate.MaxParallelism + 1
+	if err := ws.SetGlobalProfileCommand(ctx, wshrpc.CommandSetGlobalProfileData{Profile: global}); err == nil || !strings.Contains(err.Error(), "parallelism") {
+		t.Fatalf("width %d: err = %v, want a parallelism refusal", global.Parallelism, err)
+	}
+	global.Parallelism, global.WorkerRoute = 0, &waveobj.RoutePin{Runtime: "openrouter"}
+	if err := ws.SetGlobalProfileCommand(ctx, wshrpc.CommandSetGlobalProfileData{Profile: global}); err == nil || !strings.Contains(err.Error(), "workerRoute") {
+		t.Fatalf("err = %v, want a refusal naming workerRoute", err)
+	}
+	if got := jarvis.LoadGlobalProfile(); got.Parallelism != 0 || got.WorkerRoute != nil {
+		t.Fatalf("a refused global profile was written: %+v", got)
+	}
+	// 0 is the global profile's documented "let the lead choose"
+	global.WorkerRoute = &waveobj.RoutePin{Runtime: "pi", Model: "anthropic/claude-sonnet-5-5"}
+	if err := ws.SetGlobalProfileCommand(ctx, wshrpc.CommandSetGlobalProfileData{Profile: global}); err != nil {
+		t.Fatalf("width 0 with a valid worker route: %v", err)
 	}
 }
 

@@ -83,6 +83,8 @@ import { ChatRunCard } from "./chatruncard";
 import { pairRunEnded, placeRunCards, type RunCardSlot, type RunEnded } from "./chatruncards";
 import { withMarks } from "./chatskim";
 import { useSkimFold } from "./chatskimstore";
+import { placeStepLists, stepsPartKey, type AgentNow } from "./chatsteplist";
+import { ChatStepsHost, StepsPart } from "./chatsteplistview";
 import { ChatSteps } from "./chatstepsview";
 import { TaggedPromptText } from "./chattagblock";
 import { foldCommandParts, splitTagged, tagHeading, type TagPart } from "./chattagblocks";
@@ -900,6 +902,10 @@ export function ChatConversation({
     // nothing to answer to, so the same.
     const procExit = useAtomValue(getProcExitAtom(agent?.blockId ?? ""));
     const exited = agent == null || procExited(procExit, agent.sleeping);
+    // where each turn's step checklist draws and what it shows (chatsteplist.ts); the blocks read it through the host, so
+    // an item kept from an earlier render still redraws its list when a later block of its turn arrives
+    const stepsNow: AgentNow = toolsLive ? "working" : active ? "waiting" : "idle";
+    const stepLists = useMemo(() => placeStepLists(items, stepsNow), [items, stepsNow]);
     // The runs this conversation started. Each `wsh runs start` call's part is anchored to the run (or queued start) its
     // output names; `placeRunCards` says where every run draws: at its call, else at the end. The brainstorm's run keeps its
     // place at the end (the brainstorm card) and is claimed from the calls. A queued start is told from one that left the
@@ -1305,10 +1311,13 @@ export function ChatConversation({
             // and files sit between the paragraphs, and the copy button hangs in the gap under the text
             case "prose": {
                 // a reply still being written: drawn as the stored one will be, but with no fold, copy or fork yet
+                // StepsPart: a ```arc-steps block in it finds its turn's list by this part's key (chatsteplist.ts)
                 if (part.live) {
                     return (
                         <div data-chat-prose data-chat-live className="relative mb-3 min-w-0 max-w-full self-stretch">
-                            <LiveProseText text={part.text} />
+                            <StepsPart partKey={stepsPartKey(item.key, p)}>
+                                <LiveProseText text={part.text} />
+                            </StepsPart>
                         </div>
                     );
                 }
@@ -1319,7 +1328,9 @@ export function ChatConversation({
                         onContextMenu={copyMenu(part.text, fork, canAddInitiative ? part.text : null)}
                         className="group relative mb-3 min-w-0 max-w-full self-stretch"
                     >
-                        <ProseText text={part.text} />
+                        <StepsPart partKey={stepsPartKey(item.key, p)}>
+                            <ProseText text={part.text} />
+                        </StepsPart>
                         <BubbleCopy
                             text={part.text}
                             align="left"
@@ -1620,12 +1631,17 @@ export function ChatConversation({
             </AnimatePresence>
         </div>
     );
-    // the initiative cards read their agent and the initiative list from a host: only a live Claude agent's Chat has one
-    return canAddInitiative ? (
-        <ChatInitiativeHost agent={agent!} model={model!}>
-            {body}
-        </ChatInitiativeHost>
-    ) : (
-        body
+    // the initiative cards read their agent and the initiative list from a host: only a live Claude agent's Chat has one;
+    // every Chat conversation draws its step checklists
+    return (
+        <ChatStepsHost placed={stepLists}>
+            {canAddInitiative ? (
+                <ChatInitiativeHost agent={agent!} model={model!}>
+                    {body}
+                </ChatInitiativeHost>
+            ) : (
+                body
+            )}
+        </ChatStepsHost>
     );
 }

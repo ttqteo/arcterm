@@ -219,6 +219,26 @@ func TestAlternatingFailureKindsStillExhaustTheAutoRetries(t *testing.T) {
 	}
 }
 
+// an auto-retry clears the task's run id: the failed worker's run must be cancelled first, or no task names it and
+// it stays executing, out of reach of cancel and the exit hook
+func TestHandleChildOutcomeCancelsTheRunItRetries(t *testing.T) {
+	h := newChildOutcomeHarness(t, 1)
+	oldRunID := h.loadDag(t).Tasks[0].RunID
+	if err := HandleChildOutcome(h.ctx, h.workers[0], jarvis.OutcomeData{Status: "failed", Summary: "tool call errored: invalid input", ExitCode: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if task := h.loadDag(t).Tasks[0]; task.RunID == oldRunID || task.Attempts != 1 {
+		t.Fatalf("setup: want the task retried on a new run, got %+v", task)
+	}
+	old, err := wstore.GetRun(h.ctx, h.channel, oldRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old.Status != jarvis.RunStatus_Cancelled {
+		t.Fatalf("the retried run is left %s", old.Status)
+	}
+}
+
 func TestHandleChildOutcomeUsesStampedUndispatchedRunWorker(t *testing.T) {
 	h := newChildOutcomeHarness(t, 1)
 	worker := h.workers[0]

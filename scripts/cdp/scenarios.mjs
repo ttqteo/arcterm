@@ -58,6 +58,7 @@ import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
 import sidebarColumnsScenarios from "./scenarios-sidebar-columns.mjs";
 import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
 import chatBgTasksScenarios from "./scenarios-chat-bg-tasks.mjs";
+import chatStepsScenarios from "./scenarios-chat-steps.mjs";
 import agentSubagentsScenarios from "./scenarios-agent-subagents.mjs";
 import brainstormBoardPickScenarios from "./scenarios-brainstorm-board-pick.mjs";
 import brainstormBuilderScenarios from "./scenarios-brainstorm-builder.mjs";
@@ -86,6 +87,9 @@ import jarvisLaterScenarios from "./scenarios-jarvis-later.mjs";
 import jarvisSheetScenarios from "./scenarios-jarvis-sheet.mjs";
 import kaelAskKeysScenarios from "./scenarios-kael-ask-keys.mjs";
 import kaelKeysScenarios from "./scenarios-kael-keys.mjs";
+import kael1113DagScenarios from "./scenarios-kael1113-dag.mjs";
+import kael1113FinalScenarios from "./scenarios-kael1113-final.mjs";
+import kael1113TimelineScenarios from "./scenarios-kael1113-timeline.mjs";
 import modalFocusHomeScenarios from "./scenarios-modal-focus-home.mjs";
 import parkedLaunchScenarios from "./scenarios-parked-launch.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
@@ -24120,21 +24124,30 @@ function fstStage(ctx, name, { verifier = true, skip } = {}) {
     throw new Error(`no final-stage row named ${name}`);
 }
 
-// seeds a States row and publishes its events; returns the publish, for fstUntil to repeat
+// seeds a States row and publishes its events; returns a nudge for fstUntil to repeat. While a task's worker is
+// live the engine still ticks the dag, and a tick that loaded it before the seed writes its whole snapshot back
+// over it (the whole-object replace in engine.go), so the nudge seeds the row again once the stored dag lost it
 async function fstShow(h, ctx, name, opts) {
     const { cmds, final, pastfinals, events } = fstStage(ctx, name, opts);
-    await seedDag(
-        h,
-        ctx,
-        (dag) => {
-            const { final: _final, pastfinals: _past, check: _check, verify: _verify, finalcmd: _cmd, ...rest } = dag;
-            return { ...rest, ...cmds, ...(final ? { final } : {}), ...(pastfinals ? { pastfinals } : {}) };
-        },
-        fstSeedPrint
-    );
+    const want = fstSeedPrint({ ...cmds, final, pastfinals });
+    const seed = () =>
+        seedDag(
+            h,
+            ctx,
+            (dag) => {
+                const { final: _final, pastfinals: _past, check: _check, verify: _verify, finalcmd: _cmd, ...rest } = dag;
+                return { ...rest, ...cmds, ...(final ? { final } : {}), ...(pastfinals ? { pastfinals } : {}) };
+            },
+            fstSeedPrint
+        );
+    await seed();
     const publish = events ? () => fstPublishSteps(h, ctx, ...events) : undefined;
     if (publish) await publish();
-    return { nudge: publish };
+    const nudge = async () => {
+        if (fstSeedPrint(await waveService(h, "object", "GetObject", [`dag:${ctx.dagId}`])) !== want) await seed();
+        if (publish) await publish();
+    };
+    return { nudge };
 }
 
 // object.UpdateObject publishes nothing, so the stored run is sent to the page as the update it would have been
@@ -24275,7 +24288,7 @@ async function arrangeFinalStage(h, ctx) {
     const verifierRun = await fstWriteRun(h, ctx.verifierRunId, (run) => ({ ...run, stagerole: "verifier", dagoref: ctx.dagId }));
     ctx.verifierSeeded = verifierRun?.stagerole === "verifier" && verifierRun.dagoref === ctx.dagId && !verifierRun.completedts;
     await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
-    await fstShow(h, ctx, "waiting");
+    ctx.waiting = await fstShow(h, ctx, "waiting");
     ctx.leadFocused = await fstBoot(h, ctx, false);
 }
 
@@ -24329,12 +24342,19 @@ const finalStageScenario = {
             { landPath: ctx.landPath, root: wtRoot, cwd: ctx.cwd }
         );
 
-        // --- Part B: the States rows, on a dag the engine leaves alone ---
+        // --- Part B: the States rows, on a dag whose final the engine leaves alone ---
         // The strip's Final check pip (runStage, runstage.ts) follows the dag as well as the stage: this dag still has a
         // task at work, so it is never finalizing and the pip reads pending whatever the seeded stage says, except a
         // failed stage, which it shows (B5). Part A, whose dag the engine takes through the stage, reads active and held.
         let a = await fstAgent(h, (s) => s.rows.length === 0 && s.railSteps === 0);
-        let d = await fstDag(h, ctx, (s) => s.node.meta === "waits on every task");
+        // t-1's worker still ticks the dag, so every wait on a seeded row takes its nudge (fstShow); a seed lost
+        // here leaves no commands, and the strip draws the Verifier alone
+        let d = await fstDag(
+            h,
+            ctx,
+            (s) => s.node.meta === "waits on every task" && fstSame(s.node.strip, fstRepeat("waiting", 5)),
+            ctx.waiting
+        );
         rec(
             "B1. tasks still running: no tree row and the Final check pip pending; the last node reads waits on every task over five waiting segments",
             () =>
@@ -24348,12 +24368,12 @@ const finalStageScenario = {
         );
         await shot("b1-waiting-dag");
 
-        await fstShow(h, ctx, "tree");
-        a = await fstAgent(h, (s) => s.rows.length === 1 && s.rows[0].sub.startsWith("Tree"));
+        let wait = await fstShow(h, ctx, "tree");
+        a = await fstAgent(h, (s) => s.rows.length === 1 && s.rows[0].sub.startsWith("Tree"), wait);
         await clickRow();
         a = await fstUntil(h, FST_AGENT, (s) => s.rows[0].selected && s.pane != null && s.stage != null);
         await shot("b2-tree-pane");
-        d = await fstDag(h, ctx, (s) => s.node.meta.startsWith("round 1 · Tree"));
+        d = await fstDag(h, ctx, (s) => s.node.meta.startsWith("round 1 · Tree"), wait);
         rec(
             "B2. preparing the tree: Tree · <time> · step 1 of 5, the step list with Tree running, no output box, and End final stage",
             () =>
@@ -24375,10 +24395,10 @@ const finalStageScenario = {
         );
         await shot("b2-tree-dag");
 
-        let wait = await fstShow(h, ctx, "alongside");
+        wait = await fstShow(h, ctx, "alongside");
         a = await fstAgent(h, (s) => s.rows[0].sub.startsWith("Check") && s.pane.steps[0].text === "passed 22s", wait);
         await shot("b3-alongside-pane");
-        d = await fstDag(h, ctx, (s) => s.node.meta === "round 1 · Check · verifier");
+        d = await fstDag(h, ctx, (s) => s.node.meta === "round 1 · Check · verifier", wait);
         rec(
             "B3. verifier alongside (no Final command): four steps, the Verifier running beside Check, Tree's time from its event",
             () =>
@@ -24396,7 +24416,7 @@ const finalStageScenario = {
         wait = await fstShow(h, ctx, "reviewing");
         a = await fstAgent(h, (s) => s.rows[0].sub.startsWith("verifier reviewing") && s.pane.steps[3].state === "passed", wait);
         await shot("b4-reviewing-pane");
-        d = await fstDag(h, ctx, (s) => s.node.meta.startsWith("round 2 · verifier"));
+        d = await fstDag(h, ctx, (s) => s.node.meta.startsWith("round 2 · verifier"), wait);
         rec(
             "B4. verifier reviewing with its tab gone: the row is the stage's own, every command passed, the Verifier running, round 1 one line",
             () =>
@@ -24420,7 +24440,7 @@ const finalStageScenario = {
         await finalShotsClick(h, `${FST_PANE}?.querySelector("[data-final-shots-link]")`);
         const paneViewer = (await fstUntil(h, FST_AGENT, (s) => s.viewer))?.viewer;
         await closeViewer();
-        d = await fstDag(h, ctx, (s) => s.node.meta === "round 1 · failed at Final");
+        d = await fstDag(h, ctx, (s) => s.node.meta === "round 1 · failed at Final", wait);
         await shot("b5-failed-dag");
         await finalShotsClick(h, `${FST_DAG_PEEK}?.querySelector("[data-final-shots-link]")`);
         const peekViewer = (await fstUntil(h, FST_DAG, (s) => s.viewer))?.viewer;
@@ -24468,7 +24488,7 @@ const finalStageScenario = {
         await finalShotsClick(h, `${FST_RAIL}?.querySelector('[data-final-rail] [data-final-step="check"]')`);
         const keptRail = await fstUntil(h, keptRead, (s) => s.rail.includes(FST_KEPT_MARK));
         await shot("b5b-kept-rail");
-        await fstDag(h, ctx, (s) => s.node.meta === "round 1 · failed at Final");
+        await fstDag(h, ctx, (s) => s.node.meta === "round 1 · failed at Final", wait);
         const dagCell = `${FST_DAG_PEEK}?.querySelector('[data-final-step="check"]')`;
         const dagRead = `(() => ({
             text: (${FST_DAG_PEEK}?.textContent ?? "").replace(/\\s+/g, " ").trim(),
@@ -24495,10 +24515,10 @@ const finalStageScenario = {
             { keptCheck, keptGone, keptClosed, keptRail, keptDag, keptDagClosed }
         );
 
-        await fstShow(h, ctx, "fixing");
-        a = await fstAgent(h, (s) => s.rows[0].sub.startsWith("round 2") && s.rows[0].tone === "wait");
+        wait = await fstShow(h, ctx, "fixing");
+        a = await fstAgent(h, (s) => s.rows[0].sub.startsWith("round 2") && s.rows[0].tone === "wait", wait);
         await shot("b6-fixing-pane");
-        d = await fstDag(h, ctx, (s) => s.node.meta.startsWith("round 2 waits on"));
+        d = await fstDag(h, ctx, (s) => s.node.meta.startsWith("round 2 waits on"), wait);
         rec(
             "B6. fix round under way: round 2 waits on the unfinished tasks, every step waiting, round 1 one past-round line",
             () =>
@@ -24515,9 +24535,9 @@ const finalStageScenario = {
 
         // the verifier's tab joins the roster. Until the stage names its run, that tab is a stage row an earlier
         // round left, and the stage's row is its own
-        await fstShow(h, ctx, "reviewing", { verifier: false });
+        wait = await fstShow(h, ctx, "reviewing", { verifier: false });
         const rebooted = await fstBoot(h, ctx, true);
-        await fstAgent(h, (s) => s.rows.length === 1);
+        await fstAgent(h, (s) => s.rows.length === 1, wait);
         await clickRow();
         const own = await fstUntil(h, FST_AGENT, (s) => s.rows[0].selected && s.pane != null);
         wait = await fstShow(h, ctx, "reviewing");
@@ -24541,7 +24561,7 @@ const finalStageScenario = {
         // away from the row, so landing on it is the Enter's doing
         await fstFocusLead(h);
         const away = await fstUntil(h, FST_AGENT, (s) => s.rows[0].selected === false);
-        d = await fstDag(h, ctx, (s) => s.peek.open === true);
+        d = await fstDag(h, ctx, (s) => s.peek.open === true, wait);
         await shot("b7-session-dag");
         const entered = await h.ev(`(() => {
             const node = ${FST_NODE}?.closest(".react-flow__node");
@@ -24577,7 +24597,7 @@ const finalStageScenario = {
         wait = await fstShow(h, ctx, "unverified");
         a = await fstAgent(h, (s) => s.rows[0].tone === "warn" && s.stage.steps[4].state === "unverified", wait);
         await shot("b8-unverified-agent");
-        d = await fstDag(h, ctx, (s) => s.node.meta === "round 2 · unverified");
+        d = await fstDag(h, ctx, (s) => s.node.meta === "round 2 · unverified", wait);
         rec(
             "B8. unverified in round 2 on the verifier's verdict: unverified · 1 reason, the reason whole, the Verifier unverified, round 1 one line",
             () =>
@@ -24599,14 +24619,14 @@ const finalStageScenario = {
         await h.goto("agent");
         // off the row, or the fold stays open under the reader
         await fstFocusLead(h);
-        const folded = await fstUntil(h, FST_AGENT, (s) => s.rows.length === 0 && s.fold != null);
+        const folded = await fstUntil(h, FST_AGENT, (s) => s.rows.length === 0 && s.fold != null, wait);
         await shot("b9-passed-folded");
         await finalShotsClick(h, FST_FOLD);
         await fstUntil(h, FST_AGENT, (s) => s.rows.length === 1);
         await clickRow();
         a = await fstUntil(h, FST_AGENT, (s) => s.rows[0].sub === `passed · ${FST_TOTAL}` && s.stage != null, wait);
         await shot("b9-passed-agent");
-        d = await fstDag(h, ctx, (s) => s.node.meta === `round 2 · passed · ${FST_TOTAL}`);
+        d = await fstDag(h, ctx, (s) => s.node.meta === `round 2 · passed · ${FST_TOTAL}`, wait);
         rec(
             "B9. passed in round 2: the row is inside the run's finished group, every step shows its time, and the row and the node show the total",
             () =>
@@ -24632,7 +24652,7 @@ const finalStageScenario = {
         await clickRow();
         a = await fstUntil(h, FST_AGENT, (s) => s.rows[0].sub === "passed" && s.stage.steps[0].text === "passed 22s", wait);
         await shot("b10-no-total-agent");
-        d = await fstDag(h, ctx, (s) => s.node.meta === "round 2 · passed");
+        d = await fstDag(h, ctx, (s) => s.node.meta === "round 2 · passed", wait);
         rec(
             "B10. with one step's event gone: the total leaves the row and the node, that step shows no time, and every state stays passed",
             () =>
@@ -51652,7 +51672,8 @@ const RADAR_AUDIT_PANEL = `document.querySelector('[aria-label="Available routes
 // or row until ListHarnessesCommand answers; twice its client timeout (CATALOG_RPC_TIMEOUT_MS, harnessstore.ts)
 const RADAR_AUDIT_CATALOG_WAIT_MS = 60_000;
 const RADAR_AUDIT_CATALOG_UP = `${RADAR_AUDIT_PANEL}?.querySelector('[data-testid^="route-harness-"], [data-testid^="route-option-"]') != null`;
-const RADAR_CLASSIFY_INPUT = `${RADAR_AUDIT_ROW}?.querySelector('input[type="text"]')`;
+// the classifier is its own row under the audit route's (backgroundai.tsx)
+const RADAR_CLASSIFY_INPUT = `${RADAR_AUDIT_PANE}?.querySelector('[data-setting-row="headless.radarclassify"] input[type="text"]')`;
 const radarAuditFace = (h) => h.ev(`(${RADAR_AUDIT_TRIGGER}?.textContent || "").trim()`);
 const radarClassifyField = (h) =>
     h.ev(`(() => { const i = ${RADAR_CLASSIFY_INPUT}; return i ? { value: i.value, placeholder: i.placeholder } : null; })()`);
@@ -51664,9 +51685,19 @@ const settingsRadarAudit = {
         const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
         const prev = Object.fromEntries(RADAR_AUDIT_KEYS.map((k) => [k, settings[k] ?? null]));
         await h.rpc("setconfig", Object.fromEntries(RADAR_AUDIT_KEYS.map((k) => [k, null])));
-        return { prev };
+        // the catalog is answered in-page, so steps 4-6 do not hang on pi being installed (a Windows box without pi
+        // offered only Claude): claude and pi, plus agy and codex for the picker to leave out
+        const modules = await ahResolveModules(h);
+        const mock = modules.urls
+            ? await installCatalogMock(h, modules.urls, [
+                  ...routePickerFlatCatalog(),
+                  agyHarnessRow("agy", "Antigravity", { leadcapable: false, models: ["gemini-3-pro"] }),
+                  agyHarnessRow("codex", "Codex", { leadcapable: false, models: ["gpt-5.5-codex"] }),
+              ])
+            : `no-module-url (${modules.error})`;
+        return { prev, mock };
     },
-    async assert(h) {
+    async assert(h, ctx) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
 
@@ -51714,7 +51745,7 @@ const settingsRadarAudit = {
             "4. the picker offers claude and pi and no other runtime",
             JSON.stringify(offered) === JSON.stringify(["claude", "pi"]),
             catalogUp
-                ? `offered=${JSON.stringify(offered)} catalog=${catalogMs}ms`
+                ? `offered=${JSON.stringify(offered)} catalog=${catalogMs}ms mock=${ctx.mock}`
                 : `offered=${JSON.stringify(offered)} no routes after ${catalogMs}ms, panel reads "${emptyText}"`
         );
         await h.shot("cdp-shots/settings-radar-audit-open.png");
@@ -51786,6 +51817,11 @@ const settingsRadarAudit = {
         return steps;
     },
     async teardown(h, ctx) {
+        try {
+            await removeCatalogMock(h);
+        } catch (e) {
+            console.error(`settings-radar-audit teardown: remove the catalog mock failed: ${e?.message ?? e}`);
+        }
         await h.rpc("setconfig", ctx.prev);
         await h.goto("cockpit");
     },
@@ -52887,12 +52923,12 @@ const settingsVaultSync = {
 // app share the vault's settings.json, and a write can lose a rename race with the other's.
 const SP_PAGES = [
     { id: "general", cards: ["startup", "menubar", "notifications"] },
-    { id: "appearance", cards: ["theme", "colors", "fonts", "agentrows"] },
+    { id: "appearance", cards: ["theme", "colors", "fonts", "agentrows", "chat"] },
     { id: "agents", cards: ["claudeaccount", "sleep", "flags"] },
     { id: "runs", cards: ["runs", "whilework", "tokenburn"] },
     { id: "terminal", cards: ["text", "cursor", "behavior"] },
     { id: "headless", cards: ["runtime", "openrouter", "radar"] },
-    { id: "jarvis", cards: ["jarvis", "folding", "office"] },
+    { id: "jarvis", cards: ["jarvis", "form", "behaviour", "folding", "office"] },
     {
         id: "storage",
         cards: ["vault", "runworktrees", "sessions", "housekeeping", "buildoutput", "packagecaches", "canvases", "autoclean"],
@@ -53045,7 +53081,8 @@ const settingsPages = {
         const menu = await h.ev(`(() => {
             const panel = ${SP_MENU_PANEL};
             if (!panel) return null;
-            return [...panel.children].map((c) =>
+            // the rows sit in the PopoverReveal panel inside the positioned element
+            return [...(panel.firstElementChild ?? panel).children].map((c) =>
                 c.classList.contains("h-px")
                     ? { separator: true }
                     : {
@@ -53074,7 +53111,7 @@ const settingsPages = {
             `menu=${JSON.stringify(menu)} closed=${menuGone}`
         );
 
-        // appearance-detail: nine theme chips with one selected; each font option drawn in its own face
+        // appearance-detail: ten theme chips (themes.ts) with one selected; each font option drawn in its own face
         await spOpen(h, "appearance");
         await polishWaitFor(h, `${spRow("fonts.mono")} != null`, 5000);
         const chips = await h.ev(`(() => {
@@ -53087,8 +53124,8 @@ const settingsPages = {
         await polishNap(200);
         await h.shot("cdp-shots/settings-pages-appearance-detail.png");
         rec(
-            "appearance-detail: nine theme chips, one selected; Fonts options each in their own face",
-            chips.count === 9 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
+            "appearance-detail: ten theme chips, one selected; Fonts options each in their own face",
+            chips.count === 10 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
             `chips=${JSON.stringify(chips)} sans=${JSON.stringify(sansFaces)} mono=${JSON.stringify(monoFaces)}`
         );
 
@@ -60957,6 +60994,10 @@ const FILES_KIT = {
 // what the scenario modules of the 2026-11-12 Kael sync (scenarios-code-outline.mjs … scenarios-kael-keys.mjs) take: one
 // object of the kits above, so a module reaches whichever it needs and this file stays untouched by each task
 const KAEL_KITS = { rt: RT_KIT, code: CODE_KIT, files: FILES_KIT, jarvis: JARVIS_KIT };
+
+// the dag seeding helpers the 2026-11-13 Kael sync's run-view modules (scenarios-kael1113-dag/-timeline/-final.mjs) need, which
+// until now only BS_KIT carried: each module gets `{ ...KAEL_KITS, run: RUN_KIT }`
+const RUN_KIT = { seedDag, seedFinalShots, fstWriteRun, fstShow, fstUntil, fstStartLive, fstPublishSteps, dagPeekPublish };
 
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
 // (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
@@ -70546,6 +70587,9 @@ export const SCENARIOS = [
     ...railTranscriptScenarios(RT_KIT),
     ...xmasTreeScenarios(XMAS_TREE_KIT),
     ...monitorTasksScenarios(RT_KIT),
+    ...kael1113DagScenarios({ ...KAEL_KITS, run: RUN_KIT }),
+    ...kael1113TimelineScenarios({ ...KAEL_KITS, run: RUN_KIT }),
+    ...kael1113FinalScenarios({ ...KAEL_KITS, run: RUN_KIT }),
     ...codeImageZoomScenarios(CODE_KIT),
     ...codeBlameDraftScenarios(CODE_KIT),
     ...diffFileKeysScenarios(FILES_KIT),
@@ -70555,6 +70599,7 @@ export const SCENARIOS = [
     ...agentStartFailedScenarios(RT_KIT),
     ...agentStreamsScenarios(RT_KIT),
     ...chatBgTasksScenarios(RT_KIT),
+    ...chatStepsScenarios(RT_KIT),
     ...agentSubagentsScenarios(RT_KIT),
     ...modalFocusHomeScenarios(RT_KIT),
     ...parkedLaunchScenarios(),

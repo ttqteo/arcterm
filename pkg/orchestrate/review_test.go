@@ -180,6 +180,42 @@ func TestReviewerRunsOnTheLeadsRouteInTheLaneTree(t *testing.T) {
 	}
 }
 
+// fork da342d465 (P8): a reviewer's tab is grouped under its project like the worker's: the channel's name, not ""
+func TestReviewerCarriesTheChannelsProjectName(t *testing.T) {
+	ctx, dag, worker := seedReviewDag(t)
+	stubReviewTree(t, worker.EndCommit)
+	calls := captureSpawns(t)
+	// wraps captureSpawns's stub, which its own cleanup restores
+	inner := spawnWorker
+	var projects []string
+	spawnWorker = func(ctx context.Context, cap runroute.Capability, workspaceId, project, cwd, prompt string, opts jarvis.RunWorkerOptions) (string, error) {
+		projects = append(projects, project)
+		return inner(ctx, cap, workspaceId, project, cwd, prompt, opts)
+	}
+	schedule(t, ctx, dag.OID)
+	ch, err := wstore.DBMustGet[*waveobj.Channel](ctx, dag.ChannelId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 1 || len(projects) != 1 || ch.Name == "" || projects[0] != ch.Name {
+		t.Fatalf("reviewer projects = %v after %d spawns, want the channel's name %q", projects, len(*calls), ch.Name)
+	}
+}
+
+// fork ac548aa57: a reviewer only reads and gives its verdict: no MCP server and no skills listing
+func TestReviewerLaunchesWithItsStartupContextTrimmed(t *testing.T) {
+	ctx, dag, worker := seedReviewDag(t)
+	stubReviewTree(t, worker.EndCommit)
+	calls := captureSpawns(t)
+	schedule(t, ctx, dag.OID)
+	if len(*calls) != 1 {
+		t.Fatalf("want one reviewer, got %d", len(*calls))
+	}
+	if opts := (*calls)[0].opts; !opts.StrictMCP || !opts.NoSlashCommands {
+		t.Fatalf("reviewer launches with its startup context untrimmed: %+v", opts)
+	}
+}
+
 // agy and codex are workers, not leads: a reviewer judges, so an agy or codex reviewer route fails with the
 // capability's own message and spawns nothing.
 func TestReviewerRouteLead(t *testing.T) {

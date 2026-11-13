@@ -54,6 +54,36 @@ describe("recoverySummary", () => {
     });
 });
 
+// 2026-11-13 Kael sync, 932d4fa34 (D3): a human's or lead's retry carries `by` and no kind or attempt, so it is
+// not an engine recovery
+describe("recoverySummary, a retry somebody else took", () => {
+    it("skips a human's retry, keeping the engine's count and last failure kind", () => {
+        const events = [
+            retried("t-1", "verify", 1, 10),
+            retried("t-1", "verify", 2, 20),
+            failed("t-1", "verify", 3, 30),
+            ev("task-retried", { taskid: "t-1", auto: false, by: "human" }, 40),
+        ];
+        expect(recoverySummary(events, "t-1")).toEqual({
+            retries: 2,
+            lastFailureKind: "verify",
+            partial: false,
+            terminalFailure: true,
+        });
+    });
+
+    it("says nothing about a task whose only retry was a human's", () => {
+        const events = [ev("task-retried", { taskid: "t-1", auto: false, by: "human" }, 10)];
+        expect(recoverySummary(events, "t-1")).toBeNull();
+    });
+
+    it("skips the lead's retry the same way", () => {
+        const events = [retried("t-1", "timeout", 1, 10), ev("task-retried", { taskid: "t-1", by: "lead" }, 20)];
+        expect(recoverySummary(events, "t-1")?.retries).toBe(1);
+        expect(recoverySummary(events, "t-1")?.lastFailureKind).toBe("timeout");
+    });
+});
+
 describe("recoveryText", () => {
     it("summarises a recovered retry with its kind and where the task stands now", () => {
         const summary = recoverySummary([retried("t-1", "tool-error", 1, 10)], "t-1")!;

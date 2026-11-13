@@ -4,6 +4,7 @@
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { taskStripLabel } from "@/app/view/agents/runstrip";
 import { describe, expect, it } from "vitest";
+import { attentionQueue } from "../orchestrate/attentionqueue";
 import type { DigestState } from "../orchestrate/dagdigest";
 import type { TaskWorkerView } from "../orchestrate/taskcorrelate";
 import type { RunSettingsDraft } from "./runsettings";
@@ -774,6 +775,75 @@ describe("taskRow", () => {
             cleanupstate: "",
         };
         expect(taskRow(rowInput({}, { td, askOwner: null })).meta).toBe("asked the lead · idle 40s");
+    });
+});
+
+// 2026-11-13 Kael sync, 9f9b2f3e9 (D4 to D6): the Runs rows read the merge gate
+describe("taskRow, the merge gate", () => {
+    it("reads a skipped task as skipped, naming no actor", () => {
+        expect(taskRow(rowInput({ state: "skipped" })).meta).toBe("skipped");
+    });
+
+    it("shows a failed Verify's failing line from the digest, else its reason, never a passing test's line", () => {
+        const failing = { verifyerror: "exit 1: ✔ adds two positive numbers\n✔ handles zero" };
+        const td: DagTaskDigest = {
+            taskid: "t-1",
+            waitreason: "",
+            mergestate: "",
+            cleanupstate: "",
+            verifyfailline: "--- FAIL: TestAdd",
+        };
+        expect(taskRow(rowInput({ state: "verify-failed", ...failing }, { td })).meta).toBe("--- FAIL: TestAdd");
+        expect(taskRow(rowInput({ state: "verify-failed", ...failing })).meta).toBe("exit 1");
+    });
+
+    it("keeps a blocked merge's own first line, whatever the digest says of Verify", () => {
+        const td = { taskid: "t-1", waitreason: "", mergestate: "", cleanupstate: "", verifyfailline: "FAIL x" };
+        expect(taskRow(rowInput({ state: "blocked-merge", mergeerror: "CONFLICT in a.go" }, { td })).meta).toBe(
+            "CONFLICT in a.go"
+        );
+    });
+
+    it("reads a held tip as merge ready behind its holder's Verify", () => {
+        const td: DagTaskDigest = {
+            taskid: "t-2",
+            waitreason: "",
+            mergestate: "held",
+            mergeheldby: "t-3",
+            cleanupstate: "",
+        };
+        const gate = {
+            dag: {
+                tasks: [
+                    { id: "t-2", state: "done" },
+                    { id: "t-3", state: "verifying" },
+                ],
+            } as TaskGroup,
+            digest: { tasks: [td] } as DagStatusDigest,
+        };
+        const r = taskRow(rowInput({ id: "t-2", state: "done" }, { td, gate }));
+        expect(r).toMatchObject({ meta: "merge ready · waits on t-3's Verify", state: "done" });
+        // a ready tip keeps its lane line: its attention row already says merge ready
+        const ready = { ...td, mergestate: "ready", mergeheldby: undefined };
+        const readyGate = { ...gate, digest: { tasks: [ready] } as DagStatusDigest };
+        expect(taskRow(rowInput({ id: "t-2", state: "done" }, { td: ready, gate: readyGate })).meta).toBe("lane 2");
+    });
+});
+
+describe("attention for a held tip", () => {
+    it("lists a ready tip and leaves a held one out", () => {
+        const tip = (mergestate: string): DagTaskDigest => ({
+            taskid: "t-2",
+            waitreason: "",
+            mergestate,
+            cleanupstate: "",
+            humanactions: mergestate === "ready" ? ["merge"] : undefined,
+        });
+        const group = { tasks: [{ id: "t-2", state: "done" }] } as TaskGroup;
+        const queue = (mergestate: string) =>
+            attentionQueue({ tasks: [tip(mergestate)] } as DagStatusDigest, group).map((e) => e.taskId);
+        expect(queue("ready")).toEqual(["t-2"]);
+        expect(queue("held")).toEqual([]);
     });
 });
 

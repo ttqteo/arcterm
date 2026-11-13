@@ -456,6 +456,99 @@ func TestScheduleOnceLabelsAWorkerWithItsTask(t *testing.T) {
 	}
 }
 
+// fork da342d465 (P8): task workers were spawned with an empty project name, so their tabs sat outside their run's
+// project; they take the owning channel's name, as the run's lead does
+func TestScheduleOnceCarriesTheChannelsProjectName(t *testing.T) {
+	allowWorkerHarnessForTest(t)
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "engine-project-test", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := jarvis.NewRun("owner goal", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+	if err := wstore.AppendRun(ctx, ch.OID, owner); err != nil {
+		t.Fatal(err)
+	}
+	g, err := NewTaskGroup(owner.ID, ch.OID, "g", 2, false, []waveobj.TaskNode{
+		{ID: "t-0", Label: "Chunk sidebar"},
+		{ID: "t-1", Label: "Run sheet"},
+	}, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.AppendDag(ctx, &g); err != nil {
+		t.Fatal(err)
+	}
+	projects := map[string]string{}
+	old := spawnWorker
+	spawnWorker = func(_ context.Context, _ runroute.Capability, _, project, _, _ string, opts jarvis.RunWorkerOptions) (string, error) {
+		projects[opts.TaskId] = project
+		return "tab:worker", nil
+	}
+	defer func() { spawnWorker = old }()
+
+	if err := ScheduleOnce(ctx, &g); err != nil {
+		t.Fatal(err)
+	}
+	if ch.Name == "" || projects["t-0"] != ch.Name || projects["t-1"] != ch.Name {
+		t.Fatalf("worker projects = %v, want the channel's name %q", projects, ch.Name)
+	}
+}
+
+// a channel the lookup cannot read is logged and the worker spawns unnamed, as it did before: a missing name must
+// not stop a run
+func TestChannelProjectNameOfAMissingChannelIsEmpty(t *testing.T) {
+	if got := channelProjectName(context.Background(), "no-such-channel"); got != "" {
+		t.Fatalf("channelProjectName = %q, want empty", got)
+	}
+	if got := channelProjectName(context.Background(), ""); got != "" {
+		t.Fatalf("channelProjectName with no channel = %q, want empty", got)
+	}
+}
+
+// fork ac548aa57: a worker needs no MCP server but may use skills, so only the MCP listing is trimmed from its launch
+func TestScheduleOnceTrimsAWorkersMCPButNotItsSkills(t *testing.T) {
+	allowWorkerHarnessForTest(t)
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "engine-trim-test", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := jarvis.NewRun("owner goal", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+	if err := wstore.AppendRun(ctx, ch.OID, owner); err != nil {
+		t.Fatal(err)
+	}
+	g, err := NewTaskGroup(owner.ID, ch.OID, "g", 2, false, []waveobj.TaskNode{
+		{ID: "t-0", Label: "Chunk sidebar"},
+		{ID: "t-1", Label: "Run sheet"},
+	}, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.AppendDag(ctx, &g); err != nil {
+		t.Fatal(err)
+	}
+	launch := map[string]jarvis.RunWorkerOptions{}
+	old := spawnWorker
+	spawnWorker = func(_ context.Context, _ runroute.Capability, _, _, _, _ string, opts jarvis.RunWorkerOptions) (string, error) {
+		launch[opts.TaskId] = opts
+		return "tab:worker", nil
+	}
+	defer func() { spawnWorker = old }()
+
+	if err := ScheduleOnce(ctx, &g); err != nil {
+		t.Fatal(err)
+	}
+	if len(launch) != 2 {
+		t.Fatalf("want two workers spawned, got %v", launch)
+	}
+	for id, opts := range launch {
+		if !opts.StrictMCP || opts.NoSlashCommands {
+			t.Fatalf("worker %s: StrictMCP=%v NoSlashCommands=%v, want true false", id, opts.StrictMCP, opts.NoSlashCommands)
+		}
+	}
+}
+
 // A worker's tab reaches the app when its spawn returns, and it sits outside its run's tree until its run
 // arrives. Publishing the run only at tick end left each tab outside for as long as the rest of the batch took.
 func TestScheduleOncePublishesEachChildRunBeforeTheNextSpawn(t *testing.T) {

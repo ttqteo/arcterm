@@ -47,7 +47,6 @@ async function load(runId: string, channelId: string): Promise<void> {
         const rtn = await RpcApi.JarvisRunEventsCommand(TabRpcClient, {
             channelid: channelId,
             runid: runId,
-            limit: 200,
         });
         globalStore.set(eventsAtomFor(runId), rtn.events ?? []);
         globalStore.set(statusAtomFor(runId), "live");
@@ -86,7 +85,7 @@ function ensureSubscription() {
             globalStore.set(target, (prev) => {
                 const next = prev.filter((e) => e.id !== data.event.id);
                 next.unshift(data.event);
-                return next.slice(0, 200);
+                return next;
             });
         },
     });

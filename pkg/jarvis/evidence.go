@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path"
@@ -562,9 +563,51 @@ func ownsRunMarker(runID string) func(string) bool {
 	return func(v string) bool { return v == runID || strings.HasPrefix(v, runID+"-") }
 }
 
+// treeChanges diffs the tree the run worked in against its base: its landing tree, or the checkout for a run with
+// none. Once the land has removed a landing tree, a diff of the missing dir reads as an empty non-repo, so it
+// reads the land's merge when that is provably the run's work (or reads no changes for a lead-less run, whose land
+// merged nothing), and otherwise errors to leave the run unsealed.
+func treeChanges(ctx context.Context, run *waveobj.Run) (*gitinfo.Changes, error) {
+	if run.LandPath == "" {
+		return gitinfo.GetChanges(ctx, run.ProjectPath, run.BaseCommit)
+	}
+	if _, err := os.Stat(run.LandPath); !errors.Is(err, fs.ErrNotExist) {
+		return gitinfo.GetChanges(ctx, run.LandPath, run.BaseCommit)
+	}
+	// a lead that made no commit ends on the base it started from; that is no reported commit to resolve
+	leadless := run.EndCommit != "" && run.EndCommit == run.BaseCommit
+	if run.EndCommit != "" && !leadless {
+		return nil, fmt.Errorf("the landing tree %s is gone and the reported commit %s does not resolve", run.LandPath, run.EndCommit)
+	}
+	if run.Land == nil || run.Land.Commit == "" {
+		return nil, fmt.Errorf("the landing tree %s is gone and the run has no land commit", run.LandPath)
+	}
+	// the engine's land merges wave/<runId> --no-ff, so its merge's second parent is the branch's tip; a
+	// fast-forward or a by-hand merge does not have that shape, and its first-parent diff is not the run's work
+	second, err := gitinfo.ResolveCommit(ctx, run.ProjectPath, run.Land.Commit+"^2")
+	if err != nil {
+		// a lead-less run's branch never left the base, so its land had nothing to merge: no merge commit, and the
+		// tip it recorded (when it did) is the base. The land refuses to remove a tree with uncommitted changes
+		// (landingTreeHold), so a landed run's tree held no work and its file list is empty.
+		if leadless && (run.Land.Tip == "" || run.Land.Tip == run.BaseCommit) {
+			return &gitinfo.Changes{IsRepo: true}, nil
+		}
+		return nil, fmt.Errorf("the landing tree %s is gone and the land commit %s is not a merge", run.LandPath, run.Land.Commit)
+	}
+	// the land records the tip it merged since it deletes the branch; a run landed before that has only the ref
+	tip := run.Land.Tip
+	if tip == "" {
+		tip, err = gitinfo.ResolveCommit(ctx, run.ProjectPath, "refs/heads/wave/"+run.ID)
+	}
+	if err != nil || tip != second {
+		return nil, fmt.Errorf("the landing tree %s is gone and the land commit %s is not provably a merge of wave/%s's tip", run.LandPath, run.Land.Commit, run.ID)
+	}
+	return gitinfo.GetRangeChanges(ctx, run.ProjectPath, run.Land.Commit+"^1", run.Land.Commit)
+}
+
 // SealEvidence derives and freezes a run's evidence snapshot. Idempotent: a run that already has
 // Evidence is left untouched (immutability). Locates transcripts from phase WorkerOrefs and git data
-// from ProjectPath — everything it needs is on the run. A transcript I/O failure degrades that section
+// from ProjectPath and LandPath — everything it needs is on the run. A transcript I/O failure degrades that section
 // to empty, but a git failure or a context timeout fails the seal (returns an error, leaves Evidence nil)
 // so the backfill can retry rather than freezing an empty file list into the immutable snapshot.
 func SealEvidence(ctx context.Context, run *waveobj.Run) error {
@@ -609,7 +652,8 @@ func SealEvidence(ctx context.Context, run *waveobj.Run) error {
 	// git-derived: files touched. prefer the run's own commit range (BaseCommit..EndCommit) — under
 	// delegator fan-out the shared ProjectPath tree holds every sibling merged since BaseCommit, so a
 	// working-tree diff over-attributes. fall back to the working-tree-vs-baseline diff when the worker
-	// reported no commit (the common single-run case, unchanged) or the reported SHA is unresolvable.
+	// reported no commit (the common single-run case, unchanged) or the reported SHA is unresolvable. that
+	// fallback diffs the tree the run worked in, its landing tree when it has one, not the shared checkout.
 	// a git failure or context timeout must NOT seal an empty file list into the immutable snapshot —
 	// return an error and leave Evidence nil so the backfill (SealRunEvidenceCommand) retries. a clean
 	// non-repo result (IsRepo false, no error) is a legitimate empty.
@@ -625,10 +669,10 @@ func SealEvidence(ctx context.Context, run *waveobj.Run) error {
 			}
 		}
 		if ch, gerr = rangeChanges(ctx, run.ProjectPath, run.BaseCommit, run.EndCommit); gerr != nil {
-			ch, gerr = gitinfo.GetChanges(ctx, run.ProjectPath, run.BaseCommit) // reported SHA unresolvable
+			ch, gerr = treeChanges(ctx, run) // reported SHA unresolvable
 		}
 	} else {
-		ch, gerr = gitinfo.GetChanges(ctx, run.ProjectPath, run.BaseCommit)
+		ch, gerr = treeChanges(ctx, run)
 	}
 	if gerr != nil {
 		return fmt.Errorf("evidence: computing git changes: %w", gerr)

@@ -158,6 +158,41 @@ describe("laneRows", () => {
     it("has no rows before the digest lists lanes", () => {
         expect(laneRows(dag, undefined)).toEqual([]);
     });
+
+    // D6: a done tip waiting on its merge is not done, and reads the gate's line wherever it shows
+    describe("a tip at the merge gate", () => {
+        const g = {
+            tasks: [
+                task("t-1", "done", { merged: true }),
+                task("t-2", "done", { deps: ["t-1"] }),
+                task("t-3", "verifying"),
+            ],
+        } as TaskGroup;
+        const gate = (tip: Partial<DagTaskDigest>) =>
+            ({ lanes: [["t-1", "t-2"], ["t-3"]], tasks: [{ taskid: "t-2", ...tip }] }) as DagStatusDigest;
+
+        it("reads a held tip as pending, waiting on the holder", () => {
+            expect(laneRows(g, gate({ mergestate: "held", mergeheldby: "t-3" }))[0]).toEqual({
+                key: "A",
+                taskId: "t-2",
+                name: "t-2 · do t-2",
+                hist: "t-1 landed",
+                state: "pending",
+                text: "merge ready · waits on t-3's Verify",
+            });
+        });
+
+        it("reads a ready tip as pending, merge ready", () => {
+            expect(laneRows(g, gate({ mergestate: "ready" }))[0]).toMatchObject({
+                state: "pending",
+                text: "merge ready",
+            });
+        });
+
+        it("reads a merged tip as done, as before", () => {
+            expect(laneRows(g, gate({ mergestate: "merged" }))[0]).toMatchObject({ state: "done", text: "done" });
+        });
+    });
 });
 
 describe("thenTask", () => {

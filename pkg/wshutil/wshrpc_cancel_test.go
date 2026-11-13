@@ -5,6 +5,8 @@ package wshutil
 
 import (
 	"context"
+	"encoding/json"
+	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -80,5 +82,43 @@ func TestCancelRequestsForLink(t *testing.T) {
 	}
 	if !hA.done.Load() {
 		t.Fatal("expected L1 handler done")
+	}
+}
+
+// a handler that ran past its timeout still owes the router its final response: that is what drops the
+// rpc's routing entry. With room in OutputCh it must always go out, not lose a race to the done ctx.
+func TestFinalResponseAfterTimeoutIsSent(t *testing.T) {
+	for i := 0; i < 32; i++ {
+		w := &WshRpc{Lock: &sync.Mutex{}, ResponseHandlerMap: map[string]*RpcResponseHandler{}, OutputCh: make(chan []byte, 1)}
+		h, _ := mkHandler(w, "r1", baseds.LinkId(1))
+		(*h.contextCancelFn.Load())() // the timeout fires
+
+		h.SendResponse(nil, true)
+
+		if len(w.OutputCh) != 1 {
+			t.Fatalf("run %d: the final response was dropped", i)
+		}
+	}
+}
+
+// a response JSON cannot encode (NaN) must still reach the caller as an error: the handler is marked done,
+// so Finalize stays silent and the caller would otherwise wait out its timeout with the cause lost
+func TestUnencodableResponseSendsAnError(t *testing.T) {
+	w := &WshRpc{Lock: &sync.Mutex{}, ResponseHandlerMap: map[string]*RpcResponseHandler{}, OutputCh: make(chan []byte, 1)}
+	h, _ := mkHandler(w, "r1", baseds.LinkId(1))
+
+	if err := h.SendResponse(math.NaN(), true); err == nil {
+		t.Fatal("SendResponse of NaN returned no error")
+	}
+
+	if len(w.OutputCh) != 1 {
+		t.Fatal("no response was sent")
+	}
+	var msg RpcMessage
+	if err := json.Unmarshal(<-w.OutputCh, &msg); err != nil {
+		t.Fatal(err)
+	}
+	if msg.ResId != "r1" || msg.Error == "" || msg.Cont {
+		t.Fatalf("got %+v, want a final error response for r1", msg)
 	}
 }

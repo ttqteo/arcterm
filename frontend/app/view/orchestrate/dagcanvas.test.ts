@@ -89,6 +89,29 @@ describe("factOf", () => {
         const t = task("t-1", "verify-failed", { verifyerror: "exit 1: FAIL\nmore" });
         expect(factOf(t, ctx([t]))).toBe("exit 1: FAIL");
     });
+    it("says a failed or stalled task of an ended dag cannot be acted on", () => {
+        const f = task("t-1", "failed", { attempts: 1 });
+        const s = task("t-2", "stalled");
+        expect(factOf(f, ctx([f], { dagStatus: "cancelled" }))).toBe("run cancelled");
+        expect(factOf(s, ctx([s], { dagStatus: "done" }))).toBe("run ended");
+        expect(factOf(f, ctx([f], { dagStatus: "running" }))).toBe("attempt 1 · retry or skip");
+    });
+    it("blames the cancelled run for a skip, and no one else", () => {
+        const t = task("t-1", "skipped");
+        expect(factOf(t, ctx([t], { dagStatus: "cancelled" }))).toBe("run cancelled");
+        expect(factOf(t, ctx([t], { dagStatus: "running" }))).toBe("");
+        expect(factOf(t, ctx([t], { dagStatus: "done" }))).toBe("");
+    });
+    it("waits on the plan review while the plan is under review", () => {
+        const t = task("t-1", "pending", { deps: ["t-0"] });
+        const done = task("t-0", "done");
+        const all = [done, t];
+        expect(factOf(t, ctx(all, { dagStatus: "plan-review" }))).toBe("waits on plan review");
+        expect(factOf(t, ctx(all, { dagStatus: "awaiting-plan" }))).toBe("waits on plan review");
+        expect(factOf(t, ctx(all, { dagStatus: "running" }))).toBe("next to start");
+        const asked = { taskid: "t-1", waitreason: "ask", mergestate: "", cleanupstate: "" };
+        expect(factOf(t, ctx(all, { dagStatus: "plan-review", digest: asked }))).toBe("asked you");
+    });
 });
 
 describe("relatives / edgeStyle", () => {
@@ -210,6 +233,12 @@ describe("chipGroups / pickNext", () => {
             ["waiting", 1],
         ]);
     });
+    it("labels the attention group failed once the dag has ended", () => {
+        const failed = [task("a", "failed")];
+        expect(chipGroups(failed, false)[0].label).toBe("need you");
+        expect(chipGroups(failed, true)[0].label).toBe("failed");
+        expect(chipGroups([task("b", "running")], true)[0].label).toBe("working");
+    });
     it("cycles through a group", () => {
         expect(pickNext(tasks, ["attention"], null)).toBe("a");
         expect(pickNext(tasks, ["attention"], "a")).toBe("c");
@@ -239,6 +268,14 @@ describe("fitScale / openView / nodeInView", () => {
         expect(openView(tasks, row(8), pane, false)).toEqual({ fitIds: ["t-5"], minZoom: ZOOM_FLOOR });
         const settled = tasks.map((t) => ({ ...t, state: "done" }));
         expect(openView(settled, row(8), pane, false)).toEqual({ fitIds: null, minZoom: ZOOM_FLOOR });
+    });
+    it("opens on the one live task at the floor when everything would be too small", () => {
+        const tasks = Array.from({ length: 8 }, (_, i) => task(`t-${i}`, i === 6 ? "running" : "done"));
+        expect(openView(tasks, row(8), pane, false, false)).toEqual({ fitIds: ["t-6"], minZoom: ZOOM_FLOOR });
+    });
+    it("fits a too-big graph whole, below the floor, once the dag has ended", () => {
+        const tasks = Array.from({ length: 8 }, (_, i) => task(`t-${i}`, i === 5 ? "failed" : "done"));
+        expect(openView(tasks, row(8), pane, false, true)).toEqual({ fitIds: null, minZoom: ZOOM_MIN });
     });
     it("knows whether a node is comfortably on screen", () => {
         expect(nodeInView({ x: 0, y: 0, zoom: 1 }, { x: 100, y: 100 }, pane)).toBe(true);

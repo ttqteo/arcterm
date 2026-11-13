@@ -416,7 +416,7 @@ type RunEventData struct {
 	Event     waveobj.RunEvent `json:"event"`
 }
 
-// CommandJarvisRunEventsData is the run-event read request; limit 0/absent -> 200, capped at 500.
+// CommandJarvisRunEventsData is the run-event read request; limit 0/absent -> every retained event.
 type CommandJarvisRunEventsData struct {
 	ChannelId string `json:"channelid"`
 	RunId     string `json:"runid"`

@@ -147,3 +147,78 @@ func TestJarvisCtxEmptyForUnrelatedBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// ownerRunForBlock reads a stamped tab's run off its stamp (no scan of every run row, which ran per live agent on
+// every resmon snapshot), and keeps finding the run of a tab with no stamp by the scan, as it always did
+func TestOwnerRunForBlockResolvesTheTabsRun(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "ctx-stamp", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamped, unstamped, loose := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	run := jarvis.NewRun("owner goal", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+	run.Phases[0].WorkerOrefs = []string{"tab:" + stamped, "tab:" + unstamped}
+	if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+		t.Fatal(err)
+	}
+	blocks := map[string]string{}
+	for _, tabID := range []string{stamped, unstamped, loose} {
+		blocks[tabID] = uuid.NewString()
+		if err := wstore.DBInsert(ctx, &waveobj.Tab{OID: tabID, Meta: waveobj.MetaMapType{}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := wstore.DBInsert(ctx, &waveobj.Block{OID: blocks[tabID], ParentORef: "tab:" + tabID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := wstore.StampWorkerOwner(ctx, "tab:"+stamped, "run:"+run.ID, "channel:"+ch.OID); err != nil {
+		t.Fatal(err)
+	}
+	for name, tabID := range map[string]string{"stamped": stamped, "unstamped": unstamped} {
+		got, channelId, ok := ownerRunForBlock(ctx, "block:"+blocks[tabID])
+		if !ok || got.ID != run.ID || channelId != ch.OID {
+			t.Errorf("%s tab: run %v in %q, ok %v; want run %s in %s", name, got, channelId, ok, run.ID, ch.OID)
+		}
+	}
+	if got, _, ok := ownerRunForBlock(ctx, "block:"+blocks[loose]); ok {
+		t.Errorf("a tab no run lists resolved to run %s", got.ID)
+	}
+}
+
+// a run whose channel is gone owns nothing, stamped tab or not
+func TestOwnerRunForBlockSkipsARunWhoseChannelIsGone(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "ctx-gone", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamped, unstamped := uuid.NewString(), uuid.NewString()
+	run := jarvis.NewRun("orphan goal", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+	run.Phases[0].WorkerOrefs = []string{"tab:" + stamped, "tab:" + unstamped}
+	if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+		t.Fatal(err)
+	}
+	blocks := map[string]string{}
+	for _, tabID := range []string{stamped, unstamped} {
+		blocks[tabID] = uuid.NewString()
+		if err := wstore.DBInsert(ctx, &waveobj.Tab{OID: tabID, Meta: waveobj.MetaMapType{}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := wstore.DBInsert(ctx, &waveobj.Block{OID: blocks[tabID], ParentORef: "tab:" + tabID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := wstore.StampWorkerOwner(ctx, "tab:"+stamped, "run:"+run.ID, "channel:"+ch.OID); err != nil {
+		t.Fatal(err)
+	}
+	// the channel row goes, the run row stays
+	if err := wstore.DBDelete(ctx, waveobj.OType_Channel, ch.OID); err != nil {
+		t.Fatal(err)
+	}
+	for name, tabID := range map[string]string{"stamped": stamped, "unstamped": unstamped} {
+		if got, _, ok := ownerRunForBlock(ctx, "block:"+blocks[tabID]); ok {
+			t.Errorf("%s tab resolved to run %s whose channel is gone", name, got.ID)
+		}
+	}
+}

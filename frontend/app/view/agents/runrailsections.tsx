@@ -5,14 +5,9 @@
 // for a lead (status, lanes with the lead's questions under them, activity) and Task for a worker (its lead,
 // lane, dependencies, attempt and the lead's question). A question the lead holds can be taken over.
 
-import { isPeekGesture } from "@/app/cockpit/ctrlheld";
 import { paneReveal } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
-import * as WOS from "@/app/store/wos";
-import { briefSheetOpenAtom } from "@/app/view/jarvis/jarvisstore";
-import { clearSubject } from "@/app/view/jarvis/jarvissubjectstore";
 import { openOrPeek } from "@/app/view/jarvis/openref";
-import { returnWhenClosed } from "@/app/view/jarvis/returnsurface";
 import {
     cleanupOnly,
     digestStale,
@@ -21,7 +16,6 @@ import {
     nextStepView,
     taskBriefs,
 } from "@/app/view/orchestrate/dagdigest";
-import { openDagLive, openDagTask } from "@/app/view/orchestrate/dagmodalstate";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ArrowRight, ArrowUp, ArrowUpRight, Check } from "lucide-react";
@@ -119,29 +113,14 @@ function UsageRows({ spent, sealed }: { spent: UsageSummary; sealed: boolean }) 
     );
 }
 
-// openRunDag lands on the run's Brief sheet, where the DAG modal lives, with the modal open on the run or
-// one of its tasks. A Ctrl+click peeks the run instead, and the modal stays shut: it belongs to the sheet.
+// openRunDag opens the run's dag through its address, which lands on the owner run's sheet with the modal open
+// on it or one of its tasks. A Ctrl+click peeks the owner run instead, and the modal stays shut: it belongs to
+// the sheet.
 export function openRunDag(model: AgentsViewModel, run: RunInfo, taskId?: string, event?: React.MouseEvent) {
-    const dag = run.dag;
-    if (dag == null) {
+    if (run.dag == null) {
         return;
     }
-    void openOrPeek(model, { kind: "channel", channelId: run.channelId, runId: run.runId }, event).then((res) => {
-        if ("reason" in res || isPeekGesture(event)) {
-            return;
-        }
-        const dagOref = WOS.makeORef("dag", dag.oid);
-        if (taskId) {
-            openDagTask(run.channelId, run.runId, dagOref, taskId);
-        } else {
-            openDagLive(run.channelId, run.runId, dagOref);
-        }
-        // the sheet was only the way in: left open, it would greet the user's next visit to Jarvis
-        returnWhenClosed("dag", () => {
-            globalStore.set(briefSheetOpenAtom, false);
-            clearSubject();
-        });
-    });
+    void openOrPeek(model, { kind: "dag", dagId: run.dag.oid, ...(taskId ? { taskId } : {}) }, event);
 }
 
 // useRunAsks is the open questions on a run, yours first. A rail with no run gets none.
@@ -371,16 +350,18 @@ function Lanes({ model, run, leadAsks }: { model: AgentsViewModel; run: RunInfo;
                                     <div className="truncate text-[10.5px] text-muted">{r.hist}</div>
                                 ) : null}
                             </div>
+                            {/* capped, so a long text (a held merge gate's) wraps rather than squeezing out the name */}
                             <span
+                                data-lane-text
                                 className={cn(
-                                    "flex items-center gap-[5px] whitespace-nowrap text-[10.5px] font-medium tabular-nums",
+                                    "flex max-w-[120px] items-center gap-[5px] text-[10.5px] font-medium tabular-nums",
                                     LANE_TEXT[r.state]
                                 )}
                             >
                                 {r.state === "lead" ? (
                                     <ArrowRight size={10} aria-hidden />
                                 ) : (
-                                    <span className={cn("h-[7px] w-[7px] rounded-full", LANE_DOT[r.state])} />
+                                    <span className={cn("h-[7px] w-[7px] shrink-0 rounded-full", LANE_DOT[r.state])} />
                                 )}
                                 {r.text}
                             </span>

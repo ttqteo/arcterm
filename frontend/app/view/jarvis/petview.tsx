@@ -25,6 +25,7 @@ import { floatMiniAtom, floatModeAtom } from "@/app/view/agents/floatstore";
 import { workingCount } from "@/app/view/agents/sproutroster";
 import { usePlanDonuts } from "@/app/view/agents/usagemeters";
 import { useWorkerCapacity } from "@/app/view/agents/workercapacitystore";
+import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { useAtomValue } from "jotai";
 import {
     animate,
@@ -37,6 +38,7 @@ import {
 } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { finalShotsViewerOpenAtom } from "./finalshotsstore";
 import {
     HOLOGRAM_RETRY_MS,
     HOLOGRAM_SIZE_PX,
@@ -619,6 +621,11 @@ function PetSprite({
     // the fold's teleport (floatstore.ts): it plays in place of the cells, and holds the walk while it does
     const teleport = useAtomValue(petTeleportAtom).walk;
     const teleporting = teleport != null;
+    // the sprite stays out of the dag modal and the Final shots viewer; hidden, not unmounted, so the WebGL
+    // canvas keeps its context (spec F26)
+    const dagModalOpen = useAtomValue(dagModalStateAtom) != null;
+    const shotsOpen = useAtomValue(finalShotsViewerOpenAtom);
+    const overlaid = dagModalOpen || shotsOpen;
     // who he is: Spider-Man hangs, rappels and web-swings, and the walker reads it
     const character = petCharacter(useAtomValue(petCharacterAtom));
     // Mod held on its own (digithints.ts, the rail's digits too): a J where ⌘J would open the peek
@@ -1140,7 +1147,7 @@ function PetSprite({
             }}
             // opacity is animated above rather than set here: an inline style beats a utility class, so a
             // class would always have lost
-            className="fixed z-[60] cursor-grab outline-none active:cursor-grabbing"
+            className={`fixed z-[60] cursor-grab outline-none active:cursor-grabbing${overlaid ? " invisible" : ""}`}
         >
             <motion.svg
                 width={PET_PX}

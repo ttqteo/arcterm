@@ -455,6 +455,139 @@ func TestTakeOverAskRejectsTaskWithNoQuestion(t *testing.T) {
 	}
 }
 
+// seedTakeOver gives task t-0 a worker question for the lead and the lead its own open ask, one question
+// per header. It returns the worker question's oref. (Kael d977d702f)
+func seedTakeOver(t *testing.T, leadHeaders ...string) (*fakeLead, *childOutcomeHarness, string) {
+	t.Helper()
+	f := newFakeLead(t)
+	h := newChildOutcomeHarness(t, 1)
+	child, err := wstore.GetRun(h.ctx, h.channel, h.loadDag(t).Tasks[0].RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := RunBlockORefs(h.ctx, child)
+	if len(blocks) != 1 {
+		t.Fatalf("setup: want the child's one worker block, got %q", blocks)
+	}
+	agentask.GlobalRegistry.Set(blocks[0], agentask.PendingAsk{
+		AskId: "a1", Questions: []baseds.AgentAskQuestion{{Question: "which schema?"}}, Owner: agentask.AskOwner_Lead,
+	})
+	if len(leadHeaders) > 0 {
+		qs := make([]baseds.AgentAskQuestion, len(leadHeaders))
+		for i, header := range leadHeaders {
+			qs[i] = singleSelect()
+			qs[i].Header = header
+		}
+		seedLeadOwnAsk(qs...)
+	}
+	return f, h, blocks[0]
+}
+
+func TestTakeOverAskAnswersLeadRelay(t *testing.T) {
+	_, h, _ := seedTakeOver(t, "t-0")
+	calls, release := stubLeadDelivery(t, nil)
+	close(release)
+
+	if err := TakeOverAsk(h.ctx, h.dagID, "t-0"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-calls:
+		if got.oref != leadAskOref() || got.askId != "lead-ask" {
+			t.Fatalf("the answer goes to the lead's own ask, got %s/%s", got.oref, got.askId)
+		}
+		if len(got.answers) != 1 || got.answers[0].Text != jarvis.TakenOverRelayAnswer {
+			t.Fatalf("the relay is answered with TakenOverRelayAnswer, got %+v", got.answers)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the lead's relay of the taken question was never answered")
+	}
+	select {
+	case got := <-calls:
+		t.Fatalf("the relay is answered once, got a second delivery %+v", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func assertNoLeadDelivery(t *testing.T, calls chan deliveredAnswer) {
+	t.Helper()
+	select {
+	case got := <-calls:
+		t.Fatalf("the lead's question is not the relay and must not be answered, got %+v", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if _, ok := agentask.GlobalRegistry.Get(leadAskOref()); !ok {
+		t.Fatal("the lead's own question stays pending")
+	}
+}
+
+func TestTakeOverAskLeavesOtherLeadQuestion(t *testing.T) {
+	_, h, _ := seedTakeOver(t, "Plan review")
+	calls, release := stubLeadDelivery(t, nil)
+	defer close(release)
+
+	if err := TakeOverAsk(h.ctx, h.dagID, "t-0"); err != nil {
+		t.Fatal(err)
+	}
+	assertNoLeadDelivery(t, calls)
+}
+
+func TestTakeOverAskLeavesMixedLeadAsk(t *testing.T) {
+	_, h, _ := seedTakeOver(t, "t-0", "Plan review")
+	calls, release := stubLeadDelivery(t, nil)
+	defer close(release)
+
+	if err := TakeOverAsk(h.ctx, h.dagID, "t-0"); err != nil {
+		t.Fatal(err)
+	}
+	assertNoLeadDelivery(t, calls)
+}
+
+func TestTakeOverAskWithoutLeadQuestion(t *testing.T) {
+	f, h, _ := seedTakeOver(t)
+	calls, release := stubLeadDelivery(t, nil)
+	defer close(release)
+
+	if err := TakeOverAsk(h.ctx, h.dagID, "t-0"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-calls:
+		t.Fatalf("with no lead question nothing is answered, got %+v", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if n := f.countKind(waveobj.RunEventKindLeadWakeFailed); n != 0 {
+		t.Fatalf("no lead question is not a failure, got %d lead-wake-failed rows", n)
+	}
+}
+
+func TestTakeOverAskRelayDeliveryFailure(t *testing.T) {
+	_, h, worker := seedTakeOver(t, "t-0")
+	recorded := make(chan map[string]any, 1)
+	appendRunEvent = func(_ context.Context, _, _, kind string, _ *int, detail any) {
+		if kind == waveobj.RunEventKindLeadWakeFailed {
+			recorded <- detail.(map[string]any)
+		}
+	}
+	_, release := stubLeadDelivery(t, errors.New("pty closed"))
+	close(release)
+
+	if err := TakeOverAsk(h.ctx, h.dagID, "t-0"); err != nil {
+		t.Fatalf("the take-over succeeds though the relay's answer fails: %v", err)
+	}
+	if p, _ := agentask.GlobalRegistry.Get(worker); p.Owner != agentask.AskOwner_User {
+		t.Fatalf("the worker's question still moved to the human, got %+v", p)
+	}
+	select {
+	case d := <-recorded:
+		if reason, _ := d["reason"].(string); !strings.Contains(reason, "pty closed") {
+			t.Fatalf("the row carries the delivery error, got %+v", d)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a failed relay answer is recorded as lead-wake-failed")
+	}
+}
+
 func TestForwardTaskRecordsFailedTask(t *testing.T) {
 	f := newFakeLead(t)
 	h := newNotifyHarness(t, 1, []waveobj.TaskNode{{ID: "t-0", Label: "a"}})

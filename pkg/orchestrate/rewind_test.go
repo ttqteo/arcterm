@@ -4,7 +4,9 @@
 package orchestrate
 
 import (
+	"bytes"
 	"context"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,6 +95,141 @@ func TestSkippingAFailedTaskLandsItsLaneWithoutItsCommits(t *testing.T) {
 	patch, err := os.ReadFile(f.skippedPatch())
 	if err != nil || !strings.Contains(string(patch), "bad.txt") || strings.Contains(string(patch), "schema.txt") {
 		t.Fatalf("the skipped attempt's work, and only it, is saved to a recovery patch, got %q err %v", patch, err)
+	}
+}
+
+// putUnderReview finishes t-2's worker at its tree's head and starts a reviewer on that commit; it returns the
+// reviewer's run.
+func (f *mergeFixture) putUnderReview(t *testing.T, wt, base string) string {
+	t.Helper()
+	head := gitCmd(t, wt, "rev-parse", "HEAD")
+	if err := wstore.UpdateRun(f.ctx, f.channel, f.taskRun(t, "t-2").ID, func(r *waveobj.Run) error {
+		r.Status = jarvis.RunStatus_Done
+		r.EndCommit = head
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reviewer := jarvis.NewRun("review t-2", "ws-1", wt, nil, jarvis.RunMode_Quick, jarvis.QuickPlaybook(), 1)
+	reviewer.Review = true
+	reviewer.DagORef = f.dagID
+	reviewer.Phases[0].WorkerOrefs = []string{"tab:reviewer"}
+	if err := wstore.AppendRun(f.ctx, f.channel, reviewer); err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
+		task := taskByID(cur, "t-2")
+		task.State = TaskState_Reviewing
+		task.ReviewRunID = reviewer.ID
+		task.ReviewBase = base
+		RecomputeDagStatus(cur)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return reviewer.ID
+}
+
+// assertLandedWithoutT2 checks the lane landed t-1's work and none of the skipped t-2's, and the dag reached the end
+// any run reaches: nothing is left running and nothing was cancelled.
+func (f *mergeFixture) assertLandedWithoutT2(t *testing.T) {
+	t.Helper()
+	g := f.dag(t)
+	if g.Tasks[1].State != TaskState_Skipped || g.Tasks[1].Merged || g.Tasks[1].RunID != "" || g.Tasks[1].ReviewRunID != "" {
+		t.Fatalf("t-2 = %+v, want skipped, unmerged and owning no run", g.Tasks[1])
+	}
+	if !g.Tasks[0].Merged || g.Status != DagStatus_Done {
+		t.Fatalf("the skip lets the lane land and the dag end, got t-1 merged=%v, dag %s", g.Tasks[0].Merged, g.Status)
+	}
+	if got := committedFiles(t, f.project, "HEAD"); !reflect.DeepEqual(got, []string{"schema.txt"}) {
+		t.Fatalf("the squash carries t-1's work and none of the skipped t-2's, got %v", got)
+	}
+}
+
+// run e5c81d8f: t-6 was under review when the human changed their mind, and the lead had no way to drop it while
+// the cancel it tried ended the whole run
+func TestSkippingATaskUnderReviewStopsItsReviewerAndLandsTheLaneWithoutIt(t *testing.T) {
+	f := newMergeFixture(t, oneLane())
+	wt, schema := f.startSecondTask(t)
+	commitInTree(t, wt, "bad.txt")
+	worker := f.taskRun(t, "t-2").ID
+	reviewer := f.putUnderReview(t, wt, schema)
+	stopped := recordStops(t)
+
+	if err := ApplyAction(f.ctx, f.dagID, "t-2", "skip", waveobj.RoutePin{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(*stopped) == 0 || (*stopped)[0] != reviewer {
+		t.Fatalf("the skip stops t-2's reviewer %s first, stopped %v", reviewer, *stopped)
+	}
+	if run, err := wstore.GetRun(f.ctx, f.channel, reviewer); err != nil || run.Status != jarvis.RunStatus_Cancelled {
+		t.Fatalf("t-2's reviewer run is cancelled, got %+v err %v", run, err)
+	}
+	if run, err := wstore.GetRun(f.ctx, f.channel, worker); err != nil || run.Status != jarvis.RunStatus_Done {
+		t.Fatalf("t-2's finished worker keeps its done run, got %+v err %v", run, err)
+	}
+	f.assertLandedWithoutT2(t)
+}
+
+// a reviewer that finished before the skip keeps the status it finished with: cancelling it would rewrite a done run
+func TestSkippingATaskWhoseReviewerEndedKeepsTheReviewersStatus(t *testing.T) {
+	f := newMergeFixture(t, oneLane())
+	wt, schema := f.startSecondTask(t)
+	commitInTree(t, wt, "bad.txt")
+	reviewer := f.putUnderReview(t, wt, schema)
+	if err := wstore.UpdateRun(f.ctx, f.channel, reviewer, func(r *waveobj.Run) error {
+		r.Status = jarvis.RunStatus_Done
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recordStops(t)
+
+	if err := ApplyAction(f.ctx, f.dagID, "t-2", "skip", waveobj.RoutePin{}); err != nil {
+		t.Fatal(err)
+	}
+	if run, err := wstore.GetRun(f.ctx, f.channel, reviewer); err != nil || run.Status != jarvis.RunStatus_Done {
+		t.Fatalf("the ended reviewer keeps its done run, got %+v err %v", run, err)
+	}
+	f.assertLandedWithoutT2(t)
+}
+
+// a task that has not started has no worker to stop and no commit on its lane: the skip only records it
+func TestSkippingAPendingTaskStopsNothing(t *testing.T) {
+	f := newMergeFixture(t, oneLane())
+	stopped := recordStops(t)
+
+	if err := ApplyAction(f.ctx, f.dagID, "t-2", "skip", waveobj.RoutePin{}); err != nil {
+		t.Fatal(err)
+	}
+	if g := f.dag(t); g.Tasks[1].State != TaskState_Skipped || g.Tasks[1].RunID != "" || g.Tasks[0].State == TaskState_Skipped {
+		t.Fatalf("only t-2 is skipped, got t-1 %s, t-2 %s run %q", g.Tasks[0].State, g.Tasks[1].State, g.Tasks[1].RunID)
+	}
+	if len(*stopped) != 0 {
+		t.Fatalf("a pending task has nothing to stop, stopped %v", *stopped)
+	}
+}
+
+// a task skipped again writes its patch beside the earlier one's: the log named the earlier file
+func TestSkippingLogsThePatchItWrote(t *testing.T) {
+	f := newMergeFixture(t, oneLane())
+	wt, _ := f.startSecondTask(t)
+	commitInTree(t, wt, "bad.txt")
+	f.setTaskState(t, "t-2", TaskState_Failed)
+	writeFile(t, f.skippedPatch(), "an earlier skip's work\n")
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	if err := ApplyAction(f.ctx, f.dagID, "t-2", "skip", waveobj.RoutePin{}); err != nil {
+		t.Fatal(err)
+	}
+	second := strings.TrimSuffix(filepath.Base(f.skippedPatch()), ".patch") + "-2.patch"
+	if patch := readFile(t, filepath.Join(filepath.Dir(f.skippedPatch()), second)); !strings.Contains(patch, "bad.txt") {
+		t.Fatalf("the skip's work goes beside the earlier patch, got %q", patch)
+	}
+	if !strings.Contains(logged.String(), "saved to recovery/"+second) {
+		t.Fatalf("the log names %s, got:\n%s", second, logged.String())
 	}
 }
 

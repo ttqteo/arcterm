@@ -1,13 +1,15 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { RunSettingsPanel } from "@/app/view/jarvis/briefrunsheet";
 import { useAtomValue } from "jotai";
-import { runProgress } from "../agents/runlineage";
+import { useState } from "react";
+import { runFinished, runProgress } from "../agents/runlineage";
 import { RunMenu } from "../agents/runmenu";
 import { useRunUsage } from "../agents/runtokenstore";
 import { modelsText, summarizeUsage, usageText } from "../agents/runusage";
 import { chipGroups, pickNext, type ChipGroup } from "./dagcanvas";
-import { selectedTaskIdAtom } from "./dagstore";
+import { dagActionError, selectedTaskIdAtom } from "./dagstore";
 import { dagCancellable, dagStatusPill, reviewersChip, workersChip, type DagStatusPill } from "./taskroute";
 
 // a chip's dot: filled for the groups that are doing or done something, an open ring for those that are not
@@ -20,11 +22,11 @@ const CHIP_DOT = new Map<ChipGroup["key"], string>([
 ]);
 
 // the summary chips: how many tasks are in each group, and a click steps the selection through that group
-function SummaryChips({ tasks }: { tasks: TaskNode[] }) {
+function SummaryChips({ tasks, ended }: { tasks: TaskNode[]; ended: boolean }) {
     const selected = useAtomValue(selectedTaskIdAtom);
     return (
         <div className="flex flex-none items-center gap-1.5">
-            {chipGroups(tasks).map((g) => (
+            {chipGroups(tasks, ended).map((g) => (
                 <button
                     key={g.key}
                     type="button"
@@ -43,8 +45,7 @@ function SummaryChips({ tasks }: { tasks: TaskNode[] }) {
     );
 }
 
-const ROUTE_CHIP =
-    "flex-none rounded-[5px] border border-edge-mid px-[7px] py-0.5 text-[10.5px] text-ink-mid";
+const ROUTE_CHIP = "flex-none rounded-[5px] border border-edge-mid px-[7px] py-0.5 text-[10.5px] text-ink-mid";
 
 const PILL_TONE: Record<DagStatusPill["tone"], string> = {
     done: "border-success/50 bg-success/10 text-success",
@@ -62,48 +63,79 @@ export function DagGraphHeader({ group, owner }: { group: TaskGroup; owner: Run 
     const tone = PILL_TONE[pill.tone];
     const label = pill.label;
     const { done } = runProgress(group);
+    const ended = runFinished({ dag: group, status: group.status });
+    const [cancelError, setCancelError] = useState("");
+    const [adjusting, setAdjusting] = useState(false);
     const usage = useRunUsage(group.channelid, group.runid);
     const spent = summarizeUsage(usage?.rows);
     return (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-background px-4 py-2.5">
-            <div className="min-w-48 flex-1">
-                <div className="truncate text-[15px] font-bold tracking-[-0.01em] text-primary">
-                    {group.title || "orchestration dag"}
+        <div className="border-b border-border bg-background">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">
+                <div className="min-w-48 flex-1">
+                    <div className="truncate text-[15px] font-bold tracking-[-0.01em] text-primary">
+                        {group.title || "orchestration dag"}
+                    </div>
+                    <div className="text-[10.5px] tabular-nums text-ink-mid">
+                        parallelism {group.parallelism} ·{" "}
+                        <span data-dag-progress>
+                            {done}/{group.tasks.length} done
+                        </span>
+                        {spent ? ` · ${usageText(spent, usage.sealed)}` : ""}
+                    </div>
+                    {spent ? (
+                        <div className="truncate text-[10.5px] tabular-nums text-ink-mid">{modelsText(spent)}</div>
+                    ) : null}
                 </div>
-                <div className="text-[10.5px] tabular-nums text-ink-mid">
-                    parallelism {group.parallelism} · {done}/{group.tasks.length} done
-                    {spent ? ` · ${usageText(spent, usage.sealed)}` : ""}
-                </div>
-                {spent ? (
-                    <div className="truncate text-[10.5px] tabular-nums text-ink-mid">{modelsText(spent)}</div>
-                ) : null}
-            </div>
-            <SummaryChips tasks={group.tasks} />
-            <span className={ROUTE_CHIP}>{workersChip(group, owner)}</span>
-            <span className={ROUTE_CHIP}>{reviewersChip(group, owner)}</span>
-            <span
-                className={`rounded-[5px] border px-2 py-0.5 text-[10.5px] uppercase tracking-wide ${tone}`}
-            >
-                {label}
-            </span>
-            {dagCancellable(group.status) ? (
-                <button
-                    type="button"
-                    onClick={() =>
-                        void RpcApi.DagActionCommand(TabRpcClient, {
-                            channelid: group.channelid,
-                            runid: group.runid,
-                            taskid: "",
-                            action: "cancel",
-                        })
-                    }
-                    className="rounded border border-edge-mid px-2.5 py-1 text-[11.5px] font-semibold text-secondary hover:border-warning/60 hover:text-warning"
+                <SummaryChips tasks={group.tasks} ended={ended} />
+                <span className={ROUTE_CHIP}>{workersChip(group, owner)}</span>
+                <span className={ROUTE_CHIP}>{reviewersChip(group, owner)}</span>
+                <span
+                    data-dag-status-pill
+                    className={`rounded-[5px] border px-2 py-0.5 text-[10.5px] uppercase tracking-wide ${tone}`}
                 >
-                    Cancel
-                </button>
-            ) : null}
-            {/* Pause and Resume sit in the run's ⋯ menu, not beside Cancel: the owning run is what pauses */}
-            <RunMenu channelId={owner.channeloid} runId={owner.id} run={owner} />
+                    {label}
+                </span>
+                {/* the same rule as the lead card's Adjust: an engine run's dials change until it finishes */}
+                {!ended ? (
+                    <button
+                        type="button"
+                        data-dag-adjust
+                        aria-expanded={adjusting}
+                        onClick={() => setAdjusting((v) => !v)}
+                        className="rounded border border-edge-mid px-2.5 py-1 text-[11.5px] font-semibold text-secondary hover:border-edge-strong hover:text-primary"
+                    >
+                        {adjusting ? "Done" : "Adjust"}
+                    </button>
+                ) : null}
+                {dagCancellable(group.status) ? (
+                    <>
+                        {cancelError ? (
+                            <span data-dag-cancel-error className="text-[11.5px] text-warning">
+                                {cancelError}
+                            </span>
+                        ) : null}
+                        <button
+                            type="button"
+                            data-dag-cancel
+                            onClick={() => {
+                                setCancelError("");
+                                RpcApi.DagActionCommand(TabRpcClient, {
+                                    channelid: group.channelid,
+                                    runid: group.runid,
+                                    taskid: "",
+                                    action: "cancel",
+                                }).catch((e) => setCancelError(dagActionError("cancel", group.runid, e)));
+                            }}
+                            className="rounded border border-edge-mid px-2.5 py-1 text-[11.5px] font-semibold text-secondary hover:border-warning/60 hover:text-warning"
+                        >
+                            Cancel
+                        </button>
+                    </>
+                ) : null}
+                {/* Pause and Resume sit in the run's ⋯ menu, not beside Cancel: the owning run is what pauses */}
+                <RunMenu channelId={owner.channeloid} runId={owner.id} run={owner} />
+            </div>
+            {!ended ? <RunSettingsPanel run={owner} open={adjusting} /> : null}
         </div>
     );
 }

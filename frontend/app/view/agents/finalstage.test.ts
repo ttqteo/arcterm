@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    finalFailedNote,
     finalRowFocusId,
     finalStageActivity,
     finalStageId,
@@ -10,6 +11,7 @@ import {
     finalStageView,
     isFinalStageId,
     outputTail,
+    pastRoundExtras,
     shownStep,
     stepHasOutput,
     type FinalStageView,
@@ -614,5 +616,61 @@ describe("outputTail", () => {
         expect(outputTail("a\nb", 5)).toBe("a\nb");
         expect(outputTail("a\nb", 0)).toBe("");
         expect(outputTail("", 3)).toBe("");
+    });
+});
+
+// 2026-11-13 Kael sync, 362ec28e7 (F11) and 9f9b2f3e9 (D11): added cases, none of the cases above changed
+describe("finalStageView, a run cancelled before the stage started", () => {
+    it("the node did not run", () => {
+        const tasks = [...sevenDone.slice(0, 4), task("t-5", "skipped"), task("t-6", "pending")];
+        const v = finalStageView(dag(undefined, { status: "cancelled", tasks }), [], NOW);
+        expect(v.headline).toBe("did not run · run cancelled");
+        expect(v.nodeMeta).toBe("did not run · run cancelled");
+        expect(v.subline).toBe("did not run");
+    });
+
+    it("a running dag with tasks pending still waits on every task", () => {
+        const tasks = [...sevenDone.slice(0, 6), task("t-7", "pending")];
+        const v = finalStageView(dag(undefined, { status: "running", tasks }), [], NOW);
+        expect(v.headline).toBe("waits on every task");
+    });
+});
+
+describe("pastRoundExtras", () => {
+    it("keeps a failed round's detail, and says it kept no screenshots when it failed before Final", () => {
+        const detail = "Verify `node scripts/verify.mjs ./pkg/x` failed on the merged result (exit 1):\nFAIL";
+        const pastfinals = [
+            { state: "failed", round: 1, detail, shots: [{ name: "s", files: [] }] },
+            { state: "passed", round: 2, shots: [{ name: "s", files: ["s.png"] }] },
+        ] as FinalStage[];
+        const group = dag({ state: "", round: 3 }, { pastfinals });
+        expect(pastRoundExtras(group, 1)).toEqual({ detail, hasShots: false });
+        expect(pastRoundExtras(group, 2)).toEqual({ detail: "", hasShots: true });
+    });
+
+    it("has nothing for a round the dag does not list", () => {
+        expect(pastRoundExtras(dag({ state: "", round: 2 }), 1)).toEqual({ detail: "", hasShots: false });
+    });
+
+    it("leaves the earlier-rounds lines as they were", () => {
+        const pastfinals = [{ state: "failed", round: 1, detail: "Final `x` failed (exit 1):\nnope" }] as FinalStage[];
+        const v = finalStageView(dag({ state: "", round: 2 }, { pastfinals }), [ev("final", S, false, 1)], NOW);
+        expect(v.past).toEqual([{ round: 1, tone: "fail", text: "round 1 · failed at Final" }]);
+    });
+});
+
+describe("finalFailedNote", () => {
+    it("says the lead is asking about the failure, and that a rerun is the human's call", () => {
+        expect(finalFailedNote({ asking: true })).toBe(
+            "The lead is asking you about this failure. Rerun it if the failure was outside the code."
+        );
+    });
+
+    it("leaves the failure with a lead that is not asking", () => {
+        expect(finalFailedNote({ asking: false })).toBe("The lead has this failure and decides what happens next.");
+    });
+
+    it("hands the failure to the human when there is no lead", () => {
+        expect(finalFailedNote(undefined)).toBe("This failure is yours. Rerun it if the failure was outside the code.");
     });
 });

@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from "
 import { createPortal } from "react-dom";
 import {
     clampSelection,
+    emptyRoundText,
     roundLabel,
     roundTally,
     scenarioTally,
@@ -198,7 +199,16 @@ export function FinalShotsViewer({
             >
                 <ViewerHeader rounds={rounds} round={round} onPick={pickRound} onClose={onClose} />
                 {round == null || round.scenarios.length === 0 ? (
-                    <div className="flex flex-1 items-center justify-center text-xs text-ink-mid">No screenshots</div>
+                    <div
+                        data-final-shots-empty=""
+                        className="flex flex-1 items-center justify-center text-xs text-ink-mid"
+                    >
+                        {emptyRoundText(
+                            [...(group.pastfinals ?? []), group.final].find(
+                                (f) => f != null && f.round === round?.round
+                            )
+                        )}
+                    </div>
                 ) : (
                     <>
                         <ScenarioTabs round={round} current={s} onPick={pickScenario} />

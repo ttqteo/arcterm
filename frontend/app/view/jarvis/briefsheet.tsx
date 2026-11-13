@@ -320,6 +320,11 @@ function SheetChannelPending({ channelId }: { channelId: string }) {
     );
 }
 
+// Whether the sheet is drawn. The sheet's shell registers on the modal stack only once its face loads, which
+// can be after the DAG modal over it opened (an address opens both in one tick); the DAG modal re-registers when
+// this flips, so it lands back on top whichever mounted first.
+export const briefSheetVisibleAtom = atom(false);
+
 export function BriefSheet({ model }: { model: AgentsViewModel }) {
     const subject = useAtomValue(activeSubjectAtom);
     const run = useAtomValue(stageRunAtom);
@@ -425,6 +430,10 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
     };
 
     const visible = open && face.kind !== "none";
+    useEffect(() => {
+        globalStore.set(briefSheetVisibleAtom, visible);
+        return () => globalStore.set(briefSheetVisibleAtom, false);
+    }, [visible]);
     // the exit animation still needs something to draw after the subject clears, so the last shown
     // face and its title are latched rather than read live (petbubble.tsx keeps the same rule)
     const metaRunId = meta != null ? run?.id : undefined;

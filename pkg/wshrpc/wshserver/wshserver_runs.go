@@ -794,7 +794,8 @@ func (ws *WshServer) CreateChildRunCommand(ctx context.Context, data wshrpc.Comm
 		return nil, fmt.Errorf("spawning child worker: %w", err)
 	}
 	phaseZero := 0
-	appendRunEvent(ctx, channelId, child.ID, waveobj.RunEventKindChildCreated, nil, map[string]any{
+	// on the parent's log, like the child-done advanceRun records there: the row links to the child
+	appendRunEvent(ctx, channelId, parent.ID, waveobj.RunEventKindChildCreated, nil, map[string]any{
 		"childrunid": child.ID, "goal": child.Goal, "mode": child.Mode,
 	})
 	appendRunEvent(ctx, channelId, child.ID, waveobj.RunEventKindPhaseStarted, &phaseZero, map[string]any{})
@@ -1088,7 +1089,12 @@ func (ws *WshServer) ReportRunPhaseCommand(ctx context.Context, data wshrpc.Comm
 	if lerr != nil {
 		rtn.LandError = lerr.Error()
 	}
-	return rtn, err
+	// the rpc adapter sends only the error when a handler returns one, so a failure after the land rides in the
+	// reply beside it
+	if err != nil {
+		rtn.Error = err.Error()
+	}
+	return rtn, nil
 }
 
 func (ws *WshServer) CancelRunCommand(ctx context.Context, data wshrpc.CommandCancelRunData) error {

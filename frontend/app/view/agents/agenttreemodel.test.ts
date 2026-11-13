@@ -14,16 +14,18 @@ import {
     selectableRowIds,
     selectOnly,
     stageOutcome,
+    stageRowAge,
     stageSubline,
     toggleRow,
     UNGROUPED_PROJECT,
+    workerRowTone,
     type AgentTreeRow,
     type TreeFolds,
 } from "./agenttreemodel";
 import type { BuilderCheckRecord } from "./brainstormmodel";
 import { seatableAgents } from "./councilsetupmodel";
 import type { DevServerRow } from "./devserversmodel";
-import { endedWorkerId, type Lineage, type RunInfo } from "./runlineage";
+import { endedReviewerId, endedWorkerId, type Lineage, type RunInfo } from "./runlineage";
 import type { BackgroundTask } from "./transcriptprojection";
 
 function vm(id: string, state: AgentVM["state"], path?: string): AgentVM {
@@ -438,6 +440,39 @@ describe("buildAgentTree with run lineage", () => {
         expect(shape(rows)).toEqual(["group:waveterm:1:0", "run:run-1:1", "done:1:false", "stage:verifier:ver"]);
     });
 
+    describe("a lane tip at the merge gate (D6)", () => {
+        const gated = (mergestate: string) =>
+            run("run-1", [task("t-1", "done"), task("t-2", "done"), task("t-3", "verifying")], {
+                tasks: [
+                    { taskid: "t-1", mergestate: "merged" },
+                    { taskid: "t-2", mergestate, ...(mergestate === "held" ? { mergeheldby: "t-3" } : {}) },
+                ],
+            } as DagStatusDigest);
+        const roles: Lineage["roles"] = { lead: { kind: "lead", runId: "run-1" } };
+        const gateOf = (rows: AgentTreeRow[]) =>
+            rows.flatMap((r) => (r.kind === "worker" && r.task.id === "t-2" ? [r.gate] : []));
+        const treeOf = (r: RunInfo) => buildAgentTree([agent("lead", "idle")], ["lead"], lineage([r], roles));
+
+        it("keeps a held tip among the live rows with the gate's line, out of the done fold", () => {
+            const rows = treeOf(gated("held"));
+            expect(shape(rows)).toContain("worker:t-2:-");
+            expect(shape(rows).filter((s) => s.startsWith("done:"))).toEqual(["done:1:false"]);
+            expect(gateOf(rows)).toEqual(["merge ready · waits on t-3's Verify"]);
+        });
+
+        it("keeps a ready tip live too, reading merge ready", () => {
+            const rows = treeOf(gated("ready"));
+            expect(shape(rows)).toContain("worker:t-2:-");
+            expect(gateOf(rows)).toEqual(["merge ready"]);
+        });
+
+        it("folds a done task past the gate as before", () => {
+            const rows = treeOf(gated("merged"));
+            expect(shape(rows).filter((s) => s.startsWith("done:"))).toEqual(["done:2:false"]);
+            expect(shape(rows)).not.toContain("worker:t-2:-");
+        });
+    });
+
     describe("a stage session with a verdict", () => {
         const stageAgent = (id: string, runId: string) => ({ ...agent(id, "idle", ""), runId });
         // run 6c7652be's shape: round 1's plan review failed, round 2's follow-up passed, the final verifier is judging
@@ -590,6 +625,72 @@ describe("buildAgentTree with run lineage", () => {
                     "stage:plan-reviewer:spec@spec:failed",
                     "stage:plan-reviewer:full@full:passed",
                 ]);
+            });
+
+            // the engine stops a reviewer with its tab once its verdict is recorded, so the dag alone still has it
+            describe("whose tab the engine closed after its verdict", () => {
+                const failedRound = () => {
+                    const r = run("run-1", [task("t-1", "pending")]);
+                    r.dag.planreview = {
+                        state: "failed",
+                        round: 1,
+                        reviewers: [
+                            { lens: "full", state: "passed", runid: "rv-full" },
+                            { lens: "second", state: "failed", runid: "rv-second" },
+                        ],
+                    };
+                    return r;
+                };
+                const LEAD_ONLY: Lineage["roles"] = { lead: { kind: "lead", runId: "run-1" } };
+                const doneOpen = {
+                    collapsed: new Set<string>(),
+                    doneOpen: new Map([["run-1", 0]]),
+                    queuedOpen: new Set<string>(),
+                    extrasOpen: new Set<string>(),
+                };
+
+                it("keeps a row from the dag, with its lens and verdict, in the done fold", () => {
+                    const r = failedRound();
+                    expect(shape(buildAgentTree([agent("lead", "idle")], ["lead"], lineage([r], LEAD_ONLY)))).toEqual([
+                        "group:waveterm:1:0",
+                        "lead:run-1:0",
+                        "done:0+2!1:false",
+                        "queued:1:false",
+                    ]);
+                    const rows = buildAgentTree([agent("lead", "idle")], ["lead"], lineage([r], LEAD_ONLY), doneOpen);
+                    expect(shape(rows)).toEqual([
+                        "group:waveterm:1:0",
+                        "lead:run-1:0",
+                        "done:0+2!1:true",
+                        `stage:plan-reviewer:${endedReviewerId("run-1", "rv-second")}@second:failed`,
+                        `stage:plan-reviewer:${endedReviewerId("run-1", "rv-full")}@full:passed`,
+                        "queued:1:false",
+                    ]);
+                });
+
+                it("gives a reviewer whose tab is still in the roster only that tab's row", () => {
+                    const r = failedRound();
+                    const rows = buildAgentTree(
+                        [agent("lead", "idle"), stageAgent("full", "rv-full")],
+                        ["lead", "full"],
+                        lineage([r], {
+                            ...LEAD_ONLY,
+                            full: { kind: "stage", leadRunId: "run-1", stageRole: "plan-reviewer" },
+                        }),
+                        doneOpen
+                    );
+                    expect(shape(rows).filter((s) => s.startsWith("stage:"))).toEqual([
+                        `stage:plan-reviewer:${endedReviewerId("run-1", "rv-second")}@second:failed`,
+                        "stage:plan-reviewer:full@full:passed",
+                    ]);
+                });
+
+                it("leaves a round still reviewing to the roster's tabs", () => {
+                    const r = failedRound();
+                    r.dag.planreview!.state = "reviewing";
+                    const rows = buildAgentTree([agent("lead", "idle")], ["lead"], lineage([r], LEAD_ONLY), doneOpen);
+                    expect(shape(rows).filter((s) => s.startsWith("stage:"))).toEqual([]);
+                });
             });
         });
 
@@ -1525,5 +1626,35 @@ describe("tasksShown", () => {
         expect(tasksShown(TASK_FOLD_AT, undefined)).toBe(false);
         expect(tasksShown(TASK_FOLD_AT + 2, false)).toBe(false);
         expect(tasksShown(TASK_FOLD_AT, true)).toBe(true);
+    });
+});
+
+describe("workerRowTone (D18)", () => {
+    const t = (state: string) => ({ id: "t-1", state }) as TaskNode;
+
+    it("reads a failed task as an error, a stalled one as a warning", () => {
+        for (const state of ["failed", "verify-failed", "blocked-merge", "review-failed"]) {
+            expect(workerRowTone(t(state))).toBe("error");
+        }
+        expect(workerRowTone(t("stalled"))).toBe("warning");
+    });
+
+    it("gives every other state no tone", () => {
+        for (const state of ["pending", "ready", "running", "reviewing", "verifying", "done", "skipped", "cancelled"]) {
+            expect(workerRowTone(t(state))).toBeUndefined();
+        }
+    });
+});
+
+describe("stageRowAge", () => {
+    const NOW = 10 * 60_000;
+    const vm = (id: string, extra: Partial<AgentVM> = {}): AgentVM => ({ id, name: id, task: "", state: "idle", ...extra });
+    it("is a live stage session's age", () => {
+        expect(stageRowAge(vm("rev", { idleSince: NOW - 5 * 60_000 }), NOW)).toBe("5m");
+    });
+    it("is none for an ended reviewer, whose end the tree does not know", () => {
+        const ended = vm(endedReviewerId("run-1", "rv-full"), { idleSince: NOW - 5 * 60_000 });
+        expect(stageRowAge(ended, NOW)).toBeUndefined();
+        expect(stageSubline("passed", stageRowAge(ended, NOW))).toBe("passed");
     });
 });

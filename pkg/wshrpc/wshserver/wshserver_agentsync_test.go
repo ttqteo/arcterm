@@ -78,6 +78,26 @@ func TestAgentSyncAdoptPassesSkip(t *testing.T) {
 	}
 }
 
+// an rpc reply that is an error carries no data, so a failed apply must report its reason inside the reply
+// for the plan it was applying to reach the caller
+func TestAgentSyncAdoptFailureKeepsThePlan(t *testing.T) {
+	p := useAgentSyncHome(t)
+	harnessSkill(t, p, "notes")
+	// the vault cannot be created: its skills root is taken by a file
+	writeAgentSyncFile(t, filepath.Dir(p.SkillsRoot), "not a folder")
+
+	rtn, err := (&WshServer{}).AgentSyncAdoptCommand(context.Background(), wshrpc.CommandAgentSyncAdoptData{Apply: true})
+	if err != nil {
+		t.Fatalf("err = %v: an error reply would drop the plan", err)
+	}
+	if !strings.Contains(rtn.Error, "adopting harness skills") {
+		t.Fatalf("reply error = %q, want the adopt failure", rtn.Error)
+	}
+	if len(rtn.Moves) != 1 || rtn.Moves[0].Name != "notes" {
+		t.Fatalf("moves = %+v, want the plan the apply was making", rtn.Moves)
+	}
+}
+
 func TestAgentSyncAdoptDryRunUnderSnapshot(t *testing.T) {
 	p := useAgentSyncHome(t)
 	src := harnessSkill(t, p, "graphify")

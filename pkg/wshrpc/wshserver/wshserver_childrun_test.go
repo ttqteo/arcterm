@@ -409,3 +409,50 @@ func TestTaskWorkerCompleteRequiresReport(t *testing.T) {
 		})
 	}
 }
+
+// the child-created row belongs on the parent's timeline, beside the child-done row advanceRun writes there
+// and linking to the child; on the child's own log it pointed at itself and the parent had no matching row
+func TestCreateChildRunCommand_RecordsCreatedOnTheParent(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "child-created", "/repo")
+	if err != nil {
+		t.Fatalf("CreateChannel: %v", err)
+	}
+	parent := jarvis.NewRun("work the backlog", "ws-1", "/repo", nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+	leadORef := leadTabORef(ch)
+	parent.Phases[0].WorkerOrefs = []string{leadORef}
+	if err := wstore.AppendRun(ctx, ch.OID, parent); err != nil {
+		t.Fatalf("AppendRun: %v", err)
+	}
+	origSpawn := jarvis.SpawnRunWorker
+	jarvis.SpawnRunWorker = func(_ context.Context, _ runroute.Capability, _, _, _, _ string, _ jarvis.RunWorkerOptions) (string, error) {
+		return waveobj.MakeORef(waveobj.OType_Tab, "childtab").String(), nil
+	}
+	defer func() { jarvis.SpawnRunWorker = origSpawn }()
+
+	rtn, err := (&WshServer{}).CreateChildRunCommand(ctx, wshrpc.CommandCreateChildRunData{ORef: leadORef, Goal: "fix 6a"})
+	if err != nil {
+		t.Fatalf("CreateChildRunCommand: %v", err)
+	}
+	created := func(runId string) []waveobj.RunEvent {
+		t.Helper()
+		events, err := wstore.QueryRunEvents(ctx, ch.OID, runId, 0)
+		if err != nil {
+			t.Fatalf("QueryRunEvents(%s): %v", runId, err)
+		}
+		var out []waveobj.RunEvent
+		for _, ev := range events {
+			if ev.Kind == waveobj.RunEventKindChildCreated {
+				out = append(out, ev)
+			}
+		}
+		return out
+	}
+	onParent := created(parent.ID)
+	if len(onParent) != 1 || !strings.Contains(string(onParent[0].Detail), rtn.RunId) {
+		t.Fatalf("parent's child-created rows = %+v, want one naming child %s", onParent, rtn.RunId)
+	}
+	if onChild := created(rtn.RunId); len(onChild) != 0 {
+		t.Fatalf("child's own log holds child-created rows: %+v", onChild)
+	}
+}

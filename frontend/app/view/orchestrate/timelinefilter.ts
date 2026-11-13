@@ -44,6 +44,10 @@ export const ATTENTION_KINDS = new Set<string>([
     "merge-held",
 ]);
 
+// FINAL_FAILED_BLOCK is the engine's BlockingKindFinalFailed: a dag-blocked row of this kind is the final stage
+// failing, not a task.
+export const FINAL_FAILED_BLOCK = "final-failed";
+
 // taskIdOf reads the task a row belongs to; "" for a dag-level row (dag-done, evidence-sealed).
 export function taskIdOf(event: RunEvent): string {
     return detailOf<{ taskid?: string }>(event)?.taskid ?? "";

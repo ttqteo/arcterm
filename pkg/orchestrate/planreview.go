@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -259,6 +260,50 @@ func writePlanReviewOpening(b *strings.Builder, g *waveobj.TaskGroup, tree strin
 		b.WriteString("There is no spec file. Read ")
 	}
 	fmt.Fprintf(b, "the plan at %s, and the files they name.\n", DocPath(g, tree, g.PlanPath))
+	writeDependsEdges(b, g)
+}
+
+// writeDependsEdges lists the edges the engine runs the plan by, one line per task, for a plan that has any. Reviewers
+// read a task with no Depends line as running beside the one before it, when it waits for it (runs 957d9a1f,
+// 690cc20a, 8028cea5, f537df33). A plan whose tasks wait for nothing has no default edge to misread, and its brief
+// stays as it was.
+func writeDependsEdges(b *strings.Builder, g *waveobj.TaskGroup) {
+	hasEdge := false
+	for _, t := range g.Tasks {
+		if len(t.Deps) > 0 {
+			hasEdge = true
+			break
+		}
+	}
+	if !hasEdge {
+		return
+	}
+	implicit := implicitDeps(g)
+	b.WriteString("The engine parsed these dependency edges from the plan (t-N is its Task N); a task starts only after each task it waits for, a task with no Depends line waits for the one before it, and tasks with no chain of edges between them run at the same time:\n")
+	for _, t := range g.Tasks {
+		switch {
+		case len(t.Deps) == 0:
+			fmt.Fprintf(b, "- %s waits for nothing\n", t.ID)
+		case slices.Contains(implicit, t.ID):
+			fmt.Fprintf(b, "- %s waits for %s (implicit: no Depends line)\n", t.ID, strings.Join(t.Deps, ", "))
+		default:
+			fmt.Fprintf(b, "- %s waits for %s\n", t.ID, strings.Join(t.Deps, ", "))
+		}
+	}
+}
+
+// implicitDeps is the ids of the tasks the round's plan text gives no Depends line. The tasks carry only their
+// edges, so the text is parsed again; a text that no longer parses marks none implicit, and the edges stand.
+func implicitDeps(g *waveobj.TaskGroup) []string {
+	if g.PlanReview == nil || g.PlanReview.PlanText == "" {
+		return nil
+	}
+	plan, err := jarvis.ParsePlan(g.PlanReview.PlanText)
+	if err != nil {
+		log.Printf("dag %s: parsing the plan for its reviewer's dependency edges: %v", g.OID, err)
+		return nil
+	}
+	return plan.ImplicitDeps
 }
 
 // planReviewReadOnly is the line every plan reviewer's brief ends its checks with.
@@ -748,6 +793,22 @@ func PlanReviewReplaceable(g *waveobj.TaskGroup) bool {
 	return true
 }
 
+// PlanReviewRoundsSpent is ReplacePlanReviewProposal's refusal of a replaceable dag whose review has run its last
+// round, asked on its own so a submit can refuse before it touches the landing tree.
+func PlanReviewRoundsSpent(g *waveobj.TaskGroup) error {
+	pr := g.PlanReview
+	if pr == nil || pr.Round < MaxPlanReviewRounds {
+		return nil
+	}
+	if g.Autonomous {
+		return fmt.Errorf("the plan review failed %d rounds, the most it gets. %s", pr.Round, autonomousPastPlanReview)
+	}
+	if specDecidesPlanReview(g) {
+		return fmt.Errorf("the plan review failed %d rounds, the most it gets. %s. When a finding does need the human, put it to them %s", pr.Round, jarvis.SpecPastPlanReview, proceedPastPlanReview)
+	}
+	return fmt.Errorf("the plan review failed %d rounds, the most it gets; put it to the human, and %s", pr.Round, proceedPastPlanReview)
+}
+
 // ReplacePlanReviewProposal puts a revised plan in place of one whose review failed, and opens the next
 // review round on it. The run keeps its one dag; only the proposal changes.
 func ReplacePlanReviewProposal(ctx context.Context, dagID string, proposed *waveobj.TaskGroup) (*waveobj.TaskGroup, error) {
@@ -759,14 +820,8 @@ func ReplacePlanReviewProposal(ctx context.Context, dagID string, proposed *wave
 		if !PlanReviewReplaceable(g) {
 			return fmt.Errorf("dag conflict: run %s's plan review is %s, so its dag can no longer be replaced", g.RunID, pr.State)
 		}
-		if pr.Round >= MaxPlanReviewRounds && g.Autonomous {
-			return fmt.Errorf("the plan review failed %d rounds, the most it gets. %s", pr.Round, autonomousPastPlanReview)
-		}
-		if pr.Round >= MaxPlanReviewRounds && specDecidesPlanReview(g) {
-			return fmt.Errorf("the plan review failed %d rounds, the most it gets. %s. When a finding does need the human, put it to them %s", pr.Round, jarvis.SpecPastPlanReview, proceedPastPlanReview)
-		}
-		if pr.Round >= MaxPlanReviewRounds {
-			return fmt.Errorf("the plan review failed %d rounds, the most it gets; put it to the human, and %s", pr.Round, proceedPastPlanReview)
+		if err := PlanReviewRoundsSpent(g); err != nil {
+			return err
 		}
 		// round 2's reviewer confirms round 1's findings against the lead's changes, and sees its picks
 		prior := &waveobj.PlanReviewPrior{Findings: pr.Findings, PlanText: pr.PlanText, SpecText: pr.SpecText}
@@ -783,7 +838,9 @@ func ReplacePlanReviewProposal(ctx context.Context, dagID string, proposed *wave
 		g.Verify, g.Setup, g.Check, g.Preamble = proposed.Verify, proposed.Setup, proposed.Check, proposed.Preamble
 		g.FinalCmd, g.Prototype = proposed.FinalCmd, proposed.Prototype
 		g.EffortOID, g.PlanPath, g.SpecPath = proposed.EffortOID, proposed.PlanPath, proposed.SpecPath
-		g.PlanReview = &waveobj.PlanReviewStage{State: PlanReviewState_Reviewing, Round: pr.Round + 1, Prior: prior}
+		// the finished round's reviewers stay on the dag for the Agent tree; every one has ended
+		past := append(append([]waveobj.PlanReviewRound(nil), pr.PastRounds...), waveobj.PlanReviewRound{Round: pr.Round, Reviewers: pr.Reviewers})
+		g.PlanReview = &waveobj.PlanReviewStage{State: PlanReviewState_Reviewing, Round: pr.Round + 1, Prior: prior, PastRounds: past}
 		out = g
 		return nil
 	})

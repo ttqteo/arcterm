@@ -12,6 +12,8 @@ import {
     PEEK_W_PX,
     peekActions,
     peekMiddleware,
+    sessionPendingText,
+    taskFailureDetail,
     taskPeek,
     verifySection,
 } from "./dagpeek";
@@ -289,5 +291,164 @@ describe("peekMiddleware", () => {
         const p = await place({ x: 500, y: 20 }, wide, 300, inset);
         expect(p.placement).toBe("left-start");
         expect(p.x + PEEK_W_PX).toBeLessThanOrEqual(wide.width - inset);
+    });
+
+    // 2026-11-13 Kael sync, 1c535bc98 (F16)
+    it("shifts on the cross axis too, so the controls strip holds when neither side fits", () => {
+        const shiftMw = peekMiddleware({ x: 0, y: 0, width: 1000, height: 600 }, PEEK_PAD_PX).find(
+            (m) => m.name === "shift"
+        );
+        // the react wrapper keeps its options as [options, deps]
+        expect((shiftMw?.options as unknown as unknown[])?.[0]).toMatchObject({ crossAxis: true });
+    });
+});
+
+// 2026-11-13 Kael sync, 1c535bc98 and 9f9b2f3e9: the card's own rows. `rows` keeps the shape every case above pins
+// (the first line of a review note, no flags); `cardRows` is what the card draws.
+describe("taskPeek card rows", () => {
+    it("marks the worker's time row", () => {
+        const peek = taskPeek(
+            task({ state: "running", firstactivity: NOW - 12 * MIN, lastactivity: NOW - 40_000 }),
+            undefined,
+            briefs,
+            NOW
+        );
+        expect(peek.cardRows).toEqual([
+            { text: "first activity 12m ago · last 40s ago", tone: "muted", activity: true },
+        ]);
+        expect(taskPeek(task({ state: "running" }), undefined, briefs, NOW).cardRows).toEqual([
+            { text: "no activity observed", tone: "muted", activity: true },
+        ]);
+    });
+
+    it("says how long a finished task worked rather than how long ago", () => {
+        const first = 1_000_000;
+        const done = taskPeek(
+            task({ state: "done", firstactivity: first, lastactivity: first + 8 * MIN }),
+            undefined,
+            briefs,
+            NOW
+        );
+        expect(done.rows).toEqual([{ text: "worked 8m", tone: "muted" }]);
+        expect(done.cardRows).toEqual([{ text: "worked 8m", tone: "muted", activity: true }]);
+        expect(taskPeek(task({ state: "done", lastactivity: first }), undefined, briefs, NOW).rows).toEqual([]);
+        // a task still working keeps dating its stamps
+        expect(
+            taskPeek(
+                task({ state: "stalled", firstactivity: first, lastactivity: first + MIN }),
+                undefined,
+                briefs,
+                NOW
+            ).rows[0].text
+        ).toMatch(/^first activity /);
+    });
+
+    it("carries the whole review note in one clamped row, its verdict first, beside the one-line row", () => {
+        const failed = taskPeek(
+            task({ state: "review-failed", reviewverdict: "fail", reviewnote: "misses empty input\nsee parse.ts" }),
+            undefined,
+            briefs,
+            NOW
+        );
+        expect(failed.rows).toContainEqual({ text: "review fail: misses empty input", tone: "warning" });
+        expect(failed.cardRows).toContainEqual({
+            text: "review fail: misses empty input\nsee parse.ts",
+            tone: "warning",
+            clamp: true,
+        });
+        expect(failed.cardRows).toHaveLength(failed.rows.length);
+        const passed = taskPeek(
+            task({ state: "done", reviewverdict: "pass", reviewnote: "verdict line\nsecond\nthird" }),
+            undefined,
+            briefs,
+            NOW
+        ).cardRows.filter((r) => r.clamp);
+        expect(passed).toHaveLength(1);
+        expect(passed[0].text.startsWith("review")).toBe(true);
+        expect(passed[0].text).toContain("second");
+        expect(passed[0].text).toContain("third");
+        expect(passed[0].tone).toBe("muted");
+    });
+});
+
+describe("verifySection legacy output", () => {
+    it("strips colour escapes from legacy output", () => {
+        const out = "\x1b[2m > \x1b[22mok\x1b[32m ✓\x1b[39m";
+        expect(verifySection(task({ state: "done", verifyoutput: out }), NOW)?.tail).toBe("> ok ✓");
+    });
+});
+
+const failedEvent = (taskid: string, ts: number, detail?: string): RunEvent => ({
+    id: `e-${taskid}-${ts}`,
+    runid: "r",
+    channelid: "c",
+    ts,
+    kind: "task-failed",
+    detail: JSON.stringify({ taskid, lastfailurekind: "setup", attempts: 1, detail }),
+});
+
+// 2026-11-13 Kael sync, 9f9b2f3e9 (D7, D13)
+describe("taskFailureDetail", () => {
+    it("reads the newest task-failed detail for the task", () => {
+        const events = [
+            failedEvent("t1", 100, "setup: exit 1: npm ci failed"),
+            failedEvent("t1", 300, "setup: exit 1: no lockfile"),
+            failedEvent("t2", 400, "another task's"),
+            failedEvent("t1", 200, "older"),
+        ];
+        expect(taskFailureDetail(events, "t1")).toBe("setup: exit 1: no lockfile");
+    });
+
+    it("is undefined with no task-failed row, or one with no detail", () => {
+        expect(taskFailureDetail([], "t1")).toBeUndefined();
+        expect(taskFailureDetail([failedEvent("t1", 100)], "t1")).toBeUndefined();
+        const other: RunEvent = { ...failedEvent("t1", 100, "x"), kind: "task-retried" };
+        expect(taskFailureDetail([other], "t1")).toBeUndefined();
+    });
+});
+
+describe("taskPeek merge gate and failure rows", () => {
+    it("appends the failure's detail to the last failure row, clamped on the card", () => {
+        const events = [failedEvent("t1", 100, "setup: exit 1: no lockfile")];
+        const t = task({ state: "failed", lastfailurekind: "setup", attempts: 1 });
+        const peek = taskPeek(t, undefined, briefs, NOW, { events });
+        expect(peek.rows).toEqual([{ text: "last failure: setup · setup: exit 1: no lockfile", tone: "warning" }]);
+        expect(peek.cardRows).toEqual([
+            { text: "last failure: setup · setup: exit 1: no lockfile", tone: "warning", clamp: true },
+        ]);
+        // no event, no detail: the row is as it was
+        expect(taskPeek(t, undefined, briefs, NOW).cardRows).toEqual([
+            { text: "last failure: setup", tone: "warning" },
+        ]);
+    });
+
+    it("heads a failed Verify with its failing line, never a passing test's", () => {
+        const t = task({ state: "verify-failed", verifyerror: "exit 1: ✔ adds two positive numbers\n✔ zero" });
+        expect(taskPeek(t, undefined, briefs, NOW).rows).toEqual([{ text: "exit 1", tone: "warning" }]);
+        const td = digest({ verifyfailline: "--- FAIL: TestAdd" });
+        expect(taskPeek(t, td, briefs, NOW).rows).toEqual([{ text: "--- FAIL: TestAdd", tone: "warning" }]);
+    });
+
+    it("shows a held tip's merge gate line", () => {
+        const t = task({ id: "t-2", state: "done" });
+        const td = digest({ taskid: "t-2", mergestate: "held", mergeheldby: "t-4" });
+        const group = { tasks: [t, { id: "t-4", state: "verify-failed" }] } as TaskGroup;
+        expect(taskPeek(t, td, briefs, NOW, { group }).rows).toEqual([
+            { text: "merge ready · waits on t-4's failed Verify", tone: "warning" },
+        ]);
+        expect(taskPeek(t, digest({ taskid: "t-2" }), briefs, NOW, { group }).rows).toEqual([]);
+    });
+});
+
+describe("sessionPendingText", () => {
+    it("says a failed task with no run never dispatched, and where it failed", () => {
+        expect(sessionPendingText(task({ state: "failed", lastfailurekind: "setup" }))).toBe(
+            "Never dispatched · failed at setup"
+        );
+        expect(sessionPendingText(task({ state: "failed" }))).toBe("Never dispatched · failed");
+    });
+
+    it("says any other task with no run is not dispatched yet", () => {
+        expect(sessionPendingText(task({ state: "pending" }))).toBe("Not dispatched yet");
     });
 });

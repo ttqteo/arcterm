@@ -20,6 +20,7 @@
 
 import type { AgentEntry, CardTask } from "./agentsviewmodel";
 import { buildEditDiff, parseGrep, sliceRead, toolResultText } from "./tooldetail";
+import { TASK_CREATED_RE } from "./transcriptprojection";
 
 const READ_MODAL_MAX_LINES = 400; // bound stored Read body (modal view); inline uses the per-kind budget
 
@@ -412,7 +413,6 @@ export function projectPiTranscript(lines: string[]): AgentEntry[] {
     return entries;
 }
 
-const TASK_CREATED_RE = /^Task #(\d+) created successfully: (.+)$/;
 const TASK_LIST_RE = /^#(\d+) \[(\w+)\] (.+)$/;
 
 /** Pure: the card task list from the pi-tasks tools in the transcript, or undefined when the agent

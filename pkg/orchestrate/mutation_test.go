@@ -323,6 +323,67 @@ func TestSkipStopsStalledChildBeforeClearingOwnership(t *testing.T) {
 	}
 }
 
+// a skip drops only a task nothing of has landed: done, blocked-merge and the Verify states have landed or are landing
+func TestSkipRefusesALandedOrLandingTask(t *testing.T) {
+	for _, state := range []string{TaskState_Done, TaskState_BlockedMerge, TaskState_Verifying, TaskState_VerifyFailed} {
+		t.Run(state, func(t *testing.T) {
+			ctx, dag, child := seedFailedDag(t)
+			if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
+				g.Tasks[0].State = state
+				g.Tasks[0].Merged = state != TaskState_BlockedMerge
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "skip", waveobj.RoutePin{})
+			if err == nil || !strings.Contains(err.Error(), "cannot be skipped") {
+				t.Fatalf("skip from %s: err = %v, want a refusal", state, err)
+			}
+			if got := mustLoadDag(t, ctx, dag.OID).Tasks[0]; got.State != state || got.RunID != child.ID {
+				t.Fatalf("refused skip moved the task: state %s run %s", got.State, got.RunID)
+			}
+			if run, err := wstore.GetRun(ctx, dag.ChannelId, child.ID); err != nil || run.Status == jarvis.RunStatus_Cancelled {
+				t.Fatalf("refused skip cancelled the task's run: %v", err)
+			}
+		})
+	}
+}
+
+// a failed review's reviewer already ended: skipping it stops no process, as it did before a reviewing task could be
+// skipped, and leaves the reviewer's run as it finished
+func TestSkipAReviewFailedTaskStopsNoReviewer(t *testing.T) {
+	ctx, dag, worker := seedReviewFailedDag(t)
+	reviewer := jarvis.NewRun("review", "ws-1", t.TempDir(), nil, jarvis.RunMode_Quick, jarvis.QuickPlaybook(), 1)
+	reviewer.Review = true
+	reviewer.Status = jarvis.RunStatus_Done
+	reviewer.DagORef = dag.OID
+	if err := wstore.AppendRun(ctx, dag.ChannelId, reviewer); err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
+		g.Tasks[0].ReviewBase = worker.BaseCommit
+		g.Tasks[0].ReviewRunID = reviewer.ID
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stubReviewTree(t, worker.EndCommit)
+	stopped := recordStops(t)
+
+	if err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "skip", waveobj.RoutePin{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(*stopped) != 0 {
+		t.Fatalf("a failed review's skip stops no worker or reviewer, stopped %v", *stopped)
+	}
+	if run, err := wstore.GetRun(ctx, dag.ChannelId, reviewer.ID); err != nil || run.Status != jarvis.RunStatus_Done {
+		t.Fatalf("the ended reviewer's run is left as it finished, got %+v err %v", run, err)
+	}
+	if got := mustLoadDag(t, ctx, dag.OID).Tasks[0]; got.State != TaskState_Skipped || got.ReviewRunID != reviewer.ID {
+		t.Fatalf("skipped task = state %q reviewer %q, want skipped and the reviewer link kept", got.State, got.ReviewRunID)
+	}
+}
+
 func TestRetryKeepsOwnershipWhenCancelledChildCannotReload(t *testing.T) {
 	ctx, dag, child := seedFailedDag(t)
 	if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
@@ -498,6 +559,65 @@ func TestEscalateRejectsBlockedMergeWithoutCancellingRun(t *testing.T) {
 	assertEscalationRejectedWithoutCancelling(t, ctx, dag, child, worker, waveobj.RoutePin{Model: "opus"})
 	if got := mustLoadDag(t, ctx, dag.OID).Tasks[0]; got.State != TaskState_BlockedMerge || got.RunID != child.ID || got.Escalations != 0 {
 		t.Fatalf("rejected escalation moved the task: %+v", got)
+	}
+}
+
+// a retry, skip or escalate leaves a row naming who acted, so the timeline tells the human's own actions from the
+// lead's (Kael c408b2cd1). ApplyAction keeps its signature and means the human.
+func TestActionWritesItsRunEventWithTheActor(t *testing.T) {
+	cases := []struct {
+		action, kind string
+		target       waveobj.RoutePin
+		want         map[string]any
+	}{
+		{"retry", waveobj.RunEventKindTaskRetried, waveobj.RoutePin{}, map[string]any{"auto": false}},
+		{"skip", waveobj.RunEventKindTaskSkipped, waveobj.RoutePin{}, map[string]any{}},
+		{"escalate", waveobj.RunEventKindTaskEscalated, waveobj.RoutePin{Model: "opus"}, map[string]any{"model": "opus", "runtime": "claude"}},
+	}
+	for _, c := range cases {
+		for _, by := range []string{ActionByHuman, ActionByLead} {
+			t.Run(c.action+"-"+by, func(t *testing.T) {
+				ctx, dag, _, _ := seedEscalationDag(t, "claude", TaskState_Failed, 0)
+				allowEscalationSchedule(t)
+				if err := ApplyActionBy(ctx, dag.OID, "t-0", c.action, by, c.target); err != nil {
+					t.Fatal(err)
+				}
+				rows := runEventsOfKind(t, ctx, dag.ChannelId, dag.RunID, c.kind)
+				if len(rows) != 1 {
+					t.Fatalf("want one %s row, got %d", c.kind, len(rows))
+				}
+				detail := firstEventDetail(t, ctx, dag.ChannelId, dag.RunID, c.kind)
+				if detail["taskid"] != "t-0" || detail["by"] != by {
+					t.Fatalf("want taskid t-0 by %s, got %v", by, detail)
+				}
+				for k, v := range c.want {
+					if detail[k] != v {
+						t.Fatalf("want %s=%v, got %v", k, v, detail)
+					}
+				}
+			})
+		}
+	}
+}
+
+// the existing entry point keeps its signature and records the human, which is who the cockpit and `wsh runs` are
+func TestApplyActionRecordsTheHuman(t *testing.T) {
+	ctx, dag, _, _ := seedEscalationDag(t, "claude", TaskState_Failed, 0)
+	allowEscalationSchedule(t)
+	if err := ApplyAction(ctx, dag.OID, "t-0", "skip", waveobj.RoutePin{}); err != nil {
+		t.Fatal(err)
+	}
+	if detail := firstEventDetail(t, ctx, dag.ChannelId, dag.RunID, waveobj.RunEventKindTaskSkipped); detail["by"] != ActionByHuman {
+		t.Fatalf("ApplyAction records the human, got %v", detail)
+	}
+}
+
+// only the lead's CLI names itself on the wire; a missing or unknown By is the human
+func TestActionByFromWire(t *testing.T) {
+	for in, want := range map[string]string{"": ActionByHuman, "lead": ActionByLead, "human": ActionByHuman, "something": ActionByHuman} {
+		if got := ActionByFromWire(in); got != want {
+			t.Errorf("ActionByFromWire(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

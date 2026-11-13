@@ -107,6 +107,29 @@ func TestJarvisStatusIncludesEfforts(t *testing.T) {
 
 // A run's lifecycle event log must be readable through the RPC (the run-card timeline's initial
 // load path). The read is a bounded channel-scoped query returning newest-first.
+// Kael a61a68c95: a read with no limit returns the run's whole retained history.
+func TestJarvisRunEventsCommandWithoutLimitReadsEveryEvent(t *testing.T) {
+	ctx := context.Background()
+	ws := &WshServer{}
+	ch, err := wstore.CreateChannel(ctx, "rpc-nolimit", "/p/one")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	const total = 250
+	for i := 0; i < total; i++ {
+		if _, err := wstore.AppendRunEvent(ctx, ch.OID, "r-events-all", waveobj.RunEventKindCreated, nil, nil); err != nil {
+			t.Fatalf("append event: %v", err)
+		}
+	}
+	rtn, err := ws.JarvisRunEventsCommand(ctx, wshrpc.CommandJarvisRunEventsData{ChannelId: ch.OID, RunId: "r-events-all"})
+	if err != nil {
+		t.Fatalf("command without limit: %v", err)
+	}
+	if len(rtn.Events) != total {
+		t.Fatalf("no limit want all %d events, got %d", total, len(rtn.Events))
+	}
+}
+
 func TestJarvisRunEventsCommand(t *testing.T) {
 	ctx := context.Background()
 	ws := &WshServer{}

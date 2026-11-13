@@ -120,6 +120,11 @@ const (
 	// "ok"). tree is making the stage's tree, with Setup when the stage makes its own.
 	RunEventKindFinalStep = "final-step"
 
+	// final-ended: the final stage's outcome was decided ("round", "outcome": passed | unverified | failed),
+	// recorded once per round whatever decided it: the steps, the verifier's verdict or a human's end. final-step
+	// says how a command ended; only this says the stage did.
+	RunEventKindFinalEnded = "final-ended"
+
 	// merge-held: the engine is holding every ready merge because the project index is not clean, which
 	// is the human mid-edit in the checkout ("held" int, "reason"). Recorded once per transition, not per
 	// tick. Without it the halt reaches nobody: the tasks stay merge-ready and the digest keeps offering
@@ -156,6 +161,14 @@ const (
 	RunEventKindReviewOverruled   = "review-overruled"
 	RunEventKindTaskAmended       = "task-amended"
 	RunEventKindTaskLeadTold      = "task-lead-told"
+
+	// who retried, skipped or escalated a task, and the final stage's rerun; "by" is "lead" or "human"
+	//   task-skipped    "taskid", "by"
+	//   task-escalated  "taskid", "model", "runtime", "by"
+	//   final-rerun     "round"
+	RunEventKindTaskSkipped   = "task-skipped"
+	RunEventKindTaskEscalated = "task-escalated"
+	RunEventKindFinalRerun    = "final-rerun"
 
 	// dag-level judging sessions (spec 2026-09-25-orchestrator-findings-fixes):
 	//   stage-session-started  a plan reviewer or final verifier was spawned ("role", "runid")

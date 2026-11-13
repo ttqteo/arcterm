@@ -16,6 +16,7 @@ import { loadBriefingAsync, stateRpcTimeoutMs } from "./briefingstore";
 import { briefUndo } from "./briefundo";
 import { setEffortDetails, type EffortDetails } from "./effortstore";
 import { ProjectChips } from "./projectchips";
+import { chunkRef } from "./trackeredit";
 
 export interface ParsedChunkLine {
     label: string;
@@ -39,6 +40,19 @@ export function parseChunkLines(text: string): ParsedChunkLine[] {
         lines.push({ label: label === "" ? line : label, stage: label === "" ? "" : stage, checked: false });
     }
     return lines;
+}
+
+// The follow-up batch after the create seeds the chunks: the seed carries neither a stage nor a status, so both
+// land in one atomic batch. The seed's order is the plan's, so a ref is taken against the lines (an all-digit
+// label sent raw is read by the server as a position).
+export function followUpOps(lines: ParsedChunkLine[]): EffortOp[] {
+    const ref = (label: string) => chunkRef(lines, label);
+    return [
+        ...lines
+            .filter((l) => l.stage !== "")
+            .map((l) => ({ op: "setChunkStage", chunk: ref(l.label), stage: l.stage })),
+        ...lines.filter((l) => l.checked).map((l) => ({ op: "setChunkStatus", chunk: ref(l.label), status: "done" })),
+    ];
 }
 
 const inputCls =
@@ -109,15 +123,7 @@ export function EffortCreateForm({
                 },
                 { timeout: stateRpcTimeoutMs }
             );
-            // the chunk seed carries neither status nor stage, so both land in one atomic follow-up batch
-            const followOps: EffortOp[] = [
-                ...lines
-                    .filter((l) => l.stage !== "")
-                    .map((l) => ({ op: "setChunkStage", chunk: l.label, stage: l.stage })),
-                ...lines
-                    .filter((l) => l.checked)
-                    .map((l) => ({ op: "setChunkStatus", chunk: l.label, status: "done" })),
-            ];
+            const followOps = followUpOps(lines);
             if (followOps.length > 0) {
                 await RpcApi.EffortMutateCommand(
                     TabRpcClient,

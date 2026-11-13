@@ -68,8 +68,9 @@ func SetupConnRpcClient(conn net.Conn, serverImpl ServerImpl, debugStr string) (
 		writeErr := AdaptOutputChToStream(outputCh, conn)
 		if writeErr != nil {
 			writeErrCh <- writeErr
-			close(writeErrCh)
 		}
+		// closed on a clean end too, or a reader waiting for the output's end waits forever
+		close(writeErrCh)
 	}()
 	go func() {
 		defer func() {
@@ -77,6 +78,8 @@ func SetupConnRpcClient(conn net.Conn, serverImpl ServerImpl, debugStr string) (
 		}()
 		// when input is closed, close the connection
 		defer conn.Close()
+		// and end the rpc, which fails the calls still waiting on a reply that can no longer come
+		defer close(inputCh)
 		AdaptStreamToMsgCh(conn, inputCh, nil)
 	}()
 	rtn := MakeWshRpcWithChannels(inputCh, outputCh, wshrpc.RpcContext{}, serverImpl, debugStr)
@@ -177,8 +180,8 @@ func RunWshRpcOverListener(listener net.Listener, readCallback func()) {
 }
 
 // DomainLinkClosedHook runs once a domain-socket link is unregistered. wavesrv sets it to cancel the streaming
-// RPCs that entered on the link (a held job slot, an agent's control stream), as pkg/web/ws.go does for a
-// websocket; without it they live until their timeout.
+// RPCs that entered on the link (a held job slot, an agent's control stream); without it they live until their
+// timeout. UnregisterLink cancels them through the router as well, which is all a websocket link needs.
 var DomainLinkClosedHook func(baseds.LinkId)
 
 func handleDomainSocketClient(conn net.Conn, readCallback func()) {

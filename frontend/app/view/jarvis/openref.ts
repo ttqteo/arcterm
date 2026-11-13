@@ -32,14 +32,15 @@ import { selectMemoryProject } from "../agents/memorystore";
 import { initRadarScope, radarScopeAtom, radarSelectedIdAtom, scopeOfReport, selectReport } from "../agents/radarstore";
 import { setupTabAtom } from "../agents/setupstore";
 import { afterOpen } from "../agents/windowsize";
+import { openDagLive, openDagTask } from "../orchestrate/dagmodalstate";
 import { isCanvasSegment, parseAddress, type AddressHint, type OpenTarget } from "./address";
 import { effortDetailAtom, loadEffortDetail } from "./effortstore";
 import { openInitiativeSheet } from "./initiativesheetstore";
 import { briefPeekRecordAtom, briefSheetOpenAtom } from "./jarvisstore";
-import { loadRecordDetail, selectSubject, setActiveRunId } from "./jarvissubjectstore";
+import { clearSubject, loadRecordDetail, selectSubject, setActiveRunId } from "./jarvissubjectstore";
 import { clearLoadingPeek, settlePeek, startPeek, type PeekTarget } from "./peekstore";
 import { pendingDecisionAnchorAtom } from "./petstore";
-import { landOn } from "./returnsurface";
+import { landOn, returnWhenClosed } from "./returnsurface";
 import { refreshTaskList, taskListAtom, tasksErrorAtom } from "./tasksstore";
 
 type OpenFailure = { ok: false; reason: "unsupported" | "unavailable" | "failed" | "superseded"; message: string };
@@ -55,6 +56,7 @@ type Loaded<T = undefined> = { ok: true; facts: T; notice?: string } | OpenFailu
 export type OpenGesture = { ctrlKey: boolean; metaKey?: boolean; preventDefault(): void; stopPropagation(): void };
 
 type ChannelTarget = Extract<OpenTarget, { kind: "channel" }>;
+type DagTarget = Extract<OpenTarget, { kind: "dag" }>;
 type RecordTarget = Extract<OpenTarget, { kind: "record" }>;
 type RadarTarget = Extract<OpenTarget, { kind: "radar" }>;
 type CanvasTarget = Extract<OpenTarget, { kind: "canvas" }>;
@@ -87,6 +89,8 @@ function targetName(target: OpenTarget): string {
             return `channel ${target.channelId}`;
         case "run":
             return `run ${target.runId}`;
+        case "dag":
+            return `DAG ${target.dagId}`;
         case "agent":
             return `agent ${target.tabId}`;
         case "record":
@@ -288,6 +292,8 @@ async function land(
             );
         case "run":
             return select(await loadRun(target.runId, current), (s) => selectSheet(model, s, current));
+        case "dag":
+            return select(await loadDag(target.dagId, current), (s) => selectDag(model, target, s, current));
         case "agent":
             return select(loadAgent(model, target.tabId), () => selectAgent(model, target.tabId));
         case "record":
@@ -350,7 +356,12 @@ async function peek(
     >,
     current: () => boolean
 ): Promise<OpenResult> {
-    const resolved = target.kind === "channel" ? await channelRun(target, current) : loaded<PeekTarget>(target);
+    const resolved =
+        target.kind === "channel"
+            ? await channelRun(target, current)
+            : target.kind === "dag"
+              ? await dagRun(target.dagId, current)
+              : loaded<PeekTarget>(target);
     if ("reason" in resolved) {
         return resolved;
     }
@@ -404,6 +415,15 @@ async function channelRun(target: ChannelTarget, current: () => boolean): Promis
     return loaded<PeekTarget>({ kind: "run", runId: newest.id });
 }
 
+// A dag has no peek of its own either: it shows its owner run.
+async function dagRun(dagId: string, current: () => boolean): Promise<Loaded<PeekTarget>> {
+    const group = await loadGroup(dagId, current);
+    if ("reason" in group) {
+        return group;
+    }
+    return loaded<PeekTarget>({ kind: "run", runId: group.facts.runid });
+}
+
 type Sheet = { channelId: string; runId?: string };
 
 async function loadChannel(
@@ -436,6 +456,51 @@ async function loadRun(runId: string, current: () => boolean): Promise<Loaded<Sh
         return unavailable("That run has no channel to open it in");
     }
     return loadChannel(run.channeloid, runId, current);
+}
+
+const DAG_GONE = "That DAG no longer exists";
+
+async function loadGroup(dagId: string, current: () => boolean): Promise<Loaded<TaskGroup>> {
+    const group = await WOS.loadAndPinWaveObject<TaskGroup>(WOS.makeORef("dag", dagId));
+    if (!current()) {
+        return SUPERSEDED;
+    }
+    return group != null ? loaded(group) : unavailable(DAG_GONE);
+}
+
+// The DAG modal lives on its owner run's sheet, so a dag lands there: the run and channel come off the dag,
+// never off whoever asked, which is what let a worker run's sheet pose as the owner.
+async function loadDag(dagId: string, current: () => boolean): Promise<Loaded<Sheet>> {
+    const group = await loadGroup(dagId, current);
+    if ("reason" in group) {
+        return group;
+    }
+    return loadChannel(group.facts.channelid, group.facts.runid, current);
+}
+
+async function selectDag(
+    model: AgentsViewModel,
+    target: DagTarget,
+    sheet: Sheet,
+    current: () => boolean
+): Promise<OpenResult> {
+    const result = await selectSheet(model, sheet, current);
+    if ("reason" in result) {
+        return result;
+    }
+    const dagOref = WOS.makeORef("dag", target.dagId);
+    // the modal takes its owner from the dag; the sheet's channel and run are only what the state carries
+    if (target.taskId) {
+        openDagTask(sheet.channelId, sheet.runId ?? "", dagOref, target.taskId);
+    } else {
+        openDagLive(sheet.channelId, sheet.runId ?? "", dagOref);
+    }
+    // the sheet was only the way in: left open, it would greet the user's next visit to Jarvis
+    returnWhenClosed("dag", () => {
+        globalStore.set(briefSheetOpenAtom, false);
+        clearSubject();
+    });
+    return OK;
 }
 
 async function selectSheet(model: AgentsViewModel, sheet: Sheet, current: () => boolean): Promise<OpenResult> {

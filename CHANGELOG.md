@@ -39,10 +39,47 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An agent working on an initiative offers its chunk in the chat box: after a turn that ends on a commit, "xong:
   <chunk>" ticks the chunk done (as Mark done in the header's initiative popover does), then "làm tiếp: <chunk>"
   sends the agent on to the next one.
-- Jarvis has a For later list beside Ideas, under its initiatives: every session you marked for later, in every
+
+### Changed
+
+- Radar is off the nav rail and the number chords while it waits to be removed: `Cmd`+`1`…`6` (`Ctrl` on Windows)
+  now go from Cockpit to Diff, pinned apps sit under Diff, and `Cmd`+`G` `r` still opens Radar until then.
+- An agent in Chat adds chunks and notes to an initiative itself instead of handing you a card to add: what you
+  asked for goes straight in, and a chunk you did not ask for waits as proposed on the initiative for you to accept
+  or drop (a yes in the conversation accepts it).
+- Jarvis's Since you looked is split by kind: the runs that moved, one row per initiative for the whole stretch
+  (not one per day), five at a time, and the records folded into one row you open. It also stops listing every
+  record first and counting raw events in its "+N more". Ideas and For later moved under the initiatives, side by
+  side, so the two columns end near each other instead of the side one running a screen past the main one.
+  <!-- try: go:jarvis -->
+- While an agent works, Show the diff and Open the terminal are chips with their names under the chat box's text
+  again, instead of two bare icons beside Stop.
+- The whole app starts one size bigger: the default zoom is now 110%, and `Cmd`+`0` (`Ctrl`+`0` on Windows) returns
+  there. A zoom you set yourself is kept.
+- Jarvis's hologram takes the avatar's shape from the Kael fork: three rings stacked in depth around a hollow
+  core, swaying slowly. Its centre no longer glows into a white blob; while agents work, light runs in along its six
+  struts, and when Jarvis speaks it turns to face you and sweeps.
+
+### Fixed
+
+- Triple-clicking a line in Chat selects just its text: on a Mac the highlight no longer runs on to the column's right
+  edge, and the copy no longer ends in a stray line break.
+- While an agent compacts its conversation (`/compact`), Chat says Compacting… instead of Working…, with no timer
+  counting up from your last message.
+- A file path in an agent's reply in Chat can be selected and copied with the text around it. It used to drop out of
+  every selection; a click still opens the file.
+
+## 1.1.1 — 2026-11-13
+
+### Added
+
+- Jarvis has a For later list at the bottom of its side column: every session you marked for later, in every
   project, newest mark first. Click one to open its conversation (or its agent, if it is still running), Resume an
   ended one, or press Done to clear the mark; a mark whose session is gone still shows, so you can clear it.
   <!-- try: go:jarvis -->
+- Chat shows a Claude agent's plan as a checklist in its reply, as Claude Desktop does: done steps are ticked, the
+  step being worked on pulses green, and the rest wait in a dashed ring. The list updates in place as the agent works,
+  and the agent card's done/total chip counts it too. <!-- big -->
 - Chat draws a reviewer's verdict as a card: each finding with its severity and a file link, a tick on the ones to
   fix, and Fix N selected or Skip the review, which send one line to the agent. The plan handoff is four lettered
   choices, and every run the agent starts is a card at the call that started it, kept up to date until it lands. Each
@@ -55,26 +92,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Click Jarvis and press the Hide button (the crossed eye) in its peek to hide it for an hour, till 8:00, or for a time
   you type ("2h", "14:30"). It powers down as it goes and powers back on when the time is up, and says nothing while
   it is away; Ctrl+P → Show Jarvis brings it back early.
+- The Route DAG's header has an Adjust button: it opens the run's settings (parallelism, worker and reviewer routes,
+  approvals) under the header and saves them the way the run sheet does. It goes away once the run has ended.
+- A worker run's sheet has Open in the run's DAG, which opens the DAG with that task selected, and
+  `wsh ui reveal dag:<id>#<task>` does the same from a terminal; Ctrl+click on such an address peeks the run that owns
+  the DAG. The DAG window now takes its run from the DAG itself, so no opener can show it under another run.
+- The Events rail shows what you did to a run: your retry, skip, escalate, take-over and final-stage rerun are rows of
+  their own, a failure the lead forwarded to you reads as asked, and the final stage's end reads finished or failed.
 
 ### Changed
 
-- Radar is off the nav rail and the number chords while it waits to be removed: `Cmd`+`1`…`6` (`Ctrl` on Windows)
-  now go from Cockpit to Diff, pinned apps sit under Diff, and `Cmd`+`G` `r` still opens Radar until then.
-- Jarvis's Since you looked is split by kind: the runs that moved, one row per initiative for the whole stretch
-  (not one per day), five at a time, and the records folded into one row you open. It also stops listing every
-  record first and counting raw events in its "+N more". Ideas and For later moved under the initiatives, side by
-  side, so the two columns end near each other instead of the side one running a screen past the main one.
-  <!-- try: go:jarvis -->
-- An agent in Chat adds chunks and notes to an initiative itself instead of handing you a card to add: what you
-  asked for goes straight in, and a chunk you did not ask for waits as proposed on the initiative for you to accept
-  or drop (a yes in the conversation accepts it).
-- While an agent works, Show the diff and Open the terminal are chips with their names under the chat box's text
-  again, instead of two bare icons beside Stop.
-- The whole app starts one size bigger: the default zoom is now 110%, and `Cmd`+`0` (`Ctrl`+`0` on Windows) returns
-  there. A zoom you set yourself is kept.
-- Jarvis's hologram takes the avatar's shape from the Kael fork: three rings stacked in depth around a hollow
-  core, swaying slowly. Its centre no longer glows into a white blob; while agents work, light runs in along its six
-  struts, and when Jarvis speaks it turns to face you and sweeps.
 - A message you send in Chat while the agent works shows dimmed under Queued until the agent reads it, then turns
   full strength as the conversation takes it.
 - The chat box's model and effort are one chip, as in Claude Desktop ("Opus 5.5 High"): its menu lists the four
@@ -116,15 +143,34 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   from the Session column. The Agent tree's Home folder reads No folder.
 - In the New dialog, picking a session keeps the dialog's height, and the columns and the session's read fade into
   each other.
+- An ended or plan-review run's DAG says what is true: an ended DAG offers no retry or skip, its failed and skipped
+  cards read "run cancelled" or "run ended", waiting cards read "waits on plan review" while the plan is reviewed, and
+  the Cancel in the header shows the engine's refusal instead of doing nothing.
+- A run's timeline keeps its events in the order they arrived, keeps a row you opened open when an earlier event
+  arrives, counts events (not groups) in its header and filter chips, and reads a long run's whole history instead of
+  the last 200 events. An ended run's timeline stops at its last event and says "ended <date time>", with no live
+  marker; times carry the date once a run spans days. The Lifecycle drawer takes at most 35% of the DAG window and no
+  longer draws the strip, so the graph keeps the larger share.
+- The timeline names who acted: a retry, skip or escalate reads "you" or "lead", a final-stage rerun has its own row,
+  the final stage's end reads Final verification passed, unverified or failed, and each final step reads by its result
+  ("Final Check passed", "Final Verify failed").
+- In the Agent tree and the rail's lanes, a failed, verify-failed, blocked-merge or review-failed task has a red dot
+  and says why. A lane tip that is ready to merge but held behind another task's failed Verify, running Verify or
+  merge conflict stays among the run's live rows with "merge ready · waits on t-3's failed Verify", offers no Merge
+  button, and reads the same line in Jarvis's Runs rows and the DAG peek; a skipped task reads "skipped" there, and a
+  failed Verify's row reads its failing line.
+- The task peek shows a review note whole (clamped to three lines, with Show the whole note), "worked 8m" on a
+  finished task, a Verify tail without colour escape codes and a failed task's latest failure ("Never dispatched ·
+  failed at <kind>" when it never had a worker). A route picker with nothing to inherit reads "Pick a model".
+- A lead can skip a task that is under review, pending or ready: `dag skip` stops its reviewer and the run goes on.
+  The help of `dag skip` and `dag cancel` says skip drops one task and cancel ends the whole run.
+- Plan reviewers are shown the Depends edges the engine parsed (a task with no Depends line is marked as waiting for
+  the one before it), and a lead's plan step tells it to grep the callers of anything a task changes. Engine
+  reviewers, judges and workers start with less context: no MCP servers, and no skills listing for reviewers and
+  judges.
 
 ### Fixed
 
-- Triple-clicking a line in Chat selects just its text: on a Mac the highlight no longer runs on to the column's right
-  edge, and the copy no longer ends in a stray line break.
-- While an agent compacts its conversation (`/compact`), Chat says Compacting… instead of Working…, with no timer
-  counting up from your last message.
-- A file path in an agent's reply in Chat can be selected and copied with the text around it. It used to drop out of
-  every selection; a click still opens the file.
 - Idle Claude agents go to sleep again when Claude Code keeps a CPU core busy on its own while idle: that made them
   look busy, so they never slept and their RAM grew past 2 GB each. An idle one that has grown past 1.5 GB now sleeps
   after a minute instead of waiting for After idle for.
@@ -173,6 +219,48 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The RAM popover now groups each run's agents under one head row: the run's title and its total CPU, RAM and spend,
   then its lead, workers and reviewers, each named by role ("Lead", "Task t-3", "review t-4"). Leads and reviewers no
   longer sit loose among your own agents, which come first; the chevron folds a run to its head row.
+- A plan with a code fence on a list item (`- ```bash`) or saved with a byte-order mark now parses as written, and a
+  plan heading in the wrong shape ("### Task 3 - c", "# Task 2: b") is refused with the shape to write instead of
+  folding into the task above it. A worker report whose fence is left open over a heading says so.
+- A worker's outcome summary is cut at a whole character, so the channel's message and the task-failed wake no longer
+  end in half an em dash.
+- A squash that git refuses to commit (a hook, signing, a lock) is put back instead of staying staged and holding
+  every later merge, and a land that cannot tell whether the checkout is mid-merge holds with the reason instead of
+  merging over it. A branch probe git cannot answer no longer marks a lane merged and deletes its unmerged branch,
+  and a recovery patch is never overwritten: a second dump for the same lane is saved as `<name>-2.patch`.
+- A stale cleanup pass no longer erases the cleanup a merge or a cancel set, which left a merged lane's tree and
+  branch behind. A task the engine retries by itself no longer leaves its failed worker's run executing.
+- `wsh jarvis dag merge --continue` that its caller gave up on (a client timeout) still finishes once the dag lock
+  frees and wakes the lead if it fails, and `wsh` says whether the request took effect; `wsh jarvis dag status` says
+  why a held tip waits ("merge held: waits on t-3's failed Verify").
+- A branch run's evidence lists the run's own files, not the checkout's uncommitted edits, and a landed run whose
+  evidence had to wait is sealed from its merge instead of staying unsealed.
+- A lead's resubmitted plan that the engine refuses, or a revision after the last plan-review round, no longer leaves
+  its edit committed on the run's branch, and a first submit the run refuses no longer runs Setup first.
+- A plan reviewer keeps a row in the Agent tree once its round is over, and its transcript opens read-only.
+- Taking a worker's question over answers the lead's relay of it, so the lead is no longer left waiting. A final-stage
+  Rerun answers the question the lead is holding with the rerun line, instead of a wake that reached it after it had
+  acted on your answer, and a stopped final stage's result no longer ends its rerun.
+- A lead's `wsh jarvis complete` reports the land even when the complete fails afterwards. A run's timeline lists
+  "Child run created" beside "Child done", and its row opens the child run.
+- A run's worker, reviewer and judge tabs sit under the run's project in the Agent tree. A failed resume of a closed
+  worker in a new tab no longer leaves an armed tab behind and puts the closed tab back, so the next resume spawns a
+  new one; a run worker whose spawn fails part-way no longer leaves an empty tab behind.
+- Saving the global run defaults refuses a parallelism above 8 or a worker route that cannot resolve when you save,
+  instead of failing the next run's launch.
+- Deleting number-labelled chunks one after another inside the undo window no longer removes a different chunk, and
+  the New initiative form's stage and done ticks land on the right chunk when the chunks are labelled by number.
+- A conversation followed live no longer repeats a line, or garbles one, when the agent writes in a burst.
+- A route picker above the DAG window keeps its Tab, Escape and arrow keys, and a confirm or the Final shots viewer
+  above the window owns Escape and Tab. The graph refits when the window is resized, the stage line wraps, a timeline
+  hover no longer stays drawn after the DAG closes, and Jarvis's sprite hides while the window is open.
+- A DAG whose status refresh failed reads stale and asks again after 5 s, 30 s and 2 min, instead of keeping the old
+  health strip until another event arrives.
+- The final stage's node on a cancelled run reads "did not run · run cancelled". Each Earlier rounds line opens that
+  round's failure detail and links to its screenshots, and a round with none says where it ended ("Round 2 ended at
+  Verify, before the Final command ran."). A step under a second reads <1s, the pane's Verifier step opens the
+  verifier's transcript, and a failed stage's pane says what the run's lead does about it.
+- A task's recovery line counts only the engine's own retries, not yours or the lead's.
 
 ## 1.1.0 — 2026-11-13
 

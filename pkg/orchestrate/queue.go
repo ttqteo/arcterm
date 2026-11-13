@@ -40,6 +40,12 @@ func finalRerunWake(round int) string {
 	return fmt.Sprintf("%s of round %d; its failure was outside the code. Drop any fix plan for it; the stage's outcome wakes you.", finalRerunWakeHead, round)
 }
 
+// finalRerunAnswer answers the lead's open question when the human reran the stage instead: the held rerun wake would
+// arrive only after the lead acted on whatever the human answered.
+func finalRerunAnswer(round int) string {
+	return fmt.Sprintf("The human reran the final stage of round %d in the cockpit; its failure was outside the code. Drop any fix plan for it; the stage's outcome wakes you.", round)
+}
+
 // RunFinishedWake states the final stage's outcome, and every reason it could not verify something in full:
 // the lead's report has to carry them.
 func RunFinishedWake(f *waveobj.FinalStage) string {
@@ -234,6 +240,12 @@ func mergeFailedWake(taskID, errText string) string {
 // lead knows which test to read, or that it should look for a hang, before it reads the task's status.
 func verifyFailedWake(taskID, reason, failure string) string {
 	return fmt.Sprintf("%s. %s", withFact(fmt.Sprintf("wake: Verify failed after merging task %s (%s)", taskID, reason), failure), taskStatusCmd(taskID))
+}
+
+// landFailedWake tells the lead a merge or --continue it ran failed after its call had timed out, so the error the
+// call returned reached nobody.
+func landFailedWake(command, taskID string, err error) string {
+	return fmt.Sprintf("%s. %s", withFact(fmt.Sprintf("wake: your `wsh jarvis %s %s` failed after the call timed out", command, taskID), err.Error()), taskStatusCmd(taskID))
 }
 
 // engineStuckWake hands the lead a wait the engine cannot end. The lead cannot end it either: only a restart
@@ -449,7 +461,8 @@ func ForwardTask(ctx context.Context, dagID, taskID, note string) error {
 
 // TakeOverAsk hands a task's question to the human who took it from the lead in the cockpit. The lead is
 // not woken: `dag asks` stops listing the question, and an answer it had already started is refused with
-// TakenOverNote, so a wake would only cost it a turn.
+// TakenOverNote, so a wake would only cost it a turn. A relay of the question the lead already put to the
+// human (its own ask, every header the task id) is answered, since the lead would block on it otherwise.
 func TakeOverAsk(ctx context.Context, dagID, taskID string) error {
 	g, err := wstore.GetDag(ctx, dagID)
 	if err != nil {
@@ -469,6 +482,16 @@ func TakeOverAsk(ctx context.Context, dagID, taskID string) error {
 	p.ChannelId, p.RunId, p.TaskId, p.DagOID = g.ChannelId, g.RunID, task.ID, g.OID
 	if !moveAskToUser(ctx, oref, p, TakenOverNote, ForwardedByHuman) {
 		return fmt.Errorf("task %s's question was answered before it could be taken over", taskID)
+	}
+	lead := leadStateFn(ctx, g.ChannelId, g.RunID)
+	isRelay := func(q baseds.AgentAskQuestion) bool { return q.Header == taskID }
+	// the worker's question did move, so a relay that cannot be answered is recorded, not returned
+	if _, err := answerLeadQuestionWith(ctx, g.ChannelId, g.RunID, lead.BlockId, jarvis.TakenOverRelayAnswer, isRelay, nil); err != nil {
+		log.Printf("orchestrate: run %s: answering the lead's relay of task %s: %v", g.RunID, taskID, err)
+		appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindLeadWakeFailed, nil, map[string]any{
+			"reason": "the lead's relay of task " + taskID + "'s question could not be answered: " + err.Error(),
+			"lines":  []string{jarvis.TakenOverRelayAnswer},
+		})
 	}
 	return nil
 }

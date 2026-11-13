@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -115,6 +116,10 @@ func agentSyncAdoptRun(cmd *cobra.Command, args []string) error {
 		}
 		for _, n := range res.Unresolved {
 			WriteStdout("unresolved: %s\n", n)
+		}
+		// a failed apply reports its reason in the reply, beside the plan it was applying
+		if err == nil && res.Error != "" {
+			err = errors.New(res.Error)
 		}
 	}
 	return err

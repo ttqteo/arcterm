@@ -131,13 +131,27 @@ Các dòng `Effort`, `Verify`, `Setup`, `Check`, `Final`, `Prototype` và tiêu 
 
 Không có giới hạn số task.
 
-Nội dung bên trong **code fence** (``` hoặc ~~~) chỉ là chữ của task, kể cả khi nó trông như tiêu đề task hay dòng `**Depends on:**`; nhờ vậy một plan có thể trích một plan mẫu mà không sinh thêm task.
+**Heading gần giống task nhưng sai dạng bị từ chối**, không bị nuốt vào task phía trên. Ngoài code fence, một dòng khớp `#`… + `Task` + số (không phân biệt hoa thường, có hay không khoảng trắng) mà không đúng dạng `## Task N: …` / `### Task N: …` ở đầu dòng làm `ParsePlan` lỗi, kèm dạng cần viết. Ví dụ bị từ chối: `### Task 3 - c`, `#### Task 3: c`, `# Task 2: b`, `  ### Task 2: b` (thụt đầu dòng), và cả một tiêu đề phụ như `## Task 2 notes` nằm trong thân một task. Muốn giữ một tiêu đề phụ như thế trong thân task thì đặt nó trong code fence hoặc viết lại. Dòng `# <tiêu đề plan>` của chính plan (dòng `# ` đầu tiên trước task đầu) **không** bị từ chối và được phép bắt đầu bằng "Task <n>"; một dòng `# Task <n>…` khác (thứ hai trở đi, hay trong thân task) thì bị từ chối.
+
+Nội dung bên trong **code fence** (``` hoặc ~~~) chỉ là chữ của task, kể cả khi nó trông như tiêu đề task hay dòng `**Depends on:**`; nhờ vậy một plan có thể trích một plan mẫu mà không sinh thêm task. Cách `ParsePlan` đọc fence:
+
+- Fence có thể mở ngay trên một mục danh sách (`- ```bash`, `1. ~~~sh`).
+- Một fence trong fence (đoạn trích một tài liệu có block riêng) chỉ đóng bằng closer của chính nó: trong block ```` ```markdown ````, một dòng ```` ```bash ```` mở một block lồng, closer ```` ``` ```` đầu tiên đóng block lồng đó, closer kế tiếp mới đóng block ngoài. Opener lồng phải cùng ký tự, dài ít nhất bằng opener ngoài và có info string; một dòng fence trần luôn là closer. Closer phải cùng ký tự với opener, dài ít nhất bằng opener, và không có gì sau nó.
+- Một **inline code span** không mở fence: dòng bắt đầu bằng ba backtick mà phía sau còn backtick nữa trên cùng dòng (ba backtick trong một câu văn xuôi) là code trong dòng, không phải fence. Fence `~~~` thì luôn mở.
+- File có **BOM UTF-8** ở đầu vẫn được đọc đủ: BOM bị bỏ trước khi parse, nên dòng đầu (tiêu đề `# …`, hay một dòng `**Verify:**` nếu plan bắt đầu bằng nó) vẫn khớp thay vì bị mất.
+- Fence **mở mà không đóng** chỉ bị từ chối khi phần còn lại của file che mất ít nhất một heading task (khi đó task bị rơi khỏi dag mà không báo gì); nếu không che heading nào thì nó chỉ làm chữ của task cuối kéo dài tới hết file. Lỗi này đứng trước `plan has no tasks`, nên một fence không đóng che hết mọi task báo lỗi fence, không báo "no tasks". Lỗi nêu fence, vị trí mở (preamble hay task nào, số dòng), số heading bị mất và dòng cần để đóng nó.
 
 ### Các dòng đầu task
 
-Ngay dưới tiêu đề là **khối đầu**: các dòng `**Depends on:**`, `**Model:**`, `**Chunk:**`, `**Files:**` (dòng trống giữa chúng được bỏ qua). Khối đầu kết thúc ở dòng đầu tiên không phải một trong bốn loại này; từ đó các dòng trông giống thế chỉ là chữ của task.
+Ngay dưới tiêu đề là **khối đầu**: các dòng `**Depends on:**`, `**Model:**`, `**Chunk:**`, `**Files:**` (dòng trống giữa chúng được bỏ qua). Khối đầu kết thúc ở dòng đầu tiên không phải một trong bốn loại này, hay là một dòng `**Depends on:**` không còn được phép (xem ngay dưới); từ đó các dòng trông giống thế chỉ là chữ của task, kể cả `Model`, `Chunk` và `Files` đứng sau.
 
-> `**Depends on:**` phải là dòng **đầu tiên** dưới tiêu đề. Đặt nó sau `Model`, `Chunk` hay `Files` thì nó không phải khối đầu nữa: parser coi nó là chữ của task và **không báo lỗi**, task cứ chạy theo mặc định (sau task trước).
+> `**Depends on:**` phải là dòng **đầu tiên** dưới tiêu đề (dòng trống giữa tiêu đề và nó được bỏ qua), và mỗi tiêu đề chỉ có một. Parser **không báo lỗi** khi nó đứng sai chỗ, nên một dòng Depends bị bỏ qua mà không ai biết. Ba trường hợp, đều im lặng:
+>
+> - Sau một dòng `Model`, `Chunk` hay `Files`: khối đầu vẫn đang mở nhưng Depends đã hết quyền, nên dòng đó là chữ của task và kết thúc luôn khối đầu (`Model`, `Chunk`, `Files` viết sau nó cũng thành chữ). Task giữ cạnh ngầm tới task ngay trước nó (Task 1 không có cạnh nào), tức chạy tuần tự thay vì theo cạnh bạn định viết.
+> - Sau một dòng chữ: khối đầu đã hết từ dòng chữ đó; kết quả như trên, task giữ cạnh ngầm.
+> - Dòng Depends **thứ hai** dưới cùng một tiêu đề: dòng đầu được đọc và vẫn là cạnh của task; dòng thứ hai là chữ của task và kết thúc luôn khối đầu, nên `Model`, `Chunk`, `Files` viết sau nó cũng không được đọc (một dòng `Files` ở đó không tham gia phép kiểm tra chồng file).
+>
+> Vì vậy hãy đặt `**Depends on:**` đầu tiên dưới tiêu đề. Chỉ nhìn kết quả mới thấy sai: bảng task trong preview của hộp **New** có cột `needs`, và dòng `N tasks · M lanes · longest chain K` cho thấy hình dạng thật của plan.
 
 Một task phụ thuộc task dài chỉ vì interface của nó (một kiểu, một trường wire, một bảng, một chữ ký) là cách thường gặp khiến plan mọc chuỗi dài: cho interface đáp trước thành task nhỏ riêng, để phần cài đặt và các task dùng nó cùng phụ thuộc vào đó và chạy song song. Đo trên 69 run đã xong (2026-10-15), thời gian worker trên chuỗi dài nhất chiếm khoảng 70% pha task, còn chạy lại với độ rộng 8 thay vì 3 chỉ rút ngắn run khoảng 2%.
 
@@ -269,8 +283,10 @@ Những lỗi parse hay gặp (engine in nguyên văn, bằng tiếng Anh):
 
 | Thông báo | Nguyên nhân |
 |---|---|
-| `plan has no tasks: expected headings like "### Task 1: <title>"` | Không có tiêu đề `## Task N` hay `### Task N` nào (hoặc tất cả nằm trong code fence). |
+| `plan has no tasks: expected headings like "### Task 1: <title>"` | Không có tiêu đề `## Task N` hay `### Task N` nào (hoặc tất cả nằm trong một code fence đã đóng; fence không đóng che mất heading có lỗi riêng, ở dưới). |
 | `plan heading "…" is out of order: tasks are numbered 1, 2, 3..., want Task N` | Đánh số task không liền. |
+| `plan heading "…" is not a task heading: write it as "### Task N: <title>", at the start of the line under ## or ###` | Một heading gần giống task ngoài code fence nhưng sai dạng: `### Task 3 - c`, `#### Task 3: c`, `# Task 2: b`, heading thụt đầu dòng, hay `## Task 2 notes` trong thân task. `N` trong lỗi là số task kế tiếp. Dòng `# <tiêu đề plan>` đầu tiên không bị tính. |
+| `the code fence <fence> opened in <task N hoặc the preamble> (line L) is never closed, so the rest of the plan reads as its text and its K task headings are lost: close it with a line of <fence>, or if the line was inline code in prose, do not start the line with it` | Một code fence mở mà không đóng và nuốt mất K heading task (K ≥ 1). `<fence>` là đúng dãy backtick hoặc `~` đã mở nó. Fence không đóng mà không che heading nào thì không bị từ chối. |
 | `plan **Verify:** line must hold one command in backticks, got …` | Dòng lệnh thiếu backtick hoặc có thêm chữ. |
 | `plan has more than one **Verify:** line` | Hai dòng cùng loại (áp dụng cho Setup, Check, Final, Effort, Prototype). |
 | `task N depends on Task M, which is not an earlier task` | `Depends on` trỏ tới task sau hoặc chính nó. |
@@ -279,6 +295,8 @@ Những lỗi parse hay gặp (engine in nguyên văn, bằng tiếng Anh):
 | `task N: **Files:** must list paths in backticks separated by commas, …` | Dòng Files sai dạng. |
 | `task N (…) names a chunk but the plan has no **Effort:** line …` | Có `Chunk` mà không có `Effort`. |
 | `tasks A (…) and B (…) can run at the same time and both list <path> in **Files:** …` | Hai task cùng sở hữu một path, không task nào chờ task kia. |
+
+Một dòng `**Depends on:**` đặt sai chỗ (sau Files/Model/Chunk, sau chữ, hay lần thứ hai dưới một heading) **không có dòng nào trong bảng này**: parser không từ chối nó mà chỉ coi nó là chữ của task, xem [Các dòng đầu task](#các-dòng-đầu-task).
 
 Sau parse, lúc submit thật còn có các phép kiểm tra cần trạng thái: effort/chunk phải tồn tại, `--spec` phải là file có thật, Model (và harness của nó, nếu dòng Model nêu: `codex:…` cần codex trên máy này, `opencode:…` luôn bị từ chối) phải chạy được trên máy này, và `.arc/setup` phải đúng một lệnh.
 

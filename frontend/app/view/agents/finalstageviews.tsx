@@ -18,6 +18,7 @@ import { dockButtonClass, EndFinalForm } from "./endfinalform";
 import {
     finalStageView,
     outputTail,
+    pastRoundExtras,
     stepHasOutput,
     type FinalRoundLine,
     type FinalStageView,
@@ -189,29 +190,33 @@ export function FinalStepList({ steps, showCommand }: { steps: FinalStep[]; show
 }
 
 // The pipeline: one bordered cell per step, the shown one accented, else the running one. showCommand adds each
-// step's command. With onPick, a step whose output can be opened is clickable.
+// step's command. With onPick, a step whose output can be opened is clickable, and so is the Verifier when
+// opensVerifier says its session can be.
 export function FinalStepCells({
     steps,
     showCommand,
     shown,
     onPick,
+    opensVerifier,
 }: {
     steps: FinalStep[];
     showCommand?: boolean;
     shown?: FinalStepKey;
     onPick?: (key: FinalStepKey) => void;
+    opensVerifier?: boolean;
 }) {
     return (
         <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
             {steps.map((step) => {
-                const pickable = onPick != null && stepHasOutput(step);
+                const hasOutput = onPick != null && stepHasOutput(step);
+                const pickable = hasOutput || (onPick != null && opensVerifier === true && step.key === "verifier");
                 return (
                     <div
                         key={step.key}
                         data-final-step={step.key}
                         data-final-step-state={step.state}
                         role={pickable ? "button" : undefined}
-                        aria-pressed={pickable ? step.key === shown : undefined}
+                        aria-pressed={hasOutput ? step.key === shown : undefined}
                         onClick={pickable ? () => onPick(step.key) : undefined}
                         className={cn(
                             "flex min-w-0 flex-col gap-1 rounded-[8px] border px-2.5 py-2",
@@ -288,24 +293,62 @@ export function FinalOutput({ output, lines, className }: { output: string; line
     );
 }
 
-function PastRound({ line }: { line: FinalRoundLine }) {
+// A click on a round with a failure detail opens it beneath; a round that kept screenshots links to them.
+function PastRound({ line, group }: { line: FinalRoundLine; group: TaskGroup }) {
+    const [open, setOpen] = useState(false);
+    const [viewing, setViewing] = useState(false);
+    const { detail, hasShots } = pastRoundExtras(group, line.round);
+    const opens = detail !== "";
     return (
-        <div data-final-past-round={line.round} className="flex items-center gap-[9px] py-1">
-            <StepMark tone={line.tone} />
-            <span className="text-[10.5px] tabular-nums text-ink-mid">{line.text}</span>
+        <div className="flex flex-col">
+            <div className="flex items-center gap-[9px]">
+                {/* the line's own text stays what it was: the screenshots link is its sibling, not inside it */}
+                <div
+                    data-final-past-round={line.round}
+                    role={opens ? "button" : undefined}
+                    aria-expanded={opens ? open : undefined}
+                    onClick={opens ? () => setOpen(!open) : undefined}
+                    className={cn("flex min-w-0 flex-1 items-center gap-[9px] py-1", opens && "cursor-pointer")}
+                >
+                    <StepMark tone={line.tone} />
+                    <span className="text-[10.5px] tabular-nums text-ink-mid">{line.text}</span>
+                </div>
+                {hasShots ? (
+                    <button
+                        type="button"
+                        data-final-past-round-shots
+                        onClick={() => setViewing(true)}
+                        className={cn(LINK, "flex-none")}
+                    >
+                        screenshots
+                    </button>
+                ) : null}
+            </div>
+            {open ? (
+                <div
+                    data-final-past-round-detail
+                    className="sc mb-1.5 max-h-[240px] overflow-auto whitespace-pre rounded-[6px] border border-edge-mid bg-surface-code px-[9px] py-[7px] font-mono text-[10.5px] leading-[1.55] text-ink-mid"
+                >
+                    {detail}
+                </div>
+            ) : null}
+            {/* outside the line: the portaled viewer's clicks still bubble through the React tree */}
+            {viewing ? (
+                <FinalShotsViewer group={group} initial={{ round: line.round }} onClose={() => setViewing(false)} />
+            ) : null}
         </div>
     );
 }
 
 // a line per earlier round, oldest first
-export function FinalPastRounds({ past }: { past: FinalRoundLine[] }) {
+export function FinalPastRounds({ past, group }: { past: FinalRoundLine[]; group: TaskGroup }) {
     if (past.length === 0) {
         return null;
     }
     return (
         <div className="flex flex-col">
             {past.map((line) => (
-                <PastRound key={line.round} line={line} />
+                <PastRound key={line.round} line={line} group={group} />
             ))}
         </div>
     );
@@ -315,10 +358,12 @@ export function FinalPastRounds({ past }: { past: FinalRoundLine[] }) {
 // round, under pastLabel when given. Long text scrolls inside it, never cut.
 export function FinalOutcome({
     view,
+    group,
     pastLabel,
     className,
 }: {
     view: FinalStageView;
+    group: TaskGroup;
     pastLabel?: string;
     className?: string;
 }) {
@@ -345,10 +390,10 @@ export function FinalOutcome({
             {pastLabel != null && view.past.length > 0 ? (
                 <div className="flex flex-col">
                     <span className="pb-0.5 text-[11px] text-ink-mid">{pastLabel}</span>
-                    <FinalPastRounds past={view.past} />
+                    <FinalPastRounds past={view.past} group={group} />
                 </div>
             ) : (
-                <FinalPastRounds past={view.past} />
+                <FinalPastRounds past={view.past} group={group} />
             )}
         </div>
     );

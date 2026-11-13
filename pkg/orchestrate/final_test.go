@@ -953,3 +953,72 @@ func TestAFinalFailureAfterAKilledRunIsNotMarkedKilled(t *testing.T) {
 		t.Fatalf("an ordinary failure on the rerun is not killed, got %s killed=%v round %d", g.Final.State, g.Final.Killed, g.Final.Round)
 	}
 }
+
+// finalEndedEvents is the run's final-ended events, oldest first, each as "<round> <outcome>". (Kael dcd0ea248)
+func finalEndedEvents(t *testing.T, f *mergeFixture) []string {
+	t.Helper()
+	events := runEventsOfKind(t, f.ctx, f.channel, f.ownerID, waveobj.RunEventKindFinalEnded)
+	var out []string
+	for i := len(events) - 1; i >= 0; i-- {
+		var d struct {
+			Round   int    `json:"round"`
+			Outcome string `json:"outcome"`
+		}
+		if err := json.Unmarshal(events[i].Detail, &d); err != nil {
+			t.Fatalf("a final-ended event carries its round and outcome, got %s (%v)", events[i].Detail, err)
+		}
+		out = append(out, fmt.Sprintf("%d %s", d.Round, d.Outcome))
+	}
+	return out
+}
+
+func TestFinalEndedEventRecordsOutcome(t *testing.T) {
+	cases := []struct {
+		name, verify, check string
+		round               int
+		want                string
+	}{
+		{"passed", passVerify, "", 1, "1 passed"},
+		{"unverified with no Verify", "", "true", 1, "1 unverified"},
+		{"failed on a Detail", "exit 1", "", 1, "1 failed"},
+		{"a later round records its own", passVerify, "", 2, "2 passed"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := finalFixture(t, c.verify, c.check, "")
+			if c.round > 1 {
+				if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
+					cur.Final = &waveobj.FinalStage{Round: c.round}
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			runFinal(t, f)
+
+			if got := finalEndedEvents(t, f); !slices.Equal(got, []string{c.want}) {
+				t.Fatalf("one final-ended event per stage: want [%s], got %v", c.want, got)
+			}
+		})
+	}
+}
+
+func TestEndFinalStageRecordsFinalEnded(t *testing.T) {
+	// the fake lead takes the run's events
+	f, lead, _ := verifyingFixture(t)
+
+	if err := EndFinalStage(f.ctx, f.dagID, FinalState_Unverified, "reason"); err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	for _, row := range lead.rows {
+		if row["eventkind"] == waveobj.RunEventKindFinalEnded {
+			got = append(got, fmt.Sprintf("%v %v", row["round"], row["outcome"]))
+		}
+	}
+	if want := []string{"1 unverified"}; !slices.Equal(got, want) {
+		t.Fatalf("a human's end records the stage's outcome: want %v, got %v", want, got)
+	}
+}

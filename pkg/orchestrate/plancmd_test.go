@@ -166,6 +166,31 @@ func TestFailureDetailFallsBackToTheTail(t *testing.T) {
 	}
 }
 
+// node --test's passing lines name no failure, so the detail is the tail: it must not open on half a line
+// ("exit 1: elled 0") (Kael c408b2cd1). The closing summary is sized so the cut lands inside a line under ours'
+// MaxFailureDetailLen: the fork's own sizes put it exactly on a line start here.
+func TestFailureDetailTailStartsAtALine(t *testing.T) {
+	output := strings.Repeat("✔ adds two positive numbers (0.4127ms)\n", 40) + "ℹ tests 40\nℹ cancelled 0 skipped 0"
+	got := failureDetail(&planCommandError{exitCode: 1, output: output})
+	tail, ok := strings.CutPrefix(got, "exit 1: ")
+	if !ok || len(got) > MaxFailureDetailLen || !strings.HasSuffix(output, tail) {
+		t.Fatalf("want the reason and a tail of the output within %d bytes, got %q", MaxFailureDetailLen, got)
+	}
+	if !strings.HasPrefix(tail, "✔ adds two positive numbers") || output[len(output)-len(tail)-1] != '\n' {
+		t.Fatalf("want the tail to start at a line start, got %q", tail)
+	}
+}
+
+// a tail cut where a line starts keeps that line whole
+func TestFailureDetailTailOnALineStartKeepsIt(t *testing.T) {
+	room := MaxFailureDetailLen - len("exit 1: ")
+	last := strings.Repeat("y", room-2)
+	got := failureDetail(&planCommandError{exitCode: 1, output: strings.Repeat("x", 50) + "\n" + "z\n" + last})
+	if got != "exit 1: z\n"+last {
+		t.Fatalf("want the tail from the line start the cut lands on, got %q", got)
+	}
+}
+
 func TestFirstFailureExcerptRespectsTheDetailCap(t *testing.T) {
 	got := firstFailureExcerpt("FAIL\tpkg\n" + laterStages())
 	if got == "" || len(got) > MaxFailureDetailLen {
@@ -255,6 +280,16 @@ func TestLastOutputLineIsTheLastNonBlankLine(t *testing.T) {
 	}
 	if got := lastOutputLine("  \n\n"); got != "" {
 		t.Fatalf("output with no content has no line to show, got %q", got)
+	}
+}
+
+// Kael a61a68c95: escapes are stripped before the last line is picked.
+func TestLastOutputLineStripsANSI(t *testing.T) {
+	if got := lastOutputLine("ok\n\x1b[32m✓\x1b[39m done\n"); got != "✓ done" {
+		t.Fatalf("want the escapes stripped, got %q", got)
+	}
+	if got := lastOutputLine("real line\n\x1b[39m\x1b[22m\n"); got != "real line" {
+		t.Fatalf("a line of only escapes is skipped, got %q", got)
 	}
 }
 

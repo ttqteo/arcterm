@@ -82,7 +82,8 @@ func dropSkippedAttempt(ctx context.Context, g *waveobj.TaskGroup, taskID string
 	treeRemovals.Lock(lock)
 	defer treeRemovals.Unlock(lock)
 	patchName := TaskWorktreeKey(g.RunID, taskID) + "-skipped"
-	if err := dumpRecoveryPatch(ctx, project, key, base, patchName); err != nil {
+	patchFile, err := dumpRecoveryPatch(ctx, project, key, base, patchName)
+	if err != nil {
 		return fmt.Errorf("saving task %s's work before dropping it from %s: %w", taskID, branch, err)
 	}
 	var left error
@@ -103,7 +104,7 @@ func dropSkippedAttempt(ctx context.Context, g *waveobj.TaskGroup, taskID string
 	if _, err := git(ctx, project, "branch", "-f", branch, base); err != nil {
 		return fmt.Errorf("dropping task %s's work from %s: %w", taskID, branch, err)
 	}
-	log.Printf("dag %s: skipped task %s's commits dropped from %s (%s..%s), saved to recovery/%s.patch", g.OID, taskID, branch, base, head, patchName)
+	log.Printf("dag %s: skipped task %s's commits dropped from %s (%s..%s), saved to recovery/%s", g.OID, taskID, branch, base, head, patchFile)
 	if left != nil {
 		return recordLeftBehind(ctx, g.OID, taskID, left)
 	}

@@ -77,6 +77,63 @@ describe("runRailEvents", () => {
         const out = runRailEvents(run, [ev("task-done", 1, { taskid: "t1" }), ev("task-merged", 2, { taskid: "t1" })]);
         expect(out.map((e) => e.kind)).toEqual(["finished", "landed"]);
     });
+
+    it("reads the final stage's end by its outcome", () => {
+        const out = runRailEvents(run, [
+            ev("final-ended", 1, { round: 1, outcome: "passed" }),
+            ev("final-ended", 2, { round: 1, outcome: "unverified" }),
+            ev("final-ended", 3, { round: 2, outcome: "failed" }),
+            ev("final-ended", 4, { round: 2, outcome: "odd" }),
+        ]);
+        expect(out.map((e) => [e.kind, e.text])).toEqual([
+            ["finished", "final verification passed"],
+            ["finished", "final stage unverified"],
+            ["failed", "final verification failed"],
+        ]);
+    });
+
+    it("reads the human's retry, skip, escalate, take-over and rerun as acted", () => {
+        const out = runRailEvents(run, [
+            ev("task-retried", 1, { taskid: "t1", auto: false, by: "human" }),
+            ev("task-skipped", 2, { taskid: "t2", by: "human" }),
+            ev("task-escalated", 3, { taskid: "t3", model: "claude-opus-5-5", by: "human" }),
+            ev("task-forwarded", 4, { taskid: "t4", by: "human", note: "taken over" }),
+            ev("final-rerun", 5, { round: 1 }),
+        ]);
+        expect(out.map((e) => [e.kind, e.text])).toEqual([
+            ["acted", "you retried t1"],
+            ["acted", "you skipped t2"],
+            ["acted", "you escalated t3 to opus-5-5"],
+            ["acted", "you took t4 over from the lead"],
+            ["acted", "you reran the final stage"],
+        ]);
+    });
+
+    it("leaves the lead's actions and the engine's own retries off the rail", () => {
+        const out = runRailEvents(run, [
+            ev("task-retried", 1, { taskid: "t1", auto: false, by: "lead" }),
+            ev("task-skipped", 2, { taskid: "t2", by: "lead" }),
+            ev("task-escalated", 3, { taskid: "t3", model: "m", by: "lead" }),
+            ev("task-retried", 4, { taskid: "t4", kind: "failed", attempt: 1, auto: true }),
+        ]);
+        expect(out).toEqual([]);
+    });
+
+    it("reads a failure forwarded to the human as asked, with its note", () => {
+        const out = runRailEvents(run, [ev("task-forwarded", 1, { taskid: "t4", note: "needs a human call" })], "lead");
+        expect(out.map((e) => [e.kind, e.text, e.focusId])).toEqual([
+            ["asked", "t4 handed to you · needs a human call", "lead"],
+        ]);
+    });
+
+    it("reads a failed final stage as failed and leaves other blocks off the rail", () => {
+        const out = runRailEvents(run, [
+            ev("dag-blocked", 1, { failures: 1, kind: "task-failed" }),
+            ev("dag-blocked", 2, { failures: 1, kind: "final-failed" }),
+            ev("dag-blocked", 3, { failures: 1 }),
+        ]);
+        expect(out.map((e) => [e.kind, e.text])).toEqual([["failed", "final stage failed"]]);
+    });
 });
 
 describe("mergeRailEvents / splitUnread", () => {

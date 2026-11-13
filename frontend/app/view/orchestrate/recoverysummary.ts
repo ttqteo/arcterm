@@ -16,7 +16,7 @@ export type RecoverySummary = {
     terminalFailure: boolean;
 };
 
-type RetryDetail = { taskid?: string; kind?: string; attempt?: number };
+type RetryDetail = { taskid?: string; kind?: string; attempt?: number; by?: string };
 type FailedDetail = { taskid?: string; lastfailurekind?: string; attempts?: number };
 
 // recoverySummary returns null for a task with no failure history at all — the ordinary case, where a
@@ -30,7 +30,8 @@ export function recoverySummary(events: RunEvent[], taskId: string): RecoverySum
     for (const event of events) {
         if (event.kind === "task-retried") {
             const detail = detailOf<RetryDetail>(event);
-            if (detail?.taskid !== taskId) {
+            // a human's or lead's retry (stamped `by`) has no kind or attempt: not an engine recovery
+            if (detail?.taskid !== taskId || detail.by) {
                 continue;
             }
             retries++;

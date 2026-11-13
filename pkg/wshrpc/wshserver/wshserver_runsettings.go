@@ -69,10 +69,18 @@ func validateWorkersSetting(route *waveobj.RoutePin, picks bool) error {
 	return nil
 }
 
-// validateGlobalEngineDefaults validates the global profile's workers and reviewer settings as
-// validateEngineDefaults does an override's.
+// validateGlobalEngineDefaults validates the global profile's width, workers and reviewer settings as
+// validateEngineDefaults does an override's. Each is a value CreateRun would refuse when a launch inherits it.
 func validateGlobalEngineDefaults(p waveobj.JarvisProfile) error {
+	// the global profile's 0 is its documented "let the lead choose", not an explicit width
+	if err := validateParallelism(p.Parallelism, true); err != nil {
+		return err
+	}
 	if err := validateWorkersSetting(p.WorkerRoute, p.ReviewerPicks); err != nil {
+		return err
+	}
+	// resolved, not required installed: a stored default is resolved at launch, like the reviewer routes below
+	if err := validateRoute("workerRoute", harness.OperationRunWorker, p.WorkerRoute, false); err != nil {
 		return err
 	}
 	if err := validateRoute("reviewerRoute", harness.OperationLead, p.ReviewerRoute, false); err != nil {
