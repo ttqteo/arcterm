@@ -17,15 +17,15 @@ const you = (text: string): AgentEntry => ({ kind: "user", text });
 const said = (text: string): AgentEntry => ({ kind: "message", text });
 
 describe("takeBackPlan", () => {
-    it("takes back every queued message, oldest first, with ↑ or Esc, while Claude works", () => {
+    it("takes back every queued message, oldest first, while Claude works: ↑ lets the turn run on, Esc stops it", () => {
         const pending = [pend("a", "first", true), pend("b", "second", true)];
-        const plan = { kind: "queued", ids: ["a", "b"], texts: ["first", "second"] };
-        expect(takeBackPlan("Escape", pending, [], "working")).toEqual(plan);
-        expect(takeBackPlan("ArrowUp", pending, [], "working")).toEqual(plan);
+        const taken = { ids: ["a", "b"], texts: ["first", "second"] };
+        expect(takeBackPlan("ArrowUp", pending, [], "working")).toEqual({ kind: "queued", ...taken });
+        expect(takeBackPlan("Escape", pending, [you("go")], "working")).toEqual({ kind: "interrupt", ...taken });
     });
     it("leaves commands out: Claude Code does not take them back", () => {
         const pending = [pend("a", "/btw why", true, "btw"), pend("b", "and this", true)];
-        expect(takeBackPlan("Escape", pending, [], "working")).toEqual({
+        expect(takeBackPlan("ArrowUp", pending, [], "working")).toEqual({
             kind: "queued",
             ids: ["b"],
             texts: ["and this"],

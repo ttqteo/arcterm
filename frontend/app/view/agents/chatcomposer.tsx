@@ -112,6 +112,9 @@ async function pickPaths(): Promise<string[]> {
     }
 }
 
+// how long after an Esc that stopped a turn another Esc is swallowed, while the agent's state catches up
+const INTERRUPT_SETTLE_MS = 1_500;
+
 // the box's content height while it is a drop zone: the board's dashed zone is 120px high in an 8px margin
 const DropMinH = 136;
 
@@ -317,6 +320,7 @@ export function ChatComposer({
     // pending bubble, scroll); `submitNext` is set only when the text will change, so it never outlives that render.
     const submitNext = useRef(false);
     const submitRef = useRef<() => void>(() => {});
+    const interruptRef = useRef<() => boolean>(() => false);
     useEffect(
         () =>
             registerChatBox(agent.id, {
@@ -363,6 +367,7 @@ export function ChatComposer({
                     box.focus({ preventScroll: true });
                     return true;
                 },
+                interrupt: () => interruptRef.current(),
             }),
         [agent.id]
     );
@@ -570,6 +575,26 @@ export function ChatComposer({
             RpcApi.ControllerInputCommand(TabRpcClient, { blockid, inputdata64: stringToBase64("\x1b") })
         );
     };
+    // Esc while Claude works stops the turn, as Esc in Claude Code's own box does: a message it has not taken or answered
+    // yet comes back into the box (chattakeback.ts), else the turn just stops. A second Esc while the first one lands is
+    // swallowed: two reaching Claude Code once it is idle would open its rewind menu. False when it is not working, so
+    // the key keeps its old job (the box lets go of the keys, or the surface goes back).
+    const interruptedAt = useRef(0);
+    const interrupt = (): boolean => {
+        if (agent.state !== "working" || asleep || agent.blockId == null) {
+            return false;
+        }
+        const now = Date.now();
+        if (now - interruptedAt.current < INTERRUPT_SETTLE_MS) {
+            return true;
+        }
+        interruptedAt.current = now;
+        if (!takeBackKey("Escape")) {
+            stop();
+        }
+        return true;
+    };
+    interruptRef.current = interrupt;
     const attach = () => {
         fireAndForget(async () => {
             const paths = await pickPaths();
@@ -910,10 +935,10 @@ export function ChatComposer({
                                 e.preventDefault();
                                 submit();
                             } else if (e.key === "Escape") {
-                                // a message Claude has not taken or answered yet comes back into the box; else the box
-                                // lets go of the keys: Stop is its own button, so a stray Esc never stops a turn under way
+                                // while Claude works Esc stops the turn, as in Claude Code's box; else the box lets go of
+                                // the keys
                                 e.preventDefault();
-                                if (!takeBackKey("Escape")) {
+                                if (!interrupt()) {
                                     e.currentTarget.blur();
                                 }
                             }

@@ -21,10 +21,11 @@ export interface TakeBack {
     texts: string[];
 }
 
-/** What Esc or ↑ in an empty chat box takes back, or null when the key keeps its old job (Esc lets go of the box, ↑
- *  recalls the history). Only while Claude works: idle, nothing waits; asking, the keys belong to its dialog. A queued
- *  message (a plain one: Claude Code leaves commands queued) goes back with either key, and the turn runs on; with none,
- *  Esc stops a turn that has no answer yet, for the message that started it. ↑ never stops a turn. */
+/** What Esc or ↑ in an empty chat box takes back, or null when nothing comes back (the composer then stops the turn for
+ *  Esc, and ↑ recalls the history). Only while Claude works: idle, nothing waits; asking, the keys belong to its dialog.
+ *  Esc stops the turn, as it does in Claude Code's box, which puts the queued messages (plain ones: Claude Code leaves
+ *  commands queued) back in its box, or with none, the message that started a turn with no answer yet. ↑ takes the
+ *  queued messages back and the turn runs on; it never stops a turn. */
 export function takeBackPlan(
     key: "Escape" | "ArrowUp",
     pending: PendingMessage[],
@@ -36,7 +37,8 @@ export function takeBackPlan(
     }
     const queued = pending.filter((p) => p.kind == null && p.queued === true);
     if (queued.length > 0) {
-        return { kind: "queued", ids: queued.map((p) => p.id), texts: queued.map((p) => p.text) };
+        const kind = key === "Escape" ? "interrupt" : "queued";
+        return { kind, ids: queued.map((p) => p.id), texts: queued.map((p) => p.text) };
     }
     if (key !== "Escape") {
         return null;

@@ -32,12 +32,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   tokens · age, lined up down the list and in a quieter ink; a RAM figure of 1 GB or more turns amber. The unread
   count moved up beside the name, and an agent asking you keeps its columns.
 - Jarvis has a new icon in the nav rail and in What's new: an arc reactor instead of a brain.
+- In Chat, Esc stops the agent's turn while it works, as it does in Claude Code, whether or not the focus is in the
+  chat box; a queued message comes back into the box. It no longer sends you back to the Cockpit mid-turn.
 - Right-clicking a file path in Chat opens a menu of its own: Open beside the agent, Show in Explorer (Reveal in
   Finder on a Mac) and Copy path.
 
 ### Fixed
 
 - In Chat, the ring beside a running step ("Ran", "Read"…) turns in place instead of wobbling off its centre.
+- A paused run's progress strip no longer blinks: the task and stage it stopped on hold still in grey until you
+  resume it.
 
 ## 1.1.0 — 2026-11-13
 

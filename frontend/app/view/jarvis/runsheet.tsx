@@ -532,11 +532,12 @@ function SheetBarView({ bar, dag, run }: { bar: SheetBar | null; dag: SheetDagRe
     }
     const group = dag?.group ?? undefined;
     const digest = dag?.digest.digest;
-    const strip = taskStrip(group, digest);
+    const stage = runStage({ status: run.status, land: run.land, dag: group });
+    const strip = taskStrip(group, digest, stage.paused);
     if (strip == null) {
         return null;
     }
-    const tail = runStage({ status: run.status, land: run.land, dag: group }).tail;
+    const tail = stage.tail;
     return (
         <div
             role="img"

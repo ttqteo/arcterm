@@ -6,11 +6,19 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Esc stops a Claude agent's turn in Chat: while it works, press Esc in the chat box → the turn stops
+  (as Esc in Claude Code); again with a message showing Queued → the turn stops and the message comes back into the
+  box; again with the focus out of the box (click in the conversation) → the turn stops, no jump to the Cockpit; once
+  idle, Esc out of the box goes back as before. Agent surface, Chat.
+- [ ] (arcterm) A paused run's strip holds still: pause a run mid-task (+ Run menu → Pause) → the Agent tree's strip
+  under it, the lead card's bar and the run sheet show its working task (or the Final check pip) in grey, not blinking;
+  Resume → it pulses green again.
 - [ ] (arcterm) A file path in Chat has its own right-click menu: in a live agent's Chat, right-click a path link (an
   inline `docs/…` the agent named) → Open beside the agent / Show in Explorer / Copy path, not the message's Copy text
   menu; Show in Explorer opens Explorer with the file selected, and a path that does not exist toasts "File not found".
   Written and typechecked, never run in the app (`pathlinkcontext.tsx` `PathLink`, `pathlinkroute.ts`
   `revealAgentPath`).
+
 - [ ] (arcterm) The Agent sidebar's columns line up (spec 2026-11-13-sidebar-declutter-design): run
   `task verify:ui -- sidebar-columns agent-tree-rail sidebar-agent-ram` on the dev app → all pass, and
   `cdp-shots/sidebar-columns-1-rows.png` shows a 280px sidebar where every agent, lead and worker row ends its second

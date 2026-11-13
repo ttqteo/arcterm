@@ -301,7 +301,7 @@ export function buildLeadCard(input: LeadCardInput): LeadCardVM {
     const workers = dag?.workerroute;
     const workerModel = modelLabel(workers?.model) || workers?.runtime || "default";
     const leadModel = lead ? `lead ${lead.model || lead.agent || ""}`.trim() : "no lead";
-    const strip = taskStrip(dag, run.digest);
+    const strip = taskStrip(dag, run.digest, runStage(run).paused);
     return {
         rows: all.filter((r) => r.kind === "live"),
         waiting: all.filter((r) => r.kind === "wait"),

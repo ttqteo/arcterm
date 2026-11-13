@@ -52,6 +52,9 @@ export interface ChatBox {
     replace(text: string): boolean;
     /** the box takes the focus, its text and caret kept; false when it is read-only (a wake in flight) */
     focus(): boolean;
+    /** Esc while Claude works: stops the turn, a message it has not taken or answered yet coming back into the box;
+     *  false when the agent is not working */
+    interrupt(): boolean;
 }
 
 const boxes = new Map<string, ChatBox>();
@@ -84,6 +87,16 @@ export function replaceChatBox(agentId: string, text: string): boolean {
 // false when the agent has no chat box mounted, or the box would not take the focus
 export function focusChatBox(agentId: string): boolean {
     return boxes.get(agentId)?.focus() ?? false;
+}
+
+// whether the agent has a chat box mounted (its cell shows Chat)
+export function hasChatBox(agentId: string): boolean {
+    return boxes.has(agentId);
+}
+
+// false when the agent has no chat box mounted, or it is not working
+export function interruptChat(agentId: string): boolean {
+    return boxes.get(agentId)?.interrupt() ?? false;
 }
 
 // false when the agent has no chat box mounted, or the box would not take it

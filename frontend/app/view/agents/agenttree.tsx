@@ -797,11 +797,12 @@ function AskingBadge({ n }: { n: number }) {
 // then a divider and the tail every run ends in: Final check, Wrap-up, Land (runstage.ts), so a run whose tasks are
 // all green still shows it is not over.
 function TaskStripBar({ run }: { run: RunInfo }) {
-    const strip = taskStrip(run.dag, run.digest);
+    const stage = runStage(run);
+    const strip = taskStrip(run.dag, run.digest, stage.paused);
     if (strip == null) {
         return null;
     }
-    const tail = runStage(run).tail;
+    const tail = stage.tail;
     return (
         <div
             role="img"

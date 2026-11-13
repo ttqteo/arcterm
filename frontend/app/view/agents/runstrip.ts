@@ -26,6 +26,7 @@ export const SEG_FILL: Record<LaneState, string> = {
 export const PIP_FILL: Record<PipState, string> = {
     pending: "bg-edge-strong",
     active: "bg-working pulse-dot",
+    paused: "bg-muted",
     done: "bg-success/45",
     held: "bg-warning",
     failed: "bg-error",
@@ -37,8 +38,14 @@ export const STRIP_MAX = 24;
 
 export type TaskStrip = { kind: "segments"; states: LaneState[] } | { kind: "bar"; done: number; total: number };
 
-export function taskStrip(dag: TaskGroup | undefined, digest: DagStatusDigest | undefined): TaskStrip | undefined {
-    const states = runSegments(dag, digest);
+// a paused run (runStage().paused) has nothing at work: its working tasks hold still in the muted grey instead of pulsing
+export function taskStrip(
+    dag: TaskGroup | undefined,
+    digest: DagStatusDigest | undefined,
+    paused = false
+): TaskStrip | undefined {
+    const live = runSegments(dag, digest);
+    const states = paused ? live.map((s): LaneState => (s === "working" ? "muted" : s)) : live;
     if (states.length === 0) {
         return undefined;
     }

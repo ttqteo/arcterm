@@ -3,8 +3,10 @@ import {
     appendToChatBox,
     chatBoxText,
     focusChatBox,
+    hasChatBox,
     insertAt,
     insertIntoChatBox,
+    interruptChat,
     registerChatBox,
     registerChatInsert,
     replaceChatBox,
@@ -87,6 +89,7 @@ describe("the chat box registry (chatBoxText, submitIntoChatBox, appendToChatBox
         append: vi.fn(() => true),
         replace: vi.fn(() => true),
         focus: vi.fn(() => true),
+        interrupt: vi.fn(() => true),
         ...over,
     });
     it("reads an empty text and takes nothing when no box is mounted", () => {
@@ -95,6 +98,20 @@ describe("the chat box registry (chatBoxText, submitIntoChatBox, appendToChatBox
         expect(appendToChatBox("cb-none", "x")).toBe(false);
         expect(replaceChatBox("cb-none", "x")).toBe(false);
         expect(focusChatBox("cb-none")).toBe(false);
+    });
+    it("interrupts through the registered box, and knows which agents have one", () => {
+        expect(hasChatBox("cb-i")).toBe(false);
+        expect(interruptChat("cb-i")).toBe(false);
+        const b = box();
+        const off = registerChatBox("cb-i", b);
+        expect(hasChatBox("cb-i")).toBe(true);
+        expect(interruptChat("cb-i")).toBe(true);
+        expect(b.interrupt).toHaveBeenCalledOnce();
+        off();
+        expect(hasChatBox("cb-i")).toBe(false);
+        const offIdle = registerChatBox("cb-ii", box({ interrupt: vi.fn(() => false) }));
+        expect(interruptChat("cb-ii")).toBe(false);
+        offIdle();
     });
     it("focuses the registered box and says whether it took the focus", () => {
         const b = box();

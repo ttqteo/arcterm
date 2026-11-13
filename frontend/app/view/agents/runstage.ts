@@ -19,7 +19,8 @@ export type RunStageKey =
     | "landed"
     | "complete"
     | "cancelled";
-export type PipState = "pending" | "active" | "done" | "held" | "failed" | "skipped";
+// paused: the stage a paused run stopped in, which holds still instead of pulsing as active does
+export type PipState = "pending" | "active" | "paused" | "done" | "held" | "failed" | "skipped";
 // working is a task at work (green, like an agent); running is the engine moving the run on (blue)
 export type StageTone = "working" | "running" | "asking" | "done" | "error" | "muted";
 export type TailPip = { name: "Final check" | "Wrap-up" | "Land"; state: PipState };
@@ -202,6 +203,9 @@ export function runStage(
             { name: "Wrap-up", state: wrapPip },
             { name: "Land", state: landPip },
         ];
+    }
+    if (paused) {
+        tail = tail.map((p) => (p.state === "active" ? { ...p, state: "paused" } : p));
     }
     return {
         key,
