@@ -122,6 +122,34 @@ describe("pairAnswers", () => {
         expect(Object.keys(paired.get("u2")!).sort()).toEqual(["kind", "n", "part", "runId", "text"]);
     });
 
+    it("carries a verdict record's key, outcome and count, and leaves them off a record without them", () => {
+        const records = [
+            rec({
+                topic: "arc:verdict",
+                n: 0,
+                part: "",
+                text: "Skip the review: go on without these changes.",
+                kind: "verdict",
+                verdictKey: "verdict:3",
+                verdictOutcome: "skip",
+                fixed: 0,
+            }),
+        ];
+        const paired = pairAnswers(records, msgs("Skip the review: go on without these changes."), "arc:verdict");
+        expect(paired.get("u0")).toEqual({
+            n: 0,
+            part: "",
+            text: "Skip the review: go on without these changes.",
+            kind: "verdict",
+            verdictKey: "verdict:3",
+            verdictOutcome: "skip",
+            fixed: 0,
+        });
+        // a brainstorm record has none of them
+        const plain = pairAnswers([rec({ text: "Fade" })], msgs("Fade"), TOPIC).get("u0")!;
+        expect(Object.keys(plain).sort()).toEqual(["kind", "n", "part", "text"]);
+    });
+
     it("never takes a same-text message that was already there when the answer was sent", () => {
         // the user typed "Fade" before the question was asked: seen 1 skips it
         const messages = msgs("Fade", "go on", "Fade");
@@ -257,6 +285,42 @@ describe("the send record", () => {
         ]);
     });
 
+    it("keeps a verdict record's key, outcome and count when they are well-typed", () => {
+        const verdict = (over: Partial<SentAnswer>): SentAnswer =>
+            rec({ topic: "arc:verdict", n: 0, part: "", kind: "verdict", ...over });
+        const stored = [
+            verdict({
+                text: "Fix these review findings:\n- a:1 — x",
+                verdictKey: "verdict:3",
+                verdictOutcome: "fix",
+                fixed: 2,
+            }),
+            verdict({
+                text: "Skip the review: go on without these changes.",
+                verdictKey: "verdict:4.1",
+                verdictOutcome: "skip",
+                fixed: 0,
+            }),
+        ];
+        expect(parseSentStore(JSON.stringify({ a1: stored }))).toEqual({ a1: stored });
+    });
+
+    it("drops each verdict field that is not well-typed and keeps the record", () => {
+        const base = { topic: "arc:verdict", n: 0, part: "", sentAt: 5, seen: 0, kind: "verdict" };
+        const bad = [
+            { ...base, text: "a", verdictKey: "", verdictOutcome: "fix", fixed: 1 },
+            { ...base, text: "b", verdictKey: 7, verdictOutcome: "maybe", fixed: -1 },
+            { ...base, text: "c", verdictKey: "verdict:1", verdictOutcome: 3, fixed: 1.5 },
+            { ...base, text: "d", verdictKey: null, verdictOutcome: null, fixed: "2" },
+        ];
+        expect(parseSentStore(JSON.stringify({ a1: bad })).a1).toEqual([
+            { ...base, text: "a", verdictOutcome: "fix", fixed: 1 },
+            { ...base, text: "b" },
+            { ...base, text: "c", verdictKey: "verdict:1" },
+            { ...base, text: "d" },
+        ]);
+    });
+
     it("keeps `typed` only when it is the literal true", () => {
         const base = { topic: TOPIC, n: 2, part: "Motion", sentAt: 5, seen: 0 };
         const stored = [
@@ -388,7 +452,7 @@ describe("recordKind", () => {
     });
 
     it("reads the kind a record carries", () => {
-        for (const kind of ["answer", "builder-answer", "design", "builder", "run", "action"] as const) {
+        for (const kind of ["answer", "builder-answer", "design", "builder", "run", "action", "verdict"] as const) {
             expect(recordKind(rec({ kind }))).toBe(kind);
         }
     });

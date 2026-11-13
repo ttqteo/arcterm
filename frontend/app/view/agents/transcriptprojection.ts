@@ -5,7 +5,7 @@
 // No React, no Wave runtime imports. Deterministic; no LLM (spec §5.3).
 
 import { parseBtwNotice } from "../../../../claude/arc-mod/hooks/btw-core";
-import type { AgentEntry, CardTask } from "./agentsviewmodel";
+import type { AgentEntry, CardTask, ReportedFinding, SubagentCall } from "./agentsviewmodel";
 import { parseAnsiLines } from "./ansitext";
 import { answerAsk, askQuestions, buildEditDiff, parseGrep, sliceRead, toolResultText } from "./tooldetail";
 
@@ -88,6 +88,51 @@ function targetFor(input: any): string {
 }
 
 type ActionEntry = AgentEntry & { kind: "action" };
+
+const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
+
+/** Pure: a `ReportFindings` call's findings, from its input; its line, verdict and category are kept only when typed. `[]`
+ *  is a clean review. Undefined when the input has no findings array or any finding has no file or no summary: a malformed
+ *  call is left a plain tool line, never a verdict card that hides a finding (or reads as clean). */
+function reportedFindings(input: any): ReportedFinding[] | undefined {
+    const raw = input?.findings;
+    if (!Array.isArray(raw)) {
+        return undefined;
+    }
+    const findings: ReportedFinding[] = [];
+    for (const f of raw) {
+        if (!nonEmpty(f?.file) || !nonEmpty(f?.summary)) {
+            return undefined;
+        }
+        const finding: ReportedFinding = { file: f.file, summary: f.summary };
+        if (typeof f.line === "number" && Number.isFinite(f.line)) {
+            finding.line = f.line;
+        }
+        if (nonEmpty(f.verdict)) {
+            finding.verdict = f.verdict;
+        }
+        if (nonEmpty(f.category)) {
+            finding.category = f.category;
+        }
+        findings.push(finding);
+    }
+    return findings;
+}
+
+/** Pure: the subagent a `Task` / `Agent` call started, from its input and tool call id. Undefined without a description. */
+function subagentCall(input: any, toolUseId: unknown): SubagentCall | undefined {
+    if (!nonEmpty(input?.description)) {
+        return undefined;
+    }
+    const call: SubagentCall = { description: input.description };
+    if (nonEmpty(input.subagent_type)) {
+        call.subagentType = input.subagent_type;
+    }
+    if (typeof toolUseId === "string" && toolUseId !== "") {
+        call.toolUseId = toolUseId;
+    }
+    return call;
+}
 
 // the tool a background subagent reports back with: plumbing, not work it did
 const HANDBACK_TOOL = "SubagentHandback";
@@ -387,6 +432,16 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                         action.detail = { kind: "skill", name: block.input.skill, args: args !== "" ? args : undefined };
                     } else if (block.name === "AskUserQuestion" && Array.isArray(block.input?.questions)) {
                         action.detail = { kind: "ask", questions: askQuestions(block.input.questions) };
+                    } else if (block.name === "ReportFindings") {
+                        const findings = reportedFindings(block.input);
+                        if (findings != null) {
+                            action.findings = findings;
+                        }
+                    } else if (block.name === "Task" || block.name === "Agent") {
+                        const subagent = subagentCall(block.input, block.id);
+                        if (subagent != null) {
+                            action.subagent = subagent;
+                        }
                     }
                     // scratch fields (stripped before return): tool_use timestamp for duration, tool name for result
                     // routing, and the raw Bash command (the target line shows the human description instead).

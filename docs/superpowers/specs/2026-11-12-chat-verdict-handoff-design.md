@@ -114,7 +114,8 @@ Agent's call (builder question 4):
   (a run from the cockpit launcher has no `OriginTabId`), deduplicated by id.
 - A card anchors to the `wsh runs start` Bash call whose output names the run's id. A run from a brainstorm keeps the
   place the brainstorm-review spec gives it.
-- An ended session's view (`showSession`) draws the cards too, static.
+- An agent that has exited draws the cards static. An ended session in Conversation History (`showSession`) draws
+  through `CompactTranscript`, not Chat, and is out of scope.
 
 A queued run (builder question 3, the person's answer): when the choice is `Arc engine, queued`, the run card shows
 right after `✓ Handoff · Arc engine, queued`, in a `Queued` state (`Queued · after <run>` when the entry waits on
@@ -161,7 +162,7 @@ Each card folds into its own ✓ row, by the rule of the brainstorm-review spec 
   of keeping the rule itself. Register it in `skills/skills.go` as the other arc skills are.
 - Pure models with vitest beside them: `chatverdict.ts` (block and `ReportFindings` → verdict, which findings start
   ticked, the ✓ row text), `chathandoff.ts` (recognizing the question, the plan's facts, the `Recommended` label),
-  and the run card's model extended to every run by `OriginTabId`. The cards draw in their own component file.
+  and the run card's model extended to every run by `OriginTranscript`. The cards draw in their own component file.
 - An agent that has exited turns every card static (no amber dot). Motion: the spring the question card uses.
 - An `agent-chat` CDP scenario step for the verdict card (open, ticked, folded), the handoff card (open, folded) and
   the run card of a run that did not start from a brainstorm, and one `CHANGELOG.md` line.

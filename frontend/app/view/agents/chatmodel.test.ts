@@ -322,6 +322,32 @@ describe("what arcterm typed", () => {
         }
     });
 
+    it("reads a `brainstorm:` line as your message, so it can pair with its send record, not as a sent card", () => {
+        const items = chatItems([{ kind: "user", text: "brainstorm: check", uuid: "u9" }]);
+        expect(items).toEqual([{ kind: "you", key: "you:0", text: "brainstorm: check", uuid: "u9" }]);
+        for (const line of [
+            "brainstorm: confirm every guess",
+            "brainstorm: builder answer: Fade",
+            "brainstorm: run 3fa2c1d4",
+            "brainstorm: approved\n",
+        ]) {
+            expect(chatItems([you(line)])[0], line).toMatchObject({ kind: "you", text: line });
+        }
+    });
+
+    it("still reads the lines wavesrv sends by itself under `brainstorm:` as sent cards from the cockpit", () => {
+        for (const name of ["judged", "judge-failed", "builder-questions"]) {
+            expect(chatItems([you(fixture(name))])[0], name).toMatchObject({ kind: "sent", from: "cockpit" });
+        }
+    });
+
+    it("still reads another agent's message and a child run's line as sent cards", () => {
+        expect(chatItems([you(fixture("agent-message"))])[0]).toMatchObject({ kind: "sent", from: "cockpit" });
+        for (const name of ["child-done", "child-cancelled"]) {
+            expect(chatItems([you(fixture(name))])[0], name).toMatchObject({ kind: "sent", from: "cockpit" });
+        }
+    });
+
     it("keeps a sent card to six lines", () => {
         const body = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join("\n");
         const text = `[Message from agent "lead" (tab tab-1), sent with wsh agents send. Not typed by the user. Its sender reads your reply with wsh agents read, so answer here and do not send one back.]\n${body}`;

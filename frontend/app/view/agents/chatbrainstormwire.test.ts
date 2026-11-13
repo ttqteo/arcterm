@@ -11,7 +11,7 @@ import {
     boxPlaceholderOverride,
     pairedHidden,
 } from "./chatbrainstormwire";
-import type { ChatItem } from "./chatmodel";
+import { chatItems, type ChatItem } from "./chatmodel";
 
 function card(over: Partial<QuestionCard> = {}): QuestionCard {
     return {
@@ -87,6 +87,15 @@ describe("answerMessages", () => {
             { kind: "marker", key: "marker:2", item: { kind: "interrupted" } as never },
         ];
         expect(answerMessages(items)).toEqual([]);
+    });
+
+    it("offers a `brainstorm:` line a card sent, as chatItems reads it from the transcript, with its key", () => {
+        const items = chatItems([user("start"), user("brainstorm: confirm every guess"), user("brainstorm: check")]);
+        expect(answerMessages(items)).toEqual([
+            { key: "you:0", text: "start" },
+            { key: "you:1", text: "brainstorm: confirm every guess" },
+            { key: "you:2", text: "brainstorm: check" },
+        ]);
     });
 
     it("reads a message the harness wrapped whole as a paste as its body, as userTextCount counts it", () => {
@@ -185,6 +194,18 @@ describe("pairedHidden", () => {
 
     it("hides a run line that names no run: there is nothing to draw", () => {
         expect(pairedHidden(paired({ kind: "run" }), new Set(["run-1"]))).toBe(true);
+    });
+
+    it("hides the line a verdict card sent: the card folds into its own ✓ row, where it was", () => {
+        const sent = paired({
+            kind: "verdict",
+            verdictKey: "verdict:3",
+            verdictOutcome: "fix",
+            fixed: 2,
+            text: "Fix these review findings:",
+        });
+        expect(pairedHidden(sent, none)).toBe(true);
+        expect(pairedHidden(sent, new Set(["run-1"]))).toBe(true);
     });
 
     it("draws an answer, a builder answer and the design and builder steps", () => {
