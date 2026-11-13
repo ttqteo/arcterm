@@ -500,6 +500,10 @@ func classifyToolRule(name string, args []string) (job Job, heavy, ruled bool) {
 			job, heavy = jobE2E, true
 		}
 	default:
+		if startsServer(name, args) {
+			// light, and ruled so it is never learned
+			return Job{}, false, true
+		}
 		// a shell script run by name: scripts/e2e.sh, run-smoke.sh
 		if stem, ok := strings.CutSuffix(name, ".sh"); ok {
 			job, heavy = browserScript(stem)
@@ -508,6 +512,52 @@ func classifyToolRule(name string, args []string) (job Job, heavy, ruled bool) {
 		return Job{}, false, false
 	}
 	return job, heavy, true
+}
+
+// servers are the programs memgate has no other rule for that start a server, by the operand that does (none: any
+// run of the program). A server runs until stopped, so a slot would be held up to jobqueue.MaxHold (60 min) and every
+// heavy job behind it would wait; its peak would also read heavy (a Spring Boot app passes 1 GB) and teach the queue to
+// hold the next start. So a server start is light and never learned, like npm run dev; task dev is the one exception
+// (LongRunning), as the engine's Final claims its RAM. A build by the same program (mvn package, gradle build) is
+// still learned on its own peak.
+var servers = map[string][]string{
+	"mvn":       {"spring-boot:run", "quarkus:dev", "jetty:run", "tomcat7:run", "exec:java"},
+	"mvnw":      {"spring-boot:run", "quarkus:dev", "jetty:run", "tomcat7:run", "exec:java"},
+	"gradle":    {"bootRun", "quarkusDev", "appRun"},
+	"gradlew":   {"bootRun", "quarkusDev", "appRun"},
+	"next":      {"dev", "start"},
+	"nuxt":      {"dev", "preview"},
+	"nuxi":      {"dev", "preview"},
+	"flask":     {"run"},
+	"rails":     {"server", "s"},
+	"hugo":      {"server", "serve"},
+	"dotnet":    {"run", "watch"},
+	"uvicorn":   nil,
+	"gunicorn":  nil,
+	"hypercorn": nil,
+	"nodemon":   nil,
+}
+
+// startsServer says the step runs a server per servers. A Windows wrapper's .bat or .cmd is the program it wraps
+// (gradlew.bat bootRun), and a Gradle task path is its task (:api:bootRun).
+func startsServer(name string, args []string) bool {
+	name = strings.TrimSuffix(strings.TrimSuffix(name, ".bat"), ".cmd")
+	want, ok := servers[name]
+	if !ok {
+		return false
+	}
+	if want == nil {
+		return true
+	}
+	for _, op := range operands(args) {
+		if strings.HasPrefix(op, ":") {
+			op = op[strings.LastIndex(op, ":")+1:]
+		}
+		if has(want, op) {
+			return true
+		}
+	}
+	return false
 }
 
 // pnpm's flags that take a value, so the script name is found past them
