@@ -90,6 +90,7 @@ import {
     useHeldSend,
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
+import type { SentFrom } from "./chatsentflight";
 import {
     rowHold,
     runningActions,
@@ -110,6 +111,33 @@ import { permissionCardKey, usePermission } from "./permissionstore";
 import { projectsAtom } from "./projectsstore";
 import { opensTui } from "./slashcommands";
 import { useSlashMenu } from "./slashmenu";
+
+// Where the message's text sits in the box, read as it sends, for its bubble to fly from (chatsentflight.ts): the left
+// edge of its first line (a bash command's `!` marker, which its bubble starts with too) and that line's centre, kept
+// inside the editor's view when a long message has scrolled its first line out of it. None when the box is not on screen.
+function sentFromBox(box: HTMLElement | null): SentFrom | undefined {
+    const input = box?.querySelector<HTMLElement>("[data-chat-input]");
+    if (input == null) {
+        return undefined;
+    }
+    const view = input.getBoundingClientRect();
+    if (view.width === 0 || view.height === 0) {
+        return undefined;
+    }
+    const style = getComputedStyle(input);
+    const read = parseFloat(style.fontSize);
+    const fontSize = Number.isFinite(read) ? read : 14;
+    const readLine = parseFloat(style.lineHeight);
+    const lineHeight = Number.isFinite(readLine) ? readLine : fontSize * 1.9;
+    const line = (input.firstElementChild ?? input).getBoundingClientRect();
+    const bang = box?.querySelector<HTMLElement>("[data-chat-bang]")?.getBoundingClientRect();
+    const top = Math.max(view.top, Math.min(line.top, view.bottom - lineHeight));
+    return {
+        x: bang != null && bang.width > 0 ? bang.left : line.left,
+        y: top + lineHeight / 2,
+        fontSize,
+    };
+}
 
 // two lines, as the board's box; grows as the text wraps, then scrolls
 const ChatMinH = 38;
@@ -458,6 +486,8 @@ export function ChatComposer({
             return;
         }
         const sent = message;
+        // read before the send empties the box: where the text is, for its bubble to fly from
+        const from = sentFromBox(boxRef.current);
         const riding = att.attachments.map((a) => a.id);
         // What became of the cards the person handled (chatinitiativestore.ts) goes in front of their next plain message
         // only: a /command or /btw (a line before one breaks it), a `!` command, a wake send, and an answer typed while a
@@ -504,7 +534,7 @@ export function ChatComposer({
                 // them lands until the side answer comes, the panel closes or the command finishes (chatpending.ts
                 // pendingKind)
                 if (entries != null && pendsAsBubble(sent)) {
-                    addPending(agent.id, sent, entries, agent.state !== "idle");
+                    addPending(agent.id, sent, entries, agent.state !== "idle", from);
                 }
                 flipIfTui(sent);
                 for (const a of att.attachments) {

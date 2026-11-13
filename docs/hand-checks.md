@@ -2706,12 +2706,17 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   the changes → Diff says "This agent has ended" with Open its folder; compare in a repository with no remote shows no
   Fetch, and in one with a remote Fetch is there (`diffsource.ts` subjectState, `landedRunTip`, `ListBranches`
   hasremote; commit c40d7d075; the scenarios break the reads at the RPC client).
-- [ ] (arcterm) **A sent message rises into Chat from the box.** In an agent's Chat, send a message (to an idle agent,
-  then one while it works, then a `! ls`): its dimmed bubble rises in from the box in about a third of a second rather
-  than appearing at once, and the transcript's copy replacing it later does not move. Switch to another agent and back,
-  or to Terminal and back, while one is still Sending… or Queued: it shows at once, with no second rise. With the OS's
-  reduced motion on, it only fades (`chatpane.tsx` PendingBubble / PendingCommand, `chatsentrise.ts`; no scenario
-  catches the motion).
+- [ ] (arcterm) **A sent message flies into Chat from the box.** In an agent's Chat, send a one-line message to an idle
+  agent: its text lifts out of the box from exactly where it was typed, at the same size, and flies up and to the right
+  on a slight curve to its place in under half a second, the bubble's shape showing as it leaves the box; the
+  conversation above slides up to make room rather than jumping, and nothing moves or blinks when the transcript's
+  copy takes its place (it often lands mid-flight). Then a three-line message (the box shrinks back under it while it
+  flies; it still lands without a jump), one while the agent works (it leaves at full strength and lands dimmed as
+  Queued), a `! ls` (the `!` lines up; Running… shows as it lands), and one sent while scrolled far up (it lands where
+  the conversation's end comes to). Switch to another agent and back, or to Terminal and back, while one is still
+  Queued: it shows at once, with no second flight. A /btw still rises in; with the OS's reduced motion on, a message
+  only fades in (`chatsentflight.ts`, `chatsentflightview.ts`, `chatpane.tsx` PendingBubble / PendingCommand,
+  `chatcomposer.tsx` sentFromBox; no scenario catches the motion). Try it once on a Mac too (WKWebView).
 - [ ] (arcterm) **The hologram folds into the asking sphere.** With the hologram as Jarvis, have an agent ask you
   something (a permission prompt): over about a second the HUD's rings wind in and draw down into the core while the
   amber sphere grows out of it, a touch past its size, with a flare of light at the crossing; answering it plays the

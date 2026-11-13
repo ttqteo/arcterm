@@ -109,6 +109,19 @@ export const sentRise: Variants = {
     animate: { opacity: 1, y: 0, scale: 1, transition: { duration: MOTION.durMacro, ease: MOTION.easeFluid } },
 };
 
+// Sent flight: the message the person just sent flying from where its text sat in the box to its place in the chat
+// (chatsentflight.ts, chatpane.tsx useSentFlight), so the box's text becomes the bubble. The no-bounce spring, a touch
+// longer than MOTION.spring: the flight crosses several hundred px where a shape change crosses tens, and the room it
+// lands in opens on MOTION.spring, a little ahead of it. Driven as a 0 → 1 progress, so its rest is tight enough that the
+// last frames never snap.
+export const sentFlight = {
+    type: "spring",
+    visualDuration: 0.45,
+    bounce: 0,
+    restDelta: 0.001,
+    restSpeed: 0.01,
+} satisfies Transition;
+
 // Pane reveal: composerReveal's signature on the macro duration. A composer strip is a few dozen
 // pixels, so durMicro reads as a reveal there; a disclosure pane is several hundred, and the same
 // 140ms on this ease covers ~90% of that distance in two frames — indistinguishable from a snap.
