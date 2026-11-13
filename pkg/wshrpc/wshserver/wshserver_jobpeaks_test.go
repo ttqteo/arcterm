@@ -7,6 +7,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,6 +102,37 @@ func TestJobProjectMapsALinkedWorktreeToTheMainCheckout(t *testing.T) {
 	for _, cwd := range []string{wt, inside} {
 		if got := jobProject(ctx, blockWithCwd(t, cwd)); got != main {
 			t.Fatalf("project of %q = %q, want the main checkout %q", cwd, got, main)
+		}
+	}
+}
+
+// lowerDrive writes p's drive letter in lower case, as VS Code and some gitdir files do ("d:/src/…").
+func lowerDrive(p string) string {
+	if v := filepath.VolumeName(p); len(v) == 2 && v[1] == ':' {
+		return strings.ToLower(v) + p[2:]
+	}
+	return p
+}
+
+// Windows paths ignore case, and a drive letter comes either way: a worktree's gitdir file written "d:/…" and a main
+// block whose cwd reads "D:\…" are one project, or what a run measures never reaches the main checkout's agents
+func TestJobProjectIgnoresTheDriveLettersCase(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("drive letters are a Windows thing")
+	}
+	ctx := context.Background()
+	main := repoAt(t)
+	if lowerDrive(main) == main {
+		t.Fatalf("temp dir %q has no upper-case drive letter to test with", main)
+	}
+	wt := linkedWorktreeOf(t, main)
+	admin := filepath.Join(main, ".git", "worktrees", "wt")
+	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+filepath.ToSlash(lowerDrive(admin))+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, cwd := range []string{main, lowerDrive(main), wt, lowerDrive(wt)} {
+		if got := jobProject(ctx, blockWithCwd(t, cwd)); got != main {
+			t.Fatalf("project of %q = %q, want %q", cwd, got, main)
 		}
 	}
 }
