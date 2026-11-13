@@ -52,6 +52,8 @@ export interface SubagentVM {
     state: SubagentState;
     model?: string;
     transcriptPath?: string; // disk-backed source: the child's own transcript file (undefined for the legacy hook path)
+    async?: true; // spawned to run in the background, so it keeps running after its parent's turn
+    startedAtMs?: number; // when it started: its spawn's timestamp, else its file's time on disk
 }
 
 /** Pure: whether the subagent `agentId` is working in `subs` (its parent's list). A missing list, a missing entry and

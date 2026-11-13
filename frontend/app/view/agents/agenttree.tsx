@@ -1058,7 +1058,9 @@ function BackgroundTaskRows({
     agentId: string;
     rows: BackgroundTaskRow[];
 }) {
-    const peek = useAtomValue(monitorPeekAtom);
+    // a peek the chat box opened is the box's to draw and to clear
+    const peekAtom = useAtomValue(monitorPeekAtom);
+    const peek = peekAtom?.origin === "tree" ? peekAtom : null;
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
     const peeked = peek?.agentId === agentId ? rows.find((r) => r.peekId === peek.taskId) : undefined;
     const orphaned = peek?.agentId === agentId && peeked == null;
@@ -1069,7 +1071,8 @@ function BackgroundTaskRows({
     }, [orphaned]);
     useEffect(
         () => () => {
-            if (globalStore.get(monitorPeekAtom)?.agentId === agentId) {
+            const cur = globalStore.get(monitorPeekAtom);
+            if (cur?.origin === "tree" && cur.agentId === agentId) {
                 globalStore.set(monitorPeekAtom, null);
             }
         },
@@ -1081,8 +1084,8 @@ function BackgroundTaskRows({
             return;
         }
         const cur = globalStore.get(monitorPeekAtom);
-        const same = cur?.agentId === agentId && cur.taskId === r.peekId;
-        globalStore.set(monitorPeekAtom, same ? null : { agentId, taskId: r.peekId });
+        const same = cur?.origin === "tree" && cur.agentId === agentId && cur.taskId === r.peekId;
+        globalStore.set(monitorPeekAtom, same ? null : { agentId, taskId: r.peekId, origin: "tree" });
     };
     return (
         <>

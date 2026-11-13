@@ -732,6 +732,15 @@ describe("extractSubagentSpawns", () => {
         ]);
     });
 
+    it("starts a spawn at its tool_use record's timestamp", () => {
+        const line = JSON.stringify({
+            type: "assistant",
+            timestamp: "2026-11-13T10:00:00.000Z",
+            message: { content: [{ type: "tool_use", id: "t1", name: "Agent", input: { prompt: "p" } }] },
+        });
+        expect(extractSubagentSpawns([line])[0].startMs).toBe(Date.parse("2026-11-13T10:00:00.000Z"));
+    });
+
     it("does not take the copy of a request (api-request-blob) for a new spawn", () => {
         const spawn = {
             type: "tool_use",

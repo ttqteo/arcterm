@@ -24,6 +24,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- The chat box says when the agent has work running in the background: a line at its top names the newest shell
+  command, Monitor or background subagent and how many more; press it to list them all, open a task's output or a
+  subagent's conversation, and stop a task.
+
 ### Changed
 
 - The Jarvis hologram turns amber only while an agent is asking you something; gates, plans to review and runs to
