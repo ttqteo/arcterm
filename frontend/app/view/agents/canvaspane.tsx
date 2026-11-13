@@ -5,17 +5,19 @@
 // Thin: what it shows comes from canvasmodel/canvasmarks, and what it knows comes from the agent's canvas state,
 // which useCanvasPoller keeps current.
 
+import { pushToast } from "@/app/cockpit/notificationstore";
+import { COPY_HOLD_MS } from "@/app/element/copyfeedback";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { getApi } from "@/app/store/global";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, ChevronLeft, ChevronRight, SquareCheck, SquareDashed } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, SquareCheck, SquareDashed } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
-import { openLauncher } from "./launcherstore";
+import { copyBoardShot, tauriCopyShotIO } from "./canvascopy";
 import { MarkLayer, MarkTray } from "./canvasmarking";
 import {
     ALL_TAB,
@@ -48,11 +50,14 @@ import {
     type CanvasState,
 } from "./canvasstore";
 import { maybeCaptureThumb, tauriThumbIO, THUMB_SETTLE_MS } from "./canvasthumb";
+import { openLauncher } from "./launcherstore";
 import { SWAP_BAR, SWAP_BTN, SWAP_BTN_ON, SWAP_LABEL, SWAP_PRIMARY_BTN, SwapTabs } from "./swapbar";
 
 // room above a board's frame for its label; the scroll pane's top padding
 export const CANVAS_TOP_PAD = 36;
 const LABEL_OFFSET = 22;
+// the label row's right end, kept for the Copy screenshot button
+const COPY_ROOM = 84;
 
 // the scroll pane's measured width, held through a wobble of a few pixels so the fitted board does not flicker
 // (steadyFitWidth); set during render, so the held width lands in the same commit as the measurement
@@ -454,11 +459,22 @@ export function BoardFrameView({
                     "absolute flex cursor-pointer items-baseline gap-[8px] truncate text-left text-[11px]",
                     selected ? "text-accent-soft" : "text-muted hover:text-secondary"
                 )}
-                style={{ left: frame.left, top: frame.top - LABEL_OFFSET, maxWidth: frame.width }}
+                style={{
+                    left: frame.left,
+                    top: frame.top - LABEL_OFFSET,
+                    maxWidth: src != null ? Math.max(0, frame.width - COPY_ROOM) : frame.width,
+                }}
             >
                 <span className="flex-none font-semibold">{label}</span>
                 {board.title != null ? <span className="truncate">{board.title}</span> : null}
             </button>
+            {src != null ? (
+                <CopyShotButton
+                    label={label}
+                    frameRef={frameRef}
+                    style={{ left: frame.left + frame.width, top: frame.top - LABEL_OFFSET }}
+                />
+            ) : null}
             <div
                 ref={frameRef}
                 data-canvas-frame={board.name}
@@ -497,6 +513,61 @@ export function BoardFrameView({
                 {children}
             </div>
         </>
+    );
+}
+
+// above the board's right edge, outside its frame, so the button is never in the picture it takes. A failure is a toast;
+// "Copied" shows for a moment, and a click while one is under way or showing does nothing
+function CopyShotButton({
+    label,
+    frameRef,
+    style,
+}: {
+    label: string;
+    frameRef: React.RefObject<HTMLDivElement>;
+    style: React.CSSProperties;
+}) {
+    const [state, setState] = useState<"idle" | "busy" | "copied">("idle");
+    const timer = useRef<number | undefined>(undefined);
+    useEffect(() => () => window.clearTimeout(timer.current), []);
+    const copy = () => {
+        const el = frameRef.current;
+        if (el == null || state !== "idle") {
+            return;
+        }
+        setState("busy");
+        copyBoardShot(tauriCopyShotIO, el)
+            .then(() => {
+                setState("copied");
+                timer.current = window.setTimeout(() => setState("idle"), COPY_HOLD_MS);
+            })
+            .catch((e) => {
+                setState("idle");
+                pushToast({
+                    title: `Couldn't copy ${label}`,
+                    message: e instanceof Error ? e.message : String(e),
+                    level: "error",
+                });
+            });
+    };
+    return (
+        <button
+            type="button"
+            data-canvas-copy-shot={label}
+            title="Copy a screenshot of this board, as it shows here"
+            aria-label={`Copy a screenshot of ${label}`}
+            disabled={state === "busy"}
+            onClick={copy}
+            className="absolute flex -translate-x-full cursor-pointer items-center gap-[5px] whitespace-nowrap text-[11px] text-muted hover:text-secondary disabled:cursor-default"
+            style={style}
+        >
+            {state === "copied" ? (
+                <Check size={12} strokeWidth={2} aria-hidden />
+            ) : (
+                <Copy size={12} strokeWidth={1.8} aria-hidden />
+            )}
+            {state === "copied" ? "Copied" : "Copy"}
+        </button>
     );
 }
 

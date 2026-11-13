@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Canvas Copy screenshot: open a canvas (an agent's canvas pane, and Agent → Canvas gallery → a canvas),
+  press Copy above a board's right edge → "Copied" for a moment, and pasting into Paint or a chat gives the board as
+  shown, without the Copy button or the pane around it; under All each tile has its own. Check it in the packaged app
+  too (clipboard image writes need a secure origin), and on a Mac (Screen Recording permission). `canvaspane.tsx`.
 - [ ] (arcterm) Chat box background line, the presses its scenario (`chat-bg-tasks`) leaves out: have a Claude agent
   start a background `sleep 600` and a background subagent, open the line's list → Stop on the shell row ends it and
   the row leaves at once (the line folds away when nothing is left); a press on the subagent row opens its
