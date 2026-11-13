@@ -19,7 +19,6 @@ export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 // the ideas column caps on its own, so a pile of ideas never hides a live tracker
 export const IDEA_CAP = 6;
 export const ACTIVE_CAP = 8;
-export const DELTA_CAP = 10;
 export const SHIPPED_CAP = 3;
 
 export interface CappedRows<T> {
@@ -120,33 +119,6 @@ export interface ActiveWorkRow {
     meta: string;
     chip: { label: string; tone: "blocked" | "asking" | "running" | "muted" } | null;
     ts: number;
-}
-
-// calendar-day buckets for the since-last-visit window; empty groups are dropped so a quiet
-// day simply doesn't render.
-export type DeltaGroupLabel = "Today" | "Yesterday" | "Earlier";
-export interface DeltaGroup {
-    label: DeltaGroupLabel;
-    rows: DeltaRow[];
-}
-export function groupDelta(delta: DeltaRow[], nowTs: number): DeltaGroup[] {
-    const startOfDay = (ts: number) => {
-        const d = new Date(ts);
-        d.setHours(0, 0, 0, 0);
-        return d.getTime();
-    };
-    const today = startOfDay(nowTs);
-    const yesterday = today - 24 * 60 * 60 * 1000;
-    const groups: DeltaGroup[] = [
-        { label: "Today", rows: [] },
-        { label: "Yesterday", rows: [] },
-        { label: "Earlier", rows: [] },
-    ];
-    for (const row of delta) {
-        const label: DeltaGroupLabel = row.ts >= today ? "Today" : row.ts >= yesterday ? "Yesterday" : "Earlier";
-        groups.find((g) => g.label === label)!.rows.push(row);
-    }
-    return groups.filter((g) => g.rows.length > 0);
 }
 
 // The needs-you queue: one actionable row per waiting thing, replacing the single count banner that
@@ -750,8 +722,11 @@ export function projectBriefing(input: BriefingModelInput): BriefingModel {
     const promotedOrefs = new Set(windowedShipped.map((s) => "run:" + s.runoid));
     // a shipped run's start and its finish both repeat its Shipped row, so neither stays in the delta; a run that has
     // not shipped keeps its start
+    // newest first across projects: the server sorts each project's events, and the project-less records' "(none)"
+    // sorts before every path, so a plain concatenation led with every record of the window
     const delta: DeltaRow[] = rawDelta
         .filter((ev) => !RUN_EVENTS.has(ev.kind) || !promotedOrefs.has(ev.navtarget ?? ""))
+        .sort((a, b) => b.ts - a.ts)
         .map((ev) => {
             const wording = ev.kind === "dossier" ? dossierWording(ev.detail) : (DELTA_WORDING[ev.kind] ?? ev.kind);
             return {

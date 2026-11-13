@@ -20,7 +20,7 @@
 // a real control among labels are the same lie, so neither happens here.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
-import { MOTION, paneReveal } from "@/app/element/motiontokens";
+import { MOTION, paneReveal, springReveal } from "@/app/element/motiontokens";
 import { contextMenuAtom, ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { buildJarvisBindings } from "@/app/store/keybindings/bindings";
@@ -109,8 +109,6 @@ import {
     actOnChunk,
     buildAttentionQueue,
     capRegion,
-    DELTA_CAP,
-    groupDelta,
     IDEA_CAP,
     projectBriefing,
     queueActions,
@@ -138,7 +136,6 @@ import { BriefProfileModal } from "./briefprofileview";
 import { openQueueSheet } from "./briefqueuestore";
 import { briefRestorePlan } from "./briefrestore";
 import {
-    behindGroups,
     filterAsMenu,
     filterLines,
     foldOpen,
@@ -152,21 +149,27 @@ import {
     projectName,
     queueLine,
     quietCount,
+    RECORDS_SUMMARY_ID,
     runRowFace,
     sessionLine,
     sessionWindow,
     SHIPPED_EMPTY,
     SHIPPED_LABEL,
+    shippedBriefLines,
     sinceEmptyLine,
     sinceLabel,
+    sinceSections,
+    sinceWindow,
     splitIdeas,
     type BriefLine,
     type LineTarget,
+    type SinceKind,
 } from "./briefrows";
 import {
     DeltaRowView,
     IdeaRow,
     InitiativeRow,
+    RecordsSummaryRow,
     ReviewBody,
     ReviewDone,
     ReviewTools,
@@ -371,10 +374,22 @@ function FilterMenu<T>({ label, noun, tag, options, value, onChange }: FilterSpe
 
 // What a side-column region's window hid, and the way past it: the overflow opens in place. Bordered because it is a
 // control.
-function MoreControl({ n, expanded, onToggle }: { n: number; expanded: boolean; onToggle: () => void }) {
+// noun, plural, names what it hid ("+66 initiatives") where "more" would not say.
+function MoreControl({
+    n,
+    expanded,
+    onToggle,
+    noun,
+}: {
+    n: number;
+    expanded: boolean;
+    onToggle: () => void;
+    noun?: string;
+}) {
     if (n <= 0 && !expanded) {
         return null;
     }
+    const what = noun == null ? "more" : n === 1 ? noun.replace(/s$/, "") : noun;
     return (
         <button
             type="button"
@@ -382,7 +397,7 @@ function MoreControl({ n, expanded, onToggle }: { n: number; expanded: boolean; 
             onClick={onToggle}
             className={cn(LINK_BTN, "mt-0.5")}
         >
-            {expanded ? "Show less" : `+${n} more`}
+            {expanded ? "Show less" : `+${n} ${what}`}
         </button>
     );
 }
@@ -510,7 +525,7 @@ const briefCursorAtom = atom<string | undefined>(undefined) as PrimitiveAtom<str
 // "+N more", Since you looked's, Ideas' and For later's. Module scope for the cursor's reason: the Brief unmounts on
 // every surface switch, and a region that silently re-collapsed while you were reading a record would be worse than one
 // that never opened.
-type FoldId = "waiting" | "initiatives" | "behind" | "ideas" | "later";
+type FoldId = "waiting" | "initiatives" | "ideas" | "later" | `since:${SinceKind}`;
 const briefExpandedAtom = atom<Partial<Record<FoldId, boolean>>>({});
 
 // Activity's own folds (Earlier past five lines, the runs quiet for a week) and Shipped's rows past the cap; module
@@ -523,8 +538,6 @@ const briefActivityFilterAtom = atom<ActivityFilter>("all") as PrimitiveAtom<Act
 // which project the initiatives list shows, null for every one; module scope for the same reason
 const briefInitiativeProjectAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
-// a stable empty list, so a region with no rows does not churn the memos that read it
-const NO_LINES: BriefLine[] = [];
 const NO_RUNS = atom<(Run | undefined)[]>([]);
 
 // The review pass's open initiative: the sheet's head and plan, drawn in place over the pass rather than in the sheet
@@ -772,7 +785,6 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const waitingOpen = expanded.waiting === true;
     const initiativesOpen = expanded.initiatives === true;
     const ideasOpen = expanded.ideas === true;
-    const behindOpen = expanded.behind === true;
     // The filter narrows what is drawn, and a search reaches every fold (briefrows.ts foldOpen): a match hidden behind
     // "+N more" would read as no match.
     const [query, setQuery] = useState("");
@@ -955,12 +967,6 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             fireAndForget(() => loadEffortDetail(reviewCurrentORef, reviewCurrentTs));
         }
     }, [reviewCurrentORef, reviewCurrentTs]);
-
-    const deltaWindow = useMemo(
-        () => capRegion(model_?.delta ?? [], DELTA_CAP, foldOpen(behindOpen, query)),
-        [model_, behindOpen, query]
-    );
-    const deltaGroups = useMemo(() => groupDelta(deltaWindow.rows, Date.now()), [deltaWindow]);
 
     // The filter and the one-region view narrow what is drawn, and the nav ids are the drawn rows' own, so j/k can
     // never land on a row the filter hid.
@@ -1148,6 +1154,23 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         [activity]
     );
 
+    // Since you looked by kind (briefrows.ts sinceSections): the runs, one row per initiative, the records folded into
+    // one row. Built from the whole window, then each section opens its own fold; "+N" counts rows, not raw events.
+    const sections = useMemo(
+        () => sinceSections(model_?.delta ?? [], Date.now(), { efforts: effortIndex, projects: councilProjects }),
+        [model_, effortIndex, councilProjects]
+    );
+    const since = useMemo(
+        () =>
+            sections
+                .map((section) => ({
+                    section,
+                    open: expanded[`since:${section.kind}`] === true,
+                    ...sinceWindow(section, expanded[`since:${section.kind}`] === true, query),
+                }))
+                .filter((w) => w.total > 0),
+        [sections, expanded, query]
+    );
     const lines = useMemo(() => {
         const now = Date.now();
         return {
@@ -1155,23 +1178,25 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 queue.map((q) => queueLine(q, now)),
                 query
             ),
-            behind: behindGroups(deltaGroups, shipped.rows, now, { efforts: effortIndex, projects: councilProjects })
-                .map((g) => ({ ...g, lines: filterLines(g.lines, query) }))
-                .filter((g) => g.lines.length > 0),
+            shipped: filterLines(
+                shippedBriefLines(shipped.rows, now, { efforts: effortIndex, projects: councilProjects }),
+                query
+            ),
         };
-    }, [queue, deltaGroups, shipped, query, effortIndex, councilProjects]);
+    }, [queue, shipped, query, effortIndex, councilProjects]);
     const strip = waitingStrip(lines.waiting, foldOpen(waitingOpen, query));
     const mainShown = only !== "activity";
     const sideShown = only == null || only === "activity";
+    // the rows Since you looked draws, in its order: a section's summary row leads its rows
     const behindLines = useMemo(
-        () => lines.behind.filter((g) => g.label !== SHIPPED_LABEL).flatMap((g) => g.lines),
-        [lines]
+        () => since.flatMap((w) => [...(w.summary != null ? [w.summary] : []), ...w.lines]),
+        [since]
     );
-    const shippedLines = useMemo(() => lines.behind.find((g) => g.label === SHIPPED_LABEL)?.lines ?? NO_LINES, [lines]);
+    const shippedLines = lines.shipped;
     const reviewing = pass != null;
 
     // j/k walks the rows in the order they are drawn (briefnav.ts): the strip's item (its rows with Show all open), the
-    // cards row by row, the list, Activity, then Since you looked, Shipped, Ideas and For later
+    // cards row by row, the list, Ideas and For later, then Activity, Since you looked and Shipped
     const activityShown = useMemo(
         () => [...activity.live, ...activity.earlier, ...(foldOpen(staleOpen, query) ? activity.older : [])],
         [activity, staleOpen, query]
@@ -1293,6 +1318,11 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             openCouncilSheet(council);
             return;
         }
+        // Enter on the records' summary opens or folds them, as its click does
+        if (cursor === RECORDS_SUMMARY_ID) {
+            toggleRegion("since:records");
+            return;
+        }
         // Enter on a For later row opens its session, as its click does
         const later = laterWindow.rows.find((r) => r.navId === cursor);
         if (later != null) {
@@ -1310,7 +1340,18 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         if (cursorTarget != null) {
             openLine(cursorTarget);
         }
-    }, [cursor, navTarget, cursorTarget, openLine, lines.waiting, queueOf, openWaiting, laterWindow, openLater]);
+    }, [
+        cursor,
+        navTarget,
+        cursorTarget,
+        openLine,
+        lines.waiting,
+        queueOf,
+        openWaiting,
+        laterWindow,
+        openLater,
+        toggleRegion,
+    ]);
     const runList = useAtomValue(briefRunListAtom);
     // With a run sheet open on a run of the published list, j/k step the sheet through that list (design
     // L1830): the rows are the ones its n / N counts, and landing on one opens it. The cursor is still the
@@ -2100,10 +2141,125 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                 </>
                                             )}
                                         </section>
+                                        {/* Ideas and For later sit under the initiatives, side by side, where the main
+                                        column ran out long before the side one did */}
+                                        {only == null ? (
+                                            <div
+                                                data-jarvis-brief-later-row
+                                                className="grid grid-cols-1 items-start gap-7 @min-[760px]:grid-cols-2"
+                                            >
+                                                {ideaLines.length > 0 || !filtering ? (
+                                                    <section
+                                                        data-jarvis-ideas
+                                                        className="flex min-w-0 flex-col gap-[9px]"
+                                                    >
+                                                        <div
+                                                            data-jarvis-ideas-label
+                                                            className="flex items-center gap-[9px]"
+                                                        >
+                                                            <span className={cn(REGION_LABEL, "text-ink-mid")}>
+                                                                Ideas
+                                                            </span>
+                                                            <span className="flex-none text-[10.5px] font-medium tabular-nums text-ink-mid">
+                                                                {ideaLines.length}
+                                                            </span>
+                                                            <span className="h-px min-w-3 flex-1 bg-edge-faint" />
+                                                            <span className={FAINT_TEXT}>not planned yet</span>
+                                                        </div>
+                                                        <div
+                                                            className={cn(
+                                                                "flex flex-col",
+                                                                ideaLines.length > 0 &&
+                                                                    "rounded-[10px] border border-border bg-surface p-1"
+                                                            )}
+                                                        >
+                                                            {ideaLines.map((l) => (
+                                                                <IdeaRow
+                                                                    key={l.id}
+                                                                    line={l}
+                                                                    focused={cursor === l.id}
+                                                                    fresh={freshIdeas.has(keyOf(l))}
+                                                                    // an idea opens in the sheet, which offers the ways
+                                                                    // to plan it; the open one is marked as a card is
+                                                                    expanded={
+                                                                        l.target != null &&
+                                                                        "oref" in l.target &&
+                                                                        l.target.oref === openedOref
+                                                                    }
+                                                                    onContextMenu={(ev) =>
+                                                                        l.target != null && "oref" in l.target
+                                                                            ? showMenu(l.target.oref, ev)
+                                                                            : undefined
+                                                                    }
+                                                                    onOpen={() => {
+                                                                        setCursor(l.id);
+                                                                        openLine(l.target);
+                                                                    }}
+                                                                />
+                                                            ))}
+                                                            <label
+                                                                data-jarvis-jot-idea
+                                                                className={cn(
+                                                                    "flex h-8 items-center gap-2 rounded-[8px] border border-dashed border-edge-strong px-2.5 focus-within:border-accent/60",
+                                                                    ideaLines.length > 0 && "mt-1"
+                                                                )}
+                                                            >
+                                                                <Plus
+                                                                    size={12}
+                                                                    aria-hidden
+                                                                    className="flex-none text-muted"
+                                                                />
+                                                                <input
+                                                                    aria-label="Jot down an idea"
+                                                                    placeholder="Jot down an idea — Enter saves"
+                                                                    value={jot}
+                                                                    onChange={(e) => setJot(e.target.value)}
+                                                                    onKeyDown={(e) => {
+                                                                        if (
+                                                                            e.key === "Enter" &&
+                                                                            !e.nativeEvent.isComposing &&
+                                                                            jot.trim() !== ""
+                                                                        ) {
+                                                                            const t = jot.trim();
+                                                                            setJot("");
+                                                                            runMutation(() => createIdea(t));
+                                                                            briefUndo.notify(`Jotted “${t}”`);
+                                                                        } else if (e.key === "Escape") {
+                                                                            e.stopPropagation();
+                                                                            setJot("");
+                                                                            e.currentTarget.blur();
+                                                                        }
+                                                                    }}
+                                                                    className="min-w-0 flex-1 bg-transparent text-[12px] text-ink-hi outline-none placeholder:text-muted"
+                                                                />
+                                                            </label>
+                                                        </div>
+                                                        <MoreControl
+                                                            n={ideaWindow.more}
+                                                            expanded={ideasOpen}
+                                                            onToggle={() => toggleRegion("ideas")}
+                                                        />
+                                                    </section>
+                                                ) : null}
+                                                {laterAll.length > 0 || !filtering ? (
+                                                    <ForLaterRegion
+                                                        rows={laterWindow.rows}
+                                                        total={laterAll.length}
+                                                        more={laterWindow.more}
+                                                        expanded={laterOpen}
+                                                        onToggle={() => toggleRegion("later")}
+                                                        cursor={cursor}
+                                                        onOpen={openLater}
+                                                        onResume={resumeLater}
+                                                        onDone={doneLater}
+                                                    />
+                                                ) : null}
+                                            </div>
+                                        ) : null}
                                     </div>
                                 ) : null}
-                                {/* the side column: what is going on now (Activity), what happened, what shipped,
-                                    and what is not planned yet */}
+                                {/* the side column: what is going on now (Activity), what happened since you looked,
+                                    and what shipped */}
                                 {sideShown ? (
                                     <aside
                                         data-jarvis-brief-side
@@ -2220,32 +2376,88 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                                 {sinceEmptyLine(visitCursor == null)}
                                                             </p>
                                                         ) : null}
-                                                        {lines.behind
-                                                            .filter((g) => g.label !== SHIPPED_LABEL)
-                                                            .map((g) => (
-                                                                <div key={g.label} className="flex flex-col">
-                                                                    <div className="px-[11px] pb-0.5 pt-1.5 text-[10.5px] font-bold uppercase tracking-[.09em] text-muted">
-                                                                        {g.label}
+                                                        {since.map((w) => {
+                                                            const kind = w.section.kind;
+                                                            const row = (l: BriefLine) => (
+                                                                <DeltaRowView
+                                                                    key={l.id}
+                                                                    line={l}
+                                                                    // the section names an initiative or a record;
+                                                                    // a run keeps its started / completed word
+                                                                    bare={kind !== "runs"}
+                                                                    focused={cursor === l.id}
+                                                                    onOpen={
+                                                                        l.target != null
+                                                                            ? (e) => {
+                                                                                  setCursor(l.id);
+                                                                                  openLine(l.target, e);
+                                                                              }
+                                                                            : undefined
+                                                                    }
+                                                                />
+                                                            );
+                                                            return (
+                                                                <div
+                                                                    key={kind}
+                                                                    data-jarvis-since-section={kind}
+                                                                    className="flex flex-col"
+                                                                >
+                                                                    <div className="flex items-baseline gap-1.5 px-[11px] pb-0.5 pt-2 text-[10.5px] font-bold uppercase tracking-[.09em] text-muted">
+                                                                        {w.section.label}
+                                                                        <span className="font-medium tabular-nums text-ink-mid">
+                                                                            {w.total}
+                                                                        </span>
                                                                     </div>
-                                                                    {g.lines.map((l) => (
-                                                                        <DeltaRowView
-                                                                            key={l.id}
-                                                                            line={l}
-                                                                            focused={cursor === l.id}
-                                                                            onOpen={
-                                                                                l.target != null
-                                                                                    ? (e) => openLine(l.target, e)
-                                                                                    : undefined
-                                                                            }
+                                                                    {w.summary != null ? (
+                                                                        <RecordsSummaryRow
+                                                                            line={w.summary}
+                                                                            open={w.open}
+                                                                            focused={cursor === w.summary.id}
+                                                                            onToggle={() => {
+                                                                                setCursor(RECORDS_SUMMARY_ID);
+                                                                                toggleRegion("since:records");
+                                                                            }}
                                                                         />
-                                                                    ))}
+                                                                    ) : null}
+                                                                    {kind === "records" ? (
+                                                                        <AnimatePresence initial={false}>
+                                                                            {w.lines.length > 0 ? (
+                                                                                <motion.div
+                                                                                    key="records"
+                                                                                    variants={springReveal}
+                                                                                    initial="initial"
+                                                                                    animate="animate"
+                                                                                    exit="exit"
+                                                                                    data-jarvis-since-records
+                                                                                    className={cn(
+                                                                                        "flex flex-col overflow-hidden",
+                                                                                        w.summary != null && "pl-4"
+                                                                                    )}
+                                                                                >
+                                                                                    {w.lines.map(row)}
+                                                                                </motion.div>
+                                                                            ) : null}
+                                                                        </AnimatePresence>
+                                                                    ) : (
+                                                                        <>
+                                                                            {w.lines.map(row)}
+                                                                            <MoreControl
+                                                                                n={w.more}
+                                                                                noun={
+                                                                                    kind === "initiatives"
+                                                                                        ? "initiatives"
+                                                                                        : "runs"
+                                                                                }
+                                                                                expanded={w.open}
+                                                                                onToggle={() =>
+                                                                                    toggleRegion(`since:${kind}`)
+                                                                                }
+                                                                            />
+                                                                        </>
+                                                                    )}
                                                                 </div>
-                                                            ))}
-                                                        <MoreControl
-                                                            n={deltaWindow.more}
-                                                            expanded={behindOpen}
-                                                            onToggle={() => toggleRegion("behind")}
-                                                        />
+                                                            );
+                                                        })}
                                                     </div>
                                                 </section>
                                                 {/* its own section, because the two have different time bases: events
@@ -2309,112 +2521,6 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                         ) : null}
                                                     </div>
                                                 </section>
-                                                {ideaLines.length > 0 || !filtering ? (
-                                                    <section
-                                                        data-jarvis-ideas
-                                                        className="flex min-w-0 flex-col gap-[9px]"
-                                                    >
-                                                        <div
-                                                            data-jarvis-ideas-label
-                                                            className="flex items-center gap-[9px]"
-                                                        >
-                                                            <span className={cn(REGION_LABEL, "text-ink-mid")}>
-                                                                Ideas
-                                                            </span>
-                                                            <span className="flex-none text-[10.5px] font-medium tabular-nums text-ink-mid">
-                                                                {ideaLines.length}
-                                                            </span>
-                                                            <span className="h-px min-w-3 flex-1 bg-edge-faint" />
-                                                            <span className={FAINT_TEXT}>not planned yet</span>
-                                                        </div>
-                                                        <div
-                                                            className={cn(
-                                                                "flex flex-col",
-                                                                ideaLines.length > 0 &&
-                                                                    "rounded-[10px] border border-border bg-surface p-1"
-                                                            )}
-                                                        >
-                                                            {ideaLines.map((l) => (
-                                                                <IdeaRow
-                                                                    key={l.id}
-                                                                    line={l}
-                                                                    focused={cursor === l.id}
-                                                                    fresh={freshIdeas.has(keyOf(l))}
-                                                                    // an idea opens in the sheet, which offers the ways
-                                                                    // to plan it; the open one is marked as a card is
-                                                                    expanded={
-                                                                        l.target != null &&
-                                                                        "oref" in l.target &&
-                                                                        l.target.oref === openedOref
-                                                                    }
-                                                                    onContextMenu={(ev) =>
-                                                                        l.target != null && "oref" in l.target
-                                                                            ? showMenu(l.target.oref, ev)
-                                                                            : undefined
-                                                                    }
-                                                                    onOpen={() => {
-                                                                        setCursor(l.id);
-                                                                        openLine(l.target);
-                                                                    }}
-                                                                />
-                                                            ))}
-                                                            <label
-                                                                data-jarvis-jot-idea
-                                                                className={cn(
-                                                                    "flex h-8 items-center gap-2 rounded-[8px] border border-dashed border-edge-strong px-2.5 focus-within:border-accent/60",
-                                                                    ideaLines.length > 0 && "mt-1"
-                                                                )}
-                                                            >
-                                                                <Plus
-                                                                    size={12}
-                                                                    aria-hidden
-                                                                    className="flex-none text-muted"
-                                                                />
-                                                                <input
-                                                                    aria-label="Jot down an idea"
-                                                                    placeholder="Jot down an idea — Enter saves"
-                                                                    value={jot}
-                                                                    onChange={(e) => setJot(e.target.value)}
-                                                                    onKeyDown={(e) => {
-                                                                        if (
-                                                                            e.key === "Enter" &&
-                                                                            !e.nativeEvent.isComposing &&
-                                                                            jot.trim() !== ""
-                                                                        ) {
-                                                                            const t = jot.trim();
-                                                                            setJot("");
-                                                                            runMutation(() => createIdea(t));
-                                                                            briefUndo.notify(`Jotted “${t}”`);
-                                                                        } else if (e.key === "Escape") {
-                                                                            e.stopPropagation();
-                                                                            setJot("");
-                                                                            e.currentTarget.blur();
-                                                                        }
-                                                                    }}
-                                                                    className="min-w-0 flex-1 bg-transparent text-[12px] text-ink-hi outline-none placeholder:text-muted"
-                                                                />
-                                                            </label>
-                                                        </div>
-                                                        <MoreControl
-                                                            n={ideaWindow.more}
-                                                            expanded={ideasOpen}
-                                                            onToggle={() => toggleRegion("ideas")}
-                                                        />
-                                                    </section>
-                                                ) : null}
-                                                {laterAll.length > 0 || !filtering ? (
-                                                    <ForLaterRegion
-                                                        rows={laterWindow.rows}
-                                                        total={laterAll.length}
-                                                        more={laterWindow.more}
-                                                        expanded={laterOpen}
-                                                        onToggle={() => toggleRegion("later")}
-                                                        cursor={cursor}
-                                                        onOpen={openLater}
-                                                        onResume={resumeLater}
-                                                        onDone={doneLater}
-                                                    />
-                                                ) : null}
                                             </>
                                         ) : null}
                                     </aside>

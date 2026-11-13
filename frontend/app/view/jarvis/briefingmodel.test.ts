@@ -10,8 +10,6 @@ import {
     actOnChunk,
     buildAttentionQueue,
     capRegion,
-    DELTA_CAP,
-    groupDelta,
     kindWord,
     mergeActiveWork,
     oldestWaitingTs,
@@ -26,7 +24,6 @@ import {
     type AgentRow,
     type BlockerRow,
     type BriefingModelInput,
-    type DeltaRow,
     type QueueRow,
     type RunRow,
 } from "./briefingmodel";
@@ -197,10 +194,10 @@ describe("briefing projection", () => {
         expect(m.shipped.map((s) => s.oref)).toEqual(["run:r-new"]);
         expect(m.shipped[0].fresh).toBe(true);
         // a shipped run's start and its completion both repeat its Shipped row; the old completion and a run that has
-        // not shipped keep theirs
+        // not shipped keep theirs, newest first
         expect(m.delta.map((d) => [d.kind, d.oref])).toEqual([
-            ["run-done", "run:r-old"],
             ["run-created", "run:r-z"],
+            ["run-done", "run:r-old"],
         ]);
     });
 
@@ -372,7 +369,7 @@ describe("briefing projection", () => {
         expect(row?.nav).toEqual({ kind: "effort", oref: "effort:scenario-gate" });
     });
 
-    it("projects every delta row the window holds, and the cap hides two of them", () => {
+    it("projects every delta row the window holds", () => {
         const events = Array.from({ length: 12 }, (_, i) => ({
             ts: T0 - i * HOUR,
             kind: "run-created",
@@ -382,7 +379,24 @@ describe("briefing projection", () => {
         const m = projectBriefing(input(state));
         expect(m.delta).toHaveLength(12);
         expect(m.counts.delta).toBe(12); // the pill keeps the true count
-        expect(capRegion(m.delta, DELTA_CAP, false)).toMatchObject({ more: 2 });
+    });
+
+    it("orders the delta newest first across projects, so the project-less records do not all lead", () => {
+        // the server sorts each project's events, and "(none)", where records sit, sorts before every path
+        const none: TimelineEvent[] = [
+            { ts: T0 - 2 * HOUR, kind: "dossier", title: "rec a", detail: "status: active", navtarget: "task:a" },
+            { ts: T0 - 5 * HOUR, kind: "dossier", title: "rec b", detail: "status: active", navtarget: "task:b" },
+        ];
+        const one: TimelineEvent[] = [
+            { ts: T0 - HOUR, kind: "run-created", project: "/p/one", title: "run 1", navtarget: "run:r-1" },
+            { ts: T0 - 3 * HOUR, kind: "run-created", project: "/p/one", title: "run 2", navtarget: "run:r-2" },
+        ];
+        const state = workState([
+            { project: "(none)", active: [], shipped: [], events: [], delta: none },
+            { project: "/p/one", active: [], shipped: [], events: [], delta: one },
+        ]);
+        const m = projectBriefing(input(state));
+        expect(m.delta.map((d) => d.title)).toEqual(["run 1", "rec a", "run 2", "rec b"]);
     });
 
     it("projects every active leg and shipped row, each capped on its own", () => {
@@ -404,47 +418,6 @@ describe("briefing projection", () => {
         expect(m.counts.shipped).toBe(10);
         expect(capRegion(m.activeRuns, ACTIVE_CAP, false)).toMatchObject({ more: 2 });
         expect(capRegion(m.shipped, SHIPPED_CAP, false)).toMatchObject({ more: 7 });
-    });
-});
-
-describe("delta grouping", () => {
-    // fixed local noon — calendar-day buckets must not depend on the runner's TZ.
-    const NOON = new Date(2027, 0, 15, 12, 0, 0).getTime();
-    const day = (d: number, h: number) => new Date(2027, 0, d, h, 0, 0).getTime();
-    const deltaRow = (ts: number, title: string): DeltaRow => ({
-        key: "k:" + title,
-        ts,
-        kind: "run-done",
-        title,
-        wording: "Run completed",
-        detail: null,
-        oref: null,
-    });
-
-    it("buckets by calendar day into Today / Yesterday / Earlier", () => {
-        const groups = groupDelta(
-            [
-                deltaRow(day(15, 9), "this-morning"),
-                deltaRow(day(14, 23), "last-night"),
-                deltaRow(day(13, 10), "two-days-ago"),
-            ],
-            NOON
-        );
-        expect(groups.map((g) => g.label)).toEqual(["Today", "Yesterday", "Earlier"]);
-        expect(groups[0].rows.map((r) => r.title)).toEqual(["this-morning"]);
-        expect(groups[1].rows.map((r) => r.title)).toEqual(["last-night"]);
-        expect(groups[2].rows.map((r) => r.title)).toEqual(["two-days-ago"]);
-    });
-
-    it("treats midnight as the day boundary", () => {
-        const groups = groupDelta([deltaRow(day(15, 0), "midnight"), deltaRow(day(14, 0), "yesterday-midnight")], NOON);
-        expect(groups[0].rows.map((r) => r.title)).toEqual(["midnight"]);
-        expect(groups[1].rows.map((r) => r.title)).toEqual(["yesterday-midnight"]);
-    });
-
-    it("omits empty groups and returns nothing for an empty delta", () => {
-        expect(groupDelta([deltaRow(day(14, 10), "only-yesterday")], NOON).map((g) => g.label)).toEqual(["Yesterday"]);
-        expect(groupDelta([], NOON)).toEqual([]);
     });
 });
 

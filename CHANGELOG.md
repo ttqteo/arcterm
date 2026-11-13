@@ -26,7 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
-- Jarvis has a For later list at the bottom of its side column: every session you marked for later, in every
+- Jarvis has a For later list beside Ideas, under its initiatives: every session you marked for later, in every
   project, newest mark first. Click one to open its conversation (or its agent, if it is still running), Resume an
   ended one, or press Done to clear the mark; a mark whose session is gone still shows, so you can clear it.
   <!-- try: go:jarvis -->
@@ -45,6 +45,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Jarvis's Since you looked is split by kind: the runs that moved, one row per initiative for the whole stretch
+  (not one per day), five at a time, and the records folded into one row you open. It also stops listing every
+  record first and counting raw events in its "+N more". Ideas and For later moved under the initiatives, side by
+  side, so the two columns end near each other instead of the side one running a screen past the main one.
+  <!-- try: go:jarvis -->
 - The whole app starts one size bigger: the default zoom is now 110%, and `Cmd`+`0` (`Ctrl`+`0` on Windows) returns
   there. A zoom you set yourself is kept.
 - Jarvis's hologram takes the avatar's shape from the Kael fork: three rings stacked in depth around a hollow

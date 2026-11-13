@@ -1057,53 +1057,73 @@ const briefLayout = {
             JSON.stringify(page)
         );
 
-        // 3. the side column: Activity, Since you looked, Shipped, Ideas, to the right of the main column
+        // 3. the side column: Activity, Since you looked, Shipped, to the right of the main column; Ideas and For later
+        //    sit in the main column under the initiatives, side by side, so the two columns end near each other
         const side = await h.ev(`(() => {
             const side = document.querySelector('[data-jarvis-brief-side]');
             if (!side) return null;
             const main = side.previousElementSibling;
+            const row = main?.querySelector('[data-jarvis-brief-later-row]');
+            const cells = row ? [...row.children] : [];
+            const box = (el) => el?.getBoundingClientRect();
             return {
                 order: [...side.children].map(
                     (c) => c.dataset.jarvisBriefRegion ?? (c.hasAttribute('data-jarvis-ideas') ? 'ideas' : '?')
                 ),
+                mainRow: cells.map((c) => c.dataset.jarvisBriefRegion ?? (c.hasAttribute('data-jarvis-ideas') ? 'ideas' : '?')),
+                // side by side: the second cell starts right of the first, on the same top
+                sideBySide: cells.length < 2 || (Math.round(box(cells[1]).left) > Math.round(box(cells[0]).right) && Math.abs(box(cells[1]).top - box(cells[0]).top) < 2),
+                afterList: !!row && !!main.querySelector('[data-jarvis-brief-region="initiatives"]') &&
+                    !!(main.querySelector('[data-jarvis-brief-region="initiatives"]').compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING),
                 sideLeft: Math.round(side.getBoundingClientRect().left),
                 mainRight: main ? Math.round(main.getBoundingClientRect().right) : null,
             };
         })()`);
         rec(
-            "3. the side column holds Activity, Since you looked, Shipped and Ideas, to the right of the main column",
+            "3. the side column holds Activity, Since you looked and Shipped, right of the main column; Ideas and For later sit side by side under the initiatives",
             side != null &&
-                JSON.stringify(side.order) === JSON.stringify(["activity", "behind", "shipped", "ideas"]) &&
+                JSON.stringify(side.order) === JSON.stringify(["activity", "behind", "shipped"]) &&
+                side.mainRow[0] === "ideas" &&
+                side.mainRow.every((r) => r === "ideas" || r === "later") &&
+                side.sideBySide === true &&
+                side.afterList === true &&
                 side.mainRight != null &&
                 side.sideLeft > side.mainRight,
             JSON.stringify(side)
         );
         await h.shot("cdp-shots/brief-layout-columns.png");
 
-        // 3b. Since you looked rows are compact: the kind and age on one line, the title under it at nearly the row's
-        // width (a side-column row that kept the old three columns left the title about 150px of 340)
-        const deltas = await h.ev(`(() => {
-            const rows = [...document.querySelectorAll('[data-jarvis-brief-side] [data-jarvis-brief-row="delta"]')];
-            return rows.map((row) => {
-                const kind = row.querySelector('[data-jarvis-delta-kind]')?.getBoundingClientRect();
-                const title = row.querySelector('[data-jarvis-delta-title]')?.getBoundingClientRect();
-                const box = row.getBoundingClientRect();
-                return kind && title
-                    ? {
-                          kindBottom: Math.round(kind.bottom),
-                          titleTop: Math.round(title.top),
-                          titleShare: Math.round((title.width / box.width) * 100) / 100,
-                      }
-                    : null;
-            });
+        // 3b. Since you looked is split by kind (Runs, Initiatives, Records, in that order); a run row puts its kind and
+        // age over a full-width title, and the records fold into one summary row
+        const since = await h.ev(`(() => {
+            const region = document.querySelector('[data-jarvis-brief-region="behind"]');
+            const sections = [...(region?.querySelectorAll('[data-jarvis-since-section]') ?? [])];
+            const runs = [...(region?.querySelectorAll('[data-jarvis-since-section="runs"] [data-jarvis-brief-row="delta"]') ?? [])];
+            return {
+                sections: sections.map((s) => s.dataset.jarvisSinceSection),
+                runs: runs.map((row) => {
+                    const kind = row.querySelector('[data-jarvis-delta-kind]')?.getBoundingClientRect();
+                    const title = row.querySelector('[data-jarvis-delta-title]')?.getBoundingClientRect();
+                    const box = row.getBoundingClientRect();
+                    return kind && title
+                        ? { kindBottom: Math.round(kind.bottom), titleTop: Math.round(title.top), titleShare: Math.round((title.width / box.width) * 100) / 100 }
+                        : null;
+                }),
+                recordsSummary: region?.querySelector('[data-jarvis-since-records-summary]')?.dataset.jarvisSinceRecordsSummary ?? null,
+                recordRows: region?.querySelectorAll('[data-jarvis-since-records] [data-jarvis-brief-row="delta"]').length ?? 0,
+            };
         })()`);
+        const KINDS = ["runs", "initiatives", "records"];
         steps.push(
-            deltas.length === 0
-                ? skipStep("3b. a Since you looked row puts the kind and age over a full-width title", "the attention fixture has no Since you looked row")
+            since.sections.length === 0
+                ? skipStep("3b. Since you looked is split by kind, with a run's kind over its title and the records folded", "the attention fixture has no Since you looked row")
                 : {
-                      step: "3b. a Since you looked row puts the kind and age over a full-width title",
-                      ok: deltas.every((d) => d != null && d.kindBottom <= d.titleTop && d.titleShare >= 0.8),
-                      detail: JSON.stringify(deltas),
+                      step: "3b. Since you looked is split by kind, with a run's kind over its title and the records folded",
+                      ok:
+                          JSON.stringify(since.sections) === JSON.stringify(KINDS.filter((k) => since.sections.includes(k))) &&
+                          since.runs.every((d) => d != null && d.kindBottom <= d.titleTop && d.titleShare >= 0.8) &&
+                          (!since.sections.includes("records") || (since.recordsSummary === "closed" && since.recordRows === 0)),
+                      detail: JSON.stringify(since),
                   }
         );
         // the shot is the whole viewport, which at 1600 wide holds the side column to the right
