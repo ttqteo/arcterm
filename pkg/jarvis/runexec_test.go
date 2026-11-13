@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
@@ -341,6 +342,52 @@ func piCap(t *testing.T) runroute.Capability {
 	return cap
 }
 
+// a spawn that fails after its tab exists returns no oref, so no caller can remove the tab: the spawn does
+func TestSpawnRunWorkerRemovesItsTabOnFailure(t *testing.T) {
+	stubWorkerSpawn(t)
+	oldDelete := deleteWorkerTab
+	t.Cleanup(func() { deleteWorkerTab = oldDelete })
+	var deleted []string
+	deleteWorkerTab = func(ctx context.Context, workspaceId, tabId string, _ bool) (string, error) {
+		deleted = append(deleted, workspaceId+"/"+tabId)
+		return "", nil
+	}
+	var tabID string
+	stubCreate := createWorkerTab
+	createWorkerTab = func(ctx context.Context, workspaceId, name string, activate, initial bool) (string, error) {
+		id, err := stubCreate(ctx, workspaceId, name, activate, initial)
+		tabID = id
+		return id, err
+	}
+	persistWorkerBlockMeta = func(context.Context, string, waveobj.MetaMapType) error { return errors.New("write failed") }
+	oref, err := SpawnRunWorker(context.Background(), piCap(t), "ws-1", "proj", "", "do it", RunWorkerOptions{})
+	if err == nil || oref != "" {
+		t.Fatalf("got oref %q, err %v, want the meta failure", oref, err)
+	}
+	if want := []string{"ws-1/" + tabID}; !reflect.DeepEqual(deleted, want) {
+		t.Fatalf("deleted %v, want %v", deleted, want)
+	}
+}
+
+// a spawn that succeeds keeps its tab: the cleanup only runs on a failure
+func TestSpawnRunWorkerKeepsItsTabOnSuccess(t *testing.T) {
+	stubWorkerSpawn(t)
+	oldDelete := deleteWorkerTab
+	t.Cleanup(func() { deleteWorkerTab = oldDelete })
+	deleted := 0
+	deleteWorkerTab = func(context.Context, string, string, bool) (string, error) {
+		deleted++
+		return "", nil
+	}
+	oref, err := SpawnRunWorker(context.Background(), piCap(t), "ws-1", "proj", "", "do it", RunWorkerOptions{})
+	if err != nil || oref == "" {
+		t.Fatalf("got oref %q, err %v, want a spawned tab", oref, err)
+	}
+	if deleted != 0 {
+		t.Fatalf("a successful spawn deleted %d tabs, want none", deleted)
+	}
+}
+
 // the engine's dispatch passes a ctx that collects nothing; the tab must still reach the app
 func TestSpawnRunWorkerBroadcastsItsTab(t *testing.T) {
 	sent := stubWorkerSpawn(t)
@@ -496,6 +543,57 @@ func TestSpawnRunWorkerPassesALongPromptAsAFile(t *testing.T) {
 	data, err := os.ReadFile(path)
 	if err != nil || string(data) != long {
 		t.Fatalf("prompt file holds %d bytes (err %v), want the whole prompt", len(data), err)
+	}
+}
+
+// a prompt file is read once at launch (a resume rebuilds its args without it), so writing one prunes those
+// past promptFileMaxAge instead of keeping every long prompt for good
+func TestLaunchPromptPrunesOldPromptFiles(t *testing.T) {
+	oldDir, dir := promptFileDir, t.TempDir()
+	promptFileDir = func() string { return dir }
+	t.Cleanup(func() { promptFileDir = oldDir })
+	stale, recent := filepath.Join(dir, "stale.md"), filepath.Join(dir, "recent.md")
+	for _, p := range []string{stale, recent} {
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := time.Now().Add(-promptFileMaxAge - time.Hour)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := launchPrompt(strings.Repeat("x", maxInlinePromptBytes+1), "sess-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("a prompt file past its age must be removed, stat err %v", err)
+	}
+	for _, p := range []string{recent, filepath.Join(dir, "sess-1.md")} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s must stay: %v", p, err)
+		}
+	}
+}
+
+// a prompt that fits on the command line writes no file, so it prunes nothing either
+func TestLaunchPromptInlinePromptPrunesNothing(t *testing.T) {
+	oldDir, dir := promptFileDir, t.TempDir()
+	promptFileDir = func() string { return dir }
+	t.Cleanup(func() { promptFileDir = oldDir })
+	stale := filepath.Join(dir, "stale.md")
+	if err := os.WriteFile(stale, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-promptFileMaxAge - time.Hour)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := launchPrompt("short", "sess-2"); err != nil || got != "short" {
+		t.Fatalf("launchPrompt = %q, %v, want the prompt back", got, err)
+	}
+	if _, err := os.Stat(stale); err != nil {
+		t.Errorf("an inline launch must leave the prompt dir alone: %v", err)
 	}
 }
 

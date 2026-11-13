@@ -152,6 +152,51 @@ func TestBuildAttentionYieldsAStandaloneAskWithNoChannel(t *testing.T) {
 	}
 }
 
+func TestStandaloneAskCarriesTabORef(t *testing.T) {
+	items := BuildAttention(AttentionInput{
+		PendingAsks:   map[string]agentask.PendingAsk{"block:z": {AskId: "9", Ts: 42}},
+		AskWorkerORef: map[string]string{"block:z": "tab:t1"},
+	})
+	if len(items) != 1 {
+		t.Fatalf("want 1, got %+v", items)
+	}
+	got := items[0]
+	if got.ORef != "tab:t1" || got.ChannelId != "" || got.Source != "agent" ||
+		got.Why != "The agent is paused until you answer." {
+		t.Fatalf("wrong standalone ask: %+v", got)
+	}
+}
+
+func TestStandaloneAskWithoutTabHasNoORef(t *testing.T) {
+	items := BuildAttention(AttentionInput{
+		PendingAsks:   map[string]agentask.PendingAsk{"block:z": {AskId: "9", Ts: 42}},
+		AskWorkerORef: map[string]string{"block:z": "block:z"},
+	})
+	if len(items) != 1 {
+		t.Fatalf("want 1, got %+v", items)
+	}
+	got := items[0]
+	if got.ORef != "" || got.Source != "worker" || got.Why != "worker is paused until you answer." {
+		t.Fatalf("wrong standalone ask: %+v", got)
+	}
+}
+
+func TestChannelAskUnchanged(t *testing.T) {
+	items := BuildAttention(AttentionInput{
+		Channels:      []AttentionChannel{{OID: "c1", Name: "alpha"}},
+		PendingAsks:   map[string]agentask.PendingAsk{"block:a": {AskId: "1", Ts: 5}},
+		AskChannel:    map[string]string{"block:a": "c1"},
+		AskWorkerORef: map[string]string{"block:a": "tab:w"},
+	})
+	if len(items) != 1 {
+		t.Fatalf("want 1, got %+v", items)
+	}
+	got := items[0]
+	if got.ORef != "" || got.Source != "worker" || got.ChannelId != "c1" {
+		t.Fatalf("wrong channel ask: %+v", got)
+	}
+}
+
 func TestBuildAttentionOrdersByKindThenOldestFirst(t *testing.T) {
 	in := AttentionInput{
 		Channels: []AttentionChannel{{OID: "c1", Name: "alpha", Runs: []*waveobj.Run{
