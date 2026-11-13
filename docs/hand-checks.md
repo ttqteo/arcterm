@@ -6,6 +6,9 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Compacting in Chat: after a build with the new `wsh`, type `/compact` in a Claude agent's Chat → under
+  the last message it reads Compacting… with no `(…)` timer, then the line goes away when the summary lands. A
+  compaction Claude starts on its own mid-turn still reads Working…. Commit: fix(chat) a /compact reads Compacting…
 - [ ] (arcterm) Jarvis For later on real sessions: mark a session older than a week for later (History → its menu →
   Mark for later), and one of a running agent → open Jarvis: For later, at the bottom of the side column, names both
   with their project and the mark's age, newest mark first. Click the running one → Agent opens on that agent. Resume
