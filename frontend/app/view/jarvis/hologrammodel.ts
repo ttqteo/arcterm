@@ -110,3 +110,17 @@ export function hologramFps(pose: HologramPose, mix: number): number {
     const fading = mix !== pose.sphere;
     return fading || pose.busy || pose.sphere === 1 ? HOLOGRAM_LIVE_FPS : HOLOGRAM_IDLE_FPS;
 }
+
+// A lost WebGL context (a GPU reset, or Chromium dropping the oldest of too many contexts: every terminal's xterm holds
+// one too) takes the hologram away. Sprout stands in, and the hologram comes back on a fresh canvas after
+// HOLOGRAM_RETRY_MS, as a terminal's WebGL comes back. HOLOGRAM_MAX_FAILS failures inside HOLOGRAM_FAIL_WINDOW_MS stop
+// the retries, so a GPU that keeps failing (or no WebGL at all) cannot loop: Sprout stays until the form is picked again.
+export const HOLOGRAM_RETRY_MS = 5_000;
+export const HOLOGRAM_MAX_FAILS = 3;
+export const HOLOGRAM_FAIL_WINDOW_MS = 120_000;
+
+/** Pure: after a failure at `now`, the failures still inside the window and whether to try the hologram again. */
+export function hologramRetry(fails: readonly number[], now: number): { fails: number[]; retry: boolean } {
+    const kept = [...fails.filter((t) => now - t < HOLOGRAM_FAIL_WINDOW_MS), now];
+    return { fails: kept, retry: kept.length < HOLOGRAM_MAX_FAILS };
+}

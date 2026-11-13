@@ -14,7 +14,7 @@
 import { digitHintAtom } from "@/app/cockpit/digithints";
 import { toastsAtom } from "@/app/cockpit/notificationstore";
 import { MOTION } from "@/app/element/motiontokens";
-import { atoms } from "@/app/store/global";
+import { atoms, getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { deriveKeyContext } from "@/app/store/keybindings/dispatcher";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
@@ -36,7 +36,14 @@ import {
 } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { HOLOGRAM_SIZE_PX, hologramPose, hologramSize, petForm } from "./hologrammodel";
+import {
+    HOLOGRAM_RETRY_MS,
+    HOLOGRAM_SIZE_PX,
+    hologramPose,
+    hologramRetry,
+    hologramSize,
+    petForm,
+} from "./hologrammodel";
 import { HologramView, useAskingCount } from "./hologramview";
 import { openTarget } from "./openref";
 import { closePeek, openPetPeek, peekChordActive } from "./peekstore";
@@ -328,11 +335,36 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     const entering = useAtomValue(petOfficeEnteringAtom);
     // one Jarvis: in the office the boss is the creature; folded, the folded Sprout is its own (sprout-mini.tsx)
     const inOffice = officeBoss != null && !folded;
-    // the hologram form, in the full window only: Float's small window and the fold keep Sprout. A GL failure falls back
-    // to Sprout too, until the form is picked again.
+    // the hologram form, in the full window only: Float's small window and the fold keep Sprout. A GL failure (a lost
+    // context: a GPU reset, or Chromium dropping the oldest of too many, each terminal holding one) falls back to Sprout,
+    // and the hologram comes back on a fresh canvas (a new key) after HOLOGRAM_RETRY_MS, unless it keeps failing
+    // (hologramRetry): then Sprout stays until the form is picked again.
     const form = petForm(useAtomValue(petFormAtom));
     const [hologramFailed, setHologramFailed] = useState(false);
-    useEffect(() => setHologramFailed(false), [form]);
+    const [hologramTry, setHologramTry] = useState(0);
+    const hologramFails = useRef<number[]>([]);
+    const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    useEffect(() => {
+        hologramFails.current = [];
+        clearTimeout(retryTimer.current);
+        setHologramFailed(false);
+    }, [form]);
+    useEffect(() => () => clearTimeout(retryTimer.current), []);
+    const onHologramFail = useCallback(() => {
+        const { fails, retry } = hologramRetry(hologramFails.current, Date.now());
+        hologramFails.current = fails;
+        getApi().sendLog(
+            `[hologram] failed (${fails.length} in the last 2 min), ${retry ? "retrying" : "staying on Sprout"}`
+        );
+        setHologramFailed(true);
+        clearTimeout(retryTimer.current);
+        if (retry) {
+            retryTimer.current = setTimeout(() => {
+                setHologramTry((n) => n + 1);
+                setHologramFailed(false);
+            }, HOLOGRAM_RETRY_MS);
+        }
+    }, []);
     const hologram = form === "hologram" && !hologramFailed && !floating && !folded;
     // the startup loader is drawing Jarvis in the middle: no second one in the corner until it is done
     const loaderHologram = useAtomValue(hologramLoadersShownAtom) > 0;
@@ -428,7 +460,8 @@ export function PetView({ model }: { model: AgentsViewModel }) {
             {/* in the office the boss is the creature, so no footer sprite; this component stays mounted for its voice */}
             {inOffice || (hologram && loaderHologram) ? null : hologram ? (
                 <HologramView
-                    key={hologramPx}
+                    // a new size or a retry mounts a fresh canvas: a lost context cannot be had again from the old one
+                    key={`${hologramPx}:${hologramTry}`}
                     sizePx={hologramPx}
                     pose={hologramPose({ asking, working, speaking: bubble != null, peekOpen })}
                     unread={unread}
@@ -436,7 +469,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                     reduce={reduce}
                     setAnchor={setAnchor}
                     openPeek={openPeek}
-                    onFail={() => setHologramFailed(true)}
+                    onFail={onHologramFail}
                 />
             ) : (
                 <PetSprite
