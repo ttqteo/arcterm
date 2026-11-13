@@ -45,6 +45,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Hovering a queued plan in the Agent sidebar opens a card to its right: the plan's file name above its folder, the
+  whole reason when it is blocked, the lead and workers it will run with, and when it was queued.
 - A long live transcript keeps only its last screens drawn while you follow it, instead of drawing every message the
   session has added since you opened it.
 - A working run's row in the Agent sidebar says how many of its tasks are stuck (`Working · 1/6 · 3 stuck`), and hover
