@@ -249,6 +249,59 @@ export function queuedJobFor(d: JobQueueData | null, blockId: string | undefined
     return ordered(waiting)[0] ?? null;
 }
 
+/** The engine step a run's task waits on: its Setup or its merge's Verify (a batch's Verify is each of its tasks'),
+ * served first; null when none of the run's steps for it is waiting. */
+export function queuedStepFor(d: JobQueueData | null, runId: string | undefined, taskId: string): JobQueueJob | null {
+    if (d == null || !runId) {
+        return null;
+    }
+    const waiting = d.jobs.filter((j) => !j.running && j.runid === runId && (j.taskids ?? []).includes(taskId));
+    return ordered(waiting)[0] ?? null;
+}
+
+/** What a task's row says it is doing while its engine step waits: "verify queued #2", "setup queued". The step is
+ * the label's first part ("Verify · The handoff card"); a bisect's Verify is still a Verify. The row says it in words,
+ * not with a tag: at the tree's width a tag beside the row's columns leaves its words no room. */
+export function stepQueuedState(job: JobQueueJob): string {
+    const step = (job.label ?? "").split(" · ")[0].trim().toLowerCase();
+    const pos = job.position ?? 0;
+    return `${step ? `${step} queued` : "queued"}${pos > 0 ? ` #${pos}` : ""}`;
+}
+
+/** Every job a run waits on, in the order they will be served: its engine steps (by run id) and the commands of its
+ * agents (by their block ids). */
+export function runQueuedJobs(
+    d: JobQueueData | null,
+    runId: string | undefined,
+    blockIds: ReadonlySet<string>
+): JobQueueJob[] {
+    if (d == null || !runId) {
+        return [];
+    }
+    return ordered(d.jobs.filter((j) => !j.running && (j.runid === runId || (!!j.blockid && blockIds.has(j.blockid)))));
+}
+
+/** What a run's row says while any of its jobs waits: one job reads as its own tag does, several as "N queued", each
+ * named in the tooltip. It warns once any has waited past LONG_WAIT_MS. Null with nothing waiting. */
+export function runQueuedTag(
+    jobs: readonly JobQueueJob[],
+    now: number
+): { label: string; title: string; warn: boolean } | null {
+    if (jobs.length === 0) {
+        return null;
+    }
+    if (jobs.length === 1) {
+        const one = queuedTag(jobs[0], now);
+        return jobs[0].label ? { ...one, title: `${jobs[0].label}: ${one.title}` } : one;
+    }
+    const names = jobs.map((j) => (j.label ? `${j.label} (${j.name})` : j.name));
+    return {
+        label: `${jobs.length} queued`,
+        title: `${jobs.length} of this run's jobs wait their turn in the heavy-job queue: ${names.join(", ")}`,
+        warn: jobs.some((j) => now - j.queuedts > LONG_WAIT_MS),
+    };
+}
+
 /** What an agent's row and header say while its heavy command waits its turn: the head of the queue says why it waits
  * (the queue's reason is the head's), a job further back how many wait ahead of it. It warns past LONG_WAIT_MS, as the
  * chip does. */

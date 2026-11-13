@@ -5,8 +5,8 @@ import { buildRunThing, RUN_KIND } from "@/app/cockpit/actions/run";
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { ctrlHeldAtom } from "@/app/cockpit/ctrlheld";
 import { digitHintAtom } from "@/app/cockpit/digithints";
-import { queuedJobFor } from "@/app/cockpit/jobqueue";
-import { QueuedJobTag } from "@/app/cockpit/jobqueuechip";
+import { queuedJobFor, queuedStepFor, runQueuedJobs, stepQueuedState } from "@/app/cockpit/jobqueue";
+import { QueuedJobTag, RunQueuedTag } from "@/app/cockpit/jobqueuechip";
 import { jobQueueAtom } from "@/app/cockpit/jobqueuestore";
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { resmonSnapshotAtom } from "@/app/cockpit/resmonstore";
@@ -965,6 +965,9 @@ function RunSubline({
     const lineageRuns = useAtomValue(model.lineageAtom).runs;
     // a paused run says so in its words, and offers Resume beside them
     const paused = runStage(run).paused;
+    // what it waits on in the heavy-job queue, tagged before its columns, so a folded run still says so
+    const queuedJobs = useRunQueuedJobs(model, run.runId);
+    const queued = queuedJobs.length > 0 ? <RunQueuedTag runId={run.runId} jobs={queuedJobs} /> : null;
     if (run.dag == null) {
         // no dag means the lead judged the goal bounded and never submitted a plan, not that a plan is
         // still on its way — so the run's own status is the only truth here. Hardcoding "planning" left
@@ -988,7 +991,8 @@ function RunSubline({
                 {note}
                 <OriginFrom model={model} run={run} />
                 {paused ? <RunResumeButton run={run} /> : null}
-                {trailing != null ? <span className="flex-1" /> : null}
+                {trailing != null || queued != null ? <span className="flex-1" /> : null}
+                {queued}
                 {trailing}
             </div>
         );
@@ -1030,7 +1034,8 @@ function RunSubline({
                 {note}
                 <OriginFrom model={model} run={run} />
                 {paused ? <RunResumeButton run={run} /> : null}
-                {trailing != null ? <span className="flex-1" /> : null}
+                {trailing != null || queued != null ? <span className="flex-1" /> : null}
+                {queued}
                 {trailing}
             </div>
             <TaskStripBar run={run} />
@@ -1716,6 +1721,19 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
 // summed. The block ids are picked into one string, so a row redraws when that set or the figure changes, not on every
 // roster update. Null with no run, or while no reading names any of them.
 function useRunRam(model: AgentsViewModel, runId: string | undefined): RamReading | null {
+    return useAtomValue(runRamAtom(useRunBlockKey(model, runId)));
+}
+
+// The jobs a run waits on in the heavy-job queue: its engine steps and its awake agents' commands, served first first.
+function useRunQueuedJobs(model: AgentsViewModel, runId: string): JobQueueJob[] {
+    const key = useRunBlockKey(model, runId);
+    const jobQueue = useAtomValue(jobQueueAtom);
+    return useMemo(() => runQueuedJobs(jobQueue, runId, new Set(key ? key.split(",") : [])), [jobQueue, runId, key]);
+}
+
+// The block ids of a run's awake tabs, sorted and joined into one string, so a row redraws when that set changes,
+// not on every roster update. Empty with no run.
+function useRunBlockKey(model: AgentsViewModel, runId: string | undefined): string {
     const keyAtom = useMemo(
         () =>
             atom((get) =>
@@ -1729,8 +1747,7 @@ function useRunRam(model: AgentsViewModel, runId: string | undefined): RamReadin
             ),
         [model, runId]
     );
-    const key = useAtomValue(keyAtom);
-    return useAtomValue(runRamAtom(key));
+    return useAtomValue(keyAtom);
 }
 
 // A task's worker under its run. A done task's worker opens as its read-only transcript, whether or not its tab
@@ -1770,8 +1787,11 @@ function WorkerRow({
     const selected = focusKey != null && focusId === focusKey;
     const waits = done || nested ? undefined : unmetDeps(run.dag, task);
     const asksYou = !done && ask?.owner !== "lead" && (ask?.owner === "you" || agent?.state === "asking");
-    // its heavy command waiting its turn in the job queue, tagged at the second line's end
+    // its heavy command waiting its turn in the job queue, tagged at the second line's end. The engine's step for it
+    // (its Setup, its merge's Verify) belongs to no block: its state names that in words ("verify queued #1") instead
+    // of a Verify clock that runs while the command has not started, and the run's line carries the tag
     const jobQueue = useAtomValue(jobQueueAtom);
+    const step = done || nested ? null : queuedStepFor(jobQueue, run.runId, task.id);
     const queued = done ? null : queuedJobFor(jobQueue, agent?.blockId);
     const line = {
         taskId: task.id,
@@ -1781,7 +1801,7 @@ function WorkerRow({
         ask,
         outcome: done ? (task.merged ? "landed" : "done") : undefined,
         waits,
-        state: nested ? undefined : taskStateLabel(task, now),
+        state: nested ? undefined : step != null ? stepQueuedState(step) : taskStateLabel(task, now),
     };
     const sub = workerSubtext(line);
     const title = nested ? agent?.name || task.id : task.label || task.id;
@@ -1843,7 +1863,11 @@ function WorkerRow({
                             ariaHide="Hide reviewer and earlier sessions"
                         />
                     ) : null}
-                    <span className={cn("truncate text-[10.5px] tabular-nums", asksYou ? "text-warning" : "text-muted")}>
+                    {/* the fixed columns leave the words little room at the tree's width: the tooltip has them whole */}
+                    <span
+                        title={sub}
+                        className={cn("truncate text-[10.5px] tabular-nums", asksYou ? "text-warning" : "text-muted")}
+                    >
                         {sub}
                     </span>
                     {/* its canvas tag and who its ask waits on end the second line, so the title keeps the first */}

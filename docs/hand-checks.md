@@ -11,6 +11,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   tool picker on a missing tool (⌘I), the brainstorm hint strip (⌃⇧B) and the Jarvis tour's Initiatives steps (⌥↑ /
   ⌥↓, ⇧N) → no "Alt" or "Ctrl" left; on Windows they still read Alt+Z, Ctrl+Enter… Unit-tested and typechecked
   only (`keysym.fillKeys`, branch `fix/mac-key-labels`).
+- [ ] (arcterm) A run's queued engine steps show in the Agent tree: during a run on a busy machine (or with
+  `jobs:mode` `slots` and `jobs:slots` 1 while another heavy command runs), let a task merge → the run's line shows
+  "queued #N" (also folded; "N queued" with several), its tooltip names "Verify · <task>", and the task's row reads
+  "t-N · verify queued #N" until the Verify starts, then "verifying" with its clock. The CDP scenario
+  `jobqueue-run-tag` checks it on an injected queue only; the engine's `taskids` on a real job are not seen live
+  (branch `fix/run-queued-jobs`).
 - [ ] (arcterm) Topics leave Ideas: open Jarvis → the Ideas column no longer lists the topics (`wsh effort list
   --topics`: Chat, Misc, Kael sync…); each shows in All initiatives with "+N sub", no bar or count, its
   sub-initiatives indented under it, and "Link to…" lists it with "topic" in place of 0/0. Unit-tested only
