@@ -26,12 +26,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
-- New agent can park an idea for later. While the machine is busy (memory pressure high, or the CPU pegged), Enter
-  in the New dialog parks the agent instead of starting it, and `Cmd`+`Enter` (`Ctrl`+`Enter` on Windows) starts it
-  anyway; Park in the footer does the same at any time. A parked agent waits as a row in its project's folder with
-  its task and pasted screenshots kept; click it when you are ready, and the dialog opens filled in, one Enter from
-  starting. If you would rather plan it than start it, Add to initiative… on the row turns it into a chunk of the
-  initiative you pick, with the rest of the task and the screenshots in its note. <!-- try: new-agent -->
+- When memory is tight, a new agent is held instead of started. New agent works as ever, and while memory pressure is
+  high (or the CPU is pegged) Launch agent holds the agent: it waits as a dashed row among its project's agents, with
+  its task and pasted screenshots kept and no memory used. Click it to see it as a conversation not yet sent: Start
+  now starts it as New would have, and one click adds it to the initiative its task best matches, with an Undo.
+  <!-- try: new-agent -->
 - When an agent's turn ends, the chat box suggests what you would likely send next, in your own words, as chips you
   click to send: "commit đi" when it left changes uncommitted, "push đi" when its commits are not pushed, the answers
   to a question it ended on (the one it recommends first, spelled out, such as "B, ẩn thẻ Pin"), or a next step its

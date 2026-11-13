@@ -15,6 +15,8 @@
 //             which of the four views and which project's draft are councilstore.ts's councilSelAtom, councilViewAtom and
 //             councilSetupProjectAtom
 //   project   one project's Overview (projectoverview.tsx): what in it waits on you and runs; which project is overviewProjectAtom
+//   held      one agent arcterm held while the machine was busy (heldpane.tsx): its task, Start now, Add to initiative;
+//             which one is heldSelAtom, a parked launch's id (parkedstore.ts)
 // The terminal stack stays mounted, hidden, in the others, so a live xterm is never torn down and re-fitted.
 // "session" is already overloaded in this codebase (workspace tab sessions, the Brief region), so the sessions*Atoms
 // on the model keep their names rather than churn a rename.
@@ -43,12 +45,24 @@ import {
 import { reopenView } from "./councilsummarymodel";
 import { runIdOfSel } from "./sessionsruns";
 
-export type CenterMode = "terminal" | "session" | "run" | "history" | "canvases" | "councils" | "council" | "project";
+export type CenterMode =
+    | "terminal"
+    | "session"
+    | "run"
+    | "history"
+    | "canvases"
+    | "councils"
+    | "council"
+    | "project"
+    | "held";
 
 export const centerModeAtom = atom<CenterMode>("terminal") as PrimitiveAtom<CenterMode>;
 
 // the project whose Overview the `project` mode shows: a registry name, as the tree's folders name it
 export const overviewProjectAtom = atom("") as PrimitiveAtom<string>;
+
+// the held agent the `held` mode shows, by its parked launch's id
+export const heldSelAtom = atom("") as PrimitiveAtom<string>;
 
 // Where a session's or run's Back (its button, and Escape) returns: the centre view it was opened over on the Agent
 // surface (a project's Overview, History, Councils, the Canvas gallery), else the terminal.

@@ -115,17 +115,20 @@ type MetaTSType struct {
 	Count int `json:"count,omitempty"` // temp for cpu plot. will remove later
 }
 
-// ParkedLaunch is a New agent launch the person put off for later, most often because the machine was busy when they
-// had the idea: what the dialog held, so opening it fills the dialog again and Enter starts it. Written whole by the
+// ParkedLaunch is a New agent launch arcterm held because the machine was busy (memory pressure high, or the CPU
+// pegged) when the person launched it: what the dialog held, so its row starts it as New would have. Written whole by the
 // cockpit (parkedstore.ts) into the workspace's launch:parked.
 type ParkedLaunch struct {
-	Id      string   `json:"id"`
-	Project string   `json:"project"` // the registered project's name, or "Home" for No folder
-	Runtime string   `json:"runtime"` // the agent row it was parked from ("claude", "pi", ...)
-	Task    string   `json:"task"`
-	Images  []string `json:"images,omitempty"` // the pasted or dropped images, kept under ~/.arc/attachments
-	Ts      int64    `json:"ts"`               // UnixMilli it was parked
-	Reason  string   `json:"reason,omitempty"` // why it waited ("Memory pressure is high"); empty when parked by hand
+	Id          string   `json:"id"`
+	Project     string   `json:"project"`               // the registered project's name, or "Home" for No folder
+	ProjectPath string   `json:"projectpath,omitempty"` // the folder it starts in, as the dialog resolved it
+	Runtime     string   `json:"runtime"`               // the agent row it was held from ("claude", "pi", ...)
+	Command     string   `json:"command,omitempty"`     // the startup command with the dialog's flags, so Start now runs what New would have
+	Branch      string   `json:"branch,omitempty"`      // the worktree branch it was to start on; empty starts in the project folder
+	Task        string   `json:"task"`
+	Images      []string `json:"images,omitempty"` // the pasted or dropped images, kept under ~/.arc/attachments
+	Ts          int64    `json:"ts"`               // UnixMilli it was held
+	Reason      string   `json:"reason,omitempty"` // why it was held ("Memory pressure is high")
 }
 
 // returns a clean copy of meta with mergeMeta merged in

@@ -152,7 +152,7 @@ import {
 import { ToolFields, ToolList } from "./launchertoolfields";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { busyLine } from "./parkedmodel";
-import { parkLaunch, settleParkedLaunch, useMachineBusy } from "./parkedstore";
+import { parkLaunch, settleParkedLaunch, showHeld, useMachine } from "./parkedstore";
 import {
     noteRecentProject,
     projectListAtom,
@@ -499,15 +499,16 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     // a lead picker never seeds a runtime that cannot lead; memoized, since the seed effect keys on it and a
     // fallback route is a fresh object each call
     const profileRoute = useMemo(() => leadRouteSeed(rawRoute, harnesses), [rawRoute, harnesses]);
-    // An agent with a task can be parked for later (parkedmodel.ts): a resume has its own row in Conversations, and a
-    // plain terminal is light. While the machine reads busy (memory pressure high, or the CPU pegged), Enter parks it
-    // and Mod+Enter starts it anyway; the machine is read only while the dialog is open on such an agent.
-    const parkable = isAgent && runtimeShowsTask(runtime) && resume == null;
-    const machineBusy = useMachineBusy(open && parkable);
-    const parkFirst = parkable && machineBusy != null;
+    // While the machine reads busy (memory pressure high, or the CPU pegged), Launch agent holds a new agent instead
+    // of starting it (parkedmodel.ts); the dialog itself is the same, only its warning line says so. A resume has its
+    // own row in Conversations and a plain terminal is light, so neither is held; the machine is read only while the
+    // dialog is open on an agent that would be.
+    const holdable = isAgent && runtimeShowsTask(runtime) && resume == null;
+    const machineBusy = useMachine(open && holdable).busy;
+    const holds = holdable && machineBusy != null;
     // a tool is a terminal running one program, and a council's Setup starts nothing: neither asks for room
-    const ramWarning = parkFirst
-        ? busyLine(machineBusy, formatChordString("Enter"), formatChordString("Mod:Enter"))
+    const ramWarning = holds
+        ? busyLine(machineBusy)
         : isTool || isCouncil
           ? null
           : isRun
@@ -910,9 +911,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             if (!atHome) {
                 noteRecentProject(p.name);
             }
-            // a parked launch opened and started is no longer waiting; one switched to a terminal or a resume was not
-            // what it parked, so it stays
-            if (parkable) {
+            // a held agent opened in New and started is no longer held; one switched to a terminal or a resume was not
+            // what was held, so it stays
+            if (holdable) {
                 settleParkedLaunch();
             }
             endLauncherDraft();
@@ -924,24 +925,44 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
     };
 
-    // Put the agent off for later: what the dialog holds becomes a row in its project's folder, and the dialog closes.
-    // The images ride as their files under ~/.arc/attachments, which outlive the dialog; one that failed to write is left.
-    const parkAgentRow = async (p: ProjectRow) => {
+    // Hold the agent: what the dialog holds (its project, command, branch, task and images) becomes a held agent, which
+    // the centre then shows as a launched agent would be shown. The images ride as their files under ~/.arc/attachments,
+    // which outlive the dialog; one that failed to write is left.
+    const holdAgentRow = async (p: ProjectRow) => {
+        let branch: string | undefined;
+        if (wantsWorktree) {
+            if (!chosenBranch) {
+                setError("Enter a branch name or turn off the worktree option.");
+                return;
+            }
+            branch = landingBranch;
+        }
         if (!beginLauncherLaunch()) {
             return;
         }
         try {
-            await parkLaunch({
-                project: atHome ? HOME_NAME : p.name,
+            const held = await parkLaunch({
+                project: p.name,
+                projectPath: p.path,
                 runtime,
+                command: composeStartupCommand(
+                    commands[runtime] ?? runtimeStartupCommand(runtime),
+                    runtime,
+                    naFlags[runtime] ?? {}
+                ),
+                branch,
                 task,
                 images: images.flatMap((i) => (i.path ? [i.path] : [])),
                 reason: machineBusy,
             });
+            if (!globalStore.get(naRememberFlagsAtom)) {
+                globalStore.set(naFlagsAtom, {});
+            }
             endLauncherDraft();
             close();
+            showHeld(model, held.id);
         } catch (e) {
-            setError(`Could not park it: ${String(e)}`);
+            setError(`Could not hold it: ${String(e)}`);
         } finally {
             endLauncherLaunch();
         }
@@ -1018,8 +1039,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         globalStore.set(model.surfaceAtom, "setup");
     };
 
-    // `anyway` is Mod+Enter and the Start anyway button: it starts an agent the busy machine would park
-    const launch = (anyway = false) => {
+    const launch = () => {
         if (where == null) {
             return;
         }
@@ -1049,19 +1069,11 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             startRun(project);
             return;
         }
-        if (parkFirst && !anyway) {
-            void parkAgentRow(project);
+        if (holds) {
+            void holdAgentRow(project);
             return;
         }
         void launchAgentRow(project);
-    };
-
-    // the footer's Park: parks whatever the machine reads, as Enter does while it is busy
-    const park = () => {
-        if (where == null || project == null || !parkable || imagesWriting) {
-            return;
-        }
-        void parkAgentRow(project);
     };
 
     const zoneOf = (target: EventTarget): FocusZone => {
@@ -1297,7 +1309,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         <ModalShell
             open={open}
             onClose={close}
-            onSubmit={() => launch(true)}
+            onSubmit={launch}
             className="flex max-h-[86vh] w-[min(840px,93vw)] flex-col"
             christmasLights
         >
@@ -1765,49 +1777,22 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 Transcript
                             </DialogButton>
                         ) : null}
-                        {/* an agent with a task can wait for later: by hand here, or by Enter while the machine is busy,
-                            when this button starts it instead (Mod+Enter) */}
-                        {parkable ? (
-                            parkFirst ? (
-                                <DialogButton
-                                    variant="secondary"
-                                    hint={formatChordString("Mod:Enter")}
-                                    data-launcher-anyway
-                                    title={`Start it now, busy as the machine is (${formatChordString("Mod:Enter")})`}
-                                    disabled={primaryDisabled}
-                                    onClick={() => launch(true)}
-                                >
-                                    Start anyway
-                                </DialogButton>
-                            ) : (
-                                <DialogButton
-                                    variant="secondary"
-                                    data-launcher-park
-                                    title="Park it for later: it waits as a row in its project's folder, task and images kept, until you open it and start it"
-                                    disabled={primaryDisabled}
-                                    onClick={park}
-                                >
-                                    Park
-                                </DialogButton>
-                            )
-                        ) : null}
-                        {/* Enter launches from every zone, the Task box included, where Shift+Enter is the newline */}
+                        {/* Enter launches from every zone, the Task box included, where Shift+Enter is the newline. While
+                            the machine is busy the same button holds the agent (the warning line says so) */}
                         <DialogButton
                             variant="primary"
                             hint={formatChordString("Enter")}
-                            data-launcher-primary={parkFirst ? "park" : "start"}
+                            data-launcher-primary={holds ? "hold" : "start"}
                             title={
-                                parkFirst
-                                    ? `${machineBusy}: ${formatChordString("Enter")} parks it for later (${formatChordString("Shift:Enter")} is a new line in the Task box)`
-                                    : isTool || isCouncil
-                                      ? formatChordString("Enter")
-                                      : `${formatChordString("Enter")} (${formatChordString("Shift:Enter")} is a new line in the Task box)`
+                                isTool || isCouncil
+                                    ? formatChordString("Enter")
+                                    : `${formatChordString("Enter")} (${formatChordString("Shift:Enter")} is a new line in the Task box)`
                             }
                             disabled={primaryDisabled}
-                            onClick={() => launch()}
+                            onClick={launch}
                             className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-300"
                         >
-                            {parkFirst ? "Park for later" : primaryLabel(kind, runtime, resume != null, tool?.name)}
+                            {primaryLabel(kind, runtime, resume != null, tool?.name)}
                         </DialogButton>
                     </div>
                 </div>

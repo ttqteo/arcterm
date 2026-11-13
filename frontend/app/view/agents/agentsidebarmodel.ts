@@ -581,7 +581,8 @@ export type ProjectTreeRow =
     | ({ kind: "queuedentry" } & QueuedRow)
     // a run the New dialog handed off while it starts (startingrunsstore.ts), ahead of the queued plans; no focus target
     | ({ kind: "startingrun" } & StartingRun)
-    // a New agent launch parked for later (parkedmodel.ts), after the queued plans; no focus target
+    // an agent arcterm held while the machine was busy (parkedmodel.ts), right under its project's agents; it selects
+    // the centre's held view, not a tab, so it is no focus target
     | { kind: "parked"; project: string; parked: ParkedLaunch }
     // a project's split (2+ cells) as one row, where the topmost of its cells' rows was: each cell its tab and its place
     // in the 2x2 the surface draws. `shown` is the split on screen; another project's saved split is drawn too.
@@ -690,8 +691,9 @@ export function newCouncilRoot(focus: AgentVM | undefined, projects: ProjectRegi
  *  `starting` is the runs the New dialog handed off while they start: each goes in its project's folder ahead of the
  *  queued plans, and like them is no agent, no focus target and no count on the group row.
  *
- *  `parked` is the New agent launches parked for later (parkedmodel.ts): each goes in its project's folder after the
- *  queued plans (Home's for one parked on No folder), oldest first, and like them is no focus target and no count.
+ *  `parked` is the agents arcterm held while the machine was busy (parkedmodel.ts): each goes in its project's folder
+ *  right under the project's agents, ahead of the runs starting and the queued plans (Home's for one held on No
+ *  folder), oldest first; like them it is no focus target and no count.
  *
  *  `councils` (councilRowsByProject, by project name) puts the councils in: the folder of each registered project that
  *  has a council then holds its pinned councils at its top, above the agents, and right after its queued plans and
@@ -744,8 +746,12 @@ export function projectTree(input: {
     const parked = input.parked ?? [];
     // "Home" is the launcher's name for No folder, whose folder in the tree is Home's
     const parkedFolder = (p: ParkedLaunch) => (p.project === "" || p.project === "Home" ? HOME_PROJECT : p.project);
-    // the runs starting, then the plans queued: both wait to become a lead in this folder; then the agents parked for
-    // later, which wait on the person
+    // the agents held while the machine was busy: agents still to start, so they sit right under the project's agents
+    const parkedRowsOf = (project: string): ProjectTreeRow[] =>
+        parked
+            .filter((p) => parkedFolder(p) === project)
+            .map((p): ProjectTreeRow => ({ kind: "parked", project, parked: p }));
+    // the runs starting, then the plans queued: both wait to become a lead in this folder
     const queuedRowsOf = (project: string): ProjectTreeRow[] => [
         ...starting
             .filter((s) => startingFolder(s) === project)
@@ -753,9 +759,6 @@ export function projectTree(input: {
         ...queue
             .filter((q) => queueFolder(q) === project)
             .map((q): ProjectTreeRow => ({ kind: "queuedentry", ...q, project })),
-        ...parked
-            .filter((p) => parkedFolder(p) === project)
-            .map((p): ProjectTreeRow => ({ kind: "parked", project, parked: p })),
     ];
     const termProject = (t: AgentVM) => projectOf(t) || HOME_PROJECT;
     const termRows = (project: string, list: AgentVM[]): ProjectTreeRow[] =>
@@ -798,7 +801,7 @@ export function projectTree(input: {
                 out.push(r);
             }
         }
-        out.push(...queuedRowsOf(filter), ...councilRowsOf(filter));
+        out.push(...parkedRowsOf(filter), ...queuedRowsOf(filter), ...councilRowsOf(filter));
         // a shell attributed to no project shows under every one
         const mine = terminals.filter((t) => projectOf(t) === "" || projectOf(t) === filter);
         const held = serviceRowsOf(filter);
@@ -861,7 +864,13 @@ export function projectTree(input: {
         const agentRows = folder?.body ?? [];
         const waiting = queuedRowsOf(project);
         const held = serviceRowsOf(project);
-        const body: ProjectTreeRow[] = [...pinnedRowsOf(project), ...agentRows, ...waiting, ...councilRowsOf(project)];
+        const body: ProjectTreeRow[] = [
+            ...pinnedRowsOf(project),
+            ...agentRows,
+            ...parkedRowsOf(project),
+            ...waiting,
+            ...councilRowsOf(project),
+        ];
         if (list.length + held.length > 0 && body.length > 0) {
             body.push({ kind: "divider", project });
         }

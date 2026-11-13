@@ -1226,7 +1226,7 @@ describe("projectTree", () => {
                 r.kind === "parked" ? `p:${r.parked.id}` : r.kind === "startingrun" ? `s:${r.id}` : shape([r])[0]
             );
 
-        it("puts a parked launch after the queued plans, uncounted, and Home's in the Home folder last", () => {
+        it("puts a held agent right under its project's agents, uncounted, and Home's in the Home folder last", () => {
             const rows = build([agent("a")], [term("t1")], {
                 queue: queued(qe("q-1")),
                 starting: [sr("s-1", "waveterm")],
@@ -1235,9 +1235,9 @@ describe("projectTree", () => {
             expect(withParked(rows)).toEqual([
                 "group:waveterm:1a:1t",
                 "a:a",
+                "p:p-1",
                 "s:s-1",
                 "q:q-1:1",
-                "p:p-1",
                 "divider:waveterm",
                 "t:t1",
                 "group:ops:0a:0t",
@@ -1247,7 +1247,7 @@ describe("projectTree", () => {
             ]);
         });
 
-        it("narrows to the filtered project's parked launches and hides a collapsed folder's", () => {
+        it("narrows to the filtered project's held agents and hides a collapsed folder's", () => {
             const parked = [pk("p-1", "waveterm"), pk("p-2", "ops")];
             expect(withParked(build([agent("a")], [], { filter: "waveterm", parked }))).toEqual(["a:a", "p:p-1"]);
             expect(withParked(build([agent("a")], [], { parked, collapsed: ["waveterm", "ops"] }))).toEqual([

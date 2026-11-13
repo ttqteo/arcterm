@@ -6,12 +6,16 @@ import {
     BUSY_CPU_PCT,
     busyLine,
     busyReason,
+    heldLine,
     keepReadings,
+    machineNow,
+    matchWords,
     MAX_CHUNK_LABEL,
+    parkedAge,
     parkedChunk,
     parkedMeta,
     parkedTitle,
-    parkedTooltip,
+    suggestInitiative,
     withoutParked,
     withParked,
     withParkedAt,
@@ -125,23 +129,88 @@ describe("the row's words", () => {
         expect(parkedTitle(pk("a", { task: "  ", runtime: "pi" }))).toBe("New pi agent");
     });
 
-    it("reads Parked, the agent, the images and the age", () => {
-        expect(parkedMeta(pk("a", { ts: 0 }), 3 * HOUR)).toBe("Parked · claude · 3h");
-        expect(parkedMeta(pk("a", { images: ["/x.png"] }), 0)).toBe("Parked · claude · 1 image · <1m");
-        expect(parkedMeta(pk("a", { images: ["/x.png", "/y.png"] }), 0)).toBe("Parked · claude · 2 images · <1m");
+    it("reads what held it and the images, the age apart", () => {
+        expect(parkedMeta(pk("a", { reason: "Memory pressure is high" }))).toBe("held for RAM");
+        expect(parkedMeta(pk("a", { reason: "CPU is 92% busy", images: ["/x.png"] }))).toBe("held for CPU · 1 image");
+        expect(parkedMeta(pk("a", { images: ["/x.png", "/y.png"] }))).toBe("held for RAM · 2 images");
+        expect(parkedAge(pk("a", { ts: 0 }), 3 * HOUR)).toBe("3h");
+        expect(parkedAge(pk("a", { ts: 0 }), 0)).toBe("<1m");
     });
 
-    it("tooltips the whole task and why it waited", () => {
-        expect(parkedTooltip(pk("a", { task: "line one\nline two", reason: "CPU is 90% busy" }))).toBe(
-            "line one\nline two\n\nParked: CPU is 90% busy"
+    it("tells the launcher that Launch agent holds it", () => {
+        expect(busyLine("Memory pressure is high")).toBe(
+            "Memory pressure is high: arcterm will hold this agent until you start it from its row."
         );
-        expect(parkedTooltip(pk("a", { task: "" }))).toBe("New claude agent\n\nParked for later");
+    });
+});
+
+describe("the held view's words", () => {
+    it("says when, why and what it costs on the divider", () => {
+        expect(heldLine(pk("a", { ts: 0, reason: "Memory pressure is critical" }), 3 * HOUR)).toEqual({
+            when: "Held 3h ago",
+            why: "memory pressure was critical",
+            cost: "uses no memory until you start it",
+        });
+        expect(heldLine(pk("a", { ts: 0, reason: "CPU is 91% busy" }), 10_000).when).toBe("Held just now");
+        expect(heldLine(pk("a", { reason: "CPU is 91% busy" }), 0).why).toBe("the CPU was busy");
+        expect(heldLine(pk("a"), 0).why).toBe("the machine was busy");
     });
 
-    it("tells the launcher's two ways on", () => {
-        expect(busyLine("Memory pressure is high", "Enter", "⌘Enter")).toBe(
-            "Memory pressure is high: Enter parks this agent for later, ⌘Enter starts it anyway."
+    it("words the machine now: busy still, calm with its free memory, nothing without a reading", () => {
+        const gb = (b: number) => `${b / 1e9} GB`;
+        expect(machineNow("Memory pressure is high", 1e9, gb)).toEqual({
+            tone: "busy",
+            text: "Memory pressure is high still: starting it may make the machine lag",
+        });
+        expect(machineNow(null, 2.4e9, gb)).toEqual({ tone: "calm", text: "Memory normal now · 2.4 GB free" });
+        expect(machineNow(null, null, gb)).toBeNull();
+    });
+});
+
+describe("suggestInitiative", () => {
+    const eff = (oid: string, over: Partial<EffortSummary> = {}): EffortSummary => ({
+        oref: `effort:${oid}`,
+        title: oid,
+        project: "arcterm",
+        status: "active",
+        done: 0,
+        total: 0,
+        updatedts: 0,
+        ...over,
+    });
+
+    it("matches words in titles and chunk labels, Vietnamese too, leaving common words out", () => {
+        expect([...matchWords("Fix the Agent tree's row spacing, đổi màu")].sort()).toEqual(
+            ["agent", "màu", "row", "spacing", "tree", "đổi"].sort()
         );
+    });
+
+    it("picks the project's open initiative sharing the most words with the task", () => {
+        const efforts = [
+            eff("a", { title: "Usage lens", updatedts: 9 }),
+            eff("b", { title: "Agent tree polish", chunks: [{ label: "Row spacing in folders", status: "todo" }] }),
+            eff("c", { title: "Agent tree rewrite", project: "other" }),
+        ];
+        expect(suggestInitiative("Tighten the Agent tree's row spacing", "arcterm", efforts)).toEqual({
+            oref: "effort:b",
+            title: "Agent tree polish",
+        });
+    });
+
+    it("falls back to the most recently updated when no word is shared", () => {
+        const efforts = [eff("a", { updatedts: 1 }), eff("b", { updatedts: 5 })];
+        expect(suggestInitiative("zzz qqq", "arcterm", efforts)?.oref).toBe("effort:b");
+    });
+
+    it("leaves out done, archived and topic initiatives, and has none for a project without one", () => {
+        const efforts = [
+            eff("topic", { title: "tree spacing", updatedts: 9 }),
+            eff("child", { title: "unrelated", parentoid: "topic", updatedts: 1 }),
+            eff("done", { title: "tree spacing", status: "done" }),
+            eff("arch", { title: "tree spacing", status: "archived" }),
+        ];
+        expect(suggestInitiative("tree spacing", "arcterm", efforts)?.oref).toBe("effort:child");
+        expect(suggestInitiative("tree spacing", "elsewhere", efforts)).toBeNull();
     });
 });
 
@@ -160,7 +229,7 @@ describe("parkedChunk", () => {
             note: [
                 "Tighten the spacing\nrows sit 2px too close",
                 "Screenshots:\n- /a/1.png\n- /a/2.png",
-                "Parked from New agent (claude).",
+                "Held from New agent (claude).",
             ].join("\n\n"),
         });
     });

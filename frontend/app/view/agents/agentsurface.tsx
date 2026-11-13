@@ -94,6 +94,7 @@ import { rosterSeededAtom } from "./liveagents";
 import { agentFocusFallback } from "./modalfocusfallback";
 import { NO_PANES, nextPaneMounts } from "./panemounts";
 import { ProjectOverview } from "./projectoverview";
+import { HeldPane } from "./heldpane";
 import { RunPane } from "./runpane";
 import { shownServices } from "./serviceseen";
 import { appSurfaceService } from "./railapps";
@@ -947,6 +948,8 @@ function AgentCenterPane({ model, mode }: { model: AgentsViewModel; mode: Exclud
                 <RunPane model={model} />
             ) : mode === "project" ? (
                 <ProjectOverview model={model} />
+            ) : mode === "held" ? (
+                <HeldPane model={model} />
             ) : (
                 <SessionPane model={model} />
             )}

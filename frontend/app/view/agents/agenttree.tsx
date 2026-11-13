@@ -12,7 +12,6 @@ import { pushToast } from "@/app/cockpit/notificationstore";
 import { resmonSnapshotAtom } from "@/app/cockpit/resmonstore";
 import { useSettle } from "@/app/element/motionhooks";
 import { Tooltip } from "@/app/element/tooltip";
-import { InitiativePicker } from "@/app/view/jarvis/initiativepicker";
 import {
     cardVariants,
     composerReveal,
@@ -58,7 +57,6 @@ import {
     Hourglass,
     LayoutDashboard,
     LayoutGrid,
-    ListPlus,
     Loader2,
     MessageCircleQuestion,
     MessagesSquare,
@@ -144,11 +142,12 @@ import {
 import { runMenuEntries } from "./runrowmenu";
 import { startingMeta, type StartingRun } from "./startingrunsmodel";
 import { cancelStartingRun, dismissStartingRun, retryStartingRun, startingRunsAtom } from "./startingrunsstore";
-import { parkedMeta, parkedTitle, parkedTooltip } from "./parkedmodel";
-import { openParked, parkedLaunchesAtom, parkedToInitiative, removeParkedWithUndo } from "./parkedstore";
+import { parkedAge, parkedMeta, parkedTitle } from "./parkedmodel";
+import { openParked, parkedLaunchesAtom, removeParkedWithUndo, showHeld, startHeld } from "./parkedstore";
 import { terminalStatusLine, type TerminalStatusLine } from "./terminalstatus";
 import {
     centerModeAtom,
+    heldSelAtom,
     overviewProjectAtom,
     showCanvases,
     showCouncil,
@@ -3479,24 +3478,23 @@ function QueuedEntryRow({ model, row }: { model: AgentsViewModel; row: QueuedRow
     );
 }
 
-// A New agent launch parked for later (parkedstore.ts): no agent yet, so it selects nothing. A click (or the hover's
-// Start) opens the New dialog filled as it was parked, where Enter starts it; Add to initiative… turns it into a chunk
-// of one, for an idea better planned than started; Remove drops it, with an Undo.
+// An agent arcterm held while the machine was busy (parkedstore.ts): a dashed outline and a pause mark set it apart
+// from the agents above it (board A-row-outline of the pending-agent canvas). It has no tab yet, so it is no focus
+// target; a click shows it in the centre (heldpane.tsx), where it is started or added to an initiative. Hover offers
+// Start now and Remove; the menu adds Edit in New….
 function ParkedRow({ model, parked }: { model: AgentsViewModel; parked: ParkedLaunch }) {
     const now = useAtomValue(model.nowAtom);
+    const center = useAtomValue(centerModeAtom);
+    const heldSel = useAtomValue(heldSelAtom);
+    const selected = center === "held" && heldSel === parked.id;
     const title = parkedTitle(parked);
-    const rowRef = useRef<HTMLDivElement>(null);
-    const [picking, setPicking] = useState(false);
-    const open = () => openParked(model, parked);
+    const show = () => showHeld(model, parked.id);
+    const start = () => fireAndForget(() => startHeld(model, parked));
     const remove = () => fireAndForget(() => removeParkedWithUndo(parked));
-    const toInitiative = (oref: string) => {
-        setPicking(false);
-        fireAndForget(() => parkedToInitiative(parked, oref));
-    };
     const onContextMenu = (e: React.MouseEvent) => {
         const items: ContextMenuItem[] = [
-            { label: "Open to start", icon: <Play size={15} />, click: open },
-            { label: "Add to initiative…", icon: <ListPlus size={15} />, click: () => setPicking(true) },
+            { label: "Start now", icon: <Play size={15} />, click: start },
+            { label: "Edit in New…", icon: <Pencil size={15} />, click: () => openParked(model, parked) },
             { type: "separator" },
             { label: "Remove", icon: <X size={15} />, danger: true, click: remove },
         ];
@@ -3505,84 +3503,62 @@ function ParkedRow({ model, parked }: { model: AgentsViewModel; parked: ParkedLa
     const act =
         "flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-primary";
     return (
-        <>
-            <div
-                ref={rowRef}
-                data-parked-row={parked.id}
-                role="button"
-                tabIndex={-1}
-                title={parkedTooltip(parked)}
-                onClick={open}
-                onContextMenu={onContextMenu}
-                className="group relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms] hover:bg-surface-hover"
-            >
-                <Slot>
-                    <CirclePause size={13} aria-hidden className="text-muted" />
-                </Slot>
-                <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-medium text-secondary">{title}</div>
-                    <div data-parked-meta className="truncate text-[11px] text-muted">
-                        {parkedMeta(parked, now)}
-                    </div>
+        <div
+            data-parked-row={parked.id}
+            data-parked-selected={selected ? "" : undefined}
+            role="button"
+            tabIndex={-1}
+            onClick={show}
+            onContextMenu={onContextMenu}
+            className={cn(
+                // the dashed outline takes the row's 1px off its padding, so its text lines up with the agents above
+                "group relative flex cursor-pointer items-center gap-[9px] rounded-[6px] border border-dashed border-edge-strong px-[9px] py-[5px] transition-colors duration-[140ms]",
+                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
+        >
+            <Slot>
+                <CirclePause size={14} aria-hidden className={selected ? "text-secondary" : "text-muted"} />
+            </Slot>
+            <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-medium text-secondary">{title}</div>
+                <div className="flex gap-[6px] text-[11px] text-muted">
+                    <span data-parked-meta className="min-w-0 flex-1 truncate">
+                        {parkedMeta(parked)}
+                    </span>
+                    <span className="flex-none tabular-nums">{parkedAge(parked, now)}</span>
                 </div>
-                {/* three buttons would take the title's room on every row, hovered or not: they float over the row's
-                    right end, the row's full height, on the hover's own (opaque) fill faded in from the left, so the
-                    title and the image count read in full until the pointer comes */}
-                <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-[2px] rounded-r-[6px] bg-surface-hover pl-[2px] pr-[8px] opacity-0 transition-opacity duration-100 before:absolute before:inset-y-0 before:right-full before:w-[18px] before:bg-linear-to-r before:from-transparent before:to-surface-hover focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
-                    <button
-                        type="button"
-                        data-parked-act="open"
-                        title="Open to start"
-                        aria-label={`Open ${title} to start it`}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            open();
-                        }}
-                        className={act}
-                    >
-                        <Play size={12} aria-hidden />
-                    </button>
-                    <button
-                        type="button"
-                        data-parked-act="initiative"
-                        title="Add to initiative…"
-                        aria-label={`Add ${title} to an initiative`}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setPicking(true);
-                        }}
-                        className={act}
-                    >
-                        <ListPlus size={12} aria-hidden />
-                    </button>
-                    <button
-                        type="button"
-                        data-parked-act="remove"
-                        title="Remove"
-                        aria-label={`Remove ${title}`}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            remove();
-                        }}
-                        className={cn(act, "hover:text-error")}
-                    >
-                        <X size={12} aria-hidden />
-                    </button>
-                </span>
             </div>
-            {/* beside the row, not in it: React carries a click in the picker's portal up to its React parent, and the
-                row's own click would open the dialog */}
-            <InitiativePicker
-                open={picking}
-                anchor={rowRef.current}
-                // its project's initiatives come first; Home has none of its own
-                project={parked.project === "Home" ? "" : parked.project}
-                newLabel={null}
-                pickVerb="add to"
-                onPick={toInitiative}
-                onClose={() => setPicking(false)}
-            />
-        </>
+            {/* the buttons float over the row's right end on the hover's own (opaque) fill, faded in from the left, so
+                the title and the image count read in full until the pointer comes */}
+            <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-[2px] rounded-r-[6px] bg-surface-hover pl-[2px] pr-[8px] opacity-0 transition-opacity duration-100 before:absolute before:inset-y-0 before:right-full before:w-[18px] before:bg-linear-to-r before:from-transparent before:to-surface-hover focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+                <button
+                    type="button"
+                    data-parked-act="start"
+                    title="Start now"
+                    aria-label={`Start ${title} now`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        start();
+                    }}
+                    className={act}
+                >
+                    <Play size={12} aria-hidden />
+                </button>
+                <button
+                    type="button"
+                    data-parked-act="remove"
+                    title="Remove"
+                    aria-label={`Remove ${title}`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        remove();
+                    }}
+                    className={cn(act, "hover:text-error")}
+                >
+                    <X size={12} aria-hidden />
+                </button>
+            </span>
+        </div>
     );
 }
 

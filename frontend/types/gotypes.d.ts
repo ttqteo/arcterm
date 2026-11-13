@@ -4083,7 +4083,10 @@ declare global {
     type ParkedLaunch = {
         id: string;
         project: string;
+        projectpath?: string;
         runtime: string;
+        command?: string;
+        branch?: string;
         task: string;
         images?: string[];
         ts: number;
