@@ -5,6 +5,7 @@
 // document's text from its text nodes, paints every match through the CSS Custom Highlight API, so the markdown is
 // never rewrapped, and scrolls the current match into view.
 
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
@@ -228,7 +229,7 @@ export function DocFindBar({
             <button
                 type="button"
                 aria-label="Previous match"
-                title="Previous match (Shift+Enter)"
+                title={`Previous match (${formatChordString("Shift:Enter")})`}
                 disabled={none}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => step(-1)}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatChord, formatChordString, modSymbol } from "./keysym";
+import { fillKeys, formatChord, formatChordString, modSymbol } from "./keysym";
 import { setPlatform } from "./platformutil";
 
 describe("keysym", () => {
@@ -64,5 +64,13 @@ describe("keysym", () => {
         expect(modSymbol("Enter")).toBe("⏎");
         expect(modSymbol("Backspace")).toBe("⌫");
         expect(modSymbol("Escape")).toBe("esc");
+    });
+    // a Mac has no key labelled Alt: prose that names an Alt chord shows ⌥ there
+    it("fills the {chord}s in prose per platform", () => {
+        const text = "{Alt:ArrowUp} / {Alt:ArrowDown} to reorder, or {Shift:n}; j / k move";
+        setPlatform("darwin");
+        expect(fillKeys(text)).toBe("⌥↑ / ⌥↓ to reorder, or ⇧N; j / k move");
+        setPlatform("win32");
+        expect(fillKeys(text)).toBe("Alt+↑ / Alt+↓ to reorder, or Shift+N; j / k move");
     });
 });

@@ -11,6 +11,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { buildJarvisTourBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { fillKeys } from "@/util/keysym";
 import { cn } from "@/util/util";
 import {
     autoUpdate,
@@ -297,7 +298,7 @@ function TourLayer({ model, state }: { model: AgentsViewModel; state: TourState 
                         <LangSwitch />
                     </div>
                     <h2 className="text-[14px] font-semibold text-ink-hi">{text.title}</h2>
-                    <p className="mt-1.5 text-[13px] leading-[1.5] text-ink-mid">{text.body}</p>
+                    <p className="mt-1.5 text-[13px] leading-[1.5] text-ink-mid">{fillKeys(text.body)}</p>
                     <div className="mt-3.5 flex items-center justify-between gap-2">
                         <button
                             type="button"

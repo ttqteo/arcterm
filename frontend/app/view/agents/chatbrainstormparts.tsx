@@ -7,6 +7,7 @@
 // chatbrainstormcheck.tsx, chatbrainstormrun.tsx); the strings come from chatbrainstorm.ts.
 
 import { springReveal, turnTransition } from "@/app/element/motiontokens";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { ArrowUpRight, Check, ChevronRight } from "lucide-react";
 import { motion } from "motion/react";
@@ -18,7 +19,8 @@ import { sendBrainstorm } from "./brainstormsend";
 import { ERROR_LINE, onEnter, useAction } from "./brainstormui";
 import type { DecisionRowModel, Gist } from "./chatbrainstorm";
 
-const OPEN_KEY = "Alt+C";
+// the agent:view-cycle chord; labelled when drawn, as the platform is only known after boot (keysym.ts)
+const OPEN_KEY = "Alt:c";
 
 export const FOCUS_RING = "outline-none focus-visible:ring-2 focus-visible:ring-accent";
 export const SMALL_BTN =
@@ -51,12 +53,12 @@ export function OpenButton({ agent }: { agent: AgentVM }) {
         <button
             type="button"
             data-chat-bscard-open
-            title={`Open the brainstorm (${OPEN_KEY})`}
+            title={`Open the brainstorm (${formatChordString(OPEN_KEY)})`}
             onClick={() => openBrainstorm(agent)}
             className={cn(SMALL_BTN, FOCUS_RING)}
         >
             Open in Brainstorm
-            <kbd className="font-mono text-[11px] text-muted">{OPEN_KEY}</kbd>
+            <kbd className="font-mono text-[11px] text-muted">{formatChordString(OPEN_KEY)}</kbd>
             <ArrowUpRight size={12} strokeWidth={2} aria-hidden />
         </button>
     );

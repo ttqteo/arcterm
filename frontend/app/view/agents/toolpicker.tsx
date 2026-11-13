@@ -457,7 +457,7 @@ export function ToolPicker({ model }: { model: AgentsViewModel }) {
                         ) : null}
                         {hints.install ? (
                             <span className="flex items-center gap-1.5">
-                                <span className={KEY_CAP}>Ctrl I</span>
+                                <span className={KEY_CAP}>{formatChordString("Mod:i")}</span>
                                 Install
                             </span>
                         ) : null}

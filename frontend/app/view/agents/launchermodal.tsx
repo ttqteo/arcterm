@@ -1637,7 +1637,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 tabIndex={-1}
                                 hint={formatChordString("Alt:ArrowLeft")}
                                 data-launcher-back
-                                title="Back to the columns to change the agent or project (Alt+←, or ← from the sessions)"
+                                title={`Back to the columns to change the agent or project (${formatChordString("Alt:ArrowLeft")}, or ← from the sessions)`}
                                 onClick={() => leaveStep("project")}
                                 className="pl-[11px]"
                             >
@@ -1654,7 +1654,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 variant="secondary"
                                 hint={formatChordString("Shift:Enter")}
                                 data-launcher-transcript
-                                title="View transcript (Shift+Enter)"
+                                title={`View transcript (${formatChordString("Shift:Enter")})`}
                                 onClick={() => viewTranscript(resume)}
                             >
                                 Transcript
@@ -1664,7 +1664,11 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         <DialogButton
                             variant="primary"
                             hint={formatChordString("Enter")}
-                            title={isTool || isCouncil ? "Enter" : "Enter (Shift+Enter is a new line in the Task box)"}
+                            title={
+                                isTool || isCouncil
+                                    ? formatChordString("Enter")
+                                    : `${formatChordString("Enter")} (${formatChordString("Shift:Enter")} is a new line in the Task box)`
+                            }
                             disabled={primaryDisabled}
                             onClick={launch}
                             className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-300"

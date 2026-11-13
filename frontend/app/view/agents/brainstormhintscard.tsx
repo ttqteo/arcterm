@@ -5,6 +5,7 @@
 // dismissed; the dismissal is kept in localStorage (brainstormhints.ts), so it comes once per machine. Its own file name
 // because `./brainstormhints` already resolves to the .ts beside it.
 
+import { fillKeys } from "@/util/keysym";
 import { X } from "lucide-react";
 import { useState } from "react";
 import { browserHintStore, HINT_LINES, hintsSeen, markHintsSeen, shouldShowHints } from "./brainstormhints";
@@ -41,7 +42,7 @@ export function BrainstormHints() {
                                 ·
                             </span>
                         ) : null}
-                        {line}
+                        {fillKeys(line)}
                     </li>
                 ))}
             </ul>

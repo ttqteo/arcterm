@@ -8,6 +8,7 @@
 // listener, so the textarea's keys are native listeners, not onKeyDown.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { MessageSquare, Pencil, Trash2 } from "lucide-react";
@@ -108,7 +109,8 @@ function CommentEditor({ draft }: { draft: CommentDraft }) {
                     disabled={draft.note.trim() === ""}
                     className={cn(footBtn, "bg-accent font-bold text-background disabled:opacity-50")}
                 >
-                    {editing ? "Save" : "Add comment"} <kbd className="font-mono text-[10.5px] font-normal">Ctrl+↵</kbd>
+                    {editing ? "Save" : "Add comment"}{" "}
+                    <kbd className="font-mono text-[10.5px] font-normal">{formatChordString("Mod:Enter")}</kbd>
                 </button>
             </div>
         </div>

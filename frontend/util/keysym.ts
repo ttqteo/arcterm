@@ -101,3 +101,9 @@ export function formatChordString(keys: string): string {
     }
     return formatChord(keys).join(isMacOS() ? "" : "+");
 }
+
+// Prose that names a key: each `{chord}` in it ("{Alt:ArrowUp}", "{Shift:n}") becomes its label, so text written once,
+// as a constant, still reads "⌥↑" on a Mac and "Alt+↑" elsewhere. Call it when rendering, not at module eval.
+export function fillKeys(text: string): string {
+    return text.replace(/\{([^{}\s]+)\}/g, (_, keys: string) => formatChordString(keys));
+}

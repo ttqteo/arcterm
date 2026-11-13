@@ -11,14 +11,16 @@
 // closes it and gives the focus back to the box.
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { Blocks, ChevronRight, Folder, Paperclip, Plug, Plus, SquareSlash, type LucideIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 
 type PlusItem = "files" | "folder" | "slash" | "mcp" | "plugins";
 
+// a hint with a ":" is a chord, labelled per platform when drawn (Cmd+U on a Mac: chatcomposer's addFilesKey)
 const ITEMS: { id: PlusItem; label: string; icon: LucideIcon; hint: string; more?: boolean }[] = [
-    { id: "files", label: "Add files or photos", icon: Paperclip, hint: "Ctrl+U" },
+    { id: "files", label: "Add files or photos", icon: Paperclip, hint: "Mod:u" },
     { id: "folder", label: "Add folder", icon: Folder, hint: "/add-dir" },
     { id: "slash", label: "Slash commands", icon: SquareSlash, hint: "/" },
     { id: "mcp", label: "MCP servers", icon: Blocks, hint: "", more: true },
@@ -174,7 +176,9 @@ export function ChatPlusMenu({
                             </span>
                             <span className="flex-1 text-left">{item.label}</span>
                             {item.hint ? (
-                                <span className="font-mono text-[11.5px] text-ink-faint">{item.hint}</span>
+                                <span className="font-mono text-[11.5px] text-ink-faint">
+                                    {item.hint.includes(":") ? formatChordString(item.hint) : item.hint}
+                                </span>
                             ) : null}
                             {item.more ? (
                                 <ChevronRight size={12} strokeWidth={2} aria-hidden className="flex-none text-muted" />
