@@ -604,10 +604,25 @@ svg [aria-label="tip"] g path {
     color: transparent;
 }
 
-/* the working line's dot: a small Jarvis core, hot in the middle and blue at the rim, breathing with pulse-dot */
-.jarvis-dot {
-    background: radial-gradient(circle, var(--color-accent-100) 0 28%, var(--color-conn-1) 72%);
-    box-shadow: 0 0 5px color-mix(in oklab, var(--color-conn-1) 55%, transparent);
+/* the working line's dot (workingglyph.tsx): a small Jarvis hologram. pulsedriver.tsx sets --spin (0 to 1, then
+   again) on the svg, which turns the outer ring once and the inner twice the other way, and --spark on each spark,
+   which flashes at 0 and is gone by 0.2. Without the driver (reduced motion) the rings rest and no spark shows. */
+.holo-glyph {
+    filter: drop-shadow(0 0 2px color-mix(in oklab, var(--color-conn-1) 60%, transparent));
+}
+.holo-ring-out,
+.holo-ring-in {
+    transform-origin: 9px 9px;
+}
+.holo-ring-out {
+    rotate: calc(var(--spin, 0) * 360deg);
+}
+.holo-ring-in {
+    rotate: calc(var(--spin, 0) * -720deg);
+}
+.holo-spark,
+.holo-spark-slow {
+    opacity: clamp(0, 1 - var(--spark, 1) * 5, 1);
 }
 
 /* Asking attention (moment 3): a slow, persistent amber breathing glow. drop-shadow

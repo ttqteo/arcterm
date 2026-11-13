@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Copy button's check and the working hologram in the real app: in Chat click Copy under a reply → the
+  outline copy icon turns into a green check, then back (headless Chrome's clipboard refused it, so the CDP step never
+  saw the check); while a Claude agent works, its working line's dot turns its rings and flashes sparks, and with
+  Windows' animation effects off it stands still. Branch feat/model-effort-chip.
 - [ ] (arcterm) Hidden Jarvis in the Office and at launch: open Cockpit → Office, right-click the boss → Hide for 1
   hour → the boss and its ring go, its desk stays empty and no Sprout appears on the footer; Ctrl+P → Show Jarvis →
   the boss comes back with its entrance (the teleport, or Spider-Man's swing). Hide again, then quit and reopen

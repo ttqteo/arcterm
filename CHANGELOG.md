@@ -41,6 +41,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The chat box's model and effort are one chip, as in Claude Desktop ("Opus 5.5 High"): its menu lists the four
+  current models (1–4 pick one), then Effort and More models, where Fable 5.1 down to Haiku 4.5 can be picked.
+- Copy buttons draw an outline icon, as the Flag and Fork beside them do, instead of a solid one.
+- Chat's working line starts with a small Jarvis hologram: two rings turning around a hot core, with sparks
+  crackling out while the agent works (still under reduced motion).
 - The buttons on Chat's brainstorm cards ease into their hover colour, and a card's folds (Agent's calls, Decided,
   a ✓ row's detail) slide open and closed instead of popping.
 - The Jarvis hologram turns amber only while an agent is asking you something; gates, plans to review and runs to
