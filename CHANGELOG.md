@@ -45,6 +45,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The whole app starts one size bigger: the default zoom is now 110%, and `Cmd`+`0` (`Ctrl`+`0` on Windows) returns
+  there. A zoom you set yourself is kept.
 - Jarvis's hologram takes the avatar's shape from the Kael fork: three rings stacked in depth around a hollow
   core, swaying slowly. Its centre no longer glows into a white blob; while agents work, light runs in along its six
   struts, and when Jarvis speaks it turns to face you and sweeps.
@@ -92,10 +94,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
-- Idle Claude agents go to sleep again when Claude Code keeps a CPU core busy on its own while idle: that made them
-  look busy, so they never slept and their RAM grew past 2 GB each. An idle one that has grown past 1.5 GB now sleeps
+- While an agent compacts its conversation (`/compact`), Chat says Compacting… instead of Working…, with no timer
+  counting up from your last message.
 - A file path in an agent's reply in Chat can be selected and copied with the text around it. It used to drop out of
   every selection; a click still opens the file.
+- Idle Claude agents go to sleep again when Claude Code keeps a CPU core busy on its own while idle: that made them
+  look busy, so they never slept and their RAM grew past 2 GB each. An idle one that has grown past 1.5 GB now sleeps
   after a minute instead of waiting for After idle for.
 - With Jarvis set to the hologram, the fold button at the right of the app bar shows the hologram instead of Sprout.
 - A permission card in Chat shows the Enter key on the button ↑ ↓ have picked, so you can see what Enter will send.

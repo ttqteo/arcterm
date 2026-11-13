@@ -28,13 +28,14 @@ describe("zoom controller", () => {
         expect(h.setZoom).toHaveBeenCalledWith(expect.closeTo(1.1));
         expect(cb).toHaveBeenCalledWith(expect.closeTo(1.1));
     });
-    it("clamps within [0.5, 3] and resets to 1", () => {
+    it("clamps within [0.5, 3] and resets to the default, one step above 1", () => {
         for (let i = 0; i < 50; i++) chrome.zoomIn();
         expect(chrome.getZoomFactor()).toBeLessThanOrEqual(3);
         for (let i = 0; i < 100; i++) chrome.zoomOut();
         expect(chrome.getZoomFactor()).toBeGreaterThanOrEqual(0.5);
         chrome.zoomReset();
-        expect(chrome.getZoomFactor()).toBe(1);
+        expect(chrome.DefaultZoom).toBe(1.1);
+        expect(chrome.getZoomFactor()).toBe(1.1);
     });
 });
 
@@ -45,12 +46,13 @@ describe("zoom persistence", () => {
         vi.stubGlobal("localStorage", {
             getItem: (k: string) => store.get(k) ?? null,
             setItem: (k: string, v: string) => void store.set(k, v),
+            removeItem: (k: string) => void store.delete(k),
         });
     });
     it("saves each change and restores it in a fresh module", async () => {
         chrome.zoomIn();
         chrome.zoomIn();
-        expect(store.get("cockpit.zoom")).toBe("1.2");
+        expect(store.get("cockpit.zoom.v2")).toBe("1.2");
         vi.resetModules();
         h.setZoom.mockClear();
         const fresh = await import("./chrome");
@@ -59,15 +61,33 @@ describe("zoom persistence", () => {
         expect(fresh.getZoomFactor()).toBeCloseTo(1.2);
         expect(h.setZoom).toHaveBeenCalledWith(expect.closeTo(1.2));
     });
-    it("ignores a missing, out-of-range or garbage value", () => {
+    it("applies the default for a missing, out-of-range or garbage value", () => {
         for (const v of [undefined, "9", "abc"]) {
-            if (v == null) store.delete("cockpit.zoom");
-            else store.set("cockpit.zoom", v);
+            store.clear();
+            if (v != null) store.set("cockpit.zoom.v2", v);
             h.setZoom.mockClear();
             chrome.restoreZoom();
-            expect(chrome.getZoomFactor()).toBe(1);
-            expect(h.setZoom).not.toHaveBeenCalled();
+            expect(chrome.getZoomFactor()).toBe(1.1);
+            expect(h.setZoom).toHaveBeenCalledWith(1.1);
         }
+    });
+    it("moves a zoom saved under the old default of 1 to the new default", () => {
+        store.set("cockpit.zoom", "1");
+        chrome.restoreZoom();
+        expect(chrome.getZoomFactor()).toBe(1.1);
+        expect(store.has("cockpit.zoom")).toBe(false);
+        expect(store.get("cockpit.zoom.v2")).toBe("1.1");
+    });
+    it("keeps a zoom the person chose under the old key", () => {
+        store.set("cockpit.zoom", "1.3");
+        chrome.restoreZoom();
+        expect(chrome.getZoomFactor()).toBeCloseTo(1.3);
+        expect(store.has("cockpit.zoom")).toBe(false);
+    });
+    it("keeps a zoom of 1 chosen after the default moved", () => {
+        store.set("cockpit.zoom.v2", "1");
+        chrome.restoreZoom();
+        expect(chrome.getZoomFactor()).toBe(1);
     });
 });
 

@@ -6,6 +6,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 const MinZoom = 0.5;
 const MaxZoom = 3;
 const ZoomDelta = 0.1;
+// the app starts one zoom step up (text was a size too small at 1); Mod+0 comes back here.
+export const DefaultZoom = 1.1;
 
 let zoomFactor = 1;
 const zoomSubs: ((f: number) => void)[] = [];
@@ -23,7 +25,10 @@ export function onZoomFactorChange(cb: (f: number) => void) {
     zoomSubs.push(cb);
 }
 // the zoom is kept in localStorage like the theme (themestore.ts), so it survives a restart and a reinstall.
-const ZoomStorageKey = "cockpit.zoom";
+const ZoomStorageKey = "cockpit.zoom.v2";
+// the key from when the default was 1: its 1 was that default, so it follows the new one; any other value was the
+// person's own choice and carries over.
+const LegacyZoomStorageKey = "cockpit.zoom";
 function saveZoom(f: number) {
     try {
         globalThis.localStorage?.setItem(ZoomStorageKey, String(f));
@@ -31,10 +36,19 @@ function saveZoom(f: number) {
         // storage blocked: the zoom still applies, it just is not kept
     }
 }
+function readZoom(key: string): number | null {
+    const raw = globalThis.localStorage?.getItem(key);
+    if (raw == null) return null;
+    const f = Number(raw);
+    return Number.isFinite(f) && f >= MinZoom && f <= MaxZoom ? f : null;
+}
 function loadSavedZoom(): number | null {
     try {
-        const f = Number(globalThis.localStorage?.getItem(ZoomStorageKey));
-        return Number.isFinite(f) && f >= MinZoom && f <= MaxZoom ? f : null;
+        const saved = readZoom(ZoomStorageKey);
+        if (saved != null) return saved;
+        const legacy = readZoom(LegacyZoomStorageKey);
+        globalThis.localStorage?.removeItem?.(LegacyZoomStorageKey);
+        return legacy != null && legacy !== 1 ? legacy : null;
     } catch {
         return null;
     }
@@ -45,10 +59,9 @@ function applyZoom(f: number) {
     saveZoom(zoomFactor);
     for (const cb of zoomSubs) cb(zoomFactor);
 }
-// applies the saved zoom at boot; a missing or bad value leaves the webview at 1.
+// applies the saved zoom at boot; a missing or bad value applies the default.
 export function restoreZoom() {
-    const f = loadSavedZoom();
-    if (f != null && f !== 1) applyZoom(f);
+    applyZoom(loadSavedZoom() ?? DefaultZoom);
 }
 export function zoomIn() {
     applyZoom(zoomFactor + ZoomDelta);
@@ -57,7 +70,7 @@ export function zoomOut() {
     applyZoom(zoomFactor - ZoomDelta);
 }
 export function zoomReset() {
-    applyZoom(1);
+    applyZoom(DefaultZoom);
 }
 
 export function onFullScreenChange(cb: (b: boolean) => void) {

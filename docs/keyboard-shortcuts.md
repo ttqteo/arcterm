@@ -55,7 +55,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | On the Agent surface (a float and fullscreen included): the tab switcher, as the system's app switcher works. Hold `Ctrl`, press `Tab` to move through your agents and terminals (recent first; `Shift`+`Tab` goes back), and let go of `Ctrl` to open the one picked; `Esc` stays where you are. A quick `Ctrl`+`Tab` flips to the tab you were on before without drawing it. `Option`+`Tab` / `Option`+`Shift`+`Tab` too on a Mac, letting go of `Option` |
 | `Mod`+`Shift`+`W` | Close the agent or terminal in focus, as a terminal app closes its tab: the pane you are typing in, else the selected agent. Works from inside the terminal and asks first. It has no plain `Mod`+`W` form: on Windows `Ctrl`+`W` deletes a word in the terminal, and a Mac uses the same shape |
 | `Cmd`+`K` (macOS) | Clear the focused terminal's screen |
-| `Mod`+`=` / `Mod`+`-` / `Mod`+`0` | Zoom the window in / out / back to 100% (`Cmd` on macOS) |
+| `Mod`+`=` / `Mod`+`-` / `Mod`+`0` | Zoom the window in / out / back to the default 110% (`Cmd` on macOS) |
 | `Mod`+`M` | Fold the window into Sprout, from the cockpit or a float, even from inside a terminal; folded, the same key brings the window back. Settings → Jarvis & Office → Folding → Minimize: Dock sends it to the Dock or taskbar instead |
 
 Setup and Settings have no `Mod`+number slot — the positions are bound to `SURFACE_ORDER`
