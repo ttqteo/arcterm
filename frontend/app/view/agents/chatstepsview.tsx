@@ -69,22 +69,24 @@ function FoldCaret({ open }: { open: boolean }) {
     );
 }
 
-// a call with no result in a working session: a dashed ring that turns, in the colour of a run that is going well
+// a call with no result in a working session: a dashed ring whose dashes run round it, in the colour of a run that is
+// going well. The ring stays still and only the dash offset moves (tailwindsetup.css dashRun): spinning the svg itself
+// wobbled off its centre at fractional display scaling. pathLength 60 makes the 2 + 3 dash pattern close exactly, 12
+// dashes with no short one where the ring's ends meet.
 function StepSpinner() {
     return (
-        <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeDasharray="2 3"
-            aria-hidden
-            className="animate-spin text-success motion-reduce:animate-none"
-        >
-            <circle cx="12" cy="12" r="9" />
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden className="text-success">
+            <circle
+                cx="12"
+                cy="12"
+                r="9"
+                pathLength={60}
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeDasharray="2 3"
+                className="animate-[dashRun_1s_linear_infinite] motion-reduce:animate-none"
+            />
         </svg>
     );
 }
