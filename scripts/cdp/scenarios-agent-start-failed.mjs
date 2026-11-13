@@ -46,6 +46,15 @@ const focusAgent = (h, tabId) =>
         return true;`
     );
 
+// Chat or Terminal for one agent (chatmodestore.ts); "chat" drops the stored entry again
+const setMode = (h, tabId, mode) =>
+    pageEval(
+        h,
+        `const { setChatMode } = await mod("app/view/agents/chatmodestore.ts");
+        setChatMode(${JSON.stringify(tabId)}, ${JSON.stringify(mode)});
+        return true;`
+    );
+
 const HEADER = `document.querySelector("[data-agent-header]")`;
 // the header's runtime mark carries its runtime's label as a title: "Claude Code", or "Unknown" for an agent with none
 const headerState = `(() => {
@@ -161,7 +170,11 @@ export default function (kit) {
                 }
 
                 await focusAgent(h, ctx.bootingId);
+                // an agent opens in Chat, whose header is lean by design (d41f145c5): no runtime mark and no state word,
+                // the dot keeping the state as its title. The full header this step reads is Terminal's
+                await setMode(h, ctx.bootingId, "terminal");
                 await polishWaitFor(h, `(${HEADER}?.textContent ?? "").includes("start-booting-")`, ROSTER_WAIT_MS);
+                await polishWaitFor(h, `!!${HEADER}?.querySelector("[data-agent-state-pill]")`, ROSTER_WAIT_MS);
                 const booting = await h.ev(headerState);
                 const bootingRow = await h.ev(treeRow(ctx.bootingId));
                 await h.shot("cdp-shots/agent-start-failed-1-booting.png");
@@ -237,6 +250,9 @@ export default function (kit) {
                         return true;`
                     )
                 );
+                if (ctx.bootingId) {
+                    await step("drop the booting agent's Terminal mode", () => setMode(h, ctx.bootingId, "chat"));
+                }
                 for (const tabId of ctx.tabIds ?? []) {
                     await step(`close tab ${tabId}`, () =>
                         waveService(h, "workspace", "CloseTab", [ctx.workspaceId, tabId, false])
