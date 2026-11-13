@@ -4,6 +4,8 @@ import { withResultLines } from "./chatinitiative";
 import {
     ECHO_ABSENT_MAX_MS,
     ECHO_WAIT_MAX_MS,
+    ENTER_CONFIRM_MAX_MS,
+    ENTER_RETRIES,
     PASTE_OVER,
     PENDING_IDLE_MS,
     PENDING_MAX_MS,
@@ -11,6 +13,7 @@ import {
     SubmitError,
     btwQuestion,
     echoStep,
+    enterStep,
     holdLine,
     isSendNowKey,
     pastesBody,
@@ -400,6 +403,22 @@ describe("echoStep", () => {
         expect(echoStep("absent", ECHO_ABSENT_MAX_MS - 1)).toBe("wait");
         expect(echoStep("absent", ECHO_ABSENT_MAX_MS)).toBe("fail");
         expect(ECHO_ABSENT_MAX_MS).toBeGreaterThan(ECHO_WAIT_MAX_MS);
+    });
+});
+
+describe("enterStep", () => {
+    it("is done once the text left the box, or when there is no box to read", () => {
+        expect(enterStep("gone", 0, 0)).toBe("done");
+        expect(enterStep("unknown", 0, 0)).toBe("done");
+    });
+    it("waits on a box still holding the text alone, then lets it be: its Enter is on its way", () => {
+        expect(enterStep("held", ENTER_CONFIRM_MAX_MS - 1, 0)).toBe("wait");
+        expect(enterStep("held", ENTER_CONFIRM_MAX_MS, 0)).toBe("done");
+    });
+    it("retries an Enter that went in as a line break, then fails so the person presses it", () => {
+        expect(enterStep("linebreak", 0, 0)).toBe("retry");
+        expect(enterStep("linebreak", 0, ENTER_RETRIES - 1)).toBe("retry");
+        expect(enterStep("linebreak", 0, ENTER_RETRIES)).toBe("fail");
     });
 });
 

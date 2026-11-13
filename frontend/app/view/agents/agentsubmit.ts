@@ -10,11 +10,25 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { pasteIntoTerm, readTermLines } from "@/app/view/term/termpaste";
 import { stringToBase64 } from "@/util/util";
-import { echoStep, sendFailLogLine, sendFailure, SubmitError, submitSteps, type SubmitStage } from "./chatpending";
-import { typedEcho } from "./chattakeback";
+import {
+    ECHO_WAIT_MAX_MS,
+    echoStep,
+    enterStep,
+    sendFailLogLine,
+    sendFailure,
+    SubmitError,
+    submitSteps,
+    type SubmitStage,
+} from "./chatpending";
+import { enterEcho, typedEcho } from "./chattakeback";
 
 const ECHO_POLL_MS = 40;
 const ECHO_SCREEN_ROWS = 40;
+const ENTER_POLL_MS = 80;
+// Backspace as Claude Code reads it (DEL)
+const KEY_BACKSPACE = "\x7f";
+// the pause before a retried Enter, per retry: any paste Claude Code still took the text for is over by then
+const ENTER_RETRY_GAP_MS = 300;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -37,8 +51,15 @@ async function atStage(stage: SubmitStage, run: () => Promise<void> | void): Pro
 async function waitForEcho(blockId: string, text: string): Promise<void> {
     const start = Date.now();
     for (;;) {
-        const step = echoStep(typedEcho(readTermLines(blockId, ECHO_SCREEN_ROWS), text), Date.now() - start);
+        const echo = typedEcho(readTermLines(blockId, ECHO_SCREEN_ROWS), text);
+        const step = echoStep(echo, Date.now() - start);
         if (step === "enter") {
+            if (echo !== "shown") {
+                // an Enter that goes before the box showed the text can land in one read with it: say so in the log
+                logLine(
+                    `[chat-send] enter-unechoed block=${blockId.slice(0, 8)} echo=${echo} waited=${Date.now() - start}`
+                );
+            }
             return;
         }
         if (step === "fail") {
@@ -48,18 +69,63 @@ async function waitForEcho(blockId: string, text: string): Promise<void> {
     }
 }
 
-function logFailure(blockId: string, text: string, e: unknown): void {
+function logLine(line: string): void {
     try {
-        getApi().sendLog(sendFailLogLine(blockId, text, sendFailure(e)));
+        getApi().sendLog(line);
     } catch {
         // a log line must never hide the send's own error
     }
 }
 
-/** Types `text` into the agent's terminal and presses Enter. A paste goes through the mounted terminal (which brackets it
- *  when the program asked for that); with none mounted it is bracketed here, as the backend's typeWake does. Rejects with
- *  a SubmitError naming the step that failed, written to waveapp.log first: a caller that only fires and forgets still
- *  leaves a trace. */
+function logFailure(blockId: string, text: string, e: unknown): void {
+    logLine(sendFailLogLine(blockId, text, sendFailure(e)));
+}
+
+// Waits after a Backspace until the box shows `text` alone again, at most ECHO_WAIT_MAX_MS; false when it never does.
+async function waitForHeld(blockId: string, text: string): Promise<boolean> {
+    const until = Date.now() + ECHO_WAIT_MAX_MS;
+    while (Date.now() < until) {
+        await sleep(ECHO_POLL_MS);
+        if (enterEcho(readTermLines(blockId, ECHO_SCREEN_ROWS), text) === "held") {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Watches the box after the Enter (chatpending.ts enterStep) until the text left it. An Enter Claude Code took as a line
+// break is taken back with Backspace and pressed again once the box shows the text alone; one that keeps going in as a
+// line break, or a Backspace the box never shows, fails the send at its Enter: the message waits in Claude Code's box.
+async function confirmEnter(blockId: string, text: string): Promise<void> {
+    let start = Date.now();
+    let retries = 0;
+    for (;;) {
+        await sleep(ENTER_POLL_MS);
+        const step = enterStep(enterEcho(readTermLines(blockId, ECHO_SCREEN_ROWS), text), Date.now() - start, retries);
+        if (step === "done") {
+            return;
+        }
+        if (step === "fail") {
+            throw new SubmitError("enter", "Claude Code took the Enter as a line break");
+        }
+        if (step === "retry") {
+            retries++;
+            logLine(`[chat-send] enter-linebreak block=${blockId.slice(0, 8)} retry=${retries}`);
+            await atStage("enter", () => typeRaw(blockId, KEY_BACKSPACE));
+            if (!(await waitForHeld(blockId, text))) {
+                throw new SubmitError("enter", "Claude Code took the Enter as a line break");
+            }
+            await sleep(ENTER_RETRY_GAP_MS * retries);
+            await atStage("enter", () => typeRaw(blockId, "\r"));
+            start = Date.now();
+        }
+    }
+}
+
+/** Types `text` into the agent's terminal and presses Enter, then makes sure the Enter submitted it (confirmEnter). A
+ *  paste goes through the mounted terminal (which brackets it when the program asked for that); with none mounted it is
+ *  bracketed here, as the backend's typeWake does. Rejects with a SubmitError naming the step that failed, written to
+ *  waveapp.log first: a caller that only fires and forgets still leaves a trace. */
 export async function submitToAgent(blockId: string, text: string): Promise<void> {
     try {
         for (const step of submitSteps(text)) {

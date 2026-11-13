@@ -49,6 +49,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A Chat message no longer sits unsent in Claude Code's box when the machine is short of memory: if Claude Code takes
+  its Enter as a line break, arcterm removes the break and presses Enter again, and tells you when you have to press it
+  yourself.
+- An agent whose end-of-turn report was lost (Claude Code gave up on it on a slow machine) no longer reads "Working…"
+  for good: within about 30 seconds arcterm sees in the conversation that the turn ended and shows the agent idle.
 - On a Mac, shortcut hints no longer name keys a Mac does not have: the Open in Brainstorm button, the wrap and
   Send-review buttons in Code, the commit buttons, the + menu, the tool picker, the Jarvis tour and a few tooltips now
   show ⌥, ⌘ and ⇧ (⌥C, ⌘⏎) where they said Alt+C or Ctrl+Enter.

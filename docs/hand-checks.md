@@ -6,6 +6,16 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A lost Stop no longer leaves "Working…": make a Claude agent's Stop hook fail (point `Stop`'s command in
+  `~/.claude/settings.json` at a `sleep 15` with `timeout: 10` for one turn), let a turn end → the Terminal shows the
+  turn done, Chat still says Working…, and within ~30 s it goes idle and `waveapp.log` has `idled from its transcript`.
+  A long tool call (a 2-minute build) must keep reading Working the whole time. Agent surface, Chat
+  (`pkg/wshrpc/wshserver/wshserver_turnend.go`).
+- [ ] (arcterm) An Enter Claude Code takes as a line break is pressed again: on a machine under memory pressure, send
+  from Chat → the message lands; when a retry happened `waveapp.log` has `[chat-send] enter-linebreak … retry=1`. Watch
+  for a message submitted twice, or a toast "not sent … press Enter in the terminal" on a message that did go. Agent
+  surface, Chat (`agentsubmit.ts` confirmEnter, `chattakeback.ts` enterEcho). Unit-tested and typechecked only.
+
 - [ ] (arcterm) Hologram amber only on a question: with Settings → Jarvis → Form on Hologram, leave a gate or a run to
   land in Jarvis's queue and no agent asking → the corner keeps its rings; have an agent ask (`wsh ask`, or a
   permission prompt) → it turns to the amber sphere, and back once answered (`frontend/app/view/jarvis/hologramview.tsx`,
