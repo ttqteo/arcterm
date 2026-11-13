@@ -50,6 +50,7 @@ import {
     withMessageCard,
     withoutKey,
     withoutSwitchLine,
+    withSwitchHeld,
     withResultLines,
     withSwitchLine,
     withTopic,
@@ -790,6 +791,17 @@ describe("the switch line", () => {
         const p = { a1: [added, switchLine(3, "Two", "effort:o")], a2: [switchLine(9, "Theirs", "effort:o")] };
         expect(withoutSwitchLine(p, "a1")).toEqual({ a1: [added], a2: [switchLine(9, "Theirs", "effort:o")] });
         expect(p.a1).toHaveLength(2);
+    });
+
+    it("holds and lets go of an agent's waiting line, the same list when it is as asked", () => {
+        const none: readonly string[] = [];
+        const held = withSwitchHeld(none, "a1", true);
+        expect(held).toEqual(["a1"]);
+        expect(withSwitchHeld(held, "a1", true)).toBe(held);
+        expect(withSwitchHeld(held, "a2", true)).toEqual(["a1", "a2"]);
+        expect(withSwitchHeld(["a1", "a2"], "a1", false)).toEqual(["a2"]);
+        expect(withSwitchHeld(none, "a1", false)).toBe(none);
+        expect(none).toEqual([]);
     });
 
     it("removes an agent's entry once the switched line was its only one, and is the same map when there is none", () => {

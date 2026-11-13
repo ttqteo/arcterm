@@ -556,6 +556,16 @@ export function withSwitchLine(pending: PendingMap, agentId: string, line: strin
     return queueLine({ ...pending, [agentId]: kept }, agentId, line);
 }
 
+/** Pure: the agents whose `go on with:` send is on its way, with `agentId` put in or taken out. The switch queues its
+ *  line before the box has shown the chip's text and sent it, and the waiting line over the box stays hidden for these
+ *  agents, so it never draws on that path (spec section 9). The same list when it is as asked. */
+export function withSwitchHeld(held: readonly string[], agentId: string, on: boolean): readonly string[] {
+    if (held.includes(agentId) === on) {
+        return held;
+    }
+    return on ? [...held, agentId] : held.filter((id) => id !== agentId);
+}
+
 /** Pure: the pending lines without an agent's switched line (the waiting line's ✕), its other lines kept; the agent's
  *  entry goes once nothing else is in it. The same map when there is no switched line to drop. */
 export function withoutSwitchLine(pending: PendingMap, agentId: string): PendingMap {

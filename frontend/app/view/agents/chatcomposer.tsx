@@ -66,7 +66,14 @@ import { ChatBgLine } from "./chatbgline";
 import { boxState, type BoxState } from "./chatboxstate";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold, usePartMotion } from "./chatfooter";
-import { dropSwitchLine, putBackResultLines, takeResultLines, usePendingSwitch } from "./chatinitiativestore";
+import {
+    dropSwitchLine,
+    holdSwitchLine,
+    putBackResultLines,
+    takeResultLines,
+    usePendingSwitch,
+    useSwitchLineHeld,
+} from "./chatinitiativestore";
 import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
 import { answersInChat, localCommand, type LocalRoute } from "./chatlocal";
 import { clearLocalCards } from "./chatlocalstore";
@@ -161,13 +168,15 @@ export function ChatComposer(props: Parameters<typeof ComposerBox>[0]) {
 
 // The switched line (chatinitiativestore.ts) goes in front of the next plain message, which is the person's next send, so
 // it shows over the box until then; ✕ drops it and leaves the switch in place. A wake send leaves the waiting lines for the
-// next message (takeResultLines in ComposerBox), so an asleep box says nothing yet.
+// next message (takeResultLines in ComposerBox), so an asleep box says nothing yet. A `go on with:` click switches the chunk
+// and sends the chip's text at once, so its line is held back (holdSwitchLine) and never draws on that path.
 function SwitchLine({ agent }: { agent: AgentVM }) {
     const switched = usePendingSwitch(agent.id);
+    const held = useSwitchLineHeld(agent.id);
     const part = usePartMotion(springReveal);
     return (
         <AnimatePresence initial={false}>
-            {switched != null && agent.sleeping == null ? (
+            {switched != null && !held && agent.sleeping == null ? (
                 <motion.div key="switch" {...part} className="overflow-hidden">
                     <div
                         data-chat-switch-line=""
@@ -422,6 +431,9 @@ function ComposerBox({
                     }
                     if (sent === latest.current.text) {
                         submitRef.current();
+                        // the send was tried: a `go on with:` click's hold on the waiting line ends (a line the send did
+                        // not take is the one that waits for the next message)
+                        holdSwitchLine(agent.id, false);
                         return true;
                     }
                     submitNext.current = true;
@@ -563,6 +575,7 @@ function ComposerBox({
         if (submitNext.current) {
             submitNext.current = false;
             submit();
+            holdSwitchLine(agent.id, false);
         }
     }, [text]);
     // the queued message goes as soon as its prompt is answered; a box emptied meanwhile has nothing left to queue

@@ -52,6 +52,7 @@ import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
 import { isHandoffAsk } from "./chathandoff";
 import { ChatHandoffCard } from "./chathandoffcard";
+import { holdSwitchLine } from "./chatinitiativestore";
 import { submitIntoChatBox } from "./chatinsert";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
 import { awaitsOwnMessage, narratesThinking, streamsLiveReply } from "./chatlive";
@@ -724,11 +725,18 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
             return;
         }
         goingOn.current = true;
+        // the switch queues its line and the box sends a render later: the waiting line stays hidden until the box has tried
+        // the send (it lets go itself, chatcomposer.tsx), so it never draws on this path
+        holdSwitchLine(agent.id, true);
         fireAndForget(async () => {
             try {
                 await switchAgentChunk(effortOref, agent.id, chunk);
-                submitIntoChatBox(agent.id, text);
+                if (!submitIntoChatBox(agent.id, text)) {
+                    // no box took the text: the line waits for the person's next message, as the switch left it
+                    holdSwitchLine(agent.id, false);
+                }
             } catch (e) {
+                holdSwitchLine(agent.id, false);
                 pushToast({
                     title: "Could not switch the chunk",
                     message: e instanceof Error ? e.message : String(e),

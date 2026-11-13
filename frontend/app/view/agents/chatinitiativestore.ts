@@ -40,6 +40,7 @@ import {
     withMessageCard,
     withoutKey,
     withoutSwitchLine,
+    withSwitchHeld,
     withSwitchLine,
     type CardsMap,
     type DraftsMap,
@@ -227,6 +228,22 @@ const switchOf = atomFamily((agentId: string) =>
 /** The chunk the agent's waiting switched line names (`n` its place in the plan from 1), or null when none waits. */
 export function usePendingSwitch(agentId: string): { n: number; label: string } | null {
     return useAtomValue(switchOf(agentId));
+}
+
+// the agents whose `go on with:` chip is switching the chunk and then sending: the box shows the chip's text and sends it a
+// render after the switch queued its line, so the waiting line is hidden meanwhile (spec section 9: it never shows there)
+const switchHeldAtom = atom<readonly string[]>([]) as PrimitiveAtom<readonly string[]>;
+const heldOf = atomFamily((agentId: string) => atom((get) => get(switchHeldAtom).includes(agentId)));
+
+/** Hides (`true`) or shows again (`false`) the agent's waiting line. The `go on with:` click holds it for the switch and the
+ *  send; the box lets it go once it tried the send, and so does a click whose switch or send did not go through. */
+export function holdSwitchLine(agentId: string, held: boolean): void {
+    globalStore.set(switchHeldAtom, withSwitchHeld(globalStore.get(switchHeldAtom), agentId, held));
+}
+
+/** Whether the agent's waiting line is held back (see holdSwitchLine). */
+export function useSwitchLineHeld(agentId: string): boolean {
+    return useAtomValue(heldOf(agentId));
 }
 
 // ---- the write ----
