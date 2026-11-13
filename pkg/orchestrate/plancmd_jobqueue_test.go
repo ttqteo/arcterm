@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/jobpeaks"
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 	"github.com/wavetermdev/waveterm/pkg/memgate"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -117,6 +118,42 @@ func TestPlanCommandQueues(t *testing.T) {
 		case <-done:
 		case <-time.After(30 * time.Second):
 			t.Fatal("did not finish")
+		}
+	})
+
+	// the engine's steps are not measured; what agents measured for the same pattern in the project can only raise them
+	t.Run("a known step claims the measured peak when it is above the table's", func(t *testing.T) {
+		for _, c := range []struct {
+			name     string
+			peak     uint64
+			want     uint64
+			measured bool
+		}{
+			{"measured above the table", 4 * testGB, 4*testGB + 4*testGB/5, true},
+			{"measured below the table", testGB, 3 * testGB, false},
+		} {
+			t.Run(c.name, func(t *testing.T) {
+				q, release := useJobQueue(t)
+				dir := t.TempDir() // no repository: the project is the folder itself
+				store := jobpeaks.Open("", "", nil)
+				store.Record("task check:ts", dir, true, c.peak)
+				prev := jobpeaks.Default
+				jobpeaks.Default = store
+				t.Cleanup(func() { jobpeaks.Default = prev })
+
+				ctx := jobqueue.WithSource(context.Background(), jobqueue.Source{Label: "Check"})
+				done := make(chan planResult, 1)
+				go func() {
+					out, err := execPlanCommandEnv(ctx, dir, "false && task check:ts; echo checked", nil, time.Minute, nil)
+					done <- planResult{out, err}
+				}()
+				job := queuedJob(t, q)
+				if job.Name != "task check:ts" || job.Bytes != c.want || job.Basis.Measured != c.measured {
+					t.Fatalf("queued job = %+v, want %d bytes, measured %v", job, c.want, c.measured)
+				}
+				release()
+				expectOutput(t, done, "checked")
+			})
 		}
 	})
 

@@ -76,6 +76,24 @@ func TestEstimateMaxOfLastFiveTimesTwelveTenths(t *testing.T) {
 	}
 }
 
+// a peak under a tenth of the table's figure is a command that never ran: a skipped task check:ts measured 14 MB
+func TestRanIsATenthOfTheTableFigure(t *testing.T) {
+	for _, c := range []struct {
+		peak, table uint64
+		want        bool
+	}{
+		{14 * mb, 3 * gb, false},
+		{3*gb/10 - 1, 3 * gb, false},
+		{3 * gb / 10, 3 * gb, true},
+		{2 * gb, 3 * gb, true},
+		{5 * gb, 3 * gb, true},
+	} {
+		if got := Ran(c.peak, c.table); got != c.want {
+			t.Errorf("Ran(%d, %d) = %v, want %v", c.peak, c.table, got, c.want)
+		}
+	}
+}
+
 func TestEstimateOneColdRunAmongFourWarmOnes(t *testing.T) {
 	e := newEnv(t)
 	s := e.open()

@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) An engine step claims the measured peak when it is higher: with `scripts/cdp/final-verify.mjs` measured
+  at 4.8 GB in `jobpeaks.json` (data dir), start a run on this repo → its Final row in the Jobs popover reads about
+  5.7 GB "measured", not "3 GB est.", and its tooltip lists the agents' runs. Its Verify still reads 2.5 GB est. (the
+  agents' 0.9 GB never lowers it). Then skip a `task check:ts` a Claude agent queued with `run_in_background` (its bash
+  waits in `wsh jobslot --hold-parent`, so the meter sees it) from the popover → `jobpeaks.json` gets no new
+  peak for it (`pkg/orchestrate/plancmd.go` engineStepSize, `jobpeaks.Ran`).
 - [ ] (arcterm) Chat box background line, the presses its scenario (`chat-bg-tasks`) leaves out: have a Claude agent
   start a background `sleep 600` and a background subagent, open the line's list → Stop on the shell row ends it and
   the row leaves at once (the line folds away when nothing is left); a press on the subagent row opens its

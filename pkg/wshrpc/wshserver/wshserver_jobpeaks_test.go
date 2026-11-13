@@ -150,7 +150,13 @@ func TestJobPeaksOnDoneRecordsTheMeasuredCommands(t *testing.T) {
 	block := blockWithCwd(t, main)
 	onDone := JobMeterConfig().OnDone
 
-	// a command in the table: kept whatever its size, under its table name and the block's project
+	// a command in the table that never ran (skipped, refused): its bash alone, under a tenth of the table's 3 GB
+	onDone(jobmeter.Done{BlockId: block, Command: "task check:ts", Peak: 14 * testGB / 1024})
+	if got, basis := store.Estimate("task check:ts", main, 3*testGB); got != 3*testGB || basis.Measured {
+		t.Fatalf("estimate after a run that never ran = %d %+v, want the table's figure", got, basis)
+	}
+
+	// one that ran: kept under its table name and the block's project, however light next to the table
 	onDone(jobmeter.Done{BlockId: block, Command: "task check:ts", Peak: 400 * testGB / 1024})
 	got, basis := store.Estimate("task check:ts", main, 3*testGB)
 	if want := 400*testGB/1024 + 400*testGB/1024/5; got != want || !basis.Measured || basis.Elsewhere {

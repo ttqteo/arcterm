@@ -68,13 +68,17 @@ func newMeterAgents(now func() time.Time) func(t memusage.Table) []jobmeter.Agen
 }
 
 // recordJobPeak is what the meter calls when a command it measured has ended. The pattern is the command's own, as
-// memgate takes it; a compound command that did more than one thing has none, and nothing is recorded.
+// memgate takes it; a compound command that did more than one thing has none, and nothing is recorded. Nor is a
+// known command whose peak says it never ran (jobpeaks.Ran).
 func recordJobPeak(d jobmeter.Done) {
 	if jobpeaks.Default == nil {
 		return
 	}
 	pattern, known, ok := memgate.Pattern(d.Command)
 	if !ok {
+		return
+	}
+	if job, _ := memgate.Classify(d.Command); known && !jobpeaks.Ran(d.Peak, job.Bytes) {
 		return
 	}
 	jobpeaks.Default.Record(pattern, jobProject(context.Background(), d.BlockId), known, d.Peak)
