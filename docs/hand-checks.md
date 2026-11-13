@@ -12,6 +12,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   agents' 0.9 GB never lowers it). Then skip a `task check:ts` a Claude agent queued with `run_in_background` (its bash
   waits in `wsh jobslot --hold-parent`, so the meter sees it) from the popover → `jobpeaks.json` gets no new
   peak for it (`pkg/orchestrate/plancmd.go` engineStepSize, `jobpeaks.Ran`).
+- [ ] (arcterm) Canvas Copy screenshot: open a canvas (an agent's canvas pane, and Agent → Canvas gallery → a canvas),
+  press Copy above a board's right edge → "Copied" for a moment, and pasting into Paint or a chat gives the board as
+  shown, without the Copy button or the pane around it; under All each tile has its own. Check it in the packaged app
+  too (clipboard image writes need a secure origin), and on a Mac (Screen Recording permission). `canvaspane.tsx`.
 - [ ] (arcterm) Chat box background line, the presses its scenario (`chat-bg-tasks`) leaves out: have a Claude agent
   start a background `sleep 600` and a background subagent, open the line's list → Stop on the shell row ends it and
   the row leaves at once (the line folds away when nothing is left); a press on the subagent row opens its

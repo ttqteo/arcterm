@@ -29,6 +29,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The chat box says when the agent has work running in the background: a line at its top names the newest shell
   command, Monitor or background subagent and how many more; press it to list them all, open a task's output or a
   subagent's conversation, and stop a task.
+- Every board in a canvas has a Copy button above its right edge: it puts a screenshot of the board, as it shows on
+  screen, on the clipboard, ready to paste into a chat or a doc. In an agent's canvas and in the Canvas gallery.
 
 ### Changed
 
