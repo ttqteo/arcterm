@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 )
@@ -441,6 +442,73 @@ func TestSyncPushRaceRetries(t *testing.T) {
 	}
 	if !vaultFileExists(a, "memory/b2.md") {
 		t.Fatal("the retry must merge b's racing push")
+	}
+	assertPublished(t, a, remote)
+}
+
+// lockFreeWithin reports whether LockRoot(root) can be taken within d, releasing it at once.
+func lockFreeWithin(root string, d time.Duration) bool {
+	got := make(chan struct{})
+	go func() {
+		unlock := LockRoot(root)
+		close(got)
+		unlock()
+	}()
+	select {
+	case <-got:
+		return true
+	case <-time.After(d):
+		return false // the goroutine takes and drops the lock once Sync lets go of it
+	}
+}
+
+// A writer (an effort save) must not wait on the network: the vault lock is free while Sync
+// fetches and pushes, held only for its commit and merge.
+func TestSyncLeavesTheVaultLockFreeDuringFetchAndPush(t *testing.T) {
+	a, _, _ := syncedPair(t, "memory/n.md", []byte("base\n"))
+	writeVaultFile(t, a, "memory/a2.md", []byte("a2\n"))
+	var fetchFree, pushFree bool
+	beforeFetch = func() { fetchFree = lockFreeWithin(a.Root, 2*time.Second) }
+	beforePush = func() { pushFree = lockFreeWithin(a.Root, 2*time.Second) }
+	t.Cleanup(func() { beforeFetch, beforePush = nil, nil })
+
+	if res := mustSync(t, a); !res.Pushed {
+		t.Fatal("the sync must push a2")
+	}
+	if !fetchFree || !pushFree {
+		t.Fatalf("vault lock held over the network: free during fetch=%v, push=%v", fetchFree, pushFree)
+	}
+}
+
+// A write that lands while Sync fetches is committed before the merge (which needs a clean tree,
+// here one the incoming change touches) and goes out with the same push.
+func TestSyncCommitsAWriteMadeDuringTheFetch(t *testing.T) {
+	a, b, remote := syncedPair(t, "memory/n.md", []byte("base\n"))
+	writeVaultFile(t, b, "memory/n.md", []byte("edited on b\n"))
+	mustSync(t, b)
+
+	wrote := false
+	beforeFetch = func() {
+		if wrote {
+			return
+		}
+		wrote = true
+		unlock := LockRoot(a.Root) // as an effort-store write does
+		writeVaultFile(t, a, "memory/during.md", []byte("written mid-fetch\n"))
+		unlock()
+	}
+	t.Cleanup(func() { beforeFetch = nil })
+
+	res := mustSync(t, a)
+	if !wrote || !res.Pulled || !res.Pushed {
+		t.Fatalf("wrote=%v pulled=%v pushed=%v", wrote, res.Pulled, res.Pushed)
+	}
+	if got := string(readVaultFile(t, a, "memory/n.md")); got != "edited on b\n" {
+		t.Fatalf("b's edit not merged: %q", got)
+	}
+	out, err := runGitErr(context.Background(), remote, "show", "main:memory/during.md")
+	if err != nil || out != "written mid-fetch\n" {
+		t.Fatalf("the mid-fetch write was not pushed: %q, %v", out, err)
 	}
 	assertPublished(t, a, remote)
 }

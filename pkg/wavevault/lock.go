@@ -11,10 +11,13 @@ import (
 )
 
 // OpenVault builds a fresh *Vault per call, so Vault.mu cannot serialize across callers; rootLocks
-// holds one mutex per vault root for Sync, Commit and effort-store writes.
+// holds one mutex per vault root for the work tree and index: Sync's commit and merge, Commit and
+// effort-store writes. syncLocks holds a second one per root that only Sync takes, for its whole
+// run, so two Syncs never fetch or push at once while writers wait only on the local git steps.
 var (
 	rootLocksMu sync.Mutex
 	rootLocks   = map[string]*sync.Mutex{}
+	syncLocks   = map[string]*sync.Mutex{}
 )
 
 func lockKey(root string) string {
@@ -27,12 +30,21 @@ func lockKey(root string) string {
 
 // LockRoot takes the package-level lock for a vault root and returns its release. Not reentrant.
 func LockRoot(root string) (unlock func()) {
+	return lockIn(rootLocks, root)
+}
+
+// lockSync takes the per-root lock that serializes Syncs; it is never held by a writer.
+func lockSync(root string) (unlock func()) {
+	return lockIn(syncLocks, root)
+}
+
+func lockIn(locks map[string]*sync.Mutex, root string) (unlock func()) {
 	key := lockKey(root)
 	rootLocksMu.Lock()
-	m, ok := rootLocks[key]
+	m, ok := locks[key]
 	if !ok {
 		m = &sync.Mutex{}
-		rootLocks[key] = m
+		locks[key] = m
 	}
 	rootLocksMu.Unlock()
 	m.Lock()
