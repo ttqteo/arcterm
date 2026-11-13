@@ -114,9 +114,9 @@ const scheduleCleanupTimeout = 10 * time.Second
 // scheduleTickTimeout bounds one detached tick. It exists to stop a wedged tick living forever, not to pace a
 // healthy one, so it is the healthy worst case: a tick that reaches it mid-batch fails its commit, and that rolls
 // back every worker the batch started. A tick dispatches up to MaxParallelism tasks in sequence, and each spends up
-// to a spawn budget on its tree, SetupTimeout on a new tree's Setup and another spawn budget on the spawn; the rest
-// is the merge before the tick, the judging sessions, the final stage and the commit.
-const scheduleTickTimeout = MaxParallelism*(2*jarvis.RunWorkerSpawnTimeout+SetupTimeout) + 10*time.Minute
+// to a spawn budget on its tree, SetupSlotWait and SetupTimeout on a new tree's Setup and another spawn budget on the
+// spawn; the rest is the merge before the tick, the judging sessions, the final stage and the commit.
+const scheduleTickTimeout = MaxParallelism*(2*jarvis.RunWorkerSpawnTimeout+SetupSlotWait+SetupTimeout) + 10*time.Minute
 
 // spawnBudget hands each step of a tick its own jarvis.RunWorkerSpawnTimeout. One deadline for the whole tick
 // is spent by the first slow dispatch (a large checkout, a long Setup), and every task after it fails on arrival.
@@ -822,13 +822,21 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask, r
 				// no progress sink: Setup runs under the dag mutation lock, so nothing can read a
 				// partial tail while it holds the lock anyway
 				setupCtx := jobqueue.WithSource(context.WithoutCancel(ctx), jobqueue.Source{RunId: owner.ID, Label: taskStepLabel("Setup", g, taskID)})
-				// a pause cuts Setup off at once (PauseDag): it holds this lock, which the pause waits on
-				setupCtx, endSetup := dagSetupCtx(setupCtx, g.OID)
+				// a pause cuts Setup off at once (PauseDag): it holds this lock, which the pause waits on. So does
+				// a wait for a heavy-job slot, which is why that wait is bounded
+				setupCtx, endSetup := dagSetupCtx(withSlotWait(setupCtx, SetupSlotWait), g.OID)
 				var serr error
 				_, notLinked, serr = PrepareTree(withRunCmdOwner(setupCtx, owner.ID, PlanCmd_Setup, ""), wt, g.Setup)
 				setupMs = time.Since(setupStart).Milliseconds()
 				pausedMidSetup := setupCut(setupCtx)
 				endSetup()
+				if errors.Is(serr, errSlotWaitOver) {
+					// Setup never started, so the tree is as clean as it was, and the next tick sets it up
+					// (treeSetUp). The task stays pending and untried; the tasks after it would wait on the same
+					// queue, so none starts this tick either, and the lock goes back to the other lanes.
+					log.Printf("schedule dag %s task %s: Setup waited %s for a heavy-job slot; the next tick queues it again", g.OID, taskID, SetupSlotWait)
+					break
+				}
 				if serr != nil {
 					// only a new tree is set up, so a retry must not reuse this half-prepared one. The branch
 					// stays: it holds the lane's earlier commits, and the retry checks it out again.

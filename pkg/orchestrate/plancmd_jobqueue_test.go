@@ -5,6 +5,7 @@ package orchestrate
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -145,6 +146,52 @@ func TestPlanCommandQueues(t *testing.T) {
 		time.Sleep(1800 * time.Millisecond)
 		release()
 		expectOutput(t, done, "ok")
+	})
+
+	t.Run("a bounded wait gives up with errSlotWaitOver and leaves the queue", func(t *testing.T) {
+		q, _ := useJobQueue(t)
+		ctx := withSlotWait(jobqueue.WithSource(context.Background(), jobqueue.Source{Label: "Setup", Always: true}), 200*time.Millisecond)
+		done := runPlanAsync(ctx, t, "echo never")
+		queuedJob(t, q)
+		select {
+		case r := <-done:
+			if !errors.Is(r.err, errSlotWaitOver) || r.out != "" {
+				t.Fatalf("out = %q, err = %v, want errSlotWaitOver and no output", r.out, r.err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the bounded wait did not give up")
+		}
+		for _, j := range q.Snapshot().Jobs {
+			if !j.Running {
+				t.Fatalf("job still queued: %+v", j)
+			}
+		}
+	})
+
+	t.Run("the bound is on the wait, not on the command it admits", func(t *testing.T) {
+		q, release := useJobQueue(t)
+		ctx := withSlotWait(jobqueue.WithSource(context.Background(), jobqueue.Source{Label: "Setup", Always: true}), 1500*time.Millisecond)
+		done := runPlanAsync(ctx, t, "sleep 2; echo ran")
+		queuedJob(t, q)
+		release()
+		// runs past the bound: the command's own timeout is the minute runPlanAsync gives it
+		expectOutput(t, done, "ran")
+	})
+
+	t.Run("a cancel during a bounded wait is the cancel, not errSlotWaitOver", func(t *testing.T) {
+		q, _ := useJobQueue(t)
+		ctx, cancel := context.WithCancel(jobqueue.WithSource(context.Background(), jobqueue.Source{Label: "Setup", Always: true}))
+		done := runPlanAsync(withSlotWait(ctx, time.Minute), t, "echo never")
+		queuedJob(t, q)
+		cancel()
+		select {
+		case r := <-done:
+			if r.err == nil || errors.Is(r.err, errSlotWaitOver) {
+				t.Fatalf("err = %v, want the cancel's", r.err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("did not return")
+		}
 	})
 
 	t.Run("a cancelled ctx leaves the queue", func(t *testing.T) {

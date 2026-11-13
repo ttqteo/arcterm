@@ -28,6 +28,10 @@ const (
 	// SetupTimeout bounds a plan's Setup command. It runs under the dag mutation lock, so Setup is for
 	// preparing a worktree (junctions, a config file), not for an install.
 	SetupTimeout = 2 * time.Minute
+	// SetupSlotWait bounds how long a lane's Setup waits for a heavy-job slot before it starts. The wait holds the dag
+	// lock, so every other lane's merge and dispatch waits with it: past this the task stays pending and a later tick
+	// queues it again (errSlotWaitOver). Time queued still never counts against SetupTimeout.
+	SetupSlotWait = 2 * time.Minute
 	// VerifyTimeout bounds a plan's Verify command at a merge point.
 	VerifyTimeout = 20 * time.Minute
 	// VerifyProgressInterval is how often a running Verify, or a final stage command, publishes its output
@@ -237,7 +241,31 @@ func holdPlanSlot(ctx context.Context, command string) (func(), error) {
 			bytes = src.Peak
 		}
 	}
-	return jobqueue.Hold(ctx, jobqueue.Request{Name: name, Bytes: bytes, Engine: true, Source: src})
+	req := jobqueue.Request{Name: name, Bytes: bytes, Engine: true, Source: src}
+	limit, _ := ctx.Value(slotWaitKey{}).(time.Duration)
+	if limit <= 0 {
+		return jobqueue.Hold(ctx, req)
+	}
+	// the limit bounds the wait alone: a granted slot is held until release, whatever this ctx does after
+	waitCtx, cancel := context.WithTimeoutCause(ctx, limit, errSlotWaitOver)
+	defer cancel()
+	release, err := jobqueue.Hold(waitCtx, req)
+	if err != nil && ctx.Err() == nil && errors.Is(context.Cause(waitCtx), errSlotWaitOver) {
+		return nil, errSlotWaitOver
+	}
+	return release, err
+}
+
+// errSlotWaitOver is what a plan command returns when its bounded wait for a heavy-job slot (withSlotWait) ran out
+// before it started: it never ran, so it says nothing about the command.
+var errSlotWaitOver = errors.New("no heavy-job slot came free in time")
+
+type slotWaitKey struct{}
+
+// withSlotWait bounds how long a plan command run under ctx waits for a heavy-job slot; past it the command returns
+// errSlotWaitOver without running.
+func withSlotWait(ctx context.Context, limit time.Duration) context.Context {
+	return context.WithValue(ctx, slotWaitKey{}, limit)
 }
 
 // taskStepLabel names an engine step for the cockpit's queue: "Verify · Build the chip", the task's label, or its id
