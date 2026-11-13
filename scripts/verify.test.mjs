@@ -65,6 +65,11 @@ describe("needsGoGraph", () => {
         expect(needsGoGraph(["db/migrations-wstore/000001_init.up.sql"])).toBe(true);
         expect(needsGoGraph(["pkg/util/a.go"])).toBe(true);
     });
+
+    it("lists it for a mod or skill file the claude and skills packages embed", () => {
+        expect(needsGoGraph(["claude/arc-mod/hooks/register.ts"])).toBe(true);
+        expect(needsGoGraph(["skills/council/SKILL.md"])).toBe(true);
+    });
 });
 
 describe("readChangedFile", () => {

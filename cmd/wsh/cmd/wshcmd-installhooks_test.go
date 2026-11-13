@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -774,7 +775,13 @@ func TestManagedHooksPermissionRequestAsync(t *testing.T) {
 	if !managedHookAsync("PermissionRequest", "", "agent-hook") {
 		t.Fatal("managedHookAsync does not report the PermissionRequest hook as async")
 	}
-	merged := mergeAgentHooks(map[string]any{}, testWsh)
+	// a path this OS reads as one: on a Mac testWsh's backslashes are no separators, so the second merge would not
+	// know its own hook
+	wsh := testWsh
+	if runtime.GOOS != "windows" {
+		wsh = "/h/.arc/bin/wsh"
+	}
+	merged := mergeAgentHooks(map[string]any{}, wsh)
 	groups, _ := merged["hooks"].(map[string]any)["PermissionRequest"].([]any)
 	if len(groups) != 1 {
 		t.Fatalf("PermissionRequest groups written = %d, want 1", len(groups))
@@ -787,7 +794,7 @@ func TestManagedHooksPermissionRequestAsync(t *testing.T) {
 		t.Fatalf("the written PermissionRequest command = %v", hook["command"])
 	}
 	// and a second merge does not stack a copy
-	again := mergeAgentHooks(merged, testWsh)
+	again := mergeAgentHooks(merged, wsh)
 	if n := len(again["hooks"].(map[string]any)["PermissionRequest"].([]any)); n != 1 {
 		t.Fatalf("PermissionRequest groups after two merges = %d, want 1", n)
 	}
@@ -954,9 +961,13 @@ func TestInstallClaudeMod_writesTheModWithTheWshPath(t *testing.T) {
 		}
 	}
 	for _, d := range []string{dir, viewDir, skimDir} {
-		_ = filepath.WalkDir(d, func(p string, d os.DirEntry, err error) error {
-			if err == nil && strings.HasSuffix(p, ".test.ts") {
-				t.Fatalf("a test file was installed: %s", p)
+		_ = filepath.WalkDir(d, func(p string, e os.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			rel := filepath.ToSlash(strings.TrimPrefix(p, d+string(filepath.Separator)))
+			if strings.HasSuffix(p, ".test.ts") || strings.HasPrefix(rel, "testdata") || strings.HasPrefix(rel, ".claude-plugin/types") {
+				t.Fatalf("a test, fixture or engine-written type was installed: %s", p)
 			}
 			return nil
 		})

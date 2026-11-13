@@ -18,7 +18,9 @@ import { fileURLToPath } from "node:url";
 const FRONTEND_CONFIG = new Set(["package.json", "package-lock.json", "vitest.config.ts", "tsconfig.json"]);
 const JS_FILE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 // the module's Go packages live under these; a path elsewhere cannot change what a Go test sees
-const GO_DIRS = /^(pkg|cmd|db)\//;
+// claude/ and skills/ hold Go packages that embed the mods and skills beside them, so a .ts or .md change there
+// reaches wsh's and agentsync's tests
+const GO_DIRS = /^(pkg|cmd|db|claude|skills)\//;
 // a package with at least this many top-level tests is split across processes: here those take 2.6 to 110 s, and
 // below it all but one run in seconds
 export const SHARD_MIN_TESTS = 100;

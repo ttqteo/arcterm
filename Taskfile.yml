@@ -19,7 +19,6 @@ tasks:
         deps:
             - npm:install
             - sync:piartifacts
-            - sync:claudemod
             - tauri:sync-version
             - build:backend:devhost
             - build:backend:devhost:full
@@ -33,7 +32,6 @@ tasks:
         deps:
             - npm:install
             - sync:piartifacts
-            - sync:claudemod
             - build:backend:devhost
             - build:backend:devhost:full
         env:
@@ -255,6 +253,10 @@ tasks:
         sources:
             - "cmd/wsh/**/*.go"
             - "pkg/**/*.go"
+            - "claude/*.go"
+            - "claude/arc-mod/**/*"
+            - "claude/arc-view-mod/**/*"
+            - "claude/skim-mod/**/*"
             - package.json
         generates:
             - "dist/bin/wsh*"
@@ -336,28 +338,9 @@ tasks:
             - cmd/wsh/cmd/pi-simplify-gate-extension.ts
             - cmd/wsh/cmd/pi-simplify-gate-core-extension.ts
 
-    sync:claudemod:
-        desc: Copy the authored Claude mods (claude/arc-mod, claude/arc-view-mod, claude/skim-mod) into their go:embed locations cmd/wsh/cmd/claude-mod, claude-view-mod and claude-skim-mod (generated, never hand-edited), without their tests, test fixtures (testdata/) or engine-written types.
-        # once: tauri:dev and dev:browser reach it three ways at the same time (directly, and through the wavesrv and wsh
-        # builds), and two copies racing left cmd/wsh/cmd/claude-mod/arc-mod nested inside the one before. Copying the
-        # contents (src/.) into a fresh directory keeps a copy from nesting even so.
-        run: once
-        cmds:
-            - for: [{ src: arc-mod, dst: claude-mod }, { src: arc-view-mod, dst: claude-view-mod }, { src: skim-mod, dst: claude-skim-mod }]
-              cmd: rm -rf cmd/wsh/cmd/{{.ITEM.dst}} && mkdir -p cmd/wsh/cmd/{{.ITEM.dst}} && cp -r claude/{{.ITEM.src}}/. cmd/wsh/cmd/{{.ITEM.dst}}/ && rm -rf cmd/wsh/cmd/{{.ITEM.dst}}/.claude-plugin/types cmd/wsh/cmd/{{.ITEM.dst}}/testdata && rm -f cmd/wsh/cmd/{{.ITEM.dst}}/hooks/*.test.ts
-        sources:
-            - claude/arc-mod/**/*
-            - claude/arc-view-mod/**/*
-            - claude/skim-mod/**/*
-        generates:
-            - cmd/wsh/cmd/claude-mod/**/*
-            - cmd/wsh/cmd/claude-view-mod/**/*
-            - cmd/wsh/cmd/claude-skim-mod/**/*
-
     build:server:internal:
         deps:
             - sync:piartifacts
-            - sync:claudemod
         requires:
             vars:
                 - ARCHS
@@ -388,6 +371,10 @@ tasks:
         sources:
             - "cmd/wsh/**/*.go"
             - "pkg/**/*.go"
+            - "claude/*.go"
+            - "claude/arc-mod/**/*"
+            - "claude/arc-view-mod/**/*"
+            - "claude/skim-mod/**/*"
             - package.json
         generates:
             - "dist/bin/wsh*"
@@ -395,7 +382,6 @@ tasks:
     build:wsh:internal:
         deps:
             - sync:piartifacts
-            - sync:claudemod
         vars:
             EXT:
                 sh: echo {{if eq .GOOS "windows"}}.exe{{end}}
@@ -474,12 +460,11 @@ tasks:
     go:mod:tidy:
         desc: Runs `go mod tidy`
         internal: true
-        # tidy loads every package, cmd/wsh/cmd's go:embed of the mod and pi copies included, and sync:claudemod empties
-        # those folders (rm -rf, then copies) while it runs: on a cold dev build the two ran side by side and tidy failed
-        # "no matching versions for query latest" (exit 201). The copies first, so tidy only ever sees them whole.
+        # tidy loads every package, cmd/wsh/cmd's go:embed of the pi copies included: the copies first, so tidy only ever
+        # sees them whole. (The Claude mods were copies too until package claude embedded them in place: emptied and
+        # refilled while tidy ran, they failed a cold dev build "no matching versions for query latest", exit 201.)
         deps:
             - sync:piartifacts
-            - sync:claudemod
         generates:
             - go.sum
         sources:

@@ -454,7 +454,9 @@ None of the fixes has run live; they are unit-tested (`TestRunFinishedWakeNamesT
 branch's already, but the check matched by name, so `retryHeldLands` waited on edits nothing would remove, and the
 human set them aside by hand. **Fixed:** `unstagedOverlap` (`land.go`) calls an edit that `hash-object`s to the
 branch's blob a copy, not an overlap; the land puts copies back (`clearEditedCopies`, under the checkout claim) and
-merges. A differing edit still holds. Unit-tested in `TestLandKeepsUncommittedEdits`; not yet run live.
+merges. A differing edit still holds. Unit-tested in `TestLandKeepsUncommittedEdits`; not yet run live. **Since
+2026-11-13 the cause is gone:** wsh embeds the mods straight from `claude/` (`claude/mods.go`), so no build writes a
+copy; the copy check stays for any other generated file.
 
 ## Incident — run 1cad2fd0's lead hung in one tool call and held every wake (2026-11-12)
 

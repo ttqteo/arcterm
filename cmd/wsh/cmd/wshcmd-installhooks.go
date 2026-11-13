@@ -6,7 +6,7 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"embed"
+	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	claudemods "github.com/wavetermdev/waveterm/claude"
 	"github.com/wavetermdev/waveterm/pkg/stablewsh"
 )
 
@@ -151,13 +152,14 @@ func quotePath(p string) string {
 	return `"` + p + `"`
 }
 
-//go:embed all:claude-mod all:claude-view-mod all:claude-skim-mod
-var claudeModFS embed.FS
-
-// claudeMods are the embedded mods' directories, written by `task sync:claudemod` from claude/arc-mod,
-// claude/arc-view-mod and claude/skim-mod. The view mod is its own plugin because claude never runs a plugin's
-// render hook on a transcript row that plugin raised; skim is its own because it is also published alone.
-var claudeMods = []string{"claude-mod", "claude-view-mod", "claude-skim-mod"}
+// claudeMods are the mods wsh installs: each one's folder in claude/ (embedded by package claude) and the folder
+// under ~/.arc it goes to. The view mod is its own plugin because claude never runs a plugin's render hook on a
+// transcript row that plugin raised; skim is its own because it is also published alone.
+var claudeMods = []struct{ src, dir string }{
+	{"arc-mod", "claude-mod"},
+	{"arc-view-mod", "claude-view-mod"},
+	{"skim-mod", "claude-skim-mod"},
+}
 
 const claudePluginDirsVar = "CLAUDE_CODE_PLUGIN_DIRS"
 
@@ -165,8 +167,8 @@ const claudePluginDirsVar = "CLAUDE_CODE_PLUGIN_DIRS"
 // like stablewsh.Path, so the CLAUDE_CODE_PLUGIN_DIRS entries naming them never go stale.
 func claudeModDirs(home string) []string {
 	dirs := make([]string, len(claudeMods))
-	for i, name := range claudeMods {
-		dirs[i] = filepath.Join(home, ".arc", name)
+	for i, mod := range claudeMods {
+		dirs[i] = filepath.Join(home, ".arc", mod.dir)
 	}
 	return dirs
 }
@@ -177,18 +179,21 @@ func claudeModDirs(home string) []string {
 // rewriting on every arcterm launch would reload it everywhere.
 func installClaudeMod(home, wshExe string) error {
 	for i, dir := range claudeModDirs(home) {
-		root := claudeMods[i]
+		root := claudeMods[i].src
 		var shipped []string
-		err := fs.WalkDir(claudeModFS, root, func(p string, d fs.DirEntry, err error) error {
+		err := fs.WalkDir(claudemods.FS, root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
 				return err
 			}
-			body, err := claudeModFS.ReadFile(p)
+			rel := strings.TrimPrefix(p, root+"/")
+			if !claudemods.Shipped(rel) {
+				return nil
+			}
+			body, err := claudemods.FS.ReadFile(p)
 			if err != nil {
 				return fmt.Errorf("reading embedded %s: %w", p, err)
 			}
 			want := strings.ReplaceAll(string(body), `"__WSH_PATH__"`, jsonString(wshExe))
-			rel := strings.TrimPrefix(p, root+"/")
 			shipped = append(shipped, rel)
 			return writeFileIfChanged(filepath.Join(dir, filepath.FromSlash(rel)), want)
 		})

@@ -66,7 +66,8 @@ func main() {
     return stubExe;
 }
 
-// the same set task sync:claudemod drops: tests and the engine-written types
+// the same set wsh leaves out when it installs the mod (claude.Shipped in claude/mods.go): tests and the
+// engine-written types
 function copyMod(modDst, stubExe) {
     cpSync(modSrc, modDst, {
         recursive: true,
