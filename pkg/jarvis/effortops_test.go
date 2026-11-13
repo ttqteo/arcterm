@@ -352,6 +352,73 @@ func TestApplyOpsAttachWorkConflictOtherChunk(t *testing.T) {
 	expectErrCode(t, err, "EC-REF-ALREADY-ATTACHED")
 }
 
+// A workref left on a settled chunk (done or skipped) is history, not a hold: the same agent or run
+// attaches to another chunk, and the settled chunks keep what they recorded.
+func TestApplyOpsAttachWorkAfterSettledChunk(t *testing.T) {
+	e := &waveobj.Effort{
+		Title: "t", Status: "active",
+		Chunks: []waveobj.EffortChunk{
+			{Label: "Shipped", Status: "done", UpdatedTs: effortNow, WorkRefs: []waveobj.ChunkWorkRef{
+				{Kind: "agent", ORef: "agent:tab-1", Ts: effortNow},
+				{Kind: "run", ORef: "run:r1", Ts: effortNow},
+			}},
+			{Label: "Dropped", Status: "skipped", UpdatedTs: effortNow, WorkRefs: []waveobj.ChunkWorkRef{
+				{Kind: "agent", ORef: "agent:tab-1", Ts: effortNow},
+			}},
+			{Label: "Next", Status: "pending", UpdatedTs: effortNow},
+		},
+	}
+	ops := []wshrpc.EffortOp{
+		{Op: "attachWork", Chunk: "Next", Kind: "agent", ORef: "agent:tab-1"},
+		{Op: "attachWork", Chunk: "Next", Kind: "run", ORef: "run:r1"},
+	}
+	for _, op := range ops {
+		if err := ApplyEffortOps(e, []wshrpc.EffortOp{op}, "", effortNow); err != nil {
+			t.Fatalf("attach %s after a settled chunk: %v", op.ORef, err)
+		}
+	}
+	if got := e.Chunks[2].WorkRefs; len(got) != 2 || got[0].ORef != "agent:tab-1" || got[1].ORef != "run:r1" {
+		t.Fatalf("Next workrefs: %+v", got)
+	}
+	if got := e.Chunks[0].WorkRefs; len(got) != 2 || got[0].ORef != "agent:tab-1" || got[1].ORef != "run:r1" {
+		t.Fatalf("done chunk lost its workrefs: %+v", got)
+	}
+	if got := e.Chunks[1].WorkRefs; len(got) != 1 || got[0].ORef != "agent:tab-1" {
+		t.Fatalf("skipped chunk lost its workref: %+v", got)
+	}
+}
+
+// A proposed chunk is not settled: a workref on one still blocks attaching elsewhere.
+func TestApplyOpsAttachWorkProposedCountsAsLive(t *testing.T) {
+	e := mkEffort()
+	e.Chunks = append(e.Chunks, waveobj.EffortChunk{Label: "Idea", Status: "proposed", UpdatedTs: effortNow, WorkRefs: []waveobj.ChunkWorkRef{
+		{Kind: "agent", ORef: "agent:tab-1", Ts: effortNow},
+	}})
+	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "attachWork", Chunk: "Phase 3", Kind: "agent", ORef: "agent:tab-1"}}, "", effortNow)
+	expectErrCode(t, err, "EC-REF-ALREADY-ATTACHED")
+}
+
+// Validation reads the state before any op in the batch applies, so [detachWork old, attachWork new] is
+// still refused while old is live: the client's chunk switch is two writes (spec §3), and a refused batch
+// leaves the effort as it was.
+func TestApplyOpsAttachWorkBatchStillSeesLiveChunk(t *testing.T) {
+	e := mkEffort()
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "attachWork", Chunk: "Phase 2", Kind: "agent", ORef: "agent:tab-1"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	err := ApplyEffortOps(e, []wshrpc.EffortOp{
+		{Op: "detachWork", Chunk: "Phase 2", ORef: "agent:tab-1"},
+		{Op: "attachWork", Chunk: "Phase 3", Kind: "agent", ORef: "agent:tab-1"},
+	}, "", effortNow)
+	expectErrCode(t, err, "EC-REF-ALREADY-ATTACHED")
+	if got := e.Chunks[1].WorkRefs; len(got) != 1 || got[0].ORef != "agent:tab-1" {
+		t.Fatalf("a refused batch must not detach: %+v", got)
+	}
+	if len(e.Chunks[2].WorkRefs) != 0 {
+		t.Fatalf("a refused batch must not attach: %+v", e.Chunks[2].WorkRefs)
+	}
+}
+
 func TestApplyOpsAttachWorkInvalidKind(t *testing.T) {
 	e := mkEffort()
 	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "attachWork", Chunk: "Phase 2", Kind: "bogus", ORef: "run:x"}}, "", effortNow)
