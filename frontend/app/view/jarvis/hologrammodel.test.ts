@@ -7,11 +7,13 @@ import {
     ASSEMBLE_PARTS,
     assembleReveal,
     easeMix,
+    HOLOGRAM_FAIL_WINDOW_MS,
     HOLOGRAM_IDLE_FPS,
     HOLOGRAM_LIVE_FPS,
     HOLOGRAM_SIZE_PX,
     hologramFps,
     hologramPose,
+    hologramRetry,
     hologramSize,
     petForm,
     stepMix,
@@ -129,5 +131,21 @@ describe("assembleReveal", () => {
 
     it("reads a clock that is not a number as not started", () => {
         expect(assembleReveal(Number.NaN, 0)).toBe(0);
+    });
+});
+
+describe("hologramRetry", () => {
+    it("tries the hologram again after a first and a second loss", () => {
+        const one = hologramRetry([], 1_000);
+        expect(one).toEqual({ fails: [1_000], retry: true });
+        const two = hologramRetry(one.fails, 10_000);
+        expect(two).toEqual({ fails: [1_000, 10_000], retry: true });
+    });
+    it("stops on the third loss inside the window, so a failing GPU cannot loop", () => {
+        expect(hologramRetry([1_000, 10_000], 20_000)).toEqual({ fails: [1_000, 10_000, 20_000], retry: false });
+    });
+    it("forgets losses older than the window, so a loss now and then always comes back", () => {
+        const now = 5_000 + HOLOGRAM_FAIL_WINDOW_MS;
+        expect(hologramRetry([1_000, 5_000], now)).toEqual({ fails: [now], retry: true });
     });
 });

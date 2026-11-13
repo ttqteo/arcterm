@@ -54383,6 +54383,100 @@ const jobqueueAgentTag = {
     },
 };
 
+// --- hologram-recovers: a lost WebGL context took the hologram away for good, leaving Sprout until the form was picked
+// again; every terminal's xterm holds a context too, and Chromium drops the oldest past its cap. The hologram now comes
+// back on a fresh canvas after HOLOGRAM_RETRY_MS, and gives up after HOLOGRAM_MAX_FAILS losses in a window. The losses
+// here are real ones, forced through WEBGL_lose_context on the hologram's own canvas.
+const HOLO_FORM_KEY = "jarvis.pet.form";
+const HOLO = `document.querySelector("[data-pet-hologram]")`;
+// the hologram's canvas loses its context; true when there was one to lose
+const holoLose = `(() => {
+    const c = ${HOLO}?.querySelector("canvas");
+    const gl = c && (c.getContext("webgl2") || c.getContext("webgl"));
+    const ext = gl?.getExtension("WEBGL_lose_context");
+    if (!ext) return false;
+    window.__holoLostCanvas = c;
+    ext.loseContext();
+    return true;
+})()`;
+// whether a hologram shows on a canvas other than the one that was lost, with a live context
+const holoBackFresh = `(() => {
+    const c = ${HOLO}?.querySelector("canvas");
+    if (!c || c === window.__holoLostCanvas) return false;
+    const gl = c.getContext("webgl2") || c.getContext("webgl");
+    return !!gl && !gl.isContextLost();
+})()`;
+
+const hologramRecovers = {
+    name: "hologram-recovers",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { prevForm: await h.ev(`localStorage.getItem(${JSON.stringify(HOLO_FORM_KEY)})`) };
+        try {
+            // the form is read once at boot (atomWithStorage getOnInit)
+            await h.ev(`localStorage.setItem(${JSON.stringify(HOLO_FORM_KEY)}, JSON.stringify("hologram"))`);
+            ctx.formSet = true;
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the hologram form set", false, ctx.arrangeError);
+            return steps;
+        }
+        await h.goto("agent");
+        // the startup loader draws Jarvis in the middle first; the corner hologram fades in once it is done
+        const shown = await polishWaitFor(h, `!!${HOLO}?.querySelector("canvas")`, 20_000);
+        await h.shot("cdp-shots/hologram-recovers-1-shown.png");
+        rec("1. with the hologram form picked, the hologram shows", shown, JSON.stringify({ shown }));
+        if (!shown) {
+            return steps;
+        }
+
+        // 2. a real context loss: Sprout stands in at once
+        const lost = await h.ev(holoLose);
+        const sprout = await polishWaitFor(h, `!${HOLO}`, 3000);
+        await h.shot("cdp-shots/hologram-recovers-2-sprout.png");
+        rec("2. its context lost, the hologram goes and Sprout stands in", lost && sprout, JSON.stringify({ lost, sprout }));
+
+        // 3. it comes back on a fresh canvas with a live context
+        const back = await polishWaitFor(h, holoBackFresh, 12_000);
+        await h.shot("cdp-shots/hologram-recovers-3-back.png");
+        rec("3. after the retry delay the hologram is back, on a fresh canvas with a live context", back, JSON.stringify({ back }));
+
+        // 4. a second loss inside the window still comes back; the third stops the retries, so Sprout stays
+        const lost2 = await h.ev(holoLose);
+        const back2 = lost2 && (await polishWaitFor(h, holoBackFresh, 12_000));
+        const lost3 = back2 && (await h.ev(holoLose));
+        const gone3 = lost3 && (await polishWaitFor(h, `!${HOLO}`, 3000));
+        // longer than the retry delay: it does not come back
+        await new Promise((r) => setTimeout(r, 8000));
+        const stayed = !(await h.ev(`!!${HOLO}`));
+        await h.shot("cdp-shots/hologram-recovers-4-gave-up.png");
+        rec(
+            "4. a second loss comes back too; the third within the window leaves Sprout for good, so a failing GPU cannot loop",
+            back2 && gone3 && stayed,
+            JSON.stringify({ lost2, back2, lost3, gone3, stayed })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        try {
+            if (ctx.formSet) {
+                await h.ev(restoreStorageKey(HOLO_FORM_KEY, ctx.prevForm));
+            }
+            await ahReload(h);
+        } catch (e) {
+            console.error(`hologram-recovers teardown: ${e?.message ?? e}`);
+        }
+    },
+};
+
 // --- jobqueue-run-tag: an engine step of a run (a task's merge Verify) waits in the job queue under no agent's block, so
 // it used to show nowhere in the Agent tree: the task's row read "verifying 2m" while its Verify had not started, and a
 // folded run said nothing. agent-tree-rail's fixture run (a lead, t-1 dispatched) carries it; its jobs are set through
@@ -70131,6 +70225,7 @@ export const SCENARIOS = [
     jobqueueChip,
     jobqueueAgentTag,
     jobqueueRunTag,
+    hologramRecovers,
     jobqueueMeasured,
     floatMini,
     floatNote,
