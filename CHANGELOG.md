@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The Jarvis hologram turns amber only while an agent is asking you something; gates, plans to review and runs to
+  land wait in Jarvis's badge and queue and leave it on its usual rings.
 - Hovering a queued plan in the Agent sidebar opens a card to its right: the plan's file name above its folder, the
   whole reason when it is blocked, the lead and workers it will run with, and when it was queued.
 - Every agent, run and worker row in the Agent sidebar ends with the same three columns, RAM · tokens · age, lined up

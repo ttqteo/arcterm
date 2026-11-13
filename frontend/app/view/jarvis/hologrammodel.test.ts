@@ -17,7 +17,7 @@ import {
     stepMix,
 } from "./hologrammodel";
 
-const calm = { waiting: 0, working: 0, speaking: false, peekOpen: false };
+const calm = { asking: 0, working: 0, speaking: false, peekOpen: false };
 
 describe("petForm", () => {
     it("keeps the two choices and turns anything else into Sprout", () => {
@@ -46,8 +46,8 @@ describe("hologramPose", () => {
         expect(hologramPose(calm)).toEqual({ sphere: 0, busy: false, quiet: true });
     });
 
-    it("turns to the neural sphere while something waits on you", () => {
-        expect(hologramPose({ ...calm, waiting: 1 })).toEqual({ sphere: 1, busy: false, quiet: false });
+    it("turns to the neural sphere while an agent asks you something", () => {
+        expect(hologramPose({ ...calm, asking: 1 })).toEqual({ sphere: 1, busy: false, quiet: false });
     });
 
     it("beats the HUD's core while agents work or Jarvis speaks, without leaving the HUD", () => {
@@ -56,7 +56,7 @@ describe("hologramPose", () => {
     });
 
     it("a question outranks work: the sphere shows, and the core still counts as busy", () => {
-        expect(hologramPose({ ...calm, waiting: 1, working: 3 })).toEqual({ sphere: 1, busy: true, quiet: false });
+        expect(hologramPose({ ...calm, asking: 1, working: 3 })).toEqual({ sphere: 1, busy: true, quiet: false });
     });
 
     it("is not faint while the peek is open", () => {
@@ -98,7 +98,7 @@ describe("hologramFps", () => {
         expect(hologramFps(pose, 0)).toBe(HOLOGRAM_IDLE_FPS);
         expect(hologramFps(pose, 0.4)).toBe(HOLOGRAM_LIVE_FPS);
         expect(hologramFps(hologramPose({ ...calm, working: 1 }), 0)).toBe(HOLOGRAM_LIVE_FPS);
-        expect(hologramFps(hologramPose({ ...calm, waiting: 1 }), 1)).toBe(HOLOGRAM_LIVE_FPS);
+        expect(hologramFps(hologramPose({ ...calm, asking: 1 }), 1)).toBe(HOLOGRAM_LIVE_FPS);
     });
 });
 
