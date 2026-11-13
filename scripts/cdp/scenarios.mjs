@@ -51593,7 +51593,8 @@ const RADAR_AUDIT_PANEL = `document.querySelector('[aria-label="Available routes
 // or row until ListHarnessesCommand answers; twice its client timeout (CATALOG_RPC_TIMEOUT_MS, harnessstore.ts)
 const RADAR_AUDIT_CATALOG_WAIT_MS = 60_000;
 const RADAR_AUDIT_CATALOG_UP = `${RADAR_AUDIT_PANEL}?.querySelector('[data-testid^="route-harness-"], [data-testid^="route-option-"]') != null`;
-const RADAR_CLASSIFY_INPUT = `${RADAR_AUDIT_ROW}?.querySelector('input[type="text"]')`;
+// the classifier is its own row under the audit route's (backgroundai.tsx)
+const RADAR_CLASSIFY_INPUT = `${RADAR_AUDIT_PANE}?.querySelector('[data-setting-row="headless.radarclassify"] input[type="text"]')`;
 const radarAuditFace = (h) => h.ev(`(${RADAR_AUDIT_TRIGGER}?.textContent || "").trim()`);
 const radarClassifyField = (h) =>
     h.ev(`(() => { const i = ${RADAR_CLASSIFY_INPUT}; return i ? { value: i.value, placeholder: i.placeholder } : null; })()`);
@@ -51605,9 +51606,19 @@ const settingsRadarAudit = {
         const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
         const prev = Object.fromEntries(RADAR_AUDIT_KEYS.map((k) => [k, settings[k] ?? null]));
         await h.rpc("setconfig", Object.fromEntries(RADAR_AUDIT_KEYS.map((k) => [k, null])));
-        return { prev };
+        // the catalog is answered in-page, so steps 4-6 do not hang on pi being installed (a Windows box without pi
+        // offered only Claude): claude and pi, plus agy and codex for the picker to leave out
+        const modules = await ahResolveModules(h);
+        const mock = modules.urls
+            ? await installCatalogMock(h, modules.urls, [
+                  ...routePickerFlatCatalog(),
+                  agyHarnessRow("agy", "Antigravity", { leadcapable: false, models: ["gemini-3-pro"] }),
+                  agyHarnessRow("codex", "Codex", { leadcapable: false, models: ["gpt-5.5-codex"] }),
+              ])
+            : `no-module-url (${modules.error})`;
+        return { prev, mock };
     },
-    async assert(h) {
+    async assert(h, ctx) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
 
@@ -51655,7 +51666,7 @@ const settingsRadarAudit = {
             "4. the picker offers claude and pi and no other runtime",
             JSON.stringify(offered) === JSON.stringify(["claude", "pi"]),
             catalogUp
-                ? `offered=${JSON.stringify(offered)} catalog=${catalogMs}ms`
+                ? `offered=${JSON.stringify(offered)} catalog=${catalogMs}ms mock=${ctx.mock}`
                 : `offered=${JSON.stringify(offered)} no routes after ${catalogMs}ms, panel reads "${emptyText}"`
         );
         await h.shot("cdp-shots/settings-radar-audit-open.png");
@@ -51727,6 +51738,11 @@ const settingsRadarAudit = {
         return steps;
     },
     async teardown(h, ctx) {
+        try {
+            await removeCatalogMock(h);
+        } catch (e) {
+            console.error(`settings-radar-audit teardown: remove the catalog mock failed: ${e?.message ?? e}`);
+        }
         await h.rpc("setconfig", ctx.prev);
         await h.goto("cockpit");
     },
@@ -52828,12 +52844,12 @@ const settingsVaultSync = {
 // app share the vault's settings.json, and a write can lose a rename race with the other's.
 const SP_PAGES = [
     { id: "general", cards: ["startup", "menubar", "notifications"] },
-    { id: "appearance", cards: ["theme", "colors", "fonts", "agentrows"] },
+    { id: "appearance", cards: ["theme", "colors", "fonts", "agentrows", "chat"] },
     { id: "agents", cards: ["claudeaccount", "sleep", "flags"] },
     { id: "runs", cards: ["runs", "whilework", "tokenburn"] },
     { id: "terminal", cards: ["text", "cursor", "behavior"] },
     { id: "headless", cards: ["runtime", "openrouter", "radar"] },
-    { id: "jarvis", cards: ["jarvis", "folding", "office"] },
+    { id: "jarvis", cards: ["jarvis", "form", "behaviour", "folding", "office"] },
     {
         id: "storage",
         cards: ["vault", "runworktrees", "sessions", "housekeeping", "buildoutput", "packagecaches", "canvases", "autoclean"],
@@ -52986,7 +53002,8 @@ const settingsPages = {
         const menu = await h.ev(`(() => {
             const panel = ${SP_MENU_PANEL};
             if (!panel) return null;
-            return [...panel.children].map((c) =>
+            // the rows sit in the PopoverReveal panel inside the positioned element
+            return [...(panel.firstElementChild ?? panel).children].map((c) =>
                 c.classList.contains("h-px")
                     ? { separator: true }
                     : {
@@ -53015,7 +53032,7 @@ const settingsPages = {
             `menu=${JSON.stringify(menu)} closed=${menuGone}`
         );
 
-        // appearance-detail: nine theme chips with one selected; each font option drawn in its own face
+        // appearance-detail: ten theme chips (themes.ts) with one selected; each font option drawn in its own face
         await spOpen(h, "appearance");
         await polishWaitFor(h, `${spRow("fonts.mono")} != null`, 5000);
         const chips = await h.ev(`(() => {
@@ -53028,8 +53045,8 @@ const settingsPages = {
         await polishNap(200);
         await h.shot("cdp-shots/settings-pages-appearance-detail.png");
         rec(
-            "appearance-detail: nine theme chips, one selected; Fonts options each in their own face",
-            chips.count === 9 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
+            "appearance-detail: ten theme chips, one selected; Fonts options each in their own face",
+            chips.count === 10 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
             `chips=${JSON.stringify(chips)} sans=${JSON.stringify(sansFaces)} mono=${JSON.stringify(monoFaces)}`
         );
 
