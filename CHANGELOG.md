@@ -22,7 +22,7 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
+## 1.1.1 — 2026-11-13
 
 ### Added
 
@@ -39,42 +39,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An agent working on an initiative offers its chunk in the chat box: after a turn that ends on a commit, "xong:
   <chunk>" ticks the chunk done (as Mark done in the header's initiative popover does), then "làm tiếp: <chunk>"
   sends the agent on to the next one.
-
-### Changed
-
-- Radar is off the nav rail and the number chords while it waits to be removed: `Cmd`+`1`…`6` (`Ctrl` on Windows)
-  now go from Cockpit to Diff, pinned apps sit under Diff, and `Cmd`+`G` `r` still opens Radar until then.
-- An agent in Chat adds chunks and notes to an initiative itself instead of handing you a card to add: what you
-  asked for goes straight in, and a chunk you did not ask for waits as proposed on the initiative for you to accept
-  or drop (a yes in the conversation accepts it).
-- Jarvis's Since you looked is split by kind: the runs that moved, one row per initiative for the whole stretch
-  (not one per day), five at a time, and the records folded into one row you open. It also stops listing every
-  record first and counting raw events in its "+N more". Ideas and For later moved under the initiatives, side by
-  side, so the two columns end near each other instead of the side one running a screen past the main one.
-  <!-- try: go:jarvis -->
-- While an agent works, Show the diff and Open the terminal are chips with their names under the chat box's text
-  again, instead of two bare icons beside Stop.
-- The whole app starts one size bigger: the default zoom is now 110%, and `Cmd`+`0` (`Ctrl`+`0` on Windows) returns
-  there. A zoom you set yourself is kept.
-- Jarvis's hologram takes the avatar's shape from the Kael fork: three rings stacked in depth around a hollow
-  core, swaying slowly. Its centre no longer glows into a white blob; while agents work, light runs in along its six
-  struts, and when Jarvis speaks it turns to face you and sweeps.
-
-### Fixed
-
-- A heavy command an agent re-runs after auto mode refused it no longer queues twice in Heavy jobs and waits on
-  itself: it takes one slot and runs.
-- Triple-clicking a line in Chat selects just its text: on a Mac the highlight no longer runs on to the column's right
-  edge, and the copy no longer ends in a stray line break.
-- While an agent compacts its conversation (`/compact`), Chat says Compacting… instead of Working…, with no timer
-  counting up from your last message.
-- A file path in an agent's reply in Chat can be selected and copied with the text around it. It used to drop out of
-  every selection; a click still opens the file.
-
-## 1.1.1 — 2026-11-13
-
-### Added
-
 - Jarvis has a For later list at the bottom of its side column: every session you marked for later, in every
   project, newest mark first. Click one to open its conversation (or its agent, if it is still running), Resume an
   ended one, or press Done to clear the mark; a mark whose session is gone still shows, so you can clear it.
@@ -104,6 +68,23 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Radar is off the nav rail and the number chords while it waits to be removed: `Cmd`+`1`…`6` (`Ctrl` on Windows)
+  now go from Cockpit to Diff, pinned apps sit under Diff, and `Cmd`+`G` `r` still opens Radar until then.
+- An agent in Chat adds chunks and notes to an initiative itself instead of handing you a card to add: what you
+  asked for goes straight in, and a chunk you did not ask for waits as proposed on the initiative for you to accept
+  or drop (a yes in the conversation accepts it).
+- Jarvis's Since you looked is split by kind: the runs that moved, one row per initiative for the whole stretch
+  (not one per day), five at a time, and the records folded into one row you open. It also stops listing every
+  record first and counting raw events in its "+N more". Ideas and For later moved under the initiatives, side by
+  side, so the two columns end near each other instead of the side one running a screen past the main one.
+  <!-- try: go:jarvis -->
+- While an agent works, Show the diff and Open the terminal are chips with their names under the chat box's text
+  again, instead of two bare icons beside Stop.
+- The whole app starts one size bigger: the default zoom is now 110%, and `Cmd`+`0` (`Ctrl`+`0` on Windows) returns
+  there. A zoom you set yourself is kept.
+- Jarvis's hologram takes the avatar's shape from the Kael fork: three rings stacked in depth around a hollow
+  core, swaying slowly. Its centre no longer glows into a white blob; while agents work, light runs in along its six
+  struts, and when Jarvis speaks it turns to face you and sweeps.
 - A message you send in Chat while the agent works shows dimmed under Queued until the agent reads it, then turns
   full strength as the conversation takes it.
 - The chat box's model and effort are one chip, as in Claude Desktop ("Opus 5.5 High"): its menu lists the four
@@ -173,6 +154,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A heavy command an agent re-runs after auto mode refused it no longer queues twice in Heavy jobs and waits on
+  itself: it takes one slot and runs.
+- Triple-clicking a line in Chat selects just its text: on a Mac the highlight no longer runs on to the column's right
+  edge, and the copy no longer ends in a stray line break.
+- While an agent compacts its conversation (`/compact`), Chat says Compacting… instead of Working…, with no timer
+  counting up from your last message.
+- A file path in an agent's reply in Chat can be selected and copied with the text around it. It used to drop out of
+  every selection; a click still opens the file.
 - Idle Claude agents go to sleep again when Claude Code keeps a CPU core busy on its own while idle: that made them
   look busy, so they never slept and their RAM grew past 2 GB each. An idle one that has grown past 1.5 GB now sleeps
   after a minute instead of waiting for After idle for.
