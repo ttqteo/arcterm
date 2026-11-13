@@ -39,6 +39,12 @@ func useCouncilStore(t *testing.T) {
 	prev := wavebase.ConfigHome_VarCache
 	wavebase.ConfigHome_VarCache = t.TempDir()
 	t.Cleanup(func() { wavebase.ConfigHome_VarCache = prev })
+	// no project's instruction file may be rewritten by the live doc sync: its 3 s timer would fire in a later test,
+	// against that test's store, or write into this test's temp folders as they are removed (the councildoc tests
+	// drive a councilDocSync of their own)
+	prevNote, prevDocs := noteCouncilDoc, startCouncilDocs
+	noteCouncilDoc, startCouncilDocs = func(*council.Council) {}, func() {}
+	t.Cleanup(func() { noteCouncilDoc, startCouncilDocs = prevNote, prevDocs })
 }
 
 func saveCouncil(t *testing.T, c *council.Council) *council.Council {
@@ -764,11 +770,6 @@ func useCouncilRig(t *testing.T, fake *councilFake) *councilEvents {
 	prevWatch := startCouncilWatch
 	startCouncilWatch = func() {}
 	t.Cleanup(func() { startCouncilWatch = prevWatch })
-	// nor may a project's instruction file be rewritten after the test's temp folders are gone
-	prevNote, prevDocs := noteCouncilDoc, startCouncilDocs
-	noteCouncilDoc, startCouncilDocs = func(*council.Council) {}, func() {}
-	t.Cleanup(func() { noteCouncilDoc, startCouncilDocs = prevNote, prevDocs })
-
 	events := &councilEvents{}
 	prevClient := wps.Broker.GetClient()
 	wps.Broker.SetClient(events)

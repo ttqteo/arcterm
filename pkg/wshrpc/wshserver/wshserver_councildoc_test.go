@@ -13,10 +13,14 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/council"
 )
 
-// waitFile waits until path holds want, or fails after a second.
+// docWait is how long a rewrite may take to land: the timer is 10 ms, but a Verify that runs the suites across
+// processes on a loaded machine delayed it past the second this used to be
+const docWait = 10 * time.Second
+
+// waitFile waits until path holds want, or gives up after docWait.
 func waitFile(t *testing.T, path, want string) string {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(docWait)
 	for {
 		b, _ := os.ReadFile(path)
 		if strings.Contains(string(b), want) || time.Now().After(deadline) {
@@ -77,7 +81,7 @@ func TestCouncilDocSyncFollowsTheMemory(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.forget(c)
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(docWait)
 	for {
 		b, _ := os.ReadFile(claude)
 		if string(b) == "# Rules\n" {
