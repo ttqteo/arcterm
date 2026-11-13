@@ -7,7 +7,6 @@
 
 import type { AgentEntry } from "./agentsviewmodel";
 import { stripResultLines } from "./chatinitiative";
-import type { SentFrom } from "./chatsentflight";
 import { unwrapWholePaste } from "./chattagblocks";
 import type { EnterEcho, TypedEcho } from "./chattakeback";
 import { opensPanel } from "./slashcommands";
@@ -29,9 +28,6 @@ export interface PendingMessage {
      *  push it. Decided at the send, not from the agent's state as it draws: a message sent to an idle agent starts the
      *  turn that sets the agent working, and read live it flashed Queued before the transcript took it. */
     queued?: boolean;
-    /** Where its text sat in the box as it was sent, which its bubble flies from (chatsentflight.ts); none for a send
-     *  the box was not on screen for. */
-    from?: SentFrom;
 }
 
 /** The pending message for `text` sent at `now`: how many of `entries` (the transcript as drawn then) already hold its
@@ -152,21 +148,18 @@ export const PENDING_IDLE_MS = 5_000;
  *  older than PENDING_QUEUED_MAX_MS (a side question or a panel: PENDING_MAX_MS), and the agent has not sat idle on it
  *  for PENDING_IDLE_MS. `idleSince` is when the agent last went idle, null while it works. A side question or a panel
  *  waits on the agent while it sits idle (the answer comes from a fork, the panel's row once it closes), so only
- *  PENDING_MAX_MS ends those. One whose bubble is still on its flight from the box (`flying`, chatsentflight.ts) stays
- *  whatever the transcript holds: the transcript's copy takes its place once it has landed, never mid-air. */
+ *  PENDING_MAX_MS ends those. */
 export function pendingStill(
     pending: PendingMessage[],
     entries: AgentEntry[],
     now: number,
-    idleSince: number | null = null,
-    flying?: ReadonlySet<string>
+    idleSince: number | null = null
 ): PendingMessage[] {
     return pending.filter(
         (p) =>
-            flying?.has(p.id) === true ||
-            (now - p.sentAt < (p.kind != null ? PENDING_MAX_MS : PENDING_QUEUED_MAX_MS) &&
-                (p.kind != null || idleSince == null || now - Math.max(idleSince, p.sentAt) < PENDING_IDLE_MS) &&
-                userTextCount(entries, p.text) <= p.seen)
+            now - p.sentAt < (p.kind != null ? PENDING_MAX_MS : PENDING_QUEUED_MAX_MS) &&
+            (p.kind != null || idleSince == null || now - Math.max(idleSince, p.sentAt) < PENDING_IDLE_MS) &&
+            userTextCount(entries, p.text) <= p.seen
     );
 }
 

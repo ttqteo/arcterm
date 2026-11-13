@@ -160,13 +160,6 @@ describe("pendingStill", () => {
         }
     });
 
-    it("keeps one still flying from the box, whatever the transcript holds", () => {
-        const landed = [user("hello"), user("hello")];
-        expect(pendingStill([p()], landed, 2000, null, new Set(["a"]))).toHaveLength(1);
-        expect(pendingStill([p()], landed, 2000, null, new Set(["b"]))).toEqual([]);
-        expect(pendingStill([p()], landed, 2000, null, new Set())).toEqual([]);
-    });
-
     it("matches each pending against its own text", () => {
         const out = pendingStill(
             [p({ id: "a" }), p({ id: "b", text: "two", seen: 0 })],

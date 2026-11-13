@@ -8,7 +8,6 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { atom, useAtomValue } from "jotai";
 import type { AgentEntry } from "./agentsviewmodel";
 import { PENDING_QUEUED_MAX_MS, pendingMessage, pushSent, type PendingMessage } from "./chatpending";
-import type { SentFrom } from "./chatsentflight";
 
 const NONE: PendingMessage[] = [];
 const NO_HISTORY: string[] = [];
@@ -22,11 +21,9 @@ const sentByAgent = new Map<string, string[]>();
 let nextId = 0;
 
 /** Records `text` as sent to the agent just now, with how many times the `entries` (the transcript as drawn at this
- *  moment) already hold it, and whether the agent was `busy` (not idle), which makes it Queued (chatpending.ts). `from`
- *  is where its text sat in the box, which its bubble flies from (chatsentflight.ts). */
-export function addPending(agentId: string, text: string, entries: AgentEntry[], busy: boolean, from?: SentFrom): void {
-    const made = pendingMessage(`pending-${++nextId}`, text, entries, Date.now(), busy);
-    const p = from != null ? { ...made, from } : made;
+ *  moment) already hold it, and whether the agent was `busy` (not idle), which makes it Queued (chatpending.ts). */
+export function addPending(agentId: string, text: string, entries: AgentEntry[], busy: boolean): void {
+    const p = pendingMessage(`pending-${++nextId}`, text, entries, Date.now(), busy);
     const m = new Map(globalStore.get(pendingAtom));
     // the ones the transcript has long since caught up with go too, so the list never grows over a long session
     m.set(agentId, [...(m.get(agentId) ?? NONE).filter((q) => Date.now() - q.sentAt < PENDING_QUEUED_MAX_MS), p]);
@@ -92,31 +89,6 @@ export function dropPendingIds(agentId: string, ids: string[]): void {
         list.filter((p) => !ids.includes(p.id))
     );
     globalStore.set(pendingAtom, m);
-}
-
-// the pending messages whose bubble is on its flight from the box (chatsentflight.ts), by pending id: pendingStill keeps
-// them up until they land, so the transcript's copy never takes one's place mid-air
-const NO_FLYING: ReadonlySet<string> = new Set();
-const flyingAtom = atom<ReadonlySet<string>>(NO_FLYING);
-
-/** Marks (or clears) the pending message `id` as flying from the box. */
-export function setPendingFlying(id: string, flying: boolean): void {
-    const cur = globalStore.get(flyingAtom);
-    if (cur.has(id) === flying) {
-        return;
-    }
-    const next = new Set(cur);
-    if (flying) {
-        next.add(id);
-    } else {
-        next.delete(id);
-    }
-    globalStore.set(flyingAtom, next);
-}
-
-/** The ids of the pending messages flying from the box. */
-export function useFlyingPending(): ReadonlySet<string> {
-    return useAtomValue(flyingAtom);
 }
 
 /** What was sent from the agent's box, newest last (at most 20). */

@@ -19,7 +19,7 @@
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { KeyCap } from "@/app/element/keycap";
-import { layerFade, MOTION, sentFlight, sentRise, springPop } from "@/app/element/motiontokens";
+import { layerFade, MOTION, sentRise, springPop } from "@/app/element/motiontokens";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { loadEffortDetail } from "@/app/view/jarvis/effortstore";
@@ -28,7 +28,7 @@ import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ArrowDown, Highlighter } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, useIsPresent, useReducedMotion, type Variants } from "motion/react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
 import { canStop } from "./agentcomposer";
 import { getProcExitAtom } from "./agentcontrollerstore";
@@ -68,8 +68,8 @@ import {
     type PendingKind,
     type PendingMessage,
 } from "./chatpending";
-import { useFlyingPending, usePending } from "./chatpendingstore";
-import { useSentFlight, type SentEntrance } from "./chatsentflightview";
+import { usePending } from "./chatpendingstore";
+import { risesFromBox } from "./chatsentrise";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import {
     chatChips,
@@ -154,155 +154,111 @@ function ChatAsk({ model, agent, exited }: { model: AgentsViewModel; agent: Agen
     );
 }
 
-// The row a sent bubble lands in (chatsentflightview.ts useSentFlight decides how it comes in). Flying from the box, it
-// opens its height on the spring a little ahead of the bubble, so the conversation above slides up to make room instead
-// of jumping; with no place in the box to fly from (or under reduced motion) it rises in on sentRise from `origin`; drawn
-// again later, it is just there.
-function SentRow({
-    entrance,
-    rowRef,
-    origin,
-    children,
-}: {
-    entrance: SentEntrance;
-    rowRef: RefObject<HTMLDivElement | null>;
-    origin: string;
-    children: ReactNode;
-}) {
-    if (entrance === "fly") {
-        return (
-            <motion.div
-                ref={rowRef}
-                initial={{ height: 0 }}
-                animate={{ height: "auto" }}
-                transition={{ height: MOTION.spring }}
-                className="flex flex-col"
-            >
-                {children}
-            </motion.div>
-        );
-    }
-    return (
-        <motion.div
-            ref={rowRef}
-            variants={sentRise}
-            initial={entrance === "rise" ? "initial" : false}
-            animate="animate"
-            style={{ transformOrigin: origin }}
-            className="flex flex-col"
-        >
-            {children}
-        </motion.div>
-    );
+// Whether a pending bubble rises in from the box (sentRise), decided once as it mounts: the message just sent does, one
+// drawn again later (back to this agent, Terminal back to Chat) shows at once (chatsentrise.ts)
+function useRisesFromBox(sentAt: number): boolean {
+    const [rises] = useState(() => risesFromBox(sentAt, Date.now()));
+    return rises;
 }
 
 // a /btw, a bare panel command or a `! cmd` sent and not in the transcript yet. A /btw is its card asking (BtwCard), the
 // side answer the arc mod is asking a fork of the session for still to come. The others are the command, dimmed, as its
 // card will draw it, and under it what it waits on: the panel open on Claude Code's own screen (its row lands only once
 // it closes), or the command running (its row and output land only once it finishes, or goes to the background at
-// 120 s), with a way to the terminal. The command flies from the box as a message does, and the line under it shows as
-// it lands; a /btw's card rises in.
+// 120 s), with a way to the terminal
 function PendingCommand({
-    pending,
+    text,
     kind,
+    sentAt,
     onOpenTerminal,
 }: {
-    pending: PendingMessage;
+    text: string;
     kind: PendingKind;
+    sentAt: number;
     onOpenTerminal?: () => void;
 }) {
-    const text = pending.text;
-    const row = useRef<HTMLDivElement>(null);
-    const fly = useRef<HTMLDivElement>(null);
-    const entrance = useSentFlight(
-        kind === "btw" ? { id: pending.id, sentAt: pending.sentAt } : pending,
-        { row, fly, text: fly },
-        0.6
-    );
+    const rises = useRisesFromBox(sentAt);
     if (kind === "btw") {
         // the card the transcript's copy will draw, asking: only its body changes when the answer lands
         return (
-            <SentRow entrance={entrance} rowRef={row} origin="bottom center">
-                <div data-chat-pending data-chat-pending-kind={kind} className="flex flex-col">
-                    <BtwCard question={btwQuestion(text) ?? text.trim()} btw={null} />
-                </div>
-            </SentRow>
+            <motion.div
+                data-chat-pending
+                data-chat-pending-kind={kind}
+                variants={sentRise}
+                initial={rises ? "initial" : false}
+                animate="animate"
+                style={{ transformOrigin: "bottom center" }}
+                className="flex flex-col"
+            >
+                <BtwCard question={btwQuestion(text) ?? text.trim()} btw={null} />
+            </motion.div>
         );
     }
     return (
-        <SentRow entrance={entrance} rowRef={row} origin="bottom right">
-            <div data-chat-pending data-chat-pending-kind={kind} className="flex flex-col items-end gap-1">
-                <div
-                    ref={fly}
-                    className="max-w-[75%] min-w-[220px] rounded-[12px] border border-edge-mid bg-surface-raised px-[14px] py-[8px] font-mono text-[12.5px] text-primary opacity-60 [overflow-wrap:anywhere]"
-                >
-                    {text.trim()}
-                </div>
-                <motion.div
-                    initial={entrance === "fly" ? { opacity: 0 } : false}
-                    animate={{ opacity: 1 }}
-                    transition={{
-                        duration: MOTION.durMicro,
-                        ease: MOTION.easeFluid,
-                        delay: sentFlight.duration * 0.7,
-                    }}
-                    className="flex items-center gap-2"
-                >
-                    <span className="text-[11px] text-muted">{kind === "bash" ? "Running…" : "Open in Terminal"}</span>
-                    {onOpenTerminal != null ? (
-                        <button
-                            type="button"
-                            onClick={onOpenTerminal}
-                            className="cursor-pointer text-[11px] text-secondary hover:text-primary"
-                        >
-                            Show Terminal
-                        </button>
-                    ) : null}
-                </motion.div>
+        <motion.div
+            data-chat-pending
+            data-chat-pending-kind={kind}
+            variants={sentRise}
+            initial={rises ? "initial" : false}
+            animate="animate"
+            style={{ transformOrigin: "bottom right" }}
+            className="flex flex-col items-end gap-1"
+        >
+            <div className="max-w-[75%] min-w-[220px] rounded-[12px] border border-edge-mid bg-surface-raised px-[14px] py-[8px] font-mono text-[12.5px] text-primary opacity-60 [overflow-wrap:anywhere]">
+                {text.trim()}
             </div>
-        </SentRow>
+            <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted">{kind === "bash" ? "Running…" : "Open in Terminal"}</span>
+                {onOpenTerminal != null ? (
+                    <button
+                        type="button"
+                        onClick={onOpenTerminal}
+                        className="cursor-pointer text-[11px] text-secondary hover:text-primary"
+                    >
+                        Show Terminal
+                    </button>
+                ) : null}
+            </div>
+        </motion.div>
     );
 }
 
 // A message sent and not in the transcript yet: your bubble, drawn as the transcript will draw it and where
 // (chatconversation.tsx YouBubble's box, spacing and letter spacing; @mentions as pills, files as cards under it), so the
-// transcript's copy taking its place draws nothing new. It flies there from where its text sat in the box
-// (useSentFlight). What it waits on is PendingLine's, under the last of them. A Queued one (sent while Claude works) is
-// dimmed until Claude Code takes it: it waits for minutes, and the full-strength transcript row taking its place is the
-// news that it was read. One sent to an idle agent stays full strength, since the transcript takes it in a moment and a
-// dim bubble would only blink. It goes when the transcript holds the text (pendingStill), once it has landed. `first`
-// is the conversation's first message (the task a session was launched on), with no conversation above it to stand
-// clear of.
+// transcript's copy taking its place draws nothing new. What it waits on is PendingLine's, under the last of them. A
+// Queued one (sent while Claude works) is dimmed until Claude Code takes it: it waits for minutes, and the full-strength
+// transcript row taking its place is the news that it was read. One sent to an idle agent stays full strength, since the
+// transcript takes it in a moment and a dim bubble would only blink. It goes when the transcript holds the text
+// (pendingStill). `first` is the conversation's first message (the task a session was launched on), with no
+// conversation above it to stand clear of.
 function PendingBubble({ pending, first }: { pending: PendingMessage; first: boolean }) {
     const said = splitAttachments(pending.text);
     const body = said.text.trim();
-    const row = useRef<HTMLDivElement>(null);
-    const fly = useRef<HTMLDivElement>(null);
-    const bubble = useRef<HTMLDivElement>(null);
-    const entrance = useSentFlight(pending, { row, fly, text: bubble }, pending.queued === true ? 0.55 : undefined);
+    const rises = useRisesFromBox(pending.sentAt);
     return (
-        <SentRow entrance={entrance} rowRef={row} origin="bottom right">
+        <motion.div
+            data-chat-pending
+            variants={sentRise}
+            initial={rises ? "initial" : false}
+            animate="animate"
+            style={{ transformOrigin: "bottom right" }}
+            // where its transcript row lands: mt-2 over the conversation's pb-2 is the conversation's gap-4 above it,
+            // and -mb-1 under the bubble's mb-1 leaves the tail's gap-3 as the row's mb-1 + pb-2 under it
+            className={cn("-mb-1 flex flex-col items-end tracking-[-0.01em]", first ? undefined : "mt-2")}
+        >
             <div
-                data-chat-pending
-                // where its transcript row lands: mt-2 over the conversation's pb-2 is the conversation's gap-4 above it,
-                // and -mb-1 under the bubble's mb-1 leaves the tail's gap-3 as the row's mb-1 + pb-2 under it
-                className={cn("-mb-1 flex flex-col items-end tracking-[-0.01em]", first ? undefined : "mt-2")}
+                data-chat-pending-queued={pending.queued === true ? "" : undefined}
+                className={cn("flex max-w-[75%] flex-col items-end gap-2", pending.queued === true && "opacity-55")}
             >
-                <div
-                    ref={fly}
-                    data-chat-pending-queued={pending.queued === true ? "" : undefined}
-                    className={cn("flex max-w-[75%] flex-col items-end gap-2", pending.queued === true && "opacity-55")}
-                >
-                    {body !== "" || said.images.length > 0 ? (
-                        <div ref={bubble} className={youBubbleBox(said.files.length > 0)}>
-                            {body !== "" ? <TaggedPromptText text={body} /> : null}
-                            {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
-                        </div>
-                    ) : null}
-                    {said.files.length > 0 ? <ChatFileCards paths={said.files} /> : null}
-                </div>
+                {body !== "" || said.images.length > 0 ? (
+                    <div className={youBubbleBox(said.files.length > 0)}>
+                        {body !== "" ? <TaggedPromptText text={body} /> : null}
+                        {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
+                    </div>
+                ) : null}
+                {said.files.length > 0 ? <ChatFileCards paths={said.files} /> : null}
             </div>
-        </SentRow>
+        </motion.div>
     );
 }
 
@@ -673,8 +629,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const sent = usePending(agent.id);
     const [now, setNow] = useState(() => Date.now());
     const idleSince = useIdleSince(agent.state === "idle");
-    const flying = useFlyingPending();
-    const pending = pendingStill(sent, entries, now, idleSince, flying);
+    const pending = pendingStill(sent, entries, now, idleSince);
     const showsPending = pending.length > 0;
     // the live reply, which ChatConversation reads itself so its ticks redraw only the conversation: held back while the
     // message that started its turn has not landed (its bubble is drawn under the conversation, and the reply belongs
@@ -810,7 +765,6 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
             <div className="relative min-h-0 flex-1">
                 <div
                     ref={scrollRef}
-                    data-chat-scroller
                     onScroll={onScroll}
                     // the bottom padding is the dock's (useDockPadding)
                     className="flex h-full flex-col overflow-y-auto px-[22px]"
@@ -858,8 +812,9 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                 p.kind != null ? (
                                     <PendingCommand
                                         key={p.id}
-                                        pending={p}
+                                        text={p.text}
                                         kind={p.kind}
+                                        sentAt={p.sentAt}
                                         onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
                                     />
                                 ) : (

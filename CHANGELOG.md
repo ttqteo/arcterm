@@ -28,6 +28,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Chat's chips float just above the message box instead of sitting in it, so the box keeps its height as they come and
   go and the conversation no longer jumps.
+- A message you send in Chat rises in at its place again, as in a messenger, instead of flying out of the message box.
 - A resume of a past session picked in New is held too while the machine is busy, and Start now picks the same
   session up. Every held agent now says so in a toast, with Open to go to it.
 
