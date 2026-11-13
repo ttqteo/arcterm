@@ -379,17 +379,35 @@ export default function (kit) {
                         open: btn(card, "[data-chat-council-open]"),
                     };
                 })()`);
-            // the row of a council that ended, with the item it is drawn in
+            // the row of a council that ended, with the item it is drawn in. `style` is what the eye reads of it, from
+            // getComputedStyle: the head's ink and weight, the weight of its first span (the Council word), the text's ink and
+            // weight, and the ink of the row's muted reference, the ✓ or else the mark's own box (a mark with a colour of its
+            // own, the ! in text-error, brings it on an inner span, so the box is the one that is text-muted)
             const readRow = (id) =>
                 h.ev(`(() => {
                     ${HELP}
                     const layer = ${layerOf(A)};
                     const row = layer?.querySelector(${JSON.stringify(rowSel(id))});
                     const item = row?.closest("[data-chat-item]") ?? null;
+                    const headEl = row?.querySelector("[data-chat-bscard-head]") ?? null;
+                    const wordEl = headEl?.querySelector("span") ?? null;
+                    const textEl = row?.querySelector("[data-chat-bscard-text]") ?? null;
+                    const refEl = row?.querySelector("[data-chat-bscard-mark]") ?? row?.querySelector("svg") ?? null;
+                    const color = (el) => (el ? getComputedStyle(el).color : null);
+                    const weight = (el) => (el ? Number(getComputedStyle(el).fontWeight) : NaN);
                     return {
                         found: !!row,
                         end: row?.getAttribute("data-chat-council-end") ?? null,
                         text: flat(row),
+                        style: {
+                            headColor: color(headEl),
+                            headWeight: weight(headEl),
+                            word: flat(wordEl),
+                            wordWeight: weight(wordEl),
+                            textColor: color(textEl),
+                            textWeight: weight(textEl),
+                            refColor: color(refEl),
+                        },
                         mark: pick(row, "[data-chat-bscard-mark]") ? flat(pick(row, "[data-chat-bscard-mark]")) : null,
                         report: btn(row, "[data-chat-council-report]"),
                         open: btn(row, "[data-chat-council-open]"),
@@ -401,6 +419,20 @@ export default function (kit) {
                 })()`);
 
             const seatMap = (card) => card.seats.map((s) => `${s.id}:${s.state}`).join(",");
+            // how an ended row is drawn (spec section 3, the board's states 4 and 5): the feature or the reason in the same
+            // muted ink as the row's ✓ or mark and in a light weight, the head in another ink, and the first word of the head,
+            // Council, semibold. A weight the page could not read (no such element) is NaN, which JSON may turn into null:
+            // `Number.isFinite` keeps it from passing as "below 500"
+            const rowLook = (r) => {
+                const s = r.style;
+                return {
+                    textMuted: s.textColor != null && s.textColor === s.refColor,
+                    headPrimary: s.headColor != null && s.refColor != null && s.headColor !== s.refColor,
+                    wordSemibold: s.word === "Council" && Number.isFinite(s.wordWeight) && s.wordWeight >= 600,
+                    textLight: Number.isFinite(s.textWeight) && s.textWeight < 500,
+                };
+            };
+            const looksRight = (r) => Object.values(rowLook(r)).every(Boolean);
 
             // 1. the running council: the call, then the card at the end with the seats, the step, the clock, the estimate, Stop
             await run("1. running council", async (name) => {
@@ -648,10 +680,11 @@ export default function (kit) {
                 await AC.agentPage(h, `const C = await mod("app/view/agents/agentcenter.ts"); C.showTerminal(); return true;`);
                 await AC.focusAgent(h, A);
                 rec(
-                    `${name}: no card at the end; the row at the start call's item reads "Council · review · 4 directions · 11 min", "${FEATURE}" and Open report, with the ✓ and no mark glyph; clicking Open report shows the report view of the council`,
+                    `${name}: no card at the end; the row at the start call's item reads "Council · review · 4 directions · 11 min", "${FEATURE}" and Open report, with the ✓ and no mark glyph, the head in the primary ink with "Council" semibold (600 or more) and the feature in the ✓'s muted ink, below weight 500; clicking Open report shows the report view of the council`,
                     up &&
                         noTail &&
                         row.found &&
+                        looksRight(row) &&
                         row.end === "done" &&
                         row.tails === 0 &&
                         row.cards === 0 &&
@@ -666,7 +699,7 @@ export default function (kit) {
                         shown &&
                         view.sel === ID.done &&
                         view.view === "summary",
-                    { up, noTail, row, clicked, shown, view }
+                    { up, noTail, row, look: rowLook(row), clicked, shown, view }
                 );
             });
 
@@ -705,12 +738,13 @@ export default function (kit) {
                 // each row sits in the item that holds its own call
                 const inItem = [stopped, failed, notRun].every((r, i) => r.item.includes(markers[i]));
                 rec(
-                    `${name}: three rows at their calls, no card at the end: ■ "Council · stopped in round 2" with "${STOPPED_ERROR}", ! "Council · failed in round 3" with the council's error, – "Council · not run" with the refusal's first sentence, each with Open council and no Open report`,
+                    `${name}: three rows at their calls, no card at the end: ■ "Council · stopped in round 2" with "${STOPPED_ERROR}", ! "Council · failed in round 3" with the council's error, – "Council · not run" with the refusal's first sentence, each with Open council and no Open report; each draws its head in the primary ink with "Council" semibold (600 or more) and its reason in the mark's muted ink, below weight 500`,
                     up &&
                         upFailed &&
                         upNotRun &&
                         noTail &&
                         inItem &&
+                        [stopped, failed, notRun].every(looksRight) &&
                         stopped.mark === "■" &&
                         stopped.text.includes("Council · stopped in round 2") &&
                         stopped.text.includes(STOPPED_ERROR) &&
@@ -721,7 +755,7 @@ export default function (kit) {
                         notRun.text.includes("Council · not run") &&
                         notRun.text.includes(REFUSAL_FIRST) &&
                         [stopped, failed, notRun].every((r) => r.open?.text === "Open council" && r.report == null && r.tails === 0 && r.cards === 0),
-                    { up, upFailed, upNotRun, noTail, inItem, stopped, failed, notRun }
+                    { up, upFailed, upNotRun, noTail, inItem, stopped, failed, notRun, looks: [stopped, failed, notRun].map(rowLook) }
                 );
             });
 

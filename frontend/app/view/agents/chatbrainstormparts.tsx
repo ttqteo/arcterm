@@ -516,7 +516,9 @@ export function OptionRows({
 }
 
 /** The ✓ row a finished step folds into: `head` in the muted start, `text` the bold part that may be cut short, and
- *  `trailing` the muted end. A builder answer is `data-chat-bscard-answered` with `data-kind="builder"`, a step
+ *  `trailing` the muted end. `dimText` turns that round for a row whose head is the strong part (the council's): the head
+ *  in the primary ink, as a node so a caller can set one word heavier, and `text` muted and cut short. The two spans are
+ *  `data-chat-bscard-head` and `data-chat-bscard-text`. A builder answer is `data-chat-bscard-answered` with `data-kind="builder"`, a step
  *  `data-chat-bscard-done="<design|builder|run|verdict|handoff|council|docreview>"`; a question's answer is
  *  ChatBrainstormAnswered's. `extra` adds `data-*` attributes to that row element, beside the one above.
  *  `mark` is the glyph drawn in place of the ✓ (the council row's ■, !, –, ↺), in the ✓'s 14px box and muted unless it
@@ -535,9 +537,10 @@ export function DoneRow({
     mark,
     action,
     extra,
+    dimText,
 }: {
     kind: "builder-answer" | "design" | "builder" | "run" | "verdict" | "handoff" | "council" | "docreview";
-    head: string;
+    head: ReactNode;
     text?: string;
     trailing?: string;
     n?: number;
@@ -545,6 +548,7 @@ export function DoneRow({
     mark?: ReactNode;
     action?: ReactNode;
     extra?: Record<`data-${string}`, string | number | boolean | undefined>;
+    dimText?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const marks = {
@@ -567,7 +571,15 @@ export function DoneRow({
                 <Check size={14} strokeWidth={2.2} className="flex-none text-muted" aria-hidden />
             )}
             <span
-                className={cn("min-w-0 truncate", text != null ? "flex-none text-muted" : "font-medium text-primary")}
+                data-chat-bscard-head
+                className={cn(
+                    "min-w-0 truncate",
+                    dimText
+                        ? "flex-none text-primary"
+                        : text != null
+                          ? "flex-none text-muted"
+                          : "font-medium text-primary"
+                )}
             >
                 {head}
             </span>
@@ -575,7 +587,11 @@ export function DoneRow({
                 <>
                     {/* a builder answer reads "head — answer" in the row's text, the spec's wording */}
                     {kind === "builder-answer" ? <span className="flex-none text-muted">{" — "}</span> : null}
-                    <span className="min-w-0 truncate font-medium text-primary" title={text}>
+                    <span
+                        data-chat-bscard-text
+                        className={cn("min-w-0 truncate", dimText ? "text-muted" : "font-medium text-primary")}
+                        title={text}
+                    >
                         {text}
                     </span>
                 </>

@@ -128,6 +128,10 @@ export function placeCouncilCards(i: {
 
 // ---- what a card and a row say ----
 
+/** The word every card and row head starts with. The row draws it in a stronger weight than the rest of the head
+ *  (chatcouncilcard.tsx), so the heads are built from it rather than from a second copy of the string. */
+export const COUNCIL_WORD = "Council";
+
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 // the mode the head names: Go reads an empty mode as review
@@ -200,7 +204,7 @@ export function councilCardView(
     const paused = `Paused after round 1 · ${count(new Set(ideas.map((p) => p.author)).size, "expert", "experts")} sent ${count(ideas.length, "idea", "ideas")}. Read them in the room, or go on.`;
     return {
         state,
-        head: `Council · ${modeOf(c)}`,
+        head: `${COUNCIL_WORD} · ${modeOf(c)}`,
         title: c.feature.trim() || UNTITLED_COUNCIL,
         question: askedParts(c.question).question,
         tag: state === "queued" ? queuedTag(holder) : headerChip(c),
@@ -212,8 +216,9 @@ export function councilCardView(
 }
 
 /** What the one-line row of a council that ended once says. `mark` is the glyph drawn in place of the ✓ (`working` is the
- *  green dot of a council running again); `head` and `text` are the row's muted start and its bold, cut-short part; `action`
- *  is the link at its right end: the report of a done council, else the council's room. */
+ *  green dot of a council running again); `head` and `text` are the row's strong start (its first word, COUNCIL_WORD, in a
+ *  heavier weight) and its muted, cut-short part (the feature or the reason); `action` is the link at its right end: the
+ *  report of a done council, else the council's room. */
 export interface CouncilRowView {
     end: "done" | "stopped" | "failed" | "not-run" | "running";
     mark: "✓" | "■" | "!" | "–" | "working";
@@ -239,7 +244,13 @@ function refusalOf(anchor: CouncilAnchor): string | undefined {
  *  (`shownState`); one that is running, queued or waiting again after it ended is a working row with its header chip. */
 export function councilRowView(c: Council | null, anchor: CouncilAnchor, nowMs: number): CouncilRowView {
     if (c == null) {
-        return { end: "not-run", mark: "–", head: "Council · not run", text: refusalOf(anchor), action: "open" };
+        return {
+            end: "not-run",
+            mark: "–",
+            head: `${COUNCIL_WORD} · not run`,
+            text: refusalOf(anchor),
+            action: "open",
+        };
     }
     const state = shownState(c);
     const round = Math.max(1, c.round);
@@ -247,7 +258,7 @@ export function councilRowView(c: Council | null, anchor: CouncilAnchor, nowMs: 
         case "done": {
             const noun = c.mode === "brainstorm" ? ["idea", "ideas"] : ["direction", "directions"];
             const head = [
-                "Council",
+                COUNCIL_WORD,
                 modeOf(c),
                 c.summary != null ? count(c.summary.directions.length, noun[0], noun[1]) : "",
                 ranFor(c, nowMs),
@@ -264,7 +275,7 @@ export function councilRowView(c: Council | null, anchor: CouncilAnchor, nowMs: 
             return {
                 end: "stopped",
                 mark: "■",
-                head: `Council · stopped in round ${round}`,
+                head: `${COUNCIL_WORD} · stopped in round ${round}`,
                 text: oneLine(c.error) ?? "The rounds that finished are kept",
                 action: "open",
             };
@@ -272,7 +283,7 @@ export function councilRowView(c: Council | null, anchor: CouncilAnchor, nowMs: 
             return {
                 end: "failed",
                 mark: "!",
-                head: `Council · failed in round ${round}`,
+                head: `${COUNCIL_WORD} · failed in round ${round}`,
                 text: oneLine(c.error),
                 action: "open",
             };
@@ -280,7 +291,7 @@ export function councilRowView(c: Council | null, anchor: CouncilAnchor, nowMs: 
             return {
                 end: "not-run",
                 mark: "–",
-                head: "Council · not run",
+                head: `${COUNCIL_WORD} · not run`,
                 text: refusalOf(anchor) ?? oneLine(c.error),
                 action: "open",
             };
@@ -288,7 +299,7 @@ export function councilRowView(c: Council | null, anchor: CouncilAnchor, nowMs: 
             return {
                 end: "running",
                 mark: "working",
-                head: "Council · running again",
+                head: `${COUNCIL_WORD} · running again`,
                 text: headerChip(c),
                 action: "open",
             };

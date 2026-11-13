@@ -26,6 +26,7 @@ import {
     type CardState,
 } from "./chatbrainstormparts";
 import {
+    COUNCIL_WORD,
     councilCardView,
     councilRowView,
     type CouncilAnchor,
@@ -244,9 +245,10 @@ function rowMark(mark: CouncilRowView["mark"]): ReactNode {
 
 /** The one-line row of a council that has ended once, drawn at the `wsh council start` call that began it: ✓ with the
  *  mode, the count of directions or ideas and the elapsed time (done, Open report), ■ stopped, ! failed, – not run (each with
- *  its reason, Open council), or a working row while the council runs again (its header chip, Open council). It updates
- *  in place with the council. A council the store does not know draws nothing, unless a not-run line named it: that row
- *  needs only the line's own words. */
+ *  its reason, Open council), or a working row while the council runs again (its header chip, Open council). The head
+ *  is the strong part, "Council" semibold and the rest in the primary ink; the feature or the reason after it is muted
+ *  and cut short (`dimText`). It updates in place with the council. A council the store does not know draws nothing,
+ *  unless a not-run line named it: that row needs only the line's own words. */
 export function ChatCouncilRow({
     councilId,
     anchor,
@@ -267,7 +269,17 @@ export function ChatCouncilRow({
     return (
         <DoneRow
             kind="council"
-            head={view.head}
+            dimText
+            head={
+                view.head.startsWith(COUNCIL_WORD) ? (
+                    <>
+                        <span className="font-semibold">{COUNCIL_WORD}</span>
+                        {view.head.slice(COUNCIL_WORD.length)}
+                    </>
+                ) : (
+                    view.head
+                )
+            }
             text={view.text}
             mark={rowMark(view.mark)}
             action={

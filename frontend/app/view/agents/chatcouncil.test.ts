@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    COUNCIL_WORD,
     councilCardView,
     councilEndedOnce,
     councilRowView,
@@ -617,5 +618,23 @@ describe("councilRowView", () => {
             "Round 1 of 3"
         );
         expect(councilRowView(council({ state: "awaiting-you", round: 1 }), notRun, now).text).toBe("Waiting on you");
+    });
+
+    it("starts every head with the one word the row draws strong, and keeps the rest of the head after it", () => {
+        expect(COUNCIL_WORD).toBe("Council");
+        const heads = [
+            councilRowView(council({ state: "done", ranms: 4 * MIN, ...ended, summary: summaryOf(2) }), started, now),
+            councilRowView(council({ state: "stopped", round: 2, ...ended }), started, now),
+            councilRowView(council({ state: "failed", round: 1 }), started, now),
+            councilRowView(council({ state: "not-run", round: 0, ...ended }), started, now),
+            councilRowView(council({ state: "running", round: 1, rounds: 3 }), started, now),
+            councilRowView(null, notRun, now),
+        ].map((v) => v.head);
+        for (const head of heads) {
+            expect(head.startsWith(`${COUNCIL_WORD} · `)).toBe(true);
+        }
+        expect(councilCardView(council({ state: "running", round: 1, rounds: 3 }), started, null, now).head).toBe(
+            `${COUNCIL_WORD} · review`
+        );
     });
 });
