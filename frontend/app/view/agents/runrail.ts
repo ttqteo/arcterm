@@ -6,7 +6,7 @@
 
 import { formatAgeShort } from "./agentsviewmodel";
 import { ASK_OWNER_USER } from "./childaskmodel";
-import { laneLabel, workerAsk } from "./runlineage";
+import { laneLabel, mergeGateLine, workerAsk, type RunInfo } from "./runlineage";
 import { eventText } from "./runtimeline";
 
 // LaneState is where a lane's task in play stands; it picks the lane row's dot and the colour of its state text.
@@ -82,11 +82,28 @@ export function runSegments(dag: TaskGroup | undefined, digest: DagStatusDigest 
     return (dag?.tasks ?? []).map((t) => segmentState(t, digest));
 }
 
-function laneRow(key: string, tasks: TaskNode[], byId: Map<string, TaskNode>, digest?: DagStatusDigest): LaneRow {
+function laneRow(
+    key: string,
+    tasks: TaskNode[],
+    byId: Map<string, TaskNode>,
+    run: Pick<RunInfo, "dag" | "digest">
+): LaneRow {
+    const { digest } = run;
     const i = tasks.findIndex((t) => !FINISHED.has(t.state));
     const current = i === -1 ? tasks[tasks.length - 1] : tasks[i];
     const row = { key, taskId: current.id, name: taskName(current) };
     if (i === -1) {
+        // a done tip waiting on its merge has not landed yet: the lane waits with it
+        const gate = mergeGateLine(run, current.id);
+        if (gate != null && current.state === "done") {
+            const before = tasks.length > 1 ? tasks[tasks.length - 2] : undefined;
+            return {
+                ...row,
+                hist: before ? `${before.id} ${outcome(before)}` : "",
+                state: "pending",
+                text: gate,
+            };
+        }
         const done = current.state === "done";
         return {
             ...row,
@@ -119,7 +136,7 @@ export function laneRows(dag: TaskGroup | undefined, digest: DagStatusDigest | u
     const byId = new Map((dag?.tasks ?? []).map((t) => [t.id, t] as const));
     return (digest?.lanes ?? []).flatMap((ids) => {
         const tasks = ids.map((id) => byId.get(id)).filter((t): t is TaskNode => t != null);
-        return tasks.length === 0 ? [] : [laneRow(laneLabel(digest, ids[0])!, tasks, byId, digest)];
+        return tasks.length === 0 ? [] : [laneRow(laneLabel(digest, ids[0])!, tasks, byId, { dag, digest })];
     });
 }
 

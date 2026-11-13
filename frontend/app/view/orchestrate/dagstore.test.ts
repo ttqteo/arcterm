@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildViewData, dagActionError, dagActionRoute, mergeReadyIds, routeSourceLabel } from "./dagstore";
+import { globalStore } from "@/app/store/jotaiStore";
+import {
+    buildViewData,
+    clearHover,
+    dagActionError,
+    dagActionRoute,
+    hoveredTaskAtom,
+    mergeReadyIds,
+    routeSourceLabel,
+} from "./dagstore";
 
 const group = {
     id: "dag-1",
@@ -69,6 +78,26 @@ describe("buildViewData", () => {
             tasks: [{ id: "t-0", label: "setup", state: "verify-failed", merged: true }],
         } as any;
         expect(buildViewData(failed, owner, harnesses, none).nodes[0].actions).toEqual(["resolve"]);
+    });
+
+    it("offers no action once the dag has ended, and no branch for a task that no longer has one", () => {
+        const ended = (status: string, tasks: any[]) => ({ ...group, status, tasks }) as any;
+        const cancelled = ended("cancelled", [
+            { id: "t-0", state: "failed", runid: "r-0" },
+            { id: "t-1", state: "done", runid: "r-1" },
+        ]);
+        const { nodes } = buildViewData(cancelled, owner, harnesses, new Set(["t-1"]));
+        expect(nodes.map((n) => n.actions)).toEqual([[], []]);
+        expect(nodes.map((n) => n.meta)).toEqual(["", ""]);
+        const running = buildViewData(ended("running", cancelled.tasks), owner, harnesses, none).nodes;
+        expect(running[0].actions).toEqual(["retry", "skip", "escalate"]);
+        expect(running[0].meta).toBe("wave/r-0");
+    });
+    it("keeps the branch only for a task that is neither merged, skipped nor cancelled", () => {
+        const tasks = ["done", "skipped", "cancelled"].map((state, i) => ({ id: `t-${i}`, state, runid: "r" }));
+        const merged = { id: "t-m", state: "done", merged: true, runid: "r" };
+        const g = { ...group, status: "running", tasks: [...tasks, merged] } as any;
+        expect(buildViewData(g, owner, harnesses, none).nodes.map((n) => n.meta)).toEqual(["wave/r", "", "", ""]);
     });
 
     it("projects pinned, inherited, runtime-default, and unavailable routes", () => {
@@ -175,5 +204,15 @@ describe("buildViewData for a failed review", () => {
         } as any;
         const { nodes } = buildViewData(reviewGroup, owner, harnesses, none);
         expect(nodes[0].actions).toEqual(["approve", "sendback", "retry", "skip", "escalate"]);
+    });
+});
+
+describe("clearHover", () => {
+    it("clears only the side's own hover", () => {
+        globalStore.set(hoveredTaskAtom, { id: "t-2", from: "timeline" });
+        clearHover("graph");
+        expect(globalStore.get(hoveredTaskAtom)).toEqual({ id: "t-2", from: "timeline" });
+        clearHover("timeline");
+        expect(globalStore.get(hoveredTaskAtom)).toBeNull();
     });
 });

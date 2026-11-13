@@ -6,7 +6,14 @@ import type { AgentVM } from "./agentsviewmodel";
 import { finalStageId } from "./finalstage";
 import {
     agentProject,
+    endedPlanReviewers,
+    endedReviewerId,
+    endedReviewerOf,
+    endedReviewerVM,
     endedRoles,
+    endedVerifierId,
+    endedVerifierOf,
+    endedVerifierVM,
     endedWorkerId,
     endedWorkerVM,
     finalStageRoles,
@@ -18,6 +25,7 @@ import {
     leadAgentOf,
     leadRunTabIds,
     leadStandingBy,
+    mergeGateLine,
     runAgentsOf,
     runEngineBusy,
     runFocusAgent,
@@ -30,11 +38,15 @@ import {
     taskElapsed,
     taskStateLabel,
     unmetDeps,
+    verifierStepTarget,
+    verifyFailLine,
     workerAge,
     workerAsk,
     workerSubtext,
     type Lineage,
+    type RunInfo,
 } from "./runlineage";
+import { modelLabel } from "./session-models/sessionviewmodel";
 
 const dag = {
     oid: "dag-1",
@@ -262,6 +274,71 @@ describe("ended workers", () => {
             agent: undefined,
             idleSince: undefined,
             transcriptPath: undefined,
+        });
+    });
+});
+
+describe("ended plan reviewers", () => {
+    const reviewers: PlanReviewer[] = [
+        { lens: "full", state: "passed", runid: "rv-full" },
+        { lens: "second", state: "failed", runid: "rv-second" },
+        { lens: "order", state: "lost", runid: "rv-order" },
+        { lens: "tests", state: "reviewing", runid: "rv-tests" },
+        { lens: "spec", state: "lost", runid: "" },
+    ];
+    const run: RunInfo = {
+        runId: "r1",
+        channelId: "c",
+        title: "",
+        project: "p",
+        dag: { tasks: [], planreview: { state: "failed", round: 1, reviewers } } as TaskGroup,
+    };
+
+    it("lists the round's reviewers with a verdict and a run, not one still reviewing or never started", () => {
+        expect(endedPlanReviewers(run).map((r) => r.runid)).toEqual(["rv-full", "rv-second", "rv-order"]);
+        expect(endedPlanReviewers({ ...run, dag: undefined })).toEqual([]);
+    });
+
+    it("lists none while the round is still reviewing, as the roster's tabs alone are then the rows", () => {
+        const reviewing = {
+            ...run,
+            dag: { tasks: [], planreview: { state: "reviewing", round: 1, reviewers } } as TaskGroup,
+        };
+        expect(endedPlanReviewers(reviewing)).toEqual([]);
+    });
+
+    it("gives each a plan-reviewer stage role under an ended id no roster agent has", () => {
+        const id = endedReviewerId("r1", "rv-full");
+        const roles = endedRoles({ r1: run });
+        expect(roles[id]).toEqual({ kind: "stage", leadRunId: "r1", stageRole: "plan-reviewer" });
+        expect(Object.keys(roles)).toHaveLength(3);
+        expect(roles[endedReviewerId("r1", "rv-tests")]).toBeUndefined();
+        expect(isEndedWorkerId(id)).toBe(true);
+    });
+
+    it("finds the reviewer an ended id names, and none for a worker's ended id", () => {
+        expect(endedReviewerOf(run, endedReviewerId("r1", "rv-second"))?.lens).toBe("second");
+        expect(endedReviewerOf(run, endedReviewerId("r1", "rv-tests"))).toBeUndefined();
+        expect(endedReviewerOf(run, endedWorkerId("r1", "t-1"))).toBeUndefined();
+    });
+
+    it("reads an ended reviewer from its own run, named by its lens", () => {
+        const child = { runtime: "claude", model: "claude-haiku-4-5", completedts: 7000 } as Run;
+        expect(endedReviewerVM("r1", reviewers[1], child, "C:/r.jsonl")).toMatchObject({
+            id: endedReviewerId("r1", "rv-second"),
+            name: "Plan review · Second pass",
+            task: "",
+            state: "idle",
+            agent: "claude",
+            idleSince: 7000,
+            transcriptPath: "C:/r.jsonl",
+            runId: "rv-second",
+        });
+        expect(endedReviewerVM("r1", reviewers[0])).toMatchObject({
+            agent: undefined,
+            idleSince: undefined,
+            transcriptPath: undefined,
+            runId: "rv-full",
         });
     });
 });
@@ -495,5 +572,108 @@ describe("runInfoOf", () => {
         expect(info).toMatchObject({ runId: "r-2", channelId: "", title: "Orchestrator run", project: "" });
         expect(info.base).toBeUndefined();
         expect(info.leadStarted).toBe(false);
+    });
+});
+
+describe("mergeGateLine", () => {
+    const gateRun = (holderState: string, tip: Partial<DagTaskDigest>): Pick<RunInfo, "dag" | "digest"> => ({
+        dag: { tasks: [{ id: "t-2" }, { id: "t-4", state: holderState }] } as TaskGroup,
+        digest: { tasks: [{ taskid: "t-2", ...tip }] } as DagStatusDigest,
+    });
+
+    it("reads a ready tip as merge ready", () => {
+        expect(mergeGateLine(gateRun("done", { mergestate: "ready" }), "t-2")).toBe("merge ready");
+    });
+
+    it("names the holder and why a held tip waits", () => {
+        const held = { mergestate: "held", mergeheldby: "t-4" };
+        expect(mergeGateLine(gateRun("verifying", held), "t-2")).toBe("merge ready · waits on t-4's Verify");
+        expect(mergeGateLine(gateRun("verify-failed", held), "t-2")).toBe("merge ready · waits on t-4's failed Verify");
+        expect(mergeGateLine(gateRun("blocked-merge", held), "t-2")).toBe(
+            "merge ready · waits on t-4's merge conflict"
+        );
+    });
+
+    it("reads a held tip whose holder it cannot place as held", () => {
+        expect(mergeGateLine(gateRun("done", { mergestate: "held", mergeheldby: "t-9" }), "t-2")).toBe(
+            "merge ready · held"
+        );
+    });
+
+    it("is undefined for any other state or a task the digest lacks", () => {
+        expect(mergeGateLine(gateRun("done", { mergestate: "waiting" }), "t-2")).toBeUndefined();
+        expect(mergeGateLine(gateRun("done", { mergestate: "merged" }), "t-2")).toBeUndefined();
+        expect(mergeGateLine(gateRun("done", { mergestate: "ready" }), "t-9")).toBeUndefined();
+        expect(mergeGateLine({ dag: undefined, digest: undefined }, "t-2")).toBeUndefined();
+    });
+});
+
+describe("verifyFailLine", () => {
+    const task = (verifyerror?: string) => ({ id: "t-1", verifyerror }) as TaskNode;
+
+    it("prefers the digest's failure line", () => {
+        const td = { taskid: "t-1", verifyfailline: "--- FAIL: TestAdd" } as DagTaskDigest;
+        expect(verifyFailLine(task("exit 1: ✔ adds two positive numbers"), td)).toBe("--- FAIL: TestAdd");
+    });
+
+    it("falls back to the reason before the first colon, never the excerpt", () => {
+        expect(verifyFailLine(task("exit 1: ✔ adds two positive numbers\nmore"), undefined)).toBe("exit 1");
+        expect(verifyFailLine(task("timed out after 20m"), { taskid: "t-1" } as DagTaskDigest)).toBe(
+            "timed out after 20m"
+        );
+    });
+
+    it("is undefined with no verifyerror", () => {
+        expect(verifyFailLine(task(undefined), undefined)).toBeUndefined();
+        expect(verifyFailLine(task(""), undefined)).toBeUndefined();
+    });
+});
+
+// 2026-11-13 Kael sync, cff274e28 (P11)
+describe("ended verifier", () => {
+    const run: RunInfo = {
+        runId: "r1",
+        channelId: "c",
+        title: "",
+        project: "p",
+        dag: { tasks: [], final: { state: "passed", verifierrunid: "vr-1" } } as unknown as TaskGroup,
+    };
+    const noVerifier: RunInfo = { ...run, dag: { tasks: [], final: { state: "checking" } } as unknown as TaskGroup };
+
+    it("gives the current verifier a stage role under an ended id", () => {
+        const id = endedVerifierId("r1", "vr-1");
+        expect(endedRoles({ r1: run })[id]).toEqual({ kind: "stage", leadRunId: "r1", stageRole: "verifier" });
+        expect(isEndedWorkerId(id)).toBe(true);
+        expect(Object.keys(endedRoles({ r1: noVerifier }))).toEqual([]);
+    });
+
+    it("finds the verifier run an ended id names, and none for another id", () => {
+        expect(endedVerifierOf(run, endedVerifierId("r1", "vr-1"))).toBe("vr-1");
+        expect(endedVerifierOf(run, endedVerifierId("r1", "vr-0"))).toBeUndefined();
+        expect(endedVerifierOf(run, endedReviewerId("r1", "vr-1"))).toBeUndefined();
+        expect(endedVerifierOf(noVerifier, endedVerifierId("r1", ""))).toBeUndefined();
+    });
+
+    it("reads it from its own run, named for the stage", () => {
+        const child = { runtime: "claude", model: "claude-haiku-4-5", completedts: 7000 } as Run;
+        expect(endedVerifierVM("r1", "vr-1", child, "C:/v.jsonl")).toEqual({
+            id: endedVerifierId("r1", "vr-1"),
+            name: stageLabel("verifier"),
+            task: "",
+            state: "idle",
+            agent: "claude",
+            model: modelLabel("claude-haiku-4-5"),
+            idleSince: 7000,
+            transcriptPath: "C:/v.jsonl",
+            runId: "vr-1",
+        });
+    });
+
+    it("opens the live verifier agent, else its ended transcript, else nothing without a verifier", () => {
+        expect(verifierStepTarget(run, [{ id: "tab-v", runId: "vr-1" }])).toBe("tab-v");
+        expect(verifierStepTarget(run, [{ id: "tab-old", runId: "vr-0" }])).toBe(endedVerifierId("r1", "vr-1"));
+        expect(verifierStepTarget(run, [])).toBe(endedVerifierId("r1", "vr-1"));
+        expect(verifierStepTarget(noVerifier, [{ id: "tab-v", runId: "vr-1" }])).toBeUndefined();
+        expect(verifierStepTarget({ ...run, dag: undefined }, [])).toBeUndefined();
     });
 });

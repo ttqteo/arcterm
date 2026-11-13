@@ -4,7 +4,11 @@
 // Pure view derivations for a run's evidence: duration, size and clock formatting, verification counts and
 // whether the evidence still needs sealing. No React, no jotai — unit-tested in runcompletion.test.ts.
 
+// under a second reads "<1s" before rounding, or 500-999 ms would read "1s"
 export function fmtDuration(ms: number): string {
+    if (ms > 0 && ms < 1000) {
+        return "<1s";
+    }
     const s = Math.max(0, Math.round(ms / 1000));
     const m = Math.floor(s / 60);
     const rem = s % 60;

@@ -1,6 +1,8 @@
+import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { useWaveObjectValue } from "../../store/wos";
 import { capabilityFor } from "../agents/route";
+import { runFinished } from "../agents/runlineage";
 import { canEscalate } from "./escalate";
 import { cardModelTag, reviewerRouteOf, reviewStateText, taskRoute, type RouteSource } from "./taskroute";
 
@@ -16,6 +18,14 @@ export const hoveredTaskAtom = atom<{ id: string; from: "graph" | "timeline" } |
     id: string;
     from: "graph" | "timeline";
 } | null>;
+
+// Clears the hover only if `from` set it: each side owns its own, and a hover that began on the other side meanwhile
+// is not this one's to clear. Unmounts call it too, since an unmount under the pointer fires no pointer-leave.
+export function clearHover(from: "graph" | "timeline"): void {
+    if (globalStore.get(hoveredTaskAtom)?.from === from) {
+        globalStore.set(hoveredTaskAtom, null);
+    }
+}
 
 export type DagNodeRoute = {
     source: RouteSource;
@@ -91,11 +101,15 @@ export function buildViewData(
     const reviewer = reviewerRouteOf(group, owner);
     const reviewerModel = capabilityFor(reviewer.route, harnesses)?.resolvedmodel ?? "unavailable";
     const reviewerLabel = reviewer.custom ? "reviewer route" : "same as lead";
+    // the engine refuses every task action on an ended dag, so a button for one would only fail
+    const ended = runFinished({ dag: group, status: group.status });
     const nodes: DagViewNode[] = group.tasks.map((t) => {
         let actions = ACTION_BY_STATE[t.state] ?? [];
         if (t.gate && t.state === "done") actions = GATE_DONE_ACTIONS;
         if (mergeReady.has(t.id)) actions = ["merge"];
         if (canEscalate(t)) actions = [...new Set([...actions, "escalate"])];
+        if (ended) actions = [];
+        const branchGone = ended || t.merged || t.state === "skipped" || t.state === "cancelled";
         const { route: effective, source } = taskRoute(t, owner, group);
         const capability = capabilityFor(effective, harnesses);
         return {
@@ -103,7 +117,7 @@ export function buildViewData(
             label: t.label ?? t.id,
             state: t.state,
             gate: t.gate ?? false,
-            meta: t.runid ? `wave/${t.runid}` : "",
+            meta: t.runid && !branchGone ? `wave/${t.runid}` : "",
             actions,
             route: {
                 source,

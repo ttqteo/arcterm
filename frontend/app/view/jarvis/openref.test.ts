@@ -54,6 +54,8 @@ import {
     radarSelectedIdAtom,
 } from "../agents/radarstore";
 import { setupTabAtom } from "../agents/setupstore";
+import { dagModalStateAtom, dismissDagModal } from "../orchestrate/dagmodalstate";
+import { selectedTaskIdAtom } from "../orchestrate/dagstore";
 import type { OpenTarget } from "./address";
 import { effortDetailAtom } from "./effortstore";
 import { initiativeSheetAtom } from "./initiativesheetstore";
@@ -194,6 +196,68 @@ describe("run and channel landings", () => {
             message: "",
             level: "error",
         });
+    });
+});
+
+describe("dag landing", () => {
+    // Ctrl is the Windows peek key (ctrlheld.ts isPeekGesture), and the file's other suites restore darwin
+    beforeEach(() => setPlatform("win32"));
+    afterEach(() => {
+        dismissDagModal();
+        setPlatform("darwin");
+    });
+
+    // the dag names its owner, so the sheet underneath is the owner's whichever run asked
+    it("opens the owner run's sheet and the modal on the dag, with the task selected", async () => {
+        const model = makeModel();
+        objects.set("dag:d1", { oid: "d1", runid: "r1", channelid: "c1" });
+        objects.set("channel:c1", { oid: "c1" });
+        expect(await openTarget(model, { kind: "dag", dagId: "d1", taskId: "t-2" })).toEqual({ ok: true });
+        expect(globalStore.get(activeSubjectAtom)).toEqual({ kind: "channel", id: "c1" });
+        expect(globalStore.get(activeRunIdAtom)["c1"]).toBe("r1");
+        expect(globalStore.get(briefSheetOpenAtom)).toBe(true);
+        expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
+        expect(globalStore.get(dagModalStateAtom)).toEqual({
+            kind: "live",
+            channelId: "c1",
+            runId: "r1",
+            dagOref: "dag:d1",
+            error: "",
+        });
+        expect(globalStore.get(selectedTaskIdAtom)).toBe("t-2");
+    });
+
+    it("opens the modal with nothing selected when no task is named", async () => {
+        const model = makeModel();
+        objects.set("dag:d1", { oid: "d1", runid: "r1", channelid: "c1" });
+        objects.set("channel:c1", { oid: "c1" });
+        expect(await openAddress(model, "dag:d1")).toEqual({ ok: true });
+        expect(globalStore.get(dagModalStateAtom)).toMatchObject({ dagOref: "dag:d1" });
+        expect(globalStore.get(selectedTaskIdAtom)).toBeNull();
+    });
+
+    it("reports a dag that no longer exists, and opens nothing", async () => {
+        const model = makeModel();
+        expect(await openTarget(model, { kind: "dag", dagId: "gone" })).toEqual({
+            ok: false,
+            reason: "unavailable",
+            message: "That DAG no longer exists",
+        });
+        expect(globalStore.get(briefSheetOpenAtom)).toBe(false);
+        expect(globalStore.get(dagModalStateAtom)).toBeNull();
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
+    });
+
+    it("peeks the owner run on Ctrl, and leaves the modal shut", async () => {
+        const model = makeModel();
+        objects.set("dag:d1", { oid: "d1", runid: "r1", channelid: "c1" });
+        objects.set("run:r1", { oid: "r1", channeloid: "c1" });
+        objects.set("channel:c1", { oid: "c1" });
+        const event = { ctrlKey: true, preventDefault: vi.fn(), stopPropagation: vi.fn() };
+        expect(await openOrPeek(model, { kind: "dag", dagId: "d1", taskId: "t-2" }, event)).toEqual({ ok: true });
+        expect(globalStore.get(peekItemAtom)?.target).toEqual({ kind: "run", runId: "r1" });
+        expect(globalStore.get(dagModalStateAtom)).toBeNull();
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
     });
 });
 

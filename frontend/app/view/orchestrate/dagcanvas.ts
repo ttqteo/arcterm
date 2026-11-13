@@ -4,6 +4,7 @@
 // The Route DAG canvas as data: what a node says about its task, how an edge is drawn, where a key
 // moves the selection, and how the graph opens. Ported from the design canvas (dag-visualizer/Main.dc.html).
 
+import { runFinished } from "../agents/runlineage";
 import { firstLine, formatElapsed } from "./dagdigest";
 import type { Rect } from "./daglayout";
 
@@ -82,11 +83,16 @@ export type FactCtx = {
     digest: DagTaskDigest | undefined;
     mergeReady: ReadonlySet<string>;
     nowMs: number;
+    // the dag's status: an ended dag and one under plan review change what a card can truthfully say
+    dagStatus?: string;
 };
+
+const PLAN_REVIEW_STATUSES = new Set(["plan-review", "awaiting-plan"]);
 
 function waitingFact(t: TaskNode, ctx: FactCtx): string {
     if (ctx.digest?.waitreason === "ask") return "asked you";
     if (ctx.digest?.waitreason === "lead-ask") return "asked the lead";
+    if (PLAN_REVIEW_STATUSES.has(ctx.dagStatus ?? "")) return "waits on plan review";
     const open = (t.deps ?? []).filter((d) => {
         const dep = ctx.byId.get(d);
         return dep != null && !isFinished(dep);
@@ -95,8 +101,15 @@ function waitingFact(t: TaskNode, ctx: FactCtx): string {
     return open.length > MAX_NAMED_DEPS ? `waits on ${open.length} tasks` : `waits on ${open.join(", ")}`;
 }
 
+// what an ended dag says in place of "retry or skip": the engine refuses those actions once the run is over
+function endedFact(dagStatus: string): string {
+    return dagStatus === "cancelled" ? "run cancelled" : "run ended";
+}
+
 // factOf is the one fact a node card states after its id and state word (spec D2)
 export function factOf(t: TaskNode, ctx: FactCtx): string {
+    const dagStatus = ctx.dagStatus ?? "";
+    const ended = runFinished({ status: dagStatus });
     switch (t.state) {
         case "running": {
             const elapsed = t.firstactivity ? formatElapsed(Math.max(0, ctx.nowMs - t.firstactivity)) : "starting";
@@ -113,8 +126,10 @@ export function factOf(t: TaskNode, ctx: FactCtx): string {
             if (t.merged) return "merged";
             return ctx.mergeReady.has(t.id) ? "merge ready" : "awaiting merge";
         case "failed":
+            if (ended) return endedFact(dagStatus);
             return `attempt ${t.attempts || 1} · retry or skip`;
         case "stalled":
+            if (ended) return endedFact(dagStatus);
             return t.lastactivity
                 ? `idle ${formatElapsed(Math.max(0, ctx.nowMs - t.lastactivity))} · retry or skip`
                 : "idle · retry or skip";
@@ -125,7 +140,8 @@ export function factOf(t: TaskNode, ctx: FactCtx): string {
         case "review-failed":
             return "approve or send back";
         case "skipped":
-            return "skipped by you";
+            // the engine records no skipper, so the card does not guess one
+            return dagStatus === "cancelled" ? "run cancelled" : "";
         case "cancelled":
             return "run cancelled";
         default:
@@ -269,11 +285,14 @@ const CHIP_GROUPS: Omit<ChipGroup, "count">[] = [
     { key: "inert", label: "skipped", kinds: ["inert"] },
 ];
 
-export function chipGroups(tasks: TaskState[]): ChipGroup[] {
+// on an ended dag nobody is waiting on the attention tasks, so the group reports what happened to them
+export function chipGroups(tasks: TaskState[], ended = false): ChipGroup[] {
     const kinds = tasks.map(kindOf);
-    return CHIP_GROUPS.map((g) => ({ ...g, count: kinds.filter((k) => g.kinds.includes(k)).length })).filter(
-        (g) => g.count > 0
-    );
+    return CHIP_GROUPS.map((g) => ({
+        ...g,
+        label: ended && g.key === "attention" ? "failed" : g.label,
+        count: kinds.filter((k) => g.kinds.includes(k)).length,
+    })).filter((g) => g.count > 0);
 }
 
 // pickNext cycles the selection through the tasks of a chip's group, in plan order
@@ -310,14 +329,16 @@ export function fitScale(pos: Map<string, Point>, pane: Pane, hasLanes: boolean)
 }
 
 // openView fits the whole graph unless that would shrink it below the floor; then it opens on the tasks
-// that need you, else the live ones, else the ready ones, at the floor (spec D9)
+// that need you, else the live ones, else the ready ones, at the floor (spec D9). An ended dag has nothing to
+// focus on, so it fits whole down to ZOOM_MIN rather than clip.
 export function openView(
     tasks: TaskNode[],
     pos: Map<string, Point>,
     pane: Pane,
-    hasLanes: boolean
+    hasLanes: boolean,
+    ended = false
 ): { fitIds: string[] | null; minZoom: number } {
-    if (fitScale(pos, pane, hasLanes) >= ZOOM_FLOOR) return { fitIds: null, minZoom: ZOOM_MIN };
+    if (ended || fitScale(pos, pane, hasLanes) >= ZOOM_FLOOR) return { fitIds: null, minZoom: ZOOM_MIN };
     for (const kind of ["attention", "live", "ready"] as NodeKind[]) {
         const ids = tasks.filter((t) => kindOf(t) === kind).map((t) => t.id);
         if (ids.length > 0) return { fitIds: ids, minZoom: ZOOM_FLOOR };

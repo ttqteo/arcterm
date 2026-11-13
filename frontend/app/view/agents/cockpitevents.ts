@@ -5,11 +5,12 @@
 // persisted ones; a plain agent has no history anywhere, so its transitions are observed here and are lost on
 // reload (effort 9868f8d2, decided frontend-only). Pure.
 
+import { FINAL_FAILED_BLOCK } from "../orchestrate/timelinefilter";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
 import type { RunInfo } from "./runlineage";
-import { detailOf, eventText } from "./runtimeline";
+import { detailOf, eventText, finalEndedWords } from "./runtimeline";
 
-export type RailKind = "asked" | "answered" | "finished" | "quiet" | "failed" | "told" | "landed";
+export type RailKind = "asked" | "answered" | "finished" | "quiet" | "failed" | "told" | "acted" | "landed";
 
 export interface RailEvent {
     key: string;
@@ -74,11 +75,45 @@ const RUN_KIND: Record<string, RailKind> = {
     "dag-cancelled": "finished",
 };
 
+const FINAL_FAILED = "failed";
+
+/** Pure: the kinds whose rail row depends on their detail rather than on the kind alone, or undefined for any other
+ *  kind (RUN_KIND decides it). A final stage's end says how the stage itself ended, whatever decided it (the
+ *  steps, the verifier's verdict or a human), and an outcome it does not know stays off the rail. A failure
+ *  forwarded to the human reads asked. The human's own retry, skip, escalate, take-over and final rerun read acted,
+ *  while the lead's actions and the engine's retries stay off the rail, as does every dag-blocked but the final
+ *  stage's (the others are a task's failure, already there as that task's own event). */
+function detailRailKind(e: RunEvent): { kind: RailKind; text: string } | null | undefined {
+    const d = detailOf<{ by?: string; kind?: string; outcome?: string }>(e);
+    switch (e.kind) {
+        case "final-ended": {
+            const words = finalEndedWords(e);
+            return words == null ? null : { kind: d?.outcome === FINAL_FAILED ? "failed" : "finished", text: words };
+        }
+        case "dag-blocked":
+            return d?.kind === FINAL_FAILED_BLOCK ? { kind: "failed", text: "final stage failed" } : null;
+        case "task-forwarded":
+            return { kind: d?.by === "human" ? "acted" : "asked", text: eventText(e) };
+        case "task-retried":
+        case "task-skipped":
+        case "task-escalated":
+            return d?.by === "human" ? { kind: "acted", text: eventText(e) } : null;
+        case "final-rerun":
+            return { kind: "acted", text: eventText(e) };
+        default:
+            return undefined;
+    }
+}
+
 /** Pure: a run's engine events as rail events. A failed review counts once, when its rounds are spent. */
 export function runRailEvents(run: RunInfo, events: RunEvent[], leadId?: string): RailEvent[] {
     const out: RailEvent[] = [];
     for (const e of events) {
-        let kind = RUN_KIND[e.kind];
+        const byDetail = detailRailKind(e);
+        if (byDetail === null) {
+            continue;
+        }
+        let kind = byDetail?.kind ?? RUN_KIND[e.kind];
         if (e.kind === "task-review-failed" && detailOf<{ final?: boolean }>(e)?.final) {
             kind = "failed";
         }
@@ -90,7 +125,7 @@ export function runRailEvents(run: RunInfo, events: RunEvent[], leadId?: string)
             focusId: leadId,
             who: run.title,
             kind,
-            text: eventText(e),
+            text: byDetail?.text ?? eventText(e),
             ts: e.ts,
             group: run.runId,
         });

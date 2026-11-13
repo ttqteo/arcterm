@@ -95,3 +95,10 @@ export function enterOpensTask(active: Element | null): boolean {
     }
     return !isEditableTarget(active);
 }
+
+// Pure: whether the graph's arrow and zoom keys leave this focus alone. A text field types, and a popover that
+// walks its own rows with the arrows (data-owns-arrows, the route picker) moves focus to a row before the key
+// reaches the window, so the focused row button is what says the key was the popover's.
+export function graphKeysYield(active: Element | null): boolean {
+    return isEditableTarget(active) || active?.closest("[data-owns-arrows]") != null;
+}

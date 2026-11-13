@@ -1,6 +1,6 @@
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
+import { isTopModal } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
-import { isEditableTarget } from "@/app/store/keybindings/dispatcher";
 import { fireAndForget } from "@/util/util";
 import {
     applyNodeChanges,
@@ -18,6 +18,7 @@ import "@xyflow/react/dist/style.css";
 import { atom, useAtom, useAtomValue } from "jotai";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFinalStageView } from "../agents/finalstageviews";
+import { runFinished } from "../agents/runlineage";
 import {
     edgeStyle,
     factOf,
@@ -28,6 +29,7 @@ import {
     ZOOM_MAX,
     ZOOM_MIN,
     type EdgeFocus,
+    type Pane,
 } from "./dagcanvas";
 import { taskBriefs, useDagDigest } from "./dagdigest";
 import { FINAL_NODE_ID, finalEdgeStyle, withFinalNode } from "./dagfinal";
@@ -41,7 +43,7 @@ import {
     type LayoutOffsetStore,
     type Offsets,
 } from "./daglayoutstore";
-import { dagModalAgentsContextAtom } from "./dagmodalstate";
+import { DAG_MODAL_ID, dagModalAgentsContextAtom } from "./dagmodalstate";
 import {
     dagEdgeTypes,
     dagNodeTypes,
@@ -53,9 +55,9 @@ import {
 } from "./dagnodes";
 import { nextSelection, PEEK_PAD_PX } from "./dagpeek";
 import type { PeekPlace } from "./dagpeekcard";
-import { buildViewData, hoveredTaskAtom, mergeReadyIds, selectedTaskIdAtom, useDagGroup } from "./dagstore";
+import { buildViewData, clearHover, hoveredTaskAtom, mergeReadyIds, selectedTaskIdAtom, useDagGroup } from "./dagstore";
 import { DagTaskPeek, openTaskFromGraph } from "./dagtaskpeek";
-import { enterOpensTask } from "./taskcorrelate";
+import { enterOpensTask, graphKeysYield } from "./taskcorrelate";
 import { stageEntries, stageTone, type StageEntry } from "./taskroute";
 
 // fitView's padding, as a fraction of the pane
@@ -161,7 +163,7 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
             return;
         }
         // a timeline hover belongs to the timeline; leaving a card clears only the graph's own
-        if (globalStore.get(hoveredTaskAtom)?.from === "graph") globalStore.set(hoveredTaskAtom, null);
+        clearHover("graph");
     }, []);
     // closing the modal under the pointer never fires the card's pointer-leave
     useEffect(() => () => onHover(null), [onHover]);
@@ -177,7 +179,7 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
             const data: DagCardData = {
                 task,
                 view: v,
-                fact: factOf(task, { byId, digest: digestById.get(v.id), mergeReady, nowMs }),
+                fact: factOf(task, { byId, digest: digestById.get(v.id), mergeReady, nowMs, dagStatus: group.status }),
                 selected: v.id === selectedId,
                 dimmed: !inRel(v.id),
                 hovered: hovered?.id === v.id,
@@ -295,28 +297,35 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
         return box ? { w: box.width, h: box.height } : { w: 0, h: 0 };
     }, [paneElRef]);
 
+    const ended = group != null && runFinished({ dag: group, status: group.status });
     // the opening view (spec D9), once per dag, after the pane has a size: fitting a 0x0 pane would pick
-    // the focus set for every graph
-    const openedFor = useRef<string | null>(null);
+    // the focus set for every graph. Until the user moves the viewport a pane resize runs it again, so a
+    // viewport fitted to the old size never hides part of the graph (spec F17).
+    const opened = useRef<({ oid: string } & Pane) | null>(null);
+    const userMoved = useRef(false);
     // the opening fit while it is in flight (ReactFlow runs it once the nodes are measured)
     const openFit = useRef<Promise<unknown> | null>(null);
     useEffect(() => {
-        if (!tasks || tasks.length === 0 || nodes.length === 0 || openedFor.current === oid) return;
+        if (!tasks || tasks.length === 0 || nodes.length === 0) return;
         const pane = paneSize();
         if (pane.w <= 0 || pane.h <= 0) return;
-        openedFor.current = oid;
+        const prev = opened.current;
+        if (prev?.oid === oid && (userMoved.current || (prev.w === pane.w && prev.h === pane.h))) return;
+        if (prev?.oid !== oid) userMoved.current = false;
+        opened.current = { oid, ...pane };
         const { fitIds, minZoom } = openView(
             tasks,
             positions,
             pane,
-            lanes.some((l) => l.length > 1)
+            lanes.some((l) => l.length > 1),
+            ended
         );
         const fit = fitView({ padding: FIT_PADDING, minZoom, maxZoom: 1, nodes: fitIds?.map((id) => ({ id })) });
         openFit.current = fit;
         void fit.then(() => {
             if (openFit.current === fit) openFit.current = null;
         });
-    }, [fitView, lanes, nodes.length, oid, paneRect, paneSize, positions, tasks]);
+    }, [ended, fitView, lanes, nodes.length, oid, paneRect, paneSize, positions, tasks]);
 
     // the selected node's element, which its peek floats beside. ReactFlow renders a node a commit after it
     // enters the nodes, so this resolves again as they change.
@@ -355,6 +364,8 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
     useEffect(() => {
         if (!tasks) return;
         const onKey = (e: KeyboardEvent) => {
+            // a modal above the dag modal (the Final shots viewer, a confirm) owns the keys (spec F2)
+            if (!isTopModal(DAG_MODAL_ID)) return;
             // shift is not a skip: "+" is shift+= on most layouts
             if (e.ctrlKey || e.metaKey || e.altKey) return;
             if (e.key === "Enter") {
@@ -369,7 +380,7 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
                 }
                 return;
             }
-            if (isEditableTarget(document.activeElement)) return;
+            if (graphKeysYield(document.activeElement)) return;
             const r = graphKey(e.key, {
                 tasks: layoutTasks,
                 selected: selectedId,
@@ -416,13 +427,13 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
     return (
         <div className="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-background">
             <DagGraphHeader group={group} owner={owner} />
-            <div className="flex flex-none items-center gap-[18px] border-b border-border bg-surface px-4 py-1.5 text-[10.5px] tabular-nums text-ink-mid">
-                <span>
+            <div className="flex flex-none flex-wrap items-center gap-x-[18px] gap-y-1 border-b border-border bg-surface px-4 py-1.5 text-[10.5px] tabular-nums text-ink-mid">
+                <span className="whitespace-nowrap">
                     Run route · {owner.runtime || "unavailable"} / {owner.model || "default"}
                 </span>
                 {stageEntries(group, owner).map((s) => (
                     <Fragment key={s.key}>
-                        <span className="flex items-center gap-1.5">
+                        <span data-dag-stage-entry={s.key} className="flex items-center gap-1.5 whitespace-nowrap">
                             <span className={`h-[7px] w-[7px] rounded-full border ${STAGE_DOT[s.tone]}`} />
                             {s.text}
                         </span>
@@ -431,7 +442,7 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
                                 key={r.lens}
                                 data-plan-reviewer={r.lens}
                                 data-plan-reviewer-state={r.state}
-                                className="flex items-center gap-1.5"
+                                className="flex items-center gap-1.5 whitespace-nowrap"
                             >
                                 <span
                                     className={`h-[7px] w-[7px] rounded-full border ${STAGE_DOT[stageTone(r.state)]}`}
@@ -473,6 +484,11 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
                             else if (n.id === FINAL_NODE_ID) openFinalFromGraph(group, owner);
                         }}
                         onNodeDragStop={onNodeDragStop}
+                        // a viewport change with a source event is the user's; programmatic fits carry none.
+                        // onMove rather than onMoveStart: the start also fires on a plain pane click.
+                        onMove={(e) => {
+                            if (e != null) userMoved.current = true;
+                        }}
                         onPaneClick={() => globalStore.set(selectedTaskIdAtom, null)}
                     >
                         <Background

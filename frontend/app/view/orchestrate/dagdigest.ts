@@ -52,6 +52,7 @@ const REFRESH_EVENT_KINDS = new Set([
     "task-verify-passed",
     "task-verify-failed",
     "final-step",
+    "final-ended",
     "dag-done",
 ]);
 
@@ -273,9 +274,19 @@ const HEALTH_TONE: Record<string, string> = {
 // a fact about the two versions, so the caller derives it every render rather than storing a flag: a
 // stored flag can only flip when a request *returns*, which left the previous version's health and
 // counts reading as current for the whole reload.
-export function digestStale(digest: DagStatusDigest | undefined, observedVersion: number | undefined): boolean {
-    return digest != null && digest.dagversion !== observedVersion;
+//
+// A refresh that failed counts too: refreshes also run on events that leave the version alone (a child's ask), so
+// the held digest can be behind at an unchanged version, and reading it as current would keep its old health.
+export function digestStale(
+    digest: DagStatusDigest | undefined,
+    observedVersion: number | undefined,
+    error?: string
+): boolean {
+    return digest != null && (digest.dagversion !== observedVersion || error != null);
 }
+
+// the waits before the hook re-asks for a digest whose refresh failed; its readers (the graph) offer no retry
+export const DIGEST_RETRY_MS = [5_000, 30_000, 120_000];
 
 // healthView is the single decision about what the health strip says. Three rules it must never break:
 // an unavailable digest is never rendered as healthy, a stale digest's health is not shown as if it
@@ -341,6 +352,8 @@ export function useDagDigest(channelId: string, runId: string, dagOref: string):
         nextNonce.current++;
         setRefreshNonce(nextNonce.current);
     }, []);
+    // consecutive failed refreshes, which pace the automatic retries; a success resets it
+    const failures = useRef(0);
 
     // mark newly seen digest-relevant events once; each bump triggers the load effect below
     useEffect(() => {
@@ -362,6 +375,7 @@ export function useDagDigest(channelId: string, runId: string, dagOref: string):
             return;
         }
         let cancelled = false;
+        let retryTimer: ReturnType<typeof setTimeout> | undefined;
         const token = ++requestTokenRef.current;
         newestTokenRef.current = token;
         setState((s) => ({ ...s, loading: true }));
@@ -375,6 +389,7 @@ export function useDagDigest(channelId: string, runId: string, dagOref: string):
                     setState((s) => ({ ...s, loading: false }));
                     return;
                 }
+                failures.current = 0;
                 setState({ digest: rtn.digest, loading: false, error: undefined, lastUpdatedTs: Date.now() });
             })
             .catch((err: unknown) => {
@@ -382,11 +397,16 @@ export function useDagDigest(channelId: string, runId: string, dagOref: string):
                     return;
                 }
                 setState((s) => ({ ...s, loading: false, error: String(err) }));
+                const wait = DIGEST_RETRY_MS[failures.current++];
+                if (wait != null) {
+                    retryTimer = setTimeout(retry, wait);
+                }
             });
         return () => {
             cancelled = true;
+            clearTimeout(retryTimer);
         };
     }, [channelId, runId, dagOref, observedVersion, refreshNonce]);
 
-    return { ...state, stale: digestStale(state.digest, observedVersion), retry };
+    return { ...state, stale: digestStale(state.digest, observedVersion, state.error), retry };
 }

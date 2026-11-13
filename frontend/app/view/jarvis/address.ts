@@ -9,6 +9,8 @@
 export type OpenTarget =
     | { kind: "channel"; channelId: string; runId?: string }
     | { kind: "run"; runId: string }
+    // a run's task graph, with one task selected when named (openref.ts lands it on the owner run's sheet)
+    | { kind: "dag"; dagId: string; taskId?: string }
     | { kind: "agent"; tabId: string }
     | { kind: "record"; dossierId: string; anchor?: string }
     // view "activity" is the initiative's Activity sheet even while a plan waits to review (openref.ts selectEffort)
@@ -54,6 +56,8 @@ export function parseAddress(address: string, hint?: AddressHint): OpenTarget | 
             return { kind: "run", runId: id };
         case "channel":
             return { kind: "channel", channelId: id };
+        case "dag":
+            return parseDag(id);
         case "tab":
         case "agent":
             return { kind: "agent", tabId: id };
@@ -84,6 +88,15 @@ export function parseAddress(address: string, hint?: AddressHint): OpenTarget | 
         default:
             return { kind: "unsupported", message: CANNOT_OPEN };
     }
+}
+
+// dag:<oid>[#<taskId>]: the graph, with one task selected when named
+function parseDag(id: string): OpenTarget | Unsupported {
+    const [dagId, taskId, ...rest] = id.split("#");
+    if (dagId === "" || taskId === "" || rest.length > 0) {
+        return { kind: "unsupported", message: CANNOT_OPEN };
+    }
+    return taskId != null ? { kind: "dag", dagId, taskId } : { kind: "dag", dagId };
 }
 
 // vault:<id> named a node without its collection. The card's source type recovers the collection — except for

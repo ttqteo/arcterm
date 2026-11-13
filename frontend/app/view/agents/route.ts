@@ -218,6 +218,13 @@ export function pickerRowMeta(row: PickerModelRow): string {
         .join(" · ");
 }
 
+// the face of a picker with no route chosen: a caller's own label wins; a picker that cannot inherit asks for a
+// model rather than promising a route it will not inherit
+export function emptyRouteLabel(canInherit: boolean, inheritedLabel?: string): string {
+    if (inheritedLabel) return inheritedLabel;
+    return canInherit ? "Inherit route" : "Pick a model";
+}
+
 export function pickerTitleFor(customTitle?: string): string {
     const t = customTitle?.trim();
     return t ? t : "Run route";

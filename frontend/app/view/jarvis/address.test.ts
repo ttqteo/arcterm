@@ -37,6 +37,17 @@ describe("parseAddress", () => {
         expect(parseAddress(address, hint)).toEqual(want);
     });
 
+    it.each<[string, OpenTarget]>([
+        ["dag:abc", { kind: "dag", dagId: "abc" }],
+        ["dag:abc#t-2", { kind: "dag", dagId: "abc", taskId: "t-2" }],
+    ])("reads the dag address %s", (address, want) => {
+        expect(parseAddress(address)).toEqual(want);
+    });
+
+    it.each(["dag:", "dag:#t-2", "dag:abc#t-2#t-3"])("refuses the dag address %s", (address) => {
+        expect(parseAddress(address)).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
+    });
+
     // a pre-canonical vault: citation named a node without its collection; the card's source type recovers it
     describe("the legacy vault: dialect", () => {
         it("opens a dossier, or a card with no source type, as a record", () => {

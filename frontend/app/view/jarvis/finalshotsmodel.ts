@@ -107,6 +107,20 @@ export function roundTally(r: ShotRound): string {
     return `${ran - failed} of ${ran} steps passed` + (skipped ? `, ${skipped} skipped` : "");
 }
 
+export function stageHasShots(stage: FinalStage): boolean {
+    return toRound(stage).shotCount > 0;
+}
+
+// the engine opens a Check or Verify failure with the command's name (final.go), and either ends the round
+// before the Final command
+const BEFORE_FINAL = /^(Check|Verify) `/;
+
+/** Pure: what the viewer says for a round with no screenshots: where it ended, when that was before Final. */
+export function emptyRoundText(final: FinalStage | undefined): string {
+    const step = BEFORE_FINAL.exec(final?.detail ?? "")?.[1];
+    return step ? `Round ${final.round} ended at ${step}, before the Final command ran.` : "No screenshots";
+}
+
 export function roundLabel(r: ShotRound): string {
     return `Round ${r.round} ${r.state}`;
 }

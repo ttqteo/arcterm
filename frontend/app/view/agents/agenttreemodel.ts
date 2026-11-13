@@ -7,7 +7,7 @@
 // children are read from per-block atoms in the component (they're ephemeral and keyed by block ORef), so
 // they stay out of this pure helper.
 
-import { projectOf, type AgentVM } from "./agentsviewmodel";
+import { displayAgeMs, formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
 import type { BuilderCheckRecord } from "./brainstormmodel";
 import { isAgentSeat, type SeatableAgent } from "./councilmodel";
 import { seatableAgents } from "./councilsetupmodel";
@@ -23,9 +23,14 @@ import {
 import {
     BRAINSTORM_JUDGE_ROLE,
     BUILDER_CHECK_ROLE,
+    endedPlanReviewers,
+    endedReviewerVM,
     endedWorkerId,
     holdsTask,
+    isEndedWorkerId,
+    mergeGateLine,
     NO_LINEAGE,
+    PLAN_REVIEWER_ROLE,
     planReviewerOf,
     workerAsk,
     type Lineage,
@@ -56,13 +61,15 @@ export type AgentTreeRow =
     // a run whose workers are in the roster but whose lead is not: a plan-path run before its first lead
     | { kind: "run"; project: string; run: RunInfo; open: boolean; live: number }
     // a task's worker; a done task whose session is gone has no agent. `extras` counts the task's other tabs (its
-    // reviewer, an earlier attempt), listed as `nested` rows beneath it while `extrasOpen`
+    // reviewer, an earlier attempt), listed as `nested` rows beneath it while `extrasOpen`. `gate` is a done lane
+    // tip's merge gate line (mergeGateLine) while it waits to merge
     | {
           kind: "worker";
           agent?: AgentVM;
           project: string;
           run: RunInfo;
           task: TaskNode;
+          gate?: string;
           nested?: boolean;
           extras?: number;
           extrasOpen?: boolean;
@@ -164,6 +171,16 @@ export function workerNeedsYou(run: RunInfo, taskId: string, agent: AgentVM | un
     return workerAsk(run.digest, taskId)?.owner === "you";
 }
 
+const ERROR_STATES = new Set(["failed", "verify-failed", "blocked-merge", "review-failed"]);
+
+/** Pure: the tone a task's worker row draws its dot and second line in: a failure is an error, a stall a warning. */
+export function workerRowTone(task: TaskNode): "error" | "warning" | undefined {
+    if (ERROR_STATES.has(task.state)) {
+        return "error";
+    }
+    return task.state === "stalled" ? "warning" : undefined;
+}
+
 const QUEUED = new Set(["pending", "ready"]);
 // settled without landing: nothing more happens to it, so with no tab left it has no row
 const DROPPED = new Set(["skipped", "cancelled"]);
@@ -217,8 +234,14 @@ export function stageOutcome(
 
 // stageSubline is a stage row's second line: its verdict and age. the row's title already names the role. `verdict` is
 // a stage outcome, or a builder check's or judge's own word for its state (reading, answered)
-export function stageSubline(verdict: string | undefined, age: string): string {
+export function stageSubline(verdict: string | undefined, age: string | undefined): string {
     return [verdict, age].filter(Boolean).join(" · ");
+}
+
+// stageRowAge is a stage row's age. An ended reviewer's row has none: the tree has only the dag's record of it,
+// which says when it started, not when it ended, so any age would be wrong.
+export function stageRowAge(agent: AgentVM, now: number): string | undefined {
+    return isEndedWorkerId(agent.id) ? undefined : formatAgeShort(displayAgeMs(agent, now));
 }
 
 // history order: a plan review came before any task, a final verification after every one, and within a stage an
@@ -247,10 +270,13 @@ function runState(run: RunInfo, workers: Map<string, AgentVM[]>, stages: StageAg
     const tasks = run.dag?.tasks ?? [];
     // a task past its worker is still under way: verifying its merge, or failed and waiting on a judgment. Cleanup
     // reaps its worker's tab with the tree, so it keeps its row with no agent
+    // a done lane tip at the merge gate has not landed: it stays a live row until it merges
+    const atGate = (t: TaskNode) => t.state === "done" && mergeGateLine(run, t.id) != null;
     const live = tasks.filter(
-        (t) => t.state !== "done" && (workers.has(t.id) || !(QUEUED.has(t.state) || DROPPED.has(t.state)))
+        (t) =>
+            atGate(t) || (t.state !== "done" && (workers.has(t.id) || !(QUEUED.has(t.state) || DROPPED.has(t.state))))
     );
-    const done = tasks.filter((t) => t.state === "done");
+    const done = tasks.filter((t) => t.state === "done" && !atGate(t));
     // tasks not dispatched yet have no session to open, so they fold away until asked for
     const queued = tasks.filter((t) => QUEUED.has(t.state) && !workers.has(t.id));
     // the stage's row is its current verifier's session while that is in the roster, so the session gets no
@@ -260,8 +286,12 @@ function runState(run: RunInfo, workers: Map<string, AgentVM[]>, stages: StageAg
     const verifier = final.visible
         ? stages.find((s) => verifierRunId != null && s.agent.runId === verifierRunId)?.agent
         : undefined;
-    const judged = stages
-        .filter((s) => s.agent !== verifier)
+    // a plan reviewer with a verdict has no tab once the engine stops it, so the dag gives its row
+    const tabbed = new Set(stages.map((s) => s.agent.runId));
+    const endedReviewers: StageAgent[] = endedPlanReviewers(run)
+        .filter((r) => !tabbed.has(r.runid))
+        .map((r) => ({ agent: endedReviewerVM(run.runId, r), stageRole: PLAN_REVIEWER_ROLE }));
+    const judged = [...stages.filter((s) => s.agent !== verifier), ...endedReviewers]
         .map((s) => ({
             ...s,
             outcome: stageOutcome(run, s.stageRole, s.agent.runId),
@@ -329,7 +359,8 @@ function runRows(
         const extrasOpen =
             extras.length > 0 &&
             (folds.extrasOpen.has(taskFoldKey(run.runId, task.id)) || extras.some((a) => a.state === "asking"));
-        rows.push({ kind: "worker", agent: primary, project, run, task, extras: extras.length, extrasOpen });
+        const gate = mergeGateLine(run, task.id);
+        rows.push({ kind: "worker", agent: primary, project, run, task, gate, extras: extras.length, extrasOpen });
         if (extrasOpen) {
             for (const agent of extras) {
                 rows.push({ kind: "worker", agent, project, run, task, nested: true });

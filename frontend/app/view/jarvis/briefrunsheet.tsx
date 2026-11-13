@@ -183,6 +183,9 @@ type ConfigProps = {
     // inline only: what the reading prints ahead of the configuration on the same row
     meta?: ReactNode;
     waiting?: WaitingQuestion | null;
+    // not inline: when given, the host owns the Adjust toggle (the DAG modal's header), so only the dials render,
+    // while open. Left out, the panel keeps its own config line and toggle.
+    open?: boolean;
 };
 
 // The question the run's status says is waiting on the human, which saving Approvals on hands back to the
@@ -214,6 +217,7 @@ function LoadedConfig({
     inline,
     meta,
     waiting,
+    open: hostOpen,
 }: ConfigProps & { group: TaskGroup | null; groupRead: LinkedGroupRead }) {
     const leadRuntimes = useAtomValue(leadRuntimesAtom);
     const [open, setOpen] = useState(false);
@@ -257,7 +261,7 @@ function LoadedConfig({
                 </div>
             );
         }
-        return (
+        const noteRow = (
             <div data-jarvis-brief-sheet-state={readState} className="flex items-start gap-[9px] px-4 py-[11px]">
                 <span
                     className={cn(
@@ -272,6 +276,8 @@ function LoadedConfig({
                 </div>
             </div>
         );
+        // host-toggled: the note is what the host's Adjust opens, so it shows only while open
+        return hostOpen === undefined ? noteRow : <PaneReveal open={hostOpen}>{noteRow}</PaneReveal>;
     }
     if (draft == null || baseline == null) {
         return inline ? (
@@ -494,6 +500,22 @@ function LoadedConfig({
         );
     }
 
+    if (hostOpen !== undefined) {
+        // the host's own Adjust toggle sits in its header: only the dials render here, while it is open
+        return (
+            <div data-jarvis-brief-sheet-config="editable">
+                {resolvedHeader != null ? (
+                    <div className="px-4 pt-[11px]">
+                        <ResolvedNote header={resolvedHeader} />
+                    </div>
+                ) : null}
+                <PaneReveal open={hostOpen}>
+                    <div className="flex flex-col gap-3 px-4 pb-3.5 pt-[11px]">{dials}</div>
+                </PaneReveal>
+            </div>
+        );
+    }
+
     return (
         <div data-jarvis-brief-sheet-config="editable">
             <div className="flex items-center gap-2.5 px-4 py-[11px]">
@@ -539,7 +561,8 @@ function LinkedRunConfig({ dagId, ...props }: ConfigProps & { dagId: string }) {
 }
 
 // The run's configuration for whichever run the sheet is showing: a dock of its own, or, inline, the tail of
-// the reading's meta row. The linked/unlinked split is a component boundary rather than a hook inside a
+// the reading's meta row, or, with `open`, just the dials under a host's own Adjust toggle (the DAG modal's
+// header). The linked/unlinked split is a component boundary rather than a hook inside a
 // branch: useDagGroup has to be called unconditionally.
 export function RunSettingsPanel(props: ConfigProps) {
     const dagId = props.run.dagoref ?? "";

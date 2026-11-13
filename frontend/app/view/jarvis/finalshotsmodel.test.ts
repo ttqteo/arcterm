@@ -4,12 +4,14 @@
 import { describe, expect, it } from "vitest";
 import {
     clampSelection,
+    emptyRoundText,
     finalCheckEntry,
     roundLabel,
     roundTally,
     scenarioTally,
     shotPath,
     shotRounds,
+    stageHasShots,
     stepShot,
     type ShotRound,
 } from "./finalshotsmodel";
@@ -359,5 +361,32 @@ describe("stepShot", () => {
         expect(stepShot(gap, 0, 0, 1)).toEqual({ s: 2, k: 0 });
         expect(stepShot(round, 0, 0, -1)).toBeNull();
         expect(stepShot(round, 4, 0, 1)).toBeNull();
+    });
+});
+
+// 2026-11-13 Kael sync, 362ec28e7 (F22)
+describe("emptyRoundText", () => {
+    it("names the step a round ended at before the Final command", () => {
+        const verify = {
+            ...stage("failed", 2),
+            detail: "Verify `go test ./...` failed on the merged result (exit 1):\nFAIL",
+        };
+        expect(emptyRoundText(verify)).toBe("Round 2 ended at Verify, before the Final command ran.");
+        const check = { ...stage("failed", 1), detail: "Check `go build ./...` failed (exit 2):\nboom" };
+        expect(emptyRoundText(check)).toBe("Round 1 ended at Check, before the Final command ran.");
+    });
+
+    it("says no screenshots otherwise", () => {
+        expect(emptyRoundText(undefined)).toBe("No screenshots");
+        expect(emptyRoundText(stage("passed", 1))).toBe("No screenshots");
+        expect(emptyRoundText({ ...stage("failed", 1), detail: "Final `x` failed (exit 1)" })).toBe("No screenshots");
+    });
+});
+
+describe("stageHasShots", () => {
+    it("is true only for a stage that kept a screenshot file", () => {
+        expect(stageHasShots({ ...stage("passed", 1), shots: [{ name: "s", files: ["s.png"] }] })).toBe(true);
+        expect(stageHasShots({ ...stage("failed", 1), shots: [{ name: "s", files: [] }] })).toBe(false);
+        expect(stageHasShots(stage("failed", 1))).toBe(false);
     });
 });

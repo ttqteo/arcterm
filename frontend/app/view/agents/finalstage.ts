@@ -5,6 +5,7 @@
 // node all read this one view. Derived from the dag's FinalStage and the run's final-step events, which alone
 // keep a finished step's duration and result. No React, no store.
 
+import { stageHasShots } from "@/app/view/jarvis/finalshotsmodel";
 import type { AgentVM } from "./agentsviewmodel";
 import { fmtDuration } from "./runcompletion";
 import { detailOf } from "./runtimeline";
@@ -73,6 +74,7 @@ const FINAL_STEP_EVENT = "final-step";
 // the engine's finalEndedByHuman, trimmed: what opens the reason of a stage a human ended
 const ENDED_BY_HUMAN = "ended by the human:";
 const RUNNING_STATES = new Set(["checking", "final", "verifying"]);
+const DID_NOT_RUN = "did not run";
 const TASK_FINISHED = new Set(["done", "skipped"]);
 
 const LABELS: Record<FinalStepKey, string> = {
@@ -387,6 +389,9 @@ export function finalStageView(
         const time = total == null ? undefined : fmtDuration(total);
         subline = joinDot([state, time]);
         nodeMeta = headline = joinDot([roundText, state, time]);
+    } else if (stage == null && group.status === "cancelled") {
+        subline = DID_NOT_RUN;
+        nodeMeta = headline = joinDot([DID_NOT_RUN, "run cancelled"]);
     } else if (round > 1) {
         subline = waitsOn.length > 0 ? `${roundText} after ${plural(waitsOn.length, "fix task")}` : roundText;
         nodeMeta = headline = waitsOn.length > 0 ? `${roundText} waits on ${waitsOn.join(", ")}` : roundText;
@@ -498,6 +503,22 @@ export function finalRowFocusId(
 /** Pure: whether a step's output can be opened: a command running, or one that ended and kept its output. */
 export function stepHasOutput(step: FinalStep): boolean {
     return step.kept != null || (step.state === "running" && KEPT_STEPS.has(step.key));
+}
+
+/** Pure: what an earlier round's line opens beyond its text: the round's failure detail ("" when none) and whether
+ *  it kept screenshots. Read off the dag by round, so the lines in `past` keep the shape they always had. */
+export function pastRoundExtras(group: TaskGroup, round: number): { detail: string; hasShots: boolean } {
+    const stage = (group.pastfinals ?? []).find((p) => p.round === round);
+    return stage ? { detail: stage.detail ?? "", hasShots: stageHasShots(stage) } : { detail: "", hasShots: false };
+}
+
+const RERUN_HINT = "Rerun it if the failure was outside the code.";
+
+/** Pure: what a failed stage's pane tells the human, by its run's lead: asking about it, judging it, or gone. */
+export function finalFailedNote(lead: { asking: boolean } | undefined): string {
+    if (lead == null) return `This failure is yours. ${RERUN_HINT}`;
+    if (lead.asking) return `The lead is asking you about this failure. ${RERUN_HINT}`;
+    return "The lead has this failure and decides what happens next.";
 }
 
 /** Pure: the step whose output a site shows: the one picked while it has output to open, else the running command

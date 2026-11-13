@@ -4,7 +4,7 @@
 // one-line snippet, quiet gaps and the activity strip. Attention is ATTENTION_KINDS and titles are
 // runtimeline's, so this rail and any other timeline cannot disagree about either.
 
-import { detailOf, eventTitle } from "../agents/runtimeline";
+import { detailOf, eventText, eventTitle, planReviewReviewers } from "../agents/runtimeline";
 import { ATTENTION_KINDS, taskIdOf, type TimelineFilter } from "./timelinefilter";
 
 // one phase of one task within BURST_MS reads as one row; a silence of QUIET_MS or more is worth a gap row
@@ -66,6 +66,8 @@ const STEP_LABEL = new Map<string, string>([
     ["task-stalled", "stalled"],
     ["task-retried", "retried"],
     ["task-skipped", "skipped"],
+    ["task-escalated", "escalated"],
+    ["final-rerun", "final rerun"],
     ["task-done", "done"],
     ["task-merge-started", "merge"],
     ["task-merge-blocked", "merge blocked"],
@@ -90,7 +92,11 @@ export function stepLabel(event: RunEvent): string {
 }
 
 export type EventGroup = {
+    // the group's place in the sorted list: it moves when an earlier-stamped event arrives, so it is no React key
     id: string;
+    // names the group's first event, so it holds whatever arrives later; a row's React key, and the rail's
+    // open-row and entrance state
+    key: string;
     taskId: string;
     items: RunEvent[];
     first: number;
@@ -116,8 +122,12 @@ function finishGroup(g: EventGroup): EventGroup {
     };
 }
 
+// Events arrive newest-first (the history read and the live stream's unshift alike), so reversing before the stable
+// sort keeps same-millisecond events in the order they happened. A group's key names its first event, not its place
+// in the sorted list: an event stamped earlier than ones already shown (task-spawned is written after its batch)
+// would otherwise re-key every later group, remounting rows and folding an open one.
 export function groupEvents(events: RunEvent[]): EventGroup[] {
-    const sorted = [...events].sort((a, b) => a.ts - b.ts);
+    const sorted = [...events].reverse().sort((a, b) => a.ts - b.ts);
     const groups: EventGroup[] = [];
     const open = new Map<string, EventGroup>();
     sorted.forEach((e, i) => {
@@ -130,6 +140,7 @@ export function groupEvents(events: RunEvent[]): EventGroup[] {
         }
         const ng: EventGroup = {
             id: `${key}@${i}`,
+            key: `${key}@${e.id}`,
             taskId: taskIdOf(e),
             items: [e],
             first: e.ts,
@@ -217,15 +228,23 @@ export function snippetOf(e: RunEvent): string {
         case "task-amended":
         case "task-lead-told":
         case "task-told":
-        case "task-retried":
         case "task-stalled":
             return str(d.text);
+        // an action by the human or the lead says who took it; an engine retry carries no actor
+        case "task-retried":
+            return d.by ? eventText(e) : str(d.text);
+        case "task-skipped":
+        case "task-escalated":
+        case "final-rerun":
+            return eventText(e);
         case "task-spawned":
             return num(d.worktreems)
                 ? `worktree ${secs(num(d.worktreems))} · setup ${secs(num(d.setupms))} · spawn ${secs(num(d.spawnms))}`
                 : "";
         case "task-first-activity":
             return num(d.sincespawnms) ? `first output ${secs(num(d.sincespawnms))} after spawn` : "";
+        case "final-ended":
+            return num(d.round) ? `round ${num(d.round)}` : "";
         default:
             return "";
     }
@@ -235,10 +254,14 @@ export function groupSnippet(g: EventGroup): string {
     return snippetOf(g.head) || g.items.map(snippetOf).find((s) => s !== "") || "";
 }
 
-export function eventDetail(e: RunEvent): { text: string; pre: string } {
+function rawDetail(e: RunEvent): { text: string; pre: string } {
     const d = detailOf<Record<string, unknown>>(e) ?? {};
     if (e.kind === "task-verify-failed" && str(d.detail)) {
         return { text: "", pre: shortPkg(str(d.detail)) };
+    }
+    if (e.kind === "lead-wake-failed") {
+        const lines = Array.isArray(d.lines) ? d.lines.map(str).filter(Boolean) : [];
+        return { text: str(d.reason), pre: lines.join("\n") };
     }
     if (str(d.note) || str(d.downstream)) {
         return { text: [str(d.note), str(d.downstream)].filter(Boolean).join("\n\n"), pre: "" };
@@ -246,14 +269,86 @@ export function eventDetail(e: RunEvent): { text: string; pre: string } {
     return { text: snippetOf(e), pre: "" };
 }
 
+// a text that only repeats the row's title is no detail at all
+export function eventDetail(e: RunEvent): { text: string; pre: string } {
+    const detail = rawDetail(e);
+    return detail.text === eventTitle(e) ? { ...detail, text: "" } : detail;
+}
+
+// groupHasDetail: whether expanding the row shows anything beyond its title. A burst lists each step with its
+// time, so it always does; a lone event needs a detail or a plan review's reviewers.
+export function groupHasDetail(g: EventGroup): boolean {
+    if (g.items.length > 1) {
+        return true;
+    }
+    return g.items.some((e) => {
+        const detail = eventDetail(e);
+        const reviewed = e.kind === "plan-reviewed" && planReviewReviewers(e.detail).length > 0;
+        return detail.text !== "" || detail.pre !== "" || reviewed;
+    });
+}
+
+// eventCount: the rail counts events everywhere, as its header and a task popup's Lifecycle do, never bursts
+export function eventCount(groups: EventGroup[]): number {
+    return groups.reduce((n, g) => n + g.items.length, 0);
+}
+
+// axisEnd: an ended run has no "now" on its axis, so the axis stops at its last event
+export function axisEnd(events: RunEvent[], ended: boolean, nowMs: number): number {
+    if (!ended || events.length === 0) {
+        return nowMs;
+    }
+    return Math.max(...events.map((e) => e.ts));
+}
+
+function localDay(ts: number): string {
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+// needsDate: times carry a date once the events span more than one local day or the last is not from today
+export function needsDate(events: RunEvent[], nowMs: number): boolean {
+    if (events.length === 0) {
+        return false;
+    }
+    const ts = events.map((e) => e.ts);
+    const first = localDay(Math.min(...ts));
+    const last = localDay(Math.max(...ts));
+    return first !== last || last !== localDay(nowMs);
+}
+
+const SECOND_MS = 1000;
+const MINUTE_MS = 60 * SECOND_MS;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+// up to this a span reads in hours and minutes; past it whole days are the useful grain
+const SPAN_HOURS_MAX_MS = 48 * HOUR_MS;
+
+// spanText reads a duration as 45s, 12m, 1h17m or 29d
+export function spanText(ms: number): string {
+    const s = Math.max(0, Math.round(ms / SECOND_MS));
+    if (s < 60) {
+        return `${s}s`;
+    }
+    const min = Math.round(ms / MINUTE_MS);
+    if (min < 60) {
+        return `${min}m`;
+    }
+    if (ms < SPAN_HOURS_MAX_MS) {
+        return `${Math.floor(min / 60)}h${min % 60}m`;
+    }
+    return `${Math.floor(ms / DAY_MS)}d`;
+}
+
 export type StripTick = { id: string; frac: number; attention: boolean; taskId: string };
 
-export function stripTicks(events: RunEvent[], nowMs: number): StripTick[] {
+// endMs is axisEnd's: now for a live run, the last event for an ended one
+export function stripTicks(events: RunEvent[], endMs: number): StripTick[] {
     if (events.length === 0) {
         return [];
     }
     const start = Math.min(...events.map((e) => e.ts));
-    const span = Math.max(1, nowMs - start);
+    const span = Math.max(1, endMs - start);
     return events.map((e) => ({
         id: e.id,
         frac: Math.min(1, Math.max(0, (e.ts - start) / span)),
