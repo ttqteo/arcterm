@@ -333,6 +333,25 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
     return out;
 }
 
+/**
+ * Pure: whether the agent went on after the verdict at `parts[p]` of an agent item, which is when its card stops waiting on
+ * you and folds. It did when it wrote another reply or made another call after the entry the verdict came from (the key
+ * holds that entry's index), or is writing one now (a `live` prose part after it). The closing words of the reply that
+ * holds a block ("Tell me which of these to fix.") are the same entry, so they are no sign of it: the card waits while
+ * nothing but those follows it. `entries` are the ones `chatItems` was given.
+ */
+export function agentWentOn(entries: readonly AgentEntry[], parts: readonly AgentPart[], p: number): boolean {
+    const part = parts[p];
+    if (part?.kind !== "verdict") {
+        return false;
+    }
+    if (parts.slice(p + 1).some((q) => q.kind === "prose" && q.live)) {
+        return true;
+    }
+    const at = parseInt(part.key.slice(part.key.indexOf(":") + 1), 10);
+    return entries.slice(at + 1).some((e) => e.kind === "message" || e.kind === "action");
+}
+
 // "860", "3.1k", "13k", "1.3M": one decimal while the number is short, as the TUI's counter reads
 function shortCount(n: number): string {
     if (n >= 1_000_000) {

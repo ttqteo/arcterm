@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentActionEntry, AgentEntry, EditFile } from "./agentsviewmodel";
 import { withResultLines } from "./chatinitiative";
 import {
+    agentWentOn,
     bashMode,
     canSendNow,
     CHAT_RENDER_STEP,
@@ -16,6 +17,7 @@ import {
     turnStatsLabel,
     workingLine,
     workingText,
+    type AgentPart,
     type ChatItem,
 } from "./chatmodel";
 
@@ -773,6 +775,46 @@ describe("chatItems: verdict, handoff and run-start parts", () => {
             const after = keysOf([...entries, says("More."), action("grep"), reported("late")]);
             expect(after.slice(0, 3)).toEqual(before);
             expect(after).toEqual([...before, "verdict:7"]);
+        });
+    });
+
+    // when the agent has gone on (its verdict card folds) and when it has not (the card still waits on you)
+    describe("agentWentOn", () => {
+        const went = (entries: AgentEntry[], p: number): boolean =>
+            agentWentOn(entries, agentOf(chatItems(entries), 1).parts, p);
+
+        it("is not the closing words of the reply that holds the block", () => {
+            const entries = [you("review"), says(`Here.\n\n${block()}\n\nTell me which of these to fix.`)];
+            expect(kinds(chatItems(entries))).toEqual(["prose", "verdict", "prose"]);
+            expect(went(entries, 1)).toBe(false);
+        });
+
+        it("is a later reply, or a later call, after a block", () => {
+            expect(went([you("review"), says(block()), says("I went ahead.")], 0)).toBe(true);
+            expect(went([you("review"), says(block()), action("edited")], 0)).toBe(true);
+        });
+
+        it("is anything the agent did after a ReportFindings call, closing words or not", () => {
+            expect(went([you("review"), reported("one"), says("Taking the first.")], 0)).toBe(true);
+            expect(went([you("review"), reported("one")], 0)).toBe(false);
+        });
+
+        it("is a reply still being written, which the transcript does not hold yet", () => {
+            const entries = [you("review"), says(block())];
+            const parts: AgentPart[] = [
+                ...agentOf(chatItems(entries), 1).parts,
+                { kind: "prose", text: "So", live: true },
+            ];
+            expect(agentWentOn(entries, parts, 0)).toBe(true);
+        });
+
+        it("is not a task notification or an interruption, which the agent did not write", () => {
+            expect(went([you("review"), says(block()), { kind: "notification", summary: "done" }], 0)).toBe(false);
+        });
+
+        it("is false for a part that is no verdict", () => {
+            const entries = [you("review"), says(`Here.\n\n${block()}`), says("More.")];
+            expect(agentWentOn(entries, agentOf(chatItems(entries), 1).parts, 0)).toBe(false);
         });
     });
 });
