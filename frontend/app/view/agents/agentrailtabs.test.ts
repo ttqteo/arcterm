@@ -292,7 +292,7 @@ describe("filePinTarget", () => {
 
 describe("widths", () => {
     it("leaves the centre 640px beside the nav, the tree and the panel", () => {
-        expect(wideWidthMax(1920, 78)).toBe(1920 - 78 - 248 - 640);
+        expect(wideWidthMax(1920, 78)).toBe(1920 - 78 - 280 - 640);
         expect(wideWidthMax(1000, 78)).toBe(RAIL_WIDE_MIN_PX);
     });
 

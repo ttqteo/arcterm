@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { agentRamBytes, agentRamLabel, needsConsumersPoll, runRamLabel } from "./agentram";
+import { agentRamBytes, needsConsumersPoll, runRamBytes } from "./agentram";
 
 const MB = 1024 * 1024;
 
@@ -67,29 +67,21 @@ describe("agentRamBytes", () => {
     });
 });
 
-describe("agentRamLabel", () => {
-    it("words it as the Resource Manager does", () => {
-        expect(agentRamLabel("b1", snap(true, [group("g1", "b1", 412 * MB)]), null)).toBe("412 MB");
-        expect(agentRamLabel("b1", snap(true, [group("g1", "b1", 1.3 * 1024 * MB)]), null)).toBe("1.3 GB");
-        expect(agentRamLabel("b1", snap(true), null)).toBeNull();
-    });
-});
-
-describe("runRamLabel", () => {
+describe("runRamBytes", () => {
     it("sums every tab of the run a reading names", () => {
         const s = snap(true, [
             group("g1", "lead", 1024 * MB),
             group("g2", "w1", 1024 * MB),
             group("g3", "w2", 512 * MB),
         ]);
-        expect(runRamLabel(["lead", "w1", "w2"], s, null)).toBe("2.5 GB");
+        expect(runRamBytes(["lead", "w1", "w2"], s, null)).toBe(2560 * MB);
     });
 
     it("skips a tab no reading names, and has nothing when none is named", () => {
         const s = snap(true, [group("g1", "lead", 412 * MB), group("g2", "w1", -1)]);
-        expect(runRamLabel(["lead", "w1", "w9"], s, null)).toBe("412 MB");
-        expect(runRamLabel(["w1", "w9"], s, null)).toBeNull();
-        expect(runRamLabel([], s, null)).toBeNull();
+        expect(runRamBytes(["lead", "w1", "w9"], s, null)).toBe(412 * MB);
+        expect(runRamBytes(["w1", "w9"], s, null)).toBeNull();
+        expect(runRamBytes([], s, null)).toBeNull();
     });
 
     it("sums the Consumers reading where the Resource Manager does not run", () => {
@@ -97,7 +89,7 @@ describe("runRamLabel", () => {
             { blockid: "lead", rambytes: 300 * MB },
             { blockid: "w1", rambytes: 200 * MB },
         ]);
-        expect(runRamLabel(["lead", "w1"], snap(false), c)).toBe("500 MB");
+        expect(runRamBytes(["lead", "w1"], snap(false), c)).toBe(500 * MB);
     });
 });
 

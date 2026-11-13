@@ -81,7 +81,7 @@ export const RAIL_OVERVIEW_PX = 300;
 export const RAIL_WIDE_DEFAULT_PX = 520;
 export const RAIL_WIDE_MIN_PX = 360;
 const CENTRE_MIN_PX = 640; // DESIGN.md's stage-min
-const AGENT_TREE_PX = 248; // agenttree.tsx's column
+const AGENT_TREE_PX = 280; // agenttree.tsx's column
 
 export function panelFor(panels: Record<string, PanelState>, agentId: string, defaultTab: RailTab): PanelState {
     // File, Files and Transcript are never defaults: an unseen agent has no file open, Files needs a cwd it may not have,

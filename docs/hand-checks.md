@@ -14,6 +14,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   the server (`runid` / `rungoal`, `wshserver_consumers.go` `consumerOwnerRun`). Scenarios `consumers-popover` and
   `consumers-close-picked` were updated but not run.
 
+- [ ] (arcterm) The Agent sidebar's columns line up (spec 2026-11-13-sidebar-declutter-design): run
+  `task verify:ui -- sidebar-columns agent-tree-rail sidebar-agent-ram` on the dev app → all pass, and
+  `cdp-shots/sidebar-columns-1-rows.png` shows a 280px sidebar where every agent, lead and worker row ends its second
+  line with RAM · tokens · age in faint ink, right edges level down the list, the `2 runs` agent's `1.6 GB` in amber, the
+  unread count on the name line, and `asking` at the left of the asking row's second line with its columns kept. In the
+  real app the same with live agents: an agent with no RAM read yet keeps an empty gap where its RAM goes. Written and
+  typechecked, never run in the app (`agenttree.tsx` `RowCols`, `rowcols.ts`).
 - [ ] (arcterm) A lead that queued its plan's next part reads `plan queued #1` on its run line, not `queued #1`: while a
   run's lead has queued a second plan (`wsh runs start --plan … --after <its run>`), its row in the Agent tree shows the
   chip `plan queued #1` (`plan blocked` if the entry is blocked), whole on a narrow sidebar, beside the run's progress
@@ -134,6 +141,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   every 2 s, the "(24s)" after it still grey; with Reduce motion on, the text rests in plain blue. Checked only on a
   static page in headless Chromium, never in WKWebView or the running app (cf811a54d: `chatpane.tsx`,
   `tailwindsetup.css` .shimmer-jarvis, `pulse.ts`).
+- [ ] (arcterm) Jarvis's arc reactor icon reads at rail size: the nav rail's Jarvis item (20px) shows the ring, six coils and the triangular core apart, not a grey blot, active (orange) and not, with the
+  yellow badge clear of it; What's new's Jarvis lines carry the same mark. Typechecked only, never seen in the app
+  (`element/jarvisicon.ts`, canvas `jarvis-nav-icon` option F).
 - [ ] (arcterm) Chat's running step ring turns in place: at 125% or 150% Windows display scaling, while a Claude agent
   runs a command, the dashed green ring before "Ran" has its dashes run round a ring that stays put, with no wobble
   and no short dash where it closes; with Reduce motion on it holds still. Not run in the app: no dev app was up

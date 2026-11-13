@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { digitHintAtom } from "@/app/cockpit/digithints";
+import { JarvisReactor } from "@/app/element/jarvisicon";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useBindingKeys } from "@/app/store/keybindings/store";
@@ -11,7 +12,6 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
     AppWindow,
     Bot,
-    Brain,
     FileCode2,
     FileCog,
     Gauge,
@@ -46,7 +46,7 @@ import { unreadAgentsAtom } from "./unreadagentsstore";
 // Cockpit navigation icons. Runtime logos stay as image assets; app controls use Lucide components.
 const ICON: Record<SurfaceKey, LucideIcon> = {
     cockpit: LayoutDashboard,
-    jarvis: Brain,
+    jarvis: JarvisReactor,
     agent: Bot,
     radar: Radar,
     files: GitCompare,

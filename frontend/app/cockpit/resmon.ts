@@ -8,6 +8,8 @@ const UNAVAILABLE = "–";
 const MIB = 1024 * 1024;
 const GIB = 1024 * MIB;
 const MB_LIMIT = 1000;
+/** The bytes from which fmtMem writes a figure in GB rather than MB. */
+export const GB_FROM_BYTES = MB_LIMIT * MIB;
 const ARC_KEY = "arc";
 
 export function fmtCpu(pct: number, digits: 0 | 1 = 1): string {

@@ -55,6 +55,7 @@ import {
 import * as agentPageFixtures from "./agent-page-fixtures.mjs";
 import { makeCouncilScenarios } from "./councilscenarios.mjs";
 import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
+import sidebarColumnsScenarios from "./scenarios-sidebar-columns.mjs";
 import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
 import agentSubagentsScenarios from "./scenarios-agent-subagents.mjs";
 import brainstormBoardPickScenarios from "./scenarios-brainstorm-board-pick.mjs";
@@ -15925,8 +15926,8 @@ const agentTreeRail = {
         // The line as a real lead draws it: its tokens (the fixture transcript's 132k), its age and the whole run's RAM
         // (8fa946dac) after the progress, all flex-none. The fixture lead's block does not exist, so no reading names
         // it: pin one (window.__resmonFixture) so the RAM span is on the line. The line is RunSubline's own @container;
-        // forcing its width stands in for dragging the tree wider. At the tree's default width the RAM must leave the
-        // line (LEAD_RAM_YIELDS) so the progress is never cut for it; wide enough, it shows beside the progress
+        // forcing its width stands in for other widths of the tree. The RAM, tokens and age hold their columns at every
+        // width (docs/superpowers/specs/2026-11-13-sidebar-declutter-design.md); only the words to their left are cut
         const MB_BYTES = 1024 * 1024;
         await h.ev(
             `window.__resmonFixture.set(${JSON.stringify({
@@ -15988,7 +15989,7 @@ const agentTreeRail = {
         await h.ev(`window.__resmonFixture.clear()`);
         const runAt = runLine?.at ?? [];
         rec(
-            "7. the lead's run line carries its workers chip, unclipped progress and the task strip; with its tokens, age and the run's RAM on the line, the RAM leaves it on a narrow line and the progress is never cut",
+            "7. the lead's run line carries its workers chip, unclipped progress and the task strip; its tokens, age and the run's RAM stay on the line at every width, the progress reads whole at the tree's own width, and nothing spills out of the line",
             nested != null &&
                 /^\d+ of 3 tasks done/.test(nested.strip ?? "") &&
                 /workers?$/.test(nested.workersChip ?? "") &&
@@ -15998,12 +15999,11 @@ const agentTreeRail = {
                 runLine.restored === true &&
                 // the fixture is a real lead's line: tokens are there and a reading names the run's RAM
                 runAt.every((s) => s.tokens === "132k") &&
-                runAt.some((s) => typeof s.ram === "string" && s.ram !== "") &&
-                // the progress reads whole beside them at every width, and nothing spills out of the line
-                runAt.every((s) => s.whole === true && !s.overflow) &&
-                // narrow, the RAM is off the line; wide enough, it shows
-                runAt[0].ram === false &&
-                typeof runAt[runAt.length - 1].ram === "string",
+                // the RAM keeps its column at every width
+                runAt.every((s) => typeof s.ram === "string" && s.ram !== "") &&
+                // the progress reads whole at the tree's own width, and nothing spills out of the line at any
+                runAt[0].whole === true &&
+                runAt.every((s) => !s.overflow),
             JSON.stringify({ nested, runLine })
         );
         rec(
@@ -37665,7 +37665,7 @@ const railTabLabels = `[...(${RAIL_TABS_ASIDE}?.querySelectorAll('[role="tab"]')
 const railTabsWidth = `Math.round(${RAIL_TABS_ASIDE}?.getBoundingClientRect().width ?? 0)`;
 const railTabsFileText = `(${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file]")?.innerText ?? "")`;
 // the widest a wide tab may be in this window: the centre keeps 640 beside the nav (56 below 900px) and the tree
-const railTabsMax = `Math.max(360, window.innerWidth - (window.innerWidth < 900 ? 56 : 78) - 248 - 640)`;
+const railTabsMax = `Math.max(360, window.innerWidth - (window.innerWidth < 900 ? 56 : 78) - 280 - 640)`;
 const railTabsNap = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function railTabsFixture(base) {
@@ -69893,6 +69893,7 @@ export const SCENARIOS = [
     ...chatRedesignScenarios(CR_KIT),
     ...chatBrainstormReviewScenarios(CBR_KIT),
     sidebarAgentRam,
+    ...sidebarColumnsScenarios(RT_KIT),
     machineServers,
     sidebarAgentGlyph,
     capacityWarn,

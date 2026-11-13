@@ -30,6 +30,7 @@ import {
     taskElapsed,
     taskStateLabel,
     unmetDeps,
+    workerAge,
     workerAsk,
     workerSubtext,
     type Lineage,
@@ -99,19 +100,26 @@ describe("run facts", () => {
 
     it("writes a worker's second line from its question, else its lane and age", () => {
         expect(workerSubtext({ taskId: "t-2", ask: { owner: "lead", deadline: 481_000 }, lane: "B", age: "6m" })).toBe(
-            "t-2 · asked the lead · 6m"
+            "t-2 · asked the lead"
         );
-        expect(workerSubtext({ taskId: "t-3", ask: { owner: "you" }, lane: "C", age: "3m" })).toBe(
-            "t-3 · asks you · 3m"
-        );
-        expect(workerSubtext({ taskId: "t-2", lane: "B", age: "6m" })).toBe("t-2 · lane B · 6m");
-        expect(workerSubtext({ taskId: "t-2", age: "6m" })).toBe("t-2 · 6m");
+        expect(workerSubtext({ taskId: "t-3", ask: { owner: "you" }, lane: "C", age: "3m" })).toBe("t-3 · asks you");
+        expect(workerSubtext({ taskId: "t-2", lane: "B", age: "6m" })).toBe("t-2 · lane B");
+        expect(workerSubtext({ taskId: "t-2", age: "6m" })).toBe("t-2");
         expect(workerSubtext({ taskId: "t-1", lane: "A", age: "", outcome: "landed" })).toBe("t-1 · lane A · landed");
         expect(workerSubtext({ taskId: "t-4", lane: "A", age: "", waits: ["t-2", "t-3"] })).toBe(
             "t-4 · lane A · waits on t-2, t-3"
         );
         expect(workerSubtext({ taskId: "t-4", lane: "A", age: "", waits: [] })).toBe("t-4 · lane A · queued");
         expect(formatLeft(59_000)).toBe("<1m left");
+    });
+
+    it("puts a worker's age in its own column, only where it says something", () => {
+        expect(workerAge({ taskId: "t-2", lane: "B", age: "6m" })).toBe("6m");
+        expect(workerAge({ taskId: "t-2", ask: { owner: "lead", deadline: 481_000 }, age: "6m" })).toBe("6m");
+        expect(workerAge({ taskId: "t-3", ask: { owner: "you" }, state: "running", age: "3m" })).toBe("3m");
+        expect(workerAge({ taskId: "t-1", age: "9m", outcome: "landed" })).toBe("");
+        expect(workerAge({ taskId: "t-4", age: "1m", waits: [] })).toBe("");
+        expect(workerAge({ taskId: "t-1", age: "3m", state: "verifying 2m" })).toBe("");
     });
 
     it("lists what a not-started task still waits on, and nothing once it has started", () => {
