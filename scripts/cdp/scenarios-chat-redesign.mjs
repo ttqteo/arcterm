@@ -1004,9 +1004,14 @@ export default function (kit) {
                     AC.assistantText("Đã commit 1a2b3c4: hàng chip gợi ý trong ô nhập.", ts(ctx, 2000))
                 );
                 await setRoster({ idleSince: Date.now() + 2000, effortId: ctx.effortOid, committed: true });
+                // the new turn's reply drawn first, so the chips read are this turn's, not the last one's
+                const landed = await polishWaitFor(h, `${FLAT}(${layerOf(A)}).includes("Đã commit 1a2b3c4")`, WAIT_MS);
                 const chipOf = (kind) => `${layerOf(A)}?.querySelector('[data-chat-suggest-kind="${kind}"]')`;
                 const done = await polishWaitFor(h, `${FLAT}(${chipOf("done")}) === ${JSON.stringify(`xong: ${EFFORT_C1}`)}`, WAIT_MS);
                 await polishNap(300);
+                const before = await h.ev(
+                    `[...(${layerOf(A)}?.querySelectorAll("[data-chat-suggest-chip]") ?? [])].map((b) => b.getAttribute("data-chat-suggest-kind"))`
+                );
                 await shot(h, "19-initiative-done");
                 await h.ev(`${chipOf("done")}?.click()`);
                 const next = await polishWaitFor(h, `${FLAT}(${chipOf("next")}) === ${JSON.stringify(`làm tiếp: ${EFFORT_C2}`)}`, WAIT_MS);
@@ -1015,8 +1020,8 @@ export default function (kit) {
                 await shot(h, "19-initiative-next");
                 rec(
                     `${name}: a committed turn on a held chunk offers [data-chat-suggest-kind="done"] "xong: ${EFFORT_C1}"; its click ticks it done and makes the next active, and [data-chat-suggest-kind="next"] offers "làm tiếp: ${EFFORT_C2}"`,
-                    done && next && after.join(" · ") === `${EFFORT_C1}:done · ${EFFORT_C2}:active`,
-                    { done, next, after }
+                    landed && done && before.join(",") === "done" && next && after.join(" · ") === `${EFFORT_C1}:done · ${EFFORT_C2}:active`,
+                    { landed, done, before, next, after }
                 );
             });
 
