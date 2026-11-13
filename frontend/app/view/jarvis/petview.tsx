@@ -37,7 +37,7 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { HOLOGRAM_SIZE_PX, hologramPose, hologramSize, petForm } from "./hologrammodel";
-import { HologramView, useNeedsYouCount } from "./hologramview";
+import { HologramView, useAskingCount } from "./hologramview";
 import { openTarget } from "./openref";
 import { closePeek, openPetPeek, peekChordActive } from "./peekstore";
 import { PetBubble } from "./petbubble";
@@ -337,7 +337,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     // the startup loader is drawing Jarvis in the middle: no second one in the corner until it is done
     const loaderHologram = useAtomValue(hologramLoadersShownAtom) > 0;
     const hologramPx = HOLOGRAM_SIZE_PX[hologramSize(useAtomValue(petHologramSizeAtom))];
-    const needsYou = useNeedsYouCount(model);
+    const asking = useAskingCount(model);
     const shownAnchor = inOffice ? officeBoss : anchor;
     const shownCorner = inOffice ? officeCorner : hologram ? "bottom-right" : corner;
 
@@ -430,7 +430,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                 <HologramView
                     key={hologramPx}
                     sizePx={hologramPx}
-                    pose={hologramPose({ waiting: needsYou, working, speaking: bubble != null, peekOpen })}
+                    pose={hologramPose({ asking, working, speaking: bubble != null, peekOpen })}
                     unread={unread}
                     peekOpen={peekOpen}
                     reduce={reduce}

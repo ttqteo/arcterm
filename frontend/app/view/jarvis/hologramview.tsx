@@ -20,15 +20,15 @@ import { closePeek } from "./peekstore";
 // Reduced motion holds the forms at this moment rather than at 0, where every ring starts aligned
 const STILL_T = 12;
 
-/** Everything that waits on you: the agents that need you and the rest of the queue, as the dock badge counts it. */
-export function useNeedsYouCount(model: AgentsViewModel): number {
+/** The agents asking you something, as the Cockpit's badge counts them. Only a question turns the hologram to the
+ * sphere: gates, runs to land and the rest of Jarvis's queue leave it on the HUD. */
+export function useAskingCount(model: AgentsViewModel): number {
     const attention = useAtomValue(attentionAtom);
     const agents = useAtomValue(model.agentsAtom);
     const messages = useAtomValue(channelMessagesAtom);
     return useMemo(() => {
-        const split = splitAttention(attention);
         const answered = answeredAskIdsAcross(Object.values(messages));
-        return cockpitWaitingCount(split.cockpit, agents, answered) + split.jarvis.length;
+        return cockpitWaitingCount(splitAttention(attention).cockpit, agents, answered);
     }, [attention, agents, messages]);
 }
 

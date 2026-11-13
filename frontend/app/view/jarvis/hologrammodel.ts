@@ -4,9 +4,9 @@
 // The hologram form of Jarvis (Settings → Jarvis → Form): what it shows and how fast it draws. Pure; the pixels are
 // hologramscene.ts's and the corner it sits in is hologramview.tsx's.
 //
-// Two forms of one presence, from the 2026-09-11 avatar study (jarvis-avatar-comparison): the orbital HUD while nothing
-// waits on you, and the neural sphere while something does (a question, a gate, an escalation). The HUD's core beats
-// while agents work or Jarvis is speaking.
+// Two forms of one presence, from the 2026-09-11 avatar study (jarvis-avatar-comparison): the orbital HUD, and the
+// neural sphere while an agent asks you something. Gates, escalations and runs to land stay on the HUD: they wait in
+// Jarvis's queue and badge, not on the hologram. The HUD's core beats while agents work or Jarvis is speaking.
 
 export type PetForm = "sprout" | "hologram";
 
@@ -37,8 +37,8 @@ export function hologramSize(value: unknown): HologramSize {
 }
 
 export interface HologramInputs {
-    // things waiting on you: the peek's queue (useWaitingCount)
-    waiting: number;
+    // agents asking you something (hologramview's useAskingCount)
+    asking: number;
     // agents working (useWorkingCount)
     working: number;
     // a bubble is up
@@ -56,7 +56,7 @@ export interface HologramPose {
 }
 
 export function hologramPose(i: HologramInputs): HologramPose {
-    const asking = i.waiting > 0;
+    const asking = i.asking > 0;
     const busy = i.working > 0 || i.speaking;
     return {
         sphere: asking ? 1 : 0,
