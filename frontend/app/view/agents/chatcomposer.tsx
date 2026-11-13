@@ -533,6 +533,12 @@ export function ChatComposer({
         noteSent(agent.id, command);
         flipIfTui(command);
     };
+    // A suggested reply's chip: its text goes through the box's own send, as Enter on it typed would (the pending bubble,
+    // the card results in front of it, the wait behind a prompt), so the chips leave at once and a second click finds none
+    const sendSuggested = (t: string) => {
+        submitNext.current = true;
+        setTextAt(t);
+    };
     // The + menu's Add folder and Slash commands rows: an empty box becomes `t`; a box that already starts with `/` is
     // a command being written and stays as it is; any other text gets `t` put before it. The box takes the focus, the
     // caret right after `t` when it was put in (so a lone `/` opens the `/` menu), where it was otherwise.
@@ -1013,7 +1019,7 @@ export function ChatComposer({
                     {showStop ? (
                         <ActionChips key="actions" onShowDiff={onShowDiff} onOpenTerminal={showTerminal} />
                     ) : suggested.length > 0 ? (
-                        <SuggestChips key="suggest" chips={suggested} onSend={sendCommand} />
+                        <SuggestChips key="suggest" chips={suggested} onSend={sendSuggested} />
                     ) : null}
                 </AnimatePresence>
                 {/* one row through a sleep and a wake: its parts fold and crossfade in place (reduced motion snaps them) */}

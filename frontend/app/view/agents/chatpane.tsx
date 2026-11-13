@@ -79,7 +79,7 @@ import {
     wantsModelSuggest,
     writesVietnamese,
 } from "./chatsuggest";
-import { modelSuggestAtom, requestModelSuggest } from "./chatsuggeststore";
+import { requestModelSuggest, useModelSuggest } from "./chatsuggeststore";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatVisualHost } from "./chatvisualview";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
@@ -662,12 +662,12 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     // agent nobody looks at costs none; its answer is kept by turn, so a look later finds it.
     const focusId = useAtomValue(model.focusIdAtom);
     const shipGit = useAtomValue(shipGitAtom)[agent.id];
-    const modelSuggests = useAtomValue(modelSuggestAtom);
     const reply = useMemo(() => lastReply(entries), [entries]);
     const recent = useMemo(() => recentPrompts(entries), [entries]);
-    const question = reply != null && endsWithQuestion(reply);
+    const question = useMemo(() => reply != null && endsWithQuestion(reply), [reply]);
     const questionWaits = boxPlaceholderOverride(card) != null;
-    const turnKey = reply != null ? suggestKey(agent.id, reply) : null;
+    const turnKey = useMemo(() => (reply != null ? suggestKey(agent.id, reply) : null), [agent.id, reply]);
+    const modelSuggest = useModelSuggest(turnKey);
     const turnOpen = {
         reply,
         idle: agent.state === "idle",
@@ -688,7 +688,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
         ? chatChips({
               question,
               rules: question ? [] : ruleChips(agent, shipGit, writesVietnamese(recent)),
-              model: turnKey != null ? modelSuggests[turnKey] : undefined,
+              model: modelSuggest,
           })
         : undefined;
 

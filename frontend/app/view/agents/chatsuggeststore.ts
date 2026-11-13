@@ -9,7 +9,8 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget } from "@/util/util";
-import { atom, type PrimitiveAtom } from "jotai";
+import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
+import { useMemo } from "react";
 import type { ModelSuggest } from "./chatsuggest";
 
 // the turns kept: past this the oldest go
@@ -37,6 +38,13 @@ function put(key: string, state: ModelSuggest): void {
     }
     kept[key] = state;
     globalStore.set(modelSuggestAtom, kept);
+}
+
+/** One turn's model answer, or undefined before it is asked: a pane reads only its own turn's, so an answer landing for
+ *  another agent draws nothing here. */
+export function useModelSuggest(key: string | null): ModelSuggest | undefined {
+    const one = useMemo(() => atom((get) => (key == null ? undefined : get(modelSuggestAtom)[key])), [key]);
+    return useAtomValue(one);
 }
 
 /** Asks the model about one turn, once: a turn already asked (answered, failed or on its way) asks nothing. */

@@ -948,7 +948,7 @@ export default function (kit) {
                 await h.ev(`${layerOf(A)}?.querySelector("[data-chat-suggest-chip]")?.click()`);
                 const sent = await polishWaitFor(
                     h,
-                    `[...(${layerOf(A)}?.querySelectorAll("[data-chat-you]") ?? [])].some((el) => ${FLAT}(el).includes("B, ẩn thẻ Pin")) && (${chipsNow}).length === 0`,
+                    `[...(${layerOf(A)}?.querySelectorAll("[data-chat-you], [data-chat-pending]") ?? [])].some((el) => ${FLAT}(el).includes("B, ẩn thẻ Pin")) && (${chipsNow}).length === 0`,
                     WAIT_MS
                 );
                 append(
@@ -963,7 +963,7 @@ export default function (kit) {
                 await shot(h, "18-suggest-next");
                 const q = question.chips;
                 rec(
-                    `${name}: a question offers [data-chat-suggest-chip="model"] B, ẩn thẻ Pin · A · C, asked as a question with the person's last message; a click sends it and the chips go; a statement offers vẽ tôi xem`,
+                    `${name}: a question offers [data-chat-suggest-chip="model"] B, ẩn thẻ Pin · A · C, asked as a question with the person's last message; a click sends it (its bubble, pending or landed) and the chips go; a statement offers vẽ tôi xem`,
                     shown &&
                         q.map((c) => c.text).join(" · ") === "B, ẩn thẻ Pin · A · C" &&
                         q.every((c) => c.source === "model") &&
