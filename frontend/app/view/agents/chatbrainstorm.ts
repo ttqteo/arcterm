@@ -35,8 +35,9 @@ import { runStage, type RunStageView } from "./runstage";
 
 /** What a line Arc sent to the agent's brainstorm was, so the conversation can draw the message that carries it: an
  *  `answer` to a talk question or a `builder-answer` to the builder's become ✓ rows, `design` (check), `builder`
- *  (approved or keep talking) and `run` are the steps' rows, and an `action` (confirm, edit, keep, guess…) is hidden. */
-export type RecordKind = "answer" | "builder-answer" | "design" | "builder" | "run" | "action";
+ *  (approved or keep talking) and `run` are the steps' rows, and an `action` (confirm, edit, keep, guess…) is hidden. A
+ *  `verdict` is the Fix or Skip line of a reviewer's verdict card (chatverdict.ts): hidden, its card folds in place. */
+export type RecordKind = "answer" | "builder-answer" | "design" | "builder" | "run" | "action" | "verdict";
 
 export type BuilderOutcome = "approved" | "keep-talking";
 
@@ -67,6 +68,12 @@ export interface SentAnswer {
     /** answer: the words were typed (Chat's message box, the Brainstorm tab's words field) rather than picked from an
      *  option, so the ✓ row says "You replied". Unset for a click and for every record stored before this existed. */
     typed?: true;
+    /** verdict: the key of the verdict card the line came from (`verdict:<entry index>`) */
+    verdictKey?: string;
+    /** verdict: what was sent, Fix or Skip */
+    verdictOutcome?: "fix" | "skip";
+    /** verdict: how many findings were ticked when Fix was sent */
+    fixed?: number;
 }
 
 export function recordKind(r: Pick<SentAnswer, "kind">): RecordKind {
@@ -132,6 +139,7 @@ const RECORD_KINDS: ReadonlySet<string> = new Set<RecordKind>([
     "builder",
     "run",
     "action",
+    "verdict",
 ]);
 
 function wholeCount(v: unknown): number | undefined {
@@ -147,7 +155,7 @@ function readRecord(r: SentAnswer): SentAnswer {
     if (typeof raw.kind === "string" && RECORD_KINDS.has(raw.kind)) {
         out.kind = raw.kind as RecordKind;
     }
-    for (const key of ["decisions", "questions", "calls"] as const) {
+    for (const key of ["decisions", "questions", "calls", "fixed"] as const) {
         const count = wholeCount(raw[key]);
         if (count !== undefined) {
             out[key] = count;
@@ -158,6 +166,12 @@ function readRecord(r: SentAnswer): SentAnswer {
     }
     if (typeof raw.runId === "string" && raw.runId !== "") {
         out.runId = raw.runId;
+    }
+    if (typeof raw.verdictKey === "string" && raw.verdictKey !== "") {
+        out.verdictKey = raw.verdictKey;
+    }
+    if (raw.verdictOutcome === "fix" || raw.verdictOutcome === "skip") {
+        out.verdictOutcome = raw.verdictOutcome;
     }
     if (raw.typed === true) {
         out.typed = true;
@@ -197,7 +211,18 @@ export function parseSentStore(raw: string | null | undefined): SentByAgent {
 /** What a paired message draws: the record's kind and the fields its row shows. */
 export interface PairedAnswer extends Pick<
     SentAnswer,
-    "n" | "part" | "text" | "decisions" | "questions" | "calls" | "outcome" | "runId" | "typed"
+    | "n"
+    | "part"
+    | "text"
+    | "decisions"
+    | "questions"
+    | "calls"
+    | "outcome"
+    | "runId"
+    | "typed"
+    | "verdictKey"
+    | "verdictOutcome"
+    | "fixed"
 > {
     kind: RecordKind;
 }
@@ -222,6 +247,15 @@ function pairedOf(r: SentAnswer): PairedAnswer {
     }
     if (r.typed !== undefined) {
         p.typed = r.typed;
+    }
+    if (r.verdictKey !== undefined) {
+        p.verdictKey = r.verdictKey;
+    }
+    if (r.verdictOutcome !== undefined) {
+        p.verdictOutcome = r.verdictOutcome;
+    }
+    if (r.fixed !== undefined) {
+        p.fixed = r.fixed;
     }
     return p;
 }

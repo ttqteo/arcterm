@@ -4,6 +4,7 @@
 // The release notes, opened from the footer's version. Each release leads with its highlights as cards and folds every
 // other note under one count; an entry that names a binding gets a Try button that takes you to it.
 
+import { JarvisReactor } from "@/app/element/jarvisicon";
 import { ModalShell } from "@/app/modals/modalshell";
 import { displayKeys } from "@/app/store/keybindings/matcher";
 import { bindingsAtom } from "@/app/store/keybindings/store";
@@ -25,7 +26,6 @@ import {
     Bookmark,
     Bot,
     Brain,
-    BrainCircuit,
     Bug,
     ChevronRight,
     FileDiff,
@@ -89,7 +89,7 @@ const NOTE_ICONS: Record<NoteIcon, LucideIcon> = {
     palette: Palette,
     gift: Gift,
     sprout: Sprout,
-    jarvis: BrainCircuit,
+    jarvis: JarvisReactor,
     theme: Paintbrush,
     user: UserRound,
     wand: WandSparkles,

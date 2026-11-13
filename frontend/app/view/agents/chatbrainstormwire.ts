@@ -69,10 +69,12 @@ export function boxPlaceholderOverride(question: ChatCard | null): string | null
 /** Whether the message a record paired with draws nothing at all, not even an empty row in the column: an action line
  *  (confirm, edit, keep, check retry…: its effect shows on the card and in the step's ✓ row), and the line that started
  *  a run while the run is live (its card is at the end of the conversation; the ✓ row comes once the run is over, which
- *  `doneRuns`, the run ids that are landed, complete or cancelled, says). Every other kind has a row. */
+ *  `doneRuns`, the run ids that are landed, complete or cancelled, says), and the Fix or Skip line of a verdict card (the
+ *  card folds into its own ✓ row where it stood). Every other kind has a row. */
 export function pairedHidden(answer: PairedAnswer, doneRuns: ReadonlySet<string>): boolean {
     switch (answer.kind) {
         case "action":
+        case "verdict":
             return true;
         case "run":
             return answer.runId == null || !doneRuns.has(answer.runId);

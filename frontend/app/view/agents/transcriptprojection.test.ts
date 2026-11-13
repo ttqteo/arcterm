@@ -1480,6 +1480,120 @@ describe("projectTranscript AskUserQuestion", () => {
     });
 });
 
+describe("projectTranscript ReportFindings and subagent calls", () => {
+    const L = (o: unknown) => JSON.stringify(o);
+    const call = (name: string, input: unknown, id = "c1") =>
+        L({ type: "assistant", message: { content: [{ type: "tool_use", id, name, input }] } });
+
+    it("carries a ReportFindings call's findings on its action, the optional fields only when typed", () => {
+        const [action] = projectTranscript([
+            call("ReportFindings", {
+                level: "high",
+                findings: [
+                    {
+                        file: "pkg/a.go",
+                        line: 12,
+                        summary: "nil map write",
+                        failure_scenario: "x",
+                        verdict: "CONFIRMED",
+                        category: "correctness",
+                    },
+                    { file: "pkg/b.go", summary: "stale cache" },
+                ],
+            }),
+        ]) as any[];
+        expect(action).toMatchObject({ kind: "action", verb: "reportfindings" });
+        expect(action.findings).toEqual([
+            { file: "pkg/a.go", line: 12, summary: "nil map write", verdict: "CONFIRMED", category: "correctness" },
+            { file: "pkg/b.go", summary: "stale cache" },
+        ]);
+        expect(Object.keys(action.findings[1])).not.toContain("line");
+        expect(action.subagent).toBeUndefined();
+    });
+
+    it("keeps an empty findings list, so a clean review is told from a malformed call", () => {
+        const [action] = projectTranscript([call("ReportFindings", { findings: [] })]) as any[];
+        expect(action.findings).toEqual([]);
+    });
+
+    it("drops only a finding's untyped line, and leaves the field off when any finding has no file or no summary", () => {
+        const [badLine] = projectTranscript([
+            call("ReportFindings", { findings: [{ file: "a.go", summary: "ok" }, { file: "c.go", line: "7", summary: "bad line" }] }),
+        ]) as any[];
+        expect(badLine.findings).toEqual([
+            { file: "a.go", summary: "ok" },
+            { file: "c.go", summary: "bad line" },
+        ]);
+        // one unusable finding and the whole call stays a plain tool line: no card that hides it, as the verdict model does
+        for (const [n, bad] of [{ file: "b.go" }, { summary: "no file" }, { file: "b.go", summary: " " }, null, "x"].entries()) {
+            const [action] = projectTranscript([
+                call("ReportFindings", { findings: [{ file: "a.go", summary: "ok" }, bad] }, `bad${n}`),
+            ]) as any[];
+            expect(Object.keys(action)).not.toContain("findings");
+        }
+        const [none] = projectTranscript([call("ReportFindings", { level: "high" }, "c2")]) as any[];
+        expect(Object.keys(none)).not.toContain("findings");
+        const [str] = projectTranscript([call("ReportFindings", { findings: "all good" }, "c3")]) as any[];
+        expect(Object.keys(str)).not.toContain("findings");
+        const [nul] = projectTranscript([call("ReportFindings", null, "c4")]) as any[];
+        expect(Object.keys(nul)).not.toContain("findings");
+    });
+
+    it("carries an Agent call's description, type and tool id on its action", () => {
+        const [action] = projectTranscript([
+            call("Agent", { description: "Review task 3", subagent_type: "superpowers:code-reviewer", prompt: "look" }, "toolu_a1"),
+        ]) as any[];
+        expect(action.subagent).toEqual({
+            description: "Review task 3",
+            subagentType: "superpowers:code-reviewer",
+            toolUseId: "toolu_a1",
+        });
+        expect(Object.keys(action)).not.toContain("findings");
+    });
+
+    it("carries a Task call's too, and leaves the type off when it has none", () => {
+        const [action] = projectTranscript([call("Task", { description: "Find the router", prompt: "p" }, "toolu_t1")]) as any[];
+        expect(action).toMatchObject({ verb: "spawned" });
+        expect(action.subagent).toEqual({ description: "Find the router", toolUseId: "toolu_t1" });
+        expect(Object.keys(action.subagent)).not.toContain("subagentType");
+    });
+
+    it("leaves subagent off a Task or Agent call that has no description, and off every other tool", () => {
+        const [noDesc, bash] = projectTranscript([
+            call("Agent", { subagent_type: "Explore", prompt: "p" }, "t2"),
+            call("Bash", { command: "ls", description: "list" }, "b9"),
+        ]) as any[];
+        expect(Object.keys(noDesc)).not.toContain("subagent");
+        expect(Object.keys(bash)).not.toContain("subagent");
+        expect(Object.keys(bash)).not.toContain("findings");
+    });
+
+    it("does not leak a subagent or findings field into the scratch cleanup, and keeps them after the result lands", () => {
+        const out = projectTranscript([
+            call("Agent", { description: "Review", subagent_type: "code-reviewer" }, "t3"),
+            L({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t3", is_error: false, content: "done" }] } }),
+        ]) as any[];
+        expect(out[0].outcome).toBe("ok");
+        expect(out[0].subagent).toEqual({ description: "Review", subagentType: "code-reviewer", toolUseId: "t3" });
+    });
+
+    it("gives a `wsh runs start` call's command and output on its bash detail, which the run card reads", () => {
+        const [action] = projectTranscript([
+            call("Bash", { command: "wsh runs start --plan docs/p.md", description: "start the run" }, "b2"),
+            L({
+                type: "user",
+                message: { content: [{ type: "tool_result", tool_use_id: "b2", is_error: false, content: "started run 3fa21b0c-1111-2222-3333-444455556666" }] },
+            }),
+        ]) as any[];
+        expect(action.detail).toEqual({
+            kind: "bash",
+            command: "wsh runs start --plan docs/p.md",
+            output: "started run 3fa21b0c-1111-2222-3333-444455556666",
+            exit: 0,
+        });
+    });
+});
+
 describe("projectTranscript: a message queued while Claude worked", () => {
     const queued = (prompt: unknown, commandMode = "prompt") =>
         JSON.stringify({

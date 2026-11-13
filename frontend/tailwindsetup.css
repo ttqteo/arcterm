@@ -658,6 +658,16 @@ svg [aria-label="tip"] g path {
     }
 }
 
+/* Dash run: a dashed ring whose dashes travel round it while the ring stays put (Chat's running step,
+   chatstepsview.tsx StepSpinner). Spinning the whole 14px svg with animate-spin rotates a layer whose size is not a
+   whole number of device pixels at 125% or 150% scaling, so its centre wanders by a fraction of a pixel and the ring
+   wobbles; moving the dash offset redraws the ring in place. The ring's pathLength is 60, so -60 is one turn. */
+@keyframes dashRun {
+    to {
+        stroke-dashoffset: -60;
+    }
+}
+
 /* Fresh mark (Jarvis motion moment 1): a row new since your last visit carries a one-shot accent rule
    on its leading edge, holding briefly then fading. A positioned ::before rather than a box-shadow,
    because a row's focus cursor is `ring-1 ring-accent/70` — itself a box-shadow — and a second shadow

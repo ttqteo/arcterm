@@ -36,6 +36,15 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `chat-initiative` covers the card, the rows and the line with fixture transcripts and a mock RPC (cards from
   `8c5873beb`; the skill rule is `skills/initiatives/SKILL.md`).
 
+- [ ] (arcterm) A real Claude agent asks the plan Handoff and writes an `arc-review` block (`arc:handoff`, spec
+  2026-11-12-chat-verdict-handoff-design): in a Claude agent you started yourself (not one an Arc run started), after an
+  app launch has synced `skills/handoff/SKILL.md`, have it write a plan with superpowers:writing-plans → it asks one
+  `AskUserQuestion` with header `Handoff`, the plan path backticked in the question and the four choices in the
+  skill's order, one marked (Recommended); ask it for a review with a reviewer subagent → its reply ends with a fenced
+  `arc-review` block (`kind`, `reviewer`, `pass`, `note`, `findings`, `subagent`) and it stops for your pick. A live
+  agent's behaviour: the skill text is pinned by `TestShippedSkills` (`0089a1e7b`); the Chat cards that draw these come
+  in the run queued after 911b6d3a.
+
 - [ ] (arcterm) The Brainstorm tab's own-words field is a "You replied" in Chat: on an agent with a brainstorm
   question open, type an answer in that question's own-words field in the Brainstorm tab ("Answer in your own words…",
   or "Or type your own answer…" under options) and send it with OK or Enter → the ✓ row for that question in the
@@ -124,6 +133,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   every 2 s, the "(24s)" after it still grey; with Reduce motion on, the text rests in plain blue. Checked only on a
   static page in headless Chromium, never in WKWebView or the running app (cf811a54d: `chatpane.tsx`,
   `tailwindsetup.css` .shimmer-jarvis, `pulse.ts`).
+- [ ] (arcterm) Jarvis's arc reactor icon reads at rail size: the nav rail's Jarvis item (20px) shows the ring, six coils and the triangular core apart, not a grey blot, active (orange) and not, with the
+  yellow badge clear of it; What's new's Jarvis lines carry the same mark. Typechecked only, never seen in the app
+  (`element/jarvisicon.ts`, canvas `jarvis-nav-icon` option F).
+- [ ] (arcterm) Chat's running step ring turns in place: at 125% or 150% Windows display scaling, while a Claude agent
+  runs a command, the dashed green ring before "Ran" has its dashes run round a ring that stays put, with no wobble
+  and no short dash where it closes; with Reduce motion on it holds still. Not run in the app: no dev app was up
+  (`chatstepsview.tsx` StepSpinner, `tailwindsetup.css` dashRun).
 - [ ] (arcterm, Mac) Text replacements fire in Chat's message box: type `sv ` (a Text Replacement in System Settings →
   Keyboard) and it turns into "sinh viên " and is sent as that; a Vietnamese word typed with Telex gets no red
   underline, and the terminal stays as before. Checked only in a WKWebView harness with real key events into a
