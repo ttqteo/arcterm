@@ -22,37 +22,31 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
+## 1.1.0 — 2026-11-13
 
 ### Added
 
-- The Agent rail's breakdown shows what fills the context: the conversation apart from what loads every turn (tools,
-  memory files, skills, MCP), each memory file and skill a click from opening, and how long the cache stays warm
-- Chat shows Claude's reply as it is written, word by word as in the terminal, instead of each paragraph appearing
-  only once it is done. Claude agents started after the update.
 - Fork a session from Chat: Fork in the agent header's ⋯ menu starts a new session with the whole conversation, and
   Fork from here, on any message or reply (beside Copy, or right-click), starts one with the conversation up to that
   point. From one of your messages, its text waits in the new session's box to edit and send. The session you forked
-  stays as it was. Claude agents only.
+  stays as it was. Claude agents only. <!-- big -->
 - Chat now carries a brainstorm past its questions: the design's review (Confirm the design), the builder check and the
   run each show as a card in the conversation, and fold into a ✓ row once their step is done. The decisions made so far
   fold into the question card's footer, and the `brainstorm: …` lines Arc sends for your clicks no longer show as
-  messages.
+  messages. <!-- big -->
 - Chat can add to an initiative without leaving the conversation: a new chunk, a note on a chunk, or a new initiative.
   The agent proposes it as a card you add, edit or dismiss, and any message or reply has an Add to initiative… entry
   (beside Copy, or right-click) that opens the same card with its text. A handled card folds into one row, and the
-  agent hears the outcome with your next message. Claude agents only.
-
-### Changed
-
-- A long live transcript keeps only its last screens drawn while you follow it, instead of drawing every message the
-  session has added since you opened it.
-- A working run's row in the Agent sidebar says how many of its tasks are stuck (`Working · 1/6 · 3 stuck`), and hover
-  names each one (`t-2 verify failed · t-3 stalled`), instead of reading as if all were moving.
+  agent hears the outcome with your next message. Claude agents only. <!-- big -->
+- The Agent rail's breakdown shows what fills the context: the conversation apart from what loads every turn (tools,
+  memory files, skills, MCP), each memory file and skill a click from opening, and how long the cache stays warm.
+  <!-- big -->
 - Jarvis as a hologram: Settings → Jarvis & Office → Form → Hologram puts Jarvis in the window's bottom-right corner
   instead of Sprout on the footer. Blue rings while all is calm (the core beats while agents work), an amber neural
   sphere while something waits on you; click it for the same peek. Hologram size picks S, M or L. Float and the fold
   keep Sprout. <!-- big -->
+- Chat shows Claude's reply as it is written, word by word as in the terminal, instead of each paragraph appearing
+  only once it is done. Claude agents started after the update.
 - Chat's permission card answers from the keyboard: with the chat box empty, ↑ and ↓ move between Allow, "Yes, and
   don't ask again" and Deny, and Enter picks the highlighted one, as in the terminal's own prompt.
 - A file chip under Chat's "Worked" row has an arrow that opens the file in the agent's File tab (an HTML page or
@@ -60,6 +54,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A long live transcript keeps only its last screens drawn while you follow it, instead of drawing every message the
+  session has added since you opened it.
+- A working run's row in the Agent sidebar says how many of its tasks are stuck (`Working · 1/6 · 3 stuck`), and hover
+  names each one (`t-2 verify failed · t-3 stalled`), instead of reading as if all were moving.
 - Settings → Jarvis & Office groups Jarvis's settings into three short cards: Jarvis (character, Vietnam's colours),
   Form (Sprout or hologram, and the hologram's size) and Behaviour (roams, quotes).
 - With Jarvis set to the hologram, arcterm now starts up with Jarvis in the middle of the screen, its rings lighting up
