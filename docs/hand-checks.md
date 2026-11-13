@@ -466,6 +466,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   and the text is back in the box. A pty probe saw the Esc half on Claude Code 2.1.322, never ↑ on a live queue
   (`chattakeback.ts`, `chattakebackstore.ts`).
 
+- [ ] (arcterm) Tray job size tooltip, on a build from 2667a3291: with a heavy job queued, open the tray and hover a
+  job's GB figure → "The RAM the queue sets aside for it (the Jobs popover says whether it was measured)". Commit:
+  fix(tray) a job's RAM tooltip says what the figure is
 - [ ] (arcterm) A background heavy command keeps its slot on Windows, on a build with the new `wsh`: have a Claude
   agent run `task check:ts` with `run_in_background` → `waveapp.log`'s `[jobqueue] finished jN (task check:ts), held`
   reads about the typecheck's own time (a minute or two), not `2s`; a second and third heavy background command
