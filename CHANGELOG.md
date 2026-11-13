@@ -65,6 +65,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   initiative each time.
 - When you ask a Claude agent in Chat to put something in an initiative, it adds it straight away and says where,
   instead of showing an Add to initiative card for you to confirm. A card still asks for what you did not ask for.
+- The New dialog's Home row is now No folder: an agent, terminal or tool picked there starts in an empty folder of its
+  own (`~/.arc/no-folder`) instead of your home folder, and Claude Code no longer asks to trust the folder on every
+  launch. Claude Code runs there as in any project, no longer ask-only, and its past sessions there can be resumed
+  from the Session column. The Agent tree's Home folder reads No folder.
+- In the New dialog, picking a session keeps the dialog's height, and the columns and the session's read fade into
+  each other.
 
 ### Fixed
 

@@ -698,6 +698,12 @@ func EffortPinCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortPinData, opts 
 	return resp, err
 }
 
+// command "ensurenofolder", wshserver.EnsureNoFolderCommand
+func EnsureNoFolderCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (wshrpc.CommandEnsureNoFolderRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[wshrpc.CommandEnsureNoFolderRtnData](w, "ensurenofolder", nil, opts)
+	return resp, err
+}
+
 // command "eventpublish", wshserver.EventPublishCommand
 func EventPublishCommand(w *wshutil.WshRpc, data wps.WaveEvent, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "eventpublish", data, opts)

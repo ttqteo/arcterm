@@ -1299,6 +1299,11 @@ declare global {
         oldest?: EffortPinRef;
     };
 
+    // wshrpc.CommandEnsureNoFolderRtnData
+    type CommandEnsureNoFolderRtnData = {
+        path: string;
+    };
+
     // wshrpc.CommandEventReadHistoryData
     type CommandEventReadHistoryData = {
         event: string;

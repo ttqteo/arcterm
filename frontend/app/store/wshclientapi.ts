@@ -702,6 +702,12 @@ export class RpcApiType {
         return client.wshRpcCall("effortpin", data, opts);
     }
 
+    // command "ensurenofolder" [call]
+    EnsureNoFolderCommand(client: WshClient, opts?: RpcOpts): Promise<CommandEnsureNoFolderRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "ensurenofolder", null, opts);
+        return client.wshRpcCall("ensurenofolder", null, opts);
+    }
+
     // command "eventpublish" [call]
     EventPublishCommand(client: WshClient, data: WaveEvent, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "eventpublish", data, opts);

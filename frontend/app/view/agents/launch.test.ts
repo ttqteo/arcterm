@@ -3,12 +3,10 @@
 
 import { describe, expect, it } from "vitest";
 import {
-    askStartupCommand,
     buildLaunchMeta,
     composeStartupCommand,
     deriveBranch,
     isRuntimeOffered,
-    launcherFlagCatalog,
     resumeArgsForAgy,
     resumeArgsForClaude,
     resumeArgsForCodex,
@@ -86,25 +84,6 @@ describe("a quoted startup command", () => {
         expect(composeStartupCommand('claude --append-system-prompt "a b"', "claude", { verbose: true })).toBe(
             'claude --append-system-prompt "a b" --verbose'
         );
-    });
-    it("stays one argument through askStartupCommand into buildLaunchMeta (double quotes)", () => {
-        const asked = askStartupCommand('claude --model x --append-system-prompt "a b"');
-        expect(asked).toBe('claude --model x --append-system-prompt "a b" --settings .arc/claude-ask.json');
-        const m = buildLaunchMeta({ runtime: "claude", startupCommand: asked, task: "T", cwd: "/x" });
-        expect(m.cmd).toBe("claude");
-        expect(m["agent:baseargs"]).toEqual([
-            "--model",
-            "x",
-            "--append-system-prompt",
-            "a b",
-            "--settings",
-            ".arc/claude-ask.json",
-        ]);
-    });
-    it("stays one argument through askStartupCommand into buildLaunchMeta (single quotes)", () => {
-        const asked = askStartupCommand("claude --append-system-prompt 'a b'");
-        const m = buildLaunchMeta({ runtime: "claude", startupCommand: asked, task: "T", cwd: "/x" });
-        expect(m["agent:baseargs"]).toEqual(["--append-system-prompt", "a b", "--settings", ".arc/claude-ask.json"]);
     });
 });
 
@@ -210,37 +189,6 @@ describe("composeStartupCommand", () => {
     it("terminal has no flags", () => {
         expect(RUNTIME_FLAGS.terminal).toEqual([]);
         expect(composeStartupCommand("", "terminal", { verbose: true })).toBe("");
-    });
-});
-
-describe("askStartupCommand", () => {
-    it("appends the ask settings, relative to the home folder a Home agent starts in", () => {
-        expect(askStartupCommand("claude")).toBe("claude --settings .arc/claude-ask.json");
-        expect(askStartupCommand("  claude --model opus ")).toBe("claude --model opus --settings .arc/claude-ask.json");
-    });
-
-    it("replaces a --settings of the command's own and drops the skip flags", () => {
-        expect(askStartupCommand("claude --settings mine.json --verbose")).toBe(
-            "claude --verbose --settings .arc/claude-ask.json"
-        );
-        expect(askStartupCommand("claude --settings=mine.json")).toBe("claude --settings .arc/claude-ask.json");
-        expect(askStartupCommand("claude --dangerously-skip-permissions --allow-dangerously-skip-permissions")).toBe(
-            "claude --settings .arc/claude-ask.json"
-        );
-    });
-
-    it("keeps one --settings on a resume command that already carries it", () => {
-        expect(askStartupCommand("claude --resume abc --settings .arc/claude-ask.json")).toBe(
-            "claude --resume abc --settings .arc/claude-ask.json"
-        );
-    });
-});
-
-describe("launcherFlagCatalog", () => {
-    it("leaves the skip flag out of Home's menu only", () => {
-        expect(launcherFlagCatalog("claude", false).map((f) => f.id)).toContain("skip-permissions");
-        expect(launcherFlagCatalog("claude", true).map((f) => f.id)).not.toContain("skip-permissions");
-        expect(launcherFlagCatalog("claude", true).map((f) => f.id)).toContain("verbose");
     });
 });
 

@@ -81,7 +81,7 @@ brings the columns back.
 |---|---|
 | `1`…`9` | Pick that row in the focused column (Start, Project or Session); in Session `1` is New session |
 | `Alt`+`1`…`9` | In the task or goal box: pick that Start row without leaving the box |
-| `0` | In the Project column: Home, pinned under the projects |
+| `0` | In the Project column: No folder, pinned under the projects |
 | `↑` / `↓` | Move in the focused column |
 | `→` / `←` | Step Start, Project, then the Session or Tool column, and back. In the resume step, `←` from the Session list goes back to the columns |
 | `Alt`+`←` | In the resume step, from anywhere (the Task box too): Back to the columns |

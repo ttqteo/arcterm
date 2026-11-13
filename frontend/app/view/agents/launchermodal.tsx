@@ -19,7 +19,7 @@
 // reopens it on the last pick; Mod+N and Mod+Shift+R, and the Brief's `r`, open it at the agent or the run door.
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
-import { MOTION } from "@/app/element/motiontokens";
+import { viewFade } from "@/app/element/motiontokens";
 import { DialogButton } from "@/app/modals/dialogbutton";
 import { focusTrapTarget } from "@/app/modals/modalfocus";
 import { ModalShell } from "@/app/modals/modalshell";
@@ -36,7 +36,7 @@ import {
     ChevronDown,
     ChevronLeft,
     ChevronRight,
-    House,
+    FolderMinus,
     Network,
     SquareTerminal,
     Users,
@@ -45,7 +45,7 @@ import {
     Zap,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { centerModeAtom, overviewProjectAtom, showCouncilSetup, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { channelsAtom, primeChannels } from "./channelsstore";
@@ -61,7 +61,6 @@ import {
 import { councilAtom, councilListAtom, councilSelAtom, councilSetupProjectAtom, councilViewAtom } from "./councilstore";
 import { harnessesAtom, harnessPreferenceAtom, resolveDefaultRuntime } from "./harnessstore";
 import {
-    askStartupCommand,
     composeStartupCommand,
     deriveBranch,
     RUNTIME_FLAGS,
@@ -81,6 +80,7 @@ import {
     homeOffered,
     launcherKey,
     launcherTitle,
+    NO_FOLDER_LABEL,
     pickedTool,
     primaryLabel,
     projectAfterFilter,
@@ -315,6 +315,27 @@ function AccountPicker({
     );
 }
 
+// The columns band's last measured height, which the resume step takes. Kept past a close and across launches, so a
+// dialog that opens on the step already has it; per viewer and best-effort, so storage that throws only loses it.
+const BAND_HEIGHT_KEY = "launcher.bandHeight";
+
+function rememberedBandHeight(): number | null {
+    try {
+        const n = Number(localStorage.getItem(BAND_HEIGHT_KEY));
+        return Number.isFinite(n) && n > 0 ? n : null;
+    } catch {
+        return null;
+    }
+}
+
+function rememberBandHeight(h: number): void {
+    try {
+        localStorage.setItem(BAND_HEIGHT_KEY, String(h));
+    } catch {
+        // the step falls back to its own height
+    }
+}
+
 export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const door = useAtomValue(model.launcherAtom);
     const open = door != null;
@@ -365,6 +386,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const [zone, setZone] = useState<"start" | "project" | "tools" | "task" | null>(null);
     const [filter, setFilter] = useState("");
     const [home, setHome] = useState("");
+    // the No folder path, created and trusted for Claude Code by wavesrv; "" until it answers, which keeps the row hidden
+    const [noFolder, setNoFolder] = useState("");
     const [error, setError] = useState<string | null>(null);
     const rootRef = useRef<HTMLDivElement>(null);
     const startRef = useRef<HTMLDivElement>(null);
@@ -391,12 +414,12 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const toolLoad = toolStatuses != null ? "ready" : toolsError != null ? "error" : "loading";
     const candidates = useMemo(() => recentFirst(rows, recent), [rows, recent]);
     const visible = filterProjects(candidates, filter);
-    const homeShown = homeOffered(kind, runtime, home);
+    const homeShown = homeOffered(kind, runtime, noFolder);
     const picks = projectColumnPicks(visible, homeShown, filter);
     // Home is picked only by hand: when it is not on offer, the pick falls back to a registered project
     const atHome = homeShown && pickedName === HOME_PICK;
     const project: ProjectRow | null = atHome
-        ? { name: HOME_NAME, path: home }
+        ? { name: HOME_NAME, path: noFolder }
         : selectedProject(candidates, pickedName);
     const pickKey = atHome ? HOME_PICK : (project?.name ?? "");
     const projectPath = project?.path ?? "";
@@ -488,7 +511,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const primaryDisabled = where == null || blocker != null || busy || imagesWriting;
     // the list the third column holds, which → from Project steps into
     const thirdList: "resume" | "tools" | null =
-        isAgent && !atHome && runtime !== "terminal" && choices.length > 0 ? "resume" : isTool ? "tools" : null;
+        isAgent && runtime !== "terminal" && choices.length > 0 ? "resume" : isTool ? "tools" : null;
     // what an Escape closes first: a popover only while it is drawn (a branch list with no branches draws nothing)
     const flagMenuShown = isAgent && flagMenuOpen && RUNTIME_FLAGS[runtime].length > 0;
     const branchListShown = wantsWorktree && branchListOpen && branches.length > 0;
@@ -500,6 +523,16 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     // opening, dropped at close.
     const [resumeStep, setResumeStep] = useState(true);
     const stepShown = resumeStepShows(resumeStep, runtime, thirdList, resume != null);
+    // the step takes the columns band's measured height, so switching between the two leaves the dialog's height alone
+    const columnsRef = useRef<HTMLDivElement>(null);
+    const [bandHeight, setBandHeight] = useState<number | null>(rememberedBandHeight);
+    useLayoutEffect(() => {
+        const h = columnsRef.current?.offsetHeight ?? 0;
+        if (open && !stepShown && h > 0 && h !== bandHeight) {
+            rememberBandHeight(h);
+            setBandHeight(h);
+        }
+    }, [open, stepShown, startList.length, bandHeight]);
     // the column focus moves to once the step switch has rendered it: the switch unmounts the one that had focus
     const stepFocusRef = useRef<"start" | "project" | "resume" | null>(null);
     const [peek, setPeek] = useState<{ id: string; state: PeekState } | null>(null);
@@ -591,6 +624,28 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             live = false;
         };
     }, [open, home]);
+
+    // No folder is offered once wavesrv has created it and marked it trusted for Claude Code (homeOffered); every opening
+    // asks again, which costs a stat while it is in place, so a folder deleted meanwhile comes back before a launch
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        let live = true;
+        fireAndForget(async () => {
+            try {
+                const rtn = await RpcApi.EnsureNoFolderCommand(TabRpcClient);
+                if (live) {
+                    setNoFolder(rtn.path);
+                }
+            } catch (e) {
+                console.error("launcher: could not make the No folder, not offering it", e);
+            }
+        });
+        return () => {
+            live = false;
+        };
+    }, [open]);
 
     // only the Brief loads the channel list, and a run needs it to find the project's channel
     useEffect(() => {
@@ -826,9 +881,6 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                       naFlags[runtime] ?? {}
                   ),
               };
-        if (atHome && runtime === "claude") {
-            spec.startupCommand = askStartupCommand(spec.startupCommand);
-        }
         try {
             await launchAgent(model, {
                 runtime,
@@ -901,7 +953,11 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
         setError(null);
         try {
-            const res = await openTool(model, t, { project: toolAtHome ? HOME_NAME : p.name, place: "centre" });
+            const res = await openTool(model, t, {
+                project: toolAtHome ? HOME_NAME : p.name,
+                ...(atHome ? { folder: noFolder } : {}),
+                place: "centre",
+            });
             if ("reason" in res) {
                 setError(res.reason);
                 return;
@@ -1148,7 +1204,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     if (projectFocused) {
         projectHint =
             filter === "" && visible.length > 0
-                ? `${hasTextBox ? "↑↓" : "type to filter"} · 1–${Math.min(9, visible.length)}${picks.includes(HOME_PICK) ? ", 0 Home" : ""}`
+                ? `${hasTextBox ? "↑↓" : "type to filter"} · 1–${Math.min(9, visible.length)}${picks.includes(HOME_PICK) ? ", 0 No folder" : ""}`
                 : "";
     } else if (candidates.length > 9) {
         projectHint = `${candidates.length} · last used first`;
@@ -1318,11 +1374,15 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         // read gives way before the Task box does
                         <motion.div
                             key="step"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
+                            variants={viewFade}
+                            initial="initial"
+                            animate="animate"
                             data-launcher-step="resume"
-                            className="grid h-[360px] min-h-[220px] grid-cols-[272px_minmax(0,1fr)] [flex-shrink:4]"
+                            style={bandHeight != null ? { height: bandHeight } : undefined}
+                            className={cn(
+                                "grid min-h-[220px] grid-cols-[272px_minmax(0,1fr)] [flex-shrink:4]",
+                                bandHeight == null && "h-[360px]"
+                            )}
                         >
                             <div data-launcher-column="third" className="relative min-w-0 border-r border-border">
                                 <div className="absolute inset-0 flex flex-col px-2 py-3">
@@ -1344,9 +1404,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         /* the Start column sets the band's height; the other two lay out inside it and scroll */
                         <motion.div
                             key="columns"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
+                            ref={columnsRef}
+                            variants={viewFade}
+                            initial="initial"
+                            animate="animate"
                             className="shrink-0"
                         >
                             <div className="grid grid-cols-[236px_minmax(0,1fr)_minmax(0,1fr)]">
@@ -1496,16 +1557,12 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                                         {/* pinned under the list, and 0 in place of a digit, so a project added
                                                     never moves it; its own data attribute, since Home is no registered
                                                     project and the scenarios that count data-project-row count those.
-                                                    Its folder and ask-only are in the tooltip, as a project's path is */}
+                                                    Its folder is in the tooltip, as a project's path is */}
                                                         <div
                                                             role="radio"
                                                             aria-checked={atHome}
                                                             data-launcher-home
-                                                            title={
-                                                                runtime === "claude"
-                                                                    ? `${home}: no project. Claude Code starts ask-only under ~/.arc/claude-ask.json.`
-                                                                    : `${home}: no project.`
-                                                            }
+                                                            title={`${noFolder}: no project, an empty folder of its own`}
                                                             onClick={() => pickProject(HOME_PICK)}
                                                             className={cn(
                                                                 rowTone(atHome, projectFocused),
@@ -1514,7 +1571,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                                             )}
                                                         >
                                                             <Keycap k="0" lit={projectFocused} />
-                                                            <House
+                                                            <FolderMinus
                                                                 size={13}
                                                                 strokeWidth={2}
                                                                 className={cn(
@@ -1528,7 +1585,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                                                     atHome ? "text-primary" : "text-muted-foreground"
                                                                 )}
                                                             >
-                                                                {HOME_NAME}
+                                                                {NO_FOLDER_LABEL}
                                                             </span>
                                                         </div>
                                                     </>
@@ -1582,11 +1639,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                                 >
                                                     {runtime === "terminal"
                                                         ? "A plain shell has no session to resume."
-                                                        : atHome
-                                                          ? "Home starts a new session. Pick a project to resume one of its sessions."
-                                                          : sessions == null
-                                                            ? "Reading sessions…"
-                                                            : "No session of this agent here yet: it starts a new one."}
+                                                        : sessions == null
+                                                          ? "Reading sessions…"
+                                                          : "No session of this agent here yet: it starts a new one."}
                                                 </span>
                                             </>
                                         )}

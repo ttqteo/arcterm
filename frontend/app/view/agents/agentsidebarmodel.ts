@@ -904,11 +904,11 @@ export function terminalPlace(cwd: string | undefined, root: string | undefined)
     );
 }
 
-/** Pure: a folder's name as the tree reads it. The terminals with no project sit in Home (HOME_PROJECT is the key the
+/** Pure: a folder's name as the tree reads it. The terminals with no project sit in No folder (HOME_PROJECT is the key the
  *  model and the fold list use); the agents with no project keep their own "ungrouped" folder, so the two never read as
  *  one. Every other folder is the project's name. */
 export function projectLabel(project: string): string {
-    return project === HOME_PROJECT ? "Home" : project;
+    return project === HOME_PROJECT ? "No folder" : project;
 }
 
 /** Pure: what a folded folder says it holds: "2 agents · 1 terminal", only "2 terminals" when it holds no agent and only

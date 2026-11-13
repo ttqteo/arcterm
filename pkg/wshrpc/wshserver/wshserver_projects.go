@@ -12,11 +12,20 @@ import (
 
 	"github.com/wavetermdev/waveterm/pkg/claudeaccount"
 	"github.com/wavetermdev/waveterm/pkg/gitinfo"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
+
+func (ws *WshServer) EnsureNoFolderCommand(ctx context.Context) (wshrpc.CommandEnsureNoFolderRtnData, error) {
+	path, err := jarvis.EnsureNoFolder()
+	if err != nil {
+		return wshrpc.CommandEnsureNoFolderRtnData{}, err
+	}
+	return wshrpc.CommandEnsureNoFolderRtnData{Path: path}, nil
+}
 
 func (ws *WshServer) CreateProjectCommand(ctx context.Context, data wshrpc.CommandCreateProjectData) error {
 	name := strings.TrimSpace(data.Name)
