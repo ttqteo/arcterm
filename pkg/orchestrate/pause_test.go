@@ -6,6 +6,7 @@ package orchestrate
 import (
 	"context"
 	"errors"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -559,6 +560,58 @@ func TestCancelCutsOffARunningSetupAtOnce(t *testing.T) {
 	}
 	if len(spawned) != 0 {
 		t.Fatalf("a worker was spawned after its Setup was cut off: %d", len(spawned))
+	}
+}
+
+// a lane's Setup that waited SetupSlotWait for a heavy-job slot gives the dag lock back: the task is neither failed nor
+// tried, its tree stays, and the next tick runs Setup there and starts the worker
+func TestSetupThatWaitedTooLongForASlotStaysPendingAndRunsNextTick(t *testing.T) {
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, {ID: "t-1", Label: "second"}})
+	f.setPlanCommands(t, "", setupCmd)
+	var spawned []string
+	stubSpawn(t, &spawned)
+	slotFree := false
+	calls := stubPlanCommand(t, func(ctx context.Context, _, command string) error {
+		if command != setupCmd {
+			return nil
+		}
+		if limit, _ := ctx.Value(slotWaitKey{}).(time.Duration); limit != SetupSlotWait {
+			t.Errorf("Setup's slot wait is bounded by %v, want SetupSlotWait", limit)
+		}
+		if !slotFree {
+			return errSlotWaitOver
+		}
+		return nil
+	})
+	if err := Schedule(f.ctx, f.dagID); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(calls.list()); got != 1 {
+		t.Fatalf("Setup ran %d times in the tick, want once: the tasks after it wait on the same queue", got)
+	}
+	g := f.dag(t)
+	for _, task := range g.Tasks {
+		if task.State != TaskState_Pending || task.Attempts != 0 || task.RunID != "" {
+			t.Fatalf("task %s is %q (attempts %d, run %q), want pending and untried", task.ID, task.State, task.Attempts, task.RunID)
+		}
+	}
+	if len(spawned) != 0 {
+		t.Fatalf("a worker was spawned with its Setup never run: %d", len(spawned))
+	}
+	wt := worktreeDir(f.project, TaskWorktreeKey(f.ownerID, "t-0"))
+	if _, err := os.Stat(wt); err != nil {
+		t.Fatalf("the tree Setup never touched was removed: %v", err)
+	}
+
+	slotFree = true
+	if err := Schedule(f.ctx, f.dagID); err != nil {
+		t.Fatal(err)
+	}
+	if c := calls.in(wt); len(c) != 2 {
+		t.Fatalf("Setup ran %d times in %s, want again on the next tick", len(c), wt)
+	}
+	if len(spawned) == 0 {
+		t.Fatal("no worker started once the slot came free")
 	}
 }
 
