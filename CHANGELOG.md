@@ -32,6 +32,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Graphite is the default theme and Google Sans Flex the default interface font, in place of Claude and Inter; a
+  theme or font you already picked in Settings → Appearance stays. <!-- try: go:settings -->
 - Jarvis shows as the hologram by default, in the window's bottom-right corner; Settings → Jarvis & Office → Form
   brings Sprout back to the footer. If you already picked a form, it stays.
 - A message you send in Chat flies from the box to its place: its text lifts out of where you typed it and becomes the

@@ -146,7 +146,7 @@ describe("helpers", () => {
         expect(THEMES[0].id).toBe(DEFAULT_THEME_PRESET);
     });
     it("Spider is Claude's palette with the suit's blue accent, a pinker error and the suit's blue", () => {
-        const claude = activePalette(DEFAULT_THEME_PRESET);
+        const claude = activePalette("claude");
         const spider = activePalette("spider");
         const { accent, error, claudeMark, ansiBlue, ...rest } = spider;
         const { accent: _a, error: _e, claudeMark: _m, ansiBlue: _b, ...claudeRest } = claude;
