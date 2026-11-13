@@ -176,6 +176,49 @@ func TestParsePlanIgnoresFencedLines(t *testing.T) {
 	}
 }
 
+// A prose line that starts with inline code of backticks (```` ``` ````) opens no fence: CommonMark reads a backtick
+// run followed by more backticks on the line as code spans. Run 911b6d3a's plan lost Tasks 7 to 13 to such a line.
+func TestParsePlanInlineBackticksOpenNoFence(t *testing.T) {
+	src := "### Task 1: a\n```` ``` ```` blocks draw as cards\n\n### Task 2: b\n"
+	p := mustParsePlan(t, src)
+	if len(p.Tasks) != 2 || p.Tasks[1].Label != "b" {
+		t.Fatalf("an inline code line is not a fence, got %v", depLists(p.Tasks))
+	}
+}
+
+// A fence still open at the end of the plan swallows every heading after it, so submit refuses it and names where it
+// opened, rather than run a dag that silently lacks those tasks.
+func TestParsePlanUnclosedFenceIsRefused(t *testing.T) {
+	src := "### Task 1: a\ndo a\n\n### Task 2: b\n```go\nfunc x() {}\n\n### Task 3: c\n\n### Task 4: d\n"
+	_, err := ParsePlan(src)
+	if err == nil {
+		t.Fatal("an unclosed fence must be refused")
+	}
+	for _, want := range []string{"task 2", "line 5", "2 task headings"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q should name %q", err, want)
+		}
+	}
+	// open at the very end with no heading after it: the last task's text just runs on, which two older plans do
+	tail := "### Task 1: a\ndo a\n```go\nfunc x() {}\n"
+	if p, err := ParsePlan(tail); err != nil || len(p.Tasks) != 1 {
+		t.Fatalf("a fence left open at the end with nothing after it parses, got %v, %v", p.Tasks, err)
+	}
+}
+
+// A closing fence is the opener's character, at least as long, and nothing else on the line: a shorter run or one
+// with text after it is fence content.
+func TestParsePlanFenceClosesOnlyOnAMatchingRun(t *testing.T) {
+	src := "### Task 1: a\n````markdown\n```\n### Task 2: sample\n``` not a closer\n````\n\n### Task 2: real\n"
+	p := mustParsePlan(t, src)
+	if len(p.Tasks) != 2 || p.Tasks[1].Label != "real" {
+		t.Fatalf("got %v, want the sample heading kept as text", depLists(p.Tasks))
+	}
+	if !strings.Contains(p.Tasks[0].Description, "### Task 2: sample") {
+		t.Fatalf("fenced lines stay in the task text, got %q", p.Tasks[0].Description)
+	}
+}
+
 func TestParsePlanCRLF(t *testing.T) {
 	p := mustParsePlan(t, "**Verify:** `go test ./...`\r\n\r\n### Task 1: a\r\nbody\r\n### Task 2: b\r\n**Depends on:** none\r\n")
 	if p.Verify != "go test ./..." || p.Tasks[0].Label != "a" || p.Tasks[0].Description != "body" {

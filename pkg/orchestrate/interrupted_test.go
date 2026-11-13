@@ -9,7 +9,9 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/runroute"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
@@ -233,5 +235,54 @@ func TestMarkInterruptedRunsCancelsDagRunsNoTaskReferences(t *testing.T) {
 	}
 	if !slices.Equal(stopped, []string{orphan.ID}) {
 		t.Fatalf("stopped %v, want only the orphan %s, so a resync cannot start its worker again", stopped, orphan.ID)
+	}
+}
+
+// An orchestrator lead's tab must outlive its process while the dag's children run, so the first spawn keeps it on
+// exit (jarvis.EnsureWorkers). A lead reopened in a new tab gets the same: without it, the tab closes at the lead's
+// next exit and every later pause makes yet another one. A quick run's worker closes with its process.
+func TestResumeInNewTabKeepsALeadsTabOnExitOnly(t *testing.T) {
+	allowWorkerHarnessForTest(t)
+	stubResume(t, nil)
+	f := newPauseFixture(t, "t-0")
+	cases := []struct {
+		name  string
+		runID string
+		keep  bool
+	}{
+		{"an orchestrator lead", f.ownerID, true},
+		{"a quick run's worker", f.workers["t-0"], false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			closed := "tab:" + uuid.NewString()
+			if err := wstore.UpdateRun(f.ctx, f.channel, c.runID, func(r *waveobj.Run) error {
+				r.Phases[0].WorkerOrefs = []string{closed}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			var spawned []jarvis.RunWorkerOptions
+			oldSpawn := jarvis.SpawnRunWorker
+			jarvis.SpawnRunWorker = func(ctx context.Context, _ runroute.Capability, _, _, _, _ string, opts jarvis.RunWorkerOptions) (string, error) {
+				spawned = append(spawned, opts)
+				return insertTab(t, ctx), nil
+			}
+			restoreAfterStages(t, func() { jarvis.SpawnRunWorker = oldSpawn })
+
+			s := waveobj.PausedSession{RunId: c.runID, WorkerORef: closed, Runtime: "claude", SessionId: "sess"}
+			if err := ReopenSession(f.ctx, s, "carry on"); err != nil {
+				t.Fatal(err)
+			}
+			if len(spawned) != 1 {
+				t.Fatalf("spawned %d tabs for the closed one, want 1", len(spawned))
+			}
+			if spawned[0].KeepOnExit != c.keep {
+				t.Fatalf("KeepOnExit = %v, want %v", spawned[0].KeepOnExit, c.keep)
+			}
+			if spawned[0].RunId != c.runID {
+				t.Fatalf("RunId = %q, want %q: the new tab must resolve to its run", spawned[0].RunId, c.runID)
+			}
+		})
 	}
 }

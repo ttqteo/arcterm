@@ -173,19 +173,19 @@ describe("originLinks", () => {
         });
     });
 
-    it("says a queued entry's place among the waiting ones", () => {
+    it("says a queued entry is a plan, and its place among the waiting ones", () => {
         const queue = [entry("q0", {}, "tab-b"), entry("q1")];
         expect(originLinks("tab-a", {}, queue)).toEqual({
-            label: "queued #2",
-            title: "Plan q1 · queued #2",
+            label: "plan queued #2",
+            title: "Plan q1 · plan queued #2",
             target: { kind: "queued", entryId: "q1" },
         });
     });
 
-    it("says a blocked entry is blocked, which takes no place from the waiting ones", () => {
+    it("says a blocked entry is a blocked plan, which takes no place from the waiting ones", () => {
         const queue = [entry("q1", { state: "blocked", reason: "was held" }), entry("q2", {}, "tab-b")];
-        expect(label("tab-a", {}, queue)).toBe("blocked");
-        expect(label("tab-b", {}, queue)).toBe("queued #1");
+        expect(label("tab-a", {}, queue)).toBe("plan blocked");
+        expect(label("tab-b", {}, queue)).toBe("plan queued #1");
     });
 
     it("says merged once the run's branch has landed", () => {
@@ -217,7 +217,7 @@ describe("originLinks", () => {
         // a run and a queued entry are two links; the entry queued last is the newest
         expect(originLinks("tab-a", byId(run("r1", { createdTs: 100 })), [entry("q1", { queuedts: 500 })])).toEqual({
             label: "2 runs",
-            title: "2 runs · newest: Plan q1 · queued #1",
+            title: "2 runs · newest: Plan q1 · plan queued #1",
             target: { kind: "queued", entryId: "q1" },
         });
     });

@@ -89,6 +89,7 @@ func TestScanReadsMemoryUnderTheProjectSlug(t *testing.T) {
 	write(t, filepath.Join(dir, "MEMORY.md"), "- [a](a.md)")
 	write(t, filepath.Join(dir, "a.md"), "---\nname: a\ndescription: top level\ntype: feedback\n---\nbody")
 	write(t, filepath.Join(dir, "b.md"), "---\r\nname: b\r\ndescription: nested\r\nmetadata:\r\n  type: project\r\n---\r\nbody")
+	write(t, filepath.Join(dir, "bom.md"), "\xef\xbb\xbf---\r\nname: bom\r\ndescription: with a BOM\r\ntype: user\r\n---\r\nbody")
 	write(t, filepath.Join(dir, "c.md"), "no frontmatter")
 	write(t, filepath.Join(dir, "notes.txt"), "not memory")
 	files, err := Scan(proj, home)
@@ -99,6 +100,7 @@ func TestScanReadsMemoryUnderTheProjectSlug(t *testing.T) {
 		{"MEMORY.md", "index", ""},
 		{"a.md", "feedback", "top level"},
 		{"b.md", "project", "nested"},
+		{"bom.md", "user", "with a BOM"},
 		{"c.md", "", ""},
 	}
 	if got := count(files, GroupMemory); got != len(cases) {

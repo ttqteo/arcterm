@@ -135,6 +135,11 @@ func splitCmdline(cmdline string) []string {
 	return argv
 }
 
+// ReadArgv is pid's argv, read from its command line; nil when it cannot be read (the process is gone, or not ours).
+func ReadArgv(pid int) []string {
+	return splitCmdline(readCmdline(pid))
+}
+
 const tcpListen = "LISTEN"
 
 // readListenPorts maps each pid to the tcp ports (v4 and v6) it listens on, sorted and without repeats; nil

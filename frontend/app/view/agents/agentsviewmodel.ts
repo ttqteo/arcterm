@@ -2,6 +2,7 @@
 
 import { modelLabel } from "@/app/view/agents/session-models/sessionviewmodel";
 import type { BuilderCheckRecord } from "./brainstormmodel";
+import { stripResultLines } from "./chatinitiative";
 import { sessionIdFromTranscript } from "./launch";
 import { projectNameFromTranscriptPath } from "./projectname";
 
@@ -43,6 +44,24 @@ export interface AskQuestionDetail {
     typed?: string;
 }
 
+/** One finding of a `ReportFindings` call (the tool `/code-review` reports through), from its input. `verdict` is the
+ *  verifier's CONFIRMED / PLAUSIBLE when the review checked it. */
+export interface ReportedFinding {
+    file: string;
+    line?: number;
+    summary: string;
+    verdict?: string;
+    category?: string;
+}
+
+/** The subagent a `Task` / `Agent` call started: its `description` (what a review's `arc-review` block names it by),
+ *  its `subagent_type`, and the tool call's id (which names its transcript). */
+export interface SubagentCall {
+    description: string;
+    subagentType?: string;
+    toolUseId?: string;
+}
+
 /** What a bash-mode command (`! cmd`) or a slash command printed, its ANSI codes dropped: stdout and stderr, either
  *  possibly empty. */
 export interface ShellResult {
@@ -78,6 +97,8 @@ export type AgentEntry =
           durationMs?: number; // tool_use → tool_result wall time, when timestamps present
           startedAt?: number; // UnixMilli of the tool_use record, when it carried a timestamp: a tool in flight counts from it
           detail?: ActionDetail; // rich, expandable detail; absent = bare line
+          findings?: ReportedFinding[]; // a ReportFindings call: what it reported, [] for a clean review; absent on any other call
+          subagent?: SubagentCall; // a Task / Agent call: the subagent it started; absent on any other call
       };
 
 export interface AgentAskOption {
@@ -182,6 +203,18 @@ export function isNearBottom(
     threshold = STICK_THRESHOLD_PX
 ): boolean {
     return m.scrollHeight - m.scrollTop - m.clientHeight < threshold;
+}
+
+/** Pure: the scrollTop that brings a fold's head, `offset` px below the region's visible top, up to `margin` px from
+ *  that top, never past the end; null when the head is already there or above, or the region is at its end. It only
+ *  ever scrolls down: a fold opened low in the view rises so what opened shows, one opened higher stays put. */
+export function revealScrollTop(
+    m: { scrollTop: number; scrollHeight: number; clientHeight: number },
+    offset: number,
+    margin: number
+): number | null {
+    const top = Math.min(m.scrollTop + offset - margin, m.scrollHeight - m.clientHeight);
+    return top > m.scrollTop + 0.5 ? top : null;
 }
 
 export interface AgentSections {
@@ -330,10 +363,11 @@ export function groupTimeline(entries: AgentEntry[], threshold = CollapseRunThre
         if (e.kind === "message") {
             items.push({ kind: "message", text: e.text, index: i });
         } else if (e.kind === "user") {
+            // the result lines Arc put in front of the message (chatinitiative.ts) are the agent's to read, never drawn: this
+            // is the one place the Chat bubble, the Terminal-side transcript and the narration take your text from
+            const text = stripResultLines(e.text);
             items.push(
-                e.images
-                    ? { kind: "user", text: e.text, images: e.images, index: i }
-                    : { kind: "user", text: e.text, index: i }
+                e.images ? { kind: "user", text, images: e.images, index: i } : { kind: "user", text, index: i }
             );
         } else if (e.kind === "command") {
             items.push({
@@ -385,8 +419,10 @@ export function burstRenderMode(o: {
 export function conversationText(entries: AgentEntry[]): string {
     const out: string[] = [];
     for (const e of entries) {
-        if (e.kind === "message" || e.kind === "user") {
+        if (e.kind === "message") {
             out.push(e.text);
+        } else if (e.kind === "user") {
+            out.push(stripResultLines(e.text));
         } else if (e.kind === "command") {
             const name = e.isSkill ? "/" + e.name : e.name;
             out.push(e.args ? `${name} ${e.args}` : name);

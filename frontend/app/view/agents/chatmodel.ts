@@ -25,8 +25,9 @@ import type { TurnStats } from "./transcriptprojection";
 
 /** One piece of what the agent did between two of your messages. */
 export type AgentPart =
-    // `uuid`: the transcript record the prose came from, which Fork from here cuts at
-    | { kind: "prose"; text: string; uuid?: string }
+    // `uuid`: the transcript record the prose came from, which Fork from here cuts at. `live`: a reply still being
+    // written, which the transcript does not hold yet (chatlive.ts)
+    | { kind: "prose"; text: string; uuid?: string; live?: true }
     | { kind: "work"; work: WorkItem }
     // the files that work edited, once per path with the summed counts; follows its work part
     | { kind: "files"; files: EditFile[]; adds: number; dels: number };
@@ -95,10 +96,22 @@ function readSent(text: string): Sent | null {
         return { from: "cockpit", header: wakeSummary(wake), lines: wakeLines(wake) };
     }
     const sent = parseStreamPrompt(t);
-    if (sent != null) {
+    if (sent != null && !isBrainstormLineOfYours(sent)) {
         return { from: "cockpit", header: cardHeader(sent), lines: cardLines(sent) };
     }
     return null;
+}
+
+// The three `brainstorm:` lines wavesrv sends by itself (pkg/brainstormcheck: the judge's result, its failure, the builder
+// check's questions). They have no send record, and nothing in Chat's own box or cards can produce them.
+const SERVER_BRAINSTORM_LINE = /^(?:judged |judge failed:|builder questions )/;
+
+// A `brainstorm: …` line is your message in Chat, unlike in Claude Code's own transcript, where the view mod draws it as a
+// card: the cards and the box send these lines (confirm, check, run <id>, a builder's answer…), and Chat judges one by its
+// send record (chatbrainstormwire.ts answerMessages offers `you` items to pairAnswers). A paired line is hidden or folded
+// into its ✓ row; an unpaired one is the user's own words, a bubble.
+function isBrainstormLineOfYours(card: Card): boolean {
+    return card.role === "brainstorm" && !SERVER_BRAINSTORM_LINE.test(card.body[0] ?? "");
 }
 
 // "/review PR #402"; a skill's name carries no slash of its own, a slash command's does

@@ -142,14 +142,39 @@ func planTaskID(n int) string {
 	return "t-" + strconv.Itoa(n)
 }
 
-func planFenceMarker(line string) string {
+// planFence is a code fence line as CommonMark reads it: a run of three or more backticks or tildes, and what follows.
+type planFence struct {
+	char byte
+	n    int
+	rest string
+}
+
+func readPlanFence(line string) (planFence, bool) {
 	trimmed := strings.TrimLeft(line, " \t")
-	for _, marker := range []string{"```", "~~~"} {
-		if strings.HasPrefix(trimmed, marker) {
-			return marker
-		}
+	if len(trimmed) < 3 || (trimmed[0] != '`' && trimmed[0] != '~') {
+		return planFence{}, false
 	}
-	return ""
+	c := trimmed[0]
+	n := 0
+	for n < len(trimmed) && trimmed[n] == c {
+		n++
+	}
+	if n < 3 {
+		return planFence{}, false
+	}
+	return planFence{char: c, n: n, rest: trimmed[n:]}, true
+}
+
+// opens says whether the line opens a fence: a backtick run with more backticks after it on the line is inline code
+// (```` ``` ```` in prose), not a fence.
+func (f planFence) opens() bool {
+	return f.char == '~' || !strings.Contains(f.rest, "`")
+}
+
+// closes says whether the line closes the fence `open` opened: the same character, a run at least as long, and nothing
+// but spaces after it.
+func (f planFence) closes(open planFence) bool {
+	return f.char == open.char && f.n >= open.n && strings.TrimSpace(f.rest) == ""
 }
 
 // ParsePlan reads a plan in PlanFormat. Lines inside code fences are task text only, so a plan that
@@ -162,7 +187,10 @@ func ParsePlan(src string) (Plan, error) {
 	// give no reason, by dependency index; both live only for the checks below
 	files := map[int][]string{}
 	bare := map[int][]int{}
-	fence := ""
+	// the open fence, where it opened (1-based line, and the task it sits in, 0 for the preamble), and the task
+	// headings it has hidden since: an unclosed fence is refused below, naming them
+	var fence *planFence
+	fenceLine, fenceTask, fenceHidden := 0, 0, 0
 	inTaskHead, dependsAllowed := false, false
 	flush := func() {
 		if len(p.Tasks) > 0 {
@@ -177,18 +205,21 @@ func ParsePlan(src string) (Plan, error) {
 			body = append(body, line)
 		}
 	}
-	for _, line := range strings.Split(strings.ReplaceAll(src, "\r\n", "\n"), "\n") {
-		if marker := planFenceMarker(line); marker != "" && (fence == "" || marker == fence) {
-			if fence == "" {
-				fence = marker
+	for i, line := range strings.Split(strings.ReplaceAll(src, "\r\n", "\n"), "\n") {
+		if f, ok := readPlanFence(line); ok && (fence == nil && f.opens() || fence != nil && f.closes(*fence)) {
+			if fence == nil {
+				fence, fenceLine, fenceTask, fenceHidden = &f, i+1, len(p.Tasks), 0
 			} else {
-				fence = ""
+				fence = nil
 			}
 			inTaskHead = false
 			preambleLine(line)
 			continue
 		}
-		if fence != "" {
+		if fence != nil {
+			if planTaskHeadingRe.MatchString(line) {
+				fenceHidden++
+			}
 			preambleLine(line)
 			continue
 		}
@@ -274,6 +305,16 @@ func ParsePlan(src string) (Plan, error) {
 		body = append(body, line)
 	}
 	flush()
+	// a fence left open at the very end only runs the last task's text to the end of the file; one that hides a task
+	// heading drops those tasks from the dag without a word, which run 911b6d3a's plan did to Tasks 7 to 13
+	if fence != nil && fenceHidden > 0 {
+		where := "the preamble"
+		if fenceTask > 0 {
+			where = fmt.Sprintf("task %d", fenceTask)
+		}
+		return Plan{}, fmt.Errorf("the code fence %s opened in %s (line %d) is never closed, so the rest of the plan reads as its text and its %d task headings are lost: close it with a line of %s, or if the line was inline code in prose, do not start the line with it",
+			strings.Repeat(string(fence.char), fence.n), where, fenceLine, fenceHidden, strings.Repeat(string(fence.char), fence.n))
+	}
 	if len(p.Tasks) == 0 {
 		return Plan{}, fmt.Errorf("plan has no tasks: expected headings like \"### Task 1: <title>\"")
 	}

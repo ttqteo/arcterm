@@ -47,6 +47,7 @@ import { noteBashRun, useBashHistory } from "./chatbashstore";
 import { boxState, type BoxState } from "./chatboxstate";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold } from "./chatfooter";
+import { putBackResultLines, takeResultLines } from "./chatinitiativestore";
 import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
 import { answersInChat, localCommand, type LocalRoute } from "./chatlocal";
 import { clearLocalCards } from "./chatlocalstore";
@@ -70,7 +71,8 @@ import { fallAsleepLabel } from "./fallasleepstore";
 import { useFileMention } from "./filemention";
 import { chatFilesRoot, recentMentionPaths } from "./launchermention";
 import { isPathsDrag, pathsFromDrop } from "./pathdrop";
-import { usePermission } from "./permissionstore";
+import { permissionBoxKey } from "./permissionmodel";
+import { permissionCardKey, usePermission } from "./permissionstore";
 import { projectsAtom } from "./projectsstore";
 import { opensTui } from "./slashcommands";
 import { useSlashMenu } from "./slashmenu";
@@ -123,6 +125,7 @@ export function ChatComposer({
     onShowDiff,
     onLocal,
     onSendNow,
+    questionWaits,
 }: {
     agent: AgentVM;
     placeholder: string;
@@ -144,6 +147,9 @@ export function ChatComposer({
     /** a queued message's Send now, while one shows: Ctrl+Enter (Cmd+Enter on a Mac) in an empty box presses it. A box
      *  with text sends it as Enter does: the chord could reach the terminal before the text was typed in */
     onSendNow?: () => void;
+    /** a brainstorm question's card waits on an answer (chatbrainstormwire.ts boxPlaceholderOverride): what is typed is that
+     *  answer, which the card pairs with the transcript by exact text, so no initiative result line goes in front of it */
+    questionWaits?: boolean;
     /** extra data attributes on the box: the sleeping overlay keeps `data-sleeping-composer` there */
     dataAttrs?: Record<`data-${string}`, string>;
 }) {
@@ -365,7 +371,8 @@ export function ChatComposer({
     // Typed into a permission prompt or a question, a message's first digit would pick an option: the send waits. Send
     // then queues the message (`held`, kept per agent while the box unmounts for the terminal), and it goes by itself
     // once the prompt is answered.
-    const permission = usePermission(agent.blockId != null ? `block:${agent.blockId}` : undefined);
+    const permissionOref = agent.blockId != null ? `block:${agent.blockId}` : undefined;
+    const permission = usePermission(permissionOref);
     const hold = asleep ? null : sendHold(permission.length > 0, agent.ask != null && !agent.ask.hold);
     const held = useHeldSend(agent.id);
     const ready = canSend && blocker == null;
@@ -402,7 +409,16 @@ export function ChatComposer({
         }
         const sent = message;
         const riding = att.attachments.map((a) => a.id);
-        if (send()) {
+        // What became of the cards the person handled (chatinitiativestore.ts) goes in front of their next plain message
+        // only: a /command or /btw (a line before one breaks it), a `!` command, a wake send, and an answer typed while a
+        // brainstorm question waits (its record pairs with the transcript by exact text) leave the lines queued for the
+        // next one. `sent` and everything kept of it (recall, the pending bubble, onSent) stay the person's own text.
+        const lines = !asleep && !questionWaits && !bash && !sent.startsWith("/") ? takeResultLines(agent.id) : [];
+        const taken = send(lines);
+        if (!taken && lines.length > 0) {
+            putBackResultLines(agent.id, lines);
+        }
+        if (taken) {
             if (asleep) {
                 wakeSent.current = riding;
             }
@@ -776,6 +792,8 @@ export function ChatComposer({
                                 bashList.onCaret(box);
                             }
                         }}
+                        // a click outside the box closes bash mode's Tab list (a click on a row keeps the focus here)
+                        onBlur={bashList.onBlur}
                         onPasteFiles={(e) => {
                             // att.onPaste takes the files and calls preventDefault, or leaves the paste to the editor
                             att.onPaste(e as never);
@@ -846,6 +864,28 @@ export function ChatComposer({
                                     e.preventDefault();
                                     attach();
                                 }
+                                return;
+                            }
+                            // the chat's permission card, while it can answer its prompt: from an empty box ↑ and ↓ move its
+                            // highlight and Enter sends the highlighted choice, as the prompt's own list does in the terminal
+                            const cardKey = permissionBoxKey(
+                                {
+                                    key: e.key,
+                                    shiftKey: e.shiftKey,
+                                    altKey: e.altKey,
+                                    ctrlKey: e.ctrlKey,
+                                    metaKey: e.metaKey,
+                                    isComposing: e.nativeEvent.isComposing,
+                                },
+                                text === ""
+                            );
+                            if (
+                                cardKey != null &&
+                                permissionOref != null &&
+                                !e.currentTarget.readOnly &&
+                                permissionCardKey(permissionOref, cardKey)
+                            ) {
+                                e.preventDefault();
                                 return;
                             }
                             if (recallKey(e)) {

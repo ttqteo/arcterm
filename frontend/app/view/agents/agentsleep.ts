@@ -19,7 +19,7 @@ import { centerModeAtom, type CenterMode } from "./agentcenter";
 import type { GridState } from "./agentgrid";
 import type { AgentsViewModel } from "./agents";
 import { formatAgeShort, type AgentVM } from "./agentsviewmodel";
-import { ramLabel } from "./consumers";
+import { ramLabel, SLEEPABLE_AGENTS } from "./consumers";
 import { fallingAsleepOf, setFallingAsleep } from "./fallasleepstore";
 import { agentGridAtom } from "./gridstore";
 import { viewingIds } from "./unreadagents";
@@ -48,8 +48,9 @@ export function sleepingOf(meta: Record<string, unknown> | undefined | null): Ag
     };
 }
 
-// the harnesses wavesrv can sleep: the ones that resume a conversation (agentsleep.Harnesses; codex cannot)
-export const SLEEPABLE_AGENTS: ReadonlySet<string> = new Set(["claude", "pi", "agy"]);
+// the harnesses wavesrv can sleep: the ones that resume a conversation (agentsleep.Harnesses; codex cannot). Defined in
+// consumers.ts, which stays pure; re-exported so the importers of this module keep working.
+export { SLEEPABLE_AGENTS };
 
 /** Pure: a block's agent status, filled from its meta while it sleeps. The status is the server's last agent:status
  *  event, which lives only in wavesrv's memory: a restart of arcterm leaves a sleeping agent none (nothing runs to

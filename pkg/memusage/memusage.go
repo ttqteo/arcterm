@@ -8,6 +8,7 @@
 package memusage
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/shirou/gopsutil/v4/process"
@@ -63,6 +64,19 @@ func (t Table) Pids() []int32 {
 	}
 	sort.Slice(pids, func(i, j int) bool { return pids[i] < pids[j] })
 	return pids
+}
+
+// Children is pid's direct children, ascending; nil when it has none or was not running. The caller owns the slice.
+func (t Table) Children(pid int32) []int32 {
+	return slices.Clone(t.children[pid])
+}
+
+// JobFootprint is what a command's process holds that the heavy-job queue plans with: on Windows its private
+// bytes, the commit, which is what admission reads the machine's commit charge against and which Windows does not
+// trim under pressure the way it trims a working set; on macOS the physical footprint; elsewhere the resident set.
+// A pid that could not be read is absent, never zero. The Consumers panel keeps its own figure (Sampler.Footprint).
+func JobFootprint(pid int32) (uint64, bool) {
+	return jobFootprint(pid)
 }
 
 // Tree is root and every descendant, root first, breadth first; nil when root was not running.

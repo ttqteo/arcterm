@@ -378,7 +378,8 @@ export default function (kits) {
                 const hintShown = await until(`!!${q("[data-diff-split-hint]")}`, 5000);
                 const hintText = await h.ev(`${q("[data-diff-split-hint]")}?.textContent ?? ""`);
                 await h.shot("cdp-shots/diff-comments-split-hint.png");
-                // split needs a pane of SPLIT_MIN_PX (diffoptions.ts), which 1600px with the panel open does not leave
+                // split needs a pane of SPLIT_MIN_PX (diffoptions.ts); with the panel open the pane drops under it at about a
+                // 1200px window, so the step pins 2000px to leave room whatever the panel takes
                 await pin(2000);
                 await sleep(500);
                 await toggleSplit();
@@ -411,6 +412,27 @@ export default function (kits) {
                     JSON.stringify({ third, badges })
                 );
                 await h.shot("cdp-shots/diff-comments-badges.png");
+
+                // 6b. the Commit tab draws its own rows (committab.tsx) and badges the same counts, then back to the Log tab's row
+                const commitBadge = (path) =>
+                    h.ev(`(() => { const b = ${q(`[data-commit-row=${JSON.stringify(path)}] [data-changed-file-comments]`)}; return b ? b.title : null; })()`);
+                await click('[data-panel-tab="commit"]');
+                const commitRows = await until(`!!${q(`[data-commit-row=${JSON.stringify(POLICY)}]`)} && !!${q(`[data-commit-row=${JSON.stringify(README)}]`)}`, 10000);
+                const commitBadges = { policy: await commitBadge(POLICY), legacy: await commitBadge(LEGACY), readme: await commitBadge(README) };
+                await h.shot("cdp-shots/diff-comments-commit-badges.png");
+                await showLogTab(h);
+                await until(`${q('[data-panel-tab="log"]')}?.getAttribute("aria-selected") === "true"`, 5000);
+                if (await until(`!!${q('[data-history-row="worktree"] button')}`, 10000)) await click('[data-history-row="worktree"] button');
+                const backOnLog = await until(`document.querySelectorAll('[data-changed-file-row]').length === 3`, 10000);
+                rec(
+                    "6b. the Commit tab's rows badge the same comments: 2 on policy.go, 1 on legacy.go, none on README.md",
+                    commitRows &&
+                        commitBadges.policy === "2 pending comments" &&
+                        commitBadges.legacy === "1 pending comment" &&
+                        commitBadges.readme === null &&
+                        backOnLog,
+                    JSON.stringify({ commitRows, commitBadges, backOnLog })
+                );
 
                 // 7. the bar before any of that, then with the batch: the recipient is the agent, working
                 const folder = basename(ctx.dir);

@@ -87,7 +87,7 @@ func TestViewModFixtures(t *testing.T) {
 
 	wake := composeWake([]string{taskFailedWake("t-3", FailureKindUnrecorded, "the worker exited")}, "wake: 1 question waiting. wsh jarvis dag asks", nil, nil)
 	checkViewModFixture(t, "plan-lead", jarvis.PlanLeadPrompt(fixturePrinciples, "run-1234", fixtureSpec, fixturePlan, "eff-9", false, wake))
-	replacement := replacementLeadWake([]string{reviewFailedWake("t-4", "the view never loads")})
+	replacement := replacementLeadWake(nil, []string{reviewFailedWake("t-4", "the view never loads")})
 	checkViewModFixture(t, "plan-lead-replacement", jarvis.PlanLeadPrompt(nil, "run-1234", "", fixturePlan, "", true, replacement))
 
 	g := fixtureGroup()

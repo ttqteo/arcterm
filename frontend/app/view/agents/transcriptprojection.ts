@@ -5,7 +5,7 @@
 // No React, no Wave runtime imports. Deterministic; no LLM (spec §5.3).
 
 import { parseBtwNotice } from "../../../../claude/arc-mod/hooks/btw-core";
-import type { AgentEntry, CardTask } from "./agentsviewmodel";
+import type { AgentEntry, CardTask, ReportedFinding, SubagentCall } from "./agentsviewmodel";
 import { parseAnsiLines } from "./ansitext";
 import { answerAsk, askQuestions, buildEditDiff, parseGrep, sliceRead, toolResultText } from "./tooldetail";
 
@@ -16,6 +16,19 @@ const READ_MODAL_MAX_LINES = 400; // bound stored Read body (modal view); inline
 // again, and a tool_use read after its result starts over
 function isRequestCopy(rec: any): boolean {
     return rec?.type === "api-request-blob";
+}
+
+// With thinkingDisplay "updates", what the model writes to the person between tool calls can reach the transcript as a
+// thinking block holding a summary of it (a "narration" block; the TUI draws it with "· summary"), not as a text block,
+// and the full text is not written anywhere. Its thinking text is never empty, while a real thinking block's always is
+// in that mode (260 of 260 in the last 40 sessions on 2026-11-12), so it is drawn as what the agent said.
+function isNarration(rec: any, block: any): block is { thinking: string } {
+    return (
+        rec?.thinkingDisplay === "updates" &&
+        block?.type === "thinking" &&
+        typeof block.thinking === "string" &&
+        block.thinking.trim() !== ""
+    );
 }
 
 const VERB_BY_TOOL: Record<string, string> = {
@@ -75,6 +88,51 @@ function targetFor(input: any): string {
 }
 
 type ActionEntry = AgentEntry & { kind: "action" };
+
+const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
+
+/** Pure: a `ReportFindings` call's findings, from its input; its line, verdict and category are kept only when typed. `[]`
+ *  is a clean review. Undefined when the input has no findings array or any finding has no file or no summary: a malformed
+ *  call is left a plain tool line, never a verdict card that hides a finding (or reads as clean). */
+function reportedFindings(input: any): ReportedFinding[] | undefined {
+    const raw = input?.findings;
+    if (!Array.isArray(raw)) {
+        return undefined;
+    }
+    const findings: ReportedFinding[] = [];
+    for (const f of raw) {
+        if (!nonEmpty(f?.file) || !nonEmpty(f?.summary)) {
+            return undefined;
+        }
+        const finding: ReportedFinding = { file: f.file, summary: f.summary };
+        if (typeof f.line === "number" && Number.isFinite(f.line)) {
+            finding.line = f.line;
+        }
+        if (nonEmpty(f.verdict)) {
+            finding.verdict = f.verdict;
+        }
+        if (nonEmpty(f.category)) {
+            finding.category = f.category;
+        }
+        findings.push(finding);
+    }
+    return findings;
+}
+
+/** Pure: the subagent a `Task` / `Agent` call started, from its input and tool call id. Undefined without a description. */
+function subagentCall(input: any, toolUseId: unknown): SubagentCall | undefined {
+    if (!nonEmpty(input?.description)) {
+        return undefined;
+    }
+    const call: SubagentCall = { description: input.description };
+    if (nonEmpty(input.subagent_type)) {
+        call.subagentType = input.subagent_type;
+    }
+    if (typeof toolUseId === "string" && toolUseId !== "") {
+        call.toolUseId = toolUseId;
+    }
+    return call;
+}
 
 // the tool a background subagent reports back with: plumbing, not work it did
 const HANDBACK_TOOL = "SubagentHandback";
@@ -241,26 +299,92 @@ export function turnStats(lines: string[]): TurnStats | null {
     return null;
 }
 
+// a message of yours as Claude Code writes it on the chain: your text, never a tool's result riding in a user record
+function isTypedPrompt(rec: any): boolean {
+    const content = rec?.message?.content;
+    return isPrompt(rec) && !(Array.isArray(content) && content.some((b: any) => b?.type === "tool_result"));
+}
+
+/** Pure: the uuids of the records on a branch Claude Code left. Esc before any reply takes your message back into its
+ *  box, and the message you send next is written with the parent the taken-back one had (Esc Esc's rewind does the same
+ *  further back); the file keeps the old branch, the TUI draws only the live one. So a message of yours that a later one
+ *  under the same parent replaced is dead, with every record under it (through a compaction's logical parent too). Only
+ *  two messages of yours are compared: records sharing a parent are common otherwise (parallel tool results, hooks). */
+function deadBranchUuids(recs: readonly any[]): Set<string> {
+    const lastByParent = new Map<string, string>();
+    const prompts: { uuid: string; parent: string }[] = [];
+    for (const rec of recs) {
+        if (typeof rec?.uuid === "string" && typeof rec.parentUuid === "string" && isTypedPrompt(rec)) {
+            prompts.push({ uuid: rec.uuid, parent: rec.parentUuid });
+            lastByParent.set(rec.parentUuid, rec.uuid);
+        }
+    }
+    const dead = new Set(prompts.filter((p) => lastByParent.get(p.parent) !== p.uuid).map((p) => p.uuid));
+    if (dead.size === 0) {
+        return dead;
+    }
+    // a record follows its parent in the file, so one pass in order reaches the whole subtree
+    for (const rec of recs) {
+        const parent = rec?.parentUuid ?? rec?.logicalParentUuid;
+        if (typeof rec?.uuid === "string" && typeof parent === "string" && dead.has(parent)) {
+            dead.add(rec.uuid);
+        }
+    }
+    return dead;
+}
+
+const AGENT_MESSAGE_WRAP = /^\s*<agent-message\b[^>]*>\s*([^]*?)\s*(?:<\/agent-message>\s*)?$/;
+
+/** A message another agent sent this session, queued the way yours is: a subagent's hand-back report (origin.handback,
+ *  its report in handbackReportText) or another session's message, wrapped in <agent-message>. It is the agent's, so it
+ *  is drawn as a report row, never as your bubble. null for a message of yours. */
+function agentMessage(queued: any): Extract<AgentEntry, { kind: "notification" }> | null {
+    const origin = queued?.origin;
+    const prompt = typeof queued?.prompt === "string" ? queued.prompt : "";
+    const wrapped = AGENT_MESSAGE_WRAP.exec(prompt);
+    if (origin?.kind !== "peer" && wrapped == null) {
+        return null;
+    }
+    const name = typeof origin?.name === "string" && origin.name.trim() !== "" ? origin.name.trim() : null;
+    const handback = origin?.handback === true;
+    const own = handback ? origin?.handbackReportText : origin?.body;
+    const text = (typeof own === "string" && own.trim() !== "" ? own : (wrapped?.[1] ?? "")).trim();
+    const summary = handback ? `${name ?? "A subagent"} reported back` : `Message from ${name ?? "another agent"}`;
+    return { kind: "notification", summary, ...(text !== "" ? { result: text } : {}) };
+}
+
 /** Pure: project transcript JSONL lines into ordered previous-info entries.
  *  assistant text -> message; tool_use -> action; tool_result -> outcome on the matching
  *  action (ok, fail on error, or blocked for a Bash refused before it ran; see bashNeverRan).
- *  Unparseable lines and unknown record types are skipped. */
+ *  Unparseable lines and unknown record types are skipped, and so is a branch Claude Code left (deadBranchUuids). */
 export function projectTranscript(lines: string[]): AgentEntry[] {
     const entries: AgentEntry[] = [];
     const actionById = new Map<string, ActionEntry>();
+    const recs: any[] = [];
     for (const line of lines) {
-        let rec: any;
         try {
-            rec = JSON.parse(line);
+            recs.push(JSON.parse(line));
         } catch {
             continue;
         }
+    }
+    const dead = deadBranchUuids(recs);
+    for (let rec of recs) {
+        if (dead.size > 0 && typeof rec?.uuid === "string" && dead.has(rec.uuid)) {
+            continue;
+        }
         // A message queued while Claude worked and taken in mid-turn is written as an attachment, not a user record. Only
-        // its `prompt` mode is a message of yours (a task-notification is drawn from its own record); it then goes the
-        // user record's way, so text rules, task notifications and pasted images stay one code path.
+        // its `prompt` mode is a message of yours (a task-notification is drawn from its own record), and not when
+        // another agent sent it; it then goes the user record's way, so text rules, task notifications and pasted
+        // images stay one code path.
         if (rec?.type === "attachment") {
             const queued = rec.attachment;
             if (queued?.type !== "queued_command" || queued.commandMode !== "prompt") {
+                continue;
+            }
+            const fromAgent = agentMessage(queued);
+            if (fromAgent != null) {
+                entries.push(fromAgent);
                 continue;
             }
             rec = { type: "user", message: { content: queued.prompt }, timestamp: rec.timestamp, uuid: rec.uuid };
@@ -276,6 +400,10 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
             for (const block of content) {
                 if (block?.type === "text" && typeof block.text === "string" && block.text.trim() !== "") {
                     entries.push({ kind: "message", text: block.text, ...tag });
+                    continue;
+                }
+                if (isNarration(rec, block)) {
+                    entries.push({ kind: "message", text: block.thinking, ...tag });
                     continue;
                 }
                 if (block?.type === "tool_use" && typeof block.name === "string") {
@@ -304,6 +432,16 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                         action.detail = { kind: "skill", name: block.input.skill, args: args !== "" ? args : undefined };
                     } else if (block.name === "AskUserQuestion" && Array.isArray(block.input?.questions)) {
                         action.detail = { kind: "ask", questions: askQuestions(block.input.questions) };
+                    } else if (block.name === "ReportFindings") {
+                        const findings = reportedFindings(block.input);
+                        if (findings != null) {
+                            action.findings = findings;
+                        }
+                    } else if (block.name === "Task" || block.name === "Agent") {
+                        const subagent = subagentCall(block.input, block.id);
+                        if (subagent != null) {
+                            action.subagent = subagent;
+                        }
                     }
                     // scratch fields (stripped before return): tool_use timestamp for duration, tool name for result
                     // routing, and the raw Bash command (the target line shows the human description instead).

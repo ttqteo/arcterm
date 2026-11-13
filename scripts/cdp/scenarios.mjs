@@ -64,6 +64,7 @@ import brainstormJudgeScenarios from "./scenarios-brainstorm-judge.mjs";
 import brainstormReviewScenarios from "./scenarios-brainstorm-review.mjs";
 import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
 import briefActScenarios from "./scenarios-brief-act.mjs";
+import chatBrainstormReviewScenarios from "./scenarios-chat-brainstorm-review.mjs";
 import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
 import codeBlameDraftScenarios from "./scenarios-code-blame-draft.mjs";
 import codeFixesSessionScenarios from "./scenarios-code-fixes-session.mjs";
@@ -15670,22 +15671,33 @@ function writeLeadTranscript(cwd) {
     const subs = join(cwd, "lead", "subagents");
     mkdirSync(subs, { recursive: true });
     const userTurn = (content) => JSON.stringify({ type: "user", message: { role: "user", content } }) + "\n";
-    writeFileSync(parent, userTurn("verify tree rail"));
+    // one earlier assistant turn with usage, so the lead's row carries a token total (132k) as a real lead's does: a
+    // lead's run line holds its tokens and age after the progress, which step 7 measures. The user turn stays last
+    const usageTurn =
+        JSON.stringify({
+            type: "assistant",
+            timestamp: new Date().toISOString(),
+            requestId: "req_fx_tree_rail",
+            message: {
+                id: "msg_fx_tree_rail",
+                role: "assistant",
+                model: "claude-opus-4-1",
+                usage: {
+                    input_tokens: 3000,
+                    output_tokens: 1000,
+                    cache_read_input_tokens: 120000,
+                    cache_creation_input_tokens: 8000,
+                },
+            },
+        }) + "\n";
+    writeFileSync(parent, usageTurn + userTurn("verify tree rail"));
     writeFileSync(join(subs, "agent-fxsub.jsonl"), userTurn(TREE_RAIL_SUBAGENT_PROMPT));
     return parent;
 }
 
-async function arrangeTreeRail(h, ctx) {
-    await arrangeFixtureRun(h, ctx, "tree-rail", TREE_RAIL_LEAD, { transcriptPath: writeLeadTranscript(ctx.cwd) });
-    await h.rpc("dagsubmit", {
-        channelid: ctx.channelId,
-        runid: ctx.runId,
-        title: "verify tree-rail",
-        parallelism: 1,
-        tasks: RUN_SHEET_POLISH_TASKS,
-    });
-    // a queued task folds away, so t-1 has a worker row only once it dispatches
-    await waitForDispatch(h, ctx, "t-1");
+// reloads onto the fixture roster arrangeFixtureRun wrote, opens the Agent surface with the rail on, and clicks the
+// lead's row once its run has nested it (ctx.leadFocused says whether it did)
+async function focusFixtureLead(h, ctx, leadName) {
     // the rail is persisted, and the fixture roster is read once at boot
     await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
     // measure the defaults: sections at their default open state, every project expanded
@@ -15705,7 +15717,7 @@ async function arrangeTreeRail(h, ctx) {
         const leadRow = () => {
             const tree = document.querySelector("[data-agent-tree]");
             const name = tree && [...tree.querySelectorAll("*")].find(
-                (d) => d.textContent.trim() === ${JSON.stringify(TREE_RAIL_LEAD)} && d.children.length === 0
+                (d) => d.textContent.trim() === ${JSON.stringify(leadName)} && d.children.length === 0
             );
             return name ? name.closest("[data-agent-row]") : null;
         };
@@ -15721,6 +15733,20 @@ async function arrangeTreeRail(h, ctx) {
     })()`);
     // let the rail's width slide and the run section settle before the shot
     await new Promise((r) => setTimeout(r, 1200));
+}
+
+async function arrangeTreeRail(h, ctx) {
+    await arrangeFixtureRun(h, ctx, "tree-rail", TREE_RAIL_LEAD, { transcriptPath: writeLeadTranscript(ctx.cwd) });
+    await h.rpc("dagsubmit", {
+        channelid: ctx.channelId,
+        runid: ctx.runId,
+        title: "verify tree-rail",
+        parallelism: 1,
+        tasks: RUN_SHEET_POLISH_TASKS,
+    });
+    // a queued task folds away, so t-1 has a worker row only once it dispatches
+    await waitForDispatch(h, ctx, "t-1");
+    await focusFixtureLead(h, ctx, TREE_RAIL_LEAD);
 }
 
 const agentTreeRail = {
@@ -15896,14 +15922,89 @@ const agentTreeRail = {
                 subGuides: guides(sub),
             };
         })()`);
+        // The line as a real lead draws it: its tokens (the fixture transcript's 132k), its age and the whole run's RAM
+        // (8fa946dac) after the progress, all flex-none. The fixture lead's block does not exist, so no reading names
+        // it: pin one (window.__resmonFixture) so the RAM span is on the line. The line is RunSubline's own @container;
+        // forcing its width stands in for dragging the tree wider. At the tree's default width the RAM must leave the
+        // line (LEAD_RAM_YIELDS) so the progress is never cut for it; wide enough, it shows beside the progress
+        const MB_BYTES = 1024 * 1024;
+        await h.ev(
+            `window.__resmonFixture.set(${JSON.stringify({
+                supported: true,
+                ready: true,
+                ts: Date.now(),
+                cpu: 5,
+                mem: 8 * 1024 * MB_BYTES,
+                totalmem: 16 * 1024 * MB_BYTES,
+                busycpu: false,
+                busymem: false,
+                groups: [
+                    {
+                        key: "g-lead",
+                        ownerkind: "block",
+                        ownerid: "fx-blk-lead",
+                        label: "lead",
+                        killable: true,
+                        cpu: 1,
+                        mem: Math.round(1.3 * 1024 * MB_BYTES),
+                        rows: [],
+                    },
+                ],
+            })})`
+        );
+        await polishWaitFor(h, `!!document.querySelector('[data-agent-ram="${TREE_RAIL_LEAD_ID}"]')`, 8000);
+        const runLine = await h.ev(`(async () => {
+            const tree = ${TREE};
+            const name = tree && [...tree.querySelectorAll("*")].find(
+                (d) => d.textContent.trim() === ${JSON.stringify(TREE_RAIL_LEAD)} && d.children.length === 0
+            );
+            const row = name ? name.closest(".relative") : null;
+            const line = row?.querySelector('button[aria-label="Hide workers"]')?.parentElement;
+            if (!line) return null;
+            const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+            const read = () => {
+                const progress = row.querySelector("span.truncate.text-muted");
+                const ram = row.querySelector("[data-agent-ram]");
+                const tokens = row.querySelector('span[class*="min-w-[34px]"]');
+                return {
+                    w: Math.round(line.getBoundingClientRect().width),
+                    whole: progress ? progress.scrollWidth <= progress.clientWidth : null,
+                    ram: ram ? (getComputedStyle(ram).display !== "none" ? ram.textContent.trim() : false) : null,
+                    tokens: tokens ? tokens.textContent.trim() : null,
+                    overflow: line.scrollWidth > line.clientWidth,
+                };
+            };
+            const out = { at: [read()] };
+            for (const w of [240, 280, 300, 320, 360, 420]) {
+                line.style.width = w + "px";
+                await frame();
+                out.at.push(read());
+            }
+            line.style.width = "";
+            await frame();
+            out.restored = read().w === out.at[0].w;
+            return out;
+        })()`);
+        await h.ev(`window.__resmonFixture.clear()`);
+        const runAt = runLine?.at ?? [];
         rec(
-            "7. the lead's run line carries its workers chip, unclipped progress and the task strip",
+            "7. the lead's run line carries its workers chip, unclipped progress and the task strip; with its tokens, age and the run's RAM on the line, the RAM leaves it on a narrow line and the progress is never cut",
             nested != null &&
                 /^\d+ of 3 tasks done/.test(nested.strip ?? "") &&
                 /workers?$/.test(nested.workersChip ?? "") &&
                 nested.progress != null &&
-                !nested.progress.clipped,
-            JSON.stringify(nested)
+                !nested.progress.clipped &&
+                runLine != null &&
+                runLine.restored === true &&
+                // the fixture is a real lead's line: tokens are there and a reading names the run's RAM
+                runAt.every((s) => s.tokens === "132k") &&
+                runAt.some((s) => typeof s.ram === "string" && s.ram !== "") &&
+                // the progress reads whole beside them at every width, and nothing spills out of the line
+                runAt.every((s) => s.whole === true && !s.overflow) &&
+                // narrow, the RAM is off the line; wide enough, it shows
+                runAt[0].ram === false &&
+                typeof runAt[runAt.length - 1].ram === "string",
+            JSON.stringify({ nested, runLine })
         );
         rec(
             "8. t-1's worker row sits under the lead with one guide line",
@@ -15964,7 +16065,11 @@ const agentTreeRail = {
         // non-lead parent row a name line over a meta line (its runtime glyph, branch, model and tokens), which are
         // ParentRow's two children (agenttree.tsx); Final measured one at 50.25px. The step used to bound a row at
         // one line (34px); it now bounds it at two (56px) and wants exactly those two children, so a third line
-        // still fails
+        // still fails.
+        // An agent row is found by its data-agent-row mark, not by a span.rounded-full inside it: f5de00a66 ("the sidebar
+        // ✳ carries an agent's state") moved the row's state dot onto its runtime glyph (a text span), so a plain row
+        // holds no dot any more and the old filter matched none. Worker and stage rows carry the mark too; the guide,
+        // Workflow and pl-[28px] tests below still leave them out, and the folder row has none
         const tree = await h.ev(`(() => {
             const tree = ${TREE};
             if (!tree) return null;
@@ -15972,7 +16077,7 @@ const agentTreeRail = {
             const plain = [...tree.querySelectorAll("[data-agent-active-rows] .cursor-pointer")].filter(
                 (r) =>
                     r.tagName !== "BUTTON" &&
-                    r.querySelector("span.rounded-full") &&
+                    r.hasAttribute("data-agent-row") &&
                     !r.querySelector("svg.lucide-workflow") &&
                     !r.querySelector(":scope > span.absolute") &&
                     !r.className.includes("pl-[28px]")
@@ -15999,6 +16104,10 @@ const agentTreeRail = {
                 tree.tallest <= 56,
             JSON.stringify(tree)
         );
+        // Changed on purpose by 7faed95b7 ("a project folder's click opens its Overview, its chevron folds it"): a click
+        // on a project's row opens its Overview in the centre, so the step presses the row's chevron button, the one
+        // control that folds. That commit moved the agent-history, tools-tree and project-overview scenarios onto the
+        // chevron and left this step on the row
         const fold = await h.ev(`(async () => {
             const tree = ${TREE};
             const g = tree && tree.querySelector('[data-agent-folder-section="active"][aria-expanded="true"]');
@@ -16006,10 +16115,13 @@ const agentTreeRail = {
             // the Active section's rows: the Conversations list is not under a project and can fill while this runs
             const rows = () => tree.querySelectorAll("[data-agent-active-rows] .cursor-pointer").length;
             const before = rows();
-            g.click();
+            // 7faed95b7: the row's own click opens the project's Overview; its chevron button folds it
+            const chevron = g.querySelector("[data-agent-folder-toggle]");
+            if (!chevron) return null;
+            chevron.click();
             await new Promise((r) => setTimeout(r, 600));
             const after = rows();
-            g.click();
+            chevron.click();
             await new Promise((r) => setTimeout(r, 600));
             return { before, after, back: rows() };
         })()`);
@@ -16027,6 +16139,471 @@ const agentTreeRail = {
                 await h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail));
                 await h.ev(restoreStorageKey(RAIL_SECTIONS_KEY, ctx.prevSections));
                 await h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed));
+            },
+        });
+    },
+};
+
+// --- rail-context-breakdown: what fills the context, in the Agent rail's session breakdown --------------------------
+// (docs/superpowers/specs/2026-11-12-rail-context-breakdown-design.md). A fixture lead (idle, 180k of a 1M window, a
+// 1-hour cache write 17 minutes old) in a real run held by deferstart, with no dagsubmit: no worker is dispatched. The
+// breakdown is never read from a real claude: the dev-only seam window.__arcCtxBreakdown seeds each state, and a real
+// read goes on the hand-check list (docs/hand-checks.md).
+const CTX_RAIL_LEAD = "ctx-rail lead";
+const CTX_RAIL_WINDOW = 1_000_000;
+const CTX_RAIL_LIB = `
+    const rail = () => document.querySelector('aside[aria-label="Agent details"]');
+    const $ = (sel) => rail()?.querySelector(sel) ?? null;
+    const $$ = (sel) => [...(rail()?.querySelectorAll(sel) ?? [])];
+    const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+    const until = async (fn, tries = 40) => {
+        for (let i = 0; i < tries && !fn(); i++) await nap(250);
+        return !!fn();
+    };
+    const text = (el) => (el ? el.textContent.replace(/\\s+/g, " ").trim() : null);
+`;
+
+// A Claude Code transcript of the shape extractClaude reads (pkg/usagestats): a user turn and two assistant records, the
+// last with a 1-hour cache write timestamped cacheWriteAgoMs ago. It gives the rail its folder (cwd), the session's
+// spend (so the breakdown's toggle shows) and the cache countdown (GetCacheStatusCommand reads the last cache write).
+function writeCtxTranscript(path, cwd, cacheWriteAgoMs) {
+    const at = (agoMs) => new Date(Date.now() - agoMs).toISOString();
+    const assistant = (n, agoMs, usage) => ({
+        type: "assistant",
+        timestamp: at(agoMs),
+        cwd,
+        requestId: `req_ctx_${n}`,
+        message: {
+            id: `msg_ctx_${n}`,
+            model: "claude-opus-5-5",
+            role: "assistant",
+            content: [{ type: "text", text: `reply ${n}` }],
+            usage,
+        },
+    });
+    const records = [
+        {
+            type: "user",
+            timestamp: at(cacheWriteAgoMs + 15 * 60_000),
+            cwd,
+            message: { role: "user", content: "verify the context breakdown" },
+        },
+        assistant(1, cacheWriteAgoMs + 5 * 60_000, {
+            input_tokens: 6,
+            output_tokens: 420,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 38_000,
+            cache_creation: { ephemeral_1h_input_tokens: 38_000 },
+        }),
+        assistant(2, cacheWriteAgoMs, {
+            input_tokens: 4,
+            output_tokens: 610,
+            cache_read_input_tokens: 38_000,
+            cache_creation_input_tokens: 142_000,
+            cache_creation: { ephemeral_1h_input_tokens: 142_000 },
+        }),
+    ];
+    writeFileSync(path, records.map((r) => JSON.stringify(r)).join("\n") + "\n");
+}
+
+// the breakdown ctxbreakdown.test.ts lays out (Opus, a 1M window), with the memory files at the paths given
+function ctxRailBreakdown(files) {
+    return {
+        model: "claude-opus-5-5",
+        windowtokens: CTX_RAIL_WINDOW,
+        readat: Date.now() - 2 * 60_000,
+        categories: [
+            { name: "System prompt", tokens: 2500 },
+            { name: "System tools", tokens: 10100 },
+            { name: "MCP tools", tokens: 676 },
+            { name: "MCP server instructions", tokens: 1100 },
+            { name: "MCP tools (deferred)", tokens: 32700, deferred: true },
+            { name: "System tools (deferred)", tokens: 17100, deferred: true },
+            { name: "Custom agents", tokens: 423 },
+            { name: "Memory files", tokens: 16000 },
+            { name: "Skills", tokens: 6500 },
+            { name: "Messages", tokens: 1600 },
+            { name: "Compact buffer", tokens: 3000 },
+            { name: "Free space", tokens: 958100 },
+        ],
+        memoryfiles: [
+            { name: "CLAUDE.md", source: "User", path: files.user, tokens: 275 },
+            { name: "AGENTS.md", source: "Project", path: files.project, tokens: 14800 },
+            { name: "MEMORY.md", source: "AutoMem", path: files.auto, tokens: 925 },
+        ],
+        skills: Array.from({ length: 9 }, (_, i) => ({ name: `s${i}`, source: "User", tokens: (i + 1) * 10 })),
+        agents: [
+            { name: "superpowers:code-reviewer", source: "Plugin", path: files.agent, tokens: 350 },
+        ],
+        mcpservers: [{ server: "stitch", tools: 18, tokens: 22900 }],
+    };
+}
+
+// the dev-only seam in ctxbreakdownstore.ts: any state, no claude spawned
+const seedCtx = (h, ctx, state) =>
+    h.ev(`(() => {
+        if (!window.__arcCtxBreakdown) return false;
+        window.__arcCtxBreakdown.seed(${JSON.stringify(ctx.cwd)}, ${JSON.stringify(state)});
+        return true;
+    })()`);
+
+// the breakdown's toggle, clicked only when it is not already in the wanted state
+const setCtxBreakdown = (h, open) =>
+    h.ev(`(async () => {
+        ${CTX_RAIL_LIB}
+        const toggle = $("[data-rail-breakdown-toggle]");
+        if (!toggle) return { ok: false, why: "no breakdown toggle" };
+        if ((toggle.getAttribute("aria-expanded") === "true") !== ${open}) toggle.click();
+        return { ok: await until(() => (${open}) === !!$("[data-rail-breakdown]")) };
+    })()`);
+
+const railContextBreakdown = {
+    name: "rail-context-breakdown",
+    surface: "agent",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-ctx-rail-"));
+        // a user memory file outside the agent's folder, to see the File tab open one
+        const outside = mkdtempSync(join(tmpdir(), "verify-ctx-rail-home-"));
+        const ctx = {
+            cwd,
+            outside,
+            prevRail: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`),
+            prevSections: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`),
+            prevCollapsed: await h.ev(`localStorage.getItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`),
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            ctx.files = {
+                project: join(cwd, "AGENTS.md"),
+                user: join(outside, "CLAUDE.md"),
+                auto: join(cwd, ".claude-memory", "MEMORY.md"),
+                agent: join(cwd, ".claude", "agents", "code-reviewer.md"),
+            };
+            writeFileSync(ctx.files.project, "# AGENTS\n\nThe project memory file the context breakdown opens.\n");
+            writeFileSync(ctx.files.user, "# CLAUDE\n\nA user memory file outside the agent's folder.\n");
+            ctx.transcript = join(cwd, "lead.jsonl");
+            writeCtxTranscript(ctx.transcript, cwd, 17 * 60_000);
+            ctx.leadExtra = {
+                state: "idle",
+                idleSince: Date.now() - 60_000,
+                transcriptPath: ctx.transcript,
+                usage: { contextpct: 18, contextmax: CTX_RAIL_WINDOW }, // 180k in context
+            };
+            await arrangeFixtureRun(h, ctx, "ctx-rail", CTX_RAIL_LEAD, ctx.leadExtra);
+            await focusFixtureLead(h, ctx, CTX_RAIL_LEAD);
+            ctx.breakdown = ctxRailBreakdown(ctx.files);
+            ctx.seeded = await seedCtx(h, ctx, { state: "ready", data: ctx.breakdown });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        rec(
+            "0. the idle lead is focused, its breakdown seeded as read",
+            ctx.arrangeError == null && ctx.leadFocused === true && ctx.seeded === true,
+            ctx.arrangeError ?? JSON.stringify({ leadFocused: ctx.leadFocused, seeded: ctx.seeded })
+        );
+
+        // 1. the breakdown opens on the Context part above the Spend part
+        const opened = await setCtxBreakdown(h, true);
+        const parts = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            await until(() => $("[data-rail-context]"));
+            const heading = (label) => $('[data-rail-part-heading="' + label + '"]');
+            return {
+                context: !!$("[data-rail-context]"),
+                contextFigure: text(heading("Context")?.lastElementChild),
+                spendFigure: text(heading("Spend")?.lastElementChild),
+                spendAfterContext:
+                    !!heading("Context") && !!heading("Spend") &&
+                    !!(heading("Context").compareDocumentPosition(heading("Spend")) & Node.DOCUMENT_POSITION_FOLLOWING),
+            };
+        })()`);
+        await h.shot("cdp-shots/rail-context-breakdown-open.png");
+        rec(
+            "1. opening the breakdown shows the Context part over the Spend part, the heading reading 180k of 1M",
+            opened.ok === true &&
+                parts.context &&
+                parts.contextFigure === "180k of 1M" &&
+                /processed$/.test(parts.spendFigure ?? "") &&
+                parts.spendAfterContext,
+            JSON.stringify({ opened, parts })
+        );
+
+        // 2. seven groups in order; Messages is the context in use minus the fixed part: 180,000 - 37,299 = 143k
+        const groups = await h.ev(`(() => {
+            ${CTX_RAIL_LIB}
+            const all = $$("[data-ctx-group]");
+            const messages = all.find((g) => g.dataset.ctxGroup === "messages");
+            // a name or tag cut to "M" or "Syst…" by the numbers beside it
+            const clipped = all
+                .filter((g) => [...g.querySelectorAll(".truncate")].some((s) => s.scrollWidth > s.clientWidth))
+                .map((g) => g.dataset.ctxGroup);
+            return {
+                ids: all.map((g) => g.dataset.ctxGroup),
+                messages: text(messages),
+                messagesTitle: messages?.title ?? null,
+                clipped,
+            };
+        })()`);
+        rec(
+            "2. seven groups, Messages first and MCP last, none with its name or tag clipped, Messages' figure 143k, estimated in its tooltip",
+            JSON.stringify(groups.ids) === JSON.stringify(["messages", "tools", "memory", "skills", "prompt", "agents", "mcp"]) &&
+                groups.clipped.length === 0 &&
+                /143k/.test(groups.messages ?? "") &&
+                /minus what loads every turn/.test(groups.messagesTitle ?? ""),
+            JSON.stringify(groups)
+        );
+
+        // 3. Memory files lists three files; a click on AGENTS.md opens it in the File tab, and so does one on a file
+        // outside the agent's folder. Opening a file replaces the rail's sections, so each trip ends on Overview
+        // ok: the File tab shows the path and its body holds the marker text, so the file was read, not refused
+        const openMemoryFile = (path, marker) =>
+            h.ev(`(async () => {
+                ${CTX_RAIL_LIB}
+                const group = $('[data-ctx-group="memory"]');
+                if (!group) return { ok: false, why: "no Memory files group" };
+                if (group.getAttribute("aria-expanded") !== "true") group.click();
+                await until(() => $$('[data-ctx-rows="memory"] [data-ctx-open-file]').length > 0);
+                const rows = $$('[data-ctx-rows="memory"] [data-ctx-open-file]');
+                const row = rows.find((r) => r.title === "Open " + ${JSON.stringify(path)});
+                if (!row) return { ok: false, rows: rows.length, why: "no row for the file" };
+                row.click();
+                const body = () => document.querySelector("[data-rail-file]");
+                const shown = await until(() => body()?.getAttribute("data-rail-file") === ${JSON.stringify(path)}, 60);
+                const read = shown && (await until(() => (body()?.innerText ?? "").includes(${JSON.stringify(marker)}), 40));
+                return {
+                    ok: shown && read,
+                    rows: rows.length,
+                    shown: body()?.getAttribute("data-rail-file") ?? null,
+                    head: (body()?.innerText ?? "").replace(/\\s+/g, " ").slice(0, 160),
+                };
+            })()`);
+        const backToOverview = () =>
+            h.ev(`(async () => {
+                ${CTX_RAIL_LIB}
+                const tab = document.querySelector('[data-rail-key="overview"]') ?? document.querySelector('button[aria-label="Overview"]');
+                if (!tab) return { ok: false, why: "no Overview tab" };
+                tab.click();
+                return { ok: await until(() => $("[data-rail-context]")) };
+            })()`);
+        const inFolder = await openMemoryFile(ctx.files.project, "The project memory file");
+        await h.shot("cdp-shots/rail-context-breakdown-file.png");
+        const backFromFolder = await backToOverview();
+        const outsideFolder = await openMemoryFile(ctx.files.user, "outside the agent's folder");
+        const backFromOutside = await backToOverview();
+        rec(
+            "3. Memory files lists three files with a link; AGENTS.md opens in the File tab, and so does a file outside the folder; Overview brings the Context part back",
+            inFolder.ok === true &&
+                inFolder.rows === 3 &&
+                outsideFolder.ok === true &&
+                backFromFolder.ok === true &&
+                backFromOutside.ok === true,
+            JSON.stringify({ inFolder, outsideFolder, backFromFolder, backFromOutside })
+        );
+
+        // 4. the cache is warm: the 1-hour write was 17 minutes ago, so ~43m are left (a few seconds have gone by)
+        const warm = await h.ev(`(() => {
+            ${CTX_RAIL_LIB}
+            return { line: text($("[data-ctx-cache-line]")), title: $("[data-ctx-cache-line]")?.title ?? null, warn: !!$("[data-rail-cache-warn]") };
+        })()`);
+        rec(
+            "4. the cache line reads Cache warm with the countdown and the 180k, and the state row has no cache warning",
+            /^Cache warm 4[0-3]m · after that the next turn rewrites these 180k$/.test(warm.line ?? "") &&
+                /rewrites ~180k/.test(warm.title ?? "") &&
+                warm.warn === false,
+            JSON.stringify(warm)
+        );
+
+        // 5. the views no other step opens: Skills (+3 more), System tools, Custom agents, MCP and the footer. Not
+        // Refresh: once the read is built it spawns a real claude
+        const views = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            const open = async (id) => {
+                const g = $('[data-ctx-group="' + id + '"]');
+                if (g && g.getAttribute("aria-expanded") !== "true") g.click();
+                await until(() => $('[data-ctx-rows="' + id + '"]'));
+                return $('[data-ctx-rows="' + id + '"]');
+            };
+            const rows = (box) => (box ? [...box.querySelectorAll("[data-ctx-row]")] : []);
+            const skills = await open("skills");
+            const skillNote = text(skills?.querySelector("p"));
+            const skillRowsBefore = rows(skills).length;
+            const more = skills?.querySelector("[data-ctx-more]");
+            const moreText = text(more);
+            more?.click();
+            await until(() => rows($('[data-ctx-rows="skills"]')).length > skillRowsBefore);
+            const skillRowsAfter = rows($('[data-ctx-rows="skills"]')).length;
+            const moreGone = !$('[data-ctx-rows="skills"] [data-ctx-more]');
+            const tools = await open("tools");
+            const agents = await open("agents");
+            const mcp = await open("mcp");
+            const mcpRows = rows(mcp);
+            const footer = $("[data-ctx-footer]");
+            // nothing in the Context part is under 10.5px
+            const small = [];
+            const root = $("[data-rail-context]");
+            const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+            for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+                if (!n.data.trim()) continue;
+                const px = parseFloat(getComputedStyle(n.parentElement).fontSize);
+                if (px < 10.5) small.push(n.data.trim().slice(0, 30) + " @" + px);
+            }
+            return {
+                skillNote, skillRowsBefore, moreText, skillRowsAfter, moreGone,
+                toolsNote: text(tools?.querySelector("p")),
+                agentRows: rows(agents).length,
+                mcpRows: mcpRows.map((r) => [...r.children].map((c) => text(c)).filter(Boolean)),
+                mcpLinks: mcp ? mcp.querySelectorAll("[data-ctx-open-file]").length : null,
+                footer: text(footer?.firstElementChild),
+                readAgo: text($("[data-ctx-read-ago]")),
+                refresh: !!$("[data-ctx-refresh]"),
+                small,
+            };
+        })()`);
+        await h.shot("cdp-shots/rail-context-breakdown-groups.png");
+        rec(
+            "5. Skills notes that only descriptions load and lists 6 rows, +3 more makes 9; System tools names its deferred 17.1k; one custom agent; MCP's stitch row has no link; the footer, and no text under 10.5px",
+            views.skillNote === "Only each skill's description is in context; its file loads when it runs." &&
+                views.skillRowsBefore === 6 &&
+                views.moreText === "+3 more" &&
+                views.skillRowsAfter === 9 &&
+                views.moreGone === true &&
+                views.toolsNote === "Built in. 17.1k more are deferred: a tool search loads them when needed." &&
+                views.agentRows === 1 &&
+                JSON.stringify(views.mcpRows) === JSON.stringify([["stitch", "18 tools · 22.9k when loaded"]]) &&
+                views.mcpLinks === 0 &&
+                views.footer === "Free 820k · autocompact keeps 3k" &&
+                /^(just now|\d+ min ago)$/.test(views.readAgo ?? "") &&
+                views.refresh === true &&
+                views.small.length === 0,
+            JSON.stringify(views)
+        );
+
+        // 6. not read yet: the empty bar, the line and the button; the cache line still shows
+        await seedCtx(h, ctx, { state: "idle" });
+        const idle = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            await until(() => $("[data-ctx-read]"));
+            const read = $("[data-ctx-read]");
+            return {
+                read: text(read), disabled: read?.disabled ?? null, emptyBar: !!$("[data-ctx-bar-empty]"),
+                groups: $$("[data-ctx-group]").length, cacheLine: !!$("[data-ctx-cache-line]"),
+                part: text($("[data-rail-context]")),
+            };
+        })()`);
+        await h.shot("cdp-shots/rail-context-breakdown-idle.png");
+        rec(
+            "6. not read yet: an empty bar, no groups, Read the breakdown enabled, and the cache line still showing",
+            idle.read === "Read the breakdown" &&
+                idle.disabled === false &&
+                idle.emptyBar === true &&
+                idle.groups === 0 &&
+                idle.cacheLine === true &&
+                /What fills the 180k is read from Claude Code's \/context\./.test(idle.part ?? ""),
+            JSON.stringify(idle)
+        );
+
+        // 7. reading, then failed
+        await seedCtx(h, ctx, { state: "reading" });
+        const reading = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            await until(() => /Reading/.test(text($("[data-ctx-read]")) ?? ""));
+            const read = $("[data-ctx-read]");
+            return { read: text(read), disabled: read?.disabled ?? null };
+        })()`);
+        await seedCtx(h, ctx, { state: "failed", error: "claude is not on PATH" });
+        const failed = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            await until(() => $("[data-ctx-retry]"));
+            return { part: text($("[data-rail-context]")), retry: text($("[data-ctx-retry]")), cacheLine: !!$("[data-ctx-cache-line]") };
+        })()`);
+        await h.shot("cdp-shots/rail-context-breakdown-failed.png");
+        rec(
+            "7. reading: the button is disabled and says Reading… about 30 s; failed: Couldn't read /context: claude is not on PATH. and a Try again button",
+            reading.read === "Reading… about 30 s" &&
+                reading.disabled === true &&
+                (failed.part ?? "").includes("Couldn't read /context: claude is not on PATH.") &&
+                failed.retry === "Try again" &&
+                failed.cacheLine === true,
+            JSON.stringify({ reading, failed })
+        );
+
+        // 8. the cache nearly out: the cache write 56 minutes ago. The rail re-reads the cache status every 15 s
+        // (USAGE_REFRESH_MS). The note prices the rewrite from a ready breakdown; with the breakdown folded the line and
+        // the note sit in the session block, as the States board's first state has them
+        await seedCtx(h, ctx, { state: "ready", data: ctx.breakdown });
+        writeCtxTranscript(ctx.transcript, ctx.cwd, 56 * 60_000);
+        const amber = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            const ok = await until(() => $("[data-rail-cache-warn]") && $("[data-rail-rewrite-note]"), 100);
+            return { ok, warn: text($("[data-rail-cache-warn]")), note: text($("[data-rail-rewrite-note]")) };
+        })()`);
+        const folded = await setCtxBreakdown(h, false);
+        const amberFolded = await h.ev(`(() => {
+            ${CTX_RAIL_LIB}
+            return {
+                warn: text($("[data-rail-cache-warn]")),
+                warnColor: $("[data-rail-cache-warn]") ? getComputedStyle($("[data-rail-cache-warn]")).color : null,
+                note: text($("[data-rail-rewrite-note]")),
+                breakdownOpen: !!$("[data-rail-breakdown]"),
+                state: text($("[data-rail-state]")),
+            };
+        })()`);
+        await h.shot("cdp-shots/rail-context-breakdown-amber.png");
+        rec(
+            "8. under 5 minutes of cache: the state row's cache Nm left is amber, and the note reads now rewrites ~39.3k, later 180k, with the breakdown folded",
+            amber.ok === true &&
+                /^cache [34]m left$/.test(amber.warn ?? "") &&
+                amber.note === "now rewrites ~39.3k, later 180k" &&
+                folded.ok === true &&
+                amberFolded.breakdownOpen === false &&
+                /^cache [34]m left$/.test(amberFolded.warn ?? "") &&
+                amberFolded.note === "now rewrites ~39.3k, later 180k" &&
+                /^idle .* · cache [34]m left/.test(amberFolded.state ?? ""),
+            JSON.stringify({ amber, folded, amberFolded })
+        );
+
+        // 9. not a Claude agent: the roster's lead becomes a pi agent, and the breakdown opens with no Context part
+        writeFileSync(
+            TREE_RAIL_FIXTURE,
+            JSON.stringify(treeRailRoster(ctx.runId, Date.now(), CTX_RAIL_LEAD, { ...ctx.leadExtra, agent: "pi" }), null, 2)
+        );
+        await focusFixtureLead(h, ctx, CTX_RAIL_LEAD);
+        const pi = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            await until(() => $("[data-rail-session]"));
+            const toggle = $("[data-rail-breakdown-toggle]");
+            if (toggle && toggle.getAttribute("aria-expanded") !== "true") toggle.click();
+            await nap(800);
+            return {
+                session: !!$("[data-rail-session]"),
+                toggle: !!toggle,
+                breakdownOpen: !!$("[data-rail-breakdown]"),
+                context: !!$("[data-rail-context]"),
+                cacheWarn: !!$("[data-rail-cache-warn]"),
+                rewrite: !!$("[data-rail-rewrite-note]"),
+            };
+        })()`);
+        await h.shot("cdp-shots/rail-context-breakdown-pi.png");
+        rec(
+            "9. a pi lead's rail has no Context part (and no rewrite note), with the breakdown opened when its toggle shows",
+            ctx.leadFocused === true && pi.session === true && pi.context === false && pi.rewrite === false,
+            JSON.stringify({ leadFocused: ctx.leadFocused, pi })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "rail-context-breakdown", {
+            what: "restore the rail and tree preferences",
+            fn: async () => {
+                await h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail));
+                await h.ev(restoreStorageKey(RAIL_SECTIONS_KEY, ctx.prevSections));
+                await h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed));
+                rmSync(ctx.outside, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 });
             },
         });
     },
@@ -16301,6 +16878,11 @@ async function installAhMock(h, sessions, apiUrl, probeId = "ah-1") {
             mockWshRpcCall(client, command, data, opts) {
                 if (command === "getsessionsactivity") {
                     state.calls++;
+                    // step 15 sets fail to have the next scans fail, as one past its deadline does
+                    if (state.fail > 0) {
+                        state.fail--;
+                        return Promise.reject(new Error("sessions scan timed out"));
+                    }
                     return Promise.resolve({ sessions });
                 }
                 return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
@@ -16865,6 +17447,49 @@ const agentHistory = {
                                   backOnAgent: republished.surface,
                               }),
                           }
+                );
+            }
+
+            // A scan that fails with nothing loaded (a boot scan past its deadline): the Conversations section says it could
+            // not read them, with a Retry, rather than "No past conversations", and the store retries on its own after 5 s.
+            if (modules.urls != null) {
+                const u = modules.urls;
+                await h.goto("agent");
+                const failed = await h.ev(`(async () => {
+                    const { globalStore } = await import(${JSON.stringify(u.store)});
+                    const A = await import(${JSON.stringify(u.archive)});
+                    window.${AH_MOCK_KEY}.state.fail = 1;
+                    globalStore.set(A.sessionsArchiveAtom, null);
+                    await A.loadSessionsArchive();
+                    return { error: globalStore.get(A.sessionsErrorAtom), archive: globalStore.get(A.sessionsArchiveAtom)?.length ?? null };
+                })()`);
+                const errorShown = await ahWait(h, `document.querySelector("[data-agent-conversations-error]") != null`, 4000);
+                const errorText = await h.ev(`document.querySelector("[data-agent-conversations-error]")?.textContent ?? null`);
+                const emptyText = await h.ev(`/No past conversations/.test(document.querySelector("[data-agent-conversations]")?.textContent ?? "")`);
+                await h.shot("cdp-shots/agent-history-scan-failed.png");
+                const recovered = await ahWait(
+                    h,
+                    `document.querySelector("[data-agent-conversations-error]") == null && window.${AH_MOCK_KEY}?.state.fail === 0`,
+                    12000
+                );
+                const after = await h.ev(`(async () => {
+                    const { globalStore } = await import(${JSON.stringify(u.store)});
+                    const A = await import(${JSON.stringify(u.archive)});
+                    return { error: globalStore.get(A.sessionsErrorAtom), archive: globalStore.get(A.sessionsArchiveAtom)?.length ?? null };
+                })()`);
+                await h.shot("cdp-shots/agent-history-scan-retried.png");
+                rec(
+                    "15. a failed scan shows 'Could not read past conversations' with Retry, not 'No past conversations', and retries on its own",
+                    failed?.error === true &&
+                        failed.archive === 0 &&
+                        errorShown === true &&
+                        /Could not read past conversations/.test(errorText ?? "") &&
+                        /Retry/.test(errorText ?? "") &&
+                        emptyText === false &&
+                        recovered === true &&
+                        after?.error === false &&
+                        after.archive > 0,
+                    JSON.stringify({ failed, errorShown, errorText, emptyText, recovered, after })
                 );
             }
         } catch (e) {
@@ -21012,6 +21637,141 @@ const runPaused = {
                     await attempt("remove the paused run's landing tree", () =>
                         rmSync(ctx.pausedLandPath, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 })
                     );
+                }
+                await attempt("put the tree's folds back", () => h.ev(restoreLocalStorage(TREE_COLLAPSED_KEY, ctx.prevCollapsed)));
+                if (failed.length) throw new Error(failed.join("; "));
+            },
+        });
+    },
+};
+
+// --- run-row-stuck: a working run's row in the Agent tree says how many of its tasks are stuck ------------
+// (docs/superpowers/specs/2026-11-12-run-self-heal-design.md, decision 4; dagProgressLabel in runmodel.ts.)
+// A real orchestrator run held by deferstart, with a fixture lead in the roster so the Agent tree draws its row. Its
+// four-task plan is seeded the way final-stage seeds one (seedDag): t-1 done and merged with its child run unlinked,
+// so a tick has no run to derive its state from again, t-2 verify-failed, t-3 stalled and t-4 pending. Seeding writes
+// no event, so the engine wakes no lead for the two stuck tasks, and none is launched. A seeded dag proves the UI, not
+// the engine (docs/reference/cdp-run-fixtures.md).
+const RUN_ROW_STUCK_LEAD = "run-row-stuck lead";
+const RUN_ROW_STUCK_TASKS = [
+    { id: "t-1", label: "noop", description: "do nothing, stop immediately", deps: [], gate: false, state: "" },
+    { id: "t-2", label: "noop 2", description: "do nothing, stop immediately", deps: ["t-1"], gate: false, state: "" },
+    { id: "t-3", label: "noop 3", description: "do nothing, stop immediately", deps: ["t-1"], gate: false, state: "" },
+    { id: "t-4", label: "noop 4", description: "do nothing, stop immediately", deps: ["t-2", "t-3"], gate: false, state: "" },
+];
+const RUN_ROW_STUCK_STATES = { "t-1": "done", "t-2": "verify-failed", "t-3": "stalled", "t-4": "pending" };
+const runRowStuckPrint = (dag) => (dag?.tasks ?? []).map((t) => `${t.id}:${t.state}`).join(",");
+
+// The lead's row in the Agent tree, and the progress line it draws: the span titled with the run's stage and count.
+// Waits for the stuck count to show, and reads whatever is there when the wait runs out.
+const runRowStuckRead = (h) =>
+    h.ev(`(async () => {
+        ${RUN_PAUSED_LIB}
+        const row = () => treeRow(${JSON.stringify(RUN_ROW_STUCK_LEAD)});
+        const progress = () => [...(row()?.querySelectorAll("span[title]") ?? [])].find((s) => text(s).startsWith("Working")) ?? null;
+        await until(() => text(progress()).includes("stuck"));
+        const el = progress();
+        return { row: row() != null, text: el ? text(el) : null, title: el ? el.getAttribute("title") : null };
+    })()`);
+
+const runRowStuck = {
+    name: "run-row-stuck",
+    surface: "agent",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-run-row-stuck-"));
+        const ctx = { cwd, prevCollapsed: await h.ev(`localStorage.getItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`) };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            await arrangeFixtureRun(h, ctx, "run-row-stuck", RUN_ROW_STUCK_LEAD);
+            await h.rpc("dagsubmit", {
+                channelid: ctx.channelId,
+                runid: ctx.runId,
+                title: "verify run-row-stuck",
+                parallelism: 1,
+                tasks: RUN_ROW_STUCK_TASKS,
+            });
+            // a seed written while t-1 is still being dispatched would be overwritten by that tick
+            await waitForDispatch(h, ctx, "t-1");
+            ctx.dagId = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.oid;
+            if (!ctx.dagId) throw new Error("the run has no dag");
+            await seedDag(
+                h,
+                ctx,
+                (dag) => ({
+                    ...dag,
+                    tasks: dag.tasks.map(({ runid: _run, reviewrunid: _review, ...t }) => ({
+                        ...t,
+                        state: RUN_ROW_STUCK_STATES[t.id] ?? t.state,
+                        merged: t.id === "t-1" ? true : t.merged,
+                    })),
+                }),
+                runRowStuckPrint
+            );
+            ctx.seeded = runRowStuckPrint(
+                (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group
+            );
+            // the roster is read once at boot, and every project's folder open, as the default has it
+            await h.ev(`localStorage.removeItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`);
+            await h.ev("location.reload()");
+            if (!(await polishWaitFor(h, `!!document.querySelector("nav button")`, 30_000))) {
+                throw new Error("the app did not come back within 30s of the reload");
+            }
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const want = runRowStuckPrint({ tasks: Object.entries(RUN_ROW_STUCK_STATES).map(([id, state]) => ({ id, state })) });
+        rec(
+            "0. the run's plan is seeded with a done, a verify-failed, a stalled and a pending task, and the page booted on it",
+            ctx.arrangeError == null && ctx.seeded === want,
+            ctx.arrangeError ?? JSON.stringify({ runId: ctx.runId, dagId: ctx.dagId, seeded: ctx.seeded })
+        );
+        if (ctx.arrangeError != null) return steps;
+
+        await h.goto("agent");
+        const row = await runRowStuckRead(h);
+        rec(
+            "1. the run's row in the Agent tree reads Working with its count and \"· 2 stuck\"",
+            row.row === true && typeof row.text === "string" && /^Working · \d+\/4 · 2 stuck$/.test(row.text),
+            JSON.stringify(row)
+        );
+        const title = row.title ?? "";
+        const verifyAt = title.indexOf("t-2 verify failed");
+        const stalledAt = title.indexOf("t-3 stalled");
+        rec(
+            "2. its tooltip names t-2 verify failed and t-3 stalled in task order, and no task that is not stuck",
+            verifyAt >= 0 && stalledAt > verifyAt && !/t-1 |t-4 /.test(title),
+            JSON.stringify({ title })
+        );
+        await h.shot("cdp-shots/run-row-stuck.png");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "run-row-stuck", {
+            what: "cancel t-1's unlinked child run and put the tree's folds back",
+            fn: async () => {
+                const failed = [];
+                const attempt = async (what, fn) => {
+                    try {
+                        await fn();
+                    } catch (e) {
+                        failed.push(`${what}: ${e?.message ?? e}`);
+                    }
+                };
+                // t-1's child run, which the seed unlinked from its task with its worker still at work in the lane's
+                // tree: cancelling the run does not reach it
+                if (ctx.channelId) {
+                    await attempt("cancel the channel's other runs", async () => {
+                        for (const run of await channelRuns(h, ctx.channelId)) {
+                            if (run.id !== ctx.runId && run.status !== "done" && run.status !== "cancelled") {
+                                await h.rpc("cancelrun", { channelid: ctx.channelId, runid: run.id });
+                            }
+                        }
+                    });
                 }
                 await attempt("put the tree's folds back", () => h.ev(restoreLocalStorage(TREE_COLLAPSED_KEY, ctx.prevCollapsed)));
                 if (failed.length) throw new Error(failed.join("; "));
@@ -42184,6 +42944,135 @@ const agentSleep = {
                 /^\d+$/.test(settings.minutes ?? "") && settings.decrease && settings.increase,
             JSON.stringify(settings)
         );
+
+        // 9. what types into an agent's terminal is not offered to a sleeping agent: its process is gone, so its PTY is
+        // dead. The fixture agent is awake first, at a context level that offers Compact and Clear (usage.contextpct 90):
+        // the palette's agent actions offer Interrupt, Compact, Clear, Nudge and Open in split, the header's More menu
+        // Redraw terminal and Interrupt turn, and the details rail Resume, Compact and Clear. Then the same roster puts it
+        // to sleep (the page's roster fixture: the file one is not touched): the four, Redraw and the rail's buttons are
+        // gone, Open in split stays, and the sidebar row's menu offers Wake.
+        const AS_TYPING = ["Interrupt", "Compact", "Clear", "Nudge"];
+        const asNow = Date.now();
+        const asRosterWith = (asleep) =>
+            agentSleepRoster(asNow).map((a) =>
+                a.id !== AS_AWAKE_ID
+                    ? a
+                    : {
+                          ...a,
+                          usage: { contextpct: 90 },
+                          ...(asleep ? { sleeping: { since: asNow - 5 * 60_000, freedBytes: AS_FREED } } : {}),
+                      }
+            );
+        const offers = (labels, label) => labels.some((l) => l.startsWith(label));
+        // the palette's rows once an agent's actions are open
+        const paletteActionLabels = async (name) => {
+            const found = await gridPaletteFind(h, name, true);
+            if (!found.ok) return { ok: false, why: found.why, labels: [] };
+            await h.ev(paletteKey("ArrowRight"));
+            const state = await paletteStateWhen(h, (s) => s.drill != null && s.groups.length > 0, 3000);
+            return { ok: state?.drill != null, why: null, drill: state?.drill ?? null, labels: (state?.groups ?? []).flatMap((g) => g.rows) };
+        };
+        const closePalette = async () => {
+            for (let i = 0; i < 3 && (await h.ev(`!!${PALETTE_INPUT}`)); i++) {
+                await h.ev(PEEKS_ESC);
+                await polishNap(250);
+            }
+        };
+        // the buttons of the details rail's session block: Resume or Stop by the state line, Compact and Clear under it
+        const railButtons = () =>
+            h.ev(`(() => {
+                const sess = document.querySelector('aside[aria-label="Agent details"] [data-rail-session]');
+                return sess ? [...sess.querySelectorAll("button")].map((b) => b.textContent.trim()).filter(Boolean) : null;
+            })()`);
+        // the menu closes on an Escape at the document (floating-ui's dismiss), which the window-level asEscape does not
+        // reach: closed until its panel is gone, so a panel left open cannot answer for the next menu
+        const closeMenu = async () => {
+            for (let i = 0; i < 3 && (await h.ev(`!!${CA_MENU_PANEL}`)); i++) {
+                await h.ev(PEEKS_ESC);
+                await polishNap(250);
+            }
+            return !(await h.ev(`!!${CA_MENU_PANEL}`));
+        };
+        // a menu on the agent's header or its sidebar row: every label in it
+        const menuOn = async (target) => {
+            await closeMenu();
+            await h.ev(`(() => {
+                const el = ${target};
+                const r = el.getBoundingClientRect();
+                el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 40, clientY: r.top + r.height / 2, button: 2 }));
+            })()`);
+            const up = await polishWaitFor(h, `!!${CA_MENU_PANEL}`, 3000);
+            const labels = up
+                ? await h.ev(`[...${CA_MENU_PANEL}.querySelectorAll("span.flex-1")].map((s) => s.textContent.trim())`)
+                : [];
+            return { up, labels };
+        };
+        // close the menu, and show the Agent surface and the agent again
+        const backToAgent = async (id) => {
+            await closeMenu();
+            await h.goto("agent");
+            await polishWaitFor(h, `!!${asRow(id)}`, 5000);
+            await h.ev(`${asRow(id)}?.click()`);
+            await polishWaitFor(h, `!!document.querySelector("[data-agent-header]")`, 5000);
+        };
+        const HEADER = `document.querySelector("[data-agent-header]")`;
+
+        // step 6c's Sleep in the panel left the awake agent marked as falling asleep (the fixture roster never reads it
+        // asleep), and the header opens no menu while it is: drop the mark, as 5b does
+        await agentPageFixtures.agentPage(h, `${AS_FALL} F.setFallingAsleep(${JSON.stringify(AS_AWAKE_ID)}, null); return true;`);
+        await agentPageFixtures.setRoster(h, asRosterWith(false));
+        await agentPageFixtures.agentPage(h, `const R = await mod("app/view/agents/railstore.ts"); globalStore.set(R.railVisibleAtom, true); return true;`);
+        await h.goto("agent");
+        await polishWaitFor(h, `!!${asRow(AS_AWAKE_ID)}`, 5000);
+        await h.ev(`${asRow(AS_AWAKE_ID)}?.click()`);
+        await polishWaitFor(h, `!!${HEADER} && !!document.querySelector('aside[aria-label="Agent details"] [data-rail-session]')`, 5000);
+        const railAwake = await railButtons();
+        const palAwake = await paletteActionLabels(AS_AWAKE_NAME);
+        await h.shot("cdp-shots/agent-sleep-actions-awake.png");
+        await closePalette();
+        const headAwake = await menuOn(HEADER);
+        await backToAgent(AS_AWAKE_ID);
+        rec(
+            "9a. awake, at a context level that offers a reset: the palette offers Interrupt, Compact, Clear, Nudge and Open in split, the header's More menu Redraw terminal and Interrupt turn, the details rail Resume, Compact and Clear",
+            palAwake.ok && AS_TYPING.every((l) => offers(palAwake.labels, l)) && offers(palAwake.labels, "Open in split") &&
+                headAwake.up && headAwake.labels.includes("Redraw terminal") && headAwake.labels.includes("Interrupt turn") &&
+                railAwake != null && ["Resume", "Compact", "Clear"].every((b) => railAwake.includes(b)),
+            JSON.stringify({ palAwake, headAwake, railAwake })
+        );
+
+        // put it to sleep: the row reads asleep
+        await agentPageFixtures.setRoster(h, asRosterWith(true));
+        const nowAsleep = await polishWaitFor(h, `!!${asRow(AS_AWAKE_ID)}?.querySelector("[data-agent-sleeping]")`, 5000);
+        await h.ev(`${asRow(AS_AWAKE_ID)}?.click()`);
+        await polishWaitFor(h, `!!${HEADER} && !!document.querySelector('aside[aria-label="Agent details"] [data-rail-session]')`, 5000);
+        const railAsleep = await railButtons();
+        const palAsleep = await paletteActionLabels(AS_AWAKE_NAME);
+        await h.shot("cdp-shots/agent-sleep-actions-asleep.png");
+        await closePalette();
+        rec(
+            "9b. asleep, the same palette offers none of Interrupt, Compact, Clear and Nudge, and still Open in split",
+            nowAsleep && palAsleep.ok && palAsleep.labels.length > 0 && !AS_TYPING.some((l) => offers(palAsleep.labels, l)) &&
+                offers(palAsleep.labels, "Open in split"),
+            JSON.stringify({ nowAsleep, palAsleep })
+        );
+        const headAsleep = await menuOn(HEADER);
+        await h.shot("cdp-shots/agent-sleep-actions-header-menu.png");
+        await backToAgent(AS_AWAKE_ID);
+        rec(
+            "9c. asleep, the header's More menu (which still opens) has no Redraw terminal or Interrupt turn, and the details rail no Resume, Stop, Compact or Clear",
+            headAsleep.up && headAsleep.labels.length > 0 && !headAsleep.labels.includes("Redraw terminal") &&
+                !headAsleep.labels.includes("Interrupt turn") && (headAsleep.labels.includes("Hide details") || headAsleep.labels.includes("Show details")) &&
+                railAsleep != null && !["Resume", "Stop", "Compact", "Clear"].some((b) => railAsleep.includes(b)),
+            JSON.stringify({ headAsleep, railAsleep })
+        );
+        const rowAsleep = await menuOn(asRow(AS_AWAKE_ID));
+        const rowClosed = await closeMenu();
+        rec(
+            "9d. asleep, its sidebar row's menu offers Wake and no Sleep",
+            rowAsleep.up && rowAsleep.labels.includes("Wake") && !rowAsleep.labels.includes("Sleep") && rowClosed,
+            JSON.stringify({ ...rowAsleep, rowClosed })
+        );
+        await agentPageFixtures.restoreRoster(h);
         return steps;
     },
     async teardown(h, ctx) {
@@ -42266,7 +43155,8 @@ const AC_BASH_HISTORY = ["git log --oneline -5", "git status -sb"];
 const AC_SHELL_FILES = ["frontend/app/view/agents/chatpane.tsx", "frontend/app/view/agents/chatpanes/", "frontend/app/view/agents/chatpending.ts"];
 // what the mocked GetClaudeLiveCommandsCommand answers for the main agent's block: the list Claude Code's own typeahead shows in
 // that session (the arc mod publishes it, pkg/claudecmds/live.go). 12 built-ins (the bundled skills `code-review`,
-// `security-review` and `simplify` among them), 2 skills, 4 plugin commands and 1 MCP prompt, in the groups' order. No other
+// `security-review` and `simplify` among them), 2 skills, 4 plugin commands and 1 MCP prompt, in the groups' order. The menu
+// lists `help`, the one built-in here that Chat answers itself (AC_IN_CHAT), in a group of its own ahead of the other 11. No other
 // agent has one, so their menu falls back to the built-ins plus AC_COMMANDS. The `/re` filter of step 51 and the `/co` of step
 // 23 are worked out from these names: change one and read both. `mcp` and `model` are in it because a bare /mcp and /model
 // flip the cell to Terminal only while the menu's own list names them (opensTui).
@@ -42291,6 +43181,9 @@ const AC_LIVE_COMMANDS = [
     { name: "superpowers:requesting-code-review", description: "Check the work against its requirements", source: "plugin", plugin: "superpowers" },
     { name: "mcp__docs__summarize", description: "Summarize a page from the docs server", source: "mcp" },
 ];
+// the built-ins Chat answers itself with a card or the Diff surface (chatlocal.ts ROUTES, answersInChat): the `/` menu lists them
+// first as In Chat (44f8bef08), and they never read "opens in Terminal". Steps 50 and 53 read the menu's groups against this list
+const AC_IN_CHAT = ["usage", "cost", "context", "tasks", "bashes", "stats", "skills", "help", "status", "diff"];
 // the screens Claude Code 2.1.319 drew (captured by the unit tests' fixtures): the step writes them to the fixture terminal
 const AC_SCREENS = JSON.parse(readFileSync(new URL("../../frontend/app/view/agents/tuiscreen.fixtures.json", import.meta.url), "utf8"));
 
@@ -42613,6 +43506,29 @@ const acInputs = async (h, blockId) =>
     (await acCalls(h, "controllerinput"))
         .filter((c) => c.data.blockid === blockId && c.data.input !== "" && !/^\x1b\[[IO]$/.test(c.data.input))
         .map((c) => c.data.input);
+// A send is two writes: its text, then its Enter, which waits up to ECHO_WAIT_MAX_MS (chatpending.ts, read from there so the two
+// stay one number) for Claude Code's box to show the text (agentsubmit.ts). From step 24 on the fixture terminal draws a box
+// that never shows it, so each send's Enter lands the whole wait after its text, in a later step's window. A step that takes a
+// mark of a block's inputs, or reads what a send typed, first waits for that Enter with this: until the block's last input is
+// "\r", or until no input has come for the wait and a second more. Answers the inputs then, so a caller takes its mark from them.
+const AC_ECHO_WAIT_MS =
+    Number(
+        /ECHO_WAIT_MAX_MS\s*=\s*([\d_]+)/
+            .exec(readFileSync(new URL("../../frontend/app/view/agents/chatpending.ts", import.meta.url), "utf8"))?.[1]
+            ?.replace(/_/g, "")
+    ) || 2000;
+const AC_ENTER_WAIT_MS = AC_ECHO_WAIT_MS + 1000;
+async function acSettled(h, blockId) {
+    let inputs = await acInputs(h, blockId);
+    let changedAt = Date.now();
+    while (inputs.length > 0 && inputs[inputs.length - 1] !== "\r" && Date.now() - changedAt < AC_ENTER_WAIT_MS) {
+        await polishNap(60);
+        const next = await acInputs(h, blockId);
+        if (next.length !== inputs.length) changedAt = Date.now();
+        inputs = next;
+    }
+    return inputs;
+}
 const acSetAnswer = (h, mode) => h.ev(`(() => { window.${AC_MOCK_KEY}.answer = ${JSON.stringify(mode)}; return true; })()`);
 // what the mocked ShellCompleteCommand answers from now on: the completions of the next Tab in bash mode
 const acSetShell = (h, items) => h.ev(`(() => { window.${AC_MOCK_KEY}.shell = ${JSON.stringify(items)}; return true; })()`);
@@ -43090,7 +44006,7 @@ const agentChat = {
             await AC.setRoster(h, acRoster(ctx, { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined }));
             const working = await polishWaitFor(h, `(${acLayer(A)}?.querySelector("[data-chat-working]")?.textContent ?? "").includes(${JSON.stringify(AC_ACTIVITY)}) && !!${acLayer(A)}?.querySelector("[data-chat-stop]")`, AC_WAIT_MS);
             await h.shot("cdp-shots/agent-chat-4-working.png");
-            const stopsBefore = (await acInputs(h, blockA)).length;
+            const stopsBefore = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-stop]")?.click()`);
             const stopped = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input === "\\x1b")`, 3000);
             const afterStop = (await acInputs(h, blockA)).slice(stopsBefore);
@@ -43115,6 +44031,31 @@ const agentChat = {
                 before5.tools === 0 && before5.diff === 0 && toolsOpen && /read/i.test(tools ?? "") && /edit/i.test(tools ?? "") && diffOpen &&
                     (diff ?? "").includes("retries = 3"),
                 { before5, tools, diff }
+            );
+
+            // 5b. the arrow at the chip's end opens the file itself in the agent's File tab, as a path link in the terminal
+            // does; the chip's own diff stays as it was
+            mkdirSync(dirname(ctx.files.edited), { recursive: true });
+            writeFileSync(ctx.files.edited, "export const retries = 3;\nexport const backoff = true;\n");
+            const wantFile5b = JSON.stringify(ctx.files.edited.split("\\").join("/").toLowerCase());
+            const arrow5b = await h.ev(`(() => {
+                const b = ${acLayer(A)}?.querySelector("[data-chat-files] [data-chat-file-open]");
+                return b ? { path: b.getAttribute("data-chat-file-open"), label: b.getAttribute("aria-label") } : null;
+            })()`);
+            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-files] [data-chat-file-open]")?.scrollIntoView({ block: "center" })`);
+            await h.shot("cdp-shots/agent-chat-5b-chip-open.png");
+            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-files] [data-chat-file-open]")?.click()`);
+            const file5b = await polishWaitFor(
+                h,
+                `((${RAIL_ASIDE}?.querySelector("[data-rail-file]")?.dataset.railFile ?? "").split("\\\\").join("/").toLowerCase()) === ${wantFile5b}`,
+                AC_WAIT_MS
+            );
+            const diffKept5b = await h.ev(`!!${acLayer(A)}?.querySelector("[data-chat-diff]")`);
+            await h.shot("cdp-shots/agent-chat-5b-file-tab.png");
+            rec(
+                "5b. the arrow at a file chip's end (Open client.ts) opens the file in the agent's File tab; the chip's diff stays open",
+                arrow5b?.path === ctx.files.edited && arrow5b.label === "Open client.ts" && file5b && diffKept5b,
+                { arrow5b, file5b, diffKept5b }
             );
 
             // 6. picking Terminal: the layer is gone, the xterm is the same element with focus, the rail has its Transcript
@@ -43281,6 +44222,52 @@ const agentChat = {
             await acQueue(h, orefA, []);
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
 
+            // 11b. the card from the keyboard: with the chat box empty ↑ and ↓ move a ring over Allow and Deny (held at the
+            // ends), and Enter sends the ringed choice, typing nothing into the block and leaving the box empty; a new request
+            // starts on Allow, so Enter on it allows
+            const ringOn11b = `[...(${acCard(A)}?.querySelectorAll("[data-perm-choice]") ?? [])].filter((b) => b.classList.contains("outline-accent")).map((b) => b.getAttribute("data-perm-choice"))`;
+            await acQueue(h, orefA, [perm("perm-k1", "Bash", "npm run test:keys")]);
+            const up11b = await polishWaitFor(h, `!!${acCard(A)}?.querySelector("[data-permission-allow]")`, 3000);
+            await acClear(h, acBox(A));
+            await h.ev(`${acBox(A)}?.focus()`);
+            const ring0 = await h.ev(ringOn11b);
+            const hint11b = await h.ev(`${acCard(A)}?.querySelector("[data-permission-keys]")?.textContent.trim() ?? null`);
+            await acKey(h, acKeys.down);
+            const ring1 = await h.ev(ringOn11b);
+            await acKey(h, acKeys.down);
+            const ring2 = await h.ev(ringOn11b);
+            await acKey(h, acKeys.up);
+            const ring3 = await h.ev(ringOn11b);
+            await acKey(h, acKeys.down);
+            await h.shot("cdp-shots/agent-chat-11b-keys.png");
+            const inputs11b = await acInputs(h, blockA);
+            const calls11b = (await acCalls(h, "agentpermissionanswer")).length;
+            await acKey(h, acKeys.enter);
+            await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.filter((c) => c.command === "agentpermissionanswer").length === ${calls11b + 1}`, 3000);
+            const denied11b = (await acCalls(h, "agentpermissionanswer"))[calls11b];
+            await polishWaitFor(h, `!${acCard(A)}`, 3000);
+            await acQueue(h, orefA, [perm("perm-k2", "Bash", "npm run test:keys -- --again")]);
+            await polishWaitFor(h, `!!${acCard(A)}?.querySelector("[data-permission-allow]")`, 3000);
+            const ringNew = await h.ev(ringOn11b);
+            await h.ev(`${acBox(A)}?.focus()`);
+            await acKey(h, acKeys.enter);
+            await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.filter((c) => c.command === "agentpermissionanswer").length === ${calls11b + 2}`, 3000);
+            const allowed11b = (await acCalls(h, "agentpermissionanswer"))[calls11b + 1];
+            const box11b = await h.ev(acVal(acBox(A)));
+            const typed11b = (await acInputs(h, blockA)).slice(inputs11b.length);
+            await acQueue(h, orefA, []);
+            rec(
+                "11b. from the empty chat box ↑ ↓ move the card's ring (Allow → Deny, held at the end, back, down), Enter on Deny sends allow: false, a new request starts on Allow and Enter allows it; nothing is typed and the box stays empty",
+                up11b && hint11b === "↑↓ Enter" &&
+                    JSON.stringify(ring0) === JSON.stringify(["allow"]) && JSON.stringify(ring1) === JSON.stringify(["deny"]) &&
+                    JSON.stringify(ring2) === JSON.stringify(["deny"]) && JSON.stringify(ring3) === JSON.stringify(["allow"]) &&
+                    denied11b?.data?.id === "perm-k1" && denied11b.data.allow === false &&
+                    JSON.stringify(ringNew) === JSON.stringify(["allow"]) &&
+                    allowed11b?.data?.id === "perm-k2" && allowed11b.data.allow === true &&
+                    box11b === "" && typed11b.length === 0,
+                { up11b, hint11b, ring0, ring1, ring2, ring3, denied11b, ringNew, allowed11b, box11b, typed11b }
+            );
+
             // 12. an agent asking an AskUserQuestion shows its choices in the chat; clicking one sends the answer
             await showAgent(D);
             const askUp = await polishWaitFor(h, `!!${acLayer(D)}?.querySelector("[data-chat-ask] button")`, AC_WAIT_MS);
@@ -43349,7 +44336,8 @@ const agentChat = {
                 const l = ${acLayer(E)};
                 const p = [...(l?.querySelectorAll("[data-chat-pending]") ?? [])].find((e) => e.firstElementChild?.textContent.trim() === ${JSON.stringify(FIRST)});
                 return {
-                    caption: p?.querySelector("[data-chat-pending-label]")?.textContent.trim() ?? null,
+                    // the line under the pending bubbles, its own row: it folds away after them as the transcript takes them
+                    caption: p ? (l?.querySelector("[data-chat-pending-line] [data-chat-pending-label]")?.textContent.trim() ?? null) : null,
                     empty: !!l?.querySelector("[data-chat-empty]"),
                     working: !!l?.querySelector("[data-chat-working]"),
                 };
@@ -43650,8 +44638,8 @@ const agentChat = {
             );
 
             // 20. a message sent while Claude works. A `queued_command` attachment line (a message queued in the terminal and
-            // taken mid-turn) draws as your bubble; one sent from the box shows at once as a dimmed bubble captioned "Queued",
-            // and goes when a line holding the same text lands in the transcript
+            // taken mid-turn) draws as your bubble; one sent from the box shows at once as your bubble with a "Queued" line
+            // under it, and goes when a line holding the same text lands in the transcript
             const Q1 = "queued from the terminal";
             const S1 = "and also handle timeouts";
             const workingA = { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined };
@@ -43671,14 +44659,16 @@ const agentChat = {
                 const mine = ${pendingOf};
                 return {
                     text: mine[0]?.firstElementChild?.textContent.trim() ?? null,
-                    // the caption's own text: a Send now button stands beside it while the message is queued
-                    caption: mine[0]?.lastElementChild?.firstElementChild?.textContent.trim() ?? null,
+                    // the line under the pending bubbles (its own row, which folds away after them): Queued, with a Send now
+                    // button beside it
+                    caption: mine.length > 0 ? (${acLayer(A)}?.querySelector("[data-chat-pending-line] [data-chat-pending-label]")?.textContent.trim() ?? null) : null,
+                    sendNow: !!${acLayer(A)}?.querySelector("[data-chat-pending-line] [data-chat-send-now]"),
                     pending: mine.length,
                     asYou: ${youHas(S1)},
                 };
             })()`);
             await h.shot("cdp-shots/agent-chat-20-queued.png");
-            const sent20 = (await acInputs(h, blockA)).slice(before20.length);
+            const sent20 = (await acSettled(h, blockA)).slice(before20.length);
             acAppend(ctx.files.main, acQueuedLine(ctx.dir, S1));
             const landed20 = await polishWaitFor(h, `${youHas(S1)} === 1 && ${pendingOf}.length === 0`, 15000);
             rec(
@@ -43696,7 +44686,7 @@ const agentChat = {
             const holdOf = `${acLayer(A)}?.querySelector("[data-chat-hold]")`;
             await acQueue(h, orefA, [perm("perm-5", "Bash", "npm run lint")]);
             const card21 = await polishWaitFor(h, `!!${acCard(A)}`, 3000);
-            const before21 = await acInputs(h, blockA);
+            const before21 = await acSettled(h, blockA);
             await acType(h, acBox(A), S21, false);
             await polishWaitFor(h, `${holdOf}?.getAttribute("data-chat-hold") === "waiting"`, 3000);
             const hold21 = await h.ev(`(() => {
@@ -43713,7 +44703,7 @@ const agentChat = {
             await h.shot("cdp-shots/agent-chat-21-queued.png");
             await acQueue(h, orefA, []);
             const sent21ok = await polishWaitFor(h, `${acVal(acBox(A))} === "" && !${holdOf}`, 5000);
-            const sent21 = (await acInputs(h, blockA)).slice(before21.length);
+            const sent21 = (await acSettled(h, blockA)).slice(before21.length);
             rec(
                 "21. with a permission request pending a line over the box names the hold and Send stays live as Queue; Enter queues the message (Queued line, nothing typed, the text kept), and it is typed into the block once the card is gone",
                 card21 && hold21.disabled === false && hold21.label === "Queue" &&
@@ -43724,15 +44714,30 @@ const agentChat = {
                 { card21, hold21, queued21, line21, box21, before21, after21, sent21ok, sent21 }
             );
 
-            // 22. ↑ in the empty box puts back the last message sent from it (step 21's, sent once its card went)
+            // 22. ↑ in the empty box puts back the last message sent from it (step 21's, sent once its card went). While Claude
+            // works, ↑ in an empty box takes back a message Claude Code still holds queued before it recalls anything
+            // (chattakeback.ts takeBackPlan: a pending bubble captioned Queued, which step 21's is: it was sent while the agent
+            // worked). That is the take-back's key, and it ends nothing here: the fixture's Claude never writes the message's
+            // queued_command line, so the message would stay queued for good. The line lands first, as step 20's does for S1
+            // (Claude took the message at the turn's next gap): nothing is left to take back, and ↑ recalls the history
+            const pendingS21 = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-pending]") ?? [])].filter((p) => p.firstElementChild?.textContent.trim() === ${JSON.stringify(S21)})`;
+            acAppend(ctx.files.main, acQueuedLine(ctx.dir, S21));
+            const taken22 = await polishWaitFor(h, `${youHas(S21)} === 1 && ${pendingS21}.length === 0`, 15000);
+            const before22 = await acSettled(h, blockA);
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             await h.ev(`${acBox(A)}?.focus()`);
             await acKey(h, acKeys.up);
             const recalled22 = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify(S21)}`, 3000);
             const box22 = await h.ev(acVal(acBox(A)));
+            // a take-back writes ↑ to the block (ESC [ A) before it waits for the box: the recall types nothing
+            const typed22 = (await acInputs(h, blockA)).slice(before22.length);
             await h.shot("cdp-shots/agent-chat-22-recall.png");
             await acClear(h, acBox(A));
-            rec("22. ↑ in the empty box puts back the last message sent", recalled22 && box22 === S21, { box22 });
+            rec(
+                "22. ↑ in the empty box puts back the last message sent (once Claude took it, so no take-back claims the key), and types nothing into the block",
+                taken22 && recalled22 && box22 === S21 && typed22.length === 0,
+                { taken22, box22, typed22 }
+            );
 
             // 23. `/` as the box's first character lists the session's own commands (GetClaudeLiveCommandsCommand, mocked for this
             // agent's block: the bundled skill `code-review` is in it, which the disk list never holds, and `arc:council`);
@@ -43752,13 +44757,13 @@ const agentChat = {
             const fetched23 = await acCalls(h, "listclaudecommands");
             const live23 = await acCalls(h, "getclaudelivecommands");
             await acClear(h, acBox(A));
-            const beforeModel = (await acInputs(h, blockA)).length;
+            const beforeModel = (await acSettled(h, blockA)).length;
             await h.cdp("Input.insertText", { text: "/model" });
             await polishWaitFor(h, `!!document.querySelector("[data-chat-slash]")`, 3000);
             await acKey(h, acKeys.enter);
             const flipped23 = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "terminal" && !${acLayer(A)}`, 3000);
             const header23 = await acHeader(h);
-            const sentModel = (await acInputs(h, blockA)).slice(beforeModel);
+            const sentModel = (await acSettled(h, blockA)).slice(beforeModel);
             await h.shot("cdp-shots/agent-chat-23-model-terminal.png");
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
             await polishWaitFor(h, `!!${acBox(A)}`, 3000);
@@ -43786,7 +44791,7 @@ const agentChat = {
             const screen24 = await acWriteScreen(h, blockA, AC_SCREENS.mode3);
             const chipUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')`, 6000);
             await h.shot("cdp-shots/agent-chat-24-footer.png");
-            const beforeTab = (await acInputs(h, blockA)).length;
+            const beforeTab = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')?.click()`);
             const menuUp24 = await polishWaitFor(h, `${acLayer(A)}?.querySelector('button[data-chat-mode="plan"]')?.getAttribute("aria-expanded") === "true" && !!${acLayer(A)}?.querySelector('[role="menu"]')`, 3000);
             const typed24 = (await acInputs(h, blockA)).slice(beforeTab);
@@ -43982,13 +44987,13 @@ const agentChat = {
             await acKey(h, acKeys.escape);
             const closed28 = await polishWaitFor(h, `!${acMenu("Model")}`, 3000);
             const stayed28 = await h.ev(acOnScreen(A));
-            const before28 = (await acInputs(h, blockA)).length;
+            const before28 = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-model]")?.click()`);
             await polishWaitFor(h, `${acMenuRows("Model")}.length === 3`, 3000);
             await h.ev(`${acMenu("Model")}?.querySelector('[data-chat-model-choice="sonnet"]')?.click()`);
             const picked28 = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.blockid === ${JSON.stringify(blockA)} && c.data.input === "/model sonnet")`, 3000);
             const closedAfter28 = await polishWaitFor(h, `!${acMenu("Model")}`, 3000);
-            const typed28 = (await acInputs(h, blockA)).slice(before28);
+            const typed28 = (await acSettled(h, blockA)).slice(before28);
             rec(
                 "28. the model chip opens a menu of Opus, Sonnet and Haiku with the agent's model checked (aria-checked on one row), Escape closes it and the chat stays on screen, and picking Sonnet types /model sonnet into A's block and closes the menu",
                 up28 && JSON.stringify(menu28.rows.map((r) => r[0])) === JSON.stringify(["opus", "sonnet", "haiku"]) &&
@@ -44381,12 +45386,14 @@ const agentChat = {
 
             // 41. the page reads the app's colours: a click on #theme sends "theme:" and the page's --arc-background, which is the
             // app's --color-background, through the box (the bridge hands the colours over when the page says it is ready)
+            // The mark waits for the Enter of step 36's send (it lands the echo wait after its text, in this step's window), and the
+            // read below for the theme's own: it starts with theme: and ends with the Enter that is its own
             await acClear(h, acBox(A));
-            const before41 = (await acInputs(h, blockA)).length;
+            const before41 = (await acSettled(h, blockA)).length;
             const click41 = await acClickFrame(h, A, "chart.html", 76, 82);
             const theme41 = await acUntil(async () => {
                 const typed = (await typedSince(blockA, before41)).join("");
-                return typed.endsWith("\r") ? typed : null;
+                return typed.startsWith("theme:") && typed.endsWith("\r") ? typed : null;
             }, 6000);
             const appBg = await h.ev(`getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim()`);
             await h.shot("cdp-shots/agent-chat-41-visual-theme.png");
@@ -44402,13 +45409,18 @@ const agentChat = {
             const gone41 = 1650 - (Date.now() - (click41?.at ?? 0));
             if (gone41 > 0) await polishNap(gone41);
             await acClear(h, acBox(A));
-            const before42 = (await acInputs(h, blockA)).length;
+            const before42 = (await acSettled(h, blockA)).length;
             const click42 = await acClickFrame(h, A, "chart.html", 76, 34);
+            // The gap runs from the click's own send, so the second click is made once that send shows: its pending bubble,
+            // drawn by the send itself. Waiting for the text to reach the block instead timed the terminal's echo, which a
+            // loaded machine stretched past the gap (3.1 s in one Final, against 0.15-0.45 s otherwise). The Enter is waited
+            // for after the second click
+            await polishWaitFor(h, `${pendingOfA(ASK)}.length >= 1`, 3000);
+            const click42b = await acClickFrame(h, A, "chart.html", 76, 34);
             const sent42 = await acUntil(async () => {
                 const typed = (await typedSince(blockA, before42)).join("");
-                return typed.endsWith("\r") ? typed : null;
+                return typed.startsWith(ASK) && typed.endsWith("\r") ? typed : null;
             }, 6000);
-            const click42b = await acClickFrame(h, A, "chart.html", 76, 34);
             await polishNap(500);
             const typed42 = (await typedSince(blockA, before42)).join("");
             const box42 = await boxValue(A);
@@ -44423,7 +45435,7 @@ const agentChat = {
             // 43. a page's own prompt without a click is dropped; a page taller than the cap shows at 640 px with an expand button that
             // grows the frame to the page and back; a missing page says so; a path outside the folder stays code, with the reason
             await acClear(h, acBox(A));
-            const before43 = (await acInputs(h, blockA)).length;
+            const before43 = (await acSettled(h, blockA)).length;
             await acShowVisual(h, A, "auto.html");
             const autoSrc43 = await polishWaitFor(h, `(${acVisualFrame(A, "auto.html")}?.getAttribute("src") ?? "") !== ""`, 8000);
             const autoSized43 = await polishWaitFor(h, acFrameBetween(A, "auto.html", 110, 130), 8000);
@@ -44495,10 +45507,11 @@ const agentChat = {
             );
 
             // 50. "Typing /": a `/` in the main agent's box lists the session's whole command list (the mocked live list: 12
-            // built-ins, 2 skills, 4 plugin commands, 1 MCP prompt), grouped in that order with each group's count, no cap, in a
-            // box at most 420 px tall whose rows scroll; the footer counts them and says "in this session"; a plugin's row has
+            // built-ins, 2 skills, 4 plugin commands, 1 MCP prompt), grouped with each group's count, no cap, in a box at most
+            // 420 px tall whose rows scroll. The group order is In Chat (the built-ins Chat answers itself: `help` here, 44f8bef08),
+            // Built-in (the other 11), Skills, Plugins, MCP. The footer counts them and says "in this session"; a plugin's row has
             // its chip (arc:council "arc", skim "skim"), and a bare built-in that draws a menu on Claude Code's own screen
-            // (model) says "opens in Terminal"
+            // (model) says "opens in Terminal", which one Chat answers itself (help) never does
             await showAgent(A);
             await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
             await acClear(h, acBox(A));
@@ -44522,25 +45535,27 @@ const agentChat = {
             })()`);
             const row50 = (name) => s50?.rows.find((r) => r.name === name);
             const want50 = [
-                ["Built-in", "builtin"],
-                ["Skills", "user"],
-                ["Plugins", "plugin"],
-                ["MCP", "mcp"],
-            ].map(([title, source]) => {
-                const rows = AC_LIVE_COMMANDS.filter((c) => c.source === source).map((c) => c.name);
+                ["In Chat", (c) => c.source === "builtin" && AC_IN_CHAT.includes(c.name)],
+                ["Built-in", (c) => c.source === "builtin" && !AC_IN_CHAT.includes(c.name)],
+                ["Skills", (c) => c.source === "user"],
+                ["Plugins", (c) => c.source === "plugin"],
+                ["MCP", (c) => c.source === "mcp"],
+            ].map(([title, is]) => {
+                const rows = AC_LIVE_COMMANDS.filter(is).map((c) => c.name);
                 return { title, count: String(rows.length), rows };
             });
             rec(
-                "50. / in the main agent's box lists the live list grouped Built-in 12, Skills 2, Plugins 4, MCP 1 with all 19 rows (no cap) in a box at most 420 px tall whose rows scroll, the footer reads 19 commands in this session, arc:council and skim show their plugin chips, model says opens in Terminal, and code-review sits in Built-in",
+                "50. / in the main agent's box lists the live list grouped In Chat 1 (help), Built-in 11, Skills 2, Plugins 4, MCP 1 with all 19 rows (no cap) in a box at most 420 px tall whose rows scroll, the footer reads 19 commands in this session, arc:council and skim show their plugin chips, model says opens in Terminal but help (In Chat) does not, and code-review sits in Built-in",
                 up50 && s50 != null && s50.live === "true" && s50.rows.length === total50 &&
                     JSON.stringify(s50.groups) === JSON.stringify(want50) &&
-                    JSON.stringify(s50.groups.map((g) => g.count)) === JSON.stringify(["12", "2", "4", "1"]) &&
+                    JSON.stringify(s50.groups.map((g) => g.count)) === JSON.stringify(["1", "11", "2", "4", "1"]) &&
                     s50.height >= 200 && s50.height <= 420.5 &&
                     s50.scroller?.overflowY === "auto" && s50.scroller.scroll > s50.scroller.client && moved50 > 0 &&
                     s50.footer === `${total50} commands in this session` &&
                     row50("arc:council")?.chip === "arc" && row50("skim")?.chip === "skim" && row50("clear")?.chip === null &&
-                    row50("model")?.tui === true && row50("release-notes")?.tui === false &&
-                    s50.groups[0].rows.includes("code-review"),
+                    row50("model")?.tui === true && row50("release-notes")?.tui === false && row50("help")?.tui === false &&
+                    s50.groups[0].title === "In Chat" && s50.groups[0].rows.join() === "help" &&
+                    s50.groups.find((g) => g.title === "Built-in")?.rows.includes("code-review") === true,
                 { up50, s50, moved50 }
             );
 
@@ -44603,10 +45618,11 @@ const agentChat = {
             await polishWaitFor(h, `!document.querySelector("[data-chat-slash]")`, 3000);
             await h.ev(`${plus52}?.click()`);
             await polishWaitFor(h, `!!document.querySelector("[data-chat-plus-menu]")`, 3000);
-            const beforeMcp52 = (await acInputs(h, blockA)).length;
+            const beforeMcp52 = (await acSettled(h, blockA)).length;
             await h.ev(`document.querySelector('[data-chat-plus-item="mcp"]')?.click()`);
             const flipped52 = await polishWaitFor(h, `window.__arcChatMode.get(${JSON.stringify(A)}) === "terminal" && !${acLayer(A)}`, 3000);
-            const sentMcp52 = (await acInputs(h, blockA)).slice(beforeMcp52);
+            // the cell flips at the pick; the command's Enter follows the echo wait later
+            const sentMcp52 = (await acSettled(h, blockA)).slice(beforeMcp52);
             await h.shot("cdp-shots/agent-chat-52-plus-mcp-terminal.png");
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
             await polishWaitFor(h, `!!${acBox(A)}`, 3000);
@@ -44621,7 +45637,8 @@ const agentChat = {
             );
 
             // 53. an agent with no live list (the second one: wavesrv holds none for its block) falls back to the copied built-ins
-            // plus the disk list (the mocked ListClaudeCommandsCommand), and the footer says "found on disk"
+            // plus the disk list (the mocked ListClaudeCommandsCommand), and the footer says "found on disk". The built-ins Chat
+            // answers itself list first as In Chat (AC_IN_CHAT), the other built-ins under Built-in, the disk list's skill under Plugins
             await showAgent(B);
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(B)}, "chat")`);
             await polishWaitFor(h, `!!${acBox(B)}`, AC_WAIT_MS);
@@ -44635,13 +45652,16 @@ const agentChat = {
             await acClear(h, acBox(B));
             await polishWaitFor(h, `!document.querySelector("[data-chat-slash]")`, 3000);
             const found53 = /^(\d+) commands found on disk$/.exec(s53?.footer ?? "");
+            const group53 = (title) => s53?.groups.find((g) => g.title === title)?.rows ?? [];
             rec(
-                "53. in the second agent's box (no live list) / shows the built-ins plus the disk list with data-chat-slash-live false and a footer reading N commands found on disk",
+                "53. in the second agent's box (no live list) / shows the built-ins plus the disk list, grouped In Chat, Built-in, Plugins (In Chat holds only what Chat answers itself, Built-in none of it), with data-chat-slash-live false and a footer reading N commands found on disk, N the number of rows",
                 fallbackUp53 && disk53 && s53 != null && s53.live === "false" && found53 != null &&
                     Number(found53[1]) === s53.rows.length && s53.rows.length >= 23 &&
                     s53.rows.some((r) => r.name === "compact") && s53.rows.some((r) => r.name === "arc:council") &&
-                    s53.groups.map((g) => g.title).join("|") === "Built-in|Plugins",
-                { fallbackUp53, disk53, footer: s53?.footer, rows: s53?.rows.length, groups: s53?.groups.map((g) => [g.title, g.count]) }
+                    s53.groups.map((g) => g.title).join("|") === "In Chat|Built-in|Plugins" &&
+                    group53("In Chat").length > 0 && group53("In Chat").every((n) => AC_IN_CHAT.includes(n)) &&
+                    group53("Built-in").every((n) => !AC_IN_CHAT.includes(n)),
+                { fallbackUp53, disk53, footer: s53?.footer, rows: s53?.rows.length, groups: s53?.groups.map((g) => [g.title, g.count]), inChat: group53("In Chat") }
             );
 
             // 60. "Sent": a message with an @mention and a files block (the text the composer sends) draws without the block. The
@@ -44864,7 +45884,7 @@ const agentChat = {
                 };
             })()`);
             await h.shot("cdp-shots/agent-chat-70-pill.png");
-            const before70 = (await acInputs(h, blockA)).length;
+            const before70 = (await acSettled(h, blockA)).length;
             await acKey(h, acKeys.enter);
             let typed70 = [];
             for (let i = 0; i < 30 && !typed70.join("").endsWith("\r"); i++) {
@@ -45119,7 +46139,7 @@ const agentChat = {
             await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
             await acType(h, acBox(A), "!git stash list", false);
             await polishWaitFor(h, `${acVal(acBox(A))} === "!git stash list"`, 3000);
-            const before76 = (await acInputs(h, blockA)).length;
+            const before76 = (await acSettled(h, blockA)).length;
             await acKey(h, acKeys.enter);
             let sent76 = [];
             for (let i = 0; i < 30 && !sent76.join("").endsWith("\r"); i++) {
@@ -45251,7 +46271,7 @@ const agentChat = {
             const movedDown77 = await selected77(AC_SHELL_FILES[1]);
             await acKey(h, acKeys.up);
             const movedUp77 = await selected77(AC_SHELL_FILES[0]);
-            const inputs77 = (await acInputs(h, blockA)).length;
+            const inputs77 = (await acSettled(h, blockA)).length;
             await acKey(h, acKeys.enter);
             const want77 = `!npx vitest run ${AC_SHELL_FILES[0]} `;
             const picked77 = await polishWaitFor(h, `${acVal(acBox(A))}.replace(/\\u00a0/g, " ") === ${JSON.stringify(want77)}`, 3000);
@@ -45375,8 +46395,9 @@ const agentChat = {
             );
 
             // 80. A compaction at the end of the conversation, its summary long. The chat is at its end (stuck to the tail); a click
-            // on the COMPACTED chip opens the summary, which grows down from the divider: the divider stays where it was, rather
-            // than the view following the opened summary to its last line
+            // on the COMPACTED chip opens the summary, and the feed rises with it until the divider rests 56 px under the chat's
+            // top (narrationtimeline.tsx REVEAL_MARGIN_PX), so the summary shows: not left below the fold, and not the view
+            // following the opened summary to its last line
             await showAgent(A);
             await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
             const at80 = { cwd: ctx.dir, ts: new Date().toISOString() };
@@ -45405,11 +46426,316 @@ const agentChat = {
             const opened80 = await polishWaitFor(h, `(${divider80}?.textContent ?? "").includes("Kept point 60")`, 5000);
             await polishNap(700);
             const after80 = await h.ev(`${divider80}?.getBoundingClientRect().top ?? null`);
+            const scrollerTop80 = await h.ev(`(() => {
+                let s = ${divider80}?.parentElement;
+                while (s && getComputedStyle(s).overflowY !== "auto") s = s.parentElement;
+                return s ? s.getBoundingClientRect().top : null;
+            })()`);
             await h.shot("cdp-shots/agent-chat-80-compaction-open.png");
             rec(
-                "80. with the chat at its end, opening a compaction's long summary grows it down from the divider: the divider stays where it was (within 4 px), not scrolled away as the view follows the summary to its end",
-                shown80 && top80 != null && opened80 && after80 != null && Math.abs(after80 - top80) <= 4,
-                { shown80, top80, opened80, after80 }
+                "80. with the chat at its end, opening a compaction's long summary brings the divider up to rest 56 px under the chat's top (within 4 px), so the summary shows below it, not left below the fold or scrolled to its end",
+                shown80 && top80 != null && opened80 && after80 != null && scrollerTop80 != null && top80 - scrollerTop80 > 120 &&
+                    Math.abs(after80 - scrollerTop80 - 56) <= 4,
+                { shown80, top80, opened80, after80, scrollerTop80 }
+            );
+
+            // 81. Tab in bash mode puts a file whose name holds a space or a shell metacharacter in the box with a backslash before each of
+            // them, as a shell does when it completes, so the command the box sends is one word per file. The mocked ShellCompleteCommand
+            // answers `my file.txt` for `!cat my`: the one answer goes in at once as `!cat my\ file.txt `. `my\ fi` is one word for the next
+            // Tab (it asks for the word unescaped, `my fi`), and the pick takes the whole escaped word's place, nothing doubled. A folder
+            // `a b/` is `!cd a\ b/` with no space after it (its / stays bare, so the next Tab goes on into it); `$`, `&`, `;`, `'` and `(`
+            // are escaped too
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
+            const case81 = async (shell, typed, want) => {
+                await acSetShell(h, shell);
+                const n = (await acCalls(h, "shellcomplete")).length;
+                await tabOn77(typed);
+                let text = "";
+                for (let i = 0; i < 20 && text !== want; i++) {
+                    await polishNap(150);
+                    text = await boxText77();
+                }
+                return {
+                    typed,
+                    want,
+                    text,
+                    list: await h.ev(`!!document.querySelector("[data-chat-bash-list]")`),
+                    asked: (await acCalls(h, "shellcomplete")).slice(n).map((a) => a.data),
+                };
+            };
+            const res81 = [
+                await case81(["my file.txt"], "!cat my", "!cat my\\ file.txt "),
+                await case81(["my file.txt"], "!cat my\\ fi", "!cat my\\ file.txt "),
+                await case81(["a b/"], "!cd a", "!cd a\\ b/"),
+                await case81(["it's $x & (y);.txt"], "!rm it", "!rm it\\'s\\ \\$x\\ \\&\\ \\(y\\)\\;.txt "),
+            ];
+            await h.shot("cdp-shots/agent-chat-81-bash-escaped-pick.png");
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            rec(
+                "81. Tab in bash mode escapes a file's name: `!cat my` + Tab, the one answer `my file.txt` -> `!cat my\\ file.txt `; `!cat my\\ fi` + Tab asks for the word unescaped (`my fi`) and the pick replaces all of `my\\ fi` -> `!cat my\\ file.txt `; the folder `a b/` -> `!cd a\\ b/` with no space after it; `it's $x & (y);.txt` -> `!rm it\\'s\\ \\$x\\ \\&\\ \\(y\\)\\;.txt `; each asked once for kind file in the box's folder and opened no list",
+                res81.every((r) => r.text === r.want && r.list === false && r.asked.length === 1 && r.asked[0].kind === "file" && r.asked[0].cwd === cwd77) &&
+                    res81.map((r) => r.asked[0]?.word).join("|") === ["my", "my fi", "a", "it"].join("|"),
+                { res81 }
+            );
+
+            // 82. The Tab list closes when the box loses the focus to a click outside it, instead of staying over the chat until a key is
+            // pressed. With the list of step 77 open (three answers), a real click on an empty spot of the chat, which is neither the box nor
+            // the list, closes `[data-chat-bash-list]` and leaves the text as it was. A click on a row still picks it (its mousedown keeps
+            // the focus in the box, so nothing closes before the pick): the third row puts chatpending.ts and a space in place of the word
+            await acSetShell(h, AC_SHELL_FILES);
+            await tabOn77(cmd77);
+            const opened82 = await listUp77(5000);
+            await polishNap(250);
+            // an empty spot of the chat layer: not the box, not the list, and under no button, link or field (which would take the focus)
+            const spot82 = await h.ev(`(() => {
+                const r = ${acLayer(A)}?.getBoundingClientRect();
+                if (!r) return null;
+                for (let fy = 0.05; fy < 0.9; fy += 0.05) {
+                    for (let fx = 0.04; fx < 0.96; fx += 0.04) {
+                        const x = Math.round(r.left + r.width * fx);
+                        const y = Math.round(r.top + r.height * fy);
+                        const el = document.elementFromPoint(x, y);
+                        if (el && !el.closest('button, a, input, textarea, select, [contenteditable], [role="button"], [role="option"], [role="listbox"], [data-chat-bash-list], [data-agent-chat-composer]')) {
+                            return { x, y, tag: el.tagName };
+                        }
+                    }
+                }
+                return null;
+            })()`);
+            const mouse82 = async (pt) => {
+                await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: pt.x, y: pt.y });
+                for (const type of ["mousePressed", "mouseReleased"]) {
+                    await h.cdp("Input.dispatchMouseEvent", { type, x: pt.x, y: pt.y, button: "left", clickCount: 1 });
+                }
+            };
+            if (spot82 != null) await mouse82(spot82);
+            const shut82 = await listGone77(3000);
+            await polishNap(250);
+            const away82 = { text: await boxText77(), focus: await acFocusIn(h, A) };
+            await h.shot("cdp-shots/agent-chat-82-bash-list-click-away.png");
+            // the control: a click on a row picks it
+            await tabOn77(cmd77);
+            const reopened82 = await listUp77(5000);
+            const row82 = await h.ev(`(() => {
+                const r = document.querySelector('[data-chat-bash-item="${AC_SHELL_FILES[2]}"]')?.getBoundingClientRect();
+                return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } : null;
+            })()`);
+            if (row82 != null) await mouse82(row82);
+            const want82 = `!npx vitest run ${AC_SHELL_FILES[2]} `;
+            const picked82 = await polishWaitFor(h, `${acVal(acBox(A))}.replace(/\\u00a0/g, " ") === ${JSON.stringify(want82)}`, 3000);
+            const shutPick82 = await listGone77(3000);
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            rec(
+                "82. with the Tab list of three answers open over `!npx vitest run frontend/app/view/agents/chatp`, a real click on an empty spot of the chat (outside the box and the list) closes `[data-chat-bash-list]` and the box's text is as typed; a click on the third row still picks it (chatpending.ts and a space in place of the word) and closes the list",
+                opened82 && spot82 != null && shut82 && away82.text === cmd77 &&
+                    reopened82 && row82 != null && picked82 && shutPick82,
+                { opened82, spot82, shut82, away82, reopened82, row82, picked82, shutPick82 }
+            );
+
+            // 83. The ghost text follows the editor's scroll. A `!` command of ten lines (one of them long enough to wrap), past the box's
+            // max height, is scrolled to its end: the editor scrolls, and the layer that draws the ghost scrolls with it (its scrollTop is
+            // the editor's), so the ghost text, a history command's rest, stands right after the text's last line (within 2 px, on the
+            // same line) and not at the top of the layer. Scrolling the editor moves the layer with it. The command is put at the front of
+            // the folder's history (the store the box's ghost text reads) with a rest after it
+            const lines83 = [
+                "echo one",
+                "echo two",
+                "echo three",
+                `echo ${"wrap ".repeat(40).trim()}`,
+                "echo five",
+                "echo six",
+                "echo seven",
+                "echo eight",
+                "echo nine",
+                "echo ten",
+            ];
+            const typed83 = lines83.join("\n");
+            const tail83 = " and the tail";
+            await AC.agentPage(
+                h,
+                `const S = await mod("app/view/agents/chatbashstore.ts"); S.noteBashRun(${JSON.stringify(cwd77)}, ${JSON.stringify(typed83 + tail83)}); return true;`
+            );
+            // where the editor's last line ends and where the ghost starts, and the scroll of both
+            const align83 = () =>
+                h.ev(`(() => {
+                    const c = ${composer76};
+                    const box = c?.querySelector("[data-chat-input]");
+                    const layer = c?.querySelector("[data-chat-ghost-layer]");
+                    const ghost = c?.querySelector("[data-chat-ghost]");
+                    if (!box || !ghost) return null;
+                    let last = null;
+                    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+                    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (/\\S/.test(n.data)) last = n;
+                    let tr = null;
+                    if (last) {
+                        const r = document.createRange();
+                        r.selectNodeContents(last);
+                        const rects = r.getClientRects();
+                        tr = rects.length ? rects[rects.length - 1] : null;
+                    }
+                    const gr = ghost.getClientRects()[0];
+                    const br = box.getBoundingClientRect();
+                    return {
+                        scrollTop: box.scrollTop,
+                        max: box.scrollHeight - box.clientHeight,
+                        height: box.clientHeight,
+                        layerTop: layer ? layer.scrollTop : null,
+                        textRight: tr ? tr.right : null,
+                        textTop: tr ? tr.top : null,
+                        ghostLeft: gr ? gr.left : null,
+                        ghostTop: gr ? gr.top : null,
+                        ghostText: ghost.textContent,
+                        inView: gr ? gr.top >= br.top - 1 && gr.bottom <= br.bottom + 1 : null,
+                    };
+                })()`);
+            const lined = (a) =>
+                a != null && a.textRight != null && a.ghostLeft != null && Math.abs(a.ghostLeft - a.textRight) <= 2 && Math.abs(a.ghostTop - a.textTop) <= 2;
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            await h.ev(`(${acBox(A)})?.focus()`);
+            for (let i = 0; i < lines83.length; i++) {
+                if (i > 0) await acKey(h, { ...acKeys.enter, modifiers: 8 });
+                await h.cdp("Input.insertText", { text: (i === 0 ? "!" : "") + lines83[i] });
+            }
+            const typed83ok = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify("!" + typed83)}`, 5000);
+            const ghosted83 = await polishWaitFor(h, `${composer76}?.querySelector("[data-chat-ghost]")?.textContent === ${JSON.stringify(tail83)}`, 5000);
+            // to the end of the text, the way the caret scrolls it (and the layer is told by the editor's scroll event)
+            await h.ev(`(() => { const b = ${acBox(A)}; if (b) b.scrollTop = b.scrollHeight; return true; })()`);
+            await polishNap(400);
+            const end83 = await align83();
+            await h.shot("cdp-shots/agent-chat-83-bash-ghost-scrolled.png");
+            // scrolled up and back: the layer follows each time
+            await h.ev(`(() => { const b = ${acBox(A)}; if (b) b.scrollTop = 40; return true; })()`);
+            await polishNap(300);
+            const up83 = await align83();
+            await h.ev(`(() => { const b = ${acBox(A)}; if (b) b.scrollTop = b.scrollHeight; return true; })()`);
+            await polishNap(300);
+            const back83 = await align83();
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            rec(
+                "83. ten lines of `!echo …` (one wrapping) past the box's max height, with the history's rest ` and the tail` as the ghost: the editor is scrolled to its end (scrollTop above 0 and at its max), the ghost layer's scrollTop is the editor's (within 1 px), and `[data-chat-ghost]` starts within 2 px of the end of the text's last line, on its line, in view; scrolled to 40 px the layer is at 40 and back to the end it is at the end again, the ghost aligned again",
+                typed83ok && ghosted83 && end83 != null && end83.scrollTop > 0 && Math.abs(end83.scrollTop - end83.max) <= 1 && end83.ghostText === tail83 &&
+                    end83.layerTop != null && Math.abs(end83.layerTop - end83.scrollTop) <= 1 && lined(end83) && end83.inView === true &&
+                    up83 != null && Math.abs(up83.scrollTop - 40) <= 1 && up83.layerTop != null && Math.abs(up83.layerTop - up83.scrollTop) <= 1 &&
+                    back83 != null && Math.abs(back83.layerTop - back83.scrollTop) <= 1 && lined(back83),
+                { typed83ok, ghosted83, end83, up83, back83 }
+            );
+
+            // 84. No pill in a bash command. The history holds `ls @src/a.ts now` and `ls @src/a.ts now then more` (the first one newest).
+            // `!ls @src/a.ts` shows the ghost ` now`; → takes it, and the box redraws its text from outside. Before, the mention in the
+            // middle of the command, complete now, came back as a file pill, a different width from the plain text the ghost's layer mirrors
+            // (and a path in the command that is not the path of a file). Now the box holds no pill, its text is the command as it was
+            // (`!ls @src/a.ts now`), and the ghost that follows (` then more`) starts within 2 px of the end of the text's last line
+            await AC.agentPage(
+                h,
+                `const S = await mod("app/view/agents/chatbashstore.ts"); S.noteBashRun(${JSON.stringify(cwd77)}, "ls @src/a.ts now then more"); S.noteBashRun(${JSON.stringify(cwd77)}, "ls @src/a.ts now"); return true;`
+            );
+            await acType(h, acBox(A), "!ls @src/a.ts", false);
+            const first84 = await polishWaitFor(h, `${composer76}?.querySelector("[data-chat-ghost]")?.textContent === " now"`, 5000);
+            const pillsBefore84 = await acPills(h, acBox(A));
+            await acKey(h, acKeys.right);
+            const want84 = "!ls @src/a.ts now";
+            const taken84 = await polishWaitFor(h, `${acVal(acBox(A))}.replace(/\\u00a0/g, " ") === ${JSON.stringify(want84)}`, 3000);
+            const second84 = await polishWaitFor(h, `${composer76}?.querySelector("[data-chat-ghost]")?.textContent === " then more"`, 5000);
+            await polishNap(300);
+            const pills84 = await acPills(h, acBox(A));
+            const pillEls84 = await h.ev(`${composer76}?.querySelectorAll("[data-chat-pill]").length ?? null`);
+            const text84 = await boxText77();
+            const align84 = await align83();
+            await h.shot("cdp-shots/agent-chat-84-bash-no-pill.png");
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `${acVal(acBox(A))} === ""`, 3000);
+            rec(
+                "84. `!ls @src/a.ts` shows the ghost ` now`; → takes it: the box holds no file pill (none in it, none in the composer), its text is `!ls @src/a.ts now` as it was, and the next ghost ` then more` starts within 2 px of the end of the text's last line, on its line",
+                first84 && pillsBefore84.length === 0 && taken84 && second84 && pills84.length === 0 && pillEls84 === 0 && text84 === want84 &&
+                    align84 != null && align84.ghostText === " then more" && lined(align84),
+                { first84, pillsBefore84, taken84, second84, pills84, pillEls84, text84, align84 }
+            );
+
+            // 85. A drawn visual takes the new colours when the theme changes (docs/superpowers/specs/2026-11-12-chat-follow-ups-design.md,
+            // Inline visuals). chart.html is drawn and ready, so it holds the colours it was handed when it loaded. The page is at wavesrv's
+            // origin, which the app cannot read, so its colours are read as step 41 does: a click on #theme sends "theme:" and the page's
+            // --arc-background through the box. The cockpit's theme preset is switched to one with another background and the click is made
+            // again: it must carry the new --color-background. The preset is then put back, and the click carries the first value again,
+            // so the colours the frame was last handed moved with each change (the way back is a change too)
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, AC_WAIT_MS);
+            await acClear(h, acBox(A));
+            // the page of steps 40-42 is in the chat unless it was rewritten since; a reply naming it draws it again
+            const drawn85 = await h.ev(`!!${acVisual(A, "chart.html")}`);
+            if (!drawn85) acAppend(ctx.files.main, AC.assistantText(fence(`${vd}/chart.html`), stamp40()));
+            const figure85 = await polishWaitFor(h, `!!${acVisual(A, "chart.html")}`, 15000);
+            await acShowVisual(h, A, "chart.html");
+            const sized85 = await polishWaitFor(h, acFrameBetween(A, "chart.html", 290, 320), 8000);
+            const appBg85 = () => h.ev(`getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim()`);
+            let lastClick85 = null;
+            // What the page holds as --arc-background, as the text it sends. Two prompts from one frame inside the 1.5 s gap would put
+            // the second into the box, so each click waits the gap out. A click that sent nothing is made again, as step 44 does for
+            // its click (a run on a loaded machine lost the one made after the theme switch, with the box empty and the click on the
+            // button); `tries` keeps what each lost click left (the box, whether the frame had the focus), so a retry that hides
+            // something shows in the detail. A page that sent a value, even the old one, is not retried: that value is the answer
+            const pageBg85 = async () => {
+                const tries = [];
+                const end = Date.now() + 20_000;
+                for (;;) {
+                    const wait = 1650 - (Date.now() - (lastClick85?.at ?? 0));
+                    if (wait > 0) await polishNap(wait);
+                    await acClear(h, acBox(A));
+                    // the mark waits for the Enter of the send before it (the echo wait puts it after its text), and the read is the
+                    // page's own: theme: and its colour, then the Enter that is its own
+                    const n = (await acSettled(h, blockA)).length;
+                    lastClick85 = await acClickFrame(h, A, "chart.html", 76, 82);
+                    const typed =
+                        lastClick85 == null
+                            ? null
+                            : await acUntil(async () => {
+                                  const t = (await typedSince(blockA, n)).join("");
+                                  return t.startsWith("theme:") && t.endsWith("\r") ? t : null;
+                              }, 6000);
+                    if (typed != null) return { typed, tries };
+                    tries.push(
+                        await h.ev(`(() => ({
+                            clicked: ${lastClick85 != null},
+                            box: ${acVal(acBox(A))},
+                            frameFocused: document.activeElement === ${acVisualFrame(A, "chart.html")},
+                        }))()`)
+                    );
+                    if (lastClick85 == null) await polishNap(300);
+                    if (Date.now() >= end) return { typed: null, tries };
+                }
+            };
+            const setPreset85 = (id) =>
+                AC.agentPage(
+                    h,
+                    `const T = await mod("app/view/agents/themestore.ts"); globalStore.set(T.themePresetAtom, ${JSON.stringify(id)}); return true;`
+                );
+            // what the preset is now, and the raw stored value, which teardown puts back as it was
+            ctx.prevPreset = await AC.agentPage(
+                h,
+                `const T = await mod("app/view/agents/themestore.ts");
+                return { atom: globalStore.get(T.themePresetAtom), stored: localStorage.getItem("cockpit.theme.preset") };`
+            );
+            const next85 = ctx.prevPreset?.atom === "monokai" ? "graphite" : "monokai";
+            const bgBefore85 = await appBg85();
+            const before85 = figure85 && sized85 ? await pageBg85() : null;
+            await setPreset85(next85);
+            const switched85 = await polishWaitFor(h, `getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim() !== ${JSON.stringify(bgBefore85)}`, 5000);
+            const bgNext85 = await appBg85();
+            const after85 = switched85 ? await pageBg85() : null;
+            await h.shot("cdp-shots/agent-chat-85-visual-theme-switch.png");
+            await setPreset85(ctx.prevPreset?.atom ?? "claude");
+            const restored85 = await polishWaitFor(h, `getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim() === ${JSON.stringify(bgBefore85)}`, 5000);
+            const back85 = restored85 ? await pageBg85() : null;
+            rec(
+                "85. chart.html's #theme sends the page's --arc-background: before the switch it is the app's --color-background; after the cockpit's theme preset is switched (to one with another background) it is the new --color-background, and after the preset is put back it is the first one again",
+                figure85 && sized85 && bgBefore85 !== "" && before85?.typed === `theme:${bgBefore85}\r` &&
+                    switched85 && bgNext85 !== bgBefore85 && after85?.typed === `theme:${bgNext85}\r` &&
+                    restored85 && back85?.typed === `theme:${bgBefore85}\r`,
+                { figure85, sized85, drawn85, prevPreset: ctx.prevPreset, next85, bgBefore85, before85, switched85, bgNext85, after85, restored85, back85 }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
@@ -45464,6 +46790,21 @@ const agentChat = {
             }
         });
         await step("forget the visuals folder", () => h.ev(`delete window.__chatVisualsDir`));
+        // step 85 switches the cockpit's theme preset and puts it back; a throw between left it switched. The atom is set first
+        // (it writes localStorage), then the stored value is put back as it was, the key removed only if it was absent
+        await step("restore the theme preset", () =>
+            ctx.prevPreset == null
+                ? null
+                : AC.agentPage(
+                      h,
+                      `const T = await mod("app/view/agents/themestore.ts");
+                      const prev = ${JSON.stringify(ctx.prevPreset)};
+                      globalStore.set(T.themePresetAtom, prev.atom);
+                      if (prev.stored == null) localStorage.removeItem("cockpit.theme.preset");
+                      else localStorage.setItem("cockpit.theme.preset", prev.stored);
+                      return true;`
+                  )
+        );
         await step("remove the mock", () => removeAgentChatMock(h));
         await step("restore the roster", () => AC.restoreRoster(h));
         await step("clear the permission queue", () =>
@@ -46389,6 +47730,867 @@ const chatFork = {
                     if (prev == null) localStorage.removeItem(key);
                     else localStorage.setItem(key, prev);
                 }
+                return true;
+            })()`)
+        );
+        await step("remove the fixture transcripts", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
+// --- chat-initiative: Add to an initiative from Chat (docs/superpowers/specs/2026-11-12-chat-add-to-initiative-design.md, plan
+// 2026-11-13-chat-add-to-initiative.md Task 6). A Claude agent's reply holds three ```arc-initiative blocks (a note on its own
+// initiative, a chunk, a new initiative under a topic) and a fourth that is broken JSON; Chat draws the three as cards and
+// leaves the fourth a code block. The steps handle them one by one (Edit, the chunk dropdown and the picker, Add, Dismiss), open
+// cards from messages (a reply's and your own bubble's hover button, the context menu), switch one to a new initiative that the
+// mock refuses once, send plain messages that carry the outcome lines, read an exited agent's static card and reload. It reuses
+// agent-chat's tab fixtures and its RPC mock (installAgentChatMock: what the page types into a block is recorded in
+// window.__arcAgentChatMock) with a second layer over it that answers the initiative commands itself: effortlist (three
+// initiatives of the agent's project, one under a topic, the topic and one of another project), effortget (the agent's initiative
+// holds a chunk whose workrefs carry the agent's tab), effortmutate (applies an appendNote or addChunk op) and effortcreate
+// (refuses the first one on purpose). Every call is recorded; no real initiative is written. The transcripts are JSONL in a temp
+// dir. Teardown puts the roster, the mocks, the chat modes, the grid and the four chat.initiative.* localStorage keys back.
+const CI_MOCK_KEY = "__arcChatInitiativeMock";
+const CI_KEYS = {
+    handled: "chat.initiative.handled",
+    cards: "chat.initiative.cards",
+    drafts: "chat.initiative.drafts",
+    pending: "chat.initiative.pending",
+};
+const CI_SESSION = "chat-initiative-main";
+const CI_NAMES = { main: "initiative main", gone: "initiative gone" };
+const CI_PROJECT = "arcterm";
+const CI_WAIT_MS = 8000;
+const CI_REFUSED = "mock: the initiative store refused this create";
+const CI_OID = {
+    sync: "c1a00000-0000-4000-8000-000000000001",
+    policy: "c1a00000-0000-4000-8000-000000000002",
+    queue: "c1a00000-0000-4000-8000-000000000003",
+    topic: "c1a00000-0000-4000-8000-000000000004",
+    other: "c1a00000-0000-4000-8000-000000000005",
+    created: "c1a00000-0000-4000-8000-0000000000f1",
+};
+const CI_TITLE = {
+    sync: "Sync client retries",
+    policy: "Retry policy review",
+    queue: "Offline queue",
+    topic: "Sync and offline",
+    other: "Billing export",
+};
+// the agent's initiative: its second chunk is the one the agent holds (its tab is in the chunk's workrefs)
+const CI_CHUNKS = ["Add retries to the sync client", "Back off between attempts", "Log each retry attempt"];
+const CI_OWN_CHUNK = CI_CHUNKS[1];
+// long enough to run past the compact card's two clamped lines, and past the 300 characters a folded row keeps
+const CI_NOTE =
+    "Backoff is capped at 30 seconds and jittered by 20%, so two clients never retry in step. The cap comes from the p99 of how long the sync endpoint takes to recover, and a longer cap would stall the queue behind one slow request. The jitter is uniform and drawn once per attempt, not once per client, so a restart does not line the clients up again.";
+const CI_NEW_CHUNK = "Document the retry policy in the sync README";
+const CI_NEW_INITIATIVE = {
+    title: "Retry telemetry",
+    text: "Follow up: count how often a sync request retries, per endpoint.",
+    chunks: ["Count retries per request", "Chart the retry rate per endpoint"],
+};
+const CI_BROKEN = `{"kind": "note", "text": `;
+const CI_GONE_NOTE = "Each attempt's log line should carry the request id, so a stuck sync can be traced end to end.";
+const ciFence = (body) => "```arc-initiative\n" + body + "\n```";
+const CI_REPLY_1 = [
+    "I looked through the retry work. Three follow-ups are yours to decide, so they are cards:",
+    "",
+    ciFence(JSON.stringify({ kind: "note", effort: CI_OID.sync, text: CI_NOTE })),
+    "",
+    ciFence(JSON.stringify({ kind: "chunk", effort: `effort:${CI_OID.sync}`, text: CI_NEW_CHUNK })),
+    "",
+    ciFence(
+        JSON.stringify({
+            kind: "initiative",
+            title: CI_NEW_INITIATIVE.title,
+            text: CI_NEW_INITIATIVE.text,
+            chunks: CI_NEW_INITIATIVE.chunks,
+            parent: CI_OID.topic,
+        })
+    ),
+    "",
+    "And this block is not valid JSON, so it stays a code block:",
+    "",
+    ciFence(CI_BROKEN),
+].join("\n");
+const CI_PLAIN =
+    "Retries now back off exponentially, capped at 30 seconds.\n\nEach attempt waits twice as long as the last, with 20% jitter so two clients never retry in step. Worth tracking: how often a request retries in production.";
+const CI_ASK_1 = "file the follow-ups for the sync retry work";
+const CI_ASK_2 = "and how does the backoff work?";
+const CI_GONE_REPLY = [
+    "One more note for the retry work:",
+    "",
+    ciFence(JSON.stringify({ kind: "note", effort: CI_OID.sync, chunk: CI_CHUNKS[2], text: CI_GONE_NOTE })),
+].join("\n");
+const CI_SENT = ["thanks, keep going", "one more thing", "go on with the logging"];
+// the Chat's wording of a folded row's text: whitespace folded, at most 300 characters (chatinitiative.ts MAX_ROW_TEXT)
+const ciFlat = (t) => t.replace(/\s+/g, " ").trim();
+const ciClip = (t) => (ciFlat(t).length <= 300 ? ciFlat(t) : `${ciFlat(t).slice(0, 299).trimEnd()}…`);
+// What the mock recorded of one write, as the person's text: the mock reads the bytes with atob, which yields a Latin-1 string, so
+// the UTF-8 of a `›` is read back as three characters; the bracketed-paste markers go and xterm's "\r" line ends read as "\n"
+const ciUnbracket = (i) =>
+    Buffer.from(i, "latin1").toString("utf8").replace(/^\x1b\[200~/, "").replace(/\x1b\[201~$/, "").replace(/\r/g, "\n");
+
+function ciWriteFixtures(dir) {
+    const base = Date.now() - 3_600_000;
+    const o = (sec) => ({ cwd: dir, ts: new Date(base + sec * 1000).toISOString() });
+    return {
+        main: AC.writeTranscript(dir, CI_SESSION, [
+            AC.userText(CI_ASK_1, o(0)),
+            AC.assistantText(CI_REPLY_1, o(2)),
+            AC.userText(CI_ASK_2, o(10)),
+            AC.assistantText(CI_PLAIN, o(12)),
+        ]),
+        gone: AC.writeTranscript(dir, "chat-initiative-gone", [
+            AC.userText("check the retry logs", o(0)),
+            AC.assistantText(CI_GONE_REPLY, o(2)),
+        ]),
+    };
+}
+
+// the roster: the live main agent (it works on the sync initiative) and a second agent whose process step 9 ends
+function ciRoster(ctx) {
+    const now = Date.now();
+    const base = { project: CI_PROJECT, task: "", agent: "claude", model: "opus", state: "idle", idleSince: now - 60_000 };
+    return [
+        {
+            ...base,
+            id: ctx.tabs.main.tabId,
+            name: CI_NAMES.main,
+            blockId: ctx.tabs.main.blockId,
+            transcriptPath: ctx.files.main,
+            effortId: CI_OID.sync,
+        },
+        {
+            ...base,
+            id: ctx.tabs.gone.tabId,
+            name: CI_NAMES.gone,
+            blockId: ctx.tabs.gone.blockId,
+            transcriptPath: ctx.files.gone,
+        },
+    ];
+}
+
+// what the effort commands answer: the list (the project's three, the topic the first sits under, one of another project)
+// and each initiative's detail
+function ciEfforts(ctx) {
+    const now = Date.now();
+    const chunk = (label, status, extra = {}) => ({ label, status, updatedts: now - 3_600_000, ...extra });
+    const own = { kind: "agent", oref: `agent:${ctx.tabs.main.tabId}`, ts: now - 1_800_000 };
+    const specs = [
+        {
+            key: "sync",
+            project: CI_PROJECT,
+            parent: CI_OID.topic,
+            chunks: [chunk(CI_CHUNKS[0], "done"), chunk(CI_CHUNKS[1], "active", { workrefs: [own] }), chunk(CI_CHUNKS[2], "pending")],
+        },
+        {
+            key: "policy",
+            project: CI_PROJECT,
+            chunks: [chunk("Compare fixed and exponential backoff", "pending"), chunk("Write the recommendation", "pending")],
+        },
+        {
+            key: "queue",
+            project: CI_PROJECT,
+            chunks: [
+                chunk("Persist the queue", "done"),
+                chunk("Replay on reconnect", "done"),
+                chunk("Drop stale entries", "pending"),
+                chunk("Show the queue length in the footer", "pending"),
+            ],
+        },
+        { key: "topic", project: CI_PROJECT, chunks: [chunk("Keep the sync work in one place", "pending")] },
+        { key: "other", project: "billing", chunks: [chunk("Export invoices as CSV", "done"), chunk("Schedule the nightly export", "pending")] },
+    ];
+    const summaries = [];
+    const details = {};
+    for (const s of specs) {
+        const oid = CI_OID[s.key];
+        summaries.push({
+            oref: `effort:${oid}`,
+            title: CI_TITLE[s.key],
+            project: s.project,
+            status: "active",
+            parentoid: s.parent,
+            chunks: s.chunks.map((c) => ({ label: c.label, status: c.status, workrefs: c.workrefs })),
+            done: s.chunks.filter((c) => c.status === "done").length,
+            total: s.chunks.length,
+            activechunk: s.chunks.find((c) => c.status === "active")?.label,
+            updatedts: now - 3_600_000,
+        });
+        details[oid] = {
+            otype: "effort",
+            oid,
+            version: 1,
+            meta: {},
+            title: CI_TITLE[s.key],
+            project: s.project,
+            status: "active",
+            parentoid: s.parent,
+            chunks: s.chunks,
+            notes: [],
+            createdts: now - 86_400_000,
+            updatedts: now - 3_600_000,
+        };
+    }
+    return { summaries, details };
+}
+
+// The second mock layer, over agent-chat's: answers the initiative commands and records the writes (`mutates`, `creates`).
+// The first create is refused (m.refuse), as wavesrv would refuse one it cannot make; the next is answered.
+async function installCiMock(h, ctx) {
+    const resolved = await ahResolveModules(h);
+    if (resolved.error) return `unresolved: ${resolved.error}`;
+    const { summaries, details } = ciEfforts(ctx);
+    return h.ev(`(async () => {
+        const api = (await import(${JSON.stringify(resolved.urls.api)})).RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${CI_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const m = { api, prev, efforts: ${JSON.stringify(summaries)}, details: ${JSON.stringify(details)}, mutates: [], creates: [], reads: [], refuse: true };
+        const clone = (v) => JSON.parse(JSON.stringify(v));
+        api.setMockRpcClient({
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "effortlist") return Promise.resolve({ efforts: clone(m.efforts) });
+                if (command === "effortget") {
+                    m.reads.push(data.effortoid);
+                    const d = m.details[data.effortoid];
+                    return d ? Promise.resolve({ effort: clone(d) }) : Promise.reject(new Error("mock: no initiative " + data.effortoid));
+                }
+                if (command === "effortmutate") {
+                    m.mutates.push(clone(data));
+                    const d = m.details[data.effortoid];
+                    if (!d) return Promise.reject(new Error("mock: no initiative " + data.effortoid));
+                    const now = Date.now();
+                    for (const op of data.ops ?? []) {
+                        if (op.op === "appendNote") {
+                            const c = d.chunks.find((x) => x.label === op.chunk);
+                            if (!c) return Promise.reject(new Error("mock: no chunk " + op.chunk));
+                            c.notes = [...(c.notes ?? []), { ts: now, text: op.note, author: data.author }];
+                            c.updatedts = now;
+                        } else if (op.op === "addChunk") {
+                            d.chunks.push({ label: op.label, status: "pending", updatedts: now });
+                            const s = m.efforts.find((e) => e.oref === "effort:" + data.effortoid);
+                            if (s) s.total += 1;
+                        } else {
+                            return Promise.reject(new Error("mock: no op " + op.op));
+                        }
+                    }
+                    d.updatedts = now;
+                    d.version += 1;
+                    return Promise.resolve({ effort: clone(d) });
+                }
+                if (command === "effortcreate") {
+                    m.creates.push(clone(data));
+                    if (m.refuse) {
+                        m.refuse = false;
+                        return Promise.reject(new Error(${JSON.stringify(CI_REFUSED)}));
+                    }
+                    const oid = ${JSON.stringify(CI_OID.created)};
+                    const now = Date.now();
+                    const chunks = (data.chunks ?? []).map((c) => ({ label: c.label, status: "pending", updatedts: now }));
+                    m.details[oid] = { otype: "effort", oid, version: 1, meta: {}, title: data.title, project: data.project, status: "active", parentoid: data.parentoid, chunks, notes: [], createdts: now, updatedts: now };
+                    m.efforts.push({ oref: "effort:" + oid, title: data.title, project: data.project, status: "active", parentoid: data.parentoid, chunks: chunks.map((c) => ({ label: c.label, status: c.status })), done: 0, total: chunks.length, updatedts: now });
+                    return Promise.resolve({ effortoid: oid });
+                }
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        });
+        window.${CI_MOCK_KEY} = m;
+        return "installed";
+    })()`);
+}
+
+const removeCiMock = (h) =>
+    h.ev(`(() => {
+        const m = window.${CI_MOCK_KEY};
+        if (!m) return "absent";
+        m.api.setMockRpcClient(m.prev);
+        delete window.${CI_MOCK_KEY};
+        return "restored";
+    })()`);
+
+// the cards of one agent's Chat by where they came from, the card whose Add button reads `verb` (the verb names the kind in both
+// the compact card and the editor), and the rows the handled ones fold into
+const ciCards = (id, origin) => `[...document.querySelectorAll('[data-agent-chat="${id}"] [data-chat-initiative-origin="${origin}"]')]`;
+const ciCardWith = (id, verb) =>
+    `(${ciCards(id, "agent")}.find((c) => (c.querySelector("[data-chat-initiative-add]")?.textContent ?? "").trim() === ${JSON.stringify(verb)}) ?? null)`;
+const ciRows = (id) => `[...document.querySelectorAll('[data-agent-chat="${id}"] [data-chat-initiative-row]')]`;
+// while Edit or Cancel swaps a card's two bodies both are in the DOM for the spring's length (the folding one takes no click), so a
+// step waits for the settled one: the editor holds the textarea or the title field and no quote, the compact body holds the quote
+const ciEditorSettled = (cardExpr) =>
+    `(() => { const c = ${cardExpr}; return !!c && !!c.querySelector("[data-chat-initiative-text],[data-chat-initiative-title]") && !c.querySelector("[data-chat-initiative-quote]"); })()`;
+const ciCompactSettled = (cardExpr) =>
+    `(() => { const c = ${cardExpr}; return !!c && !!c.querySelector("[data-chat-initiative-quote]") && !c.querySelector("[data-chat-initiative-text],[data-chat-initiative-title],[data-chat-initiative-chunks]"); })()`;
+// everything a step asserts about one card, read at once
+const ciReadCard = (h, cardExpr) =>
+    h.ev(`(() => {
+        const c = ${cardExpr};
+        if (!c) return null;
+        const txt = (sel) => c.querySelector(sel)?.textContent.replace(/\\s+/g, " ").trim() ?? null;
+        const val = (sel) => c.querySelector(sel)?.value ?? null;
+        const quote = c.querySelector("[data-chat-initiative-quote]");
+        return {
+            label: c.getAttribute("aria-label"),
+            phase: c.getAttribute("data-chat-initiative"),
+            origin: c.getAttribute("data-chat-initiative-origin"),
+            isStatic: c.hasAttribute("data-chat-initiative-static"),
+            header: c.firstElementChild?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+            waiting: !!c.querySelector("[data-chat-initiative-waiting]"),
+            kinds: [...c.querySelectorAll("[data-chat-initiative-kind]")].map((b) => [b.getAttribute("data-chat-initiative-kind"), b.textContent.trim(), b.getAttribute("aria-pressed")]),
+            text: val("[data-chat-initiative-text]"),
+            title: val("[data-chat-initiative-title]"),
+            chunks: val("[data-chat-initiative-chunks]"),
+            quote: quote?.textContent ?? null,
+            clamp: quote ? getComputedStyle(quote).webkitLineClamp : null,
+            clamped: quote ? quote.scrollHeight > quote.clientHeight : null,
+            // the clamped quote sits in the padded blockquote, whose sibling is the sentence
+            sentence: quote?.closest("blockquote")?.previousElementSibling?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+            into: txt("[data-chat-initiative-into]"),
+            chunk: txt("[data-chat-initiative-chunk]"),
+            under: txt("[data-chat-initiative-under]"),
+            add: txt("[data-chat-initiative-add]"),
+            addDisabled: c.querySelector("[data-chat-initiative-add]")?.disabled ?? null,
+            retry: txt("[data-chat-initiative-retry]"),
+            edit: txt("[data-chat-initiative-edit]"),
+            dismiss: txt("[data-chat-initiative-dismiss]"),
+            cancel: txt("[data-chat-initiative-cancel]"),
+            error: txt("[data-chat-initiative-error]"),
+        };
+    })()`);
+// the folded rows of one agent's Chat in order: which, the spans of its line (the glyph and the empty filler dropped), Open ↗
+const ciReadRows = (h, id) =>
+    h.ev(`${ciRows(id)}.map((r) => ({
+        kind: r.getAttribute("data-chat-initiative-row"),
+        parts: [...r.children].filter((c) => c.tagName !== "svg").map((c) => c.textContent.trim()).filter((t) => t !== ""),
+        open: !!r.querySelector("[data-chat-initiative-open]"),
+    }))`);
+// a native value written to a controlled field, as typing would (the framework's tracker sees the change)
+const ciSetField = (h, selExpr, value) =>
+    h.ev(`(() => {
+        const el = ${selExpr};
+        if (!el) return false;
+        const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${JSON.stringify(value)});
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+    })()`);
+
+const chatInitiative = {
+    name: "chat-initiative",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-initiative-")),
+            tabs: {},
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+            prevStore: await h.ev(`Object.fromEntries(${JSON.stringify(Object.values(CI_KEYS))}.map((k) => [k, localStorage.getItem(k)]))`),
+        };
+        // a throw past this point still returns ctx, so teardown undoes whatever was already made
+        let at = "writing the fixtures";
+        try {
+            ctx.files = ciWriteFixtures(ctx.dir);
+            at = "resetting the grid and the stored cards";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            // the store reads these once, when the page loads: no card is handled, none waits and no line is pending
+            await h.ev(`for (const k of ${JSON.stringify(Object.values(CI_KEYS))}) localStorage.removeItem(k)`);
+            at = "reloading the page";
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            for (const key of Object.keys(CI_NAMES)) {
+                at = `making the ${key} tab`;
+                ctx.tabs[key] = await acMakeTab(h, ctx, { label: CI_NAMES[key] });
+            }
+            // the mocks go in before the roster: a card asks for the initiative list when its Chat first mounts, which the roster
+            // brings, and a host keeps the list it got (the real store's is empty)
+            at = "installing the mocks";
+            const mock = await installAgentChatMock(h, ctx);
+            if (mock !== "installed") throw new Error(`chat mock: ${mock}`);
+            const ci = await installCiMock(h, ctx);
+            if (ci !== "installed") throw new Error(`initiative mock: ${ci}`);
+            at = "setting the roster";
+            await AC.setRoster(h, ciRoster(ctx));
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: Boolean(ok), detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agents, their transcripts and the mocks", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const G = ctx.tabs.gone.tabId;
+        const blockA = ctx.tabs.main.blockId;
+        const SYNC = `effort:${CI_OID.sync}`;
+        const until = (expr, ms = CI_WAIT_MS) => polishWaitFor(h, expr, ms);
+        // a settled frame for the shot: the card's spring is over
+        const shot = async (name) => {
+            await polishNap(500);
+            await h.shot(`cdp-shots/chat-initiative-${name}.png`);
+        };
+        const showAgent = async (id) => {
+            await AC.focusAgent(h, id);
+            return polishWaitFor(h, `!!${acCell(id)}`, CI_WAIT_MS);
+        };
+        const mock = () => h.ev(`(() => { const m = window.${CI_MOCK_KEY}; return m ? { mutates: m.mutates, creates: m.creates } : null; })()`);
+        const stored = (key) => h.ev(`JSON.parse(localStorage.getItem(${JSON.stringify(key)}) ?? "{}")`);
+        const click = (expr) => h.ev(`(() => { const el = ${expr}; el?.click(); return !!el; })()`);
+        // the n-th of your bubbles and of the agent's prose parts in the main agent's Chat
+        const you = (n) => `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-you]')[${n}]`;
+        const prose = (n) => `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-prose]')[${n}]`;
+        const msgCard = `(${ciCards(A, "message")}[0] ?? null)`;
+        // the hover button of one message opens a card from it (a real pointer on the message, so :hover draws the button)
+        const openFrom = async (msgExpr) => {
+            const hovered = await cfHover(h, msgExpr);
+            const clicked = await click(`(${msgExpr})?.querySelector("[data-chat-add-initiative]")`);
+            const up = await until(`${ciCards(A, "message")}.length === 1`);
+            return { hovered, clicked, up };
+        };
+        // the element a card or row sits in is a sibling of the chat items; true when the item right before it holds `expr`
+        const afterItem = (elExpr, itemHoldsExpr) =>
+            h.ev(`(() => {
+                let slot = ${elExpr};
+                if (!slot) return null;
+                while (slot.parentElement && !slot.parentElement.querySelector(":scope > [data-chat-item]")) slot = slot.parentElement;
+                const prev = slot.previousElementSibling;
+                return !!prev && prev.hasAttribute("data-chat-item") && prev.contains(${itemHoldsExpr}) && !slot.hasAttribute("data-chat-item");
+            })()`);
+        // a plain message from the box: what the page typed into the block (the text, then its Enter) as one string, and the text of
+        // the pending bubbles read as soon as the send is made (an idle agent's goes five seconds after, chatpending.ts)
+        const pendingTexts = `[...${acLayer(A)}.querySelectorAll("[data-chat-pending]")].map((p) => p.firstElementChild?.textContent.trim())`;
+        const sendPlain = async (text) => {
+            const before = (await acSettled(h, blockA)).length;
+            await acType(h, acBox(A), text);
+            await polishWaitFor(h, `${pendingTexts}.includes(${JSON.stringify(text)})`, 1500);
+            const pend = await h.ev(pendingTexts);
+            await acUntil(async () => ((await acInputs(h, blockA)).length > before ? true : null), 5000);
+            const inputs = (await acSettled(h, blockA)).slice(before);
+            return { inputs, pend, typed: inputs.filter((i) => i !== "\r").map(ciUnbracket).join("") };
+        };
+        try {
+            // the keys need the page in focus, which Chromium holds back while the dev window is behind another
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+
+            // 1. the compact card from the agent
+            await showAgent(A);
+            const ready1 = await until(
+                `${ciCards(A, "agent")}.length === 3 && (${ciCardWith(A, "Add note")}?.querySelector("[data-chat-initiative-chunk]")?.textContent ?? "").includes(${JSON.stringify(CI_OWN_CHUNK)}) && (${ciCardWith(A, "Add note")}?.querySelector("[data-chat-initiative-into]")?.textContent ?? "").includes(${JSON.stringify(CI_TITLE.sync)})`,
+                15000
+            );
+            await acScrollTo(h, ciCardWith(A, "Add note"));
+            const c1 = await ciReadCard(h, ciCardWith(A, "Add note"));
+            const verbs1 = await h.ev(`${ciCards(A, "agent")}.map((c) => c.querySelector("[data-chat-initiative-add]")?.textContent.trim())`);
+            const broken1 = await h.ev(`(() => {
+                const p = ${prose(0)};
+                const heads = [...(p?.querySelectorAll("[data-code-head]") ?? [])];
+                return {
+                    codeBlocks: heads.length,
+                    lang: heads[0]?.textContent.includes("arc-initiative") ?? false,
+                    body: heads[0]?.parentElement?.textContent.includes('"kind": "note"') ?? false,
+                    folded: !!document.querySelector('[data-agent-chat="${A}"] [data-chat-fold]'),
+                    cardsInProse: p?.querySelectorAll("[data-chat-initiative]").length ?? 0,
+                };
+            })()`);
+            await shot("1-compact");
+            rec(
+                "1. the agent's reply draws three cards in place (a note, a chunk, a new initiative; the fourth block, broken JSON, stays a code block, and the reply is not folded behind Show more): the note card is compact, headed `Add to initiative · proposed by the agent` with the amber `Waiting on you` dot, reads `Add a note to` the initiative chip (title and 1/3) and the chunk dropdown (the agent's own chunk), quotes the note clamped to two lines (it runs past them) and offers Add note / Edit / Dismiss",
+                ready1 && c1 != null &&
+                    JSON.stringify(verbs1) === JSON.stringify(["Add note", "Add chunk", "Create initiative"]) &&
+                    broken1.codeBlocks === 1 && broken1.lang && broken1.body && !broken1.folded && broken1.cardsInProse === 3 &&
+                    c1.label === "Add to initiative" && c1.phase === "waiting" && c1.origin === "agent" && !c1.isStatic &&
+                    c1.header.includes("Add to initiative · proposed by the agent") && c1.header.includes("Waiting on you") && c1.waiting &&
+                    c1.sentence.includes("Add a note to") && c1.into.includes(CI_TITLE.sync) && c1.into.includes("1/3") &&
+                    c1.chunk.includes(CI_OWN_CHUNK) && c1.quote === CI_NOTE && c1.clamp === "2" && c1.clamped === true &&
+                    c1.add === "Add note" && c1.edit === "Edit" && c1.dismiss === "Dismiss" && c1.cancel === null && c1.kinds.length === 0,
+                { ready1, c1, verbs1, broken1 }
+            );
+
+            // 2. Edit opens the editor in place; the chunk dropdown lists the chunks by number with the agent's own marked; Change…
+            // opens the picker over the Into row, the project's initiatives first and the other projects behind
+            await click(`${ciCardWith(A, "Add note")}?.querySelector("[data-chat-initiative-edit]")`);
+            const editing2 = await until(ciEditorSettled(ciCardWith(A, "Add note")));
+            const e2 = await ciReadCard(h, ciCardWith(A, "Add note"));
+            await click(`${ciCardWith(A, "Add note")}?.querySelector("[data-chat-initiative-chunk]")`);
+            const listUp = await until(`!!document.querySelector("[data-chat-initiative-chunk-list]")`);
+            const options2 = await h.ev(`[...document.querySelectorAll("[data-chat-initiative-chunk-option]")].map((o) => ({ label: o.getAttribute("data-chat-initiative-chunk-option"), text: o.textContent.replace(/\\s+/g, " ").trim() }))`);
+            await shot("2-editor-chunks");
+            await acKey(h, acKeys.escape);
+            const listGone = await until(`!document.querySelector("[data-chat-initiative-chunk-list]")`);
+            await click(`${ciCardWith(A, "Add note")}?.querySelector('[data-chat-initiative-change="into"]')`);
+            const pickerUp = await until(`!!document.querySelector("[data-initiative-picker]")`);
+            const picker2 = await h.ev(`(() => {
+                const p = document.querySelector("[data-initiative-picker]");
+                const change = ${ciCardWith(A, "Add note")}?.querySelector('[data-chat-initiative-change="into"]')?.getBoundingClientRect();
+                const r = p?.getBoundingClientRect();
+                return {
+                    rows: [...(p?.querySelectorAll("[data-picker-row]") ?? [])].map((x) => x.getAttribute("data-picker-row")),
+                    others: p?.querySelector("[data-picker-others]")?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                    project: p?.textContent.includes(${JSON.stringify(CI_PROJECT)}) ?? false,
+                    near: !!r && !!change ? Math.abs(r.top - change.bottom) < 40 || Math.abs(r.bottom - change.top) < 40 : null,
+                };
+            })()`);
+            await shot("2-picker");
+            await acKey(h, acKeys.escape);
+            const pickerGone = await until(`!document.querySelector("[data-initiative-picker]")`);
+            rec(
+                "2. Edit on the note card opens the editor in place (the kind switch New chunk / Note / New initiative with Note pressed, the note in a textarea, the Into row with the chip and Change…, the Chunk dropdown); the dropdown lists the three chunks with their numbers and marks `· this agent's` on the agent's own only; Change… opens the picker with the project's four initiatives first and `Other projects · 1` behind, and Escape closes it",
+                editing2 && e2 != null &&
+                    JSON.stringify(e2.kinds) === JSON.stringify([["chunk", "New chunk", "false"], ["note", "Note", "true"], ["initiative", "New initiative", "false"]]) &&
+                    e2.text === CI_NOTE && e2.into.includes(CI_TITLE.sync) && e2.chunk.includes(CI_OWN_CHUNK) &&
+                    e2.add === "Add note" && e2.cancel === "Cancel" && e2.edit === null && e2.dismiss === "Dismiss" &&
+                    listUp && options2.length === 3 &&
+                    JSON.stringify(options2.map((o) => o.label)) === JSON.stringify(CI_CHUNKS) &&
+                    options2.every((o, i) => o.text.startsWith(String(i + 1)) && o.text.includes(o.label) && o.text.includes("· this agent's") === (i === 1)) &&
+                    listGone && pickerUp &&
+                    JSON.stringify(picker2.rows) === JSON.stringify([CI_OID.sync, CI_OID.policy, CI_OID.queue, CI_OID.topic].map((o) => `effort:${o}`)) &&
+                    (picker2.others ?? "").startsWith("Other projects · 1") && picker2.project && pickerGone,
+                { editing2, e2, listUp, options2, listGone, pickerUp, picker2, pickerGone }
+            );
+
+            // 3. Add note writes the note on the agent's chunk and the card folds into its row
+            await click(`${ciCardWith(A, "Add note")}?.querySelector("[data-chat-initiative-add]")`);
+            const row3 = await until(`${ciRows(A)}.length === 1 && ${ciCards(A, "agent")}.length === 2`);
+            await acScrollTo(h, `${ciRows(A)}[0]`);
+            const rows3 = await ciReadRows(h, A);
+            const m3 = await mock();
+            await shot("3-note-row");
+            rec(
+                "3. Add note folds the card into the ✓ row `Note added · <initiative> › 2 — <text>` with Open ↗, and the mock recorded one mutate: an appendNote of the note on the agent's chunk",
+                row3 && rows3.length === 1 && rows3[0].kind === "added" && rows3[0].open &&
+                    JSON.stringify(rows3[0].parts) === JSON.stringify(["Note added ·", `${CI_TITLE.sync} › 2`, `— ${ciClip(CI_NOTE)}`, "Open ↗"]) &&
+                    m3.mutates.length === 1 && m3.creates.length === 0 &&
+                    m3.mutates[0].effortoid === CI_OID.sync &&
+                    JSON.stringify(m3.mutates[0].ops) === JSON.stringify([{ op: "appendNote", chunk: CI_OWN_CHUNK, note: CI_NOTE }]),
+                { row3, rows3, m3 }
+            );
+
+            // 4. Add chunk on the chunk card appends it, and the row names the new chunk's place
+            await acScrollTo(h, ciCardWith(A, "Add chunk"));
+            const c4 = await ciReadCard(h, ciCardWith(A, "Add chunk"));
+            await click(`${ciCardWith(A, "Add chunk")}?.querySelector("[data-chat-initiative-add]")`);
+            const row4 = await until(`${ciRows(A)}.length === 2 && ${ciCards(A, "agent")}.length === 1`);
+            const rows4 = await ciReadRows(h, A);
+            await acScrollTo(h, `${ciRows(A)}[1]`);
+            const m4 = await mock();
+            await shot("4-chunk-row");
+            rec(
+                "4. the chunk card reads `Add a chunk to` the initiative with no chunk dropdown; Add chunk folds it into the ✓ row `Chunk added · <initiative> › 4 — <label>` (the new chunk's place), and the mock recorded a second mutate: an addChunk with the label",
+                c4 != null && c4.sentence.includes("Add a chunk to") && c4.chunk === null && c4.quote === CI_NEW_CHUNK && c4.add === "Add chunk" &&
+                    row4 && rows4.length === 2 && rows4[1].kind === "added" && rows4[1].open &&
+                    JSON.stringify(rows4[1].parts) === JSON.stringify(["Chunk added ·", `${CI_TITLE.sync} › 4`, `— ${CI_NEW_CHUNK}`, "Open ↗"]) &&
+                    m4.mutates.length === 2 && m4.creates.length === 0 &&
+                    JSON.stringify(m4.mutates[1].ops) === JSON.stringify([{ op: "addChunk", label: CI_NEW_CHUNK }]),
+                { c4, row4, rows4, m4 }
+            );
+
+            // 5. the new-initiative card: Edit opens its editor (the board fold-rows), Dismiss leaves the faint row and writes nothing
+            await acScrollTo(h, ciCardWith(A, "Create initiative"));
+            const c5 = await ciReadCard(h, ciCardWith(A, "Create initiative"));
+            await click(`${ciCardWith(A, "Create initiative")}?.querySelector("[data-chat-initiative-edit]")`);
+            const editing5 = await until(ciEditorSettled(ciCardWith(A, "Create initiative")));
+            const e5 = await ciReadCard(h, ciCardWith(A, "Create initiative"));
+            await shot("5-new-initiative-editor");
+            await click(`${ciCardWith(A, "Create initiative")}?.querySelector("[data-chat-initiative-dismiss]")`);
+            const row5 = await until(`${ciRows(A)}.length === 3 && ${ciCards(A, "agent")}.length === 0`);
+            const rows5 = await ciReadRows(h, A);
+            await acScrollTo(h, `${ciRows(A)}[2]`);
+            const m5 = await mock();
+            await shot("5-dismissed");
+            rec(
+                "5. the new-initiative card reads `Create a new initiative “Retry telemetry” under` the topic chip; Edit opens its editor (header `proposed by the agent`, New initiative pressed, the Title, the first chunks one per line, Under with the topic chip, Create initiative and Dismiss); Dismiss leaves the faint row `Dismissed · new initiative “Retry telemetry” under <topic>` (no Open) and nothing was written",
+                c5 != null && c5.sentence.includes("Create a new initiative “Retry telemetry” under") && c5.under.includes(CI_TITLE.topic) &&
+                    editing5 && e5 != null && e5.header.includes("proposed by the agent") &&
+                    JSON.stringify(e5.kinds) === JSON.stringify([["chunk", "New chunk", "false"], ["note", "Note", "false"], ["initiative", "New initiative", "true"]]) &&
+                    e5.title === CI_NEW_INITIATIVE.title && e5.chunks === CI_NEW_INITIATIVE.chunks.join("\n") && e5.under.includes(CI_TITLE.topic) &&
+                    e5.add === "Create initiative" && e5.dismiss === "Dismiss" &&
+                    row5 && rows5.length === 3 && rows5[2].kind === "dismissed" && !rows5[2].open &&
+                    JSON.stringify(rows5[2].parts) === JSON.stringify([`Dismissed · new initiative “${CI_NEW_INITIATIVE.title}” under ${CI_TITLE.topic}`]) &&
+                    m5.mutates.length === 2 && m5.creates.length === 0,
+                { c5, editing5, e5, row5, rows5, m5 }
+            );
+
+            // 6. Add to initiative… from a message: from the plain reply's hover button (a card right after that reply, in the
+            // editor, kind Note, the whole message filled), the same entry in its context menu, Cancel removes the card with no
+            // row; and from one of your own bubbles
+            const open6 = await openFrom(prose(1));
+            await until(ciEditorSettled(msgCard));
+            const c6 = await ciReadCard(h, msgCard);
+            const placed6 = await afterItem(`(${msgCard})`, prose(1));
+            const rowsBefore6 = (await ciReadRows(h, A)).length;
+            await acScrollTo(h, msgCard);
+            await shot("6-message-card");
+            await h.ev(`(() => {
+                const el = ${prose(1)};
+                const r = el.getBoundingClientRect();
+                el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 40, clientY: r.top + 12, button: 2 }));
+            })()`);
+            const menu6 = await until(`!!document.querySelector('[data-menu-item="Add to initiative…"]')`);
+            const copyInMenu6 = await h.ev(`!!document.querySelector('[data-menu-item="Copy text"]')`);
+            await shot("6-context-menu");
+            await AC.agentPage(h, `const C = await mod("app/store/contextmenu.ts"); C.closeContextMenu(); return true;`);
+            const pendingBefore6 = (await stored(CI_KEYS.pending))[A] ?? [];
+            await click(`${msgCard}?.querySelector("[data-chat-initiative-cancel]")`);
+            const gone6 = await until(`${ciCards(A, "message")}.length === 0`);
+            const cardsStore6 = (await stored(CI_KEYS.cards))[A] ?? [];
+            const rowsAfter6 = (await ciReadRows(h, A)).length;
+            const pendingAfter6 = (await stored(CI_KEYS.pending))[A] ?? [];
+            // your own bubble: the card opens filled with its text
+            const open6b = await openFrom(you(0));
+            await until(ciEditorSettled(msgCard));
+            const c6b = await ciReadCard(h, msgCard);
+            await acScrollTo(h, msgCard);
+            await shot("6-your-message");
+            await click(`${msgCard}?.querySelector("[data-chat-initiative-cancel]")`);
+            const gone6b = await until(`${ciCards(A, "message")}.length === 0`);
+            rec(
+                "6. Add to initiative… on the plain reply's hover button opens a card right after that reply (not a chat item), origin message, in the editor with Note pressed, the whole message in the textarea, Add note and Cancel and no Dismiss; the reply's context menu has the same entry beside Copy text; Cancel removes the card with no row, nothing stored and no line queued; your own bubble's hover button opens a card filled with that bubble's text, which Cancel removes too",
+                open6.hovered && open6.clicked && open6.up && c6 != null && placed6 === true &&
+                    c6.label === "Add to initiative" && c6.origin === "message" && c6.phase === "editing" &&
+                    c6.header.includes("Add to initiative · from your message") &&
+                    JSON.stringify(c6.kinds) === JSON.stringify([["chunk", "New chunk", "false"], ["note", "Note", "true"], ["initiative", "New initiative", "false"]]) &&
+                    c6.text.trim() === CI_PLAIN.trim() && c6.add === "Add note" && c6.cancel === "Cancel" && c6.dismiss === null &&
+                    c6.into.includes(CI_TITLE.sync) && c6.chunk.includes(CI_OWN_CHUNK) &&
+                    menu6 && copyInMenu6 &&
+                    gone6 && cardsStore6.length === 0 && rowsBefore6 === 3 && rowsAfter6 === 3 &&
+                    JSON.stringify(pendingAfter6) === JSON.stringify(pendingBefore6) &&
+                    open6b.hovered && open6b.clicked && open6b.up && c6b != null && c6b.origin === "message" && c6b.text.trim() === CI_ASK_1 &&
+                    c6b.kinds.find((k) => k[0] === "note")?.[2] === "true" && gone6b,
+                { open6, c6, placed6, menu6, copyInMenu6, gone6, cardsStore6, rowsBefore6, rowsAfter6, pendingBefore6, pendingAfter6, open6b, c6b, gone6b }
+            );
+
+            // 7. open it again and switch to New initiative: the title, the first chunks and Under with the topic chip; the mock
+            // refuses the create, so the reason and Try again show on the card, which does not fold; Try again creates it
+            const open7 = await openFrom(prose(1));
+            await until(ciEditorSettled(msgCard));
+            await click(`${msgCard}?.querySelector('[data-chat-initiative-kind="initiative"]')`);
+            const switched7 = await until(`!!${msgCard}?.querySelector("[data-chat-initiative-title]") && !${msgCard}?.querySelector("[data-chat-initiative-text]")`);
+            const topicShown7 = await until(`(${msgCard}?.querySelector("[data-chat-initiative-under]")?.textContent ?? "").includes(${JSON.stringify(CI_TITLE.topic)})`);
+            const first7 = await ciReadCard(h, msgCard);
+            const NEW_TITLE = "Retry rate dashboard";
+            const NEW_CHUNKS = ["Add a retry counter", "Graph retries per endpoint"];
+            await ciSetField(h, `${msgCard}?.querySelector("[data-chat-initiative-title]")`, NEW_TITLE);
+            await ciSetField(h, `${msgCard}?.querySelector("[data-chat-initiative-chunks]")`, NEW_CHUNKS.join("\n"));
+            const filled7 = await until(`(${msgCard}?.querySelector("[data-chat-initiative-title]")?.value ?? "") === ${JSON.stringify(NEW_TITLE)}`);
+            await acScrollTo(h, msgCard);
+            await shot("7-new-initiative-editor");
+            const filledRead7 = await ciReadCard(h, msgCard);
+            await click(`${msgCard}?.querySelector("[data-chat-initiative-add]")`);
+            const failed7 = await until(`${msgCard}?.getAttribute("data-chat-initiative") === "failed" && !!${msgCard}?.querySelector("[data-chat-initiative-error]")`);
+            const f7 = await ciReadCard(h, msgCard);
+            const rowsFailed7 = (await ciReadRows(h, A)).length;
+            await acScrollTo(h, msgCard);
+            await shot("7-refused");
+            await click(`${msgCard}?.querySelector("[data-chat-initiative-retry]")`);
+            const row7 = await until(`${ciCards(A, "message")}.length === 0 && ${ciRows(A)}.length === 4`);
+            const rows7 = await ciReadRows(h, A);
+            const m7 = await mock();
+            const placed7 = await afterItem(`${ciRows(A)}[3]`, prose(1));
+            await acScrollTo(h, `${ciRows(A)}[3]`);
+            await shot("7-created");
+            rec(
+                "7. a card opened again from the reply and switched to New initiative shows the Title (from the message's first line), the first chunks field and Under with the topic chip (the topic of the agent's initiative); Create initiative is refused by the mock: the card stays (phase failed, no row) with the reason and Try again; Try again creates it with the title, the project, the topic and the chunks, and the card folds into the ✓ row `Initiative created · “<title>” under <topic>` after the reply",
+                open7.hovered && open7.clicked && open7.up && switched7 && topicShown7 && first7 != null &&
+                    first7.title === CI_PLAIN.split("\n")[0] && first7.chunks === "" && first7.under.includes(CI_TITLE.topic) &&
+                    first7.add === "Create initiative" && first7.cancel === "Cancel" &&
+                    filled7 && filledRead7.title === NEW_TITLE && filledRead7.chunks === NEW_CHUNKS.join("\n") &&
+                    failed7 && f7.phase === "failed" && f7.error === CI_REFUSED && f7.retry === "Try again" && f7.add === null && rowsFailed7 === 3 &&
+                    row7 && rows7.length === 4 && rows7[3].kind === "added" && rows7[3].open &&
+                    JSON.stringify(rows7[3].parts) === JSON.stringify(["Initiative created ·", `“${NEW_TITLE}” under ${CI_TITLE.topic}`, "Open ↗"]) &&
+                    placed7 === true &&
+                    m7.creates.length === 2 && m7.mutates.length === 2 &&
+                    JSON.stringify(m7.creates[0]) === JSON.stringify(m7.creates[1]) &&
+                    JSON.stringify(m7.creates[1]) ===
+                        JSON.stringify({
+                            title: NEW_TITLE,
+                            project: CI_PROJECT,
+                            parentoid: CI_OID.topic,
+                            chunks: NEW_CHUNKS.map((label) => ({ label })),
+                        }),
+                { open7, switched7, topicShown7, first7, filled7, filledRead7, failed7, f7, rowsFailed7, row7, rows7, placed7, m7 }
+            );
+
+            // 8. a plain message carries the outcome lines: the four cards handled, in order, then a blank line and the text; the
+            // bubble shows only the text. The next plain message carries none; a `/` command sent while a line is pending carries
+            // none and leaves it pending, and the next plain message carries it
+            const LINES = [
+                `initiative: added note to ${CI_TITLE.sync} (${SYNC}) › ${CI_OWN_CHUNK}`,
+                `initiative: added chunk "${CI_NEW_CHUNK}" to ${CI_TITLE.sync} (${SYNC})`,
+                `initiative: dismissed initiative for ${CI_NEW_INITIATIVE.title}`,
+                `initiative: created initiative ${NEW_TITLE} (effort:${CI_OID.created}) under ${CI_TITLE.topic}`,
+            ];
+            const pending8 = (await stored(CI_KEYS.pending))[A] ?? [];
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)}`, CI_WAIT_MS);
+            await acClear(h, acBox(A));
+            const wire8 = `${LINES.join("\n")}\n\n${CI_SENT[0]}`;
+            const sent8 = await sendPlain(CI_SENT[0]);
+            const pendingAfterSend8 = (await stored(CI_KEYS.pending))[A] ?? null;
+            const pendingBubble8 = sent8.pend.includes(CI_SENT[0]);
+            // Claude Code stores a multi-line message whole inside one paste block: the line it writes for the message
+            acAppend(ctx.files.main, AC.userText(`<pasted_content id="ci1">\n${wire8}\n</pasted_content>`, { cwd: ctx.dir }));
+            const youHas = (text) => `[...${acLayer(A)}.querySelectorAll("[data-chat-you]")].filter((e) => e.textContent.includes(${JSON.stringify(text)}))`;
+            const landed8 = await until(`${youHas(CI_SENT[0])}.length === 1 && ![...${acLayer(A)}.querySelectorAll("[data-chat-pending]")].some((p) => p.firstElementChild?.textContent.trim() === ${JSON.stringify(CI_SENT[0])})`, 15000);
+            const bubble8 = await h.ev(`(() => {
+                const b = ${youHas(CI_SENT[0])}[0];
+                return { text: b?.textContent.trim() ?? null, lines: b?.textContent.includes("initiative:") ?? null, tag: b?.textContent.includes("pasted_content") ?? null };
+            })()`);
+            await acScrollTo(h, `${youHas(CI_SENT[0])}[0]`);
+            await shot("8-sent");
+            rec(
+                "8a. the first plain message sent after the four cards were handled is typed into the block with the four `initiative:` lines in the order handled (note added, chunk added, initiative dismissed, initiative created, with the initiative's oid), one blank line, then the text; the queue is empty after; its pending bubble and, once Claude Code's paste-wrapped line is in the transcript, its bubble show only the text",
+                JSON.stringify(pending8) === JSON.stringify(LINES) && sent8.typed === wire8 && sent8.inputs.includes("\r") &&
+                    pendingAfterSend8 === null && pendingBubble8 && landed8 &&
+                    bubble8.text === CI_SENT[0] && bubble8.lines === false && bubble8.tag === false,
+                { pending8, sent8, pendingAfterSend8, pendingBubble8, landed8, bubble8 }
+            );
+
+            const sent8b = await sendPlain(CI_SENT[1]);
+            acAppend(ctx.files.main, AC.userText(CI_SENT[1], { cwd: ctx.dir }));
+            await until(`${youHas(CI_SENT[1])}.length === 1`, 15000);
+            rec("8b. the second plain message carries no lines: only its text is typed", sent8b.typed === CI_SENT[1], { sent8b });
+
+            // a card handled now queues a line (a note filed from the reply, as step 6 opened it); a `/` command goes without it
+            await openFrom(prose(1));
+            await until(ciEditorSettled(msgCard));
+            await click(`${msgCard}?.querySelector("[data-chat-initiative-add]")`);
+            const row8 = await until(`${ciCards(A, "message")}.length === 0 && ${ciRows(A)}.length === 5`);
+            const m8 = await mock();
+            const queued8 = (await stored(CI_KEYS.pending))[A] ?? [];
+            const beforeSlash = (await acSettled(h, blockA)).length;
+            await acClear(h, acBox(A));
+            await acType(h, acBox(A), "/compact", false);
+            await polishWaitFor(h, `!!document.querySelector("[data-chat-slash]")`, 2000);
+            await acKey(h, acKeys.enter);
+            let slashInputs = await acUntil(async () => {
+                const now = await acInputs(h, blockA);
+                return now.length > beforeSlash ? now : null;
+            }, 2500);
+            if (slashInputs == null) {
+                // Enter picked the menu's row, which put `/compact ` in the box: the next Enter sends it
+                await acKey(h, acKeys.enter);
+                slashInputs = await acUntil(async () => {
+                    const now = await acInputs(h, blockA);
+                    return now.length > beforeSlash ? now : null;
+                }, 2500);
+            }
+            const typedSlash = (await acSettled(h, blockA)).slice(beforeSlash).filter((i) => i !== "\r").map(ciUnbracket).join("");
+            const stillPending8 = (await stored(CI_KEYS.pending))[A] ?? [];
+            const sent8c = await sendPlain(CI_SENT[2]);
+            const emptyAfter8 = (await stored(CI_KEYS.pending))[A] ?? null;
+            rec(
+                "8c. a card handled after that (a note filed from the reply) queues its line; a `/` command sent while it is pending is typed bare, without the line, and leaves it pending; the next plain message then carries it, and the queue is empty",
+                row8 && m8.mutates.length === 3 && queued8.length === 1 && queued8[0] === LINES[0] &&
+                    slashInputs != null && typedSlash.trim() === "/compact" && JSON.stringify(stillPending8) === JSON.stringify(queued8) &&
+                    sent8c.typed === `${queued8[0]}\n\n${CI_SENT[2]}` && emptyAfter8 === null,
+                { row8, mutates: m8.mutates.length, queued8, typedSlash, stillPending8, sent8c, emptyAfter8 }
+            );
+
+            // 9. an agent whose process exited: its card shows no amber dot (static), its Add note still writes and folds
+            await showAgent(G);
+            const ready9 = await until(
+                `${ciCards(G, "agent")}.length === 1 && (${ciCards(G, "agent")}[0]?.querySelector("[data-chat-initiative-chunk]")?.textContent ?? "").includes(${JSON.stringify(CI_CHUNKS[2])})`,
+                15000
+            );
+            const before9 = await ciReadCard(h, `${ciCards(G, "agent")}[0]`);
+            await bsPublishProc(h, { blockId: ctx.tabs.gone.blockId }, "done", 1);
+            const static9 = await until(`${ciCards(G, "agent")}[0]?.hasAttribute("data-chat-initiative-static") === true`);
+            await acScrollTo(h, `${ciCards(G, "agent")}[0]`);
+            const exited9 = await ciReadCard(h, `${ciCards(G, "agent")}[0]`);
+            await shot("9-exited");
+            await click(`${ciCards(G, "agent")}[0]?.querySelector("[data-chat-initiative-add]")`);
+            const row9 = await until(`${ciRows(G)}.length === 1 && ${ciCards(G, "agent")}.length === 0`);
+            const rows9 = await ciReadRows(h, G);
+            const m9 = await mock();
+            await shot("9-exited-row");
+            rec(
+                "9. the exited agent's card: before its process ends it waits with the amber dot; once it exits the card is static (data-chat-initiative-static, no amber dot), its Add note still writes (a fourth mutate: the note on `Log each retry attempt`) and the card folds into its ✓ row `Note added · <initiative> › 3 — <text>`",
+                ready9 && before9 != null && before9.waiting && !before9.isStatic &&
+                    static9 && exited9 != null && exited9.isStatic && !exited9.waiting && exited9.add === "Add note" && exited9.addDisabled === false &&
+                    row9 && rows9.length === 1 && rows9[0].kind === "added" &&
+                    JSON.stringify(rows9[0].parts) === JSON.stringify(["Note added ·", `${CI_TITLE.sync} › 3`, `— ${CI_GONE_NOTE}`, "Open ↗"]) &&
+                    m9.mutates.length === 4 &&
+                    JSON.stringify(m9.mutates[3].ops) === JSON.stringify([{ op: "appendNote", chunk: CI_CHUNKS[2], note: CI_GONE_NOTE }]),
+                { ready9, before9, static9, exited9, row9, rows9, mutates: m9.mutates.length, last: m9.mutates[3] }
+            );
+            await bsPublishProc(h, { blockId: ctx.tabs.gone.blockId }, "running", 0);
+
+            // 10. reload: every row stays folded and no handled card waits again
+            const handled10 = Object.keys(await stored(CI_KEYS.handled)).length;
+            const drafts10 = Object.keys(await stored(CI_KEYS.drafts)).length;
+            const reloaded = await ahReload(h);
+            await h.goto("agent");
+            const mocks10 = [await installAgentChatMock(h, ctx), await installCiMock(h, ctx)];
+            await AC.setRoster(h, ciRoster(ctx));
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+            await showAgent(A);
+            const back10 = await until(`${ciRows(A)}.length === 5`, 15000);
+            await polishNap(500);
+            const rows10 = await ciReadRows(h, A);
+            const live10 = await h.ev(`document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-initiative]').length`);
+            const code10 = await h.ev(`(() => {
+                const heads = [...(${prose(0)}?.querySelectorAll("[data-code-head]") ?? [])];
+                return { codeBlocks: heads.length, body: heads[0]?.parentElement?.textContent.includes('"kind": "note"') ?? false };
+            })()`);
+            await acScrollTo(h, `${ciRows(A)}[0]`);
+            await shot("10-reload");
+            await showAgent(G);
+            const back10g = await until(`${ciRows(G)}.length === 1`, 15000);
+            const live10g = await h.ev(`document.querySelectorAll('[data-agent-chat="${G}"] [data-chat-initiative]').length`);
+            await polishNap(300);
+            await shot("10-reload-exited");
+            rec(
+                "10. after a reload every row is back folded and no card waits: the main agent's Chat has its five rows (note added, chunk added, dismissed, initiative created, note added, in the order they were handled) and no card, the broken block is still a code block, and the exited agent's Chat has its one ✓ row and no card; no draft is left stored",
+                reloaded && JSON.stringify(mocks10) === JSON.stringify(["installed", "installed"]) && back10 && live10 === 0 &&
+                    JSON.stringify(rows10.map((r) => r.kind)) === JSON.stringify(["added", "added", "dismissed", "added", "added"]) &&
+                    JSON.stringify(rows10.map((r) => r.parts[0])) ===
+                        JSON.stringify(["Note added ·", "Chunk added ·", `Dismissed · new initiative “${CI_NEW_INITIATIVE.title}” under ${CI_TITLE.topic}`, "Initiative created ·", "Note added ·"]) &&
+                    code10.codeBlocks === 1 && code10.body &&
+                    // the handled records are the proposed blocks': the main agent's three and the exited agent's one
+                    back10g && live10g === 0 && handled10 === 4 && drafts10 === 0,
+                { reloaded, mocks10, back10, rows10, live10, code10, back10g, live10g, handled10, drafts10 }
+            );
+        } catch (e) {
+            rec("the scenario ran to its end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    // best-effort, so one failed step does not strand the rest
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-initiative teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("close the menu", () => AC.agentPage(h, `const C = await mod("app/store/contextmenu.ts"); C.closeContextMenu(); return true;`));
+        await step("empty the main agent's box", async () => {
+            const id = ctx.tabs?.main?.tabId;
+            if (id) await acClear(h, acBox(id));
+        });
+        await step("clear the exit", () => (ctx.tabs?.gone ? bsPublishProc(h, { blockId: ctx.tabs.gone.blockId }, "running", 0) : null));
+        await step("remove the initiative mock", () => removeCiMock(h));
+        await step("remove the chat mock", () => removeAgentChatMock(h));
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tabs", () => acCloseTabs(h, ctx));
+        // the four chat.initiative.* keys go back as they were (removed when they were absent), with the grid and the chat modes;
+        // the page reloads below, so its stores read them again
+        await step("restore the grid, the chat modes and the initiative keys", () =>
+            h.ev(`(() => {
+                const put = (key, prev) => (prev == null ? localStorage.removeItem(key) : localStorage.setItem(key, prev));
+                put(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid ?? null)});
+                put("agent.chatmode", ${JSON.stringify(ctx.prevModes ?? null)});
+                for (const [key, prev] of Object.entries(${JSON.stringify(ctx.prevStore ?? {})})) put(key, prev);
                 return true;
             })()`)
         );
@@ -52110,6 +54312,129 @@ const jobqueueAgentTag = {
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
         });
         await step("leave on the Cockpit", () => h.goto("cockpit"));
+    },
+};
+
+// --- jobqueue-measured: each row of the Jobs popover says whether its RAM figure is measured or the table's estimate
+// (docs/superpowers/specs/2026-11-12-measured-job-peaks-design.md). No run and no real job: one running measured job and
+// one queued estimated one are set through the dev hook window.__jobQueueInject, the popover is opened from the app bar's
+// chip, and each row's tag and tooltip are read back.
+const JQM_SNAPSHOT = `(() => {
+    const GB = 2 ** 30;
+    window.__jobQueueInject({
+        slots: 1,
+        mode: "auto",
+        jobs: [
+            {
+                id: "jqm-run", name: "task check:ts", bytes: Math.round(2.1 * GB), running: true, measured: true,
+                peaks: [1.8, 1.2, 0.9].map((g) => Math.round(g * GB)),
+                queuedts: Date.now() - 60_000, startedts: Date.now() - 60_000,
+            },
+            { id: "jqm-wait", name: "cargo build", bytes: 3 * GB, position: 1, reason: "slot busy", queuedts: Date.now() - 20_000 },
+        ],
+    });
+    return true;
+})()`;
+// per row: the figure, the tag after it and the tooltips the popover gives them, and whether the row stays inside the panel
+const JQM_ROWS = `[...document.querySelectorAll("[data-job-queue-panel] [data-job-row]")].map((r) => {
+    const size = r.querySelector("[data-job-size]");
+    const tag = r.querySelector("[data-job-basis]");
+    const panel = r.closest("[data-job-queue-panel]");
+    const lastButton = [...r.querySelectorAll("button")].pop();
+    return {
+        id: r.dataset.jobRow,
+        size: size?.textContent?.trim() ?? null,
+        sizeTitle: size?.title ?? null,
+        tag: tag?.textContent?.trim() ?? null,
+        basis: tag?.dataset.jobBasis ?? null,
+        tagTitle: tag?.title ?? null,
+        muted: tag?.classList.contains("text-muted") ?? false,
+        fits: r.scrollWidth <= r.clientWidth + 1 && (!lastButton || lastButton.getBoundingClientRect().right <= panel.getBoundingClientRect().right),
+    };
+})`;
+
+const jobqueueMeasured = {
+    name: "jobqueue-measured",
+    surface: "cockpit",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const hooked = await h.ev(`typeof window.__jobQueueInject === "function"`);
+        if (!hooked) {
+            rec("0. the dev hook window.__jobQueueInject", false, "not defined (a dev build is needed)");
+            return steps;
+        }
+
+        // 1. the chip counts one running and one queued job, and opens the popover
+        await h.ev(JQM_SNAPSHOT);
+        const chipUp = await polishWaitFor(
+            h,
+            `document.querySelector("[data-job-queue-chip]")?.textContent?.includes("1 · 1 queued") === true`,
+            3000
+        );
+        await h.ev(`document.querySelector("[data-job-queue-chip]")?.click()`);
+        const listed = await polishWaitFor(
+            h,
+            `document.querySelectorAll("[data-job-queue-panel] [data-job-row]").length === 2`,
+            3000
+        );
+        const rows = listed ? await h.ev(JQM_ROWS) : [];
+        await h.shot("cdp-shots/jobqueue-measured-popover.png");
+        rec(
+            "1. the Jobs chip says 1 · 1 queued and its popover lists both jobs",
+            chipUp && listed,
+            JSON.stringify({ chipUp, listed, rows: rows.length })
+        );
+
+        // 2. the running job's figure is measured: the tag says so, the tooltip names the rule and the peaks
+        const measured = rows.find((r) => r.id === "jqm-run");
+        const measuredTitle = "2.1 GB: max of the last 3 runs × 1.2 (1.8, 1.2, 0.9 GB)";
+        rec(
+            "2. the running job reads 2.1 GB measured, its tooltip the max of the last 3 runs × 1.2 and their peaks",
+            measured?.size === "2.1 GB" &&
+                measured.tag === "measured" &&
+                measured.basis === "measured" &&
+                measured.tagTitle === measuredTitle &&
+                measured.sizeTitle === measuredTitle,
+            JSON.stringify(measured)
+        );
+
+        // 3. the queued job's figure is the table's: est., and its tooltip says it is not measured yet
+        const estimated = rows.find((r) => r.id === "jqm-wait");
+        const estimateTitle = "3 GB: estimate (not measured yet)";
+        rec(
+            "3. the queued job reads 3 GB est., its tooltip estimate (not measured yet)",
+            estimated?.size === "3 GB" &&
+                estimated.tag === "est." &&
+                estimated.basis === "estimate" &&
+                estimated.tagTitle === estimateTitle &&
+                estimated.sizeTitle === estimateTitle,
+            JSON.stringify(estimated)
+        );
+
+        // 4. the word is muted and keeps the crowded row inside the panel (Run now and Skip are still in reach)
+        rec(
+            "4. the tag is muted on both rows and neither row spills out of the panel",
+            rows.length === 2 && rows.every((r) => r.muted && r.fits),
+            JSON.stringify(rows.map((r) => [r.id, r.muted, r.fits]))
+        );
+        return steps;
+    },
+    async teardown(h) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`jobqueue-measured teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("close the popover", () =>
+            h.ev(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }))`)
+        );
+        await step("clear the injected snapshot", () => h.ev("window.__jobQueueInject?.({ slots: 1, jobs: [] })"));
     },
 };
 
@@ -57847,6 +60172,10 @@ const CR_KIT = {
     bsSeeHints,
 };
 
+// what the brainstorm review in Chat (scenarios-chat-brainstorm-review.mjs) needs of this file: the Chat redesign's kit, and
+// the helper that writes a fixture run's stored object (a landed run) and publishes it to the page
+const CBR_KIT = { ...CR_KIT, fstWriteRun };
+
 // what the Jarvis revamp's scenario modules (scenarios-jarvis-{cards,activity,sheet}.mjs,
 // docs/superpowers/plans/2026-11-05-jarvis-revamp.md) need of this file: the Brief's own helpers (open Jarvis on a reload,
 // pick a briefing fixture, seed and clear initiatives, the viewport, the localStorage keys), the fixture-run helpers that
@@ -58183,8 +60512,10 @@ const runQueueScenario = {
             JSON.stringify({ stripRemove, stripAsked, stripGone, rowGone, stripListedBefore, stripListedAfter })
         );
 
-        // 2. hover shows the two buttons; the tooltip carries the plan, the route and the age
+        // 2. hover shows the two buttons; the tooltip card, to the row's right, carries the plan, the route and the age
         await rqMove(h, rqSel(a));
+        const tipSel = `document.querySelector("[data-run-queue-tip]")`;
+        await polishWaitFor(h, `${tipSel} != null && getComputedStyle(${tipSel}.parentElement).opacity === "1"`, 3000);
         const hover = await h.ev(`(() => {
             // the buttons sit in one wrapper that fades in on hover
             const shown = (id, act) => {
@@ -58196,19 +60527,24 @@ const runQueueScenario = {
                 remove: shown(${JSON.stringify(a)}, "remove"),
                 // the row the pointer is not on keeps them hidden
                 otherStart: shown(${JSON.stringify(c)}, "start"),
-                // the tooltip host lifts a hovered element's title into data-arc-title (element/titletiphost.tsx)
-                title: ${rqRow(a)}?.getAttribute("title") ?? ${rqRow(a)}?.getAttribute("data-arc-title") ?? "",
+                title: ${tipSel}?.innerText ?? "",
+                // the card sits to the row's right
+                right: (() => {
+                    const tip = ${tipSel}, row = ${rqRow(a)};
+                    return tip && row ? tip.getBoundingClientRect().left >= row.getBoundingClientRect().right : null;
+                })(),
             };
         })()`);
         await h.shot("cdp-shots/run-queue-2-hover.png");
         rec(
-            "2. hovering A shows its Start now and Remove buttons (C's stay hidden); its tooltip names the plan, Lead claude and Workers codex",
+            "2. hovering A shows its Start now and Remove buttons (C's stay hidden); a card right of the row names a.md, Lead claude and Workers codex",
             hover.start === 1 &&
                 hover.remove === 1 &&
                 hover.otherStart === 0 &&
+                hover.right === true &&
                 hover.title.includes("a.md") &&
-                hover.title.includes("Lead claude") &&
-                hover.title.includes("Workers codex"),
+                /Lead\s+claude/.test(hover.title) &&
+                /Workers\s+codex/.test(hover.title),
             JSON.stringify(hover)
         );
 
@@ -62828,8 +65164,10 @@ async function setupMemoryAssert(h, ctx) {
     );
 
     await run(
-        "9. Keys: j and k move the selection, a applies and lands on the next change to review, x keeps and u undoes",
+        "9. Keys: j and k move the selection (which clears step 8's error alert), a applies and lands on the next change to review, x keeps and u undoes",
         async () => {
+            // step 8's alert is still up here; the moves below (a project pick, a row click, j) clear it
+            const alertBefore = await text("[data-memory-error]");
             await selectProject(MEMORY_PROJECTS.own);
             await showView("table");
             // kind chips are tinted by what the change does: a removal, a bringing in, an edit in place
@@ -62846,8 +65184,7 @@ async function setupMemoryAssert(h, ctx) {
             await selectChange(own.trim.id);
             await press("j");
             const down = await waitSelected(own.delete.id);
-            // the changed-on-disk change has its Apply disabled, so a does nothing there. step 8's error alert is
-            // still up (it clears on the next action), so a new error is one that differs from it
+            // the changed-on-disk change has its Apply disabled, so a does nothing there: no new error alert
             const errorBefore = await text("[data-memory-error]");
             await press("a");
             await polishNap(500);
@@ -62881,6 +65218,8 @@ async function setupMemoryAssert(h, ctx) {
             await press("u");
             const reopened = await waitRowStatus(own.moveToDoc.id, "To review");
             const got = {
+                alertBefore,
+                alertAfterMove: errorBefore,
                 tones,
                 down,
                 held,
@@ -62899,6 +65238,8 @@ async function setupMemoryAssert(h, ctx) {
             };
             return {
                 ok:
+                    alertBefore !== "" &&
+                    errorBefore === "" &&
                     tones.delete === "remove" &&
                     tones.addToIndex === "add" &&
                     tones.trim === "edit" &&
@@ -67448,6 +69789,7 @@ export const SCENARIOS = [
     narrationFeed,
     notesWsh,
     agentTreeRail,
+    railContextBreakdown,
     agentTreeQuickReturn,
     agentHistory,
     agyHarness,
@@ -67462,6 +69804,7 @@ export const SCENARIOS = [
     runTimingScenario,
     runCost,
     runPaused,
+    runRowStuck,
     dagObservability,
     dagPeekScenario,
     dagMotionScenario,
@@ -67542,7 +69885,9 @@ export const SCENARIOS = [
     chatScrollKeep,
     chatAsleepAttachJump,
     chatFork,
+    chatInitiative,
     ...chatRedesignScenarios(CR_KIT),
+    ...chatBrainstormReviewScenarios(CBR_KIT),
     sidebarAgentRam,
     machineServers,
     sidebarAgentGlyph,
@@ -67550,6 +69895,7 @@ export const SCENARIOS = [
     notifyToast,
     jobqueueChip,
     jobqueueAgentTag,
+    jobqueueMeasured,
     floatMini,
     floatNote,
     floatLedgeTabs,

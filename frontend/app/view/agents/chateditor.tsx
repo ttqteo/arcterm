@@ -16,10 +16,11 @@
 // composition ends. A `value` that comes from outside meanwhile is held and drawn when the composition ends (in place of
 // the text typed), so the editor never says its own text over it.
 // The grey ghost text after the last character (`ghost`) is drawn over the text without being in it, in an overlay that
-// mirrors it. A bash command's leading `!` (`bash`) is in `value` but not in the editor: it is drawn as an accent marker
+// mirrors it and scrolls as the editor does (GhostScroll). A bash command's leading `!` (`bash`) is in `value` but not in the editor: it is drawn as an accent marker
 // beside it, a gap before the command, as Claude Code's own box does (chateditormodel.ts `bangSkip`); every text and offset
 // the editor takes or gives is mapped across it, and Backspace at the command's start takes the `!` away, leaving bash mode.
 
+import { isMacOS } from "@/util/platformutil";
 import { cn } from "@/util/util";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
@@ -53,7 +54,7 @@ import {
     type LexicalNode,
     type PointType,
 } from "lexical";
-import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { bangSkip, fromShown, segmentLength, segmentsOf, shownText, type Segment } from "./chateditormodel";
 import {
     adjacentPill,
@@ -115,6 +116,9 @@ export interface ChatEditorProps {
     onKeyDown?(e: KeyLike): void;
     /** a paste whose clipboard holds files comes here; true = taken (the editor then pastes nothing) */
     onPasteFiles?(e: ClipboardEvent): boolean;
+    /** the editor lost the focus: `relatedTarget` is where it went (null for a click on something that takes none, or the
+     *  window losing the focus) */
+    onBlur?(e: FocusEvent): void;
     placeholder: string;
     readOnly?: boolean;
     /** the type (size, colour) of the box, inherited by its text and its placeholder */
@@ -124,7 +128,8 @@ export interface ChatEditorProps {
     /** extra attributes for the editable element (`data-…`) */
     dataAttrs?: Record<string, string>;
     /** the text is a bash command (it starts with `!`, Chat's bash mode): its leading `!` is left out of the editor and
-     *  drawn beside it as an accent, semibold marker, a gap before the command */
+     *  drawn beside it as an accent, semibold marker, a gap before the command; and it never makes a file pill (the shell
+     *  knows no `@` mention, and the ghost text mirrors the plain text), so a `@path` in it stays text */
     bash?: boolean;
     /** grey text drawn right after the last character, not part of the message (bash mode's suggestion from Claude Code's
      *  history); empty draws nothing */
@@ -560,10 +565,14 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
         said.current = { text: value, caret: caret ?? value.length, skip };
         const shown = shownText(value, skip);
         const at = caret == null ? null : Math.max(0, caret - skip);
-        editor.update(() => $rebuild(segmentsOf(shown, at ?? undefined), at ?? (focused ? shown.length : null)), {
-            tag: "external",
-            discrete: true,
-        });
+        // a bash command draws no pills: `@path` stays text, which the ghost text's mirror of the text lines up with
+        editor.update(
+            () => $rebuild(segmentsOf(shown, at ?? undefined, { pills: !bash }), at ?? (focused ? shown.length : null)),
+            {
+                tag: "external",
+                discrete: true,
+            }
+        );
         onPill.current = editor.read(() => $selectionOnPill($readDoc()));
         // like a textarea whose value is set from outside, what came before is not undoable
         editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined);
@@ -643,9 +652,37 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
     return null;
 });
 
+/** Keeps the ghost layer scrolled where the editor is: the editor scrolls once its text passes its max height, and the layer
+ *  (which mirrors the text, `overflow-hidden`) would otherwise stay at the top, with the ghost off the last line. Set when
+ *  it mounts (a ghost that shows while the editor is already scrolled) and again when the text or the ghost changes, and on
+ *  the editor's `scroll`. Setting `scrollTop` from code moves an `overflow-hidden` box. */
+function GhostScroll({ layer, text, ghost }: { layer: RefObject<HTMLDivElement | null>; text: string; ghost: string }) {
+    const [editor] = useLexicalComposerContext();
+    const sync = useRef(() => {});
+    sync.current = () => {
+        const root = editor.getRootElement();
+        const el = layer.current;
+        if (root != null && el != null && el.scrollTop !== root.scrollTop) {
+            el.scrollTop = root.scrollTop;
+        }
+    };
+    // after the layer's own content is drawn, so the box has the height to scroll
+    useLayoutEffect(() => sync.current(), [text, ghost]);
+    useLayoutEffect(() => {
+        const onScroll = () => sync.current();
+        // called with the root now and again when it changes; the remover calls it with `null`
+        return editor.registerRootListener((root, prev) => {
+            prev?.removeEventListener("scroll", onScroll);
+            root?.addEventListener("scroll", onScroll, { passive: true });
+        });
+    }, [editor]);
+    return null;
+}
+
 export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatEditor(p, ref) {
     const props = useRef(p);
     props.current = p;
+    const ghostLayer = useRef<HTMLDivElement>(null);
     const skip = bangSkip(p.value, p.bash === true);
     const said = useRef<Said>({ text: p.value, caret: p.value.length, skip });
     const ghost = p.ghost ?? "";
@@ -656,8 +693,8 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
         nodes: [FileMentionNode],
         editable: !p.readOnly,
         onError: (error: Error) => console.error("chat editor:", error),
-        // the draft the box mounts with (a restored one, with its pills)
-        editorState: () => $rebuild(segmentsOf(shown), null),
+        // the draft the box mounts with (a restored one, with its pills; a bash command has none)
+        editorState: () => $rebuild(segmentsOf(shown, undefined, { pills: p.bash !== true }), null),
     }));
     return (
         <LexicalComposer initialConfig={initialConfig}>
@@ -681,8 +718,12 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                                 role="textbox"
                                 aria-multiline="true"
                                 aria-label="Message"
-                                // the webview's English checker underlines every Vietnamese word, as the app's other boxes
-                                spellCheck={false}
+                                // off on Windows, where WebView2's English checker would underline every Vietnamese
+                                // word, as the app's other boxes do; on a Mac it stays on, since WebKit runs Text
+                                // Replacement (sv → sinh viên) only where spellcheck is on, and the host turns the
+                                // underlines off there instead (main.rs no_spelling_underlines)
+                                spellCheck={isMacOS()}
+                                onBlur={(e) => props.current.onBlur?.(e.nativeEvent)}
                                 className="block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent"
                                 style={{ minHeight: p.minHeight, maxHeight: p.maxHeight }}
                             />
@@ -701,6 +742,7 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                     exactly where the editor's own text is: the text itself invisible, the ghost after the last character. */}
                     {ghost !== "" ? (
                         <div
+                            ref={ghostLayer}
                             aria-hidden
                             data-chat-ghost-layer=""
                             className="pointer-events-none absolute inset-0 overflow-hidden leading-[1.9] whitespace-pre-wrap select-none [overflow-wrap:anywhere]"
@@ -711,6 +753,8 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                             </span>
                         </div>
                     ) : null}
+                    {/* after the layer, so its ref is set when this lays out */}
+                    {ghost !== "" ? <GhostScroll layer={ghostLayer} text={shown} ghost={ghost} /> : null}
                     <HistoryPlugin />
                     <Bridge ref={ref} props={props} said={said} />
                 </div>

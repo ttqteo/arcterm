@@ -165,10 +165,33 @@ func FindGitBash(config *wconfig.FullConfigType, rescan bool) string {
 	return path
 }
 
+// gitBashFromPathDir returns the bash.exe to use for one PATH dir, or "" when the dir holds none. A bash started
+// from <git>\usr\bin has no /usr/bin on its PATH, so every `#!/usr/bin/env bash` shim (npx, npm globals) exits 127;
+// <git>\bin\bash.exe is Git's launcher, which sets that PATH up, so it is preferred when it exists.
+func gitBashFromPathDir(dir string, exists func(string) bool) string {
+	bashPath := filepath.Join(dir, "bash.exe")
+	if !exists(bashPath) {
+		return ""
+	}
+	clean := filepath.Clean(dir)
+	parent := filepath.Dir(clean)
+	if strings.EqualFold(filepath.Base(clean), "bin") && strings.EqualFold(filepath.Base(parent), "usr") {
+		launcher := filepath.Join(filepath.Dir(parent), "bin", "bash.exe")
+		if exists(launcher) {
+			return launcher
+		}
+	}
+	return bashPath
+}
+
 func findInstalledGitBash() (string, error) {
 	// Try PATH first (skip system32, and only accept if in a Git directory)
 	pathEnv := os.Getenv("PATH")
 	pathDirs := filepath.SplitList(pathEnv)
+	fileExists := func(p string) bool {
+		_, err := os.Stat(p)
+		return err == nil
+	}
 	for _, dir := range pathDirs {
 		dir = strings.Trim(dir, `"`)
 		if hasDirPart(dir, "system32") {
@@ -177,8 +200,7 @@ func findInstalledGitBash() (string, error) {
 		if !hasDirPart(dir, "git") {
 			continue
 		}
-		bashPath := filepath.Join(dir, "bash.exe")
-		if _, err := os.Stat(bashPath); err == nil {
+		if bashPath := gitBashFromPathDir(dir, fileExists); bashPath != "" {
 			return bashPath, nil
 		}
 	}

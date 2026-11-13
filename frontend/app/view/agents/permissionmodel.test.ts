@@ -6,8 +6,13 @@ import {
     answerFailureMessage,
     cardHead,
     cardShown,
+    choiceAnswer,
     headIdOf,
+    keptChoice,
     moreWaiting,
+    moveChoice,
+    permissionBoxKey,
+    permissionChoices,
     permissionSummaryLine,
     permissionTitle,
     REFUSAL_MS,
@@ -223,5 +228,62 @@ describe("secondChoice", () => {
     });
     it("is null for no options", () => {
         expect(secondChoice([])).toBeNull();
+    });
+});
+
+describe("the card's choices from the keyboard", () => {
+    const withSecond = permissionChoices(true);
+    const plain = permissionChoices(false);
+
+    it("lists the buttons in the order the card draws them", () => {
+        expect(withSecond).toEqual(["allow", "second", "deny"]);
+        expect(plain).toEqual(["allow", "deny"]);
+    });
+
+    it("sends what each button sends", () => {
+        expect(choiceAnswer("allow")).toEqual({ allow: true });
+        expect(choiceAnswer("second")).toEqual({ allow: true, choice: 2 });
+        expect(choiceAnswer("deny")).toEqual({ allow: false });
+    });
+
+    it("moves the highlight with ↑ and ↓, held at the ends", () => {
+        expect(moveChoice(withSecond, "allow", 1)).toBe("second");
+        expect(moveChoice(withSecond, "second", 1)).toBe("deny");
+        expect(moveChoice(withSecond, "deny", 1)).toBe("deny");
+        expect(moveChoice(withSecond, "deny", -1)).toBe("second");
+        expect(moveChoice(withSecond, "allow", -1)).toBe("allow");
+        expect(moveChoice(plain, "allow", 1)).toBe("deny");
+    });
+
+    it("keeps the highlighted choice, not its place, when the second button shows up late", () => {
+        // ↓ onto Deny before the "Yes, and …" label was read: Deny stays highlighted once the button joins the row
+        expect(keptChoice(withSecond, moveChoice(plain, "allow", 1))).toBe("deny");
+        // the second button gone (read again as a dialog of two options): back to Allow
+        expect(keptChoice(plain, "second")).toBe("allow");
+        expect(moveChoice(plain, "second", 1)).toBe("deny");
+    });
+
+    it("takes ↑, ↓ and Enter only in an empty box, with no modifier or IME composition", () => {
+        const k = (
+            key: string,
+            more: Partial<Record<"shiftKey" | "altKey" | "ctrlKey" | "metaKey" | "isComposing", boolean>> = {}
+        ) => ({
+            key,
+            shiftKey: false,
+            altKey: false,
+            ctrlKey: false,
+            metaKey: false,
+            isComposing: false,
+            ...more,
+        });
+        expect(permissionBoxKey(k("ArrowUp"), true)).toBe("up");
+        expect(permissionBoxKey(k("ArrowDown"), true)).toBe("down");
+        expect(permissionBoxKey(k("Enter"), true)).toBe("pick");
+        expect(permissionBoxKey(k("Enter"), false)).toBeNull();
+        expect(permissionBoxKey(k("ArrowDown"), false)).toBeNull();
+        expect(permissionBoxKey(k("Enter", { shiftKey: true }), true)).toBeNull();
+        expect(permissionBoxKey(k("ArrowUp", { metaKey: true }), true)).toBeNull();
+        expect(permissionBoxKey(k("Enter", { isComposing: true }), true)).toBeNull();
+        expect(permissionBoxKey(k("1"), true)).toBeNull();
     });
 });

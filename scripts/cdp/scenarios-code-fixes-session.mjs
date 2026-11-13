@@ -15,6 +15,7 @@
 import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { agentPage } from "./agent-page-fixtures.mjs";
 import { SURFACE_LABEL } from "./attach.mjs";
 
 const VIEWPORT = { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false };
@@ -808,6 +809,43 @@ export default function (kits) {
             );
             rec("a click on a row still opens its file; the rows are buttons", clicked?.there === true && clicked.tag === "BUTTON", JSON.stringify(clicked));
             await inPage(h, `document.querySelector("[data-walk-sentinel]")?.remove(); document.querySelector('[data-code-column-tab="files"]')?.click();`);
+
+            // Code reached by a palette pick: the palette still holds focus as the tree mounts, so the tree's own mount-time
+            // claim stands down (focusClaimed), and the palette's close hands focus to the visible data-focus-home, the tree.
+            // Before it, focus fell to <body> and the tree keys were dead until a click.
+            await h.goto("agent");
+            await h.ev(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
+            await agentPage(h, `globalStore.set(agentsModel().paletteOpenAtom, true); return true;`);
+            const PALETTE_INPUT = `document.querySelector('input[data-palette-input]')`;
+            const opened = await polishWaitFor(h, `!!(${PALETTE_INPUT})`, 8000);
+            await h.ev(`(() => {
+                const input = ${PALETTE_INPUT};
+                if (!input) return false;
+                Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set.call(input, "Code (browse source)");
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+                return true;
+            })()`);
+            const rowKey = `(document.querySelector('[role="option"][aria-selected="true"]')?.getAttribute("data-palette-key") ?? null)`;
+            const highlighted = await polishWaitFor(h, `${rowKey} === "go:code"`, 8000);
+            await h.ev(`${PALETTE_INPUT}?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }))`);
+            const closed = await polishWaitFor(h, `!(${PALETTE_INPUT}) && document.querySelector("[data-code-tree]") != null`, 8000);
+            await polishNap(400);
+            const landed = await inPage(
+                h,
+                `const out = { tree: document.activeElement?.matches?.("[data-code-tree]") ?? false, at: document.activeElement?.tagName ?? null, flag: S.globalStore.get(C.codeTreeFocusedAtom) };
+                // the cursor on the first file, so ArrowDown has a next row to move to (setting the atom moves no focus)
+                S.globalStore.set(C.codeCursorAtom, ${JSON.stringify(FILES[0])});
+                return out;`
+            );
+            await key(h, "ArrowDown", "ArrowDown", 40);
+            await polishNap(300);
+            const cursorAfter = await inPage(h, `return S.globalStore.get(C.codeCursorAtom);`);
+            await wshot(h, "palette-pick");
+            rec(
+                "a palette pick of Code leaves focus on the file tree, not <body>, and ArrowDown moves its cursor with no click first",
+                opened === true && highlighted === true && closed === true && landed?.tree === true && landed.flag === true && cursorAfter === FILES[1],
+                JSON.stringify({ opened, highlighted, closed, landed, cursorAfter })
+            );
             return steps;
         },
         async teardown(h, ctx) {

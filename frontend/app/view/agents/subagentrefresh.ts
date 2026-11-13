@@ -1,9 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure: when a parent's subagent list needs a fresh read besides its own transcript activity. The Agent
-// surface's sidebar streams no transcript, so activity never stamps there: a parent's state change (a hook)
-// and a slow poll while a child still reads as working are what keep its list current.
+// Pure: when a parent's subagent list needs a fresh read besides its own transcript activity. The shell (cockpitshell
+// AgentStreams) streams the transcripts of the focused agent and the active ones, whose activity stamps a re-read; an
+// agent it does not stream (idle past its grace, not focused) stamps none, so a parent's state change (a hook) and a
+// slow poll while a child or a background task still reads as working are what keep its list current.
 
 import type { SubagentVM } from "./session-models/sessionviewmodel";
 import { runningBackgroundTasks, type BackgroundTask } from "./transcriptprojection";

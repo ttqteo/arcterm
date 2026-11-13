@@ -540,7 +540,7 @@ function selectCanvas(model: AgentsViewModel, target: CanvasTarget, landing: Can
         jumpToAgent(model, landing.owner);
         return OK;
     }
-    attachCanvas(landing.agentId, { topic, dir: landing.dir, projectDir: landing.cwd, board }, Date.now());
+    attachCanvas(landing.agentId, { topic, dir: landing.dir, projectDir: landing.cwd, board });
     if (landing.show) {
         setAgentView(landing.agentId, "canvas", Date.now());
         jumpToAgent(model, landing.agentId);

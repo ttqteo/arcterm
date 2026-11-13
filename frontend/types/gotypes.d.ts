@@ -73,6 +73,11 @@ declare global {
         title?: string;
     };
 
+    // wshrpc.AgentLiveReplyUpdate
+    type AgentLiveReplyUpdate = {
+        text: string;
+    };
+
     // baseds.AgentPermissionData
     type AgentPermissionData = {
         oref: string;
@@ -1454,6 +1459,12 @@ declare global {
         swapusedbytes: number;
     };
 
+    // wshrpc.CommandGetContextBreakdownData
+    type CommandGetContextBreakdownData = {
+        cwd: string;
+        refresh?: boolean;
+    };
+
     // wshrpc.CommandGetDossierData
     type CommandGetDossierData = {
         dossierid: string;
@@ -1875,6 +1886,7 @@ declare global {
         cwd: string;
         hash?: string;
         base?: string;
+        end?: string;
         maxbytes: number;
     };
 
@@ -2447,6 +2459,11 @@ declare global {
         error?: string;
     };
 
+    // wshrpc.CommandStreamAgentLiveReplyData
+    type CommandStreamAgentLiveReplyData = {
+        path: string;
+    };
+
     // wshrpc.CommandStreamAgentTranscriptData
     type CommandStreamAgentTranscriptData = {
         path: string;
@@ -2623,6 +2640,40 @@ declare global {
         pid: number;
         command: string;
         bytes: number;
+    };
+
+    // wshrpc.ContextBreakdown
+    type ContextBreakdown = {
+        model: string;
+        windowtokens: number;
+        categories: ContextCategory[];
+        memoryfiles: ContextItem[];
+        skills: ContextItem[];
+        agents: ContextItem[];
+        mcpservers: ContextMcp[];
+        readat: number;
+    };
+
+    // wshrpc.ContextCategory
+    type ContextCategory = {
+        name: string;
+        tokens: number;
+        deferred?: boolean;
+    };
+
+    // wshrpc.ContextItem
+    type ContextItem = {
+        name: string;
+        source: string;
+        path?: string;
+        tokens: number;
+    };
+
+    // wshrpc.ContextMcp
+    type ContextMcp = {
+        server: string;
+        tools: number;
+        tokens: number;
     };
 
     // council.Council
@@ -3673,6 +3724,9 @@ declare global {
         tabid?: string;
         runid?: string;
         label?: string;
+        measured?: boolean;
+        elsewhere?: boolean;
+        peaks?: number[];
     };
 
     // wshrpc.JobSlotMissed

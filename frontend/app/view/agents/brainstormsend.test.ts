@@ -364,16 +364,146 @@ describe("recording an answer for Chat", () => {
         expect(brainstormAnswers(AGENT.id)).toEqual([]);
     });
 
+    // every line Arc sends leaves a record of its kind (chatbrainstorm.ts sendRecord), so Chat can hide it or fold it
     it.each([
         { kind: "guess" },
         { kind: "skip" },
         { kind: "confirm", part: "page" },
-        { kind: "builder-answer", text: "Only report." },
-        { kind: "check" },
-        { kind: "approved" },
-    ] as BrainstormAction[])("records nothing for a $kind line", async (action) => {
+        { kind: "confirm-all" },
+        { kind: "edit", part: "page", text: "Only report." },
+        { kind: "keep", part: "page" },
+        { kind: "restore", part: "page" },
+        { kind: "keep-all" },
+        { kind: "builder-decide" },
+    ] as BrainstormAction[])("records a $kind line as an action, with no question's number", async (action) => {
         asking();
-        await sendBrainstorm(AGENT, action, fakeIO(), 1000);
+        await sendBrainstorm(AGENT, action, fakeIO(false, false, false, [user("hello")]), 1000);
+        expect(brainstormAnswers(AGENT.id)).toEqual([
+            { topic: "lag", n: 0, part: "", text: brainstormLine(action), sentAt: 1000, seen: 0, kind: "action" },
+        ]);
+    });
+
+    it("records a check as the design step with the decisions it held", async () => {
+        updateBrainstorm(AGENT.id, (s) => ({ ...s, file: FILE }));
+        await sendBrainstorm(AGENT, { kind: "check" }, fakeIO(), 1000);
+        expect(brainstormAnswers(AGENT.id)).toEqual([
+            {
+                topic: "lag",
+                n: 0,
+                part: "",
+                text: "brainstorm: check",
+                sentAt: 1000,
+                seen: 0,
+                kind: "design",
+                decisions: 1,
+            },
+        ]);
+    });
+
+    it("records a check sent again after the first was not taken as an action: the retry draws no second row", async () => {
+        updateBrainstorm(AGENT.id, (s) => ({ ...s, file: FILE }));
+        await sendBrainstorm(AGENT, { kind: "check" }, fakeIO(), 1000);
+        // the agent ended its turn without starting the check: the line is settled and Try again is offered
+        updateBrainstorm(AGENT.id, (s) => ({ ...s, sent: null }));
+        await sendBrainstorm(AGENT, { kind: "check" }, fakeIO(), 2000);
+        expect(brainstormAnswers(AGENT.id).map((r) => [r.kind, r.sentAt])).toEqual([
+            ["design", 1000],
+            ["action", 2000],
+        ]);
+    });
+
+    it("records approved and keep talking as the builder step, counting the builder's questions and the agent's calls", async () => {
+        const checked: BrainstormFile = {
+            ...FILE,
+            check: {
+                yours: [
+                    { q: "Who pages?", a: "On-call" },
+                    { q: "How often?", a: "Each minute" },
+                ],
+                calls: [{ text: "Retry 3 times" }, { text: "Back off" }, { text: "Dedupe" }],
+                answered: ["a", "b", "c", "d"],
+            },
+        };
+        updateBrainstorm(AGENT.id, (s) => ({ ...s, file: checked }));
+        await sendBrainstorm(AGENT, { kind: "approved" }, fakeIO(), 1000);
+        updateBrainstorm(AGENT.id, (s) => ({ ...s, sent: null }));
+        await sendBrainstorm(AGENT, { kind: "keep-talking" }, fakeIO(), 2000);
+        expect(brainstormAnswers(AGENT.id)).toMatchObject([
+            { kind: "builder", questions: 2, calls: 3, outcome: "approved", text: "brainstorm: approved" },
+            { kind: "builder", questions: 2, calls: 3, outcome: "keep-talking", text: "brainstorm: keep talking" },
+        ]);
+    });
+
+    it("records the run the agent is told about", async () => {
+        updateBrainstorm(AGENT.id, (s) => ({ ...s, file: FILE }));
+        await sendBrainstorm(AGENT, { kind: "run", runId: "r1" }, fakeIO(), 1000);
+        expect(brainstormAnswers(AGENT.id)).toMatchObject([{ kind: "run", runId: "r1", text: "brainstorm: run r1" }]);
+    });
+
+    it("records a builder answer against the builder question that is open", async () => {
+        const checked: BrainstormFile = {
+            ...FILE,
+            check: {
+                yours: [
+                    { q: "Who pages?", part: "page", a: "On-call" },
+                    { q: "How often?", part: "page" },
+                ],
+                calls: [],
+                answered: [],
+            },
+        };
+        updateBrainstorm(AGENT.id, (s) => ({ ...s, file: checked }));
+        await sendBrainstorm(AGENT, { kind: "builder-answer", text: "Only report." }, fakeIO(), 1000);
+        expect(brainstormAnswers(AGENT.id)).toEqual([
+            {
+                topic: "lag",
+                n: 2,
+                part: "What on-call sees",
+                text: "brainstorm: builder answer: Only report.",
+                sentAt: 1000,
+                seen: 0,
+                kind: "builder-answer",
+            },
+        ]);
+    });
+
+    it("records nothing for a builder answer when no builder question is open: it stays a bubble", async () => {
+        asking();
+        await sendBrainstorm(AGENT, { kind: "builder-answer", text: "Only report." }, fakeIO(), 1000);
+        expect(brainstormAnswers(AGENT.id)).toEqual([]);
+    });
+
+    it("counts the same-text messages already there for an action line too", async () => {
+        asking();
+        const io = fakeIO(false, false, false, [user("brainstorm: guess"), user("hello"), user("brainstorm: guess")]);
+        await sendBrainstorm(AGENT, { kind: "guess" }, io, 1000);
+        expect(brainstormAnswers(AGENT.id)[0]).toMatchObject({ kind: "action", seen: 2 });
+    });
+
+    it("keeps at most 200 records per agent: every action leaves one", async () => {
+        asking();
+        for (let i = 0; i < 205; i++) {
+            updateBrainstorm(AGENT.id, (s) => ({ ...s, sent: null }));
+            await sendBrainstorm(AGENT, { kind: "guess" }, fakeIO(), i);
+        }
+        const kept = brainstormAnswers(AGENT.id);
+        expect(kept).toHaveLength(200);
+        expect(kept[0].sentAt).toBe(5);
+        expect(kept[199].sentAt).toBe(204);
+    });
+
+    it("records an action that wakes a sleeping agent, and none when the line cannot be sent", async () => {
+        asking();
+        const asleep = { ...AGENT, sleeping: { since: 1, freedBytes: 0 } };
+        await sendBrainstorm(asleep, { kind: "guess" }, fakeIO(), 1000);
+        expect(brainstormAnswers(AGENT.id)).toMatchObject([{ kind: "action" }]);
+        await expect(sendBrainstorm(AGENT, { kind: "skip" }, fakeIO(true))).rejects.toThrow();
+        expect(brainstormAnswers(AGENT.id)).toHaveLength(1);
+    });
+
+    it("records nothing for an agent with no brainstorm attached", async () => {
+        globalStore.set(brainstormsAtom, {});
+        await sendBrainstorm(AGENT, { kind: "guess" }, fakeIO(), 1000);
         expect(brainstormAnswers(AGENT.id)).toEqual([]);
     });
 

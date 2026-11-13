@@ -29,6 +29,7 @@ import {
     isAskStale,
     isEditAction,
     isNearBottom,
+    revealScrollTop,
     isQuiet,
     isRecentlyIdle,
     latestMessageText,
@@ -65,6 +66,8 @@ import {
     type LiveAgentInput,
     type PendingLaunch,
 } from "./agentsviewmodel";
+import { withResultLines } from "./chatinitiative";
+import { groupCompact } from "./compacttimeline";
 
 const mk = (id: string, state: AgentVM["state"], extra: Partial<AgentVM> = {}): AgentVM => ({
     id,
@@ -94,6 +97,26 @@ describe("sortAgents", () => {
         const input = [mk("a", "idle"), mk("b", "asking")];
         sortAgents(input);
         expect(input.map((a) => a.id)).toEqual(["a", "b"]);
+    });
+});
+
+describe("revealScrollTop", () => {
+    // a 400px region scrolled to 600 of 1400: the end is at 1000
+    const m = { scrollTop: 600, scrollHeight: 1400, clientHeight: 400 };
+    it("brings a fold's head low in the view up to the margin", () => {
+        // head 350px below the region's top, margin 48 -> scroll down 302
+        expect(revealScrollTop(m, 350, 48)).toBe(902);
+    });
+    it("stops at the end while the fold has not grown enough to reach the margin", () => {
+        // the summary has grown only 100px past the view: 600 + 390 - 48 = 942, but the end is 1300 - 400 = 900
+        expect(revealScrollTop({ scrollTop: 600, scrollHeight: 1300, clientHeight: 400 }, 390, 48)).toBe(900);
+    });
+    it("leaves a head already at or above the margin where it is", () => {
+        expect(revealScrollTop(m, 48, 48)).toBeNull();
+        expect(revealScrollTop(m, 20, 48)).toBeNull();
+    });
+    it("leaves a region already at its end where it is", () => {
+        expect(revealScrollTop({ scrollTop: 1000, scrollHeight: 1400, clientHeight: 400 }, 350, 48)).toBeNull();
     });
 });
 
@@ -1482,6 +1505,52 @@ describe("conversationText", () => {
 
     it("returns an empty string when there is no prose", () => {
         expect(conversationText([{ kind: "action", verb: "Bash", target: "ls" }])).toBe("");
+    });
+});
+
+describe("initiative result lines in the person's messages (result line)", () => {
+    const sent = withResultLines(
+        ["initiative: added note to Auth (effort:ab12) › 2", "initiative: dismissed chunk for Auth"],
+        "now the tests"
+    );
+    // Claude Code wraps a multi-line message whole as a paste
+    const wrapped = `<pasted_content id="45ce">\n${sent}\n</pasted_content id="45ce">`;
+
+    it("groupTimeline hands a user item only what the person wrote", () => {
+        for (const text of [sent, wrapped]) {
+            const items = groupTimeline([{ kind: "user", text }]);
+            expect(items).toEqual([{ kind: "user", text: "now the tests", index: 0 }]);
+        }
+    });
+
+    it("groupTimeline keeps the images of a message that carried lines, and leaves a plain message as it was", () => {
+        const items = groupTimeline([
+            { kind: "user", text: sent, images: ["C:\\a\\b.png"] },
+            { kind: "user", text: "plain\ninitiative: added by hand" },
+        ]);
+        expect(items).toEqual([
+            { kind: "user", text: "now the tests", images: ["C:\\a\\b.png"], index: 0 },
+            { kind: "user", text: "plain\ninitiative: added by hand", index: 1 },
+        ]);
+    });
+
+    it("groupCompact, which the Terminal-side transcript reads, shows only what the person wrote", () => {
+        const entries: AgentEntry[] = [
+            { kind: "user", text: wrapped },
+            { kind: "message", text: "ok" },
+        ];
+        expect(groupCompact(entries)).toEqual([
+            { kind: "user", text: "now the tests", index: 0 },
+            { kind: "message", text: "ok", index: 1 },
+        ]);
+    });
+
+    it("conversationText (Copy conversation) leaves the lines out of a user entry", () => {
+        const entries: AgentEntry[] = [
+            { kind: "user", text: wrapped },
+            { kind: "message", text: "done — added it" },
+        ];
+        expect(conversationText(entries)).toBe("now the tests\n\ndone — added it");
     });
 });
 

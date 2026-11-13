@@ -109,3 +109,46 @@ export function secondChoice(options: readonly TuiOption[]): string | null {
     const second = options[1];
     return second.n === 2 && /^yes\b/i.test(second.label) ? second.label : null;
 }
+
+/** One of the card's buttons, picked from the keyboard: Allow, the prompt's second "Yes, and …" option, or Deny. */
+export type PermissionChoice = "allow" | "second" | "deny";
+
+/** Pure: the card's choices in the order it draws its buttons; the second is there only while its label was read. */
+export function permissionChoices(hasSecond: boolean): PermissionChoice[] {
+    return hasSecond ? ["allow", "second", "deny"] : ["allow", "deny"];
+}
+
+/** Pure: what a choice sends, as its button does. */
+export function choiceAnswer(choice: PermissionChoice): { allow: boolean; choice?: 2 } {
+    return choice === "deny" ? { allow: false } : choice === "second" ? { allow: true, choice: 2 } : { allow: true };
+}
+
+/** Pure: the highlighted choice once the choices changed. It is kept by what it is, not where it sat: the second button
+ *  joins the row a moment after the card shows (its label is read off the terminal), and the place that held Deny then
+ *  holds "Yes, and don't ask again". A choice no longer offered falls back to Allow. */
+export function keptChoice(choices: readonly PermissionChoice[], current: PermissionChoice): PermissionChoice {
+    return choices.includes(current) ? current : "allow";
+}
+
+/** Pure: the highlight after ↑ (delta -1) or ↓ (+1), held at the ends as the prompt's own list is. */
+export function moveChoice(
+    choices: readonly PermissionChoice[],
+    current: PermissionChoice,
+    delta: -1 | 1
+): PermissionChoice {
+    const at = choices.indexOf(keptChoice(choices, current));
+    return choices[Math.min(choices.length - 1, Math.max(0, at + delta))];
+}
+
+/** Pure: what a key in the chat box does while the card can be answered: ↑ and ↓ move its highlight, Enter sends the
+ *  highlighted choice. Only in an empty box, with no modifier and no IME composition under way: with text in the box the
+ *  keys stay the box's (Enter queues the message, Send holding it until the prompt is answered). */
+export function permissionBoxKey(
+    e: { key: string; shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean; isComposing: boolean },
+    boxEmpty: boolean
+): "up" | "down" | "pick" | null {
+    if (!boxEmpty || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.isComposing) {
+        return null;
+    }
+    return e.key === "ArrowUp" ? "up" : e.key === "ArrowDown" ? "down" : e.key === "Enter" ? "pick" : null;
+}

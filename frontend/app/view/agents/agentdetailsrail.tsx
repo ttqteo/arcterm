@@ -43,6 +43,7 @@ import {
 } from "./agentrailmodel";
 import { RailResizeGrip, RailStats, RailTabStrip, useWideWidth } from "./agentrailpanel";
 import {
+    bgSessionLive,
     bgTaskStatusLabel,
     bgTaskStoppable,
     planAgentRail,
@@ -63,6 +64,9 @@ import { useChatMode } from "./chatmodestore";
 import { ASK_OWNER_USER } from "./childaskmodel";
 import { RailTree } from "./christmasrailtreeview";
 import { commitListAtom, loadCommitList, showInLog } from "./commitstore";
+import { canDrive } from "./consumers";
+import { cacheWarn, contextGroups, fmtTok, rewriteNow } from "./ctxbreakdown";
+import { ctxBreakdownAtom } from "./ctxbreakdownstore";
 import { useDevServers } from "./devserversstore";
 import { FileTab } from "./filetab";
 import { finalRowFocusId, isFinalStageId } from "./finalstage";
@@ -177,6 +181,12 @@ function DetailLine({
 
 const RESET_BTN =
     "flex-none cursor-pointer rounded-[6px] px-[6px] py-[2px] text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover";
+
+// the folder a file sits in: the path up to its last separator, null for a bare name
+function dirOf(path: string): string | null {
+    const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+    return i > 0 ? path.slice(0, i) : null;
+}
 
 const RING_R = 6;
 const RING_C = 2 * Math.PI * RING_R;
@@ -691,6 +701,10 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     // own. The cwd is this agent's last resolved one, not railState's, which is empty or another agent's for the moment
     // after a switch: reading that, a switch to an agent left on Files slid to Overview's width and back
     const agentCwd = useAtomValue(railCwdsAtom)[agent.id] ?? null;
+    // the context breakdown is read and kept per folder: this agent's, never railState's (another agent's for a moment
+    // after a switch)
+    const ctxCwd = agentCwd ?? agent.cwd ?? null;
+    const ctxState = useAtomValue(ctxBreakdownAtom(ctxCwd ?? ""));
     const treeCwd = sub == null ? agentCwd : null;
     const hasTree = treeCwd != null;
     // the Transcript tab reads the agent's own transcript, so it stays while a subagent's interior is open. A sleeping
@@ -864,13 +878,33 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const cacheCountdown = isClaude ? formatCacheCountdown(cacheStatus, now) : "—";
     const branch = ended ? ended.branch : railState?.branch;
     const worktree = ended ? undefined : railState?.worktree;
-    const live = agent.blockId != null && !ended;
+    const live = bgSessionLive(agent.blockId, ended != null);
+    // what types into its terminal (the Resume and Stop button, Compact and Clear) also needs it awake: a sleeping
+    // agent's process is gone, so its PTY is dead. `live` alone keeps feeding the background-task rows below.
+    const drivable = live && canDrive(agent);
     const bgActivity = backgroundActivity(bgTasks, machineServers);
     const shownAgentState = shownState(agent.state, bgActivity);
-    const action = sub ? null : railAction(agent.state, bgActivity, live);
+    const action = sub ? null : railAction(agent.state, bgActivity, drivable);
     const offerReset =
         ctxPct != null &&
-        offersContextReset({ isClaude, state: agent.state, level: contextLevel(ctxPct, usage?.contextmax), live });
+        offersContextReset({
+            isClaude,
+            state: agent.state,
+            level: contextLevel(ctxPct, usage?.contextmax),
+            live: drivable,
+        });
+    // under 5 minutes of cache left on a live session: the line says so in amber, and a ready breakdown prices the
+    // rewrite (what the next turn writes if the conversation is compacted now, against what it writes if it is not)
+    const cacheExpiring = ended == null && cacheWarn(cacheCountdown);
+    const ctxWindow = usage?.contextmax;
+    // a Claude agent's context in use, with a folder to read /context in: the Context part and the rewrite note
+    const liveTokens = isClaude && ctxPct != null && ctxWindow ? Math.round((ctxPct / 100) * ctxWindow) : null;
+    const ctxBreakdown =
+        ctxState.state === "ready" ? ctxState.data : ctxState.state === "reading" ? ctxState.prev : undefined;
+    const rewriteNote =
+        cacheExpiring && liveTokens != null && ctxBreakdown
+            ? `now rewrites ~${fmtTok(rewriteNow(liveTokens, contextGroups(ctxBreakdown, liveTokens)[0].tokens))}, later ${fmtTok(liveTokens)}`
+            : null;
 
     const fileCount = ended ? ended.files.length : railState?.isRepo ? changes.length : null;
     const railInput = {
@@ -1102,12 +1136,22 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                                 }
                                 className="min-w-0 flex-1 truncate text-[11px] tabular-nums text-muted"
                             >
-                                {railStatusLine({
-                                    state: shownAgentState,
-                                    age,
-                                    ended: ended != null,
-                                    cache: cacheCountdown,
-                                })}
+                                {cacheExpiring ? (
+                                    <>
+                                        {railStatusLine({ state: shownAgentState, age, ended: false, cache: "—" })}
+                                        {" · "}
+                                        <span data-rail-cache-warn className="font-semibold text-warning">
+                                            cache {cacheCountdown}
+                                        </span>
+                                    </>
+                                ) : (
+                                    railStatusLine({
+                                        state: shownAgentState,
+                                        age,
+                                        ended: ended != null,
+                                        cache: cacheCountdown,
+                                    })
+                                )}
                             </span>
                             {action?.kind === "resume" ? (
                                 <button
@@ -1131,7 +1175,32 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         </div>
                     )
                 }
-                actions={offerReset ? <ResetActions onReset={drive} /> : undefined}
+                actions={
+                    offerReset ? (
+                        <>
+                            <ResetActions onReset={drive} />
+                            {rewriteNote ? (
+                                <span
+                                    data-rail-rewrite-note
+                                    className="ml-auto min-w-0 truncate text-[10.5px] text-muted"
+                                >
+                                    {rewriteNote}
+                                </span>
+                            ) : null}
+                        </>
+                    ) : undefined
+                }
+                context={
+                    !sub && liveTokens != null && ctxWindow && ctxCwd
+                        ? {
+                              cwd: ctxCwd,
+                              liveTokens,
+                              windowTokens: ctxWindow,
+                              cache: cacheCountdown,
+                              onOpenFile: (p) => openFileInPanel(model, agent.id, { abs: p, root: dirOf(p) }),
+                          }
+                        : undefined
+                }
             >
                 <div className="flex flex-col gap-[6px]">
                     {sub ? (
@@ -1268,7 +1337,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         live={live}
                         onStop={
                             // the kill finds the task among the agent block's job object: Windows only
-                            isWindows() && agent.blockId != null && bgTaskStoppable(t, live)
+                            isWindows() && bgTaskStoppable(t, live)
                                 ? () => fireAndForget(() => stopBackgroundTask(agent.id, agent.blockId!, t))
                                 : undefined
                         }

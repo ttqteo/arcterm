@@ -456,6 +456,34 @@ human set them aside by hand. **Fixed:** `unstagedOverlap` (`land.go`) calls an 
 branch's blob a copy, not an overlap; the land puts copies back (`clearEditedCopies`, under the checkout claim) and
 merges. A differing edit still holds. Unit-tested in `TestLandKeepsUncommittedEdits`; not yet run live.
 
+## Incident — run 1cad2fd0's lead hung in one tool call and held every wake (2026-11-12)
+
+Run 1cad2fd0 (Kael sync small fixes) sat 2 h 30 min at 1/6 tasks while its row read `Working · 1/6`, holding ~5.6 GB,
+until a person paused and resumed it.
+
+- The lead called `wsh jarvis dag merge t-2 --continue` at 14:40 and the call never returned, with no child process
+  left under it. `flushLocked` held every wake behind the lead's `working` state (`wake: run … holds its lead's wake:
+  state "working" from PreToolUse`) with no deadline, so t-3's stall and t-4's review timeout reached no one.
+
+Gaps and fixes:
+
+- **A held wake had no deadline.** **Fixed (run a1d131bb, t-2):** after `LeadHungAfter` (30 min) of holding while the
+  lead works (not while it asks) with its process tree idle, `checkHungLocked` stops the lead's process, bounded by
+  `leadStopWait`, and hands the run over through `leadDiedLocked`: an autonomous run's lead is relaunched, otherwise its
+  questions go to the person. A lead using CPU is judged again a window later. A stop that does not finish hands the
+  questions to the person and replaces nothing. Unit-tested (`TestHungLeadIsStoppedAndReplaced`,
+  `TestHungLeadNonAutonomousHandsQuestionsToThePerson`, `TestHungLeadStopThatNeverReturnsHandsQuestionsToThePerson`,
+  `TestHeldWakeWhileAskingNeverHangs`); the real `DestroyBlockController` against a real hung lead has not run
+  (`hand-checks.md`).
+- **The pause that ended it made the engine start a second lead.** A pause ends the lead's process on purpose and the
+  waker read that as a death. **Fixed (t-6):** a paused run's wakes are held, not judged, and a resumed lead resolves its
+  run context. `TestAPausedRunsLeadIsNotDeclaredDeadOrReplaced`.
+- **Also found in the same run, fixed with it:** a worker's AskUserQuestion lost to a timed-out hook (t-3, recovered
+  from the transcript), a Verify shim exiting 127 under `Git\usr\bin\bash.exe` (t-1), a task read as stalled while its
+  worker waited on its own background shell (t-4), a finished worker holding 1.9 GB for 2 h 37 min (t-5), a row that
+  said nothing of what was stuck (t-8) and a dag lock held 5–28 s with no phase named (t-7; its re-measure is due
+  2026-11-26, `open-issues.md`). Spec `docs/superpowers/specs/2026-11-12-run-self-heal-design.md`.
+
 ## Constraints carried into the redesign
 
 - KISS/YAGNI: no new subsystems, no per-task timeout policies, no message bus. Only the failure modes

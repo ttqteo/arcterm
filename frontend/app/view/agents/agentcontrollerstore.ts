@@ -31,6 +31,15 @@ export function getProcExitAtom(blockId: string): PrimitiveAtom<{ code: number; 
     return exitAtom;
 }
 
+// whether a lead's process runs, as far as this window has seen: none in the roster, or its block reported done, is not
+// live; an agent put to sleep is asleep, not gone
+export function leadProcessLive(lead: { blockId?: string; sleeping?: unknown } | undefined): boolean {
+    if (lead == null) {
+        return false;
+    }
+    return lead.sleeping != null || globalStore.get(getProcExitAtom(lead.blockId ?? "")) == null;
+}
+
 // keyed like lastOutputAtoms; the reason the block's controller last refused to start, cleared once it runs
 const startErrorAtoms = new Map<string, PrimitiveAtom<string | undefined>>();
 

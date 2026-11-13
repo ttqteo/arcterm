@@ -335,7 +335,7 @@ describe("settings pages", () => {
             "runs/runs", "runs/whilework", "runs/tokenburn",
             "terminal/text", "terminal/cursor", "terminal/behavior",
             "headless/runtime", "headless/openrouter", "headless/radar",
-            "jarvis/jarvis", "jarvis/folding", "jarvis/office",
+            "jarvis/jarvis", "jarvis/form", "jarvis/behaviour", "jarvis/folding", "jarvis/office",
             "storage/vault", "storage/runworktrees", "storage/sessions", "storage/housekeeping", "storage/buildoutput",
             "storage/packagecaches", "storage/canvases", "storage/autoclean",
             "about/versions", "about/agents",
@@ -374,9 +374,9 @@ describe("settings pages", () => {
         expect(cards["headless/runtime"]).toEqual(["headless.runtime"]);
         expect(cards["headless/openrouter"]).toEqual(["headless.apikey", "headless.cheap"]);
         expect(cards["headless/radar"]).toEqual(["headless.radaraudit", "headless.radarclassify"]);
-        expect(cards["jarvis/jarvis"]).toEqual([
-            "appearance.petcharacter", "appearance.petoutfit", "appearance.petstay", "appearance.petquotes",
-        ]);
+        expect(cards["jarvis/jarvis"]).toEqual(["appearance.petcharacter", "appearance.petoutfit"]);
+        expect(cards["jarvis/form"]).toEqual(["appearance.petform", "appearance.petholosize"]);
+        expect(cards["jarvis/behaviour"]).toEqual(["appearance.petstay", "appearance.petquotes"]);
         expect(cards["jarvis/folding"]).toEqual(["window.minimize", "window.sproutcorner", "window.autosprout"]);
         expect(cards["jarvis/office"]).toEqual([
             "appearance.officeanimation", "appearance.officehours", "appearance.officesoundevents",
@@ -397,8 +397,8 @@ describe("settings pages", () => {
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
         // today's 60, the nine rows the reorganization added, the two compaction rows, the pet's stay row, Chat's fold
-        // and the agent row's RAM
-        expect(ids).toHaveLength(74 + RUNTIME_FLAGS.claude.length);
+        // , the agent row's RAM, and the pet's form and hologram size
+        expect(ids).toHaveLength(76 + RUNTIME_FLAGS.claude.length);
     });
 
     it("finds moved rows by search", () => {

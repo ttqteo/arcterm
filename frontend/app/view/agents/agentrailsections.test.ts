@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    bgSessionLive,
     bgTaskStatusLabel,
     bgTaskStopNote,
     bgTaskStoppable,
@@ -158,6 +159,15 @@ describe("bgTaskStatusLabel", () => {
         expect(bgTaskStatusLabel("running", true)).toBe("running");
         expect(bgTaskStatusLabel("running", false)).toBe("unknown");
         expect(bgTaskStatusLabel("completed", false)).toBe("completed");
+    });
+});
+
+describe("bgSessionLive", () => {
+    it("is one rule for the rail and the task peek: a terminal block, and not ended", () => {
+        expect(bgSessionLive("blk", false)).toBe(true);
+        expect(bgSessionLive(undefined, false)).toBe(false);
+        // the rail's ended worker, or an agent the peek no longer finds in the roster
+        expect(bgSessionLive("blk", true)).toBe(false);
     });
 });
 

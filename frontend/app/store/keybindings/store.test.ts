@@ -74,7 +74,7 @@ function inGallery(view: "grid" | "viewer" | "cleanup", dir: string | null = nul
 
 // a1 focused with a ready two-board canvas, in terminal mode; callers move it into canvas/marking
 function withCanvas(): any {
-    attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+    attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" });
     updateCanvas("a1", (s) => ({
         ...s,
         status: "ready",

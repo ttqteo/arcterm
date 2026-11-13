@@ -287,7 +287,8 @@ export function DesignButton({ f, onClick }: { f: BrainstormFile; onClick: () =>
 }
 
 // the answer controls a question shares: what is typed, and the one send for it and for a picked option, both sent
-// as kind
+// as kind. What the words field sends is marked typed (an answer's ✓ row in Chat reads "You replied" for it); a picked
+// option, ticked options included, leave the mark off
 export function useAnswer(agent: AgentVM, kind: "answer" | "builder-answer" = "answer") {
     const [draft, setDraft] = useState("");
     const act = useAction();
@@ -299,7 +300,7 @@ export function useAnswer(agent: AgentVM, kind: "answer" | "builder-answer" = "a
     const sendText = (text: string) => send({ kind, text });
     const sendDraft = () => {
         if (draft.trim() !== "" && !act.busy) {
-            void sendText(draft);
+            void send(kind === "answer" ? { kind, text: draft, typed: true } : { kind, text: draft });
         }
     };
     return { draft, setDraft, act, send, sendText, sendDraft };

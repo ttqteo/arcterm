@@ -8,7 +8,7 @@
 import type { AgentVM } from "./agentsviewmodel";
 import { finalStageActivity } from "./finalstage";
 import { landPlace, type LandSlot } from "./landline";
-import { runProgress, type Lineage, type RunInfo } from "./runlineage";
+import { FAILED_TEXT, runProgress, type Lineage, type RunInfo } from "./runlineage";
 import { pausedLabel, runStage } from "./runstage";
 
 export type RunStatusTone = "planning" | "review" | "running" | "blocked" | "done" | "failed" | "cancelled" | "paused";
@@ -75,13 +75,17 @@ export function dagProgressLabel(
     if (s.key !== "working" && s.key !== "plan-review" && s.key !== "planning") {
         return same(finishedRunLabel(run));
     }
+    // a working run with tasks that cannot go on says how many: the tooltip names each, in task order
+    const stuck = s.key === "working" ? (run.dag?.tasks ?? []).filter((t) => FAILED_TEXT[t.state] != null) : [];
     const base = `${s.label} · ${done}/${total}`;
+    const text = stuck.length > 0 ? `${base} · ${stuck.length} stuck` : base;
+    const named = [text, ...stuck.map((t) => `${t.id} ${FAILED_TEXT[t.state]}`)].join(" · ");
     if (leadless) {
         // a plan-path run gets its lead only at its first judgment event, so no lead yet is the normal case: the
         // tooltip says it, the line keeps its room for the count
-        return { text: base, title: `${base} · ${run.leadStarted ? "lead closed" : "lead starts if needed"}` };
+        return { text, title: `${named} · ${run.leadStarted ? "lead closed" : "lead starts if needed"}` };
     }
-    return same(base);
+    return { text, title: named };
 }
 
 // runComplete is a run with nothing left to happen: landed, or done with nothing to land. a lead still wrapping up, a

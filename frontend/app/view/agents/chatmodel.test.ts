@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AgentActionEntry, AgentEntry, EditFile } from "./agentsviewmodel";
+import { withResultLines } from "./chatinitiative";
 import {
     bashMode,
     canSendNow,
@@ -74,6 +75,18 @@ describe("chatItems", () => {
 
     it("turns an empty transcript into no items", () => {
         expect(chatItems([])).toEqual([]);
+    });
+
+    it("shows only what the person wrote when their message carried initiative result lines (result line)", () => {
+        const sent = withResultLines(["initiative: added note to Auth (effort:ab12) › 2"], "now the tests");
+        const wrapped = `<pasted_content id="45ce">\n${sent}\n</pasted_content id="45ce">`;
+        for (const text of [sent, wrapped]) {
+            const items = chatItems([{ kind: "user", text, uuid: "u1" }, says("ok")]);
+            expect(items[0]).toMatchObject({ kind: "you", text: "now the tests", uuid: "u1" });
+        }
+        // a message that only mentions `initiative:` mid-text is left alone
+        const mention = "see below\ninitiative: added by hand";
+        expect(chatItems([you(mention)])[0]).toMatchObject({ kind: "you", text: mention });
     });
 
     it("gives a plain exchange one 'you' and one agent group of prose, work, files, prose", () => {
@@ -306,6 +319,32 @@ describe("what arcterm typed", () => {
         for (const name of names) {
             const [item] = chatItems([you(fixture(name))]);
             expect(item.kind, name).toBe("sent");
+        }
+    });
+
+    it("reads a `brainstorm:` line as your message, so it can pair with its send record, not as a sent card", () => {
+        const items = chatItems([{ kind: "user", text: "brainstorm: check", uuid: "u9" }]);
+        expect(items).toEqual([{ kind: "you", key: "you:0", text: "brainstorm: check", uuid: "u9" }]);
+        for (const line of [
+            "brainstorm: confirm every guess",
+            "brainstorm: builder answer: Fade",
+            "brainstorm: run 3fa2c1d4",
+            "brainstorm: approved\n",
+        ]) {
+            expect(chatItems([you(line)])[0], line).toMatchObject({ kind: "you", text: line });
+        }
+    });
+
+    it("still reads the lines wavesrv sends by itself under `brainstorm:` as sent cards from the cockpit", () => {
+        for (const name of ["judged", "judge-failed", "builder-questions"]) {
+            expect(chatItems([you(fixture(name))])[0], name).toMatchObject({ kind: "sent", from: "cockpit" });
+        }
+    });
+
+    it("still reads another agent's message and a child run's line as sent cards", () => {
+        expect(chatItems([you(fixture("agent-message"))])[0]).toMatchObject({ kind: "sent", from: "cockpit" });
+        for (const name of ["child-done", "child-cancelled"]) {
+            expect(chatItems([you(fixture(name))])[0], name).toMatchObject({ kind: "sent", from: "cockpit" });
         }
     });
 

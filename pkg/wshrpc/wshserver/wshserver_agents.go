@@ -16,6 +16,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/bgagents"
 	"github.com/wavetermdev/waveterm/pkg/claudeaccount"
 	"github.com/wavetermdev/waveterm/pkg/claudequota"
+	"github.com/wavetermdev/waveterm/pkg/ctxbreakdown"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/projectscan"
@@ -289,6 +290,13 @@ func (ws *WshServer) GetTranscriptUsageCommand(ctx context.Context, data wshrpc.
 	return &wshrpc.CommandGetTranscriptUsageRtnData{Buckets: out}, nil
 }
 
+func (ws *WshServer) GetContextBreakdownCommand(ctx context.Context, data wshrpc.CommandGetContextBreakdownData) (*wshrpc.ContextBreakdown, error) {
+	if strings.TrimSpace(data.Cwd) == "" {
+		return nil, fmt.Errorf("no folder to read /context in")
+	}
+	return ctxbreakdown.Read(ctx, data.Cwd, data.Refresh)
+}
+
 func (ws *WshServer) GetCacheStatusCommand(ctx context.Context, data wshrpc.CommandGetCacheStatusData) (*wshrpc.CommandGetCacheStatusRtnData, error) {
 	cw, err := usagestats.LastCacheWrite(data.Path)
 	if err != nil {
@@ -522,6 +530,26 @@ func (ws *WshServer) StreamAgentTranscriptCommand(ctx context.Context, data wshr
 		defer close(ch)
 		if err := streamTranscript(ctx, data.Path, data.TailLines, ch); err != nil {
 			ch <- wshutil.RespErr[wshrpc.AgentTranscriptUpdate](err)
+		}
+	}()
+	return ch
+}
+
+func (ws *WshServer) StreamAgentLiveReplyCommand(ctx context.Context, data wshrpc.CommandStreamAgentLiveReplyData) chan wshrpc.RespOrErrorUnion[wshrpc.AgentLiveReplyUpdate] {
+	ch := make(chan wshrpc.RespOrErrorUnion[wshrpc.AgentLiveReplyUpdate], 16)
+	go func() {
+		defer func() {
+			panichandler.PanicHandler("StreamAgentLiveReplyCommand", recover())
+		}()
+		defer close(ch)
+		dir := liveReplyDir()
+		path, err := liveReplyFile(dir, data.Path)
+		if err == nil {
+			maybeSweepLiveReplies(dir)
+			err = streamLiveReply(ctx, path, ch)
+		}
+		if err != nil {
+			ch <- wshutil.RespErr[wshrpc.AgentLiveReplyUpdate](err)
 		}
 	}()
 	return ch

@@ -103,6 +103,40 @@ func TestShippedSkills(t *testing.T) {
 		}
 	}
 
+	doc, err = fs.ReadFile(FS, "handoff/SKILL.md")
+	if err != nil {
+		t.Fatalf("handoff/SKILL.md is not embedded: %v", err)
+	}
+	if got := frontmatterName(t, string(doc)); got != "handoff" {
+		t.Errorf("handoff frontmatter name = %q, want handoff", got)
+	}
+	// the Handoff ask (its header, the four choices in their order and the start commands) and the arc-review block
+	// (its fence, the `subagent` pairing field and the lines Chat's buttons send back) are what the skill teaches; Chat
+	// reads the header, the four labels and the fence by these exact words.
+	handoff := string(doc)
+	for _, want := range []string{
+		"AskUserQuestion", "Handoff", "(Recommended)",
+		"wsh runs start --plan", "--queue", "--after", "runs:maxactive",
+		"```arc-review", "subagent", "Fix these review findings:", "Skip the review:",
+	} {
+		if !strings.Contains(handoff, want) {
+			t.Errorf("handoff/SKILL.md does not mention %q", want)
+		}
+	}
+	// the four choices keep their order: Chat draws the rows in this order and maps a click back by label
+	last := -1
+	for _, label := range []string{"`Arc engine`", "`Arc engine, queued`", "`Inline in this session`", "`Subagent-driven`"} {
+		at := strings.Index(handoff, label)
+		if at < 0 {
+			t.Errorf("handoff/SKILL.md does not name the choice %s", label)
+			continue
+		}
+		if at < last {
+			t.Errorf("handoff/SKILL.md names %s before the choice above it: the four choices must come in order", label)
+		}
+		last = at
+	}
+
 	entries, err := fs.ReadDir(FS, ".")
 	if err != nil {
 		t.Fatal(err)

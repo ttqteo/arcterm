@@ -18,14 +18,14 @@
 // can always rise above the box. Chat's jump-to-latest button (data-chat-jump) rides the dock, centred above the box.
 
 import { KeyCap } from "@/app/element/keycap";
-import { layerFade, sentRise, springPop } from "@/app/element/motiontokens";
+import { layerFade, MOTION, sentRise, springPop } from "@/app/element/motiontokens";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ArrowDown, Highlighter } from "lucide-react";
-import { AnimatePresence, motion, MotionConfig, useIsPresent } from "motion/react";
+import { AnimatePresence, motion, MotionConfig, useIsPresent, useReducedMotion, type Variants } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
 import { canStop } from "./agentcomposer";
@@ -34,26 +34,35 @@ import { agentDiffScope, openDiff } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
-import { procExited } from "./brainstormmodel";
-import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
+import { builderCheckView, procExited, type BuilderCheckView } from "./brainstormmodel";
+import { brainstormAtom, brainstormSeenAtom, shownBrainstormFile } from "./brainstormstore";
 import { AskRow } from "./channelsprimitives";
 import { boxPlaceholder, type BoxState } from "./chatboxstate";
-import { openQuestion } from "./chatbrainstorm";
+import { brainstormCard } from "./chatbrainstorm";
 import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstormstore";
 import { boxAnswerRecord, boxPlaceholderOverride } from "./chatbrainstormwire";
 import { ChatComposer } from "./chatcomposer";
-import { ChatConversation } from "./chatconversation";
+import { BtwCard, ChatConversation, youBubbleBox } from "./chatconversation";
 import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
+import { awaitsOwnMessage, narratesThinking, streamsLiveReply } from "./chatlive";
+import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chatlivestore";
 import { ChatLocalCard } from "./chatlocalcards";
 import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
 import { chatCapable } from "./chatmode";
 import { canSendNow, SEND_NOW_KEYS, turnStatsLabel, workingText } from "./chatmodel";
 import { setChatMode, useChatMode } from "./chatmodestore";
-import { pendingCaption, pendingStill, queuedBubbleUp, type PendingKind, type PendingMessage } from "./chatpending";
+import {
+    btwQuestion,
+    pendingLine,
+    pendingStill,
+    queuedBubbleUp,
+    type PendingKind,
+    type PendingMessage,
+} from "./chatpending";
 import { usePending } from "./chatpendingstore";
 import { risesFromBox } from "./chatsentrise";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
@@ -86,13 +95,6 @@ function useIdleSince(idle: boolean): number | null {
     return since;
 }
 
-// A message sent and not in the transcript yet: your bubble, dimmed, and under it "Queued" when it was sent while
-// Claude worked (Claude Code takes it at the next gap) or "Sending…" when it was sent to an idle Claude
-// (chatpending.ts pendingCaption: decided at the send, so the turn it starts never flips it to Queued); a session's
-// first message, the task it was launched on, reads
-// "Starting Claude Code…" (`starting`) while the harness starts. It goes when the transcript holds the text (pendingStill). It splits
-// the text the way your bubble in the transcript does (chatconversation.tsx YouBubble: @mentions as pills, files as cards
-// under it), so nothing changes when the transcript's copy replaces it.
 // the turn's time and output tokens after the working line, as the TUI's "(1m 11s · ↓ 3.1k tokens)": its own component so
 // the second's tick redraws this alone
 function TurnStatsText({ stats }: { stats: TurnStats }) {
@@ -111,10 +113,11 @@ function useRisesFromBox(sentAt: number): boolean {
     return rises;
 }
 
-// a /btw, a bare panel command or a `! cmd` sent and not in the transcript yet: the command, dimmed, as its card will
-// draw it, and under it what it waits on: the side answer the arc mod is asking a fork of the session for, the panel
-// open on Claude Code's own screen (its row lands only once it closes), or the command running (its row and output land
-// only once it finishes, or goes to the background at 120 s), with a way to the terminal for the last two
+// a /btw, a bare panel command or a `! cmd` sent and not in the transcript yet. A /btw is its card asking (BtwCard), the
+// side answer the arc mod is asking a fork of the session for still to come. The others are the command, dimmed, as its
+// card will draw it, and under it what it waits on: the panel open on Claude Code's own screen (its row lands only once
+// it closes), or the command running (its row and output land only once it finishes, or goes to the background at
+// 120 s), with a way to the terminal
 function PendingCommand({
     text,
     kind,
@@ -127,6 +130,22 @@ function PendingCommand({
     onOpenTerminal?: () => void;
 }) {
     const rises = useRisesFromBox(sentAt);
+    if (kind === "btw") {
+        // the card the transcript's copy will draw, asking: only its body changes when the answer lands
+        return (
+            <motion.div
+                data-chat-pending
+                data-chat-pending-kind={kind}
+                variants={sentRise}
+                initial={rises ? "initial" : false}
+                animate="animate"
+                style={{ transformOrigin: "bottom center" }}
+                className="flex flex-col"
+            >
+                <BtwCard question={btwQuestion(text) ?? text.trim()} btw={null} />
+            </motion.div>
+        );
+    }
     return (
         <motion.div
             data-chat-pending
@@ -141,10 +160,8 @@ function PendingCommand({
                 {text.trim()}
             </div>
             <div className="flex items-center gap-2">
-                <span className="text-[11px] text-muted">
-                    {kind === "btw" ? "Asking on the side…" : kind === "bash" ? "Running…" : "Open in Terminal"}
-                </span>
-                {kind !== "btw" && onOpenTerminal != null ? (
+                <span className="text-[11px] text-muted">{kind === "bash" ? "Running…" : "Open in Terminal"}</span>
+                {onOpenTerminal != null ? (
                     <button
                         type="button"
                         onClick={onOpenTerminal}
@@ -158,19 +175,14 @@ function PendingCommand({
     );
 }
 
-function PendingBubble({
-    pending,
-    onSendNow,
-    starting,
-}: {
-    pending: PendingMessage;
-    onSendNow?: () => void;
-    starting?: string;
-}) {
+// A message sent and not in the transcript yet: your bubble, drawn as the transcript will draw it and where
+// (chatconversation.tsx YouBubble's box, spacing and letter spacing; @mentions as pills, files as cards under it), so the
+// transcript's copy taking its place draws nothing new. What it waits on is PendingLine's, under the last of them. It
+// goes when the transcript holds the text (pendingStill). `first` is the conversation's first message (the task a
+// session was launched on), with no conversation above it to stand clear of.
+function PendingBubble({ pending, first }: { pending: PendingMessage; first: boolean }) {
     const said = splitAttachments(pending.text);
-    const queued = pending.queued === true;
     const body = said.text.trim();
-    const chord = sendNowChord();
     const rises = useRisesFromBox(pending.sentAt);
     return (
         <motion.div
@@ -179,39 +191,73 @@ function PendingBubble({
             initial={rises ? "initial" : false}
             animate="animate"
             style={{ transformOrigin: "bottom right" }}
-            className="flex flex-col items-end gap-1"
+            // where its transcript row lands: mt-2 over the conversation's pb-2 is the conversation's gap-4 above it,
+            // and -mb-1 under the bubble's mb-1 leaves the tail's gap-3 as the row's mb-1 + pb-2 under it
+            className={cn("-mb-1 flex flex-col items-end tracking-[-0.01em]", first ? undefined : "mt-2")}
         >
-            {body !== "" || said.images.length > 0 ? (
-                <div className="max-w-[75%] rounded-[12px] bg-surface-raised px-[14px] py-[9px] text-[13.5px] leading-[1.55] text-primary opacity-60">
-                    {body !== "" ? <TaggedPromptText text={body} /> : null}
-                    {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
-                </div>
-            ) : null}
-            {said.files.length > 0 ? (
-                <div className="mt-1 max-w-[75%] opacity-60">
-                    <ChatFileCards paths={said.files} />
-                </div>
-            ) : null}
-            <div className="flex items-center gap-2">
-                <span data-chat-pending-label className="flex items-center gap-1.5 text-[11px] text-muted">
-                    {starting != null ? (
-                        <span className="h-[6px] w-[6px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
-                    ) : null}
-                    {pendingCaption(pending, starting)}
-                </span>
-                {starting == null && queued && onSendNow != null ? (
-                    <button
-                        type="button"
-                        data-chat-send-now
-                        onClick={onSendNow}
-                        title={`Send it now (${chord} in the empty box): Claude moves its running tools to the background and reads your queued messages at once`}
-                        className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-secondary hover:text-primary"
-                    >
-                        Send now
-                        <kbd className="font-sans text-[10.5px] text-muted">{chord}</kbd>
-                    </button>
+            <div className="flex max-w-[75%] flex-col items-end gap-2">
+                {body !== "" || said.images.length > 0 ? (
+                    <div className={youBubbleBox(said.files.length > 0)}>
+                        {body !== "" ? <TaggedPromptText text={body} /> : null}
+                        {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
+                    </div>
                 ) : null}
+                {said.files.length > 0 ? <ChatFileCards paths={said.files} /> : null}
             </div>
+        </motion.div>
+    );
+}
+
+// the tail's gap above PendingLine, which its margin takes back as it folds
+const LINE_GAP = 12;
+
+// PendingLine opens and folds on the spring like a chat row (springReveal), and as it folds its margin takes back the
+// tail's gap above it, so what is under it closes up with no jump when it unmounts. At rest it sits 4px under the bubble
+function pendingLineVariants(reduce: boolean): Variants {
+    const shape = reduce ? { duration: 0 } : MOTION.spring;
+    const fade = { duration: MOTION.durMicro, ease: MOTION.easeFluid };
+    const t = { height: shape, marginTop: shape, opacity: fade };
+    return {
+        initial: { opacity: 0, height: 0, marginTop: -LINE_GAP },
+        animate: { opacity: 1, height: "auto", marginTop: -8, transition: t },
+        exit: { opacity: 0, height: 0, marginTop: -LINE_GAP, transition: t },
+    };
+}
+
+// What the pending messages wait on, under the last of them (chatpending.ts pendingLine): the harness's starting line
+// while a session starts, else Queued while Claude works (Claude Code takes them at the next gap), with Send now. One
+// line, not one per bubble, and its own row: the bubbles go the moment the transcript takes them, and this folds away
+// after them, so neither a dimmed bubble nor a caption under it blinks out as the transcript's copy replaces it.
+function PendingLine({ text, starting, onSendNow }: { text: string; starting: boolean; onSendNow?: () => void }) {
+    const reduce = useReducedMotion() ?? false;
+    const chord = sendNowChord();
+    return (
+        <motion.div
+            data-chat-pending-line
+            variants={pendingLineVariants(reduce)}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="flex flex-none items-center justify-end gap-2 overflow-hidden"
+        >
+            <span data-chat-pending-label className="flex items-center gap-1.5 text-[11px] text-muted">
+                {starting ? (
+                    <span className="h-[6px] w-[6px] flex-none rounded-full bg-accent pulse-dot" aria-hidden />
+                ) : null}
+                {text}
+            </span>
+            {!starting && onSendNow != null ? (
+                <button
+                    type="button"
+                    data-chat-send-now
+                    onClick={onSendNow}
+                    title={`Send it now (${chord} in the empty box): Claude moves its running tools to the background and reads your queued messages at once`}
+                    className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-secondary hover:text-primary"
+                >
+                    Send now
+                    <kbd className="font-sans text-[10.5px] text-muted">{chord}</kbd>
+                </button>
+            ) : null}
         </motion.div>
     );
 }
@@ -404,20 +450,46 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     // sleeping agent has no process writing to its transcript, so there is no stream: one read as it falls asleep (or as
     // the pane is first seen asleep) puts its last turn in the log.
     const asleep = agent.sleeping != null;
-    // The agent's brainstorm. The question it waits on draws as a card at the end of the conversation (chatbrainstormcard.tsx)
-    // and words the box's placeholder; what is sent from the box while it waits is kept as the answer (onBoxSent), which
-    // pairs with the message the transcript lands, so that draws as the question's ✓ row (chatbrainstorm.ts pairAnswers).
-    // A click on a card's option is recorded by sendBrainstorm itself. Chat never switches to the Brainstorm tab for any of
-    // it: the card's own button does.
+    // The agent's brainstorm. The card it ends with (the question it waits on, Confirm the design, the builder check, the
+    // run) draws at the end of the conversation (chatbrainstormcard.tsx and its siblings); a question's card also words the
+    // box's placeholder. What is sent from the box while a question waits is kept as the answer (onBoxSent), which pairs
+    // with the message the transcript lands, so that draws as the question's ✓ row (chatbrainstorm.ts pairAnswers). A click
+    // on a card's button is recorded by sendBrainstorm itself. Chat never switches to the Brainstorm tab for any of it: the
+    // card's own button does.
     const brainstormState = useAtomValue(brainstormAtom(agent.id));
     const sentAnswers = useAtomValue(brainstormAnswersAtom(agent.id));
+    const seenMarks = useAtomValue(brainstormSeenAtom);
     const procExit = useAtomValue(getProcExitAtom(agent.blockId ?? ""));
     const exited = procExited(procExit, agent.sleeping);
     const brainstormTopic = brainstormState?.topic ?? "";
-    const question = useMemo(
-        () => openQuestion(shownBrainstormFile(brainstormState), sentAnswers, exited, brainstormTopic),
-        [brainstormState, sentAnswers, exited, brainstormTopic]
-    );
+    const card = useMemo(() => {
+        const s = brainstormState;
+        // the builder check as the Brainstorm tab reads it (brainstormpane.tsx): the card and the tab say one thing
+        const check: BuilderCheckView =
+            s != null
+                ? builderCheckView(agent.builderCheck, s.sentCheckAt, s.file, s.modifiedMs, agent)
+                : { kind: "none" };
+        return brainstormCard({
+            file: shownBrainstormFile(s),
+            records: sentAnswers,
+            exited,
+            topic: brainstormTopic,
+            check,
+            sent: s?.sent?.kind ?? null,
+            seen: s != null ? (seenMarks[s.path] ?? null) : null,
+            starting: s?.starting ?? null,
+            modifiedMs: s?.modifiedMs ?? null,
+        });
+    }, [
+        brainstormState,
+        sentAnswers,
+        exited,
+        brainstormTopic,
+        seenMarks,
+        agent.builderCheck,
+        agent.state,
+        agent.idleSince,
+    ]);
     // the box's state, as the box reports it (chatboxstate.ts); it words the empty box. Until the box has said, what the
     // agent's state already tells.
     const [boxNow, setBoxNow] = useState<BoxState>(() =>
@@ -447,6 +519,16 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
             requestAppend();
         }
     }, [stamp]);
+    // the reply Claude is writing (chatlive.ts), from the arc mod's live file: a stream of its own, open while the
+    // transcript's is, for a Claude agent that is awake
+    const liveStreams = streaming && !!streamId && !asleep && streamsLiveReply(agent);
+    useEffect(() => {
+        if (!liveStreams) {
+            return;
+        }
+        startLiveReplyStream(streamId, path);
+        return () => stopLiveReplyStream(streamId);
+    }, [liveStreams, streamId]);
 
     // the skim mod's store is read again whenever the transcript grows: it writes the marks before the transcript line, so
     // the newest reply's marks are there when its text arrives (refreshSkimMarks throttles to one read a second)
@@ -476,6 +558,11 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const idleSince = useIdleSince(agent.state === "idle");
     const pending = pendingStill(sent, entries, now, idleSince);
     const showsPending = pending.length > 0;
+    // the live reply, which ChatConversation reads itself so its ticks redraw only the conversation: held back while the
+    // message that started its turn has not landed (its bubble is drawn under the conversation, and the reply belongs
+    // after it), and with its thinking blocks only where the session narrates in them
+    const narrates = useMemo(() => (lines != null ? narratesThinking(lines) : false), [lines]);
+    const awaitsOwn = awaitsOwnMessage(pending);
     // the cards Chat drew for a bare /usage, /tasks… (chatlocal.ts)
     const localCards = useLocalCards(agent.id);
     // a queued message's Send now: Claude Code's own send-now chord in the agent's terminal, which sends every queued
@@ -507,13 +594,14 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const opening = (loading || empty) && showsPending;
     const startingView = opening && !asleep ? chatEmptyView(agent) : null;
     const startingTitle = startingView?.phase === "starting" ? startingView.title : undefined;
+    const line = pendingLine(pending, startingTitle);
 
     // a message taken from the box: the chat scrolls to the end so its bubble lands in view, and while a question waits the
     // message is its answer, kept with how many same-text messages the transcript held before it (`entries` is what the
     // pending bubble counts on too)
     const onBoxSent = (text: string) => {
         jumpToBottom();
-        const answer = boxAnswerRecord(question, brainstormTopic, text, entries, Date.now());
+        const answer = boxAnswerRecord(card, brainstormTopic, text, entries, Date.now());
         if (answer != null) {
             recordBrainstormAnswer(agent.id, answer);
         }
@@ -554,12 +642,21 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                 <ChatConversation
                                     key={`${view!.path}:${view!.epoch}`}
                                     entries={entries}
+                                    liveReply={liveStreams && !awaitsOwn ? liveReplyAtom(streamId) : undefined}
+                                    liveNarrates={narrates}
                                     placeId={placeId}
                                     active={agent.state !== "idle"}
                                     working={agent.state === "working"}
                                     onLoadEarlier={hasEarlier ? () => void loadEarlier() : undefined}
                                     onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
-                                    brainstorm={{ agent, topic: brainstormTopic, answers: sentAnswers, question }}
+                                    brainstorm={{
+                                        agent,
+                                        topic: brainstormTopic,
+                                        answers: sentAnswers,
+                                        card,
+                                        state: brainstormState,
+                                        model,
+                                    }}
                                     model={model}
                                     agent={agent}
                                 />
@@ -581,15 +678,20 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                         onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
                                     />
                                 ) : (
-                                    <PendingBubble
-                                        key={p.id}
-                                        pending={p}
-                                        onSendNow={sendNow}
-                                        starting={startingTitle}
-                                    />
+                                    <PendingBubble key={p.id} pending={p} first={opening} />
                                 )
                             )}
                         </AgentPathLinks>
+                        <AnimatePresence initial={false}>
+                            {line != null ? (
+                                <PendingLine
+                                    key="line"
+                                    text={line}
+                                    starting={startingTitle != null}
+                                    onSendNow={sendNow}
+                                />
+                            ) : null}
+                        </AnimatePresence>
                         {localCards.map((c) => (
                             <ChatLocalCard
                                 key={c.id}
@@ -608,10 +710,10 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                         {working != null && !empty && !opening ? (
                             <div data-chat-working className="flex items-center gap-2 text-[12px] text-muted">
                                 <span
-                                    className="h-[7px] w-[7px] flex-none rounded-full bg-accent pulse-dot"
+                                    className="h-[7px] w-[7px] flex-none rounded-full jarvis-dot pulse-dot"
                                     aria-hidden
                                 />
-                                <span className="min-w-0 truncate">{working}</span>
+                                <span className="min-w-0 truncate shimmer-jarvis">{working}</span>
                                 {turn != null ? <TurnStatsText stats={turn} /> : null}
                             </div>
                         ) : null}
@@ -692,6 +794,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                             onBoxState={setBoxNow}
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
                             onSendNow={queuedShown ? sendNow : undefined}
+                            questionWaits={boxPlaceholderOverride(card) != null}
                             onLocal={(route) => {
                                 if ("open" in route) {
                                     openDiff(model, agentDiffScope(agent.id, agent.name));
@@ -699,7 +802,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                     showLocalCard(agent.id, route.panel, route.command);
                                 }
                             }}
-                            placeholder={boxPlaceholder(boxNow, agent.name, boxPlaceholderOverride(question))}
+                            placeholder={boxPlaceholder(boxNow, agent.name, boxPlaceholderOverride(card))}
                             dataAttrs={asleep ? { "data-sleeping-composer": agent.id } : undefined}
                         />
                     </div>

@@ -704,7 +704,7 @@ describe("canvas landing", () => {
     it("leaves a canvas the user is already looking at in canvas mode", async () => {
         const model = makeModel(["a1"]);
         rpc.FileInfoCommand.mockResolvedValue({ path: "x" });
-        attachCanvas("a1", { topic: "t", dir: DIR, projectDir: CWD }, 1);
+        attachCanvas("a1", { topic: "t", dir: DIR, projectDir: CWD });
         setCanvasMode("a1", "canvas", 2);
         expect(await openAddress(model, "canvas:t", { caller }, noReport)).toEqual({ ok: true });
         expect(getCanvas("a1")?.mode).toBe("canvas");
@@ -727,7 +727,7 @@ describe("canvas landing", () => {
 
     it("without a caller, lands on the agent that already has the canvas", async () => {
         const model = makeModel(["a1", "a2"]);
-        attachCanvas("a2", { topic: "t", dir: DIR, projectDir: CWD }, 1);
+        attachCanvas("a2", { topic: "t", dir: DIR, projectDir: CWD });
         expect(await openAddress(model, "canvas:t", undefined, noReport)).toEqual({ ok: true });
         expect(getCanvas("a2")?.mode).toBe("canvas");
         expect(globalStore.get(model.focusIdAtom)).toBe("a2");
@@ -1207,7 +1207,7 @@ describe("peek", () => {
 
     it("hands a canvas to openTarget: there is nothing to peek", async () => {
         const model = makeModel(["a1"]);
-        attachCanvas("a1", { topic: "t", dir: "C:\\p\\t", projectDir: "C:\\p" }, 1);
+        attachCanvas("a1", { topic: "t", dir: "C:\\p\\t", projectDir: "C:\\p" });
         expect(isPeekable({ kind: "canvas", topic: "t" })).toBe(false);
         expect(await peekTarget(model, { kind: "canvas", topic: "t" })).toEqual({ ok: true });
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
@@ -1263,7 +1263,7 @@ describe("openOrPeek", () => {
 
     it("opens a canvas even with Ctrl", async () => {
         const model = makeModel(["a1"]);
-        attachCanvas("a1", { topic: "t", dir: "C:\\p\\t", projectDir: "C:\\p" }, 1);
+        attachCanvas("a1", { topic: "t", dir: "C:\\p\\t", projectDir: "C:\\p" });
         const event = gesture(true);
         expect(await openOrPeek(model, { kind: "canvas", topic: "t" }, event)).toEqual({ ok: true });
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");

@@ -866,6 +866,12 @@ func GetConsumersCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.Comma
 	return resp, err
 }
 
+// command "getcontextbreakdown", wshserver.GetContextBreakdownCommand
+func GetContextBreakdownCommand(w *wshutil.WshRpc, data wshrpc.CommandGetContextBreakdownData, opts *wshrpc.RpcOpts) (*wshrpc.ContextBreakdown, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.ContextBreakdown](w, "getcontextbreakdown", data, opts)
+	return resp, err
+}
+
 // command "getdossier", wshserver.GetDossierCommand
 func GetDossierCommand(w *wshutil.WshRpc, data wshrpc.CommandGetDossierData, opts *wshrpc.RpcOpts) (*wshrpc.DossierDetail, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.DossierDetail](w, "getdossier", data, opts)
@@ -1720,6 +1726,11 @@ func StopProcessCommand(w *wshutil.WshRpc, data wshrpc.CommandStopProcessData, o
 func StopRunWorkerCommand(w *wshutil.WshRpc, data wshrpc.CommandStopRunWorkerData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "stoprunworker", data, opts)
 	return err
+}
+
+// command "streamagentlivereply", wshserver.StreamAgentLiveReplyCommand
+func StreamAgentLiveReplyCommand(w *wshutil.WshRpc, data wshrpc.CommandStreamAgentLiveReplyData, opts *wshrpc.RpcOpts) chan wshrpc.RespOrErrorUnion[wshrpc.AgentLiveReplyUpdate] {
+	return sendRpcRequestResponseStreamHelper[wshrpc.AgentLiveReplyUpdate](w, "streamagentlivereply", data, opts)
 }
 
 // command "streamagenttranscript", wshserver.StreamAgentTranscriptCommand

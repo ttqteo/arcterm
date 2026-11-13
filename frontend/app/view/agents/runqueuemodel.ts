@@ -85,19 +85,50 @@ export function queuedMeta(row: QueuedRow): string {
     return `Queued #${row.place}`;
 }
 
-/** Pure: the lead and worker route a queued entry will run with, fixed at queue time: the models the person approved. */
-export function queuedRoute(entry: RunQueueEntry): string {
+function routeParts(entry: RunQueueEntry): { lead: string; workers: string } {
     const { data } = entry;
     const lead = [data.runtime, data.model].filter(Boolean).join(" · ");
     const route = data.workerroute;
     const workers = route ? [route.runtime, route.model].filter(Boolean).join(" · ") : "same as lead";
+    return { lead, workers };
+}
+
+/** Pure: the lead and worker route a queued entry will run with, fixed at queue time: the models the person approved. */
+export function queuedRoute(entry: RunQueueEntry): string {
+    const { lead, workers } = routeParts(entry);
     return `Lead ${lead} · Workers ${workers}`;
 }
 
-/** Pure: the row's tooltip, three lines: the plan, the lead and the worker route it will run with, and when it was
- *  queued. The route was fixed at queue time, so these are the models the person approved. */
-export function queuedTooltip(entry: RunQueueEntry, now: number): string {
-    return [entry.data.planpath || entry.title, queuedRoute(entry), `Queued ${formatAgo(now - entry.queuedts)}`].join(
-        "\n"
-    );
+/** The row's tooltip as parts, so the card can set the plan's file name apart from its folder. */
+export type QueuedTooltip = {
+    /** the plan's file name, or the entry's title when it has no plan path */
+    name: string;
+    /** the folder the plan sits in, with no trailing separator; absent with no plan path or a bare file name */
+    dir?: string;
+    /** the whole blocked reason, which the row's second line truncates */
+    blocked?: string;
+    lead: string;
+    workers: string;
+    /** `Queued 5m ago` */
+    age: string;
+};
+
+/** Pure: the row's tooltip: the plan, why it is blocked (when it is), the lead and worker route it will run with, and
+ *  when it was queued. The route was fixed at queue time, so these are the models the person approved. */
+export function queuedTooltip(entry: RunQueueEntry, now: number): QueuedTooltip {
+    const path = entry.data.planpath ?? "";
+    const name = lastPathSegment(path);
+    const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+    const tip: QueuedTooltip = {
+        name: name || entry.title,
+        ...routeParts(entry),
+        age: `Queued ${formatAgo(now - entry.queuedts)}`,
+    };
+    if (name && cut > 0) {
+        tip.dir = path.slice(0, cut);
+    }
+    if (isBlockedEntry(entry)) {
+        tip.blocked = entry.reason || "Blocked";
+    }
+    return tip;
 }

@@ -179,7 +179,7 @@ describe("openReview", () => {
 
     it("puts a showing canvas back to the terminal", () => {
         const model = stubModel([agentVM("a1", docAsk("k1"))]);
-        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" });
         setCanvasMode("a1", "canvas", 1);
         openReview(model, "a1");
         expect(getCanvas("a1")?.mode).toBe("terminal");

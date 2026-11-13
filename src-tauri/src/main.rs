@@ -358,9 +358,22 @@ fn clear_webview_cache_at_launch(identifier: &str) -> Option<String> {
     }
 }
 
+// WKWebView underlines every word its English checker does not know, so every Vietnamese word typed in the app. Turning
+// that off in a box (spellcheck=false) also turns off macOS Text Replacement there (System Settings → Keyboard → Text
+// Replacements, such as sv → sinh viên), which WebKit runs only where spellcheck is on. So on a Mac the webview's own
+// check-spelling-while-typing is off instead, set before the first webview reads it: Chat's message box keeps spellcheck
+// on, draws no underlines, and its text replacements fire (chateditor.tsx).
+#[cfg(target_os = "macos")]
+fn no_spelling_underlines() {
+    use objc2_foundation::{ns_string, NSUserDefaults};
+    NSUserDefaults::standardUserDefaults().setBool_forKey(false, ns_string!("WebContinuousSpellCheckingEnabled"));
+}
+
 fn main() {
     applog::install_panic_hook();
     macwindow::log_objc_exceptions();
+    #[cfg(target_os = "macos")]
+    no_spelling_underlines();
     let scrubbed_env = shellenv::scrub_inherited_agent_env();
     let path_probe = shellenv::PathProbe::start();
     #[allow(unused_mut)]

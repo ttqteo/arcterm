@@ -870,6 +870,12 @@ export class RpcApiType {
         return client.wshRpcCall("getconsumers", null, opts);
     }
 
+    // command "getcontextbreakdown" [call]
+    GetContextBreakdownCommand(client: WshClient, data: CommandGetContextBreakdownData, opts?: RpcOpts): Promise<ContextBreakdown> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getcontextbreakdown", data, opts);
+        return client.wshRpcCall("getcontextbreakdown", data, opts);
+    }
+
     // command "getdossier" [call]
     GetDossierCommand(client: WshClient, data: CommandGetDossierData, opts?: RpcOpts): Promise<DossierDetail> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getdossier", data, opts);
@@ -1726,6 +1732,12 @@ export class RpcApiType {
     StopRunWorkerCommand(client: WshClient, data: CommandStopRunWorkerData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "stoprunworker", data, opts);
         return client.wshRpcCall("stoprunworker", data, opts);
+    }
+
+    // command "streamagentlivereply" [responsestream]
+	StreamAgentLiveReplyCommand(client: WshClient, data: CommandStreamAgentLiveReplyData, opts?: RpcOpts): AsyncGenerator<AgentLiveReplyUpdate, void, boolean> {
+        if (this.mockClient) return this.mockClient.mockWshRpcStream(client, "streamagentlivereply", data, opts);
+        return client.wshRpcStream("streamagentlivereply", data, opts);
     }
 
     // command "streamagenttranscript" [responsestream]

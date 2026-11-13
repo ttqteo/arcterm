@@ -21,9 +21,12 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/memgate"
 	"github.com/wavetermdev/waveterm/pkg/memusage"
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 // The once-a-minute check that puts idle agents to sleep. agentsleep decides who may; sleepAgent does it.
@@ -145,6 +148,77 @@ var treeCPUms = func(blockId string) (float64, bool) {
 	return sec * 1000, true
 }
 
+// loadSleepDag is the dag behind a run, read for the state of the task a worker works. A var so tests need no store.
+var loadSleepDag = func(ctx context.Context, dagId string) (*waveobj.TaskGroup, error) {
+	return wstore.GetDagShared(ctx, dagId) // only read here: the group is the store's own
+}
+
+// runOwnedForSleep is whether the engine still owns a run's agent, which keeps the sleep loop off it. It owns all of
+// them but a dag task's worker whose task has passed review (done) or merged since (verifying, verify-failed): that
+// worker has no more to do, and its session stays resumable. taskState is "" for an agent whose task is not known;
+// isLead is true for every agent of a run that is not a task's worker: the lead, a task's reviewer, a stage session.
+func runOwnedForSleep(taskState string, isLead bool) bool {
+	if isLead {
+		return true
+	}
+	switch taskState {
+	case orchestrate.TaskState_Done, orchestrate.TaskState_Verifying, orchestrate.TaskState_VerifyFailed:
+		return false
+	}
+	return true
+}
+
+// runOwnership answers runOwnedForSleep for each row of one check. It reads a dag once however many of its workers
+// the roster holds.
+type runOwnership struct {
+	ctx  context.Context
+	runs map[string]*waveobj.Run       // by run id
+	dags map[string]*waveobj.TaskGroup // by dag id; nil for one that could not be read
+}
+
+func newRunOwnership(ctx context.Context, runs []*waveobj.Run) *runOwnership {
+	byID := make(map[string]*waveobj.Run, len(runs))
+	for _, run := range runs {
+		byID[run.OID] = run
+	}
+	return &runOwnership{ctx: ctx, runs: byID, dags: map[string]*waveobj.TaskGroup{}}
+}
+
+// owned is whether the engine owns the agent of run runId. A run the roster does not know, a dag that cannot be read
+// and a task the dag no longer lists all leave the agent owned.
+func (o *runOwnership) owned(runId string) bool {
+	run := o.runs[runId]
+	if run == nil {
+		return true
+	}
+	// the same test rewind.go uses to place a task's worker among a dag's runs
+	if run.DagORef == "" || run.TaskId == "" || run.Review || run.StageRole != "" {
+		return runOwnedForSleep("", true)
+	}
+	return runOwnedForSleep(o.taskState(run), false)
+}
+
+func (o *runOwnership) taskState(run *waveobj.Run) string {
+	g, read := o.dags[run.DagORef]
+	if !read {
+		var err error
+		if g, err = loadSleepDag(o.ctx, run.DagORef); err != nil {
+			log.Printf("agent sleep: reading dag %s for run %s: %v\n", run.DagORef, run.OID, err)
+			g = nil
+		}
+		o.dags[run.DagORef] = g
+	}
+	if g == nil {
+		return ""
+	}
+	for i := range g.Tasks {
+		if g.Tasks[i].ID == run.TaskId {
+			return g.Tasks[i].State
+		}
+	}
+	return ""
+}
+
 // sleepLoop holds what the check keeps between ticks. Its trackers are not safe for concurrent use: tick runs
 // on the one goroutine StartAgentSleepLoop starts.
 type sleepLoop struct {
@@ -200,6 +274,7 @@ func (l *sleepLoop) tick(ctx context.Context) {
 	var cands []agentsleep.Candidate
 	rows := map[string]*agentRow{} // by tab id
 	roster := buildAgentRoster(facts)
+	owners := newRunOwnership(ctx, facts.Runs)
 	for i := range roster {
 		row := &roster[i]
 		// a sleeping agent has no clock to keep: when it wakes its idle stretch and its CPU start over
@@ -216,7 +291,7 @@ func (l *sleepLoop) tick(ctx context.Context) {
 			Harness:   row.Harness,
 			Idle:      idle,
 			IdleSince: l.idle.Observe(row.blockId, idle, now),
-			RunOwned:  row.RunId != "",
+			RunOwned:  row.RunId != "" && owners.owned(row.RunId),
 			Viewing:   viewing[row.TabId],
 			HasStream: row.hasStream,
 		}

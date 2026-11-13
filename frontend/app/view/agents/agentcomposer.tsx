@@ -6,6 +6,7 @@ import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, typ
 import { wakeAgent, wakeErrorToast } from "./agentsleep";
 import { askBtw, submitToAgent } from "./agentsubmit";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
+import { withResultLines } from "./chatinitiative";
 import { btwQuestion } from "./chatpending";
 import { messageWithAttachments, type Attachment } from "./composerattachments";
 import { useFallingAsleep, type FallAsleepPhase } from "./fallasleepstore";
@@ -71,8 +72,9 @@ export interface AgentSend {
     /** A Sleep is putting this agent to sleep (fallasleepstore): nothing is sent until it sleeps, then a send wakes it. */
     fallingAsleep: FallAsleepPhase | undefined;
     /** Sends the box. Answers whether it did (false when `canSend` is not); the box's text is cleared by it, the
-     *  attachments' tray is the caller's. */
-    send: () => boolean;
+     *  attachments' tray is the caller's. `lines`, when given, go in front of the message on the wire (chatinitiative.ts
+     *  withResultLines): the box, and everything the caller keeps of the message, stay the person's own text. */
+    send: (lines?: readonly string[]) => boolean;
 }
 
 // Sends free text to an agent's terminal block (submitToAgent: the text, then Enter on its own). A sleeping agent has no process to type into: given
@@ -110,7 +112,7 @@ export function useAgentSend(
     const fallingAsleep = useFallingAsleep(agent?.id, agent?.sleeping != null);
     const message = messageWithAttachments(text.trim(), attachments ?? []);
     const canSend = canSendComposer(message, blockId) && !waking && fallingAsleep == null;
-    const send = (): boolean => {
+    const send = (lines?: readonly string[]): boolean => {
         if (!canSend) {
             return false;
         }
@@ -139,7 +141,8 @@ export function useAgentSend(
                 }
             });
         } else {
-            fireAndForget(() => submitToAgent(target, message));
+            // the wire text carries the result lines; `message` stays the person's own (a /btw never has any)
+            fireAndForget(() => submitToAgent(target, withResultLines(lines ?? [], message)));
         }
         setText("");
         return true;

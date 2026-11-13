@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
+import { withResultLines } from "./chatinitiative";
 import {
     PASTE_OVER,
     PENDING_IDLE_MS,
@@ -9,8 +10,8 @@ import {
     holdLine,
     isSendNowKey,
     pastesBody,
-    pendingCaption,
     pendingKind,
+    pendingLine,
     pendingMessage,
     pendingStill,
     pendsAsBubble,
@@ -62,6 +63,23 @@ describe("userTextCount", () => {
         const entries = [user(`<pasted_content id="45ce">\n${sent}\n</pasted_content id="45ce">`)];
         expect(userTextCount(entries, sent)).toBe(1);
         expect(userTextCount(entries, "bash mode không đẹp lắm")).toBe(0);
+    });
+
+    it("counts a message that carries initiative result lines as the person's own text (result line)", () => {
+        const lines = ["initiative: added note to Auth (effort:ab12) › 2", "initiative: dismissed chunk for Auth"];
+        const sent = withResultLines(lines, "now the tests");
+        // the transcript holds the lines and the text, as sent; the pending twin holds only what the person wrote
+        expect(userTextCount([user(sent)], "now the tests")).toBe(1);
+        // Claude Code wraps a multi-line message whole as a paste: the lines are inside the wrapper
+        const wrapped = `<pasted_content id="45ce">\n${sent}\n</pasted_content id="45ce">`;
+        expect(userTextCount([user(wrapped)], "now the tests")).toBe(1);
+        // a different text still does not match
+        expect(userTextCount([user(sent)], "another text")).toBe(0);
+    });
+
+    it("leaves a message that only mentions `initiative:` mid-text as it was (result line)", () => {
+        const text = "see below\ninitiative: added the thing myself";
+        expect(userTextCount([user(text)], text)).toBe(1);
     });
 });
 
@@ -143,26 +161,43 @@ describe("pendingStill", () => {
     });
 });
 
-// The caption under a pending bubble is decided when the message is sent. Read from the agent's state as it drew, a
-// message sent to an idle agent flashed Sending…, then Queued with Send now as the turn it started set the agent
-// working, then went as the transcript took it.
-describe("pendingMessage and its caption", () => {
+// Whether a message is queued is decided when it is sent. Read from the agent's state as it drew, a message sent to an
+// idle agent flashed a caption, then Queued with Send now as the turn it started set the agent working, then went as the
+// transcript took it.
+describe("pendingMessage and the line under it", () => {
     const entries: AgentEntry[] = [];
-    it("keeps a message sent to an idle agent at Sending… while the turn it started runs", () => {
+    it("gives a message sent to an idle agent no line while the turn it started runs", () => {
         const p = pendingMessage("p1", "fix the chip", entries, 1_000, false);
         expect(p.queued).toBe(false);
-        expect(pendingCaption(p)).toBe("Sending…");
+        expect(pendingLine([p])).toBeNull();
         expect(queuedBubbleUp([p])).toBe(false);
     });
-    it("captions a message sent while the agent works Queued, which Send now can push", () => {
+    it("reads Queued under a message sent while the agent works, which Send now can push", () => {
         const p = pendingMessage("p2", "and the tray", entries, 1_000, true);
-        expect(pendingCaption(p)).toBe("Queued");
+        expect(pendingLine([p])).toBe("Queued");
         expect(queuedBubbleUp([p])).toBe(true);
     });
+    it("counts the queued messages in one line", () => {
+        const ps = [
+            pendingMessage("p5", "one", entries, 1_000, true),
+            pendingMessage("p6", "two", entries, 1_100, true),
+            pendingMessage("p7", "three", entries, 1_200, false),
+        ];
+        expect(pendingLine(ps)).toBe("2 queued");
+    });
     it("lets the harness's starting line stand in for either", () => {
-        expect(pendingCaption(pendingMessage("p3", "go", entries, 1_000, true), "Starting Claude Code…")).toBe(
+        expect(pendingLine([pendingMessage("p3", "go", entries, 1_000, true)], "Starting Claude Code…")).toBe(
             "Starting Claude Code…"
         );
+        expect(pendingLine([pendingMessage("p8", "go", entries, 1_000, false)], "Starting Claude Code…")).toBe(
+            "Starting Claude Code…"
+        );
+    });
+    it("has no line for commands alone, nor for nothing pending", () => {
+        expect(
+            pendingLine([pendingMessage("p9", "/btw why", entries, 1_000, true)], "Starting Claude Code…")
+        ).toBeNull();
+        expect(pendingLine([])).toBeNull();
     });
     it("counts no command card as a queued bubble", () => {
         const p = pendingMessage("p4", "/btw why", entries, 1_000, true);

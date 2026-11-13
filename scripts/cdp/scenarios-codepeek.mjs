@@ -2,7 +2,8 @@
 // agent's terminal (docs/superpowers/plans/2026-11-12-kael-sync-code-diff-usage-setup.md, Task 7; the fork's 8216f5927,
 // e7cae9a2c, 6c717bf51, 9f979e412, 8962d9efb, 294cde415 and 19e16133d, and its scenarios-codepeek.mjs). Ctrl+click keeps what it
 // always did: it opens the path in the agent's panel (or Code), and no card opens. Inside the card Enter opens the file in Code
-// and Escape closes it, both the card's own (data-owns-keys); Escape with focus in the terminal still reaches the agent.
+// and Escape closes it, both the card's own (data-owns-keys). Escape with focus in the terminal goes where it goes with no card
+// open (step 8 compares the two); whether the agent's process reads it is a hand check, since no step reads its input.
 //
 // A shell tab is made a claude agent by the agent:status event `wsh agentstatus` publishes (as agent-uploads does), so the Agent
 // surface mounts its pane with the details rail. The shell prints one absolute path per row, from column 0: the card starts 4

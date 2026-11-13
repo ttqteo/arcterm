@@ -77,9 +77,10 @@ function headOf(res: CommandGitFileAtRefRtnData): PeekHead {
     return { kind: "text", text: res.content ?? "" };
 }
 
-// a numstat lookup is a nicety: when it fails the card still opens, with no stat. Run in the file's own folder, the
-// changes come back scoped to it and relative to it (gitinfo.GetChanges), so the file's entry is its base name
-async function changeOf(dir: string, base: string): Promise<PeekChange | null> {
+// a numstat lookup is a nicety: when it fails or times out the card still opens, its stat reading "changes unknown"
+// rather than "no changes". Run in the file's own folder, the changes come back scoped to it and relative to it
+// (gitinfo.GetChanges), so the file's entry is its base name
+async function changeOf(dir: string, base: string): Promise<PeekChange | null | "unknown"> {
     try {
         const res = await RpcApi.GitChangesCommand(TabRpcClient, { cwd: dir });
         const hit = parseGitChanges(res?.statusz ?? "", res?.numstat ?? "").files.find((f) => f.path === base);
@@ -89,8 +90,9 @@ async function changeOf(dir: string, base: string): Promise<PeekChange | null> {
         return hit.note != null
             ? { adds: hit.adds, dels: hit.dels, note: hit.note }
             : { adds: hit.adds, dels: hit.dels };
-    } catch {
-        return null;
+    } catch (e) {
+        console.warn("code peek: reading git changes failed", e);
+        return "unknown";
     }
 }
 

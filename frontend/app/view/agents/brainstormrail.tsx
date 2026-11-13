@@ -355,16 +355,12 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
                                         onHover={hoverTile}
                                         onOpen={(name) => {
                                             hoverTile(null);
-                                            attachCanvas(
-                                                agent.id,
-                                                {
-                                                    topic: f.canvas!,
-                                                    dir: canvasDir(s.cwd, f.canvas!),
-                                                    projectDir: s.cwd,
-                                                    board: name,
-                                                },
-                                                Date.now()
-                                            );
+                                            attachCanvas(agent.id, {
+                                                topic: f.canvas!,
+                                                dir: canvasDir(s.cwd, f.canvas!),
+                                                projectDir: s.cwd,
+                                                board: name,
+                                            });
                                             openBrainstormBoard(agent.id, name);
                                         }}
                                     />

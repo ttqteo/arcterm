@@ -67,6 +67,7 @@ import { canForkInChat } from "./chatfork";
 import { forkFromChat } from "./chatforkaction";
 import { selectCellView, useChatMode } from "./chatmodestore";
 import { ASLEEP_VIEW_TITLE } from "./chatswitch";
+import { canDrive } from "./consumers";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
@@ -537,7 +538,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // header also fronts background terminals, so the noun follows what is actually focused.
     const closeTerminal = () => confirmCloseSession(agent, model, "header");
     // a wake relaunching it: Close would kill the process it waits on, and the More menu's Interrupt and Redraw type
-    // into the resuming TUI, so both are off until it is back (or the wake fails)
+    // into the resuming TUI, so both are off until it is back (or the wake fails). Asleep, they are left out of the menu
+    // (canDrive): there is no process to type into.
     const waking = useWaking(agent.id);
     // a Sleep under way (the call, or the compaction before it): the same buttons stay off until it sleeps, Close aside
     const falling = useFallingAsleep(agent.id, agent.sleeping != null);
@@ -623,14 +625,17 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             });
         }
         if (blockId != null) {
-            items.push({
-                label: "Redraw terminal",
-                icon: <RotateCw size={15} />,
-                // ⌘R is a Mac key only: on Windows Ctrl+R stays the shell's reverse search (bindings.ts agent:redraw)
-                accel: isMacOS() ? "Mod:r" : undefined,
-                click: redraw,
-            });
-            items.push({ label: "Interrupt turn", icon: <CircleStop size={15} />, click: interrupt });
+            // not while it sleeps: its process is gone, so a redraw or an Esc lands on a dead PTY (Wake first)
+            if (canDrive(agent)) {
+                items.push({
+                    label: "Redraw terminal",
+                    icon: <RotateCw size={15} />,
+                    // ⌘R is a Mac key only: on Windows Ctrl+R stays the shell's reverse search (bindings.ts agent:redraw)
+                    accel: isMacOS() ? "Mod:r" : undefined,
+                    click: redraw,
+                });
+                items.push({ label: "Interrupt turn", icon: <CircleStop size={15} />, click: interrupt });
+            }
             items.push({
                 label: fullscreen ? "Exit fullscreen" : "Fullscreen terminal",
                 icon: fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />,

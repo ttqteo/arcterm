@@ -81,6 +81,21 @@ describe("projectTranscript", () => {
         ]);
     });
 
+    it("reads a narration block (thinkingDisplay updates) as a message and skips real thinking", () => {
+        const L = (o: unknown) => JSON.stringify(o);
+        const think = (display: string, thinking: string, uuid: string) =>
+            L({ type: "assistant", uuid, thinkingDisplay: display, message: { content: [{ type: "thinking", thinking, signature: "s" }] } });
+        expect(
+            projectTranscript([
+                think("updates", "", "a"),
+                think("updates", "Almost no RAM; the cost is CPU.\n\n", "b"),
+                think("updates", "   ", "c"),
+                think("summarized", "I should check the watcher first.", "d"),
+                L({ type: "api-request-blob", thinkingDisplay: "updates", message: { content: [{ type: "thinking", thinking: "copy" }] } }),
+            ])
+        ).toEqual([{ kind: "message", text: "Almost no RAM; the cost is CPU.\n\n", uuid: "b" }]);
+    });
+
     it("returns [] for empty input and skips unparseable lines", () => {
         expect(projectTranscript([])).toEqual([]);
         expect(projectTranscript(["garbage", "{bad"])).toEqual([]);
@@ -1465,6 +1480,120 @@ describe("projectTranscript AskUserQuestion", () => {
     });
 });
 
+describe("projectTranscript ReportFindings and subagent calls", () => {
+    const L = (o: unknown) => JSON.stringify(o);
+    const call = (name: string, input: unknown, id = "c1") =>
+        L({ type: "assistant", message: { content: [{ type: "tool_use", id, name, input }] } });
+
+    it("carries a ReportFindings call's findings on its action, the optional fields only when typed", () => {
+        const [action] = projectTranscript([
+            call("ReportFindings", {
+                level: "high",
+                findings: [
+                    {
+                        file: "pkg/a.go",
+                        line: 12,
+                        summary: "nil map write",
+                        failure_scenario: "x",
+                        verdict: "CONFIRMED",
+                        category: "correctness",
+                    },
+                    { file: "pkg/b.go", summary: "stale cache" },
+                ],
+            }),
+        ]) as any[];
+        expect(action).toMatchObject({ kind: "action", verb: "reportfindings" });
+        expect(action.findings).toEqual([
+            { file: "pkg/a.go", line: 12, summary: "nil map write", verdict: "CONFIRMED", category: "correctness" },
+            { file: "pkg/b.go", summary: "stale cache" },
+        ]);
+        expect(Object.keys(action.findings[1])).not.toContain("line");
+        expect(action.subagent).toBeUndefined();
+    });
+
+    it("keeps an empty findings list, so a clean review is told from a malformed call", () => {
+        const [action] = projectTranscript([call("ReportFindings", { findings: [] })]) as any[];
+        expect(action.findings).toEqual([]);
+    });
+
+    it("drops only a finding's untyped line, and leaves the field off when any finding has no file or no summary", () => {
+        const [badLine] = projectTranscript([
+            call("ReportFindings", { findings: [{ file: "a.go", summary: "ok" }, { file: "c.go", line: "7", summary: "bad line" }] }),
+        ]) as any[];
+        expect(badLine.findings).toEqual([
+            { file: "a.go", summary: "ok" },
+            { file: "c.go", summary: "bad line" },
+        ]);
+        // one unusable finding and the whole call stays a plain tool line: no card that hides it, as the verdict model does
+        for (const [n, bad] of [{ file: "b.go" }, { summary: "no file" }, { file: "b.go", summary: " " }, null, "x"].entries()) {
+            const [action] = projectTranscript([
+                call("ReportFindings", { findings: [{ file: "a.go", summary: "ok" }, bad] }, `bad${n}`),
+            ]) as any[];
+            expect(Object.keys(action)).not.toContain("findings");
+        }
+        const [none] = projectTranscript([call("ReportFindings", { level: "high" }, "c2")]) as any[];
+        expect(Object.keys(none)).not.toContain("findings");
+        const [str] = projectTranscript([call("ReportFindings", { findings: "all good" }, "c3")]) as any[];
+        expect(Object.keys(str)).not.toContain("findings");
+        const [nul] = projectTranscript([call("ReportFindings", null, "c4")]) as any[];
+        expect(Object.keys(nul)).not.toContain("findings");
+    });
+
+    it("carries an Agent call's description, type and tool id on its action", () => {
+        const [action] = projectTranscript([
+            call("Agent", { description: "Review task 3", subagent_type: "superpowers:code-reviewer", prompt: "look" }, "toolu_a1"),
+        ]) as any[];
+        expect(action.subagent).toEqual({
+            description: "Review task 3",
+            subagentType: "superpowers:code-reviewer",
+            toolUseId: "toolu_a1",
+        });
+        expect(Object.keys(action)).not.toContain("findings");
+    });
+
+    it("carries a Task call's too, and leaves the type off when it has none", () => {
+        const [action] = projectTranscript([call("Task", { description: "Find the router", prompt: "p" }, "toolu_t1")]) as any[];
+        expect(action).toMatchObject({ verb: "spawned" });
+        expect(action.subagent).toEqual({ description: "Find the router", toolUseId: "toolu_t1" });
+        expect(Object.keys(action.subagent)).not.toContain("subagentType");
+    });
+
+    it("leaves subagent off a Task or Agent call that has no description, and off every other tool", () => {
+        const [noDesc, bash] = projectTranscript([
+            call("Agent", { subagent_type: "Explore", prompt: "p" }, "t2"),
+            call("Bash", { command: "ls", description: "list" }, "b9"),
+        ]) as any[];
+        expect(Object.keys(noDesc)).not.toContain("subagent");
+        expect(Object.keys(bash)).not.toContain("subagent");
+        expect(Object.keys(bash)).not.toContain("findings");
+    });
+
+    it("does not leak a subagent or findings field into the scratch cleanup, and keeps them after the result lands", () => {
+        const out = projectTranscript([
+            call("Agent", { description: "Review", subagent_type: "code-reviewer" }, "t3"),
+            L({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t3", is_error: false, content: "done" }] } }),
+        ]) as any[];
+        expect(out[0].outcome).toBe("ok");
+        expect(out[0].subagent).toEqual({ description: "Review", subagentType: "code-reviewer", toolUseId: "t3" });
+    });
+
+    it("gives a `wsh runs start` call's command and output on its bash detail, which the run card reads", () => {
+        const [action] = projectTranscript([
+            call("Bash", { command: "wsh runs start --plan docs/p.md", description: "start the run" }, "b2"),
+            L({
+                type: "user",
+                message: { content: [{ type: "tool_result", tool_use_id: "b2", is_error: false, content: "started run 3fa21b0c-1111-2222-3333-444455556666" }] },
+            }),
+        ]) as any[];
+        expect(action.detail).toEqual({
+            kind: "bash",
+            command: "wsh runs start --plan docs/p.md",
+            output: "started run 3fa21b0c-1111-2222-3333-444455556666",
+            exit: 0,
+        });
+    });
+});
+
 describe("projectTranscript: a message queued while Claude worked", () => {
     const queued = (prompt: unknown, commandMode = "prompt") =>
         JSON.stringify({
@@ -1512,6 +1641,137 @@ describe("projectTranscript: a message queued while Claude worked", () => {
             JSON.stringify({ type: "attachment", attachment: { type: "hook_success" } }),
         ]);
         expect(entries).toEqual([]);
+    });
+});
+
+// A subagent's hand-back report (or another session's message) is queued the way your message is, wrapped in
+// <agent-message>, with origin.kind "peer": it is the agent's, drawn as a report row, never your bubble
+describe("projectTranscript: a message from another agent", () => {
+    const peer = (origin: Record<string, unknown>, prompt = '<agent-message from="a2b4">\nhello\n</agent-message>') =>
+        JSON.stringify({
+            type: "attachment",
+            uuid: "p1",
+            attachment: { type: "queued_command", commandMode: "prompt", prompt, origin: { kind: "peer", ...origin } },
+        });
+
+    it("draws a subagent's hand-back as its report, not your message", () => {
+        const entries = projectTranscript([
+            peer({
+                from: "a2b4",
+                name: "web-fetch",
+                handback: true,
+                body: "[Subagent hand-back] frame…\n  Source: x",
+                handbackReportText: "Source: x\n\n1. DEFINITION",
+            }),
+        ]);
+        expect(entries).toEqual([
+            { kind: "notification", summary: "web-fetch reported back", result: "Source: x\n\n1. DEFINITION" },
+        ]);
+    });
+
+    it("draws another session's message as a message from it", () => {
+        const entries = projectTranscript([peer({ from: "s9", name: "lead", body: "rebase onto main first" })]);
+        expect(entries).toEqual([
+            { kind: "notification", summary: "Message from lead", result: "rebase onto main first" },
+        ]);
+    });
+
+    it("reads the text inside the wrapper when the origin carries none, and names an unnamed sender", () => {
+        expect(projectTranscript([peer({ from: "a2b4", handback: true })])).toEqual([
+            { kind: "notification", summary: "A subagent reported back", result: "hello" },
+        ]);
+        expect(projectTranscript([peer({ from: "s9" })])).toEqual([
+            { kind: "notification", summary: "Message from another agent", result: "hello" },
+        ]);
+    });
+});
+
+// Esc before any reply takes your message back into Claude Code's box, and the one you send next is written with the
+// parent the taken-back one had; the TUI then draws only the live branch, and so does Chat
+describe("projectTranscript: a message taken back and sent again", () => {
+    const user = (uuid: string, parentUuid: string | null, text: string) =>
+        JSON.stringify({ type: "user", uuid, parentUuid, message: { content: text } });
+    const hook = (uuid: string, parentUuid: string) =>
+        JSON.stringify({ type: "attachment", uuid, parentUuid, attachment: { type: "hook_success" } });
+    const reply = (uuid: string, parentUuid: string, text: string) =>
+        JSON.stringify({ type: "assistant", uuid, parentUuid, message: { content: [{ type: "text", text }] } });
+
+    it("drops the taken-back message and keeps the one sent in its place", () => {
+        const entries = projectTranscript([
+            user("u0", null, "first"),
+            reply("a0", "u0", "done"),
+            user("u1", "a0", "vẽ html, không vẽ artifact"),
+            hook("h1", "u1"),
+            hook("h2", "h1"),
+            user("u2", "a0", "vẽ html, vẽ artifact"),
+            reply("a2", "u2", "ok"),
+        ]);
+        expect(entries.map((e) => (e.kind === "user" || e.kind === "message" ? e.text : e.kind))).toEqual([
+            "first",
+            "done",
+            "vẽ html, vẽ artifact",
+            "ok",
+        ]);
+    });
+
+    it("drops a whole rewound branch, replies and later messages included", () => {
+        const entries = projectTranscript([
+            user("u0", null, "first"),
+            reply("a0", "u0", "done"),
+            user("u1", "a0", "old ask"),
+            reply("a1", "u1", "old answer"),
+            user("u2", "a1", "old follow-up"),
+            JSON.stringify({
+                type: "system",
+                subtype: "compact_boundary",
+                uuid: "c1",
+                parentUuid: null,
+                logicalParentUuid: "u2",
+            }),
+            user("u3", "c1", "after the old compaction"),
+            user("u4", "a0", "new ask"),
+        ]);
+        expect(entries.map((e) => (e.kind === "user" || e.kind === "message" ? e.text : e.kind))).toEqual([
+            "first",
+            "done",
+            "new ask",
+        ]);
+    });
+
+    it("keeps records that share a parent when they are not two messages of yours", () => {
+        const lines = [
+            user("u0", null, "go"),
+            JSON.stringify({
+                type: "assistant",
+                uuid: "a1",
+                parentUuid: "u0",
+                message: { content: [{ type: "tool_use", id: "t1", name: "Read", input: { file_path: "/a.ts" } }] },
+            }),
+            JSON.stringify({
+                type: "assistant",
+                uuid: "a2",
+                parentUuid: "a1",
+                message: { content: [{ type: "tool_use", id: "t2", name: "Read", input: { file_path: "/b.ts" } }] },
+            }),
+            JSON.stringify({
+                type: "user",
+                uuid: "r1",
+                parentUuid: "a1",
+                message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "x" }] },
+            }),
+            JSON.stringify({
+                type: "user",
+                uuid: "r2",
+                parentUuid: "a1",
+                message: { content: [{ type: "tool_result", tool_use_id: "t2", content: "y" }] },
+            }),
+            hook("h1", "r2"),
+            user("u1", "r2", "and then"),
+        ];
+        const entries = projectTranscript(lines);
+        expect(entries.map((e) => e.kind)).toEqual(["user", "action", "action", "user"]);
+        const actions = entries.filter((e) => e.kind === "action");
+        expect(actions.every((e) => e.kind === "action" && e.outcome === "ok")).toBe(true);
     });
 });
 

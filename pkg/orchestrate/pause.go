@@ -8,11 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/sessiontrash"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -319,6 +322,7 @@ func unmarkDagPaused(ctx context.Context, dagID string) (*waveobj.TaskGroup, err
 				t.LastActivity, t.AskTs, t.ProgressTs = now, now, now
 			}
 		}
+		shiftStageClocks(g, now-g.PausedTs)
 		g.PausedTs, g.UpdatedTs = 0, now
 		RecomputeDagStatus(g)
 		if err := wstore.UpdateDag(txCtx, dagID, func(cur *waveobj.TaskGroup) error {
@@ -357,14 +361,46 @@ func unmarkDagPaused(ctx context.Context, dagID string) (*waveobj.TaskGroup, err
 	return resumed, nil
 }
 
+// shiftStageClocks moves every clock a reviewer's timeout reads (ReviewTimeout) past a pause of span ms, so a
+// reviewer alive at the pause is judged on the time it ran, not on the pause: run ca080f5c's plan reviewers were
+// judged lost on the first tick after each resume without ever running 20 minutes. A reviewer whose controller went
+// while paused is still lost; only its clock moves. Each stage clock read against a timeout belongs here.
+func shiftStageClocks(g *waveobj.TaskGroup, span int64) {
+	if span <= 0 {
+		return
+	}
+	if pr := g.PlanReview; pr != nil && pr.State == PlanReviewState_Reviewing {
+		for i := range pr.Reviewers {
+			if r := &pr.Reviewers[i]; r.RunID != "" && r.StartedTs > 0 {
+				r.StartedTs += span
+			}
+		}
+	}
+	for i := range g.Tasks {
+		if t := &g.Tasks[i]; t.ReviewRunID != "" && t.ReviewSpawnedTs > 0 {
+			t.ReviewSpawnedTs += span
+		}
+	}
+	if f := g.Final; f != nil && f.VerifierRunID != "" && f.StartedTs > 0 {
+		f.StartedTs += span
+	}
+}
+
 // ReopenSession reopens one suspended session with nudge as its first turn: in its own tab, or in a new tab when
 // that tab was closed. Both ResumeDag and pkg/runpause call it.
 func ReopenSession(ctx context.Context, s waveobj.PausedSession, nudge string) error {
 	if s.WorkerORef == "" || s.SessionId == "" {
 		return fmt.Errorf("reopening session of run %s: it recorded no tab or no session", s.RunId)
 	}
+	if fresh, err := reopenWithoutTranscript(ctx, s); fresh || err != nil {
+		return err
+	}
 	if !workerTabGone(ctx, s.WorkerORef) {
-		return jarvis.ResumeRunWorker(ctx, s.WorkerORef, s.Runtime, s.SessionId, nudge)
+		if err := jarvis.ResumeRunWorker(ctx, s.WorkerORef, s.Runtime, s.SessionId, nudge); err != nil {
+			return err
+		}
+		noteLeadReopened(ctx, s.RunId)
+		return nil
 	}
 	run, err := wstore.DBGet[*waveobj.Run](ctx, s.RunId)
 	if err != nil {
@@ -381,6 +417,71 @@ func ReopenSession(ctx context.Context, s waveobj.PausedSession, nudge string) e
 	if err := resumeInNewTab(ctx, run, phaseIdx, s.WorkerORef, nudge); err != nil {
 		return fmt.Errorf("reopening %s of run %s in a new tab: %w", s.WorkerORef, s.RunId, err)
 	}
+	noteLeadReopened(ctx, s.RunId)
 	sendRunUpdates(run.ChannelOID, run.ID)
 	return nil
+}
+
+// claudeTranscriptFn reports whether a Claude session has a transcript to resume. A var for tests.
+var claudeTranscriptFn = claudeTranscriptExists
+
+// SetTranscriptCheckForTest replaces the Claude transcript check for tests in other packages and returns the restore.
+func SetTranscriptCheckForTest(fn func(sessionId string) bool) func() {
+	old := claudeTranscriptFn
+	claudeTranscriptFn = fn
+	return func() { claudeTranscriptFn = old }
+}
+
+// claudeTranscriptExists looks for <id>.jsonl in any project dir of every Claude projects root. Claude writes it only
+// once it persists the first turn, so a session killed before that has an id and nothing behind it.
+func claudeTranscriptExists(sessionId string) bool {
+	for _, root := range sessiontrash.ProjectsDirs() {
+		if matches, _ := filepath.Glob(filepath.Join(root, "*", sessionId+".jsonl")); len(matches) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// reopenWithoutTranscript handles a Claude session that has no transcript, which `--resume` cannot reopen: it exits 1 at
+// once, every time (run ca080f5c's lead, paused before its first turn was written, was resumed twice into "No
+// conversation found"). A dag run's lead is launched again, fresh; a dag task's worker is left to its task's stalled
+// retry, which starts a fresh worker. fresh reports that the session was dealt with here, so it must not be resumed.
+// Any other session, or a runtime other than Claude, resumes as before.
+func reopenWithoutTranscript(ctx context.Context, s waveobj.PausedSession) (fresh bool, err error) {
+	if (s.Runtime != "" && s.Runtime != "claude") || claudeTranscriptFn(s.SessionId) {
+		return false, nil
+	}
+	run, err := wstore.DBGet[*waveobj.Run](ctx, s.RunId)
+	if err != nil || run == nil || run.DagORef == "" {
+		return false, nil // not a dag's: resume as before, and its own exit reports the failure
+	}
+	if isRunLeadTab(run, s.WorkerORef) {
+		if err := relaunchLeadFresh(ctx, run.ChannelOID, run.ID); err != nil {
+			return true, fmt.Errorf("lead session %s of run %s has no transcript to resume, and a fresh lead could not be started: %w", s.SessionId, run.ID, err)
+		}
+		log.Printf("run %s: lead session %s had no transcript to resume; launched a fresh lead", run.ID, s.SessionId)
+		return true, nil
+	}
+	return true, fmt.Errorf("session %s of run %s has no transcript to resume; its task's stalled retry starts a fresh worker", s.SessionId, run.ID)
+}
+
+// isRunLeadTab reports whether workerORef is the lead tab of an orchestrator run's running phase.
+func isRunLeadTab(run *waveobj.Run, workerORef string) bool {
+	if run.Mode != jarvis.RunMode_Orchestrator || !strings.HasPrefix(workerORef, "tab:") {
+		return false
+	}
+	i := jarvis.RunningPhaseIndex(*run)
+	return i >= 0 && slices.Contains(run.Phases[i].WorkerOrefs, workerORef)
+}
+
+// noteLeadReopened tells the waker that runId's lead, if that is what was reopened, was just restarted: the restart
+// returns before the process runs, so the lead gets the wake-confirm timeout to come up, as the boot-time restart of a
+// lead gives it (ResumeInterruptedLeads). A task's worker has no wake record to stamp.
+func noteLeadReopened(ctx context.Context, runId string) {
+	run, err := wstore.DBGet[*waveobj.Run](ctx, runId)
+	if err != nil || run == nil || run.Mode != jarvis.RunMode_Orchestrator || run.DagORef == "" {
+		return
+	}
+	wakes.leadRestarted(run.ChannelOID, run.ID)
 }

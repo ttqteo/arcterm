@@ -11,6 +11,7 @@ import { jobQueueAtom } from "@/app/cockpit/jobqueuestore";
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { resmonSnapshotAtom } from "@/app/cockpit/resmonstore";
 import { useSettle } from "@/app/element/motionhooks";
+import { Tooltip } from "@/app/element/tooltip";
 import {
     cardVariants,
     composerReveal,
@@ -122,7 +123,13 @@ import { cancellingRunIdsAtom, resumePausedRun, resumingRunIdsAtom } from "./run
 import { runEventsAtom } from "./runeventstore";
 import { originLinks, type OriginLink } from "./runorigin";
 import { openOriginLink, openOriginSession, useOriginName, useOriginRuns } from "./runoriginstore";
-import { isBlockedEntry, queuedMeta, queuedTooltip, type QueuedRow } from "./runqueuemodel";
+import {
+    isBlockedEntry,
+    queuedMeta,
+    queuedTooltip,
+    type QueuedRow,
+    type QueuedTooltip,
+} from "./runqueuemodel";
 import {
     confirmRemoveQueued,
     queuedRowsAtom,
@@ -199,7 +206,7 @@ import {
 import { projectsAtom } from "./projectsstore";
 import { useRunObjects } from "./runobjects";
 import { runtimeMeta } from "./runtimemeta";
-import { sessionsArchiveAtom } from "./sessionsarchivestore";
+import { loadSessionsArchive, sessionsArchiveAtom, sessionsErrorAtom } from "./sessionsarchivestore";
 import { liveTokensAtom, useLiveTokens } from "./livetokensstore";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
 import {
@@ -212,7 +219,7 @@ import {
 } from "./sessionsdetail";
 import { defaultMember, forkLaunchOpts, runView, type RunView } from "./sessionsruns";
 import { duplicateSession } from "./session-models/sessionsidebarmodel";
-import { SLEEPABLE_AGENTS, sleepingAge, sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
+import { sleepingAge, sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
 import {
     askingCount,
     askingLabel,
@@ -265,6 +272,7 @@ import {
     useRunInfo,
 } from "./runlineagestore";
 import { useChristmasDecor } from "./christmasstore";
+import { canSleep } from "./consumers";
 import { LandLine } from "./landprogressview";
 import { dagProgressLabel, finishedRunLabel, runComplete, runStatusView } from "./runmodel";
 import { runStage, type StageTone } from "./runstage";
@@ -492,12 +500,7 @@ function sleepMenuItems(agent: AgentVM): ContextMenuItem[] {
     if (falling != null) {
         return [{ label: fallAsleepLabel(falling), icon: <Moon size={15} />, enabled: false }];
     }
-    const sleepable =
-        agent.state === "idle" &&
-        (agent.kind == null || agent.kind === "agent") &&
-        agent.runId == null &&
-        SLEEPABLE_AGENTS.has(agent.agent ?? "");
-    if (!sleepable) {
+    if (!canSleep(agent)) {
         return [];
     }
     return [{ label: "Sleep", icon: <Moon size={15} />, click: () => fireAndForget(() => sleepWithConfirm(agent)) }];
@@ -1326,6 +1329,20 @@ function ParentRow({
               }
             : undefined;
 
+    // the words of a controller that refused to start. A lead's go at the end of its name line, like its subagents
+    // chip: on its second line they took 67px of the 197 that also hold the workers chip, the progress and the age,
+    // and the progress read "Worki…" (agent-tree-rail step 7)
+    const failedBadge =
+        startError != null && !review && !asking ? (
+            <span
+                data-agent-start-failed={agent.id}
+                title={startError}
+                className="flex-none whitespace-nowrap text-[10.5px] font-semibold text-error"
+            >
+                failed to start
+            </span>
+        ) : null;
+
     // the state: words when it wants something, else tokens and age. They end the row's second line (a lead's after
     // its workers chip and progress), so the name keeps the first line's full width
     const badges = (
@@ -1365,13 +1382,10 @@ function ParentRow({
                         Close a finished one offers. A controller that refused to start says so in words, as an ask does:
                         it waits on you to fix it */}
                     {startError != null ? (
-                        <span
-                            data-agent-start-failed={agent.id}
-                            title={startError}
-                            className="flex-none whitespace-nowrap text-[10.5px] font-semibold text-error"
-                        >
-                            failed to start
-                        </span>
+                        // a lead's is on its name line (failedBadge)
+                        lead ? null : (
+                            failedBadge
+                        )
                     ) : queued ? (
                         <QueuedJobTag job={queued} />
                     ) : done ? (
@@ -1399,7 +1413,7 @@ function ParentRow({
                                     ? `RAM the run's agents and the commands they run hold now (the lead alone: ${ownRam ?? "not read"})`
                                     : "RAM the agent and the commands it runs hold now"
                             }
-                            className={RAM_COL}
+                            className={cn(RAM_COL, lead != null && LEAD_RAM_YIELDS)}
                         >
                             {ram}
                         </span>
@@ -1483,6 +1497,7 @@ function ParentRow({
                         {/* a lead's second line already holds its workers chip, progress and badges */}
                         {lead ? subsChip : null}
                         {lead ? tasksChip : null}
+                        {lead ? failedBadge : null}
                     </div>
                 )}
                 {lead ? (
@@ -2068,6 +2083,12 @@ const CONVERSATION_META = "flex min-w-0 items-center gap-[5px] text-[10.5px] tab
 const RAM_COL = "min-w-[40px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-ink-faint";
 const TOKENS_COL = "min-w-[34px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-muted";
 const AGE_COL = "min-w-[24px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-ink-faint";
+// A lead's run line holds its workers chip, the progress, then its RAM (the whole run's), tokens and age, all of the
+// last three flex-none, so on a narrow line the progress is what gets cut ("Worki…", agent-tree-rail step 7). Below
+// this width of RunSubline's @container the RAM leaves the line (the figure stays in the Resource Manager and the
+// rail), as the workers chip's word does: the progress is never cut for it. Wide enough for the chip with its word
+// (@[250px]), the progress, and the RAM, tokens and age beside it
+const LEAD_RAM_YIELDS = "@max-[300px]:hidden";
 // a second line starts under the title, past the runtime glyph and the gap after it
 const UNDER_GLYPH = "pl-[18px]";
 
@@ -3273,8 +3294,33 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
     );
 }
 
+// The queued row's tooltip card: the plan's file name over its folder, why it is blocked, the route, and its age.
+function QueuedTooltipCard({ tip }: { tip: QueuedTooltip }) {
+    const label = "w-[52px] flex-none text-muted";
+    return (
+        <div data-run-queue-tip className="flex max-w-[300px] flex-col gap-[6px] py-[3px]">
+            <div className="min-w-0">
+                <div className="break-all text-[12px] font-medium text-primary">{tip.name}</div>
+                {tip.dir ? <div className="mt-[1px] break-all text-[10.5px] text-muted">{tip.dir}</div> : null}
+            </div>
+            {tip.blocked ? <div className="text-warning">{tip.blocked}</div> : null}
+            <div className="flex flex-col gap-[2px]">
+                <div className="flex gap-[8px]">
+                    <span className={label}>Lead</span>
+                    <span className="min-w-0 text-secondary">{tip.lead}</span>
+                </div>
+                <div className="flex gap-[8px]">
+                    <span className={label}>Workers</span>
+                    <span className="min-w-0 text-secondary">{tip.workers}</span>
+                </div>
+            </div>
+            <div className="text-[10.5px] text-muted">{tip.age}</div>
+        </div>
+    );
+}
+
 // A plan queued to start (the run queue, runqueuestore.ts). It has no session or run yet, so a click selects nothing and
-// shows nothing in the centre; the tooltip carries the plan, its route and its age instead. Hover offers Start now and
+// shows nothing in the centre; the tooltip, to the row's right, carries the plan, its route and its age instead. Hover offers Start now and
 // Remove, and the menu adds Run next (not on the head of the queue, which has nowhere to go). A blocked entry reads in the
 // warning token, as a held land does.
 function QueuedEntryRow({ model, row }: { model: AgentsViewModel; row: QueuedRow }) {
@@ -3303,49 +3349,49 @@ function QueuedEntryRow({ model, row }: { model: AgentsViewModel; row: QueuedRow
     const act =
         "flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-primary";
     return (
-        <div
-            data-run-queue-row={entry.id}
-            title={queuedTooltip(entry, now)}
-            onContextMenu={onContextMenu}
-            className="group relative flex items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms] hover:bg-surface-hover"
-        >
-            <Slot>
-                <Clock size={13} aria-hidden className={blocked ? LEAD_MARK_CLASS.warning : "text-muted"} />
-            </Slot>
-            <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium text-secondary">{entry.title}</div>
-                {/* a blocked reason can outrun the row: its own tooltip says all of it */}
-                <div
-                    data-run-queue-meta
-                    title={blocked ? meta : undefined}
-                    className={cn("truncate text-[11px]", blocked ? "text-warning" : "text-muted")}
-                >
-                    {meta}
+        <Tooltip content={<QueuedTooltipCard tip={queuedTooltip(entry, now)} />} placement="right" openDelay={400} hideOnClick>
+            <div
+                data-run-queue-row={entry.id}
+                onContextMenu={onContextMenu}
+                className="group relative flex items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms] hover:bg-surface-hover"
+            >
+                <Slot>
+                    <Clock size={13} aria-hidden className={blocked ? LEAD_MARK_CLASS.warning : "text-muted"} />
+                </Slot>
+                <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-medium text-secondary">{entry.title}</div>
+                    {/* a blocked reason can outrun the row: the tooltip card says all of it */}
+                    <div
+                        data-run-queue-meta
+                        className={cn("truncate text-[11px]", blocked ? "text-warning" : "text-muted")}
+                    >
+                        {meta}
+                    </div>
                 </div>
+                <span className="flex flex-none items-center gap-[2px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100">
+                    <button
+                        type="button"
+                        data-queue-act="start"
+                        title="Start now"
+                        aria-label={`Start ${entry.title} now`}
+                        onClick={start}
+                        className={act}
+                    >
+                        <Play size={12} aria-hidden />
+                    </button>
+                    <button
+                        type="button"
+                        data-queue-act="remove"
+                        title="Remove from queue"
+                        aria-label={`Remove ${entry.title} from the queue`}
+                        onClick={() => confirmRemoveQueued(entry)}
+                        className={cn(act, "hover:text-error")}
+                    >
+                        <X size={12} aria-hidden />
+                    </button>
+                </span>
             </div>
-            <span className="flex flex-none items-center gap-[2px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100">
-                <button
-                    type="button"
-                    data-queue-act="start"
-                    title="Start now"
-                    aria-label={`Start ${entry.title} now`}
-                    onClick={start}
-                    className={act}
-                >
-                    <Play size={12} aria-hidden />
-                </button>
-                <button
-                    type="button"
-                    data-queue-act="remove"
-                    title="Remove from queue"
-                    aria-label={`Remove ${entry.title} from the queue`}
-                    onClick={() => confirmRemoveQueued(entry)}
-                    className={cn(act, "hover:text-error")}
-                >
-                    <X size={12} aria-hidden />
-                </button>
-            </span>
-        </div>
+        </Tooltip>
     );
 }
 
@@ -3441,6 +3487,7 @@ function StartingRunRow({ model, row }: { model: AgentsViewModel; row: StartingR
 function ConversationsSection({ model }: { model: AgentsViewModel }) {
     const agents = useAtomValue(model.agentsAtom);
     const archive = useAtomValue(sessionsArchiveAtom);
+    const archiveError = useAtomValue(sessionsErrorAtom);
     const registered = useAtomValue(projectsAtom);
     const filter = useAtomValue(model.projectFilterAtom);
     const collapsedList = useAtomValue(collapsedConversationProjectsAtom);
@@ -3486,7 +3533,23 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
         <div data-agent-conversations>
             <SectionHeader section="conversations" label="Conversations" count={conversationCount(ended, filter)} />
             <FoldBody open={open}>
-                {archive == null ? null : rows.length === 0 ? (
+                {archive == null ? null : rows.length === 0 && archiveError ? (
+                    // a failed scan is not an empty past: it retries on its own (sessionsarchivestore), and Retry is for
+                    // when those retries are spent
+                    <div
+                        data-agent-conversations-error
+                        className="flex items-center gap-2 px-[10px] py-[6px] text-[12px] text-muted"
+                    >
+                        <span className="min-w-0 flex-1">Could not read past conversations</span>
+                        <button
+                            type="button"
+                            className="flex-none cursor-pointer text-accent-soft hover:underline"
+                            onClick={() => fireAndForget(loadSessionsArchive)}
+                        >
+                            Retry
+                        </button>
+                    </div>
+                ) : rows.length === 0 ? (
                     <div className="px-[10px] py-[6px] text-[12px] text-muted">
                         {filtered ? `No past conversations in ${filter}` : "No past conversations"}
                     </div>

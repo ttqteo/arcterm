@@ -6,6 +6,7 @@
 // chatpendingstore.ts; the views in chatpane.tsx and chatcomposer.tsx.
 
 import type { AgentEntry } from "./agentsviewmodel";
+import { stripResultLines } from "./chatinitiative";
 import { unwrapWholePaste } from "./chattagblocks";
 import { opensPanel } from "./slashcommands";
 
@@ -48,10 +49,20 @@ export function pendingMessage(
     };
 }
 
-/** The line under a pending message's bubble: the harness's starting line while a session starts, else Queued for one
- *  sent while the agent worked and Sending… for one sent to an idle agent, for as long as either waits. */
-export function pendingCaption(p: PendingMessage, starting?: string): string {
-    return starting ?? (p.queued === true ? "Queued" : "Sending…");
+/** The one line under the pending messages' bubbles, or null: the harness's starting line while a session starts, else
+ *  Queued ("2 queued" for more) while messages sent as the agent worked wait. Messages sent to an idle agent have none:
+ *  the transcript takes them in a moment, and a Sending… line there only blinked as the transcript's copy replaced the
+ *  bubble. A command's card (a /btw, a panel, a `! cmd`) says what it waits on itself. */
+export function pendingLine(pending: PendingMessage[], starting?: string): string | null {
+    const messages = pending.filter((p) => p.kind == null);
+    if (messages.length === 0) {
+        return null;
+    }
+    if (starting != null) {
+        return starting;
+    }
+    const queued = messages.filter((p) => p.queued === true).length;
+    return queued === 0 ? null : queued === 1 ? "Queued" : `${queued} queued`;
 }
 
 /** Whether a message bubble captioned Queued is up, which Ctrl+Enter in the empty box sends now. */
@@ -92,7 +103,9 @@ export function userTextCount(entries: AgentEntry[], text: string): number {
     const bash = bashCommand(text);
     let n = 0;
     for (const e of entries) {
-        if (e.kind === "user" && unwrapWholePaste(e.text).trim() === want) {
+        // the result lines Arc put in front of the message are no part of what the person wrote (stripResultLines also
+        // unwraps a whole paste, so a message that carried them is compared by its own text)
+        if (e.kind === "user" && unwrapWholePaste(stripResultLines(e.text)).trim() === want) {
             n++;
         } else if (e.kind === "command" && e.name === "!") {
             if (bash != null && flat(e.args ?? "") === bash) {

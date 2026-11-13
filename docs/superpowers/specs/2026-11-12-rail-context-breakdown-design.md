@@ -23,7 +23,9 @@ Folded (no change except one state):
   Compact and Clear.
 - **Cache expiring** (under 5 minutes left on a Claude agent): `cache 4m left` is drawn in `warning`, and a muted note
   sits at the end of the Compact/Clear row: `now rewrites ~49k, later 70k` (the first figure is the context with
-  Messages replaced by an assumed 2k summary; see "Figures").
+  Messages replaced by an assumed 2k summary; see "Figures"). The note lives in that row, so it shows only when the row
+  does (idle, with the context at 150k or more or nearly full; the boards draw it at 70k for illustration), and only
+  once a breakdown has been read.
 
 Open, Context part (`Context` label, rule, `70k of 1M`):
 
@@ -32,12 +34,16 @@ Open, Context part (`Context` label, rule, `70k of 1M`):
    tokens, percent of the context in use. In this order:
    - **Messages** (estimate; see "Figures"), not expandable.
    - **System tools**, expandable to a note: `Built in. 17.1k more are deferred: a tool search loads them when needed.`
-   - **Memory files**, expandable to one row per file: name, `Type · folder`, tokens, and ↗ when the file opens.
+   - **Memory files**, expandable to one row per file: name, `Type · folder`, tokens, and ↗ when the file opens
+     (`/context`'s type `AutoMem` reads `Auto memory`, as on the board).
    - **Skills**, expandable: a note (`Only each skill's description is in context; its file loads when it runs.`), then
      the 6 costliest skills (name, source, tokens, ↗ when resolved) and `+N more`, which lists the rest.
    - **System prompt**, not expandable.
    - **Custom agents**, expandable like Skills.
-   - **MCP** (MCP tools + MCP server instructions), expandable to one row per server: `stitch · 18 tools deferred · 22.9k`.
+   - **MCP** (MCP tools + MCP server instructions), expandable to one row per server: `stitch · 18 tools · 22.9k when
+     loaded` (the per-server figure sums `/context`'s MCP Tools table, which mixes loaded and deferred tools, so it is
+     what the server costs once loaded, not what it costs now; the board's `18 tools deferred` wording is superseded).
+     The Main board's red failed-server row is not built: `/context` does not list a failed server (Out of scope).
    Every group starts folded.
 3. Cache line: clock icon, `Cache warm 43m · after that the next turn rewrites these 70k` (the countdown the state row
    shows, the figure the old tooltip gave). Shown even before the breakdown is read: it needs only the countdown and the
@@ -131,9 +137,9 @@ type ContextMcp struct { Server string `json:"server"`; Tools int `json:"tools"`
 
 ### Frontend
 
-- `view/agents/ctxbreakdown.ts` (pure, with tests): `contextGroups(b, liveTokens, windowTokens)` → the rows above
-  (label, tokens, pct, tag, colour token, items, note, more), `messagesEstimate`, `cacheWarn(countdownMs)` (< 5 min),
-  `rewriteNow(...)`, and the token label (`231`, `9.1k`, `927k`). A category `/context` adds later that the model
+- `view/agents/ctxbreakdown.ts` (pure, with tests): `contextGroups(b, liveTokens)` → the rows above
+  (label, tokens, pct, tag, colour token, items, note, more; the window is not needed for them), `cacheWarn` (< 5 min
+  left), `rewriteNow(...)`, `freeTokens(window, live)`, and the token label (`231`, `9.1k`, `927k`, `1M`). A category `/context` adds later that the model
   does not know sums into an `Other` group, shown only when it is above 0.
 - `view/agents/ctxbreakdownstore.ts`: an atom per folder `{state: idle|reading|ready|failed, data, error}`, `read(cwd,
   refresh)` with the stale-load guard `transcriptusagestore.ts` uses. Nothing reads on mount: only Read the breakdown
@@ -160,5 +166,7 @@ per folder per 30 min. Nothing long-lived; no RAM watch row.
 - Go: `Parse` on the testdata file and on edge cases (no tables, `~` and `m` suffixes, an unknown category);
   `ResolvePaths` over a temp home; `Read`'s cache, single flight and env (a fake `claude` on PATH).
 - vitest: `ctxbreakdown.test.ts`.
-- CDP scenario `rail-context-breakdown`: a seeded breakdown (dev-only seam), open the breakdown, see both parts, expand
-  Memory files, click a ↗ and see the File tab; the not-read state; the amber cache state.
+- CDP scenario `rail-context-breakdown`: a seeded breakdown (dev-only seam taking any state), open the breakdown, see
+  both parts, expand Memory files, click a ↗ and see the File tab; the not-read, reading and failed states; the amber
+  cache state with the "now rewrites" note (the cache countdown comes from the fixture transcript's cache-write
+  timestamp); no Context part for a non-Claude agent.

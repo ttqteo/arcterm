@@ -51,6 +51,7 @@ import { AnswerBar, DocReviewSummary, TerminalAskNote } from "./answerbar";
 import { AttentionBanner, BannerChip } from "./attentioncard";
 import { diffStatsByIdAtom } from "./cardgitstore";
 import type { CardShare } from "./cardgridlayout";
+import { canDrive } from "./consumers";
 import { parseDocReview } from "./docreview";
 import { entriesAtomFor, tasksAtomFor } from "./livetranscriptatoms";
 import { NarrationTimeline } from "./narrationtimeline";
@@ -525,7 +526,8 @@ export const AgentRow = memo(function AgentRow({
                                 agent={agent}
                                 nowAtom={nowAtom}
                                 className="mb-1.5 border-b border-edge-mid pb-1.5"
-                                onNudge={() => driveAgent(agent.blockId, NUDGE_INPUT)}
+                                // not while it sleeps: the nudge would type into a dead PTY
+                                onNudge={canDrive(agent) ? () => driveAgent(agent.blockId, NUDGE_INPUT) : undefined}
                                 right={
                                     prog ? (
                                         <TaskChip

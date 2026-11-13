@@ -83,7 +83,7 @@ function sameAction(a: AgentActionEntry, b: AgentActionEntry): boolean {
 function samePart(a: AgentPart, b: AgentPart): boolean {
     switch (a.kind) {
         case "prose":
-            return b.kind === "prose" && a.text === b.text && a.uuid === b.uuid;
+            return b.kind === "prose" && a.text === b.text && a.uuid === b.uuid && a.live === b.live;
         case "work":
             return (
                 b.kind === "work" &&

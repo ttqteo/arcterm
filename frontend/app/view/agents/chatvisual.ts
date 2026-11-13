@@ -3,8 +3,9 @@
 //
 // The pure model of Chat's inline visual: a one-line ```arc-visual block naming an HTML page an agent wrote under
 // ~/.arc/visuals/, drawn in the chat as a frame. This module decides which block lines may be drawn, whether a prompt
-// the page posts is sent, put into the chat box or dropped, how tall the frame is, and which app colours the page
-// gets. No React and no store: the frame, the message listener and the focus check that feed these are in the view.
+// the page posts is sent, put into the chat box or dropped, how tall the frame is, which app colours the page gets and
+// whether a frame that has them needs them again. No React and no store: the frame, the message listener, the theme
+// observer and the focus check that feed these are in the view.
 
 export const VISUAL_LANG = "arc-visual";
 // the longest prompt a page may send, in UTF-16 units
@@ -118,4 +119,17 @@ export function themeVars(read: (cssVar: string) => string): Record<string, stri
         }
     }
     return out;
+}
+
+// whether the app's colours now differ from those last posted to a frame (null: none was posted yet). The frame takes
+// the new ones only when this says so, so a style write that touches no theme variable posts nothing.
+export function themeVarsChanged(last: Record<string, string> | null, next: Record<string, string>): boolean {
+    if (last == null) {
+        return true;
+    }
+    const keys = Object.keys(next);
+    if (keys.length !== Object.keys(last).length) {
+        return true;
+    }
+    return keys.some((key) => last[key] !== next[key]);
 }

@@ -6,6 +6,156 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A lead that queued its plan's next part reads `plan queued #1` on its run line, not `queued #1`: while a
+  run's lead has queued a second plan (`wsh runs start --plan … --after <its run>`), its row in the Agent tree shows the
+  chip `plan queued #1` (`plan blocked` if the entry is blocked), whole on a narrow sidebar, beside the run's progress
+  (`frontend/app/view/agents/runorigin.ts` `originLinks`; unit-tested only).
+- [ ] (arcterm) The rail's context breakdown reads a real /context: on a Claude agent with a context figure, open the
+  Agent rail's session breakdown and press Read the breakdown → the button reads "Reading… about 30 s", then the groups
+  show (Messages, System tools, Memory files, Skills…) with figures near `claude`'s own `/context`, and a memory file's
+  ↗ opens it in the File tab; no new `.jsonl` appears in `~/.claude/projects/<project>` (`--no-session-persistence`);
+  on Windows no console window flashes. The same on a Mac. And on an idle real agent with under 5 minutes of cache
+  left, the state row's `cache Nm left` is amber and `now rewrites ~X, later Y` ends the Compact/Clear row (the
+  scenario `rail-context-breakdown` seeds every state; `pkg/ctxbreakdown`, `sessionsection.tsx`,
+  `agentdetailsrail.tsx`).
+- [ ] (arcterm) A real Claude agent files a follow-up through a card and reads its outcome (Add to an initiative from
+  Chat, spec 2026-11-12-chat-add-to-initiative-design): in a Claude agent's Chat that you started yourself (not one an
+  Arc run started), after an app launch has synced the updated `arc:initiatives` skill, ask it to file a follow-up
+  ("add a chunk to this initiative for the logging gap") → its reply holds an `arc-initiative` block that Chat draws as
+  an Add to initiative card (Waiting on you), not as raw JSON, and the agent has not run `wsh effort chunk add` itself;
+  press Add chunk, then send any plain message ("ok, go on") → the agent's next turn treats the `initiative: added chunk
+  …` line that opens your message as the outcome (it does not answer it as a request, and does not propose the chunk
+  again), and your bubble shows only what you typed. A live agent's behaviour, which no scenario can drive:
+  `chat-initiative` covers the card, the rows and the line with fixture transcripts and a mock RPC (cards from
+  `8c5873beb`; the skill rule is `skills/initiatives/SKILL.md`).
+
+- [ ] (arcterm) A real Claude agent asks the plan Handoff and writes an `arc-review` block (`arc:handoff`, spec
+  2026-11-12-chat-verdict-handoff-design): in a Claude agent you started yourself (not one an Arc run started), after an
+  app launch has synced `skills/handoff/SKILL.md`, have it write a plan with superpowers:writing-plans → it asks one
+  `AskUserQuestion` with header `Handoff`, the plan path backticked in the question and the four choices in the
+  skill's order, one marked (Recommended); ask it for a review with a reviewer subagent → its reply ends with a fenced
+  `arc-review` block (`kind`, `reviewer`, `pass`, `note`, `findings`, `subagent`) and it stops for your pick. A live
+  agent's behaviour: the skill text is pinned by `TestShippedSkills` (`0089a1e7b`); the Chat cards that draw these come
+  in the run queued after 911b6d3a.
+
+- [ ] (arcterm) The Brainstorm tab's own-words field is a "You replied" in Chat: on an agent with a brainstorm
+  question open, type an answer in that question's own-words field in the Brainstorm tab ("Answer in your own words…",
+  or "Or type your own answer…" under options) and send it with OK or Enter → the ✓ row for that question in the
+  agent's Chat reads "You replied", not "You picked"; an option clicked in the same tab still reads "You picked". No
+  scenario step sends through `useAnswer.sendDraft`; Chat's own message box is covered by `chat-redesign` 14c (commit
+  `b86ab9fa4`, run ebecc28f's branch `wave/ebecc28f-a804-4c1b-ab2d-88a4ffa8797a-t-9`; `brainstormui.tsx` `useAnswer`,
+  `chatbrainstorm.ts` `SentAnswer.typed`; the tab's send is unit-tested only).
+- [ ] (arcterm) The pinned prompt band sits right on the other `CompactTranscript` hosts: open a long session in
+  History's session detail, a sleeping agent's transcript overlay, and an ended agent's transcript, and scroll each
+  down past a few of your prompts → the band holding the prompt you are under sits flush at the top edge of the
+  scroller, with no clipped line of the transcript above it, and a jump to a prompt lands it just under the band, not
+  behind it. Only the rail transcript is covered, by `rail-transcript-tab` (commit `4671d8cea`, run ebecc28f's branch
+  `wave/ebecc28f-a804-4c1b-ab2d-88a4ffa8797a-t-9`; `compacttranscript.tsx`, `pinnedpromptbar.tsx`, hosted by
+  `sessionsdetail.tsx`, `sleepingtranscript.tsx`, `endedtranscript.tsx`).
+
+- [ ] (arcterm) The agents/backend and code/diff follow-up fixes of 2026-11-13 render: run `task verify:ui --
+  code-changed-walk setup-memory agent-history diff-comments diff-scope` on a dev app (or `node
+  scripts/cdp/final-verify.mjs` with those names). New or changed steps, never run: code-changed-walk's last step (a
+  palette pick of Code leaves focus on the file tree and ArrowDown moves its cursor), setup-memory step 9 (step 8's
+  error alert clears on the next move), agent-history step 15 (a failed scan shows "Could not read past conversations"
+  with Retry and retries on its own after 5 s), diff-comments step 6b (the Commit tab's rows badge the pending
+  comments), diff-scope steps 3b (Review on a landed run lists only the run's files) and 6b (a corrupt `.git/index`
+  reads as Couldn't refresh, not as not a repository). Only unit tests, the typecheck and `node --check` ran.
+
+- [ ] (arcterm) The job queue plans on measured peaks (spec 2026-11-12-measured-job-peaks), on Windows and on the Mac:
+  in a Claude agent run `task check:ts` twice → the second run's row in the Jobs popover reads "measured" and its
+  tooltip names the first run's peak, the row's figure being that peak × 1.2 rather than the table's 3 GB "est.". Then
+  have the agent run a `make`-style build that peaks over 1 GB (`make build`, `gradle build`) twice → after the first,
+  `~/.arc/jobslot-learned.json` lists its pattern and the second takes a slot and queues like a table command; a
+  `waveapp.log` line `[jobpeaks] cannot write …` means the file was held open at that instant (Windows) and the next run
+  rewrites it. A worktree dev app leaves that file alone. Unit tests script the process table, the footprints, the
+  roster and the store; the real Git Bash process tree on Windows (`ps -l` groups), the Mac's footprint and the live
+  roster were never run together (`pkg/jobmeter`, `wshserver_jobpeaks.go`).
+- [ ] (arcterm) The brainstorm review cards in Chat draw and act: run `task verify:ui -- chat-brainstorm-review
+  chat-redesign agent-chat` on a dev app that boots. Both Final attempts of run f2306dc6 ended unverified on the
+  machine (a locked `cmd/wsh/cmd/claude-view-mod` copy, then a cold Vite still pre-bundling after 600 s under memory
+  pressure), so nothing below has been seen rendered. Check, against `.superpowers/design/chat-brainstorm-review/`:
+  - The Confirm the design card: guesses with New, the yours fold, Edit, That's right and Put mine back, Confirm all
+    or Check with a builder.
+  - The builder check card: reading with its clock, one question with Decide for me and an own-answer Send, the
+    failed state's Try again (still one ✓ Design confirmed row), and review with Approve opening the run launcher or
+    its reason.
+  - The run card with Open run, and the ✓ Run row once the run lands.
+  - The question card's Decided fold and the ✓ rows: design, builder question with no `brainstorm: builder answer:`
+    prefix, builder check.
+  - Action lines draw no bubble, while a hand-typed message stays a bubble.
+  - Every card turns static when the agent exits.
+
+  (`chatbrainstorm.ts` brainstormCard, `chatbrainstormconfirm.tsx`, `chatbrainstormcheck.tsx`,
+  `chatbrainstormrun.tsx`, `chatconversation.tsx`; unit-tested and typechecked only.)
+
+- [ ] (arcterm) A dead lead is brought back (lead-dead recovery spec 2026-11-12): in a live Ask me run sitting in a
+  failed plan review, `/exit` its lead → the run's Cockpit card shows "Lead down" with Relaunch lead at once, and
+  `wsh runs relaunch-lead <run>` starts a lead whose first message says to revise and `wsh jarvis dag submit` again;
+  on an autonomous run the replacement starts by itself. Then pause a run whose lead was launched less than a minute
+  ago (before its first reply) and resume it → `waveapp.log` shows `had no transcript to resume; launched a fresh
+  lead`, not a `claude --resume` that prints "No conversation found". Unit tests stub the spawn and the process exit
+  (`pkg/orchestrate/leaddead_test.go`); the real exit hook, spawn and the Cockpit button with no failure row
+  (`leadProcessLive`, which only knows exits this window saw) were never run.
+
+- [ ] (arcterm) A run's hung lead is stopped and replaced (run a1d131bb t-2): in a live run, have its lead sit in one
+  tool call that never returns (a command that only sleeps, so nothing under the lead uses CPU) while a worker
+  finishes → after 30 min of held wakes `waveapp.log` shows `wake: run <id>'s lead held its wakes 30 min with an idle
+  process tree; stopping block …`, the lead's process is stopped (its tab stays), and an autonomous run gets a
+  replacement lead that carries the missed wakes; on an Ask me run the lead's questions reach you instead. Every test
+  scripts `stopLeadFn`; the real `DestroyBlockController` against a real hung lead was never run
+  (`pkg/orchestrate/wake.go` `checkHungLocked`, `LeadHungAfter`).
+- [ ] (arcterm) A finished worker of a live run sleeps (run a1d131bb t-5): in a run whose first task has passed review
+  and whose other tasks keep it open, that task's worker reads asleep in the Agent tree after the idle wait
+  (`agents:sleepaftermin`, 30 min), and Wake reopens the same conversation; its lead, a reviewer and the workers of
+  unfinished tasks stay awake (`wshserver_agentsleeploop.go` `runOwnedForSleep`; unit-tested only).
+- [ ] (arcterm, Mac) A `/btw` in Chat is one card across Claude's column: send `/btw <a question>` from a Claude
+  agent's Chat; the card shows a btw tag and your question as its header, "Asking on the side…" with two pulsing lines,
+  and a footer "Not in the conversation"; when the answer lands only the body changes, with Copy in the header. Matches
+  board B1 of `.superpowers/design/chat-btw`. `25db49d8c`.
+- [ ] (arcterm, Mac) A new canvas lights the Canvas tab: have a Claude agent draw a canvas (`arc:design`) and reveal it
+  while you stay on Chat; the agent header's Canvas tab shows its clay dot until you open it. `c8cd814d4`.
+- [ ] (arcterm, Mac) Inline code in Chat is lavender like the terminal's: open a Claude agent's Chat, find a reply
+  with `code` in it (and one with a highlighted sentence holding code), and the code reads lavender on its faint pill,
+  apart from the highlight's yellow ground, not gold. `0a83928dc`.
+- [ ] (arcterm, Mac) Skim highlights in Chat survive other agents: with two Claude agents running, get a marked reply
+  in one, let the other answer with a marked reply, then switch back: the first reply still shows its highlights.
+  Needs a build with `bc13ac270` installed, and agents started after it.
+- [ ] (arcterm, Mac) Chat's "Working…" line wears Jarvis's colours: while a Claude agent works, the dot is a small
+  core (bright centre, blue rim) that breathes, and the text is blue with a bright band sweeping left to right about
+  every 2 s, the "(24s)" after it still grey; with Reduce motion on, the text rests in plain blue. Checked only on a
+  static page in headless Chromium, never in WKWebView or the running app (cf811a54d: `chatpane.tsx`,
+  `tailwindsetup.css` .shimmer-jarvis, `pulse.ts`).
+- [ ] (arcterm) Chat's running step ring turns in place: at 125% or 150% Windows display scaling, while a Claude agent
+  runs a command, the dashed green ring before "Ran" has its dashes run round a ring that stays put, with no wobble
+  and no short dash where it closes; with Reduce motion on it holds still. Not run in the app: no dev app was up
+  (`chatstepsview.tsx` StepSpinner, `tailwindsetup.css` dashRun).
+- [ ] (arcterm, Mac) Text replacements fire in Chat's message box: type `sv ` (a Text Replacement in System Settings →
+  Keyboard) and it turns into "sinh viên " and is sent as that; a Vietnamese word typed with Telex gets no red
+  underline, and the terminal stays as before. Checked only in a WKWebView harness with real key events into a
+  Lexical editor, never in the installed app or through a Vietnamese input method (7a0f6d0a3: `main.rs`
+  `no_spelling_underlines`, `chateditor.tsx`).
+- [ ] (arcterm) Opening a compaction's summary at the end of Chat brings it into view: after a `/compact`, click the
+  COMPACTED chip near the bottom; as the summary opens the conversation rises until the chip sits just under the
+  pinned prompt bar, the summary's first lines showing below it, in one smooth move with no jump back. A chip already
+  near the top opens without moving. Only unit-tested and typechecked; `task verify:ui -- agent-chat` step 80 was
+  updated for it but not run (`narrationtimeline.tsx` CompactionDivider).
+- [ ] (arcterm) Settings → Jarvis & Office shows three short cards before Folding: Jarvis (Character, Vietnam's
+  colours), Form (Shows as, Hologram size) and Behaviour (Roams, Quotes), each row's text on one or two lines; searching
+  "quotes" or "hologram" still finds its row. Only unit-tested (89dc8e4ef: `settingsmodel.ts`, `settingspages/jarvis.tsx`).
+- [ ] (arcterm) Jarvis's hologram form: Settings → Jarvis & Office → Form → Shows as → Hologram replaces Sprout with blue rings in
+  the bottom-right corner, faint when calm and solid on hover; clicking it opens the peek and the bubble sits beside
+  it. Start an agent and the core beats; once something waits on you it fades into the amber neural sphere, and back
+  when it is answered. Float and the fold still show Sprout. No milky disc or square around it, and Hologram size S / M
+  / L redraws it smaller with thinner lines, not a blown-out core. Placement, peek and the asking switch were checked
+  in the browser cockpit, the look in a live WKWebView window; never yet in the installed app since a20195495 and
+  975f3352d (`hologramview.tsx`, `hologramscene.ts`).
+- [ ] (arcterm) Chat streams Claude's reply: in a Claude agent started after the install, ask for a long answer in
+  Chat; its text grows word by word at the end of the conversation (`data-chat-live` on the part) and, a few seconds
+  after each paragraph ends, the stored copy takes its place with no jump or duplicate. A code block mid-stream draws
+  closed, a highlight shows once its mark closes, a reply between tool calls ("· summary" in the terminal) shows too,
+  and `~/.arc/live/<session id>.json` is rewritten while it streams. Only unit-tested and the mod's `turn.step` probed
+  under `claude -p` (05485e953: `live-core.ts`, `livereply.go`, `chatlive.ts`, `chatlivestore.ts`).
 - [ ] (arcterm) Chat's Fork resumes in a real claude: in a Claude agent's Chat, ⋯ → Fork opens a session that knows
   the whole conversation; Fork from here on your second message, one that knows only the first exchange; on a reply,
   one that knows everything through that reply. The original session is unchanged (the scenario `chat-fork` covers
@@ -606,6 +756,14 @@ does not, say what you saw and it becomes a bug row under Actionable.
   runs, with "Setting up arcterm" under it, instead of grey skeleton boxes; once the roster is read the usual screen
   replaces it. With Windows' animation effects off the pet stands still in the middle. Unit tests (`startuprun.ts`) and
   the typecheck only; never seen in the app (`startuploader.tsx`).
+- [ ] (arcterm) **Jarvis's hologram shows while arcterm starts up.** Settings → Jarvis & Office → Form → Hologram,
+  then relaunch arcterm (on the Agent screen, and once landing on the Cockpit) → while the agents load, the middle of
+  the screen shows the blue HUD a size up from the corner's: the core lights first, the four rings fade and grow in
+  from the inside out within about 1.5 s, then they turn with the core beating, over "Setting up arcterm"; no hologram
+  sits in the bottom-right corner meanwhile, and it fades in there once the roster is read. No milky disc or square
+  edge round it (WKWebView). With Form → Sprout the pet still runs; in Float the pet runs whatever the form. Unit tests
+  (`hologrammodel.ts` assembleReveal) and the typecheck only; never seen in the app (`startuploader.tsx`,
+  `hologramscene.ts`).
 - [ ] (arcterm) **A double right-click in a terminal opens the menu.** In the installed app, in an agent's or a shell
   terminal, with nothing selected: right-click once → the clipboard pastes once after a short beat; right-click twice
   at your usual double-click pace → the terminal menu opens and nothing pastes. With text selected, one right-click

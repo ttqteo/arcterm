@@ -51,6 +51,41 @@ func TestTreeIsRootThenEveryDescendant(t *testing.T) {
 	}
 }
 
+func TestChildrenAreTheDirectOnesOnly(t *testing.T) {
+	tb := fixtureTable()
+	if got := tb.Children(20); !slices.Equal(got, []int32{30, 40}) {
+		t.Fatalf("Children(20) = %v, want [30 40]: the shells, not claude 31 under one of them", got)
+	}
+	if got := tb.Children(31); len(got) != 0 {
+		t.Fatalf("Children(31) = %v, want none", got)
+	}
+	if got := tb.Children(99); len(got) != 0 {
+		t.Fatalf("Children(99) = %v, a pid not in the table has no children", got)
+	}
+	// the caller may change what it gets without changing the table
+	tb.Children(20)[0] = 77
+	if got := tb.Children(20); !slices.Equal(got, []int32{30, 40}) {
+		t.Fatalf("Children(20) after the caller wrote to its result = %v", got)
+	}
+}
+
+func TestChildrenLeavesOutAProcessThatIsItsOwnParent(t *testing.T) {
+	tb := NewTable(map[int32]int32{0: 0, 1: 0})
+	if got := tb.Children(0); !slices.Equal(got, []int32{1}) {
+		t.Fatalf("Children(0) = %v, want [1]", got)
+	}
+}
+
+func TestJobFootprintReadsThisProcess(t *testing.T) {
+	n, ok := JobFootprint(int32(os.Getpid()))
+	if !ok || n == 0 {
+		t.Fatalf("job footprint of this test = %d, %v", n, ok)
+	}
+	if _, ok := JobFootprint(-1); ok {
+		t.Fatal("JobFootprint read a pid that does not exist")
+	}
+}
+
 func TestTreeSurvivesAProcessThatIsItsOwnParent(t *testing.T) {
 	tb := NewTable(map[int32]int32{0: 0, 1: 0, 2: 1})
 	if got := tb.Tree(0); !slices.Equal(got, []int32{0, 1, 2}) {

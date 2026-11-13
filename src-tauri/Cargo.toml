@@ -1,6 +1,6 @@
 [package]
 name = "wave-tauri"
-version = "1.0.7"
+version = "1.1.0"
 edition = "2021"
 
 [build-dependencies]
@@ -43,7 +43,8 @@ mac-notification-sys = "0.6.15"
 # a folded window takes when arcterm comes to the front. Pinned to the versions already in the tree via tao.
 objc2 = "=0.6.4"
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSApplication", "NSButton", "NSControl", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSWindow", "NSPanel", "NSStatusItem", "NSStatusBarButton", "NSColor", "NSFont", "NSAttributedString", "NSAppearance"] }
-objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSNotification", "NSString", "NSAttributedString", "NSRange", "NSArray"] }
+# NSUserDefaults: the webview's spelling underlines, off (main.rs no_spelling_underlines).
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSNotification", "NSString", "NSAttributedString", "NSRange", "NSArray", "NSUserDefaults"] }
 # the window list behind the fold that follows you out of the app (foreground.rs), which AppKit's occlusion state could
 # not answer. Pinned to the versions already in the tree via tao.
 objc2-core-foundation = { version = "=0.3.2", default-features = false, features = ["std", "CFArray", "CFCGTypes", "CFDictionary", "CFNumber", "CFString"] }
