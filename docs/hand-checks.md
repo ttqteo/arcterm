@@ -2631,3 +2631,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   back into the HUD. Try it once on a Mac too (WKWebView draws the canvas's alpha its own way) and with the OS's
   reduced motion on, where it only fades (`hologrammodel.ts` morphPose, `hologramscene.ts` draw, `hologramview.tsx`
   POWER_ON / POWER_DOWN; the jarvis-hide scenario shoots the power-down and power-on, no scenario catches the morph).
+- [ ] (arcterm) **A Chat send waits for Claude Code's box.** Send a few messages from an agent's Chat (a short one, a
+  long one that wraps, one with a line break), also while Claude works and with the machine busy: each goes out on its
+  own, none waits in Claude Code's box with an empty row under it. `waveapp.log` no longer shows
+  `[chat-send] enter-unechoed … echo=unknown` for every send (it read so 36 of 36 times before), and an
+  `enter-linebreak … retry=1` line, when one shows, is followed by the message going out. While Claude works, ↑ in an
+  empty Chat box takes the queued messages back (`chattakeback.ts` splitRules; no scenario runs a live Claude Code).
