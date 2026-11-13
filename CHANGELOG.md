@@ -55,6 +55,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run's Verify, Check and Final wait for the RAM your agents' runs of the same command measured, when that is more
+  than the queue's estimate: a Final that took 4.8 GB no longer starts when only 3 GB is free. A heavy command you
+  skip from the Jobs popover no longer counts as a tiny run that lowers its next estimate.
 - Jarvis's hologram comes back by itself a few seconds after the graphics card drops it (a GPU reset, or many open
   terminals); before, it turned into Sprout until you picked the form again. It stays Sprout only if it keeps failing.
 - A Chat message no longer sits unsent in Claude Code's box when the machine is short of memory: if Claude Code takes

@@ -173,6 +173,15 @@ func (s *Store) Learned() map[string]bool {
 	return set
 }
 
+// Ran reports whether a known command's measured peak is a run of it: at least a tenth of table, the figure memgate's
+// table gives it. Below that the command did not run: it was skipped from the Jobs popover, refused, or failed as it
+// started, and the meter measured little more than its bash (a skipped task check:ts read 14 MB). Recorded, such a
+// peak would read as a run, and a few in a row would pull the estimate toward zero. An unknown pattern needs no such
+// floor: its light runs are what return it to light.
+func Ran(peak, table uint64) bool {
+	return peak >= table/10
+}
+
 // figure is the largest of the peaks × 1.2.
 func figure(peaks []uint64) uint64 {
 	m := slices.Max(peaks)

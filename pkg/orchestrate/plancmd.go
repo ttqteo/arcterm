@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/jobpeaks"
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 	"github.com/wavetermdev/waveterm/pkg/memgate"
 	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
@@ -225,8 +226,9 @@ func ProjectSetup(dir string) (string, error) {
 const engineStepBytes = 2560 << 20
 
 // holdPlanSlot waits for a slot in the heavy-job queue for a plan command memgate calls heavy, or for any
-// Verify or Final (Source.Always). A light Setup (this repo's .arc/setup only makes junctions) runs at once.
-func holdPlanSlot(ctx context.Context, command string) (func(), error) {
+// Verify or Final (Source.Always). A light Setup (this repo's .arc/setup only makes junctions) runs at once. dir is
+// where the command runs, which names the project whose measured peaks it claims (engineStepSize).
+func holdPlanSlot(ctx context.Context, dir, command string) (func(), error) {
 	src := jobqueue.SourceFrom(ctx)
 	job, heavy := memgate.Classify(command)
 	// a dev server runs until stopped: it never holds a slot, and only an Always step stands in for it
@@ -234,14 +236,14 @@ func holdPlanSlot(ctx context.Context, command string) (func(), error) {
 	if !known && !src.Always {
 		return func() {}, nil
 	}
-	name, bytes := job.Name, job.Bytes
-	if !known {
-		name, bytes = src.Label, engineStepBytes
-		if src.Peak > 0 {
-			bytes = src.Peak
-		}
+	name, bytes, basis := src.Label, uint64(engineStepBytes), jobqueue.Basis{}
+	if known {
+		name = job.Name
+		bytes, basis = engineStepSize(job, dir)
+	} else if src.Peak > 0 {
+		bytes = src.Peak
 	}
-	req := jobqueue.Request{Name: name, Bytes: bytes, Engine: true, Source: src}
+	req := jobqueue.Request{Name: name, Bytes: bytes, Engine: true, Source: src, Basis: basis}
 	limit, _ := ctx.Value(slotWaitKey{}).(time.Duration)
 	if limit <= 0 {
 		return jobqueue.Hold(ctx, req)
@@ -254,6 +256,19 @@ func holdPlanSlot(ctx context.Context, command string) (func(), error) {
 		return nil, errSlotWaitOver
 	}
 	return release, err
+}
+
+// engineStepSize is the RAM an engine step memgate knows claims: the table's figure, raised to the estimate Claude
+// Code's runs of the same pattern measured in the step's project (jobpeaks), never lowered to it. The engine's own
+// steps are not measured, and the same pattern can do more work in a step than by hand: an agent runs
+// scripts/verify.mjs on a few packages (0.9 GB), a final-stage Verify on every package plus the typecheck and vitest.
+// A higher measurement is the safe one to take: a final-verify.mjs measured 4.8 GB against the table's 3 GB.
+func engineStepSize(job memgate.Job, dir string) (uint64, jobqueue.Basis) {
+	measured, basis := jobpeaks.Default.Estimate(job.Name, jarvis.MainCheckout(dir), job.Bytes)
+	if measured > job.Bytes {
+		return measured, basis
+	}
+	return job.Bytes, jobqueue.Basis{}
 }
 
 // errSlotWaitOver is what a plan command returns when its bounded wait for a heavy-job slot (withSlotWait) ran out
@@ -318,7 +333,7 @@ func markTreeSetUp(ctx context.Context, wt string) {
 
 func execPlanCommandEnv(ctx context.Context, dir, command string, env []string, timeout time.Duration, progress planProgress) (string, error) {
 	// before the timeout starts, so the time spent queued never counts against it
-	release, err := holdPlanSlot(ctx, command)
+	release, err := holdPlanSlot(ctx, dir, command)
 	if err != nil {
 		return "", err
 	}

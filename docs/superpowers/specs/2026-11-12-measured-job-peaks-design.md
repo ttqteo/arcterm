@@ -59,7 +59,12 @@ cost the builder measures.
   process is gone.
 - **Not measured:**
   - A foreground PowerShell-tool command cannot be matched, so it keeps the table's number.
-  - Engine steps (Setup, Verify, Check, Final) keep the table's numbers in this change.
+  - Engine steps (Setup, Verify, Check, Final) are not measured. Amended 2026-11-13: a step memgate knows claims the
+    table's number raised to the estimate its pattern measured in the project, never lowered to it (an agent's
+    `scripts/verify.mjs` on a few packages is lighter than a final-stage Verify); `engineStepSize` in
+    `pkg/orchestrate/plancmd.go`. A step memgate does not know keeps `engineStepBytes` or `Source.Peak`.
+  - A known command whose peak is under a tenth of its table number never ran (skipped from the Jobs popover, refused,
+    or failed at start: a skipped `task check:ts` read 14 MB) and is not recorded (`jobpeaks.Ran`, added 2026-11-13).
   - Only Claude Code's commands are matched. pi, codex and agy commands are not measured, and their unknown commands
     are never learned. Their slots still use the figure Claude Code's runs measured for the same pattern and project,
     since `wsh jobslot` does not say which harness asks and the same command peaks the same either way. pi still reads
