@@ -57,7 +57,7 @@ func laneMergeReady(g *waveobj.TaskGroup, lane []string) *waveobj.TaskNode {
 		if t.State == TaskState_Skipped {
 			continue
 		}
-		if t.State != TaskState_Done || (t.Gate && !t.Released) {
+		if !taskStates[t.State].settled || (t.Gate && !t.Released) {
 			return nil
 		}
 	}

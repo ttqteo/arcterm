@@ -684,7 +684,8 @@ func (ws *WshServer) DagActionCommand(ctx context.Context, data wshrpc.CommandDa
 		return orchestrate.SendBack(ctx, run.DagORef, data.TaskId, data.Notes)
 	}
 	target := waveobj.RoutePin{Runtime: data.Runtime, Model: data.Model}
-	return orchestrate.ApplyAction(ctx, run.DagORef, data.TaskId, data.Action, target)
+	// the cockpit and `wsh runs` send no By: only the lead's CLI names itself
+	return orchestrate.ApplyActionBy(ctx, run.DagORef, data.TaskId, data.Action, orchestrate.ActionByFromWire(data.By), target)
 }
 
 // leadORef is the lead's tab oref, or ""; steerRunLead treats empty as a no-op.

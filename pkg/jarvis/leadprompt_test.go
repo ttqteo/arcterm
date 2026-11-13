@@ -145,6 +145,24 @@ func TestOrchestrationRulesLeadAsksWorkerQuestionItself(t *testing.T) {
 	}
 }
 
+// Kael d977d702f: the lead gives a relayed question the task id as its header, which is how the engine finds
+// the relay when the human takes the question over.
+func TestOrchestrationRulesLeadRelaysWithTheTaskIdHeader(t *testing.T) {
+	r := OrchestrationRules("run-1", "", "", "", false)
+	var line string
+	for _, l := range strings.Split(r, "\n") {
+		if strings.HasPrefix(l, "- questions:") {
+			line = l
+		}
+	}
+	if !strings.Contains(line, "with the header `<task id>` exactly and nothing else (for example `t-3`)") {
+		t.Errorf("the questions line does not tell the lead to head a relay with the task id:\n%s", line)
+	}
+	if TakenOverRelayAnswer == "" {
+		t.Error("TakenOverRelayAnswer is empty")
+	}
+}
+
 // the rules name the run's effort, so open issues land on it instead of on a new effort each run
 // a plan that answers to a spec lets the lead decide the last plan review round's findings the spec settles; with
 // no spec the rule is not there

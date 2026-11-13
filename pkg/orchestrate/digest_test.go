@@ -4,6 +4,7 @@
 package orchestrate
 
 import (
+	"encoding/json"
 	"reflect"
 	"slices"
 	"strings"
@@ -1130,5 +1131,229 @@ func TestHealthFollowsAFinishedRunPastItsParkedDag(t *testing.T) {
 		if got := BuildDigest(sn).Health; got != c.want {
 			t.Errorf("%s: health = %q, want %q", c.name, got, c.want)
 		}
+	}
+}
+
+// forwardRow is a task-forwarded row; askID marks the forward of a worker's question rather than of a failure.
+func forwardRow(taskID, askID string, ts int64) waveobj.RunEvent {
+	ev := retainedEvent(waveobj.RunEventKindTaskForwarded, taskID, ts)
+	detail := map[string]any{"taskid": taskID, "note": "yours"}
+	if askID != "" {
+		detail["askid"] = askID
+	}
+	ev.Detail, _ = json.Marshal(detail)
+	return ev
+}
+
+func forwardedTsOf(t *testing.T, state string, retained []waveobj.RunEvent) int64 {
+	t.Helper()
+	g := digestGroup(t, true, plainTasks())
+	setTaskStates(g, map[string]string{"t-0": state})
+	return BuildDigest(digestSnapshot(g, nil, nil, retained, digestNow)).Tasks[0].ForwardedTs
+}
+
+// retained rows arrive newest first, as the store returns them
+func TestDigestForwardedFailureIsTheHumans(t *testing.T) {
+	for _, state := range []string{TaskState_Failed, TaskState_Stalled, TaskState_BlockedMerge, TaskState_VerifyFailed, TaskState_ReviewFailed} {
+		failKind := waveobj.RunEventKindTaskFailed
+		switch state {
+		case TaskState_VerifyFailed:
+			failKind = waveobj.RunEventKindTaskVerifyFailed
+		case TaskState_ReviewFailed:
+			failKind = waveobj.RunEventKindTaskReviewFailed
+		}
+		retained := []waveobj.RunEvent{
+			forwardRow("t-1", "", 4000), // another task's forward is not this one's
+			forwardRow("t-0", "", 3000),
+			retainedEvent(failKind, "t-0", 2000),
+			retainedEvent(waveobj.RunEventKindTaskSpawned, "t-0", 1000),
+		}
+		if got := forwardedTsOf(t, state, retained); got != 3000 {
+			t.Errorf("%s forwarded after its failure: forwardedts = %d, want 3000", state, got)
+		}
+	}
+}
+
+// the human retried the forwarded task and it failed again: the new failure is the lead's until it forwards it
+func TestDigestForwardedFailureRetriedAndFailedAgainIsTheLeads(t *testing.T) {
+	for _, restart := range []string{waveobj.RunEventKindTaskRetried, waveobj.RunEventKindTaskSpawned} {
+		retained := []waveobj.RunEvent{
+			retainedEvent(waveobj.RunEventKindTaskFailed, "t-0", 5000),
+			retainedEvent(restart, "t-0", 4000),
+			forwardRow("t-0", "", 3000),
+			retainedEvent(waveobj.RunEventKindTaskFailed, "t-0", 2000),
+		}
+		if got := forwardedTsOf(t, TaskState_Failed, retained); got != 0 {
+			t.Errorf("%s then a new failure after the forward: forwardedts = %d, want 0", restart, got)
+		}
+		// the lead forwards the new failure: the human's again
+		retained = append([]waveobj.RunEvent{forwardRow("t-0", "", 6000)}, retained...)
+		if got := forwardedTsOf(t, TaskState_Failed, retained); got != 6000 {
+			t.Errorf("%s, failed, forwarded again: forwardedts = %d, want 6000", restart, got)
+		}
+	}
+}
+
+func TestDigestForwardedFailureIgnoresAForwardedQuestion(t *testing.T) {
+	retained := []waveobj.RunEvent{
+		forwardRow("t-0", "ask-1", 3000),
+		retainedEvent(waveobj.RunEventKindTaskFailed, "t-0", 2000),
+	}
+	if got := forwardedTsOf(t, TaskState_Failed, retained); got != 0 {
+		t.Fatalf("a forwarded question marked the failure forwarded: forwardedts = %d", got)
+	}
+}
+
+func TestDigestForwardedFailureUnsetOnceTheTaskRunsAgain(t *testing.T) {
+	retained := []waveobj.RunEvent{
+		forwardRow("t-0", "", 3000),
+		retainedEvent(waveobj.RunEventKindTaskFailed, "t-0", 2000),
+	}
+	if got := forwardedTsOf(t, TaskState_Running, retained); got != 0 {
+		t.Fatalf("a running task has no forwarded failure: forwardedts = %d", got)
+	}
+}
+
+func TestDigestVerifyFailLine(t *testing.T) {
+	g := digestGroup(t, true, plainTasks())
+	setTaskStates(g, map[string]string{"t-0": TaskState_VerifyFailed, "t-1": TaskState_VerifyFailed})
+	g.Tasks[0].VerifyOutput = "ok  pkg/a\n\x1b[31m--- FAIL: TestAdd (0.00s)\x1b[0m\n    add_test.go:9: got 3\nFAIL\n"
+	g.Tasks[1].VerifyOutput = "✔ adds two positive numbers\n✔ adds zero\nexit status 1\n"
+	d := BuildDigest(digestSnapshot(g, nil, nil, nil, digestNow))
+	if got := d.Tasks[0].VerifyFailLine; got != "--- FAIL: TestAdd (0.00s)" {
+		t.Errorf("verifyfailline = %q, want the failing test's line", got)
+	}
+	if got := d.Tasks[1].VerifyFailLine; got != "" {
+		t.Errorf("output naming no failure: verifyfailline = %q, want none, never a passing line", got)
+	}
+
+	g.Tasks[0].VerifyOutput = "--- FAIL: " + strings.Repeat("x", 2*MaxVerifyLineLen) + "\n"
+	if got := BuildDigest(digestSnapshot(g, nil, nil, nil, digestNow)).Tasks[0].VerifyFailLine; len(got) != MaxVerifyLineLen {
+		t.Errorf("verifyfailline is %d bytes, want it cut to %d", len(got), MaxVerifyLineLen)
+	}
+}
+
+// heldGateGroup is t-0 done and merge-ready while t-1 holds the merge queue in holderState.
+func heldGateGroup(t *testing.T, holderState string) *waveobj.TaskGroup {
+	t.Helper()
+	g := digestGroup(t, true, plainTasks())
+	setTaskStates(g, map[string]string{"t-0": TaskState_Done, "t-1": holderState, "t-2": TaskState_Done})
+	g.Tasks[1].RunID, g.Tasks[1].Merged = "run-t-1", holderState != TaskState_BlockedMerge
+	g.Tasks[2].Merged = true
+	return g
+}
+
+func TestDigestMergeQueueHeldGate(t *testing.T) {
+	for _, holderState := range []string{TaskState_Verifying, TaskState_VerifyFailed, TaskState_BlockedMerge} {
+		g := heldGateGroup(t, holderState)
+		if id, state := mergeQueueHolder(g); id != "t-1" || state != holderState {
+			t.Fatalf("%s: mergeQueueHolder = %q, %q, want t-1, %s", holderState, id, state, holderState)
+		}
+		d := BuildDigest(digestSnapshot(g, nil, nil, nil, digestNow))
+		td := d.Tasks[0]
+		if td.MergeState != "held" || td.MergeHeldBy != "t-1" || len(td.HumanActions) != 0 {
+			t.Errorf("%s: tip = %s by %q actions %v, want held by t-1 with no actions", holderState, td.MergeState, td.MergeHeldBy, td.HumanActions)
+		}
+		if d.Counts.MergeReady != 0 {
+			t.Errorf("%s: a held tip counted merge-ready", holderState)
+		}
+		if d.Next.Kind == "merge-ready" {
+			t.Errorf("%s: next = %+v, a held gate is not merge-ready", holderState, d.Next)
+		}
+	}
+}
+
+// t-2 waits on t-0's lane, so step 2 (merge-ready work that blocks successors) would name t-0 if it were not held
+func TestDigestMergeQueueHeldGateBlockingASuccessor(t *testing.T) {
+	g := digestGroup(t, true, []waveobj.TaskNode{{ID: "t-0", Label: "a"}, {ID: "t-1", Label: "b"}, {ID: "t-3", Label: "c"}, {ID: "t-2", Label: "d", Deps: []string{"t-0", "t-3"}}})
+	setTaskStates(g, map[string]string{"t-0": TaskState_Done, "t-3": TaskState_Done, "t-1": TaskState_Verifying})
+	g.Tasks[1].RunID, g.Tasks[1].Merged = "run-t-1", true
+	if mergeReadyBlocking(g) == nil {
+		t.Fatal("fixture: t-2 must wait on a merge-ready lane")
+	}
+	if d := BuildDigest(digestSnapshot(g, nil, nil, nil, digestNow)); d.Next.Kind == "merge-ready" {
+		t.Fatalf("next = %+v, a held gate blocking a successor is not merge-ready", d.Next)
+	}
+}
+
+func TestDigestMergeQueueFreedGateIsReadyAgain(t *testing.T) {
+	g := heldGateGroup(t, TaskState_Verifying)
+	setTaskStates(g, map[string]string{"t-1": TaskState_Done})
+	if id, state := mergeQueueHolder(g); id != "" || state != "" {
+		t.Fatalf("mergeQueueHolder = %q, %q, want a free queue", id, state)
+	}
+	d := BuildDigest(digestSnapshot(g, nil, nil, nil, digestNow))
+	td := d.Tasks[0]
+	if td.MergeState != "ready" || td.MergeHeldBy != "" || !slices.Equal(td.HumanActions, digestActionMerge) {
+		t.Fatalf("tip = %s by %q actions %v, want ready with merge", td.MergeState, td.MergeHeldBy, td.HumanActions)
+	}
+	if d.Counts.MergeReady != 1 || d.Next.Kind != "merge-ready" {
+		t.Fatalf("counts %+v next %+v, want the tip merge-ready", d.Counts, d.Next)
+	}
+}
+
+// a held gate asks nothing of you, however long it has waited; once its holder clears it is a gate again
+func TestHeldMergeGateIsNeverStale(t *testing.T) {
+	g := heldGateGroup(t, TaskState_Verifying)
+	now := time.Now()
+	doneTs := now.Add(-MergeGateStaleAfter - time.Minute).UnixMilli()
+	snap := DagDigestSnapshot{
+		Group:    g,
+		Retained: []waveobj.RunEvent{retainedEvent(waveobj.RunEventKindTaskDone, "t-0", doneTs)},
+		Now:      now,
+	}
+
+	d := BuildDigest(snap)
+	if d.Counts.Attention != 0 || d.Health != "healthy" {
+		t.Fatalf("held past the threshold: attention %d health %q, want 0 and healthy", d.Counts.Attention, d.Health)
+	}
+	if d.Tasks[0].MergeState != "held" || d.Tasks[0].MergeGateTs != doneTs {
+		t.Fatalf("held tip = %s gate ts %d, want held keeping its gate ts %d", d.Tasks[0].MergeState, d.Tasks[0].MergeGateTs, doneTs)
+	}
+
+	setTaskStates(g, map[string]string{"t-1": TaskState_Done})
+	d = BuildDigest(snap)
+	if d.Tasks[0].MergeState != "ready" || d.Counts.Attention != 1 || d.Health != "needs-you" {
+		t.Fatalf("holder done: tip %s attention %d health %q, want a ready stale gate counting 1", d.Tasks[0].MergeState, d.Counts.Attention, d.Health)
+	}
+}
+
+// a failed Verify outranks a conflict, which outranks a running Verify
+func TestMergeQueueHolderOrder(t *testing.T) {
+	g := digestGroup(t, true, []waveobj.TaskNode{{ID: "t-0", Label: "a"}, {ID: "t-1", Label: "b"}, {ID: "t-2", Label: "c"}, {ID: "t-3", Label: "d"}})
+	setTaskStates(g, map[string]string{"t-0": TaskState_Verifying, "t-1": TaskState_BlockedMerge, "t-2": TaskState_VerifyFailed})
+	if id, state := mergeQueueHolder(g); id != "t-2" || state != TaskState_VerifyFailed {
+		t.Fatalf("holder = %q, %q, want the verify-failed t-2", id, state)
+	}
+	setTaskStates(g, map[string]string{"t-2": TaskState_Done})
+	if id, _ := mergeQueueHolder(g); id != "t-1" {
+		t.Fatalf("holder = %q, want the conflict t-1", id)
+	}
+	g.Tasks[1].MergeError = "refused" // a refused merge never touched the tree: it holds nothing
+	if id, _ := mergeQueueHolder(g); id != "t-0" {
+		t.Fatalf("holder = %q, want the verifying t-0", id)
+	}
+}
+
+// a retry the human or the lead asked for is not evidence the engine recovered the task
+func TestRecoveredRetryIgnoresActorRetries(t *testing.T) {
+	g := digestGroup(t, false, plainTasks())
+	setTaskStates(g, map[string]string{"t-0": TaskState_Done, "t-1": TaskState_Done, "t-2": TaskState_Done})
+	actorRetry := func(taskID, by string, ts int64) waveobj.RunEvent {
+		ev := retainedEvent(waveobj.RunEventKindTaskRetried, taskID, ts)
+		ev.Detail, _ = json.Marshal(map[string]any{"taskid": taskID, "auto": false, "by": by})
+		return ev
+	}
+	retained := []waveobj.RunEvent{
+		actorRetry("t-0", "human", 5000),
+		actorRetry("t-1", "lead", 5500),
+		retainedEvent(waveobj.RunEventKindTaskRetried, "t-2", 6000),
+	}
+	d := BuildDigest(digestSnapshot(g, nil, nil, retained, digestNow))
+	if d.Counts.RecoveredRetry != 1 {
+		t.Fatalf("only the engine's retry is recovery evidence, got %d", d.Counts.RecoveredRetry)
+	}
+	if d.Tasks[0].RecoveredRetry || d.Tasks[1].RecoveredRetry || !d.Tasks[2].RecoveredRetry {
+		t.Fatalf("recovered = %v %v %v, want only t-2", d.Tasks[0].RecoveredRetry, d.Tasks[1].RecoveredRetry, d.Tasks[2].RecoveredRetry)
 	}
 }

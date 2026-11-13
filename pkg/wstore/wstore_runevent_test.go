@@ -43,6 +43,39 @@ func TestAppendAndQueryRunEvents(t *testing.T) {
 	}
 }
 
+// Kael a61a68c95: limit <= 0 reads every retained event, not the first 200.
+func TestQueryRunEventsAllWhenNoLimit(t *testing.T) {
+	ctx := context.Background()
+	ch, err := CreateChannel(ctx, "runevent-all", "/p/one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const total = 250
+	for i := 0; i < total; i++ {
+		idx := i
+		if _, err := AppendRunEventAt(ctx, int64(1000+i), ch.OID, "run-all", waveobj.RunEventKindCreated, &idx, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := QueryRunEvents(ctx, ch.OID, "run-all", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != total {
+		t.Fatalf("limit 0 want all %d events, got %d", total, len(all))
+	}
+	if all[0].PhaseIdx == nil || *all[0].PhaseIdx != total-1 {
+		t.Fatalf("want newest-first, first phaseidx %v", all[0].PhaseIdx)
+	}
+	some, err := QueryRunEvents(ctx, ch.OID, "run-all", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(some) != 10 {
+		t.Fatalf("limit 10 want 10 events, got %d", len(some))
+	}
+}
+
 func TestQueryRunEventsByKind(t *testing.T) {
 	ctx := context.Background()
 	ch, err := CreateChannel(ctx, "runevent-kinds", "/p/one")

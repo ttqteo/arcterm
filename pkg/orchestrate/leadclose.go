@@ -219,10 +219,7 @@ func MaybeCompleteLeadFreeRun(ctx context.Context, run *waveobj.Run, dag *waveob
 // snapshot, so both close paths check the tasks themselves.
 func allTasksTerminal(dag *waveobj.TaskGroup) bool {
 	for _, t := range dag.Tasks {
-		switch t.State {
-		case TaskState_Done, TaskState_Skipped, TaskState_Failed, TaskState_Cancelled:
-			continue
-		default:
+		if !taskStates[t.State].terminal {
 			return false
 		}
 	}

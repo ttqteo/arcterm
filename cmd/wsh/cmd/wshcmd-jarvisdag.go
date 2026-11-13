@@ -284,6 +284,12 @@ func taskLines(rtn *wshrpc.CommandDagStatusRtnData, now int64, tasks []waveobj.T
 	for _, td := range d.Tasks {
 		taskDigestByID[td.TaskId] = td
 	}
+	stateByID := map[string]string{}
+	if rtn.Group != nil {
+		for _, gt := range rtn.Group.Tasks {
+			stateByID[gt.ID] = gt.State
+		}
+	}
 	var lines []string
 	var buf strings.Builder
 	w := tabwriter.NewWriter(&buf, 0, 4, 2, ' ', 0)
@@ -292,7 +298,7 @@ func taskLines(rtn *wshrpc.CommandDagStatusRtnData, now int64, tasks []waveobj.T
 		if !ok {
 			continue
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", t.ID, t.State, taskSignal(t.State, td, now), strings.Join(td.HumanActions, ","), t.Label)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", t.ID, t.State, taskSignalWithHolder(t.State, td, stateByID[td.MergeHeldBy], now), strings.Join(td.HumanActions, ","), t.Label)
 	}
 	w.Flush()
 	if rows := strings.TrimSuffix(buf.String(), "\n"); rows != "" {
@@ -442,6 +448,12 @@ func flatText(s string) string {
 // age and latest line, or how long a worker has been silent. Every value is the digest's, formatted here
 // and never re-derived from task state.
 func taskSignal(state string, td wshrpc.DagTaskDigest, now int64) string {
+	return taskSignalWithHolder(state, td, "", now)
+}
+
+// taskSignalWithHolder is taskSignal for a row that may be a held merge tip: holderState is the state of the task
+// the tip waits on, "" if unknown.
+func taskSignalWithHolder(state string, td wshrpc.DagTaskDigest, holderState string, now int64) string {
 	switch {
 	case td.AskSummary != "":
 		return "ask: " + compactText(td.AskSummary, 60)
@@ -453,8 +465,25 @@ func taskSignal(state string, td wshrpc.DagTaskDigest, now int64) string {
 		return workerSignal(td, now)
 	case td.MergeState == "ready":
 		return mergeGateSignal(td, now)
+	case td.MergeState == "held":
+		return mergeHeldSignal(td.MergeHeldBy, holderState)
 	}
 	return ""
+}
+
+// mergeHoldReason words why a held tip waits, by the holder's state (the cockpit's MERGE_HOLD_REASON).
+var mergeHoldReason = map[string]string{
+	orchestrate.TaskState_Verifying:    "Verify",
+	orchestrate.TaskState_VerifyFailed: "failed Verify",
+	orchestrate.TaskState_BlockedMerge: "merge conflict",
+}
+
+func mergeHeldSignal(holder, holderState string) string {
+	reason, ok := mergeHoldReason[holderState]
+	if !ok {
+		return "merge held"
+	}
+	return "merge held: waits on " + holder + "'s " + reason
 }
 
 // workerSignal is how long the worker has been silent, and whether it is running a command meanwhile: a foreground
@@ -669,9 +698,9 @@ var dagDoneLines = map[string]string{
 	"approve":           "task {task} approved; the engine lands or dispatches it on its next tick",
 	"retry":             "task {task} re-queued; a fresh worker starts when a slot is free",
 	"escalate":          "task {task} re-queued on the chosen model; a fresh worker starts when a slot is free",
-	"skip":              "task {task} skipped; it will not run",
+	"skip":              "task {task} skipped; a reviewer or stalled worker it had is stopped, its work never lands, and the rest of the run goes on",
 	"stop":              "task {task} stopped; its worker's tab is closed and nothing retries it until you retry, escalate or skip it",
-	"cancel":            "dag cancelled; its workers stop and their worktrees are cleaned up",
+	"cancel":            "the whole run is cancelled, not just the task named: every worker and reviewer stops and their worktrees are cleaned up (to drop one task and let the run go on, use `wsh jarvis dag skip <task>`)",
 	"retry-cleanup":     "task {task}'s worktree cleanup retried; `wsh jarvis dag status` shows whether it cleared",
 	"forward":           "task {task} forwarded; it waits on the human in the cockpit",
 	"amend":             "note added to task {task}; its worker's prompt carries it",
@@ -692,6 +721,18 @@ func dagDoneLine(action, taskID string) string {
 	return strings.ReplaceAll(dagDoneLines[action], "{task}", taskID)
 }
 
+// dagActionRpc sends one dag action. A var so a test can stand in for wavesrv.
+var dagActionRpc = func(data wshrpc.CommandDagActionData, timeoutMs int64) error {
+	return wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: timeoutMs})
+}
+
+// sendLeadAction sends an action the lead's CLI issues, stamped as the lead's so the run's events tell it
+// from the human's own retry, skip or escalate in the cockpit.
+func sendLeadAction(data wshrpc.CommandDagActionData, timeoutMs int64) error {
+	data.By = wshrpc.DagActionBy_Lead
+	return dagActionRpc(data, timeoutMs)
+}
+
 func dagAction(action string) *cobra.Command {
 	return dagActionWithin(action, dagRpcTimeoutMs)
 }
@@ -707,15 +748,39 @@ func dagActionWithin(action string, timeoutMs int64) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := wshclient.DagActionCommand(RpcClient, wshrpc.CommandDagActionData{
+			if err := sendLeadAction(wshrpc.CommandDagActionData{
 				ChannelId: channelId, RunId: runId, TaskId: args[0], Action: action,
-			}, &wshrpc.RpcOpts{Timeout: timeoutMs}); err != nil {
+			}, timeoutMs); err != nil {
 				return err
 			}
 			fmt.Println(dagDoneLine(action, args[0]))
 			return nil
 		},
 	}
+}
+
+// dagSkipCmd is how a lead drops one task and lets the run go on; cancel ends the whole run.
+func dagSkipCmd() *cobra.Command {
+	c := dagAction("skip")
+	c.Short = "drop one task and let the run go on: a reviewer or stalled worker stops and the task's work never lands"
+	c.Long = "Drop one task that has not landed: pending, ready, stalled, under review, review-failed or failed. Its\n" +
+		"reviewer or stalled worker stops, its commits come off its lane (saved to a recovery patch), and the rest of\n" +
+		"the run goes on as for any skipped task; the final stage still runs. A running task is stopped first with\n" +
+		"`wsh jarvis dag stop <task-id>`, then skipped. A task that is done, merging or blocked on a merge cannot be\n" +
+		"skipped. To end the whole run, use `wsh jarvis dag cancel`."
+	return c
+}
+
+// dagCancelCmd cancels the whole run whichever task id it is given (run e5c81d8f: `dag cancel t-6` cancelled every
+// worker and reviewer, not t-6). The id stays a required argument, so no existing call changes; the help says what
+// it does with it.
+func dagCancelCmd() *cobra.Command {
+	c := dagAction("cancel")
+	c.Short = "cancel the whole run, not one task: every worker and reviewer stops (to drop one task, use skip)"
+	c.Long = "Cancel the whole run: every worker and reviewer stops, their worktrees are cleaned up and the final stage\n" +
+		"never runs. The task id is required but ignored: it does not cancel only that task. To drop one task and\n" +
+		"let the run go on, use `wsh jarvis dag skip <task-id>`."
+	return c
 }
 
 func dagEscalateData(cmd *cobra.Command, args []string) (wshrpc.CommandDagActionData, error) {
@@ -748,7 +813,7 @@ var dagEscalateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs}); err != nil {
+		if err := sendLeadAction(data, dagRpcTimeoutMs); err != nil {
 			return err
 		}
 		fmt.Println(dagDoneLine(data.Action, data.TaskId))
@@ -778,19 +843,56 @@ var dagMergeCmd = &cobra.Command{
 			return err
 		}
 		data := wshrpc.CommandDagMergeData{ChannelId: channelId, RunId: runId, TaskId: args[0]}
+		send, done := wshclient.DagMergeCommand, dagDoneLine("merge", args[0])
 		if cont {
-			if err := wshclient.DagMergeContinueCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagMergeTimeoutMs}); err != nil {
+			send = wshclient.DagMergeContinueCommand
+			done = fmt.Sprintf("task %s continued; the plan's Verify, if it has one, runs next and a failure wakes you", args[0])
+		}
+		if err := send(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagMergeTimeoutMs}); err != nil {
+			if !submitOutcomeUnknown(err) {
 				return err
 			}
-			fmt.Printf("task %s continued; the plan's Verify, if it has one, runs next and a failure wakes you\n", args[0])
-			return nil
+			out, terr := dagMergeTimedOut(data, cont, err)
+			if terr != nil {
+				return terr
+			}
+			done = out
 		}
-		if err := wshclient.DagMergeCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagMergeTimeoutMs}); err != nil {
-			return err
-		}
-		fmt.Println(dagDoneLine("merge", args[0]))
+		fmt.Println(done)
 		return nil
 	},
+}
+
+// dagMergeTimedOut says what became of a merge or --continue whose reply never came. wavesrv finishes a request it
+// received after its caller stops waiting (it waits on the dag lock, which a tick can hold for minutes) and wakes the
+// lead if it then fails, so the answer is to check the task, never to re-run the command.
+func dagMergeTimedOut(data wshrpc.CommandDagMergeData, cont bool, err error) (string, error) {
+	command := "dag merge"
+	if cont {
+		command += " --continue"
+	}
+	waited := fmt.Sprintf("%s %s got no reply within %s (%v)", command, data.TaskId, compactDur(dagMergeTimeoutMs), err)
+	check := fmt.Sprintf("check with `wsh jarvis dag status %s` rather than re-running it", data.TaskId)
+	g, rerr := readRunDag(data.ChannelId, data.RunId)
+	var task *waveobj.TaskNode
+	if g != nil {
+		for i := range g.Tasks {
+			if g.Tasks[i].ID == data.TaskId {
+				task = &g.Tasks[i]
+			}
+		}
+	}
+	if rerr != nil || task == nil {
+		return "", fmt.Errorf("%s, and reading task %s again failed (%v). A request wavesrv received still finishes, and wakes you if it fails: %s", waited, data.TaskId, rerr, check)
+	}
+	tookEffect := task.Merged
+	if cont {
+		tookEffect = task.State != orchestrate.TaskState_VerifyFailed && task.State != orchestrate.TaskState_BlockedMerge
+	}
+	if tookEffect {
+		return fmt.Sprintf("%s, but it took effect: task %s is %s; do not re-run it", waited, data.TaskId, task.State), nil
+	}
+	return "", fmt.Errorf("%s, and task %s is still %s: wavesrv is waiting for the engine to release the dag and finishes the request then (a continued Verify shows verifying), waking you if it fails; %s", waited, data.TaskId, task.State, check)
 }
 
 var dagAsksCmd = &cobra.Command{
@@ -939,7 +1041,7 @@ var dagForwardCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs}); err != nil {
+		if err := sendLeadAction(data, dagRpcTimeoutMs); err != nil {
 			return err
 		}
 		fmt.Println(dagDoneLine(data.Action, data.TaskId))
@@ -1217,7 +1319,7 @@ func dagNoteCmd(use, action, short string, args cobra.PositionalArgs) *cobra.Com
 			if err != nil {
 				return err
 			}
-			if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs}); err != nil {
+			if err := sendLeadAction(data, dagRpcTimeoutMs); err != nil {
 				return err
 			}
 			fmt.Println(dagDoneLine(action, data.TaskId))
@@ -1413,7 +1515,7 @@ func leadTree() string {
 func init() {
 	dagPlanReviewCmd.AddCommand(dagPlanReviewFindingsCmd)
 	jarvisDagCmd.AddCommand(dagSubmitCmd, dagStatusCmd, dagMergeCmd, dagAsksCmd, dagAnswerCmd, dagForwardCmd, dagRulesCmd, dagReportCmd, dagReviewCmd, dagPlanReviewCmd, dagFinalCmd, dagAmendCmd, dagTellCmd, dagGoalpostCmd)
-	jarvisDagCmd.AddCommand(dagAction("approve"), dagSendbackCmd, dagAction("retry"), dagAction("skip"), dagActionWithin("stop", 60_000), dagEscalateCmd, dagAction("cancel"), dagActionWithin("retry-cleanup", 60_000))
+	jarvisDagCmd.AddCommand(dagAction("approve"), dagSendbackCmd, dagAction("retry"), dagSkipCmd(), dagActionWithin("stop", 60_000), dagEscalateCmd, dagCancelCmd(), dagActionWithin("retry-cleanup", 60_000))
 	for _, c := range append(jarvisDagCmd.Commands(), dagPlanReviewFindingsCmd) {
 		c.Flags().String("runid", "", "run id")
 		c.Flags().String("channel", "", "channel id")

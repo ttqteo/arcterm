@@ -642,3 +642,22 @@ func TestAutoMergeableLandsFirstTheLaneMostPendingTasksWaitOn(t *testing.T) {
 		t.Fatalf("t-3 and t-4 still wait; got %d", n)
 	}
 }
+
+// a refused claim names the task to watch, never the dag uuid a reader cannot use
+func TestMergeQueueBusyCheckoutNamesNoDag(t *testing.T) {
+	project := t.TempDir()
+	l, err := claimProject(project, "dag-1111", "t-4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer releaseProject(project, l)
+	for dagID, want := range map[string]string{
+		"dag-1111": "task t-4 is merging or verifying",
+		"dag-2222": "another run is landing in this checkout",
+	} {
+		_, err := claimProject(project, dagID, "t-2")
+		if !errors.Is(err, errProjectBusy) || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "dag-1111") {
+			t.Fatalf("claim from %s: err = %v, want errProjectBusy saying %q with no dag id", dagID, err, want)
+		}
+	}
+}
