@@ -34,11 +34,11 @@ import { agentDiffScope, openDiff } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
-import { procExited } from "./brainstormmodel";
-import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
+import { builderCheckView, procExited, type BuilderCheckView } from "./brainstormmodel";
+import { brainstormAtom, brainstormSeenAtom, shownBrainstormFile } from "./brainstormstore";
 import { AskRow } from "./channelsprimitives";
 import { boxPlaceholder, type BoxState } from "./chatboxstate";
-import { openQuestion } from "./chatbrainstorm";
+import { brainstormCard } from "./chatbrainstorm";
 import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstormstore";
 import { boxAnswerRecord, boxPlaceholderOverride } from "./chatbrainstormwire";
 import { ChatComposer } from "./chatcomposer";
@@ -404,20 +404,46 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     // sleeping agent has no process writing to its transcript, so there is no stream: one read as it falls asleep (or as
     // the pane is first seen asleep) puts its last turn in the log.
     const asleep = agent.sleeping != null;
-    // The agent's brainstorm. The question it waits on draws as a card at the end of the conversation (chatbrainstormcard.tsx)
-    // and words the box's placeholder; what is sent from the box while it waits is kept as the answer (onBoxSent), which
-    // pairs with the message the transcript lands, so that draws as the question's ✓ row (chatbrainstorm.ts pairAnswers).
-    // A click on a card's option is recorded by sendBrainstorm itself. Chat never switches to the Brainstorm tab for any of
-    // it: the card's own button does.
+    // The agent's brainstorm. The card it ends with (the question it waits on, Confirm the design, the builder check, the
+    // run) draws at the end of the conversation (chatbrainstormcard.tsx and its siblings); a question's card also words the
+    // box's placeholder. What is sent from the box while a question waits is kept as the answer (onBoxSent), which pairs
+    // with the message the transcript lands, so that draws as the question's ✓ row (chatbrainstorm.ts pairAnswers). A click
+    // on a card's button is recorded by sendBrainstorm itself. Chat never switches to the Brainstorm tab for any of it: the
+    // card's own button does.
     const brainstormState = useAtomValue(brainstormAtom(agent.id));
     const sentAnswers = useAtomValue(brainstormAnswersAtom(agent.id));
+    const seenMarks = useAtomValue(brainstormSeenAtom);
     const procExit = useAtomValue(getProcExitAtom(agent.blockId ?? ""));
     const exited = procExited(procExit, agent.sleeping);
     const brainstormTopic = brainstormState?.topic ?? "";
-    const question = useMemo(
-        () => openQuestion(shownBrainstormFile(brainstormState), sentAnswers, exited, brainstormTopic),
-        [brainstormState, sentAnswers, exited, brainstormTopic]
-    );
+    const card = useMemo(() => {
+        const s = brainstormState;
+        // the builder check as the Brainstorm tab reads it (brainstormpane.tsx): the card and the tab say one thing
+        const check: BuilderCheckView =
+            s != null
+                ? builderCheckView(agent.builderCheck, s.sentCheckAt, s.file, s.modifiedMs, agent)
+                : { kind: "none" };
+        return brainstormCard({
+            file: shownBrainstormFile(s),
+            records: sentAnswers,
+            exited,
+            topic: brainstormTopic,
+            check,
+            sent: s?.sent?.kind ?? null,
+            seen: s != null ? (seenMarks[s.path] ?? null) : null,
+            starting: s?.starting ?? null,
+            modifiedMs: s?.modifiedMs ?? null,
+        });
+    }, [
+        brainstormState,
+        sentAnswers,
+        exited,
+        brainstormTopic,
+        seenMarks,
+        agent.builderCheck,
+        agent.state,
+        agent.idleSince,
+    ]);
     // the box's state, as the box reports it (chatboxstate.ts); it words the empty box. Until the box has said, what the
     // agent's state already tells.
     const [boxNow, setBoxNow] = useState<BoxState>(() =>
@@ -513,7 +539,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     // pending bubble counts on too)
     const onBoxSent = (text: string) => {
         jumpToBottom();
-        const answer = boxAnswerRecord(question, brainstormTopic, text, entries, Date.now());
+        const answer = boxAnswerRecord(card, brainstormTopic, text, entries, Date.now());
         if (answer != null) {
             recordBrainstormAnswer(agent.id, answer);
         }
@@ -559,7 +585,14 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                     working={agent.state === "working"}
                                     onLoadEarlier={hasEarlier ? () => void loadEarlier() : undefined}
                                     onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
-                                    brainstorm={{ agent, topic: brainstormTopic, answers: sentAnswers, question }}
+                                    brainstorm={{
+                                        agent,
+                                        topic: brainstormTopic,
+                                        answers: sentAnswers,
+                                        card,
+                                        state: brainstormState,
+                                        model,
+                                    }}
                                     model={model}
                                     agent={agent}
                                 />
@@ -692,6 +725,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                             onBoxState={setBoxNow}
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
                             onSendNow={queuedShown ? sendNow : undefined}
+                            questionWaits={boxPlaceholderOverride(card) != null}
                             onLocal={(route) => {
                                 if ("open" in route) {
                                     openDiff(model, agentDiffScope(agent.id, agent.name));
@@ -699,7 +733,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                     showLocalCard(agent.id, route.panel, route.command);
                                 }
                             }}
-                            placeholder={boxPlaceholder(boxNow, agent.name, boxPlaceholderOverride(question))}
+                            placeholder={boxPlaceholder(boxNow, agent.name, boxPlaceholderOverride(card))}
                             dataAttrs={asleep ? { "data-sleeping-composer": agent.id } : undefined}
                         />
                     </div>

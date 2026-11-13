@@ -14,16 +14,17 @@
 // A row that arrives at the tail, or a part that lands in a row already there, opens its height on the spring instead of
 // shoving what is above it (Arriving, chatarrival.ts); what is drawn at once (the first load, Show earlier, a restored place)
 // never animates.
-// The agent's brainstorm shows here as well (chatbrainstormcard.tsx): the question it waits on is a card after the last row,
-// which opens and leaves on the spring, and each of your messages that answered a question draws as that question's ✓ row in
-// place of its bubble (chatbrainstorm.ts pairs them by the record of what Arc sent). Chat never switches to the Brainstorm
-// tab for it; the card's button does that.
+// The agent's brainstorm shows here as well (chatbrainstormcard.tsx and its siblings): the card it ends with (the question it
+// waits on, Confirm the design, the builder check, the run) is a row after the last row, which opens and leaves on the
+// spring, and each of your messages that is a line Arc sent draws in place of its bubble by what the line was: an answer
+// or a step as its ✓ row, an action line (confirm, edit, keep…) as nothing at all (chatbrainstorm.ts pairs them by the
+// record of what Arc sent). Chat never switches to the Brainstorm tab for it; the card's button does that.
 
 import { CopyButton } from "@/app/element/copybutton";
 import { MOTION, springReveal } from "@/app/element/motiontokens";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { cn } from "@/util/util";
-import { ChevronDown, ChevronRight, Copy, GitFork } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Flag, GitFork } from "lucide-react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
@@ -36,14 +37,23 @@ import {
     type EditFile,
     type ShellResult,
 } from "./agentsviewmodel";
+import type { BrainstormState } from "./brainstormstore";
 import { arrivalFrom, tailArrivals } from "./chatarrival";
-import { pairAnswers, type OpenQuestion, type PairedAnswer, type SentAnswer } from "./chatbrainstorm";
-import { ChatBrainstormAnswered, ChatBrainstormCard } from "./chatbrainstormcard";
-import { answerMessages, answeredText } from "./chatbrainstormwire";
+import { pairAnswers, type ChatCard, type PairedAnswer, type SentAnswer } from "./chatbrainstorm";
+import {
+    ChatBrainstormAnswered,
+    ChatBrainstormBuilderAnswered,
+    ChatBrainstormCard,
+    ChatBrainstormStepDone,
+} from "./chatbrainstormcard";
+import { ChatBrainstormRunDone, ChatBrainstormRunRow, useDoneRuns } from "./chatbrainstormrun";
+import { answerMessages, answeredText, pairedHidden } from "./chatbrainstormwire";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { canForkInChat, forkPointOfProse, forkPointOfYou, type ForkPoint } from "./chatfork";
 import { forkFromChat } from "./chatforkaction";
+import { ChatInitiativeHost, InitiativeMessageCards } from "./chatinitiativecard";
+import { openMessageCard, useMessageCards } from "./chatinitiativestore";
 import { sameChatItem } from "./chatitemeq";
 import { CHAT_RENDER_STEP, chatItems, shownItems, type AgentPart, type ChatItem, type ChatMarker } from "./chatmodel";
 import { withMarks } from "./chatskim";
@@ -86,8 +96,20 @@ function Caret({ open }: { open: boolean }) {
 }
 
 // Copy in the gap under a bubble's bottom edge (the bubble keeps a margin that holds it), shown while the bubble is hovered or the button has focus (the bubble is `group`).
-// Beside it, Fork from here (`onFork`, given only where the item points at a transcript record of a forkable session).
-function BubbleCopy({ text, align, onFork }: { text: string; align: "left" | "right"; onFork?: () => void }) {
+// Beside it, Add to initiative… (`onAddInitiative`, given only in a live Claude agent's Chat: opens an initiative card
+// from this message, chatinitiativecard.tsx) and Fork from here (`onFork`, given only where the item points at a
+// transcript record of a forkable session).
+function BubbleCopy({
+    text,
+    align,
+    onFork,
+    onAddInitiative,
+}: {
+    text: string;
+    align: "left" | "right";
+    onFork?: () => void;
+    onAddInitiative?: () => void;
+}) {
     return (
         <div
             data-chat-copy
@@ -97,6 +119,18 @@ function BubbleCopy({ text, align, onFork }: { text: string; align: "left" | "ri
             )}
         >
             <CopyButton title="Copy" content={text} className="p-1 text-[12px]" />
+            {onAddInitiative ? (
+                <button
+                    type="button"
+                    data-chat-add-initiative
+                    title="Add to initiative…"
+                    aria-label="Add to initiative…"
+                    onClick={onAddInitiative}
+                    className="cursor-pointer rounded p-1 text-[12px] text-muted hover:bg-hover hover:text-ink-mid"
+                >
+                    <Flag size={12} strokeWidth={2} aria-hidden />
+                </button>
+            ) : null}
             {onFork ? (
                 <button
                     type="button"
@@ -141,8 +175,10 @@ function ProseText({ text }: { text: string }) {
     );
 }
 
-// the context menu of one bubble: Copy text and Copy conversation, and with a fork point, Fork from here
-type CopyMenu = (text: string, fork?: ForkPoint | null) => (e: React.MouseEvent) => void;
+// the context menu of one bubble: Copy text and Copy conversation, with `initiative` (the text an initiative card opens
+// with: a prose part's, or your own message's without the files it carried; given only in a live Claude agent's Chat)
+// Add to initiative…, and with a fork point, Fork from here
+type CopyMenu = (text: string, fork?: ForkPoint | null, initiative?: string | null) => (e: React.MouseEvent) => void;
 
 // a command you ran, as one card: the command as you typed it, then what it printed under a rule, stderr in red, scrolling
 // past 200 px, as the TUI draws it under its line. A bash-mode one (`! cmd`, `bash`) leads with the `!` in the accent and,
@@ -262,6 +298,7 @@ function YouBubble({
     onContextMenu,
     onOpenTerminal,
     onFork,
+    onAddInitiative,
 }: {
     item: Extract<ChatItem, { kind: "you" }>;
     onContextMenu: CopyMenu;
@@ -269,6 +306,8 @@ function YouBubble({
     // given where this session can fork: starts the fork from the message's own record (forkPointOfYou finds none for a
     // command, or a message with no uuid, and then it offers nothing)
     onFork?: (point: ForkPoint) => void;
+    // given in a live Claude agent's Chat: opens an initiative card with the message's text (a command offers none)
+    onAddInitiative?: (text: string) => void;
 }) {
     if ("command" in item && item.command.startsWith("! ")) {
         return <CommandCard command={item.command.slice(2)} bash shell={item.shell} onContextMenu={onContextMenu} />;
@@ -307,11 +346,13 @@ function YouBubble({
     const hasPictures = (item.images?.length ?? 0) > 0 || said.images.length > 0;
     const hasFiles = said.files.length > 0;
     const fork = onFork != null ? forkPointOfYou(item) : null;
+    // the card opens with what you wrote, not the paths of the files and pictures that rode with it
+    const initiative = onAddInitiative != null && text !== "" ? text : null;
     return (
         <div
             data-chat-you
             data-user-prompt
-            onContextMenu={onContextMenu(item.text, fork)}
+            onContextMenu={onContextMenu(item.text, fork, initiative)}
             className="flex max-w-[75%] flex-col items-end gap-2 self-end"
         >
             {text !== "" || hasPictures ? (
@@ -330,6 +371,7 @@ function YouBubble({
                             text={item.text}
                             align="right"
                             onFork={fork != null ? () => onFork?.(fork) : undefined}
+                            onAddInitiative={initiative != null ? () => onAddInitiative?.(initiative) : undefined}
                         />
                     ) : null}
                 </div>
@@ -478,19 +520,55 @@ function Arriving({
 const NO_KEYS: ReadonlySet<string> = new Set();
 const NO_ANSWERS: ReadonlyMap<string, PairedAnswer> = new Map();
 
-/** The agent's brainstorm as the conversation draws it: `question` is what it waits on now (a card, or the one line that
- *  points to the Brainstorm tab), `answers` and `topic` are what Arc sent to its questions, which pair with your messages
- *  so each answered question draws as one ✓ row in place of your bubble. */
+/** The agent's brainstorm as the conversation draws it: `card` is what the conversation ends with now (the question it
+ *  waits on, the Confirm the design card, the builder check, or the run), `state` and `model` what its views read (the
+ *  brainstorm they were made from, the cockpit for the clock and the launcher); `answers` and `topic` are the lines Arc
+ *  sent, which pair with your messages so each draws as its ✓ row in place of your bubble, or draws nothing (an action
+ *  line). */
 export interface ChatBrainstorm {
     agent: AgentVM;
     topic: string;
     answers: readonly SentAnswer[];
-    question: OpenQuestion | null;
+    card: ChatCard | null;
+    state: BrainstormState | null;
+    model: AgentsViewModel;
 }
 
-// the one string an answered row is drawn from, for the item's kept element to be compared by
+// the one string a paired row is drawn from, for the item's kept element to be compared by: its kind and everything the
+// row of that kind shows
 function answerKey(a: PairedAnswer | undefined): string {
-    return a == null ? "" : `${a.n}\n${a.part}\n${a.text}`;
+    return a == null
+        ? ""
+        : [a.kind, a.n, a.part, a.text, a.decisions, a.questions, a.calls, a.outcome, a.runId, a.typed].join("\n");
+}
+
+// the row a message that Arc sent draws in place of its bubble, by what the line was (a hidden line never gets here)
+function PairedRow({ answer }: { answer: PairedAnswer }) {
+    switch (answer.kind) {
+        case "answer":
+            return (
+                <ChatBrainstormAnswered
+                    n={answer.n}
+                    part={answer.part}
+                    text={answeredText(answer.text)}
+                    typed={answer.typed}
+                />
+            );
+        case "builder-answer":
+            return <ChatBrainstormBuilderAnswered n={answer.n} part={answer.part} text={answer.text} />;
+        case "design":
+        case "builder":
+            return <ChatBrainstormStepDone answer={answer} />;
+        case "run":
+            return answer.runId != null ? <ChatBrainstormRunDone runId={answer.runId} /> : null;
+        case "action":
+            return null;
+    }
+}
+
+// the key the end row's wrapper animates a swap by: one per kind, and per question (n) for the question card
+function cardKey(card: Exclude<ChatCard, { kind: "run" }>): string {
+    return card.kind === "question" ? `question:${card.n}` : card.kind;
 }
 
 // an item's element as last drawn, and what it was drawn from (ChatConversation's drawnItems)
@@ -501,6 +579,7 @@ interface DrawnItem {
     live: boolean;
     terminal: boolean;
     fork: boolean;
+    initiative: boolean;
     folds: string;
     answer: string;
     element: ReactNode;
@@ -633,6 +712,10 @@ export function ChatConversation({
 }) {
     const toolsLive = working ?? !!active;
     const items = useMemo(() => chatItems(entries), [entries]);
+    // the cards the person opened from messages (Add to initiative…), by the item they were opened after
+    const canAddInitiative = !!model && !!agent;
+    const messageCards = useMessageCards(canAddInitiative ? agent!.id : "");
+    const cardAnchors = useMemo(() => new Set(messageCards.map((card) => card.anchor)), [messageCards]);
     // which of your messages answered a question, by row key: every answered question of the conversation, not only the
     // latest. Nothing to pair, nothing computed
     const sentAnswers = brainstorm?.answers;
@@ -664,6 +747,22 @@ export function ChatConversation({
     }
     const visible = shownItems(items, Math.max(win.shown, Math.min(CHAT_RENDER_STEP, items.length)));
     const hidden = items.length - visible.length;
+    // A line Arc sent can draw nothing at all (an action line, or the line that started a run while the run is live):
+    // such an item gets no wrapper, so it leaves no empty slot in the column's gap. `drawnVisible` is what has an element,
+    // in order, which is what the place kept and restored below indexes (the drawn elements, not `visible`).
+    const runLines = useMemo(
+        () => [
+            ...new Set([...answers.values()].flatMap((a) => (a.kind === "run" && a.runId != null ? [a.runId] : []))),
+        ],
+        [answers]
+    );
+    const doneRuns = useDoneRuns(runLines);
+    const pairedOf = (item: ChatItem): PairedAnswer | undefined =>
+        item.kind === "you" && !("command" in item) ? answers.get(item.key) : undefined;
+    const drawnVisible = visible.filter((item) => {
+        const answer = pairedOf(item);
+        return answer == null || !pairedHidden(answer, doneRuns);
+    });
     // what the last commit drew, to tell what is new now: a row appended at the tail, or a part landing in a row that was
     // already there, opens on the spring (Arriving); a row the first load, Show earlier or a restored place draws does not.
     // Your own message is drawn at once too: its pending twin (chatpane.tsx) stood in the tail until it landed, and a twin
@@ -671,6 +770,12 @@ export function ChatConversation({
     const reduceMotion = useReducedMotion();
     // the card row's margin is no height or transform, so MotionConfig's reduced motion would still glide it: it jumps here
     const rowSpring = reduceMotion ? { duration: 0 } : MOTION.spring;
+    // the end row's gap opens and closes on it (the card brings its own height)
+    const endRow = {
+        initial: { marginTop: -ITEM_GAP },
+        animate: { marginTop: 0, transition: rowSpring },
+        exit: { marginTop: -ITEM_GAP, transition: rowSpring },
+    };
     const lastDrawn = useRef<{ items: string[]; parts: Set<string> }>({ items: [], parts: new Set() });
     const visibleKeys = visible.map((item) => item.key);
     const arrived = reduceMotion ? NO_KEYS : tailArrivals(lastDrawn.current.items, visibleKeys);
@@ -698,8 +803,8 @@ export function ChatConversation({
     // the scroll before "Show earlier" drew items in front, and the item that was first then
     const heightBeforeGrow = useRef<{ top: number; height: number; first: string | undefined } | null>(null);
     const placedFor = useRef<string | undefined>(undefined); // the placeId whose kept place was looked up
-    const live = useRef(visible);
-    live.current = visible;
+    const live = useRef(drawnVisible);
+    live.current = drawnVisible;
 
     const toggle = (key: string) =>
         setOpened((prev) => {
@@ -761,7 +866,12 @@ export function ChatConversation({
             return;
         }
         placedFor.current = placeId;
-        const el = rootRef.current?.querySelectorAll<HTMLElement>(":scope > [data-chat-item]")[at - hidden];
+        // the last drawn item starting at or before the kept entry: a line that draws nothing has no element to scroll to
+        const drawnAt = drawnVisible.filter((it) => keyIndex(it.key) <= place.key).length - 1;
+        const el =
+            drawnAt >= 0
+                ? rootRef.current?.querySelectorAll<HTMLElement>(":scope > [data-chat-item]")[drawnAt]
+                : undefined;
         const scroller = scrollParent(rootRef.current);
         if (el != null && scroller != null) {
             scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + place.offset;
@@ -823,8 +933,20 @@ export function ChatConversation({
     const forkRef = useRef<((p: ForkPoint) => void) | null>(null);
     forkRef.current = canFork ? (p) => forkFromChat(model!, agent!, p) : null;
     const forkHere = useCallback((p: ForkPoint) => forkRef.current?.(p), []);
+    // Add to initiative… is offered in a live Claude agent's Chat (a caller that passed the cockpit and the agent). It
+    // opens a card after the last item as it is when asked, so the item key and the agent go through a ref as well
+    const initiativeRef = useRef<{ agentId: string; anchor: string } | null>(null);
+    initiativeRef.current = canAddInitiative
+        ? { agentId: agent!.id, anchor: items[items.length - 1]?.key ?? "" }
+        : null;
+    const addToInitiative = useCallback((text: string) => {
+        const at = initiativeRef.current;
+        if (at != null) {
+            openMessageCard(at.agentId, at.anchor, text);
+        }
+    }, []);
     const copyMenu: CopyMenu = useCallback(
-        (text, fork) => (e) =>
+        (text, fork, initiative) => (e) =>
             ContextMenuModel.getInstance().showContextMenu(
                 [
                     {
@@ -837,9 +959,19 @@ export function ChatConversation({
                         icon: <Copy size={15} />,
                         click: () => void navigator.clipboard.writeText(conversationText(entriesRef.current)),
                     },
+                    ...(initiative != null || fork != null ? [{ type: "separator" as const }] : []),
+                    ...(initiative != null
+                        ? [
+                              {
+                                  label: "Add to initiative…",
+                                  sublabel: "a note, a chunk or a new initiative",
+                                  icon: <Flag size={15} />,
+                                  click: () => addToInitiative(initiative),
+                              },
+                          ]
+                        : []),
                     ...(fork != null
                         ? [
-                              { type: "separator" as const },
                               {
                                   label: "Fork from here",
                                   sublabel: "a new session up to this point",
@@ -851,7 +983,7 @@ export function ChatConversation({
                 ],
                 e
             ),
-        []
+        [addToInitiative]
     );
 
     const drawPart = (
@@ -869,7 +1001,7 @@ export function ChatConversation({
                 return (
                     <div
                         data-chat-prose
-                        onContextMenu={copyMenu(part.text, fork)}
+                        onContextMenu={copyMenu(part.text, fork, canAddInitiative ? part.text : null)}
                         className="group relative mb-3 min-w-0 max-w-full self-stretch"
                     >
                         <ProseText text={part.text} />
@@ -877,6 +1009,7 @@ export function ChatConversation({
                             text={part.text}
                             align="left"
                             onFork={fork != null ? () => forkRef.current?.(fork) : undefined}
+                            onAddInitiative={canAddInitiative ? () => addToInitiative(part.text) : undefined}
                         />
                     </div>
                 );
@@ -908,13 +1041,14 @@ export function ChatConversation({
     const drawItem = (item: ChatItem, last: boolean): ReactNode => {
         switch (item.kind) {
             case "you": {
-                // a message that answered a brainstorm question: the question's ✓ row in place of its bubble, so the
-                // answer is shown once
-                const answer = "command" in item ? undefined : answers.get(item.key);
+                // a message that is a line Arc sent to the brainstorm: its ✓ row in place of its bubble (a question's, a
+                // builder question's, a step's), so it is shown once. A line that draws nothing never gets here: `rows`
+                // gives it no wrapper (drawnVisible)
+                const answer = pairedOf(item);
                 if (answer != null) {
                     return (
                         <div className="min-w-0 self-stretch">
-                            <ChatBrainstormAnswered n={answer.n} part={answer.part} text={answeredText(answer.text)} />
+                            <PairedRow answer={answer} />
                         </div>
                     );
                 }
@@ -924,6 +1058,7 @@ export function ChatConversation({
                         onContextMenu={copyMenu}
                         onOpenTerminal={onOpenTerminal != null ? openTerminal : undefined}
                         onFork={canFork ? forkHere : undefined}
+                        onAddInitiative={canAddInitiative ? addToInitiative : undefined}
                     />
                 );
             }
@@ -955,15 +1090,22 @@ export function ChatConversation({
     // already seen, so a block landing at the end of a long conversation renders the last item and not every one before it
     // (chat-redesign step 16 reads that cost as frame time). The keep is by what the item draws from: its content
     // (sameChatItem), whether it is the last, whether the session is live, the folds opened inside it, whether there is
-    // a terminal to open, whether it can fork (the transcript path arrives after the first rows are drawn) and the
-    // brainstorm answer it stands for, if any. Everything else it draws from is state of its
-    // own components or read through a ref.
+    // a terminal to open, whether it can fork (the transcript path arrives after the first rows are drawn), whether it
+    // offers Add to initiative… and the brainstorm answer it stands for, if any. Everything else it draws from is state of
+    // its own components or read through a ref. The initiative cards the person opened from messages are rows of their
+    // own after the row of the item they were opened after (InitiativeMessageCards: no data-chat-item, so the place kept
+    // and restored never counts them, and no part of the key above); one whose item is not drawn is drawn at the end.
     const drawnItems = useRef(new Map<string, DrawnItem>());
     const drawnNow = new Map<string, DrawnItem>();
-    const rows = visible.map((item, i) => {
+    const drawnKeys = new Set<string>();
+    const rows = visible.flatMap((item, i) => {
+        const paired = pairedOf(item);
+        if (paired != null && pairedHidden(paired, doneRuns)) {
+            return [];
+        }
         const last = i === visible.length - 1;
         const folds = openedFor(opened, item.key);
-        const answer = answerKey(answers.get(item.key));
+        const answer = answerKey(paired);
         const kept = drawnItems.current.get(item.key);
         const reuse =
             kept != null &&
@@ -972,6 +1114,7 @@ export function ChatConversation({
             kept.live === toolsLive &&
             kept.terminal === (onOpenTerminal != null) &&
             kept.fork === canFork &&
+            kept.initiative === canAddInitiative &&
             kept.folds === folds &&
             kept.answer === answer &&
             sameChatItem(kept.item, item);
@@ -984,12 +1127,14 @@ export function ChatConversation({
                   live: toolsLive,
                   terminal: onOpenTerminal != null,
                   fork: canFork,
+                  initiative: canAddInitiative,
                   folds,
                   answer,
                   element: drawItem(item, last),
               };
         drawnNow.set(item.key, drawn);
-        return (
+        drawnKeys.add(item.key);
+        const row = (
             <Arriving
                 key={item.key}
                 itemKey={item.key}
@@ -1000,10 +1145,15 @@ export function ChatConversation({
                 {drawn.element}
             </Arriving>
         );
+        return cardAnchors.has(item.key) && agent != null
+            ? [row, <InitiativeMessageCards key={`${item.key}:initiative`} agentId={agent.id} anchor={item.key} />]
+            : [row];
     });
     drawnItems.current = drawnNow;
+    // the anchors of cards whose item is not drawn (another transcript epoch, or a window that dropped it): at the end
+    const endAnchors = [...cardAnchors].filter((anchor) => !drawnKeys.has(anchor));
 
-    return (
+    const body = (
         <div
             ref={rootRef}
             data-chat-conversation
@@ -1035,23 +1185,49 @@ export function ChatConversation({
             ) : null}
             {/* one wrapper per item, keyed by its first entry: the place kept and restored is found by it */}
             {rows}
-            {/* The question the brainstorm waits on, after the last row: a row kind of its own, not an item (it is no
-                data-chat-item, so the place kept and restored never counts it). The card opens its height on the spring
-                and leaves on it (the card's own variants); this wrapper does the same with the column's gap, which a
-                closed row would otherwise hold open, so nothing above it shoves. The first render draws it at once. */}
+            {agent != null
+                ? endAnchors.map((anchor) => (
+                      <InitiativeMessageCards key={`${anchor}:initiative`} agentId={agent.id} anchor={anchor} />
+                  ))
+                : null}
+            {/* The card the brainstorm ends with (the question it waits on, Confirm the design, the builder check, the
+                run), after the last row: a row kind of its own, not an item (it is no data-chat-item, so the place kept
+                and restored never counts it). The card opens its height on the spring and leaves on it (the card's own
+                variants); this wrapper does the same with the column's gap, which a closed row would otherwise hold
+                open, so nothing above it shoves. It is keyed by the card's kind (and a question's number), so a swap
+                from one card to the next animates. The first render draws it at once. The run card draws its own
+                wrapper (ChatBrainstormRunRow), which a run that is over leaves out altogether: no empty row holding
+                the column's gap. */}
             <AnimatePresence initial={false}>
-                {brainstorm?.question != null ? (
-                    <motion.div
-                        key={brainstorm.question.state === "pointer" ? "pointer" : `question:${brainstorm.question.n}`}
-                        data-chat-brainstorm-row
-                        initial={{ marginTop: -ITEM_GAP }}
-                        animate={{ marginTop: 0, transition: rowSpring }}
-                        exit={{ marginTop: -ITEM_GAP, transition: rowSpring }}
-                    >
-                        <ChatBrainstormCard agent={brainstorm.agent} question={brainstorm.question} />
-                    </motion.div>
+                {brainstorm?.card != null && brainstorm.state != null ? (
+                    brainstorm.card.kind === "run" ? (
+                        <ChatBrainstormRunRow
+                            key="run"
+                            agent={brainstorm.agent}
+                            model={brainstorm.model}
+                            card={brainstorm.card}
+                            rowProps={endRow}
+                        />
+                    ) : (
+                        <motion.div key={cardKey(brainstorm.card)} data-chat-brainstorm-row {...endRow}>
+                            <ChatBrainstormCard
+                                agent={brainstorm.agent}
+                                card={brainstorm.card}
+                                model={brainstorm.model}
+                                state={brainstorm.state}
+                            />
+                        </motion.div>
+                    )
                 ) : null}
             </AnimatePresence>
         </div>
+    );
+    // the initiative cards read their agent and the initiative list from a host: only a live Claude agent's Chat has one
+    return canAddInitiative ? (
+        <ChatInitiativeHost agent={agent!} model={model!}>
+            {body}
+        </ChatInitiativeHost>
+    ) : (
+        body
     );
 }

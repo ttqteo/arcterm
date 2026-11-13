@@ -142,6 +142,17 @@ func (s Source) For() string {
 	return "run " + s.RunId[:min(6, len(s.RunId))]
 }
 
+// Basis is what a job's Bytes figure rests on, for the cockpit to say so: the memgate table's estimate (the zero
+// Basis), or the peaks wavesrv measured for the same command. It is a comparable value, so Job stays comparable
+// (evaluate compares snapshots with slices.Equal), and is fixed at Acquire, like Bytes.
+type Basis struct {
+	Measured  bool
+	Elsewhere bool // measured only in another project
+	// Peaks are the kept peaks, newest first; 0 is none. The array's length is how many runs are kept, defined here
+	// once: nothing else spells out the 5.
+	Peaks [5]uint64
+}
+
 type Request struct {
 	Name   string // memgate's job name, or the engine step
 	Bytes  uint64 // rough RAM peak
@@ -150,6 +161,8 @@ type Request struct {
 	// counts it nor holds it
 	NoCPU  bool
 	Source Source
+	// Basis is what Bytes rests on; the zero Basis is the table's estimate
+	Basis Basis
 }
 
 // Job is one queued or running job as the cockpit sees it.

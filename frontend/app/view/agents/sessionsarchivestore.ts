@@ -54,6 +54,18 @@ function appendPage(have: SessionActivity[], page: SessionActivity[]): SessionAc
     return [...have, ...page.filter((s) => !listed.has(sessionId(s)))];
 }
 
+// a failed scan (one past its 30 s deadline while the machine is loaded at boot, a backend not up yet) is tried again on
+// its own after these waits, so the Agent tree does not sit on an empty Conversations section; a success starts over
+const RETRY_MS = [5_000, 20_000, 60_000];
+let failures = 0;
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Pure: how long to wait before retrying after the `failures`-th failed scan in a row, or null once the retries are
+ *  spent (the Conversations section then offers Retry). */
+export function archiveRetryDelay(failures: number): number | null {
+    return failures >= 1 && failures <= RETRY_MS.length ? RETRY_MS[failures - 1] : null;
+}
+
 let loading = false;
 // a refresh asked for while a scan is running (an agent just exited) would be dropped, and the scan under way may have
 // read the transcripts before that session ended: it runs once more when this one finishes
@@ -66,6 +78,8 @@ export async function loadSessionsArchive(): Promise<void> {
         return;
     }
     loading = true;
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
     try {
         const rtn = await RpcApi.GetSessionsActivityCommand(TabRpcClient, { limit: PAGE });
         // merged against what is loaded when the answer lands, so a page that arrived meanwhile is not lost
@@ -78,11 +92,17 @@ export async function loadSessionsArchive(): Promise<void> {
         globalStore.set(sessionsArchiveAtom, merged.sessions);
         globalStore.set(sessionsCursorAtom, merged.cursor);
         globalStore.set(sessionsErrorAtom, false);
-    } catch {
+        failures = 0;
+    } catch (e) {
         // surface the failure distinctly instead of an indistinguishable empty list. Keep any last-good
         // data; mark loaded (null -> []) so the surface shows the error banner, not a permanent skeleton.
+        console.warn("sessions archive: scan failed", e);
         globalStore.set(sessionsErrorAtom, true);
         globalStore.set(sessionsArchiveAtom, (prev) => prev ?? []);
+        const wait = archiveRetryDelay(++failures);
+        if (wait != null) {
+            retryTimer = setTimeout(() => void loadSessionsArchive(), wait);
+        }
     } finally {
         loading = false;
         if (again) {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
+import { withResultLines } from "./chatinitiative";
 import {
     PASTE_OVER,
     PENDING_IDLE_MS,
@@ -62,6 +63,23 @@ describe("userTextCount", () => {
         const entries = [user(`<pasted_content id="45ce">\n${sent}\n</pasted_content id="45ce">`)];
         expect(userTextCount(entries, sent)).toBe(1);
         expect(userTextCount(entries, "bash mode không đẹp lắm")).toBe(0);
+    });
+
+    it("counts a message that carries initiative result lines as the person's own text (result line)", () => {
+        const lines = ["initiative: added note to Auth (effort:ab12) › 2", "initiative: dismissed chunk for Auth"];
+        const sent = withResultLines(lines, "now the tests");
+        // the transcript holds the lines and the text, as sent; the pending twin holds only what the person wrote
+        expect(userTextCount([user(sent)], "now the tests")).toBe(1);
+        // Claude Code wraps a multi-line message whole as a paste: the lines are inside the wrapper
+        const wrapped = `<pasted_content id="45ce">\n${sent}\n</pasted_content id="45ce">`;
+        expect(userTextCount([user(wrapped)], "now the tests")).toBe(1);
+        // a different text still does not match
+        expect(userTextCount([user(sent)], "another text")).toBe(0);
+    });
+
+    it("leaves a message that only mentions `initiative:` mid-text as it was (result line)", () => {
+        const text = "see below\ninitiative: added the thing myself";
+        expect(userTextCount([user(text)], text)).toBe(1);
     });
 });
 

@@ -209,10 +209,13 @@ type CommandGitFileAtRefRtnData struct {
 }
 
 type CommandGitReviewPatchData struct {
-	Cwd      string `json:"cwd"`
-	Hash     string `json:"hash,omitempty"` // "" = the working tree against Base, untracked files included
-	Base     string `json:"base,omitempty"` // "" = HEAD; ignored with a Hash
-	MaxBytes int64  `json:"maxbytes"`       // per file
+	Cwd  string `json:"cwd"`
+	Hash string `json:"hash,omitempty"` // "" = the working tree against Base, untracked files included
+	Base string `json:"base,omitempty"` // "" = HEAD; ignored with a Hash
+	// with Base and no Hash: Base..End, the committed changes alone (a landed run read up to its own tip, as
+	// CommandGitChangesData.End bounds the file list); "" = the working tree
+	End      string `json:"end,omitempty"`
+	MaxBytes int64  `json:"maxbytes"` // per file
 }
 
 // The Diff surface's Review mode: every changed file of a selection, each with its own full-context

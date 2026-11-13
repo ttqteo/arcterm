@@ -13,7 +13,7 @@ import { focusTerm } from "@/app/view/term/termpaste";
 import { cn } from "@/util/util";
 import { useAtomValue, type Atom } from "jotai";
 import { FoldVertical } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { railTranscriptFocusAtom } from "./agentrailstore";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { groupCompact } from "./compacttimeline";
@@ -41,15 +41,6 @@ import { TranscriptSkeleton } from "./transcriptskeleton";
 
 // lines in the first read, and in each earlier chunk (Conversation History reads the same tail)
 const CHUNK_LINES = 2000;
-// a compaction marker scrolled to is left this far below the pinned prompt's band (or the top, with none), and the page
-// settles for these many ms after: the band draws a frame after the scroll, and the items drawn above the marker can take
-// the room it needs
-const MARKER_GAP_PX = 8;
-const MARKER_SETTLE_MS = [0, 120, 320];
-// the band can draw later than those timers on a long transcript, so the tree is also watched this long for it, ending
-// at the reader's own wheel, key or click
-const MARKER_WATCH_MS = 1500;
-const READER_INPUT = ["wheel", "keydown", "pointerdown"] as const;
 const NO_ENTRIES: AgentEntry[] = [];
 
 // the tab's loaded part and what is drawn from it. `entries` are the projection of every loaded line, `keyOffset` how many
@@ -415,56 +406,6 @@ export function RailTranscript({ agent, surfaceAtom }: { agent: AgentVM; surface
         }
     }, [bump]);
 
-    // CompactTranscript scrolls the marker to the scroller's top, where the pinned prompt's band covers it: scroll back
-    // until it is below the band. The marker is the first one at or below the top, and a check that finds it clear does nothing
-    const scrollNonce = view?.scroll?.nonce;
-    useLayoutEffect(() => {
-        if (scrollNonce == null) {
-            return;
-        }
-        const clearBand = () => {
-            const el = scrollRef.current;
-            if (el == null) {
-                return;
-            }
-            const top = el.getBoundingClientRect().top;
-            const band = el.querySelector("[data-pinned-prompt] > div")?.getBoundingClientRect().bottom;
-            const want = (band != null ? band - top : 0) + MARKER_GAP_PX;
-            const marker = [...el.querySelectorAll<HTMLElement>("[data-compact-compaction]")]
-                .map((m) => m.getBoundingClientRect().top - top)
-                .find((offset) => offset >= -2);
-            if (marker != null && marker < want) {
-                el.scrollTop = Math.max(0, el.scrollTop - (want - marker));
-            }
-        };
-        const frame = requestAnimationFrame(clearBand);
-        const timers = MARKER_SETTLE_MS.map((ms) => window.setTimeout(clearBand, ms));
-        // The band is drawn once the scroll's measure lands, and on a long transcript (hundreds of items drawn) that can be
-        // after the last timer: the marker then sits under it for good. So the tree is watched for the band, and for the
-        // items drawn above the marker, until MARKER_WATCH_MS passes or the reader scrolls themselves.
-        const scroller = scrollRef.current;
-        const watch = scroller == null ? null : new MutationObserver(clearBand);
-        const stopWatch = () => {
-            watch?.disconnect();
-            for (const type of READER_INPUT) {
-                scroller?.removeEventListener(type, stopWatch);
-            }
-        };
-        if (scroller != null) {
-            watch?.observe(scroller, { childList: true, subtree: true });
-            for (const type of READER_INPUT) {
-                scroller.addEventListener(type, stopWatch, { passive: true });
-            }
-        }
-        const watchTimer = window.setTimeout(stopWatch, MARKER_WATCH_MS);
-        return () => {
-            cancelAnimationFrame(frame);
-            timers.forEach((t) => window.clearTimeout(t));
-            window.clearTimeout(watchTimer);
-            stopWatch();
-        };
-    }, [scrollNonce]);
-
     const showCompactions = view != null && showsCompactions(view.entries, view.win);
     return (
         <div className="flex min-h-0 flex-1 flex-col">
@@ -505,7 +446,8 @@ export function RailTranscript({ agent, surfaceAtom }: { agent: AgentVM; surface
                             focusTerm(agent.blockId);
                         }
                     }}
-                    // no top padding: the pinned prompt's band sticks at the padding edge, which let a line show above it
+                    // a top padding is fine: the pinned prompt's band covers it (pinnedpromptbar.tsx). A jump to a compaction
+                    // marker leaves it below that band (CompactTranscript's scrollTo)
                     className="h-full overflow-y-auto px-[18px] pb-[12px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                 >
                     {view == null ? (

@@ -104,7 +104,8 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
     const treeRef = useRef<HTMLDivElement>(null);
 
     // the tree keys (j/k, arrows, Enter, n) need the tree focused, and arriving on Code left focus on
-    // <body>, so they were dead until a click or Alt+T
+    // <body>, so they were dead until a click or Alt+T. Arriving by a palette pick, the palette still holds focus
+    // here, so the tree is also the surface's data-focus-home: the palette's close hands focus to it.
     useEffect(() => {
         if (!focusClaimed()) {
             treeRef.current?.focus({ preventScroll: true });
@@ -332,6 +333,7 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                 role="tree"
                 tabIndex={0}
                 data-code-tree
+                data-focus-home
                 onFocus={() => {
                     globalStore.set(codeTreeFocusedAtom, true);
                     fireAndForget(checkStale);

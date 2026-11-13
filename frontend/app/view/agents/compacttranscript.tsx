@@ -6,7 +6,9 @@
 // "N files changed +a −d" bar for what that stretch edited. The grouping is compacttimeline.ts; the pieces that
 // are the same as the live feed's (a tool line, a command chip, a compaction marker) are narrationtimeline.tsx's.
 // Only the last RENDER_CAP items are in the DOM at first; reaching the top draws that many more, and once all are drawn
-// it asks its caller for earlier entries (compactwindow.ts holds the decisions).
+// it asks its caller for earlier entries. A reader at the bottom while items are appended is trimmed back to the last
+// RENDER_CAP, so a long live session's DOM does not grow without a cap (compactwindow.ts holds the decisions).
+// A jump to an item (scrollTo) leaves it just below the pinned prompt's band, not under it.
 
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { composerReveal } from "@/app/element/motiontokens";
@@ -31,6 +33,7 @@ import {
     itemSpan,
     keyFor,
     topAction,
+    trimmedAnchor,
     windowStart,
 } from "./compactwindow";
 import { splitAttachedImages } from "./launcherimages";
@@ -51,6 +54,57 @@ import { firstItemBelow, keepTranscriptPlace, transcriptPlace } from "./transcri
 // the top of the list counts as reached this far before it is in view, so the earlier items are drawn (or asked for) by
 // the time the reader gets there
 const REACH_TOP_PX = 200;
+
+// an item jumped to is left this far below the pinned prompt's band (or the top of the view, with none). The band draws a
+// frame after the scroll, and items drawn above the item can take the room it needs, so the place is checked again at
+// these many ms and whenever the tree changes, until BAND_WATCH_MS passes or the reader scrolls themselves
+const BAND_GAP_PX = 8;
+// an item this far above the top of the view still counts as at it (rounding in the scroll that put it there)
+const BAND_SLACK_PX = 2;
+const BAND_SETTLE_MS = [0, 120, 320];
+// the band can draw later than those timers on a long transcript (hundreds of items drawn)
+const BAND_WATCH_MS = 1500;
+const READER_INPUT = ["wheel", "keydown", "pointerdown"] as const;
+
+/** Keeps the item with this key (its wrapper's data-compact-key) below the band of the pinned prompt: scrolls back until
+ *  the item's top is BAND_GAP_PX under the band's bottom, measured from the band's own element. A check that finds it
+ *  clear, or lower, does nothing, and neither does one that finds it above the top of the view: the view has moved on
+ *  from it. Returns what stops it, which the reader's own wheel, key or click does too. */
+function keepBelowBand(root: HTMLElement, scroller: HTMLElement, key: number): () => void {
+    const check = () => {
+        const el = root.querySelector<HTMLElement>(`:scope > [data-compact-key="${key}"]`);
+        if (el == null) {
+            return;
+        }
+        const top = scroller.getBoundingClientRect().top;
+        const band = root.querySelector("[data-pinned-prompt] > div")?.getBoundingClientRect().bottom;
+        const want = (band != null ? band - top : 0) + BAND_GAP_PX;
+        const at = el.getBoundingClientRect().top - top;
+        if (at >= -BAND_SLACK_PX && at < want) {
+            scroller.scrollTop = Math.max(0, scroller.scrollTop - (want - at));
+        }
+    };
+    const frame = requestAnimationFrame(check);
+    const timers = BAND_SETTLE_MS.map((ms) => window.setTimeout(check, ms));
+    const watch = new MutationObserver(check);
+    watch.observe(root, { childList: true, subtree: true });
+    let watchTimer = 0;
+    const stop = () => {
+        cancelAnimationFrame(frame);
+        timers.forEach((t) => window.clearTimeout(t));
+        window.clearTimeout(watchTimer);
+        watch.disconnect();
+        for (const type of READER_INPUT) {
+            scroller.removeEventListener(type, stop);
+        }
+    };
+    watchTimer = window.setTimeout(stop, BAND_WATCH_MS);
+    for (const type of READER_INPUT) {
+        scroller.addEventListener(type, stop, { passive: true });
+    }
+    check();
+    return stop;
+}
 
 function Caret({ open }: { open: boolean }) {
     const Icon = open ? ChevronDown : ChevronRight;
@@ -286,8 +340,14 @@ export function CompactTranscript({
     const heightBeforeGrow = useRef<{ top: number; height: number } | null>(null);
     const wanted = useRef<number | null>(null); // the key of the item scrollTo wants at the top, until it is there
     const wantedOffset = useRef(0); // how far below that item's top the view starts: a restored place's depth into it
+    const wantedBelowBand = useRef(false); // the wanted item is a jump's, left below the pinned prompt's band; a restore's is not
+    const stopBand = useRef<(() => void) | null>(null); // ends the watch that keeps a jump's item below the band
     const handledNonce = useRef<number | null>(null);
     const placedFor = useRef<string | undefined>(undefined); // the placeId whose kept place was looked up
+    // whether the reader follows the end (is at the bottom), which decides if appended items trim the window. A reader
+    // who follows lets go only by scrolling up: items appended push the end away without the reader having left it.
+    const followsEnd = useRef(true);
+    const lastEnd = useRef<number | null>(null); // the key past the last item's entries when the items last changed
 
     // the top of the list: draw earlier items while some are hidden, ask the caller for earlier ones once all are drawn.
     // Measured, not observed: after a draw-back the sentinel may stay in view and fire nothing new, so this also runs
@@ -336,6 +396,7 @@ export function CompactTranscript({
             const held = holdingItem(spans, keyFor(scrollTo.index, keyOffset));
             wanted.current = held < 0 ? null : spans[held].start;
             wantedOffset.current = 0;
+            wantedBelowBand.current = true;
         }
         // opened again: back to where its reader left it, once per id
         if (placeId != null && placedFor.current !== placeId && spans.length > 0) {
@@ -345,6 +406,7 @@ export function CompactTranscript({
             if (held >= 0) {
                 wanted.current = spans[held].start;
                 wantedOffset.current = place.offset;
+                wantedBelowBand.current = false;
             }
         }
         if (wanted.current == null) {
@@ -358,16 +420,60 @@ export function CompactTranscript({
             // hidden: the window counts from the end, so it needs every item from this one on; this runs again once drawn
             setAnchor(spans[firstDrawn(spans.length, drawnToReach(spans.length, at))].start);
         } else {
+            const key = wanted.current;
             wanted.current = null;
-            const el = rootRef.current?.querySelectorAll<HTMLElement>(":scope > [data-compact-item]")[at - first];
-            const scroller = scrollParent(rootRef.current);
+            const root = rootRef.current;
+            const el = root?.querySelectorAll<HTMLElement>(":scope > [data-compact-item]")[at - first];
+            const scroller = scrollParent(root);
             if (el != null && scroller != null) {
                 scroller.scrollTop +=
                     el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + wantedOffset.current;
+                // the jump left the end (or did not): what the next append reads, before the scroll event says so
+                followsEnd.current = isNearBottom(scroller);
+                // a jump leaves the item just below the pinned prompt's band, which covers the top of the view; a restore
+                // keeps the place it saved, band and all
+                stopBand.current?.();
+                stopBand.current = wantedBelowBand.current && root != null ? keepBelowBand(root, scroller, key) : null;
             }
             wantedOffset.current = 0;
+            wantedBelowBand.current = false;
         }
     }, [scrollTo?.nonce, first, placeId, spans.length > 0]);
+    // the watch that keeps a jump's item below the band ends with the transcript
+    useEffect(() => () => stopBand.current?.(), []);
+    // items appended at the end (the last item's keys moved on; a load that puts entries in front leaves them where they
+    // were): a reader who follows the end has the window trimmed back to RENDER_CAP items (compactwindow.ts). Not while a
+    // jump or a restore is still drawing back, whose window the reader asked for.
+    const endKey = spans.length > 0 ? spans[spans.length - 1].end : null;
+    useLayoutEffect(() => {
+        const appended = lastEnd.current != null && endKey != null && endKey > lastEnd.current;
+        lastEnd.current = endKey;
+        if (!appended || wanted.current != null) {
+            return;
+        }
+        const next = trimmedAnchor(spans, anchor, followsEnd.current);
+        if (next !== anchor) {
+            setAnchor(next);
+        }
+    }, [endKey]);
+    // whether the reader follows the end: measured when the transcript opens (its view may start anywhere), then kept as
+    // they scroll. Scrolling up lets go; being at the bottom takes hold again; content that grows under a reader who
+    // follows does not let go, as the stuck tail of the view that holds it (sticktobottom.tsx) does not
+    useEffect(() => {
+        const scroller = scrollParent(rootRef.current);
+        if (scroller == null) {
+            return;
+        }
+        let lastTop = scroller.scrollTop;
+        followsEnd.current = isNearBottom(scroller);
+        const onScroll = () => {
+            const top = scroller.scrollTop;
+            followsEnd.current = isNearBottom(scroller) || (followsEnd.current && top >= lastTop);
+            lastTop = top;
+        };
+        scroller.addEventListener("scroll", onScroll, { passive: true });
+        return () => scroller.removeEventListener("scroll", onScroll);
+    }, []);
     // keeps where the reader is, at most once a frame while they scroll: the item at the top of the view and how far
     // into it, or nothing once they are at the end. Not while a restore is still drawing back, nor while the view has
     // no size (its surface hidden). Unmounting drops a pending frame: by then the DOM is gone or shows the next id.
@@ -496,6 +602,7 @@ export function CompactTranscript({
                 <div
                     key={spans[first + idx].start}
                     data-compact-item
+                    data-compact-key={spans[first + idx].start}
                     data-compact-compaction={item.kind === "compaction" ? "" : undefined}
                 >
                     {drawItem(item, idx)}

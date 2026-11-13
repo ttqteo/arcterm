@@ -154,14 +154,15 @@ func (fm frontmatter) kind() string {
 	return fm.Metadata.Type
 }
 
-// readFrontmatter reads the YAML block a file opens with; no block, or one that does not parse, reads as empty
+// readFrontmatter reads the YAML block a file opens with; no block, or one that does not parse, reads as empty. A
+// Windows editor's BOM and CRLF line ends read as the block they hold.
 func readFrontmatter(path string) frontmatter {
 	var fm frontmatter
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fm
 	}
-	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	text := strings.ReplaceAll(strings.TrimPrefix(string(data), "\xef\xbb\xbf"), "\r\n", "\n")
 	if !strings.HasPrefix(text, "---\n") {
 		return fm
 	}

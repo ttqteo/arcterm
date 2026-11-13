@@ -182,4 +182,27 @@ describe("the Opening… placeholder", () => {
         await opening;
         expect(globalStore.get(codeFileAtom)).toMatchObject({ kind: "text", path: "src/b.ts" });
     });
+
+    it("belongs to the latest of two opens of one path: the earlier one's answer does not show under it", async () => {
+        vi.useFakeTimers();
+        seed(["src/a.ts", "src/b.ts"]);
+        const answers: ((v: unknown) => void)[] = [];
+        rpc.fileInfo = () => new Promise((resolve) => answers.push(resolve));
+        rpc.fileRead = async () => ({ data64: btoa("b\n") });
+        const seen: string[] = [];
+        const unsub = globalStore.sub(codeFileAtom, () => seen.push(globalStore.get(codeFileAtom).kind));
+
+        const first = openPath("src/b.ts");
+        const second = openPath("src/b.ts", { pushHistory: false });
+        answers[0]({ size: 2, mimetype: "text/plain", modtime: 2 });
+        await first;
+        await vi.advanceTimersByTimeAsync(200);
+        answers[1]({ size: 2, mimetype: "text/plain", modtime: 2 });
+        await second;
+        unsub();
+
+        // with one token per path, the first showed its text and the second's placeholder then covered it: text, loading, text
+        expect(seen).toEqual(["loading", "text"]);
+        expect(globalStore.get(codeFileAtom)).toMatchObject({ kind: "text", path: "src/b.ts" });
+    });
 });

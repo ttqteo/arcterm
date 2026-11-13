@@ -45,6 +45,9 @@ transparent so it sits in the chat.
 
 Size to content. The frame grows to the page's height up to 640 px, then offers Show all.
 
+Never set `html` or `body` to `height: 100%`, `100vh` or a `min-height` of either. The page then fills the frame, so
+the frame never shrinks below the height it loaded at. Let the content set the height.
+
 ## Buttons that ask
 
 `arc.sendPrompt("…")` sends that text from the chat box as if the person typed it, to you. Keep each prompt short

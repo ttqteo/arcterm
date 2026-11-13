@@ -14,6 +14,88 @@ does not, say what you saw and it becomes a bug row under Actionable.
   left, the state row's `cache Nm left` is amber and `now rewrites ~X, later Y` ends the Compact/Clear row (the
   scenario `rail-context-breakdown` seeds every state; `pkg/ctxbreakdown`, `sessionsection.tsx`,
   `agentdetailsrail.tsx`).
+- [ ] (arcterm) A real Claude agent files a follow-up through a card and reads its outcome (Add to an initiative from
+  Chat, spec 2026-11-12-chat-add-to-initiative-design): in a Claude agent's Chat that you started yourself (not one an
+  Arc run started), after an app launch has synced the updated `arc:initiatives` skill, ask it to file a follow-up
+  ("add a chunk to this initiative for the logging gap") → its reply holds an `arc-initiative` block that Chat draws as
+  an Add to initiative card (Waiting on you), not as raw JSON, and the agent has not run `wsh effort chunk add` itself;
+  press Add chunk, then send any plain message ("ok, go on") → the agent's next turn treats the `initiative: added chunk
+  …` line that opens your message as the outcome (it does not answer it as a request, and does not propose the chunk
+  again), and your bubble shows only what you typed. A live agent's behaviour, which no scenario can drive:
+  `chat-initiative` covers the card, the rows and the line with fixture transcripts and a mock RPC (cards from
+  `8c5873beb`; the skill rule is `skills/initiatives/SKILL.md`).
+
+- [ ] (arcterm) The Brainstorm tab's own-words field is a "You replied" in Chat: on an agent with a brainstorm
+  question open, type an answer in that question's own-words field in the Brainstorm tab ("Answer in your own words…",
+  or "Or type your own answer…" under options) and send it with OK or Enter → the ✓ row for that question in the
+  agent's Chat reads "You replied", not "You picked"; an option clicked in the same tab still reads "You picked". No
+  scenario step sends through `useAnswer.sendDraft`; Chat's own message box is covered by `chat-redesign` 14c (commit
+  `b86ab9fa4`, run ebecc28f's branch `wave/ebecc28f-a804-4c1b-ab2d-88a4ffa8797a-t-9`; `brainstormui.tsx` `useAnswer`,
+  `chatbrainstorm.ts` `SentAnswer.typed`; the tab's send is unit-tested only).
+- [ ] (arcterm) The pinned prompt band sits right on the other `CompactTranscript` hosts: open a long session in
+  History's session detail, a sleeping agent's transcript overlay, and an ended agent's transcript, and scroll each
+  down past a few of your prompts → the band holding the prompt you are under sits flush at the top edge of the
+  scroller, with no clipped line of the transcript above it, and a jump to a prompt lands it just under the band, not
+  behind it. Only the rail transcript is covered, by `rail-transcript-tab` (commit `4671d8cea`, run ebecc28f's branch
+  `wave/ebecc28f-a804-4c1b-ab2d-88a4ffa8797a-t-9`; `compacttranscript.tsx`, `pinnedpromptbar.tsx`, hosted by
+  `sessionsdetail.tsx`, `sleepingtranscript.tsx`, `endedtranscript.tsx`).
+
+- [ ] (arcterm) The agents/backend and code/diff follow-up fixes of 2026-11-13 render: run `task verify:ui --
+  code-changed-walk setup-memory agent-history diff-comments diff-scope` on a dev app (or `node
+  scripts/cdp/final-verify.mjs` with those names). New or changed steps, never run: code-changed-walk's last step (a
+  palette pick of Code leaves focus on the file tree and ArrowDown moves its cursor), setup-memory step 9 (step 8's
+  error alert clears on the next move), agent-history step 15 (a failed scan shows "Could not read past conversations"
+  with Retry and retries on its own after 5 s), diff-comments step 6b (the Commit tab's rows badge the pending
+  comments), diff-scope steps 3b (Review on a landed run lists only the run's files) and 6b (a corrupt `.git/index`
+  reads as Couldn't refresh, not as not a repository). Only unit tests, the typecheck and `node --check` ran.
+
+- [ ] (arcterm) The job queue plans on measured peaks (spec 2026-11-12-measured-job-peaks), on Windows and on the Mac:
+  in a Claude agent run `task check:ts` twice → the second run's row in the Jobs popover reads "measured" and its
+  tooltip names the first run's peak, the row's figure being that peak × 1.2 rather than the table's 3 GB "est.". Then
+  have the agent run a `make`-style build that peaks over 1 GB (`make build`, `gradle build`) twice → after the first,
+  `~/.arc/jobslot-learned.json` lists its pattern and the second takes a slot and queues like a table command; a
+  `waveapp.log` line `[jobpeaks] cannot write …` means the file was held open at that instant (Windows) and the next run
+  rewrites it. A worktree dev app leaves that file alone. Unit tests script the process table, the footprints, the
+  roster and the store; the real Git Bash process tree on Windows (`ps -l` groups), the Mac's footprint and the live
+  roster were never run together (`pkg/jobmeter`, `wshserver_jobpeaks.go`).
+- [ ] (arcterm) The brainstorm review cards in Chat draw and act: run `task verify:ui -- chat-brainstorm-review
+  chat-redesign agent-chat` on a dev app that boots. Both Final attempts of run f2306dc6 ended unverified on the
+  machine (a locked `cmd/wsh/cmd/claude-view-mod` copy, then a cold Vite still pre-bundling after 600 s under memory
+  pressure), so nothing below has been seen rendered. Check, against `.superpowers/design/chat-brainstorm-review/`:
+  - The Confirm the design card: guesses with New, the yours fold, Edit, That's right and Put mine back, Confirm all
+    or Check with a builder.
+  - The builder check card: reading with its clock, one question with Decide for me and an own-answer Send, the
+    failed state's Try again (still one ✓ Design confirmed row), and review with Approve opening the run launcher or
+    its reason.
+  - The run card with Open run, and the ✓ Run row once the run lands.
+  - The question card's Decided fold and the ✓ rows: design, builder question with no `brainstorm: builder answer:`
+    prefix, builder check.
+  - Action lines draw no bubble, while a hand-typed message stays a bubble.
+  - Every card turns static when the agent exits.
+
+  (`chatbrainstorm.ts` brainstormCard, `chatbrainstormconfirm.tsx`, `chatbrainstormcheck.tsx`,
+  `chatbrainstormrun.tsx`, `chatconversation.tsx`; unit-tested and typechecked only.)
+
+- [ ] (arcterm) A dead lead is brought back (lead-dead recovery spec 2026-11-12): in a live Ask me run sitting in a
+  failed plan review, `/exit` its lead → the run's Cockpit card shows "Lead down" with Relaunch lead at once, and
+  `wsh runs relaunch-lead <run>` starts a lead whose first message says to revise and `wsh jarvis dag submit` again;
+  on an autonomous run the replacement starts by itself. Then pause a run whose lead was launched less than a minute
+  ago (before its first reply) and resume it → `waveapp.log` shows `had no transcript to resume; launched a fresh
+  lead`, not a `claude --resume` that prints "No conversation found". Unit tests stub the spawn and the process exit
+  (`pkg/orchestrate/leaddead_test.go`); the real exit hook, spawn and the Cockpit button with no failure row
+  (`leadProcessLive`, which only knows exits this window saw) were never run.
+
+- [ ] (arcterm) A run's hung lead is stopped and replaced (run a1d131bb t-2): in a live run, have its lead sit in one
+  tool call that never returns (a command that only sleeps, so nothing under the lead uses CPU) while a worker
+  finishes → after 30 min of held wakes `waveapp.log` shows `wake: run <id>'s lead held its wakes 30 min with an idle
+  process tree; stopping block …`, the lead's process is stopped (its tab stays), and an autonomous run gets a
+  replacement lead that carries the missed wakes; on an Ask me run the lead's questions reach you instead. Every test
+  scripts `stopLeadFn`; the real `DestroyBlockController` against a real hung lead was never run
+  (`pkg/orchestrate/wake.go` `checkHungLocked`, `LeadHungAfter`).
+- [ ] (arcterm) A finished worker of a live run sleeps (run a1d131bb t-5): in a run whose first task has passed review
+  and whose other tasks keep it open, that task's worker reads asleep in the Agent tree after the idle wait
+  (`agents:sleepaftermin`, 30 min), and Wake reopens the same conversation; its lead, a reviewer and the workers of
+  unfinished tasks stay awake (`wshserver_agentsleeploop.go` `runOwnedForSleep`; unit-tested only).
 - [ ] (arcterm) Chat's Fork resumes in a real claude: in a Claude agent's Chat, ⋯ → Fork opens a session that knows
   the whole conversation; Fork from here on your second message, one that knows only the first exchange; on a reply,
   one that knows everything through that reply. The original session is unchanged (the scenario `chat-fork` covers

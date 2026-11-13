@@ -4,13 +4,16 @@
 package orchestrate
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
@@ -37,22 +40,113 @@ func WithDagMutation(dagID string, fn func() error) error {
 	start := time.Now()
 	dagMutationLocks.Lock(dagID)
 	acquired := time.Now()
+	beginLockPhases(dagID)
 	defer func() {
+		// taken before the unlock: the next holder starts its own entry the moment the lock is free
+		phases := takeLockPhases(dagID)
 		dagMutationLocks.Unlock(dagID)
-		logSlowDagLock(dagID, acquired.Sub(start), time.Since(acquired))
+		logSlowDagLock(dagID, acquired.Sub(start), time.Since(acquired), phases)
 	}()
 	return fn()
 }
 
-// slowDagLock is a wait or hold worth logging: past it, a wsh caller blocked on the lock has outlived its rpc budget
-const slowDagLock = time.Duration(wshutil.DefaultTimeoutMs) * time.Millisecond
+// slowDagLock is a wait or hold worth logging: past it, a wsh caller blocked on the lock has outlived its rpc budget.
+// A var so a test can lower it.
+var slowDagLock = time.Duration(wshutil.DefaultTimeoutMs) * time.Millisecond
 
-// logSlowDagLock names the caller, so a long holder can be told apart from a caller that only waited behind one
-func logSlowDagLock(dagID string, wait, hold time.Duration) {
+// slowPhaseCount is how many of a slow holder's phases the log line names
+const slowPhaseCount = 3
+
+// logSlowDagLock names the caller, so a long holder can be told apart from a caller that only waited behind one, and
+// the holder's longest phases, so a long hold says which part of the tick took it. phases is nil for a holder that
+// timed none.
+func logSlowDagLock(dagID string, wait, hold time.Duration, phases []phaseTiming) {
 	if wait < slowDagLock && hold < slowDagLock {
 		return
 	}
-	log.Printf("dag %s lock: waited %v, held %v, by %s\n", dagID, wait.Round(time.Millisecond), hold.Round(time.Millisecond), dagLockCaller())
+	slowest := ""
+	if s := slowPhases(phases, slowPhaseCount); s != "" {
+		slowest = ", slowest: " + s
+	}
+	log.Printf("dag %s lock: waited %v, held %v, by %s%s\n", dagID, wait.Round(time.Millisecond), hold.Round(time.Millisecond), dagLockCaller(), slowest)
+}
+
+// phaseTiming is how long one block of a lock holder's work took
+type phaseTiming struct {
+	name string
+	took time.Duration
+}
+
+// slowPhases names the n longest of timings, longest first, as "review 12.1s, liveness 9.8s, merge 3.0s". The
+// string is built from the caller's slice without reordering it.
+func slowPhases(timings []phaseTiming, n int) string {
+	if len(timings) == 0 || n <= 0 {
+		return ""
+	}
+	longest := slices.Clone(timings)
+	slices.SortStableFunc(longest, func(a, b phaseTiming) int { return cmp.Compare(b.took, a.took) })
+	if len(longest) > n {
+		longest = longest[:n]
+	}
+	parts := make([]string, len(longest))
+	for i, p := range longest {
+		parts[i] = fmt.Sprintf("%s %.1fs", p.name, p.took.Seconds())
+	}
+	return strings.Join(parts, ", ")
+}
+
+// lockPhases holds the phases of the current holder of each dag's lock, for the slow-lock log. An entry exists only
+// while its dag's lock is held (WithDagMutation begins it after the lock is taken and takes it before the lock is
+// released), so one holder's timings never reach the next; the map's own mutex covers the map, not the dag.
+var lockPhases = struct {
+	mu sync.Mutex
+	m  map[string][]phaseTiming
+}{m: map[string][]phaseTiming{}}
+
+func beginLockPhases(dagID string) {
+	lockPhases.mu.Lock()
+	defer lockPhases.mu.Unlock()
+	lockPhases.m[dagID] = nil
+}
+
+// recordLockPhase adds a phase to the dag's current holder; a call with no holder is dropped.
+func recordLockPhase(dagID, name string, took time.Duration) {
+	lockPhases.mu.Lock()
+	defer lockPhases.mu.Unlock()
+	if phases, held := lockPhases.m[dagID]; held {
+		lockPhases.m[dagID] = append(phases, phaseTiming{name: name, took: took})
+	}
+}
+
+// takeLockPhases returns the dag's current holder's phases and clears them.
+func takeLockPhases(dagID string) []phaseTiming {
+	lockPhases.mu.Lock()
+	defer lockPhases.mu.Unlock()
+	phases := lockPhases.m[dagID]
+	delete(lockPhases.m, dagID)
+	return phases
+}
+
+// phaseClock times the consecutive blocks of one lock holder's work: each enter ends the block before it, and end,
+// which a defer calls, ends the last, so a block cut short by an early return is still counted. The cost of a block is
+// one time.Now and one append; the log line is built only for a lock that was slow.
+type phaseClock struct {
+	dagID string
+	name  string
+	since time.Time
+}
+
+func (c *phaseClock) enter(name string) {
+	c.end()
+	c.name, c.since = name, time.Now()
+}
+
+func (c *phaseClock) end() {
+	if c.name == "" {
+		return
+	}
+	recordLockPhase(c.dagID, c.name, time.Since(c.since))
+	c.name = ""
 }
 
 func dagLockCaller() string {
@@ -82,9 +176,11 @@ func TryWithDagMutation(dagID string, fn func() error) (bool, error) {
 		return false, nil
 	}
 	acquired := time.Now()
+	beginLockPhases(dagID)
 	defer func() {
+		phases := takeLockPhases(dagID)
 		dagMutationLocks.Unlock(dagID)
-		logSlowDagLock(dagID, 0, time.Since(acquired))
+		logSlowDagLock(dagID, 0, time.Since(acquired), phases)
 	}()
 	return true, fn()
 }

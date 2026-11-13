@@ -11,20 +11,15 @@
 
 import { canFold, endsOnQuestion, foldOf, lineCount } from "../../../../claude/skim-mod/hooks/fold-core";
 import { askOf } from "../../../../claude/skim-mod/hooks/highlight-core";
+import { hasInitiativeBlock } from "./chatinitiative";
 import { VISUAL_LANG } from "./chatvisual";
 
 // a fenced block an agent drew a visual in (chatvisual.ts): ```arc-visual at the start of a line
 const VISUAL_FENCE = new RegExp(`^\\s*\`\`\`${VISUAL_LANG}\\b`, "m");
 
-// FNV-1a over the stored text, the key the marks are kept under once the reply is stored without them
-export function hashText(text: string): string {
-    let h = 0x811c9dc5;
-    for (let i = 0; i < text.length; i++) {
-        h ^= text.charCodeAt(i);
-        h = Math.imul(h, 0x01000193);
-    }
-    return (h >>> 0).toString(16).padStart(8, "0") + text.length.toString(16);
-}
+// FNV-1a over the stored text, the key the marks are kept under once the reply is stored without them (it lives in
+// texthash.ts, shared with chatinitiative.ts, and is re-exported here so this file's importers do not change)
+export { hashText } from "./texthash";
 
 // the stored marks of every reply, by hash: each file's `highlightMarks` entries that are a [string, string[]] pair, a
 // later file winning a hash two share; a file that is not JSON or not that shape adds nothing
@@ -209,9 +204,17 @@ export function parseFoldOn(raw: string | null): boolean {
  *  each top reason when nothing is marked, with the marks it kept put back as ==…==. Null when the reply draws in full:
  *  skim is off, it is short, it ends on a question, its last mark is one (a question waiting on you, whose options
  *  are to be read), or it holds an arc-visual block (the visual an agent drew is its point, and a fold keeps prose
- *  only). `lines` is the full reply's, for the "Show more · N lines" button. */
+ *  only) or an arc-initiative block (a card waiting on you is always in view). `lines` is the full reply's, for the
+ *  "Show more · N lines" button. */
 export function chatFold(text: string, marks: readonly string[], on: boolean): { short: string; lines: number } | null {
-    if (!on || askOf(marks) != null || endsOnQuestion(text) || VISUAL_FENCE.test(text) || !canFold(text)) {
+    if (
+        !on ||
+        askOf(marks) != null ||
+        endsOnQuestion(text) ||
+        VISUAL_FENCE.test(text) ||
+        hasInitiativeBlock(text) ||
+        !canFold(text)
+    ) {
         return null;
     }
     // null too when the fold would be most of the reply: it saves no reading

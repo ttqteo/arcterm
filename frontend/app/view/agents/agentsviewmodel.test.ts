@@ -65,6 +65,8 @@ import {
     type LiveAgentInput,
     type PendingLaunch,
 } from "./agentsviewmodel";
+import { withResultLines } from "./chatinitiative";
+import { groupCompact } from "./compacttimeline";
 
 const mk = (id: string, state: AgentVM["state"], extra: Partial<AgentVM> = {}): AgentVM => ({
     id,
@@ -1482,6 +1484,52 @@ describe("conversationText", () => {
 
     it("returns an empty string when there is no prose", () => {
         expect(conversationText([{ kind: "action", verb: "Bash", target: "ls" }])).toBe("");
+    });
+});
+
+describe("initiative result lines in the person's messages (result line)", () => {
+    const sent = withResultLines(
+        ["initiative: added note to Auth (effort:ab12) › 2", "initiative: dismissed chunk for Auth"],
+        "now the tests"
+    );
+    // Claude Code wraps a multi-line message whole as a paste
+    const wrapped = `<pasted_content id="45ce">\n${sent}\n</pasted_content id="45ce">`;
+
+    it("groupTimeline hands a user item only what the person wrote", () => {
+        for (const text of [sent, wrapped]) {
+            const items = groupTimeline([{ kind: "user", text }]);
+            expect(items).toEqual([{ kind: "user", text: "now the tests", index: 0 }]);
+        }
+    });
+
+    it("groupTimeline keeps the images of a message that carried lines, and leaves a plain message as it was", () => {
+        const items = groupTimeline([
+            { kind: "user", text: sent, images: ["C:\\a\\b.png"] },
+            { kind: "user", text: "plain\ninitiative: added by hand" },
+        ]);
+        expect(items).toEqual([
+            { kind: "user", text: "now the tests", images: ["C:\\a\\b.png"], index: 0 },
+            { kind: "user", text: "plain\ninitiative: added by hand", index: 1 },
+        ]);
+    });
+
+    it("groupCompact, which the Terminal-side transcript reads, shows only what the person wrote", () => {
+        const entries: AgentEntry[] = [
+            { kind: "user", text: wrapped },
+            { kind: "message", text: "ok" },
+        ];
+        expect(groupCompact(entries)).toEqual([
+            { kind: "user", text: "now the tests", index: 0 },
+            { kind: "message", text: "ok", index: 1 },
+        ]);
+    });
+
+    it("conversationText (Copy conversation) leaves the lines out of a user entry", () => {
+        const entries: AgentEntry[] = [
+            { kind: "user", text: wrapped },
+            { kind: "message", text: "done — added it" },
+        ];
+        expect(conversationText(entries)).toBe("now the tests\n\ndone — added it");
     });
 });
 

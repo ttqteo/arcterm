@@ -24,7 +24,7 @@ function textFile(git: PeekGit, text = "x\n"): PeekFile {
     return { kind: "text", text, git };
 }
 
-function repo(head: PeekHead, change: PeekChange | null): PeekGit {
+function repo(head: PeekHead, change: PeekChange | null | "unknown"): PeekGit {
     return { kind: "repo", head, change };
 }
 
@@ -114,6 +114,13 @@ describe("peekStat", () => {
                 label: "line counts unknown",
             });
         }
+    });
+    it("reads a failed changes read as unknown, not as no changes", () => {
+        expect(peekStat(textFile(repo({ kind: "text", text: "x\n" }, "unknown")))).toEqual({
+            label: "changes unknown",
+        });
+        // a file new since HEAD still counts its own lines
+        expect(peekStat(textFile(repo(absent, "unknown"), "a\nb\n"))).toEqual({ label: "new file", adds: 2 });
     });
     it("reads no changes for a tracked file with no entry", () => {
         expect(peekStat(textFile(repo({ kind: "text", text: "x\n" }, null)))).toEqual({ label: "no changes" });

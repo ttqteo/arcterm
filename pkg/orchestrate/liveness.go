@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/process"
@@ -338,6 +339,51 @@ func sampleWorkerCPU(ctx context.Context, t *waveobj.TaskNode, run *waveobj.Run,
 	}
 	return cpuIdle
 }
+
+// backgroundShellBound is how long a worker's background shell counts as its work, from when the engine first saw it
+// running. A shell that long is a forgotten watcher, not a build: the task stalls and the lead decides.
+const backgroundShellBound = 3 * StallThreshold
+
+// backgroundShells remembers, per worker, when the engine first saw a background shell of its running: the transcript
+// names the shells and whether they have finished, but not when they started (agentsleep.BackgroundRunning keeps only
+// labels), so the bound runs from the first stall check that found one. Keyed by the child run id, which names one
+// attempt of one worker, so a retry starts clean and the loop can drop an entry without looking its block up. In
+// memory only: after a restart the clock starts over, which only lengthens a wait.
+type backgroundShells struct {
+	mu    sync.Mutex
+	since map[string]int64
+}
+
+func newBackgroundShells() *backgroundShells {
+	return &backgroundShells{since: map[string]int64{}}
+}
+
+// busy says whether the worker of runID is waiting on a background shell the bound has not yet given up on. running
+// is the labels of the shells its transcript shows still running at now. None running forgets the clock, so the next
+// shell is a new one.
+func (b *backgroundShells) busy(runID string, running []string, now int64) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(running) == 0 {
+		delete(b.since, runID)
+		return false
+	}
+	first, seen := b.since[runID]
+	if !seen {
+		first = now
+		b.since[runID] = first
+	}
+	return now-first <= backgroundShellBound.Milliseconds()
+}
+
+// forget drops runID's clock: its task is no longer running.
+func (b *backgroundShells) forget(runID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.since, runID)
+}
+
+var backgroundWatch = newBackgroundShells()
 
 // workerLatestTool is the tool call a worker has in progress, from its latest status: the PreToolUse hook (claude)
 // and the status extension (pi) report working with a detail, and PostToolUse reports working without one.

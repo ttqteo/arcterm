@@ -43,6 +43,7 @@ import {
 } from "./agentrailmodel";
 import { RailResizeGrip, RailStats, RailTabStrip, useWideWidth } from "./agentrailpanel";
 import {
+    bgSessionLive,
     bgTaskStatusLabel,
     bgTaskStoppable,
     planAgentRail,
@@ -63,6 +64,7 @@ import { useChatMode } from "./chatmodestore";
 import { ASK_OWNER_USER } from "./childaskmodel";
 import { RailTree } from "./christmasrailtreeview";
 import { commitListAtom, loadCommitList, showInLog } from "./commitstore";
+import { canDrive } from "./consumers";
 import { cacheWarn, contextGroups, fmtTok, rewriteNow } from "./ctxbreakdown";
 import { ctxBreakdownAtom } from "./ctxbreakdownstore";
 import { useDevServers } from "./devserversstore";
@@ -876,13 +878,21 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const cacheCountdown = isClaude ? formatCacheCountdown(cacheStatus, now) : "—";
     const branch = ended ? ended.branch : railState?.branch;
     const worktree = ended ? undefined : railState?.worktree;
-    const live = agent.blockId != null && !ended;
+    const live = bgSessionLive(agent.blockId, ended != null);
+    // what types into its terminal (the Resume and Stop button, Compact and Clear) also needs it awake: a sleeping
+    // agent's process is gone, so its PTY is dead. `live` alone keeps feeding the background-task rows below.
+    const drivable = live && canDrive(agent);
     const bgActivity = backgroundActivity(bgTasks, machineServers);
     const shownAgentState = shownState(agent.state, bgActivity);
-    const action = sub ? null : railAction(agent.state, bgActivity, live);
+    const action = sub ? null : railAction(agent.state, bgActivity, drivable);
     const offerReset =
         ctxPct != null &&
-        offersContextReset({ isClaude, state: agent.state, level: contextLevel(ctxPct, usage?.contextmax), live });
+        offersContextReset({
+            isClaude,
+            state: agent.state,
+            level: contextLevel(ctxPct, usage?.contextmax),
+            live: drivable,
+        });
     // under 5 minutes of cache left on a live session: the line says so in amber, and a ready breakdown prices the
     // rewrite (what the next turn writes if the conversation is compacted now, against what it writes if it is not)
     const cacheExpiring = ended == null && cacheWarn(cacheCountdown);
@@ -1327,7 +1337,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         live={live}
                         onStop={
                             // the kill finds the task among the agent block's job object: Windows only
-                            isWindows() && agent.blockId != null && bgTaskStoppable(t, live)
+                            isWindows() && bgTaskStoppable(t, live)
                                 ? () => fireAndForget(() => stopBackgroundTask(agent.id, agent.blockId!, t))
                                 : undefined
                         }

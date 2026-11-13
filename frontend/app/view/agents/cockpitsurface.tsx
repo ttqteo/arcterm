@@ -12,6 +12,7 @@ import { openTarget } from "@/app/view/jarvis/openref";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { dismissAgent, toggleAgentBackground } from "./agentactions";
 import { showTerminal } from "./agentcenter";
+import { leadProcessLive } from "./agentcontrollerstore";
 import { AgentRow } from "./agentrow";
 import type { AgentsViewModel, ChipFilter } from "./agents";
 import {
@@ -304,7 +305,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     const leadVMs = new Map<string, LeadCardVM & { down: boolean }>();
     for (const c of allCards) {
         if (c.kind === "run") {
-            const down = isLeadDown(runEvents[c.run.runId] ?? []);
+            const down = isLeadDown(runEvents[c.run.runId] ?? [], c.run, leadProcessLive(c.lead));
             leadVMs.set(c.id, {
                 ...buildLeadCard({
                     cardId: c.id,

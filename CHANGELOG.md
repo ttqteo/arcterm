@@ -32,9 +32,21 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Fork from here, on any message or reply (beside Copy, or right-click), starts one with the conversation up to that
   point. From one of your messages, its text waits in the new session's box to edit and send. The session you forked
   stays as it was. Claude agents only.
+- Chat now carries a brainstorm past its questions: the design's review (Confirm the design), the builder check and the
+  run each show as a card in the conversation, and fold into a ✓ row once their step is done. The decisions made so far
+  fold into the question card's footer, and the `brainstorm: …` lines Arc sends for your clicks no longer show as
+  messages.
+- Chat can add to an initiative without leaving the conversation: a new chunk, a note on a chunk, or a new initiative.
+  The agent proposes it as a card you add, edit or dismiss, and any message or reply has an Add to initiative… entry
+  (beside Copy, or right-click) that opens the same card with its text. A handled card folds into one row, and the
+  agent hears the outcome with your next message. Claude agents only.
 
 ### Changed
 
+- A long live transcript keeps only its last screens drawn while you follow it, instead of drawing every message the
+  session has added since you opened it.
+- A working run's row in the Agent sidebar says how many of its tasks are stuck (`Working · 1/6 · 3 stuck`), and hover
+  names each one (`t-2 verify failed · t-3 stalled`), instead of reading as if all were moving.
 - A run's follow-ups initiative is filed under the topic it belongs to (Chat, Council…) instead of at the top of the
   initiatives list, and `wsh effort list --topics` lists those topics.
 - A run's row in the Agent sidebar shows the RAM the whole run holds (its lead and every worker together) instead of
@@ -49,12 +61,62 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   empty days back to the window's start (By work still spans the window); Blame (`b` or its button) in Preview or Diff
   no longer switches the file to Source; a path just before an ellipsis ("Editing src/foo.ts…") is a link again; and
   an `@` typed into Ctrl+P on Code searches paths again — Alt+O still opens the open file's symbols.
+- The heavy-job queue learns what a job really takes. Once a Claude agent has run `task check:ts` or another heavy
+  command, the queue plans its next run on the largest of its last 5 peaks plus 20%, in that project, instead of a fixed
+  estimate, so a small repo no longer claims 3 GB. A build the queue did not know (`make build`, `gradle build`) that
+  peaks at 1 GB or more starts queueing from its next run. The Jobs popover says whether a row's RAM is measured or an
+  estimate (est.), and its tooltip names the runs behind it.
 
 ### Fixed
 
 - A lead's run line in the Agent sidebar no longer cuts its progress down to "Worki…": on a narrow sidebar the run's
   RAM figure leaves the line (it shows again once the sidebar is wide enough for it), and "failed to start" for a lead
   whose terminal could not start now sits at the end of its name line.
+- Chat's brainstorm card comes back when you ask the agent a question back instead of answering it, and the agent asks
+  that question again.
+- A typed answer's row in Chat says "You replied" instead of "You picked".
+- In a Chat box's bash mode (`!`), Tab escapes names with spaces or symbols, so `my file.txt` stays one word.
+- In bash mode, the Tab list closes when you click away from the box.
+- In bash mode, the grey suggestion stays on a long command's last line instead of drifting off its text.
+- In bash mode, an `@path` in the middle of a command stays plain text instead of turning into a file pill.
+- An inline visual in Chat takes on a new theme at once, instead of keeping the colours it loaded with.
+- Interrupt, Compact, Clear and Nudge are no longer offered on a sleeping agent, where they did nothing.
+- The pinned prompt in the Transcript tab no longer lets a line of text show above it.
+- Jumping to an item in the Transcript tab, such as a compaction marker, lands it below the pinned prompt instead of
+  under it.
+- Conversation History of a long live session no longer shifts its drawn messages or open folds while the session grows.
+- An agent whose launch failed no longer counts as an unread turn on the Agent badge.
+- A duplicated session's header names its harness while it starts, instead of Unknown.
+- Opening Code from the palette leaves the keyboard on its file tree, so j/k and the arrows work with no click first.
+- A busy Monitor no longer drops out of the Agent tree while it is still running.
+- The Memory tab's error alert goes away once you move to another change or project.
+- When past conversations fail to load, the Agent tree's Conversations section now says it could not read them and
+  offers Retry, instead of "No past conversations", and it tries again on its own.
+- The Code peek card says "changes unknown" when git's changes cannot be read, rather than "no changes".
+- The Diff's Commit tab rows show the pending-comment badge, as the Log tab's rows do.
+- Review of a landed run reads only the run's own changes, up to its tip, as its file list does, rather than the
+  checkout's later commits and uncommitted edits.
+- A skill or memory file saved with Windows line endings or a byte order mark keeps its description in Setup, and a
+  harness override merges into its front matter instead of stacking a second block.
+- A run whose lead dies while the run waits on it (after a failed plan review, or a failed final stage) now shows
+  Relaunch lead, and an autonomous run brings its lead back by itself, instead of sitting with no lead and nothing to
+  press. `wsh runs relaunch-lead <run>` does the same from a terminal.
+- Resuming a paused run no longer reopens a lead that was stopped before it wrote anything into an endless "No
+  conversation found": it starts that lead fresh. A pause no longer counts against a plan, task or final reviewer
+  either, so a resume does not throw away reviewers that were still working.
+- `wsh runs cancel` no longer asks for `--yes` because of a lead or worker whose process is already gone.
+- A run whose lead hangs in one command for 30 minutes (nothing running under it, every later report waiting behind it)
+  now has the lead stopped and replaced, or its questions handed to you, instead of the run waiting forever.
+- A worker's question no longer goes missing when arcterm is slow: when the hook that reports it times out, the engine
+  finds the open question in the worker's transcript and hands it to the lead as usual, instead of marking the task
+  stalled.
+- A plan's Verify that calls `npx` (or another Node shim) no longer fails with exit 127 on Windows when Git's `usr\bin`
+  comes first on PATH.
+- A run's worker sleeps once its task has passed review, freeing its RAM; Wake reopens it.
+- Pausing a run no longer makes the engine start a replacement lead: after a resume the lead keeps its run context, so
+  its `wsh jarvis` commands keep working.
+- A run's task no longer reads as stalled while its worker waits on a command of its own that runs in the background (a
+  long typecheck, say).
 - A brainstorm's judge or builder check that wrote its answer but could not hand it in before its 20 minutes ran out
   (on a busy machine) no longer ends as "The judge was lost": the answer it wrote is used.
 - Putting an agent to sleep now says so while it happens: its Chat box reads "Going to sleep…" (or "Compacting, then

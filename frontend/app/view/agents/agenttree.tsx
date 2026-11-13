@@ -199,7 +199,7 @@ import {
 import { projectsAtom } from "./projectsstore";
 import { useRunObjects } from "./runobjects";
 import { runtimeMeta } from "./runtimemeta";
-import { sessionsArchiveAtom } from "./sessionsarchivestore";
+import { loadSessionsArchive, sessionsArchiveAtom, sessionsErrorAtom } from "./sessionsarchivestore";
 import { liveTokensAtom, useLiveTokens } from "./livetokensstore";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
 import {
@@ -212,7 +212,7 @@ import {
 } from "./sessionsdetail";
 import { defaultMember, forkLaunchOpts, runView, type RunView } from "./sessionsruns";
 import { duplicateSession } from "./session-models/sessionsidebarmodel";
-import { SLEEPABLE_AGENTS, sleepingAge, sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
+import { sleepingAge, sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
 import {
     askingCount,
     askingLabel,
@@ -265,6 +265,7 @@ import {
     useRunInfo,
 } from "./runlineagestore";
 import { useChristmasDecor } from "./christmasstore";
+import { canSleep } from "./consumers";
 import { LandLine } from "./landprogressview";
 import { dagProgressLabel, finishedRunLabel, runComplete, runStatusView } from "./runmodel";
 import { runStage, type StageTone } from "./runstage";
@@ -492,12 +493,7 @@ function sleepMenuItems(agent: AgentVM): ContextMenuItem[] {
     if (falling != null) {
         return [{ label: fallAsleepLabel(falling), icon: <Moon size={15} />, enabled: false }];
     }
-    const sleepable =
-        agent.state === "idle" &&
-        (agent.kind == null || agent.kind === "agent") &&
-        agent.runId == null &&
-        SLEEPABLE_AGENTS.has(agent.agent ?? "");
-    if (!sleepable) {
+    if (!canSleep(agent)) {
         return [];
     }
     return [{ label: "Sleep", icon: <Moon size={15} />, click: () => fireAndForget(() => sleepWithConfirm(agent)) }];
@@ -3459,6 +3455,7 @@ function StartingRunRow({ model, row }: { model: AgentsViewModel; row: StartingR
 function ConversationsSection({ model }: { model: AgentsViewModel }) {
     const agents = useAtomValue(model.agentsAtom);
     const archive = useAtomValue(sessionsArchiveAtom);
+    const archiveError = useAtomValue(sessionsErrorAtom);
     const registered = useAtomValue(projectsAtom);
     const filter = useAtomValue(model.projectFilterAtom);
     const collapsedList = useAtomValue(collapsedConversationProjectsAtom);
@@ -3504,7 +3501,23 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
         <div data-agent-conversations>
             <SectionHeader section="conversations" label="Conversations" count={conversationCount(ended, filter)} />
             <FoldBody open={open}>
-                {archive == null ? null : rows.length === 0 ? (
+                {archive == null ? null : rows.length === 0 && archiveError ? (
+                    // a failed scan is not an empty past: it retries on its own (sessionsarchivestore), and Retry is for
+                    // when those retries are spent
+                    <div
+                        data-agent-conversations-error
+                        className="flex items-center gap-2 px-[10px] py-[6px] text-[12px] text-muted"
+                    >
+                        <span className="min-w-0 flex-1">Could not read past conversations</span>
+                        <button
+                            type="button"
+                            className="flex-none cursor-pointer text-accent-soft hover:underline"
+                            onClick={() => fireAndForget(loadSessionsArchive)}
+                        >
+                            Retry
+                        </button>
+                    </div>
+                ) : rows.length === 0 ? (
                     <div className="px-[10px] py-[6px] text-[12px] text-muted">
                         {filtered ? `No past conversations in ${filter}` : "No past conversations"}
                     </div>

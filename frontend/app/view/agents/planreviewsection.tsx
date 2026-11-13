@@ -19,6 +19,7 @@ import { Check, Pencil, X } from "lucide-react";
 import { useState } from "react";
 import { driveAgent } from "./agentactions";
 import type { AgentVM } from "./agentsviewmodel";
+import { canDrive } from "./consumers";
 import { decisionsFor, planEditChunks, restoreAt, type PlanRow } from "./planreviewmodel";
 import { holdDecisions, releaseDecision, usePlanReview } from "./planreviewstore";
 import { SectionLabel } from "./sectionlabel";
@@ -49,7 +50,8 @@ export function PlanReviewSection({ agent }: { agent: AgentVM }) {
     // an all-digit label would be read as a position, so each call names a chunk the way chunkRef says
     const refOf = (label: string) => chunkRef(plan, label);
     const waiting = rows.filter((r) => r.state === "proposed").map((r) => r.label);
-    const canContinue = agent.blockId != null && waiting.length > 0;
+    // the continue types into its terminal: not while it sleeps (a dead PTY); Accept all still works
+    const canContinue = canDrive(agent) && waiting.length > 0;
 
     // true when it went through; a failure leaves the rows as they were and says why under the buttons
     const run = async (send: () => Promise<void>, undoHold?: () => void): Promise<boolean> => {

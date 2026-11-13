@@ -13,6 +13,8 @@ import { join } from "node:path";
 const AGENT = "fx-rail-transcript";
 const AGENT_MISSING = "fx-rail-transcript-missing";
 const AGENT_NONE = "fx-rail-transcript-none";
+// step 13 adds this agent, whose transcript is the past session's file, so Conversation History shows that session live
+const AGENT_LIVE = "fx-rail-transcript-live";
 const PROJECT = "verify-rail-transcript";
 const KEYS = ["agent.rail.visible", "cockpit.rail.sections", "agent.rail.tab", "agent.rail.wideWidth", "code.project.last", "agent.launch.recentprojects", "agent.chatmode"];
 // the remembered wide width the scenario starts from (the window's max at the pinned 1600px viewport is 634)
@@ -30,6 +32,13 @@ const COMPACTIONS = [
 ];
 const RESULT_BYTES = 12_000; // a tool result
 const IMAGE_BYTES = 300_000; // a pasted image (400 KB as base64) on every 40th turn
+
+// CompactTranscript's RENDER_CAP (compactwindow.ts): the most items drawn once a reader at the bottom is appended to
+const RENDER_CAP = 200;
+// the Transcript's scroller is given this top padding by step 9, which the pinned prompt's band must cover
+const PAD_TOP = "28px";
+// a burst of appended turns: a user message and a reply each, so 2 items per turn
+const BURST_TURNS = 40;
 
 const ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
 const SCROLLER = `document.querySelector("[data-rail-transcript]")`;
@@ -56,6 +65,9 @@ function resultText(n) {
     const row = "src/session/transcript/reader.ts:118:    const loaded = await readWindow(path, start, count); // keeps the lines in order\n";
     return `call ${n}\n${row.repeat(Math.ceil(RESULT_BYTES / row.length))}`.slice(0, RESULT_BYTES);
 }
+
+// one roster agent of the fixture, idle, on the scenario's project
+const fixtureAgent = (a) => ({ project: PROJECT, task: "read the conversation back", state: "idle", agent: "claude", model: "opus", idleSince: Date.now() - 60_000, ...a });
 
 // a base64 blob of random bytes: it is not a decodable PNG, which the tab never needs, only the bytes a pasted image carries
 function imageData() {
@@ -162,6 +174,16 @@ export default function (kit) {
         return h.ev(done);
     }
 
+    // `turns` more turns at the end of the file, each carrying `label` (the last ends in -END); true once that last reply is
+    // the newest item drawn, which the append read (one in 3 s) and the draw both have to have happened for
+    async function appendBurst(h, ctx, label, turns, ms = 20000) {
+        const at = Date.now();
+        let text = "";
+        for (let i = 0; i < turns; i += 1) text += turnText(ctx.cwd, at + i * 2000, i === turns - 1 ? `${label}-END` : `${label}-n${i}`);
+        appendFileSync(ctx.transcript, text);
+        return polishWaitFor(h, `Array.from(${ITEMS} ?? []).at(-1)?.textContent?.includes("APPEND-REPLY-${label}-END") === true`, ms);
+    }
+
     const scenario = {
         name: "rail-transcript-tab",
         surface: "agent",
@@ -188,7 +210,8 @@ export default function (kit) {
                 // the same file as a past session, for Conversation History
                 ctx.sessionDir = join(homedir(), ".claude", "projects", `verify-rail-transcript-${ctx.id}`);
                 mkdirSync(ctx.sessionDir, { recursive: true });
-                copyFileSync(ctx.transcript, join(ctx.sessionDir, `${randomUUID()}.jsonl`));
+                ctx.sessionFile = join(ctx.sessionDir, `${randomUUID()}.jsonl`);
+                copyFileSync(ctx.transcript, ctx.sessionFile);
                 ctx.missing = join(ctx.base, "gone.jsonl");
 
                 await h.rpc("createproject", { name: PROJECT, path: ctx.cwd });
@@ -200,15 +223,14 @@ export default function (kit) {
                 ctx.workspaceId = ws.workspacedata.oid;
                 await openRailTerminal(h, ctx, PROJECT);
 
-                const agent = (a) => ({ project: PROJECT, task: "read the conversation back", state: "idle", agent: "claude", model: "opus", idleSince: Date.now() - 60_000, ...a });
                 mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
                 writeFileSync(
                     TREE_RAIL_FIXTURE,
                     JSON.stringify(
                         [
-                            agent({ id: AGENT, name: "rail transcript agent", blockId: ctx.terminals[0].blockId, transcriptPath: ctx.transcript }),
-                            agent({ id: AGENT_MISSING, name: "rail transcript missing", blockId: "fx-blk-rail-transcript-missing", transcriptPath: ctx.missing }),
-                            agent({ id: AGENT_NONE, name: "rail transcript none", blockId: "fx-blk-rail-transcript-none" }),
+                            fixtureAgent({ id: AGENT, name: "rail transcript agent", blockId: ctx.terminals[0].blockId, transcriptPath: ctx.transcript }),
+                            fixtureAgent({ id: AGENT_MISSING, name: "rail transcript missing", blockId: "fx-blk-rail-transcript-missing", transcriptPath: ctx.missing }),
+                            fixtureAgent({ id: AGENT_NONE, name: "rail transcript none", blockId: "fx-blk-rail-transcript-none" }),
                         ],
                         null,
                         2
@@ -461,6 +483,114 @@ export default function (kit) {
                     "8. a turn appended to the file shows at the bottom within 5 s and the view follows it; scrolled up, the next append leaves scrollTop where it was (within 2px)",
                     reread && bottom0 <= 4 && shownA && bottomA <= 4 && shownB && held0 > 0 && Math.abs(held1 - held0) <= 2 && Math.abs(held2 - held0) <= 2,
                     JSON.stringify({ reread, bottom0, shownA, msA, bottomA, held0, held1, shownB, held2 })
+                );
+
+                // 9. a scroller with a top padding: the pinned prompt's band covers it, so nothing shows above the band
+                await h.ev(`${SCROLLER}.style.paddingTop = ${JSON.stringify(PAD_TOP)}`);
+                await h.ev(`(() => { const s = ${SCROLLER}; s.scrollTop = Math.round((s.scrollHeight - s.clientHeight) / 2); })()`);
+                const PROBE = `(() => {
+                    const s = ${SCROLLER};
+                    const r = s.getBoundingClientRect();
+                    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + 1);
+                    const band = s.querySelector("[data-pinned-prompt] > div")?.getBoundingClientRect();
+                    return { pad: getComputedStyle(s).paddingTop, inBand: !!hit?.closest("[data-pinned-prompt]"), hit: hit ? hit.tagName + "." + String(hit.className).slice(0, 50) : null, bandTop: band ? Math.round(band.top - r.top) : null };
+                })()`;
+                const covered9 = await polishWaitFor(h, `(${PROBE}).inBand`, 6000);
+                await polishNap(300);
+                const probe9 = await h.ev(PROBE);
+                await h.shot("cdp-shots/rail-transcript-tab-padded-band.png");
+                rec(
+                    "9. with a 28px top padding on the Transcript's scroller, scrolled mid-transcript, the element 1px below the scroller's top is the pinned prompt's band, which starts at the scroller's top",
+                    covered9 && probe9.pad === PAD_TOP && probe9.inBand && probe9.bandTop != null && Math.abs(probe9.bandTop) <= 1,
+                    JSON.stringify({ covered9, probe9 })
+                );
+
+                // 10. a jump to a compaction marker (the padding still on) leaves it just below the band, not under it
+                const control10 = await h.ev(`(() => { const b = document.querySelector("[data-rail-compactions]"); b?.click(); return !!b; })()`);
+                const clear10 = await polishWaitFor(h, `(${MARKERS}).some((m) => m.text.includes("181") && m.band > 0 && (${CLEAR_AT_TOP_JS})(m))`, 30000);
+                await polishNap(900);
+                const markers10 = await h.ev(MARKERS);
+                await h.shot("cdp-shots/rail-transcript-tab-marker-below-band.png");
+                rec(
+                    "10. the Compactions button's jump to the newest marker leaves the marker's top at or below the pinned prompt's band's bottom, and within 40px of it, on a scroller with a top padding",
+                    control10 && clear10 && markers10.some((m) => m.text.includes("181") && m.band > 0 && CLEAR_AT_TOP(m)),
+                    JSON.stringify({ control10, clear10, markers10: markers10.map((m) => ({ text: m.text.slice(0, 24), off: m.off, band: m.band })) })
+                );
+                await h.ev(`${SCROLLER}.style.paddingTop = ""`);
+
+                // 11. at the bottom, appends past RENDER_CAP items trim the drawn window back to RENDER_CAP, newest item drawn
+                const wide11 = await scrollUntil(h, `(${ITEMS}?.length ?? 0) > ${RENDER_CAP}`, 60000);
+                const drawn11a = await h.ev(`${ITEMS}?.length ?? 0`);
+                await h.ev(`(() => { const s = ${SCROLLER}; s.scrollTop = s.scrollHeight; })()`);
+                await polishNap(600);
+                let shown11 = true;
+                for (const label of ["C", "D", "E"]) shown11 = (await appendBurst(h, ctx, label, BURST_TURNS)) && shown11;
+                await polishNap(700);
+                const state11 = await h.ev(`(() => {
+                    const items = Array.from(${ITEMS} ?? []);
+                    const s = ${SCROLLER};
+                    return { n: items.length, last: (items.at(-1)?.textContent ?? "").slice(-40), atBottom: Math.round(s.scrollHeight - s.scrollTop - s.clientHeight) };
+                })()`);
+                await h.shot("cdp-shots/rail-transcript-tab-trimmed.png");
+                rec(
+                    `11. with more than ${RENDER_CAP} items drawn and the reader at the bottom, appending ${3 * BURST_TURNS * 2} more items (3 bursts) leaves at most ${RENDER_CAP} drawn, the newest among them and the view still at the end`,
+                    wide11 && drawn11a > RENDER_CAP && shown11 && state11.n <= RENDER_CAP && state11.last.includes("APPEND-REPLY-E-END") && state11.atBottom <= 4,
+                    JSON.stringify({ wide11, drawn11a, shown11, state11 })
+                );
+
+                // 12. scrolled up, an append trims nothing and the place read holds
+                const before12 = await h.ev(`(() => { const s = ${SCROLLER}; s.scrollTop = Math.max(0, s.scrollTop - 3000); return { top: Math.round(s.scrollTop), n: ${ITEMS}.length }; })()`);
+                await polishNap(600);
+                const held12a = await h.ev(`Math.round(${SCROLLER}.scrollTop)`);
+                const shown12 = await appendBurst(h, ctx, "F", BURST_TURNS);
+                await polishNap(700);
+                const after12 = await h.ev(`({ top: Math.round(${SCROLLER}.scrollTop), n: ${ITEMS}.length })`);
+                await h.shot("cdp-shots/rail-transcript-tab-appended-not-trimmed.png");
+                rec(
+                    `12. scrolled up 3,000px, appending ${BURST_TURNS * 2} more items draws them all on top of the ${RENDER_CAP} already drawn (nothing is trimmed) and leaves scrollTop where it was (within 2px)`,
+                    shown12 && before12.n > 0 && after12.n > RENDER_CAP && after12.n >= before12.n + BURST_TURNS * 2 && Math.abs(after12.top - held12a) <= 2,
+                    JSON.stringify({ before12, held12a, shown12, after12 })
+                );
+
+                // 13. a live session in Conversation History (the surface useTranscriptRead serves with live on): the lines
+                // appended to its file grow the window it read first instead of sliding it, so the first drawn item stays
+                const roster13 = JSON.parse(readFileSync(TREE_RAIL_FIXTURE, "utf8")).filter((a) => a.id !== AGENT_LIVE);
+                roster13.push(fixtureAgent({ id: AGENT_LIVE, name: "rail transcript live", blockId: "fx-blk-rail-transcript-live", transcriptPath: ctx.sessionFile }));
+                writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(roster13, null, 2));
+                await h.ev(`window.__reloadDevMockRoster?.()`);
+                await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+                const history13 = await polishWaitFor(h, `!!document.querySelector("[data-agent-history]")`, 8000);
+                const CARD13 = `[...(document.querySelectorAll('[data-agent-history] button.border[class*="rounded-[10px]"]') ?? [])].find((b) => b.textContent.includes(${JSON.stringify(ctx.title)}))`;
+                // the roster agent holds the session's transcript, so its card reads running, not an age
+                const live13 = await polishWaitFor(h, `${CARD13}?.textContent.includes("running") === true`, 30000);
+                await h.ev(`${CARD13}?.click()`);
+                const SESSION_ROOT = `document.querySelector("[data-agent-history] [data-compact-transcript]")`;
+                const SESSION_DRAWN = `Array.from(${SESSION_ROOT}?.querySelectorAll(":scope > [data-compact-item]") ?? [])`;
+                const session13 = await polishWaitFor(h, `${SESSION_DRAWN}.length > 0`, 60000);
+                // scrolled to the middle of what is drawn: a reader at the end has the window trimmed as items arrive
+                // (compactwindow.ts), which would move the first drawn item whatever the read does
+                await h.ev(`(() => { const s = ${SESSION_SCROLL}; if (s) s.scrollTop = Math.round((s.scrollHeight - s.clientHeight) / 2); })()`);
+                await polishNap(700);
+                const FIRST13 = `(() => { const f = ${SESSION_DRAWN}[0]; return f ? { key: f.dataset.compactKey ?? null, text: (f.textContent ?? "").slice(0, 160) } : null; })()`;
+                const first13 = await h.ev(FIRST13);
+                const drawn13a = await h.ev(`${SESSION_DRAWN}.length`);
+                const heap13a = await heapMb(h);
+                // 25 turns of a prompt and a reply: 50 lines
+                const lines13 = 50;
+                let text13 = "";
+                const at13 = Date.now();
+                for (let i = 0; i < lines13 / 2; i += 1) text13 += turnText(ctx.cwd, at13 + i * 2000, i === lines13 / 2 - 1 ? "H-END" : `H-n${i}`);
+                appendFileSync(ctx.sessionFile, text13);
+                const shown13 = await polishWaitFor(h, `${SESSION_DRAWN}.at(-1)?.textContent?.includes("APPEND-REPLY-H-END") === true`, 20000);
+                await polishNap(700);
+                const first13b = await h.ev(FIRST13);
+                const drawn13b = await h.ev(`${SESSION_DRAWN}.length`);
+                const heap13b = await heapMb(h);
+                await h.shot("cdp-shots/rail-transcript-tab-history-live-appended.png");
+                rec(
+                    "13. Conversation History's detail of a live session (a roster agent holds its transcript) that has more than 2,000 lines: after 50 lines are appended to its file and the last reply is drawn, the first drawn item is the same item (same key, same text) and the drawn items grew by at least 50",
+                    history13 && live13 && session13 && first13 != null && drawn13a > 0 && shown13 && first13b?.key === first13.key && first13b?.text === first13.text && drawn13b >= drawn13a + lines13,
+                    JSON.stringify({ history13, live13, session13, first13, first13b, drawn13a, drawn13b, shown13, fileLines: ctx.lines, heapMbBefore: heap13a, heapMbAfter: heap13b })
                 );
             } catch (e) {
                 rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));

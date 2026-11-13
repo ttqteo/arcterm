@@ -50,6 +50,21 @@ func footprint(pid int32) (uint64, bool) {
 	return uint64(m.privateWorkingSetSize), true
 }
 
+// jobFootprint is the private bytes (privateUsage, the commit). PROCESS_MEMORY_COUNTERS_EX, which a Windows that
+// refuses the EX2 size is asked for, carries the field too.
+func jobFootprint(pid int32) (uint64, bool) {
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	if err != nil {
+		return 0, false
+	}
+	defer windows.CloseHandle(h)
+	var m processMemoryCountersEx2
+	if !memoryInfo(h, &m, unsafe.Sizeof(m)) && !memoryInfo(h, &m, unsafe.Offsetof(m.privateWorkingSetSize)) {
+		return 0, false
+	}
+	return uint64(m.privateUsage), true
+}
+
 func memoryInfo(h windows.Handle, m *processMemoryCountersEx2, cb uintptr) bool {
 	*m = processMemoryCountersEx2{cb: uint32(cb)}
 	r, _, _ := procGetProcessMemoryInfo.Call(uintptr(h), uintptr(unsafe.Pointer(m)), cb)

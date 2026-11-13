@@ -12,7 +12,7 @@ import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight, Folder, RefreshCw } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { AgentVM } from "./agentsviewmodel";
-import { TreeModeToggle } from "./changedfilelist";
+import { CommentCountBadge, TreeModeToggle, useCommentCounts } from "./changedfilelist";
 import { CommitFailure, growMessageBox } from "./commitbox";
 import {
     amendAllowed,
@@ -86,12 +86,15 @@ function FileRow({
     row,
     ticks,
     selected,
+    comments,
     onSelect,
     onTick,
 }: {
     row: CommitRow;
     ticks: CommitTicks;
     selected: boolean;
+    // pending diff comments on this path, the badge the Log tab's rows show
+    comments: number;
     onSelect: () => void;
     onTick: (on: boolean) => void;
 }) {
@@ -139,6 +142,7 @@ function FileRow({
                     {row.label}
                 </span>
             </span>
+            <CommentCountBadge count={comments} />
             <CountsOrNote change={change} />
         </div>
     );
@@ -203,6 +207,7 @@ function GroupRows({
     selected: string | null;
     onSelect: (path: string) => void;
 }) {
+    const comments = useCommentCounts();
     return (
         <>
             {commitRows(files, tree, collapsed).map((r) =>
@@ -228,6 +233,7 @@ function GroupRows({
                         row={r}
                         ticks={ticks}
                         selected={r.id === selected}
+                        comments={comments[r.id] ?? 0}
                         onSelect={() => onSelect(r.id)}
                         onTick={(on) => toggleTick(cwd, r.change!, on)}
                     />

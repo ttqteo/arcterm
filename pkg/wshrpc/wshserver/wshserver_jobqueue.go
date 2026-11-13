@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/shirou/gopsutil/v4/process"
+	"github.com/wavetermdev/waveterm/pkg/jobpeaks"
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 	"github.com/wavetermdev/waveterm/pkg/memgate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
@@ -39,7 +40,9 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 			}
 		}
 		yes, no := true, false
-		job, heavy := memgate.Classify(data.Command)
+		// the learned set is the unknown patterns measured heavy (a nil store has none): wsh reads the same set from the
+		// learned file, so both decide alike which commands take a slot
+		job, heavy := memgate.ClassifyWith(data.Command, jobpeaks.Default.Learned())
 		q := jobqueue.Default
 		if q != nil {
 			noteMissed(ctx, q, data.Missed)
@@ -59,7 +62,11 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 			q.NoteBypass(job.Name, src, time.Time{})
 			return
 		}
-		slot, err := q.Acquire(ctx, jobqueue.Request{Name: job.Name, Bytes: job.Bytes, Source: src}, func(w jobqueue.Wait) {
+		// the figure to admit on is what the command's last runs measured in this project, else (for a learned pattern)
+		// in another one, else the table's; every caller gets it, pi's included. A heavy command queues whatever the
+		// figure comes to: a small one only means it fits sooner
+		bytes, basis := jobpeaks.Default.Estimate(job.Name, jobProject(ctx, data.BlockId), job.Bytes)
+		slot, err := q.Acquire(ctx, jobqueue.Request{Name: job.Name, Bytes: bytes, Basis: basis, Source: src}, func(w jobqueue.Wait) {
 			// runs under the queue's lock: a full buffer drops the line, and the next place supersedes it
 			select {
 			case ch <- wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate]{Response: wshrpc.JobSlotUpdate{Queued: w.Position, Behind: w.Behind, For: w.For}}:
@@ -179,6 +186,9 @@ func JobQueueData(s jobqueue.Snapshot) wshrpc.JobQueueData {
 			Id:        j.Id,
 			Name:      j.Name,
 			Bytes:     j.Bytes,
+			Measured:  j.Basis.Measured,
+			Elsewhere: j.Basis.Elsewhere,
+			Peaks:     basisPeaks(j.Basis),
 			Running:   j.Running,
 			Forced:    j.Forced,
 			Engine:    j.Engine,
@@ -191,6 +201,17 @@ func JobQueueData(s jobqueue.Snapshot) wshrpc.JobQueueData {
 			RunId:     j.Source.RunId,
 			Label:     j.Source.Label,
 		})
+	}
+	return out
+}
+
+// basisPeaks is the basis's non-zero peaks, newest first; nil when there are none, so the field leaves the wire
+func basisPeaks(b jobqueue.Basis) []uint64 {
+	var out []uint64
+	for _, p := range b.Peaks {
+		if p > 0 {
+			out = append(out, p)
+		}
 	}
 	return out
 }

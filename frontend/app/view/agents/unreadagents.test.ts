@@ -42,6 +42,11 @@ describe("nextUnread", () => {
         expect(out).toEqual(counts({ lead: 1 }));
     });
 
+    it("does not count a launch that failed (startError folds booting to idle)", () => {
+        const failed = [{ id: "a", state: "idle" as const, startError: "codex not found on PATH" }];
+        expect(nextUnread(none, states({ a: "working" }), failed, noIds).size).toBe(0);
+    });
+
     it("does not count one that finished in view", () => {
         expect(nextUnread(none, states({ a: "working" }), roster({ a: "idle" }), new Set(["a"])).size).toBe(0);
     });

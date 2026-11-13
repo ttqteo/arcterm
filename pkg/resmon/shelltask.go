@@ -35,9 +35,68 @@ const (
 	outputSuffix = `.output" 2>&1`
 )
 
-// shQuote single-quotes s as claude code does for its eval.
-func shQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
+// unquoteEval reads the command out of the quoting claude code gives `eval`: single-quoted runs, with a quote
+// itself written `"'"` (shQuote's form) or `\'` (the arc mod's). It returns what follows the quoted command; ok is
+// false when s does not start with one quoted word.
+func unquoteEval(s string) (command, rest string, ok bool) {
+	var b strings.Builder
+	i := 0
+	for i < len(s) {
+		switch {
+		case s[i] == '\'':
+			end := strings.IndexByte(s[i+1:], '\'')
+			if end < 0 {
+				return "", "", false
+			}
+			b.WriteString(s[i+1 : i+1+end])
+			i += end + 2
+		case strings.HasPrefix(s[i:], `"'"`):
+			b.WriteByte('\'')
+			i += 3
+		case strings.HasPrefix(s[i:], `\'`):
+			b.WriteByte('\'')
+			i += 2
+		default:
+			return b.String(), s[i:], i > 0
+		}
+	}
+	return b.String(), "", i > 0
+}
+
+// EvalCommand is the command a Bash-tool shell evals: claude code starts it as `<shell> -c "<script>"` (Windows) or
+// `<shell> -c -l <script>` (macOS, Linux), where the script ends in `eval '<command>' < /dev/null && pwd -P ...`.
+// The script is the first operand after -c, short flags such as -l skipped. ok is false for any other process.
+func EvalCommand(argv []string) (command string, ok bool) {
+	for i := 1; i < len(argv); i++ {
+		if argv[i] != "-c" {
+			continue
+		}
+		j := i + 1
+		for j < len(argv) && strings.HasPrefix(argv[j], "-") {
+			j++
+		}
+		if j >= len(argv) {
+			return "", false
+		}
+		return evalIn(argv[j])
+	}
+	return "", false
+}
+
+// evalIn finds the `eval '<command>' < /dev/null` in script. The outermost one comes first, so a command that
+// quotes another eval of its own is read whole.
+func evalIn(script string) (string, bool) {
+	for from := 0; ; {
+		at := strings.Index(script[from:], evalPrefix+"'")
+		if at < 0 {
+			return "", false
+		}
+		start := from + at + len(evalPrefix)
+		if command, rest, ok := unquoteEval(script[start:]); ok && strings.HasPrefix(rest, evalSuffix) {
+			return command, true
+		}
+		from = start
+	}
 }
 
 // isTaskProcess reports whether a child of claude runs the background task. A PowerShell-tool task's cmd.exe
@@ -49,13 +108,8 @@ func isTaskProcess(name, cmdline string, argv []string, taskId, command string) 
 	if command == "" {
 		return false
 	}
-	want := evalPrefix + shQuote(command) + evalSuffix
-	for i := 0; i+1 < len(argv); i++ {
-		if argv[i] == "-c" && strings.Contains(argv[i+1], want) {
-			return true
-		}
-	}
-	return false
+	got, ok := EvalCommand(argv)
+	return ok && got == command
 }
 
 // findTaskRoot is the job member, a child of claude, that runs the task. The same command can run twice, so
@@ -86,14 +140,15 @@ func findTaskRoot(table map[int]proc, members []int, data wshrpc.CommandResMonKi
 	return best, bestDist >= 0
 }
 
-type msysProc struct {
-	pid, pgid, winpid int
+// MsysProc is one row of an MSYS install's process table: its own pid, its process group and its Windows pid.
+type MsysProc struct {
+	Pid, Pgid, Winpid int
 }
 
-// parseMsysPs reads `ps -l` rows: PID PPID PGID WINPID TTY UID STIME COMMAND, each optionally led by a
+// ParseMsysPs reads `ps -l` rows: PID PPID PGID WINPID TTY UID STIME COMMAND, each optionally led by a
 // one-letter status.
-func parseMsysPs(out string) []msysProc {
-	var procs []msysProc
+func ParseMsysPs(out string) []MsysProc {
+	var procs []MsysProc
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
 		if len(f) > 0 && len(f[0]) == 1 && !unicode.IsDigit(rune(f[0][0])) {
@@ -108,31 +163,54 @@ func parseMsysPs(out string) []msysProc {
 		if err1 != nil || err2 != nil || err3 != nil {
 			continue // the header
 		}
-		procs = append(procs, msysProc{pid: pid, pgid: pgid, winpid: winpid})
+		procs = append(procs, MsysProc{Pid: pid, Pgid: pgid, Winpid: winpid})
 	}
 	return procs
 }
 
-// msysGroupPids is the Windows pids of every MSYS process in a group led by one of pids. Only a group its
+// MsysGroupPids is the Windows pids of every MSYS process in a group led by one of pids. Only a group its
 // leader is in pids counts, so a group the task merely joined is never taken.
-func msysGroupPids(procs []msysProc, pids []int) []int {
+func MsysGroupPids(procs []MsysProc, pids []int) []int {
 	in := make(map[int]bool, len(pids))
 	for _, p := range pids {
 		in[p] = true
 	}
 	leaders := map[int]bool{}
 	for _, p := range procs {
-		if in[p.winpid] && p.pid == p.pgid {
-			leaders[p.pgid] = true
+		if in[p.Winpid] && p.Pid == p.Pgid {
+			leaders[p.Pgid] = true
 		}
 	}
 	var out []int
 	for _, p := range procs {
-		if leaders[p.pgid] {
-			out = append(out, p.winpid)
+		if leaders[p.Pgid] {
+			out = append(out, p.Winpid)
 		}
 	}
 	return out
+}
+
+// MsysPsBeside is the ps.exe in the folder of an MSYS bash, which reads that install's process table; "" when
+// there is none, as beside Git for Windows' bin\bash.exe launcher (usr\bin\bash.exe, its child, has one).
+func MsysPsBeside(bashExe string) string {
+	if bashExe == "" {
+		return ""
+	}
+	if cand := filepath.Join(filepath.Dir(bashExe), msysPsImage); fileExists(cand) {
+		return cand
+	}
+	return ""
+}
+
+// ReadMsysProcs reads an MSYS install's process table with its ps (`ps -l`), waiting at most msysPsWait.
+func ReadMsysProcs(ctx context.Context, ps string) ([]MsysProc, error) {
+	ctx, cancel := context.WithTimeout(ctx, msysPsWait)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, ps, "-l").Output()
+	if err != nil {
+		return nil, err
+	}
+	return ParseMsysPs(string(out)), nil
 }
 
 // msysGroup is what Git Bash runs for the task outside its Windows tree: its fork exits once the command
@@ -148,22 +226,19 @@ func msysGroup(ctx context.Context, table map[int]proc, pids []int) []int {
 		if len(argv) == 0 {
 			continue
 		}
-		if cand := filepath.Join(filepath.Dir(argv[0]), msysPsImage); fileExists(cand) {
-			ps = cand
+		if ps = MsysPsBeside(argv[0]); ps != "" {
 			break
 		}
 	}
 	if ps == "" {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, msysPsWait)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, ps, "-l").Output()
+	procs, err := ReadMsysProcs(ctx, ps)
 	if err != nil {
 		log.Printf("resmon: reading the msys process table with %s: %v", ps, err)
 		return nil
 	}
-	return msysGroupPids(parseMsysPs(string(out)), pids)
+	return MsysGroupPids(procs, pids)
 }
 
 func fileExists(path string) bool {

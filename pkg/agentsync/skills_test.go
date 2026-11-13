@@ -38,6 +38,25 @@ func TestSplitFrontmatterRoundTrips(t *testing.T) {
 	}
 }
 
+// a SKILL.md a Windows editor saved (BOM, CRLF) has frontmatter: its description reads, and an override merges into
+// its block rather than stacking a second block in front of it
+func TestFrontmatterReadsBOMAndCRLF(t *testing.T) {
+	doc := "\xef\xbb\xbf---\r\nname: x\r\ndescription: crlf skill\r\n---\r\n# Body\r\n"
+	block, rest, ok := splitFrontmatter(doc)
+	if !ok || block != "name: x\ndescription: crlf skill\n" || rest != "# Body\n" {
+		t.Fatalf("split = %q, %q, %v", block, rest, ok)
+	}
+	got := applyOverrides(doc, parseFrontmatterEntries("tool: codex\n"))
+	if want := "---\nname: x\ndescription: crlf skill\ntool: codex\n---\n# Body\n"; got != want {
+		t.Fatalf("applyOverrides = %q, want %q", got, want)
+	}
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "crlf", skillFile), doc)
+	if d := skillDescription(root, "crlf"); d != "crlf skill" {
+		t.Fatalf("skillDescription = %q", d)
+	}
+}
+
 func TestParseFrontmatterEntriesKeepsMultilineValues(t *testing.T) {
 	block := "name: x\ndescription: |\n  line one\n  line two\ntool: codex\n"
 	got := parseFrontmatterEntries(block)

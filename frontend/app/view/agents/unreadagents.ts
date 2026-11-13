@@ -6,7 +6,8 @@
 // unseen keeps its count and the next finish adds to it. It is read once it is in view (viewingIds), or once it asks,
 // which the Cockpit's attention badge already counts. An agent that left the roster is dropped. A run's workers and
 // stage sessions never count: they report to their lead, so their turns are the lead's business, not yours. Nor does
-// a lead once its plan is running: the engine wakes it, and those turns are the engine's business.
+// a lead once its plan is running: the engine wakes it, and those turns are the engine's business. Nor does an agent
+// whose launch failed (startError): it folds from booting to idle without ever finishing a turn.
 // No React, no store.
 
 import type { CenterMode } from "./agentcenter";
@@ -17,6 +18,7 @@ import type { Lineage } from "./runlineage";
 export interface UnreadAgent {
     id: string;
     state: AgentState;
+    startError?: string;
 }
 
 /** Pure: the agents whose turns never count: a run's workers and stage sessions, and a lead once its run has a dag.
@@ -55,7 +57,7 @@ export interface NestedAgent {
 }
 
 /** Pure: the unread counts after one roster snapshot, `prevStates` being each agent's state in the snapshot before.
- *  `nested` (nestedIds) are skipped. Only agents with a count are in the map. */
+ *  `nested` (nestedIds) and agents whose launch failed are skipped. Only agents with a count are in the map. */
 export function nextUnread(
     prev: ReadonlyMap<string, number>,
     prevStates: ReadonlyMap<string, AgentState>,
@@ -65,7 +67,7 @@ export function nextUnread(
 ): Map<string, number> {
     const out = new Map<string, number>();
     for (const a of agents) {
-        if (viewing.has(a.id) || a.state === "asking" || nested.has(a.id)) {
+        if (viewing.has(a.id) || a.state === "asking" || nested.has(a.id) || a.startError) {
             continue;
         }
         const finished = a.state === "idle" && prevStates.get(a.id) === "working" ? 1 : 0;

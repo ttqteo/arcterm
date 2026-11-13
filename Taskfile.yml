@@ -474,6 +474,12 @@ tasks:
     go:mod:tidy:
         desc: Runs `go mod tidy`
         internal: true
+        # tidy loads every package, cmd/wsh/cmd's go:embed of the mod and pi copies included, and sync:claudemod empties
+        # those folders (rm -rf, then copies) while it runs: on a cold dev build the two ran side by side and tidy failed
+        # "no matching versions for query latest" (exit 201). The copies first, so tidy only ever sees them whole.
+        deps:
+            - sync:piartifacts
+            - sync:claudemod
         generates:
             - go.sum
         sources:

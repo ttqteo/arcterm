@@ -59,6 +59,15 @@ describe("segmentsOf", () => {
     it("keeps a quoted path with no space as text, so the text round-trips as typed", () => {
         expect(segmentsOf('open @"src/a.ts" now')).toEqual([text('open @"src/a.ts" now')]);
     });
+    it("is one plain text run, whatever mentions it holds, with `pills: false` (bash mode draws none)", () => {
+        expect(segmentsOf("ls @src/a.ts now", 3, { pills: false })).toEqual([text("ls @src/a.ts now")]);
+        expect(segmentsOf("ls @src/a.ts now", undefined, { pills: false })).toEqual([text("ls @src/a.ts now")]);
+        expect(segmentsOf('ls @"x y/z.md"\n@a/b.ts', 0, { pills: false })).toEqual([text('ls @"x y/z.md"\n@a/b.ts')]);
+        expect(segmentsOf("", 0, { pills: false })).toEqual([]);
+        // pills on, or the option left out, is today's split
+        expect(segmentsOf("ls @src/a.ts now", 3, { pills: true })).toEqual(segmentsOf("ls @src/a.ts now", 3));
+        expect(segmentsOf("ls @src/a.ts now", 3, {})).toEqual([text("ls "), pill("src/a.ts"), text(" now")]);
+    });
     it("joins back to the text it was made from", () => {
         for (const t of [
             "",

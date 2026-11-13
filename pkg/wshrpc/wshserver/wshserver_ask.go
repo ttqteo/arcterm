@@ -63,6 +63,31 @@ func (ws *WshServer) AskCommand(ctx context.Context, data wshrpc.CommandAskData)
 	}
 }
 
+// RecoverWorkerAsk registers a question the engine found open in a worker's transcript with nothing in the registry
+// for its block: the worker's PreToolUse `wsh ask` hook never registered it (cancelled on timeout while wavesrv was
+// slow). It registers as AskCommand does for a hook ask, and puts the question in the lead's queue, so `dag asks` and
+// the digest show it. Wired to orchestrate.RecoverAskHook. A question already pending for the block is left alone: it
+// is the card being answered. toolUseId names the transcript's call for the log.
+func RecoverWorkerAsk(ctx context.Context, blockOref, toolUseId string, questions []baseds.AgentAskQuestion) {
+	if len(questions) == 0 {
+		return
+	}
+	oref, err := waveobj.ParseORef(blockOref)
+	if err != nil {
+		log.Printf("recover ask %s: invalid oref %q: %v\n", toolUseId, blockOref, err)
+		return
+	}
+	if _, pending := agentask.GlobalRegistry.Get(blockOref); pending {
+		return
+	}
+	askId, _, raised := raiseAsk(wshrpc.CommandAskData{ORef: blockOref, Questions: questions}, oref.OID)
+	if !raised {
+		return
+	}
+	log.Printf("recover ask %s: registered %s for %s from its transcript\n", toolUseId, askId, blockOref)
+	forwardChildAsk(ctx, blockOref, askId, questions)
+}
+
 // askRaiseLock makes taking the registry and publishing the event one step. A Claude session in a Team org raises the
 // mod's waited card and the settings hook's projection at once, and two raises left to interleave could publish in
 // the other order from the one they took the registry in: the cockpit would show the ask the registry dropped, which

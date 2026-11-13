@@ -8,13 +8,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/wavetermdev/waveterm/pkg/agentsleep"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
@@ -466,5 +469,199 @@ func TestPersonSleepGoesStraightToSleepWithoutAPayingCompaction(t *testing.T) {
 	tf := idleClaude(writeTranscript(t, "abc", usageLine(now.Add(-2*time.Minute), 150_000)))
 	if rtn := sleepAfterCompaction(context.Background(), rowOf(t, tf), false, now); rtn != nil {
 		t.Errorf("no stream: got %+v, want the Sleep to go ahead", rtn)
+	}
+}
+
+func TestRunOwnedForSleep(t *testing.T) {
+	cases := []struct {
+		name      string
+		taskState string
+		isLead    bool
+		owned     bool
+	}{
+		{"an agent that works no dag task", "", false, true},
+		{"a worker whose task is done", orchestrate.TaskState_Done, false, false},
+		{"a worker whose task is verifying", orchestrate.TaskState_Verifying, false, false},
+		{"a worker whose task failed verify", orchestrate.TaskState_VerifyFailed, false, false},
+		{"a worker whose task is pending", orchestrate.TaskState_Pending, false, true},
+		{"a worker whose task is ready", orchestrate.TaskState_Ready, false, true},
+		{"a worker whose task is running", orchestrate.TaskState_Running, false, true},
+		{"a worker whose task is stalled", orchestrate.TaskState_Stalled, false, true},
+		{"a worker whose task is reviewing", orchestrate.TaskState_Reviewing, false, true},
+		{"a worker whose task failed review", orchestrate.TaskState_ReviewFailed, false, true},
+		{"a worker whose task is blocked on a merge", orchestrate.TaskState_BlockedMerge, false, true},
+		{"a worker whose task failed", orchestrate.TaskState_Failed, false, true},
+		{"a lead", "", true, true},
+		{"a lead, whatever state a task reads", orchestrate.TaskState_Done, true, true},
+		{"a lead over a verifying task", orchestrate.TaskState_Verifying, true, true},
+	}
+	for _, c := range cases {
+		if got := runOwnedForSleep(c.taskState, c.isLead); got != c.owned {
+			t.Errorf("%s: runOwnedForSleep(%q, %v) = %v, want %v", c.name, c.taskState, c.isLead, got, c.owned)
+		}
+	}
+}
+
+func leadRun(leadTab string) *waveobj.Run {
+	return &waveobj.Run{OID: "run-lead", ID: "run-lead", DagORef: "dag-1", CreatedTs: 1,
+		Phases: []waveobj.RunPhase{{WorkerOrefs: []string{"tab:" + leadTab}}}}
+}
+
+// taskRun is the child run a dag task's worker works in.
+func taskRun(taskId, workerTab string) *waveobj.Run {
+	return &waveobj.Run{OID: "run-" + taskId, ID: "run-" + taskId, DagORef: "dag-1", TaskId: taskId, CreatedTs: 2,
+		Phases: []waveobj.RunPhase{{WorkerOrefs: []string{"tab:" + workerTab}}}}
+}
+
+// scriptDag scripts the dag the sleep loop reads for the run's tasks and returns how many times it read it.
+func scriptDag(t *testing.T, tasks ...waveobj.TaskNode) *int {
+	t.Helper()
+	reads := new(int)
+	swap(t, &loadSleepDag, func(_ context.Context, dagId string) (*waveobj.TaskGroup, error) {
+		*reads++
+		if dagId != "dag-1" {
+			return nil, errors.New("no such dag " + dagId)
+		}
+		return &waveobj.TaskGroup{OID: "dag-1", ID: "dag-1", RunID: "run-lead", Tasks: tasks}, nil
+	})
+	return reads
+}
+
+// workerOfTask makes the world's tab A the worker of task t-1 in the state given, under a lead in tab B.
+func workerOfTask(t *testing.T, w *loopWorld, state string) {
+	t.Helper()
+	w.facts.Runs = []*waveobj.Run{leadRun(agentsTabB), taskRun("t-1", agentsTabA)}
+	scriptDag(t, waveobj.TaskNode{ID: "t-1", State: state, RunID: "run-t-1"})
+}
+
+func TestSleepTickSleepsAWorkerWhoseTaskPassedReview(t *testing.T) {
+	for _, state := range []string{orchestrate.TaskState_Done, orchestrate.TaskState_Verifying, orchestrate.TaskState_VerifyFailed} {
+		t.Run(state, func(t *testing.T) {
+			worker := claudeTab(t, agentsTabA, "worker", agentsBlockA, baseds.AgentState_Idle)
+			lead := claudeTab(t, agentsTabB, "lead", agentsBlockB, baseds.AgentState_Idle)
+			w := newLoopWorld(t, worker, lead)
+			workerOfTask(t, w, state)
+
+			w.tickTo(29)
+			if len(w.slept) != 0 {
+				t.Fatalf("slept = %v before 30 minutes idle, want the usual wait kept", w.slept)
+			}
+			w.tickAt(30)
+			if !slices.Equal(w.slept, []string{agentsBlockA}) {
+				t.Fatalf("slept = %v, want the finished task's worker asleep and its lead awake", w.slept)
+			}
+		})
+	}
+}
+
+func TestSleepTickSparesTheWorkerOfAnUnfinishedTask(t *testing.T) {
+	for _, state := range []string{
+		orchestrate.TaskState_Pending, orchestrate.TaskState_Ready, orchestrate.TaskState_Running, orchestrate.TaskState_Stalled,
+		orchestrate.TaskState_Reviewing, orchestrate.TaskState_ReviewFailed, orchestrate.TaskState_BlockedMerge, orchestrate.TaskState_Failed,
+	} {
+		t.Run(state, func(t *testing.T) {
+			w := newLoopWorld(t, claudeTab(t, agentsTabA, "worker", agentsBlockA, baseds.AgentState_Idle))
+			workerOfTask(t, w, state)
+			w.freeBytes = 100 * mib // the RAM trigger spares it too
+			w.tickTo(60)
+			if len(w.slept) != 0 {
+				t.Errorf("slept = %v, want the worker of a %s task left awake", w.slept, state)
+			}
+		})
+	}
+}
+
+func TestSleepTickSparesTheOtherAgentsOfARun(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(w *loopWorld)
+	}{
+		{"the lead, with every task done", func(w *loopWorld) {
+			w.facts.Runs = []*waveobj.Run{leadRun(agentsTabA)}
+			scriptDag(w.t, waveobj.TaskNode{ID: "t-1", State: orchestrate.TaskState_Done, RunID: "run-t-1"})
+		}},
+		{"a task's reviewer", func(w *loopWorld) {
+			workerOfTask(w.t, w, orchestrate.TaskState_Done)
+			w.facts.Runs[1].Review = true
+		}},
+		{"a stage session", func(w *loopWorld) {
+			workerOfTask(w.t, w, orchestrate.TaskState_Done)
+			w.facts.Runs[1].TaskId, w.facts.Runs[1].StageRole = "", "verifier"
+		}},
+		{"a worker whose dag cannot be read", func(w *loopWorld) {
+			workerOfTask(w.t, w, orchestrate.TaskState_Done)
+			swap(w.t, &loadSleepDag, func(context.Context, string) (*waveobj.TaskGroup, error) { return nil, errors.New("store busy") })
+		}},
+		{"a worker whose task the dag no longer lists", func(w *loopWorld) {
+			workerOfTask(w.t, w, orchestrate.TaskState_Done)
+			w.facts.Runs[1].TaskId = "t-9"
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			w := newLoopWorld(t, claudeTab(t, agentsTabA, "agent", agentsBlockA, baseds.AgentState_Idle))
+			c.setup(w)
+			w.freeBytes = 100 * mib
+			w.tickTo(60)
+			if len(w.slept) != 0 {
+				t.Errorf("slept = %v, want %s left awake", w.slept, c.name)
+			}
+		})
+	}
+}
+
+func TestSleepTickReadsTheDagOncePerCheck(t *testing.T) {
+	a := claudeTab(t, agentsTabA, "one", agentsBlockA, baseds.AgentState_Idle)
+	b := claudeTab(t, agentsTabB, "lead", agentsBlockB, baseds.AgentState_Idle)
+	c := claudeTab(t, agentsTabC, "two", agentsBlockC, baseds.AgentState_Idle)
+	w := newLoopWorld(t, a, b, c)
+	w.facts.Runs = []*waveobj.Run{leadRun(agentsTabB), taskRun("t-1", agentsTabA), taskRun("t-2", agentsTabC)}
+	reads := scriptDag(t,
+		waveobj.TaskNode{ID: "t-1", State: orchestrate.TaskState_Done, RunID: "run-t-1"},
+		waveobj.TaskNode{ID: "t-2", State: orchestrate.TaskState_Running, RunID: "run-t-2"})
+
+	w.tickAt(0)
+	if *reads != 1 {
+		t.Fatalf("dag read %d times in one check of two workers and a lead, want once", *reads)
+	}
+	w.tickAt(1)
+	if *reads != 2 {
+		t.Errorf("dag read %d times in two checks, want once each", *reads)
+	}
+}
+
+// a finished worker that sleeps is the same sleep a person's idle agent gets: its block holds `--resume <session>`, so
+// a Wake reopens that conversation instead of starting a fresh one
+func TestSleepTickLeavesAFinishedWorkerResumable(t *testing.T) {
+	sw := newSleepWorld(t, claudeMeta())
+	worker := claudeTab(t, agentsTabA, "worker", agentsBlockA, baseds.AgentState_Idle)
+	w := newLoopWorld(t, worker)
+	workerOfTask(t, w, orchestrate.TaskState_Done)
+	w.loop.sleep = sleepAgent // the real sleep, over the world sw scripts
+
+	w.tickTo(30)
+	session := strings.TrimSuffix(filepath.Base(worker.Status.TranscriptPath), ".jsonl")
+	wantArgs := []string{"--resume", session, "--model", "opus"}
+	if got, _ := sw.metaValue(waveobj.MetaKey_CmdArgs).([]string); !slices.Equal(got, wantArgs) {
+		t.Fatalf("cmd:args = %v after the loop's sleep, want %v", sw.metaValue(waveobj.MetaKey_CmdArgs), wantArgs)
+	}
+	slept, _ := sw.metaValue(waveobj.MetaKey_AgentSleeping).(int64)
+	if slept == 0 || !slices.Equal(sw.eventLog(), []string{"meta", "destroy"}) {
+		t.Fatalf("agent:sleeping = %v, events = %v, want the worker's block marked asleep and its process ended", sw.metaValue(waveobj.MetaKey_AgentSleeping), sw.eventLog())
+	}
+
+	// the roster now reads the tab asleep, still a run's worker; a person's Wake restarts it on the same session
+	asleep := worker
+	asleep.ShellRunning, asleep.Cmd, asleep.Sleeping, asleep.SleepFreed = false, "claude", slept, 21000
+	w.facts.Tabs[0] = asleep
+	sw.status = func(int) baseds.AgentStatusData { return readyStatus() }
+	if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA}); err != nil {
+		t.Fatal(err)
+	}
+	if sw.resyncs != 1 {
+		t.Fatalf("restarts = %d, want the wake to restart the worker once", sw.resyncs)
+	}
+	if got, _ := sw.argsAtResync.([]string); !slices.Equal(got, wantArgs) {
+		t.Errorf("cmd:args at the restart = %v, want %v: the same conversation, not a fresh one", sw.argsAtResync, wantArgs)
 	}
 }
