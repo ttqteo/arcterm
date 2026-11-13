@@ -6,6 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Confirm the design's button at the card's foot: have a brainstorm end with 5+ guesses → in Chat the
+  card's top line has no button, and Confirm all N guesses sits right-aligned on the `N yours ›` row at its foot
+  (alone there when nothing is yours yet); confirm them all → Check with a builder takes the same place. Commit:
+  the Confirm card button fix in `chatbrainstormconfirm.tsx`.
+- [ ] (arcterm) A brainstorm's ask says "asking" once: have an agent brainstorm until it asks a question → its Agent
+  tree row's second line reads "asking question N" (amber), with no "asking" note before it; a held card (Token burn)
+  on such an agent still shows its header note. Commit: the "asking asking" fix in `agenttree.tsx`.
 - [ ] (arcterm) An engine step claims the measured peak when it is higher: with `scripts/cdp/final-verify.mjs` measured
   at 4.8 GB in `jobpeaks.json` (data dir), start a run on this repo → its Final row in the Jobs popover reads about
   5.7 GB "measured", not "3 GB est.", and its tooltip lists the agents' runs. Its Verify still reads 2.5 GB est. (the

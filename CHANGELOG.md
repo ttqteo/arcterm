@@ -54,9 +54,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A finished run files its leftover issues on the initiatives that already gather them (flaky tests, hand checks, a
   topic's bugs and polish) and notes an issue that is already there, instead of opening a new "follow-ups (run X)"
   initiative each time.
+- When you ask a Claude agent in Chat to put something in an initiative, it adds it straight away and says where,
+  instead of showing an Add to initiative card for you to confirm. A card still asks for what you did not ask for.
 
 ### Fixed
 
+- A long Confirm the design card in Chat keeps its button in view: Confirm all guesses and Check with a builder
+  sit at the card's foot, just above the chat box, instead of at its top, where many decisions pushed them off
+  screen.
+- A brainstorming agent waiting on your answer reads "asking question 3" in the Agent tree, not "asking asking…".
+- Two Add to initiative cards in one Chat reply no longer touch: they sit apart, as the reply's other blocks do.
 - A run's Verify, Check and Final wait for the RAM your agents' runs of the same command measured, when that is more
   than the queue's estimate: a Final that took 4.8 GB no longer starts when only 3 GB is free. A heavy command you
   skip from the Jobs popover no longer counts as a tiny run that lowers its next estimate.

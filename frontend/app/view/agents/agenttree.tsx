@@ -107,7 +107,7 @@ import { setAgentView } from "./agentview";
 import { waitMap } from "./agentwaits";
 import { BackgroundTaskPeek } from "./backgroundtaskpeek";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
-import { treeLine, waitsOnUser, type BrainstormFile, type BuilderCheckRecord } from "./brainstormmodel";
+import { treeLine, treeLineAsks, waitsOnUser, type BrainstormFile, type BuilderCheckRecord } from "./brainstormmodel";
 import { runStepView, runTreeText } from "./brainstormrunmodel";
 import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
 import { isUnseen } from "./canvasmodel";
@@ -1378,9 +1378,15 @@ function ParentRow({
         />
     );
     // what it asks you, in words at the left of its second line, where the model or the progress sits, so the columns
-    // stay where they are. A review is its button beside the columns instead
+    // stay where they are. A review is its button beside the columns instead, and a brainstorm whose line already says
+    // the ask ("asking question 3") needs no second "asking"; a held card keeps its note, which names the card
+    const brainstormAsks =
+        lead == null &&
+        brainstormFile != null &&
+        !agent.ask?.hold &&
+        treeLineAsks(brainstormFile, asking && waitsOnUser(brainstormFile));
     const askNote =
-        asking && !review ? (
+        asking && !review && !brainstormAsks ? (
             <span
                 data-agent-ask-note
                 title={askingLabel(agent)}
