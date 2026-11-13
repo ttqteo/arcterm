@@ -90,7 +90,7 @@ import {
     useHeldSend,
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
-import type { ChatChip, ChipKind } from "./chatsuggest";
+import { rowHold, type ChatChip, type ChipKind, type ChipRowKind } from "./chatsuggest";
 import { mergeTaken, takeBackPlan } from "./chattakeback";
 import { takeBack } from "./chattakebackstore";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
@@ -734,6 +734,12 @@ export function ChatComposer({
         chips != null && !asleep && !waking && !dozing && text === "" && att.attachments.length === 0
             ? chips
             : NO_CHIPS;
+    // the chip line: the actions while the agent works, else the replies; a change to or from the actions shows once
+    // the agent's state has held it (chatsuggest.ts rowHold), so a state that flips and comes back leaves the line alone
+    const row = useChipRow({
+        kind: showStop ? "actions" : suggested.length > 0 ? "suggest" : "none",
+        chips: suggested,
+    });
     // Send is a word asleep and while the wake is in flight. The word stays what it last was while it fades out, so a
     // finished wake does not swap "Waking…" for "Send" under the eye.
     const showWord = asleep || waking;
@@ -1019,12 +1025,13 @@ export function ChatComposer({
                 {/* A line of chips under the text (chatsuggest.ts): while the agent works, the two things Chat can show of
                     it (the diff of what it is changing, its terminal); once its turn ends, the replies the person would
                     likely send next, in their words, which a click sends. Those step aside while the person writes. One
-                    line goes before the next comes, so the box never holds both. */}
+                    line goes before the next comes, so the box never holds both, and the actions come and go only once
+                    the agent's state has held (useChipRow). */}
                 <AnimatePresence initial={false} mode="wait">
-                    {showStop ? (
+                    {row.kind === "actions" ? (
                         <ActionChips key="actions" onShowDiff={onShowDiff} onOpenTerminal={showTerminal} />
-                    ) : suggested.length > 0 ? (
-                        <SuggestChips key="suggest" chips={suggested} onSend={sendSuggested} onMarkDone={onMarkDone} />
+                    ) : row.kind === "suggest" ? (
+                        <SuggestChips key="suggest" chips={row.chips} onSend={sendSuggested} onMarkDone={onMarkDone} />
                     ) : null}
                 </AnimatePresence>
                 {/* one row through a sleep and a wake: its parts fold and crossfade in place (reduced motion snaps them) */}
@@ -1158,6 +1165,32 @@ export function ChatComposer({
             </div>
         </motion.div>
     );
+}
+
+// The chip line as shown: the one the agent's state asks for, once it has held as long as rowHold says (chatsuggest.ts).
+// While a change waits, the line shown stays with its chips as they last were: the replies kept while a turn starts are
+// still the finished turn's, and a click on one sends it as before.
+function useChipRow(target: { kind: ChipRowKind; chips: ChatChip[] }): { kind: ChipRowKind; chips: ChatChip[] } {
+    const shown = useRef(target);
+    const latest = useRef(target);
+    latest.current = target;
+    const [, redraw] = useState(0);
+    const hold = rowHold(shown.current.kind, target.kind);
+    if (hold === 0) {
+        shown.current = target;
+    }
+    const shownKind = shown.current.kind;
+    useEffect(() => {
+        if (hold === 0) {
+            return;
+        }
+        const t = setTimeout(() => {
+            shown.current = latest.current;
+            redraw((n) => n + 1);
+        }, hold);
+        return () => clearTimeout(t);
+    }, [shownKind, target.kind, hold]);
+    return shown.current;
 }
 
 // The running agent's actions: what Chat already offers (no new commands), as chips with their names. They fade in on

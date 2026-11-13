@@ -74,8 +74,9 @@ export type BtwAnswer = { answer: string } | { failure: string };
 
 // One item of "previous info": something the agent said, or something it did.
 export type AgentEntry =
-    // `uuid` (on a message and on your text messages): the transcript record it came from, which Fork from here cuts at
-    | { kind: "message"; text: string; uuid?: string }
+    // `uuid` (on a message and on your text messages): the transcript record it came from, which Fork from here cuts at.
+    // `apiError`: the text is Claude Code's own line for an API error that ended the turn (the usage limit), not a reply
+    | { kind: "message"; text: string; uuid?: string; apiError?: true }
     | { kind: "user"; text: string; images?: string[]; uuid?: string } // images: what was pasted with it, as data URLs
     // a slash command or skill you ran, or (name "!") a bash-mode command you typed; `shell` is what it printed, once that
     // lands (a slash command that printed nothing has none); `btw` a /btw's side answer

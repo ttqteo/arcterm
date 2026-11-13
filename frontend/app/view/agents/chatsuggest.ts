@@ -47,12 +47,13 @@ export const MAX_CHIPS = 3;
 const RECENT = 6;
 
 /** Pure: the agent's message that closed its last turn, or null when the person spoke last, the turn was interrupted,
- *  or the agent wrote no text since. Tool calls, notifications and compactions after it do not hide it. */
+ *  an API error ended it (the usage limit's line is no reply to answer), or the agent wrote no text since. Tool calls,
+ *  notifications and compactions after it do not hide it. */
 export function lastReply(entries: readonly AgentEntry[]): string | null {
     for (let i = entries.length - 1; i >= 0; i--) {
         const e = entries[i];
         if (e.kind === "message") {
-            return e.text.trim() === "" ? null : e.text;
+            return e.text.trim() === "" || e.apiError === true ? null : e.text;
         }
         if (e.kind === "user" || e.kind === "command" || e.kind === "interrupted") {
             return null;
@@ -219,4 +220,30 @@ export function suggestKey(agentId: string, reply: string): string {
         h = ((h << 5) + h + reply.charCodeAt(i)) | 0;
     }
     return `${agentId}:${reply.length}:${(h >>> 0).toString(36)}`;
+}
+
+/** What the box's chip line shows: the running agent's actions, the finished turn's suggested replies, or nothing. */
+export type ChipRowKind = "actions" | "suggest" | "none";
+
+/** how long the agent must keep working before its actions take the line */
+export const ROW_ENTER_ACTIONS_MS = 1000;
+/** how long the agent must keep still before its actions leave the line */
+export const ROW_LEAVE_ACTIONS_MS = 500;
+
+/** Pure: how long the line waits before it changes from what it shows to what the agent's state now asks for; 0 changes
+ *  it at once. Only a change to or from the actions waits: those follow the agent's state, which can flip and come back
+ *  inside a second (a turn the usage limit ends as it starts, a blip between two hook events), and each flip swapped
+ *  the line and sprang the box's height under the eye. Replies coming or going follow the person (writing, sending)
+ *  and change at once. */
+export function rowHold(shown: ChipRowKind, target: ChipRowKind): number {
+    if (shown === target) {
+        return 0;
+    }
+    if (target === "actions") {
+        return ROW_ENTER_ACTIONS_MS;
+    }
+    if (shown === "actions") {
+        return ROW_LEAVE_ACTIONS_MS;
+    }
+    return 0;
 }

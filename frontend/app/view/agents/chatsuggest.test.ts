@@ -9,6 +9,9 @@ import {
     initiativeChips,
     lastReply,
     recentPrompts,
+    ROW_ENTER_ACTIONS_MS,
+    ROW_LEAVE_ACTIONS_MS,
+    rowHold,
     ruleChips,
     suggestKey,
     wantsModelSuggest,
@@ -29,6 +32,15 @@ describe("lastReply", () => {
             act,
         ];
         expect(lastReply(entries)).toBe("Bạn chọn A, B hay C?");
+    });
+
+    it("is null when an API error ended the turn: the usage limit's line is no reply", () => {
+        const entries: AgentEntry[] = [
+            { kind: "message", text: "Làm theo hướng này được không?" },
+            { kind: "user", text: "được" },
+            { kind: "message", text: "You've hit your 5-hour limit · resets 12:20am", apiError: true },
+        ];
+        expect(lastReply(entries)).toBeNull();
     });
 
     it("is null when the person spoke last, ran a command, or interrupted", () => {
@@ -215,5 +227,21 @@ describe("suggestKey", () => {
         expect(suggestKey("a", "Bạn chọn A?")).toBe(suggestKey("a", "Bạn chọn A?"));
         expect(suggestKey("a", "Bạn chọn A?")).not.toBe(suggestKey("a", "Bạn chọn B?"));
         expect(suggestKey("a", "x")).not.toBe(suggestKey("b", "x"));
+    });
+});
+
+describe("rowHold", () => {
+    it("changes at once between replies and nothing, and when nothing changes", () => {
+        expect(rowHold("suggest", "none")).toBe(0);
+        expect(rowHold("none", "suggest")).toBe(0);
+        expect(rowHold("actions", "actions")).toBe(0);
+    });
+    it("waits before the actions come, from replies or from nothing", () => {
+        expect(rowHold("suggest", "actions")).toBe(ROW_ENTER_ACTIONS_MS);
+        expect(rowHold("none", "actions")).toBe(ROW_ENTER_ACTIONS_MS);
+    });
+    it("waits before the actions go", () => {
+        expect(rowHold("actions", "suggest")).toBe(ROW_LEAVE_ACTIONS_MS);
+        expect(rowHold("actions", "none")).toBe(ROW_LEAVE_ACTIONS_MS);
     });
 });

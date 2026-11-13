@@ -22,6 +22,14 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Fixed
+
+- Chat's chip line no longer flickers. Show the diff and Open the terminal come once the agent has worked a second and
+  leave half a second after it stops, so a turn the usage limit ends at once shows nothing, and the usage limit's line
+  gets no suggested replies.
+
 ## 1.1.1 — 2026-11-13
 
 ### Added
