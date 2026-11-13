@@ -390,3 +390,251 @@ func TestMergeRunWorktreeFoldsDocsIntoTheSquashCommit(t *testing.T) {
 		t.Fatalf("squash commit files = %v, want %v", files, want)
 	}
 }
+
+// refuseCommits installs a commit-msg hook in dir's repo that refuses every commit, as a project's own hook or a
+// failing signer would.
+func refuseCommits(t *testing.T, dir string) {
+	t.Helper()
+	hook := filepath.Join(gitCmd(t, dir, "rev-parse", "--git-common-dir"), "hooks", "commit-msg")
+	if !filepath.IsAbs(hook) {
+		hook = filepath.Join(dir, hook)
+	}
+	writeFile(t, hook, "#!/bin/sh\necho refused by hook >&2\nexit 1\n")
+	if err := os.Chmod(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// a squash whose commit git refuses goes back out of the checkout: left staged, every later merge held at the
+// clean-index check without counting a failure, so the lead was never told. The checkout's own edits and the
+// uncommitted docs the squash would have folded in stay as they were.
+func TestMergeCommitRefusedPutsTheSquashBack(t *testing.T) {
+	dir := newGitRepo(t)
+	base := gitCmd(t, dir, "rev-parse", "HEAD")
+	wt, _ := CreateRunWorktree(context.Background(), dir, "run-1", base)
+	writeFile(t, filepath.Join(wt, "feature.txt"), "feat\n")
+	gitCmd(t, wt, "add", ".")
+	gitCmd(t, wt, "commit", "-m", "feature")
+	spec := filepath.Join(dir, "spec.md")
+	writeFile(t, spec, "# spec\n")
+	writeFile(t, filepath.Join(dir, "scratch.txt"), "the human's\n")
+	refuseCommits(t, dir)
+
+	if _, err := MergeRunWorktree(context.Background(), dir, "run-1", MergeLane{Title: "lane"}, []string{spec}); err == nil || !strings.Contains(err.Error(), "merge commit") {
+		t.Fatalf("want the refused commit's error, got %v", err)
+	}
+	if clean, err := IndexClean(context.Background(), dir); err != nil || !clean {
+		t.Fatalf("the refused squash must not stay staged: clean=%v err=%v\n%s", clean, err, gitCmd(t, dir, "status", "--porcelain"))
+	}
+	if _, err := os.Stat(filepath.Join(dir, "feature.txt")); !os.IsNotExist(err) {
+		t.Fatalf("the squash's file must leave the checkout, stat err = %v", err)
+	}
+	if got := readFile(t, spec); got != "# spec\n" {
+		t.Fatalf("the fold doc must stay on disk, got %q", got)
+	}
+	if got := readFile(t, filepath.Join(dir, "scratch.txt")); got != "the human's\n" {
+		t.Fatalf("the checkout's own file must stay, got %q", got)
+	}
+	if got := gitCmd(t, dir, "rev-parse", "HEAD"); got != base {
+		t.Fatalf("nothing may be committed, HEAD moved to %s", got)
+	}
+}
+
+// the lead's merge does not require a clean index: a refused squash commit on top of the lead's staged work must
+// not take that work with it, from the index or from disk (engine F6)
+func TestMergeCommitRefusedKeepsWorkStagedBeforeTheSquash(t *testing.T) {
+	dir := newGitRepo(t)
+	writeFile(t, filepath.Join(dir, "lead.txt"), "base\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "lead file")
+	base := gitCmd(t, dir, "rev-parse", "HEAD")
+	wt, _ := CreateRunWorktree(context.Background(), dir, "run-1", base)
+	writeFile(t, filepath.Join(wt, "feature.txt"), "feat\n")
+	gitCmd(t, wt, "add", ".")
+	gitCmd(t, wt, "commit", "-m", "feature")
+	writeFile(t, filepath.Join(dir, "lead.txt"), "edited\n")
+	writeFile(t, filepath.Join(dir, "leadnew.txt"), "new\n")
+	gitCmd(t, dir, "add", "lead.txt", "leadnew.txt")
+	refuseCommits(t, dir)
+
+	if _, err := MergeRunWorktree(context.Background(), dir, "run-1", MergeLane{Title: "lane"}, nil); err == nil || !strings.Contains(err.Error(), "merge commit") {
+		t.Fatalf("want the refused commit's error, got %v", err)
+	}
+	if got := readFile(t, filepath.Join(dir, "lead.txt")); got != "edited\n" {
+		t.Fatalf("the lead's staged edit must stay on disk, got %q", got)
+	}
+	if got := readFile(t, filepath.Join(dir, "leadnew.txt")); got != "new\n" {
+		t.Fatalf("the lead's staged new file must stay on disk, got %q", got)
+	}
+	staged := gitCmd(t, dir, "diff", "--cached", "--name-only")
+	for _, f := range []string{"lead.txt", "leadnew.txt"} {
+		if !strings.Contains(staged, f) {
+			t.Fatalf("the lead's %s must stay staged, staged: %q", f, staged)
+		}
+	}
+	if got := gitCmd(t, dir, "rev-parse", "HEAD"); got != base {
+		t.Fatalf("nothing may be committed, HEAD moved to %s", got)
+	}
+}
+
+// engine F7: the undo runs after the context that killed the commit has ended, and must still put the merge back
+func TestUndoMergeRunsOnAnEndedContext(t *testing.T) {
+	dir := newGitRepo(t)
+	base := gitCmd(t, dir, "rev-parse", "HEAD")
+	wt, _ := CreateRunWorktree(context.Background(), dir, "run-1", base)
+	writeFile(t, filepath.Join(wt, "feature.txt"), "feat\n")
+	gitCmd(t, wt, "add", ".")
+	gitCmd(t, wt, "commit", "-m", "feature")
+	gitCmd(t, dir, "merge", "--no-ff", "--no-commit", "wave/run-1")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := mergeRefusal(ctx, dir, "main", errors.New("killed")); !strings.Contains(got, "which was aborted") {
+		t.Fatalf("the refusal must abort the merge, got %q", got)
+	}
+	if inMerge, err := mergeHeadExists(context.Background(), dir); err != nil || inMerge {
+		t.Fatalf("MERGE_HEAD must be gone: inMerge=%v err=%v", inMerge, err)
+	}
+	gitCmd(t, dir, "merge", "--squash", "wave/run-1")
+	if err := undoMerge(ctx, dir, nil); err != nil {
+		t.Fatalf("undo on an ended context: %v", err)
+	}
+	if clean, err := IndexClean(context.Background(), dir); err != nil || !clean {
+		t.Fatalf("the squash must be put back: clean=%v err=%v", clean, err)
+	}
+}
+
+// the checkout-landing counterpart: a lane merged straight into the project checkout whose commit its context killed
+// (the tick budget, shutdown) is put back on a fresh context, or the staged squash holds every later automatic merge
+func TestFinishMergeOnAnEndedContextPutsTheSquashBack(t *testing.T) {
+	dir := newGitRepo(t)
+	base := gitCmd(t, dir, "rev-parse", "HEAD")
+	wt, _ := CreateRunWorktree(context.Background(), dir, "run-1", base)
+	writeFile(t, filepath.Join(wt, "feature.txt"), "feat\n")
+	gitCmd(t, wt, "add", ".")
+	gitCmd(t, wt, "commit", "-m", "feature")
+	gitCmd(t, dir, "merge", "--squash", "wave/run-1")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := finishMerge(ctx, dir, "run-1", MergeLane{Title: "lane"}, nil, false, true); err == nil {
+		t.Fatal("a commit its context killed is an error")
+	}
+	if clean, err := IndexClean(context.Background(), dir); err != nil || !clean {
+		t.Fatalf("the squash must be put back: clean=%v err=%v", clean, err)
+	}
+	if got := gitCmd(t, dir, "rev-parse", "HEAD"); got != base {
+		t.Fatalf("nothing may be committed, HEAD moved to %s", got)
+	}
+}
+
+// a continue's staged tree is the resolver's work: a refused commit leaves it for the next --continue
+func TestMergeContinueCommitRefusedKeepsTheResolution(t *testing.T) {
+	dir := conflictedSquash(t)
+	gitCmd(t, dir, "add", "-A")
+	staged := gitCmd(t, dir, "diff", "--cached", "--name-only")
+	refuseCommits(t, dir)
+	if _, err := MergeContinue(context.Background(), dir, "run-1", MergeLane{Title: "lane"}, nil); err == nil {
+		t.Fatal("want the refused commit's error")
+	}
+	if got := gitCmd(t, dir, "diff", "--cached", "--name-only"); got != staged || got == "" {
+		t.Fatalf("the resolution must stay staged: want %q, got %q", staged, got)
+	}
+}
+
+// only exit 1 is "staged changes": git unable to read the checkout is an error, not a hold nobody counts
+func TestIndexCleanReportsWhatGitCannotRead(t *testing.T) {
+	if clean, err := IndexClean(context.Background(), t.TempDir()); err == nil {
+		t.Fatalf("a directory that is not a repository must be an error, got clean=%v", clean)
+	}
+	dir := newGitRepo(t)
+	if clean, err := IndexClean(context.Background(), dir); err != nil || !clean {
+		t.Fatalf("a clean checkout: clean=%v err=%v", clean, err)
+	}
+	writeFile(t, filepath.Join(dir, "staged.txt"), "x\n")
+	gitCmd(t, dir, "add", "staged.txt")
+	if clean, err := IndexClean(context.Background(), dir); err != nil || clean {
+		t.Fatalf("a staged change: clean=%v err=%v", clean, err)
+	}
+}
+
+// a worker that reset its branch onto the project branch (as t-10 of run e6887e42 did in the fork) holds the squashes
+// already landed there, and none of their messages belong to its lane's squash: the message logs HEAD..branch
+func TestMergeMessageSkipsCommitsOnTheProjectBranch(t *testing.T) {
+	ctx := context.Background()
+	dir := newGitRepo(t)
+	base := gitCmd(t, dir, "rev-parse", "HEAD")
+	wtA, _ := CreateRunWorktree(ctx, dir, "lane-a", base)
+	wtB, _ := CreateRunWorktree(ctx, dir, "lane-b", base)
+	for _, name := range []string{"a", "a2"} {
+		writeFile(t, filepath.Join(wtA, name+".txt"), name+"\n")
+		gitCmd(t, wtA, "add", ".")
+		gitCmd(t, wtA, "commit", "-m", "fix(a): add "+name)
+	}
+	if _, err := MergeRunWorktree(ctx, dir, "lane-a", MergeLane{Title: "a", TaskIDs: []string{"t-1"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, wtB, "reset", "--hard", gitCmd(t, dir, "rev-parse", "HEAD"))
+	writeFile(t, filepath.Join(wtB, "b.txt"), "b\n")
+	gitCmd(t, wtB, "add", ".")
+	gitCmd(t, wtB, "commit", "-m", "feat(b): add b")
+
+	if _, err := MergeRunWorktree(ctx, dir, "lane-b", MergeLane{Title: "b", TaskIDs: []string{"t-2"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	subject := gitCmd(t, dir, "log", "-1", "--format=%s")
+	if body := gitCmd(t, dir, "log", "-1", "--format=%B"); subject != "feat(b): add b" || strings.Contains(body, "add a") {
+		t.Fatalf("b's squash message = %q, want only b's commit", body)
+	}
+}
+
+// only a missing branch is a squash that landed on an earlier attempt: a probe git could not answer read the same, and
+// the caller stamped the lane merged and removed its unmerged branch. Ours credits the squash HEAD carries for a
+// gone branch (landedHead), where the fork lands nothing, so that is what the last step asserts.
+func TestMergeReportsABranchProbeGitCouldNotAnswer(t *testing.T) {
+	dir := newGitRepo(t)
+	base := gitCmd(t, dir, "rev-parse", "HEAD")
+	wt, _ := CreateRunWorktree(context.Background(), dir, "run-1", base)
+	writeFile(t, filepath.Join(wt, "feature.txt"), "feat\n")
+	gitCmd(t, wt, "add", ".")
+	gitCmd(t, wt, "commit", "-m", "feature")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if sha, err := MergeRunWorktree(ctx, dir, "run-1", MergeLane{Title: "lane"}, nil); err == nil {
+		t.Fatalf("want the probe's error, got merged with commit %q", sha)
+	}
+	// the probe alone fails: the log that would follow answers fine, and the lane must not read as merged
+	failGit(t, dir, "--verify")
+	if sha, err := MergeRunWorktree(context.Background(), dir, "run-1", MergeLane{Title: "lane"}, nil); err == nil {
+		t.Fatalf("want the probe's error, got merged with commit %q", sha)
+	}
+	gitFault = nil
+	if !branchExists(dir, "wave/run-1") {
+		t.Fatal("a probe git could not answer deleted the lane's branch")
+	}
+	landed, err := MergeRunWorktree(context.Background(), dir, "run-1", MergeLane{Title: "lane"}, nil)
+	if err != nil || landed == "" {
+		t.Fatalf("the lane still lands once git answers: sha=%q err=%v", landed, err)
+	}
+	gitCmd(t, dir, "update-ref", "-d", "refs/heads/wave/run-1")
+	if sha, err := MergeRunWorktree(context.Background(), dir, "run-1", MergeLane{Title: "lane"}, nil); err != nil || sha != landed {
+		t.Fatalf("a gone branch whose squash is at HEAD credits it, and is no error: sha=%q err=%v", sha, err)
+	}
+}
+
+// the checkout-landing counterpart: a run whose lanes merge straight into the project checkout counts a checkout git
+// cannot read toward the merge-failure limit, so the lead is told, instead of holding every automatic merge silently
+func TestCheckoutLandedRunCountsAnUnreadableIndex(t *testing.T) {
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f.finish(t, "t-0")
+	calls := stubMerge(t, func(context.Context, string, string, string) (string, error) { return "sha-1", nil })
+	// a corrupt index: git reads it and exits 128, which is no answer to "are changes staged"
+	writeFile(t, filepath.Join(f.project, ".git", "index"), "not an index\n")
+
+	AutoMergeReady(f.ctx, f.dagID)
+	if *calls != 0 {
+		t.Fatalf("a checkout git cannot read must not take a merge, got %d attempts", *calls)
+	}
+	task := f.dag(t).Tasks[0]
+	if task.Merged || task.MergeFailures != 1 || !strings.Contains(task.MergeError, "reading the index") {
+		t.Fatalf("task = merged %v, %d failures, error %q: want the unreadable index counted once", task.Merged, task.MergeFailures, task.MergeError)
+	}
+}

@@ -4,7 +4,9 @@
 package orchestrate
 
 import (
+	"bytes"
 	"context"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,6 +95,29 @@ func TestSkippingAFailedTaskLandsItsLaneWithoutItsCommits(t *testing.T) {
 	patch, err := os.ReadFile(f.skippedPatch())
 	if err != nil || !strings.Contains(string(patch), "bad.txt") || strings.Contains(string(patch), "schema.txt") {
 		t.Fatalf("the skipped attempt's work, and only it, is saved to a recovery patch, got %q err %v", patch, err)
+	}
+}
+
+// a task skipped again writes its patch beside the earlier one's: the log named the earlier file
+func TestSkippingLogsThePatchItWrote(t *testing.T) {
+	f := newMergeFixture(t, oneLane())
+	wt, _ := f.startSecondTask(t)
+	commitInTree(t, wt, "bad.txt")
+	f.setTaskState(t, "t-2", TaskState_Failed)
+	writeFile(t, f.skippedPatch(), "an earlier skip's work\n")
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	if err := ApplyAction(f.ctx, f.dagID, "t-2", "skip", waveobj.RoutePin{}); err != nil {
+		t.Fatal(err)
+	}
+	second := strings.TrimSuffix(filepath.Base(f.skippedPatch()), ".patch") + "-2.patch"
+	if patch := readFile(t, filepath.Join(filepath.Dir(f.skippedPatch()), second)); !strings.Contains(patch, "bad.txt") {
+		t.Fatalf("the skip's work goes beside the earlier patch, got %q", patch)
+	}
+	if !strings.Contains(logged.String(), "saved to recovery/"+second) {
+		t.Fatalf("the log names %s, got:\n%s", second, logged.String())
 	}
 }
 

@@ -205,6 +205,9 @@ func cleanupProjectPath(ctx context.Context, g *waveobj.TaskGroup) (string, erro
 	return ch.ProjectPath, nil
 }
 
+// cleanupTaskWorktree is removeTaskTree's removal, a seam so a test can land a merge while it runs.
+var cleanupTaskWorktree = CleanupTaskWorktree
+
 // treeRemovals serializes removals of one tree. The merge path, the tick's debt retry, cancel and retry-cleanup
 // can each reach the same tree, and none of them holds the dag lock while it removes.
 var treeRemovals = keyedmutex.New()
@@ -253,9 +256,27 @@ func removeTaskTree(ctx context.Context, dagID, taskID string, wait bool) error 
 	if !wait && !wasCancelled && g.Status == DagStatus_Cancelled {
 		return nil
 	}
-	cleanupErr := CleanupTaskWorktree(ctx, g, taskID)
-	if err := withDagMutation(dagID, func() error { return persistTaskCleanupLocked(ctx, dagID, task) }); err != nil {
+	// what this pass removes: the whole tree, or only an unmerged live lane's leftovers (CleanupTaskWorktree)
+	whole := task.Merged || g.Status == DagStatus_Cancelled
+	cleanupErr := cleanupTaskWorktree(ctx, g, taskID)
+	stale := false
+	if err := withDagMutation(dagID, func() error {
+		cur, err := wstore.GetDag(ctx, dagID)
+		if err != nil {
+			return fmt.Errorf("loading dag: %w", err)
+		}
+		// a merge or cancel that landed while this pass removed only leftovers owes the whole tree, and its own
+		// removal waits on this one: written, this pass's result would clear that debt and the tree would stay
+		if t := taskByID(cur, taskID); !whole && t != nil && (t.Merged || cur.Status == DagStatus_Cancelled) {
+			stale = true
+			return nil
+		}
+		return persistTaskCleanupLocked(ctx, dagID, task)
+	}); err != nil {
 		return errors.Join(cleanupErr, err)
+	}
+	if stale {
+		return cleanupErr
 	}
 	if cleanupErr != nil {
 		appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindTaskCleanupFailed, nil, map[string]any{"taskid": taskID, "error": cleanupErr.Error()})

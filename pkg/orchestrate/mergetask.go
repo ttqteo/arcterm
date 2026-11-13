@@ -312,6 +312,10 @@ func mergeTaskLocked(ctx context.Context, channelID string, owner *waveobj.Run, 
 		}
 		clean, cerr := IndexClean(ctx, jarvis.LandPath(owner))
 		if cerr != nil {
+			// counted, as a refused squash is: a checkout git cannot read holds every merge until the lead is told
+			if rerr := recordMergeFailureLocked(ctx, owner.DagORef, task.ID, cerr.Error(), mergeFailureLimit); rerr != nil {
+				return "", errors.Join(cerr, rerr)
+			}
 			return "", cerr
 		}
 		if !clean {
@@ -621,9 +625,10 @@ func waitingOn(g *waveobj.TaskGroup, tipID string) int {
 // merge outright, so the index is the whole hazard. Unmerged entries from an earlier conflict also
 // read as not clean, which is what keeps the automatic path off a tree mid-merge.
 func IndexClean(ctx context.Context, projectPath string) (bool, error) {
-	if _, err := git(ctx, projectPath, "diff", "--cached", "--quiet"); err != nil {
-		// exit 1 is "there are staged changes", not a failure to ask about.
-		return false, nil
+	// exit 1 is "there are staged changes"; any other failure is git unable to read the index, not an answer
+	clean, err := gitAsk(ctx, projectPath, "diff", "--cached", "--quiet")
+	if err != nil {
+		return false, fmt.Errorf("reading the index of %s: %w", projectPath, err)
 	}
-	return true, nil
+	return clean, nil
 }

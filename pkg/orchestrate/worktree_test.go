@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 )
@@ -164,6 +165,60 @@ func TestRecoveryPatch(t *testing.T) {
 	if _, err := os.Stat(patch); err != nil {
 		t.Fatalf("recovery patch missing: %v", err)
 	}
+}
+
+// a git its context killed has given no answer: on Windows a killed process exits 1, which gitAsk read as "no"
+func TestGitAskReportsAGitItsContextKilled(t *testing.T) {
+	old := gitWaitDelay
+	gitWaitDelay = 200 * time.Millisecond
+	defer func() { gitWaitDelay = old }()
+	dir := newGitRepo(t)
+	hook := filepath.Join(dir, ".git", "hooks", "pre-commit")
+	writeFile(t, hook, "#!/bin/sh\nsleep 10\n")
+	if err := os.Chmod(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if yes, err := gitAsk(ctx, dir, "commit", "--allow-empty", "-q", "-m", "slow"); err == nil {
+		t.Fatalf("a killed git must be an error, got yes=%v", yes)
+	}
+}
+
+// a lane rebuilt dirty twice dumps under the same name; the first patch is the only copy of that attempt's
+// uncommitted work, so the second goes beside it
+func TestRecoveryPatchNeverOverwritesAnEarlierOne(t *testing.T) {
+	dir := newGitRepo(t)
+	base := gitCmd(t, dir, "rev-parse", "HEAD")
+	wt, _ := CreateRunWorktree(context.Background(), dir, "run-1", base)
+	recDir := filepath.Join(dir, ".waveterm", "recovery")
+	for _, attempt := range []string{"first", "second"} {
+		writeFile(t, filepath.Join(wt, attempt+".txt"), attempt+"\n")
+		if err := DumpRecoveryPatch(context.Background(), dir, "run-1", ""); err != nil {
+			t.Fatal(err)
+		}
+		gitCmd(t, wt, "reset", "-q", "--hard")
+		gitCmd(t, wt, "clean", "-fdq")
+	}
+	first, second := readFile(t, filepath.Join(recDir, "run-1.patch")), readFile(t, filepath.Join(recDir, "run-1-2.patch"))
+	if !strings.Contains(first, "first.txt") || !strings.Contains(second, "second.txt") || strings.Contains(second, "first.txt") {
+		t.Fatalf("each dump keeps its own attempt:\nrun-1.patch:\n%s\nrun-1-2.patch:\n%s", first, second)
+	}
+}
+
+// the patch is git's diff as written: trimmed, it lost its final newline and git apply rejected it as corrupt
+func TestRecoveryPatchApplies(t *testing.T) {
+	dir := newGitRepo(t)
+	base := gitCmd(t, dir, "rev-parse", "HEAD")
+	wt, _ := CreateRunWorktree(context.Background(), dir, "run-1", base)
+	writeFile(t, filepath.Join(wt, "new.txt"), "one\ntwo\n\n")
+	gitCmd(t, wt, "add", ".")
+	gitCmd(t, wt, "commit", "-m", "wip")
+	writeFile(t, filepath.Join(wt, "dirty.txt"), "uncommitted\n")
+	if err := DumpRecoveryPatch(context.Background(), dir, "run-1", ""); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "apply", "--check", filepath.Join(dir, ".waveterm", "recovery", "run-1.patch"))
 }
 
 func TestEnsureRunWorktreeReusesCleanTree(t *testing.T) {
@@ -675,5 +730,33 @@ func TestCreateRunWorktreeOfARootProjectIsWhole(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(tree, "other", "far.txt")); err != nil {
 		t.Fatalf("a root project's tree holds every folder: %v", err)
+	}
+}
+
+// failGit fails every git call in dir whose arguments include arg, as a git unable to read the repository would
+// (exit 128), until the test ends.
+func failGit(t *testing.T, dir, arg string) {
+	t.Helper()
+	gitFault = func(d string, args []string) error {
+		if d == dir && slices.Contains(args, arg) {
+			return errors.New("exit status 128: injected failure")
+		}
+		return nil
+	}
+	t.Cleanup(func() { gitFault = nil })
+}
+
+// the fault hook fails the calls a test names and no others
+func TestGitFaultFailsOnlyTheNamedCalls(t *testing.T) {
+	dir := newGitRepo(t)
+	failGit(t, dir, "show-ref")
+	if _, err := git(context.Background(), dir, "show-ref", "--head"); err == nil {
+		t.Fatal("a call that names the argument must fail")
+	}
+	if _, err := git(context.Background(), dir, "rev-parse", "HEAD"); err != nil {
+		t.Fatalf("any other call runs: %v", err)
+	}
+	if yes, err := gitAsk(context.Background(), dir, "show-ref", "--head"); err == nil || yes {
+		t.Fatalf("an injected failure is an error, never a no: yes=%v err=%v", yes, err)
 	}
 }

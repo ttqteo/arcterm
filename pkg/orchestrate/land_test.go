@@ -378,6 +378,53 @@ func TestLandAbortsAConflictedMerge(t *testing.T) {
 	}
 }
 
+// a merge refused at its commit (a commit-msg hook here) leaves MERGE_HEAD and no conflict; the land aborts it, or
+// the checkout stays mid-merge with the run's change staged and every later land holds on it
+func TestLandAbortsAMergeItsCommitRefused(t *testing.T) {
+	f, tree := landFixture(t)
+	commitOnBranch(t, tree, "feature.txt", "branch\n")
+	f.setFinal(t, &waveobj.FinalStage{State: FinalState_Passed, Round: 1, Commit: gitCmd(t, tree, "rev-parse", "HEAD")})
+	head := gitCmd(t, f.project, "rev-parse", "HEAD")
+	refuseCommits(t, f.project)
+
+	land := f.landRun(t, false)
+	if land.State != LandState_Held || !strings.Contains(land.Reason, "aborted") {
+		t.Fatalf("land = %+v, want held on the refused, aborted merge", land)
+	}
+	if mergeInProgress(f.project) {
+		t.Fatal("the refused merge was left in progress")
+	}
+	if status := gitCmd(t, f.project, "status", "--porcelain"); status != "" {
+		t.Fatalf("checkout left dirty after the abort:\n%s", status)
+	}
+	if got := gitCmd(t, f.project, "rev-parse", "HEAD"); got != head {
+		t.Fatalf("nothing may land, HEAD moved to %s", got)
+	}
+}
+
+// the checkout-landing counterpart: a run whose lanes merge into the checkout has no land step, so a hook that refuses
+// every commit changes nothing about it
+func TestLandLeavesACheckoutLandedRunAloneWhenCommitsAreRefused(t *testing.T) {
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	if err := wstore.UpdateRun(f.ctx, f.channel, f.ownerID, func(r *waveobj.Run) error {
+		r.BaseBranch, r.Status = "main", jarvis.RunStatus_Done
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	refuseCommits(t, f.project)
+	head := gitCmd(t, f.project, "rev-parse", "HEAD")
+	if land := f.landRun(t, false); land != nil {
+		t.Fatalf("land = %+v, want nothing for a checkout-landed run", land)
+	}
+	if got := f.owner(t).Land; got != nil {
+		t.Fatalf("stored land = %+v, want none", got)
+	}
+	if got := gitCmd(t, f.project, "rev-parse", "HEAD"); got != head || mergeInProgress(f.project) {
+		t.Fatalf("the checkout was touched: HEAD %s, merge in progress %v", got, mergeInProgress(f.project))
+	}
+}
+
 func TestLandKeepsUncommittedEdits(t *testing.T) {
 	// run d9a7d94b re-ran Check and Verify for ~7 min before git merge refused the human's unstaged edit
 	t.Run("an edit to a file the branch changes holds the land before Verify", func(t *testing.T) {
@@ -990,6 +1037,50 @@ func TestLandHoldsALandingTreeLeftMidMerge(t *testing.T) {
 	f.setLandCommands(t, "", "true")
 	head := gitCmd(t, f.project, "rev-parse", "main")
 	f.assertHeld(t, f.landRun(t, false), head, "mid-merge")
+}
+
+// whether the landing tree is mid-merge is asked before the check runs there: a probe git could not answer read as
+// "no", so the check ran over the open merge, the run landed, and the land removed the tree with the merge in it
+func TestLandHoldsWhenGitCannotSayTheLandingTreeIsMidMerge(t *testing.T) {
+	f, tree := landFixture(t)
+	commitOnBranch(t, tree, "wrapup.md", "wrap-up\n")
+	gitDir := gitCmd(t, tree, "rev-parse", "--git-dir")
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(tree, gitDir)
+	}
+	// a merge with nothing to change: the tree has no uncommitted changes for landingTreeHold to see
+	writeFile(t, filepath.Join(gitDir, "MERGE_HEAD"), gitCmd(t, f.project, "rev-parse", "main")+"\n")
+	marker := filepath.ToSlash(filepath.Join(t.TempDir(), "verified"))
+	f.setLandCommands(t, "", "touch '"+marker+"'")
+	failGit(t, tree, "MERGE_HEAD")
+	head := gitCmd(t, f.project, "rev-parse", "main")
+
+	f.assertHeld(t, f.landRun(t, false), head, "mid-merge")
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("Verify ran over the open merge, stat err %v", err)
+	}
+	if !mergeInProgress(tree) {
+		t.Fatal("the landing tree's open merge is gone")
+	}
+}
+
+// the checkout-landing counterpart: a checkout-landed run has no landing tree to probe, so a git that cannot answer
+// about MERGE_HEAD changes nothing about it
+func TestLandLeavesACheckoutLandedRunAloneWhenGitCannotReadMergeHead(t *testing.T) {
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	if err := wstore.UpdateRun(f.ctx, f.channel, f.ownerID, func(r *waveobj.Run) error {
+		r.BaseBranch, r.Status = "main", jarvis.RunStatus_Done
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	failGit(t, f.project, "MERGE_HEAD")
+	if land := f.landRun(t, false); land != nil {
+		t.Fatalf("land = %+v, want nothing for a checkout-landed run", land)
+	}
+	if got := f.owner(t).Land; got != nil {
+		t.Fatalf("stored land = %+v, want none", got)
+	}
 }
 
 func TestLandNotesCommitsThatLandedOnTheBaseDuringTheRun(t *testing.T) {

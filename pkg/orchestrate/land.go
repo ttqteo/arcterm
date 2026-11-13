@@ -450,7 +450,11 @@ func checkoutHold(ctx context.Context, run *waveobj.Run) (reason string, dirty b
 			return "the checkout is stopped mid-operation: " + inProgressOps[i].what, true
 		}
 	}
-	if clean, _ := IndexClean(ctx, project); !clean {
+	clean, err := IndexClean(ctx, project)
+	if err != nil {
+		return err.Error(), false
+	}
+	if !clean {
 		return "the checkout has staged changes", true
 	}
 	overlap, _, _, err := unstagedOverlap(ctx, project, branch, unionMergePaths(ctx, project, run.BaseBranch))
@@ -630,9 +634,14 @@ func abortLandTreeMerge(run *waveobj.Run) {
 }
 
 // midMergeHold is why the landing tree cannot take a merge or be checked: someone left a merge open in it, and a
-// check would speak for the run plus that merge.
+// check would speak for the run plus that merge. A probe git cannot answer holds too: read as "no", the check ran over
+// the open merge and the land removed the tree with it.
 func midMergeHold(ctx context.Context, run *waveobj.Run) string {
-	if _, err := git(ctx, run.LandPath, "rev-parse", "-q", "--verify", "MERGE_HEAD"); err == nil {
+	inMerge, err := mergeHeadExists(ctx, run.LandPath)
+	if err != nil {
+		return "reading whether the landing tree " + run.LandPath + " is stopped mid-merge: " + err.Error()
+	}
+	if inMerge {
 		return "the landing tree " + run.LandPath + " is stopped mid-merge; finish or abort that merge there, then land again"
 	}
 	return ""
@@ -913,6 +922,11 @@ func LandConflicts(ctx context.Context, run *waveobj.Run) ([]string, error) {
 	return slices.Compact(files), nil
 }
 
+// mergeHeadExists reports whether tree is stopped inside a merge: MERGE_HEAD exists.
+func mergeHeadExists(ctx context.Context, tree string) (bool, error) {
+	return gitAsk(ctx, tree, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+}
+
 // conflictedFiles lists the paths a stopped merge left unmerged in tree. The diff filter reads the index, so it does
 // not depend on the language git prints its messages in.
 func conflictedFiles(ctx context.Context, tree string) ([]string, error) {
@@ -935,12 +949,27 @@ var objectID = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 // mergeRefusal says why git would not make the merge. A conflict is aborted, so the checkout is left with no
 // merge state; a refusal to overwrite uncommitted edits never started one, and the edits are untouched.
 func mergeRefusal(ctx context.Context, project, base string, merr error) string {
+	// the context may be what killed the merge, and the undo must still run
+	ctx, cancel := cleanupContext(ctx)
+	defer cancel()
 	if conflicted, err := conflictedFiles(ctx, project); err == nil && len(conflicted) > 0 {
 		files := strings.Join(conflicted, ", ")
 		if _, err := git(ctx, project, "merge", "--abort"); err != nil {
 			return fmt.Sprintf("the merge conflicts with %s in %s, and aborting it failed: %v", base, files, err)
 		}
 		return fmt.Sprintf("the merge conflicts with %s in %s; it was aborted", base, files)
+	}
+	// refused at its commit (a commit-msg or pre-merge-commit hook, signing, a killed git): no conflict, but the
+	// checkout is left mid-merge with the run's change staged, and every later land holds on it
+	inMerge, err := mergeHeadExists(ctx, project)
+	if err != nil {
+		return fmt.Sprintf("git refused the merge: %v; reading whether it left the checkout mid-merge failed: %v", merr, err)
+	}
+	if inMerge {
+		if err := undoMerge(ctx, project, nil); err != nil {
+			return fmt.Sprintf("git refused the merge: %v; aborting it failed: %v", merr, err)
+		}
+		return fmt.Sprintf("git refused the merge, which was aborted: %v", merr)
 	}
 	if files, untracked := overwrittenFiles(merr.Error()); len(files) > 0 {
 		what := "uncommitted changes"
