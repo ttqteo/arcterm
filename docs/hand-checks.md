@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A lead that queued its plan's next part reads `plan queued #1` on its run line, not `queued #1`: while a
+  run's lead has queued a second plan (`wsh runs start --plan … --after <its run>`), its row in the Agent tree shows the
+  chip `plan queued #1` (`plan blocked` if the entry is blocked), whole on a narrow sidebar, beside the run's progress
+  (`frontend/app/view/agents/runorigin.ts` `originLinks`; unit-tested only).
 - [ ] (arcterm) The rail's context breakdown reads a real /context: on a Claude agent with a context figure, open the
   Agent rail's session breakdown and press Read the breakdown → the button reads "Reading… about 30 s", then the groups
   show (Messages, System tools, Memory files, Skills…) with figures near `claude`'s own `/context`, and a memory file's

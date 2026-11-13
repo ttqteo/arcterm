@@ -113,7 +113,9 @@ function runLink(run: OriginRun): { label: string; title: string } {
 
 /** Pure: the run chip on the session `agentId`'s (its tab id) meta line: where the runs it started with
  *  `wsh runs start` stand, and the plans it queued that have not started. One link reads as itself (`3/5`,
- *  `queued #2`, `merged`, `held`); two or more read `2 runs` and point at the newest. Null when there is none. */
+ *  `plan queued #2`, `merged`, `held`); two or more read `2 runs` and point at the newest. Null when there is none.
+ *  A queued link names the plan, since the chip also sits on a lead's own working run line: a bare `queued #1` there
+ *  read as that run waiting in line, when it is the next part the lead queued. */
 export function originLinks(
     agentId: string,
     runs: Readonly<Record<string, OriginRun>>,
@@ -127,7 +129,7 @@ export function originLinks(
     }
     for (const row of queuedRows(queue, {})) {
         if (row.entry.data.origintabid === agentId) {
-            const label = row.place == null ? "blocked" : `queued #${row.place}`;
+            const label = row.place == null ? "plan blocked" : `plan queued #${row.place}`;
             links.push({
                 label,
                 title: `${row.entry.title} · ${label}`,
