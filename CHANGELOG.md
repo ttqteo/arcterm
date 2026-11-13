@@ -24,6 +24,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Changed
+
+- Jarvis has a new icon in the nav rail and in What's new: an arc reactor instead of a brain.
+
 ### Fixed
 
 - In Chat, the ring beside a running step ("Ran", "Read"…) turns in place instead of wobbling off its centre.

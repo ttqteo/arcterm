@@ -126,6 +126,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   every 2 s, the "(24s)" after it still grey; with Reduce motion on, the text rests in plain blue. Checked only on a
   static page in headless Chromium, never in WKWebView or the running app (cf811a54d: `chatpane.tsx`,
   `tailwindsetup.css` .shimmer-jarvis, `pulse.ts`).
+- [ ] (arcterm) Jarvis's arc reactor icon reads at rail size: the nav rail's Jarvis item (20px) shows the ring, six coils and the triangular core apart, not a grey blot, active (orange) and not, with the
+  yellow badge clear of it; What's new's Jarvis lines carry the same mark. Typechecked only, never seen in the app
+  (`element/jarvisicon.ts`, canvas `jarvis-nav-icon` option F).
 - [ ] (arcterm) Chat's running step ring turns in place: at 125% or 150% Windows display scaling, while a Claude agent
   runs a command, the dashed green ring before "Ran" has its dashes run round a ring that stays put, with no wobble
   and no short dash where it closes; with Reduce motion on it holds still. Not run in the app: no dev app was up
