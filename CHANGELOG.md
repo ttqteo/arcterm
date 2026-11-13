@@ -32,6 +32,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Jarvis shows as the hologram by default, in the window's bottom-right corner; Settings → Jarvis & Office → Form
+  brings Sprout back to the footer. If you already picked a form, it stays.
 - A message you send in Chat flies from the box to its place: its text lifts out of where you typed it and becomes the
   bubble, and the conversation slides up to make room instead of jumping.
 - While an agent works, Chat's Show the diff appears only once the turn has edited a file, and Open the terminal only

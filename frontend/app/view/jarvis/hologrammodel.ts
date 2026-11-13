@@ -13,14 +13,14 @@ import { activityLevel } from "./hologramhud";
 
 export type PetForm = "sprout" | "hologram";
 
-export const DEFAULT_PET_FORM: PetForm = "sprout";
+export const DEFAULT_PET_FORM: PetForm = "hologram";
 
 export const PET_FORM_NAME: Record<PetForm, string> = {
     sprout: "Sprout",
     hologram: "Hologram",
 };
 
-/** A stored choice, or Sprout for anything that is not one of the two (a hand-edited value). */
+/** A stored choice, or the hologram (the default) for anything that is not one of the two (a hand-edited value). */
 export function petForm(value: unknown): PetForm {
     return value === "sprout" || value === "hologram" ? value : DEFAULT_PET_FORM;
 }
