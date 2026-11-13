@@ -85,79 +85,6 @@ Tracked in their own initiatives, not here:
 - **arcterm Claude mod live verify** (usage strip, card answer, Esc, dag child ask, settings hooks; `CLAUDE_CODE_PLUGIN_DIRS` loading with no enable prompt; a card answered after more than ten minutes still answers the call) — effort `99832658`, chunk 9. Each needs an interactive Claude session in the dev app; the headless half is `node scripts/claude-mod-load-check.mjs`. Spec `docs/superpowers/specs/2026-10-02-claude-mod-design.md`.
 - **Orchestrator wall-clock** — effort `b1fe5d7e`: live-verify the unit-tested fixes, the round-2 final tree lock, the Timing section live check.
 
-### (arcterm) RAM watch
-
-- **Cockpit office** (2026-10-15, `cockpit-office-bench`, 76 people: 48 desks, 27 seats and the boss; dev app in
-  headless Chrome on the Mac, a loaded 8 GB machine): every budget held. Heap −4.13 MB and −664 DOM nodes (the office
-  replaces the Cards grid, so both read below Cards); busy −4.7 % over Cards while the boss and three walkers walk (22 %
-  raw, baseline 26.7 %), −6.4 % under reduced motion, −15.2 % in a quiet office; 143 to 150 sprites; 37 to 65 ms to
-  draw. Budgets: 5 MB, 2,000, 2 %, 0.5 %, 0.3 %, 600, 1 MB, 150 ms. Busy is from React's dev build (a
-  performance.measure per render) and sits inside the baseline's noise; the production-build reading is the effort chunk
-  'Re-measure: cockpit office busy on a production build'. Row 7 holds what a second Office round trip adds back in
-  Cards: +0.01, −1.99 and −2.81 MB in three runs, −2.8 MB in the run's Final. Read from the first Cards read, as the
-  spec first had it, the same row read −0.6 to +2.39 MB over seven runs, and a control run that never opened the office
-  read +1.56 MB on that step: the dev page's own growth. Both reads come after a forced GC (`metrics()`), yet the dev
-  page's heap still swings by up to about 3 MB between reads; the cause is not established, and a swing that size can
-  hide a leak under the 1 MB budget.
-- **Cockpit office, walking off React** (2026-10-15, same bench and machine): a walk step moved the boss and the walkers
-  through their atoms, so React rendered each of them on every animation frame (~400 renders a second while the boss
-  and three walkers walk, `Mover` ~205 of them). A step now writes the transform on the DOM: ~176 renders a second
-  (`Mover` 26), JS while walking 8.1 to 10.6 % of a core against 9.6 to 19 % before (two 10 s holds each, read with
-  `Performance.getMetrics`). The bench: busy walking −9.5 % over Cards (14.2 % raw, baseline 23.7 %), −8.7 % reduced,
-  −14.8 % quiet; heap −4.96 MB, −775 nodes, 91 sprites, 74 ms to draw, +0.04 MB on the second round trip. A probe of
-  the same hold found paint and raster small: drawing the static scenery (floors, walls, desk parts, 259 of the
-  office's 591 nodes) as one pixel canvas, or giving the movers their own layer alone, moved busy by less than the
-  holds' own noise (±3 points), and cut only the off-main-thread raster (3.7–4.6 % to 0.7–1.6 %).
-- **Cockpit office in pixel art** (2026-10-15, `cockpit-office-bench`, the same 76-person roster; dev app in headless
-  Chrome on the Mac, before and after interleaved, two runs each, each on its own ports and store; a loaded 8 GB
-  machine, the Cards baseline read 23.5 to 35.7 %): the office's own DOM nodes 498 → 218 (the floors, walls, windows,
-  dark layers, screens, sign and desk parts are now two canvases at art resolution, 391 × 1070 × 4 = ~1.67 MB each);
-  busy walking −9.4 / −8.8 → −7.1 / −20.5 % over Cards (raw 16.5 / 14.7 → 18.0 / 15.2 %), reduced motion −12.2 / −8.0
-  → −9.7 / −18.3 %, quiet −17.0 / −15.5 → −16.6 / −25.3 %; heap −4.29 / −4.46 → −4.70 / −5.87 MB; sprites 91 / 92 →
-  95 / 95; time to draw 84 / 78 → 133 / 201 ms; a second round trip +0.03 / +0.02 MB after (−1.13 / +0.02 before).
-  One budget missed: the second after run drew in 201 ms (budget 150); the first held at 133 ms, and a third after
-  run, read only for the canvas size, at 118 ms. The draw is the one number that rose (about 80 ms before to 130–200
-  ms), and the cause is not established: the open now waits for both canvases to paint, and the miss came in the run
-  whose Cards baseline read 35.7 %. Re-measure the open on a production build or a quiet machine. Busy did not move
-  beyond the holds' noise of ±3 points: the raw readings are 14.7–16.5 % before and 15.2–18.0 % after, and every
-  over-Cards figure sits below the baseline, so the budgets read as held from a baseline that swings by more than
-  they allow.
-- **Cockpit office with the pixel-game controls** (2026-10-16, `cockpit-office-bench` at fd9c41ac0, after run 25462413's
-  HUD bar, dialog box and office menu; Tauri dev app on Windows through `final-verify.mjs`, its own ports and store,
-  the Cards baseline read 36.6 %): every budget held. 76 people, the office's own DOM nodes 245 (218 before the
-  controls), −1174 nodes and −4.68 MB heap against Cards; busy walking −16.2 % over Cards (20.4 % raw), reduced motion
-  −16.9 %, quiet −26.8 % with no clock running; 145 sprites; 115 ms to draw; a second round trip −2 MB. The first
-  bench run on Windows rather than the Mac, so the busy figures are not comparable with the rows above; the
-  production-build re-measure is still open.
-- **Cockpit office as floors** (2026-10-16, `cockpit-office-bench`, the same 48 agents over six projects and three
-  fixture runs; two runs, in the Windows dev app (WebView2) on a loaded machine, so the absolute figures do not compare
-  with the Mac's above): the office draws one floor of four rooms, so it holds 31 people (20 desks, 10 seats and the boss)
-  where it held 76, on two floors (G and 1); its own DOM nodes 218 → 113, −1,345 / −1,347 over Cards; heap −5.67 / −5.16
-  MB; busy walking −13.5 / −20.8 % over Cards (raw 14.9 / 22 %, baselines 28.4 / 42.8 %), reduced motion −15.2 / −28.5
-  %, quiet −18.4 / −32.3 %; sprite cache 81; a second round trip −0.73 / −0.66 MB; time to draw 76 / 155 ms. One budget
-  missed: the second run drew in 155 ms (budget 150), with its Cards baseline at 42.8 % against 28.4 % in the first,
-  which drew in 76 ms: the same noise as the pixel-art entry's miss, so re-measure the open on a production build or a
-  quiet machine. The bench's roster check (step 0) now asks for a full floor of about 30 people and a second floor,
-  not 75 people.
-- (arcterm) telebot (2026-10-16): one long-poll goroutine + 2 s ticker; measure wavesrv RSS on/off.
-- **Cockpit office pet boss** (2026-10-16, `cockpit-office-bench`, one run through `final-verify.mjs` in the Windows dev
-  app (WebView2), the same 31 people on two floors as the floors entry above, which is the before: it was measured on
-  this run's base commit, where the boss was still the chibi `<img>`; the Cards baseline read 28 %, as in that entry's
-  first run): every budget held. The boss is now an `<svg>` of the pet's cells (Sprout's 99 at rest, the Minion's 115)
-  in a button, so the office's own DOM nodes 113 → 214 (+101) and nodes added over Cards −1,345 / −1,347 → −1,244; heap
-  −5.67 / −5.16 → −5.12 MB (+0.55 / +0.04); sprite cache 81 → 74 (the boss no longer goes through it); a second round
-  trip −0.73 / −0.66 → −0.73 MB; time to draw 76 / 155 → 104 ms. Busy: walking −13.5 / −20.8 → −6.5 % over Cards (raw
-  14.9 / 22 → 21.5 %, baseline 28.4 / 42.8 → 28 %), reduced motion −15.2 / −28.5 → −7.5 %, quiet −18.4 / −32.3 → −22.5
-  % with no clock running. Walking is the one figure that moved against the pet: with a baseline close to the first
-  before run's, the raw reading is 6.6 points higher, though inside the 14.9–22 % spread the two before runs had. The
-  likely cost is the boss redrawing its ~100 rects on each walk frame (8 a second); one run cannot tell that from noise,
-  so it joins the production-build re-measure already open. Budgets: 5 MB, 2,000, 2 %, 0.5 %, 0.3 %, 600, 1 MB, 150 ms.
-  The pet's entrance is a one-off 0.5 to 2.2 s as the office opens and is skipped in the bench (`entrance: "skip"`), so
-  none of these include it.
-- **Office music** (2026-10-16, not measured): to measure by hand: arcterm's WebView2 processes in Task Manager, Office
-  open, music off then on for a minute (spec estimate 1–3 MB). Nothing exists with the Office closed or music off but
-  the jingles' short-lived nodes. The `office-sound` scenario logs the cues and plays no sound, so it reads no memory.
-
 ---
 
 ## 2 · Blocked
@@ -376,3 +303,77 @@ setting; that call is the person's. Layers are the compact RAM popup's.
 | Pinned apps: the page's iframe in the centre, and the app's own dev server | uncommitted | Interface, and the app's process | Not measured. No frame until an app is opened; open, the frame (no second webview). The app's server is a held service (row above): it runs while the app is used and for a minute after (always, with Keep running), and its RAM is the app's, not arcterm's. | 2026-10-19 | pending |
 | Agent → Transcript tab on the rail (`railtranscript.tsx`): the last 2,000 transcript lines of the focused agent projected and drawn, every earlier chunk the reader loads kept as lines and projected entries until the tab unmounts (closing the rail or leaving the tab drops them), and a live stream while the tab is shown | uncommitted | Interface | The page's JS heap after a GC, from `task verify:ui -- rail-transcript-tab` on a generated 8,404-line, ~50 MB Claude session (large tool results, 26 base64 images): 50 MB before the tab opens, 83 MB after its first read (the last 2,000 lines, 750 items, 200 drawn), 226 MB after Compactions loaded it back to the start (all 8,404 lines held as strings and entries; a tool result is kept whole in its entry). Not measured: the WebView2 working set, and a real 55 MB+ session (hand check in section 0). Loading back is the reader's act, so the cost is paid only on a long read; the first read alone is the cost of opening it. | 2026-10-29 | pending |
 | Agent → Canvas gallery: the grid of lazy `<img>` previews, and the viewer's one board iframe | `75278d142` | Interface | The page's JS heap after a GC, from Final's `canvas-gallery` steps 1 (grid) and 3 (viewer) on a 3-canvas fixture: 41.6 MB and 41.8 MB (43.4 and 43.4 in an earlier run). Not measured: the WebView2 working set, and the 17-canvas case. The heap figure is the page's own JS and says nothing of the board iframe. Between visits only the list (a row per canvas) and the folder-URL cache stay. | 2026-10-14 | pending |
+| Telebot: one long-poll goroutine and a 2 s ticker | — | arcterm (wavesrv) | Not measured. To read: wavesrv's RSS with the bot on, then off. | 2026-10-16 | pending |
+| Office music: the jingles' short-lived nodes while the Office is open and music is on; nothing exists with the Office closed or music off | — | Interface | Not measured (spec estimate 1–3 MB). The `office-sound` scenario logs the cues and plays no sound, so it reads no memory. To read by hand: arcterm's WebView2 processes in Task Manager, Office open, music off then on for a minute. | 2026-10-16 | pending |
+
+### Measurement notes
+
+Readings too long for a table row, oldest first: the Cockpit office bench runs of 2026-10-15 and 2026-10-16. A new
+measurement goes in the table; a note here only when it needs the room.
+
+- **Cockpit office** (2026-10-15, `cockpit-office-bench`, 76 people: 48 desks, 27 seats and the boss; dev app in
+  headless Chrome on the Mac, a loaded 8 GB machine): every budget held. Heap −4.13 MB and −664 DOM nodes (the office
+  replaces the Cards grid, so both read below Cards); busy −4.7 % over Cards while the boss and three walkers walk (22 %
+  raw, baseline 26.7 %), −6.4 % under reduced motion, −15.2 % in a quiet office; 143 to 150 sprites; 37 to 65 ms to
+  draw. Budgets: 5 MB, 2,000, 2 %, 0.5 %, 0.3 %, 600, 1 MB, 150 ms. Busy is from React's dev build (a
+  performance.measure per render) and sits inside the baseline's noise; the production-build reading is the effort chunk
+  'Re-measure: cockpit office busy on a production build'. Row 7 holds what a second Office round trip adds back in
+  Cards: +0.01, −1.99 and −2.81 MB in three runs, −2.8 MB in the run's Final. Read from the first Cards read, as the
+  spec first had it, the same row read −0.6 to +2.39 MB over seven runs, and a control run that never opened the office
+  read +1.56 MB on that step: the dev page's own growth. Both reads come after a forced GC (`metrics()`), yet the dev
+  page's heap still swings by up to about 3 MB between reads; the cause is not established, and a swing that size can
+  hide a leak under the 1 MB budget.
+- **Cockpit office, walking off React** (2026-10-15, same bench and machine): a walk step moved the boss and the walkers
+  through their atoms, so React rendered each of them on every animation frame (~400 renders a second while the boss
+  and three walkers walk, `Mover` ~205 of them). A step now writes the transform on the DOM: ~176 renders a second
+  (`Mover` 26), JS while walking 8.1 to 10.6 % of a core against 9.6 to 19 % before (two 10 s holds each, read with
+  `Performance.getMetrics`). The bench: busy walking −9.5 % over Cards (14.2 % raw, baseline 23.7 %), −8.7 % reduced,
+  −14.8 % quiet; heap −4.96 MB, −775 nodes, 91 sprites, 74 ms to draw, +0.04 MB on the second round trip. A probe of
+  the same hold found paint and raster small: drawing the static scenery (floors, walls, desk parts, 259 of the
+  office's 591 nodes) as one pixel canvas, or giving the movers their own layer alone, moved busy by less than the
+  holds' own noise (±3 points), and cut only the off-main-thread raster (3.7–4.6 % to 0.7–1.6 %).
+- **Cockpit office in pixel art** (2026-10-15, `cockpit-office-bench`, the same 76-person roster; dev app in headless
+  Chrome on the Mac, before and after interleaved, two runs each, each on its own ports and store; a loaded 8 GB
+  machine, the Cards baseline read 23.5 to 35.7 %): the office's own DOM nodes 498 → 218 (the floors, walls, windows,
+  dark layers, screens, sign and desk parts are now two canvases at art resolution, 391 × 1070 × 4 = ~1.67 MB each);
+  busy walking −9.4 / −8.8 → −7.1 / −20.5 % over Cards (raw 16.5 / 14.7 → 18.0 / 15.2 %), reduced motion −12.2 / −8.0
+  → −9.7 / −18.3 %, quiet −17.0 / −15.5 → −16.6 / −25.3 %; heap −4.29 / −4.46 → −4.70 / −5.87 MB; sprites 91 / 92 →
+  95 / 95; time to draw 84 / 78 → 133 / 201 ms; a second round trip +0.03 / +0.02 MB after (−1.13 / +0.02 before).
+  One budget missed: the second after run drew in 201 ms (budget 150); the first held at 133 ms, and a third after
+  run, read only for the canvas size, at 118 ms. The draw is the one number that rose (about 80 ms before to 130–200
+  ms), and the cause is not established: the open now waits for both canvases to paint, and the miss came in the run
+  whose Cards baseline read 35.7 %. Re-measure the open on a production build or a quiet machine. Busy did not move
+  beyond the holds' noise of ±3 points: the raw readings are 14.7–16.5 % before and 15.2–18.0 % after, and every
+  over-Cards figure sits below the baseline, so the budgets read as held from a baseline that swings by more than
+  they allow.
+- **Cockpit office with the pixel-game controls** (2026-10-16, `cockpit-office-bench` at fd9c41ac0, after run 25462413's
+  HUD bar, dialog box and office menu; Tauri dev app on Windows through `final-verify.mjs`, its own ports and store,
+  the Cards baseline read 36.6 %): every budget held. 76 people, the office's own DOM nodes 245 (218 before the
+  controls), −1174 nodes and −4.68 MB heap against Cards; busy walking −16.2 % over Cards (20.4 % raw), reduced motion
+  −16.9 %, quiet −26.8 % with no clock running; 145 sprites; 115 ms to draw; a second round trip −2 MB. The first
+  bench run on Windows rather than the Mac, so the busy figures are not comparable with the rows above; the
+  production-build re-measure is still open.
+- **Cockpit office as floors** (2026-10-16, `cockpit-office-bench`, the same 48 agents over six projects and three
+  fixture runs; two runs, in the Windows dev app (WebView2) on a loaded machine, so the absolute figures do not compare
+  with the Mac's above): the office draws one floor of four rooms, so it holds 31 people (20 desks, 10 seats and the boss)
+  where it held 76, on two floors (G and 1); its own DOM nodes 218 → 113, −1,345 / −1,347 over Cards; heap −5.67 / −5.16
+  MB; busy walking −13.5 / −20.8 % over Cards (raw 14.9 / 22 %, baselines 28.4 / 42.8 %), reduced motion −15.2 / −28.5
+  %, quiet −18.4 / −32.3 %; sprite cache 81; a second round trip −0.73 / −0.66 MB; time to draw 76 / 155 ms. One budget
+  missed: the second run drew in 155 ms (budget 150), with its Cards baseline at 42.8 % against 28.4 % in the first,
+  which drew in 76 ms: the same noise as the pixel-art entry's miss, so re-measure the open on a production build or a
+  quiet machine. The bench's roster check (step 0) now asks for a full floor of about 30 people and a second floor,
+  not 75 people.
+- **Cockpit office pet boss** (2026-10-16, `cockpit-office-bench`, one run through `final-verify.mjs` in the Windows dev
+  app (WebView2), the same 31 people on two floors as the floors entry above, which is the before: it was measured on
+  this run's base commit, where the boss was still the chibi `<img>`; the Cards baseline read 28 %, as in that entry's
+  first run): every budget held. The boss is now an `<svg>` of the pet's cells (Sprout's 99 at rest, the Minion's 115)
+  in a button, so the office's own DOM nodes 113 → 214 (+101) and nodes added over Cards −1,345 / −1,347 → −1,244; heap
+  −5.67 / −5.16 → −5.12 MB (+0.55 / +0.04); sprite cache 81 → 74 (the boss no longer goes through it); a second round
+  trip −0.73 / −0.66 → −0.73 MB; time to draw 76 / 155 → 104 ms. Busy: walking −13.5 / −20.8 → −6.5 % over Cards (raw
+  14.9 / 22 → 21.5 %, baseline 28.4 / 42.8 → 28 %), reduced motion −15.2 / −28.5 → −7.5 %, quiet −18.4 / −32.3 → −22.5
+  % with no clock running. Walking is the one figure that moved against the pet: with a baseline close to the first
+  before run's, the raw reading is 6.6 points higher, though inside the 14.9–22 % spread the two before runs had. The
+  likely cost is the boss redrawing its ~100 rects on each walk frame (8 a second); one run cannot tell that from noise,
+  so it joins the production-build re-measure already open. Budgets: 5 MB, 2,000, 2 %, 0.5 %, 0.3 %, 600, 1 MB, 150 ms.
+  The pet's entrance is a one-off 0.5 to 2.2 s as the office opens and is skipped in the bench (`entrance: "skip"`), so
+  none of these include it.
