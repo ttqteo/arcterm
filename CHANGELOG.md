@@ -110,6 +110,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Triple-clicking a line in Chat selects just its text: on a Mac the highlight no longer runs on to the column's right
+  edge, and the copy no longer ends in a stray line break.
 - While an agent compacts its conversation (`/compact`), Chat says Compacting… instead of Working…, with no timer
   counting up from your last message.
 - A file path in an agent's reply in Chat can be selected and copied with the text around it. It used to drop out of

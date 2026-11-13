@@ -22,6 +22,7 @@ import { splitInsightBlocks } from "./insightblocks";
 import { PathLink } from "./pathlinkcontext";
 import { inlinePathOf } from "./pathlinks";
 import remarkFileMention from "./remarkfilemention";
+import { trimTripleClick } from "./selectiontrim";
 
 // Lightweight inline markdown for narration lines. Deliberately NOT the full element/markdown.tsx
 // (which wraps every render in OverlayScrollbars + a TOC + rehypeRaw); raw HTML is not enabled here,
@@ -194,7 +195,7 @@ export const MarkdownMessage = memo(function MarkdownMessage({
 }: { text: string; className?: string } & MarkdownExtras) {
     const segments = splitInsightBlocks(text);
     return (
-        <div className={cn("agent-md", className)}>
+        <div className={cn("agent-md", className)} onMouseUp={trimTripleClick}>
             {segments.map((seg, i) =>
                 seg.kind === "insight" ? (
                     <InsightCallout key={i} text={seg.text} extras={{ marks, diagrams, mentions }} />
