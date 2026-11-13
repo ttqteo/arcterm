@@ -17,7 +17,35 @@ const (
 	AutoCleanDelay = 2 * time.Minute
 	// AutoCleanEvery is the pause between auto-cleans
 	AutoCleanEvery = 24 * time.Hour
+	// IdleWaitMax is how long a scheduled scan waits for the heavy jobs to finish before it runs anyway
+	IdleWaitMax = 30 * time.Minute
+	// idlePoll is how often a waiting scan asks again
+	idlePoll = 30 * time.Second
 )
+
+// waitForIdle holds a scheduled scan while busy names a reason (a build, a typecheck, a test suite holds a heavy-job
+// slot), asking every poll, for at most max. A scan beside them walked node_modules and cargo targets for 5 to 24
+// minutes on a loaded Windows box (2026-11-13), against ~11 s idle, and slowed the builds it ran beside. False when
+// ctx ends first. A nil busy never waits. A scan the person asks for (Settings → Storage) does not come through here.
+func waitForIdle(ctx context.Context, busy func() string, poll, max time.Duration) bool {
+	if busy == nil {
+		return ctx.Err() == nil
+	}
+	deadline := time.Now().Add(max)
+	logged := false
+	for busy() != "" && time.Now().Before(deadline) {
+		if !logged {
+			logged = true
+			log.Printf("storage: scheduled scan waits: %s\n", busy())
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(poll):
+		}
+	}
+	return ctx.Err() == nil
+}
 
 // AutoClean cleans what needs no one's say: finished run worktrees with no uncommitted changes, and rolled logs
 // older than LogMaxAge. The session trash purges itself (sessiontrash.StartPurgeLoop). Sessions, build output, a
@@ -66,6 +94,9 @@ func (s *Scanner) StartLoop(ctx context.Context, enabled func() bool, delay, eve
 		case <-time.After(delay):
 		}
 		for {
+			if !waitForIdle(ctx, s.env.BusyCaches, idlePoll, IdleWaitMax) {
+				return
+			}
 			if enabled() {
 				s.AutoClean(ctx)
 			} else {

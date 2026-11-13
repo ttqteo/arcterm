@@ -6,6 +6,7 @@ package storage
 import (
 	"context"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -48,6 +49,43 @@ func TestAutoCleanTakesOnlyTheSafeParts(t *testing.T) {
 	}
 	// AutoClean ends with a background rescan: let it finish before TempDir cleanup removes what it walks.
 	waitFor(t, func() bool { return !s.Report().Scanning })
+}
+
+// A scheduled scan waits while a heavy job runs, starts once none does, gives up waiting after max, and stops with
+// its context.
+func TestWaitForIdle(t *testing.T) {
+	ctx := context.Background()
+	if !waitForIdle(ctx, nil, time.Millisecond, time.Second) {
+		t.Fatal("no busy reading should not wait")
+	}
+	var asks atomic.Int32
+	busyFor := func(n int32) func() string {
+		return func() string {
+			if asks.Add(1) <= n {
+				return "a build or install is running"
+			}
+			return ""
+		}
+	}
+	start := time.Now()
+	if !waitForIdle(ctx, busyFor(3), 5*time.Millisecond, time.Minute) {
+		t.Fatal("waitForIdle gave up while the context lives")
+	}
+	if took := time.Since(start); took < 10*time.Millisecond || took > 5*time.Second {
+		t.Fatalf("waited %v for three busy asks at 5 ms", took)
+	}
+	start = time.Now()
+	if !waitForIdle(ctx, func() string { return "busy" }, 5*time.Millisecond, 30*time.Millisecond) {
+		t.Fatal("past max the scan should run anyway")
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Fatalf("a never-idle machine held the scan %v, past max", took)
+	}
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	if waitForIdle(cctx, func() string { return "busy" }, time.Millisecond, time.Minute) {
+		t.Fatal("an ended context should stop the wait")
+	}
 }
 
 func TestAutoCleanSkipsCanvases(t *testing.T) {

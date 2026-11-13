@@ -30,6 +30,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   longer holds a heavy-job slot for up to an hour, which kept builds and typechecks waiting behind it.
 - arcterm's background service no longer keeps a CPU core busy once you have thousands of past runs: the servers
   list re-read every run on each refresh.
+- The Storage scan arcterm runs at start and once a day waits until no build, typecheck or test suite is running
+  (up to 30 minutes), so it no longer slows them down or drags on for many minutes beside them.
 
 ## 1.1.1 — 2026-11-13
 
