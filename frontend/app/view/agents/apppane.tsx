@@ -13,7 +13,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { appFrameName, appShows, appWaitLine, keptAppFrames, type AppState } from "./appmodel";
+import { appFrameName, appFrameRect, appShows, appWaitLine, keptAppFrames, type AppState } from "./appmodel";
 import {
     appLoadingAtom,
     appSeenAtom,
@@ -109,8 +109,8 @@ export function AppPane({ tabId, state, active = true }: { tabId: string; state:
     );
 }
 
-// Every open app's page that is kept loaded (keptAppFrames): the one on screen over its slot, the rest invisible where
-// they last showed, at that size, so each keeps its page and its scroll. In the shell, mounted once.
+// Every open app's page that is kept loaded (keptAppFrames): the one on screen over its slot, the rest invisible and off
+// the window at the size they last showed (appFrameRect), so each keeps its page and its scroll. In the shell, mounted once.
 export function AppFrames() {
     const states = useAtomValue(appStatesAtom);
     const slot = useAtomValue(appSlotAtom);
@@ -180,7 +180,7 @@ function AppFrame({
             allow="clipboard-read; clipboard-write"
             aria-hidden={on ? undefined : true}
             tabIndex={on ? undefined : -1}
-            style={rect ?? undefined}
+            style={appFrameRect(rect, on) ?? undefined}
             onLoad={() => setAppLoading(tabId, false)}
             // a page with no background of its own reads as it does in a browser: on white, not on the
             // cockpit's dark. Out of sight it is invisible, not display:none, which would lose its scroll.

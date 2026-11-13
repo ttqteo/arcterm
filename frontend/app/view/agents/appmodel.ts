@@ -188,6 +188,20 @@ export function keptAppFrames(
     );
 }
 
+// Where a kept page's frame sits: over its slot while on screen; out of sight, at the same size (which keeps its scroll)
+// but off the window's left edge. Invisible is not enough: in WKWebView a frame that was clicked into still takes the
+// right-clicks over the place it left, past visibility:hidden and pointer-events:none, and shows the native "Open Frame
+// in New Window" menu over the Agent sidebar. Null before it ever showed.
+export function appFrameRect<R extends { left: number; top: number; width: number; height: number }>(
+    rect: R | null,
+    on: boolean
+): R | null {
+    if (rect == null || on) {
+        return rect;
+    }
+    return { ...rect, left: -rect.width - 10_000 };
+}
+
 export function appWaitLine(s: Pick<AppState, "url" | "startedMs">, now: number): string {
     const secs = s.startedMs > 0 ? Math.max(0, Math.floor((now - s.startedMs) / 1000)) : 0;
     return `Waiting for ${appHost(s.url)} · ${secs} s`;

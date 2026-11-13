@@ -268,6 +268,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   its `wsh jarvis` commands keep working.
 - A run's task no longer reads as stalled while its worker waits on a command of its own that runs in the background (a
   long typecheck, say).
+- Right-clicking the Agent sidebar on a Mac no longer shows a stray "Open Frame in New Window" menu after you had
+  clicked into an app's page and left it.
 - The Canvas tab in an agent's header now shows its dot when the agent draws a canvas you have not opened yet, not only
   when it changes one you already looked at.
 - Highlights in Chat no longer vanish from one agent's replies while other Claude agents are running: each agent kept

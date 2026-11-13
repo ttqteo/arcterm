@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
     APP_FRAME_IDLE_MS,
     appFrameName,
+    appFrameRect,
     appHost,
     appShows,
     appUrlOk,
@@ -143,6 +144,23 @@ describe("the pages kept loaded out of sight", () => {
     });
     it("never keeps a page that is not open", () => {
         expect(keptAppFrames(states, "c", { c: now, d: now }, now)).toEqual([]);
+    });
+});
+
+describe("where a kept page sits", () => {
+    const rect = { left: 56, top: 70, width: 1200, height: 800 };
+
+    it("sits over its slot while on screen", () => {
+        expect(appFrameRect(rect, true)).toEqual(rect);
+    });
+    it("out of sight, keeps its size but leaves the window, so a right-click there never reaches it", () => {
+        const out = appFrameRect(rect, false)!;
+        expect(out.width).toBe(rect.width);
+        expect(out.height).toBe(rect.height);
+        expect(out.left + out.width).toBeLessThanOrEqual(0);
+    });
+    it("has no place before it ever showed", () => {
+        expect(appFrameRect(null, false)).toBeNull();
     });
 });
 
