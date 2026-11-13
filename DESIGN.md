@@ -458,6 +458,12 @@ Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
   No key symbols there (`⏎`, `↵`, `^`, `⌫`, `⌃`, `⇧`): a Windows user does not
   read them. The Mac glyphs (`⌘⇧P`) stay on a Mac only. Every label goes through
   `util/keysym.ts`, never a glyph typed into a component.
+- **Keys a Vietnamese input method rewrites** — the person types with Telex, which
+  turns `[` into `ơ` and `]` into `ư` before the app sees them, so a bracket
+  binding reads as broken. Lead a shortcut with keys Telex leaves alone (arrows,
+  `Esc`, `Enter`, `Ctrl`/`Alt` chords); a bracket may stay only as a second
+  binding, never the only one and never the one a hint shows (the canvas viewer's
+  `←` `→` with `[` `]` beside them, `docs/keyboard-shortcuts.md`).
 - **Status indicators** — dot + color + pulse (`pulse-dot` on `bg-working`/`bg-asking`;
   `pulse-dot-slow`, `pulse-soft` for the slower curves); status is never color alone.
   The pulse is drawn at 12fps by `element/pulsedriver.tsx`, not a CSS animation:
