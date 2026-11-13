@@ -61,6 +61,25 @@ export function flightOpacity(dim: number, p: number): number {
     return 1 - (1 - dim) * q;
 }
 
+/** How long the flight's aim takes to follow its place, as a time constant (ms): about 63% of the way in this long. */
+export const AIM_FOLLOW_MS = 40;
+
+/** Where the flight aims, eased toward `measured`, the place the bubble will land as read this frame. That place steps
+ *  rather than glides (the dock's padding and the scroll pin land a frame after the box or the row that moved them), so
+ *  aiming straight at each read made the bubble jitter on its way and jump as it landed; the aim follows the read with
+ *  a time constant instead, the same whatever the frame rate. `prev` null: the first read, taken as it is. */
+export function followAim(
+    prev: { left: number; top: number } | null,
+    measured: { left: number; top: number },
+    dtMs: number
+): { left: number; top: number } {
+    if (prev == null) {
+        return measured;
+    }
+    const k = 1 - Math.exp(-Math.max(0, dtMs) / AIM_FOLLOW_MS);
+    return { left: prev.left + (measured.left - prev.left) * k, top: prev.top + (measured.top - prev.top) * k };
+}
+
 /** How far the scroller still has to go to its end: the conversation is following its end (Chat jumps there on a send),
  *  so this is how much the bubble's place will still move up, by the pin that comes after the frame's layout or by the
  *  smooth scroll of a jump from higher up. The flight aims at the place it will have. */

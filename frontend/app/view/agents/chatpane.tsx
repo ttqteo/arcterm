@@ -244,7 +244,7 @@ function PendingCommand({
                     transition={{
                         duration: MOTION.durMicro,
                         ease: MOTION.easeFluid,
-                        delay: sentFlight.visualDuration * 0.7,
+                        delay: sentFlight.duration * 0.7,
                     }}
                     className="flex items-center gap-2"
                 >

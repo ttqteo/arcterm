@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { flightAt, flightOpacity, scrollToGo, type FlightAnchor, type SentFrom } from "./chatsentflight";
+import {
+    AIM_FOLLOW_MS,
+    flightAt,
+    flightOpacity,
+    followAim,
+    scrollToGo,
+    type FlightAnchor,
+    type SentFrom,
+} from "./chatsentflight";
 
 // the box's text at 14px, its first line centred at y 700; the bubble's text at 13.5px, 14px in and ~19px down
 const from: SentFrom = { x: 120, y: 700, fontSize: 14 };
@@ -68,5 +76,33 @@ describe("scrollToGo", () => {
         expect(scrollToGo({ scrollHeight: 2000, clientHeight: 600, scrollTop: 1360 })).toBe(40);
         expect(scrollToGo({ scrollHeight: 2000, clientHeight: 600, scrollTop: 1400 })).toBe(0);
         expect(scrollToGo({ scrollHeight: 300, clientHeight: 600, scrollTop: 0 })).toBe(0);
+    });
+});
+
+describe("followAim", () => {
+    const at = { left: 100, top: 300 };
+    it("takes the first read as it is", () => {
+        expect(followAim(null, at, 16)).toEqual(at);
+    });
+    it("moves part of the way toward a place that stepped, not all of it", () => {
+        const next = followAim(at, { left: 100, top: 260 }, 16);
+        expect(next.top).toBeLessThan(300);
+        expect(next.top).toBeGreaterThan(260);
+        expect(next.left).toBe(100);
+    });
+    it("covers about 63% of a step in one time constant, however the frames fall", () => {
+        const one = followAim(at, { left: 100, top: 200 }, AIM_FOLLOW_MS);
+        expect(one.top).toBeCloseTo(300 - 100 * (1 - Math.exp(-1)));
+        let two = at;
+        for (let i = 0; i < 4; i++) {
+            two = followAim(two, { left: 100, top: 200 }, AIM_FOLLOW_MS / 4);
+        }
+        expect(two.top).toBeCloseTo(one.top);
+    });
+    it("stays put for a frame of no time, and reaches the place in time", () => {
+        expect(followAim(at, { left: 0, top: 0 }, 0)).toEqual(at);
+        const late = followAim(at, { left: 0, top: 0 }, AIM_FOLLOW_MS * 20);
+        expect(late.top).toBeCloseTo(0);
+        expect(late.left).toBeCloseTo(0);
     });
 });

@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The DOM side of a sent message's flight from the box to its place in the chat (chatsentflight.ts has the arithmetic,
-// motiontokens.ts sentFlight the spring). Its bubble mounts with its text over where the text sat in the box and flies
-// there on the spring, raised over the box while it flies. Each frame it reads where the bubble lays out now and aims at
-// where it will be once the conversation has scrolled to its end (the row it lands in opens as it flies, the box shrinks
-// back to one line, a send from higher up scrolls down), so it lands without a jump whatever moves under it. Should the
+// motiontokens.ts sentFlight the ease-in-out). Its bubble mounts with its text over where the text sat in the box and
+// flies there, raised over the box while it flies. Each frame it reads where the bubble lays out now and where it will be
+// once the conversation has scrolled to its end (the row it lands in opens as it flies, the box shrinks back to one line,
+// a send from higher up scrolls down), and its aim follows that place smoothly (followAim), so it lands without a jump
+// or a jitter whatever moves under it. Should the
 // transcript's copy of the message land mid-air, that row stays hidden until the bubble has landed and gone, so the swap
 // happens at rest, where the two draw the same.
 
@@ -13,14 +14,14 @@ import { sentFlight } from "@/app/element/motiontokens";
 import { animate, cancelFrame, frame, useReducedMotion } from "motion/react";
 import { useLayoutEffect, useState, type RefObject } from "react";
 import { setPendingFlying } from "./chatpendingstore";
-import { flightAt, flightOpacity, scrollToGo, type FlightAnchor, type SentFrom } from "./chatsentflight";
+import { flightAt, flightOpacity, followAim, scrollToGo, type FlightAnchor, type SentFrom } from "./chatsentflight";
 import { risesFromBox } from "./chatsentrise";
 
 /** How a sent bubble comes in as it mounts: flying from the box, rising in (sentRise: no place in the box to fly from,
  *  or reduced motion), or there at once (drawn again later: back to this agent, Terminal back to Chat). */
 export type SentEntrance = "fly" | "rise" | "none";
 
-// how long a landed bubble may hold its place on screen while the conversation scrolls the rest of the way to it
+// how long a landed bubble may ease on toward its place while the conversation scrolls the rest of the way to it
 const SETTLE_MAX_MS = 800;
 // how long the transcript's copy stays hidden after a landing when the bubble has not gone by then (the row taken for
 // its copy was another message after all)
@@ -102,16 +103,27 @@ export function useSentFlight(
 
         // the transform on screen now: what the element's laid-out place is read back through
         let cur = { dx: 0, dy: 0 };
+        // where the flight aims (viewport px), following the place it will land; and when it was last moved
+        let aim: { left: number; top: number } | null = null;
+        let aimAt = performance.now();
+        // how far the aim and the transform still are from rest: the scroll left to go plus the aim's lag, in px
         const apply = (q: number): number => {
             const r = fly.getBoundingClientRect();
             const toGo = scroller != null ? scrollToGo(scroller) : 0;
-            const f = flightAt(from, { left: r.left - cur.dx, top: r.top - cur.dy - toGo }, anchor, q);
-            cur = { dx: f.dx, dy: f.dy - toGo };
+            // where it lays out now, with no transform, and so where it will land once the scroller reaches its end
+            const left = r.left - cur.dx;
+            const top = r.top - cur.dy;
+            const now = performance.now();
+            aim = followAim(aim, { left, top: top - toGo }, now - aimAt);
+            aimAt = now;
+            const f = flightAt(from, aim, anchor, q);
+            // the transform is from where it lays out now, not from the aim
+            cur = { dx: f.dx + aim.left - left, dy: f.dy + aim.top - top };
             fly.style.transform = `translate(${cur.dx}px, ${cur.dy}px) scale(${f.scale})`;
             if (dim != null) {
                 fly.style.opacity = String(flightOpacity(dim, q));
             }
-            return toGo;
+            return toGo + Math.abs(aim.left - left) + Math.abs(aim.top - (top - toGo));
         };
 
         let over = false;
@@ -156,7 +168,7 @@ export function useSentFlight(
                 frame.postRender(step);
             },
             onComplete: () => {
-                // landed: it holds its place on screen while the conversation scrolls the rest of the way to meet it
+                // landed: it eases on to its place while the conversation scrolls the rest of the way to meet it
                 cancelFrame(step);
                 const start = performance.now();
                 const settle = () => {
