@@ -85,6 +85,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Idle Claude agents go to sleep again when Claude Code keeps a CPU core busy on its own while idle: that made them
+  look busy, so they never slept and their RAM grew past 2 GB each. An idle one that has grown past 1.5 GB now sleeps
+  after a minute instead of waiting for After idle for.
 - With Jarvis set to the hologram, the fold button at the right of the app bar shows the hologram instead of Sprout.
 - A permission card in Chat shows the Enter key on the button ↑ ↓ have picked, so you can see what Enter will send.
 - Chat no longer stops mid-word ("Writ") while Claude writes a file: the sentence it says before a tool call shows

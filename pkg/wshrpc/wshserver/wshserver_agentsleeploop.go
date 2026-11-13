@@ -128,25 +128,62 @@ var readTranscriptEnd = func(path string, maxBytes int64) ([]string, error) {
 	return lines, nil
 }
 
-// treeCPUms is the CPU time (ms, user plus system) a block's whole process tree has used so far, and whether
-// there is a tree to read. A var so tests script it.
-var treeCPUms = func(blockId string) (float64, bool) {
+// agentTree is what one check reads of a block's process tree: the CPU time (ms, user plus system) the whole tree
+// has used so far, the part of it the commands under the agent used (the agent's own process left out), and what
+// the agent's own process holds (0 when it could not be read).
+type agentTree struct {
+	wholeMs, commandsMs float64
+	agentBytes          uint64
+}
+
+// readAgentTree reads a block's process tree, and whether there is one. The agent is the root, or the root shell's
+// one child where the shell did not exec it (memusage.AgentPid). A var so tests script it.
+var readAgentTree = func(blockId string) (agentTree, bool) {
 	pid := blockcontroller.GetBlockControllerPid(blockId)
 	if pid <= 0 {
-		return 0, false
+		return agentTree{}, false
 	}
 	root, err := process.NewProcess(int32(pid))
 	if err != nil {
-		return 0, false
+		return agentTree{}, false
 	}
-	var sec float64
-	for _, p := range memusage.ProcessTree(root) {
-		if times, err := p.Times(); err == nil {
-			sec += times.User + times.System
+	agent := root.Pid
+	if isShellProcess(root.Pid) {
+		if kids, err := root.Children(); err == nil && len(kids) == 1 {
+			agent = kids[0].Pid
 		}
 	}
-	return sec * 1000, true
+	var tree agentTree
+	for _, p := range memusage.ProcessTree(root) {
+		times, err := p.Times()
+		if err != nil {
+			continue
+		}
+		ms := (times.User + times.System) * 1000
+		tree.wholeMs += ms
+		if p.Pid != agent {
+			tree.commandsMs += ms
+		}
+	}
+	if b, ok := memusage.Live().Footprint(agent); ok {
+		tree.agentBytes = b
+	}
+	return tree, true
 }
+
+// transcriptModTime is when a transcript was last written. A var so tests script it.
+var transcriptModTime = func(path string) (time.Time, bool) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return info.ModTime(), true
+}
+
+// ownCPUSpins is the harnesses whose own process can spin while idle (Claude Code: ~1 core and ~100 MB a minute,
+// 2026-11-13), so the CPU check reads only the commands under them, and their transcript stands in for the rest.
+// The others keep the whole tree's CPU, and need no transcript.
+var ownCPUSpins = map[string]bool{"claude": true}
 
 // loadSleepDag is the dag behind a run, read for the state of the task a worker works. A var so tests need no store.
 var loadSleepDag = func(ctx context.Context, dagId string) (*waveobj.TaskGroup, error) {
@@ -301,11 +338,17 @@ func (l *sleepLoop) tick(ctx context.Context) {
 		}
 		// every live agent, idle or not: a quiet tree is one whose last 5 minutes were quiet, which an agent that
 		// only just stopped working has not had yet
-		if ms, ok := treeCPUms(row.blockId); ok {
+		if tree, ok := readAgentTree(row.blockId); ok {
 			sampled[row.blockId] = true
+			ms := tree.wholeMs
+			if ownCPUSpins[row.Harness] {
+				ms = tree.commandsMs
+			}
 			l.cpu.Add(row.blockId, now, ms)
 			c.CPUIdle = l.cpu.Idle(row.blockId, now)
+			c.AgentBytes = tree.agentBytes
 		}
+		c.TranscriptQuiet = !ownCPUSpins[row.Harness] // read with the transcript facts below
 		// the transcript reads are the costly facts; an agent that fails a cheap rule is spared whatever they say
 		sleepFacts := s.Enabled && idle && !c.RunOwned && !c.Viewing && c.CPUIdle
 		cacheFacts := idle && !c.RunOwned && c.HasStream && row.Harness == "claude" && (s.Compact || pending)
@@ -386,6 +429,11 @@ func (l *sleepLoop) readTranscriptFacts(ctx context.Context, row *agentRow, c *a
 	}
 	if sleep {
 		c.SessionKnown = sessionKey(row.Harness, tpath, row.status.SessionID) != ""
+		if ownCPUSpins[row.Harness] && tpath != "" {
+			if at, ok := transcriptModTime(tpath); ok {
+				c.TranscriptQuiet = l.now().Sub(at) >= agentsleep.CPUWindow
+			}
+		}
 		background, subagents := runningWork(tpath)
 		c.BackgroundRunning = len(background) > 0
 		c.SubagentsRunning = len(subagents) > 0

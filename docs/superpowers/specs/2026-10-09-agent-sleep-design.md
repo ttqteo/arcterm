@@ -41,7 +41,11 @@ footprint.
    2. No Claude background task, subagent or other child process alive under it: killing `claude` would
       kill them too.
    3. Its process tree's CPU near zero over the last 5 minutes. This catches a hook that reported idle
-      by mistake, or a state stuck at idle.
+      by mistake, or a state stuck at idle. (Revised 2026-11-13: for claude the check reads only the commands
+      under it, its own process left out, and its transcript must have gone unwritten for those 5 minutes
+      instead. An idle Claude Code can spin a core by itself, which kept every agent awake while each grew past
+      2 GB. A claude whose own process holds 1.5 GiB or more also sleeps after one idle minute, not After idle
+      for.)
    4. Not the lead or a worker of a run.
    5. A harness that resumes: claude, pi, opencode, agy.
    6. A known session id, so `--resume` has something to reopen.

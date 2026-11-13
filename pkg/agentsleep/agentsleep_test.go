@@ -19,13 +19,45 @@ var on = Settings{Enabled: true, After: 30 * time.Minute}
 // eligible is a candidate every condition holds for, idle since `idle` before t0.
 func eligible(tab string, idle time.Duration) Candidate {
 	return Candidate{
-		TabId:        tab,
-		BlockId:      "b-" + tab,
-		Harness:      "claude",
-		Idle:         true,
-		IdleSince:    t0.Add(-idle),
-		SessionKnown: true,
-		CPUIdle:      true,
+		TabId:           tab,
+		BlockId:         "b-" + tab,
+		Harness:         "claude",
+		Idle:            true,
+		IdleSince:       t0.Add(-idle),
+		SessionKnown:    true,
+		CPUIdle:         true,
+		TranscriptQuiet: true,
+	}
+}
+
+// bloated is an eligible candidate whose own process holds `bytes`.
+func bloated(tab string, idle time.Duration, bytes uint64) Candidate {
+	c := eligible(tab, idle)
+	c.AgentBytes = bytes
+	return c
+}
+
+func TestPickSleepsABloatedAgentAfterAMinute(t *testing.T) {
+	if got := Pick([]Candidate{bloated("a", RAMTriggerMinIdle, BloatedAgent)}, t0, on, plentyOfRAM); !reflect.DeepEqual(got, []string{"a"}) {
+		t.Fatalf("an agent holding %d idle %v picked %v, want [a]", BloatedAgent, RAMTriggerMinIdle, got)
+	}
+	if got := Pick([]Candidate{bloated("a", RAMTriggerMinIdle-time.Second, BloatedAgent)}, t0, on, plentyOfRAM); len(got) != 0 {
+		t.Fatalf("a bloated agent that just finished picked %v, want none", got)
+	}
+	if got := Pick([]Candidate{bloated("a", 10*time.Minute, BloatedAgent-1)}, t0, on, plentyOfRAM); len(got) != 0 {
+		t.Fatalf("an agent under the bloat line idle 10m picked %v, want none (After is 30m)", got)
+	}
+}
+
+func TestPickSleepsEveryBloatedAgentWithTheTimedOnes(t *testing.T) {
+	cands := []Candidate{
+		eligible("old", 40*time.Minute),
+		bloated("big", 2*time.Minute, 3<<30),
+		eligible("young", 2*time.Minute),
+	}
+	got := Pick(cands, t0, on, plentyOfRAM)
+	if want := []string{"old", "big"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("picked %v, want %v", got, want)
 	}
 }
 
@@ -74,16 +106,20 @@ func TestPickNeverSleepsAgentsThatDoNotQualify(t *testing.T) {
 		{"background task running", func(c *Candidate) { c.BackgroundRunning = true }},
 		{"subagents running", func(c *Candidate) { c.SubagentsRunning = true }},
 		{"busy CPU", func(c *Candidate) { c.CPUIdle = false }},
+		{"transcript still being written", func(c *Candidate) { c.TranscriptQuiet = false }},
 		{"codex cannot resume", func(c *Candidate) { c.Harness = "codex" }},
 		{"opencode is not in the roster", func(c *Candidate) { c.Harness = "opencode" }},
 		{"unknown harness", func(c *Candidate) { c.Harness = "" }},
 	}
 	for _, tc := range cases {
 		for _, free := range []uint64{plentyOfRAM, 100 << 20} { // the RAM trigger must not slip it through
-			c := eligible("a", 3*time.Hour)
-			tc.edit(&c)
-			if got := Pick([]Candidate{c}, t0, on, free); len(got) != 0 {
-				t.Errorf("%s (free %d): picked %v, want none", tc.name, free, got)
+			// nor must the bloat trigger
+			for _, bytes := range []uint64{0, 4 << 30} {
+				c := bloated("a", 3*time.Hour, bytes)
+				tc.edit(&c)
+				if got := Pick([]Candidate{c}, t0, on, free); len(got) != 0 {
+					t.Errorf("%s (free %d, agent %d): picked %v, want none", tc.name, free, bytes, got)
+				}
 			}
 		}
 	}
