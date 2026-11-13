@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Consumers panel (spec 2026-10-08-consumers-panel-design.md): every live agent with its RAM and its tokens and
-// spend of the last 10 minutes, a run's workers under their run, and Stop / → Sonnet per row; free RAM and the 5-hour
+// spend of the last 10 minutes, each run under a head row of its title and sums, its lead, workers and reviewers
+// under it until its chevron folds it (the agents you opened always first, so none reads as a run's), and Stop / → Sonnet per row; free RAM and the 5-hour
 // quota in the header, arcterm's own processes below. Opened from the RAM chip (ranked by RAM) and the plan-usage
 // meters (ranked by tokens). Where the Resource Manager runs (Windows) it is the compact panel instead: a one-line
 // header with Arc's CPU, and per agent its CPU, RAM, spend and the heaviest command it runs, every action (kill that
@@ -32,7 +33,7 @@ import { officeClocks, officeDomNodes, officeMeter, officeMeterAtom } from "@/ap
 import { spriteCacheStats } from "@/app/view/office/spritecache";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowRight, CircleAlert, Ellipsis, Moon, Square, TriangleAlert } from "lucide-react";
+import { ArrowRight, ChevronRight, CircleAlert, Ellipsis, Moon, Square, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { closeSessions, confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
@@ -51,6 +52,7 @@ import {
     pickState,
     ramBar,
     ramLabel,
+    runRowName,
     SLEEPING_GROUP,
     sleepingByProject,
     staleLine,
@@ -59,6 +61,7 @@ import {
     switchToastText,
     togglePickAll,
     withSwapBytes,
+    type ConsumerGroup,
     type ConsumerRow,
     type ConsumersView,
 } from "./consumers";
@@ -68,8 +71,8 @@ import { officeAnimation, officeAnimationAtom } from "./officestore";
 import { TickBox } from "./tickbox";
 import { usePlanDonuts } from "./usagemeters";
 import { fmt, usd } from "./usagestats";
-import { formatGB } from "./workercapacity";
 import { useWaking } from "./wakingstore";
+import { formatGB } from "./workercapacity";
 
 // whether `/model` switches a Claude session inside a running turn: the consumers-panel plan's Task 1 could not check
 // it (no tmux), so a mid-turn switch is worded as waiting for the next turn
@@ -186,11 +189,13 @@ function Row({
     model,
     pick,
     underProject,
+    inRun,
 }: {
     row: ConsumerRow;
     model: AgentsViewModel;
     pick: Picking;
     underProject?: boolean; // under its project's head in Sleeping, which names the project already
+    inRun?: boolean; // under its run's head, which names the run: the row names its role (runRowName)
 }) {
     // the call in flight; a sleep or a wake takes seconds, and a second press would only be refused by the server
     const [pending, setPending] = useState<"sleep" | "wake" | null>(null);
@@ -235,8 +240,8 @@ function Row({
                     row.sleeping ? "text-muted" : "text-primary"
                 )}
             >
-                {row.name}
-                {row.project && !underProject ? (
+                {inRun ? runRowName(row) : row.name}
+                {row.project && !underProject && !inRun ? (
                     <span className="ml-1.5 text-[11px] text-ink-faint">{row.project}</span>
                 ) : null}
             </button>
@@ -567,11 +572,13 @@ function CompactRow({
     model,
     ready,
     pick,
+    inRun,
 }: {
     row: ConsumerRow;
     model: AgentsViewModel;
     ready: boolean;
     pick: Picking;
+    inRun?: boolean; // under its run's head, which names the run: the row names its role (runRowName)
 }) {
     const note = useAtomValue(resmonNotesAtom)[row.id];
     const [sending, setSending] = useState(false);
@@ -611,7 +618,7 @@ function CompactRow({
                             row.sleeping ? "text-muted" : "text-primary"
                         )}
                     >
-                        {row.name}
+                        {inRun ? runRowName(row) : row.name}
                     </button>
                     {cmd != null ? (
                         <span
@@ -697,6 +704,92 @@ function CompactRow({
                     {note.text}
                 </div>
             ) : null}
+        </div>
+    );
+}
+
+// a run's head row: its title and its sums in the columns its lead and workers fill under it; the chevron folds it to
+// this row, the arrow opens the run itself
+function RunHead({
+    group,
+    open,
+    onToggle,
+    compact,
+    ready,
+    model,
+}: {
+    group: ConsumerGroup;
+    open: boolean;
+    onToggle: () => void;
+    compact: boolean;
+    ready: boolean;
+    model: AgentsViewModel;
+}) {
+    const t = group.run!;
+    const n = group.rows.length;
+    const words = `${n} ${n === 1 ? "agent" : "agents"}${t.working > 0 ? ` · ${t.working} working` : ""}`;
+    const num = "text-[12px] tabular-nums text-secondary";
+    const spend = t.tokens === undefined ? "—" : usd(t.spendUsd ?? 0);
+    return (
+        <div
+            data-consumers-run={group.key}
+            data-open={open ? "" : undefined}
+            className="group mx-1 mt-0.5 flex h-[30px] items-center gap-2.5 rounded-md px-2 hover:bg-surface-hover"
+        >
+            <button
+                type="button"
+                data-consumers-run-toggle
+                aria-expanded={open}
+                title={open ? "Fold this run's agents" : "Show this run's lead and workers"}
+                onClick={onToggle}
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
+            >
+                <span className={SLOT}>
+                    <ChevronRight
+                        size={12}
+                        className={cn("text-muted transition-transform duration-100", open && "rotate-90")}
+                        aria-hidden
+                    />
+                </span>
+                <span className="min-w-0 truncate text-[12px] font-semibold text-secondary">
+                    {group.label}
+                    <span className="ml-1.5 text-[11px] font-normal text-ink-faint">{words}</span>
+                </span>
+            </button>
+            {compact ? (
+                <>
+                    <span className={cn(COL_CPU, num)}>{t.cpu === undefined || !ready ? "–" : fmtCpu(t.cpu)}</span>
+                    <span className={cn(COL_RAM, num)}>{t.ramBytes === undefined ? "–" : ramLabel(t.ramBytes)}</span>
+                    <span className={cn(COL_SPEND, "whitespace-nowrap", num)}>{spend}</span>
+                </>
+            ) : (
+                <>
+                    <span className={COL_MODEL} />
+                    <span className={cn(COL_RAM, num)}>{t.ramBytes === undefined ? "—" : ramLabel(t.ramBytes)}</span>
+                    <span className={cn("flex flex-none items-center gap-2.5", num)}>
+                        <span className={COL_TOKENS}>{t.tokens === undefined ? "—" : fmt(t.tokens)}</span>
+                        <span className={COL_SPEND}>{spend}</span>
+                    </span>
+                </>
+            )}
+            <span className={cn(compact ? "w-[52px]" : COL_ACTIONS, "flex flex-none items-center justify-end")}>
+                <button
+                    type="button"
+                    data-consumers-run-open
+                    title="Open this run"
+                    aria-label={`Open ${group.label}`}
+                    onClick={() => {
+                        close();
+                        fireAndForget(() => openTarget(model, { kind: "run", runId: group.key }));
+                    }}
+                    className={cn(
+                        ICON_ACTION,
+                        "opacity-0 transition-opacity duration-100 group-focus-within:opacity-100 group-hover:opacity-100"
+                    )}
+                >
+                    <ArrowRight size={13} />
+                </button>
+            </span>
         </div>
     );
 }
@@ -888,9 +981,12 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
     }
     // the rows ticked to close together, forgotten when the panel closes
     const [picked, setPicked] = useState<Set<string>>(() => new Set());
+    // the runs folded to their head row; each shows its lead and workers, and all open again when the panel closes
+    const [foldedRuns, setFoldedRuns] = useState<Set<string>>(() => new Set());
     useEffect(() => {
         if (!open) {
             setPicked(new Set());
+            setFoldedRuns(new Set());
         }
     }, [open]);
     const openUsage = () => {
@@ -980,79 +1076,110 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                         ) : (
                             <>
                                 {compact ? <CompactHeads /> : <ColumnHeads />}
-                                {view.groups.map((g) => (
-                                    <div key={g.key}>
-                                        {g.key === SLEEPING_GROUP ? (
-                                            // its tick, over the rows' ticks, picks every sleeping agent at once
-                                            <div
-                                                className={cn(
-                                                    SECTION_LABEL,
-                                                    "mx-1 mt-1.5 flex items-center gap-2.5 px-2 pb-0.5 pt-1"
-                                                )}
-                                            >
-                                                <span className={SLOT}>
-                                                    <TickBox
-                                                        state={pickState(picked, g.rows)}
-                                                        label="Select every sleeping agent"
-                                                        title="Select every sleeping agent, to close them together"
-                                                        onToggle={() => setPicked((p) => togglePickAll(p, g.rows))}
-                                                        attrs={{ "data-consumers-pick-sleeping": "" }}
-                                                    />
-                                                </span>
-                                                <span>{g.label}</span>
-                                            </div>
-                                        ) : g.label ? (
-                                            <div className={cn(SECTION_LABEL, "mt-1.5 px-3 pb-0.5 pt-1")}>
-                                                {g.label}
-                                            </div>
-                                        ) : null}
-                                        {bunchesOf(g).map((b) => (
-                                            <div
-                                                key={b.project}
-                                                data-consumers-sleeping-project={b.head ? b.project : undefined}
-                                            >
-                                                {b.head ? (
-                                                    // sleeping agents of more than one project: a tick for each one's
-                                                    <div className="mx-1 flex items-center gap-2.5 px-2 pb-0.5 pt-1">
-                                                        <span className={SLOT}>
-                                                            <TickBox
-                                                                state={pickState(picked, b.rows)}
-                                                                label={`Select every sleeping agent in ${b.project}`}
-                                                                title={`Select every sleeping agent in ${b.project}, to close them together`}
-                                                                onToggle={() =>
-                                                                    setPicked((p) => togglePickAll(p, b.rows))
-                                                                }
-                                                                attrs={{ "data-consumers-pick-project": b.project }}
+                                {view.groups.map((g) =>
+                                    g.run != null ? (
+                                        <div key={g.key}>
+                                            <RunHead
+                                                group={g}
+                                                open={!foldedRuns.has(g.key)}
+                                                onToggle={() => setFoldedRuns((s) => toggleInSet(s, g.key))}
+                                                compact={compact}
+                                                ready={!!snap?.ready}
+                                                model={model}
+                                            />
+                                            {!foldedRuns.has(g.key) ? (
+                                                // its lead and workers, set in under the run's chevron
+                                                <div
+                                                    data-consumers-run-rows
+                                                    className="ml-[18px] border-l border-edge-mid"
+                                                >
+                                                    {g.rows.map((r) =>
+                                                        compact ? (
+                                                            <CompactRow
+                                                                key={r.id}
+                                                                row={r}
+                                                                model={model}
+                                                                ready={!!snap?.ready}
+                                                                pick={pick}
+                                                                inRun
                                                             />
-                                                        </span>
-                                                        <span className="truncate text-[11.5px] font-medium text-secondary">
-                                                            {b.project}
-                                                        </span>
-                                                    </div>
-                                                ) : null}
-                                                {b.rows.map((r) =>
-                                                    compact ? (
-                                                        <CompactRow
-                                                            key={r.id}
-                                                            row={r}
-                                                            model={model}
-                                                            ready={!!snap?.ready}
-                                                            pick={pick}
+                                                        ) : (
+                                                            <Row key={r.id} row={r} model={model} pick={pick} inRun />
+                                                        )
+                                                    )}
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    ) : (
+                                        <div key={g.key}>
+                                            {g.key === SLEEPING_GROUP ? (
+                                                // its tick, over the rows' ticks, picks every sleeping agent at once
+                                                <div
+                                                    className={cn(
+                                                        SECTION_LABEL,
+                                                        "mx-1 mt-1.5 flex items-center gap-2.5 px-2 pb-0.5 pt-1"
+                                                    )}
+                                                >
+                                                    <span className={SLOT}>
+                                                        <TickBox
+                                                            state={pickState(picked, g.rows)}
+                                                            label="Select every sleeping agent"
+                                                            title="Select every sleeping agent, to close them together"
+                                                            onToggle={() => setPicked((p) => togglePickAll(p, g.rows))}
+                                                            attrs={{ "data-consumers-pick-sleeping": "" }}
                                                         />
-                                                    ) : (
-                                                        <Row
-                                                            key={r.id}
-                                                            row={r}
-                                                            model={model}
-                                                            pick={pick}
-                                                            underProject={b.head}
-                                                        />
-                                                    )
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                ))}
+                                                    </span>
+                                                    <span>{g.label}</span>
+                                                </div>
+                                            ) : null}
+                                            {bunchesOf(g).map((b) => (
+                                                <div
+                                                    key={b.project}
+                                                    data-consumers-sleeping-project={b.head ? b.project : undefined}
+                                                >
+                                                    {b.head ? (
+                                                        // sleeping agents of more than one project: a tick for each one's
+                                                        <div className="mx-1 flex items-center gap-2.5 px-2 pb-0.5 pt-1">
+                                                            <span className={SLOT}>
+                                                                <TickBox
+                                                                    state={pickState(picked, b.rows)}
+                                                                    label={`Select every sleeping agent in ${b.project}`}
+                                                                    title={`Select every sleeping agent in ${b.project}, to close them together`}
+                                                                    onToggle={() =>
+                                                                        setPicked((p) => togglePickAll(p, b.rows))
+                                                                    }
+                                                                    attrs={{ "data-consumers-pick-project": b.project }}
+                                                                />
+                                                            </span>
+                                                            <span className="truncate text-[11.5px] font-medium text-secondary">
+                                                                {b.project}
+                                                            </span>
+                                                        </div>
+                                                    ) : null}
+                                                    {b.rows.map((r) =>
+                                                        compact ? (
+                                                            <CompactRow
+                                                                key={r.id}
+                                                                row={r}
+                                                                model={model}
+                                                                ready={!!snap?.ready}
+                                                                pick={pick}
+                                                            />
+                                                        ) : (
+                                                            <Row
+                                                                key={r.id}
+                                                                row={r}
+                                                                model={model}
+                                                                pick={pick}
+                                                                underProject={b.head}
+                                                            />
+                                                        )
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )
+                                )}
                             </>
                         )}
                     </div>

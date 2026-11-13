@@ -130,9 +130,55 @@ func TestGetConsumersReportsEachAgentsRamTokensAndTask(t *testing.T) {
 	if a.Dag != nil || c.Dag == nil || c.Dag.TaskId != "t-4" {
 		t.Fatalf("A's run has no dag, C works on t-4: A %+v, C %+v", a.Dag, c.Dag)
 	}
+	// B and C work for the run that owns their dag; A's quick run is not one the panel groups by
+	if a.RunId != "" || b.RunId != "run-owner" || c.RunId != "run-owner" {
+		t.Fatalf("runs: A %q, B %q, C %q; want none, run-owner, run-owner", a.RunId, b.RunId, c.RunId)
+	}
 	// B and C share one dag: it is read once a reading, from the runs the roster already loaded
 	if *dagReads != 1 {
 		t.Fatalf("dag reads = %d, want 1", *dagReads)
+	}
+}
+
+func TestConsumerOwnerRunGroupsALeadAndEveryDagChild(t *testing.T) {
+	lead := &waveobj.Run{OID: "run-owner", Mode: "orchestrator", Goal: "Build Gọn lại sidebar\nmore", DagORef: "dag-1"}
+	planning := &waveobj.Run{OID: "run-new", Mode: "orchestrator", Goal: "Plan it"}
+	worker := &waveobj.Run{OID: "run-b", DagORef: "dag-1", TaskId: "t-3"}
+	reviewer := &waveobj.Run{OID: "run-rv", DagORef: "dag-1", TaskId: "t-3", Review: true}
+	quick := &waveobj.Run{OID: "run-q", Mode: "quick"}
+	runs := []*waveobj.Run{lead, planning, worker, reviewer, quick}
+	cases := []struct {
+		name     string
+		run      *waveobj.Run
+		g        *waveobj.TaskGroup
+		wantId   string
+		wantGoal string
+		wantTask string
+	}{
+		{"a lead, its plan in", lead, consumersDag, "run-owner", "Build Gọn lại sidebar\nmore", ""},
+		{"a lead still planning", planning, nil, "run-new", "Plan it", ""},
+		{"a worker on its task", worker, consumersDag, "run-owner", "Build Gọn lại sidebar\nmore", "t-3"},
+		// its run is not the task's run, so it has no task to stop, but it still sits with its run
+		{"a reviewer", reviewer, consumersDag, "run-owner", "Build Gọn lại sidebar\nmore", ""},
+		{"a quick run's worker", quick, nil, "", "", ""},
+		{"a dag child whose dag could not be read", reviewer, nil, "", "", ""},
+		{"no run", nil, nil, "", "", ""},
+	}
+	for _, c := range cases {
+		id, goal := consumerOwnerRun(c.run, c.g, runs)
+		if id != c.wantId || goal != c.wantGoal {
+			t.Errorf("%s: run %q goal %q, want %q %q", c.name, id, goal, c.wantId, c.wantGoal)
+		}
+		if c.run == nil {
+			continue
+		}
+		task := ""
+		if d := consumerDag(c.g, c.run); d != nil {
+			task = d.TaskId
+		}
+		if task != c.wantTask {
+			t.Errorf("%s: task %q, want %q", c.name, task, c.wantTask)
+		}
 	}
 }
 

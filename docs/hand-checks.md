@@ -18,6 +18,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   menu; Show in Explorer opens Explorer with the file selected, and a path that does not exist toasts "File not found".
   Written and typechecked, never run in the app (`pathlinkcontext.tsx` `PathLink`, `pathlinkroute.ts`
   `revealAgentPath`).
+- [ ] (arcterm) The RAM popover groups a run's lead, workers and reviewers under one head row: with an orchestrator
+  run going (its lead, a worker on a task and a `review t-N` reviewer live), open the RAM chip → your own agents come
+  first, then one head row with the run's title (`Build …` cut before "as specified in"), its agent count and the sums
+  of CPU, RAM and spend, and under it `Lead` first, then `Task t-N` / `t-N · …` and `review t-N`; none of the three
+  sits loose at the top, and the chevron folds the run to its head row. Needs a rebuilt wavesrv: the run comes from
+  the server (`runid` / `rungoal`, `wshserver_consumers.go` `consumerOwnerRun`). Scenarios `consumers-popover` and
+  `consumers-close-picked` were updated but not run.
 
 - [ ] (arcterm) The Agent sidebar's columns line up (spec 2026-11-13-sidebar-declutter-design): run
   `task verify:ui -- sidebar-columns agent-tree-rail sidebar-agent-ram` on the dev app → all pass, and

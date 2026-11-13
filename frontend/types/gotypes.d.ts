@@ -2626,6 +2626,8 @@ declare global {
         tokens?: UsageBucket[];
         dag?: ConsumerDag;
         heaviest?: ConsumerProcess;
+        runid?: string;
+        rungoal?: string;
     };
 
     // wshrpc.ConsumerDag
