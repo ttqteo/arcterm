@@ -74,6 +74,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- With Jarvis set to the hologram, the fold button at the right of the app bar shows the hologram instead of Sprout.
+- A permission card in Chat shows the Enter key on the button ↑ ↓ have picked, so you can see what Enter will send.
 - Chat no longer stops mid-word ("Writ") while Claude writes a file: the sentence it says before a tool call shows
   whole at once, instead of waiting seconds for the tool call to finish streaming.
 - A long Confirm the design card in Chat keeps its button in view: Confirm all guesses and Check with a builder

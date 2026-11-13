@@ -12,6 +12,7 @@
 // and Enter sends the highlighted one (permissionstore.ts's card keys, which the box reads); with a button of the card in
 // focus, the arrows move the highlight and the focus with it, so Enter or Space presses the highlighted button.
 
+import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { readTermLines } from "../term/termpaste";
@@ -39,10 +40,11 @@ import {
 } from "./permissionstore";
 import { tuiPermissionOptions } from "./tuiscreen";
 
+// flex: the highlighted button carries its Enter key beside the label
 const PRIMARY_BTN =
-    "flex-none cursor-pointer rounded-[7px] bg-accent px-[14px] py-[6px] text-[12.5px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50";
+    "flex flex-none cursor-pointer items-center gap-1.5 rounded-[7px] bg-accent px-[14px] py-[6px] text-[12.5px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50";
 const SECONDARY_BTN =
-    "flex-none cursor-pointer rounded-[7px] border border-edge-mid bg-surface-raised px-[14px] py-[6px] text-[12.5px] font-semibold text-muted hover:border-edge-strong hover:bg-surface-hover disabled:cursor-default disabled:opacity-50";
+    "flex flex-none cursor-pointer items-center gap-1.5 rounded-[7px] border border-edge-mid bg-surface-raised px-[14px] py-[6px] text-[12.5px] font-semibold text-muted hover:border-edge-strong hover:bg-surface-hover disabled:cursor-default disabled:opacity-50";
 const TEXT_BTN = "flex-none cursor-pointer text-[12px] text-accent-soft hover:underline";
 // the choice ↑ ↓ are on: a ring clear of the button, in the accent the primary button already wears
 const PICKED = "outline outline-2 outline-offset-2 outline-accent";
@@ -150,6 +152,20 @@ export function PermissionCard({
     const answer = (allow: boolean, choice?: 2) =>
         fireAndForget(() => answerPermission(oref, head.id, { allow, choice }));
     const ring = (choice: PermissionChoice) => (picked === choice ? PICKED : undefined);
+    // the key that sends the highlighted choice, on that button alone
+    const enterKey = (choice: PermissionChoice, onAccent = false) =>
+        picked === choice ? (
+            <kbd
+                aria-hidden
+                data-perm-enter
+                className={cn(
+                    "flex-none rounded-[4px] border px-1 font-mono text-[10.5px] font-normal leading-4",
+                    onAccent ? "border-background/30 text-background/75" : "border-edge-mid text-muted"
+                )}
+            >
+                {formatChordString("Enter")}
+            </kbd>
+        ) : null;
     // a button of the card in focus: the arrows move the highlight and the focus with it
     const onRowKey = (e: KeyboardEvent<HTMLDivElement>) => {
         const delta =
@@ -197,6 +213,7 @@ export function PermissionCard({
                             onClick={() => answer(true)}
                         >
                             Allow
+                            {enterKey("allow", true)}
                         </button>
                         {second != null && (
                             <button
@@ -205,10 +222,11 @@ export function PermissionCard({
                                 data-perm-choice="second"
                                 disabled={busy}
                                 title={second}
-                                className={cn(SECONDARY_BTN, "min-w-0 max-w-[320px] truncate", ring("second"))}
+                                className={cn(SECONDARY_BTN, "min-w-0 max-w-[320px]", ring("second"))}
                                 onClick={() => answer(true, 2)}
                             >
-                                {second}
+                                <span className="min-w-0 truncate">{second}</span>
+                                {enterKey("second")}
                             </button>
                         )}
                         <button
@@ -221,6 +239,7 @@ export function PermissionCard({
                             onClick={() => answer(false)}
                         >
                             Deny
+                            {enterKey("deny")}
                         </button>
                         <button
                             type="button"

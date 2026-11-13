@@ -15,6 +15,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   its dev app under memory pressure. Commit: feat(launcher) No folder replaces Home (`launchermodal.tsx`,
   `pkg/jarvis/nofolder.go`).
 
+- [ ] (arcterm) Hologram fold button and the permission card's Enter key: Settings → Jarvis → Form → Hologram → the
+  26px button left of the window controls shows blue rings around a light core, not Sprout; back to Sprout → the
+  creature again. Then have a Claude agent ask a permission in Chat → the highlighted button (Allow at first) carries an
+  Enter key chip; ↓ moves the ring and the chip together to the second choice and Deny. `app-bar.tsx` HologramGlyph,
+  `permissioncard.tsx` enterKey.
 - [ ] (arcterm) Hidden Jarvis in the Office and at launch: open Cockpit → Office, right-click the boss → Hide for 1
   hour → the boss and its ring go, its desk stays empty and no Sprout appears on the footer; Ctrl+P → Show Jarvis →
   the boss comes back with its entrance (the teleport, or Spider-Man's swing). Hide again, then quit and reopen
