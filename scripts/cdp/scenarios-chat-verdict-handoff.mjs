@@ -1164,8 +1164,18 @@ export default function (kit) {
                 await step(`remove the queue entry ${id}`, () => h.rpc("runqueueremove", { id }));
             }
             if (ctx.channelId != null) {
-                // a landed run refuses a cancel; the rest are deferred and cancel at once
+                // a done run (step 7 lands one) refuses a cancel ("a finished run cannot be cancelled"), so only a run
+                // that is not done is cancelled; the done ones go with the channel below, which removes its runs. A
+                // failed read leaves the set empty, so every run is tried and a failure is logged as before
+                const done = new Set();
+                await step("read the runs' states", async () => {
+                    for (const r of (await h.rpc("getchannelruns", { channelid: ctx.channelId }))?.runs ?? []) {
+                        if (r.status === "done") done.add(r.id);
+                    }
+                });
+                // the rest are deferred and cancel at once
                 for (const runId of Object.values(ctx.runs ?? {})) {
+                    if (done.has(runId)) continue;
                     await step(`cancel run ${runId}`, () => h.rpc("cancelrun", { channelid: ctx.channelId, runid: runId }));
                 }
                 await step("delete the runs' channel", () => h.rpc("deletechannel", { channelid: ctx.channelId }));
