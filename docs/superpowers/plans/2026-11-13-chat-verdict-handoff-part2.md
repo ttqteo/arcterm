@@ -65,7 +65,10 @@ Rules for every task:
 7. **Reviewer pairing.** The block's `subagent` matches an `Agent` / `Task` call's `description` in the same agent
    item; without it, the nearest reviewer call before the block in that item (a call whose `subagent_type` or
    description contains "review", case-insensitive). `Open the review` shows only when the paired call resolves to a
-   subagent transcript Arc can open; `/code-review` and `review-plan` have none.
+   subagent transcript Arc can open; `/code-review` and `review-plan` have none. The call resolves by its tool-use id:
+   `SubagentVM` today has no link to the `Agent` / `Task` call that spawned it (`correlateSubagents` pairs files to
+   spawns by prompt text, which a `ReviewerCall` does not carry), so `SubagentVM` gains `toolUseId`, set from the
+   matched spawn, and the card finds the subagent whose `toolUseId` equals `ReviewerCall.toolUseId`.
 8. **Handoff placement.** While the agent waits on a `Handoff` ask, the live handoff card replaces the `AskRow` in
    Chat's dock (`data-chat-ask`), where the plain choices are today, so it shows even before the tool call reaches the
    transcript. In the conversation an unanswered `handoff` part draws nothing while the agent is live, and a static
@@ -87,7 +90,9 @@ Rules for every task:
     after the anchor that no anchor claims. A conversation run that no anchor claims draws at the end of the
     conversation, before the brainstorm's card. A card folds in place into its ✓ row when the run is landed, complete
     or cancelled, or when a run-ended message is paired with it (a held run never reaches a done stage; its
-    `[arc] Run … held:` message is what folds it). The queued stage is the card's own (`data-chat-bscard-run-stage="queued"`); `runStage` gains none.
+    `[arc] Run … held:` message is what folds it). The brainstorm's run folds the same way: a paired message hides
+    its live card (`ChatBrainstormRunRow`) and makes its `brainstorm: run` line draw the ✓ row
+    (`ChatBrainstormRunDone`), as a done run does. The queued stage is the card's own (`data-chat-bscard-run-stage="queued"`); `runStage` gains none.
 11. **The run-ended message.** A user (or `sent`) item whose first line matches
     `^\[arc\] Run ([0-9a-f]{8})( "…")? (landed: …|held: …|held\.)` and whose id prefixes a run card of this
     conversation (brainstorm's run included) draws nothing; that run's ✓ row reads `Run <id8> landed · <what follows
@@ -133,12 +138,17 @@ A scenario of its own (decision 12), modelled on `scripts/cdp/scenarios-chat-bra
 agent over a real tab with a shell controller, mock roster row, fixture transcript appended the way Claude Code
 writes it, `fstWriteRun` for fixture runs, the send record read back from `localStorage['chat.brainstorm.sent']`),
 written against the DOM contract above, registered in `scenarios.mjs` beside `chatBrainstormReviewScenarios(CBR_KIT)`.
-Teardown puts the roster, localStorage keys, runs and tabs back. Steps, each with its own shot and assert:
+Teardown puts the roster, localStorage keys, runs and tabs back. Every fixture run the conversation started sets both
+`origintranscript` (the fixture transcript) and `origintabid` (the fixture agent's tab), as `CreateRunCommand` does
+(`pkg/wshrpc/wshserver/wshserver_runs.go`, `run.OriginTabId` / `run.OriginTranscript`): the origin-run index
+(`runoriginstore.ts`) keeps only runs with an `origintabid`, so a run with the transcript alone never reaches
+`useConversationRuns`. Steps, each with its own shot and assert:
 
 1. Verdict card waiting: the transcript ends on a reply with an `arc-review` block (3 findings: 2 Important, 1
    Minor; `subagent` naming the call) after an `Agent` call with `subagent_type` `superpowers:code-reviewer`, with a
    subagent transcript written beside the fixture transcript where Claude Code writes one (see
-   `scripts/cdp/scenarios-agent-subagents.mjs` for the layout); roster row idle. Assert the card state `waiting`, chip
+   `scripts/cdp/scenarios-agent-subagents.mjs` for the layout), its first prompt the `Agent` call's prompt word for
+   word (`correlateSubagents` pairs a file to its call by that text); roster row idle. Assert the card state `waiting`, chip
    `changes`, the note, 3 finding rows, the two Important ticked and the Minor not, `Fix 2 selected`,
    `Skip the review`, and `[data-chat-vcard-open]` present.
 1b. Click `[data-chat-vcard-open]`: the subagent's interior opens (assert what the Agent surface shows for it). Back
@@ -170,6 +180,10 @@ Teardown puts the roster, localStorage keys, runs and tabs back. Steps, each wit
    no bubble, and clicking `[data-chat-run-ended]` opens `[data-chat-run-ended-text]` with the message.
 7b. A held run: another run card whose run is held (not landed), then an `[arc] Run <id8> held: <reason>.` message:
    the card folds into `Run <id8> held: <reason>` and the message draws no bubble.
+7c. A held brainstorm run: the fixture conversation's brainstorm state names a fixture run (`brainstorm.run`, as
+   `chat-brainstorm-review` sets `file.run`) whose run is held, then an `[arc] Run <id8> held: <reason>.` message
+   is appended: the brainstorm's live run card is gone, its `brainstorm: run` line draws
+   `[data-chat-bscard-done="run"]` reading `Run <id8> held: <reason>`, and the message draws no bubble.
 8. A queued run: a Bash call whose result is `queued <entryId> (#1 in line) — …` and a real queue entry for it,
    added with the `runqueueadd` RPC with `after` set to a fixture run that never lands, so it stays queued (as the
    queued scenarios in `scenarios.mjs` around line 59696 do); `runqueueremove` it in teardown. The card shows
@@ -191,7 +205,8 @@ Decisions 1–2. `AgentPart` gains:
 | { kind: "runstart"; key: string; anchor: RunAnchor }
 ```
 
-`chatItems` makes them as decision 1 says; a work stretch emptied by the cut leaves no empty work part; files parts
+`chatItems` makes them as decision 1 says, the reviewer calls it pairs carrying the action's `toolUseId` (Task 3 opens
+the review by it, decision 7); a work stretch emptied by the cut leaves no empty work part; files parts
 stay after their work. `chatitemeq.ts` compares the new parts (by key and content) so a kept element redraws only
 when they change. In `chatconversation.tsx`, `drawPart` returns `null` for the three new kinds (Task 6 draws them);
 nothing else there changes.
@@ -205,9 +220,14 @@ reply with an `arc-review` block between two paragraphs (three parts), a broken 
 ### Task 3: The verdict card
 **Depends on:** none
 **Model:** sonnet
-**Files:** `frontend/app/view/agents/chatverdictcard.tsx`, `frontend/app/view/agents/chatverdictsend.ts`, `frontend/app/view/agents/chatverdictsend.test.ts`, `frontend/app/view/agents/brainstormsend.ts`
+**Files:** `frontend/app/view/agents/chatverdictcard.tsx`, `frontend/app/view/agents/chatverdictsend.ts`, `frontend/app/view/agents/chatverdictsend.test.ts`, `frontend/app/view/agents/brainstormsend.ts`, `frontend/app/view/agents/chatbrainstormparts.tsx`, `frontend/app/view/agents/session-models/sessionviewmodel.ts`, `frontend/app/view/agents/subagentcorrelate.ts`, `frontend/app/view/agents/subagentcorrelate.test.ts`
 
-Board `B-pick-and-send.dc.html`. Export `PromptIO` and `tauriPromptIO` from `brainstormsend.ts` (they are module
+Board `B-pick-and-send.dc.html`. First the link from a reviewer call to its subagent (decision 7): `SubagentVM`
+(`session-models/sessionviewmodel.ts`) gains `toolUseId?: string`, which `correlateSubagents` sets from the matched
+spawn's `toolUseId` (an unmatched file has none); a test in `subagentcorrelate.test.ts` covers both. Second,
+`TickBox` in `chatbrainstormparts.tsx` hardcodes `data-chat-bscard-tick` and `Combine <letter>`: give it optional
+`attrs` (replacing that attribute when given) and `label` props, the brainstorm card's output unchanged, and the
+verdict card passes `{ "data-chat-vcard-tick": "" }` and `Select finding <n>`. Export `PromptIO` and `tauriPromptIO` from `brainstormsend.ts` (they are module
 private today) and reuse them; nothing else there changes. `chatverdictsend.ts`: `sendVerdict(agent, key, outcome, line, io = tauriPromptIO,
 now)` sends the line (wake when asleep, else prompt, as `sendBrainstorm` does), then keeps `verdictRecord(...)` with
 `recordBrainstormAnswer`; a failure throws with the agent's name, nothing recorded. `chatverdictcard.tsx` exports:
@@ -222,11 +242,13 @@ Approved, tokens only), the note, one row per finding (severity pill, `file:line
 pill does, summary), and in `waiting` only: a tick box per finding (`TickBox` from the parts file, initial ticks from
 `initialTicks`, kept per verdict key in a module-level jotai atom so a remount keeps them), `Fix N selected` (primary
 button) and `Skip the review`, an `Or type below what to change` hint, and the send error on the card. `Open the
-review` (header action) opens the paired subagent's transcript the way the Agent surface opens a subagent's interior
-(find it from `scripts/cdp/scenarios-agent-subagents.mjs` and the subagent rows in `agentrailpanel.tsx`); left out when
-`reviewer` is null or does not resolve.
+review` (header action) finds the subagent in `subagentsByIdAtom[agent.id]` whose `toolUseId` equals
+`reviewer.toolUseId` (calling `refreshSubagents(agent.id, agent.transcriptPath)` on mount, as Chat's local card does
+in `chatlocalcards.tsx`) and opens its interior by setting `focusSubagentAtom` with `parentId`, `agentId`,
+`transcriptPath` and `label`, as `chatlocalcards.tsx` and `agentdetailsrail.tsx` (the subagent rows) do; left out when
+`reviewer` is null, has no `toolUseId`, or no subagent with a `transcriptPath` matches.
 
-Tests (`npx vitest run frontend/app/view/agents/chatverdictsend.test.ts`): a sent fix keeps its record with the right
+Tests (`npx vitest run frontend/app/view/agents/chatverdictsend.test.ts frontend/app/view/agents/subagentcorrelate.test.ts`): the `toolUseId` carried and left out as above; a sent fix keeps its record with the right
 `seen`; a sleeping agent is woken with the line; a failed prompt throws and records nothing. The card is shown by the
 `chat-verdict-handoff` scenario steps 1, 1b (Open the review, the file:line link), 2, 2b (Skip), 3 and 3b (static).
 
@@ -273,10 +295,13 @@ stage `queued`, then the run's own stage once started), and once the run is done
 (decision 11; a held run folds only by its message), in place, `DoneRow kind="run"` with `runEndedLine` and the
 message as `detail` when `ended` is given, else `runDoneLine`. `live` false makes the card
 static. Make sure the run queue is loaded (the store's existing mount hook). `chatbrainstormrun.tsx` keeps its
-exports and attributes and uses the shared box; `ChatBrainstormRunDone` takes an optional `ended` the same way.
+exports and attributes and uses the shared box. The brainstorm's run folds by its message too (decision 10), since a
+held run is never done: `ChatBrainstormRunRow` takes an optional `ended` and returns nothing when it is given, as it
+does for a done run, and `ChatBrainstormRunDone` takes an optional `ended` and, when given, draws the ✓ row with
+`runEndedLine` and the message as `detail` whether or not the run is done.
 
 Acceptance: `task check:ts`; the brainstorm run card steps of `chat-brainstorm-review` unchanged; shown by
-`chat-verdict-handoff` steps 6, 7 (ended row's caret), 7b (held) and 8.
+`chat-verdict-handoff` steps 6, 7 (ended row's caret), 7b (held), 7c (held brainstorm run) and 8.
 
 ### Task 6: Draw the cards in the conversation
 **Depends on:** Task 2 (shares chatconversation.tsx), Task 3 (draws ChatVerdictCard), Task 4 (draws ChatHandoffCard and ChatHandoffDone), Task 5 (draws ChatRunCard and uses useConversationRuns)
@@ -292,7 +317,10 @@ an agent that has not exited; working = `toolsLive`; nextIsYou from the next ite
 a static `ChatHandoffCard` otherwise; `runstart` parts with `ChatRunCard` per `placeRunCards` (runs from
 `useConversationRuns` over the agent's transcript path; the brainstorm's run from the brainstorm prop), and the trailing runs at the end before the brainstorm card. Hide each
 user or sent item `pairRunEnded` pairs with a run card of this conversation (no wrapper, as `drawnVisible` leaves a
-hidden line), and hand its `RunEnded` to that run's card (or to `ChatBrainstormRunDone` for the brainstorm's run).
+hidden line), and hand its `RunEnded` to that run's card. For the brainstorm's run, hand it to both
+`ChatBrainstormRunRow` and `ChatBrainstormRunDone`, and count the run as done where the conversation reads
+`useDoneRuns` (its id joins the done set when it has an ended message), so its `brainstorm: run` line draws the ✓ row
+instead of nothing (decision 10).
 Extend the kept-element compare (`answerKey` / `DrawnItem`) so a mode or record change redraws. An exited agent
 draws every card static (decision 13).
 
@@ -301,7 +329,7 @@ user: Chat draws a reviewer's verdict as a card you tick and send, the plan hand
 every run the agent starts, each folding to a ✓ row.
 
 Acceptance: `task check:ts`; `npx vitest run frontend/app/view/agents/chatverdict.test.ts frontend/app/view/agents/chatruncards.test.ts`;
-shown by `chat-verdict-handoff` steps 1–3b and 6–8 (7b for the held fold).
+shown by `chat-verdict-handoff` steps 1–3b and 6–8 (7b for the held fold, 7c for the held brainstorm run).
 
 ### Task 7: The live handoff card in Chat's dock
 **Depends on:** Task 4 (draws ChatHandoffCard)
