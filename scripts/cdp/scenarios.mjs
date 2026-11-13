@@ -16483,6 +16483,41 @@ const railContextBreakdown = {
             JSON.stringify(views)
         );
 
+        // 5b. every group open makes the rail scroll: its scrollbar's room is kept either way, so the content is one
+        // width, each Spend label stays on one line, and a group folds shut on a height animation, not at once
+        const fit = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            const scroll = $("[data-rail-session]")?.closest("[data-rail-scroll]");
+            const labels = $$("[data-spend-label]");
+            const toggle = $('[data-ctx-group="skills"]');
+            const box = () => $('[data-ctx-rows="skills"]');
+            const full = box()?.parentElement?.getBoundingClientRect().height ?? 0;
+            toggle?.click();
+            await nap(60);
+            const mid = box()?.parentElement?.getBoundingClientRect().height ?? -1;
+            const gone = await until(() => !box());
+            return {
+                scrolls: scroll ? scroll.scrollHeight > scroll.clientHeight : null,
+                gutter: scroll ? getComputedStyle(scroll).scrollbarGutter : null,
+                labels: labels.map((l) => [text(l), Math.round(l.getBoundingClientRect().height)]),
+                full: Math.round(full),
+                mid: Math.round(mid),
+                gone,
+            };
+        })()`);
+        rec(
+            "5b. the scrolling rail keeps its scrollbar gutter, every Spend label is one line, and Skills folds shut through a mid height",
+            fit.scrolls === true &&
+                fit.gutter === "stable" &&
+                fit.labels.length >= 3 &&
+                fit.labels.every(([, h]) => h > 0 && h <= 20) &&
+                fit.full > 0 &&
+                fit.mid > 0 &&
+                fit.mid < fit.full &&
+                fit.gone === true,
+            JSON.stringify(fit)
+        );
+
         // 6. not read yet: the empty bar, the line and the button; the cache line still shows
         await seedCtx(h, ctx, { state: "idle" });
         const idle = await h.ev(`(async () => {

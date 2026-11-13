@@ -46,6 +46,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The Agent details rail keeps one width whether it scrolls or not, so the Spend table's columns no longer shift
+  and its labels no longer wrap when a scrollbar appears; a Context group (Skills, Memory files…) now folds open and
+  shut smoothly.
 - Changing an initiative (from the app or `wsh effort`) no longer stalls or fails with a timeout while the vault
   syncs over the network; it waits only for the vault's quick local commit.
 - A Chat message that never reaches Claude Code no longer sits under "Queued" for good: arcterm tells you it was not
