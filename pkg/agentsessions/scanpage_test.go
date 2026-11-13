@@ -231,3 +231,15 @@ func TestScanPage_windowZeroReadsEveryFile(t *testing.T) {
 		t.Errorf("want the 400-day-old session, got %+v", page.Sessions)
 	}
 }
+
+func TestScanPage_idsReadOnlyTheNamedSessionsWhateverTheirAge(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeClaudeSession(t, dir, "new", "/p/a", "new task", now.Add(-time.Hour))
+	writeClaudeSession(t, dir, "old", "/p/b", "old task", now.AddDate(0, 0, -40))
+	writeClaudeSession(t, dir, "other", "/p/a", "other task", now.Add(-2*time.Hour))
+	pages := readAllPages(t, []provider{claudeProvider(dir)}, PageOpts{Ids: []string{"old", "new.jsonl", "gone"}})
+	if len(pages) != 1 || !reflect.DeepEqual(pages[0], []string{"new", "old"}) {
+		t.Errorf("want one page of [new old], got %v", pages)
+	}
+}

@@ -82,6 +82,7 @@ import diffScopeScenarios from "./scenarios-diff-scope.mjs";
 import diffStatesScenarios from "./scenarios-diff-states.mjs";
 import jarvisActivityScenarios from "./scenarios-jarvis-activity.mjs";
 import jarvisCardsScenarios from "./scenarios-jarvis-cards.mjs";
+import jarvisLaterScenarios from "./scenarios-jarvis-later.mjs";
 import jarvisSheetScenarios from "./scenarios-jarvis-sheet.mjs";
 import kaelAskKeysScenarios from "./scenarios-kael-ask-keys.mjs";
 import kaelKeysScenarios from "./scenarios-kael-keys.mjs";
@@ -70500,6 +70501,7 @@ export const SCENARIOS = [
     ...jarvisCardsScenarios(JARVIS_KIT),
     ...jarvisActivityScenarios(JARVIS_KIT),
     ...jarvisSheetScenarios(JARVIS_KIT),
+    ...jarvisLaterScenarios(JARVIS_KIT),
     agentRailWorktreeFiles,
     agentRailChangesCommits,
     agentRailCommitMode,

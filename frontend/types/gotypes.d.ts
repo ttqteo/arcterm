@@ -1600,6 +1600,7 @@ declare global {
         windowdays?: number;
         limit?: number;
         cursor?: string;
+        ids?: string[];
     };
 
     // wshrpc.CommandGetSessionsActivityRtnData

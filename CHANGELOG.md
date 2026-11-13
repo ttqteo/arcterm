@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Jarvis has a For later list at the bottom of its side column: every session you marked for later, in every
+  project, newest mark first. Click one to open its conversation (or its agent, if it is still running), Resume an
+  ended one, or press Done to clear the mark; a mark whose session is gone still shows, so you can clear it.
+  <!-- try: go:jarvis -->
 - Chat draws a reviewer's verdict as a card: each finding with its severity and a file link, a tick on the ones to
   fix, and Fix N selected or Skip the review, which send one line to the agent. The plan handoff is four lettered
   choices, and every run the agent starts is a card at the call that started it, kept up to date until it lands. Each

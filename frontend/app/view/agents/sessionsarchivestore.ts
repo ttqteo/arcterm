@@ -133,6 +133,39 @@ export async function loadMoreSessionsArchive(): Promise<void> {
     }
 }
 
+// Sessions read by id, outside the archive's pages: the ones Jarvis's For later names, whatever their age. `ids` is what
+// the last finished lookup asked for, so an id it covers that has no session reads as gone, not as loading. The session
+// pane resolves from these too, so a mark older than the archive's loaded pages still opens its transcript.
+export type SessionLookup = { ids: string[]; sessions: SessionActivity[] };
+export const sessionLookupAtom = atom<SessionLookup>({ ids: [], sessions: [] }) as PrimitiveAtom<SessionLookup>;
+
+let lookupWanted = "";
+
+/** Read the sessions whose transcript stems are `ids`. A lookup overtaken by a newer one drops its answer; a failed one
+ *  keeps what was looked up before, so its rows stay loading rather than reading as gone. */
+export async function lookupSessions(ids: string[]): Promise<void> {
+    const key = [...ids].sort().join(" ");
+    lookupWanted = key;
+    if (ids.length === 0) {
+        globalStore.set(sessionLookupAtom, { ids: [], sessions: [] });
+        return;
+    }
+    try {
+        const rtn = await RpcApi.GetSessionsActivityCommand(TabRpcClient, { ids });
+        if (lookupWanted === key) {
+            globalStore.set(sessionLookupAtom, { ids, sessions: rtn.sessions ?? [] });
+        }
+    } catch (e) {
+        console.warn("sessions lookup by id failed", e);
+    }
+}
+
+/** Pure: the archive with the sessions looked up by id that it does not list behind it, for a reader resolving one
+ *  session by its key. */
+export function withLookedUp(archive: SessionActivity[], lookedUp: SessionActivity[]): SessionActivity[] {
+    return lookedUp.length === 0 ? archive : appendPage(archive, lookedUp);
+}
+
 /** Take a session's row out now: a delete reloads only the first page, which would leave a row from an older page. */
 export function dropFromArchive(transcriptPath: string): void {
     if (transcriptPath === "") {

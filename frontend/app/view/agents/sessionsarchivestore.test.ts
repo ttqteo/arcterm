@@ -12,18 +12,21 @@ import {
     groupByRecency,
     loadMoreSessionsArchive,
     loadSessionsArchive,
+    lookupSessions,
     mergedFeed,
     mergeFreshPage,
     overlayLive,
     paletteSessions,
     resolveSelectedSession,
     sessionHolder,
+    sessionLookupAtom,
     sessionsArchiveAtom,
     sessionsCursorAtom,
     sessionsErrorAtom,
     sessionsLoadingMoreAtom,
     storedSessionHolders,
     totalEvents,
+    withLookedUp,
     type StoredAgentBlock,
 } from "./sessionsarchivestore";
 
@@ -408,5 +411,63 @@ describe("paletteSessions", () => {
             at("norc", 7, { resumecommand: "" }),
         ];
         expect(paletteSessions(list).map((s) => s.id)).toEqual(["none", "lead"]);
+    });
+});
+
+describe("lookupSessions", () => {
+    const rpc = vi.mocked(RpcApi.GetSessionsActivityCommand);
+
+    it("asks for the ids and keeps what it found with the ids it covered", async () => {
+        rpc.mockReset();
+        rpc.mockResolvedValueOnce({ sessions: [mk({ id: "a" })] });
+        await lookupSessions(["a", "gone"]);
+        expect(rpc.mock.calls[0][1]).toEqual({ ids: ["a", "gone"] });
+        expect(globalStore.get(sessionLookupAtom)).toEqual({ ids: ["a", "gone"], sessions: [mk({ id: "a" })] });
+    });
+
+    it("asks nothing for no ids: an empty filter would read every session", async () => {
+        rpc.mockReset();
+        await lookupSessions([]);
+        expect(rpc).not.toHaveBeenCalled();
+        expect(globalStore.get(sessionLookupAtom)).toEqual({ ids: [], sessions: [] });
+    });
+
+    it("drops an answer a newer lookup overtook", async () => {
+        rpc.mockReset();
+        let answerOld: (v: { sessions: SessionActivity[] }) => void = () => {};
+        rpc.mockReturnValueOnce(new Promise((r) => (answerOld = r)));
+        rpc.mockResolvedValueOnce({ sessions: [mk({ id: "new" })] });
+        const old = lookupSessions(["old"]);
+        await lookupSessions(["new"]);
+        answerOld({ sessions: [mk({ id: "old" })] });
+        await old;
+        expect(globalStore.get(sessionLookupAtom).ids).toEqual(["new"]);
+    });
+
+    it("keeps the last lookup when one fails, so its rows do not read as gone", async () => {
+        rpc.mockReset();
+        rpc.mockResolvedValueOnce({ sessions: [mk({ id: "a" })] });
+        await lookupSessions(["a"]);
+        rpc.mockRejectedValueOnce(new Error("backend down"));
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        await lookupSessions(["a", "b"]);
+        warn.mockRestore();
+        expect(globalStore.get(sessionLookupAtom).ids).toEqual(["a"]);
+    });
+});
+
+describe("withLookedUp", () => {
+    it("adds the looked-up sessions the archive does not list, behind it", () => {
+        const archive = [mk({ id: "a" })];
+        const out = withLookedUp(archive, [mk({ id: "a", task: "dup" }), mk({ id: "old" })]);
+        expect(out.map((s) => [s.id, s.task])).toEqual([
+            ["a", "do the thing"],
+            ["old", "do the thing"],
+        ]);
+    });
+
+    it("hands the archive back untouched with nothing looked up", () => {
+        const archive = [mk()];
+        expect(withLookedUp(archive, [])).toBe(archive);
     });
 });

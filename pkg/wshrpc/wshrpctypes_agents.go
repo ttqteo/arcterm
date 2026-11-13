@@ -383,9 +383,10 @@ type ProjectActivityDay struct {
 }
 
 type CommandGetSessionsActivityData struct {
-	WindowDays int    `json:"windowdays,omitempty"`
-	Limit      int    `json:"limit,omitempty"`
-	Cursor     string `json:"cursor,omitempty"`
+	WindowDays int      `json:"windowdays,omitempty"`
+	Limit      int      `json:"limit,omitempty"`
+	Cursor     string   `json:"cursor,omitempty"`
+	Ids        []string `json:"ids,omitempty"` // only these sessions, by transcript stem, whatever their age (Jarvis's For later)
 }
 
 type CommandGetSessionsActivityRtnData struct {

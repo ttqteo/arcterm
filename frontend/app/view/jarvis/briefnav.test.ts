@@ -21,6 +21,7 @@ const PARTS: BriefNavParts = {
     behind: ["behind:e1"],
     shipped: ["shipped:run:r0"],
     ideas: ["initiatives:effort:i1"],
+    later: ["later:s1"],
 };
 
 describe("briefNavIds", () => {
@@ -38,6 +39,7 @@ describe("briefNavIds", () => {
             "behind:e1",
             "shipped:run:r0",
             "initiatives:effort:i1",
+            "later:s1",
         ]);
     });
 

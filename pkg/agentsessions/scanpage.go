@@ -3,6 +3,7 @@ package agentsessions
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +18,9 @@ type PageOpts struct {
 	Runtime     string // "" = every runtime; else only that provider's candidates are walked
 	ProjectPath string // "" = every project; else normProjectPath(s.ProjectPath) == normProjectPath(ProjectPath)
 	Query       string // "" = no filter; else strings.Contains(lower(s.Task), lower(trimmed Query))
+	// nil = every session; else only the transcripts whose stem (the file name less .jsonl or .json) or whole file
+	// name is listed, so a session is read by its id whatever its age
+	Ids []string
 }
 
 // Page is one page of sessions and where the next one starts.
@@ -66,6 +70,21 @@ func normProjectPath(p string) string {
 	return strings.ToLower(p)
 }
 
+// candidatesNamed keeps the candidates whose stem or file name is one of ids, in their order.
+func candidatesNamed(cands []candidate, ids []string) []candidate {
+	want := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+	var out []candidate
+	for _, c := range cands {
+		if want[c.stem] || want[filepath.Base(c.path)] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 func scanPageFrom(providers []provider, opts PageOpts, tempDir string) (Page, error) {
 	var curNano int64
 	var curPath string
@@ -98,6 +117,9 @@ func scanPageFrom(providers []provider, opts PageOpts, tempDir string) (Page, er
 			}
 		}
 		cands = append(cands, walkCandidates(p, opts.WindowDays)...)
+	}
+	if len(opts.Ids) > 0 {
+		cands = candidatesNamed(cands, opts.Ids)
 	}
 	sort.Slice(cands, func(i, j int) bool { return candidateLess(cands[i], cands[j]) })
 	if hasCursor {
