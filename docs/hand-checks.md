@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Brainstorm card motion: in Chat, on a builder check card hover Open in Brainstorm, Keep talking and
+  Approve → the colours ease in (~140ms) instead of snapping; click Agent's calls N → the list slides open and folds
+  shut with no jump in the gap above it; open a ✓ Run row's detail → same. The `chat-brainstorm-review` scenario passed
+  (26/26) but its shots are stills. Commit b90fbb688, `chatbrainstormparts.tsx`.
 - [ ] (arcterm) Confirm the design's button at the card's foot: have a brainstorm end with 5+ guesses → in Chat the
   card's top line has no button, and Confirm all N guesses sits right-aligned on the `N yours ›` row at its foot
   (alone there when nothing is yours yet); confirm them all → Check with a builder takes the same place. Commit:
