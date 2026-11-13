@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
 import { withResultLines } from "./chatinitiative";
 import {
+    ECHO_ABSENT_MAX_MS,
+    ECHO_WAIT_MAX_MS,
     PASTE_OVER,
     PENDING_IDLE_MS,
     PENDING_MAX_MS,
     PENDING_QUEUED_MAX_MS,
+    SubmitError,
     btwQuestion,
+    echoStep,
     holdLine,
     isSendNowKey,
     pastesBody,
@@ -19,6 +23,8 @@ import {
     queuedBubbleUp,
     recall,
     releasesHeld,
+    sendFailLogLine,
+    sendFailure,
     sendHold,
     submitDelayMs,
     submitSteps,
@@ -377,5 +383,56 @@ describe("submitDelayMs", () => {
         expect(submitDelayMs(5)).toBe(80);
         expect(submitDelayMs(20_000)).toBeGreaterThan(submitDelayMs(2_000));
         expect(submitDelayMs(10_000_000)).toBe(600);
+    });
+});
+
+describe("echoStep", () => {
+    it("presses Enter at once when the box shows the text or cannot be read", () => {
+        expect(echoStep("shown", 0)).toBe("enter");
+        expect(echoStep("unknown", 0)).toBe("enter");
+    });
+    it("waits on a box holding something else, then presses Enter anyway, as before", () => {
+        expect(echoStep("other", ECHO_WAIT_MAX_MS - 1)).toBe("wait");
+        expect(echoStep("other", ECHO_WAIT_MAX_MS)).toBe("enter");
+    });
+    it("gives up without Enter on a box that stays empty: the text never reached Claude Code", () => {
+        expect(echoStep("absent", ECHO_WAIT_MAX_MS)).toBe("wait");
+        expect(echoStep("absent", ECHO_ABSENT_MAX_MS - 1)).toBe("wait");
+        expect(echoStep("absent", ECHO_ABSENT_MAX_MS)).toBe("fail");
+        expect(ECHO_ABSENT_MAX_MS).toBeGreaterThan(ECHO_WAIT_MAX_MS);
+    });
+});
+
+describe("sendFailure", () => {
+    it("puts the text back when nothing of it is in Claude Code's box", () => {
+        expect(sendFailure(new SubmitError("type", "shell input buffer full"))).toMatchObject({
+            restore: true,
+            reason: "shell input buffer full",
+        });
+        expect(sendFailure(new SubmitError("echo", "the box stayed empty")).restore).toBe(true);
+    });
+    it("leaves the text where it is when only the Enter failed: it waits in Claude Code's box", () => {
+        const f = sendFailure(new SubmitError("enter", "timeout"));
+        expect(f.restore).toBe(false);
+        expect(f.message).toMatch(/press Enter in the terminal/);
+    });
+    it("reads any other error as a failed typing", () => {
+        expect(sendFailure(new Error("no controller found for block b1"))).toMatchObject({
+            stage: "type",
+            restore: true,
+            reason: "no controller found for block b1",
+        });
+        expect(sendFailure("boom").reason).toBe("boom");
+    });
+});
+
+describe("sendFailLogLine", () => {
+    it("names the block, the stage, the length and the reason on one line", () => {
+        const line = sendFailLogLine(
+            "333e3a90-de29-46c6-9a5c-2eeeff4ad293",
+            "thiếu chọn effort",
+            sendFailure(new SubmitError("type", 'bad "x"\nmore'))
+        );
+        expect(line).toBe('[chat-send] fail block=333e3a90 stage=type len=17 err="bad \\"x\\" more"');
     });
 });

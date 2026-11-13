@@ -53,7 +53,16 @@ import { answersInChat, localCommand, type LocalRoute } from "./chatlocal";
 import { clearLocalCards } from "./chatlocalstore";
 import { bashMode } from "./chatmodel";
 import { setChatMode } from "./chatmodestore";
-import { holdLine, isSendNowKey, pendingStill, pendsAsBubble, recall, releasesHeld, sendHold } from "./chatpending";
+import {
+    holdLine,
+    isSendNowKey,
+    pendingStill,
+    pendsAsBubble,
+    recall,
+    releasesHeld,
+    sendHold,
+    type SendFailure,
+} from "./chatpending";
 import {
     addPending,
     dropPending,
@@ -419,7 +428,24 @@ export function ChatComposer({
         // brainstorm question waits (its record pairs with the transcript by exact text) leave the lines queued for the
         // next one. `sent` and everything kept of it (recall, the pending bubble, onSent) stay the person's own text.
         const lines = !asleep && !questionWaits && !bash && !sent.startsWith("/") ? takeResultLines(agent.id) : [];
-        const taken = send(lines);
+        // the paths of the files riding the message, put back as chips if it never reaches Claude Code
+        const ridingPaths = att.attachments.map((a) => a.path).filter((p): p is string => p != null);
+        const agentId = agent.id;
+        // a send that failed on its way to Claude Code (useAgentSend put the text back and toasted): its Queued bubble
+        // goes, and what rode along comes back, unless the text waits in Claude Code's box (only the Enter failed)
+        const onFailed = (f: SendFailure) => {
+            dropPending(agentId, sent);
+            if (!f.restore) {
+                return;
+            }
+            if (lines.length > 0) {
+                putBackResultLines(agentId, lines);
+            }
+            if (ridingPaths.length > 0) {
+                att.addPaths(ridingPaths);
+            }
+        };
+        const taken = send(lines, onFailed);
         if (!taken && lines.length > 0) {
             putBackResultLines(agent.id, lines);
         }

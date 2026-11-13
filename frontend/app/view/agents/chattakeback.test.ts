@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
 import { withResultLines } from "./chatinitiative";
 import type { PendingMessage } from "./chatpending";
-import { boxHolds, boxShowsTyped, inputBoxRows, mergeTaken, takeBackPlan } from "./chattakeback";
+import { boxHolds, boxShowsTyped, inputBoxRows, mergeTaken, takeBackPlan, typedEcho } from "./chattakeback";
 
 const rule = "─".repeat(40);
 const pend = (id: string, text: string, queued: boolean, kind?: PendingMessage["kind"]): PendingMessage => ({
@@ -126,6 +126,27 @@ describe("boxShowsTyped", () => {
     });
     it("has nothing to wait for when no box shows", () => {
         expect(boxShowsTyped(["a permission dialog"], msg)).toBeNull();
+    });
+});
+
+// a chat send whose text never reached Claude Code read as Queued for good: its box stayed empty through the turn
+// ("thiếu chọn effort", 2026-11-13)
+describe("typedEcho", () => {
+    const screen = (...box: string[]) => ["> earlier message", "", rule, ...box, rule, "  ⏵⏵ auto mode on"];
+    it("is shown once the box holds the text", () => {
+        expect(typedEcho(screen("❯ thiếu chọn effort"), "thiếu chọn effort")).toBe("shown");
+    });
+    it("is absent while the box is readable and empty", () => {
+        expect(typedEcho(screen("❯ "), "thiếu chọn effort")).toBe("absent");
+        expect(typedEcho(screen("❯ ", "  "), "thiếu chọn effort")).toBe("absent");
+    });
+    it("is other while the box holds something that is not the text yet", () => {
+        expect(typedEcho(screen("❯ thiếu chọn"), "thiếu chọn effort")).toBe("other");
+        expect(typedEcho(screen("❯ ls -la"), "! ls -la")).toBe("other");
+    });
+    it("is unknown with no screen or no box on it", () => {
+        expect(typedEcho(null, "x")).toBe("unknown");
+        expect(typedEcho(["a permission dialog"], "x")).toBe("unknown");
     });
 });
 
