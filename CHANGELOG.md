@@ -32,8 +32,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   tokens · age, lined up down the list and in a quieter ink; a RAM figure of 1 GB or more turns amber. The unread
   count moved up beside the name, and an agent asking you keeps its columns.
 - Jarvis has a new icon in the nav rail and in What's new: an arc reactor instead of a brain.
-- The model chip under the chat box offers Fable 5.2, Opus 5.5, Sonnet 5.5 and Haiku 5.5, each with its own icon
-  and a line on what it is for; the chip shows the icon of the model the agent runs.
+- The model chip under the chat box offers Fable 5.2, Opus 5.5, Sonnet 5.5 and Haiku 5.5 as a plain list of names,
+  as Claude Code's own model menu does, with a check on the model the agent runs.
 - An Effort chip sits beside the model chip under the chat box: pick Low, Medium, High, Extra high, Max or Auto,
   each drawn as a five-bar meter, and it sends `/effort` to Claude Code.
 - In Chat, Esc stops the agent's turn while it works, as it does in Claude Code, whether or not the focus is in the
