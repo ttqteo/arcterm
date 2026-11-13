@@ -565,7 +565,8 @@ func ownsRunMarker(runID string) func(string) bool {
 
 // treeChanges diffs the tree the run worked in against its base: its landing tree, or the checkout for a run with
 // none. Once the land has removed a landing tree, a diff of the missing dir reads as an empty non-repo, so it
-// reads the land's merge when that is provably the run's work, and otherwise errors to leave the run unsealed.
+// reads the land's merge when that is provably the run's work (or reads no changes for a lead-less run, whose land
+// merged nothing), and otherwise errors to leave the run unsealed.
 func treeChanges(ctx context.Context, run *waveobj.Run) (*gitinfo.Changes, error) {
 	if run.LandPath == "" {
 		return gitinfo.GetChanges(ctx, run.ProjectPath, run.BaseCommit)
@@ -573,7 +574,9 @@ func treeChanges(ctx context.Context, run *waveobj.Run) (*gitinfo.Changes, error
 	if _, err := os.Stat(run.LandPath); !errors.Is(err, fs.ErrNotExist) {
 		return gitinfo.GetChanges(ctx, run.LandPath, run.BaseCommit)
 	}
-	if run.EndCommit != "" {
+	// a lead that made no commit ends on the base it started from; that is no reported commit to resolve
+	leadless := run.EndCommit != "" && run.EndCommit == run.BaseCommit
+	if run.EndCommit != "" && !leadless {
 		return nil, fmt.Errorf("the landing tree %s is gone and the reported commit %s does not resolve", run.LandPath, run.EndCommit)
 	}
 	if run.Land == nil || run.Land.Commit == "" {
@@ -583,6 +586,12 @@ func treeChanges(ctx context.Context, run *waveobj.Run) (*gitinfo.Changes, error
 	// fast-forward or a by-hand merge does not have that shape, and its first-parent diff is not the run's work
 	second, err := gitinfo.ResolveCommit(ctx, run.ProjectPath, run.Land.Commit+"^2")
 	if err != nil {
+		// a lead-less run's branch never left the base, so its land had nothing to merge: no merge commit, and the
+		// tip it recorded (when it did) is the base. The land refuses to remove a tree with uncommitted changes
+		// (landingTreeHold), so a landed run's tree held no work and its file list is empty.
+		if leadless && (run.Land.Tip == "" || run.Land.Tip == run.BaseCommit) {
+			return &gitinfo.Changes{IsRepo: true}, nil
+		}
 		return nil, fmt.Errorf("the landing tree %s is gone and the land commit %s is not a merge", run.LandPath, run.Land.Commit)
 	}
 	// the land records the tip it merged since it deletes the branch; a run landed before that has only the ref

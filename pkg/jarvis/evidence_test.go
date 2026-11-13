@@ -1231,3 +1231,86 @@ func TestSealEvidenceAfterLandWithAnotherRecordedTipStaysUnsealed(t *testing.T) 
 		t.Errorf("sealed %v from a merge of another tip, want an error", run.Evidence)
 	}
 }
+
+// leadlessLandedRunWithoutTree builds a branch-landed run whose lead made no commit: wave/r6 never left the base,
+// so the land had nothing to merge (no merge commit, and Commit is the tip itself, as mergedCommit reports it),
+// then removed the tree and the branch. The human committed on main since, and EndCommit is the base.
+func leadlessLandedRunWithoutTree(t *testing.T) (run *waveobj.Run, mainHead string) {
+	t.Helper()
+	ctx := context.Background()
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-b", "main")
+	write := func(p, s string) {
+		if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(dir, "base.txt"), "base\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "base")
+	base, err := gitinfo.HeadCommit(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := filepath.Join(t.TempDir(), "land")
+	gitCmd(t, dir, "worktree", "add", "-b", "wave/r6", tree, base)
+	write(filepath.Join(dir, "human.txt"), "h\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "human work")
+	mainHead, err = gitinfo.HeadCommit(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "worktree", "remove", tree)
+	gitCmd(t, dir, "branch", "-D", "wave/r6")
+	return &waveobj.Run{
+		ID: "r6", Status: RunStatus_Done, ProjectPath: dir, LandPath: tree, BaseCommit: base, EndCommit: base, CreatedTs: 1000,
+		Land:   &waveobj.RunLand{State: "landed", Commit: base, Tip: base},
+		Phases: []waveobj.RunPhase{{Kind: PhaseKind_Execute, State: PhaseState_Done, DoneTs: 5000}},
+	}, mainHead
+}
+
+// a lead that committed nothing has EndCommit == BaseCommit, and its land is no merge: once the land removed the
+// tree the backfill seals the run's true file list, which is empty, rather than staying unsealed for good
+func TestSealEvidenceAfterLandOfALeadlessRunSealsNoChanges(t *testing.T) {
+	for name, land := range map[string]func(run *waveobj.Run, mainHead string) *waveobj.RunLand{
+		"the land recorded the tip": func(run *waveobj.Run, _ string) *waveobj.RunLand { return run.Land },
+		"the land recorded no tip": func(run *waveobj.Run, mainHead string) *waveobj.RunLand {
+			return &waveobj.RunLand{State: "landed", Commit: mainHead}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			run, mainHead := leadlessLandedRunWithoutTree(t)
+			run.Land = land(run, mainHead)
+			if got := sealedPaths(t, run); len(got) != 0 || run.Evidence.AddTotal != 0 || run.Evidence.DelTotal != 0 {
+				t.Errorf("sealed files = %v (+%d -%d), want none: the lead made no commit and human.txt is main's", got, run.Evidence.AddTotal, run.Evidence.DelTotal)
+			}
+		})
+	}
+}
+
+// the empty list is the land's proof for a lead-less run: without a land, or with a land of a branch that moved off
+// the base, nothing says the tree held no work, so the seal still waits
+func TestSealEvidenceAfterLandOfALeadlessRunNeedsItsLand(t *testing.T) {
+	run, _ := leadlessLandedRunWithoutTree(t)
+	run.Land = nil
+	if err := SealEvidence(context.Background(), run); err == nil {
+		t.Errorf("sealed %v with no land, want an error", run.Evidence)
+	}
+
+	run, mainHead := leadlessLandedRunWithoutTree(t)
+	run.Land = &waveobj.RunLand{State: "landed", Commit: mainHead, Tip: mainHead}
+	if err := SealEvidence(context.Background(), run); err == nil {
+		t.Errorf("sealed %v from a land whose branch tip was not the base, want an error", run.Evidence)
+	}
+}
+
+// only EndCommit == BaseCommit reads as no commit: another reported commit that does not resolve still leaves the
+// run unsealed, as it did before
+func TestSealEvidenceAfterLandWithAnUnresolvableEndCommitStaysUnsealed(t *testing.T) {
+	run := landedRunWithoutTree(t, true)
+	run.EndCommit = "0123456789abcdef0123456789abcdef01234567"
+	if err := SealEvidence(context.Background(), run); err == nil {
+		t.Errorf("sealed %v with an EndCommit that does not resolve, want an error", run.Evidence)
+	}
+}
