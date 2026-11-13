@@ -493,6 +493,47 @@ func TestTranscriptTailer(t *testing.T) {
 	}
 }
 
+// bytes appended between the size check and the read must be counted once: offsetting by the stat size
+// re-read them on the next call, duplicating lines, and a re-read that ended mid-line glued the saved
+// partial onto repeated bytes, a malformed line in place of the real one
+func TestTranscriptTailerConcurrentAppends(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	writeFile(t, path, "")
+	const total = 3000
+	go func() {
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return
+		}
+		defer f.Close()
+		for i := 0; i < total; i++ {
+			line := fmt.Sprintf("{\"n\":%d}\n", i)
+			// two writes, so a read can end mid-line
+			f.WriteString(line[:4])
+			f.WriteString(line[4:])
+		}
+	}()
+
+	tl := &transcriptTailer{}
+	var got []string
+	deadline := time.Now().Add(10 * time.Second)
+	for len(got) < total && time.Now().Before(deadline) {
+		lines, err := tl.readNew(path)
+		if err != nil {
+			t.Fatalf("readNew: %v", err)
+		}
+		got = append(got, lines...)
+	}
+	if len(got) != total {
+		t.Fatalf("read %d lines, want %d", len(got), total)
+	}
+	for i, line := range got {
+		if want := fmt.Sprintf("{\"n\":%d}", i); line != want {
+			t.Fatalf("line %d = %q, want %q", i, line, want)
+		}
+	}
+}
+
 func TestStreamTranscript(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s.jsonl")
@@ -879,5 +920,179 @@ func TestSubagentModel(t *testing.T) {
 		if byId[id].Model != want {
 			t.Errorf("%s: Model = %q, want %q", id, byId[id].Model, want)
 		}
+	}
+}
+
+// boundedTranscript is a transcript that exercises the bounded readers' edges: a 2 MB line (past any
+// block and bufio size), blank and whitespace-only lines, CRLF endings and an unterminated last line.
+func boundedTranscript() string {
+	var b strings.Builder
+	for i := 0; i < 300; i++ {
+		fmt.Fprintf(&b, "{\"n\":%d,\"pad\":\"%s\"}\n", i, strings.Repeat("x", i*37%900))
+		switch i {
+		case 7:
+			b.WriteString("\n   \n")
+		case 120:
+			b.WriteString("{\"big\":\"" + strings.Repeat("y", 2<<20) + "\"}\n")
+		case 200:
+			b.WriteString("{\"crlf\":1}\r\n\r\n")
+		}
+	}
+	b.WriteString("{\"partial\":true")
+	return b.String()
+}
+
+// the bounded tail and head reads return exactly what the whole-file read does, sliced
+func TestTranscriptBoundedReadsMatchWholeFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	writeFile(t, path, boundedTranscript())
+	all, _, partial, err := readTranscriptFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !partial {
+		t.Fatal("the fixture must end in an unterminated line")
+	}
+	for _, n := range []int{1, 2, 3, 50, 99, 100, 101, 180, 181, 182, len(all) - 1, len(all), len(all) + 5} {
+		tail, err := readTranscriptTail(path, n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := all[max(0, len(all)-n):]
+		if !reflect.DeepEqual(tail, want) {
+			t.Fatalf("tail %d: got %d lines, want %d (first got %.40q, want %.40q)", n, len(tail), len(want), tail[0], want[0])
+		}
+		head, err := readTranscriptHead(path, n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := all[:min(n, len(all))]; !reflect.DeepEqual(head, want) {
+			t.Fatalf("head %d: got %d lines, want %d", n, len(head), len(want))
+		}
+	}
+	// the line-indexed read the RPC answers is the whole-file read and keeps its numbering
+	rtn, err := readTranscriptSlice(path, 5, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rtn.Total != len(all) || rtn.Start != len(all)-5 || !reflect.DeepEqual(rtn.Lines, all[len(all)-5:]) {
+		t.Fatalf("slice read: start %d total %d, want %d and %d", rtn.Start, rtn.Total, len(all)-5, len(all))
+	}
+}
+
+// a bounded read of a file that is not there, or an empty or directory path, errs as the whole-file read did,
+// in the words the cockpit knows
+func TestTranscriptBoundedReadsMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "nope.jsonl")
+	if _, err := readTranscriptTail(missing, 3); err == nil || !strings.HasPrefix(err.Error(), noTranscriptFile+" ") {
+		t.Errorf("tail of a missing file: want %q..., got %v", noTranscriptFile, err)
+	}
+	if _, err := readTranscriptHead(missing, 3); err == nil || !strings.HasPrefix(err.Error(), noTranscriptFile+" ") {
+		t.Errorf("head of a missing file: want %q..., got %v", noTranscriptFile, err)
+	}
+	for _, path := range []string{"", dir} {
+		if _, err := readTranscriptTail(path, 3); err == nil {
+			t.Errorf("tail of %q: want an error", path)
+		}
+		if _, err := readTranscriptHead(path, 3); err == nil {
+			t.Errorf("head of %q: want an error", path)
+		}
+	}
+	empty := filepath.Join(dir, "empty.jsonl")
+	writeFile(t, empty, "")
+	if tail, err := readTranscriptTail(empty, 3); err != nil || len(tail) != 0 {
+		t.Errorf("tail of an empty file = %v, %v; want none", tail, err)
+	}
+	if head, err := readTranscriptHead(empty, 3); err != nil || len(head) != 0 {
+		t.Errorf("head of an empty file = %v, %v; want none", head, err)
+	}
+}
+
+// the tail read stops at a line boundary once it holds n lines, so it reads the tail, not the file
+func TestReadTailReadsTheTail(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	content := boundedTranscript()
+	writeFile(t, path, content)
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	size := int64(len(content))
+	for _, n := range []int{1, 2, 50} {
+		off, data, err := readTail(f, size, n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if off == 0 || content[off-1] != '\n' || string(data) != content[off:] {
+			t.Fatalf("n=%d: off %d is not a line boundary holding the rest of the file", n, off)
+		}
+		// the last 50 lines are under 64 KB, so one or two blocks hold them
+		if len(data) > 2*tailBlockSize {
+			t.Errorf("n=%d: read %d bytes of a %d-byte file", n, len(data), size)
+		}
+	}
+	if off, data, err := readTail(f, size, 100000); err != nil || off != 0 || string(data) != content {
+		t.Errorf("more lines than the file: off %d, %d bytes, err %v; want the whole file", off, len(data), err)
+	}
+}
+
+// a stream backlog with a line limit starts at the tail and then follows appends as before
+func TestStreamTranscriptBacklogStartsAtTail(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	writeFile(t, path, "a\nb\n\nc\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch := make(chan wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate], 8)
+	go func() { _ = streamTranscript(ctx, path, 2, ch) }()
+	first := <-ch
+	if !reflect.DeepEqual(first.Response.Lines, []string{"b", "c"}) {
+		t.Fatalf("backlog = %v, want [b c]", first.Response.Lines)
+	}
+	appendFile(t, path, "d\n")
+	select {
+	case next := <-ch:
+		if !reflect.DeepEqual(next.Response.Lines, []string{"d"}) {
+			t.Fatalf("append = %v, want [d]", next.Response.Lines)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no update after append")
+	}
+}
+
+// an unfinished last line is held back from the backlog, so the tail offset must reach one line further back
+// to still deliver tailLines complete lines, and the line arrives whole once its newline does. The lines are
+// ~100 KB, longer than the tail read's first block: with short ones a block holds hundreds of lines and the
+// stream trims them, so the off-by-one never shows. Here the first two blocks end one line short of the count.
+func TestStreamTranscriptBacklogHoldsBackAnUnfinishedLine(t *testing.T) {
+	pad := strings.Repeat("x", 100_000)
+	line := func(n int) string { return fmt.Sprintf(`{"n":%d,"pad":"%s"}`, n, pad) }
+	var b strings.Builder
+	for i := 0; i < 12; i++ {
+		b.WriteString(line(i) + "\n")
+	}
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	writeFile(t, path, b.String()+`{"n":12`)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch := make(chan wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate], 8)
+	go func() { _ = streamTranscript(ctx, path, 2, ch) }()
+	select {
+	case first := <-ch:
+		if want := []string{line(10), line(11)}; !reflect.DeepEqual(first.Response.Lines, want) {
+			t.Fatalf("backlog = %d lines, want the last two complete ones (n 10 and 11)", len(first.Response.Lines))
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no backlog")
+	}
+	appendFile(t, path, "}\n")
+	select {
+	case next := <-ch:
+		if !reflect.DeepEqual(next.Response.Lines, []string{`{"n":12}`}) {
+			t.Fatalf("append = %.60q, want the finished line", next.Response.Lines)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no update after the line's newline")
 	}
 }

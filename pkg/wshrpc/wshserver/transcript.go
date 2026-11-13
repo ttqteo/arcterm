@@ -4,6 +4,8 @@
 package wshserver
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -79,6 +81,100 @@ func readTranscriptFile(path string) (lines []string, end int64, partial bool, e
 		partial = true
 	}
 	return lines, end, partial, nil
+}
+
+// tailBlockSize is how far back each step of the bounded tail read goes.
+const tailBlockSize = 64 * 1024
+
+// openTranscript checks, as statTranscript does, that path names a transcript file that exists, and opens it for
+// reading with the size it had at the check.
+func openTranscript(path string) (*os.File, int64, error) {
+	size, err := statTranscript(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, 0, fmt.Errorf("read transcript: %w", err)
+	}
+	return f, size, nil
+}
+
+// nonEmptyLines splits data on newlines and drops blank lines; an unterminated last line counts, as it does in
+// readTranscriptFile.
+func nonEmptyLines(data []byte) []string {
+	lines, rest := splitTranscriptData(data)
+	if strings.TrimSpace(rest) != "" {
+		lines = append(lines, rest)
+	}
+	return lines
+}
+
+// countNonEmptyLines counts what nonEmptyLines would return, without building the strings.
+func countNonEmptyLines(data []byte) int {
+	count := 0
+	for len(data) > 0 {
+		end := bytes.IndexByte(data, '\n')
+		if end < 0 {
+			end = len(data)
+		}
+		if len(bytes.TrimSpace(data[:end])) > 0 {
+			count++
+		}
+		data = data[min(end+1, len(data)):]
+	}
+	return count
+}
+
+// readTail reads back from the end of the first size bytes of f in doubling blocks until it holds n non-empty
+// lines that start on a line boundary, or the whole file. It returns that boundary and the bytes from it on, so a
+// tail read costs the tail, not the file: subagent transcripts reach tens of MB. An unterminated last line counts.
+func readTail(f *os.File, size int64, n int) (int64, []byte, error) {
+	var data []byte
+	pos := size
+	for block := int64(tailBlockSize); pos > 0; block *= 2 {
+		step := min(block, pos)
+		pos -= step
+		chunk := make([]byte, step+int64(len(data)))
+		if _, err := f.ReadAt(chunk[:step], pos); err != nil {
+			return 0, nil, fmt.Errorf("read transcript: %w", err)
+		}
+		copy(chunk[step:], data)
+		data = chunk
+		if pos == 0 {
+			break
+		}
+		if nl := bytes.IndexByte(data, '\n'); nl >= 0 && countNonEmptyLines(data[nl+1:]) >= n {
+			return pos + int64(nl) + 1, data[nl+1:], nil
+		}
+	}
+	return 0, data, nil
+}
+
+// transcriptTailOffset is the line boundary readTail finds for the transcript at path as it is now.
+func transcriptTailOffset(path string, n int) (int64, error) {
+	f, size, err := openTranscript(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	off, _, err := readTail(f, size, n)
+	return off, err
+}
+
+// readTranscriptLastLines returns the last n (> 0) non-empty lines of the transcript at path, reading only the tail.
+func readTranscriptLastLines(path string, n int) ([]string, error) {
+	f, size, err := openTranscript(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	_, data, err := readTail(f, size, n)
+	if err != nil {
+		return nil, err
+	}
+	lines := nonEmptyLines(data)
+	return lines[max(0, len(lines)-n):], nil
 }
 
 // sliceTranscriptLines picks the window of lines a read asks for and the file index of its first line:
@@ -191,24 +287,50 @@ func readAgentTranscript(data wshrpc.CommandGetAgentTranscriptData) (*wshrpc.Com
 // readTranscriptTail returns the last maxLines non-empty lines of the transcript at path.
 // maxLines == 0 keeps the default tail size; a negative maxLines returns every line (the
 // full-history read Pi alone requests — its parent-linked active branch can't be reconstructed
-// from a bounded tail).
+// from a bounded tail). A bounded tail reads only the end of the file, not the whole of it (readTail); the line-indexed
+// read of readTranscriptSlice, which numbers lines from the file's start, still reads it whole.
 func readTranscriptTail(path string, maxLines int) ([]string, error) {
-	rtn, err := readTranscriptSlice(path, maxLines, 0, false)
-	if err != nil {
-		return nil, err
+	if maxLines < 0 {
+		rtn, err := readTranscriptSlice(path, maxLines, 0, false)
+		if err != nil {
+			return nil, err
+		}
+		return rtn.Lines, nil
 	}
-	return rtn.Lines, nil
+	if maxLines == 0 {
+		maxLines = defaultTranscriptTailLines
+	}
+	return readTranscriptLastLines(path, maxLines)
 }
 
-// readTranscriptHead returns the first maxLines non-empty lines of the transcript at path. Codex's
-// cwd lives only on the first-line session_meta record, so the head read resolves cwd for Codex
-// sessions too long to fit the tail (see docs/deferred.md, Files surface).
+// readTranscriptHead returns the first maxLines non-empty lines of the transcript at path, stopping at the last one
+// instead of reading the rest of the file. Codex's cwd lives only on the first-line session_meta record, so the head
+// read resolves cwd for Codex sessions too long to fit the tail (see docs/deferred.md, Files surface).
 func readTranscriptHead(path string, maxLines int) ([]string, error) {
-	rtn, err := readTranscriptSlice(path, maxLines, 0, true)
+	f, _, err := openTranscript(path)
 	if err != nil {
 		return nil, err
 	}
-	return rtn.Lines, nil
+	defer f.Close()
+	if maxLines <= 0 {
+		maxLines = defaultTranscriptTailLines
+	}
+	// a Reader, not a Scanner: a transcript line can run to MBs, past any Scanner buffer
+	r := bufio.NewReaderSize(f, tailBlockSize)
+	var lines []string
+	for len(lines) < maxLines {
+		ln, err := r.ReadString('\n')
+		if trimmed := strings.TrimSuffix(ln, "\n"); strings.TrimSpace(trimmed) != "" {
+			lines = append(lines, trimmed)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read transcript: %w", err)
+		}
+	}
+	return lines, nil
 }
 
 // transcriptTailer reads only the lines appended to a file since the last call.
@@ -246,7 +368,8 @@ func (t *transcriptTailer) readNew(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	t.offset = size
+	// advance by what was read, not by size: ReadAll runs to the current end, past bytes appended since Stat
+	t.offset += int64(len(data))
 	buf := append(t.partial, data...)
 	var lines []string
 	start := 0
@@ -315,6 +438,14 @@ func streamTranscript(ctx context.Context, path string, tailLines int, ch chan w
 	}
 
 	tailer := &transcriptTailer{}
+	if tailLines > 0 {
+		// start at the tail's line boundary instead of the file's start. One extra line: readTail counts an
+		// unterminated last line, which readNew holds back. A file not there (yet) or unreadable leaves the offset at
+		// 0, and readNew reports it as it always did
+		if off, err := transcriptTailOffset(path, tailLines+1); err == nil {
+			tailer.offset = off
+		}
+	}
 	backlog, err := tailer.readNew(path)
 	// a not-yet-existing file is expected: stay open with an empty backlog and pick the file up when it
 	// appears — don't abort, or the stream dies permanently until the panel remounts.
