@@ -1,9 +1,13 @@
 package jobqueue
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
+	"os"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -136,6 +140,54 @@ func TestPlanAutoCapsByCPU(t *testing.T) {
 				t.Fatalf("reason = %q, want %q", reason, c.reason)
 			}
 		})
+	}
+}
+
+// waveapp.log alone shows how many heavy jobs ran at once and why one waited: each start counts the heavy jobs
+// running, a job's first wait names its reason, and a released slot logs its finish.
+func TestLogShowsHowManyRanAtOnce(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	q := New(Config{Mode: func() string { return ModeAuto }, CPUs: func() int { return 12 }})
+	ctx := context.Background()
+	a, err := q.Acquire(ctx, Request{Name: "a", Bytes: gb}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := q.Acquire(ctx, Request{Name: "b", Bytes: gb}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting := make(chan struct{}, 4)
+	got := make(chan *Slot, 1)
+	go func() {
+		s, _ := q.Acquire(ctx, Request{Name: "c", Bytes: gb}, func(Wait) { waiting <- struct{}{} })
+		got <- s
+	}()
+	select {
+	case <-waiting:
+	case <-time.After(2 * time.Second):
+		t.Fatal("c started beside two heavy jobs on 12 CPUs")
+	}
+	a.Release()
+	c := <-got
+	b.Release()
+	c.Release()
+	out := buf.String()
+	for _, want := range []string{
+		"started j1 (a,", "1 heavy running",
+		"started j2 (b,", "2 heavy running",
+		"j3 (c) waits #1: CPU busy, 2 at a time",
+		"finished j1 (a), held",
+		"finished j3 (c), held",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "3 heavy running") {
+		t.Errorf("three heavy jobs ran at once on 12 CPUs:\n%s", out)
 	}
 }
 
