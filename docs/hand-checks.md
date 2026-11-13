@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A queued run's card in Chat turns into its run in place: in a Claude agent, start a run with
+  `wsh runs start … --after <a live run>` so it queues → its card reads `Queued · after <that run>`; once the run ahead
+  ends and the entry starts, the same card shows the new run's stage and Open run, without a second card appearing and
+  without a flash of nothing on the first render after a reload (`frontend/app/view/agents/chatruncard.tsx`,
+  `chatruncards.ts` `placeRunCards`, `chatconversation.tsx`; the `chat-verdict-handoff` scenario covers only an entry
+  still in the queue; 1be9dcb93).
 - [ ] (arcterm) A lead that queued its plan's next part reads `plan queued #1` on its run line, not `queued #1`: while a
   run's lead has queued a second plan (`wsh runs start --plan … --after <its run>`), its row in the Agent tree shows the
   chip `plan queued #1` (`plan blocked` if the entry is blocked), whole on a narrow sidebar, beside the run's progress
