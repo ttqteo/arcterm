@@ -3525,7 +3525,10 @@ function ParkedRow({ model, parked }: { model: AgentsViewModel; parked: ParkedLa
                         {parkedMeta(parked, now)}
                     </div>
                 </div>
-                <span className="flex flex-none items-center gap-[2px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100">
+                {/* three buttons would take the title's room on every row, hovered or not: they float over the row's
+                    right end, the row's full height, on the hover's own (opaque) fill faded in from the left, so the
+                    title and the image count read in full until the pointer comes */}
+                <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-[2px] rounded-r-[6px] bg-surface-hover pl-[2px] pr-[8px] opacity-0 transition-opacity duration-100 before:absolute before:inset-y-0 before:right-full before:w-[18px] before:bg-linear-to-r before:from-transparent before:to-surface-hover focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
                     <button
                         type="button"
                         data-parked-act="open"

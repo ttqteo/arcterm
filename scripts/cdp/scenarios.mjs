@@ -87,6 +87,7 @@ import jarvisSheetScenarios from "./scenarios-jarvis-sheet.mjs";
 import kaelAskKeysScenarios from "./scenarios-kael-ask-keys.mjs";
 import kaelKeysScenarios from "./scenarios-kael-keys.mjs";
 import modalFocusHomeScenarios from "./scenarios-modal-focus-home.mjs";
+import parkedLaunchScenarios from "./scenarios-parked-launch.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
 import paletteBrainstormResumeScenarios from "./scenarios-palette-brainstorm-resume.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
@@ -70552,6 +70553,7 @@ export const SCENARIOS = [
     ...chatBgTasksScenarios(RT_KIT),
     ...agentSubagentsScenarios(RT_KIT),
     ...modalFocusHomeScenarios(RT_KIT),
+    ...parkedLaunchScenarios(),
     ...terminalStatusLineScenarios(RT_KIT),
     ...jarvisCardsScenarios(JARVIS_KIT),
     ...jarvisActivityScenarios(JARVIS_KIT),
