@@ -130,7 +130,7 @@ Chi tiết cần biết:
 
 ### Skills đi kèm arcterm
 
-arcterm mang theo mười skill, được đưa vào `<vault>/skills/` ở mỗi lần đồng bộ (nên chúng luôn nằm ở nhóm **Ships with arcterm**) và từ đó chiếu vào mọi harness:
+arcterm mang theo mười một skill, được đưa vào `<vault>/skills/` ở mỗi lần đồng bộ (nên chúng luôn nằm ở nhóm **Ships with arcterm**) và từ đó chiếu vào mọi harness:
 
 | Skill | Dùng khi |
 |---|---|
@@ -138,6 +138,7 @@ arcterm mang theo mười skill, được đưa vào `<vault>/skills/` ở mỗi
 | `arc:cockpit` | Agent cần cho bạn xem một thứ trong cockpit hoặc điều khiển cockpit (`wsh ui`). |
 | `arc:initiatives` | Việc quá lớn cho một run; theo dõi initiative nhiều chunk (`wsh effort`). |
 | `arc:doc-review` | Agent vừa sửa xong một bài báo `.tex` hoặc ghi chú Markdown và cần bạn duyệt. |
+| `arc:handoff` | Agent vừa viết xong một plan và hỏi bạn muốn thực hiện thế nào, hoặc vừa nhận kết quả một lần review (Chat vẽ cả hai thành thẻ). |
 | `arc:design` | Làm bản mock UI nhiều artboard (`.dc.html`) trong thư mục tạm không commit; vẽ các phương án UI thành board thay vì ASCII. |
 | `arc:brainstorm` | Agent đang brainstorm một tính năng; arcterm hiện pane [Brainstorm](brainstorm.md) cạnh terminal. |
 | `arc:council` | Cuộc trò chuyện có một câu hỏi còn bỏ ngỏ, hoặc bạn bảo "hỏi council" ([Council](council.md)). |
@@ -145,7 +146,7 @@ arcterm mang theo mười skill, được đưa vào `<vault>/skills/` ở mỗi
 | `arc:learn` | Bạn sửa agent hoặc dặn "từ giờ luôn…"; lời đó thành một luật chờ bạn duyệt (`wsh learn note`). |
 | `arc:notes` | Bạn bảo agent ghi lại một điều (`wsh note add`). |
 
-Với Claude Code, các skill này nằm trong arc mod (`~/.arc/claude-mod/skills/`, kèm luật bạn đã duyệt qua `wsh learn`) nên hiện tên `arc:<skill>`; harness khác (codex, pi…) đọc chúng từ vault với tên không có prefix (`runs`, `cockpit`, `initiatives`, `doc-review`, `design`, `brainstorm`, `council`, `detach`, `learn`, `notes`).
+Với Claude Code, các skill này nằm trong arc mod (`~/.arc/claude-mod/skills/`, kèm luật bạn đã duyệt qua `wsh learn`) nên hiện tên `arc:<skill>`; harness khác (codex, pi…) đọc chúng từ vault với tên không có prefix (`runs`, `cockpit`, `initiatives`, `doc-review`, `handoff`, `design`, `brainstorm`, `council`, `detach`, `learn`, `notes`).
 
 Chúng dạy agent cách dùng `wsh` và các quy ước của cockpit; xem [Tích hợp agent](agent-integration.md#skills-đi-kèm).
 
