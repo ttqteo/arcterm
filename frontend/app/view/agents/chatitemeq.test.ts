@@ -84,6 +84,70 @@ describe("sameChatItem", () => {
         expect(sameChatItem(items([ask(["A"])])[0], items([ask(["A"])])[0])).toBe(true);
     });
 
+    describe("the verdict, handoff and run-start parts", () => {
+        const review = (summary: string): string =>
+            `\`\`\`arc-review\n${JSON.stringify({ kind: "code", pass: false, findings: [{ severity: "Minor", file: "a.ts", summary }] })}\n\`\`\``;
+        const spawn = (toolUseId: string): AgentEntry =>
+            ({
+                kind: "action",
+                verb: "agent",
+                target: "Review it",
+                subagent: { description: "Review it", subagentType: "code-reviewer", toolUseId },
+            }) as AgentEntry;
+        const ask = (picked: string[]): AgentEntry =>
+            ({
+                kind: "action",
+                verb: "asked",
+                target: "Handoff",
+                detail: {
+                    kind: "ask",
+                    questions: [
+                        { question: "Run `p.md`?", header: "Handoff", options: [{ label: "Arc engine" }], picked },
+                    ],
+                },
+            }) as AgentEntry;
+        const start = (output: string): AgentEntry =>
+            ({
+                kind: "action",
+                verb: "bash",
+                target: "wsh runs start",
+                outcome: "ok",
+                detail: { kind: "bash", command: "wsh runs start --plan p.md", output, exit: 0 },
+            }) as AgentEntry;
+        const at = (entries: AgentEntry[]): ChatItem => items([{ kind: "user", text: "go" }, ...entries])[1];
+
+        it("sees the same verdict, rebuilt, as the same, and a verdict with other findings as another", () => {
+            const say = (text: string): AgentEntry => ({ kind: "message", text });
+            expect(sameChatItem(at([say(review("one"))]), at([say(review("one"))]))).toBe(true);
+            expect(sameChatItem(at([say(review("one"))]), at([say(review("two"))]))).toBe(false);
+        });
+
+        it("tells a verdict that found its reviewer call from the same one that did not", () => {
+            const say = (text: string): AgentEntry => ({ kind: "message", text });
+            const withCall = at([spawn("t1"), say(review("one"))]);
+            expect(sameChatItem(withCall, at([spawn("t1"), say(review("one"))]))).toBe(true);
+            expect(sameChatItem(withCall, at([spawn("t2"), say(review("one"))]))).toBe(false);
+            expect(sameChatItem(withCall, at([say(review("one"))]))).toBe(false);
+        });
+
+        it("tells a handoff once it was answered", () => {
+            expect(sameChatItem(at([ask([])]), at([ask([])]))).toBe(true);
+            expect(sameChatItem(at([ask([])]), at([ask(["Arc engine"])]))).toBe(false);
+        });
+
+        it("tells a run-start part by the run it names", () => {
+            expect(
+                sameChatItem(at([start("started run aaaaaaaa (x)\n")]), at([start("started run aaaaaaaa (x)\n")]))
+            ).toBe(true);
+            expect(
+                sameChatItem(at([start("started run aaaaaaaa (x)\n")]), at([start("started run bbbbbbbb (x)\n")]))
+            ).toBe(false);
+            expect(sameChatItem(at([start("started run aaaaaaaa (x)\n")]), at([start("queued aaaaaaaa\n")]))).toBe(
+                false
+            );
+        });
+    });
+
     it("tells your message and the output of a command you ran", () => {
         const you = (text: string): AgentEntry => ({ kind: "user", text });
         expect(sameChatItem(items([you("a")])[0], items([you("a")])[0])).toBe(true);

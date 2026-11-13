@@ -12,6 +12,19 @@ does not, say what you saw and it becomes a bug row under Actionable.
   arcterm → still hidden, and the startup screen shows only "Setting up arcterm", no Sprout or hologram. Fold the
   window while hidden → the folded Sprout shows and says nothing until Show Jarvis. Commit: the Jarvis snooze
   (`cockpitoffice.tsx` BossView, `startuploader.tsx`, `pethidestore.ts`).
+- [ ] (arcterm) Chat keeps up with a reply before a big Write: after a build with this arc mod installed, ask a Claude
+  agent to write a ~100-line file and watch Chat → the line it says before the Write ("Writing the …") shows whole
+  within a moment, not cut mid-word until the Write lands. `claude/arc-mod/hooks/register.ts` turn.step trailing write.
+- [ ] (arcterm) A queued run's card in Chat turns into its run in place: in a Claude agent, start a run with
+  `wsh runs start … --after <a live run>` so it queues → its card reads `Queued · after <that run>`; once the run ahead
+  ends and the entry starts, the same card shows the new run's stage and Open run, without a second card appearing and
+  without a flash of nothing on the first render after a reload (`frontend/app/view/agents/chatruncard.tsx`,
+  `chatruncards.ts` `placeRunCards`, `chatconversation.tsx`; the `chat-verdict-handoff` scenario covers only an entry
+  still in the queue; 1be9dcb93).
+- [ ] (arcterm) Brainstorm card motion: in Chat, on a builder check card hover Open in Brainstorm, Keep talking and
+  Approve → the colours ease in (~140ms) instead of snapping; click Agent's calls N → the list slides open and folds
+  shut with no jump in the gap above it; open a ✓ Run row's detail → same. The `chat-brainstorm-review` scenario passed
+  (26/26) but its shots are stills. Commit b90fbb688, `chatbrainstormparts.tsx`.
 - [ ] (arcterm) Confirm the design's button at the card's foot: have a brainstorm end with 5+ guesses → in Chat the
   card's top line has no button, and Confirm all N guesses sits right-aligned on the `N yours ›` row at its foot
   (alone there when nothing is yours yet); confirm them all → Check with a builder takes the same place. Commit:

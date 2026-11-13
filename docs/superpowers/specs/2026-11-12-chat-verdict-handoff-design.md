@@ -4,7 +4,7 @@ Date: 2026-11-12 · Brainstorm: `.superpowers/brainstorm/chat-verdict-handoff/br
 Initiative: "GUI redesign after the AI-chat references" (`effort 7655bf18-619e-40cf-8805-5f4a6e5ac85e`, chunks 5
 "Chat: the reviewer's verdict as a card" and 6 "Chat: the plan handoff as a card")
 
-**Prototype:** D:\work\arcterm\.superpowers\design\chat-verdict-handoff\project
+**Prototype:** .superpowers/design/chat-verdict-handoff/project
 
 The canvas holds two boards: `B-pick-and-send.dc.html` (the verdict card while the agent waits on you, with ticks
 and its two buttons) and `H-A-rows.dc.html` (the handoff card). Their sample copy is partly Vietnamese; the UI
@@ -164,7 +164,7 @@ Each card folds into its own ✓ row, by the rule of the brainstorm-review spec 
   ticked, the ✓ row text), `chathandoff.ts` (recognizing the question, the plan's facts, the `Recommended` label),
   and the run card's model extended to every run by `OriginTranscript`. The cards draw in their own component file.
 - An agent that has exited turns every card static (no amber dot). Motion: the spring the question card uses.
-- An `agent-chat` CDP scenario step for the verdict card (open, ticked, folded), the handoff card (open, folded) and
+- A CDP scenario of its own, `chat-verdict-handoff`, with steps for the verdict card (open, ticked, folded), the handoff card (open, folded) and
   the run card of a run that did not start from a brainstorm, and one `CHANGELOG.md` line.
 
 ### 7. Strings
@@ -182,5 +182,5 @@ Chat's UI strings stay English, as in the rest of Chat: `Code review`, `Plan rev
   `OriginTranscript` plus `brainstorm.run`, deduplicated; an `arc-review` block paired by `subagent` and by nearest
   call; the queued card (waiting, after a run, blocked, then started); the run-ended `[arc] Run` message paired with
   its card (landed, held, and one for a run of another conversation, which stays a bubble); an exited agent.
-- CDP: `agent-chat` steps that open the verdict card with ticks, its folded row, the handoff card, its folded row
+- CDP: `chat-verdict-handoff` steps (a scenario of its own, beside `chat-brainstorm-review`; `agent-chat` is unchanged) that open the verdict card with ticks, its folded row, the handoff card, its folded row
   followed by a run card, and a run card for a run started outside a brainstorm. The boards are the reference.

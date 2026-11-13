@@ -10,7 +10,7 @@ import { springReveal, turnTransition } from "@/app/element/motiontokens";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { ArrowUpRight, Check, ChevronRight } from "lucide-react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useState, type ReactNode } from "react";
 import type { AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
@@ -23,12 +23,11 @@ import type { DecisionRowModel, Gist } from "./chatbrainstorm";
 const OPEN_KEY = "Alt:c";
 
 export const FOCUS_RING = "outline-none focus-visible:ring-2 focus-visible:ring-accent";
-export const SMALL_BTN =
-    "flex flex-none cursor-pointer items-center gap-[6px] rounded-[8px] border border-edge-mid bg-surface-raised px-[10px] py-[4px] text-[12px] text-secondary hover:border-edge-strong hover:bg-surface-hover disabled:cursor-default disabled:opacity-50";
-export const PRIMARY_BTN =
-    "flex-none cursor-pointer rounded-[7px] bg-accent px-[14px] py-[7px] text-[12.5px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50";
-export const ROW =
-    "flex min-w-0 items-stretch overflow-hidden rounded-[10px] border has-[button:disabled]:opacity-60 has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-accent";
+// a hover eases its colours in at MOTION.durMicro instead of snapping (DESIGN.md "Motion": micro ~140ms)
+const HOVER_EASE = "transition-colors duration-[140ms] motion-reduce:transition-none";
+export const SMALL_BTN = `flex flex-none cursor-pointer items-center gap-[6px] rounded-[8px] border border-edge-mid bg-surface-raised px-[10px] py-[4px] text-[12px] text-secondary hover:border-edge-strong hover:bg-surface-hover disabled:cursor-default disabled:opacity-50 ${HOVER_EASE}`;
+export const PRIMARY_BTN = `flex-none cursor-pointer rounded-[7px] bg-accent px-[14px] py-[7px] text-[12.5px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50 ${HOVER_EASE}`;
+export const ROW = `flex min-w-0 items-stretch overflow-hidden rounded-[10px] border has-[button:disabled]:opacity-60 has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-accent ${HOVER_EASE}`;
 export const ROW_PICK = "border-accent/55 bg-accent/8 has-[button:enabled:hover]:bg-accentbg";
 export const ROW_PLAIN = "border-edge-mid bg-surface has-[button:enabled:hover]:border-edge-strong";
 export const LETTER =
@@ -87,9 +86,10 @@ export type CardKind = "question" | "confirm" | "check" | "run" | "verdict" | "h
 /** The section every card is: its motion wrapper (enters and leaves on springReveal), the kind and state attributes the
  *  scenarios read, and the header row (icon, head, the state tag, then the header's right end). `label` is the section's
  *  aria-label (the head when left out); `extra` carries the attributes only one card has (the question card's
- *  `data-chat-bscard` and `data-chat-bscard-n`). The right end holds `action`, a card's own link (Open the review, Open
- *  the plan, Open run), and Open in Brainstorm beside it when an `agent` is passed: a brainstorm card passes the agent
- *  and no action, a verdict, handoff or generic run card passes an action and no agent. */
+ *  `data-chat-bscard` and `data-chat-bscard-n`, the verdict card's `data-chat-vcard`); `chip` is a card's pill between
+ *  the head and the state tag (the verdict card's Changes requested / Approved). The right end holds `action`, a card's
+ *  own link (Open the review, Open the plan, Open run), and Open in Brainstorm beside it when an `agent` is passed: a
+ *  brainstorm card passes the agent and no action, a verdict, handoff or generic run card passes an action and no agent. */
 export function CardShell({
     kind,
     state,
@@ -100,6 +100,7 @@ export function CardShell({
     label,
     extra,
     stage,
+    chip,
     children,
 }: {
     kind: CardKind;
@@ -109,8 +110,9 @@ export function CardShell({
     agent?: AgentVM;
     action?: ReactNode;
     label?: string;
-    extra?: { "data-chat-bscard"?: boolean; "data-chat-bscard-n"?: number };
+    extra?: Record<`data-${string}`, string | number | boolean | undefined>;
     stage?: string;
+    chip?: ReactNode;
     children: ReactNode;
 }) {
     return (
@@ -134,6 +136,7 @@ export function CardShell({
                     <span data-chat-bscard-head className="min-w-0 truncate">
                         {head}
                     </span>
+                    {chip}
                     <StateTag state={state} />
                     {action != null || agent != null ? (
                         <span className="ml-auto flex flex-none items-center gap-[8px]">
@@ -169,7 +172,7 @@ export function Fold({
     }
     const shown = open && items.length > 0;
     return (
-        <div className="@container flex min-w-0 flex-col gap-[8px]">
+        <div className="@container flex min-w-0 flex-col">
             <div className="flex items-center gap-[12px] text-[12px] text-muted">
                 {items.length > 0 ? (
                     <button
@@ -179,6 +182,7 @@ export function Fold({
                         onClick={() => setOpen(!open)}
                         className={cn(
                             "flex w-fit flex-none cursor-pointer items-center gap-[6px] rounded-[4px] border-0 bg-transparent p-0 text-[12px] font-semibold text-secondary hover:text-primary",
+                            HOVER_EASE,
                             FOCUS_RING
                         )}
                     >
@@ -197,31 +201,48 @@ export function Fold({
                 ) : null}
                 {beside}
             </div>
-            {shown ? (
-                <ul
-                    data-chat-bscard-fold-list={name}
-                    className="m-0 flex list-none flex-col gap-[6px] p-0 pl-[18px] text-[12.5px] leading-[1.5]"
-                >
-                    {items.map((it) => (
-                        <li key={it.id} className="flex min-w-0 gap-[10px]">
-                            <Check
-                                size={13}
-                                strokeWidth={2.4}
-                                className="mt-[3px] flex-none text-success"
-                                aria-hidden
-                            />
-                            {it.title !== "" ? (
-                                <span className="w-[196px] flex-none font-medium text-primary @max-[520px]:w-[120px]">
-                                    {it.title}
-                                </span>
-                            ) : null}
-                            <span className={cn("min-w-0 flex-1", it.title !== "" ? "text-muted" : "text-secondary")}>
-                                {it.gist}
-                            </span>
-                        </li>
-                    ))}
-                </ul>
-            ) : null}
+            {/* the list opens and folds on the spring; the gap above it is its own top padding, so it folds with it */}
+            <AnimatePresence initial={false}>
+                {shown ? (
+                    <motion.div
+                        key="list"
+                        variants={springReveal}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        className="overflow-hidden"
+                    >
+                        <ul
+                            data-chat-bscard-fold-list={name}
+                            className="m-0 flex list-none flex-col gap-[6px] p-0 pl-[18px] pt-[8px] text-[12.5px] leading-[1.5]"
+                        >
+                            {items.map((it) => (
+                                <li key={it.id} className="flex min-w-0 gap-[10px]">
+                                    <Check
+                                        size={13}
+                                        strokeWidth={2.4}
+                                        className="mt-[3px] flex-none text-success"
+                                        aria-hidden
+                                    />
+                                    {it.title !== "" ? (
+                                        <span className="w-[196px] flex-none font-medium text-primary @max-[520px]:w-[120px]">
+                                            {it.title}
+                                        </span>
+                                    ) : null}
+                                    <span
+                                        className={cn(
+                                            "min-w-0 flex-1",
+                                            it.title !== "" ? "text-muted" : "text-secondary"
+                                        )}
+                                    >
+                                        {it.gist}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
         </div>
     );
 }
@@ -365,25 +386,31 @@ export function DecisionRow({ agent, row, disabled }: { agent: AgentVM; row: Dec
     );
 }
 
-// the box before a row's button on a question that takes more than one option: ticking only collects the row
+// the box before a row's button on a question that takes more than one option: ticking only collects the row. The verdict
+// card's finding rows use it too, with `attrs` in place of the brainstorm card's `data-chat-bscard-tick` and their own
+// `label`
 export function TickBox({
     i,
     on,
     disabled,
     onToggle,
+    attrs,
+    label,
 }: {
     i: number;
     on: boolean;
     disabled: boolean;
     onToggle: () => void;
+    attrs?: Record<`data-${string}`, string | number | boolean>;
+    label?: string;
 }) {
     return (
         <button
             type="button"
             role="checkbox"
             aria-checked={on}
-            aria-label={`Combine ${optionLetter(i)}`}
-            data-chat-bscard-tick={i}
+            aria-label={label ?? `Combine ${optionLetter(i)}`}
+            {...(attrs ?? { "data-chat-bscard-tick": i })}
             disabled={disabled}
             onClick={onToggle}
             className="flex flex-none cursor-pointer items-center border-0 bg-transparent pl-[12px] outline-none disabled:cursor-default"
@@ -522,7 +549,7 @@ export function DoneRow({
         );
     }
     return (
-        <div className="flex min-w-0 flex-col gap-[6px]">
+        <div className="flex min-w-0 flex-col">
             <button
                 type="button"
                 {...marks}
@@ -532,19 +559,34 @@ export function DoneRow({
                 className={cn(
                     DONE_ROW,
                     "w-full cursor-pointer text-left hover:border-edge-strong hover:bg-surface-hover",
+                    HOVER_EASE,
                     FOCUS_RING
                 )}
             >
                 {inner}
             </button>
-            {open ? (
-                <div
-                    {...(kind === "run" ? { "data-chat-run-ended-text": "" } : null)}
-                    className="whitespace-pre-wrap break-words rounded-[10px] border border-edge-mid bg-surface px-[14px] py-[9px] text-[12px] leading-[1.5] text-muted"
-                >
-                    {detail}
-                </div>
-            ) : null}
+            {/* the detail opens and folds on the spring; the gap above it is its own top padding, so it folds with it */}
+            <AnimatePresence initial={false}>
+                {open ? (
+                    <motion.div
+                        key="detail"
+                        variants={springReveal}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        className="overflow-hidden"
+                    >
+                        <div className="pt-[6px]">
+                            <div
+                                {...(kind === "run" ? { "data-chat-run-ended-text": "" } : null)}
+                                className="whitespace-pre-wrap break-words rounded-[10px] border border-edge-mid bg-surface px-[14px] py-[9px] text-[12px] leading-[1.5] text-muted"
+                            >
+                                {detail}
+                            </div>
+                        </div>
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
         </div>
     );
 }

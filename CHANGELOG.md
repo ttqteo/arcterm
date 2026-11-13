@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Chat draws a reviewer's verdict as a card: each finding with its severity and a file link, a tick on the ones to
+  fix, and Fix N selected or Skip the review, which send one line to the agent. The plan handoff is four lettered
+  choices, and every run the agent starts is a card at the call that started it, kept up to date until it lands. Each
+  folds into a ✓ row once you have answered or the run is over.
 - The chat box says when the agent has work running in the background: a line at its top names the newest shell
   command, Monitor or background subagent and how many more; press it to list them all, open a task's output or a
   subagent's conversation, and stop a task.
@@ -37,6 +41,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The buttons on Chat's brainstorm cards ease into their hover colour, and a card's folds (Agent's calls, Decided,
+  a ✓ row's detail) slide open and closed instead of popping.
 - The Jarvis hologram turns amber only while an agent is asking you something; gates, plans to review and runs to
   land wait in Jarvis's badge and queue and leave it on its usual rings.
 - Hovering a queued plan in the Agent sidebar opens a card to its right: the plan's file name above its folder, the
@@ -62,6 +68,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Chat no longer stops mid-word ("Writ") while Claude writes a file: the sentence it says before a tool call shows
+  whole at once, instead of waiting seconds for the tool call to finish streaming.
 - A long Confirm the design card in Chat keeps its button in view: Confirm all guesses and Check with a builder
   sit at the card's foot, just above the chat box, instead of at its top, where many decisions pushed them off
   screen.

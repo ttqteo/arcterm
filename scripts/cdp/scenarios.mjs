@@ -68,6 +68,7 @@ import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
 import briefActScenarios from "./scenarios-brief-act.mjs";
 import chatBrainstormReviewScenarios from "./scenarios-chat-brainstorm-review.mjs";
 import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
+import chatVerdictHandoffScenarios from "./scenarios-chat-verdict-handoff.mjs";
 import codeBlameDraftScenarios from "./scenarios-code-blame-draft.mjs";
 import codeFixesSessionScenarios from "./scenarios-code-fixes-session.mjs";
 import codeFixesViewScenarios from "./scenarios-code-fixes-view.mjs";
@@ -70415,6 +70416,7 @@ export const SCENARIOS = [
     chatInitiative,
     ...chatRedesignScenarios(CR_KIT),
     ...chatBrainstormReviewScenarios(CBR_KIT),
+    ...chatVerdictHandoffScenarios(CBR_KIT),
     sidebarAgentRam,
     ...sidebarColumnsScenarios(RT_KIT),
     machineServers,

@@ -17,6 +17,7 @@ import { showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { channelsAtom, loadChannels } from "./channelsstore";
+import { conversationRuns } from "./chatruncards";
 import { runFocusAgent, type RunInfo } from "./runlineage";
 import {
     originName,
@@ -119,6 +120,24 @@ export function useRunsStartedBy(agent: Pick<AgentVM, "id" | "transcriptPath">):
     );
     const runs = useAtomValue(live);
     return useMemo(() => runsStartedBy(agent, runs), [runs, agent.id, agent.transcriptPath]);
+}
+
+/** The runs one conversation started, oldest first, live: those whose origin transcript is `transcriptPath` (a tab spans
+ *  `/clear`, resumed sessions and forks, so the transcript, not the tab, says whose they are). Read from the same
+ *  origin-run index as `useRunsStartedBy`, so a run with no origin tab is not in it; the brainstorm's run, which a
+ *  launcher run has no origin for, is the conversation's to add (`conversationRuns`). */
+export function useConversationRuns(transcriptPath: string | undefined): Run[] {
+    useEffect(() => watchOriginRuns(), []);
+    const index = useAtomValue(originRunsAtom);
+    const mine = useMemo(
+        () => conversationRuns(transcriptPath, Object.values(index)).map((id) => index[id]),
+        [index, transcriptPath]
+    );
+    const live = useMemo(
+        () => atom((get) => mine.map((r) => get(WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", r.oid))) ?? r)),
+        [mine]
+    );
+    return useAtomValue(live);
 }
 
 /** The runs a session started as the tree's run chip reads them, by run id: every run the channels list under its tab
