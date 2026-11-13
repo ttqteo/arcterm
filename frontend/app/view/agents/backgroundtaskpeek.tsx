@@ -1,7 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// A background task's events and output in a floating peek beside its Agent tree row: a Monitor has an Events tab (what
+// A background task's events and output in a floating peek beside its Agent tree row (or above its row in the chat box's
+// background list, chatbgline.tsx): a Monitor has an Events tab (what
 // it has reported) and an Output tab, a background shell only its output. A running task's output is re-read on a timer
 // and followed at the tail; an ended one is read once. A running task of a live agent has a Stop in the header.
 // It opens at a set size (long lines wrap) and its right edge, bottom edge and corner drag it larger; it keeps that size.
@@ -22,6 +23,7 @@ import {
     useDismiss,
     useFloating,
     useInteractions,
+    type Placement,
 } from "@floating-ui/react";
 import { useAtomValue } from "jotai";
 import { Radio, Terminal, X } from "lucide-react";
@@ -465,11 +467,17 @@ export function BackgroundTaskPeek({
     agentId,
     task,
     anchor,
+    placement = "right-start",
+    gap = PEEK_GAP_PX,
 }: {
     model: AgentsViewModel;
     agentId: string;
     task: BackgroundTask;
     anchor: HTMLElement;
+    /** where it opens from its anchor: beside the tree row (the default), or above the chat box's row ("top-start") */
+    placement?: Placement;
+    /** the space between the anchor and the peek */
+    gap?: number;
 }) {
     const now = useAtomValue(model.nowAtom);
     // the task a row hands over is a snapshot: the list holds how it is now (stopped, ended, new events), and an ended
@@ -488,10 +496,10 @@ export function BackgroundTaskPeek({
         open: true,
         onOpenChange: (open) => !open && close(),
         elements: { reference: anchor },
-        placement: "right-start",
+        placement,
         strategy: "fixed",
         middleware: [
-            offset(PEEK_GAP_PX),
+            offset(gap),
             shift({ padding: 8 }),
             // as wide as it was dragged, up to the screen's edge; a window too narrow for even the least width keeps
             // that and lets shift slide it over the tree

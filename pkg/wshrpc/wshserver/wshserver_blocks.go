@@ -60,6 +60,11 @@ func (ws *WshServer) ControllerInputCommand(ctx context.Context, data wshrpc.Com
 		inputUnion.InputData = inputBuf[:nw]
 	}
 	if err := blockcontroller.SendInput(data.BlockId, inputUnion); err != nil {
+		// typed input that no process took is lost (a chat message read Queued for good, 2026-11-13): leave a trace.
+		// A bare resize is not logged: a terminal mounting before its process starts sends one routinely.
+		if len(inputUnion.InputData) > 0 {
+			log.Printf("[input] block %s: %d bytes refused: %v\n", data.BlockId, len(inputUnion.InputData), err)
+		}
 		return err
 	}
 	noteBlockInput(ctx, data.BlockId, inputUnion.InputData)

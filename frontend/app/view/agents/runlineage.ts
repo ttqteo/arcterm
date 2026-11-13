@@ -315,8 +315,9 @@ export interface WorkerLine {
     state?: string;
 }
 
-// workerSubtext is a worker row's second line, led by its task id since the row's title is the task's label:
-// what it came to, what it waits on, whose turn its question is, what state it is in, else its lane and age.
+// workerSubtext is the words of a worker row's second line, led by its task id since the row's title is the task's
+// label: what it came to, what it waits on, whose turn its question is, what state it is in, else its lane. Its age is
+// the row's age column (workerAge), not part of the words.
 export function workerSubtext(w: WorkerLine): string {
     const lane = w.lane ? `lane ${w.lane}` : "";
     let tail: string[];
@@ -325,16 +326,25 @@ export function workerSubtext(w: WorkerLine): string {
     } else if (w.waits) {
         tail = [lane, w.waits.length > 0 ? `waits on ${w.waits.join(", ")}` : "queued"];
     } else if (w.ask?.owner === "lead") {
-        tail = ["asked the lead", w.age];
+        tail = ["asked the lead"];
     } else if (w.ask?.owner === "you") {
-        tail = ["asks you", w.age];
+        tail = ["asks you"];
     } else if (w.state) {
         // the state leads: the lane is what truncation should cut
         tail = [w.state, lane];
     } else {
-        tail = [lane, w.age];
+        tail = [lane];
     }
     return [w.taskId, ...tail].filter(Boolean).join(" · ");
+}
+
+// workerAge is what a worker row's age column says: how long its question has waited, or how long it has run, and
+// nothing for a task that came to an outcome, waits to start, or names a state of its own (a Verify carries its time)
+export function workerAge(w: WorkerLine): string {
+    if (w.outcome || w.waits || (w.state && !w.ask)) {
+        return "";
+    }
+    return w.age;
 }
 
 // taskElapsed is how long a task's current worker has run, "" for a task spawned before the engine stamped it.

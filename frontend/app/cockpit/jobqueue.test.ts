@@ -20,11 +20,15 @@ import {
     pauseLeft,
     pausePatch,
     queuedJobFor,
+    queuedStepFor,
     queuedTag,
     queueTitle,
     RECENT_BYPASS_MS,
+    runQueuedJobs,
+    runQueuedTag,
     sizeLabel,
     sourceLabel,
+    stepQueuedState,
 } from "./jobqueue";
 
 const job = (o: Partial<JobQueueJob>): JobQueueJob => ({
@@ -143,6 +147,77 @@ describe("jobqueue", () => {
         expect(queuedJobFor(d, "b9")).toBeNull();
         expect(queuedJobFor(d, undefined)).toBeNull();
         expect(queuedJobFor(null, "b1")).toBeNull();
+    });
+    it("finds the engine step a run's task waits on, a batch's Verify for each of its tasks", () => {
+        const d = {
+            slots: 1,
+            mode: "auto",
+            jobs: [
+                job({ id: "run", running: true, runid: "R", taskids: ["t-1"], label: "Verify · One" }),
+                job({ id: "v", position: 2, runid: "R", taskids: ["t-3", "t-4"], label: "Verify · Three" }),
+                job({ id: "s", position: 1, runid: "R", taskids: ["t-4"], label: "Setup · Four" }),
+                job({ id: "other", position: 3, runid: "X", taskids: ["t-3"] }),
+                job({ id: "final", position: 4, runid: "R", label: "Final" }),
+            ],
+        };
+        expect(queuedStepFor(d, "R", "t-3")?.id).toBe("v");
+        expect(queuedStepFor(d, "R", "t-4")?.id).toBe("s");
+        // a running step has stopped waiting; a whole-run step is no task's
+        expect(queuedStepFor(d, "R", "t-1")).toBeNull();
+        expect(queuedStepFor(d, "R", "t-9")).toBeNull();
+        expect(queuedStepFor(d, undefined, "t-3")).toBeNull();
+        expect(queuedStepFor(null, "R", "t-3")).toBeNull();
+    });
+    it("names a queued step by its label's first part", () => {
+        expect(stepQueuedState(job({ label: "Verify · The handoff card", position: 2 }))).toBe("verify queued");
+        expect(stepQueuedState(job({ label: "Verify · bisect" }))).toBe("verify queued");
+        expect(stepQueuedState(job({ label: "Setup · t-2", position: 1 }))).toBe("setup queued");
+        expect(stepQueuedState(job({}))).toBe("queued");
+    });
+    it("names an engine step first in its tag's tooltip, and an agent's command alone", () => {
+        expect(queuedTag(job({ label: "Verify · Four", name: "scripts/verify.mjs" }), 0).title).toBe(
+            "Verify · Four: scripts/verify.mjs waits its turn in the heavy-job queue"
+        );
+        expect(queuedTag(job({ name: "task check:ts" }), 0).title).toBe(
+            "task check:ts waits its turn in the heavy-job queue"
+        );
+    });
+    it("collects every job a run waits on: its steps and its agents' commands, in serving order", () => {
+        const d = {
+            slots: 1,
+            mode: "auto",
+            jobs: [
+                job({ id: "a2", position: 3, blockid: "w2" }),
+                job({ id: "step", position: 1, runid: "R", label: "Verify · Two" }),
+                job({ id: "a1", position: 2, blockid: "w1" }),
+                job({ id: "busy", running: true, blockid: "w1" }),
+                job({ id: "stranger", position: 4, blockid: "z" }),
+                job({ id: "otherrun", position: 5, runid: "X" }),
+            ],
+        };
+        expect(runQueuedJobs(d, "R", new Set(["w1", "w2"])).map((j) => j.id)).toEqual(["step", "a1", "a2"]);
+        expect(runQueuedJobs(d, "R", new Set())).toHaveLength(1);
+        expect(runQueuedJobs(null, "R", new Set(["w1"]))).toEqual([]);
+        expect(runQueuedJobs(d, undefined, new Set(["w1"]))).toEqual([]);
+    });
+    it("tags a run with its one waiting job, or how many wait, and warns once any waited long", () => {
+        expect(runQueuedTag([], 0)).toBeNull();
+        const one = runQueuedTag([job({ position: 1, label: "Verify · Four", name: "scripts/verify.mjs" })], 1_000);
+        expect(one?.label).toBe("queued #1");
+        expect(one?.title).toBe("Verify · Four: scripts/verify.mjs waits its turn in the heavy-job queue");
+        expect(one?.warn).toBe(false);
+        const two = runQueuedTag(
+            [
+                job({ id: "a", position: 1, label: "Verify · Four", name: "scripts/verify.mjs", queuedts: 0 }),
+                job({ id: "b", position: 2, name: "task check:ts", queuedts: LONG_WAIT_MS }),
+            ],
+            LONG_WAIT_MS + 1
+        );
+        expect(two?.label).toBe("2 queued");
+        expect(two?.title).toBe(
+            "2 of this run's jobs wait their turn in the heavy-job queue: Verify · Four (scripts/verify.mjs), task check:ts"
+        );
+        expect(two?.warn).toBe(true);
     });
     it("tags the head of the queue with why it waits", () => {
         const tag = queuedTag(job({ position: 1, reason: "needs 3.0 GB, 1.2 GB free", queuedts: 0 }), 20_000);

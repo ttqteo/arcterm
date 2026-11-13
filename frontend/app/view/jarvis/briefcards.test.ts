@@ -66,6 +66,14 @@ describe("pinnedCards", () => {
         expect(orefs(pinnedCards(cards, cards))).toEqual(["a"]);
     });
 
+    it("leaves a topic out of the fallback cards, so it stays in the list over its sub-initiatives", () => {
+        const cards = [{ ...idea("top"), topic: true }, card("a")];
+        expect(orefs(pinnedCards(cards, cards))).toEqual(["a"]);
+        const [item] = listAfterCards(nestInitiatives([cards[0]]), []);
+        expect(listRowFace(item, { now: NOW }).hasProgress).toBe(false);
+        expect(listRowFace(listAfterCards(nestInitiatives([cards[1]]), [])[0], { now: NOW }).hasProgress).toBe(true);
+    });
+
     it("draws six pins at most, the oldest six, when another machine's merge left more", () => {
         const cards = [1, 2, 3, 4, 5, 6, 7].map((n) => card("p" + n, { pinnedts: n * 10 }));
         expect(orefs(pinnedCards(cards, cards))).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);

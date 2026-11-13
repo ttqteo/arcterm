@@ -56,41 +56,9 @@ export function ChatBrainstormConfirm({
             icon={<ListChecks size={14} strokeWidth={2} className="flex-none" aria-hidden />}
             agent={agent}
         >
-            <div className="flex flex-wrap items-center gap-x-[14px] gap-y-[8px]">
-                <span
-                    data-chat-bscard-review-line
-                    className="min-w-[200px] flex-1 text-[13px] leading-[1.5] text-secondary"
-                >
-                    {card.line}
-                </span>
-                {card.action === "confirm-all" ? (
-                    <button
-                        type="button"
-                        data-chat-bscard-confirm-all
-                        disabled={off}
-                        onClick={() => void act.run(() => sendBrainstorm(agent, { kind: "confirm-all" }))}
-                        className={cn(PRIMARY_BTN, FOCUS_RING)}
-                    >
-                        Confirm all {card.guesses} guesses
-                    </button>
-                ) : null}
-                {card.action === "check" ? (
-                    <button
-                        type="button"
-                        data-chat-bscard-check
-                        disabled={off}
-                        onClick={() => void act.run(() => sendBrainstorm(agent, { kind: "check" }))}
-                        className={cn(PRIMARY_BTN, FOCUS_RING)}
-                    >
-                        Check with a builder
-                    </button>
-                ) : null}
-            </div>
-            {act.error ? (
-                <div role="alert" className={ERROR_LINE}>
-                    {act.error}
-                </div>
-            ) : null}
+            <span data-chat-bscard-review-line className="text-[13px] leading-[1.5] text-secondary">
+                {card.line}
+            </span>
             {/* a row leaves on the spring when its decision turns yours; the padding under each row is its gap, so the
                 collapsing row takes its gap with it, and the negative margin takes the last one back */}
             <div className="-mb-[8px] flex flex-col empty:hidden">
@@ -111,7 +79,45 @@ export function ChatBrainstormConfirm({
                     ))}
                 </AnimatePresence>
             </div>
-            <Fold name="yours" label={`${card.yours.length} yours`} items={card.yours} />
+            {/* the card's one action sits at its foot, beside the fold: Chat keeps the conversation scrolled to its end,
+                so a card with many rows pushes its head off screen while its foot stays just above the composer */}
+            <Fold
+                name="yours"
+                label={`${card.yours.length} yours`}
+                items={card.yours}
+                beside={
+                    card.action == null ? null : (
+                        <span className="ml-auto flex flex-none items-center">
+                            {card.action === "confirm-all" ? (
+                                <button
+                                    type="button"
+                                    data-chat-bscard-confirm-all
+                                    disabled={off}
+                                    onClick={() => void act.run(() => sendBrainstorm(agent, { kind: "confirm-all" }))}
+                                    className={cn(PRIMARY_BTN, FOCUS_RING)}
+                                >
+                                    Confirm all {card.guesses} guesses
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    data-chat-bscard-check
+                                    disabled={off}
+                                    onClick={() => void act.run(() => sendBrainstorm(agent, { kind: "check" }))}
+                                    className={cn(PRIMARY_BTN, FOCUS_RING)}
+                                >
+                                    Check with a builder
+                                </button>
+                            )}
+                        </span>
+                    )
+                }
+            />
+            {act.error ? (
+                <div role="alert" className={ERROR_LINE}>
+                    {act.error}
+                </div>
+            ) : null}
         </CardShell>
     );
 }

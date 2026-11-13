@@ -21,10 +21,11 @@ export interface TakeBack {
     texts: string[];
 }
 
-/** What Esc or ↑ in an empty chat box takes back, or null when the key keeps its old job (Esc lets go of the box, ↑
- *  recalls the history). Only while Claude works: idle, nothing waits; asking, the keys belong to its dialog. A queued
- *  message (a plain one: Claude Code leaves commands queued) goes back with either key, and the turn runs on; with none,
- *  Esc stops a turn that has no answer yet, for the message that started it. ↑ never stops a turn. */
+/** What Esc or ↑ in an empty chat box takes back, or null when nothing comes back (the composer then stops the turn for
+ *  Esc, and ↑ recalls the history). Only while Claude works: idle, nothing waits; asking, the keys belong to its dialog.
+ *  Esc stops the turn, as it does in Claude Code's box, which puts the queued messages (plain ones: Claude Code leaves
+ *  commands queued) back in its box, or with none, the message that started a turn with no answer yet. ↑ takes the
+ *  queued messages back and the turn runs on; it never stops a turn. */
 export function takeBackPlan(
     key: "Escape" | "ArrowUp",
     pending: PendingMessage[],
@@ -36,7 +37,8 @@ export function takeBackPlan(
     }
     const queued = pending.filter((p) => p.kind == null && p.queued === true);
     if (queued.length > 0) {
-        return { kind: "queued", ids: queued.map((p) => p.id), texts: queued.map((p) => p.text) };
+        const kind = key === "Escape" ? "interrupt" : "queued";
+        return { kind, ids: queued.map((p) => p.id), texts: queued.map((p) => p.text) };
     }
     if (key !== "Escape") {
         return null;
@@ -111,6 +113,48 @@ export function boxShowsTyped(lines: string[], text: string): boolean | null {
     }
     const tail = squash(text).normalize("NFC").slice(-TYPED_TAIL);
     return tail === "" || box.includes(tail);
+}
+
+/** What Claude Code's box shows of a text a send just typed: `shown`, all of it (boxShowsTyped); `absent`, the box is on
+ *  screen and empty, so none of it has reached Claude Code yet; `other`, the box holds something that is not the text
+ *  (part of it, a draft, a bash-mode prompt drawn its own way); `unknown`, no screen or no box to read. Only `absent`
+ *  says the text is missing: anything else in the box may be how it draws the text. */
+export type TypedEcho = "shown" | "absent" | "other" | "unknown";
+
+export function typedEcho(lines: string[] | null, text: string): TypedEcho {
+    if (lines == null) {
+        return "unknown";
+    }
+    const shows = boxShowsTyped(lines, text);
+    if (shows == null) {
+        return "unknown";
+    }
+    if (shows) {
+        return "shown";
+    }
+    const rows = inputBoxRows(lines) ?? [];
+    return squash(rows.map((r) => r.replace(/^\s*❯/, "")).join("")) === "" ? "absent" : "other";
+}
+
+/** What Claude Code's box shows of a sent text once its Enter is written: `gone`, the text left the box (submitted, or
+ *  queued while Claude works); `linebreak`, the text is still there with an empty row under it, so the Enter went in as
+ *  a line break and the message sits unsent (2026-11-13: Claude Code, slowed by a machine short of RAM, read the Enter
+ *  as part of the text); `held`, the text alone, its Enter not read yet; `unknown`, no box to read. */
+export type EnterEcho = "gone" | "linebreak" | "held" | "unknown";
+
+export function enterEcho(lines: string[] | null, text: string): EnterEcho {
+    if (lines == null) {
+        return "unknown";
+    }
+    const rows = inputBoxRows(lines);
+    if (rows == null) {
+        return "unknown";
+    }
+    if (boxShowsTyped(lines, text) !== true) {
+        return "gone";
+    }
+    const last = rows[rows.length - 1] ?? "";
+    return rows.length >= 2 && squash(last.replace(/^\s*❯/, "")) === "" ? "linebreak" : "held";
 }
 
 /** The chat box after a take-back: the messages first, one per line, then what the box held, as Claude Code's box puts

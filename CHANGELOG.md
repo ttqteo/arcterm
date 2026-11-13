@@ -30,11 +30,79 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   fix, and Fix N selected or Skip the review, which send one line to the agent. The plan handoff is four lettered
   choices, and every run the agent starts is a card at the call that started it, kept up to date until it lands. Each
   folds into a ✓ row once you have answered or the run is over.
+- The chat box says when the agent has work running in the background: a line at its top names the newest shell
+  command, Monitor or background subagent and how many more; press it to list them all, open a task's output or a
+  subagent's conversation, and stop a task.
+- Every board in a canvas has a Copy button above its right edge: it puts a screenshot of the board, as it shows on
+  screen, on the clipboard, ready to paste into a chat or a doc. In an agent's canvas and in the Canvas gallery.
 
 ### Changed
 
+- The Jarvis hologram turns amber only while an agent is asking you something; gates, plans to review and runs to
+  land wait in Jarvis's badge and queue and leave it on its usual rings.
 - Hovering a queued plan in the Agent sidebar opens a card to its right: the plan's file name above its folder, the
   whole reason when it is blocked, the lead and workers it will run with, and when it was queued.
+- Every agent, run and worker row in the Agent sidebar ends with the same three columns, RAM · tokens · age, lined up
+  down the list and in a quieter ink; a RAM figure of 1 GB or more turns amber. The unread count moved up beside the
+  name, and an agent asking you keeps its columns. The sidebar widens a little only while all three columns are on:
+  turn one off in Settings → Appearance → Agent sidebar and it is back to its old width.
+- Jarvis has a new icon in the nav rail and in What's new: an arc reactor instead of a brain.
+- The model chip under the chat box offers Fable 5.2, Opus 5.5, Sonnet 5.5 and Haiku 5.5 as a plain list of names,
+  as Claude Code's own model menu does, with a check on the model the agent runs.
+- An Effort chip sits beside the model chip under the chat box: pick Low, Medium, High, Extra high, Max or Auto,
+  each drawn as a five-bar meter, and it sends `/effort` to Claude Code.
+- In Chat, Esc stops the agent's turn while it works, as it does in Claude Code, whether or not the focus is in the
+  chat box; a queued message comes back into the box. It no longer sends you back to the Cockpit mid-turn.
+- Right-clicking a file path in Chat opens a menu of its own: Open beside the agent, Show in Explorer (Reveal in
+  Finder on a Mac) and Copy path.
+- A finished run files its leftover issues on the initiatives that already gather them (flaky tests, hand checks, a
+  topic's bugs and polish) and notes an issue that is already there, instead of opening a new "follow-ups (run X)"
+  initiative each time.
+- When you ask a Claude agent in Chat to put something in an initiative, it adds it straight away and says where,
+  instead of showing an Add to initiative card for you to confirm. A card still asks for what you did not ask for.
+
+### Fixed
+
+- A long Confirm the design card in Chat keeps its button in view: Confirm all guesses and Check with a builder
+  sit at the card's foot, just above the chat box, instead of at its top, where many decisions pushed them off
+  screen.
+- A brainstorming agent waiting on your answer reads "asking question 3" in the Agent tree, not "asking asking…".
+- Two Add to initiative cards in one Chat reply no longer touch: they sit apart, as the reply's other blocks do.
+- A run's Verify, Check and Final wait for the RAM your agents' runs of the same command measured, when that is more
+  than the queue's estimate: a Final that took 4.8 GB no longer starts when only 3 GB is free. A heavy command you
+  skip from the Jobs popover no longer counts as a tiny run that lowers its next estimate.
+- Jarvis's hologram comes back by itself a few seconds after the graphics card drops it (a GPU reset, or many open
+  terminals); before, it turned into Sprout until you picked the form again. It stays Sprout only if it keeps failing.
+- A Chat message no longer sits unsent in Claude Code's box when the machine is short of memory: if Claude Code takes
+  its Enter as a line break, arcterm removes the break and presses Enter again, and tells you when you have to press it
+  yourself.
+- An agent whose end-of-turn report was lost (Claude Code gave up on it on a slow machine) no longer reads "Working…"
+  for good: within about 30 seconds arcterm sees in the conversation that the turn ended and shows the agent idle.
+- On a Mac, shortcut hints no longer name keys a Mac does not have: the Open in Brainstorm button, the wrap and
+  Send-review buttons in Code, the commit buttons, the + menu, the tool picker, the Jarvis tour and a few tooltips now
+  show ⌥, ⌘ and ⇧ (⌥C, ⌘⏎) where they said Alt+C or Ctrl+Enter.
+- A run task whose Setup waits for memory in the heavy-job queue no longer holds up the run's other tasks: after two
+  minutes it steps out of the queue, stays pending and tries again, so merges and other tasks carry on meanwhile.
+- The Agent details rail keeps one width whether it scrolls or not, so the Spend table's columns no longer shift
+  and its labels no longer wrap when a scrollbar appears; a Context group (Skills, Memory files…) now folds open and
+  shut smoothly.
+- A run whose Verify, Setup or Final waits in the heavy-job queue now says so in the Agent sidebar: the run's line
+  shows "queued #N" (or "N queued") even when folded, and the task's row carries its own "queued #N" tag and reads
+  "verify queued" instead of a Verify clock that ran before the command had started.
+- An agent that failed to start says so at the end of its name in the Agent sidebar, as a lead does, so its second
+  line no longer runs past the row when it also shows the runs it started.
+- Changing an initiative (from the app or `wsh effort`) no longer stalls or fails with a timeout while the vault
+  syncs over the network; it waits only for the vault's quick local commit.
+- A Chat message that never reaches Claude Code no longer sits under "Queued" for good: arcterm tells you it was not
+  sent and puts it back in the chat box with its files, so you can send it again.
+- Topics (an initiative others are filed under, such as "Chat" or "Misc") no longer fill Jarvis's Ideas column: they
+  sit in All initiatives with their sub-initiatives under them, with no 0/0 bar, and stay out of Review.
+- In Chat, the ring beside a running step ("Ran", "Read"…) turns in place instead of wobbling off its centre.
+- A paused run's progress strip no longer blinks: the task and stage it stopped on hold still in grey until you
+  resume it.
+- The RAM popover now groups each run's agents under one head row: the run's title and its total CPU, RAM and spend,
+  then its lead, workers and reviewers, each named by role ("Lead", "Task t-3", "review t-4"). Leads and reviewers no
+  longer sit loose among your own agents, which come first; the chevron folds a run to its head row.
 
 ## 1.1.0 — 2026-11-13
 
@@ -81,6 +149,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   initiatives list, and `wsh effort list --topics` lists those topics.
 - A run's row in the Agent sidebar shows the RAM the whole run holds (its lead and every worker together) instead of
   the lead's alone; hover it for the lead's own figure.
+- Hovering a queued plan in the Agent sidebar opens a card to its right: the plan's file name above its folder, the
+  whole reason when it is blocked, the lead and workers it will run with, and when it was queued.
 - In a Chat box's bash mode (`!`), Tab now takes the grey command suggested from your history, as → does; with no
   suggestion showing, Tab still completes the word under the caret.
 - A session you start with a task is named after that task while Claude Code starts, instead of the project name,

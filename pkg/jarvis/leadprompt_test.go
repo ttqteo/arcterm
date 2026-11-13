@@ -188,6 +188,11 @@ func TestOrchestrationRulesCompleteOnTheirOwn(t *testing.T) {
 		"wsh effort create",
 		"wsh effort list --topics",
 		"--parent <topic oid>",
+		// open issues go on standing efforts, deduped, not on a new effort per run
+		"never on one made for this run",
+		"wsh effort show <effort>",
+		"wsh effort chunk note <effort>",
+		"never after the run",
 		AskTool("claude"),
 		AskTool("pi"),
 		"report",

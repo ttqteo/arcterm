@@ -50,7 +50,25 @@ export type EffortCardModel = {
     pinnedTs: number;
     // the newest note: where the initiative was left, which Work on picks up from
     lastnote?: EffortLastNote;
+    // a topic: other initiatives are linked under it (buildEffortCards). It gathers them rather than holding a plan of
+    // its own, so it is never an idea, however few chunks it has. Absent on a card built alone.
+    topic?: boolean;
 };
+
+// Every summary's card, each topic marked: an initiative that another one in `summaries` names as its parent. One
+// summary cannot tell it is a topic, so a list of cards the Brief splits into trackers and ideas is built here.
+export function buildEffortCards(summaries: EffortSummary[]): EffortCardModel[] {
+    const oidOf = (oref: string) => oref.replace(/^effort:/, "");
+    const parents = new Set(
+        summaries
+            .filter((s) => s.status !== "archived" && s.parentoid != null && s.parentoid !== oidOf(s.oref))
+            .map((s) => s.parentoid)
+    );
+    return summaries.map((s) => {
+        const card = buildEffortCard(s);
+        return parents.has(oidOf(s.oref)) ? { ...card, topic: true } : card;
+    });
+}
 
 // done/(total-skipped): skips shrink the denominator so a finished-by-skipping effort still reads 100%.
 // the count line shows "x of y · n skipped" only when something was skipped; all-skipped is a corner.

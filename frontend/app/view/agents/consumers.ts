@@ -3,12 +3,13 @@
 //
 // Pure: the Consumers panel's rows. Joins a GetConsumersCommand reading with the roster and, where the Resource Manager
 // runs (Windows), each agent's CPU and heaviest command from its snapshot; sorts by RAM or by tokens of the window,
-// groups a run's workers under their run, and marks what to warn about and which actions a row offers.
+// groups a run's lead, workers and reviewers under their run, and marks what to warn about and which actions a row offers.
 // consumerspanel.tsx draws it. No React, no store.
 
 import { agentWork, type AgentWork } from "@/app/cockpit/resmon";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
 import type { TickState } from "./commitselection";
+import { runHeadline } from "./projectoverviewmodel";
 import { fmtClock } from "./runcompletion";
 import { aggregateSessionUsage, type SessionUsage } from "./sessionusage";
 import { formatGB } from "./workercapacity";
@@ -75,12 +76,28 @@ export interface ConsumerRow {
     canSleep: boolean; // awake and idle, on a harness that resumes, and not working for a run
     work?: AgentWork; // its CPU and heaviest command, where the Resource Manager reads them; absent asleep
     dag?: ConsumerDag; // a run worker's task, for Stop
+    runId?: string; // the orchestrator run it works for, which groups it: a lead's own, a dag child's owner
+    lead: boolean; // the lead of that run
     vm: AgentVM;
 }
 
+// the group of the agents you opened: headless, so it is always the first, never under a run's rows
+export const AGENTS_GROUP = "agents";
+
+/** A run's sums, which its folded row shows in the columns its lead and workers fill when it is open. A sum is absent
+ * while none of its rows was read. */
+export interface RunTotals {
+    ramBytes?: number;
+    tokens?: number;
+    spendUsd?: number;
+    cpu?: number;
+    working: number; // how many of its agents are working
+}
+
 export interface ConsumerGroup {
-    key: string; // the owner run id, "agents" for the agents you opened, or SLEEPING_GROUP
-    label?: string; // "Run 85548d0b", "Sleeping"
+    key: string; // the owner run id, AGENTS_GROUP for the agents you opened, or SLEEPING_GROUP
+    label?: string; // a run's title ("Build Gọn lại sidebar Agent"), "Sleeping"
+    run?: RunTotals; // a run's group: one row that opens onto its lead and workers
     rows: ConsumerRow[];
 }
 
@@ -126,12 +143,73 @@ function byWeight(sort: ConsumersSort) {
     };
 }
 
-// moves the Sleeping group, if there is one, to the end; the rest keep their order
-function sleepingLast(groups: ConsumerGroup[]): void {
+// moves the agents you opened to the front and the Sleeping group to the end; the runs keep their order between
+function pinEnds(groups: ConsumerGroup[]): void {
+    const first = groups.findIndex((g) => g.key === AGENTS_GROUP);
+    if (first > 0) {
+        groups.unshift(...groups.splice(first, 1));
+    }
     const at = groups.findIndex((g) => g.key === SLEEPING_GROUP);
     if (at >= 0) {
         groups.push(...groups.splice(at, 1));
     }
+}
+
+function runTotals(rows: ConsumerRow[]): RunTotals {
+    return {
+        ramBytes: sumRead(rows.map((r) => r.ramBytes)),
+        tokens: sumRead(rows.map((r) => r.tokens)),
+        spendUsd: sumRead(rows.map((r) => (r.tokens === undefined ? undefined : (r.spendUsd ?? 0)))),
+        cpu: sumRead(rows.map((r) => r.work?.cpu)),
+        working: rows.filter((r) => r.state === "working").length,
+    };
+}
+
+// a group ranks by its heaviest row, a run by its sum: it shows as one row
+function groupWeight(g: ConsumerGroup, sort: ConsumersSort): number | undefined {
+    if (g.run != null) {
+        return sort === "ram" ? g.run.ramBytes : g.run.tokens;
+    }
+    return weight(g.rows[0], sort);
+}
+
+function byGroupWeight(sort: ConsumersSort) {
+    return (a: ConsumerGroup, b: ConsumerGroup): number => {
+        const wa = groupWeight(a, sort);
+        const wb = groupWeight(b, sort);
+        if (wa !== wb) {
+            if (wa === undefined || wb === undefined) {
+                return wa === undefined ? 1 : -1;
+            }
+            return wb - wa;
+        }
+        return a.key.localeCompare(b.key);
+    };
+}
+
+// the lead first, then its workers and reviewers by weight
+function byLeadThenWeight(sort: ConsumersSort) {
+    const w = byWeight(sort);
+    return (a: ConsumerRow, b: ConsumerRow): number => (a.lead !== b.lead ? (a.lead ? -1 : 1) : w(a, b));
+}
+
+/** A run's title, the head of its group: the first line of its goal, "Build X" of a spec's run; its short id when the
+ * goal was not read. */
+export function runGroupLabel(runId: string, goal: string | undefined): string {
+    return goal?.trim() ? runHeadline(goal).title : `Run ${runId.slice(0, 8)}`;
+}
+
+/** What a row under its run's head is called: the head already names the run, so its lead is "Lead", and a worker
+ * leads with its task ("t-2 · Add the owner run"), or is "Task t-2" when its tab is named for its project as the
+ * Resource Manager names it; a reviewer's name says its task already ("review t-4"). */
+export function runRowName(r: Pick<ConsumerRow, "name" | "lead" | "dag" | "project">): string {
+    if (r.lead) {
+        return "Lead";
+    }
+    if (r.dag != null && !r.name.includes(r.dag.taskid)) {
+        return !r.name || r.name === r.project ? `Task ${r.dag.taskid}` : `${r.dag.taskid} · ${r.name}`;
+    }
+    return r.name;
 }
 
 export function buildConsumers(
@@ -142,6 +220,7 @@ export function buildConsumers(
 ): ConsumersView {
     const byId = new Map(agents.map((a) => [a.id, a]));
     const rows: ConsumerRow[] = [];
+    const goals = new Map<string, string>();
     for (const c of data.agents ?? []) {
         const vm = byId.get(c.tabid);
         if (vm == null) {
@@ -150,6 +229,11 @@ export function buildConsumers(
         const usage = c.tokensread ? aggregateSessionUsage(c.tokens ?? []) : undefined;
         const opus = vm.agent === "claude" && (vm.model ?? "").startsWith("opus");
         const sleeping = vm.sleeping != null;
+        // the server names the run; a reading from before it did still has the worker's task
+        const runId = c.runid || c.dag?.runid || undefined;
+        if (runId != null && c.rungoal) {
+            goals.set(runId, c.rungoal);
+        }
         rows.push({
             id: vm.id,
             name: vm.name,
@@ -167,6 +251,8 @@ export function buildConsumers(
             canSleep: c.dag == null && canSleep(vm),
             work: sleeping ? undefined : (agentWork(snap, c.blockid) ?? undefined),
             dag: c.dag,
+            runId,
+            lead: runId != null && vm.runId === runId,
             vm,
         });
     }
@@ -177,18 +263,24 @@ export function buildConsumers(
     }
     const groups = new Map<string, ConsumerGroup>();
     for (const r of rows) {
-        const key = r.sleeping ? SLEEPING_GROUP : (r.dag?.runid ?? "agents");
-        const label = r.sleeping ? "Sleeping" : r.dag ? `Run ${r.dag.runid.slice(0, 8)}` : undefined;
+        const run = r.runId;
+        const key = r.sleeping ? SLEEPING_GROUP : (run ?? AGENTS_GROUP);
+        const label = r.sleeping ? "Sleeping" : run ? runGroupLabel(run, goals.get(run)) : undefined;
         const g = groups.get(key) ?? { key, label, rows: [] };
         g.rows.push(r);
         groups.set(key, g);
     }
     const ordered = [...groups.values()];
     for (const g of ordered) {
-        g.rows.sort(byWeight(sort));
+        if (g.key !== AGENTS_GROUP && g.key !== SLEEPING_GROUP) {
+            g.rows.sort(byLeadThenWeight(sort));
+            g.run = runTotals(g.rows);
+        } else {
+            g.rows.sort(byWeight(sort));
+        }
     }
-    ordered.sort((a, b) => byWeight(sort)(a.rows[0], b.rows[0]));
-    sleepingLast(ordered);
+    ordered.sort(byGroupWeight(sort));
+    pinEnds(ordered);
     const own: OwnUsage[] = [
         { label: "Interface", bytes: data.interfacebytes },
         { label: "Server", bytes: data.serverbytes },
@@ -213,8 +305,8 @@ export function buildConsumers(
 /** Keeps the rows where they were while the panel stays open: a new reading does not move a row. `held` is the row
  * ids in the order the panel first drew them (null on open: the view's own ranking is kept). A row not in `held` (an
  * agent that started since) goes after the held ones of its group, a new group after the held groups, both in the
- * view's ranking. The Sleeping group stays last whatever its rows' held places (an agent that fell asleep while the
- * panel was open). Returns the view in that order and the order to hold next. */
+ * view's ranking. The agents you opened stay first and the Sleeping group last whatever their rows' held places (an
+ * agent that fell asleep while the panel was open). Returns the view in that order and the order to hold next. */
 export function holdOrder(view: ConsumersView, held: string[] | null): { view: ConsumersView; order: string[] } {
     const flat = (groups: ConsumerGroup[]) => groups.flatMap((g) => g.rows.map((r) => r.id));
     if (held == null) {
@@ -227,7 +319,7 @@ export function holdOrder(view: ConsumersView, held: string[] | null): { view: C
     const groups = view.groups.map((g) => ({ ...g, rows: [...g.rows].sort((a, b) => byHeld(pos(a.id), pos(b.id))) }));
     const first = (g: ConsumerGroup) => Math.min(...g.rows.map((r) => pos(r.id)));
     groups.sort((a, b) => byHeld(first(a), first(b)));
-    sleepingLast(groups);
+    pinEnds(groups);
     return { view: { ...view, groups }, order: flat(groups) };
 }
 

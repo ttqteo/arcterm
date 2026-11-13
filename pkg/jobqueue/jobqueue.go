@@ -126,6 +126,10 @@ type Source struct {
 	TabId   string
 	RunId   string
 	Label   string // "Verify · Task 3"; empty for an agent
+	// Tasks are the ids of the run's tasks an engine step is for, comma-joined ("t-3" or a merge batch's "t-3,t-4"),
+	// so the cockpit tags those tasks' rows while the step waits; empty for a step of the whole run or an agent. A
+	// string, not a slice, so Job stays comparable
+	Tasks string
 	// Always queues an engine step that memgate does not call heavy (Verify, Final)
 	Always bool
 	// Peak is the RAM an Always step claims when memgate does not know its command: memgate.DevBytes for

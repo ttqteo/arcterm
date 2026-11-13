@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Jarvis tour's words, in Vietnamese and English. The selectors are the surface's own data attributes; a step
-// whose target is missing shows its card in the middle, so every body must read right without the spotlight.
+// whose target is missing shows its card in the middle, so every body must read right without the spotlight. A
+// modifier chord is written `{Alt:ArrowUp}`, never "Alt+↑": the view fills it per platform (keysym.fillKeys).
 
 import type { TourLang, TourTrack } from "./jarvistour";
 
@@ -116,11 +117,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 id: "brief:keys",
                 vi: {
                     title: "Phím tắt của Brief",
-                    body: "j / k: đi qua dải chờ, các thẻ, danh sách, Activity rồi cột bên cạnh · Enter: mở · w: Work on · p: ghim hoặc bỏ ghim initiative · r: run mới · e: mở hoặc gập dải record. Shift+? mở danh sách phím đầy đủ.",
+                    body: "j / k: đi qua dải chờ, các thẻ, danh sách, Activity rồi cột bên cạnh · Enter: mở · w: Work on · p: ghim hoặc bỏ ghim initiative · r: run mới · e: mở hoặc gập dải record. {Shift:?} mở danh sách phím đầy đủ.",
                 },
                 en: {
                     title: "The Brief's keys",
-                    body: "j / k: walk the strip, the cards, the list, Activity and the side column · Enter: open · w: Work on · p: pin or unpin an initiative · r: new run · e: open or fold the record band. Shift+? lists every key.",
+                    body: "j / k: walk the strip, the cards, the list, Activity and the side column · Enter: open · w: Work on · p: pin or unpin an initiative · r: new run · e: open or fold the record band. {Shift:?} lists every key.",
                 },
             },
         ],
@@ -135,11 +136,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 target: ["[data-jarvis-new-initiative]"],
                 vi: {
                     title: "Initiative mới",
-                    body: "Việc lớn hơn một run sống thành initiative: một danh sách chunk, mỗi chunk có trạng thái và ghi chú. Bấm đây (hoặc Shift+N) để tạo. Agent cũng tạo và cập nhật chúng bằng wsh effort.",
+                    body: "Việc lớn hơn một run sống thành initiative: một danh sách chunk, mỗi chunk có trạng thái và ghi chú. Bấm đây (hoặc {Shift:n}) để tạo. Agent cũng tạo và cập nhật chúng bằng wsh effort.",
                 },
                 en: {
                     title: "New initiative",
-                    body: "Work bigger than one run lives as an initiative: a list of chunks, each with a state and notes. Click here (or Shift+N) to make one. Agents make and update them with wsh effort too.",
+                    body: "Work bigger than one run lives as an initiative: a list of chunks, each with a state and notes. Click here (or {Shift:n}) to make one. Agents make and update them with wsh effort too.",
                 },
             },
             {
@@ -200,11 +201,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 prepare: "firstInitiative",
                 vi: {
                     title: "Kế hoạch của initiative",
-                    body: "Thân sheet là các stage và chunk, sửa được ngay tại đây: bấm chữ trạng thái để đổi, Add chunk để thêm, Alt+↑ / Alt+↓ để đổi thứ tự trong stage. j / k di chuyển giữa các chunk; Enter mở chunk ngay trong sheet, với ghi chú và trạng thái của nó.",
+                    body: "Thân sheet là các stage và chunk, sửa được ngay tại đây: bấm chữ trạng thái để đổi, Add chunk để thêm, {Alt:ArrowUp} / {Alt:ArrowDown} để đổi thứ tự trong stage. j / k di chuyển giữa các chunk; Enter mở chunk ngay trong sheet, với ghi chú và trạng thái của nó.",
                 },
                 en: {
                     title: "The initiative's plan",
-                    body: "The sheet's body is its stages and chunks, edited right there: click a status word to change it, Add chunk to add one, Alt+↑ / Alt+↓ to reorder within a stage. j / k move between chunks; Enter opens a chunk inside the sheet, with its notes and status.",
+                    body: "The sheet's body is its stages and chunks, edited right there: click a status word to change it, Add chunk to add one, {Alt:ArrowUp} / {Alt:ArrowDown} to reorder within a stage. j / k move between chunks; Enter opens a chunk inside the sheet, with its notes and status.",
                 },
             },
             {

@@ -10,6 +10,7 @@
 // working controls for tidiness is churn.
 
 import { ContextMenuModel } from "@/app/store/contextmenu";
+import { formatChordString } from "@/util/keysym";
 import { joinRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
@@ -203,7 +204,7 @@ function WrapToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
             data-code-wrap
             aria-pressed={on}
             aria-label="Wrap long lines"
-            title={on ? "Stop wrapping long lines (Alt+Z)" : "Wrap long lines (Alt+Z)"}
+            title={`${on ? "Stop wrapping long lines" : "Wrap long lines"} (${formatChordString("Alt:z")})`}
             onClick={onToggle}
             className={cn(ICON_BTN, on && ICON_ON)}
         >

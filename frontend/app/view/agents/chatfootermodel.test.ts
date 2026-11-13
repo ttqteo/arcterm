@@ -6,6 +6,9 @@ import {
     contextLabel,
     contextWarn,
     currentModelAlias,
+    EFFORT_CHOICES,
+    effortChoice,
+    effortCommand,
     footerParts,
     MODE_CHOICES,
     MODEL_CHOICES,
@@ -65,14 +68,29 @@ describe("model choices", () => {
         expect(currentModelAlias("Opus 5.5")).toBe("opus");
         expect(currentModelAlias("claude-sonnet-5-5")).toBe("sonnet");
         expect(currentModelAlias("Haiku 5.5")).toBe("haiku");
+        expect(currentModelAlias("claude-fable-5-2")).toBe("fable");
         expect(currentModelAlias(undefined)).toBeNull();
         expect(currentModelAlias("gpt-6")).toBeNull();
     });
-    it("lists the three aliases in order", () => {
-        expect(MODEL_CHOICES.map((c) => c.alias)).toEqual(["opus", "sonnet", "haiku"]);
+    it("lists the four families, newest first, each with a full model id", () => {
+        expect(MODEL_CHOICES.map((c) => c.alias)).toEqual(["fable", "opus", "sonnet", "haiku"]);
+        for (const c of MODEL_CHOICES) {
+            expect(c.id.startsWith(`claude-${c.alias}-`)).toBe(true);
+        }
     });
-    it("types /model with the alias", () => {
-        expect(modelCommand("sonnet")).toBe("/model sonnet");
+    it("types /model with the model id", () => {
+        expect(modelCommand("claude-sonnet-5-5")).toBe("/model claude-sonnet-5-5");
+    });
+});
+
+describe("effort choices", () => {
+    it("lists Claude Code's five levels in order", () => {
+        expect(EFFORT_CHOICES.map((c) => c.level)).toEqual(["low", "medium", "high", "xhigh", "max"]);
+        expect(effortChoice("xhigh").glyph).toBe("◉");
+    });
+    it("types /effort with the level", () => {
+        expect(effortCommand("high")).toBe("/effort high");
+        expect(effortCommand("auto")).toBe("/effort auto");
     });
 });
 

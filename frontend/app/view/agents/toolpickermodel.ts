@@ -5,6 +5,7 @@
 // query, the words on a row and in the footer, and what a key does. toolpicker.tsx draws it; the state and the open /
 // install actions are toolsstore.ts, the grouping rules toolsmodel.ts.
 
+import { formatChordString } from "@/util/keysym";
 import { shortIds } from "./agentrailmodel";
 import { installCommand, pickerOrder, toolGroups, type ToolState } from "./toolsmodel";
 
@@ -179,7 +180,7 @@ export function openRefusal(row: PickerRow, platform: string): string | null {
             return `${name} is not on PATH. Check the command in settings.`;
         default:
             return installCommand(row.tool, platform) != null
-                ? `${name} is not installed. Press Ctrl I to install it.`
+                ? `${name} is not installed. Press ${formatChordString("Mod:i")} to install it.`
                 : `${name} is not installed, and arcterm has no install command for it here.`;
     }
 }

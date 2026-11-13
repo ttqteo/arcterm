@@ -8,6 +8,7 @@
 // (committab.tsx). The panel is a view over the stores; the surface owns what to load.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { X } from "lucide-react";
@@ -87,7 +88,9 @@ function PanelTabButton({ id, count, active }: { id: PanelTab; count?: number | 
             data-panel-tab={id}
             aria-selected={active}
             onClick={() => globalStore.set(panelTabAtom, id)}
-            title={id === "commit" ? "Commit (Shift+C)" : "Log (Shift+H)"}
+            title={
+                id === "commit" ? `Commit (${formatChordString("Shift:c")})` : `Log (${formatChordString("Shift:h")})`
+            }
             className={cn(
                 TAB_BASE,
                 active ? "border-foreground text-ink-hi" : "border-transparent text-muted hover:text-ink-hi"

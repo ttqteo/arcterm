@@ -1,6 +1,7 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { formatChordString } from "@/util/keysym";
 import { autoUpdate, FloatingPortal, Middleware, offset, useFloating } from "@floating-ui/react";
 import clsx from "clsx";
 import { atom, useAtom, WritableAtom } from "jotai";
@@ -133,7 +134,7 @@ const SearchComponent = ({
     const prevDecl: IconButtonDecl = {
         elemtype: "iconbutton",
         icon: "chevron-up",
-        title: "Previous Result (Shift+Enter)",
+        title: `Previous Result (${formatChordString("Shift:Enter")})`,
         disabled: numResults === 0,
         click: onPrevWrapper,
     };

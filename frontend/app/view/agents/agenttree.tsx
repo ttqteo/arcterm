@@ -5,8 +5,8 @@ import { buildRunThing, RUN_KIND } from "@/app/cockpit/actions/run";
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { ctrlHeldAtom } from "@/app/cockpit/ctrlheld";
 import { digitHintAtom } from "@/app/cockpit/digithints";
-import { queuedJobFor } from "@/app/cockpit/jobqueue";
-import { QueuedJobTag } from "@/app/cockpit/jobqueuechip";
+import { queuedJobFor, queuedStepFor, runQueuedJobs, stepQueuedState } from "@/app/cockpit/jobqueue";
+import { QueuedJobTag, RunQueuedTag } from "@/app/cockpit/jobqueuechip";
 import { jobQueueAtom } from "@/app/cockpit/jobqueuestore";
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { resmonSnapshotAtom } from "@/app/cockpit/resmonstore";
@@ -107,7 +107,7 @@ import { setAgentView } from "./agentview";
 import { waitMap } from "./agentwaits";
 import { BackgroundTaskPeek } from "./backgroundtaskpeek";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
-import { treeLine, waitsOnUser, type BrainstormFile, type BuilderCheckRecord } from "./brainstormmodel";
+import { treeLine, treeLineAsks, waitsOnUser, type BrainstormFile, type BuilderCheckRecord } from "./brainstormmodel";
 import { runStepView, runTreeText } from "./brainstormrunmodel";
 import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
 import { isUnseen } from "./canvasmodel";
@@ -253,6 +253,7 @@ import {
     taskElapsed,
     taskStateLabel,
     unmetDeps,
+    workerAge,
     workerAsk,
     workerEnded,
     workerSubtext,
@@ -287,7 +288,9 @@ import { ServerMark, StatusDot } from "./statusdot";
 import { clockTime } from "./monitortasks";
 import { backgroundTasksByIdAtom, focusSubagentAtom, monitorPeekAtom, subagentsByIdAtom } from "./subagentsstore";
 import { rowFieldsAtom } from "./rowfieldsstore";
+import { AGENT_TREE_WIDE_PX, agentTreeWidth } from "./rowfields";
 import { agentRamAtom, runRamAtom, useAgentRamPoll } from "./agentramstore";
+import { rowCols, type RamReading, type RowCell, type RowColKey } from "./rowcols";
 import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
 import { attentionAtom, splitAttention } from "./attentionstore";
@@ -795,11 +798,12 @@ function AskingBadge({ n }: { n: number }) {
 // then a divider and the tail every run ends in: Final check, Wrap-up, Land (runstage.ts), so a run whose tasks are
 // all green still shows it is not over.
 function TaskStripBar({ run }: { run: RunInfo }) {
-    const strip = taskStrip(run.dag, run.digest);
+    const stage = runStage(run);
+    const strip = taskStrip(run.dag, run.digest, stage.paused);
     if (strip == null) {
         return null;
     }
-    const tail = runStage(run).tail;
+    const tail = stage.tail;
     return (
         <div
             role="img"
@@ -938,14 +942,15 @@ function RunResumeButton({ run }: { run: RunInfo }) {
 }
 
 // RunSubline is a run row's second line: a chip folding its workers away, and how far the plan is.
-// a lead's second line: its workers chip and progress, then `from <session>` when a session started the run, then
-// `trailing` (the lead's own badges) at its right end
+// a lead's second line: its workers chip and progress, then `note` (what the lead asks you), then `from <session>` when
+// a session started the run, then `trailing` (the lead's own badges and its columns) at its right end
 function RunSubline({
     model,
     run,
     open,
     live,
     leadless,
+    note,
     trailing,
 }: {
     model: AgentsViewModel;
@@ -953,12 +958,16 @@ function RunSubline({
     open: boolean;
     live: number;
     leadless?: boolean;
+    note?: React.ReactNode;
     trailing?: React.ReactNode;
 }) {
     // the runs the tree knows, which a land in line is placed among (landPlace keeps to the run's own project)
     const lineageRuns = useAtomValue(model.lineageAtom).runs;
     // a paused run says so in its words, and offers Resume beside them
     const paused = runStage(run).paused;
+    // what it waits on in the heavy-job queue, tagged before its columns, so a folded run still says so
+    const queuedJobs = useRunQueuedJobs(model, run.runId);
+    const queued = queuedJobs.length > 0 ? <RunQueuedTag runId={run.runId} jobs={queuedJobs} /> : null;
     if (run.dag == null) {
         // no dag means the lead judged the goal bounded and never submitted a plan, not that a plan is
         // still on its way — so the run's own status is the only truth here. Hardcoding "planning" left
@@ -979,9 +988,11 @@ function RunSubline({
                         {runStatusView(run.status ?? "planning", run.land, run.pausedBy, run.pausedUntil).label}
                     </span>
                 )}
+                {note}
                 <OriginFrom model={model} run={run} />
                 {paused ? <RunResumeButton run={run} /> : null}
-                {trailing != null ? <span className="flex-1" /> : null}
+                {trailing != null || queued != null ? <span className="flex-1" /> : null}
+                {queued}
                 {trailing}
             </div>
         );
@@ -1020,9 +1031,11 @@ function RunSubline({
                         {progress.text}
                     </span>
                 )}
+                {note}
                 <OriginFrom model={model} run={run} />
                 {paused ? <RunResumeButton run={run} /> : null}
-                {trailing != null ? <span className="flex-1" /> : null}
+                {trailing != null || queued != null ? <span className="flex-1" /> : null}
+                {queued}
                 {trailing}
             </div>
             <TaskStripBar run={run} />
@@ -1045,7 +1058,9 @@ function BackgroundTaskRows({
     agentId: string;
     rows: BackgroundTaskRow[];
 }) {
-    const peek = useAtomValue(monitorPeekAtom);
+    // a peek the chat box opened is the box's to draw and to clear
+    const peekAtom = useAtomValue(monitorPeekAtom);
+    const peek = peekAtom?.origin === "tree" ? peekAtom : null;
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
     const peeked = peek?.agentId === agentId ? rows.find((r) => r.peekId === peek.taskId) : undefined;
     const orphaned = peek?.agentId === agentId && peeked == null;
@@ -1056,7 +1071,8 @@ function BackgroundTaskRows({
     }, [orphaned]);
     useEffect(
         () => () => {
-            if (globalStore.get(monitorPeekAtom)?.agentId === agentId) {
+            const cur = globalStore.get(monitorPeekAtom);
+            if (cur?.origin === "tree" && cur.agentId === agentId) {
                 globalStore.set(monitorPeekAtom, null);
             }
         },
@@ -1068,8 +1084,8 @@ function BackgroundTaskRows({
             return;
         }
         const cur = globalStore.get(monitorPeekAtom);
-        const same = cur?.agentId === agentId && cur.taskId === r.peekId;
-        globalStore.set(monitorPeekAtom, same ? null : { agentId, taskId: r.peekId });
+        const same = cur?.origin === "tree" && cur.agentId === agentId && cur.taskId === r.peekId;
+        globalStore.set(monitorPeekAtom, same ? null : { agentId, taskId: r.peekId, origin: "tree" });
     };
     return (
         <>
@@ -1217,8 +1233,8 @@ function ParentRow({
     const expanded = subagentExpanded(subs, expandOverride);
     // with rows picked (Ctrl/Cmd+click, Shift+click) the picked rows are the selection; else the focused agent's is
     const selected = picks?.any ? picks.picked : focusId === agent.id;
-    // how many turns it finished that you have not looked at (unreadagents.ts): a count at the row's end, as a chat
-    // list shows unread messages, and the name reads bold
+    // how many turns it finished that you have not looked at (unreadagents.ts): a count at the end of its name line, and
+    // the name reads bold
     const unreadCount = useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0;
     // the row shows no "n/m" part an agent stopped on: read off its last message, it caught any n/m in the prose
     // ("steps 14/14a" drew a 14/14 chip); an agent asking you is seen by its breathing row (.asking-tint) instead
@@ -1329,9 +1345,9 @@ function ParentRow({
               }
             : undefined;
 
-    // the words of a controller that refused to start. A lead's go at the end of its name line, like its subagents
-    // chip: on its second line they took 67px of the 197 that also hold the workers chip, the progress and the age,
-    // and the progress read "Worki…" (agent-tree-rail step 7)
+    // the words of a controller that refused to start, at the end of its name line, where the name gives way to them.
+    // On its second line they took 67px of the 197 that also hold a lead's workers chip and progress, or a plain
+    // agent's run chip, beside the three number columns, and pushed the line past its row (sidebar-columns step 8)
     const failedBadge =
         startError != null && !review && !asking ? (
             <span
@@ -1343,13 +1359,48 @@ function ParentRow({
             </span>
         ) : null;
 
-    // the state: words when it wants something, else tokens and age. They end the row's second line (a lead's after
-    // its workers chip and progress), so the name keeps the first line's full width
+    // the RAM, tokens and age that end its second line (rowcols.ts): always in place, so they line up with every other
+    // row's, empty where there is no figure yet
+    const cols = (
+        <RowCols
+            cells={rowCols(fields, {
+                ram,
+                tokens,
+                age: agent.sleeping ? sleepingAge(agent, now) : formatAgeShort(displayAgeMs(agent, now)),
+            })}
+            ram={{
+                attrs: { "data-agent-ram": agent.id },
+                title:
+                    lead != null
+                        ? `RAM the run's agents and the commands they run hold now (the lead alone: ${ownRam?.label ?? "not read"})`
+                        : "RAM the agent and the commands it runs hold now",
+            }}
+        />
+    );
+    // what it asks you, in words at the left of its second line, where the model or the progress sits, so the columns
+    // stay where they are. A review is its button beside the columns instead, and a brainstorm whose line already says
+    // the ask ("asking question 3") needs no second "asking"; a held card keeps its note, which names the card
+    const brainstormAsks =
+        lead == null &&
+        brainstormFile != null &&
+        !agent.ask?.hold &&
+        treeLineAsks(brainstormFile, asking && waitsOnUser(brainstormFile));
+    const askNote =
+        asking && !review && !brainstormAsks ? (
+            <span
+                data-agent-ask-note
+                title={askingLabel(agent)}
+                className="min-w-0 max-w-[55%] flex-none truncate font-semibold text-warning"
+            >
+                {askingLabel(agent)}
+            </span>
+        ) : null;
+    // its state, when it wants something, and the marks and buttons a turn leaves: they end the row's second line just
+    // left of the columns, at full width; only the words to their left are cut (a lead's after its workers chip and
+    // progress), so the name keeps the first line's full width. An agent whose controller refused to start says so
+    // on its name line instead (failedBadge), and its queued command or Close waits for it to start
     const badges = (
         <>
-            {/* a row names its state in words only when it wants something; otherwise its glyph says working, idle or
-                sleeping, and a count says how many finished turns you have not read, or the part a turn stopped on
-                waiting for your reply */}
             {inCouncil ? (
                 <span
                     data-agent-in-council
@@ -1374,71 +1425,39 @@ function ParentRow({
                     review
                     <ArrowUpRight size={10} strokeWidth={2.2} aria-hidden />
                 </button>
-            ) : asking ? (
-                <span className="flex-none text-[10.5px] font-semibold text-warning">{askingLabel(agent)}</span>
-            ) : (
-                <>
-                    {/* its glyph carries working, idle or (a moon) sleeping; this slot holds its queued command or the
-                        Close a finished one offers. A controller that refused to start says so in words, as an ask does:
-                        it waits on you to fix it */}
-                    {startError != null ? (
-                        // a lead's is on its name line (failedBadge)
-                        lead ? null : (
-                            failedBadge
-                        )
-                    ) : queued ? (
-                        <QueuedJobTag job={queued} />
-                    ) : done ? (
-                        // the chip's click is its own: it must not select the row it closes
-                        <button
-                            type="button"
-                            data-agent-done={agent.id}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                confirmCloseSession(agent, model, "tree Done chip");
-                            }}
-                            title={DONE_TITLE}
-                            aria-label="Close"
-                            className="flex h-[16px] w-[16px] flex-none cursor-pointer items-center justify-center rounded-[4px] text-success hover:bg-surface-hover"
-                        >
-                            <Check size={12} strokeWidth={2.4} aria-hidden />
-                        </button>
-                    ) : null}
-                    <ServerMark servers={servers} />
-                    {fields.ram && ram ? (
-                        <span
-                            data-agent-ram={agent.id}
-                            title={
-                                lead != null
-                                    ? `RAM the run's agents and the commands they run hold now (the lead alone: ${ownRam ?? "not read"})`
-                                    : "RAM the agent and the commands it runs hold now"
-                            }
-                            className={cn(RAM_COL, lead != null && LEAD_RAM_YIELDS)}
-                        >
-                            {ram}
-                        </span>
-                    ) : null}
-                    {fields.tokens && tokens ? (
-                        <span className={cn(TOKENS_COL, dim && "text-ink-faint")}>{formatTokens(tokens)}</span>
-                    ) : null}
-                    {fields.age ? (
-                        <span className={AGE_COL}>
-                            {agent.sleeping ? sleepingAge(agent, now) : formatAgeShort(displayAgeMs(agent, now))}
-                        </span>
-                    ) : null}
-                    {unread ? (
-                        <span
-                            data-agent-unread={unreadCount}
-                            aria-label={`${unreadCount} finished ${unreadCount === 1 ? "turn" : "turns"} not read yet`}
-                            className="flex h-[15px] min-w-[15px] flex-none items-center justify-center rounded-full bg-accent px-1 text-[9.5px] font-bold tabular-nums text-background"
-                        >
-                            {unreadLabel(unreadCount)}
-                        </span>
-                    ) : null}
-                </>
-            )}
+            ) : asking || startError != null ? null : queued ? (
+                <QueuedJobTag job={queued} />
+            ) : done ? (
+                // the chip's click is its own: it must not select the row it closes
+                <button
+                    type="button"
+                    data-agent-done={agent.id}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        confirmCloseSession(agent, model, "tree Done chip");
+                    }}
+                    title={DONE_TITLE}
+                    aria-label="Close"
+                    className="flex h-[16px] w-[16px] flex-none cursor-pointer items-center justify-center rounded-[4px] text-success hover:bg-surface-hover"
+                >
+                    <Check size={12} strokeWidth={2.4} aria-hidden />
+                </button>
+            ) : null}
+            <ServerMark servers={servers} />
+            {cols}
         </>
     );
+    // how many finished turns you have not read: a count at the end of its name line, as a chat list shows unread
+    // messages, so it never moves the columns on the line under it
+    const unreadBadge = unread ? (
+        <span
+            data-agent-unread={unreadCount}
+            aria-label={`${unreadCount} finished ${unreadCount === 1 ? "turn" : "turns"} not read yet`}
+            className="flex h-[15px] min-w-[15px] flex-none items-center justify-center rounded-full bg-accent px-1 text-[9.5px] font-bold tabular-nums text-background"
+        >
+            {unreadLabel(unreadCount)}
+        </span>
+    ) : null;
 
     // The animating motion.div wrapper lives in AgentTree (direct AnimatePresence child, required for
     // popLayout to pop an exiting row out of flow). This is just the row body + subagent reveal.
@@ -1497,7 +1516,8 @@ function ParentRow({
                         {/* a lead's second line already holds its workers chip, progress and badges */}
                         {lead ? subsChip : null}
                         {lead ? tasksChip : null}
-                        {lead ? failedBadge : null}
+                        {failedBadge}
+                        {unreadBadge}
                     </div>
                 )}
                 {lead ? (
@@ -1506,6 +1526,7 @@ function ParentRow({
                         run={lead.run}
                         open={lead.open}
                         live={lead.live}
+                        note={askNote}
                         trailing={
                             <>
                                 {originChip}
@@ -1519,6 +1540,7 @@ function ParentRow({
                     // branch. @container: the subagents chip drops its word when this line is narrow, and the model
                     // truncates
                     <div className={cn(CONVERSATION_META, "@container mt-[3px]", UNDER_GLYPH, dim && "text-ink-faint")}>
+                        {askNote}
                         {waitsFor ? (
                             <span className="flex min-w-0 items-center gap-[3px]" title={`Waiting on ${waitsFor}`}>
                                 <Hourglass size={10} aria-hidden className="flex-none" />
@@ -1651,7 +1673,7 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
     // drawn as a lead's row (ParentRow) is: a run reads the same whether or not its lead's tab is open, and only the
     // tokens a lead's session carries are missing
     const mark = leadMark(run, undefined);
-    const ramOn = useAtomValue(rowFieldsAtom).ram;
+    const fields = useAtomValue(rowFieldsAtom);
     const ram = useRunRam(model, run.runId);
     return (
         <div
@@ -1684,25 +1706,37 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
                 live={live}
                 leadless
                 trailing={
-                    ramOn && ram ? (
-                        <span
-                            data-run-ram={run.runId}
-                            title="RAM the run's agents and the commands they run hold now"
-                            className={RAM_COL}
-                        >
-                            {ram}
-                        </span>
-                    ) : undefined
+                    // its columns hold their places with no lead session to read tokens or an age from
+                    <RowCols
+                        cells={rowCols(fields, { ram })}
+                        ram={{
+                            attrs: { "data-run-ram": run.runId },
+                            title: "RAM the run's agents and the commands they run hold now",
+                        }}
+                    />
                 }
             />
         </div>
     );
 }
 
-// The RAM words for everything a run holds: its awake tabs' terminals (the lead, workers, reviewers, stage sessions)
+// The RAM reading for everything a run holds: its awake tabs' terminals (the lead, workers, reviewers, stage sessions)
 // summed. The block ids are picked into one string, so a row redraws when that set or the figure changes, not on every
 // roster update. Null with no run, or while no reading names any of them.
-function useRunRam(model: AgentsViewModel, runId: string | undefined): string | null {
+function useRunRam(model: AgentsViewModel, runId: string | undefined): RamReading | null {
+    return useAtomValue(runRamAtom(useRunBlockKey(model, runId)));
+}
+
+// The jobs a run waits on in the heavy-job queue: its engine steps and its awake agents' commands, served first first.
+function useRunQueuedJobs(model: AgentsViewModel, runId: string): JobQueueJob[] {
+    const key = useRunBlockKey(model, runId);
+    const jobQueue = useAtomValue(jobQueueAtom);
+    return useMemo(() => runQueuedJobs(jobQueue, runId, new Set(key ? key.split(",") : [])), [jobQueue, runId, key]);
+}
+
+// The block ids of a run's awake tabs, sorted and joined into one string, so a row redraws when that set changes,
+// not on every roster update. Empty with no run.
+function useRunBlockKey(model: AgentsViewModel, runId: string | undefined): string {
     const keyAtom = useMemo(
         () =>
             atom((get) =>
@@ -1716,8 +1750,7 @@ function useRunRam(model: AgentsViewModel, runId: string | undefined): string | 
             ),
         [model, runId]
     );
-    const key = useAtomValue(keyAtom);
-    return useAtomValue(runRamAtom(key));
+    return useAtomValue(keyAtom);
 }
 
 // A task's worker under its run. A done task's worker opens as its read-only transcript, whether or not its tab
@@ -1731,6 +1764,7 @@ function WorkerRow({
     nested,
     extras,
     navDigit,
+    tokens,
 }: {
     model: AgentsViewModel;
     run: RunInfo;
@@ -1739,8 +1773,12 @@ function WorkerRow({
     nested?: boolean;
     extras?: { count: number; open: boolean };
     navDigit?: number; // its agent's Alt+1..9 digit
+    tokens?: number; // its session's token total (livetokensstore); absent until read
 }) {
     const focusId = useSelectedRowId(model);
+    const fields = useAtomValue(rowFieldsAtom);
+    // what its processes hold now, as an agent's row reads it; an asleep or reaped worker has none
+    const ram = useAtomValue(agentRamAtom(agent?.sleeping != null ? undefined : agent?.blockId));
     const now = useAtomValue(model.nowAtom);
     // the task's state and question belong to its worker's row, not to the tabs nested under it
     const done = !nested && task.state === "done";
@@ -1752,10 +1790,14 @@ function WorkerRow({
     const selected = focusKey != null && focusId === focusKey;
     const waits = done || nested ? undefined : unmetDeps(run.dag, task);
     const asksYou = !done && ask?.owner !== "lead" && (ask?.owner === "you" || agent?.state === "asking");
-    // its heavy command waiting its turn in the job queue, tagged at the second line's end
+    // what it waits on in the job queue, tagged at the second line's end: its agent's heavy command, else the engine's
+    // step for it (its Setup, its merge's Verify), which belongs to no block. The tag stays whole beside the columns and
+    // the words are what shrink (sidebar-declutter spec); the words then say "verify queued", not a Verify clock that
+    // runs while the command has not started
     const jobQueue = useAtomValue(jobQueueAtom);
-    const queued = done ? null : queuedJobFor(jobQueue, agent?.blockId);
-    const sub = workerSubtext({
+    const step = done || nested ? null : queuedStepFor(jobQueue, run.runId, task.id);
+    const queued = done ? null : (queuedJobFor(jobQueue, agent?.blockId) ?? step);
+    const line = {
         taskId: task.id,
         lane,
         // a question's age is how long it has waited; otherwise the worker's own elapsed time, not its last activity
@@ -1763,8 +1805,9 @@ function WorkerRow({
         ask,
         outcome: done ? (task.merged ? "landed" : "done") : undefined,
         waits,
-        state: nested ? undefined : taskStateLabel(task, now),
-    });
+        state: nested ? undefined : step != null ? stepQueuedState(step) : taskStateLabel(task, now),
+    };
+    const sub = workerSubtext(line);
     const title = nested ? agent?.name || task.id : task.label || task.id;
     const digit = useHeldDigit(navDigit);
 
@@ -1788,7 +1831,8 @@ function WorkerRow({
             data-agent-row={agent?.id}
             {...dragSource(agent, !ended)}
             className={cn(
-                "relative flex items-center gap-[9px] rounded-[6px] py-[7px] pr-[11px] transition-colors duration-[140ms]",
+                // the same right padding as an agent's row, so its columns end where theirs do
+                "relative flex items-center gap-[9px] rounded-[6px] py-[7px] pr-[10px] transition-colors duration-[140ms]",
                 nested ? "pl-[45px]" : "pl-[28px]",
                 focusKey != null && "cursor-pointer",
                 selected ? "bg-surface-selected" : focusKey != null && "hover:bg-surface-hover"
@@ -1823,7 +1867,11 @@ function WorkerRow({
                             ariaHide="Hide reviewer and earlier sessions"
                         />
                     ) : null}
-                    <span className={cn("truncate text-[10.5px] tabular-nums", asksYou ? "text-warning" : "text-muted")}>
+                    {/* the fixed columns leave the words little room at the tree's width: the tooltip has them whole */}
+                    <span
+                        title={sub}
+                        className={cn("truncate text-[10.5px] tabular-nums", asksYou ? "text-warning" : "text-muted")}
+                    >
                         {sub}
                     </span>
                     {/* its canvas tag and who its ask waits on end the second line, so the title keeps the first */}
@@ -1841,6 +1889,13 @@ function WorkerRow({
                     ) : queued ? (
                         <QueuedJobTag job={queued} />
                     ) : null}
+                    <RowCols
+                        cells={rowCols(fields, { ram, tokens, age: workerAge(line) })}
+                        ram={{
+                            attrs: agent != null ? { "data-agent-ram": agent.id } : {},
+                            title: "RAM the worker and the commands it runs hold now",
+                        }}
+                    />
                 </div>
             </div>
         </div>
@@ -2079,16 +2134,40 @@ function ConversationHead({
 }
 
 const CONVERSATION_META = "flex min-w-0 items-center gap-[5px] text-[10.5px] tabular-nums text-muted";
-// a row's RAM, tokens and age end its meta line as right-aligned columns, so they line up down the list
-const RAM_COL = "min-w-[40px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-ink-faint";
-const TOKENS_COL = "min-w-[34px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-muted";
-const AGE_COL = "min-w-[24px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-ink-faint";
-// A lead's run line holds its workers chip, the progress, then its RAM (the whole run's), tokens and age, all of the
-// last three flex-none, so on a narrow line the progress is what gets cut ("Worki…", agent-tree-rail step 7). Below
-// this width of RunSubline's @container the RAM leaves the line (the figure stays in the Resource Manager and the
-// rail), as the workers chip's word does: the progress is never cut for it. Wide enough for the chip with its word
-// (@[250px]), the progress, and the RAM, tokens and age beside it
-const LEAD_RAM_YIELDS = "@max-[300px]:hidden";
+// a row's RAM, tokens and age end its meta line as right-aligned columns of fixed least widths, so they line up down
+// the list. Every figure is faint; the RAM cell alone turns to the warning colour (rowcols.ts)
+const COL = "flex-none whitespace-nowrap text-right text-[11px] tabular-nums";
+const COL_WIDTH: Record<RowColKey, string> = { ram: "min-w-[40px]", tokens: "min-w-[34px]", age: "min-w-[24px]" };
+const TOKENS_COL = `${COL_WIDTH.tokens} ${COL} text-ink-faint`;
+const AGE_COL = `${COL_WIDTH.age} ${COL} text-ink-faint`;
+
+// The cells that end an agent's, a lead's, a run's or a worker's second line, one per field that is on (rowCols), in a
+// group of its own so every row spaces them alike. An empty cell keeps its width, so a row with no RAM read yet still
+// lines its tokens and age up with the rows around it. `ram` tags and titles the RAM cell while it has a figure.
+function RowCols({ cells, ram }: { cells: RowCell[]; ram?: { attrs: Record<string, string>; title: string } }) {
+    if (cells.length === 0) {
+        return null;
+    }
+    return (
+        <span data-row-cols className="flex flex-none items-center gap-[6px]">
+            {cells.map((c) => {
+                const ramShown = c.key === "ram" && c.text !== "";
+                return (
+                    <span
+                        key={c.key}
+                        data-row-col={c.key}
+                        data-row-col-warn={c.warn ? "" : undefined}
+                        {...(ramShown ? ram?.attrs : undefined)}
+                        title={ramShown ? ram?.title : undefined}
+                        className={cn(COL_WIDTH[c.key], COL, c.warn ? "text-warning" : "text-ink-faint")}
+                    >
+                        {c.text}
+                    </span>
+                );
+            })}
+        </span>
+    );
+}
 // a second line starts under the title, past the runtime glyph and the gap after it
 const UNDER_GLYPH = "pl-[18px]";
 
@@ -3697,6 +3776,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const collapsedList = useAtomValue(collapsedProjectsAtom);
     const center = useAtomValue(centerModeAtom);
     const overviewProject = useAtomValue(overviewProjectAtom);
+    // 280px only while RAM · tokens · age are all on; any of them off and the tree is back to 248px (rowfields.ts)
+    const wide = agentTreeWidth(useAtomValue(rowFieldsAtom)) === AGENT_TREE_WIDE_PX;
     // One tree per project: each project's live agents, a divider, then its terminals and tools (projectTree), a collapsed
     // project folding to its folder row. The ended conversations are the section under it (ConversationsSection).
     const filter = useAtomValue(model.projectFilterAtom);
@@ -3849,7 +3930,13 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     }, [idsKey]);
 
     return (
-        <div data-agent-tree className="relative isolate flex w-[248px] shrink-0 select-none flex-col border-r border-border bg-surface">
+        <div
+            data-agent-tree
+            className={cn(
+                "relative isolate flex shrink-0 select-none flex-col border-r border-border bg-surface",
+                wide ? "w-[280px]" : "w-[248px]"
+            )}
+        >
             <PanelWeb />
             <TreeSpider sensing={asking > 0} />
             <div className="flex flex-col gap-[4px] px-[8px] pb-[4px] pt-[10px]">
@@ -4066,6 +4153,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                     : { count: r.extras ?? 0, open: r.extrasOpen ?? false }
                                             }
                                             navDigit={r.agent != null ? digits.get(r.agent.id) : undefined}
+                                            tokens={r.agent != null ? tokens.get(r.agent.id) : undefined}
                                         />
                                     );
                                     break;

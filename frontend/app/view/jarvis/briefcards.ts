@@ -21,7 +21,7 @@ export const FALLBACK_CARDS = 6;
 // the list's rows before "+N more"
 export const LIST_CAP = 6;
 
-type Pinnable = Pick<EffortCardModel, "oref" | "status" | "pinnedTs" | "done" | "remaining" | "skipped">;
+type Pinnable = Pick<EffortCardModel, "oref" | "status" | "pinnedTs" | "done" | "remaining" | "skipped" | "topic">;
 
 // a card or a list row is a live tracker: an archived initiative is out of both, an idea sits in Ideas
 function isLive(c: Pinnable): boolean {
@@ -38,7 +38,8 @@ export function pinnedCards<T extends Pinnable>(cards: T[], ordered: T[]): T[] {
     if (pins.length > 0) {
         return pins.slice(0, MAX_PINNED);
     }
-    return ordered.filter(isLive).slice(0, FALLBACK_CARDS);
+    // a topic stays in the list, where its sub-initiatives hang under it: as a card it would show no progress
+    return ordered.filter((c) => isLive(c) && c.topic !== true).slice(0, FALLBACK_CARDS);
 }
 
 // N in "Pinned N of M": the live pins
@@ -117,6 +118,8 @@ export type InitiativeFace = {
     total: number;
     pct: string;
     segments: ChunkTone[];
+    // false for a topic with no chunks of its own: the count and the bar are left out rather than drawn 0/0
+    hasProgress: boolean;
     status: StatusCell;
     // "Next" (accent), "Blocked on" (amber) or "Done", with that chunk; absent when there is nothing to name
     noteLabel?: BriefLine["noteLabel"];
@@ -172,6 +175,7 @@ function face(card: EffortCardModel, meta: string, depth: number, subCount: numb
         total: p.total,
         pct: `${p.pct}%`,
         segments: card.segments,
+        hasProgress: line.progress != null,
         status: statusCell(card, input),
         ...(line.noteLabel != null ? { noteLabel: line.noteLabel } : {}),
         note: line.note,

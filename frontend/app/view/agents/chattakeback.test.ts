@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
 import { withResultLines } from "./chatinitiative";
 import type { PendingMessage } from "./chatpending";
-import { boxHolds, boxShowsTyped, inputBoxRows, mergeTaken, takeBackPlan } from "./chattakeback";
+import { boxHolds, boxShowsTyped, enterEcho, inputBoxRows, mergeTaken, takeBackPlan, typedEcho } from "./chattakeback";
 
 const rule = "─".repeat(40);
 const pend = (id: string, text: string, queued: boolean, kind?: PendingMessage["kind"]): PendingMessage => ({
@@ -17,15 +17,15 @@ const you = (text: string): AgentEntry => ({ kind: "user", text });
 const said = (text: string): AgentEntry => ({ kind: "message", text });
 
 describe("takeBackPlan", () => {
-    it("takes back every queued message, oldest first, with ↑ or Esc, while Claude works", () => {
+    it("takes back every queued message, oldest first, while Claude works: ↑ lets the turn run on, Esc stops it", () => {
         const pending = [pend("a", "first", true), pend("b", "second", true)];
-        const plan = { kind: "queued", ids: ["a", "b"], texts: ["first", "second"] };
-        expect(takeBackPlan("Escape", pending, [], "working")).toEqual(plan);
-        expect(takeBackPlan("ArrowUp", pending, [], "working")).toEqual(plan);
+        const taken = { ids: ["a", "b"], texts: ["first", "second"] };
+        expect(takeBackPlan("ArrowUp", pending, [], "working")).toEqual({ kind: "queued", ...taken });
+        expect(takeBackPlan("Escape", pending, [you("go")], "working")).toEqual({ kind: "interrupt", ...taken });
     });
     it("leaves commands out: Claude Code does not take them back", () => {
         const pending = [pend("a", "/btw why", true, "btw"), pend("b", "and this", true)];
-        expect(takeBackPlan("Escape", pending, [], "working")).toEqual({
+        expect(takeBackPlan("ArrowUp", pending, [], "working")).toEqual({
             kind: "queued",
             ids: ["b"],
             texts: ["and this"],
@@ -126,6 +126,50 @@ describe("boxShowsTyped", () => {
     });
     it("has nothing to wait for when no box shows", () => {
         expect(boxShowsTyped(["a permission dialog"], msg)).toBeNull();
+    });
+});
+
+// a chat send whose text never reached Claude Code read as Queued for good: its box stayed empty through the turn
+// ("thiếu chọn effort", 2026-11-13)
+describe("typedEcho", () => {
+    const screen = (...box: string[]) => ["> earlier message", "", rule, ...box, rule, "  ⏵⏵ auto mode on"];
+    it("is shown once the box holds the text", () => {
+        expect(typedEcho(screen("❯ thiếu chọn effort"), "thiếu chọn effort")).toBe("shown");
+    });
+    it("is absent while the box is readable and empty", () => {
+        expect(typedEcho(screen("❯ "), "thiếu chọn effort")).toBe("absent");
+        expect(typedEcho(screen("❯ ", "  "), "thiếu chọn effort")).toBe("absent");
+    });
+    it("is other while the box holds something that is not the text yet", () => {
+        expect(typedEcho(screen("❯ thiếu chọn"), "thiếu chọn effort")).toBe("other");
+        expect(typedEcho(screen("❯ ls -la"), "! ls -la")).toBe("other");
+    });
+    it("is unknown with no screen or no box on it", () => {
+        expect(typedEcho(null, "x")).toBe("unknown");
+        expect(typedEcho(["a permission dialog"], "x")).toBe("unknown");
+    });
+});
+
+describe("enterEcho", () => {
+    const screen = (...box: string[]) => ["> earlier message", "", rule, ...box, rule, "  ⏵⏵ auto mode on"];
+    const sent = "có, và ví dụ tôi muốn cockpit fullscreen ở màn 2 có được không?";
+    it("is gone once the text left the box: submitted, or queued while Claude works", () => {
+        expect(enterEcho(screen("❯ "), sent)).toBe("gone");
+        expect(enterEcho(screen("❯ something typed since"), sent)).toBe("gone");
+    });
+    it("is a line break when the text sits over an empty row (2026-11-13, a message read Queued for 15 min)", () => {
+        expect(enterEcho(screen(`❯ ${sent}`, "  "), sent)).toBe("linebreak");
+        expect(enterEcho(screen("❯ [Pasted text #1 +3 lines]", ""), "a\nb\nc\nd")).toBe("linebreak");
+    });
+    it("is held while the text sits alone, wrapped or not, its Enter not read yet", () => {
+        expect(enterEcho(screen(`❯ ${sent}`), sent)).toBe("held");
+        expect(enterEcho(screen("❯ có, và ví dụ tôi muốn cockpit fullscreen", "  ở màn 2 có được không?"), sent)).toBe(
+            "held"
+        );
+    });
+    it("is unknown with no screen or no box on it", () => {
+        expect(enterEcho(null, sent)).toBe("unknown");
+        expect(enterEcho(["a /model menu"], sent)).toBe("unknown");
     });
 });
 

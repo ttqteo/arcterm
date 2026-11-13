@@ -23,6 +23,13 @@ describe("taskStrip", () => {
             states: ["done", "asking"],
         });
     });
+    it("holds a paused run's working tasks still, in the muted grey instead of the pulsing green", () => {
+        expect(taskStrip(dagOf("done", "running", "pending"), undefined, true)).toEqual({
+            kind: "segments",
+            states: ["done", "muted", "pending"],
+        });
+        expect(SEG_FILL.muted).not.toContain("pulse");
+    });
     it("keeps segments at exactly STRIP_MAX tasks", () => {
         const s = taskStrip(dagOf(...Array(STRIP_MAX).fill("pending")), undefined);
         expect(s?.kind).toBe("segments");

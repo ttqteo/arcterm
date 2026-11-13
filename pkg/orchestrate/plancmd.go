@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/jobpeaks"
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 	"github.com/wavetermdev/waveterm/pkg/memgate"
 	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
@@ -28,6 +29,10 @@ const (
 	// SetupTimeout bounds a plan's Setup command. It runs under the dag mutation lock, so Setup is for
 	// preparing a worktree (junctions, a config file), not for an install.
 	SetupTimeout = 2 * time.Minute
+	// SetupSlotWait bounds how long a lane's Setup waits for a heavy-job slot before it starts. The wait holds the dag
+	// lock, so every other lane's merge and dispatch waits with it: past this the task stays pending and a later tick
+	// queues it again (errSlotWaitOver). Time queued still never counts against SetupTimeout.
+	SetupSlotWait = 2 * time.Minute
 	// VerifyTimeout bounds a plan's Verify command at a merge point.
 	VerifyTimeout = 20 * time.Minute
 	// VerifyProgressInterval is how often a running Verify, or a final stage command, publishes its output
@@ -221,8 +226,9 @@ func ProjectSetup(dir string) (string, error) {
 const engineStepBytes = 2560 << 20
 
 // holdPlanSlot waits for a slot in the heavy-job queue for a plan command memgate calls heavy, or for any
-// Verify or Final (Source.Always). A light Setup (this repo's .arc/setup only makes junctions) runs at once.
-func holdPlanSlot(ctx context.Context, command string) (func(), error) {
+// Verify or Final (Source.Always). A light Setup (this repo's .arc/setup only makes junctions) runs at once. dir is
+// where the command runs, which names the project whose measured peaks it claims (engineStepSize).
+func holdPlanSlot(ctx context.Context, dir, command string) (func(), error) {
 	src := jobqueue.SourceFrom(ctx)
 	job, heavy := memgate.Classify(command)
 	// a dev server runs until stopped: it never holds a slot, and only an Always step stands in for it
@@ -230,14 +236,51 @@ func holdPlanSlot(ctx context.Context, command string) (func(), error) {
 	if !known && !src.Always {
 		return func() {}, nil
 	}
-	name, bytes := job.Name, job.Bytes
-	if !known {
-		name, bytes = src.Label, engineStepBytes
-		if src.Peak > 0 {
-			bytes = src.Peak
-		}
+	name, bytes, basis := src.Label, uint64(engineStepBytes), jobqueue.Basis{}
+	if known {
+		name = job.Name
+		bytes, basis = engineStepSize(job, dir)
+	} else if src.Peak > 0 {
+		bytes = src.Peak
 	}
-	return jobqueue.Hold(ctx, jobqueue.Request{Name: name, Bytes: bytes, Engine: true, Source: src})
+	req := jobqueue.Request{Name: name, Bytes: bytes, Engine: true, Source: src, Basis: basis}
+	limit, _ := ctx.Value(slotWaitKey{}).(time.Duration)
+	if limit <= 0 {
+		return jobqueue.Hold(ctx, req)
+	}
+	// the limit bounds the wait alone: a granted slot is held until release, whatever this ctx does after
+	waitCtx, cancel := context.WithTimeoutCause(ctx, limit, errSlotWaitOver)
+	defer cancel()
+	release, err := jobqueue.Hold(waitCtx, req)
+	if err != nil && ctx.Err() == nil && errors.Is(context.Cause(waitCtx), errSlotWaitOver) {
+		return nil, errSlotWaitOver
+	}
+	return release, err
+}
+
+// engineStepSize is the RAM an engine step memgate knows claims: the table's figure, raised to the estimate Claude
+// Code's runs of the same pattern measured in the step's project (jobpeaks), never lowered to it. The engine's own
+// steps are not measured, and the same pattern can do more work in a step than by hand: an agent runs
+// scripts/verify.mjs on a few packages (0.9 GB), a final-stage Verify on every package plus the typecheck and vitest.
+// A higher measurement is the safe one to take: a final-verify.mjs measured 4.8 GB against the table's 3 GB.
+func engineStepSize(job memgate.Job, dir string) (uint64, jobqueue.Basis) {
+	measured, basis := jobpeaks.Default.Estimate(job.Name, jarvis.MainCheckout(dir), job.Bytes)
+	if measured > job.Bytes {
+		return measured, basis
+	}
+	return job.Bytes, jobqueue.Basis{}
+}
+
+// errSlotWaitOver is what a plan command returns when its bounded wait for a heavy-job slot (withSlotWait) ran out
+// before it started: it never ran, so it says nothing about the command.
+var errSlotWaitOver = errors.New("no heavy-job slot came free in time")
+
+type slotWaitKey struct{}
+
+// withSlotWait bounds how long a plan command run under ctx waits for a heavy-job slot; past it the command returns
+// errSlotWaitOver without running.
+func withSlotWait(ctx context.Context, limit time.Duration) context.Context {
+	return context.WithValue(ctx, slotWaitKey{}, limit)
 }
 
 // taskStepLabel names an engine step for the cockpit's queue: "Verify · Build the chip", the task's label, or its id
@@ -290,7 +333,7 @@ func markTreeSetUp(ctx context.Context, wt string) {
 
 func execPlanCommandEnv(ctx context.Context, dir, command string, env []string, timeout time.Duration, progress planProgress) (string, error) {
 	// before the timeout starts, so the time spent queued never counts against it
-	release, err := holdPlanSlot(ctx, command)
+	release, err := holdPlanSlot(ctx, dir, command)
 	if err != nil {
 		return "", err
 	}

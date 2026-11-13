@@ -266,7 +266,7 @@ function unverifiedCount(r: Run): number {
 const SPEC_GOAL = /^(.+?) as specified in (.+?)\.?$/;
 
 // a run's row title and the spec file it names, if any: the absolute spec path would take the whole row
-function runHeadline(goal: string): { title: string; spec: string } {
+export function runHeadline(goal: string): { title: string; spec: string } {
     const first = goal.trim().split("\n")[0];
     const m = SPEC_GOAL.exec(first);
     if (m == null) {

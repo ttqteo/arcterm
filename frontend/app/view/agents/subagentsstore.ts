@@ -32,10 +32,13 @@ export const backgroundTasksByIdAtom = atom<Record<string, BackgroundTask[]>>({}
     Record<string, BackgroundTask[]>
 >;
 
-/** The background task whose peek (Events and Output) is open beside the Agent tree: its agent and its task id. */
+/** The background task whose peek (Events and Output) is open: its agent, its task id, and who draws it. "tree" is
+ *  the Agent tree (beside its row; the /tasks card opens it there too), "chat" the chat box's background list (above
+ *  its row). Each draws only the peeks of its own origin. */
 export interface MonitorPeekRef {
     agentId: string;
     taskId: string;
+    origin: "tree" | "chat";
 }
 // an atom, not row state, so one peek is open at a time and dropSubagents can close it when its agent leaves
 export const monitorPeekAtom = atom<MonitorPeekRef | null>(null) as PrimitiveAtom<MonitorPeekRef | null>;

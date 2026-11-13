@@ -40,8 +40,14 @@ type and detail. Commit to a small system:
 - Accents: 0–2, in oklch, sharing chroma and lightness, varying hue.
   Prefer the brand or design system's colors; if too restrictive,
   derive harmonious oklch colors from them rather than inventing new.
-- Motion, where the design carries it (CSS in the artboard): one
-  well-orchestrated moment, not scattered effects.
+- Motion, in every design, played live in the artboard (CSS): go
+  through each change the UI makes (appear and leave, open and fold,
+  select, a value updating, loading to done, reorder) and give it its
+  motion, or say in the canvas why it stays still; the person approves
+  it with the rest, so it is never left to the code. One
+  well-orchestrated moment per change, not scattered effects. In
+  arcterm the values come from `element/motiontokens.ts` (DESIGN.md
+  "Motion").
   Motion confirms a change that already happened, beside a static
   sign of it (label, colour, position), and is never decorative.
   How often it plays decides whether it exists: a keyboard action or

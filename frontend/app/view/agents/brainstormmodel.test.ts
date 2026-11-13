@@ -103,6 +103,7 @@ import {
     terminalAnswer,
     togglePick,
     treeLine,
+    treeLineAsks,
     unseenSince,
     withBrainstorm,
     type BrainstormFile,
@@ -702,6 +703,15 @@ describe("treeLine", () => {
     it("reads a kept question with work underway as working, nothing answered", () => {
         const s = shownFile(file({ question: { n: 3, text: "?", part: "a" } }), { at: 1, modifiedMs: 1, kind: "line" });
         expect(treeLine(s, false).text).toBe("working");
+    });
+});
+
+describe("treeLineAsks", () => {
+    it("is the ask only while asking with no run, so the row's asking note is not said twice", () => {
+        const q = { n: 3, text: "?", part: "a" };
+        expect(treeLineAsks(file({ question: q }), true)).toBe(true);
+        expect(treeLineAsks(file({ question: q }), false)).toBe(false);
+        expect(treeLineAsks(file({ run: "abcdef0123456789" }), true)).toBe(false);
     });
 });
 

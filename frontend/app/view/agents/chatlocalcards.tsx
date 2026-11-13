@@ -288,7 +288,7 @@ function TasksBody({ model, agent }: { model: AgentsViewModel; agent: AgentVM })
     const stop = (t: BackgroundTask) =>
         live ? () => fireAndForget(() => stopBackgroundTask(agent.id, agent.blockId!, t)) : undefined;
     const peek = (t: BackgroundTask) =>
-        t.taskId != null ? () => globalStore.set(monitorPeekAtom, { agentId: agent.id, taskId: t.taskId! }) : undefined;
+        t.taskId != null ? () => globalStore.set(monitorPeekAtom, { agentId: agent.id, taskId: t.taskId!, origin: "tree" }) : undefined;
     if (g.running.length === 0 && g.ended.length === 0 && subs.length === 0) {
         return <span className="text-[12.5px] text-muted">No background tasks or subagents in this session.</span>;
     }

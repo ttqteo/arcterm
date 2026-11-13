@@ -7,17 +7,19 @@ import {
     ASSEMBLE_PARTS,
     assembleReveal,
     easeMix,
+    HOLOGRAM_FAIL_WINDOW_MS,
     HOLOGRAM_IDLE_FPS,
     HOLOGRAM_LIVE_FPS,
     HOLOGRAM_SIZE_PX,
     hologramFps,
     hologramPose,
+    hologramRetry,
     hologramSize,
     petForm,
     stepMix,
 } from "./hologrammodel";
 
-const calm = { waiting: 0, working: 0, speaking: false, peekOpen: false };
+const calm = { asking: 0, working: 0, speaking: false, peekOpen: false };
 
 describe("petForm", () => {
     it("keeps the two choices and turns anything else into Sprout", () => {
@@ -46,8 +48,8 @@ describe("hologramPose", () => {
         expect(hologramPose(calm)).toEqual({ sphere: 0, busy: false, quiet: true });
     });
 
-    it("turns to the neural sphere while something waits on you", () => {
-        expect(hologramPose({ ...calm, waiting: 1 })).toEqual({ sphere: 1, busy: false, quiet: false });
+    it("turns to the neural sphere while an agent asks you something", () => {
+        expect(hologramPose({ ...calm, asking: 1 })).toEqual({ sphere: 1, busy: false, quiet: false });
     });
 
     it("beats the HUD's core while agents work or Jarvis speaks, without leaving the HUD", () => {
@@ -56,7 +58,7 @@ describe("hologramPose", () => {
     });
 
     it("a question outranks work: the sphere shows, and the core still counts as busy", () => {
-        expect(hologramPose({ ...calm, waiting: 1, working: 3 })).toEqual({ sphere: 1, busy: true, quiet: false });
+        expect(hologramPose({ ...calm, asking: 1, working: 3 })).toEqual({ sphere: 1, busy: true, quiet: false });
     });
 
     it("is not faint while the peek is open", () => {
@@ -98,7 +100,7 @@ describe("hologramFps", () => {
         expect(hologramFps(pose, 0)).toBe(HOLOGRAM_IDLE_FPS);
         expect(hologramFps(pose, 0.4)).toBe(HOLOGRAM_LIVE_FPS);
         expect(hologramFps(hologramPose({ ...calm, working: 1 }), 0)).toBe(HOLOGRAM_LIVE_FPS);
-        expect(hologramFps(hologramPose({ ...calm, waiting: 1 }), 1)).toBe(HOLOGRAM_LIVE_FPS);
+        expect(hologramFps(hologramPose({ ...calm, asking: 1 }), 1)).toBe(HOLOGRAM_LIVE_FPS);
     });
 });
 
@@ -129,5 +131,21 @@ describe("assembleReveal", () => {
 
     it("reads a clock that is not a number as not started", () => {
         expect(assembleReveal(Number.NaN, 0)).toBe(0);
+    });
+});
+
+describe("hologramRetry", () => {
+    it("tries the hologram again after a first and a second loss", () => {
+        const one = hologramRetry([], 1_000);
+        expect(one).toEqual({ fails: [1_000], retry: true });
+        const two = hologramRetry(one.fails, 10_000);
+        expect(two).toEqual({ fails: [1_000, 10_000], retry: true });
+    });
+    it("stops on the third loss inside the window, so a failing GPU cannot loop", () => {
+        expect(hologramRetry([1_000, 10_000], 20_000)).toEqual({ fails: [1_000, 10_000, 20_000], retry: false });
+    });
+    it("forgets losses older than the window, so a loss now and then always comes back", () => {
+        const now = 5_000 + HOLOGRAM_FAIL_WINDOW_MS;
+        expect(hologramRetry([1_000, 5_000], now)).toEqual({ fails: [now], retry: true });
     });
 });

@@ -778,7 +778,9 @@ function AddNote({ onAdd }: { onAdd: (text: string) => void }) {
                     className="w-full resize-none bg-transparent text-[12.5px] leading-[1.6] text-primary outline-none"
                 />
                 <div className="flex items-center gap-2">
-                    <span className="flex-1 text-[10.5px] text-ink-mid">Ctrl+Enter adds · Esc clears</span>
+                    <span className="flex-1 text-[10.5px] text-ink-mid">
+                        {formatChordString("Mod:Enter")} adds · {formatChordString("Escape")} clears
+                    </span>
                     <button
                         type="button"
                         disabled={draft.trim() === ""}

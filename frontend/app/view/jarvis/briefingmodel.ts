@@ -7,7 +7,7 @@
 
 import { formatAge, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { attentionAct, type AttentionAct } from "./attentionact";
-import { buildEffortCard, type EffortCardModel } from "./effortmodel";
+import { buildEffortCards, type EffortCardModel } from "./effortmodel";
 import { openAgentFor } from "./initiativework";
 import { planReviewORef } from "./planreviewtarget";
 
@@ -804,11 +804,10 @@ export function projectBriefing(input: BriefingModelInput): BriefingModel {
     }
 
     // efforts: non-archived only, newest-updated first (the wire already sorts; the defensive sort
-    // keeps the projection total regardless of server ordering).
-    const effortCards = (state.efforts ?? [])
-        .filter((e) => e.status !== "archived")
-        .sort((a, b) => b.updatedts - a.updatedts)
-        .map(buildEffortCard);
+    // keeps the projection total regardless of server ordering). Topics are marked, so the Brief keeps them out of Ideas.
+    const effortCards = buildEffortCards(
+        (state.efforts ?? []).filter((e) => e.status !== "archived").sort((a, b) => b.updatedts - a.updatedts)
+    );
 
     return {
         activeRuns,

@@ -173,6 +173,13 @@ describe("runStage", () => {
         expect(PAUSED_LABEL).toBe("Paused · resumes when memory frees");
     });
 
+    it("holds the tail stage a paused run stopped in still, where a running one pulses", () => {
+        const pips = (status: string) => runStage({ status, dag: dag("finalizing") }).tail.map((p) => p.state);
+        expect(pips("executing")).toContain("active");
+        expect(pips("paused")).not.toContain("active");
+        expect(pips("paused")).toContain("paused");
+    });
+
     it("says a run the person paused waits for them, since Arc never resumes it", () => {
         expect(runStage({ status: "paused", pausedBy: "manual" }).label).toBe(PAUSED_BY_YOU_LABEL);
         expect(PAUSED_BY_YOU_LABEL).toBe("Paused · until you resume");
@@ -193,7 +200,8 @@ describe("runStage", () => {
     it("keeps the stage a paused run stopped in, and its tail, under the paused words", () => {
         const checking = runStage({ status: "paused", dag: dag("finalizing", { state: "checking", step: "final" }) });
         expect(checking).toMatchObject({ key: "final-check", label: PAUSED_LABEL, paused: true });
-        expect(checking.tail.map((p) => p.state)).toEqual(["active", "pending", "pending"]);
+        // the stopped stage keeps its place in the tail, held still: "paused", not the pulsing "active"
+        expect(checking.tail.map((p) => p.state)).toEqual(["paused", "pending", "pending"]);
         expect(runStage({ status: "paused", dag: dag("done", { state: "passed" }) })).toMatchObject({
             key: "wrapping-up",
             label: PAUSED_LABEL,

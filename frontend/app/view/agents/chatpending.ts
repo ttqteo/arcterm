@@ -8,6 +8,7 @@
 import type { AgentEntry } from "./agentsviewmodel";
 import { stripResultLines } from "./chatinitiative";
 import { unwrapWholePaste } from "./chattagblocks";
+import type { EnterEcho, TypedEcho } from "./chattakeback";
 import { opensPanel } from "./slashcommands";
 
 /** What a pending command stands for until its row lands: a side question the arc mod is answering (`btw`), a panel
@@ -249,6 +250,109 @@ export type SubmitStep =
 
 /** How long a send waits at most for Claude Code's box to show the message before it presses Enter anyway. */
 export const ECHO_WAIT_MAX_MS = 2_000;
+
+/** How long a send waits on a box that stays empty before it gives up without pressing Enter. Longer than
+ *  ECHO_WAIT_MAX_MS: Claude Code draws what it read only when its event loop is free, so a busy turn can show the text
+ *  late, and a text that shows after the send gave up sits in its box unsent. */
+export const ECHO_ABSENT_MAX_MS = 8_000;
+
+/** Pure: what a send does after waiting `waitedMs` on the box's echo (chattakeback.ts typedEcho): press Enter, wait
+ *  more, or fail. Only a box that stays empty fails: the text never reached Claude Code, and an Enter would submit
+ *  nothing (a chat message read Queued for good, 2026-11-13). A box holding something else gets Enter after
+ *  ECHO_WAIT_MAX_MS as before, since the text may be drawn in a way the read does not match. */
+export function echoStep(echo: TypedEcho, waitedMs: number): "enter" | "wait" | "fail" {
+    switch (echo) {
+        case "shown":
+        case "unknown":
+            return "enter";
+        case "other":
+            return waitedMs >= ECHO_WAIT_MAX_MS ? "enter" : "wait";
+        case "absent":
+            return waitedMs >= ECHO_ABSENT_MAX_MS ? "fail" : "wait";
+    }
+}
+
+/** How long a send watches Claude Code's box after its Enter for the text to leave it. Past it the send is taken as
+ *  done: an Enter not read yet is still on its way. */
+export const ENTER_CONFIRM_MAX_MS = 10_000;
+
+/** How many times a send takes back an Enter that went in as a line break and presses it again before it gives up. */
+export const ENTER_RETRIES = 2;
+
+/** Pure: what a send does `waitedMs` after its Enter, from what the box shows (chattakeback.ts enterEcho) and how many
+ *  retries it made: `done` once the text left the box (or there is no box to read, or the watch is over), `retry` when
+ *  the Enter went in as a line break (Backspace, then Enter again), `fail` when it did so after every retry, so the
+ *  message waits in Claude Code's box for an Enter of the person's. */
+export function enterStep(echo: EnterEcho, waitedMs: number, retries: number): "done" | "wait" | "retry" | "fail" {
+    switch (echo) {
+        case "gone":
+        case "unknown":
+            return "done";
+        case "held":
+            return waitedMs >= ENTER_CONFIRM_MAX_MS ? "done" : "wait";
+        case "linebreak":
+            return retries < ENTER_RETRIES ? "retry" : "fail";
+    }
+}
+
+/** Where a send failed: `type`, writing the text into the terminal; `echo`, the text never showed in Claude Code's box;
+ *  `enter`, the Enter after a text that did show. */
+export type SubmitStage = "type" | "echo" | "enter";
+
+export class SubmitError extends Error {
+    constructor(
+        readonly stage: SubmitStage,
+        message: string
+    ) {
+        super(message);
+        this.name = "SubmitError";
+    }
+}
+
+/** What the person is told of a failed send, and whether the text goes back into the chat box: it does when none of it
+ *  is in Claude Code's box (typing failed, or it never showed there), not when only the Enter failed, where it waits in
+ *  Claude Code's box and sending it again would put it there twice. Any other error counts as a failed typing. */
+export interface SendFailure {
+    stage: SubmitStage;
+    reason: string;
+    restore: boolean;
+    message: string;
+}
+
+export function sendFailure(e: unknown): SendFailure {
+    const stage: SubmitStage = e instanceof SubmitError ? e.stage : "type";
+    const reason = e instanceof Error ? e.message : String(e);
+    switch (stage) {
+        case "enter":
+            return {
+                stage,
+                reason,
+                restore: false,
+                message: `It is in Claude Code's box but the Enter did not go through (${reason}): press Enter in the terminal.`,
+            };
+        case "echo":
+            return {
+                stage,
+                reason,
+                restore: true,
+                message: "Claude Code never showed it in its box, so it was not sent. It is back in the chat box.",
+            };
+        default:
+            return {
+                stage,
+                reason,
+                restore: true,
+                message: `It could not be typed into the terminal (${reason}). It is back in the chat box.`,
+            };
+    }
+}
+
+/** The waveapp.log line of a failed send: the block's short id, the stage, the text's length (never the text) and the
+ *  reason on one line. */
+export function sendFailLogLine(blockId: string, text: string, f: SendFailure): string {
+    const err = f.reason.replace(/\s+/g, " ").replace(/"/g, '\\"');
+    return `[chat-send] fail block=${blockId.slice(0, 8)} stage=${f.stage} len=${Array.from(text).length} err="${err}"`;
+}
 
 /** Pure: how a line goes into an agent's TUI and is submitted. Enter is always a write of its own, after the box shows
  *  the text: Claude Code's input reader reads "\r" as Enter only when it arrives as its own chunk, and a "text\r" read in

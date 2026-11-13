@@ -106,10 +106,13 @@ When the person reads you in arcterm's Chat (a Claude agent they opened, not an 
 you do to an initiative splits two ways:
 
 - **Directly with `wsh effort`, as above:** your own work. Progress notes and status on the chunk you hold,
-  claiming it, ticking it done.
-- **Through a card:** anything new, or not yours. A new chunk, a new initiative, a note on a chunk you do not hold.
-  Write one fenced block in your reply; Chat draws it as a card the person adds, edits or dismisses, and nothing
-  is written until they add it. Do not run `wsh effort chunk add` or `create` for these yourself.
+  claiming it, ticking it done. And whatever the person asked you to put in an initiative ("bỏ vào initiative đi",
+  "add that as a chunk"): they already decided, so a card would only ask again. Write it, then say in one line what
+  you wrote where (a chunk added with no `--proposed`, since they asked for it).
+- **Through a card:** anything new, or not yours, that the person did not ask for. A new chunk, a new initiative, a
+  note on a chunk you do not hold. Write one fenced block in your reply; Chat draws it as a card the person adds,
+  edits or dismisses, and nothing is written until they add it. Do not run `wsh effort chunk add` or `create` for
+  these yourself.
 
 Agents an Arc run started (a lead, a worker) keep writing directly: their Chat is not an inbox. So does any agent
 whose Chat is not there (pi, codex). Outside Chat the block reads as raw JSON.

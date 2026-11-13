@@ -457,7 +457,23 @@ Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
   `+`, each key capitalized: `Ctrl+Enter`, `Ctrl+Shift+P`, `Alt+Backspace`, `Esc`.
   No key symbols there (`⏎`, `↵`, `^`, `⌫`, `⌃`, `⇧`): a Windows user does not
   read them. The Mac glyphs (`⌘⇧P`) stay on a Mac only. Every label goes through
-  `util/keysym.ts`, never a glyph typed into a component.
+  `util/keysym.ts`, never a glyph typed into a component — and never a key name
+  either: a string that spells `"Alt+C"`, `"Ctrl+Enter"` or `"Shift+N"` in a
+  `title`, a `<kbd>`, a hint or a toast shows a Mac user a key their keyboard does
+  not label that way (a Mac has no Alt key; it is ⌥). Write the chord and label it when drawn:
+  `formatChordString("Alt:c")`. Prose kept as a constant (a tour step, a hint
+  line) writes `{Alt:ArrowUp}` and renders through `fillKeys`, which runs at render
+  because the platform is only known after boot. Label the chord the handler
+  really reads: `Mod` (⌘ on a Mac, Ctrl elsewhere) when it takes `ctrlKey ||
+  metaKey` or a `Mod:` binding, `Ctrl` (⌃ on a Mac) when only Control works. Only
+  a control drawn on one platform alone (an `isWindows()` branch) may name that
+  platform's key in words.
+- **Keys a Vietnamese input method rewrites** — the person types with Telex, which
+  turns `[` into `ơ` and `]` into `ư` before the app sees them, so a bracket
+  binding reads as broken. Lead a shortcut with keys Telex leaves alone (arrows,
+  `Esc`, `Enter`, `Ctrl`/`Alt` chords); a bracket may stay only as a second
+  binding, never the only one and never the one a hint shows (the canvas viewer's
+  `←` `→` with `[` `]` beside them, `docs/keyboard-shortcuts.md`).
 - **Status indicators** — dot + color + pulse (`pulse-dot` on `bg-working`/`bg-asking`;
   `pulse-dot-slow`, `pulse-soft` for the slower curves); status is never color alone.
   The pulse is drawn at 12fps by `element/pulsedriver.tsx`, not a CSS animation:
@@ -553,6 +569,15 @@ UI changes get a validated high-fidelity HTML mockup before implementation — p
 first, always. The mockup is the design proposal; it must be seen and approved before
 code is written.
 
+- **Every new design designs its motion**, as part of the proposal, not as polish added
+  after the code: list each change the UI goes through (appear and leave, open and fold,
+  select, a value updating, loading to done, reorder) and give each its motion from
+  `element/motiontokens.ts` (`springReveal`, `springPop`, the Fluid ease, the durations
+  above), or say why it stays still (a keyboard action, something seen a hundred times a
+  day). The mockup plays it live in the artboard, so it is approved with the rest, and
+  the plan names the motion each task builds, so it is not dropped in implementation.
+  The Motion rules above still decide what ships: motion makes a change legible, keeps
+  reduced motion, and never cascades.
 - Build it with the `arc:design` Claude Code skill: a `.dc.html` canvas under the gitignored
   `.superpowers/design/<topic>/`, which arcterm serves and shows on the Agent surface. This file is its design system — every rule
   above applies to the mockup as it will to the code.

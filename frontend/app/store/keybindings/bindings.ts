@@ -17,7 +17,7 @@ import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
 import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { setAgentView, type AgentView } from "@/app/view/agents/agentview";
 import { cellView, cellViewOptions, chatCapable, nextCellView } from "@/app/view/agents/chatmode";
-import { focusChatBox } from "@/app/view/agents/chatinsert";
+import { focusChatBox, hasChatBox, interruptChat } from "@/app/view/agents/chatinsert";
 import { CHAT_JUMP_KEYS, jumpChatToLatest } from "@/app/view/agents/chatjump";
 import { getChatMode, selectCellView } from "@/app/view/agents/chatmodestore";
 import {
@@ -1411,6 +1411,17 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
               : canvas()?.mode === "canvas"
                 ? "canvas"
                 : "terminal";
+    // the focused agent shows Chat and is working: Escape stops its turn, as in Claude Code, instead of leaving
+    const chatWorking = (): boolean => {
+        // a mounted chat box first: the cheap test, and the one that holds on every Escape away from Chat
+        if (!hasChatBox(focusId())) {
+            return false;
+        }
+        const agent = chatAgent();
+        return (
+            agent != null && agent.state === "working" && slotView() === "terminal" && getChatMode(agent) === "chat"
+        );
+    };
     const redrawFocused = () => {
         const id = focusId();
         const items = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
@@ -1448,13 +1459,29 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "Escape",
             group: "Agent",
             label: "Back, else to Cockpit (or exit fullscreen)",
-            when: (ctx) => agentNavStrict(ctx) && globalStore.get(focusSubagentAtom) == null && noCanvas(),
+            when: (ctx) =>
+                agentNavStrict(ctx) && globalStore.get(focusSubagentAtom) == null && noCanvas() && !chatWorking(),
             run: () => {
                 if (globalStore.get(terminalFullscreenAtom)) {
                     globalStore.set(terminalFullscreenAtom, false);
                 } else {
                     backOrHome(model);
                 }
+            },
+        },
+        {
+            // Reading Chat while the agent works, Escape stops the turn as it does in the chat box (and in Claude Code),
+            // a queued message coming back into the box; agent:back takes the key again once the agent is idle. In the
+            // box itself the box handles Escape, so this is strict like agent:back, with which it is exclusive.
+            id: "agent:chat-interrupt",
+            keys: "Escape",
+            group: "Agent",
+            label: "Stop the agent's turn (in Chat, while it works)",
+            when: (ctx) =>
+                agentNavStrict(ctx) && globalStore.get(focusSubagentAtom) == null && noCanvas() && chatWorking(),
+            run: () => {
+                const agent = chatAgent();
+                return agent != null && interruptChat(agent.id) ? undefined : false;
             },
         },
         {

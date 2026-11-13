@@ -119,7 +119,9 @@ func withDetachedTree(ctx context.Context, project, name, label, commit, setup s
 			log.Printf("removing the %s %s: %v", label, wt, err)
 		}
 	}()
-	setupCtx := jobqueue.WithSource(ctx, jobqueue.Source{RunId: jobqueue.SourceFrom(ctx).RunId, Label: "Setup · " + label})
+	// the tree's Setup is for the tasks its caller's step is (a bisect tree's, the batch's), so it keeps them
+	from := jobqueue.SourceFrom(ctx)
+	setupCtx := jobqueue.WithSource(ctx, jobqueue.Source{RunId: from.RunId, Tasks: from.Tasks, Label: "Setup · " + label})
 	if o, ok := jobobject.OwnerFrom(setupCtx); ok {
 		o.Cmd = PlanCmd_Setup
 		setupCtx = jobobject.WithOwner(setupCtx, o)

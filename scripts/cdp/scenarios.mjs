@@ -55,7 +55,9 @@ import {
 import * as agentPageFixtures from "./agent-page-fixtures.mjs";
 import { makeCouncilScenarios } from "./councilscenarios.mjs";
 import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
+import sidebarColumnsScenarios from "./scenarios-sidebar-columns.mjs";
 import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
+import chatBgTasksScenarios from "./scenarios-chat-bg-tasks.mjs";
 import agentSubagentsScenarios from "./scenarios-agent-subagents.mjs";
 import brainstormBoardPickScenarios from "./scenarios-brainstorm-board-pick.mjs";
 import brainstormBuilderScenarios from "./scenarios-brainstorm-builder.mjs";
@@ -15926,8 +15928,8 @@ const agentTreeRail = {
         // The line as a real lead draws it: its tokens (the fixture transcript's 132k), its age and the whole run's RAM
         // (8fa946dac) after the progress, all flex-none. The fixture lead's block does not exist, so no reading names
         // it: pin one (window.__resmonFixture) so the RAM span is on the line. The line is RunSubline's own @container;
-        // forcing its width stands in for dragging the tree wider. At the tree's default width the RAM must leave the
-        // line (LEAD_RAM_YIELDS) so the progress is never cut for it; wide enough, it shows beside the progress
+        // forcing its width stands in for other widths of the tree. The RAM, tokens and age hold their columns at every
+        // width (docs/superpowers/specs/2026-11-13-sidebar-declutter-design.md); only the words to their left are cut
         const MB_BYTES = 1024 * 1024;
         await h.ev(
             `window.__resmonFixture.set(${JSON.stringify({
@@ -15970,6 +15972,9 @@ const agentTreeRail = {
                 return {
                     w: Math.round(line.getBoundingClientRect().width),
                     whole: progress ? progress.scrollWidth <= progress.clientWidth : null,
+                    // how much of it shows, and whether its tooltip holds it whole
+                    shown: progress ? Math.round(progress.clientWidth) : null,
+                    titled: progress ? progress.title.length > 0 : null,
                     ram: ram ? (getComputedStyle(ram).display !== "none" ? ram.textContent.trim() : false) : null,
                     tokens: tokens ? tokens.textContent.trim() : null,
                     overflow: line.scrollWidth > line.clientWidth,
@@ -15989,22 +15994,25 @@ const agentTreeRail = {
         await h.ev(`window.__resmonFixture.clear()`);
         const runAt = runLine?.at ?? [];
         rec(
-            "7. the lead's run line carries its workers chip, unclipped progress and the task strip; with its tokens, age and the run's RAM on the line, the RAM leaves it on a narrow line and the progress is never cut",
+            // the spec (2026-11-13-sidebar-declutter-design, "Bố cục dòng"): the words left of the columns shrink and cut
+            // with …, never the columns. At the tree's own 280px the three columns leave "Working · 0/3" about 40px, so
+            // it is cut there, but it shows, its tooltip has it whole, and it reads whole once the line has room
+            "7. the lead's run line carries its workers chip, its progress and the task strip; its tokens, age and the run's RAM stay on the line at every width; the progress shows at the tree's own width (whole in its tooltip) and reads whole from 300px; nothing spills out of the line",
             nested != null &&
                 /^\d+ of 3 tasks done/.test(nested.strip ?? "") &&
                 /workers?$/.test(nested.workersChip ?? "") &&
                 nested.progress != null &&
-                !nested.progress.clipped &&
                 runLine != null &&
                 runLine.restored === true &&
                 // the fixture is a real lead's line: tokens are there and a reading names the run's RAM
                 runAt.every((s) => s.tokens === "132k") &&
-                runAt.some((s) => typeof s.ram === "string" && s.ram !== "") &&
-                // the progress reads whole beside them at every width, and nothing spills out of the line
-                runAt.every((s) => s.whole === true && !s.overflow) &&
-                // narrow, the RAM is off the line; wide enough, it shows
-                runAt[0].ram === false &&
-                typeof runAt[runAt.length - 1].ram === "string",
+                // the RAM keeps its column at every width
+                runAt.every((s) => typeof s.ram === "string" && s.ram !== "") &&
+                // the progress shows at the tree's own width, its tooltip whole; from 300px it reads whole
+                (runAt[0].shown ?? 0) >= 20 &&
+                runAt[0].titled === true &&
+                runAt.filter((s) => s.w >= 300).every((s) => s.whole === true) &&
+                runAt.every((s) => !s.overflow),
             JSON.stringify({ nested, runLine })
         );
         rec(
@@ -16482,6 +16490,41 @@ const railContextBreakdown = {
                 views.refresh === true &&
                 views.small.length === 0,
             JSON.stringify(views)
+        );
+
+        // 5b. every group open makes the rail scroll: its scrollbar's room is kept either way, so the content is one
+        // width, each Spend label stays on one line, and a group folds shut on a height animation, not at once
+        const fit = await h.ev(`(async () => {
+            ${CTX_RAIL_LIB}
+            const scroll = $("[data-rail-session]")?.closest("[data-rail-scroll]");
+            const labels = $$("[data-spend-label]");
+            const toggle = $('[data-ctx-group="skills"]');
+            const box = () => $('[data-ctx-rows="skills"]');
+            const full = box()?.parentElement?.getBoundingClientRect().height ?? 0;
+            toggle?.click();
+            await nap(60);
+            const mid = box()?.parentElement?.getBoundingClientRect().height ?? -1;
+            const gone = await until(() => !box());
+            return {
+                scrolls: scroll ? scroll.scrollHeight > scroll.clientHeight : null,
+                gutter: scroll ? getComputedStyle(scroll).scrollbarGutter : null,
+                labels: labels.map((l) => [text(l), Math.round(l.getBoundingClientRect().height)]),
+                full: Math.round(full),
+                mid: Math.round(mid),
+                gone,
+            };
+        })()`);
+        rec(
+            "5b. the scrolling rail keeps its scrollbar gutter, every Spend label is one line, and Skills folds shut through a mid height",
+            fit.scrolls === true &&
+                fit.gutter === "stable" &&
+                fit.labels.length >= 3 &&
+                fit.labels.every(([, h]) => h > 0 && h <= 20) &&
+                fit.full > 0 &&
+                fit.mid > 0 &&
+                fit.mid < fit.full &&
+                fit.gone === true,
+            JSON.stringify(fit)
         );
 
         // 6. not read yet: the empty bar, the line and the button; the cache line still shows
@@ -37666,7 +37709,7 @@ const railTabLabels = `[...(${RAIL_TABS_ASIDE}?.querySelectorAll('[role="tab"]')
 const railTabsWidth = `Math.round(${RAIL_TABS_ASIDE}?.getBoundingClientRect().width ?? 0)`;
 const railTabsFileText = `(${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file]")?.innerText ?? "")`;
 // the widest a wide tab may be in this window: the centre keeps 640 beside the nav (56 below 900px) and the tree
-const railTabsMax = `Math.max(360, window.innerWidth - (window.innerWidth < 900 ? 56 : 78) - 248 - 640)`;
+const railTabsMax = `Math.max(360, window.innerWidth - (window.innerWidth < 900 ? 56 : 78) - 280 - 640)`;
 const railTabsNap = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function railTabsFixture(base) {
@@ -41708,7 +41751,7 @@ const CONSUMERS_READING = {
     agents: [
         // 80K counted, and 9M cache reads that the count leaves out: no burn
         { tabid: "fx-consumers-mine", blockid: "fx-blk-mine", rambytes: 300 * 2 ** 20, tokensread: true, tokens: [consumersBucket("claude-sonnet-4-6", 80_000, 9_000_000)] },
-        { tabid: "fx-consumers-worker", blockid: "fx-blk-worker", rambytes: 2.5 * 2 ** 30, tokensread: true, tokens: [consumersBucket("claude-opus-4-8", 1_200_000)], dag: { channelid: "fx-ch", runid: "85548d0b-fx", taskid: "t-3" } },
+        { tabid: "fx-consumers-worker", blockid: "fx-blk-worker", rambytes: 2.5 * 2 ** 30, tokensread: true, tokens: [consumersBucket("claude-opus-4-8", 1_200_000)], dag: { channelid: "fx-ch", runid: "85548d0b-fx", taskid: "t-3" }, runid: "85548d0b-fx", rungoal: "Build Consumer lag alerts as specified in D:\\p\\docs\\lag.md." },
         { tabid: "fx-consumers-pi", blockid: "fx-blk-pi", rambytes: 200 * 2 ** 20, tokensread: false },
     ],
 };
@@ -41806,6 +41849,9 @@ const consumersResmon = (ready) => ({
 const consumersCells = (sel) =>
     `Object.fromEntries([...document.querySelectorAll("[data-consumer-row]")].map((r) => [r.dataset.consumerRow, r.querySelector(${JSON.stringify(sel)})?.textContent.trim() ?? null]))`;
 const consumersRowExpr = (id) => `document.querySelector('[data-consumer-row="${id}"]')`;
+// the run's head row; the panel opens with it open, its worker under it until the chevron folds it
+const CONSUMERS_RUN = `document.querySelector('[data-consumers-run="85548d0b-fx"]')`;
+const CONSUMERS_OPEN_RUN = `(() => { const t = ${CONSUMERS_RUN}?.querySelector("[data-consumers-run-toggle]"); if (t?.getAttribute("aria-expanded") === "false") t.click(); })()`;
 const consumersDialogExpr = (text) =>
     `[...document.querySelectorAll('[role="dialog"]')].find((d) => !d.matches("[data-consumers-panel]") && d.textContent.includes(${JSON.stringify(text)}))`;
 const consumersToastExpr = (...parts) =>
@@ -41902,26 +41948,49 @@ const consumersPopover = {
         );
 
         await consumersMode(h, "reading");
-        await polishWaitFor(h, `document.querySelectorAll("[data-consumer-row]").length === 4`, 5000);
+        await polishWaitFor(h, `document.querySelectorAll("[data-consumer-row]").length === 4 && !!${CONSUMERS_RUN}`, 5000);
+        const panelRows = `[...document.querySelectorAll("[data-consumers-panel] [data-consumer-row]")].map((r) => r.dataset.consumerRow)`;
         const ram = await h.ev(`(() => {
             const p = document.querySelector("[data-consumers-panel]");
             if (!p) return null;
+            const run = ${CONSUMERS_RUN};
             return {
-                rows: [...p.querySelectorAll("[data-consumer-row]")].map((r) => r.dataset.consumerRow),
+                rows: ${panelRows},
                 header: p.querySelector("[data-consumers-header]")?.textContent ?? "",
                 inRam: p.querySelector("[data-consumers-in-ram]")?.textContent ?? "",
-                runLabel: p.textContent.toLowerCase().includes("run 85548d0b"),
+                run: run?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                runAfterMine: !!run && !!(${consumersRowExpr("fx-consumers-mine")}?.compareDocumentPosition(run) & Node.DOCUMENT_POSITION_FOLLOWING),
+                worker: ${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-open]")?.textContent.trim() ?? null,
+                inRun: !!${consumersRowExpr("fx-consumers-worker")}?.closest("[data-consumers-run-rows]"),
                 ramCols: p.querySelectorAll("[data-consumer-ram]").length,
                 tokenCols: p.querySelectorAll("[data-consumer-tokens]").length,
             };
         })()`);
         await h.shot("cdp-shots/consumers-ram.png");
         rec(
-            "3. rows by RAM: the run's worker first under its run, free RAM, the swap and the 5-hour quota in the header, arcterm's share by what it holds in RAM, each row's RAM and tokens side by side",
-            !!ram && ram.rows[0] === "fx-consumers-worker" && ram.rows.length === 4 && ram.runLabel &&
+            "3. rows by RAM: the agents you opened first, then the run under a head of its title and sums, its 2.5 GB worker under it as Task t-3, free RAM, the swap and the 5-hour quota in the header, arcterm's share by what it holds in RAM, each row's RAM and tokens side by side",
+            !!ram && JSON.stringify(ram.rows) === JSON.stringify(["fx-consumers-mine", "fx-consumers-pi", ctx.liveTabId, "fx-consumers-worker"]) &&
+                /^Build Consumer lag alerts ?1 agent · 1 working ?2\.5 GB/.test(ram.run ?? "") && ram.runAfterMine &&
+                ram.worker === "Task t-3" && ram.inRun &&
                 ram.header.includes("free of") && ram.header.includes("4.5 GB swap") && ram.header.includes("5h quota 62%") &&
                 /^arcterm 1\.9 GB in RAM · [\d.]+ GB with swap$/.test(ram.inRam) && ram.ramCols === 4 && ram.tokenCols === 4,
             JSON.stringify(ram)
+        );
+
+        await h.ev(`${CONSUMERS_RUN}?.querySelector("[data-consumers-run-toggle]")?.click()`);
+        await polishWaitFor(h, `!${consumersRowExpr("fx-consumers-worker")}`, 2000);
+        const folded3 = await h.ev(`({
+            rows: ${panelRows},
+            expanded: ${CONSUMERS_RUN}?.querySelector("[data-consumers-run-toggle]")?.getAttribute("aria-expanded"),
+        })`);
+        await h.shot("cdp-shots/consumers-run-folded.png");
+        await h.ev(CONSUMERS_OPEN_RUN);
+        const runReopened = await polishWaitFor(h, `!!${consumersRowExpr("fx-consumers-worker")}`, 2000);
+        rec(
+            "3b. the run's chevron folds it to its head row, and opens it again",
+            JSON.stringify(folded3.rows) === JSON.stringify(["fx-consumers-mine", "fx-consumers-pi", ctx.liveTabId]) &&
+                folded3.expanded === "false" && runReopened,
+            JSON.stringify({ ...folded3, runReopened })
         );
 
         const own = await h.ev(`[...document.querySelectorAll("[data-consumers-own]")].map((o) => [o.dataset.consumersOwn, o.textContent])`);
@@ -42117,6 +42186,8 @@ const consumersPopover = {
         // a real Escape over a confirm closes the confirm alone: the panel stays and the stop is not sent
         const stopsBefore = (await calls()).filter((c) => c.command === "dagaction").length;
         const reopened3 = await openFromChip();
+        await polishWaitFor(h, `!!${CONSUMERS_RUN}`, 5000);
+        await h.ev(CONSUMERS_OPEN_RUN);
         await polishWaitFor(h, `!!${consumersRowExpr("fx-consumers-worker")}`, 5000);
         await h.ev(`${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-stop]")?.click()`);
         const escConfirm = await polishWaitFor(h, `!!${consumersDialogExpr(CONSUMERS_STOP_WORKER)}`, 3000);
@@ -42142,6 +42213,8 @@ const consumersPopover = {
         await h.ev(`window.__resmonFixture?.set(${JSON.stringify(consumersResmon(false))})`);
         await settle(200);
         const compactUp = await openFromChip();
+        await polishWaitFor(h, `!!${CONSUMERS_RUN}`, 3000);
+        await h.ev(CONSUMERS_OPEN_RUN);
         await polishWaitFor(h, `!!document.querySelector("[data-consumers-arc]") && !!document.querySelector("[data-consumer-command]")`, 3000);
         await settle(400);
         const first = await h.ev(`({
@@ -42242,16 +42315,17 @@ const CP_READING = {
     ],
 };
 
-// swaps the app's own WorkspaceService.CloseTab (the instance agentactions.ts imports) for one that records the tab
+// swaps the app's own WorkspaceService.CloseTab (the instance closetab.ts, which every close goes through, imports) for
+// one that records the tab
 async function installClosePickedMock(h) {
     const resolved = await ahResolveModules(h);
     if (resolved.error) return `unresolved: ${resolved.error}`;
     return h.ev(`(async () => {
         if (window.${CP_CLOSE_KEY}) return "already-installed";
-        const from = new URL("../view/agents/agentactions.ts", ${JSON.stringify(resolved.urls.store)}).href;
+        const from = new URL("../view/agents/closetab.ts", ${JSON.stringify(resolved.urls.store)}).href;
         const src = await (await fetch(from)).text();
         const m = src.match(/["']([^"'\\s]*\\/store\\/services\\.ts(?:\\?[^"'\\s]*)?)["']/);
-        if (!m) return "agentactions.ts does not import services.ts";
+        if (!m) return "closetab.ts does not import services.ts";
         const svc = (await import(new URL(m[1], from).href)).WorkspaceService;
         if (!svc) return "no WorkspaceService";
         const state = { svc, calls: [] };
@@ -42312,7 +42386,12 @@ const consumersClosePicked = {
 
         const chipReady = await polishWaitFor(h, `!!document.querySelector("[data-worker-capacity]")`, 10000);
         await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
-        const rows = await polishWaitFor(h, `document.querySelectorAll("[data-consumer-row]").length === 6`, 5000);
+        // the worker sits under its run's head
+        const rows = await polishWaitFor(
+            h,
+            `document.querySelectorAll("[data-consumer-row]").length === 6 && !!document.querySelector('[data-consumers-run="77aa11bb-fx"]')`,
+            5000
+        );
         const rest = await h.ev(`({
             ticks: [...document.querySelectorAll("[data-consumer-pick]")].map((t) => t.dataset.consumerPick),
             shown: [...document.querySelectorAll("[data-consumer-pick]")].filter((t) => t.getClientRects().length > 0).length,
@@ -44942,12 +45021,12 @@ const agentChat = {
                 { pin27, back27 }
             );
 
-            // 28. the model chip opens a menu of the three aliases with the current one checked; Escape closes it; picking Sonnet
-            // types /model sonnet into the block and closes the menu
+            // 28. the model chip opens a plain menu of the four families (names only) with the current one checked; Escape closes
+            // it; picking Sonnet types its full model id into the block and closes the menu
             await showAgent(A);
             await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-model]")`, AC_WAIT_MS);
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-model]")?.click()`);
-            const up28 = await polishWaitFor(h, `${acMenuRows("Model")}.length === 3`, 3000);
+            const up28 = await polishWaitFor(h, `${acMenuRows("Model")}.length === 4`, 3000);
             const menu28 = await h.ev(`(() => ({
                 rows: ${acMenuRows("Model")}.map((r) => [r.getAttribute("data-chat-model-choice"), r.getAttribute("aria-checked"), r.textContent.trim()]),
                 expanded: ${acLayer(A)}?.querySelector("[data-chat-model]")?.getAttribute("aria-expanded") ?? null,
@@ -44958,16 +45037,17 @@ const agentChat = {
             const stayed28 = await h.ev(acOnScreen(A));
             const before28 = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-model]")?.click()`);
-            await polishWaitFor(h, `${acMenuRows("Model")}.length === 3`, 3000);
+            await polishWaitFor(h, `${acMenuRows("Model")}.length === 4`, 3000);
             await h.ev(`${acMenu("Model")}?.querySelector('[data-chat-model-choice="sonnet"]')?.click()`);
-            const picked28 = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.blockid === ${JSON.stringify(blockA)} && c.data.input === "/model sonnet")`, 3000);
+            const picked28 = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.blockid === ${JSON.stringify(blockA)} && c.data.input === "/model claude-sonnet-5-5")`, 3000);
             const closedAfter28 = await polishWaitFor(h, `!${acMenu("Model")}`, 3000);
             const typed28 = (await acSettled(h, blockA)).slice(before28);
             rec(
-                "28. the model chip opens a menu of Opus, Sonnet and Haiku with the agent's model checked (aria-checked on one row), Escape closes it and the chat stays on screen, and picking Sonnet types /model sonnet into A's block and closes the menu",
-                up28 && JSON.stringify(menu28.rows.map((r) => r[0])) === JSON.stringify(["opus", "sonnet", "haiku"]) &&
+                "28. the model chip opens a menu of Fable, Opus, Sonnet and Haiku, each row only its name, with the agent's model checked (aria-checked on one row), Escape closes it and the chat stays on screen, and picking Sonnet types /model claude-sonnet-5-5 into A's block and closes the menu",
+                up28 && JSON.stringify(menu28.rows.map((r) => r[0])) === JSON.stringify(["fable", "opus", "sonnet", "haiku"]) &&
+                    JSON.stringify(menu28.rows.map((r) => r[2])) === JSON.stringify(["Fable 5.2", "Opus 5.5", "Sonnet 5.5", "Haiku 5.5"]) &&
                     menu28.rows.filter((r) => r[1] === "true").map((r) => r[0]).join() === "opus" && menu28.expanded === "true" &&
-                    closed28 && stayed28 && picked28 && JSON.stringify(typed28) === JSON.stringify(["/model sonnet", "\r"]) && closedAfter28,
+                    closed28 && stayed28 && picked28 && JSON.stringify(typed28) === JSON.stringify(["/model claude-sonnet-5-5", "\r"]) && closedAfter28,
                 { menu28, closed28, stayed28, picked28, typed28, closedAfter28 }
             );
 
@@ -54207,6 +54287,26 @@ const jobqueueAgentTag = {
             })()`);
         await h.goto("agent");
         await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${JQT_AGENT}"]')`, 8000);
+        // the fixture's block is not a real one, so its pane's controller start fails ("error getting block: not
+        // found") and the row says failed to start, which rightly wins over a queued tag. The agent this scenario is
+        // about is a working one: clear that refusal, once the pane has had its try
+        await new Promise((r) => setTimeout(r, 1500));
+        const started = await lookEval(h, `
+            const { globalStore } = await mod("app/store/jotaiStore.ts");
+            const { getStartErrorAtom } = await mod("app/view/agents/agentcontrollerstore.ts");
+            globalStore.set(getStartErrorAtom(${JSON.stringify(JQT_BLOCK)}), undefined);
+            return true;
+        `);
+        const startedShown = await polishWaitFor(
+            h,
+            `!(document.querySelector('[data-agent-row="${JQT_AGENT}"]')?.textContent ?? "").includes("failed to start")`,
+            3000
+        );
+        rec(
+            "0. the fixture agent reads as started (its fake block's start refusal cleared)",
+            started === true && startedShown,
+            JSON.stringify({ started, startedShown })
+        );
 
         // 1. the waiting agent's row reads queued #1, why in its tooltip
         await h.ev(jqtSnapshot(20_000));
@@ -54281,6 +54381,265 @@ const jobqueueAgentTag = {
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
         });
         await step("leave on the Cockpit", () => h.goto("cockpit"));
+    },
+};
+
+// --- hologram-recovers: a lost WebGL context took the hologram away for good, leaving Sprout until the form was picked
+// again; every terminal's xterm holds a context too, and Chromium drops the oldest past its cap. The hologram now comes
+// back on a fresh canvas after HOLOGRAM_RETRY_MS, and gives up after HOLOGRAM_MAX_FAILS losses in a window. The losses
+// here are real ones, forced through WEBGL_lose_context on the hologram's own canvas.
+const HOLO_FORM_KEY = "jarvis.pet.form";
+const HOLO = `document.querySelector("[data-pet-hologram]")`;
+// the hologram's canvas loses its context; true when there was one to lose
+const holoLose = `(() => {
+    const c = ${HOLO}?.querySelector("canvas");
+    const gl = c && (c.getContext("webgl2") || c.getContext("webgl"));
+    const ext = gl?.getExtension("WEBGL_lose_context");
+    if (!ext) return false;
+    window.__holoLostCanvas = c;
+    ext.loseContext();
+    return true;
+})()`;
+// whether a hologram shows on a canvas other than the one that was lost, with a live context
+const holoBackFresh = `(() => {
+    const c = ${HOLO}?.querySelector("canvas");
+    if (!c || c === window.__holoLostCanvas) return false;
+    const gl = c.getContext("webgl2") || c.getContext("webgl");
+    return !!gl && !gl.isContextLost();
+})()`;
+
+const hologramRecovers = {
+    name: "hologram-recovers",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { prevForm: await h.ev(`localStorage.getItem(${JSON.stringify(HOLO_FORM_KEY)})`) };
+        try {
+            // the form is read once at boot (atomWithStorage getOnInit)
+            await h.ev(`localStorage.setItem(${JSON.stringify(HOLO_FORM_KEY)}, JSON.stringify("hologram"))`);
+            ctx.formSet = true;
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the hologram form set", false, ctx.arrangeError);
+            return steps;
+        }
+        await h.goto("agent");
+        // the startup loader draws Jarvis in the middle first; the corner hologram fades in once it is done
+        const shown = await polishWaitFor(h, `!!${HOLO}?.querySelector("canvas")`, 20_000);
+        await h.shot("cdp-shots/hologram-recovers-1-shown.png");
+        rec("1. with the hologram form picked, the hologram shows", shown, JSON.stringify({ shown }));
+        if (!shown) {
+            return steps;
+        }
+
+        // 2. a real context loss: Sprout stands in at once
+        const lost = await h.ev(holoLose);
+        const sprout = await polishWaitFor(h, `!${HOLO}`, 3000);
+        await h.shot("cdp-shots/hologram-recovers-2-sprout.png");
+        rec("2. its context lost, the hologram goes and Sprout stands in", lost && sprout, JSON.stringify({ lost, sprout }));
+
+        // 3. it comes back on a fresh canvas with a live context
+        const back = await polishWaitFor(h, holoBackFresh, 12_000);
+        await h.shot("cdp-shots/hologram-recovers-3-back.png");
+        rec("3. after the retry delay the hologram is back, on a fresh canvas with a live context", back, JSON.stringify({ back }));
+
+        // 4. a second loss inside the window still comes back; the third stops the retries, so Sprout stays
+        const lost2 = await h.ev(holoLose);
+        const back2 = lost2 && (await polishWaitFor(h, holoBackFresh, 12_000));
+        const lost3 = back2 && (await h.ev(holoLose));
+        const gone3 = lost3 && (await polishWaitFor(h, `!${HOLO}`, 3000));
+        // longer than the retry delay: it does not come back
+        await new Promise((r) => setTimeout(r, 8000));
+        const stayed = !(await h.ev(`!!${HOLO}`));
+        await h.shot("cdp-shots/hologram-recovers-4-gave-up.png");
+        rec(
+            "4. a second loss comes back too; the third within the window leaves Sprout for good, so a failing GPU cannot loop",
+            back2 && gone3 && stayed,
+            JSON.stringify({ lost2, back2, lost3, gone3, stayed })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        try {
+            if (ctx.formSet) {
+                await h.ev(restoreStorageKey(HOLO_FORM_KEY, ctx.prevForm));
+            }
+            await ahReload(h);
+        } catch (e) {
+            console.error(`hologram-recovers teardown: ${e?.message ?? e}`);
+        }
+    },
+};
+
+// --- jobqueue-run-tag: an engine step of a run (a task's merge Verify) waits in the job queue under no agent's block, so
+// it used to show nowhere in the Agent tree: the task's row read "verifying 2m" while its Verify had not started, and a
+// folded run said nothing. agent-tree-rail's fixture run (a lead, t-1 dispatched) carries it; its jobs are set through
+// window.__jobQueueInject with the run's id and t-1, so no real Verify runs.
+const JQR_TREE = `document.querySelector("[data-agent-tree]")`;
+const jqrSnapshot = (runId, jobs) => `window.__jobQueueInject({ slots: 1, mode: "auto", jobs: ${jobs(runId)} })`;
+const jqrVerify = (runId, extra = "") => `[
+    { id: "jqr-verify", name: "scripts/verify.mjs", bytes: 3221225472, position: 1, reason: "needs 3.0 GB, 1.2 GB free",
+      queuedts: Date.now() - 20_000, runid: ${JSON.stringify(runId)}, taskids: ["t-1"], label: "Verify · noop" }${extra}
+]`;
+
+const jobqueueRunTag = {
+    name: "jobqueue-run-tag",
+    surface: "agent",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-jq-run-"));
+        const ctx = {
+            cwd,
+            prevRail: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`),
+            prevSections: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`),
+            prevCollapsed: await h.ev(`localStorage.getItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`),
+        };
+        try {
+            await arrangeTreeRail(h, ctx);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        rec(
+            "0. the fixture run's lead nested and t-1 dispatched",
+            ctx.arrangeError == null && ctx.leadFocused === true && ctx.dispatched === true,
+            ctx.arrangeError ?? JSON.stringify({ runId: ctx.runId, dispatched: ctx.dispatched })
+        );
+        if (ctx.arrangeError != null) {
+            return steps;
+        }
+        const RUN_TAG = `[data-run-queued="${ctx.runId}"]`;
+        const read = () =>
+            h.ev(`(() => {
+                const tree = ${JQR_TREE};
+                const runTag = tree?.querySelector(${JSON.stringify(RUN_TAG)});
+                // t-1's worker row is titled by its task's label; a worker the roster does not list has no
+                // data-agent-row, so the row is found from its title's column, which holds its second line
+                const title = tree && [...tree.querySelectorAll("div")].find(
+                    (d) => d.textContent.trim() === "noop" && d.children.length === 0
+                );
+                const col = title?.parentElement;
+                const sub = col?.querySelector("span.truncate");
+                const workerTag = col?.querySelector("[data-agent-queued]");
+                return {
+                    run: runTag ? { text: runTag.textContent.trim(), title: runTag.title } : null,
+                    worker: col
+                        ? {
+                              sub: sub?.textContent.trim() ?? null,
+                              subTitle: sub?.title ?? null,
+                              clipped: sub ? sub.scrollWidth > sub.clientWidth + 1 : null,
+                              tag: workerTag?.textContent.trim() ?? null,
+                              tagTitle: workerTag?.title ?? null,
+                              tagWhole: workerTag ? workerTag.scrollWidth <= workerTag.clientWidth + 1 : null,
+                          }
+                        : null,
+                };
+            })()`);
+        await h.goto("agent");
+
+        // 1. the run's Verify for t-1 waits: the run's line and t-1's row both say so, and t-1 reads verify queued
+        await h.ev(jqrSnapshot(ctx.runId, jqrVerify));
+        await polishWaitFor(h, `!!${JQR_TREE}?.querySelector(${JSON.stringify(RUN_TAG)})`, 3000);
+        const one = await read();
+        await h.shot("cdp-shots/jobqueue-run-tag.png");
+        rec(
+            // the sidebar-declutter spec: a status tag such as QueuedJobTag stays whole beside the columns, and the words
+            // left of it shrink. So t-1's row carries the tag, whole, and its words (whole in their tooltip) say verify
+            // queued; at the tree's width they are mostly cut. `clipped` is reported, not judged
+            "1. the run's line says queued #1 naming Verify · noop; t-1's row carries a whole queued #1 tag naming it, and its words say verify queued (whole in their tooltip)",
+            one.run?.text === "queued #1" &&
+                one.run.title.startsWith("Verify · noop: scripts/verify.mjs waits its turn") &&
+                one.worker?.tag === "queued #1" &&
+                one.worker.tagWhole === true &&
+                one.worker.tagTitle.startsWith("Verify · noop: scripts/verify.mjs waits its turn") &&
+                /^t-1 · verify queued/.test(one.worker.sub ?? "") &&
+                one.worker.subTitle === one.worker.sub,
+            JSON.stringify(one)
+        );
+
+        // 2. folded, the run still says it waits
+        const folded = await h.ev(`(async () => {
+            const tree = ${JQR_TREE};
+            // the run's own line holds both its fold chip and its tag
+            const line = () => tree?.querySelector(${JSON.stringify(RUN_TAG)})?.parentElement ?? null;
+            const chip = line()?.querySelector('[aria-label="Hide workers"]');
+            chip?.click();
+            for (let i = 0; i < 20 && line()?.querySelector('[aria-label="Hide workers"]'); i++) await new Promise((r) => setTimeout(r, 100));
+            return {
+                clicked: !!chip,
+                folded: !!line()?.querySelector('[aria-label="Show workers"]'),
+                tag: tree?.querySelector(${JSON.stringify(RUN_TAG)})?.textContent.trim() ?? null,
+            };
+        })()`);
+        await h.shot("cdp-shots/jobqueue-run-tag-folded.png");
+        rec(
+            "2. folded, the run's line keeps its queued #1",
+            folded.clicked && folded.folded && folded.tag === "queued #1",
+            JSON.stringify(folded)
+        );
+        await h.ev(
+            `${JQR_TREE}?.querySelector(${JSON.stringify(RUN_TAG)})?.parentElement?.querySelector('[aria-label="Show workers"]')?.click()`
+        );
+
+        // 3. two of its jobs wait: the run reads 2 queued, both named in its tooltip
+        await h.ev(
+            jqrSnapshot(ctx.runId, (id) =>
+                jqrVerify(
+                    id,
+                    `, { id: "jqr-final", name: "final-verify", bytes: 6442450944, position: 2, queuedts: Date.now() - 10_000, runid: ${JSON.stringify(id)}, label: "Final" }`
+                )
+            )
+        );
+        await polishWaitFor(
+            h,
+            `${JQR_TREE}?.querySelector(${JSON.stringify(RUN_TAG)})?.textContent.trim() === "2 queued"`,
+            3000
+        );
+        const two = await read();
+        rec(
+            "3. with its Verify and its Final waiting, the run's line says 2 queued and names both",
+            two.run?.text === "2 queued" && two.run.title.includes("Verify · noop") && two.run.title.includes("Final"),
+            JSON.stringify(two)
+        );
+
+        // 4. once the Verify runs and the Final is gone, no tag is left and t-1 no longer reads verify queued
+        await h.ev(`window.__jobQueueInject({ slots: 1, mode: "auto", jobs: [
+            { id: "jqr-verify", name: "scripts/verify.mjs", bytes: 3221225472, running: true, queuedts: Date.now() - 30_000,
+              startedts: Date.now(), runid: ${JSON.stringify(ctx.runId)}, taskids: ["t-1"], label: "Verify · noop" },
+        ] })`);
+        await polishWaitFor(h, `!${JQR_TREE}?.querySelector(${JSON.stringify(RUN_TAG)})`, 3000);
+        const ran = await read();
+        rec(
+            "4. once its step runs, neither the run nor t-1 carries a tag, and t-1 no longer reads verify queued",
+            ran.run == null && ran.worker?.tag == null && !/verify queued/.test(ran.worker?.sub ?? ""),
+            JSON.stringify(ran)
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        try {
+            await h.ev("window.__jobQueueInject?.({ slots: 1, jobs: [] })");
+        } catch (e) {
+            console.error(`jobqueue-run-tag teardown: clear the injected snapshot failed: ${e?.message ?? e}`);
+        }
+        await teardownFixtureRun(h, ctx, "jobqueue-run-tag", {
+            what: "restore the rail and tree preferences",
+            fn: async () => {
+                await h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail));
+                await h.ev(restoreStorageKey(RAIL_SECTIONS_KEY, ctx.prevSections));
+                await h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed));
+            },
+        });
     },
 };
 
@@ -69835,6 +70194,7 @@ export const SCENARIOS = [
     ...briefActScenarios(JARVIS_KIT),
     ...agentStartFailedScenarios(RT_KIT),
     ...agentStreamsScenarios(RT_KIT),
+    ...chatBgTasksScenarios(RT_KIT),
     ...agentSubagentsScenarios(RT_KIT),
     ...modalFocusHomeScenarios(RT_KIT),
     ...terminalStatusLineScenarios(RT_KIT),
@@ -69859,12 +70219,15 @@ export const SCENARIOS = [
     ...chatBrainstormReviewScenarios(CBR_KIT),
     ...chatVerdictHandoffScenarios(CBR_KIT),
     sidebarAgentRam,
+    ...sidebarColumnsScenarios(RT_KIT),
     machineServers,
     sidebarAgentGlyph,
     capacityWarn,
     notifyToast,
     jobqueueChip,
     jobqueueAgentTag,
+    jobqueueRunTag,
+    hologramRecovers,
     jobqueueMeasured,
     floatMini,
     floatNote,

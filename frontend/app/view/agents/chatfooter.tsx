@@ -1,7 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The footer of the chat box, as pill chips: the agent's model (a menu of the three aliases; a pick types `/model <alias>`),
+// The footer of the chat box, as pill chips: the agent's model (a menu of the model families by name only, as Claude
+// Code's own menu has them; a pick types `/model <id>`), its effort (a menu of Claude Code's levels drawn as a five-bar meter; a pick types
+// `/effort <level>`),
 // Claude Code's permission mode (a menu of the modes; a pick presses Shift+Tab until Claude Code's footer names that
 // mode) and, at the right, how full the context is as a small ring with its percent. The mode is read off the terminal
 // that stays mounted under the chat (tuiscreen.ts). A dialog or a menu covers Claude Code's footer for a while: the
@@ -15,6 +17,7 @@ import { PopoverReveal } from "@/app/element/popoverreveal";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { readTermLines } from "@/app/view/term/termpaste";
+import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { Check, ChevronUp, Lock } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
@@ -24,6 +27,9 @@ import type { AgentVM } from "./agentsviewmodel";
 import {
     contextWarn,
     currentModelAlias,
+    EFFORT_CHOICES,
+    effortChoice,
+    effortCommand,
     MODE_CHOICES,
     MODEL_CHOICES,
     modeLabel,
@@ -31,7 +37,7 @@ import {
     modeStep,
     ringDash,
 } from "./chatfootermodel";
-import { tuiMode, type ClaudeMode } from "./tuiscreen";
+import { tuiEffort, tuiMode, type ClaudeMode, type EffortLevel } from "./tuiscreen";
 
 // the bottom rows of the screen hold the footer, even under a notice or the effort line
 const SCREEN_ROWS = 12;
@@ -72,10 +78,18 @@ export function Fold({ children, className }: { children: ReactNode; className?:
     );
 }
 
-// The last mode Claude Code's footer named, read on mount and each second while the page is visible; `read` reads now
-// and answers what that read found (null when no footer shows). A read that finds no footer leaves the mode as it was.
-function useTuiMode(blockId: string | undefined): { mode: ClaudeMode | null; read: () => ClaudeMode | null } {
+// The last mode Claude Code's footer named and the last effort its effort line named, read on mount and each second
+// while the page is visible; `read` reads now and answers the mode that read found (null when no footer shows). A read
+// that finds no footer leaves the mode as it was, and one with no effort line the effort (the line shows only for a
+// while after a change, so a pick sets the effort at once with `setEffort`).
+function useTuiMode(blockId: string | undefined): {
+    mode: ClaudeMode | null;
+    effort: EffortLevel | null;
+    setEffort: (e: EffortLevel | null) => void;
+    read: () => ClaudeMode | null;
+} {
     const [mode, setMode] = useState<ClaudeMode | null>(null);
+    const [effort, setEffort] = useState<EffortLevel | null>(null);
     const read = useCallback((): ClaudeMode | null => {
         if (blockId == null) {
             return null;
@@ -85,10 +99,15 @@ function useTuiMode(blockId: string | undefined): { mode: ClaudeMode | null; rea
         if (next != null) {
             setMode(next);
         }
+        const seenEffort = lines == null ? null : tuiEffort(lines);
+        if (seenEffort != null) {
+            setEffort(seenEffort);
+        }
         return next;
     }, [blockId]);
     useEffect(() => {
         setMode(null);
+        setEffort(null);
         read();
         const poll = setInterval(() => {
             if (document.visibilityState === "visible") {
@@ -97,7 +116,7 @@ function useTuiMode(blockId: string | undefined): { mode: ClaudeMode | null; rea
         }, POLL_MS);
         return () => clearInterval(poll);
     }, [read]);
-    return { mode, read };
+    return { mode, effort, setEffort, read };
 }
 
 // One chip's menu: its open state, the closes (a press outside, Escape, Tab out) and ↑ / ↓ between its rows. The
@@ -211,13 +230,13 @@ function ChipMenu({
 
 function ModelChip({ agent }: { agent: AgentVM }) {
     const current = currentModelAlias(agent.model);
-    const pick = (alias: string, m: ChipMenuState) => {
+    const pick = (id: string, m: ChipMenuState) => {
         const blockid = agent.blockId;
         m.close(true);
         if (blockid == null) {
             return;
         }
-        fireAndForget(() => submitToAgent(blockid, modelCommand(alias)));
+        fireAndForget(() => submitToAgent(blockid, modelCommand(id)));
     };
     return (
         <ChipMenu
@@ -234,7 +253,6 @@ function ModelChip({ agent }: { agent: AgentVM }) {
                     onClick={() => m.setOpen(!m.open)}
                     className={cn(CHIP, chipTone(m.open))}
                 >
-                    <span aria-hidden className="h-[8px] w-[8px] flex-none rounded-full bg-accent" />
                     <span className="min-w-0 truncate">{agent.model || "Model"}</span>
                     <ChevronUp size={11} strokeWidth={2.2} aria-hidden className="flex-none" />
                 </button>
@@ -250,16 +268,122 @@ function ModelChip({ agent }: { agent: AgentVM }) {
                             aria-checked={c.alias === current}
                             tabIndex={-1}
                             data-chat-model-choice={c.alias}
-                            onClick={() => pick(c.alias, m)}
+                            onClick={() => pick(c.id, m)}
                             className={row(c.alias === current)}
                         >
-                            <span className="min-w-0 flex-1 text-left">{c.label}</span>
+                            <span className="min-w-0 flex-1 truncate text-left">{c.label}</span>
                             <span className="flex w-[14px] flex-none justify-center">
                                 {c.alias === current ? <Check size={13} aria-hidden /> : null}
                             </span>
                         </button>
                     ))}
-                    <div className={MENU_FOOT}>Sends /model to Claude Code</div>
+                </>
+            )}
+        />
+    );
+}
+
+// Five bars rising left to right, the first `filled` in the accent: the effort level at a glance (0 = not known)
+function EffortMeter({ filled, size }: { filled: number; size: "chip" | "row" }) {
+    return (
+        <svg
+            width={size === "chip" ? 14 : 17}
+            height={size === "chip" ? 11 : 13}
+            viewBox="0 0 17 13"
+            aria-hidden
+            className="flex-none"
+        >
+            {[0, 1, 2, 3, 4].map((i) => {
+                const bar = 4 + i * 2.25;
+                return (
+                    <rect
+                        key={i}
+                        x={i * 3.5}
+                        y={13 - bar}
+                        width={2.4}
+                        height={bar}
+                        rx={0.8}
+                        className={i < filled ? "fill-accent" : "fill-edge-strong"}
+                    />
+                );
+            })}
+        </svg>
+    );
+}
+
+function EffortChip({
+    effort,
+    onPick,
+}: {
+    effort: EffortLevel | null;
+    onPick: (level: EffortLevel | "auto", m: ChipMenuState) => void;
+}) {
+    const filled = effort == null ? 0 : EFFORT_CHOICES.findIndex((c) => c.level === effort) + 1;
+    return (
+        <ChipMenu
+            menuLabel="Effort"
+            width="w-[260px]"
+            chip={(m) => (
+                <button
+                    type="button"
+                    data-chip-trigger
+                    data-chat-effort={effort ?? ""}
+                    aria-haspopup="menu"
+                    aria-expanded={m.open}
+                    title="Effort (sends /effort)"
+                    onClick={() => m.setOpen(!m.open)}
+                    className={cn(CHIP, "whitespace-nowrap", chipTone(m.open))}
+                >
+                    <EffortMeter filled={filled} size="chip" />
+                    <span>{effort == null ? "Effort" : effortChoice(effort).label}</span>
+                    <ChevronUp size={11} strokeWidth={2.2} aria-hidden className="flex-none" />
+                </button>
+            )}
+            menu={(m) => (
+                <>
+                    <div className={MENU_CAPTION}>Effort</div>
+                    {EFFORT_CHOICES.map((c, i) => (
+                        <button
+                            key={c.level}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={c.level === effort}
+                            tabIndex={-1}
+                            data-chat-effort-choice={c.level}
+                            onClick={() => onPick(c.level, m)}
+                            className={row(c.level === effort)}
+                        >
+                            <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[7px] bg-accent/10">
+                                <EffortMeter filled={i + 1} size="row" />
+                            </span>
+                            <span className="flex min-w-0 flex-1 flex-col text-left">
+                                <span className="truncate">{c.label}</span>
+                                <span className="truncate text-[11.5px] text-muted">{c.note}</span>
+                            </span>
+                            <span className="flex w-[14px] flex-none justify-center">
+                                {c.level === effort ? <Check size={13} aria-hidden /> : null}
+                            </span>
+                        </button>
+                    ))}
+                    <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={false}
+                        tabIndex={-1}
+                        data-chat-effort-choice="auto"
+                        onClick={() => onPick("auto", m)}
+                        className={row(false)}
+                    >
+                        <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[7px] bg-surface-hover">
+                            <EffortMeter filled={0} size="row" />
+                        </span>
+                        <span className="flex min-w-0 flex-1 flex-col text-left">
+                            <span className="truncate">Auto</span>
+                            <span className="truncate text-[11.5px] text-muted">The model's own default</span>
+                        </span>
+                        <span className="w-[14px] flex-none" />
+                    </button>
+                    <div className={MENU_FOOT}>Sends /effort to Claude Code</div>
                 </>
             )}
         />
@@ -278,7 +402,7 @@ function ModeChip({ mode, onPick }: { mode: ClaudeMode; onPick: (target: ClaudeM
                     data-chat-mode={mode}
                     aria-haspopup="menu"
                     aria-expanded={m.open}
-                    title="Permission mode (Shift+Tab cycles it)"
+                    title={`Permission mode (${formatChordString("Shift:Tab")} cycles it)`}
                     onClick={() => m.setOpen(!m.open)}
                     className={cn(CHIP, "whitespace-nowrap", chipTone(m.open))}
                 >
@@ -355,7 +479,16 @@ function ContextRing({ pct, dim }: { pct: number; dim: boolean }) {
 
 export function ChatFooter({ agent }: { agent: AgentVM }) {
     const asleep = agent.sleeping != null;
-    const { mode, read } = useTuiMode(asleep ? undefined : agent.blockId);
+    const { mode, effort, setEffort, read } = useTuiMode(asleep ? undefined : agent.blockId);
+    const pickEffort = (level: EffortLevel | "auto", m: ChipMenuState) => {
+        m.close(true);
+        const blockid = agent.blockId;
+        if (blockid == null || asleep) {
+            return;
+        }
+        setEffort(level === "auto" ? null : level);
+        fireAndForget(() => submitToAgent(blockid, effortCommand(level)));
+    };
     const swap = usePartMotion(microFade);
     // a mode pick's loop: a newer pick, a sleep, another block and an unmount each end the one running
     const run = useRef(0);
@@ -448,6 +581,13 @@ export function ChatFooter({ agent }: { agent: AgentVM }) {
                     )}
                 </AnimatePresence>
             </div>
+            <AnimatePresence initial={false}>
+                {!asleep ? (
+                    <Fold key="effort">
+                        <EffortChip effort={effort} onPick={pickEffort} />
+                    </Fold>
+                ) : null}
+            </AnimatePresence>
             <AnimatePresence initial={false}>
                 {!asleep && mode != null ? (
                     <Fold key="mode">

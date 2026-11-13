@@ -253,6 +253,13 @@ describe("what the views read", () => {
             ["effort:b", false, true],
         ]);
     });
+    it("leaves a topic out: only its sub-initiatives move", () => {
+        const trackers = [
+            { oref: "effort:t", status: "active", updatedts: 1, blockedChunks: [], topic: true },
+            { oref: "effort:a", status: "active", updatedts: 1, blockedChunks: [] },
+        ];
+        expect(reviewCards(trackers, [], [], []).map((c) => c.oref)).toEqual(["effort:a"]);
+    });
     it("heads the block with the mark, or the cursor", () => {
         expect(sinceHeading(undefined)).toBe("since you last looked");
         expect(sinceHeading(new Date(2026, 9, 10, 12).getTime())).toBe("last reviewed Oct 10");

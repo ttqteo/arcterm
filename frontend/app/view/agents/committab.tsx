@@ -7,6 +7,7 @@
 // ↑/↓, opens that file's diff against HEAD at once; Space ticks the row; Ctrl+Enter in the box commits.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight, Folder, RefreshCw } from "lucide-react";
@@ -502,7 +503,7 @@ export function CommitTab({
                     data-commit-button
                     disabled={!ready}
                     onClick={() => void commitNow(cwd)}
-                    title="Commit the ticked files (Ctrl+Enter)"
+                    title={`Commit the ticked files (${formatChordString("Mod:Enter")})`}
                     className={cn(
                         "flex h-[32px] items-center justify-center gap-[10px] rounded-[8px] text-[12px] font-semibold",
                         ready
@@ -512,7 +513,7 @@ export function CommitTab({
                 >
                     {run.running ? <RefreshCw size={13} className="animate-spin" /> : null}
                     <span>{commitLabel(n, amend)}</span>
-                    <span className="font-mono text-[10px] opacity-70">Ctrl+Enter</span>
+                    <span className="font-mono text-[10px] opacity-70">{formatChordString("Mod:Enter")}</span>
                 </button>
                 {run.failure ? (
                     <CommitFailure failure={run.failure} onDismiss={() => dismissCommitFailure(cwd)} />

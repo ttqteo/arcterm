@@ -1051,7 +1051,12 @@ export function InitiativeBlockView({ raw }: { raw: string }) {
     if (host == null || block == null) {
         return <CodeBlock code={raw} lang={INITIATIVE_LANG} />;
     }
-    return <BlockCard host={host} block={block} />;
+    // the margin a visual block takes in prose (chatvisualview.tsx my-2): two blocks in a row otherwise touch
+    return (
+        <div data-chat-initiative-block className="my-2">
+            <BlockCard host={host} block={block} />
+        </div>
+    );
 }
 
 function MessageLive({ host, agentId, card }: { host: Host; agentId: string; card: MessageCard }) {

@@ -5,7 +5,16 @@ import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Layers, Pause, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
-import { bypassOnly, chipText, chipTitle, longWait, pauseLeft, queuedTag, recentBypass } from "./jobqueue";
+import {
+    bypassOnly,
+    chipText,
+    chipTitle,
+    longWait,
+    pauseLeft,
+    queuedTag,
+    recentBypass,
+    runQueuedTag,
+} from "./jobqueue";
 import { jobQueueAtom, toggleJobQueue } from "./jobqueuestore";
 
 // how often a waiting or paused queue re-reads the clock, so the chip turns to its warning, or counts a pause down,
@@ -60,17 +69,39 @@ export function JobQueueChip() {
 // Jobs popover from the tag, where Run now and Skip are, and never reaches the row it sits on. It keeps its own clock,
 // as the chip does, so it turns to its warning past LONG_WAIT_MS without its row or header ticking every second.
 export function QueuedJobTag({ job }: { job: JobQueueJob }) {
+    useWaitClock();
+    return <QueueTagButton tag={queuedTag(job, Date.now())} attrs={{ "data-agent-queued": job.id }} />;
+}
+
+// A run's tag while any of its jobs waits: its engine steps and its agents' commands, so a folded run still says it
+// waits on the queue. One job reads as an agent's tag does; several read "N queued", each named in the tooltip.
+export function RunQueuedTag({ runId, jobs }: { runId: string; jobs: readonly JobQueueJob[] }) {
+    useWaitClock();
+    const tag = runQueuedTag(jobs, Date.now());
+    return tag == null ? null : <QueueTagButton tag={tag} attrs={{ "data-run-queued": runId }} />;
+}
+
+// the tags keep their own clock, as the chip does, so they turn to the warning without their row ticking every second
+function useWaitClock() {
     const [, setTick] = useState(0);
     useEffect(() => {
         const timer = setInterval(() => setTick((n) => n + 1), LONG_WAIT_CHECK_MS);
         return () => clearInterval(timer);
     }, []);
-    const tag = queuedTag(job, Date.now());
+}
+
+function QueueTagButton({
+    tag,
+    attrs,
+}: {
+    tag: { label: string; title: string; warn: boolean };
+    attrs: Record<string, string>;
+}) {
     const Icon = tag.warn ? TriangleAlert : Layers;
     return (
         <button
             type="button"
-            data-agent-queued={job.id}
+            {...attrs}
             aria-haspopup="dialog"
             title={`${tag.title}. Click for Run now or Skip.`}
             onClick={(e) => {

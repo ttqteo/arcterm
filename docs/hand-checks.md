@@ -12,6 +12,113 @@ does not, say what you saw and it becomes a bug row under Actionable.
   without a flash of nothing on the first render after a reload (`frontend/app/view/agents/chatruncard.tsx`,
   `chatruncards.ts` `placeRunCards`, `chatconversation.tsx`; the `chat-verdict-handoff` scenario covers only an entry
   still in the queue; 1be9dcb93).
+- [ ] (arcterm) Confirm the design's button at the card's foot: have a brainstorm end with 5+ guesses → in Chat the
+  card's top line has no button, and Confirm all N guesses sits right-aligned on the `N yours ›` row at its foot
+  (alone there when nothing is yours yet); confirm them all → Check with a builder takes the same place. Commit:
+  the Confirm card button fix in `chatbrainstormconfirm.tsx`.
+- [ ] (arcterm) Two Add to initiative cards in one reply sit apart: have a Claude agent in Chat propose two
+  `arc-initiative` blocks in one reply → the cards (and their folded rows once handled) have the same gap as a visual
+  block, not touching borders. Then ask it "bỏ vào initiative đi" → it runs `wsh effort` itself and says what it
+  added, with no card. `chatinitiativecard.tsx` InitiativeBlockView, `skills/initiatives/SKILL.md`.
+- [ ] (arcterm) A brainstorm's ask says "asking" once: have an agent brainstorm until it asks a question → its Agent
+  tree row's second line reads "asking question N" (amber), with no "asking" note before it; a held card (Token burn)
+  on such an agent still shows its header note. Commit: the "asking asking" fix in `agenttree.tsx`.
+- [ ] (arcterm) An engine step claims the measured peak when it is higher: with `scripts/cdp/final-verify.mjs` measured
+  at 4.8 GB in `jobpeaks.json` (data dir), start a run on this repo → its Final row in the Jobs popover reads about
+  5.7 GB "measured", not "3 GB est.", and its tooltip lists the agents' runs. Its Verify still reads 2.5 GB est. (the
+  agents' 0.9 GB never lowers it). Then skip a `task check:ts` a Claude agent queued with `run_in_background` (its bash
+  waits in `wsh jobslot --hold-parent`, so the meter sees it) from the popover → `jobpeaks.json` gets no new
+  peak for it (`pkg/orchestrate/plancmd.go` engineStepSize, `jobpeaks.Ran`).
+- [ ] (arcterm) Canvas Copy screenshot: open a canvas (an agent's canvas pane, and Agent → Canvas gallery → a canvas),
+  press Copy above a board's right edge → "Copied" for a moment, and pasting into Paint or a chat gives the board as
+  shown, without the Copy button or the pane around it; under All each tile has its own. Check it in the packaged app
+  too (clipboard image writes need a secure origin), and on a Mac (Screen Recording permission). `canvaspane.tsx`.
+- [ ] (arcterm) Chat box background line, the presses its scenario (`chat-bg-tasks`) leaves out: have a Claude agent
+  start a background `sleep 600` and a background subagent, open the line's list → Stop on the shell row ends it and
+  the row leaves at once (the line folds away when nothing is left); a press on the subagent row opens its
+  conversation. Also check the line goes when the agent falls asleep. Agent surface, Chat (`chatbgline.tsx`).
+- [ ] (arcterm) A lost Stop no longer leaves "Working…": make a Claude agent's Stop hook fail (point `Stop`'s command in
+  `~/.claude/settings.json` at a `sleep 15` with `timeout: 10` for one turn), let a turn end → the Terminal shows the
+  turn done, Chat still says Working…, and within ~30 s it goes idle and `waveapp.log` has `idled from its transcript`.
+  A long tool call (a 2-minute build) must keep reading Working the whole time. Agent surface, Chat
+  (`pkg/wshrpc/wshserver/wshserver_turnend.go`).
+- [ ] (arcterm) An Enter Claude Code takes as a line break is pressed again: on a machine under memory pressure, send
+  from Chat → the message lands; when a retry happened `waveapp.log` has `[chat-send] enter-linebreak … retry=1`. Watch
+  for a message submitted twice, or a toast "not sent … press Enter in the terminal" on a message that did go. Agent
+  surface, Chat (`agentsubmit.ts` confirmEnter, `chattakeback.ts` enterEcho). Unit-tested and typechecked only.
+
+- [ ] (arcterm) Hologram amber only on a question: with Settings → Jarvis → Form on Hologram, leave a gate or a run to
+  land in Jarvis's queue and no agent asking → the corner keeps its rings; have an agent ask (`wsh ask`, or a
+  permission prompt) → it turns to the amber sphere, and back once answered (`frontend/app/view/jarvis/hologramview.tsx`,
+  bb05a685b).
+- [ ] (arcterm) Mac shortcut labels: on a Mac, hover Code's wrap button (⌥Z) and Send review (⌥⇧M), a Claude agent's
+  Chat brainstorm card (Open in Brainstorm ⌥C), the Diff commit button (⌘⏎), the chat + menu (Add files ⌘U), the
+  tool picker on a missing tool (⌘I), the brainstorm hint strip (⌃⇧B) and the Jarvis tour's Initiatives steps (⌥↑ /
+  ⌥↓, ⇧N) → no "Alt" or "Ctrl" left; on Windows they still read Alt+Z, Ctrl+Enter… Unit-tested and typechecked
+  only (`keysym.fillKeys`, branch `fix/mac-key-labels`).
+- [ ] (arcterm) A run's queued engine steps show in the Agent tree: during a run on a busy machine (or with
+  `jobs:mode` `slots` and `jobs:slots` 1 while another heavy command runs), let a task merge → the run's line shows
+  "queued #N" (also folded; "N queued" with several), its tooltip names "Verify · <task>", and the task's row reads
+  "t-N · verify queued #N" until the Verify starts, then "verifying" with its clock. The CDP scenario
+  `jobqueue-run-tag` checks it on an injected queue only; the engine's `taskids` on a real job are not seen live
+  (branch `fix/run-queued-jobs`).
+- [ ] (arcterm) Topics leave Ideas: open Jarvis → the Ideas column no longer lists the topics (`wsh effort list
+  --topics`: Chat, Misc, Kael sync…); each shows in All initiatives with "+N sub", no bar or count, its
+  sub-initiatives indented under it, and "Link to…" lists it with "topic" in place of 0/0. Unit-tested only
+  (`buildEffortCards`, branch `fix/brief-topics-not-ideas`).
+- [ ] (arcterm) Initiative writes no longer queue behind a vault sync: with a vault remote set, run a burst of
+  `wsh effort chunk add/note` (a few hundred, as a cleanup script does) → none comes back `EC-TIME: timeout waiting for
+  response`; before, about 1 in 120 did, each time the sync fetched or pushed. Unit-tested only (`pkg/wavevault`
+  `TestSyncLeavesTheVaultLockFreeDuringFetchAndPush`, 8acb6f0a4).
+- [ ] (arcterm) A finished run files its open issues on standing initiatives: after the next orchestrator run with no
+  initiative named lands, its leftover issues sit on the matching existing initiative (Flaky tests, Hand checks, the
+  topic's "… bugs and polish") with no new "… follow-ups (run X)" initiative, and an issue already open gets a note,
+  not a second chunk. Prompt change only (`pkg/jarvis/leadprompt.go`, 04d6ef103).
+- [ ] (arcterm) A Chat send that never reaches Claude Code comes back: while a Claude agent works, send a message from
+  Chat → it shows Queued and, once the turn ends, lands in the conversation (the normal path, unchanged). To see the
+  failure path, make the PTY refuse input (stop the agent's process from Task Manager, then send) → a "Message to … not
+  sent" toast, no Queued bubble, the text and its file chips back in the box, and a `[chat-send] fail` line in
+  `waveapp.log`. Watch for a false failure: a message that does show in the Terminal's box but was toasted as not sent
+  (`typedEcho` read the box as empty for 8 s). Agent surface, Chat. Unit-tested and typechecked only (`agentsubmit.ts`,
+  `chatpending.ts` `echoStep`/`sendFailure`, `chattakeback.ts` `typedEcho`).
+- [ ] (arcterm) The model menu in Chat: click the model chip under a Claude agent's chat box → four rows (Fable 5.2,
+  Opus 5.5, Sonnet 5.5, Haiku 5.5), each with a tinted icon and a note, a check on the running one; pick Fable →
+  Claude Code gets `/model claude-fable-5-2` and the chip turns to the sparkles icon. Agent surface, Chat.
+- [ ] (arcterm) The Effort chip in Chat: beside the model chip, click Effort → Low…Max and Auto, each with a bar meter;
+  pick High → Claude Code gets `/effort high`, the chip reads High with three of its five bars lit, and stays High after the
+  `◐ … · /effort` line over Claude Code's box goes away. Agent surface, Chat.
+- [ ] (arcterm) Esc stops a Claude agent's turn in Chat: while it works, press Esc in the chat box → the turn stops
+  (as Esc in Claude Code); again with a message showing Queued → the turn stops and the message comes back into the
+  box; again with the focus out of the box (click in the conversation) → the turn stops, no jump to the Cockpit; once
+  idle, Esc out of the box goes back as before. Agent surface, Chat.
+- [ ] (arcterm) A paused run's strip holds still: pause a run mid-task (+ Run menu → Pause) → the Agent tree's strip
+  under it, the lead card's bar and the run sheet show its working task (or the Final check pip) in grey, not blinking;
+  Resume → it pulses green again.
+- [ ] (arcterm) A file path in Chat has its own right-click menu: in a live agent's Chat, right-click a path link (an
+  inline `docs/…` the agent named) → Open beside the agent / Show in Explorer / Copy path, not the message's Copy text
+  menu; Show in Explorer opens Explorer with the file selected, and a path that does not exist toasts "File not found".
+  Written and typechecked, never run in the app (`pathlinkcontext.tsx` `PathLink`, `pathlinkroute.ts`
+  `revealAgentPath`).
+- [ ] (arcterm) The RAM popover groups a run's lead, workers and reviewers under one head row: with an orchestrator
+  run going (its lead, a worker on a task and a `review t-N` reviewer live), open the RAM chip → your own agents come
+  first, then one head row with the run's title (`Build …` cut before "as specified in"), its agent count and the sums
+  of CPU, RAM and spend, and under it `Lead` first, then `Task t-N` / `t-N · …` and `review t-N`; none of the three
+  sits loose at the top, and the chevron folds the run to its head row. Needs a rebuilt wavesrv: the run comes from
+  the server (`runid` / `rungoal`, `wshserver_consumers.go` `consumerOwnerRun`). Scenarios `consumers-popover` and
+  `consumers-close-picked` were updated but not run.
+
+- [ ] (arcterm) The Agent sidebar's columns line up (spec 2026-11-13-sidebar-declutter-design): run
+  `task verify:ui -- sidebar-columns agent-tree-rail sidebar-agent-ram` on the dev app → all pass, and
+  `cdp-shots/sidebar-columns-1-rows.png` shows a 280px sidebar where every agent, lead and worker row ends its second
+  line with RAM · tokens · age in faint ink, right edges level down the list, the `2 runs` agent's `1.6 GB` in amber, the
+  unread count on the name line, and `asking` at the left of the asking row's second line with its columns kept. In the
+  real app the same with live agents: an agent with no RAM read yet keeps an empty gap where its RAM goes. Written and
+  typechecked, never run in the app (`agenttree.tsx` `RowCols`, `rowcols.ts`).
+- [ ] (arcterm) The Agent sidebar is back to 248px once a number column is off (`agentTreeWidth`, `rowfields.ts`):
+  `task verify:ui -- sidebar-columns` step 9 passes and `cdp-shots/sidebar-columns-2-narrow.png` shows a 248px sidebar
+  with RAM · age lined up and nothing cut off. In the real app, turn Tokens off in Settings → Appearance → Agent sidebar:
+  the sidebar narrows at once, turn it back on and it widens to 280px; a dragged File / Transcript panel still leaves the
+  centre its room. Written and typechecked, never run in the app.
 - [ ] (arcterm) A lead that queued its plan's next part reads `plan queued #1` on its run line, not `queued #1`: while a
   run's lead has queued a second plan (`wsh runs start --plan … --after <its run>`), its row in the Agent tree shows the
   chip `plan queued #1` (`plan blocked` if the entry is blocked), whole on a narrow sidebar, beside the run's progress
@@ -132,6 +239,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   every 2 s, the "(24s)" after it still grey; with Reduce motion on, the text rests in plain blue. Checked only on a
   static page in headless Chromium, never in WKWebView or the running app (cf811a54d: `chatpane.tsx`,
   `tailwindsetup.css` .shimmer-jarvis, `pulse.ts`).
+- [ ] (arcterm) Jarvis's arc reactor icon reads at rail size: the nav rail's Jarvis item (20px) shows the ring, six coils and the triangular core apart, not a grey blot, active (orange) and not, with the
+  yellow badge clear of it; What's new's Jarvis lines carry the same mark. Typechecked only, never seen in the app
+  (`element/jarvisicon.ts`, canvas `jarvis-nav-icon` option F).
+- [ ] (arcterm) Chat's running step ring turns in place: at 125% or 150% Windows display scaling, while a Claude agent
+  runs a command, the dashed green ring before "Ran" has its dashes run round a ring that stays put, with no wobble
+  and no short dash where it closes; with Reduce motion on it holds still. Not run in the app: no dev app was up
+  (`chatstepsview.tsx` StepSpinner, `tailwindsetup.css` dashRun).
 - [ ] (arcterm, Mac) Text replacements fire in Chat's message box: type `sv ` (a Text Replacement in System Settings →
   Keyboard) and it turns into "sinh viên " and is sent as that; a Vietnamese word typed with Telex gets no red
   underline, and the terminal stays as before. Checked only in a WKWebView harness with real key events into a

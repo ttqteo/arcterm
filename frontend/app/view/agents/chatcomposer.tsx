@@ -23,6 +23,9 @@
 // stays the source of truth: `text` is the message as the agent receives it, and everything here (the menus, recall, the
 // insert registry, the send) works on that string and offsets in it, through the editor's handle (`editorRef`), which
 // answers like the part of a textarea they use.
+//
+// While the agent has background work running (shells, Monitors, background subagents), a line at the box's top names it
+// and unfolds into the list (chatbgline.tsx).
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { MOTION, turnTransition } from "@/app/element/motiontokens";
@@ -37,6 +40,7 @@ import { ArrowUp, FileDiff, Moon, Terminal, type LucideIcon } from "lucide-react
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { canStop, useAgentSend } from "./agentcomposer";
+import type { AgentsViewModel } from "./agents";
 import { sleepingLine, wakeAgent, wakeErrorToast } from "./agentsleep";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
@@ -44,6 +48,7 @@ import { AttachmentTray } from "./attachmenttray";
 import { useBashComplete } from "./bashcomplete";
 import { bashGhost } from "./chatbash";
 import { noteBashRun, useBashHistory } from "./chatbashstore";
+import { ChatBgLine } from "./chatbgline";
 import { boxState, type BoxState } from "./chatboxstate";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold } from "./chatfooter";
@@ -53,7 +58,16 @@ import { answersInChat, localCommand, type LocalRoute } from "./chatlocal";
 import { clearLocalCards } from "./chatlocalstore";
 import { bashMode } from "./chatmodel";
 import { setChatMode } from "./chatmodestore";
-import { holdLine, isSendNowKey, pendingStill, pendsAsBubble, recall, releasesHeld, sendHold } from "./chatpending";
+import {
+    holdLine,
+    isSendNowKey,
+    pendingStill,
+    pendsAsBubble,
+    recall,
+    releasesHeld,
+    sendHold,
+    type SendFailure,
+} from "./chatpending";
 import {
     addPending,
     dropPending,
@@ -112,10 +126,14 @@ async function pickPaths(): Promise<string[]> {
     }
 }
 
+// how long after an Esc that stopped a turn another Esc is swallowed, while the agent's state catches up
+const INTERRUPT_SETTLE_MS = 1_500;
+
 // the box's content height while it is a drop zone: the board's dashed zone is 120px high in an 8px margin
 const DropMinH = 136;
 
 export function ChatComposer({
+    model,
     agent,
     placeholder,
     dataAttrs,
@@ -127,6 +145,7 @@ export function ChatComposer({
     onSendNow,
     questionWaits,
 }: {
+    model: AgentsViewModel;
     agent: AgentVM;
     placeholder: string;
     /** the conversation as drawn: a send of an awake agent is shown as a pending bubble until the transcript holds it.
@@ -317,6 +336,7 @@ export function ChatComposer({
     // pending bubble, scroll); `submitNext` is set only when the text will change, so it never outlives that render.
     const submitNext = useRef(false);
     const submitRef = useRef<() => void>(() => {});
+    const interruptRef = useRef<() => boolean>(() => false);
     useEffect(
         () =>
             registerChatBox(agent.id, {
@@ -363,6 +383,7 @@ export function ChatComposer({
                     box.focus({ preventScroll: true });
                     return true;
                 },
+                interrupt: () => interruptRef.current(),
             }),
         [agent.id]
     );
@@ -414,7 +435,24 @@ export function ChatComposer({
         // brainstorm question waits (its record pairs with the transcript by exact text) leave the lines queued for the
         // next one. `sent` and everything kept of it (recall, the pending bubble, onSent) stay the person's own text.
         const lines = !asleep && !questionWaits && !bash && !sent.startsWith("/") ? takeResultLines(agent.id) : [];
-        const taken = send(lines);
+        // the paths of the files riding the message, put back as chips if it never reaches Claude Code
+        const ridingPaths = att.attachments.map((a) => a.path).filter((p): p is string => p != null);
+        const agentId = agent.id;
+        // a send that failed on its way to Claude Code (useAgentSend put the text back and toasted): its Queued bubble
+        // goes, and what rode along comes back, unless the text waits in Claude Code's box (only the Enter failed)
+        const onFailed = (f: SendFailure) => {
+            dropPending(agentId, sent);
+            if (!f.restore) {
+                return;
+            }
+            if (lines.length > 0) {
+                putBackResultLines(agentId, lines);
+            }
+            if (ridingPaths.length > 0) {
+                att.addPaths(ridingPaths);
+            }
+        };
+        const taken = send(lines, onFailed);
         if (!taken && lines.length > 0) {
             putBackResultLines(agent.id, lines);
         }
@@ -570,6 +608,26 @@ export function ChatComposer({
             RpcApi.ControllerInputCommand(TabRpcClient, { blockid, inputdata64: stringToBase64("\x1b") })
         );
     };
+    // Esc while Claude works stops the turn, as Esc in Claude Code's own box does: a message it has not taken or answered
+    // yet comes back into the box (chattakeback.ts), else the turn just stops. A second Esc while the first one lands is
+    // swallowed: two reaching Claude Code once it is idle would open its rewind menu. False when it is not working, so
+    // the key keeps its old job (the box lets go of the keys, or the surface goes back).
+    const interruptedAt = useRef(0);
+    const interrupt = (): boolean => {
+        if (agent.state !== "working" || asleep || agent.blockId == null) {
+            return false;
+        }
+        const now = Date.now();
+        if (now - interruptedAt.current < INTERRUPT_SETTLE_MS) {
+            return true;
+        }
+        interruptedAt.current = now;
+        if (!takeBackKey("Escape")) {
+            stop();
+        }
+        return true;
+    };
+    interruptRef.current = interrupt;
     const attach = () => {
         fireAndForget(async () => {
             const paths = await pickPaths();
@@ -743,6 +801,9 @@ export function ChatComposer({
                         ) : null}
                     </div>
                 ) : null}
+                {/* the agent's background work still running (chatbgline.tsx): under the queued-message line, which asks
+                the person to act */}
+                <ChatBgLine model={model} agent={agent} />
                 <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />
                 {/* a bash command says what it is above its well: it runs in the agent's shell, and its output joins the chat */}
                 {bash ? (
@@ -910,10 +971,10 @@ export function ChatComposer({
                                 e.preventDefault();
                                 submit();
                             } else if (e.key === "Escape") {
-                                // a message Claude has not taken or answered yet comes back into the box; else the box
-                                // lets go of the keys: Stop is its own button, so a stray Esc never stops a turn under way
+                                // while Claude works Esc stops the turn, as in Claude Code's box; else the box lets go of
+                                // the keys
                                 e.preventDefault();
-                                if (!takeBackKey("Escape")) {
+                                if (!interrupt()) {
                                     e.currentTarget.blur();
                                 }
                             }

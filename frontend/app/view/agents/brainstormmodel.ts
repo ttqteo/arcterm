@@ -557,6 +557,12 @@ export function withBrainstorm(agent: AgentVM, f: BrainstormFile | null, now: nu
 
 export type TreeLine = { text: string; runId?: string };
 
+// whether treeLine's words are the ask itself ("asking question 3", "confirm 2 decisions"), so the row's own "asking"
+// note would say it twice; a brainstorm with a run names the run instead
+export function treeLineAsks(f: BrainstormFile, asking: boolean): boolean {
+    return asking && f.run == null;
+}
+
 // runText is what Arc knows of the brainstorm's run
 export function treeLine(f: BrainstormFile, asking: boolean, runText?: string): TreeLine {
     if (f.run != null) {

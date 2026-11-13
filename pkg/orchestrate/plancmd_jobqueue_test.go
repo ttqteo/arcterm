@@ -5,10 +5,12 @@ package orchestrate
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/jobpeaks"
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 	"github.com/wavetermdev/waveterm/pkg/memgate"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -119,6 +121,42 @@ func TestPlanCommandQueues(t *testing.T) {
 		}
 	})
 
+	// the engine's steps are not measured; what agents measured for the same pattern in the project can only raise them
+	t.Run("a known step claims the measured peak when it is above the table's", func(t *testing.T) {
+		for _, c := range []struct {
+			name     string
+			peak     uint64
+			want     uint64
+			measured bool
+		}{
+			{"measured above the table", 4 * testGB, 4*testGB + 4*testGB/5, true},
+			{"measured below the table", testGB, 3 * testGB, false},
+		} {
+			t.Run(c.name, func(t *testing.T) {
+				q, release := useJobQueue(t)
+				dir := t.TempDir() // no repository: the project is the folder itself
+				store := jobpeaks.Open("", "", nil)
+				store.Record("task check:ts", dir, true, c.peak)
+				prev := jobpeaks.Default
+				jobpeaks.Default = store
+				t.Cleanup(func() { jobpeaks.Default = prev })
+
+				ctx := jobqueue.WithSource(context.Background(), jobqueue.Source{Label: "Check"})
+				done := make(chan planResult, 1)
+				go func() {
+					out, err := execPlanCommandEnv(ctx, dir, "false && task check:ts; echo checked", nil, time.Minute, nil)
+					done <- planResult{out, err}
+				}()
+				job := queuedJob(t, q)
+				if job.Name != "task check:ts" || job.Bytes != c.want || job.Basis.Measured != c.measured {
+					t.Fatalf("queued job = %+v, want %d bytes, measured %v", job, c.want, c.measured)
+				}
+				release()
+				expectOutput(t, done, "checked")
+			})
+		}
+	})
+
 	t.Run("a Final claims a dev app's RAM", func(t *testing.T) {
 		q, release := useJobQueue(t)
 		ctx := jobqueue.WithSource(context.Background(), jobqueue.Source{Label: "Final", Always: true, Peak: memgate.DevBytes})
@@ -145,6 +183,52 @@ func TestPlanCommandQueues(t *testing.T) {
 		time.Sleep(1800 * time.Millisecond)
 		release()
 		expectOutput(t, done, "ok")
+	})
+
+	t.Run("a bounded wait gives up with errSlotWaitOver and leaves the queue", func(t *testing.T) {
+		q, _ := useJobQueue(t)
+		ctx := withSlotWait(jobqueue.WithSource(context.Background(), jobqueue.Source{Label: "Setup", Always: true}), 200*time.Millisecond)
+		done := runPlanAsync(ctx, t, "echo never")
+		queuedJob(t, q)
+		select {
+		case r := <-done:
+			if !errors.Is(r.err, errSlotWaitOver) || r.out != "" {
+				t.Fatalf("out = %q, err = %v, want errSlotWaitOver and no output", r.out, r.err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the bounded wait did not give up")
+		}
+		for _, j := range q.Snapshot().Jobs {
+			if !j.Running {
+				t.Fatalf("job still queued: %+v", j)
+			}
+		}
+	})
+
+	t.Run("the bound is on the wait, not on the command it admits", func(t *testing.T) {
+		q, release := useJobQueue(t)
+		ctx := withSlotWait(jobqueue.WithSource(context.Background(), jobqueue.Source{Label: "Setup", Always: true}), 1500*time.Millisecond)
+		done := runPlanAsync(ctx, t, "sleep 2; echo ran")
+		queuedJob(t, q)
+		release()
+		// runs past the bound: the command's own timeout is the minute runPlanAsync gives it
+		expectOutput(t, done, "ran")
+	})
+
+	t.Run("a cancel during a bounded wait is the cancel, not errSlotWaitOver", func(t *testing.T) {
+		q, _ := useJobQueue(t)
+		ctx, cancel := context.WithCancel(jobqueue.WithSource(context.Background(), jobqueue.Source{Label: "Setup", Always: true}))
+		done := runPlanAsync(withSlotWait(ctx, time.Minute), t, "echo never")
+		queuedJob(t, q)
+		cancel()
+		select {
+		case r := <-done:
+			if r.err == nil || errors.Is(r.err, errSlotWaitOver) {
+				t.Fatalf("err = %v, want the cancel's", r.err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("did not return")
+		}
 	})
 
 	t.Run("a cancelled ctx leaves the queue", func(t *testing.T) {

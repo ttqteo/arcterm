@@ -1444,7 +1444,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     <div className="flex min-h-0 flex-1 flex-col">
                         <div
                             data-rail-changes
-                            className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[18px] pb-[40px] pt-[12px]"
+                            className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[40px] pl-[18px] pr-[8px] pt-[12px] [scrollbar-gutter:stable]"
                         >
                             {filesContent(changes, true)}
                         </div>

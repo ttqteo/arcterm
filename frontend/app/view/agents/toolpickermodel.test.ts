@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { setPlatform } from "@/util/platformutil";
 import { describe, expect, it } from "vitest";
 import {
     flatRows,
@@ -224,9 +225,14 @@ describe("rowNote", () => {
 describe("openRefusal", () => {
     const row = (t: ToolStatus, state: PickerRow["state"]): PickerRow => ({ tool: t, state });
 
-    it("tells a tool that is not installed how to get it", () => {
+    it("tells a tool that is not installed how to get it, naming the key as the platform labels it", () => {
+        setPlatform("win32");
         expect(openRefusal(row(tool("gitui", { found: false }), "not-installed"), "win32")).toBe(
-            "gitui is not installed. Press Ctrl I to install it."
+            "gitui is not installed. Press Ctrl+I to install it."
+        );
+        setPlatform("darwin");
+        expect(openRefusal(row(tool("gitui", { found: false }), "not-installed"), "darwin")).toBe(
+            "gitui is not installed. Press ⌘I to install it."
         );
         expect(openRefusal(row(tool("gitui", { found: false, install: {} }), "not-installed"), "win32")).toBe(
             "gitui is not installed, and arcterm has no install command for it here."
