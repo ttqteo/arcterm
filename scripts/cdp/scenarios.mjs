@@ -598,7 +598,8 @@ const briefSurface = {
         });
 
         // strip show all: every item opens as today's queue row under the strip, each opening what it names with its
-        // one action; Accept, never Acknowledge
+        // own actions, which are its only controls: one, or Unblock and Done on a blocked chunk (queueActions in
+        // briefingmodel.ts); Accept, never Acknowledge
         await h.ev(`document.querySelector('[data-jarvis-strip-show-all]')?.click()`);
         await briefNap(400);
         await h.shot("cdp-shots/brief-surface-strip-all.png");
@@ -613,18 +614,21 @@ const briefSurface = {
                 under: !!head && !!box && box.getBoundingClientRect().top >= head.getBoundingClientRect().bottom,
                 rows: rows.length,
                 openable: rows.filter((r) => r.classList.contains('cursor-pointer')).length,
-                oneAction: rows.filter((r) => controls(r).length === 1 && r.querySelectorAll('[data-jarvis-queue-act]').length === 1).length,
-                acts: rows.map((r) => (r.querySelector('[data-jarvis-queue-act]')?.textContent ?? '').trim()),
+                ownActions: rows.filter((r) => {
+                    const acts = [...r.querySelectorAll('[data-jarvis-queue-act]')].map((b) => b.dataset.jarvisQueueAct);
+                    return controls(r).length === acts.length && (acts.length === 1 || acts.join() === 'unblock-chunk,done-chunk');
+                }).length,
+                acts: rows.map((r) => [...r.querySelectorAll('[data-jarvis-queue-act]')].map((b) => (b.textContent ?? '').trim()).join('+')),
             };
         })()`);
         steps.push({
-            step: "strip show all: Show all opens every queue row under the strip, each opening what it names with its one action",
+            step: "strip show all: Show all opens every queue row under the strip, each opening what it names with its own actions",
             ok:
                 q.expanded === "true" &&
                 q.under === true &&
                 q.rows === waitingN &&
                 q.openable === q.rows &&
-                q.oneAction === q.rows &&
+                q.ownActions === q.rows &&
                 q.acts.includes("Accept") &&
                 !q.acts.includes("Acknowledge"),
             detail: JSON.stringify({ n: waitingN, ...q }),
@@ -675,7 +679,8 @@ const briefSurface = {
         await briefNap(300);
 
         // F8: the row states what it is waiting on and what it belongs to, on its one line. The "attention" fixture is
-        // the one that carries wire attention items. The row itself opens, so its one nested control is its action.
+        // the one that carries wire attention items. The row itself opens, so its nested controls are its actions alone:
+        // one, or Unblock and Done on a blocked chunk.
         await h.ev(`document.querySelector('[data-jarvis-strip-show-all="shut"]')?.click()`);
         await briefNap(300);
         const named = await h.ev(`(() => {
@@ -687,9 +692,13 @@ const briefSurface = {
             };
             return {
                 rows: rows.length,
-                oneAction: rows.filter(
-                    (r) => r.querySelectorAll('button, a, input, select, textarea').length === 1 && r.querySelector('[data-jarvis-queue-act]')
-                ).length,
+                ownActions: rows.filter((r) => {
+                    const acts = [...r.querySelectorAll('[data-jarvis-queue-act]')].map((b) => b.dataset.jarvisQueueAct);
+                    return (
+                        r.querySelectorAll('button, a, input, select, textarea').length === acts.length &&
+                        (acts.length === 1 || acts.join() === 'unblock-chunk,done-chunk')
+                    );
+                }).length,
                 first: rows.length ? txt(rows[0]) : null,
                 linked: act("slice 2"),
                 unlinked: act("Phase 7"),
@@ -699,7 +708,7 @@ const briefSurface = {
             step: "9. a queue row names its initiative and why it is waiting",
             ok:
                 named.rows >= 3 &&
-                named.oneAction === named.rows &&
+                named.ownActions === named.rows &&
                 // the effort title is joined on the frontend from the efforts already on the surface,
                 // so a raw oid here would mean the join silently failed
                 (named.first ?? "").includes("Scenario gate clearance · Phase 3") &&
@@ -732,24 +741,31 @@ const briefSurface = {
         await briefCloseSheet(h);
         await briefNap(300);
 
-        // 8. the blocked chunk is waiting on you, and its queue row opens the initiative's own sheet
+        // 8. the blocked chunk is waiting on you, and its queue row opens the initiative's own sheet on that chunk: the
+        //    chunk view and its head (back to the initiative, named by its title) in place of the initiative's head
         await h.ev(`document.querySelector('[data-jarvis-strip-show-all="shut"]')?.click()`);
         // a queue row names its initiative; the strip's own line names only the chunk, so it is found by its item id
         const blockedRow = `([...document.querySelectorAll('[data-jarvis-waiting-strip] [data-jarvis-brief-row="queue"]')].find((r) => r.innerText.includes(${JSON.stringify(BRIEF_SURFACE_BLOCKED)})) ?? [...document.querySelectorAll('[data-jarvis-waiting-head]')].find((r) => (r.dataset.jarvisWaitingItem ?? '').includes(${JSON.stringify(ctx.effortId ?? "-")}))?.querySelector('[data-jarvis-waiting-title]'))`;
         const found = await polishWaitFor(h, `!!(${blockedRow})`, 20000);
         await h.ev(`(${blockedRow})?.click()`);
-        await briefNap(800);
+        await polishWaitFor(h, `!!document.querySelector('[data-jarvis-brief-sheet="effort"] [data-jarvis-chunk-view]')`, 8000);
+        await briefNap(300);
         const sheet8 = await h.ev(`(() => {
             const el = document.querySelector('[data-jarvis-brief-sheet]');
             return {
                 found: ${found},
                 face: el ? el.dataset.jarvisBriefSheet : null,
-                head: el?.querySelector('[data-jarvis-initiative-sheet-head]')?.dataset.jarvisInitiativeSheetHead ?? null,
+                chunk: el?.querySelector('[data-jarvis-chunk-view]')?.dataset.jarvisChunkView ?? null,
+                back: (el?.querySelector('[data-jarvis-chunk-head] [data-jarvis-chunk-back]')?.textContent ?? '').trim(),
             };
         })()`);
         steps.push({
-            step: "8. a blocked chunk still opens the initiative's own sheet",
-            ok: sheet8.found === true && sheet8.face === "effort" && sheet8.head === `effort:${ctx.effortId}`,
+            step: "8. a blocked chunk opens the initiative's own sheet on that chunk",
+            ok:
+                sheet8.found === true &&
+                sheet8.face === "effort" &&
+                sheet8.chunk === "Stuck" &&
+                sheet8.back === BRIEF_SURFACE_BLOCKED,
             detail: JSON.stringify(sheet8),
         });
         await briefCloseSheet(h);
