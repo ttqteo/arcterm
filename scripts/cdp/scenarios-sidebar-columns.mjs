@@ -1,5 +1,5 @@
 // sidebar-columns: the Agent sidebar's rows at 280px with RAM · tokens · age in three fixed cells at the end of every
-// agent's, lead's and worker's second line (docs/superpowers/specs/2026-11-13-sidebar-declutter-design.md; prototype
+// agent's, lead's and worker's second line, and back at 248px once a column is turned off (docs/superpowers/specs/2026-11-13-sidebar-declutter-design.md; prototype
 // .superpowers/design/sidebar-declutter/project/A-cot-thang-hang.dc.html). The roster is a fixture (devMockAgentsAtom):
 // an agent with an unread turn, a lead whose run has a dag (its task strip and a worker row under it), a second lead
 // with no dag and no RAM reading, an agent asking, and a working agent that started both runs (its `2 runs` chip) and
@@ -345,6 +345,30 @@ export default function (kit) {
                         "8. no row's second line spills past the row",
                         rows.every((r) => r != null && r.overflow === false),
                         Object.fromEntries(Object.entries(got.rows).map(([id, r]) => [id, r?.overflow]))
+                    );
+
+                    // a column turned off gives its room back: the tree is 248px again (agentTreeWidth in rowfields.ts);
+                    // teardown restores the stored fields
+                    const narrowed = await AC.agentPage(
+                        h,
+                        `const F = await mod("app/view/agents/rowfieldsstore.ts");
+                        globalStore.set(F.rowFieldsAtom, "tokens", false);
+                        return await until(() => Math.round(document.querySelector("[data-agent-tree]")?.getBoundingClientRect().width ?? 0) === 248, 5000);`
+                    );
+                    await polishNap(300);
+                    const narrow = await h.ev(readRows(Object.values(IDS)));
+                    await h.shot(`cdp-shots/${NAME}-2-narrow.png`);
+                    const narrowRows = Object.values(IDS).map((id) => narrow.rows[id]);
+                    const narrowEdges = Object.fromEntries(
+                        ["ram", "age"].map((k) => [k, narrowRows.filter(Boolean).map((r) => r.cells.find((c) => c.key === k)?.right ?? null)])
+                    );
+                    rec(
+                        "9. with Tokens turned off the sidebar is 248px, every row ends with RAM · age lined up down the list, and no second line spills past its row",
+                        narrowed === true &&
+                            narrow.width === 248 &&
+                            narrowRows.every((r) => r != null && r.cells.map((c) => c.key).join(",") === "ram,age" && r.overflow === false) &&
+                            Object.values(narrowEdges).every((xs) => xs.every((x) => x != null) && Math.max(...xs) - Math.min(...xs) <= 1),
+                        { narrowed, width: narrow.width, edges: narrowEdges, overflow: Object.fromEntries(Object.entries(narrow.rows).map(([id, r]) => [id, r?.overflow])) }
                     );
                 } catch (e) {
                     rec("the steps ran to the end", false, String(e?.message ?? e));

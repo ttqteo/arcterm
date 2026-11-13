@@ -58,6 +58,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   unread count on the name line, and `asking` at the left of the asking row's second line with its columns kept. In the
   real app the same with live agents: an agent with no RAM read yet keeps an empty gap where its RAM goes. Written and
   typechecked, never run in the app (`agenttree.tsx` `RowCols`, `rowcols.ts`).
+- [ ] (arcterm) The Agent sidebar is back to 248px once a number column is off (`agentTreeWidth`, `rowfields.ts`):
+  `task verify:ui -- sidebar-columns` step 9 passes and `cdp-shots/sidebar-columns-2-narrow.png` shows a 248px sidebar
+  with RAM · age lined up and nothing cut off. In the real app, turn Tokens off in Settings → Appearance → Agent sidebar:
+  the sidebar narrows at once, turn it back on and it widens to 280px; a dragged File / Transcript panel still leaves the
+  centre its room. Written and typechecked, never run in the app.
 - [ ] (arcterm) A lead that queued its plan's next part reads `plan queued #1` on its run line, not `queued #1`: while a
   run's lead has queued a second plan (`wsh runs start --plan … --after <its run>`), its row in the Agent tree shows the
   chip `plan queued #1` (`plan blocked` if the entry is blocked), whole on a narrow sidebar, beside the run's progress

@@ -44,6 +44,8 @@ import {
     type ResizableTab,
 } from "./agentrailtabs";
 import { navRailCollapsed } from "./navrailwidth";
+import { agentTreeWidth } from "./rowfields";
+import { rowFieldsAtom } from "./rowfieldsstore";
 
 const TAB =
     "flex min-w-[40px] cursor-pointer items-center justify-center gap-[5px] border-0 border-b-2 bg-transparent px-[9px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent";
@@ -412,7 +414,8 @@ export function useWideWidth(tab: ResizableTab): { width: number; max: number } 
     const stored = useAtomValue(railWidthAtoms[tab]);
     const drag = useAtomValue(railWideDragAtom);
     const win = useWindowWidth();
-    const max = wideWidthMax(win, navRailCollapsed(win) ? 56 : 78);
+    const treeWidth = agentTreeWidth(useAtomValue(rowFieldsAtom));
+    const max = wideWidthMax(win, navRailCollapsed(win) ? 56 : 78, treeWidth);
     return { width: clampWideWidth(drag ?? stored, max, tab), max };
 }
 
