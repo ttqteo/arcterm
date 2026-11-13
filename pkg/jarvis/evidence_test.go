@@ -1092,3 +1092,225 @@ func verificationCommands(lines []string) []waveobj.EvidenceVerif {
 	acc.addTranscript(lines)
 	return acc.out
 }
+
+// a branch-landed lead with no commit works in its own tree: the fallback diffs that tree, not the checkout,
+// where the human's own uncommitted edits sit
+func TestSealEvidenceFallbackDiffsTheLandingTree(t *testing.T) {
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(dir, "base.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "base")
+	base, err := gitinfo.HeadCommit(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := filepath.Join(t.TempDir(), "land")
+	gitCmd(t, dir, "worktree", "add", "-b", "wave/r3", tree, base)
+	if err := os.WriteFile(filepath.Join(dir, "human.txt"), []byte("h\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tree, "run.txt"), []byte("r\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	run := &waveobj.Run{
+		ID: "r3", Status: RunStatus_Done, ProjectPath: dir, LandPath: tree, BaseCommit: base, CreatedTs: 1000, // EndCommit empty
+		Phases: []waveobj.RunPhase{{Kind: PhaseKind_Execute, State: PhaseState_Done, DoneTs: 5000}},
+	}
+	if got := sealedPaths(t, run); !got["run.txt"] || got["human.txt"] {
+		t.Errorf("sealed files = %v, want the landing tree's run.txt and not the checkout's human.txt", got)
+	}
+}
+
+// a checkout-landed run has no landing tree: the fallback still diffs the checkout it works in
+func TestSealEvidenceFallbackOfACheckoutRunDiffsTheCheckout(t *testing.T) {
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(dir, "base.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "base")
+	base, err := gitinfo.HeadCommit(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "work.txt"), []byte("w\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	run := &waveobj.Run{
+		ID: "r5", Status: RunStatus_Done, ProjectPath: dir, BaseCommit: base, CreatedTs: 1000, // no LandPath, no EndCommit
+		Phases: []waveobj.RunPhase{{Kind: PhaseKind_Execute, State: PhaseState_Done, DoneTs: 5000}},
+	}
+	if got := sealedPaths(t, run); !got["work.txt"] || len(got) != 1 {
+		t.Errorf("sealed files = %v, want the checkout's work.txt", got)
+	}
+}
+
+// landedRunWithoutTree builds a branch-landed run with no EndCommit whose land merged wave/<id> --no-ff into
+// main beside a human commit, then removed the landing tree. keepBranch leaves the branch, as a failed removal does.
+func landedRunWithoutTree(t *testing.T, keepBranch bool) *waveobj.Run {
+	t.Helper()
+	ctx := context.Background()
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-b", "main")
+	write := func(p, s string) {
+		if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(dir, "base.txt"), "base\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "base")
+	base, err := gitinfo.HeadCommit(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := filepath.Join(t.TempDir(), "land")
+	gitCmd(t, dir, "worktree", "add", "-b", "wave/r4", tree, base)
+	write(filepath.Join(tree, "run.txt"), "r\n")
+	gitCmd(t, tree, "add", ".")
+	gitCmd(t, tree, "commit", "-m", "run work")
+	write(filepath.Join(dir, "human.txt"), "h\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "human work")
+	gitCmd(t, dir, "merge", "--no-ff", "-m", "land r4", "wave/r4")
+	landCommit, err := gitinfo.HeadCommit(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "worktree", "remove", tree)
+	if !keepBranch {
+		gitCmd(t, dir, "branch", "-D", "wave/r4")
+	}
+	return &waveobj.Run{
+		ID: "r4", Status: RunStatus_Done, ProjectPath: dir, LandPath: tree, BaseCommit: base, CreatedTs: 1000, // EndCommit empty
+		Land:   &waveobj.RunLand{State: "landed", Commit: landCommit},
+		Phases: []waveobj.RunPhase{{Kind: PhaseKind_Execute, State: PhaseState_Done, DoneTs: 5000}},
+	}
+}
+
+// the land removed the tree but its --no-ff merge of the branch still on disk is exactly the run's work
+func TestSealEvidenceAfterLandReadsTheLandsMerge(t *testing.T) {
+	run := landedRunWithoutTree(t, true)
+	if got := sealedPaths(t, run); !got["run.txt"] || got["human.txt"] || len(got) != 1 {
+		t.Errorf("sealed files = %v, want only the merge's run.txt", got)
+	}
+}
+
+// with the tree and the branch gone nothing proves what the run changed: the seal must wait, not freeze nothing
+func TestSealEvidenceAfterLandWithoutItsBranchStaysUnsealed(t *testing.T) {
+	run := landedRunWithoutTree(t, false)
+	if err := SealEvidence(context.Background(), run); err == nil {
+		t.Errorf("sealed %v from a missing landing tree, want an error", run.Evidence)
+	}
+}
+
+// the land deletes wave/<runId> with its tree, so the tip it recorded is what proves the merge is the run's
+func TestSealEvidenceAfterLandReadsTheMergeOfItsRecordedTip(t *testing.T) {
+	run := landedRunWithoutTree(t, false)
+	tip, err := gitinfo.ResolveCommit(context.Background(), run.ProjectPath, run.Land.Commit+"^2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.Land.Tip = tip
+	if got := sealedPaths(t, run); !got["run.txt"] || got["human.txt"] || len(got) != 1 {
+		t.Errorf("sealed files = %v, want only the merge's run.txt", got)
+	}
+}
+
+// a recorded tip the merge did not merge is not the run's land, even while the branch ref still matches
+func TestSealEvidenceAfterLandWithAnotherRecordedTipStaysUnsealed(t *testing.T) {
+	run := landedRunWithoutTree(t, true)
+	run.Land.Tip = run.BaseCommit
+	if err := SealEvidence(context.Background(), run); err == nil {
+		t.Errorf("sealed %v from a merge of another tip, want an error", run.Evidence)
+	}
+}
+
+// leadlessLandedRunWithoutTree builds a branch-landed run whose lead made no commit: wave/r6 never left the base,
+// so the land had nothing to merge (no merge commit, and Commit is the tip itself, as mergedCommit reports it),
+// then removed the tree and the branch. The human committed on main since, and EndCommit is the base.
+func leadlessLandedRunWithoutTree(t *testing.T) (run *waveobj.Run, mainHead string) {
+	t.Helper()
+	ctx := context.Background()
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-b", "main")
+	write := func(p, s string) {
+		if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(dir, "base.txt"), "base\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "base")
+	base, err := gitinfo.HeadCommit(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := filepath.Join(t.TempDir(), "land")
+	gitCmd(t, dir, "worktree", "add", "-b", "wave/r6", tree, base)
+	write(filepath.Join(dir, "human.txt"), "h\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "human work")
+	mainHead, err = gitinfo.HeadCommit(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "worktree", "remove", tree)
+	gitCmd(t, dir, "branch", "-D", "wave/r6")
+	return &waveobj.Run{
+		ID: "r6", Status: RunStatus_Done, ProjectPath: dir, LandPath: tree, BaseCommit: base, EndCommit: base, CreatedTs: 1000,
+		Land:   &waveobj.RunLand{State: "landed", Commit: base, Tip: base},
+		Phases: []waveobj.RunPhase{{Kind: PhaseKind_Execute, State: PhaseState_Done, DoneTs: 5000}},
+	}, mainHead
+}
+
+// a lead that committed nothing has EndCommit == BaseCommit, and its land is no merge: once the land removed the
+// tree the backfill seals the run's true file list, which is empty, rather than staying unsealed for good
+func TestSealEvidenceAfterLandOfALeadlessRunSealsNoChanges(t *testing.T) {
+	for name, land := range map[string]func(run *waveobj.Run, mainHead string) *waveobj.RunLand{
+		"the land recorded the tip": func(run *waveobj.Run, _ string) *waveobj.RunLand { return run.Land },
+		"the land recorded no tip": func(run *waveobj.Run, mainHead string) *waveobj.RunLand {
+			return &waveobj.RunLand{State: "landed", Commit: mainHead}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			run, mainHead := leadlessLandedRunWithoutTree(t)
+			run.Land = land(run, mainHead)
+			if got := sealedPaths(t, run); len(got) != 0 || run.Evidence.AddTotal != 0 || run.Evidence.DelTotal != 0 {
+				t.Errorf("sealed files = %v (+%d -%d), want none: the lead made no commit and human.txt is main's", got, run.Evidence.AddTotal, run.Evidence.DelTotal)
+			}
+		})
+	}
+}
+
+// the empty list is the land's proof for a lead-less run: without a land, or with a land of a branch that moved off
+// the base, nothing says the tree held no work, so the seal still waits
+func TestSealEvidenceAfterLandOfALeadlessRunNeedsItsLand(t *testing.T) {
+	run, _ := leadlessLandedRunWithoutTree(t)
+	run.Land = nil
+	if err := SealEvidence(context.Background(), run); err == nil {
+		t.Errorf("sealed %v with no land, want an error", run.Evidence)
+	}
+
+	run, mainHead := leadlessLandedRunWithoutTree(t)
+	run.Land = &waveobj.RunLand{State: "landed", Commit: mainHead, Tip: mainHead}
+	if err := SealEvidence(context.Background(), run); err == nil {
+		t.Errorf("sealed %v from a land whose branch tip was not the base, want an error", run.Evidence)
+	}
+}
+
+// only EndCommit == BaseCommit reads as no commit: another reported commit that does not resolve still leaves the
+// run unsealed, as it did before
+func TestSealEvidenceAfterLandWithAnUnresolvableEndCommitStaysUnsealed(t *testing.T) {
+	run := landedRunWithoutTree(t, true)
+	run.EndCommit = "0123456789abcdef0123456789abcdef01234567"
+	if err := SealEvidence(context.Background(), run); err == nil {
+		t.Errorf("sealed %v with an EndCommit that does not resolve, want an error", run.Evidence)
+	}
+}

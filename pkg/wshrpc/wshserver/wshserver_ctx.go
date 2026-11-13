@@ -5,16 +5,16 @@ package wshserver
 
 import (
 	"context"
-	"slices"
 
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
-// ownerRunForBlock resolves the run owning a block (block -> tab via ParentORef -> the run whose
-// phases list that tab as a worker) plus its channel. Found=false for any unresolvable step — callers
-// degrade gracefully (an ask from an unrelated block is not a dag child's ask).
+// ownerRunForBlock resolves the run owning a block (block -> tab via ParentORef -> the run the tab's owner
+// stamp names, or else the run whose phases list that tab as a worker) plus its channel. Found=false for any
+// unresolvable step — callers degrade gracefully (an ask from an unrelated block is not a dag child's ask).
 func ownerRunForBlock(ctx context.Context, blockOrefStr string) (*waveobj.Run, string, bool) {
 	if blockOrefStr == "" {
 		return nil, "", false
@@ -31,33 +31,15 @@ func ownerRunForBlock(ctx context.Context, blockOrefStr string) (*waveobj.Run, s
 	if err != nil || tabORef.OType != waveobj.OType_Tab {
 		return nil, "", false
 	}
-	tabOrefStr := "tab:" + tabORef.OID
-	// the store narrows to the rows that mention the tab without decoding any: every effort update and
-	// ask resolves its block here, and decoding every run each time was a quarter of what wavesrv allocated
-	runs, err := wstore.GetRunCandidatesByWorker(ctx, tabOrefStr)
-	if err != nil {
+	// a stamped tab's run is read off its stamp; a tab with no usable stamp falls back to the store's narrowed scan
+	// of the run rows (jarvis.ResolveRunWorkerFromMeta), which skips a run whose channel is gone. Every effort
+	// update, resmon snapshot and ask resolves its block here, and the scan alone was ~330 ms per call on a store
+	// of thousands of runs.
+	m := jarvis.ResolveRunWorkerFromMeta(ctx, "tab:"+tabORef.OID)
+	if m == nil {
 		return nil, "", false
 	}
-	for _, run := range runs {
-		if !runHasWorker(run, tabOrefStr) {
-			continue
-		}
-		// a run whose channel is gone owns nothing
-		if ch, cerr := wstore.DBGet[*waveobj.Channel](ctx, run.ChannelOID); cerr != nil || ch == nil {
-			continue
-		}
-		return run, run.ChannelOID, true
-	}
-	return nil, "", false
-}
-
-func runHasWorker(run *waveobj.Run, workerORef string) bool {
-	for _, p := range run.Phases {
-		if slices.Contains(p.WorkerOrefs, workerORef) {
-			return true
-		}
-	}
-	return false
+	return m.Run, m.Channel.OID, true
 }
 
 // JarvisCtxCommand resolves the run context owning the caller's block: block -> tab (ParentORef) ->

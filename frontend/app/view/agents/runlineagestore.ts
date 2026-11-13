@@ -17,7 +17,11 @@ import { type AgentVM } from "./agentsviewmodel";
 import { taskFoldKey, type TreeFolds } from "./agenttreemodel";
 import { finalStageRunId } from "./finalstage";
 import {
+    endedReviewerOf,
+    endedReviewerVM,
     endedRoles,
+    endedVerifierOf,
+    endedVerifierVM,
     endedWorkerVM,
     finalStageRoles,
     finalStageVM,
@@ -201,7 +205,8 @@ export interface EndedWorker {
     branch?: string;
 }
 
-// endedWorkerAtomFor is the done task's worker the surface is focused on, if the focus is one.
+// endedWorkerAtomFor is the done task's worker, or the ended plan reviewer, the surface is focused on, if the focus
+// is one.
 export function endedWorkerAtomFor(
     focusIdAtom: Atom<string | undefined>,
     lineageAtom: Atom<Lineage>
@@ -210,7 +215,26 @@ export function endedWorkerAtomFor(
         const id = get(focusIdAtom);
         const lineage = get(lineageAtom);
         const role = id ? lineage.roles[id] : undefined;
-        if (!isEndedWorkerId(id ?? "") || role?.kind !== "worker") {
+        if (id == null || !isEndedWorkerId(id)) {
+            return undefined;
+        }
+        if (role?.kind === "stage") {
+            const run = lineage.runs[role.leadRunId];
+            const verifierRunId = run ? endedVerifierOf(run, id) : undefined;
+            if (verifierRunId != null) {
+                const child = get(WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", verifierRunId)));
+                const path = get(runTranscriptPathsAtom)[verifierRunId];
+                return { agent: endedVerifierVM(run.runId, verifierRunId, child, path), files: [] };
+            }
+            const reviewer = run ? endedReviewerOf(run, id) : undefined;
+            if (reviewer == null) {
+                return undefined;
+            }
+            const child = get(WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", reviewer.runid)));
+            const path = get(runTranscriptPathsAtom)[reviewer.runid];
+            return { agent: endedReviewerVM(run.runId, reviewer, child, path), files: [] };
+        }
+        if (role?.kind !== "worker") {
             return undefined;
         }
         const run = lineage.runs[role.leadRunId];

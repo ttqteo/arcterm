@@ -6,6 +6,8 @@
 // roster and renders beside these rows.
 
 import { flip, hide, offset, shift, size, type Middleware, type Rect } from "@floating-ui/react";
+import { mergeGateLine, verifyFailLine } from "../agents/runlineage";
+import { detailOf } from "../agents/runtimeline";
 import { firstLine, formatElapsed, verifyHeading, waitingText, type TaskBrief } from "./dagdigest";
 import { dagActionRoute } from "./dagstore";
 
@@ -24,7 +26,7 @@ export function peekMiddleware(boundary: Element | Rect, rightInsetPx: number): 
     return [
         offset(PEEK_GAP_PX),
         flip({ boundary, padding, fallbackPlacements: [PEEK_FALLBACK] }),
-        shift({ boundary, padding }),
+        shift({ boundary, padding, crossAxis: true }),
         size({
             boundary,
             padding,
@@ -67,35 +69,86 @@ export function nextSelection(current: string | null, clicked: string, clickCoun
 }
 
 export type PeekRow = { text: string; tone: "muted" | "warning" };
+// a row as the card draws it: a clamped row is long prose the card cuts to a few lines, with a toggle to read it
+// all; activity marks the worker's time row
+export type CardRow = PeekRow & { clamp?: boolean; activity?: boolean };
 // what a task's Verify has to show: a heading, and the output tail the plan's command left behind
 export type VerifySection = { heading: string; tail: string; tone: "muted" | "warning" };
-export type TaskPeek = { title: string; description: string; rows: PeekRow[]; verify: VerifySection | null };
+// rows is the compact reading (a review note's first line, no flags); cardRows is the same rows as the card
+// draws them, with the review note whole
+export type TaskPeek = {
+    title: string;
+    description: string;
+    rows: PeekRow[];
+    cardRows: CardRow[];
+    verify: VerifySection | null;
+};
+
+type FailedDetail = { taskid?: string; detail?: string };
+
+// taskFailureDetail is why a task failed, as its newest task-failed event says: a dispatch that failed before its
+// worker started has no transcript, so this is the only place its reason lives
+export function taskFailureDetail(events: RunEvent[], taskId: string): string | undefined {
+    let newest: RunEvent | undefined;
+    for (const event of events) {
+        if (event.kind !== "task-failed" || detailOf<FailedDetail>(event)?.taskid !== taskId) continue;
+        if (newest == null || event.ts > newest.ts) newest = event;
+    }
+    return newest ? detailOf<FailedDetail>(newest)?.detail || undefined : undefined;
+}
+
+// sessionPendingText is the worker box of a task with no run: one that failed never got a worker
+export function sessionPendingText(task: TaskNode): string {
+    if (task.state !== "failed") return "Not dispatched yet";
+    return task.lastfailurekind ? `Never dispatched · failed at ${task.lastfailurekind}` : "Never dispatched · failed";
+}
+
+// what the peek reads beyond its task: the dag, for the merge gate's holder, and the run's events
+export type PeekContext = { group?: TaskGroup; events?: RunEvent[] };
 
 export function taskPeek(
     task: TaskNode,
     td: DagTaskDigest | undefined,
     briefs: Map<string, TaskBrief>,
-    nowMs: number
+    nowMs: number,
+    { group, events = [] }: PeekContext = {}
 ): TaskPeek {
     const rows: PeekRow[] = [];
+    const cardRows: CardRow[] = [];
+    // a row, and how the card draws it when that is not as it reads
+    const add = (row: PeekRow, card: Partial<CardRow> = {}) => {
+        rows.push(row);
+        cardRows.push({ ...row, ...card });
+    };
+    // the peek is handed its task's digest row alone, which is all the gate line reads of the digest
+    const gate = td ? mergeGateLine({ dag: group, digest: { tasks: [td] } as DagStatusDigest }, task.id) : undefined;
+    if (gate) {
+        add({ text: gate, tone: "warning" });
+    }
     if (td?.waitreason === "ask" || td?.waitreason === "lead-ask") {
         const who = td.waitreason === "ask" ? "you" : "the lead";
-        rows.push({ text: `asked ${who}: ${td.asksummary || "a question"}`, tone: "warning" });
+        add({ text: `asked ${who}: ${td.asksummary || "a question"}`, tone: "warning" });
     }
     if (task.state === "pending" || task.state === "ready") {
-        rows.push({ text: waitingText(td, briefs), tone: "muted" });
+        add({ text: waitingText(td, briefs), tone: "muted" });
     }
     const activity = activityText(task, nowMs);
     if (activity) {
-        rows.push({ text: activity, tone: "muted" });
+        add({ text: activity, tone: "muted" }, { activity: true });
     }
     if (task.lastfailurekind) {
         const attempt = (task.attempts ?? 0) > 1 ? ` · attempt ${task.attempts}` : "";
-        rows.push({ text: `last failure: ${task.lastfailurekind}${attempt}`, tone: "warning" });
+        const why = taskFailureDetail(events, task.id);
+        const text = `last failure: ${task.lastfailurekind}${attempt}`;
+        if (why) {
+            add({ text: `${text} · ${why}`, tone: "warning" }, { clamp: true });
+        } else {
+            add({ text, tone: "warning" });
+        }
     }
     if (task.state === "reviewing") {
         const round = (task.reviewround ?? 0) + 1;
-        rows.push({
+        add({
             text: round > 1 ? `reviewer checking the fix · round ${round}` : "reviewer checking the commit",
             tone: "muted",
         });
@@ -104,26 +157,34 @@ export function taskPeek(
     if (reviewNote) {
         const failed = task.state === "review-failed" || task.reviewverdict === "fail";
         const verdict = task.reviewverdict ? ` ${task.reviewverdict}` : "";
-        rows.push({ text: `review${verdict}: ${reviewNote}`, tone: failed ? "warning" : "muted" });
+        const tone = failed ? "warning" : "muted";
+        // the card shows the whole trimmed note under the verdict, clamped to a few lines
+        const whole = (task.reviewnote ?? "").trim();
+        add({ text: `review${verdict}: ${reviewNote}`, tone }, { text: `review${verdict}: ${whole}`, clamp: true });
     }
-    for (const err of [task.verifyerror, task.mergeerror, task.cleanuperror]) {
-        const line = firstLine(err);
+    for (const line of [verifyFailLine(task, td), firstLine(task.mergeerror), firstLine(task.cleanuperror)]) {
         if (line) {
-            rows.push({ text: line, tone: "warning" });
+            add({ text: line, tone: "warning" });
         }
     }
     return {
         title: task.label || task.id,
         description: (task.description ?? "").trim(),
         rows,
+        cardRows,
         verify: verifySection(task, nowMs),
     };
 }
 
+// colour and cursor escapes in output stored before the engine stripped them at capture; the CSI rule of
+// utilfn.StripANSI
+// eslint-disable-next-line no-control-regex
+const CSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
+
 // verifySection decides what the peek's Verify block shows. A failed Verify's reason is already a row, so
 // its section is the output alone; a task that never verified, or passed before output was kept, has none.
 export function verifySection(task: TaskNode, nowMs: number): VerifySection | null {
-    const tail = (task.verifyoutput ?? "").trim();
+    const tail = (task.verifyoutput ?? "").replace(CSI_RE, "").trim();
     switch (task.state) {
         case "verifying":
             return { heading: verifyHeading(task.verifystartedts, nowMs), tail, tone: "muted" };
@@ -136,9 +197,17 @@ export function verifySection(task: TaskNode, nowMs: number): VerifySection | nu
     }
 }
 
+const ACTIVE_STATES = new Set(["running", "stalled", "verifying", "reviewing"]);
+
 // the stamps are sampled transcript writes; a running task with neither has written nothing the watchdog
-// can read (or its runtime has no readable transcript), which is not the same as idle
+// can read (or its runtime has no readable transcript), which is not the same as idle. A task past its work
+// says how long it worked: how long ago is a fact about the reader's clock.
 function activityText(task: TaskNode, nowMs: number): string | null {
+    if (!ACTIVE_STATES.has(task.state)) {
+        return task.firstactivity && task.lastactivity
+            ? `worked ${formatElapsed(Math.max(0, task.lastactivity - task.firstactivity))}`
+            : null;
+    }
     const parts: string[] = [];
     if (task.firstactivity) {
         parts.push(`first activity ${ago(nowMs, task.firstactivity)} ago`);

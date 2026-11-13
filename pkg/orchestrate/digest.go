@@ -5,10 +5,12 @@ package orchestrate
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/agentask"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
@@ -48,7 +50,7 @@ func BuildDigest(sn DagDigestSnapshot) wshrpc.DagStatusDigest {
 	askByTask := askIndex(sn.Asks)
 	retried := retriedTaskSet(sn.Retained)
 	gateClock := mergeGateClock(g, sn.Retained)
-	staleGate := staleMergeGates(gateClock, sn.Now)
+	staleGate := staleMergeGates(g, gateClock, sn.Now)
 	d := wshrpc.DagStatusDigest{
 		DagVersion: g.Version,
 		Health:     buildHealth(g, sn.Owner, askByTask, staleGate),
@@ -70,6 +72,7 @@ func BuildDigest(sn DagDigestSnapshot) wshrpc.DagStatusDigest {
 	}
 	for i := range g.Tasks {
 		td := buildTaskDigest(g, &g.Tasks[i], askByTask, retried, gateClock, sn.Now.UnixMilli())
+		td.ForwardedTs = forwardedFailureTs(&g.Tasks[i], sn.Retained)
 		withReview(&td, &g.Tasks[i], runByID[g.Tasks[i].RunID])
 		d.Tasks = append(d.Tasks, td)
 	}
@@ -132,16 +135,21 @@ func askIndex(asks []wshrpc.DagAskItem) map[string]wshrpc.DagAskItem {
 	return out
 }
 
-// retriedTaskSet returns the task ids that carry a retained task-retried event (recovered-retry proof
-// requires the current task be done; the per-task check does that part).
+// retriedTaskSet returns the task ids that carry a retained task-retried event of the engine's own (recovered-retry
+// proof requires the current task be done; the per-task check does that part). A row with a `by` is a retry the
+// human or the lead asked for, not evidence the engine recovered the task.
 func retriedTaskSet(retained []waveobj.RunEvent) map[string]bool {
 	out := map[string]bool{}
 	for _, ev := range retained {
 		if ev.Kind != waveobj.RunEventKindTaskRetried {
 			continue
 		}
-		if taskID := eventTaskID(ev); taskID != "" {
-			out[taskID] = true
+		var detail struct {
+			TaskID string  `json:"taskid"`
+			By     *string `json:"by"`
+		}
+		if json.Unmarshal(ev.Detail, &detail) == nil && detail.TaskID != "" && detail.By == nil {
+			out[detail.TaskID] = true
 		}
 	}
 	return out
@@ -180,11 +188,13 @@ func mergeGateClock(g *waveobj.TaskGroup, retained []waveobj.RunEvent) map[strin
 }
 
 // staleMergeGates returns the gates open past MergeGateStaleAfter. A gate with no clock is left out: a missed
-// escalation costs a timeout, a fabricated one raises a false alarm on live work.
-func staleMergeGates(gateClock map[string]int64, now time.Time) map[string]bool {
+// escalation costs a timeout, a fabricated one raises a false alarm on live work. A held gate is left out too: it
+// waits on the merge queue's holder, so it asks nothing of anyone until the holder clears.
+func staleMergeGates(g *waveobj.TaskGroup, gateClock map[string]int64, now time.Time) map[string]bool {
+	holder, _ := mergeQueueHolder(g)
 	stale := map[string]bool{}
 	for id, doneTs := range gateClock {
-		if now.UnixMilli()-doneTs > MergeGateStaleAfter.Milliseconds() {
+		if holder == "" && now.UnixMilli()-doneTs > MergeGateStaleAfter.Milliseconds() {
 			stale[id] = true
 		}
 	}
@@ -223,7 +233,7 @@ func buildCounts(g *waveobj.TaskGroup, askByTask map[string]wshrpc.DagAskItem, r
 			if retried[t.ID] {
 				c.RecoveredRetry++
 			}
-			if mergeReadyTip(g, t) {
+			if mergeReadyTip(g, t) && mergeHeldBy(g, t) == "" {
 				c.MergeReady++
 			}
 		case TaskState_Running, TaskState_Reviewing:
@@ -363,8 +373,10 @@ func buildNext(g *waveobj.TaskGroup, askByTask map[string]wshrpc.DagAskItem) wsh
 	if ids := tasksWithAsk(g, askByTask, true); len(ids) > 0 {
 		return wshrpc.DagNextStep{Kind: "lead-action", TaskIds: ids, Actions: digestActionAnswer}
 	}
+	// a held merge gate asks nothing of the lead: the holder's Verify or conflict is what must move
+	holder, _ := mergeQueueHolder(g)
 	// 2. merge-ready work that blocks successors (merge-required dags only)
-	if blocked := mergeReadyBlocking(g); len(blocked) > 0 {
+	if blocked := mergeReadyBlocking(g); holder == "" && len(blocked) > 0 {
 		return mergeReadyStep(mergeReadyIDs(g))
 	}
 	// 3. tasks the scheduler can dispatch now
@@ -384,7 +396,7 @@ func buildNext(g *waveobj.TaskGroup, askByTask map[string]wshrpc.DagAskItem) wsh
 	// 4b. merge-ready work that blocks nothing: on a flat dag no successor is ever waiting, so step 2
 	// never fires and the gate would fall through to terminal. Ranked below dispatch and parallelism
 	// so a dag that can still spawn is never reported as needing the lead.
-	if ids := mergeReadyIDs(g); len(ids) > 0 {
+	if ids := mergeReadyIDs(g); holder == "" && len(ids) > 0 {
 		return mergeReadyStep(ids)
 	}
 	// 4c. a merged task's Verify is running; the next merge waits on it
@@ -560,10 +572,14 @@ func buildTaskDigest(g *waveobj.TaskGroup, t *waveobj.TaskNode, askByTask map[st
 		td.VerifyStartedTs = t.VerifyStartedTs
 		td.VerifyLastLine = truncateText(lastOutputLine(t.VerifyOutput), MaxVerifyLineLen)
 	}
+	if t.State == TaskState_VerifyFailed {
+		td.VerifyFailLine = verifyFailLine(t.VerifyOutput)
+	}
 	if t.State == TaskState_Done && retried[t.ID] {
 		td.RecoveredRetry = true
 	}
 	td.MergeState = taskMergeState(g, t)
+	td.MergeHeldBy = mergeHeldBy(g, t)
 	td.MergeGateTs = gateClock[t.ID]
 	td.CleanupState = taskCleanupState(g, t)
 	return td
@@ -647,7 +663,7 @@ func taskHumanActions(g *waveobj.TaskGroup, t *waveobj.TaskNode) []string {
 		return digestActionRetrySkipEscalate
 	case t.State == TaskState_BlockedMerge || t.State == TaskState_VerifyFailed:
 		return digestActionResolveMerge
-	case mergeReadyTip(g, t):
+	case mergeReadyTip(g, t) && mergeHeldBy(g, t) == "":
 		return digestActionMerge
 	}
 	return nil
@@ -663,11 +679,76 @@ func taskMergeState(g *waveobj.TaskGroup, t *waveobj.TaskNode) string {
 	if t.State == TaskState_BlockedMerge {
 		return "blocked"
 	}
-	// a lane merges as one, so only its tip reads ready
+	// a lane merges as one, so only its tip reads ready; held while another task has the merge queue
 	if mergeReadyTip(g, t) {
+		if mergeHeldBy(g, t) != "" {
+			return "held"
+		}
 		return "ready"
 	}
 	return "waiting"
+}
+
+// mergeHeldBy names the task holding t's merge: t is a merge-ready lane tip and another task's Verify or merge
+// conflict has the merge queue (mergeQueueHolder). "" for any other task.
+func mergeHeldBy(g *waveobj.TaskGroup, t *waveobj.TaskNode) string {
+	if !mergeReadyTip(g, t) {
+		return ""
+	}
+	holder, _ := mergeQueueHolder(g)
+	return holder
+}
+
+// forwardedFailureRestarts are the rows that start a new attempt at a task or record a new failure of it: a
+// forward older than any of them handed over a failure that is no longer the task's open one.
+var forwardedFailureRestarts = map[string]bool{
+	waveobj.RunEventKindTaskSpawned:      true,
+	waveobj.RunEventKindTaskRetried:      true,
+	waveobj.RunEventKindTaskMergeStarted: true,
+	waveobj.RunEventKindTaskFailed:       true,
+	waveobj.RunEventKindTaskVerifyFailed: true,
+	waveobj.RunEventKindTaskReviewFailed: true,
+}
+
+// forwardedFailureTs is when the lead handed t's open failure to the human: the newest task-forwarded row for t
+// with no askid (a forwarded question is the ask's, not the failure's), when it is newer than every row that
+// restarts or fails t again and t is still in a state a forward hands over. 0 while the lead holds the failure.
+func forwardedFailureTs(t *waveobj.TaskNode, retained []waveobj.RunEvent) int64 {
+	switch t.State {
+	case TaskState_Failed, TaskState_Stalled, TaskState_BlockedMerge, TaskState_VerifyFailed, TaskState_ReviewFailed:
+	default:
+		return 0
+	}
+	var forwardTs, restartTs int64
+	for _, ev := range retained {
+		if ev.Kind != waveobj.RunEventKindTaskForwarded && !forwardedFailureRestarts[ev.Kind] {
+			continue
+		}
+		var detail struct {
+			TaskID string `json:"taskid"`
+			AskID  string `json:"askid"`
+		}
+		if json.Unmarshal(ev.Detail, &detail) != nil || detail.TaskID != t.ID {
+			continue
+		}
+		switch {
+		case ev.Kind != waveobj.RunEventKindTaskForwarded:
+			restartTs = max(restartTs, ev.Ts)
+		case detail.AskID == "":
+			forwardTs = max(forwardTs, ev.Ts)
+		}
+	}
+	if forwardTs > restartTs {
+		return forwardTs
+	}
+	return 0
+}
+
+// verifyFailLine is a failed Verify's failing line: the first line of its failure excerpt, "" when no line of the
+// output names a failure, so a reader never shows a passing check as the cause.
+func verifyFailLine(output string) string {
+	line, _, _ := strings.Cut(firstFailureExcerpt(utilfn.StripANSI(output)), "\n")
+	return strings.ToValidUTF8(truncateText(strings.TrimSpace(line), MaxVerifyLineLen), "")
 }
 
 func taskCleanupState(g *waveobj.TaskGroup, t *waveobj.TaskNode) string {

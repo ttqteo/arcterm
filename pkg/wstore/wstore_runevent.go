@@ -90,10 +90,11 @@ func QueryRunEventsByKind(ctx context.Context, channelId, runId string, kinds []
 	})
 }
 
-// QueryRunEvents returns a run's events newest-first, capped at limit rows (0/negative -> 200, max 500).
+// QueryRunEvents returns a run's events newest-first. limit > 0 caps the rows; 0/negative returns every
+// retained event (bounded by maxRunEventsPerRun), since the timeline shows the whole run history.
 func QueryRunEvents(ctx context.Context, channelId, runId string, limit int) ([]waveobj.RunEvent, error) {
-	if limit <= 0 || limit > 500 {
-		limit = 200
+	if limit <= 0 {
+		limit = -1 // sqlite: no limit
 	}
 	return WithReadTxRtn(ctx, func(tx *TxWrap) ([]waveobj.RunEvent, error) {
 		var rows []runEventRow

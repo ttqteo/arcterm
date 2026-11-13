@@ -6,6 +6,7 @@ package jarvis
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,6 +41,15 @@ type RunWorkerSpec struct {
 // each runtime's unattended base arguments. A non-empty sessionId names the worker's session: claude and pi
 // take --session-id and name the transcript by it; agy and codex name their own session, so they never get one.
 func RunWorkerSpecFor(cap runroute.Capability, sessionId, prompt string) (RunWorkerSpec, bool) {
+	return RunWorkerSpecWithOptions(cap, RunWorkerOptions{SessionId: sessionId}, prompt)
+}
+
+// RunWorkerSpecWithOptions is RunWorkerSpecFor for a launch that also trims the session's startup context:
+// opts.SessionId is RunWorkerSpecFor's sessionId, and opts.StrictMCP and opts.NoSlashCommands apply to claude
+// only, since pi has neither an MCP config nor a skills listing to trim and agy and codex take neither flag.
+// The flags are launch flags, so BaseArgs carries them and a resume keeps them.
+func RunWorkerSpecWithOptions(cap runroute.Capability, opts RunWorkerOptions, prompt string) (RunWorkerSpec, bool) {
+	sessionId := opts.SessionId
 	if !runroute.IsValid(cap) {
 		return RunWorkerSpec{}, false
 	}
@@ -53,6 +63,12 @@ func RunWorkerSpecFor(cap runroute.Capability, sessionId, prompt string) (RunWor
 	switch cap.Runtime {
 	case "claude":
 		args = []string{"--dangerously-skip-permissions"}
+		if opts.StrictMCP {
+			args = append(args, "--strict-mcp-config")
+		}
+		if opts.NoSlashCommands {
+			args = append(args, "--disable-slash-commands")
+		}
 	case "pi":
 		args = nil
 	case "agy":
@@ -183,10 +199,20 @@ type RunWorkerOptions struct {
 	// ShortCache gives the session claude's 5-minute prompt cache: for an engine session that works its turns
 	// back to back and exits, never one a person may pause in (consult.PromptCacheTTLEnv).
 	ShortCache bool
+	// StrictMCP launches a claude session with --strict-mcp-config, so no MCP server the account or project
+	// configures loads (~2.1k tokens of startup context): for an engine worker or judge, which use none.
+	StrictMCP bool
+	// NoSlashCommands launches a claude session with --disable-slash-commands, which also drops the skills
+	// listing (~4.6k tokens): only for a session whose prompt invokes no skill and that is never typed a slash
+	// command, so never a lead (writing-plans, /compact) or a worker (may use skills).
+	NoSlashCommands bool
 }
 
 // createWorkerTab is the tab-creation seam, so tests make a tab without a layout or a live workspace.
 var createWorkerTab = wcore.CreateTab
+
+// deleteWorkerTab removes the tab of a spawn that failed part-way; a seam for the same reason.
+var deleteWorkerTab = wcore.DeleteTab
 
 // sendWorkerTabUpdates broadcasts the object updates a spawn collected. A var so tests can record them.
 var sendWorkerTabUpdates = func(updates waveobj.UpdatesRtnType) { wps.Broker.SendUpdateEvents(updates) }
@@ -263,6 +289,30 @@ const maxInlinePromptBytes = 16 * 1024
 // only known once the server has started; a var so tests write to a temp dir.
 var promptFileDir = func() string { return filepath.Join(wavebase.GetWaveDataDir(), "jarvis", "prompts") }
 
+// promptFileMaxAge is how long a prompt file is kept. A worker reads its file once at launch and a resume
+// rebuilds its args without it, so this only has to outlast a launch, with wide margin.
+const promptFileMaxAge = 7 * 24 * time.Hour
+
+// prunePromptFiles removes the prompt files in dir older than promptFileMaxAge. A failure only leaves files
+// behind, so it is logged rather than failing the launch.
+func prunePromptFiles(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		log.Printf("pruning prompt files: %v", err)
+		return
+	}
+	cutoff := time.Now().Add(-promptFileMaxAge)
+	for _, e := range entries {
+		info, err := e.Info()
+		if err != nil || e.IsDir() || info.ModTime().After(cutoff) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+			log.Printf("pruning prompt file %s: %v", e.Name(), err)
+		}
+	}
+}
+
 // launchPrompt is the prompt to put on the command line: the prompt itself when it fits, otherwise a
 // pointer to a file holding it. Only long prompts move, because claude titles a session from its first
 // message and a pointer would give every worker the same title.
@@ -278,6 +328,7 @@ func launchPrompt(prompt, sessionId string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("creating prompt dir: %w", err)
 	}
+	prunePromptFiles(dir)
 	path := filepath.Join(dir, name+".md")
 	if err := os.WriteFile(path, []byte(prompt), 0o644); err != nil {
 		return "", fmt.Errorf("writing prompt file: %w", err)
@@ -293,7 +344,7 @@ var SpawnRunWorker = func(ctx context.Context, cap runroute.Capability, workspac
 	if err != nil {
 		return "", err
 	}
-	spec, ok := RunWorkerSpecFor(cap, opts.SessionId, prompt)
+	spec, ok := RunWorkerSpecWithOptions(cap, opts, prompt)
 	if !ok {
 		return "", fmt.Errorf("no unattended run worker adapter for runtime %q model %q", cap.Runtime, cap.Model)
 	}
@@ -319,6 +370,17 @@ var SpawnRunWorker = func(ctx context.Context, cap runroute.Capability, workspac
 	if err != nil {
 		return "", fmt.Errorf("creating worker tab: %w", err)
 	}
+	// a failure from here returns no oref, so no caller can remove the tab; uncancelled, since an expired
+	// spawn ctx is one way to fail, and before the deferred broadcast above, which then carries the delete
+	spawned := false
+	defer func() {
+		if spawned {
+			return
+		}
+		if _, derr := deleteWorkerTab(context.WithoutCancel(ctx), workspaceId, tabId, false); derr != nil {
+			log.Printf("removing worker tab %s of a failed spawn: %v", tabId, derr)
+		}
+	}()
 	tab, err := wstore.DBMustGet[*waveobj.Tab](ctx, tabId)
 	if err != nil {
 		return "", fmt.Errorf("loading worker tab: %w", err)
@@ -353,6 +415,7 @@ var SpawnRunWorker = func(ctx context.Context, cap runroute.Capability, workspac
 	if err := persistWorkerBlockMeta(ctx, blockId, blockMeta); err != nil {
 		return "", fmt.Errorf("setting worker block meta: %w", err)
 	}
+	spawned = true
 	return waveobj.MakeORef(waveobj.OType_Tab, tabId).String(), nil
 }
 

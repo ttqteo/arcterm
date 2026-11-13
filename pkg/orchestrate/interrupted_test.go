@@ -286,3 +286,53 @@ func TestResumeInNewTabKeepsALeadsTabOnExitOnly(t *testing.T) {
 		})
 	}
 }
+
+// fork c31e2dfd6 and e1c8645bd: a resume that spawned its new tab and then failed stops that tab, as dispatch stops an
+// unrecorded worker (left armed it is a worker no run drives, and each retry of the resume adds another), and puts the
+// closed tab back on the phase, or the next resume runs in a tab with no controller, reports success and starts nothing
+func TestResumeInNewTabStopsTheTabItSpawnedOnError(t *testing.T) {
+	for name, c := range map[string]struct {
+		closed    string
+		resumeErr error
+	}{
+		"the closed tab left the phase": {closed: "tab:elsewhere"},
+		"the resume fails":              {closed: "tab:worker", resumeErr: errors.New("no session")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			channelId, stored := newInterruptedRun(t, nil)
+			run, err := wstore.GetRun(ctx, channelId, stored.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			spawned := insertTab(t, ctx)
+			oldSpawn, oldResume, oldStop := jarvis.SpawnRunWorker, jarvis.ResumeRunWorker, stopSpawnedWorker
+			jarvis.SpawnRunWorker = func(context.Context, runroute.Capability, string, string, string, string, jarvis.RunWorkerOptions) (string, error) {
+				return spawned, nil
+			}
+			jarvis.ResumeRunWorker = func(context.Context, string, string, string, string) error { return c.resumeErr }
+			var stopped []string
+			stopSpawnedWorker = func(_ context.Context, worker string) error {
+				stopped = append(stopped, worker)
+				return nil
+			}
+			restoreAfterStages(t, func() {
+				jarvis.SpawnRunWorker, jarvis.ResumeRunWorker, stopSpawnedWorker = oldSpawn, oldResume, oldStop
+			})
+
+			if err := resumeInNewTab(ctx, run, 0, c.closed, "nudge"); err == nil {
+				t.Fatal("want the resume's error")
+			}
+			if !slices.Equal(stopped, []string{spawned}) {
+				t.Fatalf("stopped %v, want the spawned tab %s", stopped, spawned)
+			}
+			after, err := wstore.GetRun(ctx, channelId, stored.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if workers := after.Phases[0].WorkerOrefs; !slices.Equal(workers, []string{"tab:worker"}) {
+				t.Fatalf("the phase names %v, want the closed tab alone: the stopped tab must not stay its worker", workers)
+			}
+		})
+	}
+}

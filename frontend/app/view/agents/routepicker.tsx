@@ -23,6 +23,7 @@ import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } fr
 import {
     allowPickerSections,
     buildPickerSections,
+    emptyRouteLabel,
     filterPickerSections,
     modelFace,
     pickerRowMeta,
@@ -53,7 +54,7 @@ export function RoutePicker({
     value,
     onChange,
     canInherit = false,
-    inheritedLabel = "Inherit route",
+    inheritedLabel,
     placement = "top-start",
     openRequest = 0,
     title,
@@ -98,10 +99,12 @@ export function RoutePicker({
     const inheritedSelected = value == null && !extraSelected;
     // only a route the operator chose: an inherited one warns on the picker it is inherited from
     const refused = extraSelected ? undefined : refusedRouteFor(value, refusedRoutes);
+    const emptyLabel = emptyRouteLabel(canInherit, inheritedLabel);
+    const faceEmpty = !extraSelected && value == null;
     const face = extraSelected
         ? extraOption.label
         : value == null
-          ? inheritedLabel
+          ? emptyLabel
           : `${harness?.label ?? value.runtime} · ${modelFace(value)}`;
     const catalog = useMemo(
         () => allowPickerSections(buildPickerSections(harnesses, refusedRoutes), runtimes),
@@ -210,7 +213,9 @@ export function RoutePicker({
                           : "border-border text-secondary hover:text-primary"
                 )}
             >
-                <span className="min-w-0 truncate">{face}</span>
+                <span className="min-w-0 truncate" data-route-picker-empty={faceEmpty || undefined}>
+                    {face}
+                </span>
                 {refused ? (
                     <span className="flex-none text-[10px] font-semibold text-warning" title={refused.text}>
                         refused
@@ -227,7 +232,13 @@ export function RoutePicker({
             </button>
             <FloatingPortal>
                 {/* above ModalShell's z-[70] backdrop: the launcher's pickers live inside a modal */}
-                <div ref={refs.setFloating} style={floatingStyles} {...getFloatingProps()} className="z-[80]">
+                <div
+                    ref={refs.setFloating}
+                    style={floatingStyles}
+                    {...getFloatingProps()}
+                    data-owns-arrows
+                    className="z-[80]"
+                >
                 <PopoverReveal
                     open={open}
                     origin="bottom left"
@@ -273,7 +284,7 @@ export function RoutePicker({
                                     inheritedSelected ? "bg-surface-raised text-accent" : "text-primary hover:bg-surface-hover"
                                 )}
                             >
-                                <span className="min-w-0 flex-1 text-[12.5px] font-semibold">{inheritedLabel}</span>
+                                <span className="min-w-0 flex-1 text-[12.5px] font-semibold">{emptyLabel}</span>
                                 {inheritedSelected ? <Check size={12} className="mt-[3px] flex-none text-accent" /> : null}
                             </button>
                         ) : null}

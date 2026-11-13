@@ -72,6 +72,7 @@ type rpcRoutingInfo struct {
 	rpcId        string
 	sourceLinkId baseds.LinkId
 	destRouteId  string
+	destLinkId   baseds.LinkId
 }
 
 type messageWrap struct {
@@ -219,7 +220,10 @@ func (router *WshRouter) handleNoRoute(msg RpcMessage, ingressLinkId baseds.Link
 	router.sendRoutedMessage(respBytes, msg.Source, msg.Command, baseds.NoLinkId)
 }
 
-func (router *WshRouter) registerRouteInfo(rpcId string, sourceLinkId baseds.LinkId, destRouteId string) {
+// timeoutMs is the request's own timeout: past it the caller has given up (a Go caller's context and a
+// frontend caller's timer both bound the whole rpc), so the entry goes even if the destination, still
+// connected, never answers. A request with no timeout (a frontend stream) has no such bound.
+func (router *WshRouter) registerRouteInfo(rpcId string, sourceLinkId baseds.LinkId, destRouteId string, destLinkId baseds.LinkId, timeoutMs int64) {
 	if rpcId == "" {
 		return
 	}
@@ -229,6 +233,10 @@ func (router *WshRouter) registerRouteInfo(rpcId string, sourceLinkId baseds.Lin
 		rpcId:        rpcId,
 		sourceLinkId: sourceLinkId,
 		destRouteId:  destRouteId,
+		destLinkId:   destLinkId,
+	}
+	if timeoutMs > 0 {
+		time.AfterFunc(time.Duration(timeoutMs)*time.Millisecond, func() { router.unregisterRouteInfo(rpcId) })
 	}
 }
 
@@ -273,6 +281,20 @@ func (router *WshRouter) sendRoutedMessage(msgBytes []byte, routeId string, comm
 		log.Printf("[router] no rpc for route id %q\n", routeId)
 	}
 	return false
+}
+
+// routeLink is the link sendRoutedMessage sends routeId's messages to, NoLinkId when there is none.
+func (router *WshRouter) routeLink(routeId string) baseds.LinkId {
+	if linkIdStr, ok := strings.CutPrefix(routeId, RoutePrefix_Link); ok {
+		if linkIdInt, err := strconv.ParseInt(linkIdStr, 10, 32); err == nil {
+			return baseds.LinkId(linkIdInt)
+		}
+	}
+	if lm := router.getLinkForRoute(routeId); lm != nil {
+		return lm.linkId
+	}
+	upstreamLinkId, _ := router.getUpstreamClient()
+	return upstreamLinkId
 }
 
 func (router *WshRouter) sendMessageToLink(msgBytes []byte, linkId baseds.LinkId, ingressLinkId baseds.LinkId) bool {
@@ -336,7 +358,7 @@ func (router *WshRouter) runServer() {
 				router.handleNoRoute(msg, input.IngressLinkId)
 				continue
 			}
-			router.registerRouteInfo(msg.ReqId, input.IngressLinkId, routeId)
+			router.registerRouteInfo(msg.ReqId, input.IngressLinkId, routeId, router.routeLink(routeId), msg.Timeout)
 			continue
 		}
 		// look at reqid or resid to route correctly
@@ -348,6 +370,10 @@ func (router *WshRouter) runServer() {
 			}
 			// no need to check the return value here (noop if failed)
 			router.sendRoutedMessage(msgBytes, routeInfo.destRouteId, "", input.IngressLinkId)
+			if msg.Cancel {
+				// a cancelled handler sends no final response, so this is the last message of the rpc
+				router.unregisterRouteInfo(msg.ReqId)
+			}
 			continue
 		} else if msg.ResId != "" {
 			routeInfo := router.getRouteInfo(msg.ResId)
@@ -674,16 +700,54 @@ func (router *WshRouter) getRoutesForLink(linkId baseds.LinkId) []string {
 	return routes
 }
 
+// ReplaceLink unregisters oldLinkId for newLinkId, the same peer reconnected. The requests the old link had not
+// answered move to the new link instead of failing, since the peer can still answer them there; their own
+// timeout still drops them if it does not.
+func (router *WshRouter) ReplaceLink(oldLinkId, newLinkId baseds.LinkId) {
+	router.unregisterLink(oldLinkId, newLinkId)
+}
+
 func (router *WshRouter) UnregisterLink(linkId baseds.LinkId) {
+	router.unregisterLink(linkId, baseds.NoLinkId)
+}
+
+// unregisterLink moves the requests linkId was handling to successorLinkId, or fails them when it is NoLinkId.
+func (router *WshRouter) unregisterLink(linkId baseds.LinkId, successorLinkId baseds.LinkId) {
 	routes := router.getRoutesForLink(linkId)
 	for _, routeId := range routes {
 		router.unbindRoute(linkId, routeId)
 	}
 	router.lock.Lock()
-	defer router.lock.Unlock()
 	delete(router.linkMap, linkId)
 	if router.upstreamLinkId == linkId {
 		router.upstreamLinkId = baseds.NoLinkId
+	}
+	var orphaned, unanswered []rpcRoutingInfo
+	for rpcId, ri := range router.rpcMap {
+		switch {
+		case ri.sourceLinkId == linkId:
+			orphaned = append(orphaned, ri)
+			delete(router.rpcMap, rpcId)
+		case ri.destLinkId == linkId && linkId != baseds.NoLinkId && successorLinkId != baseds.NoLinkId:
+			ri.destLinkId = successorLinkId
+			router.rpcMap[rpcId] = ri
+		case ri.destLinkId == linkId && linkId != baseds.NoLinkId:
+			unanswered = append(unanswered, ri)
+		}
+	}
+	router.lock.Unlock()
+	// nothing can answer these now: fail them at the caller rather than leave it waiting out its timeout.
+	// the error goes through inputCh behind whatever the link already queued there, so a response it sent
+	// just before closing still wins, and runServer drops this error as having no route info
+	for _, ri := range unanswered {
+		errBytes, _ := json.Marshal(RpcMessage{ResId: ri.rpcId, Error: fmt.Sprintf("route %q went away before it answered", ri.destRouteId)})
+		router.inputCh <- baseds.RpcInputChType{MsgBytes: errBytes, IngressLinkId: baseds.NoLinkId}
+	}
+	// nobody can receive these replies now: cancel the handlers, or a stream runs to its timeout (an
+	// agentctl stream's is 30 days) and keeps looking like a live caller
+	for _, ri := range orphaned {
+		cancelBytes, _ := json.Marshal(RpcMessage{Cancel: true, ReqId: ri.rpcId})
+		router.sendRoutedMessage(cancelBytes, ri.destRouteId, "", baseds.NoLinkId)
 	}
 }
 

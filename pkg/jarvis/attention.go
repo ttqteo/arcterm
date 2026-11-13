@@ -403,8 +403,20 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 		chOID := in.AskChannel[oref]
 		ch := byOID[chOID]
 		name := in.AskWorker[oref]
+		fallback := "worker"
+		why := ""
+		// a channel-less ask is a standalone agent: its tab is how the Brief reaches it
+		tabORef := ""
+		if ch.OID == "" && strings.HasPrefix(in.AskWorkerORef[oref], "tab:") {
+			tabORef = in.AskWorkerORef[oref]
+			fallback = "agent"
+			why = "The agent is paused until you answer."
+		}
 		if name == "" {
-			name = "worker"
+			name = fallback
+		}
+		if why == "" {
+			why = fmt.Sprintf("%s is paused until you answer.", name)
 		}
 		askRun := runForWorker(ch.Runs, in.AskWorkerORef[oref])
 		askEffort, askChunk := attribution(askRun)
@@ -418,9 +430,10 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 			Text:         askText(p.Questions),
 			Action:       "Answer",
 			WaitingSince: p.Ts,
+			ORef:         tabORef,
 			EffortOID:    askEffort,
 			ChunkLabel:   askChunk,
-			Why:          fmt.Sprintf("%s is paused until you answer.", name),
+			Why:          why,
 		})
 	}
 

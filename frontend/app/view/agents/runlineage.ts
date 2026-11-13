@@ -8,6 +8,7 @@
 import { modelLabel } from "@/app/view/agents/session-models/sessionviewmodel";
 import { formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
 import { finalStageId, finalStageView } from "./finalstage";
+import { planReviewLensTitle } from "./runtimeline";
 
 // a stage session judges the whole run rather than one task: its plan reviewer, its final verifier
 export type RunRole =
@@ -216,8 +217,62 @@ export function workerEnded(task: TaskNode): boolean {
     return task.state === "done" || task.merged === true;
 }
 
-// endedRoles gives each task of the runs in view whose worker ended a worker role under its ended id, so the
-// header and the rail place an ended worker as they place a live one.
+export const PLAN_REVIEWER_ROLE = "plan-reviewer";
+
+const ENDED_REVIEWER_TAG = "review:";
+
+// endedReviewerId is what a plan reviewer with a verdict is focused by. The engine stops its session with its tab
+// once the verdict is recorded, so, like a done task's worker, it is read back from its transcript; it shares that
+// prefix so every check for an ended session takes it as one.
+export function endedReviewerId(runId: string, reviewerRunId: string): string {
+    return `${ENDED_WORKER_PREFIX}${runId}:${ENDED_REVIEWER_TAG}${reviewerRunId}`;
+}
+
+// endedPlanReviewers is the current round's plan reviewers that have a verdict and a run of their own, once the
+// round is over. The dag keeps only the current round, and a round still reviewing leaves its rows to the roster's
+// tabs, as the tree always has.
+export function endedPlanReviewers(run: RunInfo): PlanReviewer[] {
+    const review = run.dag?.planreview;
+    if (review == null || review.state === PLAN_REVIEW_IN_FLIGHT) {
+        return [];
+    }
+    return (review.reviewers ?? []).filter((r) => r.runid && PLAN_REVIEWER_VERDICT[r.state] != null);
+}
+
+// endedReviewerOf is the ended plan reviewer of run that id names, if it names one.
+export function endedReviewerOf(run: RunInfo, id: string): PlanReviewer | undefined {
+    return endedPlanReviewers(run).find((r) => endedReviewerId(run.runId, r.runid) === id);
+}
+
+const ENDED_VERIFIER_TAG = "verifier:";
+
+// endedVerifierId is what a final stage's verifier session is focused by once its tab is gone, so its transcript
+// can be read back. It shares the ended prefix so every check for an ended session takes it as one.
+export function endedVerifierId(runId: string, verifierRunId: string): string {
+    return `${ENDED_WORKER_PREFIX}${runId}:${ENDED_VERIFIER_TAG}${verifierRunId}`;
+}
+
+// endedVerifierOf is the current round's verifier run of run that id names, if it names it.
+export function endedVerifierOf(run: RunInfo, id: string): string | undefined {
+    const verifierRunId = run.dag?.final?.verifierrunid;
+    return verifierRunId && endedVerifierId(run.runId, verifierRunId) === id ? verifierRunId : undefined;
+}
+
+// verifierStepTarget is what a click on the Verifier step focuses: the verifier's live agent when it is in the
+// roster, else its ended transcript; none while the stage has no verifier run.
+export function verifierStepTarget(
+    run: Pick<RunInfo, "runId" | "dag">,
+    agents: Pick<AgentVM, "id" | "runId">[]
+): string | undefined {
+    const verifierRunId = run.dag?.final?.verifierrunid;
+    if (!verifierRunId) {
+        return undefined;
+    }
+    return agents.find((a) => a.runId === verifierRunId)?.id ?? endedVerifierId(run.runId, verifierRunId);
+}
+
+// endedRoles gives each task of the runs in view whose worker ended a worker role under its ended id, and each
+// ended plan reviewer a stage role under its own, so the header and the rail place them as they place live ones.
 export function endedRoles(runs: Record<string, RunInfo>): Record<string, RunRole> {
     const roles: Record<string, RunRole> = {};
     for (const run of Object.values(runs)) {
@@ -226,8 +281,54 @@ export function endedRoles(runs: Record<string, RunInfo>): Record<string, RunRol
                 roles[endedWorkerId(run.runId, task.id)] = { kind: "worker", leadRunId: run.runId, taskId: task.id };
             }
         }
+        for (const r of endedPlanReviewers(run)) {
+            roles[endedReviewerId(run.runId, r.runid)] = {
+                kind: "stage",
+                leadRunId: run.runId,
+                stageRole: PLAN_REVIEWER_ROLE,
+            };
+        }
+        const verifierRunId = run.dag?.final?.verifierrunid;
+        if (verifierRunId) {
+            roles[endedVerifierId(run.runId, verifierRunId)] = {
+                kind: "stage",
+                leadRunId: run.runId,
+                stageRole: VERIFIER_ROLE,
+            };
+        }
     }
     return roles;
+}
+
+// endedReviewerVM is an ended plan reviewer as the Agent surface shows it, from its own run: idle since that run
+// completed, and read from the transcript its session wrote.
+export function endedReviewerVM(runId: string, reviewer: PlanReviewer, child?: Run, transcriptPath?: string): AgentVM {
+    return {
+        id: endedReviewerId(runId, reviewer.runid),
+        name: `${stageLabel(PLAN_REVIEWER_ROLE)} · ${planReviewLensTitle(reviewer.lens)}`,
+        task: "",
+        state: "idle",
+        agent: child?.runtime || undefined,
+        model: modelLabel(child?.model),
+        idleSince: child?.completedts,
+        transcriptPath: transcriptPath || undefined,
+        runId: reviewer.runid,
+    };
+}
+
+// endedVerifierVM is a final stage's ended verifier as the Agent surface shows it, from its own run.
+export function endedVerifierVM(runId: string, verifierRunId: string, child?: Run, transcriptPath?: string): AgentVM {
+    return {
+        id: endedVerifierId(runId, verifierRunId),
+        name: stageLabel(VERIFIER_ROLE),
+        task: "",
+        state: "idle",
+        agent: child?.runtime || undefined,
+        model: modelLabel(child?.model),
+        idleSince: child?.completedts,
+        transcriptPath: transcriptPath || undefined,
+        runId: verifierRunId,
+    };
 }
 
 // endedWorkerVM is a done task's worker as the Agent surface shows it, from the child run the task last ran:
@@ -284,7 +385,39 @@ export function laneLabel(digest: DagStatusDigest | undefined, taskId: string): 
     return i < 26 ? String.fromCharCode(65 + i) : String(i + 1);
 }
 
-export type WorkerAsk = { owner: "lead"; deadline?: number } | { owner: "you" };
+const MERGE_HOLD_REASON: Record<string, string> = {
+    verifying: "Verify",
+    "verify-failed": "failed Verify",
+    "blocked-merge": "merge conflict",
+};
+
+// mergeGateLine is how a lane tip at the merge gate reads wherever it shows: ready, or ready but held behind the
+// task whose Verify or conflict has the merge queue. Undefined for any other state.
+export function mergeGateLine(run: Pick<RunInfo, "dag" | "digest">, taskId: string): string | undefined {
+    const td = run.digest?.tasks?.find((t) => t.taskid === taskId);
+    if (td?.mergestate === "ready") {
+        return "merge ready";
+    }
+    if (td?.mergestate !== "held") {
+        return undefined;
+    }
+    const holder = td.mergeheldby;
+    const reason = MERGE_HOLD_REASON[run.dag?.tasks?.find((t) => t.id === holder)?.state ?? ""];
+    return reason != null ? `merge ready · waits on ${holder}'s ${reason}` : "merge ready · held";
+}
+
+// verifyFailLine is the failing Verify check a verify-failed task shows: the digest's line when the engine found
+// one, else the reason alone ("exit 1" from "exit 1: <excerpt>"), never an arbitrary line of the output.
+export function verifyFailLine(task: TaskNode, td: DagTaskDigest | undefined): string | undefined {
+    if (td?.verifyfailline) {
+        return td.verifyfailline;
+    }
+    const first = task.verifyerror?.split("\n")[0] ?? "";
+    const reason = first.split(": ")[0].trim();
+    return reason !== "" ? reason : undefined;
+}
+
+export type WorkerAsk ={ owner: "lead"; deadline?: number } | { owner: "you" };
 
 // workerAsk says who holds a task's open question, if it has one.
 export function workerAsk(digest: DagStatusDigest | undefined, taskId: string): WorkerAsk | undefined {

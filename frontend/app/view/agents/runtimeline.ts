@@ -2,6 +2,8 @@
 //
 // Pure: how a run's lifecycle events read as rows — title, text, detail payload, time label and tone.
 
+import { shortModel } from "./modelname";
+
 // --- row rendering helpers (pure; the view maps them to DOM) ---
 
 // KIND_TITLE renders each event kind as a human sentence; a kind outside the map (older rows or a
@@ -24,6 +26,9 @@ const KIND_TITLE: Record<string, string> = {
     "task-stalled": "Task stalled",
     "task-suspect": "Task may be stuck",
     "task-retried": "Task retried",
+    "task-skipped": "Skipped",
+    "task-escalated": "Escalated",
+    "final-rerun": "Final stage rerun",
     "dag-blocked": "DAG blocked",
     "dag-done": "DAG complete",
     "task-done": "Task done",
@@ -69,6 +74,7 @@ const KIND_TITLE: Record<string, string> = {
     landed: "Run landed",
     "stage-session-started": "Judging session started",
     "plan-reviewed": "Plan reviewed",
+    "final-ended": "Final stage ended",
     "queued-start": "Started from the queue",
     "land-queued": "Land in line",
     "land-resolving": "Resolving conflicts with the base",
@@ -105,6 +111,9 @@ const KIND_TONE: Record<string, string> = {
     "task-suspect": "text-warning",
     "dag-blocked": "text-warning",
     "task-retried": "text-warning",
+    "task-escalated": "text-warning",
+    "task-skipped": "text-muted",
+    "final-rerun": "text-muted",
     "task-failed": "text-warning",
     "task-merge-blocked": "text-warning",
     "task-merge-failed": "text-warning",
@@ -140,6 +149,7 @@ const KIND_TONE: Record<string, string> = {
     landed: "text-success",
     "stage-session-started": "text-muted",
     "plan-reviewed": "text-muted",
+    "final-ended": "text-muted",
 };
 
 function eventKindTitle(kind: string): string {
@@ -168,13 +178,66 @@ export function planReviewLensTitle(lens: string): string {
     return PLAN_REVIEW_LENS_TITLE[lens] ?? lens;
 }
 
+// a final-step row is one step of the final stage, and only its detail says which step and how it ended
+const FINAL_STEP_TITLE: Record<string, string> = {
+    tree: "Final tree",
+    check: "Final Check",
+    verify: "Final Verify",
+    final: "Final command",
+};
+
+function finalStepOf(event: RunEvent): { step: string; ok: boolean } {
+    const d = detailOf<{ step?: string; ok?: boolean }>(event);
+    return { step: d?.step ?? "", ok: d?.ok === true };
+}
+
+// a final-ended row is the final stage's end, and only its detail says the outcome; the Events rail says these
+// words too
+const FINAL_PASSED = "passed";
+const FINAL_ENDED_WORDS = new Map<string, string>([
+    [FINAL_PASSED, "final verification passed"],
+    ["unverified", "final stage unverified"],
+    ["failed", "final verification failed"],
+]);
+
+function finalOutcomeOf(event: RunEvent): string {
+    return detailOf<{ outcome?: string }>(event)?.outcome ?? "";
+}
+
+/** Pure: a final-ended event's outcome in words, or undefined for an outcome it does not know. */
+export function finalEndedWords(event: RunEvent): string | undefined {
+    return FINAL_ENDED_WORDS.get(finalOutcomeOf(event));
+}
+
 export function eventTitle(event: RunEvent): string {
     if (event.kind === "stage-session-started") {
         const d = detailOf<{ role?: string; lens?: string }>(event);
         const title = STAGE_ROLE_TITLE[d?.role ?? ""] ?? eventKindTitle(event.kind);
         return d?.lens ? `${title} · ${planReviewLensTitle(d.lens)}` : title;
     }
+    if (event.kind === "final-step") {
+        const { step, ok } = finalStepOf(event);
+        return `${FINAL_STEP_TITLE[step] ?? "Final step"} ${ok ? "passed" : "failed"}`;
+    }
+    if (event.kind === "final-ended") {
+        const words = finalEndedWords(event);
+        if (words) {
+            return words[0].toUpperCase() + words.slice(1);
+        }
+    }
     return eventKindTitle(event.kind);
+}
+
+// eventTone is toneFor for one row: a final step's or a final stage's tone is its outcome, which its kind alone does
+// not carry
+export function eventTone(event: RunEvent): string {
+    if (event.kind === "final-step") {
+        return finalStepOf(event).ok ? "text-success" : "text-warning";
+    }
+    if (event.kind === "final-ended" && finalEndedWords(event)) {
+        return finalOutcomeOf(event) === FINAL_PASSED ? "text-success" : "text-warning";
+    }
+    return toneFor(event.kind);
 }
 
 // eventText is one row as every timeline says it: its title, naming the task it is about and what was asked or told.
@@ -188,9 +251,20 @@ export function eventText(event: RunEvent): string {
         held?: number;
         reason?: string;
         entryid?: string;
+        model?: string;
     }>(event);
     const task = d?.taskid ?? "";
+    // an engine retry carries no actor, so it keeps the generic text
+    const actor = d?.by === "lead" ? "lead" : "you";
     switch (event.kind) {
+        case "task-retried":
+            return d?.by ? `${actor} retried ${task}` : defaultText(event, task);
+        case "task-skipped":
+            return `${actor} skipped ${task}`;
+        case "task-escalated":
+            return [`${actor} escalated ${task}`, d?.model ? shortModel(d.model) : ""].filter(Boolean).join(" to ");
+        case "final-rerun":
+            return "you reran the final stage";
         case "task-forwarded":
             return d?.by === "human"
                 ? `you took ${task} over from the lead`
@@ -213,8 +287,12 @@ export function eventText(event: RunEvent): string {
         case "queued-start":
             return [eventTitle(event), d?.entryid].filter(Boolean).join(" · ");
         default:
-            return task ? `${eventTitle(event)} · ${task}` : eventTitle(event);
+            return defaultText(event, task);
     }
+}
+
+function defaultText(event: RunEvent, task: string): string {
+    return task ? `${eventTitle(event)} · ${task}` : eventTitle(event);
 }
 
 // detailOf parses the row's JSON detail payload; undefined on malformed data (a row render must
@@ -251,11 +329,15 @@ export function planReviewReviewers(detail: unknown): PlanReviewReviewerRow[] {
     return out;
 }
 
-export function tsLabel(ts: number): string {
+// fixed English abbreviations rather than the locale's, so a dated label reads the same on every machine
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// withDate is for times that span days, where a bare HH:MM would misorder rows to the eye
+export function tsLabel(ts: number, withDate = false): string {
     const d = new Date(ts);
     const hh = String(d.getHours()).padStart(2, "0");
     const mm = String(d.getMinutes()).padStart(2, "0");
-    return `${hh}:${mm}`;
+    return withDate ? `${MONTHS[d.getMonth()]} ${d.getDate()} ${hh}:${mm}` : `${hh}:${mm}`;
 }
 
 export function toneFor(kind: string): string {

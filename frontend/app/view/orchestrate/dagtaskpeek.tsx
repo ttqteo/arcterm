@@ -12,11 +12,12 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import { CircleAlert } from "lucide-react";
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { AgentsViewModel } from "../agents/agents";
 import { runAtom } from "../agents/channelsstore";
 import { InlineMarkdown } from "../agents/inlinemarkdown";
 import { RoutePicker } from "../agents/routepicker";
+import { useRunEvents } from "../agents/runeventstore";
 import { useRunUsage } from "../agents/runtokenstore";
 import { modelsText, summarizeUsage, usageText } from "../agents/runusage";
 import { ActivityLine, StatusLine } from "../agents/statusline";
@@ -26,7 +27,7 @@ import { descriptionLead } from "./dagdescription";
 import type { TaskBrief } from "./dagdigest";
 import { closeDagModal, dagModalAgentsContextAtom } from "./dagmodalstate";
 import { wordTone } from "./dagnodes";
-import { peekActions, taskPeek, type PeekAction } from "./dagpeek";
+import { peekActions, sessionPendingText, taskPeek, type CardRow, type PeekAction } from "./dagpeek";
 import {
     DagPeekCard,
     PEEK_BTN,
@@ -73,7 +74,8 @@ export function DagTaskPeek({
     // the shared 1s ticker drives the Verify elapsed; without the roster context there is no ticker
     const tick = useAtomValue(agentsCtx?.model.nowAtom ?? NO_TICK_ATOM);
     const worker = resolveTaskWorker({ id: task.id, runid: task.runid }, childRun, agentsCtx?.agents ?? []);
-    const peek = taskPeek(task, digestTask, briefs, tick || Date.now());
+    const events = useRunEvents(group.runid, group.channelid);
+    const peek = taskPeek(task, digestTask, briefs, tick || Date.now(), { group, events });
 
     // escalate opens the route picker; every other action is sent, and a refusal is shown on the card instead
     // of vanishing into an unhandled rejection
@@ -111,7 +113,9 @@ export function DagTaskPeek({
                     {view.meta ? (
                         <>
                             <span>·</span>
-                            <span className="min-w-0 truncate">{view.meta}</span>
+                            <span data-peek-meta className="min-w-0 truncate">
+                                {view.meta}
+                            </span>
                         </>
                     ) : null}
                 </>
@@ -153,22 +157,26 @@ export function DagTaskPeek({
             hint={HINT}
         >
             {worker.agent && agentsCtx ? <ActivityLine agent={worker.agent} nowAtom={agentsCtx.model.nowAtom} /> : null}
-            {peek.rows.length > 0 ? (
+            {peek.cardRows.length > 0 ? (
                 <div className="flex flex-col gap-[3px]">
-                    {peek.rows.map((row, i) => (
-                        <div
-                            key={i}
-                            className={cn(
-                                "text-[10.5px] leading-[14px] tabular-nums",
-                                row.tone === "warning" ? "text-warning" : "text-muted"
-                            )}
-                        >
-                            {row.text}
-                        </div>
-                    ))}
+                    {peek.cardRows.map((row, i) =>
+                        row.clamp ? (
+                            <ClampedRow key={i} row={row} />
+                        ) : (
+                            <div
+                                key={i}
+                                data-peek-activity={row.activity || undefined}
+                                className={cn(ROW_TEXT, rowTone(row))}
+                            >
+                                {row.text}
+                            </div>
+                        )
+                    )}
                 </div>
             ) : null}
-            {agentsCtx ? <WorkerSession worker={worker} model={agentsCtx.model} /> : null}
+            {agentsCtx ? (
+                <WorkerSession worker={worker} model={agentsCtx.model} pending={sessionPendingText(task)} />
+            ) : null}
             <dl className="m-0 grid grid-cols-[54px_minmax(0,1fr)] gap-x-2.5 gap-y-2">
                 <dt className={DT}>Worker</dt>
                 <dd
@@ -196,6 +204,7 @@ export function DagTaskPeek({
                     <div className={META_TEXT}>{peek.verify.heading}</div>
                     {peek.verify.tail ? (
                         <pre
+                            data-peek-verify-tail
                             className={cn(
                                 "m-0 max-h-[110px] overflow-auto whitespace-pre-wrap break-all rounded-md border border-edge-mid bg-surface-code px-2 py-1.5 font-mono text-[10.5px] leading-[14px]",
                                 peek.verify.tone === "warning" ? "text-warning" : "text-secondary"
@@ -207,6 +216,48 @@ export function DagTaskPeek({
                 </div>
             ) : null}
         </DagPeekCard>
+    );
+}
+
+const ROW_TEXT = "text-[10.5px] leading-[14px] tabular-nums";
+const TOGGLE_BTN =
+    "cursor-pointer self-start border-0 bg-transparent p-0 text-[11.5px] font-semibold text-accent-soft hover:text-accent";
+
+function rowTone(row: CardRow): string {
+    return row.tone === "warning" ? "text-warning" : "text-muted";
+}
+
+// ClampedRow is a row of long prose (the review note, a failure's detail) cut to three lines, with a toggle only
+// when the cut hides something
+function ClampedRow({ row }: { row: CardRow }) {
+    const [open, setOpen] = useState(false);
+    const [overflows, setOverflows] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (el && !open) setOverflows(el.scrollHeight > el.clientHeight);
+    }, [row.text, open]);
+    return (
+        <div className="flex flex-col gap-1">
+            <div
+                ref={ref}
+                data-peek-review-note
+                className={cn(ROW_TEXT, rowTone(row), "whitespace-pre-line break-words", !open && "line-clamp-3")}
+            >
+                {row.text}
+            </div>
+            {overflows ? (
+                <button
+                    type="button"
+                    data-peek-review-toggle
+                    onClick={() => setOpen(!open)}
+                    aria-expanded={open}
+                    className={TOGGLE_BTN}
+                >
+                    {open ? "Show less" : "Show the whole note"}
+                </button>
+            ) : null}
+        </div>
     );
 }
 
@@ -310,7 +361,16 @@ const SESSION_BTN = "flex-none cursor-pointer rounded-[6px] border px-2 py-[3px]
 // WorkerSession is the task's worker treatment: the shared status line when dispatched, with Open in Agent,
 // and the explicit pending and worker-unavailable states. A double-click or Enter on the node opens the same
 // place as the button.
-function WorkerSession({ worker, model }: { worker: TaskWorkerView; model: AgentsViewModel }) {
+function WorkerSession({
+    worker,
+    model,
+    pending,
+}: {
+    worker: TaskWorkerView;
+    model: AgentsViewModel;
+    // what the box says while there is no session to show
+    pending: string;
+}) {
     const open = (e: MouseEvent) => {
         e.stopPropagation();
         openFromGraph(worker, model);
@@ -319,7 +379,7 @@ function WorkerSession({ worker, model }: { worker: TaskWorkerView; model: Agent
         return (
             <div className={cn(SESSION_BOX, "border-dashed text-[11px] text-ink-mid")}>
                 <span className="h-1.5 w-1.5 flex-none rounded-full bg-edge-strong" />
-                Not dispatched yet
+                {pending}
             </div>
         );
     }

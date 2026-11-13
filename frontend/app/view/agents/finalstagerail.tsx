@@ -75,7 +75,7 @@ export function FinalStageRail({ model, run }: { model: AgentsViewModel; run: Ru
             </div>
             <FinalShotsLink group={run.dag} />
             {/* the earlier rounds alone: what this round came to is the pane's, or the verifier's own terminal */}
-            <FinalPastRounds past={view.past} />
+            {run.dag ? <FinalPastRounds past={view.past} group={run.dag} /> : null}
         </div>
     );
 }

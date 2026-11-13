@@ -545,3 +545,44 @@ func TestPlanReviewChecksThePlansClaimsAboutExistingCode(t *testing.T) {
 		t.Fatalf("the reviewer must check the plan's claims about existing code against the tree:\n%s", p)
 	}
 }
+
+// fork ac548aa57: reviewers failed plans for "Task N has no Depends line, so it runs beside Task M" (runs 957d9a1f,
+// 690cc20a): a plan with edges has every brief list the ones the engine parsed, the default one marked implicit, and
+// say what a missing Depends line means
+func TestPlanReviewPromptsListTheParsedDependsEdges(t *testing.T) {
+	const text = "# Plan\n\n### Task 1: a\n**Depends on:** none\n\n### Task 2: b\n\n### Task 3: c\n**Depends on:** Task 1\n"
+	plan, err := jarvis.ParsePlan(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := &waveobj.TaskGroup{RunID: "run-1", PlanPath: "p.md", Tasks: plan.Tasks,
+		PlanReview: &waveobj.PlanReviewStage{Round: 2, PlanText: text, Prior: &waveobj.PlanReviewPrior{PlanText: text}}}
+	followup, err := planFollowupPrompt(context.Background(), g, "tree")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompts := map[string]string{"full": planReviewPrompt(g, "tree"), "second": planSecondPassPrompt(g, "tree"), "followup": followup}
+	for lens, p := range prompts {
+		for _, want := range []string{
+			"- t-1 waits for nothing\n",
+			"- t-2 waits for t-1 (implicit: no Depends line)\n",
+			"- t-3 waits for t-1\n",
+			"a task with no Depends line waits for the one before it",
+		} {
+			if !strings.Contains(p, want) {
+				t.Errorf("%s brief missing %q:\n%s", lens, want, p)
+			}
+		}
+	}
+}
+
+// a plan whose tasks wait for nothing has no default edge to misread, so its briefs stay as they were: the edge list
+// is added only where a plan has edges, and no brief of ours changes otherwise
+func TestPlanReviewPromptsListNoEdgesForAPlanWithNone(t *testing.T) {
+	g := &waveobj.TaskGroup{RunID: "run-1", PlanPath: "p.md", Tasks: []waveobj.TaskNode{{ID: "t-1", Label: "a"}, {ID: "t-2", Label: "b"}}}
+	for lens, p := range map[string]string{"full": planReviewPrompt(g, "tree"), "second": planSecondPassPrompt(g, "tree")} {
+		if strings.Contains(p, "dependency edges") || strings.Contains(p, "- t-1 waits for") {
+			t.Errorf("%s brief lists edges for a plan with none:\n%s", lens, p)
+		}
+	}
+}

@@ -205,7 +205,8 @@ func outcomeSummary(sess *agentsessions.SessionInfo) string {
 	}
 	const maxLen = 160
 	if len(text) > maxLen {
-		text = text[:maxLen]
+		// the byte cut can split a rune
+		text = strings.ToValidUTF8(text[:maxLen], "")
 	}
 	return text
 }

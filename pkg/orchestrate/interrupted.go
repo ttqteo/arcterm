@@ -216,7 +216,9 @@ func workerTabGone(ctx context.Context, workerORef string) bool {
 
 // resumeInNewTab resumes a worker whose tab was closed in a new tab, which takes the closed one's place on the
 // phase and carries the run's owner stamp before it starts, so the resumed agent's wsh calls resolve to its run.
-func resumeInNewTab(ctx context.Context, run *waveobj.Run, phaseIdx int, closed, nudge string) error {
+// Once the tab is spawned, an error stops it, as dispatch stops a worker it could not record: left armed it is a
+// worker no run drives, and each retry of the resume would add another.
+func resumeInNewTab(ctx context.Context, run *waveobj.Run, phaseIdx int, closed, nudge string) (err error) {
 	// a tab is created, so a caller's short RPC budget must not cancel it half-made
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), jarvis.RunWorkerSpawnTimeout)
 	defer cancel()
@@ -235,20 +237,43 @@ func resumeInNewTab(ctx context.Context, run *waveobj.Run, phaseIdx int, closed,
 	if err != nil {
 		return err
 	}
-	if err := wstore.UpdateRun(ctx, run.ChannelOID, run.ID, func(r *waveobj.Run) error {
-		workers := r.Phases[phaseIdx].WorkerOrefs
-		if i := slices.Index(workers, closed); i >= 0 {
-			workers[i] = tabORef
-			return nil
+	swapped := false
+	defer func() {
+		if err == nil {
+			return
 		}
-		return fmt.Errorf("its closed tab %s is no longer the phase's worker", closed)
-	}); err != nil {
+		if serr := stopUnrecordedWorker(ctx, tabORef); serr != nil {
+			err = errors.Join(err, fmt.Errorf("stopping the new tab %s: %w", tabORef, serr))
+		}
+		// the stopped tab has no controller: left on the phase, the next resume would run in it, report success
+		// and start nothing, where the closed tab sends it to a new tab again
+		if swapped {
+			if serr := swapPhaseWorker(context.WithoutCancel(ctx), run, phaseIdx, "new", tabORef, closed); serr != nil {
+				err = errors.Join(err, fmt.Errorf("putting the closed tab %s back on the phase: %w", closed, serr))
+			}
+		}
+	}()
+	if err := swapPhaseWorker(ctx, run, phaseIdx, "closed", closed, tabORef); err != nil {
 		return err
 	}
+	swapped = true
 	runORef := waveobj.MakeORef(waveobj.OType_Run, run.ID).String()
 	channelORef := waveobj.MakeORef(waveobj.OType_Channel, run.ChannelOID).String()
 	if err := wstore.StampWorkerOwner(ctx, tabORef, runORef, channelORef); err != nil {
 		return err
 	}
 	return jarvis.ResumeRunWorker(ctx, tabORef, run.Runtime, run.SessionId, nudge)
+}
+
+// swapPhaseWorker replaces the tab from with the tab to among the worker tabs of the run's phase phaseIdx; role
+// ("closed", "new") names from in the error when it is no longer there.
+func swapPhaseWorker(ctx context.Context, run *waveobj.Run, phaseIdx int, role, from, to string) error {
+	return wstore.UpdateRun(ctx, run.ChannelOID, run.ID, func(r *waveobj.Run) error {
+		workers := r.Phases[phaseIdx].WorkerOrefs
+		if i := slices.Index(workers, from); i >= 0 {
+			workers[i] = to
+			return nil
+		}
+		return fmt.Errorf("its %s tab %s is no longer the phase's worker", role, from)
+	})
 }

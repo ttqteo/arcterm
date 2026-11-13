@@ -9,6 +9,7 @@ import { jumpToAgent } from "../agents/channelsprimitives";
 import { openOrPeek } from "../jarvis/openref";
 import {
     enterOpensTask,
+    graphKeysYield,
     openTaskWorker,
     resolveTaskWorker,
     taskWorkerTarget,
@@ -95,6 +96,19 @@ describe("enterOpensTask", () => {
         expect(enterOpensTask(focused("A"))).toBe(false);
         expect(enterOpensTask(focused("INPUT"))).toBe(false);
         expect(enterOpensTask(focused("TEXTAREA"))).toBe(false);
+    });
+});
+
+describe("graphKeysYield", () => {
+    it("keeps the graph's keys on the graph and on a plain button", () => {
+        expect(graphKeysYield(null)).toBe(false);
+        expect(graphKeysYield(focused("BUTTON"))).toBe(false);
+    });
+
+    it("leaves the keys to a text field, and to a row of a popover that walks its own rows", () => {
+        expect(graphKeysYield(focused("INPUT"))).toBe(true);
+        const row = { tagName: "BUTTON", closest: (sel: string) => (sel === "[data-owns-arrows]" ? {} : null) };
+        expect(graphKeysYield(row as unknown as Element)).toBe(true);
     });
 });
 

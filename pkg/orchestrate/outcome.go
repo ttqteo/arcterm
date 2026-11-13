@@ -100,6 +100,11 @@ func HandleChildOutcome(ctx context.Context, workerORef string, data jarvis.Outc
 			g.Failures++
 		}
 		if mayRetry {
+			// RetryTask clears the run id, after which no task names the run: still executing, the dag's cancel
+			// (childRunIDs) and the exit hook (which skips dag children) would never reach it. Its worker has exited.
+			if _, err := cancelTaskRun(ctx, g, task); err != nil {
+				return err
+			}
 			if err := RetryTask(g, task.ID); err != nil {
 				return err
 			}

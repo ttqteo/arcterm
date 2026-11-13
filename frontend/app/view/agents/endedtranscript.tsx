@@ -31,11 +31,13 @@ export function EndedTranscript({ model, agent }: { model: AgentsViewModel; agen
     const placeId = `ended:${agent.id}`; // where the reader left it, kept while another agent is in view
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries, placeId);
     const role = lineage.roles[agent.id];
-    const run = role?.kind === "worker" ? lineage.runs[role.leadRunId] : undefined;
+    // a done task's worker, or a plan reviewer the engine stopped after its verdict
+    const leadRunId = role?.kind === "worker" || role?.kind === "stage" ? role.leadRunId : undefined;
+    const run = leadRunId ? lineage.runs[leadRunId] : undefined;
     const task = role?.kind === "worker" ? run?.dag?.tasks?.find((t) => t.id === role.taskId) : undefined;
     const childRunId = agent.runId;
     const channelId = run?.channelId;
-    const lead = role?.kind === "worker" ? leadAgentOf(lineage, agents, role.leadRunId) : undefined;
+    const lead = leadRunId ? leadAgentOf(lineage, agents, leadRunId) : undefined;
     // back to the run: its lead, with the rail open on the run's lanes
     const toRun = () => {
         if (lead == null) {

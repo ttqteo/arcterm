@@ -80,6 +80,42 @@ func TestDagEscalateData(t *testing.T) {
 	}
 }
 
+// Kael c3a7aa5fa: every action the lead's CLI sends is stamped by:lead, so the engine can tell it from the
+// human's own retry, skip or escalate in the cockpit. The data builders stay unstamped (TestDagEscalateData).
+func TestDagActionPayloadsByLead(t *testing.T) {
+	var sent []wshrpc.CommandDagActionData
+	prev := dagActionRpc
+	dagActionRpc = func(data wshrpc.CommandDagActionData, _ int64) error {
+		sent = append(sent, data)
+		return nil
+	}
+	defer func() { dagActionRpc = prev }()
+
+	flags := map[string]string{"channel": "ch", "runid": "run", "model": "sonnet", "runtime": "claude"}
+	for _, c := range []*cobra.Command{dagAction("retry"), dagSkipCmd(), dagCancelCmd(), dagEscalateCmd} {
+		cmd := newDagEscalateTestCmd(t, flags)
+		if err := c.RunE(cmd, []string{"t-1"}); err != nil {
+			t.Fatalf("%s: %v", c.Use, err)
+		}
+	}
+	forward := newDagEscalateTestCmd(t, flags)
+	if err := dagForwardCmd.RunE(forward, []string{"t-1", "checked it, recommend option A"}); err != nil {
+		t.Fatalf("forward: %v", err)
+	}
+	if len(sent) != 5 {
+		t.Fatalf("sent %d actions, want 5", len(sent))
+	}
+	for i, action := range []string{"retry", "skip", "cancel", "escalate", "forward"} {
+		if sent[i].Action != action || sent[i].By != wshrpc.DagActionBy_Lead {
+			t.Fatalf("payload %d = %+v, want action %q by %q", i, sent[i], action, wshrpc.DagActionBy_Lead)
+		}
+	}
+	raw, err := json.Marshal(sent[0])
+	if err != nil || !strings.Contains(string(raw), `"by":"lead"`) {
+		t.Fatalf("wire form = %s (%v), want by:lead", raw, err)
+	}
+}
+
 func TestDagEscalateDataRequiresModel(t *testing.T) {
 	cmd := newDagEscalateTestCmd(t, map[string]string{"channel": "ch", "runid": "run", "runtime": "claude"})
 	if _, err := dagEscalateData(cmd, []string{"t-1"}); err == nil || !strings.Contains(err.Error(), "--model is required") {
@@ -490,6 +526,90 @@ func TestMergeGateSignalShowsNoAgeWithoutAClock(t *testing.T) {
 	}
 }
 
+// a tip held behind another task's Verify says what it waits on, where a ready one says it waits for a merge
+func TestDagStatusShowsAHeldMergeGate(t *testing.T) {
+	g := &waveobj.TaskGroup{ID: "d-1", Status: "running", Parallelism: 2, Tasks: []waveobj.TaskNode{
+		{ID: "t-2", Label: "held", State: "done"},
+		{ID: "t-4", Label: "holder", State: "verifying"},
+	}}
+	now := int64(40 * 60_000)
+	rtn := &wshrpc.CommandDagStatusRtnData{Group: g, Digest: wshrpc.DagStatusDigest{
+		Tasks: []wshrpc.DagTaskDigest{
+			{TaskId: "t-2", MergeState: "held", MergeHeldBy: "t-4", MergeGateTs: now - 5*60_000},
+			{TaskId: "t-4", MergeState: "merged"},
+		},
+	}}
+	lines := dagStatusLines(rtn, now)
+	for _, l := range lines {
+		if strings.HasPrefix(l, "t-2 ") {
+			if !strings.Contains(l, "merge held: waits on t-4's Verify") || strings.Contains(l, "merge waiting") {
+				t.Fatalf("a held tip names its holder and is not waiting on a merge, got %q", l)
+			}
+			return
+		}
+	}
+	t.Fatalf("no t-2 row in:\n%s", strings.Join(lines, "\n"))
+}
+
+func TestTaskSignalNamesWhyAHeldTipWaits(t *testing.T) {
+	td := wshrpc.DagTaskDigest{MergeState: "held", MergeHeldBy: "t-2"}
+	cases := []struct{ holderState, want string }{
+		{orchestrate.TaskState_Verifying, "merge held: waits on t-2's Verify"},
+		{orchestrate.TaskState_VerifyFailed, "merge held: waits on t-2's failed Verify"},
+		{orchestrate.TaskState_BlockedMerge, "merge held: waits on t-2's merge conflict"},
+		{"", "merge held"},
+		{orchestrate.TaskState_Running, "merge held"},
+	}
+	for _, c := range cases {
+		if got := taskSignalWithHolder(orchestrate.TaskState_Done, td, c.holderState, 0); got != c.want {
+			t.Fatalf("holder state %q: taskSignalWithHolder = %q, want %q", c.holderState, got, c.want)
+		}
+	}
+}
+
+// 65ce3ef3: a --continue that timed out left the lead unable to tell whether it registered, so it re-ran it
+func TestDagMergeTimedOutSaysWhetherItTookEffect(t *testing.T) {
+	task := func(state string, merged bool) *waveobj.TaskGroup {
+		return &waveobj.TaskGroup{Tasks: []waveobj.TaskNode{{ID: "t-20", State: state, Merged: merged}}}
+	}
+	for _, tc := range []struct {
+		name    string
+		cont    bool
+		dag     *waveobj.TaskGroup
+		readErr error
+		wantErr bool
+		want    []string
+	}{
+		{name: "a continue that took effect", cont: true, dag: task(orchestrate.TaskState_Verifying, true),
+			want: []string{"took effect: task t-20 is verifying", "do not re-run"}},
+		{name: "a continue still waiting", cont: true, dag: task(orchestrate.TaskState_VerifyFailed, true), wantErr: true,
+			want: []string{"still verify-failed", "finishes the request then", "waking you if it fails", "wsh jarvis dag status t-20"}},
+		{name: "a merge that took effect", dag: task(orchestrate.TaskState_Verifying, true),
+			want: []string{"dag merge t-20 got no reply", "took effect"}},
+		{name: "a merge still waiting", dag: task(orchestrate.TaskState_Done, false), wantErr: true,
+			want: []string{"still done", "rather than re-running it"}},
+		{name: "a re-read that failed", cont: true, readErr: errors.New(rpcTimeoutText), wantErr: true,
+			want: []string{"reading task t-20 again failed", "wakes you if it fails", "wsh jarvis dag status t-20"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stubWavesrv(t)
+			readRunDag = func(string, string) (*waveobj.TaskGroup, error) { return tc.dag, tc.readErr }
+			out, err := dagMergeTimedOut(wshrpc.CommandDagMergeData{ChannelId: "ch", RunId: "r", TaskId: "t-20"}, tc.cont, errors.New(rpcTimeoutText))
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("want error %v, got out %q err %v", tc.wantErr, out, err)
+			}
+			if err != nil {
+				out = err.Error()
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(out, w) {
+					t.Fatalf("want %q in:\n%s", w, out)
+				}
+			}
+		})
+	}
+}
+
 func TestDagReviewData(t *testing.T) {
 	cmd := newDagEscalateTestCmd(t, map[string]string{"channel": "ch", "runid": "reviewer-run"})
 	cmd.Flags().String("downstream", "", "")
@@ -750,6 +870,45 @@ func TestDagDoneLineCoversEveryAction(t *testing.T) {
 	}
 	if got := dagDoneLine("planreview-accept", ""); got == "" || strings.Contains(got, "Ending") {
 		t.Errorf("accept keeps the lead's session, got %q", got)
+	}
+}
+
+// run e5c81d8f: `dag cancel t-6` read as cancelling one task and ended the whole run, every worker and reviewer with
+// it. The command still takes the task id it always did, and says in its help and its done line that it ends the run
+// and that skip is how one task is dropped.
+func TestDagCancelSaysItEndsTheWholeRun(t *testing.T) {
+	c := dagCancelCmd()
+	if c.Use != "cancel <task-id>" {
+		t.Fatalf("cancel keeps its argument, got %q", c.Use)
+	}
+	if err := c.Args(c, []string{"t-6"}); err != nil {
+		t.Fatalf("cancel still accepts one task id: %v", err)
+	}
+	for _, want := range []string{"whole run", "ignored", "wsh jarvis dag skip <task-id>"} {
+		if !strings.Contains(c.Short+"\n"+c.Long, want) {
+			t.Errorf("cancel's help must say %q, got:\n%s\n%s", want, c.Short, c.Long)
+		}
+	}
+	if got := dagDoneLine("cancel", "t-6"); !strings.Contains(got, "whole run") || !strings.Contains(got, "dag skip") {
+		t.Errorf("cancel's done line must say it ended the whole run and point at skip, got %q", got)
+	}
+}
+
+func TestDagSkipSaysItDropsOneTaskAndTheRunGoesOn(t *testing.T) {
+	c := dagSkipCmd()
+	if c.Use != "skip <task-id>" {
+		t.Fatalf("skip keeps its argument, got %q", c.Use)
+	}
+	if err := c.Args(c, []string{"t-6"}); err != nil {
+		t.Fatalf("skip takes one task id: %v", err)
+	}
+	for _, want := range []string{"one task", "under review", "dag stop", "dag cancel"} {
+		if !strings.Contains(c.Short+"\n"+c.Long, want) {
+			t.Errorf("skip's help must say %q, got:\n%s\n%s", want, c.Short, c.Long)
+		}
+	}
+	if got := dagDoneLine("skip", "t-6"); !strings.Contains(got, "task t-6") || !strings.Contains(got, "rest of the run goes on") {
+		t.Errorf("skip's done line must name the task and say the run goes on, got %q", got)
 	}
 }
 

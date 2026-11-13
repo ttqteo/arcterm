@@ -167,6 +167,30 @@ func snapshotInto(ctx context.Context, tree, p string) (string, error) {
 			}
 		}
 	}
+	return treeRel(tree, target)
+}
+
+// DocPaths returns the repo-relative paths SnapshotDocs would give paths, committing and copying nothing. An empty
+// path gives an empty one.
+func DocPaths(ctx context.Context, landTree string, paths ...string) ([]string, error) {
+	rels := make([]string, len(paths))
+	for i, p := range paths {
+		if p == "" {
+			continue
+		}
+		target, err := treeTarget(ctx, landTree, p)
+		if err != nil {
+			return nil, err
+		}
+		if rels[i], err = treeRel(landTree, target); err != nil {
+			return nil, err
+		}
+	}
+	return rels, nil
+}
+
+// treeRel is target's path relative to tree, in slash form.
+func treeRel(tree, target string) (string, error) {
 	rel, err := filepath.Rel(tree, target)
 	if err != nil {
 		return "", err

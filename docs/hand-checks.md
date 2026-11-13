@@ -6,6 +6,70 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Kael sync 11-13: a land refused mid-merge is undone: in a scratch repo, start a run with two tasks, and
+  once the first lane has merged put a `commit-msg` hook in the repo's `.git/hooks` that refuses the engine's own
+  commits and no one else's (`#!/bin/sh`, then `grep -q '^Arc-Run:' "$1" && exit 1`; only the squash and land commits
+  carry that trailer, so the workers' commits still go through). While the second lane merges → its squash is refused,
+  the landing tree has nothing staged afterwards, and the next tick merges it once the hook is gone; before, the
+  squash stayed staged and held every later merge. Put the hook back before the run completes → the land holds with the
+  refusal as its reason, `git status` in the checkout shows no merge in progress (no `.git/MERGE_HEAD`) and nothing
+  staged; remove the hook and run `wsh runs land <run-id>` → it lands. A run started with `--landing checkout` behaves
+  as it did. Unit-tested on Windows only (`/bin/sh` hooks), never on a real run. Commit: f03b9ee67 (`merge.go`
+  `finishMerge` / `undoMerge`, `land.go` `mergeRefusal`).
+- [ ] (arcterm) Kael sync 11-13: a resume that fails in a new tab leaves no extra tab: close the tab of a Quick run's
+  worker while it works → the run reads Blocked "worker's tab was closed…". Make the resume fail (move the worker's
+  session `.jsonl` away) and Resume from the palette → it reports why, and the Agent tree gains no extra terminal for
+  the run; put the file back and Resume again → one new tab opens and the worker continues. Unit-tested only. Commit:
+  5019e90c8 (`interrupted.go` `resumeInNewTab`, `swapPhaseWorker`).
+- [ ] (arcterm) Kael sync 11-13: an RPC client dropped mid-call: from a terminal in arcterm run `wsh ask --wait "x"`
+  and end that wsh process hard (Task Manager, by its PID) → the wait it held ends on the server (a second
+  `wsh ask --wait` in another terminal is answered, not queued behind it) and `waveapp.log` shows at most one `went
+  away before it answered` for the call. Then reload the cockpit window (Ctrl+R) while the Agent surface is loading →
+  its lists load with no timeout toast. Unit-tested only; `-race` could not run on this machine's zig toolchain.
+  Commit: 7d9e0bcf6 (`pkg/wshutil/wshrouter.go`, `wshrpc.go`, `pkg/web/ws.go`).
+- [ ] (arcterm) Kael sync 11-13: a run's agents sit under its project, with the trimmed launch: start an orchestrator
+  run with Claude workers → in the Agent tree its lead, task workers, reviewers and plan reviewers are under the run's
+  project folder, not outside it. A worker's launch line carries `--strict-mcp-config`, a reviewer's and a judge's
+  also `--disable-slash-commands` (`wsh agents` or the process list), and the task still passes review and lands. Only
+  the CLI's flag list was confirmed, no real launch. Commit: 5019e90c8 (`engine.go` `channelProjectName`,
+  `jarvis.RunWorkerSpecWithOptions`).
+- [ ] (arcterm) Kael sync 11-13: a failed skill adopt in Setup shows the banner, no toast: in Setup → Skills make the
+  vault's skills folder read-only and adopt a skill → the Setup banner names the failure, no "Moved N skills into the
+  vault" toast shows, your keep choices stay and the matrix is read again. Vitest only. Commit: 7c1e0b7db
+  (`setupstore.ts` `adoptSkills`).
+- [ ] (arcterm) Kael sync 11-13: initiative chunks labelled by number: in the New initiative form add chunks labelled
+  `1`, `2`, `3`, tick a stage and a done on the second → the created initiative has them on its own chunk 2. In an
+  initiative with chunks `1`, `2`, `3` delete chunk 1, then chunk 2 inside the undo window → chunks 1 and 2 go and 3
+  stays. Undo a move of a chunk → it returns to its place. Never tried in the app. Commit: 148cc8dbd
+  (`effortstore.ts`, `effortcreateform.tsx`).
+- [ ] (arcterm) Kael sync 11-13: the DAG window's owner and its small states: open a worker task's run sheet (Agent
+  tree → the run's worker → its sheet) → the dock reads Open in the run's DAG, and it opens the DAG with that task
+  selected; the subtitle reads `<project> · <first 8 characters of the run id>`. Run `wsh ui reveal dag:<id>#<task>` in
+  a terminal → the DAG opens on that task's run, and Ctrl+click on a `dag:` address where the cockpit draws one peeks
+  the owner run instead. With Jarvis as the walking pet (not the hologram), open the DAG window and the Final shots
+  viewer → the sprite is gone behind them and comes back when they close. Only vitest covers these. Commit: dbd4023d6
+  (`dagmodal.tsx`, `openref.ts`, `petview.tsx`).
+- [ ] (arcterm) Kael sync 11-13: an ended run's timeline and a real held tip: open the DAG of a run that has ended →
+  the timeline's strip reads `ended <date time>` with the date on its labels once events span days, no now marker or
+  live pill, and no retry or skip on its cards. Then in a live run make one lane's Verify fail while another lane's
+  tip is merge-ready → the Agent tree shows the failed task with a red dot and reason and the other tip stays a live
+  row with "merge ready · waits on t-N's failed Verify" (wrapped inside the rail's lane), the same line shows in
+  Jarvis's Runs row and the DAG peek, there is no Merge button on it, and `wsh jarvis dag status` prints `merge held:
+  waits on t-N's failed Verify`. The scenarios patch the digest on the page, so no run has shown the engine's own
+  `held`. Commit: 078afd010 (`digest.go`, `queue.go`) with dbd4023d6 (`runlineage.ts`, `agenttreemodel.ts`).
+- [ ] (arcterm) Kael sync 11-13: skipping a task under review, and a take-over that answers the lead: in a live run
+  `wsh jarvis dag skip t-N` while t-N is under review → its reviewer's tab stops, the lane goes back to the review
+  base and the run goes on (the timeline reads "you skipped" for your click, "lead skipped" for the lead's). When a
+  lead relays a worker's question with `AskUserQuestion` (header exactly `t-N`) and you press Take over → the lead's
+  relay is answered at once and the lead carries on; a Plan review or land question of the lead is not touched. On a
+  failed final stage press Rerun while the lead is asking → the lead's question is answered with the rerun line.
+  Unit-tested only. Commit: 078afd010 (`scheduler.go` `SkipTask`, `queue.go` `TakeOverAsk`, `final.go`
+  `RerunFinalStage`).
+- [ ] (arcterm) Kael sync 11-13: the Verifier step of an ended stage: open the final stage's pane of a run whose
+  verifier has ended and click the Verifier step → the verifier's read-only transcript opens (the scenario's seeded
+  run has none, so only the "Session ended · read-only transcript" banner was checked). Commit: dbd4023d6
+  (`finalstagepane.tsx`, `runlineage.ts` `verifierStepTarget`).
+
 - [ ] (arcterm) Jarvis For later on real sessions: mark a session older than a week for later (History → its menu →
   Mark for later), and one of a running agent → open Jarvis: For later, at the bottom of the side column, names both
   with their project and the mark's age, newest mark first. Click the running one → Agent opens on that agent. Resume

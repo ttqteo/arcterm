@@ -24,3 +24,13 @@ describe("runcompletion derivations", () => {
         expect(needsEvidenceSeal({ status: "executing" } as Run)).toBe(false);
     });
 });
+
+// 2026-11-13 Kael sync, cff274e28 (P10)
+describe("fmtDuration under a second", () => {
+    it("reads a sub-second duration as <1s, not a rounded 1s", () => {
+        expect(fmtDuration(211)).toBe("<1s");
+        expect(fmtDuration(999)).toBe("<1s");
+        expect(fmtDuration(1500)).toBe("2s");
+        expect(fmtDuration(0)).toBe("0s");
+    });
+});

@@ -493,6 +493,7 @@ declare global {
         moves?: AgentSyncSkillMove[];
         unresolved?: string[];
         dryrun?: boolean;
+        error?: string;
     };
 
     // wshrpc.CommandAgentSyncApplyData
@@ -1079,6 +1080,7 @@ declare global {
         unverified?: string;
         downstreamfor?: string[];
         picks?: DagModelPick[];
+        by?: string;
     };
 
     // wshrpc.CommandDagAnswerData
@@ -2193,6 +2195,7 @@ declare global {
     type CommandReportRunPhaseRtnData = {
         land?: RunLand;
         landerror?: string;
+        error?: string;
     };
 
     // wshrpc.CommandResMonKillChildrenData
@@ -3257,6 +3260,9 @@ declare global {
         reviewnote?: string;
         reviewdownstream?: string;
         reviewunverified?: string;
+        forwardedts?: number;
+        mergeheldby?: string;
+        verifyfailline?: string;
     };
 
     // wshrpc.DagTaskDuration
@@ -4102,6 +4108,12 @@ declare global {
         reason: string;
     };
 
+    // waveobj.PlanReviewRound
+    type PlanReviewRound = {
+        round: number;
+        reviewers?: PlanReviewer[];
+    };
+
     // waveobj.PlanReviewStage
     type PlanReviewStage = {
         state: string;
@@ -4111,6 +4123,7 @@ declare global {
         plantext?: string;
         spectext?: string;
         prior?: PlanReviewPrior;
+        pastrounds?: PlanReviewRound[];
     };
 
     // waveobj.PlanReviewer
@@ -4560,6 +4573,7 @@ declare global {
         reason?: string;
         commit?: string;
         notes?: string[];
+        tip?: string;
         dismissed?: boolean;
         dirty?: boolean;
         force?: boolean;

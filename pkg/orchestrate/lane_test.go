@@ -109,6 +109,41 @@ func TestReadyTasksStartsTheNextTaskInALaneBeforeAnyMerge(t *testing.T) {
 	}
 }
 
+// a join depends on two lanes: it starts on the landing head once both have merged, never when only one has (the
+// fork's F4: a task started on one lane's tip would lack the other lane's commits). Ours has no early start, so this
+// pins that ReadyTasks reads every cross-lane dependency.
+func TestReadyTasksJoinWaitsForEveryLaneItDependsOn(t *testing.T) {
+	join := func(states map[string]string) *waveobj.TaskGroup {
+		g, err := NewTaskGroup("run-1", "ch-1", "g", 2, true, []waveobj.TaskNode{
+			{ID: "t-1", Label: "schema"},
+			{ID: "t-2", Label: "api"},
+			{ID: "t-3", Label: "ui", Deps: []string{"t-1", "t-2"}},
+		}, 1, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for id, s := range states {
+			taskByID(&g, id).State = s
+		}
+		return &g
+	}
+	g := join(map[string]string{"t-1": TaskState_Done, "t-2": TaskState_Done})
+	markMerged(g, "t-1")
+	if got := ReadyTasks(g); len(got) != 0 {
+		t.Fatalf("one lane merged and one done but unmerged: the join waits, got %v", got)
+	}
+	g = join(map[string]string{"t-1": TaskState_Done, "t-2": TaskState_Reviewing})
+	markMerged(g, "t-1")
+	if got := ReadyTasks(g); len(got) != 0 {
+		t.Fatalf("one lane merged and one under review: the join waits, got %v", got)
+	}
+	g = join(map[string]string{"t-1": TaskState_Done, "t-2": TaskState_Done})
+	markMerged(g, "t-1", "t-2")
+	if got := ReadyTasks(g); !reflect.DeepEqual(got, []string{"t-3"}) {
+		t.Fatalf("both lanes merged: want [t-3], got %v", got)
+	}
+}
+
 // retrying an earlier task while a later one runs would put two workers in one tree
 func TestNextToSpawnRunsOneWorkerPerLane(t *testing.T) {
 	g := laneGroup(t, true, map[string]string{"t-1": TaskState_Pending, "t-2": TaskState_Running})

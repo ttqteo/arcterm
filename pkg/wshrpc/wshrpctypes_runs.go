@@ -166,6 +166,9 @@ type CommandReportRunPhaseData struct {
 type CommandReportRunPhaseRtnData struct {
 	Land      *waveobj.RunLand `json:"land,omitempty"`      // the land's outcome; nil when the complete made no land
 	LandError string           `json:"landerror,omitempty"` // why the land could not be attempted at all
+	// Error is why the complete failed after the run went done, beside the land it still made. It rides in the
+	// reply because an rpc error reply carries no data.
+	Error string `json:"error,omitempty"`
 }
 
 type CommandCreateChildRunData struct {

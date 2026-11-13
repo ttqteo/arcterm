@@ -5,12 +5,13 @@
 // where a terminal would be it shows the pipeline, the running command with its output tail, and what an ended
 // stage came to. A click on a step that ended shows the output it kept.
 
+import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import { dockButtonClass } from "./endfinalform";
-import { shownStep, type FinalStepKey } from "./finalstage";
+import { finalFailedNote, shownStep, type FinalStepKey } from "./finalstage";
 import {
     EndFinalStage,
     FinalKeptOutput,
@@ -21,13 +22,24 @@ import {
     RerunFinalStage,
     useFinalStageView,
 } from "./finalstageviews";
-import { stageLabel, type RunInfo } from "./runlineage";
+import { leadAgentOf, stageLabel, verifierStepTarget, type RunInfo } from "./runlineage";
 import { FINAL_FILL } from "./runstrip";
 
 export function FinalStagePane({ model, run }: { model: AgentsViewModel; run: RunInfo }) {
     const now = useAtomValue(model.nowAtom);
     const view = useFinalStageView(run.dag, run.runId, run.channelId, now);
+    const agents = useAtomValue(model.agentsAtom);
+    const lead = leadAgentOf(useAtomValue(model.lineageAtom), agents, run.runId);
     const [picked, setPicked] = useState<FinalStepKey | null>(null);
+    // the verifier's transcript is its output, so its step opens that session instead of the output panel
+    const verifierTarget = verifierStepTarget(run, agents);
+    const onPick = (key: FinalStepKey) => {
+        if (key === "verifier" && verifierTarget != null) {
+            globalStore.set(model.focusIdAtom, verifierTarget);
+            return;
+        }
+        setPicked(picked === key ? null : key);
+    };
     // with no output yet (Tree, or a command's first seconds) the step list stands alone
     const shown = shownStep(view, picked);
     const outputRef = useRef<HTMLDivElement>(null);
@@ -63,7 +75,8 @@ export function FinalStagePane({ model, run }: { model: AgentsViewModel; run: Ru
                     <FinalStepCells
                         steps={view.steps}
                         shown={shown?.key}
-                        onPick={(key) => setPicked(picked === key ? null : key)}
+                        onPick={onPick}
+                        opensVerifier={verifierTarget != null}
                     />
                 </div>
             ) : null}
@@ -90,10 +103,10 @@ export function FinalStagePane({ model, run }: { model: AgentsViewModel; run: Ru
                     </>
                 ) : (
                     <>
-                        <FinalOutcome view={view} />
+                        {run.dag ? <FinalOutcome view={view} group={run.dag} /> : null}
                         {view.state === "failed" ? (
-                            <span className="flex-none text-[12px] text-muted">
-                                The lead has this failure and decides what happens next.
+                            <span data-final-note className="flex-none text-[12px] text-muted">
+                                {finalFailedNote(lead ? { asking: lead.state === "asking" } : undefined)}
                             </span>
                         ) : null}
                         <FinalShotsLink group={run.dag} />

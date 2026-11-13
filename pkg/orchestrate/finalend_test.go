@@ -5,10 +5,12 @@ package orchestrate
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -168,6 +170,115 @@ func TestAHumanRerunsAKilledFinalStage(t *testing.T) {
 	}
 }
 
+// a rerun leaves one final-rerun row (Kael c408b2cd1)
+func TestARerunWritesAFinalRerunRow(t *testing.T) {
+	lead := newFakeLead(t)
+	f := finalFixture(t, passVerify, "exit 1", "")
+	if g := runFinal(t, f); g.Final.State != FinalState_Failed {
+		t.Fatalf("setup: want a failed stage, got %s", g.Final.State)
+	}
+	ackWake(lead)
+
+	if err := RerunFinalStage(f.ctx, f.dagID); err != nil {
+		t.Fatal(err)
+	}
+	if n := lead.countKind(waveobj.RunEventKindFinalRerun); n != 1 {
+		t.Fatalf("the rerun writes one final-rerun row, got %d", n)
+	}
+	for _, row := range lead.rows {
+		if row["eventkind"] == waveobj.RunEventKindFinalRerun && row["round"] != 1 {
+			t.Fatalf("the row carries the round, got %v", row)
+		}
+	}
+}
+
+// failedStageWithAskingLead is a failed final stage whose woken lead now holds its own question open, as when it put
+// the failure to the human
+func failedStageWithAskingLead(t *testing.T) (*mergeFixture, *fakeLead) {
+	t.Helper()
+	lead := newFakeLead(t)
+	f := finalFixture(t, passVerify, "echo 'docker is not running'; exit 1", "")
+	if g := runFinal(t, f); g.Final.State != FinalState_Failed || len(lead.sends) != 1 {
+		t.Fatalf("setup: want a failed stage that woke the lead, got %s / %q", g.Final.State, lead.sends)
+	}
+	ackWake(lead)
+	lead.state.State = baseds.AgentState_Asking
+	seedLeadOwnAsk(singleSelect())
+	return f, lead
+}
+
+// heldRerunWakes counts the rerun wakes sent or held for the lead
+func heldRerunWakes(lead *fakeLead) int {
+	wakes.lock.Lock()
+	defer wakes.lock.Unlock()
+	n := 0
+	for _, line := range lead.sends {
+		if strings.HasPrefix(line, finalRerunWakeHead) {
+			n++
+		}
+	}
+	for _, rw := range wakes.runs {
+		for _, line := range rw.lines {
+			if strings.HasPrefix(line, finalRerunWakeHead) {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// the lead's open question about the failed stage is answered by the rerun, so it does not act on the human's
+// answer to it before the held wake arrives
+func TestARerunAnswersTheLeadsOpenQuestion(t *testing.T) {
+	f, lead := failedStageWithAskingLead(t)
+	calls, release := stubLeadDelivery(t, nil)
+	defer close(release)
+
+	if err := RerunFinalStage(f.ctx, f.dagID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-calls:
+		if got.oref != leadAskOref() || len(got.answers) != 1 || got.answers[0].Text != finalRerunAnswer(1) {
+			t.Fatalf("want the rerun answer on the lead's own ask, got %+v", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the lead's question was never answered")
+	}
+	if n := heldRerunWakes(lead); n != 0 {
+		t.Fatalf("an answered question needs no rerun wake, got %d", n)
+	}
+	if n := lead.countKind(waveobj.RunEventKindFinalRerun); n != 1 {
+		t.Fatalf("the rerun writes one final-rerun row, got %d", n)
+	}
+}
+
+// an answer that fails to type still tells the lead, once, by the wake
+func TestARerunWhoseAnswerFailsWakesOnce(t *testing.T) {
+	f, lead := failedStageWithAskingLead(t)
+	calls, release := stubLeadDelivery(t, errors.New("the picker closed"))
+
+	if err := RerunFinalStage(f.ctx, f.dagID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-calls:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the lead's question was never answered")
+	}
+	if n := heldRerunWakes(lead); n != 0 {
+		t.Fatalf("no wake while the answer is still being typed, got %d", n)
+	}
+	close(release)
+	deadline := time.Now().Add(5 * time.Second)
+	for heldRerunWakes(lead) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := heldRerunWakes(lead); n != 1 {
+		t.Fatalf("a failed answer posts one rerun wake, got %d", n)
+	}
+}
+
 // the lead completed after its last round failed; a rerun then wakes nobody, since nobody would read it
 func TestARerunOfADoneRunWakesNobody(t *testing.T) {
 	lead := newFakeLead(t)
@@ -218,6 +329,70 @@ func TestRefusedFinalStageReruns(t *testing.T) {
 func ackWake(lead *fakeLead) {
 	NoteLeadStatus(context.Background(), lead.status(baseds.AgentState_Working))
 	NoteLeadStatus(context.Background(), lead.status(baseds.AgentState_Idle))
+}
+
+// a stage the human ended and reran in the same round, whose next tick started it again before the ended commands'
+// goroutine recorded: that goroutine's failure is the ended start's, and must not end the rerun failed. Round and
+// state cannot tell the two starts apart, and the goroutine's own cut-off check (its context) ran before the stop
+// (Kael b2cc11cbf: ours already cuts off a result whose commands the stop killed; this is the stop that comes after
+// the commands returned, before the result is recorded)
+func TestARerunIsNotEndedByAResultRecordedAfterItsStop(t *testing.T) {
+	const finalCmd = "the-final-command"
+	f := finalFixture(t, passVerify, "", finalCmd)
+	started, proceed := make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	stubPlanCommandOutput(t, func(_ context.Context, _, command string) (string, error) {
+		if command != finalCmd {
+			return "", nil
+		}
+		if calls.Add(1) == 1 {
+			close(started)
+			<-proceed
+			return "boom", &planCommandError{exitCode: 1, output: "boom"}
+		}
+		return "", nil // the rerun's Final command passes
+	})
+	await := awaitFinal(t)
+	if err := Schedule(f.ctx, f.dagID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the Final command did not start")
+	}
+
+	// hold the dag lock so the command's failure reaches the record only after the end's stop, the rerun and the tick
+	// that starts the rerun
+	inLock, stopNow, finished := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		finished <- WithDagMutation(f.dagID, func() error {
+			close(inLock)
+			<-stopNow
+			stopDagFinal(f.dagID)
+			return wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
+				round := cur.Final.Round
+				cur.Final = &waveobj.FinalStage{State: FinalState_Checking, Round: round, OutDir: finalOutDir(cur.OID, round), StartedTs: time.Now().UnixMilli()}
+				return nil
+			})
+		})
+	}()
+	<-inLock
+	close(proceed)                     // the command fails; its goroutine goes on to wait for the dag lock
+	time.Sleep(300 * time.Millisecond) // long enough for it to be waiting
+	close(stopNow)
+	if err := <-finished; err != nil {
+		t.Fatal(err)
+	}
+
+	await() // the stopped commands
+	if g := f.dag(t); g.Final.State == FinalState_Failed {
+		t.Fatalf("the stopped commands' result ended the rerun: %+v", g.Final)
+	}
+	await() // the rerun's own commands, started by the tick after the stopped ones let go
+	if g := f.dag(t); g.Final.State != FinalState_Passed || g.Final.Round != 1 {
+		t.Fatalf("the rerun passes in its round, got %s / %+v", g.Status, g.Final)
+	}
 }
 
 // a run that never had a lead gets none launched only to be told to drop a fix plan it never wrote

@@ -219,11 +219,18 @@ func retryable(state string) bool {
 	return taskActive(state) || state == TaskState_Failed || state == TaskState_ReviewFailed
 }
 
+// skippable is the states a skip may drop a task from: nothing of it has landed or is landing. A stalled task's worker
+// and a reviewing task's reviewer are stopped first (prepareActionLocked). A running task is not in the list: stop it,
+// which fails it, and skip it then. Done, blocked-merge and the Verify states have landed or are landing.
 func skippable(state string) bool {
-	return state == TaskState_Failed || state == TaskState_Stalled || state == TaskState_Ready || state == TaskState_ReviewFailed
+	switch state {
+	case TaskState_Pending, TaskState_Ready, TaskState_Stalled, TaskState_Reviewing, TaskState_ReviewFailed, TaskState_Failed:
+		return true
+	}
+	return false
 }
 
-// SkipTask marks a failed/ready task skipped (no spawn).
+// SkipTask marks a task skipped: it never runs again and never lands.
 func SkipTask(g *waveobj.TaskGroup, taskID string) error {
 	for i := range g.Tasks {
 		if g.Tasks[i].ID != taskID {
@@ -231,6 +238,10 @@ func SkipTask(g *waveobj.TaskGroup, taskID string) error {
 		}
 		if !skippable(g.Tasks[i].State) {
 			return fmt.Errorf("task %q cannot be skipped from state %q", taskID, g.Tasks[i].State)
+		}
+		if g.Tasks[i].State == TaskState_Reviewing {
+			// the reviewer the skip stopped: its exit is no longer this task's
+			g.Tasks[i].ReviewRunID = ""
 		}
 		g.Tasks[i].State = TaskState_Skipped
 		g.Tasks[i].RunID = ""
@@ -240,17 +251,14 @@ func SkipTask(g *waveobj.TaskGroup, taskID string) error {
 	return fmt.Errorf("no task %q", taskID)
 }
 
-// CancelGroup terminally cancels: pending/ready -> skipped, running -> cancelled. A cancelled dag no longer reads
-// paused, so its PausedTs is cleared with it.
+// CancelGroup terminally cancels: each task takes its cancelTo state (taskStates). Not yet started is skipped; a live
+// worker, a review or a failed review is cancelled; a task that already ended, and one in a landing state, stays as it
+// was. A cancelled dag no longer reads paused, so its PausedTs is cleared with it.
 func CancelGroup(g *waveobj.TaskGroup) *waveobj.TaskGroup {
 	g.PausedTs = 0
 	for i := range g.Tasks {
-		t := &g.Tasks[i]
-		switch t.State {
-		case TaskState_Pending, TaskState_Ready:
-			t.State = TaskState_Skipped
-		case TaskState_Running, TaskState_Stalled, TaskState_Reviewing, TaskState_ReviewFailed:
-			t.State = TaskState_Cancelled
+		if to := taskStates[g.Tasks[i].State].cancelTo; to != "" {
+			g.Tasks[i].State = to
 		}
 	}
 	g.Status = DagStatus_Cancelled

@@ -297,3 +297,171 @@ func TestPostOutcomeOnlyForDispatchedWorker(t *testing.T) {
 		t.Fatalf("undispatched worker must get no outcome, got %d", got)
 	}
 }
+
+// countingScans swaps the run-row scan for one that counts its calls.
+func countingScans(t *testing.T) *int {
+	t.Helper()
+	scans := 0
+	orig := scanRunWorker
+	scanRunWorker = func(ctx context.Context, oref string) *RunWorkerMatch {
+		scans++
+		return orig(ctx, oref)
+	}
+	t.Cleanup(func() { scanRunWorker = orig })
+	return &scans
+}
+
+// a stamp that names a run no longer listing its tab fell back to the ~330 ms scan of every run row on every
+// call (attention polls every 5-10s): the scan's answer holds until the stamp changes, so it runs once
+func TestResolveRunWorkerFromMeta_StaleStampScansOnce(t *testing.T) {
+	ctx := context.Background()
+	scans := countingScans(t)
+	ch, err := wstore.CreateChannel(ctx, "rw-stale", "/p")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	chORef := waveobj.MakeORef(waveobj.OType_Channel, ch.OID).String()
+	appendRun := func(workers ...string) string {
+		id := uuid.NewString()
+		run := waveobj.Run{ID: id, Goal: "g", Status: "executing", CreatedTs: 1,
+			Phases: []waveobj.RunPhase{{Kind: PhaseKind_Execute, WorkerOrefs: workers}}}
+		if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+			t.Fatalf("append run: %v", err)
+		}
+		return id
+	}
+	stamp := func(tab, runID string) {
+		if err := wstore.StampWorkerOwner(ctx, tab, waveobj.MakeORef(waveobj.OType_Run, runID).String(), chORef); err != nil {
+			t.Fatalf("stamp: %v", err)
+		}
+	}
+	elsewhere := appendRun()
+
+	listed := seedWorkerTab(t, ctx)
+	owner := appendRun(listed)
+	stamp(listed, elsewhere)
+	for i := range 2 {
+		if m := ResolveRunWorkerFromMeta(ctx, listed); m == nil || m.Run.ID != owner {
+			t.Fatalf("call %d: resolved %+v, want run %s, which lists the tab", i, m, owner)
+		}
+	}
+	if *scans != 1 {
+		t.Errorf("a stale stamp whose tab another run lists: %d scans over 2 calls, want 1", *scans)
+	}
+
+	*scans = 0
+	unlisted := seedWorkerTab(t, ctx)
+	stamp(unlisted, elsewhere)
+	for i := range 2 {
+		if m := ResolveRunWorkerFromMeta(ctx, unlisted); m != nil {
+			t.Fatalf("call %d: resolved run %s, want none", i, m.Run.ID)
+		}
+	}
+	if *scans != 1 {
+		t.Errorf("a stale stamp no run lists: %d scans over 2 calls, want 1", *scans)
+	}
+
+	// a new stamp is a new answer
+	*scans = 0
+	later := appendRun(unlisted)
+	stamp(unlisted, later)
+	if m := ResolveRunWorkerFromMeta(ctx, unlisted); m == nil || m.Run.ID != later || *scans != 0 {
+		t.Errorf("restamped tab: resolved %+v with %d scans, want run %s off the stamp", m, *scans, later)
+	}
+}
+
+// a remembered run that stops listing the tab is scanned for again, so a stale stamp's answer is never kept past
+// the run row that backed it
+func TestResolveRunWorkerFromMeta_StaleStampRescansWhenTheRememberedRunLetsGo(t *testing.T) {
+	ctx := context.Background()
+	scans := countingScans(t)
+	ch, err := wstore.CreateChannel(ctx, "rw-stale-moved", "/p")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	chORef := waveobj.MakeORef(waveobj.OType_Channel, ch.OID).String()
+	appendRun := func(workers ...string) string {
+		id := uuid.NewString()
+		run := waveobj.Run{ID: id, Goal: "g", Status: "executing", CreatedTs: 1,
+			Phases: []waveobj.RunPhase{{Kind: PhaseKind_Execute, WorkerOrefs: workers}}}
+		if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+			t.Fatalf("append run: %v", err)
+		}
+		return id
+	}
+	tab := seedWorkerTab(t, ctx)
+	elsewhere := appendRun()
+	first := appendRun(tab)
+	if err := wstore.StampWorkerOwner(ctx, tab, waveobj.MakeORef(waveobj.OType_Run, elsewhere).String(), chORef); err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+	if m := ResolveRunWorkerFromMeta(ctx, tab); m == nil || m.Run.ID != first {
+		t.Fatalf("resolved %+v, want run %s", m, first)
+	}
+	// the remembered run drops the tab and another lists it, with the stamp unchanged
+	if err := wstore.UpdateRun(ctx, ch.OID, first, func(r *waveobj.Run) error {
+		r.Phases[0].WorkerOrefs = nil
+		return nil
+	}); err != nil {
+		t.Fatalf("update run: %v", err)
+	}
+	second := appendRun(tab)
+	*scans = 0
+	if m := ResolveRunWorkerFromMeta(ctx, tab); m == nil || m.Run.ID != second || *scans != 1 {
+		t.Fatalf("resolved %+v with %d scans, want run %s from one fresh scan", m, *scans, second)
+	}
+}
+
+// a tab with no stamp is still found by the scan, to the run that lists it, and nothing is remembered about it: a
+// run that lists it later is found on the next call
+func TestResolveRunWorkerFromMeta_UnstampedTabStillScansEveryCall(t *testing.T) {
+	ctx := context.Background()
+	scans := countingScans(t)
+	ch, err := wstore.CreateChannel(ctx, "rw-unstamped", "/p")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	tab := seedWorkerTab(t, ctx)
+	if m := ResolveRunWorkerFromMeta(ctx, tab); m != nil {
+		t.Fatalf("a tab no run lists resolved to run %s", m.Run.ID)
+	}
+	runID := uuid.NewString()
+	run := waveobj.Run{ID: runID, Goal: "g", Status: "executing", CreatedTs: 1,
+		Phases: []waveobj.RunPhase{{Kind: PhaseKind_Execute, WorkerOrefs: []string{tab}}}}
+	if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+		t.Fatalf("append run: %v", err)
+	}
+	if m := ResolveRunWorkerFromMeta(ctx, tab); m == nil || m.Run.ID != runID {
+		t.Fatalf("resolved %+v, want run %s, which lists the unstamped tab", m, runID)
+	}
+	if *scans != 2 {
+		t.Errorf("%d scans over 2 calls for an unstamped tab, want one per call", *scans)
+	}
+}
+
+// a stamped tab whose run lists it is the common case: it must cost no scan
+func TestResolveRunWorkerFromMeta_StampedTabNeedsNoScan(t *testing.T) {
+	ctx := context.Background()
+	scans := countingScans(t)
+	ch, err := wstore.CreateChannel(ctx, "rw-stamped-noscan", "/p")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	tab := seedWorkerTab(t, ctx)
+	runID := uuid.NewString()
+	run := waveobj.Run{ID: runID, Goal: "g", Status: "executing", CreatedTs: 1,
+		Phases: []waveobj.RunPhase{{Kind: PhaseKind_Execute, WorkerOrefs: []string{tab}}}}
+	if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+		t.Fatalf("append run: %v", err)
+	}
+	if err := wstore.StampWorkerOwner(ctx, tab, waveobj.MakeORef(waveobj.OType_Run, runID).String(),
+		waveobj.MakeORef(waveobj.OType_Channel, ch.OID).String()); err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+	if m := ResolveRunWorkerFromMeta(ctx, tab); m == nil || m.Run.ID != runID || m.PhaseIdx != 0 {
+		t.Fatalf("resolved %+v, want run %s phase 0", m, runID)
+	}
+	if *scans != 0 {
+		t.Errorf("%d scans for a stamped tab, want none", *scans)
+	}
+}

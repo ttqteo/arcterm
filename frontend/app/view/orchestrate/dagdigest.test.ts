@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
     acceptDigest,
     cleanupOnly,
+    DIGEST_RETRY_MS,
     formatElapsed,
     freshCounts,
     healthView,
@@ -61,6 +62,10 @@ describe("shouldRefreshDigest", () => {
         expect(shouldRefreshDigest("task-spawned")).toBe(true);
         expect(shouldRefreshDigest("final-step")).toBe(true);
         expect(shouldRefreshDigest("dag-done")).toBe(true);
+    });
+
+    it("refreshes when the final stage ends", () => {
+        expect(shouldRefreshDigest("final-ended")).toBe(true);
     });
 
     it("does not refresh on activity ticks or unrelated kinds", () => {
@@ -208,6 +213,19 @@ describe("freshness (finding 7)", () => {
     it("is stale the moment the observed dag version moves past it, not when the reload returns", () => {
         expect(digestStale(digest(4), 5)).toBe(true);
         expect(digestStale(digest(4), 4)).toBe(false);
+    });
+
+    it("is stale when the last refresh failed, even at an unchanged version", () => {
+        // refreshes also run on events that leave the version alone (a child's ask), so a failed one leaves the held
+        // digest possibly behind
+        expect(digestStale(digest(4), 4, "timeout")).toBe(true);
+        expect(digestStale(digest(4), 4, undefined)).toBe(false);
+        expect(digestStale(undefined, 4, "timeout")).toBe(false);
+    });
+
+    it("waits longer before each automatic retry of a failed refresh", () => {
+        expect(DIGEST_RETRY_MS.length).toBeGreaterThan(0);
+        expect([...DIGEST_RETRY_MS].sort((a, b) => a - b)).toEqual(DIGEST_RETRY_MS);
     });
 
     it("treats a missing digest as unavailable rather than stale", () => {

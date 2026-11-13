@@ -9,7 +9,7 @@ You run inside arcterm. `wsh ui` lets you see and steer the cockpit the user is 
 
 - `wsh ui state` — JSON: current surface, `busy`, `selection` (addresses), and the `actions` available now.
 - `wsh ui reveal <address>` — take the user to an entity. Addresses: `run:<id>`, `channel:<id>`,
-  `agent:<tabId>`, `task:<id>`, `memnote:<id>`, `effort:<id>`, `radarreport:<id> [--anchor <findingId>]`,
+  `dag:<oid>[#<taskId>]` (a run's task graph, on one task when named), `agent:<tabId>`, `task:<id>`, `memnote:<id>`, `effort:<id>`, `radarreport:<id> [--anchor <findingId>]`,
   `surface:<cockpit|jarvis|agent|code|files|radar|usage|setup|settings|history>` (`history` is Conversation History, a mode of the Agent surface).
   Your own terminal is `agent:$WAVETERM_TABID`. Files: use `wsh view <path>` instead.
   A `memnote:` has no surface: it shows in the avatar popup and leaves the user where they are.

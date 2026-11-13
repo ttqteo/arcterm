@@ -85,8 +85,17 @@ var finalFinished = func(dagID string) {}
 var finalRuns = struct {
 	sync.Mutex
 	byDag    map[string]context.CancelFunc
+	starts   map[string]*finalCommands
 	verdicts map[string]finalVerdict
-}{byDag: make(map[string]context.CancelFunc), verdicts: make(map[string]finalVerdict)}
+}{byDag: make(map[string]context.CancelFunc), starts: make(map[string]*finalCommands), verdicts: make(map[string]finalVerdict)}
+
+// finalCommands is one start of a dag's final commands, kept beside the cancel in byDag. stopped is set by stopDagFinal:
+// the stage they ran for was ended, so their result records nothing. Round and state cannot say so: a rerun restarts
+// the same round, and its next tick can move it to checking before the stopped commands record. The commands' own
+// context cannot either, since a stop that comes after they returned has cancelled nothing they read.
+type finalCommands struct {
+	stopped bool
+}
 
 // finalVerdict is a verifier's verdict on one round, held until the stage's commands finish.
 type finalVerdict struct {
@@ -102,9 +111,19 @@ func stopDagFinal(dagID string) {
 	finalRuns.Lock()
 	defer finalRuns.Unlock()
 	delete(finalRuns.verdicts, dagID)
+	if c := finalRuns.starts[dagID]; c != nil {
+		c.stopped = true
+	}
 	if cancel := finalRuns.byDag[dagID]; cancel != nil {
 		cancel()
 	}
+}
+
+// finalStopped reports whether stopDagFinal stopped c.
+func finalStopped(c *finalCommands) bool {
+	finalRuns.Lock()
+	defer finalRuns.Unlock()
+	return c.stopped
 }
 
 func holdFinalVerdict(dagID string, v finalVerdict) {
@@ -242,6 +261,8 @@ func startFinalCommands(dagID string, owner *waveobj.Run) {
 		return
 	}
 	finalRuns.byDag[dagID] = cancel
+	run := &finalCommands{}
+	finalRuns.starts[dagID] = run
 	finalRuns.Unlock()
 	goStage("final "+dagID, func() {
 		defer finalFinished(dagID)
@@ -255,6 +276,8 @@ func startFinalCommands(dagID string, owner *waveobj.Run) {
 		spawnCtx, spawnCancel := context.WithTimeout(bg, jarvis.RunWorkerSpawnTimeout)
 		removeTree := !res.onStage
 		if err := WithDagMutation(dagID, func() error {
+			// read with the stage, under the lock: a stop that came after the commands returned counts too
+			res.cutOff = res.cutOff || finalStopped(run)
 			var rerr error
 			removeTree, rerr = recordFinalLocked(bg, spawnCtx, dagID, owner, res)
 			return rerr
@@ -267,6 +290,7 @@ func startFinalCommands(dagID string, owner *waveobj.Run) {
 		}
 		finalRuns.Lock()
 		delete(finalRuns.byDag, dagID)
+		delete(finalRuns.starts, dagID)
 		finalRuns.Unlock()
 		// the outcome makes the dag done or blocked, which the tick announces
 		if err := Schedule(bg, dagID); err != nil {
@@ -286,7 +310,7 @@ type finalResult struct {
 	unverified    []string
 	onStage       bool
 	killed        bool // the failed step was killed from outside
-	cutOff        bool // stopDagFinal ended the commands before they finished: nothing they found is a result
+	cutOff        bool // stopDagFinal ended the commands, before they finished or before they recorded: nothing they found is a result
 	shots         []waveobj.FinalShot
 	shotsManifest bool
 }
@@ -689,6 +713,12 @@ func finishFinal(ctx context.Context, g *waveobj.TaskGroup, judged bool, afterCo
 	default:
 		f.State = FinalState_Passed
 	}
+	endedRound, outcome, endChannelID, endRunID := f.Round, f.State, g.ChannelId, g.RunID
+	*afterCommit = append(*afterCommit, func() {
+		appendRunEvent(context.Background(), endChannelID, endRunID, waveobj.RunEventKindFinalEnded, nil, map[string]any{
+			"round": endedRound, "outcome": outcome,
+		})
+	})
 	if f.State != FinalState_Failed {
 		return
 	}
@@ -802,7 +832,8 @@ func RerunFinalStage(ctx context.Context, dagID string) error {
 		RecomputeDagStatus(g)
 		channelID, runID := g.ChannelId, g.RunID
 		afterCommit = append(afterCommit, func() {
-			PostWake(ctx, channelID, runID, finalRerunWake(round))
+			appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindFinalRerun, nil, map[string]any{"round": round})
+			answerLeadWithRerun(ctx, channelID, runID, round)
 		})
 		return persistDag(ctx, g)
 	})
@@ -813,6 +844,21 @@ func RerunFinalStage(ctx context.Context, dagID string) error {
 		fn()
 	}
 	return nil
+}
+
+// answerLeadWithRerun tells the lead of a rerun. A question it holds then is about the failed stage, since every task
+// settled before the stage ran, so the rerun answers it: the wake would be held until the lead acted on the human's
+// answer. With no question to answer, or an answer that cannot be delivered, the lead gets the wake.
+func answerLeadWithRerun(ctx context.Context, channelID, runID string, round int) {
+	wake := func() { PostWake(context.WithoutCancel(ctx), channelID, runID, finalRerunWake(round)) }
+	lead := leadStateFn(ctx, channelID, runID)
+	answered, err := answerLeadQuestionWith(ctx, channelID, runID, lead.BlockId, finalRerunAnswer(round), anyQuestion, wake)
+	if err != nil {
+		log.Printf("orchestrate: run %s: answering the lead's question with the rerun: %v", runID, err)
+	}
+	if !answered {
+		wake()
+	}
 }
 
 // removeStaleFinalTree is removeWorktreeDir, a var so a test can leave a stale final tree in place on any platform.

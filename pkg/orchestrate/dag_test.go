@@ -2,6 +2,12 @@ package orchestrate
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
@@ -445,5 +451,102 @@ func TestDeriveTaskStatesNoNewCommitSkipsReview(t *testing.T) {
 	DeriveTaskStates(g, map[string]*waveobj.Run{"r-0": {ID: "r-0", Status: jarvis.RunStatus_Done, BaseCommit: "same", EndCommit: "same"}})
 	if g.Tasks[0].State != TaskState_Reviewing {
 		t.Fatalf("a fix round that committed nothing is still judged, got %s", g.Tasks[0].State)
+	}
+}
+
+// declaredTaskStates parses dag.go and returns the value of every TaskState_* constant it declares.
+func declaredTaskStates(t *testing.T) []string {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), "dag.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var states []string
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			vs := spec.(*ast.ValueSpec)
+			for i, name := range vs.Names {
+				if !strings.HasPrefix(name.Name, "TaskState_") {
+					continue
+				}
+				value, err := strconv.Unquote(vs.Values[i].(*ast.BasicLit).Value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				states = append(states, value)
+			}
+		}
+	}
+	if len(states) == 0 {
+		t.Fatal("found no TaskState_ constants in dag.go")
+	}
+	return states
+}
+
+// every TaskState_* constant declared in dag.go has a row in taskStates, so no reader's set leaves a state out
+func TestEveryTaskStateIsClassified(t *testing.T) {
+	states := declaredTaskStates(t)
+	for _, s := range states {
+		if _, ok := taskStates[s]; !ok {
+			t.Errorf("task state %q has no row in taskStates", s)
+		}
+	}
+	if len(taskStates) != len(states) {
+		t.Errorf("taskStates has %d rows for %d states", len(taskStates), len(states))
+	}
+	// what CancelGroup writes must itself end the task. The landing states are the known exception: a cancelled dag
+	// leaves a merge conflict or a Verify as it was (the fork cancels them; the owner decides in docs/open-issues.md).
+	for s, c := range taskStates {
+		if c.cancelTo == "" && !c.terminal && !c.landing {
+			t.Errorf("state %q is neither terminal, a landing state nor cancelled by CancelGroup", s)
+		}
+		if c.cancelTo != "" && !taskStates[c.cancelTo].terminal {
+			t.Errorf("state %q cancels to %q, which is not terminal", s, c.cancelTo)
+		}
+	}
+}
+
+// taskStates must answer, for every state, what the readers' own switches answered before it replaced them: the
+// table is a refactor of ours, so no state moves into or out of a set. The sets here are written out by hand.
+func TestTaskStatesClassifyAsTheSwitchesDid(t *testing.T) {
+	in := func(state string, set ...string) bool { return slices.Contains(set, state) }
+	for _, s := range declaredTaskStates(t) {
+		c := taskStates[s]
+		if want := in(s, TaskState_Running, TaskState_Stalled); c.active != want || taskActive(s) != want {
+			t.Errorf("%s: active = %v, want %v", s, c.active, want)
+		}
+		if want := in(s, TaskState_Running, TaskState_Stalled, TaskState_Reviewing); c.inFlight != want || taskInFlight(s) != want {
+			t.Errorf("%s: inFlight = %v, want %v", s, c.inFlight, want)
+		}
+		if want := in(s, TaskState_Reviewing, TaskState_ReviewFailed); c.review != want || reviewState(s) != want {
+			t.Errorf("%s: review = %v, want %v", s, c.review, want)
+		}
+		if want := in(s, TaskState_BlockedMerge, TaskState_Verifying, TaskState_VerifyFailed); c.landing != want || landingState(s) != want {
+			t.Errorf("%s: landing = %v, want %v", s, c.landing, want)
+		}
+		if want := in(s, TaskState_Done, TaskState_Skipped); c.settled != want {
+			t.Errorf("%s: settled = %v, want %v", s, c.settled, want)
+		}
+		// allTasksTerminal's old switch: done, skipped, failed and cancelled continue; anything else stops the walk
+		want := in(s, TaskState_Done, TaskState_Skipped, TaskState_Failed, TaskState_Cancelled)
+		if c.terminal != want || allTasksTerminal(&waveobj.TaskGroup{Tasks: []waveobj.TaskNode{{ID: "t-1", State: s}}}) != want {
+			t.Errorf("%s: terminal = %v, want %v", s, c.terminal, want)
+		}
+		// CancelGroup's old switch: not started -> skipped; a live worker or a review -> cancelled; the rest untouched
+		wantCancel := s
+		switch s {
+		case TaskState_Pending, TaskState_Ready:
+			wantCancel = TaskState_Skipped
+		case TaskState_Running, TaskState_Stalled, TaskState_Reviewing, TaskState_ReviewFailed:
+			wantCancel = TaskState_Cancelled
+		}
+		g := &waveobj.TaskGroup{Tasks: []waveobj.TaskNode{{ID: "t-1", State: s}}}
+		if CancelGroup(g); g.Tasks[0].State != wantCancel {
+			t.Errorf("%s: CancelGroup left %s, want %s", s, g.Tasks[0].State, wantCancel)
+		}
 	}
 }

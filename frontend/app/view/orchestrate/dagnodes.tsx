@@ -122,6 +122,7 @@ export function DagCardNode({ data }: NodeProps) {
         <div
             data-dag-node={task.id}
             data-dag-node-route={`${view.route.source}:${view.route.runtime}:${view.route.model}`}
+            data-dag-node-hovered={hovered ? "" : undefined}
             role="button"
             aria-pressed={selected}
             aria-label={`${task.id} ${view.label}, ${word}, ${fact}`}
@@ -144,9 +145,17 @@ export function DagCardNode({ data }: NodeProps) {
                 </span>
             </div>
             <div className={`flex items-center gap-1.5 leading-[14px] ${META_TEXT}`}>
-                <span className="min-w-0 flex-1 truncate">
-                    {task.id} · <span className={look.word}>{word}</span> · {fact}
+                <span data-dag-node-word className="flex-none">
+                    {task.id} · <span className={look.word}>{word}</span>
                 </span>
+                {fact ? (
+                    <span data-dag-node-fact className="min-w-0 flex-1 truncate">
+                        {" · "}
+                        {fact}
+                    </span>
+                ) : (
+                    <span className="flex-1" />
+                )}
                 {view.tag ? (
                     <span className="flex-none rounded-[5px] border border-edge-mid bg-surface-raised px-[5px] text-[10px] text-accent-soft">
                         {view.tag}

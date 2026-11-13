@@ -13,6 +13,19 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 )
 
+// fork ac548aa57: the most common round-1 plan review finding was a caller or test of a changed signature on no task's
+// Files line, so the lead is told to grep the references before it submits
+func TestEveryPlanningPromptListsCallersOfChangedSignatures(t *testing.T) {
+	want := "for every symbol whose signature, type shape or name a task changes, grep its references across the repo, tests and `scripts/` included, and put each file that must change on that task's Files line"
+	for _, runtime := range []string{"claude", "pi"} {
+		for _, autonomous := range []bool{false, true} {
+			if p := BuildOrchestratePrompt("ship auth", nil, runtime, autonomous); !strings.Contains(p, want) {
+				t.Errorf("%s autonomous=%v: plan step missing the caller grep:\n%s", runtime, autonomous, p)
+			}
+		}
+	}
+}
+
 func TestAskToolByRuntime(t *testing.T) {
 	cases := map[string]string{"claude": "AskUserQuestion", "pi": "ask_user_question", "agy": "ask_question", "": "AskUserQuestion"}
 	for runtime, want := range cases {
@@ -142,6 +155,24 @@ func TestOrchestrationRulesLeadAsksWorkerQuestionItself(t *testing.T) {
 	}
 	if strings.Index(line, "wsh jarvis dag asks") > strings.Index(line, "deadline passes") || !strings.Contains(line, "Before you ask, and before you ask again, run `wsh jarvis dag asks`") {
 		t.Errorf("the lead checks `dag asks` before asking:\n%s", line)
+	}
+}
+
+// Kael d977d702f: the lead gives a relayed question the task id as its header, which is how the engine finds
+// the relay when the human takes the question over.
+func TestOrchestrationRulesLeadRelaysWithTheTaskIdHeader(t *testing.T) {
+	r := OrchestrationRules("run-1", "", "", "", false)
+	var line string
+	for _, l := range strings.Split(r, "\n") {
+		if strings.HasPrefix(l, "- questions:") {
+			line = l
+		}
+	}
+	if !strings.Contains(line, "with the header `<task id>` exactly and nothing else (for example `t-3`)") {
+		t.Errorf("the questions line does not tell the lead to head a relay with the task id:\n%s", line)
+	}
+	if TakenOverRelayAnswer == "" {
+		t.Error("TakenOverRelayAnswer is empty")
 	}
 }
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { parseChunkLines } from "./effortcreateform";
+import { followUpOps, parseChunkLines } from "./effortcreateform";
 
 describe("parseChunkLines", () => {
     it("splits lines and defaults unchecked", () => {
@@ -32,5 +32,28 @@ describe("parseChunkLines stages", () => {
             { label: "Note:", stage: "", checked: false },
             { label: "http://x", stage: "", checked: false },
         ]);
+    });
+});
+
+describe("followUpOps", () => {
+    it("sends a stage and a done tick against the chunk's label", () => {
+        const lines = parseChunkLines("A: first\nsecond").map((l, i) => ({ ...l, checked: i === 1 }));
+        expect(followUpOps(lines)).toEqual([
+            { op: "setChunkStage", chunk: "first", stage: "A" },
+            { op: "setChunkStatus", chunk: "second", status: "done" },
+        ]);
+    });
+
+    it("sends an all-digit label as its position, which is how the server reads it", () => {
+        const lines = parseChunkLines("Phase: 3\n1\n2").map((l, i) => ({ ...l, checked: i >= 1 }));
+        expect(followUpOps(lines)).toEqual([
+            { op: "setChunkStage", chunk: "1", stage: "Phase" },
+            { op: "setChunkStatus", chunk: "2", status: "done" },
+            { op: "setChunkStatus", chunk: "3", status: "done" },
+        ]);
+    });
+
+    it("has nothing to send for plain pending, unstaged chunks", () => {
+        expect(followUpOps(parseChunkLines("one\ntwo"))).toEqual([]);
     });
 });

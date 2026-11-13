@@ -149,7 +149,7 @@ export function DagFinalPeek({
                     <FinalOutput output={view.output} lines={OUTPUT_LINES} />
                 </div>
             ) : null}
-            <FinalOutcome view={view} pastLabel={PAST_LABEL} className="flex-none" />
+            <FinalOutcome view={view} group={group} pastLabel={PAST_LABEL} className="flex-none" />
             <FinalShotsLink group={group} />
         </DagPeekCard>
     );

@@ -707,7 +707,7 @@ func (ws *WshServer) JarvisStatusCommand(ctx context.Context, data wshrpc.Comman
 }
 
 // JarvisRunEventsCommand lists a run's lifecycle events newest-first, for the run-card timeline.
-// Bounded read; the channel scoping keeps a stray caller from reading another channel's run log.
+// Bounded by the per-run retention cap; the channel scoping keeps a stray caller from reading another channel's run log.
 func (ws *WshServer) JarvisRunEventsCommand(ctx context.Context, data wshrpc.CommandJarvisRunEventsData) (*wshrpc.CommandJarvisRunEventsRtnData, error) {
 	if data.ChannelId == "" || data.RunId == "" {
 		return nil, fmt.Errorf("channelid and runid are required")

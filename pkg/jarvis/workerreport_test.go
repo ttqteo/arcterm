@@ -167,3 +167,63 @@ func TestWorkerReportTemplateLeavesBaseFormatterStateOut(t *testing.T) {
 		t.Fatalf("the Found not fixed placeholder must leave base formatter and lint state out:\n%s", WorkerReportTemplate)
 	}
 }
+
+// Kael sync 11-13 (1765e5dcb): a fence opened on a list item, or with ~~~, closes on its own closer, so the heading
+// after it is read
+func TestWorkerReportFenceOpenedOnAListItem(t *testing.T) {
+	for name, quote := range map[string]string{
+		"dash":  "ran:\n- ```bash\n  go test ./pkg/x\n  ```",
+		"tilde": "ran:\n~~~bash\ngo test ./pkg/x\n~~~",
+	} {
+		t.Run(name, func(t *testing.T) {
+			rep, err := ParseWorkerReport(strings.Replace(validReport, "landed it", quote, 1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(rep.Done, "go test ./pkg/x") || rep.ForLater != "use X" {
+				t.Fatalf("got %+v", rep)
+			}
+		})
+	}
+}
+
+// engine F3 (725085b17): the plan parser's fence shapes, read the same way in a report
+func TestWorkerReportFenceShapes(t *testing.T) {
+	for name, quote := range map[string]string{
+		"nested same-length fences":  "quoted:\n```markdown\n# Doc\n```bash\ngo test\n```\n```",
+		"inline span on a list item": "ran:\n- ```go test ./...``` passed",
+	} {
+		t.Run(name, func(t *testing.T) {
+			rep, err := ParseWorkerReport(strings.Replace(validReport, "landed it", quote, 1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rep.ForLater != "use X" {
+				t.Fatalf("got %+v", rep)
+			}
+		})
+	}
+}
+
+// a fence left open over a heading is refused with its own reason, not only as sections gone missing
+func TestWorkerReportRefusesAnUnclosedFence(t *testing.T) {
+	_, err := ParseWorkerReport(strings.Replace(validReport, "landed it", "ran:\n```bash\ngo test", 1))
+	if err == nil || !strings.Contains(err.Error(), "never closed") {
+		t.Fatalf("want an unclosed-fence error, got %v", err)
+	}
+	_, err = ParseWorkerReport(strings.Replace(validReport, "landed it", "ran:\n- ```bash\n  go test", 1))
+	if err == nil || !strings.Contains(err.Error(), "never closed") {
+		t.Fatalf("a list-item fence left open over a heading is refused too, got %v", err)
+	}
+}
+
+// a fence left open in the last section, hiding no heading, still parses, as a plan's does (0e9d917d8)
+func TestWorkerReportUnclosedFenceThatHidesNothingParses(t *testing.T) {
+	rep, err := ParseWorkerReport(validReport + "```bash\ngo test\n")
+	if err != nil {
+		t.Fatalf("got %v", err)
+	}
+	if rep.Done != "landed it" || !strings.Contains(rep.FoundNotFixed, "go test") {
+		t.Fatalf("got %+v", rep)
+	}
+}

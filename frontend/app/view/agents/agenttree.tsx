@@ -94,10 +94,12 @@ import {
     pickedRowIds,
     selectableRowIds,
     selectOnly,
+    stageRowAge,
     stageSubline,
     tasksShown,
     TASK_FOLD_AT,
     toggleRow,
+    workerRowTone,
     type BackgroundTaskRow,
     type ChecksFold,
     type RowSelection,
@@ -245,6 +247,7 @@ import {
 } from "./projectfoldstore";
 import {
     endedWorkerId,
+    isEndedWorkerId,
     laneLabel,
     runAgentsOf,
     runFocusAgent,
@@ -276,6 +279,7 @@ import { useChristmasDecor } from "./christmasstore";
 import { canSleep } from "./consumers";
 import { LandLine } from "./landprogressview";
 import { dagProgressLabel, finishedRunLabel, runComplete, runStatusView } from "./runmodel";
+import { openRunDag } from "./runrailsections";
 import { runStage, type StageTone } from "./runstage";
 import { FINAL_FILL, PIP_FILL, SEG_FILL, taskStrip, taskStripLabel } from "./runstrip";
 import {
@@ -1761,6 +1765,7 @@ function WorkerRow({
     run,
     task,
     agent,
+    gate,
     nested,
     extras,
     navDigit,
@@ -1770,6 +1775,7 @@ function WorkerRow({
     run: RunInfo;
     task: TaskNode;
     agent?: AgentVM;
+    gate?: string; // a done lane tip's merge gate line while it waits to merge
     nested?: boolean;
     extras?: { count: number; open: boolean };
     navDigit?: number; // its agent's Alt+1..9 digit
@@ -1781,7 +1787,8 @@ function WorkerRow({
     const ram = useAtomValue(agentRamAtom(agent?.sleeping != null ? undefined : agent?.blockId));
     const now = useAtomValue(model.nowAtom);
     // the task's state and question belong to its worker's row, not to the tabs nested under it
-    const done = !nested && task.state === "done";
+    const done = !nested && task.state === "done" && gate == null;
+    const tone = nested ? undefined : workerRowTone(task);
     const lane = laneLabel(run.digest, task.id);
     const ask = done || nested ? undefined : workerAsk(run.digest, task.id);
     // with its tab reaped, a task past its worker still opens that worker's transcript
@@ -1805,14 +1812,19 @@ function WorkerRow({
         ask,
         outcome: done ? (task.merged ? "landed" : "done") : undefined,
         waits,
-        state: nested ? undefined : step != null ? stepQueuedState(step) : taskStateLabel(task, now),
+        state: nested ? undefined : (gate ?? (step != null ? stepQueuedState(step) : taskStateLabel(task, now))),
     };
     const sub = workerSubtext(line);
     const title = nested ? agent?.name || task.id : task.label || task.id;
     const digit = useHeldDigit(navDigit);
 
+    // a row with no session to open, such as a task that failed before one existed, opens the run's DAG at it
+    const opens = focusKey != null || !nested;
     const select = () => {
         if (focusKey == null) {
+            if (!nested) {
+                openRunDag(model, run, task.id);
+            }
             return;
         }
         selectAgentRow(model, focusKey);
@@ -1829,13 +1841,14 @@ function WorkerRow({
             onClick={select}
             onContextMenu={onContextMenu}
             data-agent-row={agent?.id}
+            data-tree-task={nested ? undefined : task.id}
             {...dragSource(agent, !ended)}
             className={cn(
                 // the same right padding as an agent's row, so its columns end where theirs do
                 "relative flex items-center gap-[9px] rounded-[6px] py-[7px] pr-[10px] transition-colors duration-[140ms]",
                 nested ? "pl-[45px]" : "pl-[28px]",
-                focusKey != null && "cursor-pointer",
-                selected ? "bg-surface-selected" : focusKey != null && "hover:bg-surface-hover"
+                opens && "cursor-pointer",
+                selected ? "bg-surface-selected" : opens && "hover:bg-surface-hover"
             )}
         >
             <Guides depth={nested ? 2 : 1} />
@@ -1844,7 +1857,14 @@ function WorkerRow({
                     {done ? (
                         // a check, not a dot: dots mean a live session, so a landed worker must not read as one
                         <Check size={11} aria-hidden className="text-success" />
-                    ) : waits ? (
+                    ) : tone != null ? (
+                        <span
+                            className={cn(
+                                "h-[7px] w-[7px] shrink-0 rounded-full",
+                                tone === "error" ? "bg-error" : "bg-warning"
+                            )}
+                        />
+                    ) : waits || gate != null ? (
                         <span className="h-[7px] w-[7px] shrink-0 rounded-full border border-muted" />
                     ) : (task.state === "verifying" || task.state === "reviewing") && !nested ? (
                         <StatusDot state="working" pulse className="!h-[7px] !w-[7px]" />
@@ -1870,7 +1890,10 @@ function WorkerRow({
                     {/* the fixed columns leave the words little room at the tree's width: the tooltip has them whole */}
                     <span
                         title={sub}
-                        className={cn("truncate text-[10.5px] tabular-nums", asksYou ? "text-warning" : "text-muted")}
+                        className={cn(
+                            "truncate text-[10.5px] tabular-nums",
+                            asksYou || tone === "warning" ? "text-warning" : tone === "error" ? "text-error" : "text-muted"
+                        )}
                     >
                         {sub}
                     </span>
@@ -1948,7 +1971,8 @@ function StageRow({
     return (
         <div
             onClick={select}
-            onContextMenu={onContextMenu}
+            // an ended session has no tab left to close
+            onContextMenu={isEndedWorkerId(agent.id) ? undefined : onContextMenu}
             data-agent-row={agent.id}
             data-tree-stage={stageRole}
             {...dragSource(agent, true)}
@@ -1974,7 +1998,7 @@ function StageRow({
                     {lens ? `${stageLabel(stageRole)} · ${planReviewLensTitle(lens)}` : stageLabel(stageRole)}
                 </div>
                 <div className="mt-[3px] truncate text-[10.5px] tabular-nums text-muted">
-                    {stageSubline(verdict ?? outcome, formatAgeShort(displayAgeMs(agent, now)))}
+                    {stageSubline(verdict ?? outcome, stageRowAge(agent, now))}
                 </div>
             </div>
         </div>
@@ -4146,6 +4170,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             run={r.run}
                                             task={r.task}
                                             agent={r.agent}
+                                            gate={r.gate}
                                             nested={r.nested}
                                             extras={
                                                 r.nested

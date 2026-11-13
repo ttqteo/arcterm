@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -191,4 +192,112 @@ func TestContinueAcceptsWhatIsCommittedOrStagedInTheLandingTree(t *testing.T) {
 			t.Fatal("the continued squash is merged")
 		}
 	})
+}
+
+// 65ce3ef3: a --continue waited minutes on the dag lock behind slow ticks, past its RPC deadline, then dropped the
+// re-run it had claimed the project for. The task stayed verify-failed with the old failure, a second --continue
+// was refused as busy meanwhile, and nothing woke the lead.
+func TestContinueTakesEffectAfterItsCallerGaveUp(t *testing.T) {
+	lead := newFakeLead(t)
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f.setPlanCommands(t, verifyCmd, "")
+	if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
+		cur.Tasks[0].State, cur.Tasks[0].Merged, cur.Tasks[0].VerifyError = TaskState_VerifyFailed, true, "the old failure"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stubPlanCommand(t, func(context.Context, string, string) error {
+		return &planCommandError{exitCode: 1, output: "FAIL again"}
+	})
+	await := awaitVerify(t)
+
+	// a tick holds the dag lock
+	held, release := make(chan struct{}), make(chan struct{})
+	go func() {
+		_ = WithDagMutation(f.dagID, func() error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	caller, cancel := context.WithCancel(f.ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- ContinueMerge(caller, f.channel, f.ownerID, "t-0") }()
+	deadline := time.Now().Add(10 * time.Second)
+	for !projectClaimed(f.project) {
+		if time.Now().After(deadline) {
+			t.Fatal("the continue never claimed the project")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err := ContinueMerge(f.ctx, f.channel, f.ownerID, "t-0"); err == nil || !strings.Contains(err.Error(), "already in progress") {
+		t.Fatalf("a second continue while the first waits: err = %v, want it told the first is in progress", err)
+	}
+	cancel() // the client's RPC deadline passes while the continue waits on the lock
+	close(release)
+
+	if err := <-done; err != nil {
+		t.Fatalf("the continue was dropped once its caller gave up: %v", err)
+	}
+	await()
+	task := f.dag(t).Tasks[0]
+	if task.State != TaskState_VerifyFailed || task.VerifyError == "the old failure" {
+		t.Fatalf("the re-run's outcome was not recorded: %s %q", task.State, task.VerifyError)
+	}
+	woke := false
+	for _, s := range lead.sends {
+		woke = woke || strings.Contains(s, "Verify failed after merging task t-0")
+	}
+	if !woke {
+		t.Fatalf("the lead is woken for the re-run's failure, got %q", lead.sends)
+	}
+}
+
+// a continue that fails after its caller stopped waiting has no reader for its error but the lead
+func TestContinueFailingAfterItsCallerGaveUpWakesTheLead(t *testing.T) {
+	lead := newFakeLead(t)
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f.setPlanCommands(t, verifyCmd, "")
+	setState := func(state string) {
+		t.Helper()
+		if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
+			cur.Tasks[0].State, cur.Tasks[0].Merged = state, true
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setState(TaskState_VerifyFailed)
+	held, release := make(chan struct{}), make(chan struct{})
+	go func() {
+		_ = WithDagMutation(f.dagID, func() error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	caller, cancel := context.WithCancel(f.ctx)
+	done := make(chan error, 1)
+	go func() { done <- ContinueMerge(caller, f.channel, f.ownerID, "t-0") }()
+	deadline := time.Now().Add(10 * time.Second)
+	for !projectClaimed(f.project) {
+		if time.Now().After(deadline) {
+			t.Fatal("the continue never claimed the project")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	setState(TaskState_Done) // the task moved on while the continue waited
+	cancel()
+	close(release)
+
+	if err := <-done; err == nil {
+		t.Fatal("a continue of a task no longer verify-failed succeeded")
+	}
+	if len(lead.sends) != 1 || !strings.Contains(lead.sends[0], "failed after the call timed out") || !strings.Contains(lead.sends[0], "no longer verify-failed") {
+		t.Fatalf("the lead is woken once with the error, got %q", lead.sends)
+	}
 }

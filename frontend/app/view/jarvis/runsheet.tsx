@@ -49,7 +49,7 @@ import { spendText, summarizeUsage } from "@/app/view/agents/runusage";
 import { SectionLabel } from "@/app/view/agents/sectionlabel";
 import { attentionQueue, type QueueEntry } from "@/app/view/orchestrate/attentionqueue";
 import { formatElapsed, taskBriefs, useDagDigest, type TaskBrief } from "@/app/view/orchestrate/dagdigest";
-import { openDagLive, openDagTask } from "@/app/view/orchestrate/dagmodalstate";
+import { openRunSheetDag } from "@/app/view/orchestrate/dagmodalstate";
 import { useDagGroup } from "@/app/view/orchestrate/dagstore";
 import { recoverySummary, recoveryText } from "@/app/view/orchestrate/recoverysummary";
 import { openTaskWorker, resolveTaskWorker, type TaskWorkerView } from "@/app/view/orchestrate/taskcorrelate";
@@ -644,7 +644,7 @@ function Tasks({
                                 row.kind === "gap" ? (
                                     <SheetGapRow key={`gap:${i}`} minutes={row.minutes} />
                                 ) : (
-                                    <SheetBurstRow key={row.group.id} ctx={ctx} group={row.group} />
+                                    <SheetBurstRow key={row.group.key} ctx={ctx} group={row.group} />
                                 )
                             )}
                         </div>
@@ -652,7 +652,7 @@ function Tasks({
                     {run.dagoref ? (
                         <button
                             type="button"
-                            onClick={() => openDagLive(channel.oid, run.id, "dag:" + run.dagoref)}
+                            onClick={() => openRunSheetDag(run)}
                             className={cn(LINK, "mt-1 inline-flex items-center gap-1 self-start")}
                         >
                             open the full timeline
@@ -672,6 +672,7 @@ function Tasks({
                             td={td}
                             briefs={briefs}
                             digest={digest}
+                            group={group}
                             events={events}
                             askOwner={askOwnerOf(asks, task.id)}
                             asOf={asOf}
@@ -707,7 +708,7 @@ function SheetGapRow({ minutes }: { minutes: number }) {
 // one line per burst; the modal keeps the steps, snippet and detail. Without a dag there is no modal to open,
 // so the row is plain.
 function SheetBurstRow({ ctx, group }: { ctx: SheetCtx; group: EventGroup }) {
-    const { channel, run } = ctx;
+    const { run } = ctx;
     const body = (
         <>
             <SpineGlyph kind={group.head.kind} attention={group.attention} compact />
@@ -731,17 +732,12 @@ function SheetBurstRow({ ctx, group }: { ctx: SheetCtx; group: EventGroup }) {
     if (!run.dagoref) {
         return <div className={rowClass}>{body}</div>;
     }
-    const dagOref = "dag:" + run.dagoref;
     return (
         <button
             type="button"
             data-run-sheet-burst={group.taskId || undefined}
             title="Show in the DAG"
-            onClick={() =>
-                group.taskId
-                    ? openDagTask(channel.oid, run.id, dagOref, group.taskId)
-                    : openDagLive(channel.oid, run.id, dagOref)
-            }
+            onClick={() => openRunSheetDag(run, group.taskId)}
             className={cn(
                 rowClass,
                 "cursor-pointer hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
@@ -775,6 +771,7 @@ function TaskRow({
     td,
     briefs,
     digest,
+    group,
     events,
     askOwner,
     asOf,
@@ -784,6 +781,7 @@ function TaskRow({
     td: DagTaskDigest | undefined;
     briefs: Map<string, TaskBrief>;
     digest: DagStatusDigest;
+    group: TaskGroup;
     events: RunEvent[];
     askOwner: "user" | "lead" | null;
     asOf: string | null;
@@ -801,10 +799,11 @@ function TaskRow({
         askOwner,
         nowMs: ctx.now,
         asOf,
+        gate: { dag: group, digest },
     });
     const act = () => {
         if (row.action === "open-dag-task") {
-            openDagTask(ctx.channel.oid, ctx.run.id, "dag:" + ctx.run.dagoref, task.id);
+            openRunSheetDag(ctx.run, task.id);
             return;
         }
         openTaskWorker(worker, ctx.model);
@@ -861,13 +860,11 @@ function Attention({ ctx, digest, group }: { ctx: SheetCtx; digest: DagStatusDig
 function AttentionRow({ ctx, entry }: { ctx: SheetCtx; entry: QueueEntry }) {
     const worker = useTaskWorker({ id: entry.taskId, runid: entry.runId }, ctx.agents);
     const openWorker = entry.target === "worker" && worker.state !== "pending";
-    const go = () =>
-        openWorker
-            ? openTaskWorker(worker, ctx.model)
-            : openDagTask(ctx.channel.oid, ctx.run.id, "dag:" + ctx.run.dagoref, entry.taskId);
+    const go = () => (openWorker ? openTaskWorker(worker, ctx.model) : openRunSheetDag(ctx.run, entry.taskId));
     return (
         <button
             type="button"
+            data-run-sheet-attention={entry.taskId}
             onClick={go}
             title={openWorker ? "Open the worker" : "Show this task in the DAG"}
             className="flex w-full cursor-pointer items-center gap-[9px] rounded-[8px] border border-warning/30 bg-warning/12 px-[11px] py-2 text-left hover:border-warning focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
@@ -1177,10 +1174,11 @@ function Dock({
                 {run.dagoref ? (
                     <button
                         type="button"
-                        onClick={() => openDagLive(channel.oid, run.id, "dag:" + run.dagoref)}
+                        data-run-sheet-open-dag
+                        onClick={() => openRunSheetDag(run)}
                         className={accent === "dag" ? DOCK_ACCENT : DOCK_BTN}
                     >
-                        Open DAG
+                        {run.taskid ? "Open in the run's DAG" : "Open DAG"}
                     </button>
                 ) : null}
                 {finalEntry != null ? (

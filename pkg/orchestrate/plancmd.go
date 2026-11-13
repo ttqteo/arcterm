@@ -155,10 +155,22 @@ func failureDetail(err error) string {
 	if excerpt := firstFailureExcerpt(pe.output); excerpt != "" {
 		return head + strings.ToValidUTF8(truncateText(excerpt, room), "")
 	}
-	if len(pe.output) > room {
-		return head + strings.ToValidUTF8(pe.output[len(pe.output)-room:], "")
+	if cut := len(pe.output) - room; cut > 0 {
+		return head + strings.ToValidUTF8(pe.output[lineStartFrom(pe.output, cut):], "")
 	}
 	return pe.Error()
+}
+
+// lineStartFrom is the first line start at or after cut, so a tail never opens on half a line; cut itself when no
+// line starts in the rest, since a tail of one long line can only be cut inside it
+func lineStartFrom(s string, cut int) int {
+	if s[cut-1] == '\n' {
+		return cut
+	}
+	if i := strings.IndexByte(s[cut:], '\n'); i >= 0 && cut+i+1 < len(s) {
+		return cut + i + 1
+	}
+	return cut
 }
 
 func shortDuration(d time.Duration) string {
@@ -375,9 +387,10 @@ func execPlanCommandEnv(ctx context.Context, dir, command string, env []string, 
 }
 
 // lastOutputLine is the last non-blank line of a plan command's output: the one line a status row has
-// room for. "" when there is nothing to show yet.
+// room for. "" when there is nothing to show yet. Escapes are stripped first so a last line made only of
+// them is skipped, not returned as "".
 func lastOutputLine(output string) string {
-	lines := strings.Split(output, "\n")
+	lines := strings.Split(utilfn.StripANSI(output), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
 		if line := strings.TrimSpace(lines[i]); line != "" {
 			return line
