@@ -8,7 +8,8 @@
 // or wakes. The box is one object that changes shape by state (chatboxstate.ts: idle, running, drop, suggest, bash,
 // asleep): its root is `data-chat-box` carrying `data-chat-box-state`, its height springs to its content's measured height,
 // and the parts of a state cross-fade on the micro ease: a running agent adds a line of action chips and puts Stop where
-// Send was (Send stays beside it once there is a message to send), a drag of files turns the box into a dashed drop zone.
+// Send was (Send stays beside it once there is a message to send), a finished turn's suggested replies take that line
+// while the box is empty (chatsuggest.ts), a drag of files turns the box into a dashed drop zone.
 // What it sends and how a sleeping agent is woken is
 // useAgentSend's (agentcomposer.tsx), the same path as the compact composer; this adds attachments
 // (composerattachments.ts: a pasted or dropped image is kept and goes as the "Attached images:" block your bubble draws
@@ -28,7 +29,7 @@
 // and unfolds into the list (chatbgline.tsx).
 
 import { pushToast } from "@/app/cockpit/notificationstore";
-import { MOTION, turnTransition } from "@/app/element/motiontokens";
+import { microFade, MOTION, turnTransition } from "@/app/element/motiontokens";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -36,7 +37,16 @@ import { focusTerm } from "@/app/view/term/termpaste";
 import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
-import { ArrowUp, FileDiff, Moon, Terminal, type LucideIcon } from "lucide-react";
+import {
+    ArrowUp,
+    ArrowUpFromLine,
+    CornerDownLeft,
+    FileDiff,
+    GitCommitHorizontal,
+    Moon,
+    Terminal,
+    type LucideIcon,
+} from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { canStop, useAgentSend } from "./agentcomposer";
@@ -51,7 +61,7 @@ import { noteBashRun, useBashHistory } from "./chatbashstore";
 import { ChatBgLine } from "./chatbgline";
 import { boxState, type BoxState } from "./chatboxstate";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
-import { ChatFooter, Fold } from "./chatfooter";
+import { ChatFooter, Fold, usePartMotion } from "./chatfooter";
 import { putBackResultLines, takeResultLines } from "./chatinitiativestore";
 import { insertAt, registerChatBox, registerChatInsert } from "./chatinsert";
 import { answersInChat, localCommand, type LocalRoute } from "./chatlocal";
@@ -78,6 +88,7 @@ import {
     useHeldSend,
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
+import type { ChatChip, ChipKind } from "./chatsuggest";
 import { mergeTaken, takeBackPlan } from "./chattakeback";
 import { takeBack } from "./chattakebackstore";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
@@ -105,6 +116,7 @@ const dragNamesPaths = (dt: DataTransfer | null) => {
 };
 
 const NO_BLOCK: Atom<Block | undefined> = atom(undefined as Block | undefined);
+const NO_CHIPS: ChatChip[] = [];
 
 let picking = false; // the native dialog takes a moment to appear; a second click must not open another
 
@@ -141,6 +153,7 @@ export function ChatComposer({
     onSent,
     onBoxState,
     onShowDiff,
+    chips,
     onLocal,
     onSendNow,
     questionWaits,
@@ -158,8 +171,11 @@ export function ChatComposer({
     /** the box's state (chatboxstate.ts) whenever it changes, and once as the box mounts: the pane words the empty box's
      *  placeholder from it */
     onBoxState?: (state: BoxState) => void;
-    /** the running agent's "Show the diff" icon; left out, the icon is not drawn */
+    /** the running agent's "Show the diff" chip; left out, the chip is not drawn */
     onShowDiff?: () => void;
+    /** the replies suggested once the turn ended (chatsuggest.ts chatChips), drawn as chips while the box is empty; a
+     *  click sends one. Left out, none. */
+    chips?: ChatChip[];
     /** a bare /usage, /tasks, /diff… typed in the box (chatlocal.ts): Chat answers it instead of sending it. Left out,
      *  every command is sent. */
     onLocal?: (route: LocalRoute) => void;
@@ -702,6 +718,11 @@ export function ChatComposer({
     };
     // not while a Sleep is under way: Esc would cut short the compaction the sleep waits on
     const showStop = !asleep && !dozing && agent.blockId != null && canStop(agent.state, agent.sleeping);
+    // the finished turn's suggested replies, while the box is empty: they step aside once the person writes or attaches
+    const suggested =
+        chips != null && !asleep && !waking && !dozing && text === "" && att.attachments.length === 0
+            ? chips
+            : NO_CHIPS;
     // Send is a word asleep and while the wake is in flight. The word stays what it last was while it fades out, so a
     // finished wake does not swap "Waking…" for "Send" under the eye.
     const showWord = asleep || waking;
@@ -984,6 +1005,17 @@ export function ChatComposer({
                 {slash.list}
                 {bashList.list}
                 {mention.list}
+                {/* A line of chips under the text (chatsuggest.ts): while the agent works, the two things Chat can show of
+                    it (the diff of what it is changing, its terminal); once its turn ends, the replies the person would
+                    likely send next, in their words, which a click sends. Those step aside while the person writes. One
+                    line goes before the next comes, so the box never holds both. */}
+                <AnimatePresence initial={false} mode="wait">
+                    {showStop ? (
+                        <ActionChips key="actions" onShowDiff={onShowDiff} onOpenTerminal={showTerminal} />
+                    ) : suggested.length > 0 ? (
+                        <SuggestChips key="suggest" chips={suggested} onSend={sendCommand} />
+                    ) : null}
+                </AnimatePresence>
                 {/* one row through a sleep and a wake: its parts fold and crossfade in place (reduced motion snaps them) */}
                 <MotionConfig reducedMotion="user">
                     <div className="flex items-center gap-1.5">
@@ -1025,22 +1057,6 @@ export function ChatComposer({
                         </AnimatePresence>
                         {/* takes the row's free width, so Stop and Send stay at the far right */}
                         <ChatFooter agent={agent} />
-                        {/* a running agent: the two things Chat can show for it (the diff of what it is changing, its
-                            terminal), as icons beside Stop, so the box grows no row for them */}
-                        <AnimatePresence initial={false}>
-                            {showStop && onShowDiff != null ? (
-                                <Fold key="diff">
-                                    <ActionIcon icon={FileDiff} label="Show the diff" onClick={onShowDiff} />
-                                </Fold>
-                            ) : null}
-                        </AnimatePresence>
-                        <AnimatePresence initial={false}>
-                            {showStop ? (
-                                <Fold key="terminal">
-                                    <ActionIcon icon={Terminal} label="Open the terminal" onClick={showTerminal} />
-                                </Fold>
-                            ) : null}
-                        </AnimatePresence>
                         {/* the round Stop where Send is while the agent works; Send folds out beside it with nothing to send */}
                         <AnimatePresence initial={false}>
                             {showStop ? (
@@ -1133,19 +1149,82 @@ export function ChatComposer({
     );
 }
 
-// One of the running agent's actions (what Chat already offers, no new commands): a bare icon the size of the `+`, its
-// name in the tooltip
-function ActionIcon({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
+// The running agent's actions: what Chat already offers (no new commands), as chips with their names. They fade in on
+// the micro ease; the box's own height spring makes room for them.
+function ActionChips({ onShowDiff, onOpenTerminal }: { onShowDiff?: () => void; onOpenTerminal: () => void }) {
+    const part = usePartMotion(microFade);
+    return (
+        <motion.div {...part} className="flex flex-wrap items-center gap-1.5">
+            {onShowDiff != null ? (
+                <Chip
+                    icon={FileDiff}
+                    label="Show the diff"
+                    onClick={onShowDiff}
+                    data={{ "data-chat-action-chip": "" }}
+                />
+            ) : null}
+            <Chip
+                icon={Terminal}
+                label="Open the terminal"
+                onClick={onOpenTerminal}
+                data={{ "data-chat-action-chip": "" }}
+            />
+        </motion.div>
+    );
+}
+
+const SUGGEST_ICONS: Record<ChipKind, LucideIcon> = {
+    commit: GitCommitHorizontal,
+    push: ArrowUpFromLine,
+    reply: CornerDownLeft,
+};
+
+// The finished turn's suggested replies (chatsuggest.ts), a click sends one as typed. A chip the model adds a few
+// seconds after the rules' fades in beside them.
+function SuggestChips({ chips, onSend }: { chips: ChatChip[]; onSend: (text: string) => void }) {
+    const part = usePartMotion(microFade);
+    return (
+        <motion.div {...part} data-chat-suggest="" className="flex flex-wrap items-center gap-1.5">
+            <AnimatePresence initial={false}>
+                {chips.map((c) => (
+                    <motion.div key={c.text} {...part}>
+                        <Chip
+                            icon={SUGGEST_ICONS[c.kind]}
+                            label={c.text}
+                            title={`Send “${c.text}”`}
+                            onClick={() => onSend(c.text)}
+                            data={{ "data-chat-suggest-chip": c.source }}
+                        />
+                    </motion.div>
+                ))}
+            </AnimatePresence>
+        </motion.div>
+    );
+}
+
+function Chip({
+    icon: Icon,
+    label,
+    title,
+    onClick,
+    data,
+}: {
+    icon: LucideIcon;
+    label: string;
+    title?: string;
+    onClick: () => void;
+    data: Record<`data-${string}`, string>;
+}) {
     return (
         <button
             type="button"
-            data-chat-action=""
-            aria-label={label}
-            title={label}
+            {...data}
+            title={title}
             onClick={onClick}
-            className="flex size-[28px] flex-none cursor-pointer items-center justify-center rounded-[8px] text-muted transition-colors hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+            className="flex h-[28px] max-w-full cursor-pointer items-center gap-1.5 rounded-full border border-edge-mid bg-surface px-[11px] text-[12.5px] text-secondary transition-colors hover:border-edge-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
         >
-            <Icon size={15} strokeWidth={1.8} aria-hidden />
+            <Icon size={13} strokeWidth={1.8} aria-hidden className="flex-none" />
+            <span className="truncate">{label}</span>
         </button>
     );
 }

@@ -4,7 +4,7 @@ Jarvis là surface điều phối (`Ctrl+2`, `Ctrl+G` `j`): một **Brief** cho 
 
 Các trang liên quan: [Orchestrator](orchestrator.md) (cách một run chạy), [Plan file](plan-format.md), [Cockpit](cockpit.md) (thẻ agent và dải **Needs you**), [Agent](agent.md) (terminal của lead và worker), [Phím tắt](../keyboard-shortcuts.md#jarvis).
 
-<!-- shot: jarvis-brief.png | Brief của Jarvis với vùng Waiting on you, các hàng initiative có thanh chunk và cột bên cạnh (Since you looked, Shipped) | Demo store, project acme-store; tạo một initiative bằng `wsh effort` và một run Quick đang chạy, rồi mở Jarvis -->
+<!-- shot: jarvis-brief.png | Brief của Jarvis với vùng Waiting on you, các hàng initiative có thanh chunk và cột bên cạnh (Since you looked, Shipped, Ideas) | Demo store, project acme-store; tạo một initiative bằng `wsh effort` và một run Quick đang chạy, rồi mở Jarvis -->
 
 ## Tour
 
@@ -23,12 +23,12 @@ Dưới header, Brief có hai cột. Cột chính, từ trên xuống, mỗi vù
 - **Waiting on you**: câu hỏi, cổng duyệt, task bị chặn, run cần accept. Dòng tóm tắt ở đầu vùng, rồi ba việc gấp nhất hiện sẵn, mỗi hàng có nút hành động ngay tại chỗ (**Approve**, **Answer**, **Open**, **Accept**); **+N more** (N là số việc còn ẩn) mở phần còn lại, **Show less** gập lại. Khi có hơn một run unverified, **Accept K unverified** ở đầu vùng nhận hết một lượt. Ẩn khi không có gì chờ (header ghi **all clear**). Huy hiệu trên nav rail đếm cùng các mục này.
 - **Runs**: các run đang chạy, theo project (mỗi project có một channel). `Shift+J` / `Shift+K` chuyển giữa các run của channel.
 - **Initiatives**: mỗi initiative là một hàng; xem [Initiatives](#initiatives).
-- **Ideas** và **For later**, cạnh nhau dưới danh sách initiative. **Ideas**: ý tưởng chưa có chunk. Gõ vào ô **Jot down an idea** rồi `Enter` để ghi nhanh một ý (`Esc` xóa ô); không cần form. **For later**: các phiên bạn đã đánh dấu **Mark for later**, mới đánh dấu trước, với **Resume** và **Done**.
 
 Cột bên cạnh (340px) giữ phần đã qua:
 
-- **Since you looked**: những gì đổi kể từ lần bạn nhìn gần nhất, chia theo loại. **Runs**: run bắt đầu, run xong. **Initiatives**: mỗi initiative một hàng cho cả khoảng thời gian (số note, chunk xong, chunk thêm), mới nhất trước, hiện 5 hàng rồi `+N initiatives`. **Records**: record và quyết định gộp thành một hàng đếm theo trạng thái; bấm (hoặc `Enter`) để mở danh sách. **Mark seen** (hoàn tác được) làm vùng này gọn lại.
+- **Since you looked**: run bắt đầu, run xong, quyết định đã ghi và cập nhật record kể từ lần bạn nhìn gần nhất. **Mark seen** (hoàn tác được) làm vùng này gọn lại.
 - **Shipped · 7 days**: những gì đã ship trong bảy ngày qua, hiện ba mục rồi `+N more`.
+- **Ideas**: ý tưởng chưa có chunk. Gõ vào ô **Jot down an idea** rồi `Enter` để ghi nhanh một ý (`Esc` xóa ô); không cần form.
 
 Brief hẹp hơn 1100px thì cột bên cạnh rớt xuống dưới cột chính. Khi **Runs** hay **Initiatives** trống, vùng đó hiện một khung nét đứt với một câu và nút bắt đầu (**New run**, **New initiative**).
 

@@ -72,6 +72,7 @@ type WshRpcInterface interface {
 	MemHygieneCommands
 	WorkflowScanCommands
 	TranslateCommands
+	ChatSuggestCommands
 	WshRpcRemoteFileInterface
 	WshRpcFileInterface
 }

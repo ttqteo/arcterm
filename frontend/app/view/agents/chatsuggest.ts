@@ -1,0 +1,163 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Chat's suggested replies: the chips in the message box once an agent's turn ends (chatcomposer.tsx draws them, and
+// while the agent works draws its own two, Show the diff and Open the terminal). They are what the person would likely
+// send next, in their own words ("commit đi", not "Commit"), and a click sends one. They come from two places:
+//
+// - rules over what Chat already knows, shown at once: the turn left its edits uncommitted ("commit đi") or its commits
+//   unpushed ("push đi"), from the header's one git read (shipmodel.ts, shipstore.ts);
+// - one haiku call (pkg/chatsuggest), a few seconds later, that reads the end of the reply: the answers to the question
+//   it ends on, or the one next step only the reply shows ("vẽ tôi xem" after a layout told in words).
+//
+// A reply that ends in a question gets the model's answers alone: a rule's "commit đi" does not answer "A, B or C?", and
+// while the answers are on their way the row stays empty rather than offer a bare "ok" the agent would have to read a
+// choice into. Only a call that failed or found nothing leaves "ok" there. Pure: chatsuggeststore.ts holds the
+// model's answers and makes the call, chatpane.tsx wires the two.
+
+import type { AgentEntry, AgentVM } from "./agentsviewmodel";
+import { shipOffer, type ShipGit } from "./shipmodel";
+
+export type ChipKind = "commit" | "push" | "reply";
+
+/** One suggested reply: `text` is both what the chip says and what a click sends. */
+export interface ChatChip {
+    text: string;
+    kind: ChipKind;
+    source: "rule" | "model" | "fallback";
+}
+
+/** The model's answer for one turn, as the store holds it. */
+export type ModelSuggest = { status: "loading" } | { status: "done"; replies: string[] } | { status: "failed" };
+
+/** at most this many chips in the row */
+export const MAX_CHIPS = 3;
+
+/** the person's last messages the model reads for their words and language */
+const RECENT = 6;
+
+/** Pure: the agent's message that closed its last turn, or null when the person spoke last, the turn was interrupted,
+ *  or the agent wrote no text since. Tool calls, notifications and compactions after it do not hide it. */
+export function lastReply(entries: readonly AgentEntry[]): string | null {
+    for (let i = entries.length - 1; i >= 0; i--) {
+        const e = entries[i];
+        if (e.kind === "message") {
+            return e.text.trim() === "" ? null : e.text;
+        }
+        if (e.kind === "user" || e.kind === "command" || e.kind === "interrupted") {
+            return null;
+        }
+    }
+    return null;
+}
+
+/** Pure: the reply's last line of prose ends with a question mark. Fenced code (a card block written after the
+ *  question) is not prose, and the emphasis and highlight marks around a sentence do not count. */
+export function endsWithQuestion(reply: string): boolean {
+    const prose = reply.replace(/```[\s\S]*?(```|$)/g, "");
+    const lines = prose.split("\n").map((l) => l.trim());
+    for (let i = lines.length - 1; i >= 0; i--) {
+        if (lines[i] === "") {
+            continue;
+        }
+        const bare = lines[i].replace(/[=*_`"'”’)\]\s]+$/u, "");
+        return bare.endsWith("?") || bare.endsWith("？");
+    }
+    return false;
+}
+
+/** Pure: the person's last messages, oldest first, each on one line, with what a paste or a picture brought along left
+ *  out: they are what the model matches the replies' wording and language to. */
+export function recentPrompts(entries: readonly AgentEntry[], n = RECENT): string[] {
+    const out: string[] = [];
+    for (let i = entries.length - 1; i >= 0 && out.length < n; i--) {
+        const e = entries[i];
+        if (e.kind !== "user") {
+            continue;
+        }
+        const own = e.text
+            .split(/\n\s*Attached images:/)[0]
+            .replace(/\s+/g, " ")
+            .trim();
+        if (own !== "") {
+            out.unshift(own);
+        }
+    }
+    return out;
+}
+
+// the letters only Vietnamese writes: one is enough to tell the person writes it
+const VIETNAMESE = /[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/i;
+
+/** Pure: the person writes Vietnamese, as their last messages show; the rules' chips are worded in it then. */
+export function writesVietnamese(recent: readonly string[]): boolean {
+    return recent.some((r) => VIETNAMESE.test(r));
+}
+
+/** Pure: the rules' chips for a turn that does not end in a question: the git work it left, from the header's read of
+ *  the repo, gated as the header's Ship chip is (an agent at its prompt, no run's, not stopped on part n/m). Edits left
+ *  uncommitted ask for a commit; commits only, ahead of the upstream, ask for a push. */
+export function ruleChips(
+    agent: Pick<AgentVM, "kind" | "blockId" | "state" | "sleeping" | "runId" | "step" | "edited" | "committed">,
+    git: ShipGit | null | undefined,
+    vi: boolean
+): ChatChip[] {
+    if (git == null || shipOffer(agent, git) == null) {
+        return [];
+    }
+    if (agent.edited === true && git.dirty > 0) {
+        return [{ text: vi ? "commit đi" : "commit it", kind: "commit", source: "rule" }];
+    }
+    if (git.ahead > 0 && git.upstream !== "") {
+        return [{ text: vi ? "push đi" : "push it", kind: "push", source: "rule" }];
+    }
+    return [];
+}
+
+/** Pure: whether Chat asks the model about this turn: the agent is back at its prompt, awake, with a reply to read and
+ *  nothing else asking the person (its own question card, a brainstorm question, a message on its way), and the person
+ *  has it in front of them, so an agent nobody looks at costs no call. */
+export function wantsModelSuggest(i: {
+    reply: string | null;
+    idle: boolean;
+    asleep: boolean;
+    asking: boolean;
+    questionWaits: boolean;
+    pending: boolean;
+    seen: boolean;
+}): boolean {
+    return i.reply != null && i.idle && !i.asleep && !i.asking && !i.questionWaits && !i.pending && i.seen;
+}
+
+/** Pure: the row's chips. A question's are the model's answers (with "ok" only once the call failed or found none); any
+ *  other turn's are the rules' chips, then the model's next step when it is not one of them. */
+export function chatChips(i: { question: boolean; rules: ChatChip[]; model: ModelSuggest | undefined }): ChatChip[] {
+    const replies = i.model?.status === "done" ? i.model.replies : [];
+    const fromModel = replies.map((text): ChatChip => ({ text, kind: "reply", source: "model" }));
+    if (i.question) {
+        if (fromModel.length > 0) {
+            return fromModel.slice(0, MAX_CHIPS);
+        }
+        const settled = i.model?.status === "failed" || i.model?.status === "done";
+        return settled ? [{ text: "ok", kind: "reply", source: "fallback" }] : [];
+    }
+    const out = [...i.rules];
+    const shown = new Set(out.map((c) => c.text.toLowerCase()));
+    for (const c of fromModel) {
+        if (!shown.has(c.text.toLowerCase())) {
+            out.push(c);
+            shown.add(c.text.toLowerCase());
+        }
+    }
+    return out.slice(0, MAX_CHIPS);
+}
+
+/** Pure: the key one turn's model answer is kept under: the agent and its reply, so a new turn asks again and the same
+ *  turn seen twice does not. */
+export function suggestKey(agentId: string, reply: string): string {
+    let h = 5381;
+    for (let i = 0; i < reply.length; i++) {
+        h = ((h << 5) + h + reply.charCodeAt(i)) | 0;
+    }
+    return `${agentId}:${reply.length}:${(h >>> 0).toString(36)}`;
+}

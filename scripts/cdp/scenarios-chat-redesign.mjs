@@ -2,7 +2,8 @@
 // a floating message box that changes shape by state, step lines that fold into `Worked for…`, the frosted suggestion
 // panel, the type rhythm, the brainstorm question card in the conversation, the jump button, and frame timing while
 // blocks stream in. It is written against the spec's DOM contract ("Builder decisions"), not against the components:
-// [data-chat-box][data-chat-box-state], [data-chat-fade], [data-chat-send], [data-chat-stop], [data-chat-action],
+// [data-chat-box][data-chat-box-state], [data-chat-fade], [data-chat-send], [data-chat-stop], [data-chat-action-chip],
+// [data-chat-suggest-chip] (step 18, the suggested replies; window.__chatSuggestFake answers their model call),
 // [data-chat-suggest-panel], [data-chat-step][data-chat-step-running], [data-chat-step-chip], [data-chat-step-more],
 // [data-chat-bscard][data-chat-bscard-state], [data-chat-bscard-option], [data-chat-bscard-send],
 // [data-chat-bscard-open], [data-chat-bscard-kind], [data-chat-bscard-answered], [data-chat-jump], and the existing
@@ -263,6 +264,9 @@ export default function (kit) {
                 // the Brainstorm pane's first-open hint card is not what this scenario reads
                 if (typeof bsSeeHints === "function") await bsSeeHints(h);
                 if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+                // the suggested replies' model call is answered here, empty until step 18 sets its answers: no haiku call
+                // runs, and no chip the steps before do not expect lands in the box
+                await h.ev(`(() => { window.__chatSuggestFake = () => []; return true; })()`);
                 await h.goto("agent");
                 at = "making the tab";
                 ctx.tab = await makeTab(h, ctx, { label: NAME });
@@ -318,21 +322,26 @@ export default function (kit) {
                 );
             });
 
-            // 2. the agent working: the box runs, with its action icons and Stop in place of Send
+            // 2. the agent working: the box runs, with its action chips and Stop in place of Send
             await run("2. box running", async (name) => {
                 await setRoster(WORKING);
                 const running = await toState("running");
+                await polishWaitFor(h, `!!${layerOf(A)}?.querySelector("[data-chat-action-chip]")`, SHORT_MS);
                 const got = await h.ev(`(() => {
                     const layer = ${layerOf(A)};
                     return {
                         state: layer?.querySelector("[data-chat-box]")?.getAttribute("data-chat-box-state") ?? null,
-                        actions: [...(layer?.querySelectorAll("[data-chat-action]") ?? [])].map((b) => b.getAttribute("aria-label")),
+                        actions: [...(layer?.querySelectorAll("[data-chat-action-chip]") ?? [])].map(${FLAT}),
                         stop: !!layer?.querySelector("[data-chat-stop]"),
                         send: !!layer?.querySelector("[data-chat-send]"),
                     };
                 })()`);
                 await shot(h, "2-box-running");
-                rec(`${name}: state running, an Open the terminal icon and Stop`, running && got.state === "running" && got.actions.includes("Open the terminal") && got.stop, got);
+                rec(
+                    `${name}: state running, an Open the terminal chip with its name and Stop`,
+                    running && got.state === "running" && got.actions.includes("Open the terminal") && got.stop,
+                    got
+                );
             });
 
             // 3. files dragged over the box: a drop zone; leaving puts the state back
@@ -910,6 +919,64 @@ export default function (kit) {
                 );
             });
 
+            // 18. suggested replies: a turn that ends on a question offers the model's answers (the recommended one spelled
+            // out first), a click sends one; a turn that ends on a statement offers the one next step the model names
+            await run("18. suggested replies", async (name) => {
+                await clearBox(h, A);
+                await h.ev(`(() => {
+                    window.__crSuggestAsked = [];
+                    window.__chatSuggestFake = (d) => {
+                        window.__crSuggestAsked.push(d);
+                        return d.question ? ["B, ẩn thẻ Pin", "A", "C"] : ["vẽ tôi xem"];
+                    };
+                    return true;
+                })()`);
+                const chipsNow = `[...(${layerOf(A)}?.querySelectorAll("[data-chat-suggest-chip]") ?? [])].map((b) => ({ text: ${FLAT}(b), source: b.getAttribute("data-chat-suggest-chip") }))`;
+                append(
+                    ctx,
+                    AC.userText("vẽ 3 phương án bố cục cho trang Jarvis", ts(ctx, -2000)),
+                    AC.assistantText(
+                        'Ba phương án: A cột phải tự cuộn, B cột phải thành tab, C cân lại hai cột. Theo tôi B gọn nhất.\n\nBạn chọn A, B hay C, và có ẩn thẻ "Pin an initiative" không?',
+                        ts(ctx, -1000)
+                    )
+                );
+                await setRoster({ idleSince: Date.now() });
+                const shown = await polishWaitFor(h, `(${chipsNow}).length === 3`, WAIT_MS);
+                await polishNap(400);
+                const question = await h.ev(`({ chips: ${chipsNow}, asked: window.__crSuggestAsked.at(-1) ?? null })`);
+                await shot(h, "18-suggest-question");
+                await h.ev(`${layerOf(A)}?.querySelector("[data-chat-suggest-chip]")?.click()`);
+                const sent = await polishWaitFor(
+                    h,
+                    `[...(${layerOf(A)}?.querySelectorAll("[data-chat-you]") ?? [])].some((el) => ${FLAT}(el).includes("B, ẩn thẻ Pin")) && (${chipsNow}).length === 0`,
+                    WAIT_MS
+                );
+                append(
+                    ctx,
+                    AC.userText("B, ẩn thẻ Pin", ts(ctx, 0)),
+                    AC.assistantText("Xong: trang Jarvis giờ có bốn tab, và thẻ Pin ẩn khi đã ghim một initiative.", ts(ctx, 500))
+                );
+                await setRoster({ idleSince: Date.now() + 1000 });
+                const next = await polishWaitFor(h, `(${chipsNow}).some((c) => c.text === "vẽ tôi xem")`, WAIT_MS);
+                await polishNap(300);
+                const statement = await h.ev(`({ chips: ${chipsNow}, asked: window.__crSuggestAsked.at(-1) ?? null })`);
+                await shot(h, "18-suggest-next");
+                const q = question.chips;
+                rec(
+                    `${name}: a question offers [data-chat-suggest-chip="model"] B, ẩn thẻ Pin · A · C, asked as a question with the person's last message; a click sends it and the chips go; a statement offers vẽ tôi xem`,
+                    shown &&
+                        q.map((c) => c.text).join(" · ") === "B, ẩn thẻ Pin · A · C" &&
+                        q.every((c) => c.source === "model") &&
+                        question.asked?.question === true &&
+                        (question.asked?.recent ?? []).includes("vẽ 3 phương án bố cục cho trang Jarvis") &&
+                        sent &&
+                        next &&
+                        statement.chips.length === 1 &&
+                        statement.asked?.question !== true,
+                    { question, sent, statement }
+                );
+            });
+
             return steps;
         },
 
@@ -921,7 +988,11 @@ export default function (kit) {
                     console.error(`chat-redesign teardown: ${what} failed: ${e?.message ?? e}`);
                 }
             };
-            await step("remove the probes", () => h.ev(`(() => { if (window.__crFrames) window.__crFrames.on = false; delete window.__crFrames; delete window.__crDrag; return true; })()`));
+            await step("remove the probes", () =>
+                h.ev(
+                    `(() => { if (window.__crFrames) window.__crFrames.on = false; delete window.__crFrames; delete window.__crDrag; delete window.__chatSuggestFake; delete window.__crSuggestAsked; return true; })()`
+                )
+            );
             if (ctx.tab != null) {
                 await step("clear the exit", () =>
                     h.rpc("eventpublish", {

@@ -2,8 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { buildAttentionQueue, type ActiveWorkRow, type DeltaRow, type QueueRow, type RunRow } from "./briefingmodel";
 import {
+    buildAttentionQueue,
+    capRegion,
+    DELTA_CAP,
+    groupDelta,
+    type ActiveWorkRow,
+    type DeltaRow,
+    type QueueRow,
+    type RunRow,
+} from "./briefingmodel";
+import {
+    behindGroups,
     filterAsMenu,
     filterLines,
     foldOpen,
@@ -19,7 +29,6 @@ import {
     projectName,
     queueLine,
     quietCount,
-    RECORDS_SUMMARY_ID,
     runKindCounts,
     runKindLegs,
     runRowFace,
@@ -27,12 +36,9 @@ import {
     sessionWindow,
     settleNesting,
     SHIPPED_EMPTY,
-    shippedBriefLines,
-    SINCE_CAP,
+    SHIPPED_LABEL,
     sinceEmptyLine,
     sinceLabel,
-    sinceSections,
-    sinceWindow,
     splitIdeas,
     type BriefLine,
 } from "./briefrows";
@@ -593,7 +599,7 @@ describe("sessionWindow", () => {
     });
 });
 
-describe("sinceSections", () => {
+describe("behindGroups", () => {
     const delta = (over: Partial<DeltaRow>): DeltaRow => ({
         key: "k",
         ts: NOW,
@@ -604,115 +610,95 @@ describe("sinceSections", () => {
         oref: "effort:e1",
         ...over,
     });
-    const record = (key: string, ts: number, status: string): DeltaRow =>
-        delta({
-            key,
-            ts,
-            kind: "dossier",
-            title: "Record " + key,
-            wording: "Record updated · current status: " + status,
-            detail: "status: " + status,
-            oref: "task:" + key,
-        });
 
-    it("splits the window into runs, one row per initiative, then records, whatever the day", () => {
-        const sections = sinceSections(
+    it("folds an initiative's events into one digest that leads with its newest note", () => {
+        const groups = behindGroups(
             [
-                record("d1", NOW - MIN, "active"),
-                delta({ key: "1", ts: NOW - 2 * MIN, kind: "chunk-added", detail: "B · " }),
-                delta({
-                    key: "r",
-                    ts: NOW - 3 * MIN,
-                    kind: "run-done",
-                    title: "execute plan",
-                    wording: "Run completed",
-                    detail: "summary",
-                    oref: "run:r1",
-                }),
-                // yesterday's events of the same initiative join today's row
-                delta({ key: "2", ts: NOW - DAY, detail: "A · Shipped the fold. Then more." }),
-                delta({ key: "3", ts: NOW - DAY - MIN, kind: "chunk-done", detail: "A · plan written" }),
+                {
+                    label: "Today",
+                    rows: [
+                        delta({ key: "1", ts: NOW - MIN, kind: "chunk-added", detail: "B · " }),
+                        delta({ key: "2", ts: NOW - 2 * MIN, detail: "A · Shipped the fold. Then more." }),
+                        delta({
+                            key: "3",
+                            ts: NOW - 3 * MIN,
+                            kind: "run-done",
+                            title: "execute plan",
+                            wording: "Run completed",
+                            detail: "summary",
+                            oref: "run:r1",
+                        }),
+                        delta({ key: "4", ts: NOW - 4 * MIN, kind: "chunk-done", detail: "A · plan written" }),
+                    ],
+                },
             ],
+            [],
             NOW
         );
-        expect(sections.map((s) => [s.kind, s.label])).toEqual([
-            ["runs", "Runs"],
-            ["initiatives", "Initiatives"],
-            ["records", "Records"],
-        ]);
-        expect(sections[0].lines.map((l) => [l.id, l.kind, l.title, l.detail, l.state])).toEqual([
-            ["behind:r", "Run completed", "execute plan", "summary", "3m"],
-        ]);
-        expect(sections[1].lines.map((l) => [l.id, l.title, l.note, l.detail, l.state])).toEqual([
+        expect(groups.map((g) => g.label)).toEqual(["Today"]);
+        expect(groups[0].lines.map((l) => [l.id, l.kind, l.title, l.note, l.detail, l.state])).toEqual([
             [
-                "behind:effort:effort:e1",
+                "behind:effort:Today:effort:e1",
+                "Initiative",
                 "SIEM",
                 "Shipped the fold.",
-                // a chunk's done note is a note too
                 "2 notes · 1 chunk done · 1 chunk added",
-                "2m",
+                "1m",
             ],
+            ["behind:3", "Run completed", "execute plan", "", "summary", "3m"],
         ]);
-        expect(sections[1].lines[0].target).toEqual({ oref: "effort:e1" });
+        expect(groups[0].lines[0].target).toEqual({ oref: "effort:e1" });
+        expect(groups[0].lines.map((l) => [l.group, l.kindTone])).toEqual([
+            ["delta", "muted"],
+            ["delta", "ok"],
+        ]);
     });
 
-    it("orders the initiatives by their newest event, even when the rows come in unsorted", () => {
-        const [inits] = sinceSections(
+    it("keeps a record's event in the kind column and its status in the detail", () => {
+        const [group] = behindGroups(
             [
-                delta({ key: "a", ts: NOW - 3 * MIN, title: "Old", oref: "effort:old" }),
-                delta({ key: "b", ts: NOW - MIN, title: "New", oref: "effort:new" }),
-                delta({ key: "c", ts: NOW - 2 * MIN, title: "Mid", oref: "effort:mid" }),
+                {
+                    label: "Today",
+                    rows: [
+                        delta({
+                            key: "d",
+                            kind: "dossier",
+                            title: "Clear the gate",
+                            wording: "Record updated · current status: blocked",
+                            detail: "status: blocked",
+                            oref: "task:d1",
+                        }),
+                    ],
+                },
             ],
+            [],
             NOW
         );
-        expect(inits.lines.map((l) => l.title)).toEqual(["New", "Mid", "Old"]);
-    });
-
-    it("folds the records into one summary row that counts them by status", () => {
-        const sections = sinceSections(
-            [
-                record("a", NOW - MIN, "active"),
-                record("b", NOW - 2 * MIN, "completed"),
-                record("c", NOW - 3 * MIN, "active"),
-                delta({
-                    key: "d",
-                    ts: NOW - 4 * MIN,
-                    kind: "decision",
-                    title: "chose sqlite",
-                    detail: null,
-                    oref: null,
-                }),
-            ],
-            NOW
-        );
-        const records = sections.find((s) => s.kind === "records")!;
-        expect(records.summary).toMatchObject({
-            id: RECORDS_SUMMARY_ID,
-            title: "4 records updated",
-            detail: "2 active · 1 completed · 1 decision",
-            state: "1m",
-            target: null,
+        expect(group.lines[0]).toMatchObject({
+            kind: "Record updated",
+            kindTone: "asking",
+            detail: "current status: blocked",
         });
-        expect(records.lines.map((l) => [l.title, l.kindTone, l.detail])).toEqual([
-            ["Record a", "muted", "current status: active"],
-            ["Record b", "muted", "current status: completed"],
-            ["Record c", "muted", "current status: active"],
-            ["chose sqlite", "muted", ""],
-        ]);
     });
 
     it("says what an initiative did when it wrote no note", () => {
-        const [inits] = sinceSections(
+        const [group] = behindGroups(
             [
-                delta({ key: "1", kind: "effort-status", detail: "paused" }),
-                delta({ key: "2", kind: "effort-created", detail: "3 chunks" }),
+                {
+                    label: "Yesterday",
+                    rows: [
+                        delta({ key: "1", kind: "effort-status", detail: "paused" }),
+                        delta({ key: "2", kind: "effort-created", detail: "3 chunks" }),
+                    ],
+                },
             ],
+            [],
             NOW
         );
-        expect([inits.lines[0].note, inits.lines[0].detail]).toEqual(["", "created · marked paused"]);
+        expect([group.lines[0].note, group.lines[0].detail]).toEqual(["", "created · marked paused"]);
     });
 
-    it("folds a run into its initiative's row, by the title the events or the index give it", () => {
+    it("folds a run into its initiative's digest, by the title that day's events or the index gives it", () => {
         const run = (key: string, ts: number, kind: string, effortOid: string): DeltaRow =>
             delta({
                 key,
@@ -725,142 +711,73 @@ describe("sinceSections", () => {
                 effortOid,
             });
         const efforts = new Map([["e2", { oref: "effort:e2", title: "Radar", chunkStages: {} }]]);
-        const sections = sinceSections(
+        const [today] = behindGroups(
             [
-                run("r1", NOW - MIN, "run-created", "e1"),
-                delta({ key: "n", ts: NOW - 2 * MIN, detail: "A · wrote the fold" }),
-                run("r1", NOW - 3 * MIN, "run-done", "e1"),
-                run("r2", NOW - 4 * MIN, "run-created", "e2"),
-                run("r3", NOW - 5 * MIN, "run-created", "gone"),
-                run("r4", NOW - 6 * MIN, "run-created", ""),
+                {
+                    label: "Today",
+                    rows: [
+                        run("r1", NOW - MIN, "run-created", "e1"),
+                        delta({ key: "n", ts: NOW - 2 * MIN, detail: "A · wrote the fold" }),
+                        run("r1", NOW - 3 * MIN, "run-done", "e1"),
+                        run("r2", NOW - 4 * MIN, "run-created", "e2"),
+                        run("r3", NOW - 5 * MIN, "run-created", "gone"),
+                        run("r4", NOW - 6 * MIN, "run-created", ""),
+                    ],
+                },
             ],
+            [],
             NOW,
             { efforts }
         );
-        expect(sections.map((s) => s.lines.map((l) => [l.id, l.title, l.detail]))).toEqual([
-            [
-                ["behind:r3", "Run goal r3", "executing"],
-                ["behind:r4", "Run goal r4", "executing"],
-            ],
-            [
-                ["behind:effort:effort:e1", "SIEM", "1 note · 1 run"],
-                ["behind:effort:effort:e2", "Radar", "1 run"],
-            ],
+        expect(today.lines.map((l) => [l.id, l.kind, l.title, l.detail])).toEqual([
+            ["behind:effort:Today:effort:e1", "Initiative", "SIEM", "1 note · 1 run"],
+            ["behind:effort:Today:effort:e2", "Initiative", "Radar", "1 run"],
+            ["behind:r3", "Run", "Run goal r3", "executing"],
+            ["behind:r4", "Run", "Run goal r4", "executing"],
         ]);
-    });
-
-    it("keeps one row for a run that started and finished inside the window: its finish", () => {
-        const [runs] = sinceSections(
-            [
-                delta({ key: "done", ts: NOW - MIN, kind: "run-done", title: "g", detail: "sealed", oref: "run:r1" }),
-                delta({
-                    key: "start",
-                    ts: NOW - 9 * MIN,
-                    kind: "run-created",
-                    title: "g",
-                    detail: "status: executing",
-                    oref: "run:r1",
-                }),
-                delta({
-                    key: "other",
-                    ts: NOW - 5 * MIN,
-                    kind: "run-created",
-                    title: "h",
-                    detail: "status: executing",
-                    oref: "run:r2",
-                }),
-            ],
-            NOW
-        );
-        expect(runs.lines.map((l) => l.id)).toEqual(["behind:done", "behind:other"]);
+        expect(today.lines[1].target).toEqual({ oref: "effort:e2" });
     });
 
     it("names a row's project, takes a goal's first sentence and a summary's first line of prose", () => {
-        const [runs] = sinceSections(
+        const [today] = behindGroups(
             [
-                delta({
-                    key: "a",
-                    kind: "run-done",
-                    title: "Wire the fold. Then ship the rest\nof a long goal.",
-                    wording: "Run completed",
-                    detail: "# Run report: wire\n\n## Tasks\n- t-1: **wire** the `fold`",
-                    oref: "run:a",
-                    project: "D:\\work\\waveterm",
-                }),
-                delta({
-                    key: "b",
-                    ts: NOW - MIN,
-                    kind: "run-created",
-                    title: "next",
-                    wording: "Run started",
-                    detail: "status: executing",
-                    oref: "run:b",
-                    project: "D:\\work\\waveterm",
-                }),
+                {
+                    label: "Today",
+                    rows: [
+                        delta({
+                            key: "a",
+                            kind: "run-done",
+                            title: "Wire the fold. Then ship the rest\nof a long goal.",
+                            wording: "Run completed",
+                            detail: "# Run report: wire\n\n## Tasks\n- t-1: **wire** the `fold`",
+                            oref: "run:a",
+                            project: "D:\\work\\waveterm",
+                        }),
+                        delta({
+                            key: "b",
+                            kind: "run-created",
+                            title: "next",
+                            wording: "Run started",
+                            detail: "status: executing",
+                            oref: "run:b",
+                            project: "D:\\work\\waveterm",
+                        }),
+                    ],
+                },
             ],
+            [],
             NOW,
             { projects: { arcterm: { path: "D:/work/waveterm" } } }
         );
-        expect(runs.lines.map((l) => [l.title, l.detail])).toEqual([
+        expect(today.lines.map((l) => [l.title, l.detail])).toEqual([
             ["Wire the fold.", "arcterm · t-1: wire the fold"],
             ["next", "arcterm · executing"],
         ]);
     });
 
-    it("returns no section for an empty window", () => {
-        expect(sinceSections([], NOW)).toEqual([]);
-    });
-});
-
-describe("sinceWindow", () => {
-    const notes = (n: number): DeltaRow[] =>
-        Array.from({ length: n }, (_, i) => ({
-            key: "k" + i,
-            ts: NOW - i * MIN,
-            kind: "effort-note",
-            title: i === n - 1 ? "the hidden radar initiative" : `initiative ${i}`,
-            wording: "",
-            detail: "A · note",
-            oref: "effort:e" + i,
-        }));
-
-    it("shows SINCE_CAP rows of a section and counts the rest; open shows them all", () => {
-        const [inits] = sinceSections(notes(SINCE_CAP + 3), NOW);
-        expect(sinceWindow(inits, false, "")).toMatchObject({ summary: null, more: 3, total: SINCE_CAP + 3 });
-        expect(sinceWindow(inits, false, "").lines).toHaveLength(SINCE_CAP);
-        expect(sinceWindow(inits, true, "")).toMatchObject({ more: 0 });
-        expect(sinceWindow(inits, true, "").lines).toHaveLength(SINCE_CAP + 3);
-    });
-
-    it("finds a row behind the fold when searched", () => {
-        const [inits] = sinceSections(notes(SINCE_CAP + 3), NOW);
-        expect(sinceWindow(inits, false, "").lines.map((l) => l.title)).not.toContain("the hidden radar initiative");
-        expect(sinceWindow(inits, false, "radar").lines.map((l) => l.title)).toEqual(["the hidden radar initiative"]);
-    });
-
-    it("shows the records' summary closed, its rows under it open, and only matching rows when searched", () => {
-        const rows: DeltaRow[] = ["alpha", "beta"].map((t, i) => ({
-            key: t,
-            ts: NOW - i * MIN,
-            kind: "dossier",
-            title: t,
-            wording: "",
-            detail: "status: active",
-            oref: "task:" + t,
-        }));
-        const [records] = sinceSections(rows, NOW);
-        const closed = sinceWindow(records, false, "");
-        expect([closed.summary?.title, closed.lines.length, closed.total]).toEqual(["2 records updated", 0, 2]);
-        const open = sinceWindow(records, true, "");
-        expect([open.summary?.id, open.lines.map((l) => l.title)]).toEqual([RECORDS_SUMMARY_ID, ["alpha", "beta"]]);
-        const searched = sinceWindow(records, false, "beta");
-        expect([searched.summary, searched.lines.map((l) => l.title)]).toEqual([null, ["beta"]]);
-    });
-});
-
-describe("shippedBriefLines", () => {
-    it("draws a shipped run with its project, its summary's first sentence and its report", () => {
-        const [line] = shippedBriefLines(
+    it("keeps shipped runs as their own group", () => {
+        const groups = behindGroups(
+            [],
             [
                 {
                     oref: "run:r2",
@@ -877,7 +794,10 @@ describe("shippedBriefLines", () => {
             ],
             NOW
         );
-        expect(line).toMatchObject({
+        expect(groups).toHaveLength(1);
+        // the Brief tells this group from the delta groups by this label, so the test names the constant
+        expect(groups[0].label).toBe(SHIPPED_LABEL);
+        expect(groups[0].lines[0]).toMatchObject({
             id: "behind:shipped:run:r2",
             kind: "Shipped",
             kindTone: "ok",
@@ -1223,6 +1143,27 @@ describe("a search reaches every fold", () => {
         expect(foldOpen(false, "   ")).toBe(false);
         expect(foldOpen(false, "radar")).toBe(true);
         expect(foldOpen(true, "")).toBe(true);
+    });
+
+    it("matches a row that sits behind Behind you's '+N more', and shows it", () => {
+        const rows: DeltaRow[] = Array.from({ length: DELTA_CAP + 3 }, (_, i) => ({
+            key: "k" + i,
+            ts: NOW - i * MIN,
+            kind: "decision",
+            title: i === DELTA_CAP + 1 ? "the hidden radar decision" : `decision ${i}`,
+            wording: "Decision recorded",
+            detail: null,
+            oref: null,
+        }));
+        const linesFor = (query: string) => {
+            const window = capRegion(rows, DELTA_CAP, foldOpen(false, query));
+            return behindGroups(groupDelta(window.rows, NOW), [], NOW)
+                .flatMap((g) => g.lines)
+                .filter((l) => filterLines([l], query).length > 0);
+        };
+        // folded and unsearched, the row is behind the fold; searched, it is drawn and matches
+        expect(linesFor("").map((l) => l.title)).not.toContain("the hidden radar decision");
+        expect(linesFor("radar").map((l) => l.title)).toEqual(["the hidden radar decision"]);
     });
 });
 

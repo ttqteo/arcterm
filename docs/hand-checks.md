@@ -10,7 +10,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
   the last message it reads Compacting… with no `(…)` timer, then the line goes away when the summary lands. A
   compaction Claude starts on its own mid-turn still reads Working…. Commit: fix(chat) a /compact reads Compacting…
 - [ ] (arcterm) Jarvis For later on real sessions: mark a session older than a week for later (History → its menu →
-  Mark for later), and one of a running agent → open Jarvis: For later, beside Ideas under the initiatives list, names both
+  Mark for later), and one of a running agent → open Jarvis: For later, at the bottom of the side column, names both
   with their project and the mark's age, newest mark first. Click the running one → Agent opens on that agent. Resume
   on the old one → it resumes in a new tab (no second tab if one already holds it). `jarvis-brief-later` covers the
   rows, Done/Undo and opening a transcript, on injected sessions only. Commit: feat(jarvis) For later region

@@ -72,11 +72,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 target: ["[data-jarvis-region-only]"],
                 vi: {
                     title: "Bố cục của Brief",
-                    body: "Cột chính: dải Waiting on you, rồi Initiatives (các thẻ đã ghim, dưới là danh sách còn lại), dưới cùng là Ideas và For later cạnh nhau. Cột bên cạnh: Activity, Since you looked, Shipped. Nút nhỏ ở cuối tiêu đề Initiatives và Activity (Show only) chỉ hiện vùng đó; bấm lại để hiện tất cả.",
+                    body: "Cột chính: dải Waiting on you, rồi Initiatives (các thẻ đã ghim, dưới là danh sách còn lại). Cột bên cạnh: Activity, Since you looked, Shipped, Ideas. Nút nhỏ ở cuối tiêu đề Initiatives và Activity (Show only) chỉ hiện vùng đó; bấm lại để hiện tất cả.",
                 },
                 en: {
                     title: "How the Brief is laid out",
-                    body: "The main column holds the Waiting on you strip, then Initiatives: the pinned cards, and every other initiative in a list under them, with Ideas and For later side by side at the bottom. The column beside it holds Activity, Since you looked and Shipped. The small Show only button at the end of the Initiatives and Activity headings shows that region alone; press it again to show them all.",
+                    body: "The main column holds the Waiting on you strip, then Initiatives: the pinned cards, and every other initiative in a list under them. The column beside it holds Activity, Since you looked, Shipped and Ideas. The small Show only button at the end of the Initiatives and Activity headings shows that region alone; press it again to show them all.",
                 },
             },
             {
@@ -97,11 +97,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 also: ["[data-jarvis-brief-mark-seen]", '[data-jarvis-brief-region="shipped"]'],
                 vi: {
                     title: "Từ lần bạn nhìn",
-                    body: "Những gì đổi kể từ lần cuối bạn xem, dưới Activity, chia theo loại: Runs, Initiatives (mỗi initiative một hàng) và Records (gộp thành một hàng, bấm để mở). Ngay dưới là Shipped: những gì đã ship trong 7 ngày qua. «Mark seen» đánh dấu đã xem để Since you looked gọn lại.",
+                    body: "Run đã land và việc đã xong kể từ lần cuối bạn xem, dưới Activity. Ngay dưới là Shipped: những gì đã ship trong 7 ngày qua. «Mark seen» đánh dấu đã xem để Since you looked gọn lại.",
                 },
                 en: {
                     title: "Since you looked",
-                    body: "What changed since you last looked, under Activity, by kind: Runs, Initiatives (one row each) and Records (folded into one row that opens). Shipped sits under it with what shipped in the last seven days. Mark seen clears Since you looked so it stays short.",
+                    body: "Runs that landed and work that finished since you last looked, under Activity. Shipped sits under it with what shipped in the last seven days. Mark seen clears Since you looked so it stays short.",
                 },
             },
             {

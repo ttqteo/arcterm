@@ -285,6 +285,12 @@ func CanvasServeCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (s
 	return resp, err
 }
 
+// command "chatsuggest", wshserver.ChatSuggestCommand
+func ChatSuggestCommand(w *wshutil.WshRpc, data wshrpc.CommandChatSuggestData, opts *wshrpc.RpcOpts) (*wshrpc.CommandChatSuggestRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandChatSuggestRtnData](w, "chatsuggest", data, opts)
+	return resp, err
+}
+
 // command "checkmemoryhygiene", wshserver.CheckMemoryHygieneCommand
 func CheckMemoryHygieneCommand(w *wshutil.WshRpc, data wshrpc.CommandCheckMemoryHygieneData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "checkmemoryhygiene", data, opts)

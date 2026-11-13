@@ -69,6 +69,17 @@ import {
 import { usePending } from "./chatpendingstore";
 import { risesFromBox } from "./chatsentrise";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
+import {
+    chatChips,
+    endsWithQuestion,
+    lastReply,
+    recentPrompts,
+    ruleChips,
+    suggestKey,
+    wantsModelSuggest,
+    writesVietnamese,
+} from "./chatsuggest";
+import { modelSuggestAtom, requestModelSuggest } from "./chatsuggeststore";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatVisualHost } from "./chatvisualview";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
@@ -79,6 +90,7 @@ import { PermissionCard } from "./permissioncard";
 import { useTranscriptWindow } from "./railtranscript";
 import { runtimeLogo } from "./runtimelogo";
 import { runtimeMeta } from "./runtimemeta";
+import { shipGitAtom } from "./shipstore";
 import { useStickToBottom } from "./sticktobottom";
 import { turnStats, type TurnStats } from "./transcriptprojection";
 import { TranscriptSkeleton } from "./transcriptskeleton";
@@ -645,6 +657,41 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
         }
     };
 
+    // The replies the box suggests once the turn ends (chatsuggest.ts): the rules' at once, from the header's git read of
+    // the repo; the model's when its call answers. Only the agent in focus on the Agent surface makes the call, so an
+    // agent nobody looks at costs none; its answer is kept by turn, so a look later finds it.
+    const focusId = useAtomValue(model.focusIdAtom);
+    const shipGit = useAtomValue(shipGitAtom)[agent.id];
+    const modelSuggests = useAtomValue(modelSuggestAtom);
+    const reply = useMemo(() => lastReply(entries), [entries]);
+    const recent = useMemo(() => recentPrompts(entries), [entries]);
+    const question = reply != null && endsWithQuestion(reply);
+    const questionWaits = boxPlaceholderOverride(card) != null;
+    const turnKey = reply != null ? suggestKey(agent.id, reply) : null;
+    const turnOpen = {
+        reply,
+        idle: agent.state === "idle",
+        asleep,
+        asking,
+        questionWaits,
+        pending: showsPending,
+    };
+    const askModel = wantsModelSuggest({ ...turnOpen, seen: focusId === agent.id && surface === "agent" });
+    useEffect(() => {
+        if (askModel && turnKey != null && reply != null) {
+            requestModelSuggest(turnKey, { reply, recent, question });
+        }
+        // the key stands for the reply, and the question with it; the person's messages before it change with the reply
+    }, [askModel, turnKey]);
+    // a cell in a split shows the chips too, from the rules and from an answer already in
+    const chips = wantsModelSuggest({ ...turnOpen, seen: true })
+        ? chatChips({
+              question,
+              rules: question ? [] : ruleChips(agent, shipGit, writesVietnamese(recent)),
+              model: turnKey != null ? modelSuggests[turnKey] : undefined,
+          })
+        : undefined;
+
     return (
         <div
             data-agent-chat={agent.id}
@@ -829,8 +876,9 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                             onSent={onBoxSent}
                             onBoxState={setBoxNow}
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
+                            chips={chips}
                             onSendNow={queuedShown ? sendNow : undefined}
-                            questionWaits={boxPlaceholderOverride(card) != null}
+                            questionWaits={questionWaits}
                             onLocal={(route) => {
                                 if ("open" in route) {
                                     openDiff(model, agentDiffScope(agent.id, agent.name));

@@ -13,13 +13,13 @@ import { runStage, type StageTone } from "@/app/view/agents/runstage";
 import { parseAddress, type OpenTarget } from "./address";
 import {
     ACTIVE_CAP,
-    capRegion,
     mergeActiveWork,
     queueKindLabel,
     queueOpenTarget,
     SEVEN_DAYS_MS,
     type ActiveWorkRow,
     type AgentRow,
+    type DeltaGroup,
     type DeltaRow,
     type QueueOpenTarget,
     type QueueRow,
@@ -607,10 +607,10 @@ export function plainSummary(md: string): string {
     return headline(line.replace(MD_LIST, "").replace(MD_LINK, "$1").replace(MD_INLINE, "").trim());
 }
 
-// One row per initiative over the whole window: its notes read as what was written, finished and planned, led by the
-// newest note's first sentence, with the runs it started or finished counted beside them. A burst of forty notes from one
-// agent would otherwise be forty rows, and a row per day would show an initiative that moved on both days twice.
-function digestLine(oref: string, title: string, rows: DeltaRow[], now: number): BriefLine {
+// One row per initiative per day: the day's notes read as what was written, finished and planned, led by the newest note's
+// first sentence, with the runs it started or finished counted beside them. A burst of forty notes from one agent would
+// otherwise be forty rows.
+function digestLine(group: string, oref: string, title: string, rows: DeltaRow[], now: number): BriefLine {
     const newestFirst = [...rows].sort((a, b) => b.ts - a.ts);
     const notes = newestFirst
         .filter((r) => r.kind !== "chunk-added" && CHUNK_EVENTS.has(r.kind))
@@ -622,7 +622,7 @@ function digestLine(oref: string, title: string, rows: DeltaRow[], now: number):
     const status = newestFirst.find((r) => r.kind === "effort-status");
     const top = newestFirst[0];
     return {
-        id: `behind:effort:${oref}`,
+        id: `behind:effort:${group}:${oref}`,
         kind: "Initiative",
         kindTone: "muted",
         title,
@@ -646,12 +646,11 @@ function digestLine(oref: string, title: string, rows: DeltaRow[], now: number):
     };
 }
 
-// a record's update asks nothing of anyone, so it is not drawn in the asking amber
 const DELTA_TONE: Record<string, LineTone> = {
     "run-created": "active",
     "run-done": "ok",
     decision: "muted",
-    dossier: "muted",
+    dossier: "asking",
 };
 
 // the second line: the project, then what happened. A run's start says its status, its finish its summary.
@@ -693,153 +692,79 @@ export type BehindContext = {
     projects?: Record<string, { path?: string }> | null;
 };
 
-// Since you looked, by kind: the runs that moved, one row per initiative, then the records. Runs and initiatives
-// open SINCE_CAP rows at a time; the records fold into one summary row, because a record's update says only its
-// current status, and twenty of them saying "active" were the region's whole first screen.
-export type SinceKind = "runs" | "initiatives" | "records";
-export type SinceSection = {
-    kind: SinceKind;
-    label: string;
-    lines: BriefLine[];
-    // records only: the row the closed fold shows, and the one that opens it
-    summary?: BriefLine;
-};
-export const SINCE_CAP = 5;
-export const RECORDS_SUMMARY_ID = "behind:records";
-const RECORD_EVENTS = new Set(["dossier", "decision"]);
-
-function recordsSummary(rows: DeltaRow[], now: number): BriefLine {
-    const statuses = new Map<string, number>();
-    for (const r of rows) {
-        const status = (r.detail ?? "").startsWith("status: ") ? r.detail!.slice("status: ".length) : null;
-        if (r.kind === "dossier" && status != null) {
-            statuses.set(status, (statuses.get(status) ?? 0) + 1);
-        }
-    }
-    const decisions = rows.filter((r) => r.kind === "decision").length;
-    return {
-        id: RECORDS_SUMMARY_ID,
-        kind: "Records",
-        kindTone: "muted",
-        title: plural(rows.length, "record") + " updated",
-        note: "",
-        meta: "",
-        detail: joined([
-            ...[...statuses].sort((a, b) => b[1] - a[1]).map(([status, n]) => `${n} ${status}`),
-            decisions > 0 ? plural(decisions, "decision") : "",
-        ]),
-        state: age(Math.max(...rows.map((r) => r.ts)), now),
-        stateTone: "muted",
-        progress: null,
-        target: null,
-        why: "",
-        age: "",
-        group: "delta",
-    };
-}
-
-export function sinceSections(delta: DeltaRow[], now: number, ctx: BehindContext = {}): SinceSection[] {
+export function behindGroups(
+    groups: DeltaGroup[],
+    shipped: ShippedRow[],
+    now: number,
+    ctx: BehindContext = {}
+): LineGroup[] {
     const name = (path: string | undefined) => projectName(path ?? "", ctx.projects ?? null);
-    const rows = [...delta].sort((a, b) => b.ts - a.ts);
-    // an initiative's title: from its own events, else the index; a run whose initiative has neither (archived, or
-    // another project's) stays a run rather than a digest with no name
-    const titles = new Map<string, string>();
-    for (const r of rows.filter(isEffortEvent)) {
-        if (!titles.has(r.oref!)) {
+    const out: LineGroup[] = groups.map((g) => {
+        // an initiative's title: from its own events that day, else the index; a run whose initiative has
+        // neither (archived, or another project's) stays its own row rather than a digest with no name
+        const titles = new Map<string, string>();
+        for (const r of g.rows.filter(isEffortEvent)) {
             titles.set(r.oref!, r.title);
         }
-    }
-    const foldKey = (r: DeltaRow): string | null => {
-        if (isEffortEvent(r)) {
-            return r.oref!;
+        const foldKey = (r: DeltaRow): string | null => {
+            if (isEffortEvent(r)) {
+                return r.oref!;
+            }
+            if (!RUN_EVENTS.has(r.kind) || !r.effortOid) {
+                return null;
+            }
+            const oref = "effort:" + r.effortOid;
+            const indexed = ctx.efforts?.get(r.effortOid)?.title;
+            if (!titles.has(oref) && indexed != null) {
+                titles.set(oref, indexed);
+            }
+            return titles.has(oref) ? oref : null;
+        };
+        const byEffort = new Map<string, DeltaRow[]>();
+        for (const r of g.rows) {
+            const k = foldKey(r);
+            if (k != null) {
+                byEffort.set(k, [...(byEffort.get(k) ?? []), r]);
+            }
         }
-        if (!RUN_EVENTS.has(r.kind) || !r.effortOid) {
-            return null;
+        const lines: BriefLine[] = [];
+        const placed = new Set<string>();
+        for (const r of g.rows) {
+            const k = foldKey(r);
+            if (k == null) {
+                lines.push(deltaLine(r, now, name(r.project)));
+            } else if (!placed.has(k)) {
+                // the digest sits where the initiative's first event did, so the day keeps its order
+                placed.add(k);
+                lines.push(digestLine(g.label, k, titles.get(k)!, byEffort.get(k)!, now));
+            }
         }
-        const oref = "effort:" + r.effortOid;
-        const indexed = ctx.efforts?.get(r.effortOid)?.title;
-        if (!titles.has(oref) && indexed != null) {
-            titles.set(oref, indexed);
-        }
-        return titles.has(oref) ? oref : null;
-    };
-    const byEffort = new Map<string, DeltaRow[]>();
-    const runs: BriefLine[] = [];
-    const records: DeltaRow[] = [];
-    // a run that finished inside the window says so on its finish; its start would repeat it
-    const finished = new Set(rows.filter((r) => r.kind === "run-done" && r.oref != null).map((r) => r.oref));
-    for (const r of rows) {
-        const k = foldKey(r);
-        if (k != null) {
-            byEffort.set(k, [...(byEffort.get(k) ?? []), r]);
-        } else if (RECORD_EVENTS.has(r.kind)) {
-            records.push(r);
-        } else if (!(r.kind === "run-created" && finished.has(r.oref))) {
-            runs.push(deltaLine(r, now, name(r.project)));
-        }
-    }
-    // newest activity first: the map keeps the order each initiative's newest event was met in
-    const initiatives = [...byEffort].map(([oref, evs]) => digestLine(oref, titles.get(oref)!, evs, now));
-    const out: SinceSection[] = [];
-    if (runs.length > 0) {
-        out.push({ kind: "runs", label: "Runs", lines: runs });
-    }
-    if (initiatives.length > 0) {
-        out.push({ kind: "initiatives", label: "Initiatives", lines: initiatives });
-    }
-    if (records.length > 0) {
+        return { label: g.label, lines };
+    });
+    if (shipped.length > 0) {
         out.push({
-            kind: "records",
-            label: "Records",
-            lines: records.map((r) => deltaLine(r, now, name(r.project))),
-            summary: recordsSummary(records, now),
+            label: SHIPPED_LABEL,
+            lines: shipped.map((s) => ({
+                id: "behind:shipped:" + s.oref,
+                kind: "Shipped",
+                kindTone: "ok",
+                title: s.goal,
+                note: "",
+                meta: "",
+                state: age(s.completedTs, now),
+                stateTone: "muted",
+                progress: null,
+                target: { oref: s.oref },
+                why: "",
+                age: "",
+                detail: joined([name(s.project), plainSummary(s.summary)]),
+                hasReport: s.hasReport,
+                fresh: s.fresh,
+                group: "shipped" as const,
+            })),
         });
     }
     return out;
-}
-
-// What a section draws: the filter narrows its rows and reaches past every fold (foldOpen). Runs and initiatives show
-// SINCE_CAP rows and count the rest; the records show their summary row, and their rows under it once opened.
-export function sinceWindow(
-    section: SinceSection,
-    open: boolean,
-    query: string
-): { summary: BriefLine | null; lines: BriefLine[]; more: number; total: number } {
-    const lines = filterLines(section.lines, query);
-    const searching = query.trim() !== "";
-    if (section.kind === "records") {
-        return {
-            summary: searching ? null : (section.summary ?? null),
-            lines: foldOpen(open, query) ? lines : [],
-            more: 0,
-            total: lines.length,
-        };
-    }
-    const w = capRegion(lines, SINCE_CAP, foldOpen(open, query));
-    return { summary: null, lines: w.rows, more: w.more, total: lines.length };
-}
-
-// Shipped: the last seven days' landed runs, its own region beside Since you looked
-export function shippedBriefLines(shipped: ShippedRow[], now: number, ctx: BehindContext = {}): BriefLine[] {
-    const name = (path: string | undefined) => projectName(path ?? "", ctx.projects ?? null);
-    return shipped.map((s) => ({
-        id: "behind:shipped:" + s.oref,
-        kind: "Shipped",
-        kindTone: "ok",
-        title: s.goal,
-        note: "",
-        meta: "",
-        state: age(s.completedTs, now),
-        stateTone: "muted",
-        progress: null,
-        target: { oref: s.oref },
-        why: "",
-        age: "",
-        detail: joined([name(s.project), plainSummary(s.summary)]),
-        hasReport: s.hasReport,
-        fresh: s.fresh,
-        group: "shipped" as const,
-    }));
 }
 
 export function filterLines<T extends BriefLine>(lines: T[], query: string): T[] {

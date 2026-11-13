@@ -741,6 +741,18 @@ declare global {
         runid: string;
     };
 
+    // wshrpc.CommandChatSuggestData
+    type CommandChatSuggestData = {
+        reply: string;
+        recent?: string[];
+        question?: boolean;
+    };
+
+    // wshrpc.CommandChatSuggestRtnData
+    type CommandChatSuggestRtnData = {
+        replies: string[];
+    };
+
     // wshrpc.CommandCheckMemoryHygieneData
     type CommandCheckMemoryHygieneData = {
         project: string;

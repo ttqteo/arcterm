@@ -288,6 +288,12 @@ export class RpcApiType {
         return client.wshRpcCall("canvasserve", data, opts);
     }
 
+    // command "chatsuggest" [call]
+    ChatSuggestCommand(client: WshClient, data: CommandChatSuggestData, opts?: RpcOpts): Promise<CommandChatSuggestRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "chatsuggest", data, opts);
+        return client.wshRpcCall("chatsuggest", data, opts);
+    }
+
     // command "checkmemoryhygiene" [call]
     CheckMemoryHygieneCommand(client: WshClient, data: CommandCheckMemoryHygieneData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "checkmemoryhygiene", data, opts);
