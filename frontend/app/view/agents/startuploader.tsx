@@ -9,12 +9,14 @@
 // - Hologram: Jarvis's HUD a size up from its corner, built part by part (the core, then the rings from the inside out),
 //   then turning with its core beating until the roster is read. While it shows, the corner hologram stands down
 //   (hologramLoadersShownAtom). Float's small window keeps Sprout, as the corner does, and so does a GL failure.
-// With reduced motion either stands still.
+// With reduced motion either stands still. While Jarvis is hidden (pethide.ts) neither shows, only the line, so a hidden
+// Jarvis makes no WebGL context even at launch.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { petForm, type HologramPose } from "@/app/view/jarvis/hologrammodel";
 import { useHologramCanvas } from "@/app/view/jarvis/hologramview";
 import { petCharacter } from "@/app/view/jarvis/petcharacter";
+import { jarvisHiddenAtom } from "@/app/view/jarvis/pethidestore";
 import { PET_GRID, spriteFor } from "@/app/view/jarvis/petsprite";
 import { hologramLoadersShownAtom, petCharacterAtom, petFormAtom } from "@/app/view/jarvis/petstore";
 import { SproutSvg } from "@/app/view/jarvis/sproutsvg";
@@ -138,13 +140,14 @@ function LoaderFigure() {
 }
 
 export function StartupLoader({ className }: { className?: string }) {
+    const hidden = useAtomValue(jarvisHiddenAtom);
     return (
         <div
             role="status"
             aria-live="polite"
             className={cn("flex h-full w-full flex-col items-center justify-center gap-5 bg-background", className)}
         >
-            <LoaderFigure />
+            {hidden ? null : <LoaderFigure />}
             <div className="flex flex-col items-center gap-1 text-center">
                 <span className="text-[14px] font-semibold text-primary">Setting up arcterm</span>
                 <span className="text-[12.5px] text-muted">Loading your agents and terminals, just a moment…</span>

@@ -116,7 +116,13 @@ describe("buildCommandItems", () => {
 });
 
 describe("buildExtraItems", () => {
-    const deps = () => ({ openNewProject: vi.fn(), openToolPicker: vi.fn(), reloadWindow: vi.fn() });
+    const deps = () => ({
+        openNewProject: vi.fn(),
+        openToolPicker: vi.fn(),
+        reloadWindow: vi.fn(),
+        jarvisHidden: false,
+        showJarvis: vi.fn(),
+    });
 
     it("offers the chordless modals and one drill row each for themes and open brainstorms", () => {
         const items = buildExtraItems(deps());
@@ -146,6 +152,14 @@ describe("buildExtraItems", () => {
         const d = deps();
         buildExtraItems(d)[0].run();
         expect(d.openNewProject).toHaveBeenCalled();
+    });
+    it("lists Show Jarvis only while Jarvis is hidden, and it shows Jarvis", () => {
+        expect(buildExtraItems(deps()).some((i) => i.key === "cmd:show-jarvis")).toBe(false);
+        const d = { ...deps(), jarvisHidden: true };
+        const item = buildExtraItems(d).find((i) => i.key === "cmd:show-jarvis");
+        expect(item).toMatchObject({ title: "Show Jarvis", group: "Global" });
+        item?.run();
+        expect(d.showJarvis).toHaveBeenCalled();
     });
     it("opens the tool picker from Open a tool…", () => {
         const d = deps();

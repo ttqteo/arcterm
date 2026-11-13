@@ -16,6 +16,8 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { closePeek } from "@/app/view/jarvis/peekstore";
 import { petCharacter } from "@/app/view/jarvis/petcharacter";
 import { expressionFor, postureFor, type PetExpression, type PetPosture } from "@/app/view/jarvis/petcondition";
+import { showHideMenu } from "@/app/view/jarvis/pethidemenu";
+import { jarvisHiddenAtom } from "@/app/view/jarvis/pethidestore";
 import { cornerFor } from "@/app/view/jarvis/petledge";
 import { petOutfit, petOutfitChoice } from "@/app/view/jarvis/petoutfit";
 import {
@@ -35,6 +37,7 @@ import {
     petOfficeBossAtom,
     petOfficeCornerAtom,
     petOfficeEnteringAtom,
+    petOfficeOpenAtom,
     petOutfitChoiceAtom,
     petPeekOpenAtom,
     petUnreadAtom,
@@ -778,6 +781,11 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     // whether this visit opens with the boss pet's entrance (officeentrance.ts): decided as the office mounts, once. With
     // reduced motion or the animation off nothing is drawn moving, the entrance included
     const [entrancePlays] = useState(() => shouldPlayEntrance(Date.now(), !moving));
+    // the office is open, boss drawn or not (Jarvis hidden): the footer's creature does not take its place meanwhile
+    useLayoutEffect(() => {
+        globalStore.set(petOfficeOpenAtom, true);
+        return () => globalStore.set(petOfficeOpenAtom, false);
+    }, []);
 
     // the Needs you rows follow the project filter, so the office's sound rebases its board when it changes
     const projectFilter = useAtomValue(props.model.projectFilterAtom);
@@ -3057,6 +3065,14 @@ function BossView({
     still: boolean;
 }) {
     const look = useAtomValue(bossLookAtom);
+    // Jarvis hidden for a while (pethide.ts): no boss and no ring, its desk left empty so the room keeps its layout.
+    // Once hidden during this visit, its return is an arrival: the entrance plays as when the office opens
+    const hidden = useAtomValue(jarvisHiddenAtom);
+    const wasHidden = useRef(hidden);
+    if (hidden) {
+        wasHidden.current = true;
+    }
+    const plays = wasHidden.current ? !still : entrancePlays;
     const ringRef = useRef<HTMLImageElement>(null);
     useDomTransform(ringRef, bossAtom, () => {
         const at = bossAt();
@@ -3065,7 +3081,7 @@ function BossView({
             `translate(${Math.round((at.x - 21) / PLAN_CELL) * PLAN_CELL}px, ${Math.round((at.y - 9) / PLAN_CELL) * PLAN_CELL}px)`
         );
     });
-    if (!look) {
+    if (!look || hidden) {
         return null;
     }
     return (
@@ -3081,7 +3097,7 @@ function BossView({
                 )}
                 style={{ width: 14 * PLAN_CELL, height: 5 * PLAN_CELL }}
             />
-            <BossPet plan={plan} phase={phase} model={model} look={look} entrancePlays={entrancePlays} still={still} />
+            <BossPet plan={plan} phase={phase} model={model} look={look} entrancePlays={plays} still={still} />
         </>
     );
 }
@@ -3430,6 +3446,10 @@ function BossPet({
                     } else {
                         openPetBubble(model);
                     }
+                }}
+                onContextMenu={(e) => {
+                    bumpBossInput();
+                    showHideMenu(e);
                 }}
                 data-office-boss=""
                 data-office-boss-pet={character}

@@ -4796,6 +4796,7 @@ declare global {
         "window:minimize"?: string;
         "window:autosprout"?: boolean;
         "window:autosproutpauseuntil"?: number;
+        "jarvis:hiddenuntil"?: number;
         "conn:*"?: boolean;
         "conn:localhostdisplayname"?: string;
         "debug:*"?: boolean;
