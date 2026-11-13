@@ -62,6 +62,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A heavy command an agent re-runs after auto mode refused it no longer queues twice in Heavy jobs and waits on
+  itself: it takes one slot and runs.
 - Triple-clicking a line in Chat selects just its text: on a Mac the highlight no longer runs on to the column's right
   edge, and the copy no longer ends in a stray line break.
 - While an agent compacts its conversation (`/compact`), Chat says Compacting… instead of Working…, with no timer

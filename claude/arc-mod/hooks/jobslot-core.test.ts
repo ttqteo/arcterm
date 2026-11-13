@@ -72,6 +72,17 @@ describe("a heavy background command", () => {
         }
     });
 
+    it("reads the wrapped form a model copied back from auto mode's refusal as held", () => {
+        // as it came back on 2026-11-13: the model ran it in the foreground, and the hook queued it a second time
+        const command =
+            'NODE_OPTIONS=--max-old-space-size=4096 task check:ts 2>&1 | tail -25; echo "tsc exit=${pipestatus[1]}"';
+        const pasted =
+            "'/Users/me/.arc/bin/wsh' jobslot --hold-parent -- " +
+            `'NODE_OPTIONS=--max-old-space-size=4096 task check:ts 2>&1 | tail -25; echo "tsc exit=\${pipestatus[1]}"'` +
+            `; [ $? -ne 75 ] || exit 75\n${command}`;
+        expect(heldOriginal(wsh, pasted)).toBe(command);
+    });
+
     it("reads any other command as not held", () => {
         expect(heldOriginal(wsh, "task check:ts")).toBeNull();
         expect(heldOriginal(wsh, heldInBackground("/other/wsh", "task check:ts"))).toBeNull();

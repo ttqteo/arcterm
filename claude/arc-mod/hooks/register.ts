@@ -854,11 +854,21 @@ export const register: Register = (on) => {
 
     // refused in code: a prompt's rule is one the model can talk itself out of
     on("tool.call", { tool: "Bash" }, async ($, e, next) => {
-        const why = await refusal($, e.command, e.run_in_background);
+        // the wrapped form, copied back by the model: auto mode refuses a background call this hook wrapped and
+        // prints the wrapped command, which the model then runs as its own. Its `wsh jobslot --hold-parent` already
+        // holds the slot for the shell's life, so it is judged as the command inside, never queued a second time
+        // (a foreground call held a slot around it and the wrapper then waited behind that slot, its own) nor
+        // wrapped twice, and runs as written: an input changed here would draw auto mode's refusal again
+        const original = heldOriginal(WSH, e.command);
+        const command = original ?? e.command;
+        const why = await refusal($, command, e.run_in_background);
         if (why !== null) {
             return { deny: why };
         }
-        const findings = await goalposts($, () => inspectCommand(e.command, ALL_CATEGORIES));
+        const findings = await goalposts($, () => inspectCommand(command, ALL_CATEGORIES));
+        if (original !== null) {
+            return withUiCheck($, command, () => withGoalposts($, findings, e, next));
+        }
         if (e.run_in_background === true && (await takesSlot($, e.command))) {
             // the call returns once the command starts, so a slot held around it would free at once: the command
             // waits for its turn in its own shell, which keeps the slot until it exits

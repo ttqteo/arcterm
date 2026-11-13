@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A pasted jobslot wrapper queues once: after a build with the new `wsh` and an arcterm restart, have a
+  Claude agent run `'<home>/.arc/bin/wsh' jobslot --hold-parent -- 'task check:ts'; [ $? -ne 75 ] || exit 75` then a
+  newline and `task check:ts`, in the foreground → the Jobs popover shows one `task check:ts`, running, not a second
+  one waiting "CPU busy, 1 at a time" behind it, and the typecheck finishes on its own. Commit: fix(arc-mod) a pasted
+  jobslot wrapper is not queued twice
 - [ ] (arcterm) Triple-click in Chat on a Mac: after a build, triple-click a short list item, a short paragraph and a
   heading in an agent's reply → each highlights only its text, with no band on to the column's right edge, and Copy
   pastes the line with no trailing line break. A drag across several paragraphs still selects them all. Checked only in
