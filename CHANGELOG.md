@@ -99,6 +99,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run no longer quietly drops part of its plan: a line of prose that starts with inline code (```` ``` ````) was read
+  as an unclosed code block, and every task after it vanished from the run. Such a line now reads as prose, and a code
+  block left open over later tasks is refused at submit with the line it opened on.
 - A lead's run line in the Agent sidebar no longer cuts its progress down to "Worki…": on a narrow sidebar the run's
   RAM figure leaves the line (it shows again once the sidebar is wide enough for it), and "failed to start" for a lead
   whose terminal could not start now sits at the end of its name line.
