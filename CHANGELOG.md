@@ -61,6 +61,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Chat no longer stops mid-word ("Writ") while Claude writes a file: the sentence it says before a tool call shows
+  whole at once, instead of waiting seconds for the tool call to finish streaming.
 - A long Confirm the design card in Chat keeps its button in view: Confirm all guesses and Check with a builder
   sit at the card's foot, just above the chat box, instead of at its top, where many decisions pushed them off
   screen.

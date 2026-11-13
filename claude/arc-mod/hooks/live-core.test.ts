@@ -47,8 +47,31 @@ describe("LiveGather", () => {
         g.add("text", 0, "a");
         expect(g.due(5000)).toBe(true);
         g.payload(false, 5000);
+        g.add("text", 0, "b");
         expect(g.due(5000 + LIVE_WRITE_MS - 1)).toBe(false);
         expect(g.due(5000 + LIVE_WRITE_MS)).toBe(true);
+    });
+
+    it("owes a trailing write for text that came after the last write, however long no chunk follows", () => {
+        const g = new LiveGather("t", 0);
+        expect(g.flushIn(0)).toBeNull();
+        g.add("text", 0, "Writ");
+        g.payload(false, 5000);
+        expect(g.flushIn(5010)).toBeNull();
+        // the rest of the text lands inside the window, then only a tool call's input streams
+        g.add("text", 0, "ing the tests.");
+        expect(g.due(5040)).toBe(false);
+        expect(g.flushIn(5040)).toBe(LIVE_WRITE_MS - 40);
+        expect(g.flushIn(5000 + LIVE_WRITE_MS + 500)).toBe(0);
+        g.payload(false, 5000 + LIVE_WRITE_MS);
+        expect(g.flushIn(5000 + LIVE_WRITE_MS)).toBeNull();
+    });
+
+    it("is not due again with nothing new since the last write", () => {
+        const g = new LiveGather("t", 0);
+        g.add("text", 0, "a");
+        g.payload(false, 5000);
+        expect(g.due(5000 + LIVE_WRITE_MS)).toBe(false);
     });
 });
 
