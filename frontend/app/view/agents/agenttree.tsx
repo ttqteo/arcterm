@@ -1342,9 +1342,9 @@ function ParentRow({
               }
             : undefined;
 
-    // the words of a controller that refused to start. A lead's go at the end of its name line, like its subagents
-    // chip: on its second line they took 67px of the 197 that also hold the workers chip, the progress and the age,
-    // and the progress read "Worki…" (agent-tree-rail step 7)
+    // the words of a controller that refused to start, at the end of its name line, where the name gives way to them.
+    // On its second line they took 67px of the 197 that also hold a lead's workers chip and progress, or a plain
+    // agent's run chip, beside the three number columns, and pushed the line past its row (sidebar-columns step 8)
     const failedBadge =
         startError != null && !review && !asking ? (
             <span
@@ -1388,7 +1388,8 @@ function ParentRow({
         ) : null;
     // its state, when it wants something, and the marks and buttons a turn leaves: they end the row's second line just
     // left of the columns, at full width; only the words to their left are cut (a lead's after its workers chip and
-    // progress), so the name keeps the first line's full width
+    // progress), so the name keeps the first line's full width. An agent whose controller refused to start says so
+    // on its name line instead (failedBadge), and its queued command or Close waits for it to start
     const badges = (
         <>
             {inCouncil ? (
@@ -1415,14 +1416,7 @@ function ParentRow({
                     review
                     <ArrowUpRight size={10} strokeWidth={2.2} aria-hidden />
                 </button>
-            ) : asking ? null : startError != null ? (
-                // its glyph carries working, idle or (a moon) sleeping; this slot holds its queued command or the Close a
-                // finished one offers. A controller that refused to start says so in words, as an ask does: it waits on
-                // you to fix it. A lead's is on its name line (failedBadge)
-                lead ? null : (
-                    failedBadge
-                )
-            ) : queued ? (
+            ) : asking || startError != null ? null : queued ? (
                 <QueuedJobTag job={queued} />
             ) : done ? (
                 // the chip's click is its own: it must not select the row it closes
@@ -1513,7 +1507,7 @@ function ParentRow({
                         {/* a lead's second line already holds its workers chip, progress and badges */}
                         {lead ? subsChip : null}
                         {lead ? tasksChip : null}
-                        {lead ? failedBadge : null}
+                        {failedBadge}
                         {unreadBadge}
                     </div>
                 )}
@@ -1787,12 +1781,13 @@ function WorkerRow({
     const selected = focusKey != null && focusId === focusKey;
     const waits = done || nested ? undefined : unmetDeps(run.dag, task);
     const asksYou = !done && ask?.owner !== "lead" && (ask?.owner === "you" || agent?.state === "asking");
-    // its heavy command waiting its turn in the job queue, tagged at the second line's end. The engine's step for it
-    // (its Setup, its merge's Verify) belongs to no block: its state names that in words ("verify queued #1") instead
-    // of a Verify clock that runs while the command has not started, and the run's line carries the tag
+    // what it waits on in the job queue, tagged at the second line's end: its agent's heavy command, else the engine's
+    // step for it (its Setup, its merge's Verify), which belongs to no block. The tag stays whole beside the columns and
+    // the words are what shrink (sidebar-declutter spec); the words then say "verify queued", not a Verify clock that
+    // runs while the command has not started
     const jobQueue = useAtomValue(jobQueueAtom);
     const step = done || nested ? null : queuedStepFor(jobQueue, run.runId, task.id);
-    const queued = done ? null : queuedJobFor(jobQueue, agent?.blockId);
+    const queued = done ? null : (queuedJobFor(jobQueue, agent?.blockId) ?? step);
     const line = {
         taskId: task.id,
         lane,

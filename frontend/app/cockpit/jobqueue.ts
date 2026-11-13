@@ -259,13 +259,12 @@ export function queuedStepFor(d: JobQueueData | null, runId: string | undefined,
     return ordered(waiting)[0] ?? null;
 }
 
-/** What a task's row says it is doing while its engine step waits: "verify queued #2", "setup queued". The step is
- * the label's first part ("Verify · The handoff card"); a bisect's Verify is still a Verify. The row says it in words,
- * not with a tag: at the tree's width a tag beside the row's columns leaves its words no room. */
+/** What a task's row says it is doing while its engine step waits: "verify queued", "setup queued", in place of a
+ * Verify clock that runs while the command has not started. The step is the label's first part ("Verify · The handoff
+ * card"); a bisect's Verify is still a Verify. Its place in line is the row's tag's to say. */
 export function stepQueuedState(job: JobQueueJob): string {
     const step = (job.label ?? "").split(" · ")[0].trim().toLowerCase();
-    const pos = job.position ?? 0;
-    return `${step ? `${step} queued` : "queued"}${pos > 0 ? ` #${pos}` : ""}`;
+    return step ? `${step} queued` : "queued";
 }
 
 /** Every job a run waits on, in the order they will be served: its engine steps (by run id) and the commands of its
@@ -291,8 +290,7 @@ export function runQueuedTag(
         return null;
     }
     if (jobs.length === 1) {
-        const one = queuedTag(jobs[0], now);
-        return jobs[0].label ? { ...one, title: `${jobs[0].label}: ${one.title}` } : one;
+        return queuedTag(jobs[0], now);
     }
     const names = jobs.map((j) => (j.label ? `${j.label} (${j.name})` : j.name));
     return {
@@ -307,7 +305,8 @@ export function runQueuedTag(
  * chip does. */
 export function queuedTag(job: JobQueueJob, now: number): { label: string; title: string; warn: boolean } {
     const pos = job.position ?? 0;
-    const title = `${job.name} waits its turn in the heavy-job queue`;
+    // an engine step names itself first ("Verify · The handoff card: scripts/verify.mjs waits…")
+    const title = `${job.label ? `${job.label}: ` : ""}${job.name} waits its turn in the heavy-job queue`;
     let why = "";
     if (pos > 1) {
         why = `${pos - 1} ${pos === 2 ? "job" : "jobs"} ahead of it`;

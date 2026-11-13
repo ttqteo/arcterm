@@ -169,10 +169,18 @@ describe("jobqueue", () => {
         expect(queuedStepFor(null, "R", "t-3")).toBeNull();
     });
     it("names a queued step by its label's first part", () => {
-        expect(stepQueuedState(job({ label: "Verify · The handoff card", position: 2 }))).toBe("verify queued #2");
+        expect(stepQueuedState(job({ label: "Verify · The handoff card", position: 2 }))).toBe("verify queued");
         expect(stepQueuedState(job({ label: "Verify · bisect" }))).toBe("verify queued");
-        expect(stepQueuedState(job({ label: "Setup · t-2", position: 1 }))).toBe("setup queued #1");
+        expect(stepQueuedState(job({ label: "Setup · t-2", position: 1 }))).toBe("setup queued");
         expect(stepQueuedState(job({}))).toBe("queued");
+    });
+    it("names an engine step first in its tag's tooltip, and an agent's command alone", () => {
+        expect(queuedTag(job({ label: "Verify · Four", name: "scripts/verify.mjs" }), 0).title).toBe(
+            "Verify · Four: scripts/verify.mjs waits its turn in the heavy-job queue"
+        );
+        expect(queuedTag(job({ name: "task check:ts" }), 0).title).toBe(
+            "task check:ts waits its turn in the heavy-job queue"
+        );
     });
     it("collects every job a run waits on: its steps and its agents' commands, in serving order", () => {
         const d = {
