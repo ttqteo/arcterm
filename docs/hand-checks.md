@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat box background line, the presses its scenario (`chat-bg-tasks`) leaves out: have a Claude agent
+  start a background `sleep 600` and a background subagent, open the line's list → Stop on the shell row ends it and
+  the row leaves at once (the line folds away when nothing is left); a press on the subagent row opens its
+  conversation. Also check the line goes when the agent falls asleep. Agent surface, Chat (`chatbgline.tsx`).
 - [ ] (arcterm) A lost Stop no longer leaves "Working…": make a Claude agent's Stop hook fail (point `Stop`'s command in
   `~/.claude/settings.json` at a `sleep 15` with `timeout: 10` for one turn), let a turn end → the Terminal shows the
   turn done, Chat still says Working…, and within ~30 s it goes idle and `waveapp.log` has `idled from its transcript`.

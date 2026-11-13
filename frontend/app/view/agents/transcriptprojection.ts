@@ -692,6 +692,7 @@ export interface SubagentSpawn {
     // a background agent: its tool_result was only the launch ack, so it is done (and failed or not) when a
     // <task-notification> names it; until then its own transcript is all that says whether it ended
     async?: true;
+    startMs?: number; // when the parent called it: its tool_use record's timestamp
 }
 
 // how claude answers the tool_use of an agent it starts in the background, before the agent has done anything: the
@@ -751,12 +752,14 @@ export function extractSubagentSpawns(lines: string[]): SubagentSpawn[] {
                 typeof block.id === "string"
             ) {
                 const input = block.input ?? {};
+                const ts = typeof rec.timestamp === "string" ? Date.parse(rec.timestamp) : NaN;
                 spawns.set(block.id, {
                     toolUseId: block.id,
                     subagentType: typeof input.subagent_type === "string" ? input.subagent_type : "",
                     prompt: typeof input.prompt === "string" ? input.prompt : "",
                     done: false,
                     failed: false,
+                    ...(Number.isFinite(ts) ? { startMs: ts } : {}),
                 });
                 order.push(block.id);
             } else if (block?.type === "tool_result" && typeof block.tool_use_id === "string") {

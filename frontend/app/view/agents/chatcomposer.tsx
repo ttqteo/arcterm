@@ -23,6 +23,9 @@
 // stays the source of truth: `text` is the message as the agent receives it, and everything here (the menus, recall, the
 // insert registry, the send) works on that string and offsets in it, through the editor's handle (`editorRef`), which
 // answers like the part of a textarea they use.
+//
+// While the agent has background work running (shells, Monitors, background subagents), a line at the box's top names it
+// and unfolds into the list (chatbgline.tsx).
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { MOTION, turnTransition } from "@/app/element/motiontokens";
@@ -37,6 +40,7 @@ import { ArrowUp, FileDiff, Moon, Terminal, type LucideIcon } from "lucide-react
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { canStop, useAgentSend } from "./agentcomposer";
+import type { AgentsViewModel } from "./agents";
 import { sleepingLine, wakeAgent, wakeErrorToast } from "./agentsleep";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
@@ -44,6 +48,7 @@ import { AttachmentTray } from "./attachmenttray";
 import { useBashComplete } from "./bashcomplete";
 import { bashGhost } from "./chatbash";
 import { noteBashRun, useBashHistory } from "./chatbashstore";
+import { ChatBgLine } from "./chatbgline";
 import { boxState, type BoxState } from "./chatboxstate";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold } from "./chatfooter";
@@ -128,6 +133,7 @@ const INTERRUPT_SETTLE_MS = 1_500;
 const DropMinH = 136;
 
 export function ChatComposer({
+    model,
     agent,
     placeholder,
     dataAttrs,
@@ -139,6 +145,7 @@ export function ChatComposer({
     onSendNow,
     questionWaits,
 }: {
+    model: AgentsViewModel;
     agent: AgentVM;
     placeholder: string;
     /** the conversation as drawn: a send of an awake agent is shown as a pending bubble until the transcript holds it.
@@ -794,6 +801,9 @@ export function ChatComposer({
                         ) : null}
                     </div>
                 ) : null}
+                {/* the agent's background work still running (chatbgline.tsx): under the queued-message line, which asks
+                the person to act */}
+                <ChatBgLine model={model} agent={agent} />
                 <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />
                 {/* a bash command says what it is above its well: it runs in the agent's shell, and its output joins the chat */}
                 {bash ? (

@@ -22,7 +22,22 @@ const file = (over: Partial<SubagentFileInfo>): SubagentFileInfo => ({
 describe("correlateSubagents", () => {
     it("takes type + success state from a matched, completed spawn", () => {
         const out = correlateSubagents([spawn({ done: true })], [file({})]);
-        expect(out).toEqual([{ id: "a1", type: "Explore", state: "success", transcriptPath: "/p/agent-a1.jsonl" }]);
+        expect(out).toEqual([
+            { id: "a1", type: "Explore", state: "success", transcriptPath: "/p/agent-a1.jsonl", startedAtMs: 1 },
+        ]);
+    });
+
+    it("carries whether the spawn went to the background", () => {
+        expect(correlateSubagents([spawn({ async: true })], [file({})])[0].async).toBe(true);
+        expect(correlateSubagents([spawn({})], [file({})])[0].async).toBeUndefined();
+        // an unmatched file has no spawn to say so
+        expect(correlateSubagents([], [file({})])[0].async).toBeUndefined();
+    });
+
+    it("starts at the spawn's timestamp, else at the file's time on disk", () => {
+        expect(correlateSubagents([spawn({ startMs: 500 })], [file({ startedatms: 900 })])[0].startedAtMs).toBe(500);
+        expect(correlateSubagents([], [file({ startedatms: 900 })])[0].startedAtMs).toBe(900);
+        expect(correlateSubagents([], [file({ startedatms: 0 })])[0].startedAtMs).toBeUndefined();
     });
 
     it("maps an errored spawn to failure", () => {

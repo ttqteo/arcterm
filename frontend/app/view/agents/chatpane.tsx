@@ -788,6 +788,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                         />
                         <ChatComposer
                             key={agent.id}
+                            model={model}
                             agent={agent}
                             entries={entries}
                             onSent={onBoxSent}
