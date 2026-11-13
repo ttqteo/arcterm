@@ -44977,12 +44977,12 @@ const agentChat = {
                 { pin27, back27 }
             );
 
-            // 28. the model chip opens a menu of the three aliases with the current one checked; Escape closes it; picking Sonnet
-            // types /model sonnet into the block and closes the menu
+            // 28. the model chip opens a plain menu of the four families (names only) with the current one checked; Escape closes
+            // it; picking Sonnet types its full model id into the block and closes the menu
             await showAgent(A);
             await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-model]")`, AC_WAIT_MS);
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-model]")?.click()`);
-            const up28 = await polishWaitFor(h, `${acMenuRows("Model")}.length === 3`, 3000);
+            const up28 = await polishWaitFor(h, `${acMenuRows("Model")}.length === 4`, 3000);
             const menu28 = await h.ev(`(() => ({
                 rows: ${acMenuRows("Model")}.map((r) => [r.getAttribute("data-chat-model-choice"), r.getAttribute("aria-checked"), r.textContent.trim()]),
                 expanded: ${acLayer(A)}?.querySelector("[data-chat-model]")?.getAttribute("aria-expanded") ?? null,
@@ -44993,16 +44993,17 @@ const agentChat = {
             const stayed28 = await h.ev(acOnScreen(A));
             const before28 = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-model]")?.click()`);
-            await polishWaitFor(h, `${acMenuRows("Model")}.length === 3`, 3000);
+            await polishWaitFor(h, `${acMenuRows("Model")}.length === 4`, 3000);
             await h.ev(`${acMenu("Model")}?.querySelector('[data-chat-model-choice="sonnet"]')?.click()`);
-            const picked28 = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.blockid === ${JSON.stringify(blockA)} && c.data.input === "/model sonnet")`, 3000);
+            const picked28 = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.blockid === ${JSON.stringify(blockA)} && c.data.input === "/model claude-sonnet-5-5")`, 3000);
             const closedAfter28 = await polishWaitFor(h, `!${acMenu("Model")}`, 3000);
             const typed28 = (await acSettled(h, blockA)).slice(before28);
             rec(
-                "28. the model chip opens a menu of Opus, Sonnet and Haiku with the agent's model checked (aria-checked on one row), Escape closes it and the chat stays on screen, and picking Sonnet types /model sonnet into A's block and closes the menu",
-                up28 && JSON.stringify(menu28.rows.map((r) => r[0])) === JSON.stringify(["opus", "sonnet", "haiku"]) &&
+                "28. the model chip opens a menu of Fable, Opus, Sonnet and Haiku, each row only its name, with the agent's model checked (aria-checked on one row), Escape closes it and the chat stays on screen, and picking Sonnet types /model claude-sonnet-5-5 into A's block and closes the menu",
+                up28 && JSON.stringify(menu28.rows.map((r) => r[0])) === JSON.stringify(["fable", "opus", "sonnet", "haiku"]) &&
+                    JSON.stringify(menu28.rows.map((r) => r[2])) === JSON.stringify(["Fable 5.2", "Opus 5.5", "Sonnet 5.5", "Haiku 5.5"]) &&
                     menu28.rows.filter((r) => r[1] === "true").map((r) => r[0]).join() === "opus" && menu28.expanded === "true" &&
-                    closed28 && stayed28 && picked28 && JSON.stringify(typed28) === JSON.stringify(["/model sonnet", "\r"]) && closedAfter28,
+                    closed28 && stayed28 && picked28 && JSON.stringify(typed28) === JSON.stringify(["/model claude-sonnet-5-5", "\r"]) && closedAfter28,
                 { menu28, closed28, stayed28, picked28, typed28, closedAfter28 }
             );
 

@@ -52,11 +52,11 @@ export function footerParts(
 // switches to without opening its own menu (a family alias like `fable` may not exist in every Claude Code version).
 export type ModelFamily = "fable" | "opus" | "sonnet" | "haiku";
 
-export const MODEL_CHOICES: { alias: ModelFamily; id: string; label: string; note: string }[] = [
-    { alias: "fable", id: "claude-fable-5-2", label: "Fable 5.2", note: "Newest, for the hardest work" },
-    { alias: "opus", id: "claude-opus-5-5", label: "Opus 5.5", note: "Deep reasoning, long tasks" },
-    { alias: "sonnet", id: "claude-sonnet-5-5", label: "Sonnet 5.5", note: "Fast and capable, everyday work" },
-    { alias: "haiku", id: "claude-haiku-5-5", label: "Haiku 5.5", note: "Fastest, for light tasks" },
+export const MODEL_CHOICES: { alias: ModelFamily; id: string; label: string }[] = [
+    { alias: "fable", id: "claude-fable-5-2", label: "Fable 5.2" },
+    { alias: "opus", id: "claude-opus-5-5", label: "Opus 5.5" },
+    { alias: "sonnet", id: "claude-sonnet-5-5", label: "Sonnet 5.5" },
+    { alias: "haiku", id: "claude-haiku-5-5", label: "Haiku 5.5" },
 ];
 
 /** The family of the model the agent runs, read off its model name, or null when none matches. */

@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The footer of the chat box, as pill chips: the agent's model (a menu of the model families, each with its own icon; a
-// pick types `/model <id>`), its effort (a menu of Claude Code's levels drawn as a five-bar meter; a pick types
+// The footer of the chat box, as pill chips: the agent's model (a menu of the model families by name only, as Claude
+// Code's own menu has them; a pick types `/model <id>`), its effort (a menu of Claude Code's levels drawn as a five-bar meter; a pick types
 // `/effort <level>`),
 // Claude Code's permission mode (a menu of the modes; a pick presses Shift+Tab until Claude Code's footer names that
 // mode) and, at the right, how full the context is as a small ring with its percent. The mode is read off the terminal
@@ -19,7 +19,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { readTermLines } from "@/app/view/term/termpaste";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
-import { Check, ChevronUp, Feather, Gem, Leaf, Lock, Sparkles, type LucideIcon } from "lucide-react";
+import { Check, ChevronUp, Lock } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import { submitToAgent } from "./agentsubmit";
@@ -36,7 +36,6 @@ import {
     modelCommand,
     modeStep,
     ringDash,
-    type ModelFamily,
 } from "./chatfootermodel";
 import { tuiEffort, tuiMode, type ClaudeMode, type EffortLevel } from "./tuiscreen";
 
@@ -229,32 +228,6 @@ function ChipMenu({
     );
 }
 
-// Each model family's icon and tint (categorical lane colours, so every theme recolours them)
-const MODEL_LOOK: Record<ModelFamily, { icon: LucideIcon; tint: string; wash: string }> = {
-    fable: { icon: Sparkles, tint: "text-graphlane-4", wash: "bg-graphlane-4/15" },
-    opus: { icon: Gem, tint: "text-graphlane-1", wash: "bg-graphlane-1/15" },
-    sonnet: { icon: Feather, tint: "text-graphlane-6", wash: "bg-graphlane-6/15" },
-    haiku: { icon: Leaf, tint: "text-graphlane-2", wash: "bg-graphlane-2/15" },
-};
-
-function ModelBadge({ family, size }: { family: ModelFamily; size: "chip" | "row" }) {
-    const look = MODEL_LOOK[family];
-    const Icon = look.icon;
-    return (
-        <span
-            aria-hidden
-            className={cn(
-                "flex flex-none items-center justify-center",
-                look.wash,
-                look.tint,
-                size === "chip" ? "-ml-1 h-[18px] w-[18px] rounded-full" : "h-[26px] w-[26px] rounded-[7px]"
-            )}
-        >
-            <Icon size={size === "chip" ? 11 : 14} strokeWidth={2} />
-        </span>
-    );
-}
-
 function ModelChip({ agent }: { agent: AgentVM }) {
     const current = currentModelAlias(agent.model);
     const pick = (id: string, m: ChipMenuState) => {
@@ -268,7 +241,7 @@ function ModelChip({ agent }: { agent: AgentVM }) {
     return (
         <ChipMenu
             menuLabel="Model"
-            width="w-[260px]"
+            width="w-[200px]"
             chip={(m) => (
                 <button
                     type="button"
@@ -280,11 +253,6 @@ function ModelChip({ agent }: { agent: AgentVM }) {
                     onClick={() => m.setOpen(!m.open)}
                     className={cn(CHIP, chipTone(m.open))}
                 >
-                    {current != null ? (
-                        <ModelBadge family={current} size="chip" />
-                    ) : (
-                        <span aria-hidden className="h-[8px] w-[8px] flex-none rounded-full bg-accent" />
-                    )}
                     <span className="min-w-0 truncate">{agent.model || "Model"}</span>
                     <ChevronUp size={11} strokeWidth={2.2} aria-hidden className="flex-none" />
                 </button>
@@ -303,17 +271,12 @@ function ModelChip({ agent }: { agent: AgentVM }) {
                             onClick={() => pick(c.id, m)}
                             className={row(c.alias === current)}
                         >
-                            <ModelBadge family={c.alias} size="row" />
-                            <span className="flex min-w-0 flex-1 flex-col text-left">
-                                <span className="truncate">{c.label}</span>
-                                <span className="truncate text-[11.5px] text-muted">{c.note}</span>
-                            </span>
+                            <span className="min-w-0 flex-1 truncate text-left">{c.label}</span>
                             <span className="flex w-[14px] flex-none justify-center">
                                 {c.alias === current ? <Check size={13} aria-hidden /> : null}
                             </span>
                         </button>
                     ))}
-                    <div className={MENU_FOOT}>Sends /model to Claude Code</div>
                 </>
             )}
         />
