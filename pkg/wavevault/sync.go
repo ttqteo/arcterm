@@ -49,8 +49,12 @@ const (
 // pushRejectedMarkers are the stderr fragments of a push the remote refused because it moved on.
 var pushRejectedMarkers = []string{"[rejected]", "non-fast-forward", "fetch first"}
 
-// beforePush runs just before each push; the test seam for a push race.
-var beforePush func()
+// beforePush runs just before each push; the test seam for a push race. beforeFetch runs just
+// before each fetch; the test seam for a write landing while the network step runs.
+var (
+	beforePush  func()
+	beforeFetch func()
+)
 
 // SyncResult reports one Sync. Off is "" when sync ran, else SyncOffNoGit or SyncOffNoRemote.
 // NewConflicts lists the vault-relative conflict copies this run wrote. Pulled is whether the merge brought in
@@ -67,15 +71,21 @@ type unmergedPath struct {
 	stages map[int]string // stage → blob id
 }
 
-// Sync commits local changes, merges origin/main and pushes, under the vault lock. Conflicts merge
-// field-aware (efforts) or key-level (settings), else keep the local side and save the remote side
-// under conflicts/. No git on PATH or no origin remote is not an error: Off says which.
+// Sync commits local changes, merges origin/main and pushes. Conflicts merge field-aware (efforts)
+// or key-level (settings), else keep the local side and save the remote side under conflicts/. No
+// git on PATH or no origin remote is not an error: Off says which.
+//
+// The vault lock (LockRoot) is held only for the steps that touch the work tree or index: the
+// commit and the merge. The fetch and the push run without it, since they move only refs and
+// objects, and they wait on the network: holding the lock through them made every effort write
+// queue behind a whole sync, past wsh's 5 s RPC timeout. A write that lands meanwhile is committed
+// right before the merge, so the merge always starts from a clean tree, and pushed by the next Sync.
 func (v *Vault) Sync(ctx context.Context) (SyncResult, error) {
 	if _, err := exec.LookPath("git"); err != nil {
 		return SyncResult{Off: SyncOffNoGit}, nil
 	}
-	unlock := LockRoot(v.Root)
-	defer unlock()
+	unlockSync := lockSync(v.Root)
+	defer unlockSync()
 
 	url, err := v.RemoteURL(ctx)
 	if err != nil {
@@ -84,24 +94,21 @@ func (v *Vault) Sync(ctx context.Context) (SyncResult, error) {
 	if url == "" {
 		return SyncResult{Off: SyncOffNoRemote}, nil
 	}
-	if _, ok := v.revParse(ctx, "MERGE_HEAD"); ok {
-		if _, err := v.syncGit(ctx, "merge", "--abort"); err != nil {
-			return SyncResult{}, err
+	// a merge a crash interrupted is dropped first; the local changes are committed after the fetch
+	if err := v.withRootLock(func() error {
+		if _, ok := v.revParse(ctx, "MERGE_HEAD"); ok {
+			_, err := v.syncGit(ctx, "merge", "--abort")
+			return err
 		}
-	}
-	if _, err := v.commitLocked(ctx, syncCommitLabel); err != nil {
+		return nil
+	}); err != nil {
 		return SyncResult{}, err
 	}
 
 	var res SyncResult
 	for attempt := 1; ; attempt++ {
-		before, _ := v.revParse(ctx, "HEAD")
 		if err := v.fetchAndMerge(ctx, &res); err != nil {
 			return res, err
-		}
-		// the local changes are committed by now, so HEAD moves only by what the merge brought in
-		if after, _ := v.revParse(ctx, "HEAD"); after != before {
-			res.Pulled = true
 		}
 		pushed, err := v.push(ctx)
 		if err == nil {
@@ -114,12 +121,39 @@ func (v *Vault) Sync(ctx context.Context) (SyncResult, error) {
 	}
 }
 
-// fetchAndMerge fetches origin and merges origin/main, resolving every conflict and committing the
-// merge. An absent origin/main (a freshly created remote) leaves nothing to merge.
+// withRootLock runs fn holding the vault lock.
+func (v *Vault) withRootLock(fn func() error) error {
+	unlock := LockRoot(v.Root)
+	defer unlock()
+	return fn()
+}
+
+// fetchAndMerge fetches origin without the vault lock, then, holding it, commits what was written
+// during the fetch and merges origin/main, resolving every conflict and committing the merge. An
+// absent origin/main (a freshly created remote) leaves nothing to merge.
 func (v *Vault) fetchAndMerge(ctx context.Context, res *SyncResult) error {
+	if beforeFetch != nil {
+		beforeFetch()
+	}
 	if _, err := v.syncGitNet(ctx, "fetch", syncRemote); err != nil {
 		return err
 	}
+	return v.withRootLock(func() error {
+		if _, err := v.commitLocked(ctx, syncCommitLabel); err != nil {
+			return err
+		}
+		// the local changes are committed by now, so HEAD moves only by what the merge brings in
+		before, _ := v.revParse(ctx, "HEAD")
+		err := v.mergeUpstreamLocked(ctx, res)
+		if after, _ := v.revParse(ctx, "HEAD"); after != before {
+			res.Pulled = true
+		}
+		return err
+	})
+}
+
+// mergeUpstreamLocked merges origin/main for a caller holding the vault lock.
+func (v *Vault) mergeUpstreamLocked(ctx context.Context, res *SyncResult) error {
 	if _, ok := v.revParse(ctx, syncUpstream); !ok {
 		return nil
 	}
