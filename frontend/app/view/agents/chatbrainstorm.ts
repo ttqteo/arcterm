@@ -9,11 +9,13 @@
 
 import {
     approveBlocker,
+    changedSentences,
     checkReview,
     decisionParts,
     judgeWait,
     judgeWork,
     optionLetter,
+    partAnswer,
     partGist,
     partTitle,
     partView,
@@ -26,7 +28,9 @@ import {
     type BrainstormFile,
     type BrainstormQuestion,
     type BuilderCheckView,
+    type PartAnswer,
     type SeenMark,
+    type SentenceDiff,
     type SentKind,
     type StartingRunMark,
 } from "./brainstormmodel";
@@ -327,13 +331,18 @@ export interface QuestionCard {
 export type Gist = { id: string; title: string; gist: string };
 
 /** One decision that needs the user, as the Confirm card (and the check's review) draws a row: a guess, or a decision the
- *  agent changed since the user confirmed it (`was`, `why`). `isNew` is a decision the user has not seen yet. */
+ *  agent changed since the user confirmed it. A changed one carries what changed, as the Brainstorm tab's review draws
+ *  it: `diff`, the sentences that left (`removed`) and came in (`added`) between what the user confirmed and `body`, the
+ *  cause `why`, and `said`, the answer the part came from. A guess has an empty `diff`. `isNew` is a decision the user
+ *  has not seen yet. */
 export type DecisionRowModel = {
     id: string;
     title: string;
     gist: string;
     view: "guess" | "changed";
-    was?: string;
+    body: string;
+    said?: PartAnswer;
+    diff: SentenceDiff;
     why?: string;
     isNew: boolean;
 };
@@ -519,12 +528,15 @@ function confirmCard(input: CardInput, f: BrainstormFile): ConfirmCard | null {
     for (const p of decisionParts(f)) {
         const view = partView(f, p);
         if (view === "guess" || view === "changed") {
+            const said = partAnswer(f, p);
             rows.push({
                 id: p.id,
                 title: p.title,
                 gist: partGist(f, p),
                 view,
-                ...(p.was != null ? { was: p.was } : {}),
+                body: p.body,
+                ...(said != null ? { said } : {}),
+                diff: view === "changed" ? changedSentences(p.was ?? "", p.body) : [],
                 ...(p.why != null ? { why: p.why } : {}),
                 isNew: unseen.has(p.id),
             });
@@ -573,12 +585,15 @@ function checkCard(input: CardInput, f: BrainstormFile): CheckCard | null {
         const review = checkReview(f);
         for (const r of [...review.changed, ...review.fresh]) {
             if (r.action === "keep-restore" || r.action === "confirm") {
+                const changed = r.action === "keep-restore";
                 rows.push({
                     id: r.id,
                     title: r.title,
                     gist: r.gist,
-                    view: r.action === "keep-restore" ? "changed" : "guess",
-                    ...(r.was != null ? { was: r.was } : {}),
+                    view: changed ? "changed" : "guess",
+                    body: r.body,
+                    ...(r.said != null ? { said: r.said } : {}),
+                    diff: changed ? changedSentences(r.was ?? "", r.body) : [],
                     ...(r.cause !== "" ? { why: r.cause } : {}),
                     isNew: unseen.has(r.id),
                 });

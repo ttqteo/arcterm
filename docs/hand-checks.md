@@ -17,6 +17,14 @@ does not, say what you saw and it becomes a bug row under Actionable.
   <file>", and Request changes from Review into "↺ … changes requested · N comments". An exited agent shows both cards
   without Stop, Continue, Review and Approve. The `chat-council` scenario covers these states from fixtures, not the output of a real agent's
   `wsh council start`. Commit: feat(chat) place the council cards and the Doc review rows in the conversation
+- [ ] (arcterm) **The brainstorm part of the Chat band on a live agent.** Link a real Claude agent to an initiative and
+  have it run a brainstorm that draws boards. While it works between two questions, its Chat band reads `Brainstorm`,
+  `N boards` and `Decided N` beside the initiative, with no Mark done on the line. Let it draw another board while
+  Chat is shown → within a few seconds `1 new` with a dot appears, and the header's Brainstorm tab carries the same
+  dot. Open the part → the decisions that are yours and the boards, the new one tagged `new`, the conversation moved
+  down and not under it. Click the new board → the Brainstorm tab opens and both dots go; from inside the band, `b`
+  opens the same tab. Checked only with fixture agents in the `chat-brainstorm-band` scenario (`chatband.tsx`,
+  `brainstormbandview.tsx`).
 - [ ] (arcterm) A pasted jobslot wrapper queues once: after a build with the new `wsh` and an arcterm restart, have a
   Claude agent run `'<home>/.arc/bin/wsh' jobslot --hold-parent -- 'task check:ts'; [ $? -ne 75 ] || exit 75` then a
   newline and `task check:ts`, in the foreground → the Jobs popover shows one `task check:ts`, running, not a second
@@ -654,8 +662,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Chat's compact header: a live Claude agent in Chat → its header shows the dot, the name and the project
   (and a server, the lead, an initiative or Ship/Commit/Close when they apply), with no ✳, state word, model, context
   or ⌥C; hover the dot → its state; flip to Terminal → the full header is back and Chat/Terminal did not move. An agent
-  with no initiative: … → "Link to initiative…" opens the picker under the … button, and `i` opens it too, in Chat and
-  in Terminal (`agentheader.tsx` `lean`; the `initiative-link` scenario was moved to the menu but not run).
+  with no initiative: the header shows a `+ Link to initiative` chip with an `i` keycap that opens the picker under it,
+  and `i` opens it too, in Chat and in Terminal; a linked agent's Chat header has no ◇ chip, and `i` opens its band
+  (`agentheader.tsx` `lean`; the `initiative-link` scenario is updated by the chat-initiative-link plan's Task 6).
 - [ ] (arcterm) A Chat message queued mid-turn reads as you wrote it: while a Claude agent works, send from its Chat a
   message of two lines with a pasted screenshot → once Claude takes it in, your bubble shows the two lines and the
   picture as a thumbnail, with no `<pasted_content id="…">` tags and no `Attached images:` list; a paste inside a
@@ -2747,3 +2756,10 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   `[chat-send] enter-unechoed … echo=unknown` for every send (it read so 36 of 36 times before), and an
   `enter-linebreak … retry=1` line, when one shows, is followed by the message going out. While Claude works, ↑ in an
   empty Chat box takes the queued messages back (`chattakeback.ts` splitRules; no scenario runs a live Claude Code).
+- [ ] (arcterm) **The initiative band on a live Claude agent and on a Mac.** Link a real Claude agent to an initiative,
+  let a turn end on a chunk, then click its `go on with: <label>` chip: the band moves to that chunk at once, the
+  waiting line never draws over the box, and the agent's next prompt starts with
+  `initiative: switched you to chunk <n> <label>`. Mark done from the band: the agent moves to the next chunk. Press
+  `i` from the message box: the band opens and `m`, `n`, `w` and the arrows work without a click. Once on a Mac
+  (`task dev:browser`, then `task verify:ui -- chat-initiative-band initiative-popover initiative-link`): the scenarios
+  ran only on WebView2 in run 175af141, with fixture agents (`initiativebandview.tsx`, `chatpane.tsx` goOn).

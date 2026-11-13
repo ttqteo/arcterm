@@ -18,6 +18,7 @@
 // model's answers and makes the call, chatpane.tsx wires the two.
 
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
+import { agentChunk } from "./initiativepopovermodel";
 import { shipOffer, type ShipGit } from "./shipmodel";
 
 export type ChipKind = "commit" | "push" | "reply" | "done" | "next";
@@ -32,9 +33,9 @@ export interface ChatChip {
     chunk?: string;
 }
 
-/** The part of an initiative the initiative rule reads. */
+/** The part of an initiative the initiative rule reads. A workref's `ts` is when it was attached (ms). */
 export interface ChipEffort {
-    chunks?: { label: string; status: string; workrefs?: { kind: string; oref: string }[] }[];
+    chunks?: { label: string; status: string; workrefs?: { kind: string; oref: string; ts?: number }[] }[];
 }
 
 /** The model's answer for one turn, as the store holds it. */
@@ -124,36 +125,36 @@ export function ruleChips(
     return [];
 }
 
-const settled = (status: string) => status === "done" || status === "skipped";
-
 /** Pure: the initiative rule's chip for a turn that does not end in a question, on the initiative the agent works on.
- *  The chunk it is on is the one its tab holds and has not settled, or, when it holds none at all, the active one (it
- *  was started on the initiative, not on a chunk), as the header popover reads it (initiativepopovermodel.ts
- *  agentChunk). A turn that ended on a commit offers to tick that chunk done: the work landed, and whether it is the
- *  whole chunk stays the person's call. Once every chunk the agent held is settled, the next one after them that no
- *  other agent holds is offered as a message to go on with. A proposed chunk is nobody's work yet. */
+ *  The chunk it is on is the one the band and the header popover read, by the one definition (initiativepopovermodel.ts
+ *  agentChunk): the live chunk its tab holds, and nothing else (no active chunk stands in for an agent that holds none).
+ *  A turn that ended on a commit offers to tick that chunk done: the work landed, and whether it is the whole chunk stays
+ *  the person's call. The chip belongs to the turn: given `turnEnded` (when the agent went idle, ms), a chunk the agent
+ *  was attached to after that (a switch, or Mark done carrying it forward) was not that turn's work, so it offers no
+ *  done:; a workref with no stamp, or no `turnEnded`, is as it always was. Once every chunk the agent held is settled,
+ *  the next one after them that no other agent holds is offered as a message to go on with. A proposed chunk is nobody's
+ *  work yet. */
 export function initiativeChips(
     effort: ChipEffort | null | undefined,
     tabId: string,
     committed: boolean,
-    vi: boolean
+    vi: boolean,
+    turnEnded?: number
 ): ChatChip[] {
     const chunks = (effort?.chunks ?? []).filter((c) => c.status !== "proposed");
     if (chunks.length === 0) {
         return [];
     }
     const ref = "agent:" + tabId;
-    const holds = (c: (typeof chunks)[number]) => (c.workrefs ?? []).some((w) => w.oref === ref);
-    const mine = chunks.filter(holds);
-    const on =
-        mine.find((c) => c.status === "active") ??
-        mine.find((c) => !settled(c.status)) ??
-        (mine.length === 0 ? chunks.find((c) => c.status === "active") : undefined);
+    const on = agentChunk({ chunks }, tabId);
     if (on != null) {
-        return committed
+        const stamp = (on.workrefs ?? []).find((w) => w.oref === ref)?.ts;
+        const ofThisTurn = turnEnded === undefined || stamp === undefined || stamp <= turnEnded;
+        return committed && ofThisTurn
             ? [{ text: (vi ? "xong: " : "done: ") + on.label, kind: "done", source: "rule", chunk: on.label }]
             : [];
     }
+    const mine = chunks.filter((c) => (c.workrefs ?? []).some((w) => w.oref === ref));
     if (mine.length === 0) {
         return [];
     }

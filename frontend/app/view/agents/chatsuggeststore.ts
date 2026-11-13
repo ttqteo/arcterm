@@ -9,12 +9,13 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { advanceChunk, effortDetailAtom, setChunkStatus } from "@/app/view/jarvis/effortstore";
+import { advanceChunk, attachAgent, effortDetailAtom, setChunkStatus } from "@/app/view/jarvis/effortstore";
 import { chunkRef } from "@/app/view/jarvis/trackeredit";
 import { fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { useMemo } from "react";
 import type { ModelSuggest } from "./chatsuggest";
+import { carryForward, doneIsAdvance } from "./initiativeband";
 import { planEditChunks } from "./planreviewmodel";
 
 // the turns kept: past this the oldest go
@@ -51,23 +52,39 @@ export function useModelSuggest(key: string | null): ModelSuggest | undefined {
     return useAtomValue(one);
 }
 
-/** Ticks `label` done on the initiative `oref`, as the header popover's Mark done does: from the active chunk it is
- *  `advance` (done, and the next one active); from any other it marks that chunk done and moves on only when nothing
- *  is active, since `advance` would finish another chunk. The initiative must be loaded (effortDetailAtom). */
-export async function markChunkDone(oref: string, label: string): Promise<void> {
-    const chunks = globalStore.get(effortDetailAtom).get(oref)?.chunks ?? [];
-    const chunk = chunks.find((c) => c.label === label);
-    if (chunk == null) {
+/** Ticks `label` done on the initiative `oref` for the agent in tab `tabId`, as the header popover's Mark done does: from
+ *  the first active chunk it is `advance` (done, and the next one active); from any other it marks that chunk done and
+ *  moves on only when nothing is active, since `advance` finishes the first active chunk, which may be another agent's
+ *  (doneIsAdvance). Then the agent goes with it: the chunk that woke in that write gets the agent attached, unless
+ *  someone already holds it (carryForward), so the band and the chips read the agent on the next chunk and not on
+ *  nothing. The initiative must be loaded (effortDetailAtom). */
+export async function markChunkDone(oref: string, label: string, tabId: string): Promise<void> {
+    const before = globalStore.get(effortDetailAtom).get(oref);
+    const chunks = before?.chunks ?? [];
+    if (before == null || !chunks.some((c) => c.label === label)) {
         return;
     }
-    if (chunk.status === "active") {
+    if (doneIsAdvance(before, label)) {
         await advanceChunk(oref);
-        return;
+    } else {
+        await setChunkStatus(oref, chunkRef(planEditChunks(chunks), label), "done");
+        const mid = globalStore.get(effortDetailAtom).get(oref);
+        if (!(mid?.chunks ?? []).some((c) => c.status === "active")) {
+            await advanceChunk(oref);
+        }
     }
-    await setChunkStatus(oref, chunkRef(planEditChunks(chunks), label), "done");
     const after = globalStore.get(effortDetailAtom).get(oref);
-    if (!(after?.chunks ?? []).some((c) => c.status === "active")) {
-        await advanceChunk(oref);
+    const next = after != null ? carryForward(before, after, tabId) : null;
+    if (after == null || next == null) {
+        return;
+    }
+    try {
+        await attachAgent(oref, chunkRef(planEditChunks(after.chunks ?? []), next), tabId);
+    } catch (e) {
+        // the chunk is done: the caller's "could not mark it done" would be false
+        throw new Error(
+            `Marked done, but could not move this agent to “${next}”: ${e instanceof Error ? e.message : String(e)}`
+        );
     }
 }
 

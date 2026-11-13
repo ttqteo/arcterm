@@ -116,7 +116,13 @@ The person does not add chunks or notes by hand, so never hand them a card or a 
   under its topic (`--parent`).
 
 Then say in one line what you wrote where. Chat still draws the `arc-initiative` blocks of older replies as cards, and
-a line `initiative: …` opening a message is the outcome of one of those: nothing to act on, and never write a new block.
+a line `initiative: added …`, `created …` or `dismissed …` opening a message is the outcome of one of those: nothing to
+act on, and never write a new block.
+
+A line `initiative: switched you to chunk <n> <label> (effort:<oid>)` opening a message is different: the person moved
+you to that chunk in the initiative's band. Work on it from now on, as if you had been attached to it; there is nothing
+to write and no block to answer with. The person already set it active, so don't run `wsh effort attach` or
+`advance` for the move.
 
 ## Statuses
 

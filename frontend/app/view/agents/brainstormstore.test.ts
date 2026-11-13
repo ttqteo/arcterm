@@ -4,21 +4,46 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const rpc = vi.hoisted(() => ({ SetMetaCommand: vi.fn() }));
+// vitest runs in node here: the seen board names (chat.brainstorm.seenBoards) need a storage to be written to
+const ls = vi.hoisted(() => {
+    const store = new Map<string, string>();
+    const mock = {
+        store,
+        failWrites: false,
+        getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+        setItem: (k: string, v: string) => {
+            if (mock.failWrites) {
+                throw new Error("storage denied");
+            }
+            store.set(k, v);
+        },
+        removeItem: (k: string) => void store.delete(k),
+        clear: () => store.clear(),
+    };
+    (globalThis as any).localStorage = mock;
+    return mock;
+});
 
 vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: rpc }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { parseSeenBoards } from "./brainstormband";
+import type { BrainstormFile, BrainstormPart } from "./brainstormmodel";
 import {
     attachBrainstorm,
     brainstormAtom,
+    brainstormBandAtom,
     brainstormOwner,
     brainstormsAtom,
+    brainstormSeenBoardsAtom,
     detachBrainstorm,
     dismissBrainstorm,
     getBrainstorm,
+    markBoardsSeen,
     moveReviewCursor,
     openBrainstormBoard,
+    SEEN_BOARDS_KEY,
     setBrainstormMode,
     setReviewCursor,
     toggleReviewRow,
@@ -27,11 +52,40 @@ import {
 
 const IDS = ["a1", "a2"];
 const LAG = { topic: "lag", cwd: "/p" };
+const LAG_PATH = "/p/.superpowers/brainstorm/lag/brainstorm.json";
 
 afterEach(() => {
     IDS.forEach(detachBrainstorm);
     rpc.SetMetaCommand.mockReset();
+    globalStore.set(brainstormSeenBoardsAtom, {});
+    ls.clear();
+    ls.failWrites = false;
 });
+
+function boardsFile(boards: string[], over: Partial<BrainstormFile> = {}): BrainstormFile {
+    const parts: BrainstormPart[] = [
+        { id: "who", title: "Who", state: "yours", body: "Page the owner.", boards },
+        { id: "how", title: "How", state: "guess", body: "" },
+    ];
+    return {
+        v: 1,
+        title: "Lag alerts",
+        spec: "",
+        canvas: "lag",
+        question: null,
+        working: null,
+        parts,
+        history: [],
+        done: false,
+        check: null,
+        run: null,
+        ...over,
+    };
+}
+
+function readFile(agentId: string, f: BrainstormFile): void {
+    updateBrainstorm(agentId, (s) => ({ ...s, file: f }));
+}
 
 describe("attachBrainstorm", () => {
     it("starts in terminal mode with nothing read", () => {
@@ -174,6 +228,119 @@ describe("review cursor", () => {
         toggleReviewRow("a1", "y");
         toggleReviewRow("a1", "x");
         expect(getBrainstorm("a1")?.review.open).toEqual({ x: false, y: true });
+    });
+});
+
+describe("seen boards", () => {
+    const seenOf = (path = LAG_PATH) => globalStore.get(brainstormSeenBoardsAtom)[path];
+    const band = (agentId = "a1") => globalStore.get(brainstormBandAtom(agentId));
+
+    it("takes the names when the Brainstorm tab opens", () => {
+        attachBrainstorm("a1", LAG, 100);
+        readFile("a1", boardsFile(["A.dc.html", "B.dc.html"]));
+        expect(band()?.newCount).toBe(2);
+        setBrainstormMode("a1", "brainstorm", 250);
+        expect(seenOf()).toEqual({ names: ["A.dc.html", "B.dc.html"], at: 250 });
+        expect(band()?.newCount).toBe(0);
+    });
+
+    it("does not take them when the tab goes back to the terminal", () => {
+        attachBrainstorm("a1", LAG, 100);
+        readFile("a1", boardsFile(["A.dc.html"]));
+        setBrainstormMode("a1", "brainstorm", 250);
+        readFile("a1", boardsFile(["A.dc.html", "B.dc.html"]));
+        setBrainstormMode("a1", "terminal", 400);
+        expect(seenOf()).toEqual({ names: ["A.dc.html"], at: 250 });
+        expect(band()?.newCount).toBe(1);
+    });
+
+    it("takes nothing while the file has not been read yet", () => {
+        attachBrainstorm("a1", LAG, 100);
+        setBrainstormMode("a1", "brainstorm", 250);
+        expect(seenOf()).toBeUndefined();
+    });
+
+    it("reports a board added after the tab was opened as new", () => {
+        attachBrainstorm("a1", LAG, 100);
+        readFile("a1", boardsFile(["A.dc.html"]));
+        setBrainstormMode("a1", "brainstorm", 250);
+        setBrainstormMode("a1", "terminal", 300);
+        readFile("a1", boardsFile(["A.dc.html", "B.dc.html"]));
+        const m = band();
+        expect(m?.newCount).toBe(1);
+        expect(m?.boards.map((b) => [b.name, b.isNew])).toEqual([
+            ["A.dc.html", false],
+            ["B.dc.html", true],
+        ]);
+    });
+
+    it("reads every board as new for a brainstorm with no entry", () => {
+        attachBrainstorm("a1", LAG, 100);
+        readFile("a1", boardsFile(["A.dc.html", "B.dc.html"]));
+        expect(band()?.newCount).toBe(2);
+    });
+
+    it("is persisted under chat.brainstorm.seenBoards", () => {
+        attachBrainstorm("a1", LAG, 100);
+        readFile("a1", boardsFile(["A.dc.html"]));
+        setBrainstormMode("a1", "brainstorm", 250);
+        expect(SEEN_BOARDS_KEY).toBe("chat.brainstorm.seenBoards");
+        expect(parseSeenBoards(ls.store.get("chat.brainstorm.seenBoards"))).toEqual({
+            [LAG_PATH]: { names: ["A.dc.html"], at: 250 },
+        });
+    });
+
+    it("is kept per brainstorm file, so another agent's names are its own", () => {
+        attachBrainstorm("a1", LAG, 100);
+        attachBrainstorm("a2", { topic: "other", cwd: "/p" }, 100);
+        readFile("a1", boardsFile(["A.dc.html"]));
+        readFile("a2", boardsFile(["A.dc.html"]));
+        setBrainstormMode("a1", "brainstorm", 250);
+        expect(band("a1")?.newCount).toBe(0);
+        expect(band("a2")?.newCount).toBe(1);
+    });
+
+    it("writes nothing when the names are already the stored ones", () => {
+        attachBrainstorm("a1", LAG, 100);
+        readFile("a1", boardsFile(["A.dc.html"]));
+        setBrainstormMode("a1", "brainstorm", 250);
+        const before = globalStore.get(brainstormSeenBoardsAtom);
+        markBoardsSeen(LAG_PATH, boardsFile(["A.dc.html"]), 900);
+        expect(globalStore.get(brainstormSeenBoardsAtom)).toBe(before);
+        expect(seenOf()?.at).toBe(250);
+    });
+
+    it("has no band model with no brainstorm attached, or before its file is read", () => {
+        expect(band("a2")).toBeNull();
+        attachBrainstorm("a1", LAG, 100);
+        expect(band()).toBeNull();
+    });
+
+    it("keeps the band's decisions and an empty board list before any board exists", () => {
+        attachBrainstorm("a1", LAG, 100);
+        readFile("a1", boardsFile([]));
+        const m = band();
+        expect(m?.boards).toEqual([]);
+        expect(m?.newCount).toBe(0);
+        expect(m?.decided.map((g) => g.id)).toEqual(["who"]);
+    });
+
+    it("degrades to memory with one warning when the storage cannot be written", () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        ls.failWrites = true;
+        markBoardsSeen(LAG_PATH, boardsFile(["A.dc.html"]), 10);
+        markBoardsSeen(LAG_PATH, boardsFile(["A.dc.html", "B.dc.html"]), 20);
+        expect(seenOf()).toEqual({ names: ["A.dc.html", "B.dc.html"], at: 20 });
+        expect(warn).toHaveBeenCalledTimes(1);
+        warn.mockRestore();
+    });
+
+    it("is seeded from the storage at module load", async () => {
+        ls.store.set(SEEN_BOARDS_KEY, JSON.stringify({ [LAG_PATH]: { names: ["A.dc.html"], at: 7 } }));
+        vi.resetModules();
+        const fresh = await import("./brainstormstore");
+        const { globalStore: freshStore } = await import("@/app/store/jotaiStore");
+        expect(freshStore.get(fresh.brainstormSeenBoardsAtom)).toEqual({ [LAG_PATH]: { names: ["A.dc.html"], at: 7 } });
     });
 });
 

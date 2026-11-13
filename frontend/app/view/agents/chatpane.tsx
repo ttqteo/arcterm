@@ -40,6 +40,7 @@ import { answerAgentAsk } from "./askanswer";
 import { builderCheckView, procExited, type BuilderCheckView } from "./brainstormmodel";
 import { brainstormAtom, brainstormSeenAtom, shownBrainstormFile } from "./brainstormstore";
 import { AskRow } from "./channelsprimitives";
+import { ChatBand } from "./chatband";
 import { boxPlaceholder, type BoxState } from "./chatboxstate";
 import { brainstormCard } from "./chatbrainstorm";
 import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstormstore";
@@ -54,6 +55,8 @@ import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
 import { isHandoffAsk } from "./chathandoff";
 import { ChatHandoffCard } from "./chathandoffcard";
+import { holdSwitchLine } from "./chatinitiativestore";
+import { submitIntoChatBox } from "./chatinsert";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
 import { awaitsOwnMessage, narratesThinking, streamsLiveReply } from "./chatlive";
 import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chatlivestore";
@@ -87,6 +90,7 @@ import {
 import { markChunkDone, requestModelSuggest, useEffortDetail, useModelSuggest } from "./chatsuggeststore";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatVisualHost } from "./chatvisualview";
+import { switchAgentChunk } from "./initiativebandstore";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
 import { PromptImages, useNow } from "./narrationtimeline";
@@ -713,13 +717,44 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
         }
         fireAndForget(async () => {
             try {
-                await markChunkDone(effortOref, chunk);
+                await markChunkDone(effortOref, chunk, agent.id);
             } catch (e) {
+                // markChunkDone can fail after the chunk is done (the agent could not be moved on), so the title is no lie
                 pushToast({
-                    title: "Could not mark it done",
+                    title: "Mark done didn't finish",
                     message: e instanceof Error ? e.message : String(e),
                     level: "error",
                 });
+            }
+        });
+    };
+    // The go on with: chip: the agent moves to that chunk first, so the switched line rides in front of the chip's text
+    // (spec section 9); a switch that fails sends nothing. A second click while the switch is on its way finds it busy.
+    const goingOn = useRef(false);
+    const goOn = (chunk: string, text: string) => {
+        if (effortOref == null || goingOn.current) {
+            return;
+        }
+        goingOn.current = true;
+        // the switch queues its line and the box sends a render later: the waiting line stays hidden until the box has tried
+        // the send (it lets go itself, chatcomposer.tsx), so it never draws on this path
+        holdSwitchLine(agent.id, true);
+        fireAndForget(async () => {
+            try {
+                await switchAgentChunk(effortOref, agent.id, chunk);
+                if (!submitIntoChatBox(agent.id, text)) {
+                    // no box took the text: the line waits for the person's next message, as the switch left it
+                    holdSwitchLine(agent.id, false);
+                }
+            } catch (e) {
+                holdSwitchLine(agent.id, false);
+                pushToast({
+                    title: "Could not switch the chunk",
+                    message: e instanceof Error ? e.message : String(e),
+                    level: "error",
+                });
+            } finally {
+                goingOn.current = false;
             }
         });
     };
@@ -732,7 +767,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                   ? []
                   : [
                         ...ruleChips(agent, shipGit, vi),
-                        ...initiativeChips(effort, agent.id, agent.committed === true, vi),
+                        ...initiativeChips(effort, agent.id, agent.committed === true, vi, turnEnded),
                     ],
               model: modelSuggest,
           })
@@ -753,6 +788,11 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                 barred ? "top-[26px]" : "top-0"
             )}
         >
+            {/* The band (the initiative and the brainstorm attached to the agent): above the scroller, not inside it, so
+                opening it pushes the conversation down and never covers it. The scroller keeps its scrollTop as it shrinks
+                (a reader stays on the message at the top of the view) and useStickToBottom re-pins a followed tail, so the
+                reading position holds. */}
+            {agent.effortId != null || brainstormState != null ? <ChatBand model={model} agent={agent} /> : null}
             <div className="relative min-h-0 flex-1">
                 <div
                     ref={scrollRef}
@@ -924,6 +964,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
                             chips={chips}
                             onMarkDone={markDone}
+                            onGoOn={goOn}
                             onSendNow={queuedShown ? sendNow : undefined}
                             questionWaits={questionWaits}
                             onLocal={(route) => {

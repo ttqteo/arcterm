@@ -261,6 +261,11 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 				if i == idx {
 					continue
 				}
+				// a workref left on a done or skipped chunk is history, not a hold: one agent or run
+				// holds one live chunk at a time, plus any number of settled ones
+				if c.Status == "done" || c.Status == "skipped" {
+					continue
+				}
 				for _, w := range c.WorkRefs {
 					if w.ORef == op.ORef {
 						return fmt.Errorf("EC-REF-ALREADY-ATTACHED: %s is already attached to chunk %q", op.ORef, c.Label)

@@ -12,6 +12,7 @@ import { Fragment, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     answerLine,
+    changedSentences,
     designLabel,
     hasProsCons,
     judgeWork,
@@ -24,7 +25,6 @@ import {
     questionBoards,
     questionTrack,
     sendPickedLabel,
-    sentenceDiff,
     togglePick,
     type AnswerOption,
     type Approach,
@@ -37,6 +37,7 @@ import {
     type LineBox,
     type PartAnswer,
     type PartState,
+    type SentenceDiff,
     type TrackSegment,
 } from "./brainstormmodel";
 import { optionHoverAtom } from "./brainstormrail";
@@ -1181,13 +1182,15 @@ export function SaidLine({ said, open }: { said: PartAnswer; open: boolean }) {
     );
 }
 
-export function ChangeDiff({ part }: { part: BrainstormPart }) {
-    const diff = sentenceDiff(part.was ?? "", part.body).filter((d) => d.kind !== "same");
+/** The sentences a rewritten decision changed (`changedSentences`), one line each: − removed, + added. The Brainstorm
+ *  tab's review (`ChangeDiff`) and Chat's Confirm and check cards draw their changes with this one component. */
+export function SentenceDiffLines({ lines }: { lines: SentenceDiff }) {
     return (
         <>
-            {diff.map((d, i) => (
+            {lines.map((d, i) => (
                 <div
                     key={i}
+                    data-diff-line={d.kind === "added" ? "added" : "removed"}
                     className={cn(
                         "rounded-[6px] px-[10px] py-[6px] text-[13px] leading-[1.5] text-secondary",
                         d.kind === "added" ? "bg-diff-added/10" : "bg-diff-removed/10"
@@ -1199,6 +1202,14 @@ export function ChangeDiff({ part }: { part: BrainstormPart }) {
                     {d.text}
                 </div>
             ))}
+        </>
+    );
+}
+
+export function ChangeDiff({ part }: { part: BrainstormPart }) {
+    return (
+        <>
+            <SentenceDiffLines lines={changedSentences(part.was ?? "", part.body)} />
             {part.why ? <div className="text-[12px] text-muted">Why: {part.why}</div> : null}
         </>
     );

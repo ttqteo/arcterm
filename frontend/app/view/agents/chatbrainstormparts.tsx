@@ -16,7 +16,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
 import { optionLetter, type AnswerOption } from "./brainstormmodel";
 import { sendBrainstorm } from "./brainstormsend";
-import { ERROR_LINE, onEnter, useAction } from "./brainstormui";
+import { ERROR_LINE, onEnter, SaidLine, SentenceDiffLines, useAction } from "./brainstormui";
 import type { DecisionRowModel, Gist } from "./chatbrainstorm";
 
 // the agent:view-cycle chord; labelled when drawn, as the platform is only known after boot (keysym.ts)
@@ -317,10 +317,17 @@ export function DecisionRow({ agent, row, disabled }: { agent: AgentVM; row: Dec
                 ) : null}
             </div>
             <div className="text-[13px] leading-[1.5] text-secondary">{row.gist}</div>
-            {row.view === "changed" && (row.was != null || row.why != null) ? (
-                <div className="flex flex-col gap-[3px] text-[12px] leading-[1.5] text-muted">
-                    {row.was != null ? <span>Was: {row.was}</span> : null}
-                    {row.why != null ? <span>Why: {row.why}</span> : null}
+            {row.view === "changed" && (row.said != null || row.diff.length > 0 || row.why != null) ? (
+                // what changed, as the Brainstorm tab's review draws it: the answer it came from, the sentences that
+                // left and came in, then the cause
+                <div data-chat-bscard-change className="flex min-w-0 flex-col gap-[4px]">
+                    {row.said != null ? <SaidLine said={row.said} open={false} /> : null}
+                    <SentenceDiffLines lines={row.diff} />
+                    {row.why != null ? (
+                        <span data-chat-bscard-why className="text-[12px] leading-[1.5] text-muted">
+                            Why: {row.why}
+                        </span>
+                    ) : null}
                 </div>
             ) : null}
             {editing ? (

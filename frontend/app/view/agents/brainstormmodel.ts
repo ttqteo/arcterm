@@ -1398,6 +1398,12 @@ export function sentenceDiff(was: string, now: string): SentenceDiff {
     return out;
 }
 
+/** What a rewritten decision changed: `sentenceDiff` without the sentences both sides share. The Brainstorm tab's
+ *  review and Chat's Confirm and check cards draw exactly these lines. */
+export function changedSentences(was: string, body: string): SentenceDiff {
+    return sentenceDiff(was, body).filter((d) => d.kind !== "same");
+}
+
 export type HandoffView = {
     questions: number;
     open: BuilderQuestion | null;

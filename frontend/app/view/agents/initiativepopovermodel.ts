@@ -16,19 +16,16 @@ type PopoverEffort = { status?: string; chunks?: PopoverChunk[] };
 
 const settled = (status: string) => status === "done" || status === "skipped";
 
-// The chunk whose workrefs hold this agent's tab; the active chunk stands in for an agent with none of its own (it
-// was started on the initiative, not attached to a chunk). A proposed chunk is nobody's work yet. Null when neither
-// exists.
+// "The chunk this agent is on", the one definition the band, `m`, the done: / go on with: chips and the Terminal popover
+// share: the live (not done, not skipped) chunk whose workrefs hold this agent's tab, an active one first when legacy
+// data attached it to several. Nothing else: the initiative's active chunk does not stand in for an agent that holds none,
+// and a proposed chunk is nobody's work yet. Null when there is no such chunk.
 export function agentChunk<T extends PopoverChunk>(effort: { chunks?: T[] }, tabId: string): T | null {
-    const chunks = (effort.chunks ?? []).filter((c) => c.status !== "proposed");
     const ref = "agent:" + tabId;
-    const held = chunks.filter((c) => (c.workrefs ?? []).some((w) => w.oref === ref));
-    return (
-        held.find((c) => c.status === "active") ??
-        held.find((c) => !settled(c.status)) ??
-        chunks.find((c) => c.status === "active") ??
-        null
+    const live = (effort.chunks ?? []).filter(
+        (c) => c.status !== "proposed" && !settled(c.status) && (c.workrefs ?? []).some((w) => w.oref === ref)
     );
+    return live.find((c) => c.status === "active") ?? live[0] ?? null;
 }
 
 // The next pending chunks after `label` in plan order (from the top with none), by label. A chunk that is deferred,
