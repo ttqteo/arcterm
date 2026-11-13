@@ -11,7 +11,7 @@
 // The keys are the band's own while focus is in it (the root is data-owns-keys, so the dispatcher counts focus here as
 // editable and every single-key binding stands down): m Mark done, n Add note, w Work on this, the arrows and Enter on
 // the rows, Esc or i collapse and hand the keyboard back to the message box. The one global `i` (agent:initiative) opens
-// the band by toggleBand, and the band takes focus as it opens.
+// the band's initiative part by toggleBandPart, and the band takes focus as it opens.
 
 import { KeyCap } from "@/app/element/keycap";
 import { springReveal } from "@/app/element/motiontokens";
@@ -45,7 +45,7 @@ import {
     type BandHolder,
     type BandRow,
 } from "./initiativeband";
-import { setBandOpen, switchAgentChunk, toggleBand, useBandOpen } from "./initiativebandstore";
+import { setBandPart, switchAgentChunk, toggleBandPart, useBandPart } from "./initiativebandstore";
 import { BTN, ChunkStatusMenu, CURSOR_RING, ROW, STATUS_TEXT } from "./initiativechunkmenu";
 import {
     agentChunk,
@@ -82,7 +82,7 @@ export function InitiativeBand({ model, agent }: { model: AgentsViewModel; agent
     const { oref, effort, proposed } = usePlanReview(agent.effortId);
     // the band shows what the initiative is now: a card's write and the agent's own `wsh effort` land as the agent works
     useInitiativeReread(agent.effortId, agent.state, false);
-    const open = useBandOpen(agent.id);
+    const open = useBandPart(agent.id) === "initiative";
     const rootRef = useRef<HTMLDivElement>(null);
     const [cursor, setCursor] = useState(0);
     const [allOpen, setAllOpen] = useState(false);
@@ -276,7 +276,7 @@ export function InitiativeBand({ model, agent }: { model: AgentsViewModel; agent
         if (mine == null) {
             return;
         }
-        setBandOpen(agent.id, true);
+        setBandPart(agent.id, "initiative");
         setSub({ kind: "note", draft: "" });
     };
     const toggleAll = () => setAllOpen((v) => !v);
@@ -313,7 +313,7 @@ export function InitiativeBand({ model, agent }: { model: AgentsViewModel; agent
     // Pick a chunk…: the band opens with the cursor on the first chunk that offers Work on this, in the window or else in
     // the full list, which opens for it
     const pick = () => {
-        setBandOpen(agent.id, true);
+        setBandPart(agent.id, "initiative");
         const inWindow = firstWorkOn(rows.window);
         if (inWindow >= 0) {
             setCursor(inWindow);
@@ -363,7 +363,7 @@ export function InitiativeBand({ model, agent }: { model: AgentsViewModel; agent
         if (e.key === "Escape" || e.key === "i") {
             handled();
             if (open) {
-                setBandOpen(agent.id, false);
+                setBandPart(agent.id, null);
             } else if (!focusChatBox(agent.id)) {
                 (document.activeElement as HTMLElement | null)?.blur();
             }
@@ -387,7 +387,7 @@ export function InitiativeBand({ model, agent }: { model: AgentsViewModel; agent
             if (open) {
                 openAt(cur);
             } else {
-                setBandOpen(agent.id, true);
+                setBandPart(agent.id, "initiative");
             }
         }
     };
@@ -551,7 +551,7 @@ export function InitiativeBand({ model, agent }: { model: AgentsViewModel; agent
         >
             <div
                 data-band-line
-                onClick={effort != null ? () => toggleBand(agent.id) : undefined}
+                onClick={effort != null ? () => toggleBandPart(agent.id, "initiative") : undefined}
                 className={cn(
                     "flex h-[36px] items-center px-4",
                     narrow ? "gap-[8px] px-3" : "gap-[10px]",
@@ -647,7 +647,7 @@ export function InitiativeBand({ model, agent }: { model: AgentsViewModel; agent
                             onMouseDown={keepFocus}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                toggleBand(agent.id);
+                                toggleBandPart(agent.id, "initiative");
                             }}
                             className="flex size-[22px] flex-none cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent p-0 text-muted hover:text-primary"
                         >

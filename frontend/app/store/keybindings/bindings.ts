@@ -87,7 +87,7 @@ import {
     refreshHistory,
 } from "@/app/view/agents/githistorystore";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
-import { toggleBand } from "@/app/view/agents/initiativebandstore";
+import { toggleBandPart } from "@/app/view/agents/initiativebandstore";
 import { initiativeLinkPickerAtom, initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
 import { openNewCouncil } from "@/app/view/agents/newcouncil";
@@ -1808,14 +1808,15 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "i",
             group: "Agent",
             label: "The agent's initiative",
-            // The focused agent's initiative, where the view shows it. In Chat that is the band under the header, which
-            // `i` expands or collapses (`[data-initiative-band]` is on screen only for a linked agent's Chat); a linked
-            // agent in Terminal gets the popover instead; an agent with none gets the Link to initiative picker, when
-            // the header carries its chip (Chat's lean header and Terminal's both do). The focused agent is in the
-            // model's atoms, which a when() cannot read (whenstate.ts), so run() looks it up and lets the key pass
-            // when there is nothing to open. Open, the band's and the popover's own keys take over: the band is
-            // data-owns-keys, so the dispatcher reads focus inside it as typing and this binding stands down (and the
-            // band's own handler closes it on `i`); the popover is yielded to in agentNav.
+            // The focused agent's initiative, where the view shows it. In Chat that is the band's initiative part under
+            // the header, which `i` expands or collapses, over the brainstorm part when that one was open
+            // (`[data-initiative-band]` is on screen only for a linked agent's Chat, whatever the band holds beside it);
+            // a linked agent in Terminal gets the popover instead; an agent with none gets the Link to initiative
+            // picker, when the header carries its chip (Chat's lean header and Terminal's both do). The focused agent
+            // is in the model's atoms, which a when() cannot read (whenstate.ts), so run() looks it up and lets the
+            // key pass when there is nothing to open. Open, the band's and the popover's own keys take over: the band
+            // is data-owns-keys, so the dispatcher reads focus inside it as typing and this binding stands down (and
+            // the band's own handler closes it on `i`); the popover is yielded to in agentNav.
             when: nav,
             run: () => {
                 const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
@@ -1831,7 +1832,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 }
                 const bandSelector = `[data-initiative-band="${agent.id.replace(/["\\]/g, "\\$&")}"]`;
                 if (document.querySelector(bandSelector) != null) {
-                    toggleBand(agent.id);
+                    toggleBandPart(agent.id, "initiative");
                     return;
                 }
                 globalStore.set(initiativePopoverAtom, agent.id);

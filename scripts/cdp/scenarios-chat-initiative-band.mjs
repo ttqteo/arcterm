@@ -175,7 +175,7 @@ export default function (kit) {
         );
 
     const setBand = (h, id, open) =>
-        AC.agentPage(h, `const S = await mod("app/view/agents/initiativebandstore.ts"); S.setBandOpen(${JSON.stringify(id)}, ${open}); return true;`);
+        AC.agentPage(h, `const S = await mod("app/view/agents/initiativebandstore.ts"); S.setBandPart(${JSON.stringify(id)}, ${open ? '"initiative"' : "null"}); return true;`);
     // the waiting lines of an agent, taken out (a step starts with none)
     const takePending = (h, id) =>
         AC.agentPage(h, `const S = await mod("app/view/agents/chatinitiativestore.ts"); S.takeResultLines(${JSON.stringify(id)}); return true;`);
@@ -903,7 +903,7 @@ export default function (kit) {
                         h,
                         `const B = await mod("app/view/agents/initiativebandstore.ts");
                         const S = await mod("app/view/agents/chatinitiativestore.ts");
-                        for (const id of ${JSON.stringify([ctx.tabA.tabId, ctx.tabB?.tabId].filter(Boolean))}) { B.setBandOpen(id, false); S.takeResultLines(id); }
+                        for (const id of ${JSON.stringify([ctx.tabA.tabId, ctx.tabB?.tabId].filter(Boolean))}) { B.setBandPart(id, null); S.takeResultLines(id); }
                         return true;`
                     )
                 );

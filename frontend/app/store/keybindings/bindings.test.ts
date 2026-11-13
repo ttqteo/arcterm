@@ -70,7 +70,7 @@ import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
-import { bandOpenAtom } from "@/app/view/agents/initiativebandstore";
+import { bandPartsAtom } from "@/app/view/agents/initiativebandstore";
 import { initiativeLinkPickerAtom, initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { briefPeekRecordAtom, briefSheetOpenAtom, chunkMoveAtom } from "@/app/view/jarvis/jarvisstore";
@@ -2951,7 +2951,7 @@ describe("agent:initiative", () => {
     afterEach(() => {
         vi.unstubAllGlobals();
         globalStore.set(initiativePopoverAtom, null);
-        globalStore.set(bandOpenAtom, []);
+        globalStore.set(bandPartsAtom, []);
     });
 
     it("is i on the Agent surface, in navigate posture", () => {
@@ -2982,12 +2982,35 @@ describe("agent:initiative", () => {
         const b = find(model, "agent:initiative");
         expect(b.run(nav)).not.toBe(false);
         expect(seen).toContain('[data-initiative-band="a2"]');
-        expect(globalStore.get(bandOpenAtom)).toEqual(["a2"]);
+        expect(globalStore.get(bandPartsAtom)).toEqual([{ id: "a2", part: "initiative" }]);
         expect(globalStore.get(initiativePopoverAtom)).toBeNull();
         // i again collapses it
         expect(b.run(nav)).not.toBe(false);
-        expect(globalStore.get(bandOpenAtom)).toEqual([]);
+        expect(globalStore.get(bandPartsAtom)).toEqual([]);
         expect(globalStore.get(initiativePopoverAtom)).toBeNull();
+    });
+
+    it("makes the initiative part the open one when the agent's brainstorm part is open", () => {
+        const model = modelWith("a2", [agent("a1", "e1"), agent("a2", "e2")]);
+        vi.stubGlobal("document", {
+            activeElement: null,
+            querySelector: (sel: string) => (sel === '[data-initiative-band="a2"]' ? {} : null),
+        });
+        globalStore.set(bandPartsAtom, [
+            { id: "a1", part: "initiative" },
+            { id: "a2", part: "brainstorm" },
+        ]);
+        const b = find(model, "agent:initiative");
+        expect(b.run(nav)).not.toBe(false);
+        // one part at a time, and only this agent's: i opened the initiative part over the brainstorm one
+        expect(globalStore.get(bandPartsAtom)).toEqual([
+            { id: "a1", part: "initiative" },
+            { id: "a2", part: "initiative" },
+        ]);
+        expect(globalStore.get(initiativePopoverAtom)).toBeNull();
+        // and i on it collapses to none, not back to the brainstorm part
+        expect(b.run(nav)).not.toBe(false);
+        expect(globalStore.get(bandPartsAtom)).toEqual([{ id: "a1", part: "initiative" }]);
     });
 
     it("opens the popover when only another agent's band is on screen (a linked agent in Terminal)", () => {
@@ -2997,7 +3020,7 @@ describe("agent:initiative", () => {
             querySelector: (sel: string) => (sel === '[data-initiative-band="a2"]' ? {} : null),
         });
         expect(find(model, "agent:initiative").run(nav)).not.toBe(false);
-        expect(globalStore.get(bandOpenAtom)).toEqual([]);
+        expect(globalStore.get(bandPartsAtom)).toEqual([]);
         expect(globalStore.get(initiativePopoverAtom)).toBe("a1");
     });
 
@@ -3018,7 +3041,7 @@ describe("agent:initiative", () => {
         expect(seen).toEqual(["[data-initiative-link]"]);
         expect(globalStore.get(initiativeLinkPickerAtom)).toBe("a1");
         expect(globalStore.get(initiativePopoverAtom)).toBeNull();
-        expect(globalStore.get(bandOpenAtom)).toEqual([]);
+        expect(globalStore.get(bandPartsAtom)).toEqual([]);
         globalStore.set(initiativeLinkPickerAtom, null);
     });
 
