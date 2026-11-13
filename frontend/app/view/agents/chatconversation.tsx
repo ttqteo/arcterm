@@ -1138,6 +1138,11 @@ export function ChatConversation({
                     <FileChips files={part.files} openPaths={openPaths} onToggle={(path) => toggle(`${key}:${path}`)} />
                 );
             }
+            // the verdict, handoff and run cards: drawn once their views exist, nothing until then
+            case "verdict":
+            case "handoff":
+            case "runstart":
+                return null;
         }
     };
 

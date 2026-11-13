@@ -487,6 +487,296 @@ describe("workingText", () => {
     });
 });
 
+// the three moments an agent item is cut at: a reviewer's verdict, the plan handoff and a `wsh runs start` call
+describe("chatItems: verdict, handoff and run-start parts", () => {
+    const REVIEW = {
+        kind: "code",
+        reviewer: "code-reviewer",
+        pass: false,
+        note: "Two things to fix",
+        findings: [{ severity: "Critical", file: "a.ts", line: 3, summary: "bad" }],
+    };
+    const block = (v: object = REVIEW): string => `\`\`\`arc-review\n${JSON.stringify(v)}\n\`\`\``;
+    const kinds = (items: ChatItem[], at = 1): string[] => agentOf(items, at).parts.map((p) => p.kind);
+    const part = (items: ChatItem[], p: number, at = 1) => agentOf(items, at).parts[p];
+
+    // an Agent / Task call: the subagent it started
+    const spawn = (description: string, subagentType?: string, toolUseId?: string): AgentEntry =>
+        action("agent", { subagent: { description, ...(subagentType ? { subagentType } : {}), toolUseId } });
+    const reported = (...summaries: string[]): AgentEntry =>
+        action("reported", {
+            outcome: "ok",
+            findings: summaries.map((summary, i) => ({
+                file: `f${i}.ts`,
+                line: i + 1,
+                summary,
+                verdict: i === 0 ? "CONFIRMED" : "PLAUSIBLE",
+            })),
+        });
+    const ask = (header: string, picked: string[] = [], extra: Partial<AgentActionEntry> = {}): AgentEntry =>
+        action("asked", {
+            outcome: picked.length > 0 ? "ok" : undefined,
+            detail: {
+                kind: "ask",
+                questions: [
+                    {
+                        question: "Plan saved to `docs/plans/p.md`. How to run it?",
+                        header,
+                        options: [{ label: "Arc engine (Recommended)" }, { label: "Inline in this session" }],
+                        picked,
+                    },
+                ],
+            },
+            ...extra,
+        });
+    const runsStart = (output: string, command = "wsh runs start --plan docs/plans/p.md"): AgentEntry =>
+        action("bash", { outcome: "ok", detail: { kind: "bash", command, output, exit: 0 } });
+
+    describe("an arc-review block in a reply", () => {
+        it("cuts a reply with a block between two paragraphs into prose, verdict, prose", () => {
+            const items = chatItems([
+                you("review it"),
+                { kind: "message", text: `Before.\n\n${block()}\n\nAfter.`, uuid: "m1" },
+            ]);
+            expect(kinds(items)).toEqual(["prose", "verdict", "prose"]);
+            expect(part(items, 0)).toEqual({ kind: "prose", text: "Before.", uuid: "m1" });
+            expect(part(items, 1)).toMatchObject({ kind: "verdict", key: "verdict:1", verdict: REVIEW });
+            expect(part(items, 2)).toEqual({ kind: "prose", text: "After.", uuid: "m1" });
+        });
+
+        it("leaves no empty prose part when the block is the whole reply", () => {
+            expect(kinds(chatItems([you("x"), says(block())]))).toEqual(["verdict"]);
+        });
+
+        it("leaves a block that does not parse in the prose, as one part with the text as written", () => {
+            const broken = `Look:\n\n\`\`\`arc-review\n{ not json\n\`\`\`\n\nDone.`;
+            const items = chatItems([you("x"), says(broken)]);
+            expect(kinds(items)).toEqual(["prose"]);
+            expect(part(items, 0)).toEqual({ kind: "prose", text: broken });
+        });
+
+        it("leaves a reply with no block exactly as it was written", () => {
+            const text = "  A reply with trailing space.  \n\n";
+            expect(part(chatItems([you("x"), says(text)]), 0)).toEqual({ kind: "prose", text });
+        });
+
+        it("keys one block by its message, and several blocks of one message by their order in it", () => {
+            const one = chatItems([you("x"), says(`a\n\n${block()}`)]);
+            expect(part(one, 1)).toMatchObject({ key: "verdict:1" });
+            const two = chatItems([you("x"), says(`${block()}\n\nand\n\n${block({ ...REVIEW, kind: "plan" })}`)]);
+            expect(kinds(two)).toEqual(["verdict", "prose", "verdict"]);
+            expect(part(two, 0)).toMatchObject({ key: "verdict:1.0" });
+            expect(part(two, 2)).toMatchObject({ key: "verdict:1.1" });
+        });
+
+        it("pairs the block with the reviewer call its subagent field names", () => {
+            const items = chatItems([
+                you("go"),
+                spawn("Review the plan", "superpowers:code-reviewer", "toolu_plan"),
+                spawn("Review the code", "superpowers:code-reviewer", "toolu_code"),
+                says(block({ ...REVIEW, subagent: "review the plan" })),
+            ]);
+            expect(kinds(items)).toEqual(["work", "verdict"]);
+            expect(part(items, 1)).toMatchObject({
+                kind: "verdict",
+                reviewer: {
+                    description: "Review the plan",
+                    subagentType: "superpowers:code-reviewer",
+                    toolUseId: "toolu_plan",
+                    index: 1,
+                },
+            });
+        });
+
+        it("pairs a block that names no subagent with the nearest reviewer call before it", () => {
+            const items = chatItems([
+                you("go"),
+                spawn("Explore the repo", "Explore", "toolu_explore"),
+                spawn("Check the diff", "superpowers:code-reviewer", "toolu_old"),
+                says("Round one."),
+                spawn("Re-check the diff", "superpowers:code-reviewer", "toolu_new"),
+                says(block()),
+            ]);
+            const verdict = agentOf(items, 1).parts.find((p) => p.kind === "verdict");
+            expect(verdict).toMatchObject({ reviewer: { toolUseId: "toolu_new", index: 4 } });
+        });
+
+        it("pairs nothing when the item holds no reviewer call, and never reaches into an earlier group", () => {
+            const lone = chatItems([you("go"), says(block())]);
+            expect(part(lone, 0)).not.toHaveProperty("reviewer");
+            const earlier = chatItems([
+                you("one"),
+                spawn("Review it", "superpowers:code-reviewer", "toolu_1"),
+                you("two"),
+                says(block()),
+            ]);
+            expect(part(earlier, 0, 3)).not.toHaveProperty("reviewer");
+        });
+    });
+
+    describe("a ReportFindings call", () => {
+        it("cuts the call out of the middle of a work stretch: work, verdict, work", () => {
+            const items = chatItems([
+                you("review"),
+                action("read"),
+                action("grep"),
+                reported("first", "second"),
+                action("bash"),
+                edit(file("a.ts", 1, 0)),
+            ]);
+            expect(kinds(items)).toEqual(["work", "verdict", "work", "files"]);
+            const before = part(items, 0);
+            const after = part(items, 2);
+            expect(before.kind === "work" && before.work.actions.map((a) => a.verb)).toEqual(["read", "grep"]);
+            expect(before.kind === "work" && before.work.startIndex).toBe(1);
+            expect(after.kind === "work" && after.work.actions.map((a) => a.verb)).toEqual(["bash", "edited"]);
+            expect(after.kind === "work" && after.work.startIndex).toBe(4);
+            const verdict = part(items, 1);
+            expect(verdict).toMatchObject({
+                kind: "verdict",
+                key: "verdict:3",
+                verdict: { kind: "code", reviewer: "code-review", pass: false, note: "2 findings, 1 confirmed" },
+            });
+            expect(verdict.kind === "verdict" && verdict.verdict.findings.map((f) => f.severity)).toEqual([
+                "Important",
+                "Minor",
+            ]);
+        });
+
+        it("leaves no empty work part around a call that is the whole stretch", () => {
+            expect(kinds(chatItems([you("review"), reported("only")]))).toEqual(["verdict"]);
+        });
+
+        it("reads a clean review as a pass, and never pairs it with a reviewer subagent", () => {
+            const items = chatItems([
+                you("go"),
+                spawn("Review the diff", "superpowers:code-reviewer", "t1"),
+                reported(),
+            ]);
+            expect(kinds(items)).toEqual(["work", "verdict"]);
+            const verdict = part(items, 1);
+            expect(verdict).toMatchObject({ verdict: { pass: true, note: "No findings" } });
+            expect(verdict).not.toHaveProperty("reviewer");
+        });
+
+        it("keeps the files each piece of a cut stretch edited after that piece", () => {
+            const items = chatItems([you("go"), edit(file("a.ts", 2, 1)), reported("x"), edit(file("b.ts", 4, 0))]);
+            expect(kinds(items)).toEqual(["work", "files", "verdict", "work", "files"]);
+            expect(part(items, 1)).toMatchObject({ kind: "files", adds: 2, dels: 1 });
+            expect(part(items, 4)).toMatchObject({ kind: "files", adds: 4, dels: 0 });
+        });
+    });
+
+    describe("a Handoff ask", () => {
+        it("cuts an unanswered Handoff ask out of its stretch as a handoff part holding the question", () => {
+            const items = chatItems([you("plan it"), action("read"), ask("Handoff")]);
+            expect(kinds(items)).toEqual(["work", "handoff"]);
+            expect(part(items, 1)).toMatchObject({
+                kind: "handoff",
+                key: "handoff:2",
+                question: { header: "Handoff", picked: [] },
+            });
+        });
+
+        it("keeps the answer on the part once it landed", () => {
+            const items = chatItems([you("plan it"), ask("Handoff", ["Arc engine (Recommended)"])]);
+            expect(kinds(items)).toEqual(["handoff"]);
+            expect(part(items, 0)).toMatchObject({ question: { picked: ["Arc engine (Recommended)"] } });
+        });
+
+        it("splits the stretch around it: work, handoff, work", () => {
+            const items = chatItems([you("x"), action("read"), ask("Handoff"), action("bash")]);
+            expect(kinds(items)).toEqual(["work", "handoff", "work"]);
+        });
+
+        it("leaves a plain AskUserQuestion in the work", () => {
+            const items = chatItems([you("x"), action("read"), ask("Scope"), action("bash")]);
+            expect(kinds(items)).toEqual(["work"]);
+            const work = part(items, 0);
+            expect(work.kind === "work" && work.work.actions).toHaveLength(3);
+        });
+
+        it("leaves an ask of several questions in the work even when one is headed Handoff", () => {
+            const two = action("asked", {
+                detail: {
+                    kind: "ask",
+                    questions: [
+                        { question: "A?", header: "Handoff", options: [], picked: [] },
+                        { question: "B?", header: "Scope", options: [], picked: [] },
+                    ],
+                },
+            });
+            expect(kinds(chatItems([you("x"), two]))).toEqual(["work"]);
+        });
+    });
+
+    describe("a wsh runs start call", () => {
+        it("splits the stretch after the call, which stays a tool line in the work before it", () => {
+            const items = chatItems([
+                you("run it"),
+                action("read"),
+                runsStart("started run 3fa21b0c (orchestrator, running) in main\n"),
+            ]);
+            expect(kinds(items)).toEqual(["work", "runstart"]);
+            const work = part(items, 0);
+            expect(work.kind === "work" && work.work.actions.map((a) => a.verb)).toEqual(["read", "bash"]);
+            expect(part(items, 1)).toEqual({
+                kind: "runstart",
+                key: "runstart:2",
+                anchor: { kind: "started", runId: "3fa21b0c" },
+            });
+        });
+
+        it("goes on with a work part when the stretch goes on", () => {
+            const items = chatItems([
+                you("run it"),
+                runsStart("queued q-17 (#1 in line)\n"),
+                action("read"),
+                action("grep"),
+            ]);
+            expect(kinds(items)).toEqual(["work", "runstart", "work"]);
+            expect(part(items, 1)).toMatchObject({ key: "runstart:1", anchor: { kind: "queued", entryId: "q-17" } });
+            const after = part(items, 2);
+            expect(after.kind === "work" && after.work.startIndex).toBe(2);
+        });
+
+        it("makes no part for a call whose output names no run, or a command that is not wsh runs start", () => {
+            expect(kinds(chatItems([you("x"), runsStart("error: no plan file\n")]))).toEqual(["work"]);
+            expect(kinds(chatItems([you("x"), runsStart("started run 3fa21b0c (x)\n", "wsh runs list")]))).toEqual([
+                "work",
+            ]);
+            // a Bash call still running has no output yet, hence no part
+            expect(kinds(chatItems([you("x"), action("bash")]))).toEqual(["work"]);
+        });
+
+        it("keeps the files the stretch edited before the call after its work part", () => {
+            const items = chatItems([you("x"), edit(file("a.ts", 1, 0)), runsStart("started run 3fa21b0c (x)\n")]);
+            expect(kinds(items)).toEqual(["work", "files", "runstart"]);
+        });
+    });
+
+    describe("keys as the transcript grows", () => {
+        it("keeps the key of each part when entries append after it", () => {
+            const entries: AgentEntry[] = [
+                you("go"),
+                says(`Looking.\n\n${block()}`),
+                action("read"),
+                ask("Handoff"),
+                runsStart("started run 3fa21b0c (x)\n"),
+            ];
+            const keysOf = (es: AgentEntry[]): string[] =>
+                agentOf(chatItems(es), 1)
+                    .parts.filter((p) => p.kind === "verdict" || p.kind === "handoff" || p.kind === "runstart")
+                    .map((p) => (p as { key: string }).key);
+            const before = keysOf(entries);
+            expect(before).toEqual(["verdict:1", "handoff:3", "runstart:4"]);
+            const after = keysOf([...entries, says("More."), action("grep"), reported("late")]);
+            expect(after.slice(0, 3)).toEqual(before);
+            expect(after).toEqual([...before, "verdict:7"]);
+        });
+    });
+});
+
 describe("shownItems", () => {
     const items = Array.from({ length: 300 }, (_, i) => ({ kind: "marker", key: `m${i}` }) as unknown as ChatItem);
 
