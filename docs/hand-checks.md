@@ -640,8 +640,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Chat's compact header: a live Claude agent in Chat → its header shows the dot, the name and the project
   (and a server, the lead, an initiative or Ship/Commit/Close when they apply), with no ✳, state word, model, context
   or ⌥C; hover the dot → its state; flip to Terminal → the full header is back and Chat/Terminal did not move. An agent
-  with no initiative: … → "Link to initiative…" opens the picker under the … button, and `i` opens it too, in Chat and
-  in Terminal (`agentheader.tsx` `lean`; the `initiative-link` scenario was moved to the menu but not run).
+  with no initiative: the header shows a `+ Link to initiative` chip with an `i` keycap that opens the picker under it,
+  and `i` opens it too, in Chat and in Terminal; a linked agent's Chat header has no ◇ chip, and `i` opens its band
+  (`agentheader.tsx` `lean`; the `initiative-link` scenario is updated by the chat-initiative-link plan's Task 6).
 - [ ] (arcterm) A Chat message queued mid-turn reads as you wrote it: while a Claude agent works, send from its Chat a
   message of two lines with a pasted screenshot → once Claude takes it in, your bubble shows the two lines and the
   picture as a thumbnail, with no `<pasted_content id="…">` tags and no `Attached images:` list; a paste inside a

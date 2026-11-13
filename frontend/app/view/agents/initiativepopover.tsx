@@ -4,7 +4,9 @@
 // The initiative popover on the agent header: the initiative this agent works on, opened in place so the person does not
 // leave the agent for Jarvis. The chunk the agent is on (Mark done, its latest note), the next two, the plan waiting for
 // review, and Add note. Its keys (m, n, the arrows, Enter, Esc) are its own while it is open: the root is
-// data-owns-keys, and the single-key Agent bindings yield to initiativePopoverAtom (bindings.ts).
+// data-owns-keys, and the single-key Agent bindings yield to initiativePopoverAtom (bindings.ts). It is the Terminal
+// view's: in Chat the band under the header replaced it (the lean header has no chip to open it from), and an agent that
+// holds no chunk reads "No chunk for this agent" in both, from the one definition (agentChunk).
 
 import { KeyCap } from "@/app/element/keycap";
 import { PopoverReveal } from "@/app/element/popoverreveal";
@@ -413,9 +415,7 @@ function PopoverBody({
                 {mine != null ? (
                     rowView(rows[0], 0)
                 ) : (
-                    <div className="text-[11.5px] text-muted">
-                        {effort == null ? "" : "No chunk yet: it takes the active one."}
-                    </div>
+                    <div className="text-[11.5px] text-muted">{effort == null ? "" : "No chunk for this agent"}</div>
                 )}
             </div>
             {nextRows.length > 0 || proposed > 0 ? (

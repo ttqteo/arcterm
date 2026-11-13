@@ -39,7 +39,6 @@ import {
     Ellipsis,
     GitCommitHorizontal,
     GitFork,
-    Link2,
     Maximize2,
     Minimize2,
     PanelRight,
@@ -206,21 +205,13 @@ function InitiativeLink({ model, agent }: { model: AgentsViewModel; agent: Agent
 
 // An agent with no initiative: "+ Link to initiative" opens the picker. A pick writes the tab's session:effort, and
 // attaches the agent to the initiative's active chunk (else its first pending one) so the chunk reads as its work; a new
-// initiative made from the session is an idea with no chunk, so nothing is attached. `menuAnchor` given (the Chat view,
-// whose header has no chip): only the picker, opened from the "…" menu or `i` and hung under the "…" button.
-function LinkToInitiative({
-    agent,
-    project,
-    menuAnchor,
-}: {
-    agent: AgentVM;
-    project: string;
-    menuAnchor?: HTMLElement | null;
-}) {
+// initiative made from the session is an idea with no chunk, so nothing is attached. `keyHint` (the Chat view's lean
+// header) puts the `i` keycap on the chip: the chip and the key open the one picker, and once the agent is linked the
+// same key opens its band.
+function LinkToInitiative({ agent, project, keyHint }: { agent: AgentVM; project: string; keyHint?: boolean }) {
     const open = useAtomValue(initiativeLinkPickerAtom) === agent.id;
     const setOpen = (v: boolean) => globalStore.set(initiativeLinkPickerAtom, v ? agent.id : null);
-    const [chip, setChip] = useState<HTMLButtonElement | null>(null);
-    const anchor = menuAnchor !== undefined ? menuAnchor : chip;
+    const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
     // a picker left open when its header goes (Chat ↔ Terminal, another agent picked) does not reopen later
     useEffect(
         () => () => {
@@ -259,26 +250,25 @@ function LinkToInitiative({
     };
     return (
         <>
-            {menuAnchor !== undefined ? null : (
-                <>
-                    {" · "}
-                    <button
-                        ref={setChip}
-                        type="button"
-                        data-initiative-link
-                        aria-haspopup="dialog"
-                        aria-expanded={open}
-                        onClick={() => setOpen(!open)}
-                        title="Link this agent to an initiative (i)"
-                        className={cn(
-                            "inline-flex h-[20px] cursor-pointer items-center rounded-[5px] border border-dashed border-edge-strong px-[7px] align-middle text-[11px] text-ink-mid hover:text-primary",
-                            open && "bg-surface-selected"
-                        )}
-                    >
-                        + Link to initiative
-                    </button>
-                </>
-            )}
+            {" · "}
+            <button
+                ref={setAnchor}
+                type="button"
+                data-initiative-link
+                aria-haspopup="dialog"
+                aria-expanded={open}
+                onClick={() => setOpen(!open)}
+                title="Link this agent to an initiative (i)"
+                className={cn(
+                    "inline-flex h-[20px] cursor-pointer items-center gap-[6px] rounded-[5px] border border-dashed border-edge-strong px-[7px] align-middle text-[11px] text-ink-mid hover:text-primary",
+                    open && "bg-surface-selected"
+                )}
+            >
+                + Link to initiative
+                {keyHint ? (
+                    <KeyCap chord="i" variant="inline" className="cursor-pointer px-[4px] py-0 leading-[14px]" />
+                ) : null}
+            </button>
             <InitiativePicker
                 open={open}
                 anchor={anchor}
@@ -455,10 +445,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const shownView: CellView = chatShown ? cellView(view, chatAsleep ? "chat" : chatMode) : view;
     // Chat shows the model and the context in its box and the agent's work as it goes, so its header keeps the name and
     // where it works: no runtime mark, state word, model, context or Alt+C (the box holds the focus, not the TUI), and
-    // Link to initiative moves into the "…" menu. The dot keeps the state, its word in its title.
+    // no ◇ initiative chip, which the band under the header replaces (`i` opens it); an agent with no initiative keeps
+    // its Link to initiative chip. The dot keeps the state, its word in its title.
     const lean = chatShown && shownView === "chat";
-    const [moreButton, setMoreButton] = useState<HTMLButtonElement | null>(null);
-    const linkFromMenu = lean && canLink && agent.effortId == null;
     const viewControl = chatShown || hasCanvas || docReview != null || brainstorm != null;
     const viewOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null);
     // what Alt+C walks: asleep it skips the disabled Terminal (agent:view-cycle passes the same asleep flag)
@@ -606,14 +595,6 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 click: () => forkFromChat(model, agent),
             });
         }
-        if (linkFromMenu) {
-            items.push({
-                label: "Link to initiative…",
-                icon: <Link2 size={15} />,
-                accel: "i",
-                click: () => globalStore.set(initiativeLinkPickerAtom, agent.id),
-            });
-        }
         if (canSplit) {
             // the header is the focused agent's, which is whose folder the picker opens a tool in
             items.push({
@@ -747,9 +728,11 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                     </span>
                     {project || "—"}
                     {agent.effortId != null ? (
-                        <InitiativeLink model={model} agent={agent} />
-                    ) : canLink && !lean ? (
-                        <LinkToInitiative agent={agent} project={project} />
+                        lean ? null : (
+                            <InitiativeLink model={model} agent={agent} />
+                        )
+                    ) : canLink ? (
+                        <LinkToInitiative agent={agent} project={project} keyHint={lean} />
                     ) : null}
                     {lineage?.kind === "lead" ? (
                         <>
@@ -917,10 +900,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 ) : null}
                 {blockId != null ? (
                     <button
-                        ref={setMoreButton}
                         type="button"
                         data-agent-header-more
-                        data-initiative-link-menu={linkFromMenu ? "" : undefined}
                         aria-haspopup="menu"
                         aria-label="More"
                         onClick={openHeaderMenu}
@@ -931,7 +912,6 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         <Ellipsis size={15} strokeWidth={1.8} aria-hidden />
                     </button>
                 ) : null}
-                {linkFromMenu ? <LinkToInitiative agent={agent} project={project} menuAnchor={moreButton} /> : null}
                 {canSplit ? (
                     <button
                         type="button"
