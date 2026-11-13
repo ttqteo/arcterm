@@ -6,6 +6,14 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Initiative writes no longer queue behind a vault sync: with a vault remote set, run a burst of
+  `wsh effort chunk add/note` (a few hundred, as a cleanup script does) → none comes back `EC-TIME: timeout waiting for
+  response`; before, about 1 in 120 did, each time the sync fetched or pushed. Unit-tested only (`pkg/wavevault`
+  `TestSyncLeavesTheVaultLockFreeDuringFetchAndPush`, 8acb6f0a4).
+- [ ] (arcterm) A finished run files its open issues on standing initiatives: after the next orchestrator run with no
+  initiative named lands, its leftover issues sit on the matching existing initiative (Flaky tests, Hand checks, the
+  topic's "… bugs and polish") with no new "… follow-ups (run X)" initiative, and an issue already open gets a note,
+  not a second chunk. Prompt change only (`pkg/jarvis/leadprompt.go`, 04d6ef103).
 - [ ] (arcterm) The model menu in Chat: click the model chip under a Claude agent's chat box → four rows (Fable 5.2,
   Opus 5.5, Sonnet 5.5, Haiku 5.5), each with a tinted icon and a note, a check on the running one; pick Fable →
   Claude Code gets `/model claude-fable-5-2` and the chip turns to the sparkles icon. Agent surface, Chat.
