@@ -140,6 +140,14 @@ func DBGetAllObjsByType[T waveobj.WaveObj](ctx context.Context, otype string) ([
 	})
 }
 
+// DBGetAllObjsByTypeShared is DBGetAllObjsByType for a caller that only reads: the objects are shared, not copies
+// (see selectShared), so a poll decodes only the rows that changed since the last read. The agent roster reads every
+// run this way: 3,000 runs are ~60 MB of JSON, and decoding them on each dev-servers poll kept wavesrv near a core
+// (2026-11-13 pprof).
+func DBGetAllObjsByTypeShared[T waveobj.WaveObj](ctx context.Context, otype string) ([]T, error) {
+	return selectShared[T](ctx, fmt.Sprintf("SELECT oid, version FROM %s", tableNameFromOType(otype)))
+}
+
 // sharedObjs holds the objects the Shared readers have decoded, each at the version it was read.
 // ponytail: a deleted row's entry stays until wavesrv exits; drop it in DBDelete if deletes ever add up.
 var sharedObjs = struct {

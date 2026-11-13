@@ -295,6 +295,19 @@ func TestSharedReadersDecodeOnlyChangedRows(t *testing.T) {
 		t.Fatalf("the updated run came back stale: %q (held copy now %q)", after[1].Status, first[1].Status)
 	}
 
+	// every run of the type, as the agent roster reads them: the untouched run is the object already held
+	all, err := DBGetAllObjsByTypeShared[*waveobj.Run](ctx, waveobj.OType_Run)
+	if err != nil {
+		t.Fatalf("DBGetAllObjsByTypeShared: %v", err)
+	}
+	byId := map[string]*waveobj.Run{}
+	for _, r := range all {
+		byId[r.ID] = r
+	}
+	if byId["shr-early"] != first[0] || byId["shr-late"] != after[1] {
+		t.Fatalf("the all-runs read decoded held rows again or missed one: %d runs", len(all))
+	}
+
 	chans, err := GetChannelsShared(ctx)
 	if err != nil || !slices.ContainsFunc(chans, func(c *waveobj.Channel) bool { return c.OID == ch.OID }) {
 		t.Fatalf("GetChannelsShared missed the channel: err=%v", err)
