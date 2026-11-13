@@ -19,7 +19,12 @@ const (
 	LowRAM uint64 = 1 << 30
 	// the RAM trigger still never sleeps an agent that just finished
 	RAMTriggerMinIdle = time.Minute
-	// how long a process tree's CPU must stay quiet before the agent counts as truly idle
+	// an idle agent whose own process holds this much sleeps after RAMTriggerMinIdle, not After. Claude Code can spin
+	// while idle and grow by ~100 MB a minute (2026-11-13: seven idle sessions at 1.2 to 2.7 GB each, ~1 core apiece);
+	// a working one holds 300 to 800 MB
+	BloatedAgent uint64 = 1536 << 20
+	// how long a process tree's CPU must stay quiet before the agent counts as truly idle; also how long its
+	// transcript must go unwritten
 	CPUWindow = 5 * time.Minute
 	// the share of one core under which a tree counts as idle
 	IdleCPUShare = 0.05
@@ -39,7 +44,14 @@ type Candidate struct {
 	Viewing                 bool      // the focused agent, or a pane showing in the Agent grid
 	BackgroundRunning       bool      // a Claude background shell task or Monitor is alive under it
 	SubagentsRunning        bool      // a subagent is alive under it
-	CPUIdle                 bool      // CPURing.Idle over CPUWindow
+	// CPURing.Idle over CPUWindow. For claude it reads only the commands under the agent, its own process left out:
+	// an idle Claude Code can spin a core on its own, which kept it awake, and growing, for good (2026-11-13)
+	CPUIdle bool
+	// claude's transcript went unwritten for CPUWindow: what still catches it working under a status stuck at idle
+	// now that its own CPU is not read. Always true for the other harnesses, whose whole tree's CPU is read
+	TranscriptQuiet bool
+	// what the agent's own process holds (memusage's footprint); 0 when not read
+	AgentBytes uint64
 
 	// what Decide's compaction rules read (compact.go)
 	Cache        CacheState // from the transcript's tail; zero when it was not read
@@ -60,13 +72,20 @@ type Settings struct {
 // canSleep is the whole eligibility rule: every condition holds.
 func canSleep(c Candidate) bool {
 	return Harnesses[c.Harness] && c.Idle && !c.IdleSince.IsZero() && !c.RunOwned && c.SessionKnown &&
-		!c.Viewing && !c.BackgroundRunning && !c.SubagentsRunning && c.CPUIdle
+		!c.Viewing && !c.BackgroundRunning && !c.SubagentsRunning && c.CPUIdle && c.TranscriptQuiet
 }
 
-// Pick returns the tab ids to sleep this check: every eligible agent idle for Settings.After, or, when none
-// is and free RAM is under LowRAM, the one eligible agent idle longest (at least RAMTriggerMinIdle). The RAM
-// trigger sleeps one agent a check so a drop never sleeps more agents than it needs. Ids come back longest
-// idle first, ties by tab id. Pass math.MaxUint64 as freeBytes when free RAM could not be read.
+// due is whether an eligible agent has been idle long enough: Settings.After, or RAMTriggerMinIdle when its own
+// process holds BloatedAgent or more.
+func due(c Candidate, now time.Time, s Settings) bool {
+	idle := now.Sub(c.IdleSince)
+	return idle >= s.After || c.AgentBytes >= BloatedAgent && idle >= RAMTriggerMinIdle
+}
+
+// Pick returns the tab ids to sleep this check: every eligible agent idle for Settings.After (or bloated, idle
+// RAMTriggerMinIdle), or, when none is and free RAM is under LowRAM, the one eligible agent idle longest (at least
+// RAMTriggerMinIdle). The RAM trigger sleeps one agent a check so a drop never sleeps more agents than it needs.
+// Ids come back longest idle first, ties by tab id. Pass math.MaxUint64 as freeBytes when free RAM could not be read.
 func Pick(cands []Candidate, now time.Time, s Settings, freeBytes uint64) []string {
 	if !s.Enabled {
 		return nil
@@ -83,14 +102,14 @@ func Pick(cands []Candidate, now time.Time, s Settings, freeBytes uint64) []stri
 		}
 		return cmp.Compare(a.TabId, b.TabId)
 	})
-	var due []string
+	var picked []string
 	for _, c := range ok {
-		if now.Sub(c.IdleSince) >= s.After {
-			due = append(due, c.TabId)
+		if due(c, now, s) {
+			picked = append(picked, c.TabId)
 		}
 	}
-	if len(due) > 0 {
-		return due
+	if len(picked) > 0 {
+		return picked
 	}
 	if freeBytes >= LowRAM || len(ok) == 0 {
 		return nil

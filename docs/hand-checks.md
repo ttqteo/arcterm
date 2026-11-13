@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A spinning idle Claude sleeps: with Sleep idle agents on, leave a Claude agent idle and off screen
+  while its `claude.exe` burns CPU (Task Manager) → once it holds over 1.5 GB it sleeps about 5 minutes after its last
+  turn (a smaller one at After idle for), with a "Put 1 agent to sleep" notice; Wake brings it back. An agent working
+  with its status stuck at idle stays up while its transcript grows. Commit: fix(agentsleep) sleep agents that spin
+  while idle (`pkg/agentsleep`, `wshserver_agentsleeploop.go`).
 - [ ] (arcterm) Queued bubble dims: in an agent's Chat, send a message while Claude works → its bubble shows at ~55%
   under Queued · Send now; when Claude takes it, the transcript row replaces it at full strength. A message sent to an
   idle agent stays full strength. Commit: fix(chat) dim a queued bubble (`chatpane.tsx` PendingBubble).

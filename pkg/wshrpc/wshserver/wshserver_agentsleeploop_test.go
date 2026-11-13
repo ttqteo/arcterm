@@ -35,7 +35,10 @@ type loopWorld struct {
 	after   time.Duration
 
 	freeBytes  uint64
-	cpuMs      func(blockId string, minute int) float64 // a tree's cumulative CPU time at a minute of the run
+	cpuMs      func(blockId string, minute int) float64 // the commands' cumulative CPU time at a minute of the run
+	agentMs    func(blockId string, minute int) float64 // the agent's own process's, likewise
+	agentBytes map[string]uint64                        // what each agent's own process holds
+	written    map[string]time.Time                     // when each transcript was last written, by path
 	freed      map[string]uint64
 	sleepErr   map[string]error
 	background map[string][]string // what sleepAgent says still runs, per block
@@ -56,6 +59,9 @@ func newLoopWorld(t *testing.T, tabs ...agentTabFacts) *loopWorld {
 		after:      30 * time.Minute,
 		freeBytes:  8 << 30,
 		cpuMs:      func(string, int) float64 { return 1000 }, // flat: the trees do no work
+		agentMs:    func(string, int) float64 { return 500 },  // flat: the agents' own processes do none either
+		agentBytes: map[string]uint64{},
+		written:    map[string]time.Time{},
 		freed:      map[string]uint64{},
 		sleepErr:   map[string]error{},
 		background: map[string][]string{},
@@ -65,7 +71,16 @@ func newLoopWorld(t *testing.T, tabs ...agentTabFacts) *loopWorld {
 	swap(t, &virtualMemory, func(context.Context) (*mem.VirtualMemoryStat, error) {
 		return &mem.VirtualMemoryStat{Total: 16 << 30, Available: w.freeBytes}, nil
 	})
-	swap(t, &treeCPUms, func(blockId string) (float64, bool) { return w.cpuMs(blockId, w.minute), true })
+	swap(t, &readAgentTree, func(blockId string) (agentTree, bool) {
+		cmds := w.cpuMs(blockId, w.minute)
+		return agentTree{wholeMs: cmds + w.agentMs(blockId, w.minute), commandsMs: cmds, agentBytes: w.agentBytes[blockId]}, true
+	})
+	swap(t, &transcriptModTime, func(path string) (time.Time, bool) {
+		if at, ok := w.written[path]; ok {
+			return at, true
+		}
+		return w.start.Add(-time.Hour), true // written before the run began
+	})
 	w.loop = &sleepLoop{
 		idle:     agentsleep.NewIdleTracker(),
 		cpu:      agentsleep.NewCPURing(),
@@ -185,6 +200,37 @@ func TestSleepTickRAMTriggerSleepsOneEarly(t *testing.T) {
 	}
 }
 
+func TestSleepTickSleepsAClaudeThatSpinsWhileIdle(t *testing.T) {
+	w := newLoopWorld(t, claudeTab(t, agentsTabA, "design", agentsBlockA, baseds.AgentState_Idle))
+	// claude.exe itself burns a core; nothing under it runs
+	w.agentMs = func(_ string, minute int) float64 { return float64(minute) * 60_000 }
+
+	w.tickTo(29)
+	if len(w.slept) != 0 {
+		t.Fatalf("slept = %v before 30 minutes, want none", w.slept)
+	}
+	w.tickAt(30)
+	if !slices.Equal(w.slept, []string{agentsBlockA}) {
+		t.Fatalf("slept = %v, want the spinning agent put to sleep at 30 minutes", w.slept)
+	}
+}
+
+func TestSleepTickSleepsABloatedClaudeEarly(t *testing.T) {
+	w := newLoopWorld(t, claudeTab(t, agentsTabA, "design", agentsBlockA, baseds.AgentState_Idle))
+	w.agentMs = func(_ string, minute int) float64 { return float64(minute) * 60_000 }
+	w.agentBytes[agentsBlockA] = 2 << 30
+
+	// its commands' CPU needs a full window of samples before it counts as quiet
+	w.tickTo(4)
+	if len(w.slept) != 0 {
+		t.Fatalf("slept = %v at minute 4, want none before a full CPU window", w.slept)
+	}
+	w.tickAt(5)
+	if !slices.Equal(w.slept, []string{agentsBlockA}) {
+		t.Fatalf("slept = %v at minute 5, want the bloated agent asleep", w.slept)
+	}
+}
+
 func TestSleepTickOffWhenTheSettingIsOff(t *testing.T) {
 	w := newLoopWorld(t, claudeTab(t, agentsTabA, "design", agentsBlockA, baseds.AgentState_Idle))
 	w.enabled = false
@@ -289,6 +335,21 @@ func TestSleepTickSpares(t *testing.T) {
 		}},
 		{"a harness that cannot resume", func(t *testing.T, w *loopWorld) {
 			w.facts.Tabs[0].Status.Agent = "codex"
+		}},
+		{"a claude whose transcript is still being written", func(t *testing.T, w *loopWorld) {
+			// a status stuck at idle while it works: its own CPU is not read, its transcript says so
+			path := w.facts.Tabs[0].Status.TranscriptPath
+			w.loop.now = func() time.Time {
+				now := w.start.Add(time.Duration(w.minute) * time.Minute)
+				w.written[path] = now.Add(-time.Minute)
+				return now
+			}
+		}},
+		{"a pi whose own process is busy", func(t *testing.T, w *loopWorld) {
+			// only claude has its own CPU left out
+			w.facts.Tabs[0] = agentFacts(agentsTabA, "design", agentsBlockA, "pi", baseds.AgentState_Idle)
+			w.facts.Tabs[0].Status.TranscriptPath = writeTranscript(t, "session-pi")
+			w.agentMs = func(_ string, minute int) float64 { return float64(minute) * 36_000 }
 		}},
 	}
 	for _, tc := range cases {
