@@ -84,6 +84,9 @@ type CommandAgentSyncAdoptRtnData struct {
 	Unresolved []string             `json:"unresolved,omitempty"`
 	// DryRun is true when nothing was moved (a snapshot).
 	DryRun bool `json:"dryrun,omitempty"`
+	// Error is why an apply failed partway; Moves and Unresolved are then the plan it was applying. It rides in
+	// the reply because an rpc error reply carries no data.
+	Error string `json:"error,omitempty"`
 }
 
 type CommandAgentSyncSteeringReadRtnData struct {

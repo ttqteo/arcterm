@@ -457,6 +457,9 @@ type RunLand struct {
 	Reason string   `json:"reason,omitempty"` // why it is held
 	Commit string   `json:"commit,omitempty"` // the merge commit
 	Notes  []string `json:"notes,omitempty"`  // what the landed result was not verified against, e.g. a moved base
+	// Tip is the wave/<runId> commit the land merged, kept because the land deletes the branch: the evidence seal
+	// proves Commit is the run's merge by it.
+	Tip string `json:"tip,omitempty"`
 	// Dismissed is the human dropping a held land's attention item. A retry writes a fresh RunLand, so a new
 	// hold shows again.
 	Dismissed bool `json:"dismissed,omitempty"`
@@ -496,7 +499,7 @@ type TaskNode struct {
 	Deps        []string `json:"deps,omitempty"`
 	Chunks      []string `json:"chunks,omitempty"`    // labels of the dag's effort chunks this task closes when it lands
 	Gate        bool     `json:"gate,omitempty"`      // halt the DAG at completion for review
-	State       string   `json:"state"`               // pending|ready|running|stalled|done|failed|cancelled|skipped|blocked-merge|verifying|verify-failed
+	State       string   `json:"state"`               // pending|ready|running|stalled|reviewing|review-failed|done|failed|cancelled|skipped|blocked-merge|verifying|verify-failed
 	RunID       string   `json:"runid,omitempty"`     // child run once spawned
 	SpawnedTs   int64    `json:"spawnedts,omitempty"` // when RunID's worker was spawned (UnixMilli), restamped each attempt
 	Released    bool     `json:"released,omitempty"`  // gate released by human approval
@@ -715,6 +718,15 @@ type PlanReviewStage struct {
 	PlanText  string           `json:"plantext,omitempty"`  // the plan as this round's reviewers read it
 	SpecText  string           `json:"spectext,omitempty"`  // the spec likewise (empty with no spec file)
 	Prior     *PlanReviewPrior `json:"prior,omitempty"`     // round 2: what round 1 found, read and picked
+
+	// PastRounds are the earlier rounds' reviewers, oldest first; a dag stored before this field reads as one round.
+	PastRounds []PlanReviewRound `json:"pastrounds,omitempty"`
+}
+
+// PlanReviewRound is a finished plan review round's reviewer sessions.
+type PlanReviewRound struct {
+	Round     int            `json:"round"`
+	Reviewers []PlanReviewer `json:"reviewers,omitempty"`
 }
 
 // PlanReviewer is one reviewer session of a plan review round.
