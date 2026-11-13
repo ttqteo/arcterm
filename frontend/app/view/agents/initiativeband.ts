@@ -191,10 +191,14 @@ export function doneIsAdvance(effort: BandEffort, label: string): boolean {
 export const NARROW_BAND_PX = 640;
 
 /** Pure: the band's labels and what it draws, by its width: in a narrow cell no segment bar (the count stays), the title
- *  clipped to 150px and `Mark done` shortened to `Done`; the chunk label is clipped by the view. `titleMax` is a px
- *  width. */
-export function bandLabels(narrow: boolean): { markDone: "Mark done" | "Done"; segments: boolean; titleMax: number } {
+ *  clipped to 150px and `Mark done` shortened to `Done`. The chunk label is clipped by the view, and left out
+ *  (`chunkLabel` false) only in a narrow cell with a brainstorm part beside the initiative part, which needs the room; a
+ *  narrow initiative-only band keeps it. `titleMax` is a px width. */
+export function bandLabels(
+    narrow: boolean,
+    brainstormBeside = false
+): { markDone: "Mark done" | "Done"; segments: boolean; titleMax: number; chunkLabel: boolean } {
     return narrow
-        ? { markDone: "Done", segments: false, titleMax: 150 }
-        : { markDone: "Mark done", segments: true, titleMax: 320 };
+        ? { markDone: "Done", segments: false, titleMax: 150, chunkLabel: !brainstormBeside }
+        : { markDone: "Mark done", segments: true, titleMax: 320, chunkLabel: true };
 }

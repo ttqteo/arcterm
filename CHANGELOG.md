@@ -32,9 +32,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   agent's own, the latest note, Add note and Open in Jarvis. Work on this, on a chunk no one holds, moves the agent
   there, and the agent is told with your next message (a line over the box says so, and ✕ drops it). An agent with no
   initiative shows Link to initiative in the header. <!-- big -->
+- In Chat, an agent with a brainstorm attached always shows it in the band under the header, between two questions
+  too: how many boards it has, with a dot and "N new" for the ones that arrived since you last opened the Brainstorm
+  tab (the tab carries the same dot), and how many decisions are yours. Open that part and it pushes the conversation
+  down to the decisions and the boards; a click on a board opens the Brainstorm tab. With an initiative beside it, Mark
+  done moves into the initiative's opened view (the `m` key still works).
 
 ### Changed
 
+- A decision the agent changed, in Chat's Confirm the design and builder check cards, now shows what changed as the
+  Brainstorm tab's review does: the removed sentences in red with −, the added ones in green with +, then why, and
+  your answer, in place of the old text under "Was:".
 - Mark done now moves the agent on to the next chunk, and an agent that holds no chunk is no longer treated as working
   the initiative's active one: it shows "No chunk for this agent" until you pick one.
 
