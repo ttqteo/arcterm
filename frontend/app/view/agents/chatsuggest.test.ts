@@ -13,7 +13,9 @@ import {
     ROW_LEAVE_ACTIONS_MS,
     rowHold,
     ruleChips,
+    runningActions,
     suggestKey,
+    TERMINAL_AFTER_MS,
     wantsModelSuggest,
     writesVietnamese,
     type ChatChip,
@@ -243,5 +245,52 @@ describe("rowHold", () => {
     it("waits before the actions go", () => {
         expect(rowHold("actions", "suggest")).toBe(ROW_LEAVE_ACTIONS_MS);
         expect(rowHold("actions", "none")).toBe(ROW_LEAVE_ACTIONS_MS);
+    });
+});
+
+describe("runningActions", () => {
+    const now = 1_000_000;
+    const edit = (outcome?: "ok" | "fail" | "blocked"): AgentEntry => ({
+        kind: "action",
+        verb: "edited",
+        target: "a.ts",
+        outcome,
+    });
+    const ran = (startedAt: number, outcome?: "ok"): AgentEntry => ({
+        kind: "action",
+        verb: "ran",
+        target: "npm test",
+        startedAt,
+        outcome,
+    });
+
+    it("offers neither while the turn only reads", () => {
+        expect(runningActions([{ kind: "user", text: "xem giúp" }, act], now)).toEqual({
+            diff: false,
+            terminal: false,
+            terminalAt: null,
+        });
+    });
+    it("offers the diff once the turn edited a file, not for an edit that failed or was refused", () => {
+        expect(runningActions([{ kind: "user", text: "sửa đi" }, edit("ok"), act], now).diff).toBe(true);
+        expect(runningActions([{ kind: "user", text: "sửa đi" }, edit()], now).diff).toBe(true);
+        expect(runningActions([{ kind: "user", text: "sửa đi" }, edit("fail"), edit("blocked")], now).diff).toBe(false);
+    });
+    it("reads only the turn since the person's last message", () => {
+        expect(runningActions([edit("ok"), { kind: "user", text: "giải thích thôi" }, act], now).diff).toBe(false);
+    });
+    it("offers the terminal once a command has run long enough, and says when one will", () => {
+        const user: AgentEntry = { kind: "user", text: "chạy test đi" };
+        expect(runningActions([user, ran(now - TERMINAL_AFTER_MS)], now)).toEqual({
+            diff: false,
+            terminal: true,
+            terminalAt: null,
+        });
+        expect(runningActions([user, ran(now - 2_000)], now)).toEqual({
+            diff: false,
+            terminal: false,
+            terminalAt: now - 2_000 + TERMINAL_AFTER_MS,
+        });
+        expect(runningActions([user, ran(now - 60_000, "ok")], now).terminal).toBe(false);
     });
 });

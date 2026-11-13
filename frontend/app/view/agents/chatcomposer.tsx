@@ -90,7 +90,14 @@ import {
     useHeldSend,
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
-import { rowHold, type ChatChip, type ChipKind, type ChipRowKind } from "./chatsuggest";
+import {
+    rowHold,
+    runningActions,
+    type ChatChip,
+    type ChipKind,
+    type ChipRowKind,
+    type RunningActions,
+} from "./chatsuggest";
 import { mergeTaken, takeBackPlan } from "./chattakeback";
 import { takeBack } from "./chattakebackstore";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
@@ -119,6 +126,7 @@ const dragNamesPaths = (dt: DataTransfer | null) => {
 
 const NO_BLOCK: Atom<Block | undefined> = atom(undefined as Block | undefined);
 const NO_CHIPS: ChatChip[] = [];
+const NO_ACTS: RunningActions = { diff: false, terminal: false, terminalAt: null };
 
 let picking = false; // the native dialog takes a moment to appear; a second click must not open another
 
@@ -734,11 +742,24 @@ export function ChatComposer({
         chips != null && !asleep && !waking && !dozing && text === "" && att.attachments.length === 0
             ? chips
             : NO_CHIPS;
-    // the chip line: the actions while the agent works, else the replies; a change to or from the actions shows once
+    // the running agent's actions that have something to show (chatsuggest.ts runningActions): the diff once the turn
+    // edited a file, the terminal once a command has run a while; read again when a running command gets there
+    const acts = showStop ? runningActions(entries ?? [], Date.now()) : NO_ACTS;
+    const [, tick] = useState(0);
+    useEffect(() => {
+        if (acts.terminalAt == null) {
+            return;
+        }
+        const t = setTimeout(() => tick((n) => n + 1), Math.max(0, acts.terminalAt - Date.now()) + 50);
+        return () => clearTimeout(t);
+    }, [acts.terminalAt]);
+    // the chip line: those actions while the agent works, else the replies; a change to or from the actions shows once
     // the agent's state has held it (chatsuggest.ts rowHold), so a state that flips and comes back leaves the line alone
     const row = useChipRow({
-        kind: showStop ? "actions" : suggested.length > 0 ? "suggest" : "none",
+        kind: showStop && (acts.diff || acts.terminal) ? "actions" : suggested.length > 0 ? "suggest" : "none",
         chips: suggested,
+        diff: acts.diff,
+        terminal: acts.terminal,
     });
     // Send is a word asleep and while the wake is in flight. The word stays what it last was while it fades out, so a
     // finished wake does not swap "Waking…" for "Send" under the eye.
@@ -1023,13 +1044,18 @@ export function ChatComposer({
                 {bashList.list}
                 {mention.list}
                 {/* A line of chips under the text (chatsuggest.ts): while the agent works, the two things Chat can show of
-                    it (the diff of what it is changing, its terminal); once its turn ends, the replies the person would
+                    it once they hold something (the diff of what it changed, the terminal of a command running a while);
+                    once its turn ends, the replies the person would
                     likely send next, in their words, which a click sends. Those step aside while the person writes. One
                     line goes before the next comes, so the box never holds both, and the actions come and go only once
                     the agent's state has held (useChipRow). */}
                 <AnimatePresence initial={false} mode="wait">
                     {row.kind === "actions" ? (
-                        <ActionChips key="actions" onShowDiff={onShowDiff} onOpenTerminal={showTerminal} />
+                        <ActionChips
+                            key="actions"
+                            onShowDiff={row.diff ? onShowDiff : undefined}
+                            onOpenTerminal={row.terminal ? showTerminal : undefined}
+                        />
                     ) : row.kind === "suggest" ? (
                         <SuggestChips key="suggest" chips={row.chips} onSend={sendSuggested} onMarkDone={onMarkDone} />
                     ) : null}
@@ -1170,7 +1196,7 @@ export function ChatComposer({
 // The chip line as shown: the one the agent's state asks for, once it has held as long as rowHold says (chatsuggest.ts).
 // While a change waits, the line shown stays with its chips as they last were: the replies kept while a turn starts are
 // still the finished turn's, and a click on one sends it as before.
-function useChipRow(target: { kind: ChipRowKind; chips: ChatChip[] }): { kind: ChipRowKind; chips: ChatChip[] } {
+function useChipRow<T extends { kind: ChipRowKind }>(target: T): T {
     const shown = useRef(target);
     const latest = useRef(target);
     latest.current = target;
@@ -1193,26 +1219,34 @@ function useChipRow(target: { kind: ChipRowKind; chips: ChatChip[] }): { kind: C
     return shown.current;
 }
 
-// The running agent's actions: what Chat already offers (no new commands), as chips with their names. They fade in on
-// the micro ease; the box's own height spring makes room for them.
-function ActionChips({ onShowDiff, onOpenTerminal }: { onShowDiff?: () => void; onOpenTerminal: () => void }) {
+// The running agent's actions: what Chat already offers (no new commands), as chips with their names, each drawn only
+// when given (it has something to show). They fade in on the micro ease; the box's own height spring makes room for them.
+function ActionChips({ onShowDiff, onOpenTerminal }: { onShowDiff?: () => void; onOpenTerminal?: () => void }) {
     const part = usePartMotion(microFade);
     return (
         <motion.div {...part} className="flex flex-wrap items-center gap-1.5">
-            {onShowDiff != null ? (
-                <Chip
-                    icon={FileDiff}
-                    label="Show the diff"
-                    onClick={onShowDiff}
-                    data={{ "data-chat-action-chip": "" }}
-                />
-            ) : null}
-            <Chip
-                icon={Terminal}
-                label="Open the terminal"
-                onClick={onOpenTerminal}
-                data={{ "data-chat-action-chip": "" }}
-            />
+            <AnimatePresence initial={false}>
+                {onShowDiff != null ? (
+                    <motion.div key="diff" {...part}>
+                        <Chip
+                            icon={FileDiff}
+                            label="Show the diff"
+                            onClick={onShowDiff}
+                            data={{ "data-chat-action-chip": "diff" }}
+                        />
+                    </motion.div>
+                ) : null}
+                {onOpenTerminal != null ? (
+                    <motion.div key="terminal" {...part}>
+                        <Chip
+                            icon={Terminal}
+                            label="Open the terminal"
+                            onClick={onOpenTerminal}
+                            data={{ "data-chat-action-chip": "terminal" }}
+                        />
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
         </motion.div>
     );
 }

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Chat's suggested replies: the chips in the message box once an agent's turn ends (chatcomposer.tsx draws them, and
-// while the agent works draws its own two, Show the diff and Open the terminal). They are what the person would likely
+// while the agent works draws its own two, Show the diff and Open the terminal, each once it has something to show:
+// runningActions). They are what the person would likely
 // send next, in their own words ("commit đi", not "Commit"), and a click sends one. They come from two places:
 //
 // - rules over what Chat already knows, shown at once: the turn left its edits uncommitted ("commit đi") or its commits
@@ -246,4 +247,49 @@ export function rowHold(shown: ChipRowKind, target: ChipRowKind): number {
         return ROW_LEAVE_ACTIONS_MS;
     }
     return 0;
+}
+
+/** the verbs of the tools whose call changes a file (transcriptprojection.ts verbFor) */
+const EDIT_VERBS = new Set(["edited", "wrote", "multiedit", "notebookedit"]);
+
+/** how long a command runs before its terminal is worth a look: its live output is there, not in Chat */
+export const TERMINAL_AFTER_MS = 10_000;
+
+/** Which of a running agent's two actions have something to show, and when the terminal will if a command still short
+ *  of TERMINAL_AFTER_MS keeps running (null when none runs). */
+export interface RunningActions {
+    diff: boolean;
+    terminal: boolean;
+    terminalAt: number | null;
+}
+
+/** Pure: the running agent's actions worth a chip, from its transcript since the person's last message: Show the diff
+ *  once the turn has edited a file (an edit that failed or was refused changed nothing), Open the terminal while a
+ *  command has run TERMINAL_AFTER_MS or more. A turn that only reads and searches offers neither: the header's Terminal
+ *  and the rail's Diff are there all the time. */
+export function runningActions(entries: readonly AgentEntry[], now: number): RunningActions {
+    let diff = false;
+    let terminal = false;
+    let terminalAt: number | null = null;
+    for (let i = entries.length - 1; i >= 0; i--) {
+        const e = entries[i];
+        if (e.kind === "user") {
+            break;
+        }
+        if (e.kind !== "action") {
+            continue;
+        }
+        if (EDIT_VERBS.has(e.verb) && e.outcome !== "fail" && e.outcome !== "blocked") {
+            diff = true;
+        }
+        if (e.verb === "ran" && e.outcome == null && e.startedAt != null) {
+            const due = e.startedAt + TERMINAL_AFTER_MS;
+            if (now >= due) {
+                terminal = true;
+            } else {
+                terminalAt = terminalAt == null ? due : Math.min(terminalAt, due);
+            }
+        }
+    }
+    return { diff, terminal, terminalAt: terminal ? null : terminalAt };
 }

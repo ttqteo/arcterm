@@ -30,6 +30,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Claude Code sessions of the last 30 days, one is offered word for word when it fits the turn. Setup → Learned lists
   them under Your usual replies, where × takes one out for good.
 
+### Changed
+
+- While an agent works, Chat's Show the diff appears only once the turn has edited a file, and Open the terminal only
+  while a command has run 10 seconds or more: a turn that only reads and searches shows neither.
+
 ### Fixed
 
 - Triple-clicking text in Chat on a Mac no longer flashes a wide highlight before it settles, and a paragraph or list

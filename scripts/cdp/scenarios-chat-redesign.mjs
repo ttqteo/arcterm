@@ -2,7 +2,8 @@
 // a floating message box that changes shape by state, step lines that fold into `Worked for…`, the frosted suggestion
 // panel, the type rhythm, the brainstorm question card in the conversation, the jump button, and frame timing while
 // blocks stream in. It is written against the spec's DOM contract ("Builder decisions"), not against the components:
-// [data-chat-box][data-chat-box-state], [data-chat-fade], [data-chat-send], [data-chat-stop], [data-chat-action-chip],
+// [data-chat-box][data-chat-box-state], [data-chat-fade], [data-chat-send], [data-chat-stop],
+// [data-chat-action-chip] (diff or terminal, each once it has something to show: steps 2, 6b, 20),
 // [data-chat-suggest-chip] (step 18, the suggested replies; window.__chatSuggestFake answers their model call),
 // [data-chat-suggest-panel], [data-chat-step][data-chat-step-running], [data-chat-step-chip], [data-chat-step-more],
 // [data-chat-bscard][data-chat-bscard-state], [data-chat-bscard-option], [data-chat-bscard-send],
@@ -326,11 +327,13 @@ export default function (kit) {
                 );
             });
 
-            // 2. the agent working: the box runs, with its action chips and Stop in place of Send
+            // 2. the agent working: the box runs, with Stop in place of Send; a turn that has edited nothing and runs no long
+            // command draws no action chip (6b and 20 draw them)
             await run("2. box running", async (name) => {
                 await setRoster(WORKING);
                 const running = await toState("running");
-                await polishWaitFor(h, `!!${layerOf(A)}?.querySelector("[data-chat-action-chip]")`, SHORT_MS);
+                // past the line's 1 s hold, so a chip that would come has come
+                await polishNap(1600);
                 const got = await h.ev(`(() => {
                     const layer = ${layerOf(A)};
                     return {
@@ -342,8 +345,8 @@ export default function (kit) {
                 })()`);
                 await shot(h, "2-box-running");
                 rec(
-                    `${name}: state running, an Open the terminal chip with its name and Stop`,
-                    running && got.state === "running" && got.actions.includes("Open the terminal") && got.stop,
+                    `${name}: state running with Stop, and no [data-chat-action-chip] while the turn has edited nothing and runs no long command`,
+                    running && got.state === "running" && got.actions.length === 0 && got.stop,
                     got
                 );
             });
@@ -490,6 +493,17 @@ export default function (kit) {
                     `${name}: [data-chat-step] lines sit inside [data-chat-tools], exactly one [data-chat-step-running] also carries data-tool-running, and the [data-chat-work] [data-fold] header reads Working for`,
                     up && lines && got.steps >= 5 && got.running === 1 && got.runningHasToolRunning && got.fold.startsWith("Working for"),
                     got
+                );
+            });
+
+            // 6b. the same turn has edited files, and its tool in flight is a Read: Show the diff alone
+            await run("6b. running chips diff", async (name) => {
+                const shown = await polishWaitFor(h, `!!${layerOf(A)}?.querySelector('[data-chat-action-chip="diff"]')`, SHORT_MS);
+                const actions = await h.ev(`[...(${layerOf(A)}?.querySelectorAll("[data-chat-action-chip]") ?? [])].map(${FLAT})`);
+                rec(
+                    `${name}: a working turn that edited files offers [data-chat-action-chip="diff"] Show the diff, and no Open the terminal while no command runs`,
+                    shown && actions.join(",") === "Show the diff",
+                    { shown, actions }
                 );
             });
 
@@ -1023,6 +1037,26 @@ export default function (kit) {
                     landed && done && before.join(",") === "done" && next && after.join(" · ") === `${EFFORT_C1}:done · ${EFFORT_C2}:active`,
                     { landed, done, before, next, after }
                 );
+            });
+
+            // 20. a new turn whose command has run 15 s with no result yet: Open the terminal alone (it edited nothing)
+            await run("20. running chips terminal", async (name) => {
+                append(
+                    ctx,
+                    AC.userText("chạy test đi", ts(ctx, -16_000)),
+                    AC.toolUse("toolu_cr_longbash", "Bash", { command: "npm test" }, ts(ctx, -15_000))
+                );
+                await setRoster(WORKING);
+                const shown = await polishWaitFor(h, `!!${layerOf(A)}?.querySelector('[data-chat-action-chip="terminal"]')`, WAIT_MS);
+                await polishNap(300);
+                const actions = await h.ev(`[...(${layerOf(A)}?.querySelectorAll("[data-chat-action-chip]") ?? [])].map(${FLAT})`);
+                await shot(h, "20-running-terminal");
+                rec(
+                    `${name}: a command running 10 s or more offers [data-chat-action-chip="terminal"] Open the terminal, and no Show the diff in a turn that edited nothing`,
+                    shown && actions.join(",") === "Open the terminal",
+                    { shown, actions }
+                );
+                await setRoster({});
             });
 
             return steps;
