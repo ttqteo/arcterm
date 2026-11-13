@@ -31,11 +31,11 @@ import {
     useInteractions,
 } from "@floating-ui/react";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { Check, Pencil } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { AgentsViewModel } from "./agents";
 import { formatAgo, type AgentVM } from "./agentsviewmodel";
 import { markChunkDone } from "./chatsuggeststore";
+import { BTN, ChunkStatusMenu, CURSOR_RING, ROW, STATUS_TEXT } from "./initiativechunkmenu";
 import {
     CHUNK_RENAME,
     chunkMenuItems,
@@ -44,7 +44,6 @@ import {
     popoverRows,
     popoverStatus,
     stepRow,
-    type PopoverStatusTone,
 } from "./initiativepopovermodel";
 import { planEditChunks } from "./planreviewmodel";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
@@ -58,19 +57,6 @@ export const initiativePopoverAtom = atom<string | null>(null) as PrimitiveAtom<
 // The agent whose Link to initiative picker is open, else null: its header's "+ Link to initiative" chip, the "…" menu's
 // row in the Chat view (which has no chip) and the `i` key all open the one picker.
 export const initiativeLinkPickerAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
-
-const STATUS_TEXT: Record<PopoverStatusTone, string> = {
-    success: "text-success",
-    working: "text-working",
-    asking: "text-asking",
-    muted: "text-ink-mid",
-    faint: "text-ink-faint",
-};
-
-const BTN =
-    "inline-flex h-[26px] cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-edge-mid bg-surface-raised px-[10px] text-[11.5px] font-semibold text-secondary hover:border-edge-strong hover:bg-surface-hover disabled:cursor-default disabled:opacity-50";
-const ROW = "flex min-h-[26px] cursor-pointer items-center gap-[9px] rounded-[6px] px-[8px] -mx-[8px]";
-const CURSOR_RING = "ring-1 ring-inset ring-accent/60";
 
 type Sub =
     | { kind: "menu"; label: string; at: number } // a chunk's status menu, `at` the menu's own cursor
@@ -153,7 +139,7 @@ function PopoverBody({
         if (mine == null) {
             return;
         }
-        void run(() => markChunkDone(oref, mine.label));
+        void run(() => markChunkDone(oref, mine.label, agent.id));
     };
     const pickStatus = (label: string, status: string) => {
         setSub(null);
@@ -356,41 +342,13 @@ function PopoverBody({
                     </div>
                 ) : null}
                 {menuOpen && sub?.kind === "menu" ? (
-                    <div
-                        role="menu"
-                        data-popover-menu
-                        className="mb-[2px] mt-[4px] flex flex-col rounded-[7px] border border-edge-mid bg-surface p-[3px]"
-                    >
-                        {chunkMenuItems(chunk?.status ?? "").map((item, i) => (
-                            <div
-                                key={item.id}
-                                role="menuitem"
-                                data-menu-item={item.id}
-                                onMouseDown={keepFocus}
-                                onMouseMove={() => setSub({ ...sub, at: i })}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    chooseMenu(label, item.id);
-                                }}
-                                className={cn(
-                                    "flex h-[24px] cursor-pointer items-center gap-[8px] rounded-[5px] px-[8px] text-[11.5px]",
-                                    item.id === CHUNK_RENAME && "mt-[2px] border-t border-edge-mid",
-                                    i === sub.at
-                                        ? "bg-surface-selected text-primary"
-                                        : "text-secondary hover:bg-surface-hover"
-                                )}
-                            >
-                                {item.id === CHUNK_RENAME ? (
-                                    <Pencil size={11} aria-hidden className="flex-none text-ink-mid" />
-                                ) : (
-                                    <span className="flex w-[11px] flex-none justify-center text-accent">
-                                        {item.current ? <Check size={11} strokeWidth={2.4} aria-hidden /> : null}
-                                    </span>
-                                )}
-                                {item.label}
-                            </div>
-                        ))}
-                    </div>
+                    <ChunkStatusMenu
+                        status={chunk?.status ?? ""}
+                        at={sub.at}
+                        onHover={(i) => setSub({ ...sub, at: i })}
+                        onChoose={(id) => chooseMenu(label, id)}
+                        dataAttr="data-popover-menu"
+                    />
                 ) : null}
             </div>
         );

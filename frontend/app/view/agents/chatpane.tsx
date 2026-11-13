@@ -702,7 +702,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
         }
         fireAndForget(async () => {
             try {
-                await markChunkDone(effortOref, chunk);
+                await markChunkDone(effortOref, chunk, agent.id);
             } catch (e) {
                 pushToast({
                     title: "Could not mark it done",

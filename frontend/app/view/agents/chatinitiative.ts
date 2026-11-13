@@ -518,12 +518,65 @@ export function withResultLines(lines: readonly string[], message: string): stri
     return lines.length === 0 ? message : `${lines.join("\n")}\n\n${message}`;
 }
 
-const RESULT_LINE = /^initiative: (added|created|dismissed) /;
+const RESULT_LINE = /^initiative: (added|created|dismissed|switched) /;
+
+/** Pure: the line that tells the agent the person moved it to another chunk (spec
+ *  2026-11-14-chat-initiative-link-design.md §4): `initiative: switched you to chunk <n> <label> (effort:<oid>)`, `n` the
+ *  chunk's place in the plan from 1. The oref is left out for an initiative with none. The skill (skills/initiatives)
+ *  says how the agent reads it. */
+export function switchLine(n: number, label: string, oref: string): string {
+    const o = effortOref(oref);
+    return `initiative: switched you to chunk ${n} ${flat(label)}${o === "" ? "" : ` (${o})`}`;
+}
+
+const SWITCH_PREFIX = "initiative: switched ";
+const isSwitchLine = (line: string): boolean => line.startsWith(SWITCH_PREFIX);
+
+// the label runs lazily up to the oref in parentheses at the end, so a label with parentheses of its own stays whole
+const SWITCH_LINE = /^initiative: switched you to chunk (\d+) (.+?)(?: \(effort:[^()\s]*\))?$/;
+
+/** Pure: the waiting line's chunk, read from the last switched line among an agent's pending lines; null when none. */
+export function pendingSwitch(lines: readonly string[]): { n: number; label: string } | null {
+    for (let i = lines.length - 1; i >= 0; i--) {
+        if (!isSwitchLine(lines[i])) {
+            continue;
+        }
+        const m = SWITCH_LINE.exec(lines[i]);
+        if (m != null) {
+            return { n: Number(m[1]), label: m[2] };
+        }
+    }
+    return null;
+}
+
+/** Pure: the pending lines with a switched line for an agent, at the end, in place of any earlier one: several switches
+ *  before a message send only the last. The agent's other lines stay, in order. */
+export function withSwitchLine(pending: PendingMap, agentId: string, line: string): PendingMap {
+    const kept = ownList(pending, agentId).filter((l) => !isSwitchLine(l));
+    return queueLine({ ...pending, [agentId]: kept }, agentId, line);
+}
+
+/** Pure: the pending lines without an agent's switched line (the waiting line's ✕), its other lines kept; the agent's
+ *  entry goes once nothing else is in it. The same map when there is no switched line to drop. */
+export function withoutSwitchLine(pending: PendingMap, agentId: string): PendingMap {
+    const lines = ownList(pending, agentId);
+    if (!lines.some(isSwitchLine)) {
+        return pending;
+    }
+    const rest = lines.filter((l) => !isSwitchLine(l));
+    const next = { ...pending };
+    if (rest.length === 0) {
+        delete next[agentId];
+    } else {
+        next[agentId] = rest;
+    }
+    return next;
+}
 
 /** Pure: a transcript message without the result lines Arc put in front of it: the leading run of lines that start
- *  `initiative: added|created|dismissed ` and the one blank line after it, nothing else. Claude Code wraps a whole
- *  multi-line message as one pasted block, which is what a message carrying result lines is, so a wrapped message is read
- *  as the paste first; one with lines comes back unwrapped, one with none comes back exactly as it was. */
+ *  `initiative: added|created|dismissed|switched ` and the one blank line after it, nothing else. Claude Code wraps a
+ *  whole multi-line message as one pasted block, which is what a message carrying result lines is, so a wrapped message
+ *  is read as the paste first; one with lines comes back unwrapped, one with none comes back exactly as it was. */
 export function stripResultLines(text: string): string {
     const body = unwrapWholePaste(text);
     const lines = body.split("\n");
