@@ -15,7 +15,7 @@
 // Spend part.
 
 import { StackedMeter } from "@/app/element/meter";
-import { paneReveal } from "@/app/element/motiontokens";
+import { foldReveal, paneReveal } from "@/app/element/motiontokens";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
@@ -109,17 +109,25 @@ function UsageBreakdown({ usage }: { usage: SessionUsage }) {
                     .map((c) => (
                         <div
                             key={c.cls}
-                            className="flex items-center gap-[9px] border-b border-edge-faint py-[7px] last:border-b-0"
+                            data-spend-row={c.cls}
+                            className="flex items-center gap-[8px] border-b border-edge-faint py-[7px] last:border-b-0"
                         >
                             <span className={cn("h-[9px] w-[9px] flex-none rounded-[3px]", CLASS_FILL[c.cls])} />
-                            <span className="min-w-0 flex-1 text-[12px] text-secondary">{c.label}</span>
-                            <span className="w-[52px] text-right text-[11.5px] tabular-nums text-secondary">
+                            {/* one line whatever the rail's width: a wrapped label shifted every column under it */}
+                            <span
+                                data-spend-label
+                                className="min-w-0 flex-1 truncate text-[12px] text-secondary"
+                                title={c.label}
+                            >
+                                {c.label}
+                            </span>
+                            <span className="w-[46px] flex-none text-right text-[11.5px] tabular-nums text-secondary">
                                 {fmt(c.tokens)}
                             </span>
-                            <span className="w-[40px] text-right text-[10.5px] tabular-nums text-muted">
+                            <span className="w-[38px] flex-none text-right text-[10.5px] tabular-nums text-muted">
                                 {pctStr(totalTokens > 0 ? (c.tokens / totalTokens) * 100 : 0)}
                             </span>
-                            <span className="w-[48px] text-right text-[11.5px] tabular-nums text-muted">
+                            <span className="w-[44px] flex-none text-right text-[11.5px] tabular-nums text-muted">
                                 {usd(c.spendUsd)}
                             </span>
                         </div>
@@ -309,24 +317,30 @@ function CtxGroupRow({
                     {head}
                 </div>
             )}
-            {expandable && open ? (
-                <div data-ctx-rows={g.id} className="mb-[6px] ml-[18px] mt-[4px] flex flex-col">
-                    {g.note ? <p className="mb-[4px] text-[11px] leading-[1.5] text-muted">{g.note}</p> : null}
-                    {rows.map((r, i) => (
-                        <CtxItemRow key={`${r.name}:${i}`} row={r} onOpen={onOpenFile} />
-                    ))}
-                    {!showAll && g.more.length > 0 ? (
-                        <button
-                            type="button"
-                            data-ctx-more
-                            onClick={onShowAll}
-                            className="mt-[2px] w-fit cursor-pointer text-[10.5px] font-semibold text-accent-soft"
-                        >
-                            +{g.more.length} more
-                        </button>
-                    ) : null}
-                </div>
-            ) : null}
+            {/* the group's rows fold open and shut as the breakdown does; padding, not margins, so the height
+                animates from nothing */}
+            <AnimatePresence initial={false}>
+                {expandable && open ? (
+                    <motion.div key="rows" variants={foldReveal} initial="initial" animate="animate" exit="exit">
+                        <div data-ctx-rows={g.id} className="ml-[18px] flex flex-col pb-[6px] pt-[4px]">
+                            {g.note ? <p className="mb-[4px] text-[11px] leading-[1.5] text-muted">{g.note}</p> : null}
+                            {rows.map((r, i) => (
+                                <CtxItemRow key={`${r.name}:${i}`} row={r} onOpen={onOpenFile} />
+                            ))}
+                            {!showAll && g.more.length > 0 ? (
+                                <button
+                                    type="button"
+                                    data-ctx-more
+                                    onClick={onShowAll}
+                                    className="mt-[2px] w-fit cursor-pointer text-[10.5px] font-semibold text-accent-soft"
+                                >
+                                    +{g.more.length} more
+                                </button>
+                            ) : null}
+                        </div>
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
         </>
     );
 }
