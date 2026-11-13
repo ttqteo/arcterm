@@ -205,6 +205,8 @@ func publishEvent(ctx context.Context, data wps.WaveEvent) {
 		noteAgentInTurn(ctx, &data)
 		noteRunSleepStatus(ctx, &data)
 		noteUsageLimit(ctx, &data)
+		// a turn whose Stop never reported still ends in its transcript (wshserver_turnend.go)
+		noteTurnEndWatch(&data)
 	}
 }
 

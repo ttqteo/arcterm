@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
 import { withResultLines } from "./chatinitiative";
 import type { PendingMessage } from "./chatpending";
-import { boxHolds, boxShowsTyped, inputBoxRows, mergeTaken, takeBackPlan, typedEcho } from "./chattakeback";
+import { boxHolds, boxShowsTyped, enterEcho, inputBoxRows, mergeTaken, takeBackPlan, typedEcho } from "./chattakeback";
 
 const rule = "─".repeat(40);
 const pend = (id: string, text: string, queued: boolean, kind?: PendingMessage["kind"]): PendingMessage => ({
@@ -147,6 +147,29 @@ describe("typedEcho", () => {
     it("is unknown with no screen or no box on it", () => {
         expect(typedEcho(null, "x")).toBe("unknown");
         expect(typedEcho(["a permission dialog"], "x")).toBe("unknown");
+    });
+});
+
+describe("enterEcho", () => {
+    const screen = (...box: string[]) => ["> earlier message", "", rule, ...box, rule, "  ⏵⏵ auto mode on"];
+    const sent = "có, và ví dụ tôi muốn cockpit fullscreen ở màn 2 có được không?";
+    it("is gone once the text left the box: submitted, or queued while Claude works", () => {
+        expect(enterEcho(screen("❯ "), sent)).toBe("gone");
+        expect(enterEcho(screen("❯ something typed since"), sent)).toBe("gone");
+    });
+    it("is a line break when the text sits over an empty row (2026-11-13, a message read Queued for 15 min)", () => {
+        expect(enterEcho(screen(`❯ ${sent}`, "  "), sent)).toBe("linebreak");
+        expect(enterEcho(screen("❯ [Pasted text #1 +3 lines]", ""), "a\nb\nc\nd")).toBe("linebreak");
+    });
+    it("is held while the text sits alone, wrapped or not, its Enter not read yet", () => {
+        expect(enterEcho(screen(`❯ ${sent}`), sent)).toBe("held");
+        expect(enterEcho(screen("❯ có, và ví dụ tôi muốn cockpit fullscreen", "  ở màn 2 có được không?"), sent)).toBe(
+            "held"
+        );
+    });
+    it("is unknown with no screen or no box on it", () => {
+        expect(enterEcho(null, sent)).toBe("unknown");
+        expect(enterEcho(["a /model menu"], sent)).toBe("unknown");
     });
 });
 

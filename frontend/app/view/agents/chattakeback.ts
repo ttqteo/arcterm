@@ -136,6 +136,27 @@ export function typedEcho(lines: string[] | null, text: string): TypedEcho {
     return squash(rows.map((r) => r.replace(/^\s*❯/, "")).join("")) === "" ? "absent" : "other";
 }
 
+/** What Claude Code's box shows of a sent text once its Enter is written: `gone`, the text left the box (submitted, or
+ *  queued while Claude works); `linebreak`, the text is still there with an empty row under it, so the Enter went in as
+ *  a line break and the message sits unsent (2026-11-13: Claude Code, slowed by a machine short of RAM, read the Enter
+ *  as part of the text); `held`, the text alone, its Enter not read yet; `unknown`, no box to read. */
+export type EnterEcho = "gone" | "linebreak" | "held" | "unknown";
+
+export function enterEcho(lines: string[] | null, text: string): EnterEcho {
+    if (lines == null) {
+        return "unknown";
+    }
+    const rows = inputBoxRows(lines);
+    if (rows == null) {
+        return "unknown";
+    }
+    if (boxShowsTyped(lines, text) !== true) {
+        return "gone";
+    }
+    const last = rows[rows.length - 1] ?? "";
+    return rows.length >= 2 && squash(last.replace(/^\s*❯/, "")) === "" ? "linebreak" : "held";
+}
+
 /** The chat box after a take-back: the messages first, one per line, then what the box held, as Claude Code's box puts
  *  them back ahead of your draft. */
 export function mergeTaken(texts: string[], box: string): string {
