@@ -1219,6 +1219,42 @@ describe("projectTree", () => {
                 "s:s-2",
             ]);
         });
+
+        const pk = (id: string, project: string): ParkedLaunch => ({ id, project, runtime: "claude", task: id, ts: 0 });
+        const withParked = (rows: ProjectTreeRow[]) =>
+            rows.map((r) =>
+                r.kind === "parked" ? `p:${r.parked.id}` : r.kind === "startingrun" ? `s:${r.id}` : shape([r])[0]
+            );
+
+        it("puts a parked launch after the queued plans, uncounted, and Home's in the Home folder last", () => {
+            const rows = build([agent("a")], [term("t1")], {
+                queue: queued(qe("q-1")),
+                starting: [sr("s-1", "waveterm")],
+                parked: [pk("p-1", "waveterm"), pk("p-2", "Home"), pk("p-3", "ops")],
+            });
+            expect(withParked(rows)).toEqual([
+                "group:waveterm:1a:1t",
+                "a:a",
+                "s:s-1",
+                "q:q-1:1",
+                "p:p-1",
+                "divider:waveterm",
+                "t:t1",
+                "group:ops:0a:0t",
+                "p:p-3",
+                `group:${HOME_PROJECT}:0a:0t`,
+                "p:p-2",
+            ]);
+        });
+
+        it("narrows to the filtered project's parked launches and hides a collapsed folder's", () => {
+            const parked = [pk("p-1", "waveterm"), pk("p-2", "ops")];
+            expect(withParked(build([agent("a")], [], { filter: "waveterm", parked }))).toEqual(["a:a", "p:p-1"]);
+            expect(withParked(build([agent("a")], [], { parked, collapsed: ["waveterm", "ops"] }))).toEqual([
+                "group:waveterm:1a:0t:closed",
+                "group:ops:0a:0t:closed",
+            ]);
+        });
     });
 
     describe("splits", () => {

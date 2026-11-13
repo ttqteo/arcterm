@@ -86,6 +86,8 @@ type MetaTSType struct {
 	SessionLater           map[string]int64 `json:"session:later,omitempty"`           // workspace (session id, its transcript's file stem -> when it was marked for later)
 	SessionHelper          bool             `json:"session:helper,omitempty"`          // tab (a short-lived helper terminal, e.g. the Claude sign-in dialog's; the sidebar skips it)
 
+	LaunchParked []ParkedLaunch `json:"launch:parked,omitempty"` // workspace (the New agent launches put off while the machine was busy, oldest first)
+
 	// the builder check on a brainstorm (Arc launches the reviewer and owns its state on the agent's tab)
 	BrainstormCheckState   string `json:"brainstorm:checkstate,omitempty"`   // tab ("reading" | "answered" | "failed")
 	BrainstormCheckTs      int64  `json:"brainstorm:checkts,omitempty"`      // tab (UnixMilli of the last state change)
@@ -111,6 +113,19 @@ type MetaTSType struct {
 	AgentWakeFailed     string `json:"agent:wakefailed,omitempty"`     // block (why the last wake did not come back; the agent stays sleeping while it is set)
 
 	Count int `json:"count,omitempty"` // temp for cpu plot. will remove later
+}
+
+// ParkedLaunch is a New agent launch the person put off for later, most often because the machine was busy when they
+// had the idea: what the dialog held, so opening it fills the dialog again and Enter starts it. Written whole by the
+// cockpit (parkedstore.ts) into the workspace's launch:parked.
+type ParkedLaunch struct {
+	Id      string   `json:"id"`
+	Project string   `json:"project"` // the registered project's name, or "Home" for No folder
+	Runtime string   `json:"runtime"` // the agent row it was parked from ("claude", "pi", ...)
+	Task    string   `json:"task"`
+	Images  []string `json:"images,omitempty"` // the pasted or dropped images, kept under ~/.arc/attachments
+	Ts      int64    `json:"ts"`               // UnixMilli it was parked
+	Reason  string   `json:"reason,omitempty"` // why it waited ("Memory pressure is high"); empty when parked by hand
 }
 
 // returns a clean copy of meta with mergeMeta merged in

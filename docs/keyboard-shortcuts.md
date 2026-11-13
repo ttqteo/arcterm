@@ -88,9 +88,9 @@ brings the columns back.
 | letters | In the Start, Project or Session column, start typing the task (or a run's goal): focus moves to that box with the letter in it. A pick with no such box (a terminal, a tool, a council, a run from a plan file) filters the Project column by name instead; `Backspace` shortens the filter |
 | `a`…`z` | In the Tool column (with the Tool row picked): pick the nth tool. `↑` / `↓` walk the list, `Enter` opens the tool |
 | `Tab` / `Shift`+`Tab` | Next / previous: the task or goal box, Project, the Session or Tool column, Cancel, the launch button, and round again. With a box, Start is no stop (`Alt`+`1`…`9` picks there); the Task row's + Flag, Worktree and Command are for the pointer, and the fields they open (the flag list, the command, the branch) are stops while open. A run's own fields (route, width…) sit between its goal and Project |
-| `Enter` | Launch, from the task or goal box, a column, the Tool list or a one-line field |
+| `Enter` | Launch, from the task or goal box, a column, the Tool list or a one-line field. While the machine is busy (memory pressure high or critical, or the CPU over 85% two readings running), Enter on an agent with a task parks it for later instead: it waits as a Parked row in its project's folder, task and images kept, and a click on the row fills the dialog again |
 | `Shift`+`Enter` | In the task or goal box: a new line. Elsewhere, with a session picked in the columns: read its transcript instead of resuming it. In the resume step it does nothing, as the session is read beside the list |
-| `Mod`+`Enter` | Launch, from anywhere in the dialog |
+| `Mod`+`Enter` | Launch, from anywhere in the dialog; while the machine is busy, this starts the agent anyway (the footer's Start anyway) |
 | `Esc` | Close the open menu or the Project column's filter first, then the dialog. What you typed is kept for the next open |
 
 ## Open a tool (`Mod`+`Shift`+`O`)

@@ -56,6 +56,9 @@ export const launcherPageAtom = atom({ key: "", cursor: "", loading: false }) as
 export const launcherResumeAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 // the images pasted or dropped into the Task box, each with its temp file once written (launcherimages.ts)
 export const launcherImagesAtom = atom<TaskImage[]>([]) as PrimitiveAtom<TaskImage[]>;
+// The parked launch (parkedstore.ts) the draft was filled from, so a start or a park from it settles that entry and adds
+// none. It lasts as the draft does: a close and a reopen are still that entry; a Clear or a launch ends it.
+export const launcherParkedIdAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 // this open showed a draft a close had kept
 export const launcherRestoredAtom = atom(false) as PrimitiveAtom<boolean>;
 export const launcherBusyAtom = atom(false) as PrimitiveAtom<boolean>;
@@ -154,6 +157,7 @@ export function clearLauncherDraft(): void {
         URL.revokeObjectURL(img.previewUrl);
     }
     globalStore.set(launcherImagesAtom, []);
+    globalStore.set(launcherParkedIdAtom, null);
     globalStore.set(launcherRestoredAtom, false);
 }
 

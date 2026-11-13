@@ -12,6 +12,7 @@ import { pushToast } from "@/app/cockpit/notificationstore";
 import { resmonSnapshotAtom } from "@/app/cockpit/resmonstore";
 import { useSettle } from "@/app/element/motionhooks";
 import { Tooltip } from "@/app/element/tooltip";
+import { InitiativePicker } from "@/app/view/jarvis/initiativepicker";
 import {
     cardVariants,
     composerReveal,
@@ -39,6 +40,7 @@ import {
     ChevronDown,
     ChevronRight,
     ChevronUp,
+    CirclePause,
     Clock,
     Columns2,
     Copy,
@@ -56,6 +58,7 @@ import {
     Hourglass,
     LayoutDashboard,
     LayoutGrid,
+    ListPlus,
     Loader2,
     MessageCircleQuestion,
     MessagesSquare,
@@ -141,6 +144,8 @@ import {
 import { runMenuEntries } from "./runrowmenu";
 import { startingMeta, type StartingRun } from "./startingrunsmodel";
 import { cancelStartingRun, dismissStartingRun, retryStartingRun, startingRunsAtom } from "./startingrunsstore";
+import { parkedMeta, parkedTitle, parkedTooltip } from "./parkedmodel";
+import { openParked, parkedLaunchesAtom, parkedToInitiative, removeParkedWithUndo } from "./parkedstore";
 import { terminalStatusLine, type TerminalStatusLine } from "./terminalstatus";
 import {
     centerModeAtom,
@@ -3474,6 +3479,110 @@ function QueuedEntryRow({ model, row }: { model: AgentsViewModel; row: QueuedRow
     );
 }
 
+// A New agent launch parked for later (parkedstore.ts): no agent yet, so it selects nothing. A click (or the hover's
+// Start) opens the New dialog filled as it was parked, where Enter starts it; Add to initiative… turns it into a chunk
+// of one, for an idea better planned than started; Remove drops it, with an Undo.
+function ParkedRow({ model, parked }: { model: AgentsViewModel; parked: ParkedLaunch }) {
+    const now = useAtomValue(model.nowAtom);
+    const title = parkedTitle(parked);
+    const rowRef = useRef<HTMLDivElement>(null);
+    const [picking, setPicking] = useState(false);
+    const open = () => openParked(model, parked);
+    const remove = () => fireAndForget(() => removeParkedWithUndo(parked));
+    const toInitiative = (oref: string) => {
+        setPicking(false);
+        fireAndForget(() => parkedToInitiative(parked, oref));
+    };
+    const onContextMenu = (e: React.MouseEvent) => {
+        const items: ContextMenuItem[] = [
+            { label: "Open to start", icon: <Play size={15} />, click: open },
+            { label: "Add to initiative…", icon: <ListPlus size={15} />, click: () => setPicking(true) },
+            { type: "separator" },
+            { label: "Remove", icon: <X size={15} />, danger: true, click: remove },
+        ];
+        ContextMenuModel.getInstance().showContextMenu(items, e);
+    };
+    const act =
+        "flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-primary";
+    return (
+        <>
+            <div
+                ref={rowRef}
+                data-parked-row={parked.id}
+                role="button"
+                tabIndex={-1}
+                title={parkedTooltip(parked)}
+                onClick={open}
+                onContextMenu={onContextMenu}
+                className="group relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms] hover:bg-surface-hover"
+            >
+                <Slot>
+                    <CirclePause size={13} aria-hidden className="text-muted" />
+                </Slot>
+                <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-medium text-secondary">{title}</div>
+                    <div data-parked-meta className="truncate text-[11px] text-muted">
+                        {parkedMeta(parked, now)}
+                    </div>
+                </div>
+                <span className="flex flex-none items-center gap-[2px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100">
+                    <button
+                        type="button"
+                        data-parked-act="open"
+                        title="Open to start"
+                        aria-label={`Open ${title} to start it`}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            open();
+                        }}
+                        className={act}
+                    >
+                        <Play size={12} aria-hidden />
+                    </button>
+                    <button
+                        type="button"
+                        data-parked-act="initiative"
+                        title="Add to initiative…"
+                        aria-label={`Add ${title} to an initiative`}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setPicking(true);
+                        }}
+                        className={act}
+                    >
+                        <ListPlus size={12} aria-hidden />
+                    </button>
+                    <button
+                        type="button"
+                        data-parked-act="remove"
+                        title="Remove"
+                        aria-label={`Remove ${title}`}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            remove();
+                        }}
+                        className={cn(act, "hover:text-error")}
+                    >
+                        <X size={12} aria-hidden />
+                    </button>
+                </span>
+            </div>
+            {/* beside the row, not in it: React carries a click in the picker's portal up to its React parent, and the
+                row's own click would open the dialog */}
+            <InitiativePicker
+                open={picking}
+                anchor={rowRef.current}
+                // its project's initiatives come first; Home has none of its own
+                project={parked.project === "Home" ? "" : parked.project}
+                newLabel={null}
+                pickVerb="add to"
+                onPick={toInitiative}
+                onClose={() => setPicking(false)}
+            />
+        </>
+    );
+}
+
 // A run the New dialog handed off while it starts (startingrunsstore.ts). It has no run or session yet, so a click
 // selects nothing; it goes when the run exists, and the run's lead takes its place. Hover offers Cancel while it
 // starts, and Try again and Dismiss once it failed; the menu holds the same.
@@ -3820,6 +3929,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const queue = useAtomValue(queuedRowsAtom);
     // the runs the New dialog handed off while they start, ahead of the queued plans
     const starting = useAtomValue(startingRunsAtom);
+    // the New agent launches parked for later, after the queued plans
+    const parked = useAtomValue(parkedLaunchesAtom);
     // the held services (wavesrv's) that are up or in trouble: a row each in its project's folder, after the divider. A
     // sleeping one has none (the selected one keeps its row), and its tab is still no terminal row.
     useEffect(() => ensureServicesFeed(), []);
@@ -3848,6 +3959,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         roots,
         queue,
         starting,
+        parked,
         services,
         serviceTabs,
         splits,
@@ -4053,6 +4165,11 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                     );
                                 case "startingrun":
                                     return plain(`starting-run-${r.id}`, <StartingRunRow model={model} row={r} />);
+                                case "parked":
+                                    return plain(
+                                        `parked-${r.parked.id}`,
+                                        <ParkedRow model={model} parked={r.parked} />
+                                    );
                                 case "council":
                                     return plain(`council-${r.id}`, <CouncilRow model={model} row={r} />);
                                 case "service":

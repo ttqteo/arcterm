@@ -4019,6 +4019,7 @@ declare global {
         "session:collapsedgroups"?: string[];
         "session:later"?: {[key: string]: number};
         "session:helper"?: boolean;
+        "launch:parked"?: ParkedLaunch[];
         "brainstorm:checkstate"?: string;
         "brainstorm:checkts"?: number;
         "brainstorm:checkrun"?: string;
@@ -4076,6 +4077,17 @@ declare global {
     type OpenFileData = {
         path: string;
         edit?: boolean;
+    };
+
+    // waveobj.ParkedLaunch
+    type ParkedLaunch = {
+        id: string;
+        project: string;
+        runtime: string;
+        task: string;
+        images?: string[];
+        ts: number;
+        reason?: string;
     };
 
     // wshrpc.PathCommandData

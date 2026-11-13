@@ -151,7 +151,8 @@ function TaskImages() {
                             className="relative h-12 w-12 shrink-0"
                         >
                             <img
-                                src={img.previewUrl}
+                                // a parked launch's image has no preview until its file is read back (parkedstore.ts)
+                                src={img.previewUrl || undefined}
                                 alt=""
                                 onClick={() => toggle(img.id)}
                                 className={cn(
@@ -188,7 +189,7 @@ function TaskImages() {
             {shown != null ? (
                 <img
                     data-task-image-open
-                    src={shown.previewUrl}
+                    src={shown.previewUrl || undefined}
                     alt=""
                     onClick={() => setOpenId(null)}
                     className="max-h-[40vh] max-w-full cursor-zoom-out self-start rounded-[8px] border border-edge-mid object-contain"

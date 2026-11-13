@@ -151,6 +151,8 @@ import {
 } from "./launcherstore";
 import { ToolFields, ToolList } from "./launchertoolfields";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
+import { busyLine } from "./parkedmodel";
+import { parkLaunch, settleParkedLaunch, useMachineBusy } from "./parkedstore";
 import {
     noteRecentProject,
     projectListAtom,
@@ -497,15 +499,22 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     // a lead picker never seeds a runtime that cannot lead; memoized, since the seed effect keys on it and a
     // fallback route is a fresh object each call
     const profileRoute = useMemo(() => leadRouteSeed(rawRoute, harnesses), [rawRoute, harnesses]);
+    // An agent with a task can be parked for later (parkedmodel.ts): a resume has its own row in Conversations, and a
+    // plain terminal is light. While the machine reads busy (memory pressure high, or the CPU pegged), Enter parks it
+    // and Mod+Enter starts it anyway; the machine is read only while the dialog is open on such an agent.
+    const parkable = isAgent && runtimeShowsTask(runtime) && resume == null;
+    const machineBusy = useMachineBusy(open && parkable);
+    const parkFirst = parkable && machineBusy != null;
     // a tool is a terminal running one program, and a council's Setup starts nothing: neither asks for room
-    const ramWarning =
-        isTool || isCouncil
-            ? null
-            : isRun
-              ? shape === "quick"
-                  ? newAgentRamWarning(cap, "run", "worker")
-                  : null
-              : newAgentRamWarning(cap, runtime);
+    const ramWarning = parkFirst
+        ? busyLine(machineBusy, formatChordString("Enter"), formatChordString("Mod:Enter"))
+        : isTool || isCouncil
+          ? null
+          : isRun
+            ? shape === "quick"
+                ? newAgentRamWarning(cap, "run", "worker")
+                : null
+            : newAgentRamWarning(cap, runtime);
     // an image still being written has no path to send yet; one that failed does not hold the launch
     const imagesWriting = isAgent && imagesPending(images);
     const primaryDisabled = where == null || blocker != null || busy || imagesWriting;
@@ -901,10 +910,38 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             if (!atHome) {
                 noteRecentProject(p.name);
             }
+            // a parked launch opened and started is no longer waiting; one switched to a terminal or a resume was not
+            // what it parked, so it stays
+            if (parkable) {
+                settleParkedLaunch();
+            }
             endLauncherDraft();
             close();
         } catch (e) {
             setError(String(e));
+        } finally {
+            endLauncherLaunch();
+        }
+    };
+
+    // Put the agent off for later: what the dialog holds becomes a row in its project's folder, and the dialog closes.
+    // The images ride as their files under ~/.arc/attachments, which outlive the dialog; one that failed to write is left.
+    const parkAgentRow = async (p: ProjectRow) => {
+        if (!beginLauncherLaunch()) {
+            return;
+        }
+        try {
+            await parkLaunch({
+                project: atHome ? HOME_NAME : p.name,
+                runtime,
+                task,
+                images: images.flatMap((i) => (i.path ? [i.path] : [])),
+                reason: machineBusy,
+            });
+            endLauncherDraft();
+            close();
+        } catch (e) {
+            setError(`Could not park it: ${String(e)}`);
         } finally {
             endLauncherLaunch();
         }
@@ -981,7 +1018,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         globalStore.set(model.surfaceAtom, "setup");
     };
 
-    const launch = () => {
+    // `anyway` is Mod+Enter and the Start anyway button: it starts an agent the busy machine would park
+    const launch = (anyway = false) => {
         if (where == null) {
             return;
         }
@@ -1011,7 +1049,19 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             startRun(project);
             return;
         }
+        if (parkFirst && !anyway) {
+            void parkAgentRow(project);
+            return;
+        }
         void launchAgentRow(project);
+    };
+
+    // the footer's Park: parks whatever the machine reads, as Enter does while it is busy
+    const park = () => {
+        if (where == null || project == null || !parkable || imagesWriting) {
+            return;
+        }
+        void parkAgentRow(project);
     };
 
     const zoneOf = (target: EventTarget): FocusZone => {
@@ -1247,7 +1297,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         <ModalShell
             open={open}
             onClose={close}
-            onSubmit={launch}
+            onSubmit={() => launch(true)}
             className="flex max-h-[86vh] w-[min(840px,93vw)] flex-col"
             christmasLights
         >
@@ -1715,20 +1765,49 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 Transcript
                             </DialogButton>
                         ) : null}
+                        {/* an agent with a task can wait for later: by hand here, or by Enter while the machine is busy,
+                            when this button starts it instead (Mod+Enter) */}
+                        {parkable ? (
+                            parkFirst ? (
+                                <DialogButton
+                                    variant="secondary"
+                                    hint={formatChordString("Mod:Enter")}
+                                    data-launcher-anyway
+                                    title={`Start it now, busy as the machine is (${formatChordString("Mod:Enter")})`}
+                                    disabled={primaryDisabled}
+                                    onClick={() => launch(true)}
+                                >
+                                    Start anyway
+                                </DialogButton>
+                            ) : (
+                                <DialogButton
+                                    variant="secondary"
+                                    data-launcher-park
+                                    title="Park it for later: it waits as a row in its project's folder, task and images kept, until you open it and start it"
+                                    disabled={primaryDisabled}
+                                    onClick={park}
+                                >
+                                    Park
+                                </DialogButton>
+                            )
+                        ) : null}
                         {/* Enter launches from every zone, the Task box included, where Shift+Enter is the newline */}
                         <DialogButton
                             variant="primary"
                             hint={formatChordString("Enter")}
+                            data-launcher-primary={parkFirst ? "park" : "start"}
                             title={
-                                isTool || isCouncil
-                                    ? formatChordString("Enter")
-                                    : `${formatChordString("Enter")} (${formatChordString("Shift:Enter")} is a new line in the Task box)`
+                                parkFirst
+                                    ? `${machineBusy}: ${formatChordString("Enter")} parks it for later (${formatChordString("Shift:Enter")} is a new line in the Task box)`
+                                    : isTool || isCouncil
+                                      ? formatChordString("Enter")
+                                      : `${formatChordString("Enter")} (${formatChordString("Shift:Enter")} is a new line in the Task box)`
                             }
                             disabled={primaryDisabled}
-                            onClick={launch}
+                            onClick={() => launch()}
                             className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-300"
                         >
-                            {primaryLabel(kind, runtime, resume != null, tool?.name)}
+                            {parkFirst ? "Park for later" : primaryLabel(kind, runtime, resume != null, tool?.name)}
                         </DialogButton>
                     </div>
                 </div>
