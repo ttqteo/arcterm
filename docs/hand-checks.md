@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A file path in Chat has its own right-click menu: in a live agent's Chat, right-click a path link (an
+  inline `docs/…` the agent named) → Open beside the agent / Show in Explorer / Copy path, not the message's Copy text
+  menu; Show in Explorer opens Explorer with the file selected, and a path that does not exist toasts "File not found".
+  Written and typechecked, never run in the app (`pathlinkcontext.tsx` `PathLink`, `pathlinkroute.ts`
+  `revealAgentPath`).
 - [ ] (arcterm) The Agent sidebar's columns line up (spec 2026-11-13-sidebar-declutter-design): run
   `task verify:ui -- sidebar-columns agent-tree-rail sidebar-agent-ram` on the dev app → all pass, and
   `cdp-shots/sidebar-columns-1-rows.png` shows a 280px sidebar where every agent, lead and worker row ends its second

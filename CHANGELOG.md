@@ -32,6 +32,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   tokens · age, lined up down the list and in a quieter ink; a RAM figure of 1 GB or more turns amber. The unread
   count moved up beside the name, and an agent asking you keeps its columns.
 - Jarvis has a new icon in the nav rail and in What's new: an arc reactor instead of a brain.
+- Right-clicking a file path in Chat opens a menu of its own: Open beside the agent, Show in Explorer (Reveal in
+  Finder on a Mac) and Copy path.
 
 ### Fixed
 
