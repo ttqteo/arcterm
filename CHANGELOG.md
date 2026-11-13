@@ -34,6 +34,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The buttons on Chat's brainstorm cards ease into their hover colour, and a card's folds (Agent's calls, Decided,
+  a ✓ row's detail) slide open and closed instead of popping.
 - The Jarvis hologram turns amber only while an agent is asking you something; gates, plans to review and runs to
   land wait in Jarvis's badge and queue and leave it on its usual rings.
 - Hovering a queued plan in the Agent sidebar opens a card to its right: the plan's file name above its folder, the
