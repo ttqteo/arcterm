@@ -86,7 +86,9 @@ step of "Order" names together), run in that order.
 - Plan parsing (`dc1c00b4a`, `0d79622ee`, `a2c52d70e`, `19be11b27`, `725085b17`, `65f44bce3`, `6c55c3aef`) changes
   what `jarvis.PlanFormat` accepts: a plan ours accepts today and the fork refuses is a behaviour change; refuse only
   what ours would already misparse, and keep `pkg/jarvis/plan.go`'s existing tests passing unchanged.
-- `04aea9b2c` runs workers and reviewers at below-normal priority: on Windows and macOS both.
+- `04aea9b2c` runs workers and reviewers at below-normal priority: ours already does (`7a3c3f755`: every run agent,
+  reviewers included, gets `cmd:lowpriority` in `pkg/jarvis/runexec.go`, applied by `jobobject.LowerPriority` on
+  Windows and as nice 10 on macOS), so it is skipped; the fork's `LowerPriority(blockId)` would redeclare ours.
 
 - `04e8340db` fix(jarvis): a channel-less ask carries its agent's tab oref
 - `a61a68c95` fix(runevents): read the whole run history, strip ANSI from last line

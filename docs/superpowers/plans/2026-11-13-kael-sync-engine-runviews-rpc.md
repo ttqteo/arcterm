@@ -1,7 +1,7 @@
 # Kael sync (2026-11-13), step 1: engine core, run views, RPC plumbing
 
 **Spec:** `docs/superpowers/specs/2026-11-13-kael-sync-engine-hardening-overview-design.md` (read it whole before starting a task: groups 1, 2 and 3 are this plan; its "Out of scope" lists the hunks to drop, and its "Our code wins" section is the hard rule every task and reviewer applies)
-**Verify:** `node scripts/verify.mjs ./pkg/orchestrate/... ./pkg/jarvis/... ./pkg/wshutil/... ./pkg/wshrpc/... ./pkg/web/... ./pkg/wstore/... ./pkg/waveobj/... ./pkg/gitinfo/... ./pkg/agentsessions/... ./pkg/util/jobobject/... ./cmd/wsh/...`
+**Verify:** `node scripts/verify.mjs ./pkg/orchestrate/... ./pkg/jarvis/... ./pkg/wshutil/... ./pkg/wshrpc/... ./pkg/web/... ./pkg/wstore/... ./pkg/waveobj/... ./pkg/gitinfo/... ./pkg/agentsessions/... ./cmd/wsh/...`
 **Check:** `task check:ts`
 **Final:** `node scripts/cdp/final-verify.mjs kael1113-dag-modal kael1113-timeline kael1113-tree-lanes kael1113-final-stage dag-lifecycle dag-peek dag-observability final-stage final-rerun lead-card-merge-gate agent-tree-rail run-sheet-cards`
 
@@ -74,26 +74,46 @@ Go tests on Windows need cgo: `CGO_ENABLED=1 CC="zig cc -target x86_64-windows-g
    `wshcmd-jarvisdag.go`, `leadprompt.go`. Parallel lanes there would only trade task time for merge conflicts.
 3. **The run views are one serial chain (Tasks 13 → 14 → 15)** for the same reason (`daggraph.tsx`, `dagmodal.tsx`,
    `timelinerail.tsx`, `timelinegroups.ts`, `runlineage.ts`, `finalstagepane.tsx`).
-4. **The frontend halves of engine commits go with the views.** `dcd0ea248`, `7378b15a4`, `c3a7aa5fa` and `a61a68c95`
-   have Go and TS parts: the Go part goes in the core chain, the TS part in Task 14, built against Task 1's wire types.
+4. **The frontend halves of engine commits go with the views.** `dcd0ea248`, `c3a7aa5fa` and `a61a68c95` have Go and
+   TS parts: the Go part goes in the core chain, the TS part in Task 14, built against Task 1's wire types.
+   `7378b15a4` is TS only and is wholly Task 14's.
 5. **`98cd26122` (drop may-be-stuck's repeated-failure scan) is skipped** unless Task 6 shows ours raises the same
    false alarm the fork removed it for; it removes a behaviour of ours (spec, "Our code wins").
 6. **`06ef4d9c4` (the DAG modal takes its owner from the dag)** also trims the palette's run items and deletes cases
    from `bindings.test.ts` and `dispatcher.test.ts`. Ours has no `palette-items.ts`; Task 13 ports the owner and
    `openref` part only, and keeps every palette entry and test case of ours.
-7. **`969ae84ec`'s frontend part** targets the fork's `setupskillsstore.ts`, which ours lacks: Task 10 ports the Go
-   reply field and shows the reason in ours' Setup skills adopt flow only if ours has a place that reads the adopt
-   reply; otherwise it names the frontend half skipped.
+7. **`969ae84ec`'s frontend half is skipped.** It targets the fork's `setupskillsstore.ts`, which ours lacks; ours reads
+   the adopt reply in `setupstore.ts` (`adoptResultText` in `skillsmatrix.ts`) and no scenario drives a failed adopt.
+   Task 10 ports the Go reply field and prints the reason in `wsh agentsync`; showing it in the Setup toast is an open
+   issue for Task 16.
 8. **`ed721ed5c` (chunk refs resolved against the live plan)** targets `briefinitiatives.tsx` and `briefmutations.ts`,
    which ours lacks; Task 3 ports it onto ours' equivalent in `effortstore.ts` / the Brief's initiative forms if the
    same race exists, else skips it.
-9. **`04aea9b2c` (below-normal priority for workers and reviewers)** must build on Windows and macOS: its
-   `jobobject_windows.go` / `jobobject_other.go` split is kept, and Task 8 checks `GOOS=darwin go build ./pkg/...`.
+9. **`04aea9b2c` (below-normal priority for workers and reviewers) is skipped: ours already has it.** `7a3c3f755` sets
+   `cmd:lowpriority` on every run agent, reviewers included (`pkg/jarvis/runexec.go` `makeWorkerBlockMeta`;
+   `TestMakeWorkerBlockMetaRunsBelowNormalPriority`), applied by `jobobject.LowerPriority(job, proc)`
+   (`priority_windows.go`, nice 10 in `priority_other.go`). The fork's `LowerPriority(blockId string)` would redeclare
+   it.
+10. **Behaviour changes found in the engine commits are kept ours, not taken.** `a93cb8ca1` refuses `MergeTask` while a
+    Verify has failed (reversing our `verify_test.go` case that an independent lane still merges by hand);
+    `f2f866e4d` makes `CancelGroup` cancel verifying / verify-failed / blocked-merge tasks and changes
+    `HandleChildOutcome` (flipping our `TestCancelStopsARunningVerify`). Each task ports the rest and keeps ours here;
+    the owner decides these in `docs/open-issues.md` (Task 16).
+11. **`c408b2cd1`'s actor argument is added beside `ApplyAction`, not into it.** The fork adds an
+    `ActionByLead`/`ActionByHuman` argument to `ApplyAction` / `applyActionLocked`, which edits ~9 existing test files.
+    Task 7 adds a new entry point that takes the actor (for example `ApplyActionBy`), keeps `ApplyAction` with its
+    signature delegating with the actor today's callers mean, and switches only `wshserver_dag.go`'s caller; no
+    existing test call changes.
+12. **Prompt fixtures are pinned twice.** `claude/arc-view-mod/testdata/*.txt` are checked by the view mod's vitest and
+    by Go's `TestViewModFixtures` (`pkg/orchestrate/viewmod_fixtures_test.go`). A task that changes a lead or reviewer
+    prompt runs both. `ac548aa57`'s `lead-design*.txt` fixtures have no counterpart in ours: skip them.
 
 ## Scenario modules (created empty by Task 1, filled by their task)
 
-Each is `export default function (kits) { return [ …scenarios ]; }`, registered in `scenarios.mjs` with the existing
-`KAEL_KITS`.
+Each is `export default function (kits) { return [ …scenarios ]; }`, registered in `scenarios.mjs` with
+`{ ...KAEL_KITS, run: RUN_KIT }`. `KAEL_KITS` (`rt`, `code`, `files`, `jarvis`) has no dag seeding, so Task 1 adds
+`RUN_KIT` beside it carrying the module-level helpers these scenarios need, today only in `BS_KIT`: `seedDag`,
+`seedFinalShots`, `fstWriteRun`, `fstShow`, `fstUntil`, `fstStartLive`, `fstPublishSteps`, `dagPeekPublish`.
 
 | Module | Task | Scenario names |
 |---|---|---|
@@ -101,8 +121,8 @@ Each is `export default function (kits) { return [ …scenarios ]; }`, registere
 | `scripts/cdp/scenarios-kael1113-timeline.mjs` | 14 | `kael1113-timeline`, `kael1113-tree-lanes` |
 | `scripts/cdp/scenarios-kael1113-final.mjs` | 15 | `kael1113-final-stage` |
 
-A dag the scenarios need is seeded with the helpers `docs/reference/cdp-run-fixtures.md` names (they live in
-`scenarios.mjs`), passed in through the kits.
+A dag the scenarios need is seeded with the helpers `docs/reference/cdp-run-fixtures.md` names, read off `kits.run`.
+A view task that finds a helper missing from `RUN_KIT` writes its own in its module rather than editing `scenarios.mjs`.
 
 ---
 
@@ -117,8 +137,11 @@ A dag the scenarios need is seeded with the helpers `docs/reference/cdp-run-fixt
 2. Do not take `98cd26122`'s or `c1869154c`'s wire removals, nor any early-start field.
 3. Run `task generate`; check `git diff --stat` shows only generated files besides the Go above.
 4. `go build ./...` and `task check:ts` pass.
-5. Create the three scenario modules, each returning `[]`, and register them in `scenarios.mjs` beside
-   `monitorTasksScenarios`, called with `KAEL_KITS`.
+5. Create the three scenario modules, each returning `[]`. In `scenarios.mjs`, add
+   `const RUN_KIT = { seedDag, seedFinalShots, fstWriteRun, fstShow, fstUntil, fstStartLive, fstPublishSteps, dagPeekPublish };`
+   beside `KAEL_KITS` (leave `KAEL_KITS` and `BS_KIT` as they are) and register the three modules beside
+   `monitorTasksScenarios`, each called with `{ ...KAEL_KITS, run: RUN_KIT }`. Importing `scenarios.mjs` with node
+   (`node -e "import('./scripts/cdp/scenarios.mjs')"`) loads without error.
 6. Commit (`wshrpc: Kael sync 11-13 wire fields`), the body listing every field and the commit it came from.
 
 ### Task 2: Plan and worker-report parsing
@@ -177,6 +200,9 @@ never stale; only engine retries recover), `6231b6970` (finish a `merge --contin
 
 - Ours already has a merge gate (`MergeGateTs`, `lead-card-merge-gate` scenario, `digest.go` mentions forwarded
   failures): port only what ours lacks, and keep our digest lines' wording where ours already says the same thing.
+- Decision 10: drop `a93cb8ca1`'s hunk that refuses `MergeTask` while a Verify has failed; our `verify_test.go` case
+  that an independent lane still merges by hand passes unchanged. Name the dropped hunk in the commit body for Task 16's
+  open issues.
 - The fork's "held merge" in `a93cb8ca1` may lean on early start's held merge: drop any hunk that does.
 
 ### Task 6: Scheduler, task states, skip and join
@@ -187,10 +213,15 @@ Commits: `f2f866e4d` (classify task states in one table in `dag.go`), `f26d786f8
 depends on to merge), `c245d90ed` (auto-retry cancels the failed worker's run), `b13e2eb92` (skip stops a running or
 reviewing task), `98cd26122` (see decision 5: skipped unless shown needed).
 
-- `f2f866e4d` is a refactor: the table must classify every state exactly as ours does today, including any state ours
-  has and the fork does not; a test enumerates every `TaskState_*` constant against the old answers.
+- `f2f866e4d` is not a pure refactor (decision 10). Port its one classification table, filled with ours' answers: it
+  must classify every state exactly as ours does today, including `CancelGroup`'s mapping (verifying, verify-failed
+  and blocked-merge are not cancelled) and `HandleChildOutcome` as it is; a test enumerates every `TaskState_*`
+  constant against the old answers, and `TestCancelStopsARunningVerify` (`verify_test.go`) passes unchanged. Drop the
+  cancel-mapping change, the `HandleChildOutcome` change (the fork's O-R3) and the early-start part (F-R1); name each
+  in the commit body for Task 16's open issues (the fork's F-R6 and O-R3).
 - `b13e2eb92` changes the lead prompt: update `claude/arc-view-mod/testdata` only by adding the new line, and run
-  `npx vitest run claude/arc-view-mod` to keep the view mod's fixtures matching.
+  both fixture checks (decision 12): `npx vitest run claude/arc-view-mod` and
+  `go test ./pkg/orchestrate -run '^TestViewModFixtures$'`.
 
 ### Task 7: Run events, final stage outcome, lead relay and Rerun
 **Depends on:** Task 6
@@ -203,21 +234,24 @@ never ends its rerun), `a61a68c95` (read the whole run history, strip ANSI from 
 
 - Ours has its own final-stage rerun (`76912e3f1`: a Check or Verify exit 3 and a killed step are no verdict): keep
   that rule; `b2cc11cbf` fits around it.
+- `c408b2cd1` (decision 11): add the actor through a new function beside `ApplyAction` / `applyActionLocked`; keep
+  their signatures, and change no existing call in a test file. The test files on the Files line take new cases only.
 
-### Task 8: Plan review rounds, worker priority and project, resume in a new tab
+### Task 8: Plan review rounds, worker project, resume in a new tab
 **Depends on:** Task 7, Task 2, Task 3
-**Files:** `claude/arc-view-mod/testdata/lead-goal-autonomous.txt`, `claude/arc-view-mod/testdata/lead-goal.txt`, `claude/arc-view-mod/testdata/plan-reviewer-second.txt`, `claude/arc-view-mod/testdata/plan-reviewer.txt`, `pkg/agentsessions/agentsessions.go`, `pkg/agentsessions/extractsession_test.go`, `pkg/jarvis/leadprompt.go`, `pkg/jarvis/leadprompt_test.go`, `pkg/jarvis/plan.go`, `pkg/jarvis/plan_test.go`, `pkg/jarvis/runexec.go`, `pkg/jarvis/runexec_test.go`, `pkg/orchestrate/engine.go`, `pkg/orchestrate/engine_test.go`, `pkg/orchestrate/interrupted.go`, `pkg/orchestrate/interrupted_test.go`, `pkg/orchestrate/maintest_test.go`, `pkg/orchestrate/planreview.go`, `pkg/orchestrate/planreview_test.go`, `pkg/orchestrate/planreviewlens_test.go`, `pkg/orchestrate/planreviewpicks_test.go`, `pkg/orchestrate/planreviewround2_test.go`, `pkg/orchestrate/review.go`, `pkg/orchestrate/review_test.go`, `pkg/orchestrate/stagesession.go`, `pkg/orchestrate/stagesession_test.go`, `pkg/orchestrate/workerpriority_test.go`, `pkg/util/jobobject/jobobject_other.go`, `pkg/util/jobobject/jobobject_windows.go`, `pkg/util/jobobject/jobobject_windows_test.go`, `pkg/wshrpc/wshserver/wshserver_dag.go`, `pkg/wshrpc/wshserver/wshserver_landing_test.go`
+**Files:** `claude/arc-view-mod/testdata/lead-goal-autonomous.txt`, `claude/arc-view-mod/testdata/lead-goal.txt`, `claude/arc-view-mod/testdata/plan-reviewer-second.txt`, `claude/arc-view-mod/testdata/plan-reviewer.txt`, `pkg/agentsessions/agentsessions.go`, `pkg/agentsessions/extractsession_test.go`, `pkg/jarvis/leadprompt.go`, `pkg/jarvis/leadprompt_test.go`, `pkg/jarvis/plan.go`, `pkg/jarvis/plan_test.go`, `pkg/jarvis/runexec.go`, `pkg/jarvis/runexec_test.go`, `pkg/orchestrate/engine.go`, `pkg/orchestrate/engine_test.go`, `pkg/orchestrate/interrupted.go`, `pkg/orchestrate/interrupted_test.go`, `pkg/orchestrate/maintest_test.go`, `pkg/orchestrate/planreview.go`, `pkg/orchestrate/planreview_test.go`, `pkg/orchestrate/planreviewlens_test.go`, `pkg/orchestrate/planreviewpicks_test.go`, `pkg/orchestrate/planreviewround2_test.go`, `pkg/orchestrate/review.go`, `pkg/orchestrate/review_test.go`, `pkg/orchestrate/stagesession.go`, `pkg/orchestrate/stagesession_test.go`, `pkg/wshrpc/wshserver/wshserver_dag.go`, `pkg/wshrpc/wshserver/wshserver_landing_test.go`
 
 Commits: `ff9e86dd2` (keep earlier plan-review rounds' reviewers on the dag), `09d6aef7c` (refuse a plan revision past
-the review limit before committing), `ac548aa57` (plan review edges, caller grep, leaner launches), `04aea9b2c` (run
-workers and reviewers at below-normal priority), `da342d465` (workers carry their project; usage counted once),
-`c31e2dfd6` (a failed resume in a new tab stops the tab it spawned), `e1c8645bd` (… and puts the closed tab back),
-`5e7ef9081` (tests keep worker spawns out of the real claude config).
+the review limit before committing), `ac548aa57` (plan review edges, caller grep, leaner launches), `da342d465`
+(workers carry their project; usage counted once), `c31e2dfd6` (a failed resume in a new tab stops the tab it
+spawned), `e1c8645bd` (… and puts the closed tab back), `5e7ef9081` (tests keep worker spawns out of the real claude
+config). `04aea9b2c` is not ported (decision 9): touch nothing in `pkg/util/jobobject`, and name it skipped in the
+commit body.
 
 - Ours runs two round-1 plan reviewers (Full review, Second): `ff9e86dd2` keeps the earlier rounds' reviewers beside
   them, it does not change round 1.
-- `04aea9b2c`: also run `GOOS=darwin go build ./pkg/...` (decision 9).
-- `ac548aa57`'s prompt changes update `claude/arc-view-mod/testdata` as in Task 6; `npx vitest run claude/arc-view-mod`.
+- `ac548aa57`'s prompt changes update `claude/arc-view-mod/testdata` as in Task 6 and run both fixture checks
+  (decision 12); its `lead-design*.txt` fixtures are skipped.
 
 ### Task 9: Landing seal and dag submit
 **Depends on:** Task 8, Task 4
@@ -237,7 +271,7 @@ submit before touching the landing tree).
 
 Commits: `c37355faa` (record child-created on the parent run's log), `43ba106a9` (carry a lead's land past a failed
 complete in its reply), `6b693bb55` (validate the global profile's width and worker route), `969ae84ec` (carry a
-failed adopt's reason in the reply; decision 7).
+failed adopt's reason in the reply; decision 7: Go reply field and `wsh agentsync` output only, no frontend change).
 
 - `6b693bb55` validates settings ours accepts today: refuse only values ours cannot run with (a width or route ours
   would fail on later); a saved profile that works today still saves.
@@ -277,26 +311,40 @@ DAG modal owns Escape and Tab), `c4f14e608` (clear a timeline hover when the rai
 
 - Every existing DAG and Jarvis binding stays; the key fixes only stand a DAG key down while a modal above it has focus.
 - `06ef4d9c4` edits `skills/cockpit/SKILL.md` (ours' source; never the copy under `cmd/wsh/cmd/claude-mod`).
-- Scenario `kael1113-dag-modal`: seed an ended dag and a blocked dag; open the DAG modal on each; shot and assert the
-  graph states the ended state, the header shows Cancel on the blocked one, Adjust opens the run settings; open the
-  route picker above the modal and assert Tab and Escape reach the picker, not the graph.
+- Scenario `kael1113-dag-modal` (helpers from `kits.run`), one shot and assert per step:
+  1. Seed an ended dag; open the DAG modal; assert the graph states the ended state (`7477f4a27`).
+  2. Seed a dag in plan-review; open it; assert the graph states plan review, not running (`7477f4a27`).
+  3. Seed a blocked dag; open it; assert the header shows Cancel (`c3d092f4f`), and Adjust opens the run settings
+     (`aca599018`).
+  4. With a long stage line, narrow the window (CDP `Emulation.setDeviceMetricsOverride`); assert the stage line wraps
+     inside the header and the graph refits to the new width with no node clipped (`072d27962`); restore the size.
+  5. Open the route picker above the modal; assert Tab and Escape reach the picker, not the graph, and the graph's
+     arrows do not move its selection (`8c544f72c`, `7c9976ed1`, `92b5b04fa`).
+  6. Hover a timeline row so the graph highlights its task, then close the timeline rail; assert no node stays
+     highlighted (`c4f14e608`).
 
 ### Task 14: Timeline, run events and tree lanes
 **Depends on:** Task 13
-**Files:** `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/agents/agenttreemodel.test.ts`, `frontend/app/view/agents/agenttreemodel.ts`, `frontend/app/view/agents/cockpitevents.test.ts`, `frontend/app/view/agents/cockpitevents.ts`, `frontend/app/view/agents/cockpiteventsrail.tsx`, `frontend/app/view/agents/endedtranscript.tsx`, `frontend/app/view/agents/runeventstore.ts`, `frontend/app/view/agents/runlineage.test.ts`, `frontend/app/view/agents/runlineage.ts`, `frontend/app/view/agents/runlineagestore.ts`, `frontend/app/view/agents/runrail.test.ts`, `frontend/app/view/agents/runrail.ts`, `frontend/app/view/agents/runrailsections.tsx`, `frontend/app/view/agents/runtimeline.test.ts`, `frontend/app/view/agents/runtimeline.ts`, `frontend/app/view/orchestrate/dagdigest.test.ts`, `frontend/app/view/orchestrate/dagdigest.ts`, `frontend/app/view/orchestrate/dagmodal.tsx`, `frontend/app/view/orchestrate/dagnodes.tsx`, `frontend/app/view/orchestrate/taskroute.test.ts`, `frontend/app/view/orchestrate/taskroute.ts`, `frontend/app/view/orchestrate/timelinegroups.test.ts`, `frontend/app/view/orchestrate/timelinegroups.ts`, `frontend/app/view/orchestrate/timelinerail.tsx`, `scripts/cdp/scenarios-kael1113-timeline.mjs`
+**Files:** `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/agents/agenttreemodel.test.ts`, `frontend/app/view/agents/agenttreemodel.ts`, `frontend/app/view/agents/cockpitevents.test.ts`, `frontend/app/view/agents/cockpitevents.ts`, `frontend/app/view/agents/cockpiteventsrail.tsx`, `frontend/app/view/agents/endedtranscript.tsx`, `frontend/app/view/agents/runeventstore.ts`, `frontend/app/view/agents/runlineage.test.ts`, `frontend/app/view/agents/runlineage.ts`, `frontend/app/view/agents/runlineagestore.ts`, `frontend/app/view/agents/runrail.test.ts`, `frontend/app/view/agents/runrail.ts`, `frontend/app/view/agents/runrailsections.tsx`, `frontend/app/view/agents/runtimeline.test.ts`, `frontend/app/view/agents/runtimeline.ts`, `frontend/app/view/orchestrate/dagdigest.test.ts`, `frontend/app/view/orchestrate/dagdigest.ts`, `frontend/app/view/orchestrate/dagmodal.tsx`, `frontend/app/view/orchestrate/dagnodes.tsx`, `frontend/app/view/orchestrate/peeklifecycle.test.ts`, `frontend/app/view/orchestrate/peeklifecycle.ts`, `frontend/app/view/orchestrate/taskroute.test.ts`, `frontend/app/view/orchestrate/taskroute.ts`, `frontend/app/view/orchestrate/timelinegroups.test.ts`, `frontend/app/view/orchestrate/timelinegroups.ts`, `frontend/app/view/orchestrate/timelinerail.tsx`, `scripts/cdp/scenarios-kael1113-timeline.mjs`
 
 Commits: `652fa1a3d` (ended runs, drawer strip, row targets and event counts), `8d14dca57` (timeline groups keyed by
 their first event, in arrival order), `a728ee85d` (the open Lifecycle drawer leaves the graph the larger share),
 `9d633e0a0` (failed tones and merge gate rows in the tree and rail lanes), `5459268f8` (a failed digest refresh is
 stale and retried), and the TS parts of `dcd0ea248`, `7378b15a4`, `c3a7aa5fa` and `a61a68c95` (decision 4).
 
-- The fork's `peeklifecycle.ts` does not exist in ours: put its pure part beside our timeline model if ours has no
-  equivalent, with its test.
+- The fork's `peeklifecycle.ts` does not exist in ours: if ours has no equivalent pure model, create
+  `frontend/app/view/orchestrate/peeklifecycle.ts` with `peeklifecycle.test.ts` beside it, holding only the fork's pure
+  part; if ours has one, port into it and leave those two files uncreated.
 - `1feb637d5` (drop the lane label) is not in this plan; keep ours' lane label.
-- Scenarios: `kael1113-timeline` (seed a run with final-ended, action and forwarded-failure events; open the timeline;
-  assert groups in arrival order, the event counts, the Lifecycle drawer leaving the graph the larger share);
-  `kael1113-tree-lanes` (seed a run with a failed task and a held merge gate; assert the failed tone and the merge gate
-  row in the Agent tree and the rail lanes).
+- Scenario `kael1113-timeline` (helpers from `kits.run`), one shot and assert per step:
+  1. Seed a running dag with final-ended, action and forwarded-failure run events; open the timeline; assert groups in
+     arrival order and the event counts (`8d14dca57`, `652fa1a3d`).
+  2. Open the Lifecycle drawer; assert the graph keeps the larger share (`a728ee85d`).
+  3. Seed an ended run; assert the timeline lists it as ended, with its drawer strip (`652fa1a3d`).
+  4. Make the digest refresh fail once (seed the run so its digest read errors, or stub the RPC through `h.eval`);
+     assert the digest reads stale, then recovers on the retry (`5459268f8`).
+- Scenario `kael1113-tree-lanes`: seed a run with a failed task and a held merge gate; assert the failed tone and the
+  merge gate row in the Agent tree and the rail lanes (`9d633e0a0`).
 
 ### Task 15: Final stage and peeks
 **Depends on:** Task 14
@@ -308,9 +356,15 @@ rows" are Jarvis's Runs), `1c535bc98` (task peek review note, worked time, clean
 line counts only the engine's retries).
 
 - Ours' final stage has its own rerun and exit-3 handling: the views keep showing them as now.
-- Scenario `kael1113-final-stage`: seed a run whose Final was cancelled after an earlier failed round, with a step under
-  a second and no shots; assert the cancelled node, the earlier round's details, "<1s", the empty-shots state, and the
-  merge gate line in the Runs row and the DAG peek.
+- Scenario `kael1113-final-stage` (helpers from `kits.run`), one shot and assert per step:
+  1. Seed a run whose Final was cancelled after an earlier failed round, with a step under a second and no shots;
+     assert the cancelled node, the earlier round's details, "<1s" and the empty-shots state (`362ec28e7`, `cff274e28`).
+  2. Click the Verifier step; assert it opens as `cff274e28` makes it.
+  3. Seed a held merge gate; assert the merge gate line in the Jarvis Runs row, the DAG peek and the final stage pane
+     (`9f9b2f3e9`).
+  4. Seed a done task with a review note, worked time and a Verify tail carrying ANSI codes; open its task peek; assert
+     the review note, the worked time and a Verify tail with no escape codes (`1c535bc98`).
+  5. Seed a task with engine retries and lead retries; assert the recovery line counts only the engine's (`932d4fa34`).
 
 ### Task 16: Changelog, hand checks and the orchestrator guide
 **Depends on:** Task 9 (reads the engine chain's commit notes), Task 2 (reads its refusals), Task 3 (reads its commit notes), Task 10 (reads its commit notes), Task 11 (reads its commit notes), Task 12 (reads its commit notes), Task 15 (reads the view chain's commit notes)
@@ -319,15 +373,17 @@ line counts only the engine's retries).
 1. Read every task's commit bodies ("Differs from plan" and any change listed for this task).
 2. `CHANGELOG.md`, under the top `Unreleased` section: one line each for what a user notices (the DAG modal's ended and
    blocked states and Cancel, Adjust from the header, timeline order and counts, failed tones and merge gate rows in
-   the tree, the final stage's cancelled node and "<1s", plans refused with a clear reason, workers at below-normal
-   priority). Internals stay out.
+   the tree, the final stage's cancelled node and "<1s", plans refused with a clear reason). Internals stay out; worker
+   priority is already ours (decision 9) and gets no line.
 3. `docs/guide/orchestrator.md`: what changed for someone running the engine (plan parsing refusals that were taken,
-   the merge gate and Verify lines in `wsh runs show` / dag status, skip stopping a running task, lower worker
-   priority). Take the fork's `docs/orchestrator-guide.md` hunks from these commits where they describe something
-   ported; checkout landing stays documented.
+   the merge gate and Verify lines in `wsh runs show` / dag status, skip stopping a running task). Take the fork's
+   `docs/orchestrator-guide.md` hunks from these commits where they describe something ported; checkout landing stays
+   documented.
 4. `docs/hand-checks.md`: a `- [ ] (arcterm) Kael sync 11-13: …` line for each thing no scenario proves: a real run
-   whose land is refused mid-merge and undone, a resume that fails in a new tab, worker priority seen in Task Manager
-   or Activity Monitor, an RPC client dropped mid-call (Task 11).
-5. `docs/open-issues.md`: one line per skipped commit the owner should decide (at least `98cd26122` and any refusal
-   Task 2 skipped), titled "(arcterm) …".
+   whose land is refused mid-merge and undone, a resume that fails in a new tab, an RPC client dropped mid-call
+   (Task 11).
+5. `docs/open-issues.md`: one line per skipped commit or hunk the owner should decide, titled "(arcterm) …": at least
+   `98cd26122`, any refusal Task 2 skipped, `a93cb8ca1`'s MergeTask refusal after a failed Verify, `f2f866e4d`'s
+   cancel mapping and `HandleChildOutcome` change (the fork's F-R6, O-R3), and `969ae84ec`'s adopt reason in the Setup
+   toast (decisions 7 and 10).
 6. Commit by pathspec (`docs: Kael sync 11-13 step 1 changelog, guide and hand checks`).
