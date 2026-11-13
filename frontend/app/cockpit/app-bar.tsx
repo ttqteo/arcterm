@@ -18,9 +18,10 @@ import { writeConfig } from "@/app/view/agents/settingsui";
 import { SpiderMark, useSpiderDecor } from "@/app/view/agents/themedecorview";
 import { HeaderUsage } from "@/app/view/agents/usagemeters";
 import { autoSproutOn, minimizeChoice } from "@/app/view/agents/windowsize";
+import { petForm } from "@/app/view/jarvis/hologrammodel";
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { spriteFor } from "@/app/view/jarvis/petsprite";
-import { petCharacterAtom } from "@/app/view/jarvis/petstore";
+import { petCharacterAtom, petFormAtom } from "@/app/view/jarvis/petstore";
 import { SproutSvg } from "@/app/view/jarvis/sproutsvg";
 import { formatChordString } from "@/util/keysym";
 import { isMacOS } from "@/util/platformutil";
@@ -53,6 +54,26 @@ function foldSprites(outfit: "santa-hat" | null) {
 }
 const FOLD_SPRITE = foldSprites(null);
 const FOLD_SPRITE_HAT = foldSprites("santa-hat");
+
+// Jarvis in its hologram form (Settings → Jarvis → Form), still, at the button's size: the HUD's rings around its hot
+// core, in the hologram's own tokens (hologramscene.ts readHologramColours). No GL canvas for 18px.
+function HologramGlyph() {
+    return (
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden className="pointer-events-none">
+            <circle
+                cx="9"
+                cy="9"
+                r="7.5"
+                stroke="var(--color-conn-1)"
+                strokeWidth="1"
+                strokeDasharray="9 3 3 3"
+                opacity="0.75"
+            />
+            <circle cx="9" cy="9" r="4.75" stroke="var(--color-conn-1)" strokeWidth="1.25" strokeDasharray="6 2.5" />
+            <circle cx="9" cy="9" r="2" fill="var(--color-accent-100)" />
+        </svg>
+    );
+}
 
 // The fold buttons' tooltip, here and on the float bar: on a Mac, ⌘M folds too while window:minimize says Sprout
 export function useFoldTitle(): string {
@@ -95,6 +116,8 @@ export function showFoldMenu(e: React.MouseEvent): void {
 export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     const mac = isMacOS();
     const character = petCharacter(useAtomValue(petCharacterAtom));
+    // the hologram form draws its HUD on the fold button in place of the creature
+    const hologram = petForm(useAtomValue(petFormAtom)) === "hologram";
     const foldTitle = useFoldTitle();
     // the lights hide in macOS fullscreen, so their room goes with them
     const fullscreen = useAtomValue(atoms.isFullScreen);
@@ -124,7 +147,10 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
             {/* shrink-0: the search in the middle gives way first; this group shrinking wrapped "All projects" */}
             <div data-tauri-drag-region data-xmas-start className="relative flex shrink-0 items-center gap-[9px]">
                 {/* the mark alone names the app: no "arcterm" wordmark beside it, only for a screen reader */}
-                <span data-tauri-drag-region className={clsx("flex shrink-0", spider ? "text-spidey-red" : "text-primary")}>
+                <span
+                    data-tauri-drag-region
+                    className={clsx("flex shrink-0", spider ? "text-spidey-red" : "text-primary")}
+                >
                     {spider ? <SpiderMark /> : christmas ? <ChristmasMark /> : <ArctermMark />}
                     <span className="sr-only">arcterm</span>
                 </span>
@@ -193,7 +219,11 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                     onContextMenu={showFoldMenu}
                     className="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border border-edge-mid bg-surface-raised hover:bg-surface-hover"
                 >
-                    <SproutSvg sprite={(christmas ? FOLD_SPRITE_HAT : FOLD_SPRITE)[character]} cellPx={1} />
+                    {hologram ? (
+                        <HologramGlyph />
+                    ) : (
+                        <SproutSvg sprite={(christmas ? FOLD_SPRITE_HAT : FOLD_SPRITE)[character]} cellPx={1} />
+                    )}
                 </button>
 
                 {mac ? null : <WindowControls />}
