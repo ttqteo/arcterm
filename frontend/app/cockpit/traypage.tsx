@@ -224,7 +224,10 @@ function JobRow({ j, send }: { j: TrayJob; send: Send }) {
                 <span className="min-w-0 flex-1 truncate text-[12.5px] text-primary" title={j.name}>
                     {j.name}
                 </span>
-                <span title="Its peak RAM" className="text-[12px] tabular-nums text-secondary">
+                <span
+                    title="The RAM the queue sets aside for it (the Jobs popover says whether it was measured)"
+                    className="text-[12px] tabular-nums text-secondary"
+                >
                     {fmtSize(j.bytes)}
                 </span>
                 <span className="whitespace-nowrap text-[12px] tabular-nums text-secondary">

@@ -1,6 +1,6 @@
 {
     "include": ["frontend/**/*"],
-    "exclude": ["node_modules"],
+    "exclude": ["node_modules", "frontend/**/dist"],
     "compilerOptions": {
         "target": "es6",
         "module": "es2020",
