@@ -113,7 +113,7 @@ func jobslotRun(cmd *cobra.Command, args []string) error {
 	}
 	holdPid := int32(0)
 	if jobslotHoldParent {
-		holdPid = int32(os.Getppid())
+		holdPid = jobslotHoldPid()
 	}
 	missedDir := jobslotMissedDir()
 	msgs, reached := jobslotOpen(func() error {

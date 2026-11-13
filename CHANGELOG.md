@@ -32,6 +32,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   list re-read every run on each refresh.
 - The Storage scan arcterm runs at start and once a day waits until no build, typecheck or test suite is running
   (up to 30 minutes), so it no longer slows them down or drags on for many minutes beside them.
+- On Windows, a build or typecheck an agent runs in the background keeps its heavy-job slot until it ends. It let go
+  after two seconds, so more of them ran at once than the queue allows.
 
 ## 1.1.1 — 2026-11-13
 

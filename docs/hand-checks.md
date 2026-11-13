@@ -466,11 +466,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   and the text is back in the box. A pty probe saw the Esc half on Claude Code 2.1.322, never ↑ on a live queue
   (`chattakeback.ts`, `chattakebackstore.ts`).
 
-- [ ] (arcterm) Heavy jobs in Auto on the 12-thread Windows PC, on a build from 921a1a485: with several agents running
-  `task check:ts`, the Jobs popover shows at most 2 running and the rest waiting with "CPU busy, 2 at a time"; a
-  council's experts still run side by side (`pkg/jobqueue` autoCap). From 07e592b48 the log answers it too: no
-  `[jobqueue] started` line in `waveapp.log` ends above `, 2 heavy running`, a third reads `waits #1: CPU busy, 2 at
-  a time`, and each has a `finished … held` line.
+- [ ] (arcterm) A background heavy command keeps its slot on Windows, on a build with the new `wsh`: have a Claude
+  agent run `task check:ts` with `run_in_background` → `waveapp.log`'s `[jobqueue] finished jN (task check:ts), held`
+  reads about the typecheck's own time (a minute or two), not `2s`; a second and third heavy background command
+  started beside it wait their turn. Before the fix every one let go after one 2 s poll (seen 2026-11-14), because
+  under Git Bash wsh's parent is a fork that exits with wsh (`cmd/wsh/cmd/wshcmd-jobslothold.go`). Commit:
+  fix(wsh) a background heavy command keeps its slot on Windows
 - [ ] (arcterm) A server start takes no heavy-job slot, on a build from 62dd4420e: have an agent run
   `./gradlew bootRun` or `mvn spring-boot:run` in the background (or `uvicorn app:app`) in a Java or Python project:
   the Jobs popover shows no row for it, and a `task check:ts` started beside it starts at once
