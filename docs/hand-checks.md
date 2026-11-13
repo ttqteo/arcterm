@@ -10,6 +10,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   card's top line has no button, and Confirm all N guesses sits right-aligned on the `N yours ›` row at its foot
   (alone there when nothing is yours yet); confirm them all → Check with a builder takes the same place. Commit:
   the Confirm card button fix in `chatbrainstormconfirm.tsx`.
+- [ ] (arcterm) Two Add to initiative cards in one reply sit apart: have a Claude agent in Chat propose two
+  `arc-initiative` blocks in one reply → the cards (and their folded rows once handled) have the same gap as a visual
+  block, not touching borders. Then ask it "bỏ vào initiative đi" → it runs `wsh effort` itself and says what it
+  added, with no card. `chatinitiativecard.tsx` InitiativeBlockView, `skills/initiatives/SKILL.md`.
 - [ ] (arcterm) A brainstorm's ask says "asking" once: have an agent brainstorm until it asks a question → its Agent
   tree row's second line reads "asking question N" (amber), with no "asking" note before it; a held card (Token burn)
   on such an agent still shows its header note. Commit: the "asking asking" fix in `agenttree.tsx`.

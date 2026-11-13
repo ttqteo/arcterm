@@ -111,9 +111,10 @@ nothing is added to wavesrv. Outside Chat (the terminal view) the block reads as
 ### 5. When the agent still writes directly (answer 6)
 
 - Directly with `wsh effort`, as today: its own work. Progress notes and status on the chunk it holds, claiming,
-  ticking done.
-- Through the card: anything new or anything not its own. A new chunk, a new initiative, a note on a chunk it does
-  not hold.
+  ticking done. And what the person asked it to put in an initiative (revised 2026-11-13: "bỏ vào initiative đi"
+  came back as two cards waiting on the person who had just asked; the card only asked again).
+- Through the card: anything new or anything not its own that the person did not ask for. A new chunk, a new
+  initiative, a note on a chunk it does not hold.
 - Agents an Arc run started do not change.
 
 `skills/initiatives/SKILL.md` gains this rule, the block's format, and how to read the result line (section 7).
