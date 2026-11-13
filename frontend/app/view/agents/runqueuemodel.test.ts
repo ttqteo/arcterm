@@ -201,37 +201,50 @@ describe("queuedRoute", () => {
 });
 
 describe("queuedTooltip", () => {
-    it("is three lines: the plan path, the lead and the worker route, and the age", () => {
+    it("splits the plan path into its file name and folder, with the lead, the worker route and the age", () => {
         const e = entry(
             "q-a",
             {},
             { runtime: "claude", model: "opus", workerroute: { runtime: "codex", model: "gpt-5" } }
         );
-        expect(queuedTooltip(e, NOW).split("\n")).toEqual([
-            "docs/plans/q-a.md",
-            "Lead claude · opus · Workers codex · gpt-5",
-            "Queued 5m ago",
-        ]);
+        expect(queuedTooltip(e, NOW)).toEqual({
+            name: "q-a.md",
+            dir: "docs/plans",
+            lead: "claude · opus",
+            workers: "codex · gpt-5",
+            age: "Queued 5m ago",
+        });
+    });
+
+    it("splits a Windows plan path too", () => {
+        const e = entry("q-a", {}, { planpath: "C:\\Users\\u\\Temp\\2026-11-13-handoff.md" });
+        const tip = queuedTooltip(e, NOW);
+        expect(tip.name).toBe("2026-11-13-handoff.md");
+        expect(tip.dir).toBe("C:\\Users\\u\\Temp");
     });
 
     it("says the workers are the same as the lead when no worker route is set", () => {
-        const e = entry("q-a", {}, { runtime: "pi" });
-        expect(queuedTooltip(e, NOW).split("\n")).toEqual([
-            "docs/plans/q-a.md",
-            "Lead pi · Workers same as lead",
-            "Queued 5m ago",
-        ]);
+        const tip = queuedTooltip(entry("q-a", {}, { runtime: "pi" }), NOW);
+        expect(tip.lead).toBe("pi");
+        expect(tip.workers).toBe("same as lead");
     });
 
     it("leaves a worker route's model out when it pins none", () => {
         const e = entry("q-a", {}, { runtime: "claude", model: "sonnet", workerroute: { runtime: "agy" } });
-        expect(queuedTooltip(e, NOW).split("\n")[1]).toBe("Lead claude · sonnet · Workers agy");
+        expect(queuedTooltip(e, NOW).workers).toBe("agy");
+    });
+
+    it("carries the whole blocked reason for a blocked entry, and none for a waiting one", () => {
+        expect(queuedTooltip(entry("q-a"), NOW).blocked).toBeUndefined();
+        const held = entry("q-b", { state: "blocked", reason: "Build Thẻ verdict was cancelled" });
+        expect(queuedTooltip(held, NOW).blocked).toBe("Build Thẻ verdict was cancelled");
+        expect(queuedTooltip(entry("q-c", { state: "blocked" }), NOW).blocked).toBe("Blocked");
     });
 
     it("says just now for an entry queued under a minute ago, and falls back to the title with no plan path", () => {
-        const e = entry("q-a", { queuedts: NOW - 20_000 }, { planpath: undefined });
-        const lines = queuedTooltip(e, NOW).split("\n");
-        expect(lines[0]).toBe("Plan q-a");
-        expect(lines[2]).toBe("Queued just now");
+        const tip = queuedTooltip(entry("q-a", { queuedts: NOW - 20_000 }, { planpath: undefined }), NOW);
+        expect(tip.name).toBe("Plan q-a");
+        expect(tip.dir).toBeUndefined();
+        expect(tip.age).toBe("Queued just now");
     });
 });

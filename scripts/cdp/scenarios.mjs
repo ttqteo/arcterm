@@ -60480,8 +60480,10 @@ const runQueueScenario = {
             JSON.stringify({ stripRemove, stripAsked, stripGone, rowGone, stripListedBefore, stripListedAfter })
         );
 
-        // 2. hover shows the two buttons; the tooltip carries the plan, the route and the age
+        // 2. hover shows the two buttons; the tooltip card, to the row's right, carries the plan, the route and the age
         await rqMove(h, rqSel(a));
+        const tipSel = `document.querySelector("[data-run-queue-tip]")`;
+        await polishWaitFor(h, `${tipSel} != null && getComputedStyle(${tipSel}.parentElement).opacity === "1"`, 3000);
         const hover = await h.ev(`(() => {
             // the buttons sit in one wrapper that fades in on hover
             const shown = (id, act) => {
@@ -60493,19 +60495,24 @@ const runQueueScenario = {
                 remove: shown(${JSON.stringify(a)}, "remove"),
                 // the row the pointer is not on keeps them hidden
                 otherStart: shown(${JSON.stringify(c)}, "start"),
-                // the tooltip host lifts a hovered element's title into data-arc-title (element/titletiphost.tsx)
-                title: ${rqRow(a)}?.getAttribute("title") ?? ${rqRow(a)}?.getAttribute("data-arc-title") ?? "",
+                title: ${tipSel}?.innerText ?? "",
+                // the card sits to the row's right
+                right: (() => {
+                    const tip = ${tipSel}, row = ${rqRow(a)};
+                    return tip && row ? tip.getBoundingClientRect().left >= row.getBoundingClientRect().right : null;
+                })(),
             };
         })()`);
         await h.shot("cdp-shots/run-queue-2-hover.png");
         rec(
-            "2. hovering A shows its Start now and Remove buttons (C's stay hidden); its tooltip names the plan, Lead claude and Workers codex",
+            "2. hovering A shows its Start now and Remove buttons (C's stay hidden); a card right of the row names a.md, Lead claude and Workers codex",
             hover.start === 1 &&
                 hover.remove === 1 &&
                 hover.otherStart === 0 &&
+                hover.right === true &&
                 hover.title.includes("a.md") &&
-                hover.title.includes("Lead claude") &&
-                hover.title.includes("Workers codex"),
+                /Lead\s+claude/.test(hover.title) &&
+                /Workers\s+codex/.test(hover.title),
             JSON.stringify(hover)
         );
 

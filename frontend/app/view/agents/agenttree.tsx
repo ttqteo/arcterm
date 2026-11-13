@@ -11,6 +11,7 @@ import { jobQueueAtom } from "@/app/cockpit/jobqueuestore";
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { resmonSnapshotAtom } from "@/app/cockpit/resmonstore";
 import { useSettle } from "@/app/element/motionhooks";
+import { Tooltip } from "@/app/element/tooltip";
 import {
     cardVariants,
     composerReveal,
@@ -122,7 +123,13 @@ import { cancellingRunIdsAtom, resumePausedRun, resumingRunIdsAtom } from "./run
 import { runEventsAtom } from "./runeventstore";
 import { originLinks, type OriginLink } from "./runorigin";
 import { openOriginLink, openOriginSession, useOriginName, useOriginRuns } from "./runoriginstore";
-import { isBlockedEntry, queuedMeta, queuedTooltip, type QueuedRow } from "./runqueuemodel";
+import {
+    isBlockedEntry,
+    queuedMeta,
+    queuedTooltip,
+    type QueuedRow,
+    type QueuedTooltip,
+} from "./runqueuemodel";
 import {
     confirmRemoveQueued,
     queuedRowsAtom,
@@ -3287,8 +3294,33 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
     );
 }
 
+// The queued row's tooltip card: the plan's file name over its folder, why it is blocked, the route, and its age.
+function QueuedTooltipCard({ tip }: { tip: QueuedTooltip }) {
+    const label = "w-[52px] flex-none text-muted";
+    return (
+        <div data-run-queue-tip className="flex max-w-[300px] flex-col gap-[6px] py-[3px]">
+            <div className="min-w-0">
+                <div className="break-all text-[12px] font-medium text-primary">{tip.name}</div>
+                {tip.dir ? <div className="mt-[1px] break-all text-[10.5px] text-muted">{tip.dir}</div> : null}
+            </div>
+            {tip.blocked ? <div className="text-warning">{tip.blocked}</div> : null}
+            <div className="flex flex-col gap-[2px]">
+                <div className="flex gap-[8px]">
+                    <span className={label}>Lead</span>
+                    <span className="min-w-0 text-secondary">{tip.lead}</span>
+                </div>
+                <div className="flex gap-[8px]">
+                    <span className={label}>Workers</span>
+                    <span className="min-w-0 text-secondary">{tip.workers}</span>
+                </div>
+            </div>
+            <div className="text-[10.5px] text-muted">{tip.age}</div>
+        </div>
+    );
+}
+
 // A plan queued to start (the run queue, runqueuestore.ts). It has no session or run yet, so a click selects nothing and
-// shows nothing in the centre; the tooltip carries the plan, its route and its age instead. Hover offers Start now and
+// shows nothing in the centre; the tooltip, to the row's right, carries the plan, its route and its age instead. Hover offers Start now and
 // Remove, and the menu adds Run next (not on the head of the queue, which has nowhere to go). A blocked entry reads in the
 // warning token, as a held land does.
 function QueuedEntryRow({ model, row }: { model: AgentsViewModel; row: QueuedRow }) {
@@ -3317,49 +3349,49 @@ function QueuedEntryRow({ model, row }: { model: AgentsViewModel; row: QueuedRow
     const act =
         "flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-primary";
     return (
-        <div
-            data-run-queue-row={entry.id}
-            title={queuedTooltip(entry, now)}
-            onContextMenu={onContextMenu}
-            className="group relative flex items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms] hover:bg-surface-hover"
-        >
-            <Slot>
-                <Clock size={13} aria-hidden className={blocked ? LEAD_MARK_CLASS.warning : "text-muted"} />
-            </Slot>
-            <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium text-secondary">{entry.title}</div>
-                {/* a blocked reason can outrun the row: its own tooltip says all of it */}
-                <div
-                    data-run-queue-meta
-                    title={blocked ? meta : undefined}
-                    className={cn("truncate text-[11px]", blocked ? "text-warning" : "text-muted")}
-                >
-                    {meta}
+        <Tooltip content={<QueuedTooltipCard tip={queuedTooltip(entry, now)} />} placement="right" openDelay={400} hideOnClick>
+            <div
+                data-run-queue-row={entry.id}
+                onContextMenu={onContextMenu}
+                className="group relative flex items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms] hover:bg-surface-hover"
+            >
+                <Slot>
+                    <Clock size={13} aria-hidden className={blocked ? LEAD_MARK_CLASS.warning : "text-muted"} />
+                </Slot>
+                <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-medium text-secondary">{entry.title}</div>
+                    {/* a blocked reason can outrun the row: the tooltip card says all of it */}
+                    <div
+                        data-run-queue-meta
+                        className={cn("truncate text-[11px]", blocked ? "text-warning" : "text-muted")}
+                    >
+                        {meta}
+                    </div>
                 </div>
+                <span className="flex flex-none items-center gap-[2px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100">
+                    <button
+                        type="button"
+                        data-queue-act="start"
+                        title="Start now"
+                        aria-label={`Start ${entry.title} now`}
+                        onClick={start}
+                        className={act}
+                    >
+                        <Play size={12} aria-hidden />
+                    </button>
+                    <button
+                        type="button"
+                        data-queue-act="remove"
+                        title="Remove from queue"
+                        aria-label={`Remove ${entry.title} from the queue`}
+                        onClick={() => confirmRemoveQueued(entry)}
+                        className={cn(act, "hover:text-error")}
+                    >
+                        <X size={12} aria-hidden />
+                    </button>
+                </span>
             </div>
-            <span className="flex flex-none items-center gap-[2px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100">
-                <button
-                    type="button"
-                    data-queue-act="start"
-                    title="Start now"
-                    aria-label={`Start ${entry.title} now`}
-                    onClick={start}
-                    className={act}
-                >
-                    <Play size={12} aria-hidden />
-                </button>
-                <button
-                    type="button"
-                    data-queue-act="remove"
-                    title="Remove from queue"
-                    aria-label={`Remove ${entry.title} from the queue`}
-                    onClick={() => confirmRemoveQueued(entry)}
-                    className={cn(act, "hover:text-error")}
-                >
-                    <X size={12} aria-hidden />
-                </button>
-            </span>
-        </div>
+        </Tooltip>
     );
 }
 

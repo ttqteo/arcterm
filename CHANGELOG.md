@@ -41,6 +41,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The Agent rail's breakdown shows what fills the context: the conversation apart from what loads every turn (tools,
   memory files, skills, MCP), each memory file and skill a click from opening, and how long the cache stays warm.
   <!-- big -->
+  agent hears the outcome with your next message. Claude agents only.
+
+### Changed
+
+- Hovering a queued plan in the Agent sidebar opens a card to its right: the plan's file name above its folder, the
+  whole reason when it is blocked, the lead and workers it will run with, and when it was queued.
+- A long live transcript keeps only its last screens drawn while you follow it, instead of drawing every message the
+  session has added since you opened it.
+- A working run's row in the Agent sidebar says how many of its tasks are stuck (`Working · 1/6 · 3 stuck`), and hover
+  names each one (`t-2 verify failed · t-3 stalled`), instead of reading as if all were moving.
 - Jarvis as a hologram: Settings → Jarvis & Office → Form → Hologram puts Jarvis in the window's bottom-right corner
   instead of Sprout on the footer. Blue rings while all is calm (the core beats while agents work), an amber neural
   sphere while something waits on you; click it for the same peek. Hologram size picks S, M or L. Float and the fold
