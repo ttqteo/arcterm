@@ -63,6 +63,20 @@ export function OpenButton({ agent }: { agent: AgentVM }) {
     );
 }
 
+// the dot before a state word: amber while it waits on you, the working green otherwise. A card's own `tag` (CardShell)
+// takes it when its word is one that is at work, and leaves it out when it is not (a queued council)
+export function StateDot({ state }: { state: CardState }) {
+    return (
+        <span
+            aria-hidden="true"
+            className={cn(
+                "h-[6px] w-[6px] flex-none rounded-full pulse-dot",
+                state === "waiting" ? "bg-asking" : "bg-working"
+            )}
+        />
+    );
+}
+
 // one dot and one word say where the card stands, never the colour alone. Only `waiting` is amber: the judge weighing
 // and a builder or the agent at work are the working green
 export function StateTag({ state }: { state: CardState }) {
@@ -72,22 +86,23 @@ export function StateTag({ state }: { state: CardState }) {
     const waiting = state === "waiting";
     return (
         <span className={cn("ml-[6px] flex items-center gap-[6px]", waiting ? "text-warning" : "text-secondary")}>
-            <span
-                aria-hidden="true"
-                className={cn("h-[6px] w-[6px] flex-none rounded-full pulse-dot", waiting ? "bg-asking" : "bg-working")}
-            />
+            <StateDot state={state} />
             {waiting ? "Waiting on you" : state === "working" ? "Working" : "Judge weighing"}
         </span>
     );
 }
 
-export type CardKind = "question" | "confirm" | "check" | "run" | "verdict" | "handoff";
+export type CardKind = "question" | "confirm" | "check" | "run" | "verdict" | "handoff" | "council" | "docreview";
 
 /** The section every card is: its motion wrapper (enters and leaves on springReveal), the kind and state attributes the
  *  scenarios read, and the header row (icon, head, the state tag, then the header's right end). `label` is the section's
  *  aria-label (the head when left out); `extra` carries the attributes only one card has (the question card's
  *  `data-chat-bscard` and `data-chat-bscard-n`, the verdict card's `data-chat-vcard`); `chip` is a card's pill between
- *  the head and the state tag (the verdict card's Changes requested / Approved). The right end holds `action`, a card's
+ *  the head and the state tag (the verdict card's Changes requested / Approved). `tag` is a card's own word for where it
+ *  stands (the council's step, `Queued after …`): it takes the state tag's place in a span carrying `data-chat-bscard-tag`,
+ *  coloured by `state` (amber while it waits on you, muted once the agent exited, else secondary) and with no dot of its
+ *  own, since a queued council is not at work: put a `StateDot` in it when it is, and a long word in a `truncate` span.
+ *  `state` still gives the shell's `data-chat-bscard-state`. The right end holds `action`, a card's
  *  own link (Open the review, Open the plan, Open run), and Open in Brainstorm beside it when an `agent` is passed: a
  *  brainstorm card passes the agent and no action, a verdict, handoff or generic run card passes an action and no agent. */
 export function CardShell({
@@ -101,6 +116,7 @@ export function CardShell({
     extra,
     stage,
     chip,
+    tag,
     children,
 }: {
     kind: CardKind;
@@ -113,6 +129,7 @@ export function CardShell({
     extra?: Record<`data-${string}`, string | number | boolean | undefined>;
     stage?: string;
     chip?: ReactNode;
+    tag?: ReactNode;
     children: ReactNode;
 }) {
     return (
@@ -137,7 +154,23 @@ export function CardShell({
                         {head}
                     </span>
                     {chip}
-                    <StateTag state={state} />
+                    {tag != null ? (
+                        <span
+                            data-chat-bscard-tag
+                            className={cn(
+                                "ml-[6px] flex min-w-0 items-center gap-[6px]",
+                                state === "waiting"
+                                    ? "text-warning"
+                                    : state === "static"
+                                      ? "text-muted"
+                                      : "text-secondary"
+                            )}
+                        >
+                            {tag}
+                        </span>
+                    ) : (
+                        <StateTag state={state} />
+                    )}
                     {action != null || agent != null ? (
                         <span className="ml-auto flex flex-none items-center gap-[8px]">
                             {action}
@@ -490,8 +523,14 @@ export function OptionRows({
 }
 
 /** The ✓ row a finished step folds into: `head` in the muted start, `text` the bold part that may be cut short, and
- *  `trailing` the muted end. A builder answer is `data-chat-bscard-answered` with `data-kind="builder"`, a step
- *  `data-chat-bscard-done="<design|builder|run|verdict|handoff>"`; a question's answer is ChatBrainstormAnswered's.
+ *  `trailing` the muted end. `dimText` turns that round for a row whose head is the strong part (the council's): the head
+ *  in the primary ink, as a node so a caller can set one word heavier, and `text` muted and cut short. The two spans are
+ *  `data-chat-bscard-head` and `data-chat-bscard-text`. A builder answer is `data-chat-bscard-answered` with `data-kind="builder"`, a step
+ *  `data-chat-bscard-done="<design|builder|run|verdict|handoff|council|docreview>"`; a question's answer is
+ *  ChatBrainstormAnswered's. `extra` adds `data-*` attributes to that row element, beside the one above.
+ *  `mark` is the glyph drawn in place of the ✓ (the council row's ■, !, –, ↺), in the ✓'s 14px box and muted unless it
+ *  brings a colour of its own. `action` is a button at the row's right end (Open report), drawn only on a row without a
+ *  `detail`: a row with a detail is itself a button, and a button never nests in a button.
  *  With a `detail` the row is a button with a caret (`aria-expanded`) that opens the detail text under it, pre-wrapped
  *  and muted, closed by default and local to the row, since a fold is a glance; a run row's button is
  *  `data-chat-run-ended` and its text `data-chat-run-ended-text` (the `[arc] Run` message, as written). */
@@ -502,24 +541,52 @@ export function DoneRow({
     trailing,
     n,
     detail,
+    mark,
+    action,
+    extra,
+    dimText,
 }: {
-    kind: "builder-answer" | "design" | "builder" | "run" | "verdict" | "handoff";
-    head: string;
+    kind: "builder-answer" | "design" | "builder" | "run" | "verdict" | "handoff" | "council" | "docreview";
+    head: ReactNode;
     text?: string;
     trailing?: string;
     n?: number;
     detail?: string;
+    mark?: ReactNode;
+    action?: ReactNode;
+    extra?: Record<`data-${string}`, string | number | boolean | undefined>;
+    dimText?: boolean;
 }) {
     const [open, setOpen] = useState(false);
-    const marks =
-        kind === "builder-answer"
+    const marks = {
+        ...(kind === "builder-answer"
             ? { "data-chat-bscard-answered": "", "data-kind": "builder", "data-chat-bscard-n": n }
-            : { "data-chat-bscard-done": kind };
+            : { "data-chat-bscard-done": kind }),
+        ...extra,
+    };
     const inner = (
         <>
-            <Check size={14} strokeWidth={2.2} className="flex-none text-muted" aria-hidden />
+            {mark != null ? (
+                <span
+                    data-chat-bscard-mark
+                    aria-hidden
+                    className="flex h-[14px] w-[14px] flex-none items-center justify-center text-[12px] leading-none text-muted"
+                >
+                    {mark}
+                </span>
+            ) : (
+                <Check size={14} strokeWidth={2.2} className="flex-none text-muted" aria-hidden />
+            )}
             <span
-                className={cn("min-w-0 truncate", text != null ? "flex-none text-muted" : "font-medium text-primary")}
+                data-chat-bscard-head
+                className={cn(
+                    "min-w-0 truncate",
+                    dimText
+                        ? "flex-none text-primary"
+                        : text != null
+                          ? "flex-none text-muted"
+                          : "font-medium text-primary"
+                )}
             >
                 {head}
             </span>
@@ -527,7 +594,11 @@ export function DoneRow({
                 <>
                     {/* a builder answer reads "head — answer" in the row's text, the spec's wording */}
                     {kind === "builder-answer" ? <span className="flex-none text-muted">{" — "}</span> : null}
-                    <span className="min-w-0 truncate font-medium text-primary" title={text}>
+                    <span
+                        data-chat-bscard-text
+                        className={cn("min-w-0 truncate", dimText ? "text-muted" : "font-medium text-primary")}
+                        title={text}
+                    >
                         {text}
                     </span>
                 </>
@@ -552,6 +623,9 @@ export function DoneRow({
         return (
             <div {...marks} className={DONE_ROW}>
                 {inner}
+                {action != null ? (
+                    <span className={cn("flex flex-none items-center", trailing == null && "ml-auto")}>{action}</span>
+                ) : null}
             </div>
         );
     }

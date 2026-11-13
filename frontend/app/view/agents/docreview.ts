@@ -10,7 +10,7 @@
 // convention; it opens as the review view that replaces the agent's terminal, never as the dialog.
 
 import { atom, type PrimitiveAtom } from "jotai";
-import type { AgentAsk, AgentVM } from "./agentsviewmodel";
+import type { AgentAskQuestion, AgentVM } from "./agentsviewmodel";
 
 export const DOC_REVIEW_HEADERS = { spec: "Spec review", plan: "Plan review", doc: "Doc review" } as const;
 
@@ -64,7 +64,9 @@ const kindOf = (header: string | undefined): DocReviewKind | null => {
     );
 };
 
-export function parseDocReview(ask: AgentAsk | undefined): DocReview | null {
+// Takes the questions alone, readonly, so the live ask (an `AgentAsk`) and an answered ask in the transcript (its
+// `AskQuestionDetail[]`) both pass.
+export function parseDocReview(ask: { questions: readonly AgentAskQuestion[] } | undefined): DocReview | null {
     const qs = ask?.questions ?? [];
     if (qs.length !== 1) {
         return null;

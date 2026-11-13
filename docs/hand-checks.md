@@ -6,6 +6,17 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council and Doc review cards in Chat, with a real agent: in a Claude agent's Chat have it start a
+  council (`/arc:council`, or ask for one) → while it runs a Council card sits at the end of the conversation (the
+  question, a chip per expert, the step, the time, the estimate, Stop; Open council opens the room); a second council
+  started while one runs shows the queued card naming the first; a council that pauses after round 1 reads Waiting on
+  you with Continue and Stop. When one ends its card leaves on the spring and a ✓ row (Open report) stands at the
+  `wsh council start` call, ■ when you Stop it; run a follow-up on a done council from its room → its row reads
+  running again and the card never comes back to the end. Then have the agent ask a Doc review (`/arc:doc-review`) → a
+  Doc review card in the dock above the box with Review and Approve; Approve folds it into "✓ Doc review · approved ·
+  <file>", and Request changes from Review into "↺ … changes requested · N comments". An exited agent shows both cards
+  without Stop, Continue, Review and Approve. The `chat-council` scenario covers these states from fixtures, not the output of a real agent's
+  `wsh council start`. Commit: feat(chat) place the council cards and the Doc review rows in the conversation
 - [ ] (arcterm) **The brainstorm part of the Chat band on a live agent.** Link a real Claude agent to an initiative and
   have it run a brainstorm that draws boards. While it works between two questions, its Chat band reads `Brainstorm`,
   `N boards` and `Decided N` beside the initiative, with no Mark done on the line. Let it draw another board while
