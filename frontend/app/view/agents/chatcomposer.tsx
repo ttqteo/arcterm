@@ -9,7 +9,7 @@
 // asleep): its root is `data-chat-box` carrying `data-chat-box-state`, its height springs to its content's measured height,
 // and the parts of a state cross-fade on the micro ease: a running agent adds a line of action chips and puts Stop where
 // Send was (Send stays beside it once there is a message to send), a finished turn's suggested replies take that line
-// while the box is empty (chatsuggest.ts), a drag of files turns the box into a dashed drop zone.
+// while what is typed still starts one of them (chatsuggest.ts), a drag of files turns the box into a dashed drop zone.
 // What it sends and how a sleeping agent is woken is
 // useAgentSend's (agentcomposer.tsx), the same path as the compact composer; this adds attachments
 // (composerattachments.ts: a pasted or dropped image is kept and goes as the "Attached images:" block your bubble draws
@@ -91,6 +91,7 @@ import {
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
 import {
+    chipsMatching,
     rowHold,
     runningActions,
     type ChatChip,
@@ -184,8 +185,8 @@ export function ChatComposer({
     onBoxState?: (state: BoxState) => void;
     /** the running agent's "Show the diff" chip; left out, the chip is not drawn */
     onShowDiff?: () => void;
-    /** the replies suggested once the turn ended (chatsuggest.ts chatChips), drawn as chips while the box is empty; a
-     *  click sends one. Left out, none. */
+    /** the replies suggested once the turn ended (chatsuggest.ts chatChips), drawn as chips while the box is empty or
+     *  what is typed still starts them; a click sends one. Left out, none. */
     chips?: ChatChip[];
     /** a chunk's done chip: ticks it on the agent's initiative. Left out, that chip is not drawn. */
     onMarkDone?: (chunk: string) => void;
@@ -750,11 +751,15 @@ export function ChatComposer({
     };
     // not while a Sleep is under way: Esc would cut short the compaction the sleep waits on
     const showStop = !asleep && !dozing && agent.blockId != null && canStop(agent.state, agent.sleeping);
-    // the finished turn's suggested replies, while the box is empty: they step aside once the person writes or attaches
-    const suggested =
-        chips != null && !asleep && !waking && !dozing && text === "" && att.attachments.length === 0
-            ? chips
-            : NO_CHIPS;
+    // the finished turn's suggested replies: those that still start with what the person types (chatsuggest.ts
+    // chipsMatching) stay, the rest step aside, and all of them once an attachment goes in
+    const suggested = useMemo(
+        () =>
+            chips != null && !asleep && !waking && !dozing && att.attachments.length === 0
+                ? chipsMatching(chips, text)
+                : NO_CHIPS,
+        [chips, asleep, waking, dozing, att.attachments.length, text]
+    );
     // the running agent's actions that have something to show (chatsuggest.ts runningActions): the diff once the turn
     // edited a file, the terminal once a command has run a while; read again when a running command gets there
     const acts = showStop ? runningActions(entries ?? [], Date.now()) : NO_ACTS;
@@ -1059,7 +1064,8 @@ export function ChatComposer({
                 {/* A line of chips under the text (chatsuggest.ts): while the agent works, the two things Chat can show of
                     it once they hold something (the diff of what it changed, the terminal of a command running a while);
                     once its turn ends, the replies the person would
-                    likely send next, in their words, which a click sends. Those step aside while the person writes. One
+                    likely send next, in their words, which a click sends. Those step aside once what the person writes
+                    no longer starts them. One
                     line goes before the next comes, so the box never holds both, and the actions come and go only once
                     the agent's state has held (useChipRow). */}
                 <AnimatePresence initial={false} mode="wait">

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
 import {
     chatChips,
+    chipsMatching,
     endsWithQuestion,
     initiativeChips,
     lastReply,
@@ -221,6 +222,36 @@ describe("wantsModelSuggest", () => {
         expect(wantsModelSuggest({ ...base, questionWaits: true })).toBe(false);
         expect(wantsModelSuggest({ ...base, pending: true })).toBe(false);
         expect(wantsModelSuggest({ ...base, seen: false })).toBe(false);
+    });
+});
+
+describe("chipsMatching", () => {
+    const chips: ChatChip[] = [
+        { text: "build đi", kind: "reply", source: "model" },
+        { text: "Commit đi", kind: "commit", source: "rule" },
+        { text: "Mark it done", kind: "done", source: "rule", chunk: "c1" },
+    ];
+
+    it("keeps every chip while the box is empty or holds only spaces", () => {
+        expect(chipsMatching(chips, "")).toEqual(chips);
+        expect(chipsMatching(chips, "  \n")).toEqual(chips);
+    });
+
+    it("keeps the chips whose text starts with what is typed", () => {
+        expect(chipsMatching(chips, "bu").map((c) => c.text)).toEqual(["build đi"]);
+        expect(chipsMatching(chips, "build đi").map((c) => c.text)).toEqual(["build đi"]);
+    });
+
+    it("ignores case, Vietnamese marks and extra spaces, so a reply half typed in Telex still matches", () => {
+        expect(chipsMatching(chips, "COMMIT").map((c) => c.text)).toEqual(["Commit đi"]);
+        expect(chipsMatching(chips, "build d").map((c) => c.text)).toEqual(["build đi"]);
+        expect(chipsMatching(chips, "build  di").map((c) => c.text)).toEqual(["build đi"]);
+    });
+
+    it("drops every chip once the text leaves them, and a done chip once anything is typed", () => {
+        expect(chipsMatching(chips, "buildx")).toEqual([]);
+        expect(chipsMatching(chips, "build đi rồi push")).toEqual([]);
+        expect(chipsMatching(chips, "m")).toEqual([]);
     });
 });
 
