@@ -9,6 +9,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Chat keeps up with a reply before a big Write: after a build with this arc mod installed, ask a Claude
   agent to write a ~100-line file and watch Chat → the line it says before the Write ("Writing the …") shows whole
   within a moment, not cut mid-word until the Write lands. `claude/arc-mod/hooks/register.ts` turn.step trailing write.
+- [ ] (arcterm) A queued run's card in Chat turns into its run in place: in a Claude agent, start a run with
+  `wsh runs start … --after <a live run>` so it queues → its card reads `Queued · after <that run>`; once the run ahead
+  ends and the entry starts, the same card shows the new run's stage and Open run, without a second card appearing and
+  without a flash of nothing on the first render after a reload (`frontend/app/view/agents/chatruncard.tsx`,
+  `chatruncards.ts` `placeRunCards`, `chatconversation.tsx`; the `chat-verdict-handoff` scenario covers only an entry
+  still in the queue; 1be9dcb93).
 - [ ] (arcterm) Brainstorm card motion: in Chat, on a builder check card hover Open in Brainstorm, Keep talking and
   Approve → the colours ease in (~140ms) instead of snapping; click Agent's calls N → the list slides open and folds
   shut with no jump in the gap above it; open a ✓ Run row's detail → same. The `chat-brainstorm-review` scenario passed

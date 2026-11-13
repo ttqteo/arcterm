@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Chat draws a reviewer's verdict as a card: each finding with its severity and a file link, a tick on the ones to
+  fix, and Fix N selected or Skip the review, which send one line to the agent. The plan handoff is four lettered
+  choices, and every run the agent starts is a card at the call that started it, kept up to date until it lands. Each
+  folds into a ✓ row once you have answered or the run is over.
 - The chat box says when the agent has work running in the background: a line at its top names the newest shell
   command, Monitor or background subagent and how many more; press it to list them all, open a task's output or a
   subagent's conversation, and stop a task.

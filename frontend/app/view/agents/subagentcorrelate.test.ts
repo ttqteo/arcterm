@@ -23,8 +23,29 @@ describe("correlateSubagents", () => {
     it("takes type + success state from a matched, completed spawn", () => {
         const out = correlateSubagents([spawn({ done: true })], [file({})]);
         expect(out).toEqual([
-            { id: "a1", type: "Explore", state: "success", transcriptPath: "/p/agent-a1.jsonl", startedAtMs: 1 },
+            {
+                id: "a1",
+                type: "Explore",
+                state: "success",
+                transcriptPath: "/p/agent-a1.jsonl",
+                startedAtMs: 1,
+                toolUseId: "t",
+            },
         ]);
+    });
+
+    it("carries the matched spawn's tool-use id, so a call finds the subagent it started", () => {
+        const spawns = [spawn({ toolUseId: "toolu_a", prompt: "P1" }), spawn({ toolUseId: "toolu_b", prompt: "P2" })];
+        const files = [file({ agentid: "f2", firstprompt: "P2" }), file({ agentid: "f1", firstprompt: "P1" })];
+        expect(correlateSubagents(spawns, files).map((s) => [s.id, s.toolUseId])).toEqual([
+            ["f2", "toolu_b"],
+            ["f1", "toolu_a"],
+        ]);
+    });
+
+    it("leaves the tool-use id out of a file no spawn matched", () => {
+        const out = correlateSubagents([spawn({ prompt: "P1" })], [file({ firstprompt: "orphan" })]);
+        expect(out[0]).not.toHaveProperty("toolUseId");
     });
 
     it("carries whether the spawn went to the background", () => {

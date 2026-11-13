@@ -45,7 +45,9 @@ export function mergeEditFiles(files: EditFile[]): EditFile[] {
     return [...byPath.values()];
 }
 
-function workOf(startIndex: number, actions: AgentActionEntry[]): WorkItem {
+/** Pure: one stretch of consecutive tool calls as a WorkItem, `startIndex` the entry index of the first. Chat cuts a stretch
+ *  at a verdict, a handoff or a run start (chatmodel.ts) and builds each piece with this. */
+export function workOf(startIndex: number, actions: AgentActionEntry[]): WorkItem {
     const edits: EditFile[] = [];
     for (const a of actions) {
         if (isEditAction(a) && a.detail?.kind === "edit") {

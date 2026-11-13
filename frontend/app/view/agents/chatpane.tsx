@@ -33,7 +33,8 @@ import { getProcExitAtom } from "./agentcontrollerstore";
 import { agentDiffScope, openDiff } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
 import { submitToAgent } from "./agentsubmit";
-import type { AgentEntry, AgentVM } from "./agentsviewmodel";
+import { askSentKey, type AgentEntry, type AgentVM } from "./agentsviewmodel";
+import { answerAgentAsk } from "./askanswer";
 import { builderCheckView, procExited, type BuilderCheckView } from "./brainstormmodel";
 import { brainstormAtom, brainstormSeenAtom, shownBrainstormFile } from "./brainstormstore";
 import { AskRow } from "./channelsprimitives";
@@ -47,6 +48,8 @@ import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
+import { isHandoffAsk } from "./chathandoff";
+import { ChatHandoffCard } from "./chathandoffcard";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
 import { awaitsOwnMessage, narratesThinking, streamsLiveReply } from "./chatlive";
 import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chatlivestore";
@@ -103,6 +106,33 @@ function TurnStatsText({ stats }: { stats: TurnStats }) {
         <span data-chat-turn-stats className="flex-none tabular-nums text-ink-faint">
             ({label})
         </span>
+    );
+}
+
+// The agent's live ask under the conversation: the plan handoff (an AskUserQuestion with header `Handoff`) as its card,
+// every other ask as its plain choices. A row of the card answers with the index of the agent's own option, through the
+// answer path the cockpit's bars share (askanswer.ts), which locks the ask against a second click; the rows go dead once
+// the answer is sent, and for an exited agent, whose card is static. Words typed in the box answer the ask as for any ask.
+function ChatAsk({ model, agent, exited }: { model: AgentsViewModel; agent: AgentVM; exited: boolean }) {
+    const sentIds = useAtomValue(model.sentIdsAtom);
+    const question = agent.ask?.questions[0];
+    if (question == null || !isHandoffAsk(agent.ask?.questions)) {
+        return <AskRow model={model} agent={agent} alert />;
+    }
+    const sent = sentIds.has(askSentKey(agent) ?? "");
+    return (
+        <ChatHandoffCard
+            question={question}
+            state={exited ? "static" : "waiting"}
+            agent={agent}
+            onPick={
+                exited || sent
+                    ? undefined
+                    : (optionIndex) => {
+                          answerAgentAsk(model, agent.id, { 0: new Set([optionIndex]) }, {});
+                      }
+            }
+        />
     );
 }
 
@@ -724,7 +754,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                         />
                         {asking ? (
                             <div data-chat-ask={agent.id}>
-                                <AskRow model={model} agent={agent} alert />
+                                <ChatAsk model={model} agent={agent} exited={exited} />
                             </div>
                         ) : null}
                     </div>

@@ -29,7 +29,7 @@ import { userTextCount } from "./chatpending";
 import { openLauncher } from "./launcherstore";
 import { cachedTranscriptEntries } from "./railtranscript";
 
-type PromptIO = {
+export type PromptIO = {
     prompt(blockId: string, text: string): Promise<void>;
     wake(tabId: string, text: string): Promise<void>;
     stopJudge(blockId: string): Promise<void>;
@@ -42,7 +42,7 @@ type PromptIO = {
 // a session whose arc mod holds a control stream runs the line as a prompt, leaving the user's draft in the
 // composer alone; any other session has it typed, as canvas marks are sent. A sleeping agent has no process to send
 // to: the line goes with its Wake, which delivers it once the agent is back, as the composer's message does
-const tauriPromptIO: PromptIO = {
+export const tauriPromptIO: PromptIO = {
     async prompt(blockId, text) {
         await RpcApi.AgentPromptCommand(TabRpcClient, { blockid: blockId, text });
     },

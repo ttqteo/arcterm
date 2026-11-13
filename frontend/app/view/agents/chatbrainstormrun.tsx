@@ -5,142 +5,58 @@
 // section 4 and Builder decisions 8 and 12): a card at the end of the conversation with the run's name, its kind and its
 // stage, updated in place, and one way in (Open run); once the run is landed, complete or cancelled the card is gone and
 // the run is one ✓ row in the timeline. The run is read from the run store (`useRunInfo`), so the card moves with it; no
-// task bar and no actions of its own: the run's own sheet is one click away.
+// task bar and no actions of its own: the run's own sheet is one click away. The card itself is the one every run of a
+// conversation has (`RunCardBox`, chatruncard.tsx); a held run never reaches a done stage, so the `[arc] Run … held:`
+// message wavesrv typed into the session (`ended`) folds the brainstorm's run as it does any other.
 
-import { openTarget } from "@/app/view/jarvis/openref";
-import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue } from "jotai";
-import { ArrowUpRight, Play } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, type ComponentProps } from "react";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
-import { runCardView, runDoneLine, type RunCard, type RunCardView } from "./chatbrainstorm";
-import { CardShell, DoneRow, FOCUS_RING, SMALL_BTN, type CardState } from "./chatbrainstormparts";
+import { runCardView, runDoneLine, type RunCard } from "./chatbrainstorm";
+import { DoneRow } from "./chatbrainstormparts";
+import { RunCardBox } from "./chatruncard";
+import { runBody, runTag } from "./chatruncardmodel";
+import { runCardFolded, runEndedLine, type RunEnded } from "./chatruncards";
 import { runInfoAtom, useRunInfo } from "./runlineagestore";
-import type { StageTone } from "./runstage";
-
-// the stage's dot by its tone: amber only for a run that needs the person (the card's one amber), green for a task at
-// work, accent for the engine moving the run on, the quiet grey otherwise
-const STAGE_DOT: Record<StageTone, string> = {
-    working: "bg-working pulse-dot",
-    running: "bg-accent pulse-dot",
-    asking: "bg-asking pulse-dot",
-    done: "bg-success",
-    error: "bg-error",
-    muted: "bg-muted",
-};
-
-// What the header tag says. A live run is the engine's work, not the person's turn, so the tag says Working and turns
-// amber (Waiting on you) only when the run itself needs the person; an exited agent is static whatever the run does.
-function tagState(card: RunCard, view: RunCardView, loaded: boolean): CardState {
-    if (card.state === "static") {
-        return "static";
-    }
-    return loaded && view.stage?.needsYou === true ? "waiting" : "working";
-}
-
-function RunCardBox({
-    agent,
-    card,
-    model,
-    view,
-    loaded,
-}: {
-    agent: AgentVM;
-    card: RunCard;
-    model: AgentsViewModel;
-    view: RunCardView;
-    loaded: boolean;
-}) {
-    // a run that is loaded but unknown to Arc (deleted) has no name or stage to show and nothing to open
-    const missing = loaded && view.stage == null;
-    const stage = loaded ? view.stage : null;
-    const open = () => fireAndForget(() => openTarget(model, { kind: "run", runId: card.runId }));
-    return (
-        <CardShell
-            kind="run"
-            state={tagState(card, view, loaded)}
-            head={loaded && !missing ? view.kind : "Run"}
-            icon={<Play size={14} strokeWidth={2} className="flex-none" aria-hidden />}
-            agent={agent}
-            label="The run this brainstorm started"
-        >
-            <div className="flex min-w-0 items-center gap-[12px]">
-                <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
-                    {!loaded ? (
-                        <span data-chat-bscard-run-loading className="text-[12.5px] leading-[1.5] text-muted">
-                            Loading the run…
-                        </span>
-                    ) : missing ? (
-                        <span data-chat-bscard-run-missing className="text-[12.5px] leading-[1.5] text-muted">
-                            Arc cannot find this run.
-                        </span>
-                    ) : (
-                        <>
-                            <span
-                                data-chat-bscard-run-name
-                                title={view.name}
-                                className="truncate text-[15px] font-semibold leading-[1.45] text-primary"
-                            >
-                                {view.name}
-                            </span>
-                            {stage != null ? (
-                                <span
-                                    data-chat-bscard-run-stage={stage.key}
-                                    title={stage.label}
-                                    className="flex min-w-0 items-center gap-[8px] text-[12.5px] leading-[1.5] text-secondary"
-                                >
-                                    <span
-                                        aria-hidden="true"
-                                        className={cn("h-[7px] w-[7px] flex-none rounded-full", STAGE_DOT[stage.tone])}
-                                    />
-                                    <span className="min-w-0 truncate">{stage.label}</span>
-                                </span>
-                            ) : null}
-                        </>
-                    )}
-                </div>
-                {!missing ? (
-                    <button
-                        type="button"
-                        data-chat-bscard-run-open
-                        onClick={open}
-                        className={cn(SMALL_BTN, FOCUS_RING, "font-semibold text-primary")}
-                    >
-                        Open run
-                        <ArrowUpRight size={12} strokeWidth={2} aria-hidden />
-                    </button>
-                ) : null}
-            </div>
-        </CardShell>
-    );
-}
 
 /** The whole end row of a run card, its wrapper included: the run the brainstorm started, read from the run store. Once
- *  the run is landed, complete or cancelled it returns nothing (no wrapper, so no empty row holding the column's gap) and
- *  the run is `ChatBrainstormRunDone`'s ✓ row. Otherwise it draws the wrapper the conversation hands in as `rowProps` (its
- *  end row's motion props: the gap opens and closes on the spring) around the card. The wrapper carries the end row's
- *  `data-chat-brainstorm-row` mark itself, so a caller's `rowProps` need not. */
+ *  the run is landed, complete or cancelled, or its run-ended message came (`ended`), it returns nothing (no wrapper, so
+ *  no empty row holding the column's gap) and the run is `ChatBrainstormRunDone`'s ✓ row. Otherwise it draws the wrapper
+ *  the conversation hands in as `rowProps` (its end row's motion props: the gap opens and closes on the spring) around
+ *  the card. The wrapper carries the end row's `data-chat-brainstorm-row` mark itself, so a caller's `rowProps` need
+ *  not. */
 export function ChatBrainstormRunRow({
     agent,
     card,
     model,
     rowProps,
+    ended,
 }: {
     agent: AgentVM;
     card: RunCard;
     model: AgentsViewModel;
     rowProps: ComponentProps<typeof motion.div>;
+    ended?: RunEnded | null;
 }) {
     const read = useRunInfo(card.runId);
     const view = runCardView(read.run);
-    if (view.done) {
+    if (runCardFolded(view, ended)) {
         return null;
     }
     return (
         <motion.div {...rowProps} data-chat-brainstorm-row>
-            <RunCardBox agent={agent} card={card} model={model} view={view} loaded={read.loaded} />
+            <RunCardBox
+                id={card.runId}
+                runId={card.runId}
+                state={runTag(card.state !== "static", read.loaded && view.stage?.needsYou === true)}
+                head={read.loaded && view.stage != null ? view.kind : "Run"}
+                body={runBody(view, read.loaded)}
+                label="The run this brainstorm started"
+                model={model}
+                agent={agent}
+            />
         </motion.div>
     );
 }
@@ -169,9 +85,14 @@ export function useDoneRuns(runIds: readonly string[]): ReadonlySet<string> {
 }
 
 /** A run that is over as one ✓ row, "Run · <name> · Landed", drawn in place of the `brainstorm: run <id>` message that
- *  started it. Nothing while the run is live (its card is at the end of the conversation) or while Arc has not read it. */
-export function ChatBrainstormRunDone({ runId }: { runId: string }) {
+ *  started it. Nothing while the run is live (its card is at the end of the conversation) or while Arc has not read it.
+ *  With its run-ended message (`ended`) the row is "Run 3fa21b0c landed · merged into main" (or "… held: <reason>") and
+ *  opens to the message as written, whether or not the run is done: a held run never is. */
+export function ChatBrainstormRunDone({ runId, ended }: { runId: string; ended?: RunEnded | null }) {
     const { run } = useRunInfo(runId);
+    if (ended != null) {
+        return <DoneRow kind="run" head={runEndedLine(runId, ended)} detail={ended.text} />;
+    }
     const view = runCardView(run);
     return view.done ? <DoneRow kind="run" head={runDoneLine(view)} /> : null;
 }

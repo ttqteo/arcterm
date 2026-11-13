@@ -18,8 +18,26 @@ import {
     type Card,
 } from "../../../../claude/arc-view-mod/hooks/prompt-core";
 import { parseWake, recapLine, wakeSummary, type Wake } from "../../../../claude/arc-view-mod/hooks/wake-core";
-import type { AgentEntry, AgentState, BtwAnswer, EditFile, ShellResult } from "./agentsviewmodel";
-import { groupCompact, type CompactItem, type WorkItem } from "./compacttimeline";
+import type {
+    AgentActionEntry,
+    AgentEntry,
+    AgentState,
+    AskQuestionDetail,
+    BtwAnswer,
+    EditFile,
+    ShellResult,
+} from "./agentsviewmodel";
+import { isHandoffAsk } from "./chathandoff";
+import { runStartAnchor, type RunAnchor } from "./chatruncards";
+import {
+    pairReviewer,
+    REVIEW_LANG,
+    splitReviewBlocks,
+    verdictFromFindings,
+    type ReviewerCall,
+    type Verdict,
+} from "./chatverdict";
+import { groupCompact, workOf, type CompactItem, type WorkItem } from "./compacttimeline";
 import { opensPanel } from "./slashcommands";
 import type { TurnStats } from "./transcriptprojection";
 
@@ -30,7 +48,16 @@ export type AgentPart =
     | { kind: "prose"; text: string; uuid?: string; live?: true }
     | { kind: "work"; work: WorkItem }
     // the files that work edited, once per path with the summed counts; follows its work part
-    | { kind: "files"; files: EditFile[]; adds: number; dels: number };
+    | { kind: "files"; files: EditFile[]; adds: number; dels: number }
+    // Three moments Chat draws as cards of their own (chatverdict.ts, chathandoff.ts, chatruncards.ts); each `key` is
+    // `<kind>:<entry index>` of the message or call it came from, so it holds as entries append. A reviewer's verdict: an
+    // ```arc-review block cut out of a reply, or a `ReportFindings` call (`reviewer`: the Agent / Task call a block judges,
+    // when one pairs)
+    | { kind: "verdict"; key: string; verdict: Verdict; reviewer?: ReviewerCall }
+    // the plan handoff: an AskUserQuestion with the header `Handoff`, answered or not (`question.picked` / `typed`)
+    | { kind: "handoff"; key: string; question: AskQuestionDetail }
+    // a `wsh runs start` call's run: where that run's card sits (the call itself stays a tool line in the work before it)
+    | { kind: "runstart"; key: string; anchor: RunAnchor };
 
 /** Who sent a prompt arcterm typed into the session. */
 export type SentFrom = "run" | "cockpit";
@@ -141,18 +168,60 @@ function recordUuid(entry: AgentEntry | undefined): string | undefined {
     return entry != null && (entry.kind === "user" || entry.kind === "message") ? entry.uuid : undefined;
 }
 
+// What a tool call is to Chat when it is more than a tool line: the review a `ReportFindings` call reports, the plan
+// handoff, or a run `wsh runs start` began.
+type Moment =
+    | { kind: "verdict"; verdict: Verdict }
+    | { kind: "handoff"; question: AskQuestionDetail }
+    | { kind: "runstart"; anchor: RunAnchor };
+
+function momentOf(action: AgentActionEntry): Moment | null {
+    if (action.findings != null) {
+        const verdict = verdictFromFindings({ findings: action.findings });
+        return verdict != null ? { kind: "verdict", verdict } : null;
+    }
+    const detail = action.detail;
+    if (detail?.kind === "ask") {
+        return isHandoffAsk(detail.questions) ? { kind: "handoff", question: detail.questions[0] } : null;
+    }
+    if (detail?.kind === "bash") {
+        const anchor = runStartAnchor(detail.command ?? "", detail.output);
+        return anchor != null ? { kind: "runstart", anchor } : null;
+    }
+    return null;
+}
+
+// a work part, and the files part that follows it when its tools edited any
+function pushWork(parts: AgentPart[], work: WorkItem): void {
+    parts.push({ kind: "work", work });
+    if (work.files.length > 0) {
+        parts.push({ kind: "files", files: work.files, adds: work.adds, dels: work.dels });
+    }
+}
+
+type VerdictPart = Extract<AgentPart, { kind: "verdict" }>;
+
 /**
  * Pure: the transcript as chat items. Every agent-side item (a message, a stretch of tools) between two of your
  * messages, a sent card or a marker joins one group; a marker splits the agent's side in two, since it is a point in the
  * conversation of its own.
+ *
+ * A group is cut at three moments, each a part of its own: a reply holding an ```arc-review block (the prose before and
+ * after it kept as parts), a `ReportFindings` call and a `Handoff` ask (both cut out of the stretch of tools they sit in),
+ * and a `wsh runs start` call whose output names a run (the stretch is split after the call, which stays a tool line).
  */
 export function chatItems(entries: AgentEntry[]): ChatItem[] {
     const out: ChatItem[] = [];
     let group: Extract<ChatItem, { kind: "agent" }> | null = null;
+    // the Agent / Task calls of the group so far, which a reply's review block pairs with; a block is paired once the
+    // group is complete, since the call it names may come after it
+    let calls: ReviewerCall[] = [];
+    const unpaired: { part: VerdictPart; blockIndex: number; calls: ReviewerCall[] }[] = [];
     // the group the next agent-side item joins, opened by that item's own entry index
     const agentParts = (index: number): AgentPart[] => {
         if (group == null) {
             group = { kind: "agent", key: keyOf("agent", index), parts: [] };
+            calls = [];
             out.push(group);
         }
         return group.parts;
@@ -182,15 +251,69 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
                 break;
             case "message": {
                 const uuid = recordUuid(entries[item.index]);
-                agentParts(item.index).push({ kind: "prose", text: item.text, ...(uuid != null ? { uuid } : {}) });
+                const parts = agentParts(item.index);
+                // a reply with no review block is kept as it was written (the split trims the prose around a block)
+                const pieces = item.text.includes(REVIEW_LANG) ? splitReviewBlocks(item.text) : [];
+                const blocks = pieces.filter((p) => p.kind === "verdict").length;
+                if (blocks === 0) {
+                    parts.push({ kind: "prose", text: item.text, ...(uuid != null ? { uuid } : {}) });
+                    break;
+                }
+                let n = 0;
+                for (const piece of pieces) {
+                    if (piece.kind === "prose") {
+                        parts.push({ kind: "prose", text: piece.text, ...(uuid != null ? { uuid } : {}) });
+                        continue;
+                    }
+                    const key = blocks > 1 ? `verdict:${item.index}.${n}` : `verdict:${item.index}`;
+                    n++;
+                    const part: VerdictPart = { kind: "verdict", key, verdict: piece.verdict };
+                    parts.push(part);
+                    unpaired.push({ part, blockIndex: item.index, calls });
+                }
                 break;
             }
             case "work": {
                 const parts = agentParts(item.startIndex);
-                parts.push({ kind: "work", work: item });
-                if (item.files.length > 0) {
-                    parts.push({ kind: "files", files: item.files, adds: item.adds, dels: item.dels });
-                }
+                item.actions.forEach((a, k) => {
+                    if (a.subagent != null) {
+                        calls.push({
+                            description: a.subagent.description,
+                            ...(a.subagent.subagentType != null ? { subagentType: a.subagent.subagentType } : {}),
+                            ...(a.subagent.toolUseId != null ? { toolUseId: a.subagent.toolUseId } : {}),
+                            index: item.startIndex + k,
+                        });
+                    }
+                });
+                // the tools [from, to) as a work part; the stretch itself when nothing cuts it
+                let from = 0;
+                const cut = (to: number): void => {
+                    if (to > from) {
+                        const whole = from === 0 && to === item.actions.length;
+                        pushWork(parts, whole ? item : workOf(item.startIndex + from, item.actions.slice(from, to)));
+                    }
+                    from = to;
+                };
+                item.actions.forEach((a, k) => {
+                    const moment = momentOf(a);
+                    if (moment == null) {
+                        return;
+                    }
+                    const index = item.startIndex + k;
+                    if (moment.kind === "runstart") {
+                        cut(k + 1);
+                        parts.push({ kind: "runstart", key: `runstart:${index}`, anchor: moment.anchor });
+                        return;
+                    }
+                    cut(k);
+                    from = k + 1;
+                    parts.push(
+                        moment.kind === "verdict"
+                            ? { kind: "verdict", key: `verdict:${index}`, verdict: moment.verdict }
+                            : { kind: "handoff", key: `handoff:${index}`, question: moment.question }
+                    );
+                });
+                cut(item.actions.length);
                 break;
             }
             case "compaction":
@@ -201,7 +324,32 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
                 break;
         }
     }
+    for (const { part, blockIndex, calls: groupCalls } of unpaired) {
+        const reviewer = pairReviewer(part.verdict, groupCalls, blockIndex);
+        if (reviewer != null) {
+            part.reviewer = reviewer;
+        }
+    }
     return out;
+}
+
+/**
+ * Pure: whether the agent went on after the verdict at `parts[p]` of an agent item, which is when its card stops waiting on
+ * you and folds. It did when it wrote another reply or made another call after the entry the verdict came from (the key
+ * holds that entry's index), or is writing one now (a `live` prose part after it). The closing words of the reply that
+ * holds a block ("Tell me which of these to fix.") are the same entry, so they are no sign of it: the card waits while
+ * nothing but those follows it. `entries` are the ones `chatItems` was given.
+ */
+export function agentWentOn(entries: readonly AgentEntry[], parts: readonly AgentPart[], p: number): boolean {
+    const part = parts[p];
+    if (part?.kind !== "verdict") {
+        return false;
+    }
+    if (parts.slice(p + 1).some((q) => q.kind === "prose" && q.live)) {
+        return true;
+    }
+    const at = parseInt(part.key.slice(part.key.indexOf(":") + 1), 10);
+    return entries.slice(at + 1).some((e) => e.kind === "message" || e.kind === "action");
 }
 
 // "860", "3.1k", "13k", "1.3M": one decimal while the number is short, as the TUI's counter reads
