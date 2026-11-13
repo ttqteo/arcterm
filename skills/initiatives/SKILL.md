@@ -100,54 +100,23 @@ Chunks are always referenced by exact label, never index.
 - Run↔chunk links detach automatically when the run's evidence seals; session workrefs detach at
   session end. Nothing auto-ticks — completion is always a deliberate action.
 
-## In a Claude agent's Chat: write directly for your own work, propose the rest
+## In a Claude agent's Chat: write it yourself
 
-When the person reads you in arcterm's Chat (a Claude agent they opened, not an agent an Arc run started), what
-you do to an initiative splits two ways:
+When the person reads you in arcterm's Chat, you write to initiatives with `wsh effort` yourself, as everywhere else.
+The person does not add chunks or notes by hand, so never hand them a card or a block to add:
 
-- **Directly with `wsh effort`, as above:** your own work. Progress notes and status on the chunk you hold,
-  claiming it, ticking it done. And whatever the person asked you to put in an initiative ("bỏ vào initiative đi",
-  "add that as a chunk"): they already decided, so a card would only ask again. Write it, then say in one line what
-  you wrote where (a chunk added with no `--proposed`, since they asked for it).
-- **Through a card:** anything new, or not yours, that the person did not ask for. A new chunk, a new initiative, a
-  note on a chunk you do not hold. Write one fenced block in your reply; Chat draws it as a card the person adds,
-  edits or dismisses, and nothing is written until they add it. Do not run `wsh effort chunk add` or `create` for
-  these yourself.
+- **Your own work:** progress notes and status on the chunk you hold, claiming it, ticking it done, as above.
+- **What the person asked for** ("bỏ vào initiative đi", "add that as a chunk", or a yes to a chunk you offered):
+  `chunk add` with no `--proposed`, since they decided.
+- **A chunk nobody asked for** (scope you found, a split you suggest, the next step you see): `chunk add --proposed`.
+  It waits on the initiative (the agent header's popover, the Brief) for the person to accept or drop. A yes in the
+  conversation is the accept: `wsh effort chunk status <effort> "<chunk>" pending`.
+- **A note on a chunk you do not hold:** `chunk note`, saying in the note what it comes from.
+- **A new initiative nobody asked for:** name it and its first chunks in one line and ask; `create` it on a yes,
+  under its topic (`--parent`).
 
-Agents an Arc run started (a lead, a worker) keep writing directly: their Chat is not an inbox. So does any agent
-whose Chat is not there (pi, codex). Outside Chat the block reads as raw JSON.
-
-The block is the fence `arc-initiative` around one JSON object:
-
-````
-```arc-initiative
-{"kind": "note", "effort": "<oid>", "chunk": "<exact chunk label>", "text": "<the note>"}
-```
-````
-
-- `kind` (`"note"`, `"chunk"` or `"initiative"`) and `text` are required: the note, the new chunk's label (200
-  characters at most; a longer one is clipped), or, for an initiative, what it is for.
-- `effort` is the initiative's oid; left out, the card opens on the initiative you work on. `chunk` is a note's chunk by
-  its exact label; left out, it is the chunk you hold. One that does not exist opens the card with that target
-  empty, for the person to pick.
-- A new initiative also takes `title` (left out, the first line of `text`), `chunks` (its first chunks, an array of
-  labels) and `parent` (the oid of its topic, from `wsh effort list --topics`; left out, the topic yours sits under).
-- Broken JSON, an unknown `kind` or no `text` leaves the block as plain code, with no card. A field this list does not
-  name is ignored.
-- **Word a new proposal differently from one the person already handled.** A block is remembered by its content: the
-  very same block written again shows as the row it folded into, and the person is not asked twice.
-
-Do not wait on a card. When the person has handled one, the outcome opens their next message, one line per card
-in the order they were handled, then a blank line and what they wrote:
-
-- `initiative: added note to <title> (effort:<oid>) › <chunk>`
-- `initiative: added chunk "<label>" to <title> (effort:<oid>)`
-- `initiative: created initiative <title> (effort:<oid>) under <topic>`
-- `initiative: dismissed <note|chunk|initiative> for <title>`
-
-These lines are the outcome, nothing to act on unless the person says so; do not answer them, and do not propose a
-card they dismissed again. The oid is there so you can carry on with `wsh effort` (claim the new chunk, say) without
-searching. If the person sends nothing more, you never hear, which is fine.
+Then say in one line what you wrote where. Chat still draws the `arc-initiative` blocks of older replies as cards, and
+a line `initiative: …` opening a message is the outcome of one of those: nothing to act on, and never write a new block.
 
 ## Statuses
 

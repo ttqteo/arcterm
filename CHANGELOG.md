@@ -56,6 +56,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- An agent in Chat adds chunks and notes to an initiative itself instead of handing you a card to add: what you
+  asked for goes straight in, and a chunk you did not ask for waits as proposed on the initiative for you to accept
+  or drop (a yes in the conversation accepts it).
 - While an agent works, Show the diff and Open the terminal are chips with their names under the chat box's text
   again, instead of two bare icons beside Stop.
 - The whole app starts one size bigger: the default zoom is now 110%, and `Cmd`+`0` (`Ctrl`+`0` on Windows) returns
