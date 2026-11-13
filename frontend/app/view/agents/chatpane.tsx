@@ -461,9 +461,12 @@ export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; ag
 // the dock's place in the pane, and the room kept between the last line and the box (px)
 const DOCK_BOTTOM = 20;
 const DOCK_MARGIN = 16;
+// the chip line floating above the dock (a 28px chip and its 8px gap), kept clear under the last line whether it shows or
+// not, so the line coming and going never moves the conversation
+const CHIP_LINE = 36;
 
-// The scroller's bottom padding = the dock's height (the box, and the goal strip above it) + its 20px from the bottom + a
-// 16px margin, so the last line scrolls to rest above the box whatever its height. It is written to the element, not kept
+// The scroller's bottom padding = the dock's height (the box, and the goal strip above it) + its 20px from the bottom + the
+// chip line's room + a 16px margin, so the last line scrolls to rest above the box and its chips whatever its height. It is written to the element, not kept
 // in state: the box's height spring is a new height every frame, and a re-render of the pane per frame would redraw the
 // conversation. The padding takes height from the scroller's content box, which useStickToBottom's observer sees and
 // re-pins a stuck tail on, so the tail rides the box as it grows; a reader scrolled up is left where they are. The
@@ -479,7 +482,7 @@ function useDockPadding(scrollRef: RefObject<HTMLDivElement | null>, dockRef: Re
             // a cell that is not on screen has no size: keep the padding it had, the observer writes the real one when
             // the cell is shown again
             if (dock.offsetHeight > 0) {
-                scroller.style.paddingBottom = `${dock.offsetHeight + DOCK_BOTTOM + DOCK_MARGIN}px`;
+                scroller.style.paddingBottom = `${dock.offsetHeight + DOCK_BOTTOM + CHIP_LINE + DOCK_MARGIN}px`;
             }
         };
         apply();
@@ -606,6 +609,9 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
         asleep ? "asleep" : agent.blockId != null && canStop(agent.state, agent.sleeping) ? "running" : "idle"
     );
     const dockRef = useRef<HTMLDivElement>(null);
+    // the slot above the dock the box draws its chip line into, and whether the line shows (the jump pill rises over it)
+    const [chipSlot, setChipSlot] = useState<HTMLDivElement | null>(null);
+    const [chipLineShown, setChipLineShown] = useState(false);
     useDockPadding(scrollRef, dockRef);
     // false while ChatLayer's exit plays: the pane is still drawn (fading) but already gone as far as input goes
     const present = useIsPresent();
@@ -925,10 +931,22 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     `[data-sleeping-composer] [data-chat-input]`. */}
                 <div ref={dockRef} data-chat-dock className="pointer-events-none absolute inset-x-6 bottom-5 z-10">
                     <div className="pointer-events-auto relative mx-auto w-full max-w-[720px]">
+                        {/* the box's chip line (chatcomposer.tsx), floated just above the dock so it never changes the box's
+                            height; it takes the pointer only on its chips */}
+                        <div
+                            ref={setChipSlot}
+                            data-chat-chip-slot
+                            className="pointer-events-none absolute bottom-full left-0 right-0 mb-2 flex px-1"
+                        />
                         {/* Chat's own jump-to-latest: a ↓ pill naming its key, centred just above the box while the reader is scrolled
                             up; it pops in and out on the spring (the wrapper carries the centring, so the pop's scale is the
                             button's alone) */}
-                        <div className="absolute bottom-full left-1/2 z-10 mb-4 -translate-x-1/2">
+                        <div
+                            className={cn(
+                                "absolute bottom-full left-1/2 z-10 -translate-x-1/2 transition-[margin] duration-[140ms] motion-reduce:transition-none",
+                                chipLineShown ? "mb-[48px]" : "mb-4"
+                            )}
+                        >
                             <AnimatePresence initial={false}>
                                 {!atBottom ? (
                                     <motion.button
@@ -969,6 +987,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                             entries={entries}
                             onSent={onBoxSent}
                             onBoxState={setBoxNow}
+                            chipSlot={chipSlot}
+                            onChipLine={setChipLineShown}
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
                             chips={chips}
                             onMarkDone={markDone}

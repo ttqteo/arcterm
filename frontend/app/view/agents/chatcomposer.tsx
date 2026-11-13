@@ -51,6 +51,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { createPortal } from "react-dom";
 import { canStop, useAgentSend } from "./agentcomposer";
 import type { AgentsViewModel } from "./agents";
 import { sleepingLine, wakeAgent, wakeErrorToast } from "./agentsleep";
@@ -190,6 +191,8 @@ export function ChatComposer({
     entries,
     onSent,
     onBoxState,
+    chipSlot,
+    onChipLine,
     onShowDiff,
     chips,
     onMarkDone,
@@ -210,6 +213,11 @@ export function ChatComposer({
     /** the box's state (chatboxstate.ts) whenever it changes, and once as the box mounts: the pane words the empty box's
      *  placeholder from it */
     onBoxState?: (state: BoxState) => void;
+    /** where the chip line is drawn: a slot the pane floats above the dock, so the line coming and going never changes
+     *  the box's height (nor moves the conversation). Left out, the line sits in the box above its bottom row. */
+    chipSlot?: HTMLElement | null;
+    /** whether the chip line shows, whenever that changes: the pane lifts its jump-to-latest pill over it */
+    onChipLine?: (shown: boolean) => void;
     /** the running agent's "Show the diff" chip; left out, the chip is not drawn */
     onShowDiff?: () => void;
     /** the replies suggested once the turn ended (chatsuggest.ts chatChips), drawn as chips while the box is empty; a
@@ -804,6 +812,23 @@ export function ChatComposer({
         diff: acts.diff,
         terminal: acts.terminal,
     });
+    const chipLine = (
+        <AnimatePresence initial={false} mode="wait">
+            {row.kind === "actions" ? (
+                <ActionChips
+                    key="actions"
+                    onShowDiff={row.diff ? onShowDiff : undefined}
+                    onOpenTerminal={row.terminal ? showTerminal : undefined}
+                />
+            ) : row.kind === "suggest" ? (
+                <SuggestChips key="suggest" chips={row.chips} onSend={sendSuggested} onMarkDone={onMarkDone} />
+            ) : null}
+        </AnimatePresence>
+    );
+    const chipShown = row.kind !== "none";
+    useLayoutEffect(() => {
+        onChipLine?.(chipShown);
+    }, [chipShown]);
     // Send is a word asleep and while the wake is in flight. The word stays what it last was while it fades out, so a
     // finished wake does not swap "Waking…" for "Send" under the eye.
     const showWord = asleep || waking;
@@ -1092,17 +1117,10 @@ export function ChatComposer({
                     likely send next, in their words, which a click sends. Those step aside while the person writes. One
                     line goes before the next comes, so the box never holds both, and the actions come and go only once
                     the agent's state has held (useChipRow). */}
-                <AnimatePresence initial={false} mode="wait">
-                    {row.kind === "actions" ? (
-                        <ActionChips
-                            key="actions"
-                            onShowDiff={row.diff ? onShowDiff : undefined}
-                            onOpenTerminal={row.terminal ? showTerminal : undefined}
-                        />
-                    ) : row.kind === "suggest" ? (
-                        <SuggestChips key="suggest" chips={row.chips} onSend={sendSuggested} onMarkDone={onMarkDone} />
-                    ) : null}
-                </AnimatePresence>
+                {chipSlot == null ? chipLine : null}
+                {chipSlot != null
+                    ? createPortal(<div className="pointer-events-auto">{chipLine}</div>, chipSlot)
+                    : null}
                 {/* one row through a sleep and a wake: its parts fold and crossfade in place (reduced motion snaps them) */}
                 <MotionConfig reducedMotion="user">
                     <div className="flex items-center gap-1.5">
