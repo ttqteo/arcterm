@@ -47,7 +47,7 @@ import { ChunkView, ChunkViewHead } from "./chunkview";
 import { EffortCreateForm } from "./effortcreateform";
 import { EffortDetailView } from "./effortdetailview";
 import { effortFeed, feedNoteCounts } from "./effortfeed";
-import { buildEffortCard, chunkTone, type ChunkTone, type EffortCardModel } from "./effortmodel";
+import { buildEffortCards, chunkTone, type ChunkTone, type EffortCardModel } from "./effortmodel";
 import { effortChunkRows, loadEffortDetail, togglePin, type ChunkRowModel } from "./effortstore";
 import { useInitiativeEdits, type InitiativeEditsState } from "./initiativeedits";
 import {
@@ -96,7 +96,7 @@ function progressOf(chunks: ChunkRowModel[]): { done: number; total: number; pct
 function useCards(): EffortCardModel[] {
     const briefing = useAtomValue(briefingStateAtom);
     const summaries = briefing.snapshot?.state.efforts;
-    return useMemo(() => (summaries ?? []).map(buildEffortCard), [summaries]);
+    return useMemo(() => buildEffortCards(summaries ?? []), [summaries]);
 }
 
 /**

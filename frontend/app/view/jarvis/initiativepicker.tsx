@@ -23,7 +23,7 @@ import {
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { stateRpcTimeoutMs } from "./briefingstore";
-import { buildEffortCard, type EffortCardModel } from "./effortmodel";
+import { buildEffortCards, type EffortCardModel } from "./effortmodel";
 import { pickerRows, type PickerRow, type PickerTone } from "./initiativepickermodel";
 
 // the initiatives that are not archived, read when the picker opens (the Brief's own list is not loaded on the Agent
@@ -39,7 +39,7 @@ export function useInitiativeCards(active: boolean): { cards: EffortCardModel[] 
         }
         let live = true;
         RpcApi.EffortListCommand(TabRpcClient, {}, { timeout: stateRpcTimeoutMs })
-            .then((rtn) => live && setState({ cards: (rtn.efforts ?? []).map(buildEffortCard), error: null }))
+            .then((rtn) => live && setState({ cards: buildEffortCards(rtn.efforts ?? []), error: null }))
             .catch((e) => live && setState({ cards: [], error: e instanceof Error ? e.message : String(e) }));
         return () => {
             live = false;

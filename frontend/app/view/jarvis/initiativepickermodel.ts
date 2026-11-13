@@ -47,7 +47,11 @@ function pickerRow(card: EffortCardModel): PickerRow {
         oref: card.oref,
         title: card.title,
         project: card.project ?? "",
-        progress: `${card.done}/${card.done + card.remaining}`,
+        // a topic holds no chunks of its own, so it names no count
+        progress:
+            card.topic === true && card.done + card.remaining === 0
+                ? "topic"
+                : `${card.done}/${card.done + card.remaining}`,
         ...pickerStatus(card),
     };
 }

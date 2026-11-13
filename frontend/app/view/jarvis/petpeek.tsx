@@ -51,7 +51,7 @@ import {
 } from "react";
 import { briefingStateAtom } from "./briefingstore";
 import { splitIdeas } from "./briefrows";
-import { buildEffortCard } from "./effortmodel";
+import { buildEffortCards } from "./effortmodel";
 import { peekAddress } from "./openref";
 import { formKey, questionAfterPick, type FormKey } from "./peekanswer";
 import { PeekItemView, runItemCommand, type ItemChrome } from "./peekitem";
@@ -829,10 +829,7 @@ export function PetPeek({
         }
         const efforts = snapshot.state.efforts ?? [];
         const trackers = splitIdeas(
-            efforts
-                .filter((e) => e.status !== "archived")
-                .sort((a, b) => b.updatedts - a.updatedts)
-                .map(buildEffortCard)
+            buildEffortCards(efforts.filter((e) => e.status !== "archived").sort((a, b) => b.updatedts - a.updatedts))
         ).trackers;
         const queue = reviewQueue(
             reviewCards(trackers, efforts, items, agents),

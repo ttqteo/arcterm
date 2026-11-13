@@ -314,6 +314,39 @@ describe("splitIdeas", () => {
         expect(out.trackers.map((c) => c.oref)).toEqual(["t1", "t2"]);
         expect(out.ideas.map((c) => c.oref)).toEqual(["i1", "i2"]);
     });
+
+    it("keeps a topic with the trackers: it has no chunks because its sub-initiatives hold them", () => {
+        const topic = { ...card("top", 0, 0), topic: true };
+        const out = splitIdeas([topic, card("i1", 0, 0)]);
+        expect(out.trackers.map((c) => c.oref)).toEqual(["top"]);
+        expect(out.ideas.map((c) => c.oref)).toEqual(["i1"]);
+    });
+});
+
+describe("a topic's line", () => {
+    const topic = (over: Partial<EffortCardModel> = {}) =>
+        ({
+            ...buildEffortCard({
+                oref: "effort:top",
+                title: "Chat",
+                status: "active",
+                done: 0,
+                total: 0,
+                updatedts: 1,
+            } as EffortSummary),
+            topic: true,
+            ...over,
+        }) as EffortCardModel;
+
+    it("is a tracker with no progress, not an idea", () => {
+        const line = initiativeLine(topic());
+        expect(line.idea).toBeUndefined();
+        expect(line.progress).toBeNull();
+    });
+
+    it("is never counted quiet, however long since it was touched", () => {
+        expect(quietCount([topic()], 30 * 24 * 3_600_000)).toBe(0);
+    });
 });
 
 describe("parent and child initiatives", () => {

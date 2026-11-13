@@ -179,11 +179,18 @@ function InitiativeCard({
                 <PinButton face={face} shown={focused} onPin={actions.onPin} className="-mr-1 -mt-0.5" />
             </div>
             <div className="flex items-baseline gap-2">
-                <span className="text-[20px] font-semibold tabular-nums text-primary">
-                    {face.done}
-                    <span className="text-ink-faint">/{face.total}</span>
-                </span>
-                <span className="text-[11.5px] tabular-nums text-muted">{face.pct}</span>
+                {face.hasProgress ? (
+                    <>
+                        <span className="text-[20px] font-semibold tabular-nums text-primary">
+                            {face.done}
+                            <span className="text-ink-faint">/{face.total}</span>
+                        </span>
+                        <span className="text-[11.5px] tabular-nums text-muted">{face.pct}</span>
+                    </>
+                ) : (
+                    // a pinned topic: its sub-initiatives hold the work, so there is no count of its own
+                    <span className="text-[20px] font-semibold text-ink-faint">Topic</span>
+                )}
                 <span className="flex-1" />
                 <span
                     data-jarvis-card-status

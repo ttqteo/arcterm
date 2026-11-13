@@ -80,12 +80,16 @@ function InitiativeListRow({
                     </span>
                 ) : null}
             </span>
-            <span className="flex items-center gap-2">
-                <SegmentBar segments={face.segments} size="sm" className="flex-1" />
-                <span className="w-[34px] flex-none text-right text-[11px] tabular-nums text-secondary">
-                    {face.done}/{face.total}
+            {face.hasProgress ? (
+                <span className="flex items-center gap-2">
+                    <SegmentBar segments={face.segments} size="sm" className="flex-1" />
+                    <span className="w-[34px] flex-none text-right text-[11px] tabular-nums text-secondary">
+                        {face.done}/{face.total}
+                    </span>
                 </span>
-            </span>
+            ) : (
+                <span />
+            )}
             <span title={face.note} className="min-w-0 truncate text-[12px] text-muted">
                 {label != null ? (
                     <>
