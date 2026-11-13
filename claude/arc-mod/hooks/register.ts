@@ -739,6 +739,14 @@ export const register: Register = (on) => {
             (text) => $.fs.write(file, text),
             (err) => $.ui.log(`arc: writing the live reply failed: ${String(err)}`, { to: "debug" })
         );
+        // the trailing write of text that landed inside the write window (LiveGather.flushIn)
+        let trailing: Timer | null = null;
+        const flush = () => {
+            trailing = null;
+            if (live.flushIn(Date.now()) !== null) {
+                out.write(live.payload(false, Date.now()));
+            }
+        };
         try {
             for await (const chunk of next(e)) {
                 if (chunk.kind === "text" || chunk.kind === "thinking") {
@@ -746,11 +754,17 @@ export const register: Register = (on) => {
                     const now = Date.now();
                     if (live.due(now)) {
                         out.write(live.payload(false, now));
+                    } else if (trailing === null) {
+                        const wait = live.flushIn(now);
+                        if (wait !== null) {
+                            trailing = $.clock.after(wait, flush);
+                        }
                     }
                 }
                 yield chunk;
             }
         } finally {
+            trailing?.cancel();
             if (live.hasText()) {
                 out.write(live.payload(true, Date.now()));
             }

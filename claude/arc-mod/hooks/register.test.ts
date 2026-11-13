@@ -279,6 +279,12 @@ describe("the live reply (turn.step)", () => {
                     k === "WAVETERM_BLOCKID" || k === "WAVETERM_JWT" ? "x" : k === "HOME" ? "/home/me" : undefined,
             },
             session: { ...$.session, id: async () => "sess-1" },
+            clock: {
+                after: (ms: number, fn: () => void) => {
+                    const t = setTimeout(fn, ms);
+                    return { cancel: () => clearTimeout(t) };
+                },
+            },
             fs: {
                 ...$.fs,
                 write: async (path: string, text: string) => {
@@ -296,14 +302,17 @@ describe("the live reply (turn.step)", () => {
         { kind: "stop", stopReason: "tool_use", usage: null },
     ];
 
-    async function step(event: Record<string, unknown>, writes: { path: string; text: string }[]) {
+    async function step(
+        event: Record<string, unknown>,
+        writes: { path: string; text: string }[],
+        chunks: () => AsyncGenerator<unknown> = async function* () {
+            yield* CHUNKS;
+        }
+    ) {
         const handlers = registered();
         const $ = liveEngine(writes);
         await handlers.get("session.start")!($, { cwd: "/repo" }, async () => undefined);
-        const next = () =>
-            (async function* () {
-                yield* CHUNKS;
-            })();
+        const next = chunks;
         const out: unknown[] = [];
         for await (const c of handlers.get("turn.step")!($, event, next) as unknown as AsyncIterable<unknown>) {
             out.push(c);
@@ -323,6 +332,24 @@ describe("the live reply (turn.step)", () => {
             step: 0,
             done: true,
             blocks: [{ index: 1, kind: "text", text: "Hello" }],
+        });
+    });
+
+    it("writes the end of a block that landed inside the write window while a tool call's input still streams", async () => {
+        const writes: { path: string; text: string }[] = [];
+        let midStream: unknown[] = [];
+        await step({ turnId: "turn-1", index: 0 }, writes, async function* () {
+            yield { kind: "text", index: 0, text: "Writ" };
+            yield { kind: "text", index: 0, text: "ing the tests." };
+            yield { kind: "tool", index: 1, name: "Write", id: "t1" };
+            // the tool's input streams for a while, with no text chunk
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            midStream = writes.map((w) => JSON.parse(w.text));
+            yield { kind: "stop", stopReason: "tool_use", usage: null };
+        });
+        expect(midStream[midStream.length - 1]).toMatchObject({
+            done: false,
+            blocks: [{ index: 0, kind: "text", text: "Writing the tests." }],
         });
     });
 

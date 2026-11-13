@@ -6,6 +6,9 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Chat keeps up with a reply before a big Write: after a build with this arc mod installed, ask a Claude
+  agent to write a ~100-line file and watch Chat → the line it says before the Write ("Writing the …") shows whole
+  within a moment, not cut mid-word until the Write lands. `claude/arc-mod/hooks/register.ts` turn.step trailing write.
 - [ ] (arcterm) Brainstorm card motion: in Chat, on a builder check card hover Open in Brainstorm, Keep talking and
   Approve → the colours ease in (~140ms) instead of snapping; click Agent's calls N → the list slides open and folds
   shut with no jump in the gap above it; open a ✓ Run row's detail → same. The `chat-brainstorm-review` scenario passed
