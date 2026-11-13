@@ -1341,9 +1341,9 @@ export function ChatConversation({
                 );
             }
             case "work": {
-                // the work the agent is doing now: nothing but its files chip and its cards (a verdict, a handoff, a run it
-                // started) after it in the last item. It shows open, so a click on it folds it (a key of its own, which
-                // stops counting once the agent is done)
+                // the work the agent is doing now: nothing but its files chip and its cards (a verdict, a handoff, a Doc
+                // review, a run or a council it started) after it in the last item. It shows open, so a click on it folds
+                // it (a key of its own, which stops counting once the agent is done)
                 const autoOpen =
                     !!active &&
                     last &&
@@ -1354,7 +1354,9 @@ export function ChatConversation({
                                 q.kind === "files" ||
                                 q.kind === "verdict" ||
                                 q.kind === "handoff" ||
-                                q.kind === "runstart"
+                                q.kind === "docreview" ||
+                                q.kind === "runstart" ||
+                                q.kind === "councilstart"
                         );
                 return (
                     <ChatSteps
@@ -1410,6 +1412,12 @@ export function ChatConversation({
                     />
                 );
             }
+            // Task 4 draws a council's ended row at its start call (its live card sits at the end of the conversation)
+            case "councilstart":
+                return null;
+            // Task 4 draws the answered Doc review as its row (the live card is the dock's, as the handoff's is)
+            case "docreview":
+                return null;
         }
     };
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import type { AgentAsk, AgentVM } from "./agentsviewmodel";
+import type { AgentAsk, AgentVM, AskQuestionDetail } from "./agentsviewmodel";
 import { focusItem, parseDocReview, shouldAutoOpen } from "./docreview";
 
 const OPTIONS = [{ label: "Approve" }, { label: "Request changes" }];
@@ -13,6 +13,17 @@ const ask = (header: string, question: string, options = OPTIONS, askId = "a1"):
 });
 
 describe("parseDocReview", () => {
+    it("reads the questions alone, as the live ask's or as the transcript's answered ones", () => {
+        const live = ask("Doc review", "/r/paper/intro.tex\nA note.\n- one\nPages: 12");
+        const answered: readonly AskQuestionDetail[] = [
+            { ...live.questions[0], options: OPTIONS, picked: ["Request changes"], typed: "1. [a] shorter" },
+        ];
+        const fromLive = parseDocReview({ questions: live.questions });
+        expect(fromLive).toEqual(parseDocReview(live));
+        expect(fromLive).toMatchObject({ kind: "doc", doc: "latex", path: "/r/paper/intro.tex", pageLimit: 12 });
+        expect(parseDocReview({ questions: answered })).toEqual(fromLive);
+        expect(parseDocReview(undefined)).toBeNull();
+    });
     it("reads a Spec review ask", () => {
         const q =
             "C:/repo/docs/specs/2026-09-24-auth.md\n- Redis sessions, 14-day sliding TTL\n- Accept the legacy sid cookie for one release";

@@ -84,7 +84,7 @@ describe("sameChatItem", () => {
         expect(sameChatItem(items([ask(["A"])])[0], items([ask(["A"])])[0])).toBe(true);
     });
 
-    describe("the verdict, handoff and run-start parts", () => {
+    describe("the verdict, handoff, run-start, council-start and Doc review parts", () => {
         const review = (summary: string): string =>
             `\`\`\`arc-review\n${JSON.stringify({ kind: "code", pass: false, findings: [{ severity: "Minor", file: "a.ts", summary }] })}\n\`\`\``;
         const spawn = (toolUseId: string): AgentEntry =>
@@ -113,6 +113,32 @@ describe("sameChatItem", () => {
                 target: "wsh runs start",
                 outcome: "ok",
                 detail: { kind: "bash", command: "wsh runs start --plan p.md", output, exit: 0 },
+            }) as AgentEntry;
+        const council = (output: string): AgentEntry =>
+            ({
+                kind: "action",
+                verb: "bash",
+                target: "wsh council start",
+                outcome: "ok",
+                detail: { kind: "bash", command: 'wsh council start --feature "x"', output, exit: 0 },
+            }) as AgentEntry;
+        const docReview = (picked: string[], typed?: string): AgentEntry =>
+            ({
+                kind: "action",
+                verb: "asked",
+                target: "Doc review",
+                detail: {
+                    kind: "ask",
+                    questions: [
+                        {
+                            question: "paper/intro.tex\n- one",
+                            header: "Doc review",
+                            options: [{ label: "Approve" }, { label: "Request changes" }],
+                            picked,
+                            ...(typed != null ? { typed } : {}),
+                        },
+                    ],
+                },
             }) as AgentEntry;
         const at = (entries: AgentEntry[]): ChatItem => items([{ kind: "user", text: "go" }, ...entries])[1];
 
@@ -145,6 +171,39 @@ describe("sameChatItem", () => {
             expect(sameChatItem(at([start("started run aaaaaaaa (x)\n")]), at([start("queued aaaaaaaa\n")]))).toBe(
                 false
             );
+        });
+
+        it("tells a council-start part by the council and the line it names", () => {
+            const started = (id: string, estimate = "≈ 14 calls · ~0.9M tokens"): string =>
+                `council ${id} started: x · review · g · 4 experts · ${estimate}\n`;
+            expect(sameChatItem(at([council(started("aaaa1111"))]), at([council(started("aaaa1111"))]))).toBe(true);
+            expect(sameChatItem(at([council(started("aaaa1111"))]), at([council(started("bbbb2222"))]))).toBe(false);
+            expect(
+                sameChatItem(
+                    at([council(started("aaaa1111"))]),
+                    at([council(started("aaaa1111", "≈ 9 calls · ~1M tokens"))])
+                )
+            ).toBe(false);
+            const queued = "Queued after cccc3333 · council aaaa1111 starts by itself when it ends\n";
+            expect(sameChatItem(at([council(started("aaaa1111"))]), at([council(queued)]))).toBe(false);
+            expect(sameChatItem(at([council(queued)]), at([council(queued)]))).toBe(true);
+        });
+
+        it("tells a Doc review once it was answered, and by what it was answered", () => {
+            expect(sameChatItem(at([docReview([])]), at([docReview([])]))).toBe(true);
+            expect(sameChatItem(at([docReview([])]), at([docReview(["Approve"])]))).toBe(false);
+            expect(
+                sameChatItem(
+                    at([docReview(["Request changes"], "1. [a] x")]),
+                    at([docReview(["Request changes"], "1. [a] x")])
+                )
+            ).toBe(true);
+            expect(
+                sameChatItem(
+                    at([docReview(["Request changes"], "1. [a] x")]),
+                    at([docReview(["Request changes"], "1. [a] y")])
+                )
+            ).toBe(false);
         });
     });
 
