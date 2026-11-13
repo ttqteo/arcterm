@@ -1,21 +1,33 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: {} }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
+import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentVM } from "./agentsviewmodel";
+import { parseBrainstorm } from "./brainstormmodel";
 import {
     listAllOpenBrainstorms,
     listOpenBrainstorms,
+    pollAndMerge,
     pollBrainstormOnce,
     reconcileBrainstorms,
     settleBrainstorm,
     type BrainstormIO,
 } from "./brainstormpoller";
-import type { BrainstormState } from "./brainstormstore";
+import {
+    attachBrainstorm,
+    brainstormBandAtom,
+    brainstormSeenBoardsAtom,
+    detachBrainstorm,
+    getBrainstorm,
+    setBrainstormMode,
+    updateBrainstorm,
+    type BrainstormState,
+} from "./brainstormstore";
 
 const PATH = "/p/.superpowers/brainstorm/t/brainstorm.json";
 const BASE = "http://127.0.0.1:5005/canvas/tok";
@@ -344,5 +356,77 @@ describe("listAllOpenBrainstorms", () => {
             ["b", "/b", "Y"],
             ["a", "/a", "X"],
         ]);
+    });
+});
+
+describe("seen boards on a poll", () => {
+    const A = "A.dc.html";
+    const B = "B.dc.html";
+    const withBoards = (...boards: string[]) =>
+        fileText({
+            canvas: "lag",
+            question: null,
+            parts: [{ id: "who", title: "Who", state: "yours", body: "Page the owner.", boards }],
+        });
+    const seenOf = () => globalStore.get(brainstormSeenBoardsAtom)[PATH];
+    const band = () => globalStore.get(brainstormBandAtom("a1"));
+
+    // an agent whose brainstorm was read with boards [A], the user having looked at the tab (or not) at that point
+    function attachReadOnce(shown: boolean): void {
+        attachBrainstorm("a1", { topic: "t", cwd: "/p" }, 100);
+        const parsed = parseBrainstorm(withBoards(A));
+        if (!parsed.ok) {
+            throw new Error("fixture does not parse");
+        }
+        updateBrainstorm("a1", (s) => ({ ...s, file: parsed.file, modifiedMs: 5 }));
+        setBrainstormMode("a1", "brainstorm", 200);
+        if (!shown) {
+            setBrainstormMode("a1", "terminal", 300);
+        }
+    }
+
+    afterEach(() => {
+        detachBrainstorm("a1");
+        globalStore.set(brainstormSeenBoardsAtom, {});
+    });
+
+    it("refreshes the names when a poll reads a changed file while the agent's tab is shown", async () => {
+        attachReadOnce(true);
+        expect(seenOf()?.names).toEqual([A]);
+        await pollAndMerge("a1", undefined, fakeIO({ modifiedMs: 10, text: withBoards(A, B) }).io);
+        expect(seenOf()?.names).toEqual([A, B]);
+        expect(band()?.newCount).toBe(0);
+    });
+
+    it("leaves the names alone for an agent not in brainstorm mode, and reports the board as new", async () => {
+        attachReadOnce(false);
+        await pollAndMerge("a1", undefined, fakeIO({ modifiedMs: 10, text: withBoards(A, B) }).io);
+        expect(getBrainstorm("a1")?.file?.parts[0].boards).toEqual([A, B]);
+        expect(seenOf()?.names).toEqual([A]);
+        expect(band()?.newCount).toBe(1);
+        expect(band()?.boards.map((b) => [b.name, b.isNew])).toEqual([
+            [A, false],
+            [B, true],
+        ]);
+    });
+
+    it("writes no entry for an agent that never opened the tab: its first boards stay new", async () => {
+        attachBrainstorm("a1", { topic: "t", cwd: "/p" }, 100);
+        await pollAndMerge("a1", undefined, fakeIO({ modifiedMs: 10, text: withBoards(A) }).io);
+        expect(seenOf()).toBeUndefined();
+        expect(band()?.newCount).toBe(1);
+    });
+
+    it("does not touch the names when the poll reads nothing", async () => {
+        attachReadOnce(true);
+        const before = globalStore.get(brainstormSeenBoardsAtom);
+        await pollAndMerge("a1", undefined, fakeIO({ modifiedMs: 5, text: withBoards(A, B) }).io);
+        expect(globalStore.get(brainstormSeenBoardsAtom)).toBe(before);
+    });
+
+    it("keeps the names when a read fails to parse", async () => {
+        attachReadOnce(true);
+        await pollAndMerge("a1", undefined, fakeIO({ modifiedMs: 11, text: '{"v": 1, "title": "Cons' }).io);
+        expect(seenOf()?.names).toEqual([A]);
     });
 });

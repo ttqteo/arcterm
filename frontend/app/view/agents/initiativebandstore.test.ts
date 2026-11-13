@@ -51,11 +51,12 @@ import { takeResultLines } from "./chatinitiativestore";
 import { markChunkDone } from "./chatsuggeststore";
 import {
     BAND_STORAGE_KEY,
-    bandOpenAtom,
+    bandPartsAtom,
     coerceBandOpen,
-    setBandOpen,
+    setBandPart,
     switchAgentChunk,
-    toggleBand,
+    toggleBandPart,
+    withBandPart,
 } from "./initiativebandstore";
 
 const OREF = "effort:e1";
@@ -86,7 +87,7 @@ beforeEach(() => {
     ls.failWrites = false;
     delete (globalThis as any).window.__initiativeSwitchFail;
     takeResultLines(TAB);
-    globalStore.set(bandOpenAtom, []);
+    globalStore.set(bandPartsAtom, []);
 });
 
 // A is the agent's own active chunk, B and C pending
@@ -329,58 +330,115 @@ describe("markChunkDone", () => {
     });
 });
 
-describe("the band's open state", () => {
-    it("toggleBand flips one agent's flag and writes chat.initiative.band", () => {
-        toggleBand("a1");
-        expect(globalStore.get(bandOpenAtom)).toEqual(["a1"]);
-        expect(ls.store.get(BAND_STORAGE_KEY)).toBe('["a1"]');
+describe("the band's open part", () => {
+    const part = (id: string, p: "initiative" | "brainstorm") => ({ id, part: p });
+
+    it("toggleBandPart opens one agent's part and writes chat.initiative.band, the others untouched", () => {
+        toggleBandPart("a1", "initiative");
+        expect(globalStore.get(bandPartsAtom)).toEqual([part("a1", "initiative")]);
+        expect(ls.store.get(BAND_STORAGE_KEY)).toBe('[{"id":"a1","part":"initiative"}]');
         expect(BAND_STORAGE_KEY).toBe("chat.initiative.band");
-        toggleBand("a2");
-        expect(globalStore.get(bandOpenAtom)).toEqual(["a1", "a2"]);
-        toggleBand("a1");
-        expect(globalStore.get(bandOpenAtom)).toEqual(["a2"]);
-        expect(ls.store.get(BAND_STORAGE_KEY)).toBe('["a2"]');
+        toggleBandPart("a2", "brainstorm");
+        expect(globalStore.get(bandPartsAtom)).toEqual([part("a1", "initiative"), part("a2", "brainstorm")]);
+        // the same part again closes it
+        toggleBandPart("a1", "initiative");
+        expect(globalStore.get(bandPartsAtom)).toEqual([part("a2", "brainstorm")]);
+        expect(ls.store.get(BAND_STORAGE_KEY)).toBe('[{"id":"a2","part":"brainstorm"}]');
+    });
+
+    it("toggleBandPart opens one part at a time: the other part's open one is replaced, not joined", () => {
+        toggleBandPart("a1", "brainstorm");
+        toggleBandPart("a2", "initiative");
+        // a1 goes from the brainstorm part to the initiative part
+        toggleBandPart("a1", "initiative");
+        expect(globalStore.get(bandPartsAtom)).toEqual([part("a2", "initiative"), part("a1", "initiative")]);
+        // and back, the initiative part's own toggle closing nothing here
+        toggleBandPart("a1", "brainstorm");
+        expect(globalStore.get(bandPartsAtom)).toEqual([part("a2", "initiative"), part("a1", "brainstorm")]);
+        toggleBandPart("a1", "brainstorm");
+        expect(globalStore.get(bandPartsAtom)).toEqual([part("a2", "initiative")]);
+    });
+
+    it("setBandPart opens a named part or closes with null, and persists what it set", () => {
+        setBandPart("a1", "brainstorm");
+        expect(globalStore.get(bandPartsAtom)).toEqual([part("a1", "brainstorm")]);
+        // the persisted shape round-trips into the same list
+        expect(coerceBandOpen(ls.store.get(BAND_STORAGE_KEY))).toEqual(globalStore.get(bandPartsAtom));
+        setBandPart("a1", null);
+        expect(globalStore.get(bandPartsAtom)).toEqual([]);
+        expect(ls.store.get(BAND_STORAGE_KEY)).toBe("[]");
     });
 
     it("still toggles when localStorage throws", () => {
         ls.failWrites = true;
         const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-        expect(() => toggleBand("a3")).not.toThrow();
-        expect(globalStore.get(bandOpenAtom)).toEqual(["a3"]);
-        expect(() => toggleBand("a3")).not.toThrow();
-        expect(globalStore.get(bandOpenAtom)).toEqual([]);
+        expect(() => toggleBandPart("a3", "initiative")).not.toThrow();
+        expect(globalStore.get(bandPartsAtom)).toEqual([part("a3", "initiative")]);
+        expect(() => toggleBandPart("a3", "initiative")).not.toThrow();
+        expect(globalStore.get(bandPartsAtom)).toEqual([]);
         warn.mockRestore();
     });
 
     it("keeps the 200 newest open agents, dropping the oldest", () => {
         for (let i = 0; i < 201; i++) {
-            setBandOpen("agent" + i, true);
+            setBandPart("agent" + i, i % 2 === 0 ? "initiative" : "brainstorm");
         }
-        const ids = globalStore.get(bandOpenAtom);
-        expect(ids).toHaveLength(200);
-        expect(ids[0]).toBe("agent1");
-        expect(ids[199]).toBe("agent200");
+        const list = globalStore.get(bandPartsAtom);
+        expect(list).toHaveLength(200);
+        expect(list[0]).toEqual(part("agent1", "brainstorm"));
+        expect(list[199]).toEqual(part("agent200", "initiative"));
     });
 
-    it("setBandOpen to the state it already has changes and writes nothing", () => {
-        setBandOpen("a1", true);
-        const before = globalStore.get(bandOpenAtom);
+    it("setBandPart to the state it already has changes and writes nothing", () => {
+        setBandPart("a1", "initiative");
+        const before = globalStore.get(bandPartsAtom);
         ls.store.delete(BAND_STORAGE_KEY);
-        setBandOpen("a1", true);
-        setBandOpen("never-open", false);
-        expect(globalStore.get(bandOpenAtom)).toBe(before);
+        setBandPart("a1", "initiative");
+        setBandPart("never-open", null);
+        expect(globalStore.get(bandPartsAtom)).toBe(before);
         expect(ls.store.has(BAND_STORAGE_KEY)).toBe(false);
     });
 
-    it("reads what localStorage holds as a list of ids, and anything else as none", () => {
-        expect(coerceBandOpen('["a","b"]')).toEqual(["a", "b"]);
+    it("withBandPart puts the opened agent last and leaves the list alone when nothing changes", () => {
+        const list = [part("a", "initiative"), part("b", "brainstorm")];
+        expect(withBandPart(list, "b", "brainstorm")).toBe(list);
+        expect(withBandPart(list, "zzz", null)).toBe(list);
+        expect(withBandPart(list, "a", "brainstorm")).toEqual([part("b", "brainstorm"), part("a", "brainstorm")]);
+        expect(withBandPart(list, "b", "initiative")).toEqual([part("a", "initiative"), part("b", "initiative")]);
+        expect(withBandPart(list, "a", null)).toEqual([part("b", "brainstorm")]);
+    });
+
+    it("reads the landed shape, a list of bare ids, as the initiative part open", () => {
+        expect(coerceBandOpen('["a1","a2"]')).toEqual([part("a1", "initiative"), part("a2", "initiative")]);
+        // a band open before the update stays open on the same part
+        ls.store.set(BAND_STORAGE_KEY, '["a1","a2"]');
+        expect(coerceBandOpen(ls.store.get(BAND_STORAGE_KEY))).toEqual([
+            part("a1", "initiative"),
+            part("a2", "initiative"),
+        ]);
+    });
+
+    it("reads the new shape, and anything else as none", () => {
+        expect(coerceBandOpen('[{"id":"a","part":"brainstorm"},{"id":"b","part":"initiative"}]')).toEqual([
+            part("a", "brainstorm"),
+            part("b", "initiative"),
+        ]);
+        // both shapes in one list, an entry with a part it does not know or none, and repeats, are dealt with one by one
+        expect(
+            coerceBandOpen(
+                '["a",{"id":"b","part":"brainstorm"},{"id":"c","part":"bogus"},{"id":"d"},{"part":"initiative"},"a",{"id":"b","part":"initiative"}]'
+            )
+        ).toEqual([part("a", "initiative"), part("b", "brainstorm")]);
         expect(coerceBandOpen(null)).toEqual([]);
         expect(coerceBandOpen("not json")).toEqual([]);
         expect(coerceBandOpen('{"a":true}')).toEqual([]);
-        expect(coerceBandOpen('["a",3,"","a","b"]')).toEqual(["a", "b"]);
+        expect(coerceBandOpen('["a",3,"","a","b",null,[]]')).toEqual([
+            part("a", "initiative"),
+            part("b", "initiative"),
+        ]);
         const many = JSON.stringify(Array.from({ length: 250 }, (_, i) => "id" + i));
         const kept = coerceBandOpen(many);
         expect(kept).toHaveLength(200);
-        expect(kept[0]).toBe("id50");
+        expect(kept[0]).toEqual(part("id50", "initiative"));
     });
 });

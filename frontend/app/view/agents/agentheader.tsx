@@ -57,8 +57,9 @@ import type { AgentsViewModel } from "./agents";
 import { askingLabel, askSentKey, formatTokens, projectOf, type AgentVM } from "./agentsviewmodel";
 import { setAgentView, type AgentView } from "./agentview";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
+import { brainstormTabDot } from "./brainstormband";
 import { waitsOnUser } from "./brainstormmodel";
-import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
+import { brainstormAtom, brainstormBandAtom, shownBrainstormFile } from "./brainstormstore";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { cellView, cellViewOptions, chatCapable, type CellView } from "./chatmode";
@@ -254,7 +255,7 @@ function LinkToInitiative({ agent, project, keyHint }: { agent: AgentVM; project
             <button
                 ref={setAnchor}
                 type="button"
-                data-initiative-link
+                data-initiative-link={agent.id}
                 aria-haspopup="dialog"
                 aria-expanded={open}
                 onClick={() => setOpen(!open)}
@@ -379,6 +380,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const fullscreen = useAtomValue(terminalFullscreenAtom);
     const floating = useAtomValue(floatModeAtom);
     const brainstorm = useAtomValue(brainstormAtom(agent.id));
+    const brainstormBand = useAtomValue(brainstormBandAtom(agent.id));
     // an agent with a brainstorm never shows its canvas: the brainstorm pane opens its boards, and takes the canvas's slot
     const canvas = useAtomValue(canvasStateAtom(agent.id));
     const hasCanvas = canvas != null && brainstorm == null;
@@ -432,6 +434,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
               : hasCanvas && canvas.mode === "canvas"
                 ? "canvas"
                 : "terminal";
+    // the Brainstorm tab's dot: amber while the agent asks, else the accent while a board is new since the tab was last opened
+    const brainstormDot = brainstormTabDot(brainstormBand?.newCount ?? 0, brainstormAsking, view === "brainstorm");
     // the bare key that goes back to the terminal from the first view the agent has to swap to
     const swapKey = docReview != null ? "r" : brainstorm != null ? "b" : "c";
     // A Claude agent's control always shows, Chat first, awake or asleep: Chat and Terminal are the one "terminal" slot,
@@ -836,10 +840,16 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                           label: (
                                               <>
                                                   Brainstorm
-                                                  {brainstormAsking ? (
+                                                  {brainstormDot === "asking" ? (
                                                       <span
                                                           aria-label="asking you"
                                                           className="h-[6px] w-[6px] rounded-full bg-warning"
+                                                      />
+                                                  ) : brainstormDot === "new" ? (
+                                                      <span
+                                                          data-brainstorm-tab-new
+                                                          aria-label="new boards"
+                                                          className="h-[6px] w-[6px] rounded-full bg-accent"
                                                       />
                                                   ) : null}
                                               </>

@@ -1,10 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The initiative band's two stores (docs/superpowers/specs/2026-11-14-chat-initiative-link-design.md): which agents'
-// bands are open (`chat.initiative.band` in localStorage, so a reload keeps them), and the chunk switch, whose ops
-// initiativeband.ts plans and which this file only sends. Module-level atoms, as every surface but Agent unmounts on a
-// switch.
+// The initiative band's two stores (docs/superpowers/specs/2026-11-14-chat-initiative-link-design.md): which part of each
+// agent's band is expanded (`chat.initiative.band` in localStorage, so a reload keeps them; the initiative part, or the
+// brainstorm part beside it, one at a time), and the chunk switch, whose ops initiativeband.ts plans and which this file
+// only sends. Module-level atoms, as every surface but Agent unmounts on a switch.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { effortDetailAtom, loadEffortDetail, mutateEffortOps } from "@/app/view/jarvis/effortstore";
@@ -15,7 +15,7 @@ import { switchPlan } from "./initiativeband";
 
 export const BAND_STORAGE_KEY = "chat.initiative.band";
 
-// the agents whose band is open, kept to the newest this many
+// the agents whose band has a part expanded, kept to the newest this many
 const MAX_OPEN = 200;
 
 declare global {
@@ -35,9 +35,20 @@ function warnOnce(what: string, e: unknown): void {
     }
 }
 
-/** Pure: the open agents out of what localStorage held: a JSON list of ids, kept in order without repeats or empty ids and
- *  cut to the newest 200; anything else is none. */
-export function coerceBandOpen(raw: unknown): string[] {
+/** The band's two parts: the initiative part and the brainstorm part (the brainstorm status beside it). One part is
+ *  expanded at a time per agent. */
+export type BandPart = "initiative" | "brainstorm";
+
+/** One agent's expanded part. */
+export type BandPartEntry = { id: string; part: BandPart };
+
+const isBandPart = (v: unknown): v is BandPart => v === "initiative" || v === "brainstorm";
+
+/** Pure: the expanded parts out of what localStorage held: a JSON list of `{ id, part }`, kept in order, the first of an
+ *  agent's repeats winning, without empty ids or unknown parts, and cut to the newest 200. A bare string entry, the shape
+ *  that landed first (a list of ids), reads as the initiative part, so a band open before the update stays open; anything
+ *  else is none. */
+export function coerceBandOpen(raw: unknown): BandPartEntry[] {
     if (typeof raw !== "string") {
         return [];
     }
@@ -50,23 +61,45 @@ export function coerceBandOpen(raw: unknown): string[] {
     if (!Array.isArray(parsed)) {
         return [];
     }
-    const ids = parsed.filter((id, i): id is string => typeof id === "string" && id !== "" && parsed.indexOf(id) === i);
-    return ids.slice(-MAX_OPEN);
+    const out: BandPartEntry[] = [];
+    const seen = new Set<string>();
+    for (const item of parsed) {
+        let entry: BandPartEntry | null = null;
+        if (typeof item === "string") {
+            entry = { id: item, part: "initiative" };
+        } else if (item != null && typeof item === "object" && !Array.isArray(item)) {
+            const { id, part } = item as { id?: unknown; part?: unknown };
+            if (typeof id === "string" && isBandPart(part)) {
+                entry = { id, part };
+            }
+        }
+        if (entry == null || entry.id === "" || seen.has(entry.id)) {
+            continue;
+        }
+        seen.add(entry.id);
+        out.push(entry);
+    }
+    return out.slice(-MAX_OPEN);
 }
 
-/** Pure: `ids` with `agentId` open (as the newest, the oldest dropped past 200) or closed. The same list when it already
- *  is as asked. */
-export function withBandOpen(ids: readonly string[], agentId: string, open: boolean): readonly string[] {
-    if (!open) {
-        return ids.includes(agentId) ? ids.filter((id) => id !== agentId) : ids;
+/** Pure: `list` with `agentId`'s expanded part set to `part` (as the newest, the oldest dropped past 200) or, with null,
+ *  collapsed. The same list when it already is as asked. */
+export function withBandPart(
+    list: readonly BandPartEntry[],
+    agentId: string,
+    part: BandPart | null
+): readonly BandPartEntry[] {
+    if (part == null) {
+        return list.some((e) => e.id === agentId) ? list.filter((e) => e.id !== agentId) : list;
     }
-    if (ids[ids.length - 1] === agentId) {
-        return ids;
+    const last = list[list.length - 1];
+    if (last != null && last.id === agentId && last.part === part) {
+        return list;
     }
-    return [...ids.filter((id) => id !== agentId), agentId].slice(-MAX_OPEN);
+    return [...list.filter((e) => e.id !== agentId), { id: agentId, part }].slice(-MAX_OPEN);
 }
 
-function readOpen(): string[] {
+function readOpen(): BandPartEntry[] {
     try {
         return coerceBandOpen(globalThis.localStorage?.getItem(BAND_STORAGE_KEY));
     } catch (e) {
@@ -75,24 +108,28 @@ function readOpen(): string[] {
     }
 }
 
-/** The ids of the agents whose band is open, oldest first. Seeded from localStorage at module load. */
-export const bandOpenAtom = atom<readonly string[]>(readOpen()) as PrimitiveAtom<readonly string[]>;
+/** Each agent's expanded band part, oldest first; an agent not in the list has its band collapsed. Seeded from
+ *  localStorage at module load. */
+export const bandPartsAtom = atom<readonly BandPartEntry[]>(readOpen()) as PrimitiveAtom<readonly BandPartEntry[]>;
 
-const openOf = atomFamily((agentId: string) => atom((get) => get(bandOpenAtom).includes(agentId)));
+const partOf = atomFamily((agentId: string) =>
+    atom((get) => get(bandPartsAtom).find((e) => e.id === agentId)?.part ?? null)
+);
 
-/** Whether the agent's band is open (it starts collapsed). */
-export function useBandOpen(agentId: string): boolean {
-    return useAtomValue(openOf(agentId));
+/** Which part of the agent's band is expanded, or null when it is collapsed (it starts collapsed). */
+export function useBandPart(agentId: string): BandPart | null {
+    return useAtomValue(partOf(agentId));
 }
 
-/** Opens or collapses one agent's band; the others are untouched. A storage that cannot be written leaves it in memory. */
-export function setBandOpen(agentId: string, open: boolean): void {
-    const prev = globalStore.get(bandOpenAtom);
-    const next = withBandOpen(prev, agentId, open);
+/** Expands one agent's `part` (replacing the other part if that one was open) or, with null, collapses its band; the
+ *  other agents are untouched. A storage that cannot be written leaves it in memory. */
+export function setBandPart(agentId: string, part: BandPart | null): void {
+    const prev = globalStore.get(bandPartsAtom);
+    const next = withBandPart(prev, agentId, part);
     if (next === prev) {
         return;
     }
-    globalStore.set(bandOpenAtom, next);
+    globalStore.set(bandPartsAtom, next);
     try {
         globalThis.localStorage?.setItem(BAND_STORAGE_KEY, JSON.stringify(next));
     } catch (e) {
@@ -100,8 +137,10 @@ export function setBandOpen(agentId: string, open: boolean): void {
     }
 }
 
-export function toggleBand(agentId: string): void {
-    setBandOpen(agentId, !globalStore.get(bandOpenAtom).includes(agentId));
+/** Expands `part`, or collapses the band when `part` is the one already expanded. */
+export function toggleBandPart(agentId: string, part: BandPart): void {
+    const open = globalStore.get(bandPartsAtom).find((e) => e.id === agentId)?.part ?? null;
+    setBandPart(agentId, open === part ? null : part);
 }
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));

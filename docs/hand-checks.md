@@ -6,6 +6,14 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **The brainstorm part of the Chat band on a live agent.** Link a real Claude agent to an initiative and
+  have it run a brainstorm that draws boards. While it works between two questions, its Chat band reads `Brainstorm`,
+  `N boards` and `Decided N` beside the initiative, with no Mark done on the line. Let it draw another board while
+  Chat is shown → within a few seconds `1 new` with a dot appears, and the header's Brainstorm tab carries the same
+  dot. Open the part → the decisions that are yours and the boards, the new one tagged `new`, the conversation moved
+  down and not under it. Click the new board → the Brainstorm tab opens and both dots go; from inside the band, `b`
+  opens the same tab. Checked only with fixture agents in the `chat-brainstorm-band` scenario (`chatband.tsx`,
+  `brainstormbandview.tsx`).
 - [ ] (arcterm) A pasted jobslot wrapper queues once: after a build with the new `wsh` and an arcterm restart, have a
   Claude agent run `'<home>/.arc/bin/wsh' jobslot --hold-parent -- 'task check:ts'; [ $? -ne 75 ] || exit 75` then a
   newline and `task check:ts`, in the foreground → the Jobs popover shows one `task check:ts`, running, not a second

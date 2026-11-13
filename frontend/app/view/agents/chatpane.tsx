@@ -40,6 +40,7 @@ import { answerAgentAsk } from "./askanswer";
 import { builderCheckView, procExited, type BuilderCheckView } from "./brainstormmodel";
 import { brainstormAtom, brainstormSeenAtom, shownBrainstormFile } from "./brainstormstore";
 import { AskRow } from "./channelsprimitives";
+import { ChatBand } from "./chatband";
 import { boxPlaceholder, type BoxState } from "./chatboxstate";
 import { brainstormCard } from "./chatbrainstorm";
 import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstormstore";
@@ -88,7 +89,6 @@ import { markChunkDone, requestModelSuggest, useEffortDetail, useModelSuggest } 
 import { TaggedPromptText } from "./chattagblock";
 import { ChatVisualHost } from "./chatvisualview";
 import { switchAgentChunk } from "./initiativebandstore";
-import { InitiativeBand } from "./initiativebandview";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
 import { PromptImages, useNow } from "./narrationtimeline";
@@ -777,10 +777,11 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                 barred ? "top-[26px]" : "top-0"
             )}
         >
-            {/* The initiative band: above the scroller, not inside it, so opening it pushes the conversation down and never
-                covers it. The scroller keeps its scrollTop as it shrinks (a reader stays on the message at the top of the
-                view) and useStickToBottom re-pins a followed tail, so the reading position holds. */}
-            {agent.effortId != null ? <InitiativeBand model={model} agent={agent} /> : null}
+            {/* The band (the initiative and the brainstorm attached to the agent): above the scroller, not inside it, so
+                opening it pushes the conversation down and never covers it. The scroller keeps its scrollTop as it shrinks
+                (a reader stays on the message at the top of the view) and useStickToBottom re-pins a followed tail, so the
+                reading position holds. */}
+            {agent.effortId != null || brainstormState != null ? <ChatBand model={model} agent={agent} /> : null}
             <div className="relative min-h-0 flex-1">
                 <div
                     ref={scrollRef}

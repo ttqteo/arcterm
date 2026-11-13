@@ -338,11 +338,20 @@ describe("doneIsAdvance", () => {
 
 describe("bandLabels", () => {
     it("is the full band at width", () => {
-        expect(bandLabels(false)).toEqual({ markDone: "Mark done", segments: true, titleMax: 320 });
+        expect(bandLabels(false)).toEqual({ markDone: "Mark done", segments: true, titleMax: 320, chunkLabel: true });
     });
 
     it("drops the bar, clips the title to 150px and shortens Mark done in a narrow cell", () => {
-        expect(bandLabels(true)).toEqual({ markDone: "Done", segments: false, titleMax: 150 });
+        expect(bandLabels(true)).toEqual({ markDone: "Done", segments: false, titleMax: 150, chunkLabel: true });
+    });
+
+    it("keeps the chunk label beside a brainstorm part at width, and drops it only in a narrow cell", () => {
+        expect(bandLabels(false, true).chunkLabel).toBe(true);
+        expect(bandLabels(true, true)).toEqual({ markDone: "Done", segments: false, titleMax: 150, chunkLabel: false });
+    });
+
+    it("keeps the chunk label of a narrow initiative-only band, which the view clips", () => {
+        expect(bandLabels(true, false).chunkLabel).toBe(true);
     });
 
     it("is narrow below 640px", () => {
