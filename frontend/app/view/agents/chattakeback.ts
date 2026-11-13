@@ -178,3 +178,89 @@ export function mergeTaken(texts: string[], box: string): string {
     const taken = texts.join("\n");
     return box === "" ? taken : `${taken}\n${box}`;
 }
+
+/** how long after a take-back the record it took may still reach Chat: Claude Code wrote it before the Esc, and Chat
+ *  draws it at its next read of the transcript */
+export const TAKEN_BACK_LANDS_MS = 5_000;
+
+/** A message Esc took back after Claude Code had written it to the transcript. Claude Code's rewind keeps the record, and
+ *  only the next prompt, branching off before it, makes it the dead branch the projection drops; until then it stood in
+ *  the conversation as sent, beside its own text back in the box (2026-11-14, on Windows). `uuids` are its records found
+ *  so far, `texts` the ones not found yet, which may still land until `at` + TAKEN_BACK_LANDS_MS, and `known` the user
+ *  records Chat held at the take-back, which a message sent again later is never one of. */
+export interface TakenBack {
+    at: number;
+    uuids: string[];
+    texts: string[];
+    known: string[];
+}
+
+// the person's messages after the agent's last reply (a message, a tool call or a command), oldest first
+function trailingUsers(entries: readonly AgentEntry[]): Extract<AgentEntry, { kind: "user" }>[] {
+    const out: Extract<AgentEntry, { kind: "user" }>[] = [];
+    for (let i = entries.length - 1; i >= 0; i--) {
+        const e = entries[i];
+        if (e.kind === "message" || e.kind === "action" || e.kind === "command") {
+            break;
+        }
+        if (e.kind === "user") {
+            out.unshift(e);
+        }
+    }
+    return out;
+}
+
+// the trailing messages of `texts`, one record each, leaving out `skip`; and the texts no record matched
+function matchTrailing(
+    entries: readonly AgentEntry[],
+    texts: readonly string[],
+    skip: ReadonlySet<string>
+): { uuids: string[]; texts: string[] } {
+    const left = [...texts];
+    const uuids: string[] = [];
+    for (const e of trailingUsers(entries)) {
+        if (e.uuid == null || skip.has(e.uuid)) {
+            continue;
+        }
+        const i = left.indexOf(stripResultLines(e.text));
+        if (i >= 0) {
+            uuids.push(e.uuid);
+            left.splice(i, 1);
+        }
+    }
+    return { uuids, texts: left };
+}
+
+/** Pure: what an Esc take-back (`plan.kind` interrupt) took, against what Chat held when the key went: a message that
+ *  had landed is found at once, among the person's messages since the agent's last reply. */
+export function takenBackOf(plan: TakeBack, entries: readonly AgentEntry[], now: number): TakenBack {
+    const known = entries.flatMap((e) => (e.kind === "user" && e.uuid != null ? [e.uuid] : []));
+    const { uuids, texts } = matchTrailing(entries, plan.texts, new Set());
+    return { at: now, uuids, texts, known };
+}
+
+/** Pure: `entries` without the records a take-back took, and the take-back with the records found now (null when none
+ *  was), to keep, so they stay hidden past the wait. A text not found yet is looked for among the records Chat did not
+ *  hold at the take-back, until TAKEN_BACK_LANDS_MS has passed. */
+export function withoutTakenBack(
+    entries: AgentEntry[],
+    taken: TakenBack | undefined,
+    now: number
+): { entries: AgentEntry[]; next: TakenBack | null } {
+    if (taken == null) {
+        return { entries, next: null };
+    }
+    let next: TakenBack | null = null;
+    if (taken.texts.length > 0 && now - taken.at <= TAKEN_BACK_LANDS_MS) {
+        const found = matchTrailing(entries, taken.texts, new Set([...taken.known, ...taken.uuids]));
+        if (found.uuids.length > 0) {
+            next = { ...taken, uuids: [...taken.uuids, ...found.uuids], texts: found.texts };
+        }
+    }
+    const hide = new Set((next ?? taken).uuids);
+    if (hide.size === 0) {
+        return { entries, next };
+    }
+    const kept = entries.filter((e) => !(e.kind === "user" && e.uuid != null && hide.has(e.uuid)));
+    return { entries: kept.length === entries.length ? entries : kept, next };
+}

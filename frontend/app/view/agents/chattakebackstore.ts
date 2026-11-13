@@ -4,14 +4,32 @@
 // Runs a take-back (chattakeback.ts has the rules): the key into the agent's terminal, a wait until Claude Code's box
 // holds the text, Ctrl+U to clear it there, and the text into the chat box. Nothing comes back when the box never shows
 // the text (Claude took the message, or answered first); a box that would not clear gets its text queued again with
-// Enter, so a take-back that fails leaves things as they were.
+// Enter, so a take-back that fails leaves things as they were. An Esc take-back is kept per agent (TakenBack), so the
+// conversation hides the record Claude Code wrote before the Esc (withoutTakenBack).
 
+import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { readTermLines } from "@/app/view/term/termpaste";
 import { stringToBase64 } from "@/util/util";
+import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
+import { useMemo } from "react";
 import { dropPendingIds } from "./chatpendingstore";
-import { boxHolds, inputBoxRows, type TakeBack } from "./chattakeback";
+import { boxHolds, inputBoxRows, type TakeBack, type TakenBack } from "./chattakeback";
+
+/** each agent's last Esc take-back, by agent id */
+const takenBackAtom = atom<Record<string, TakenBack>>({}) as PrimitiveAtom<Record<string, TakenBack>>;
+
+/** Keeps `taken` as the agent's last Esc take-back, in place of the one before. */
+export function noteTakenBack(agentId: string, taken: TakenBack): void {
+    globalStore.set(takenBackAtom, { ...globalStore.get(takenBackAtom), [agentId]: taken });
+}
+
+/** The agent's last Esc take-back, or undefined: a pane reads only its own. */
+export function useTakenBack(agentId: string): TakenBack | undefined {
+    const one = useMemo(() => atom((get) => get(takenBackAtom)[agentId]), [agentId]);
+    return useAtomValue(one);
+}
 
 const KEY_UP = "\x1b[A";
 const KEY_ESC = "\x1b";

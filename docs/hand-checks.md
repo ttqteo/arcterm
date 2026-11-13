@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Esc in Chat before the reply, on Windows: after a build, in a Claude agent's Chat send a long ask
+  ("write 3000 words on …") and press Esc once its bubble shows as sent, before any reply → the text comes back into the
+  box and the bubble leaves the conversation at the same moment, with no Queued bubble after; send it again → it shows
+  once and gets its answer. Tried on a Mac in the browser dev app with a real Claude (haiku), not in WebView2. Commit:
+  fix(chat) a message Esc takes back leaves the conversation
 - [ ] (arcterm) A pasted jobslot wrapper queues once: after a build with the new `wsh` and an arcterm restart, have a
   Claude agent run `'<home>/.arc/bin/wsh' jobslot --hold-parent -- 'task check:ts'; [ $? -ne 75 ] || exit 75` then a
   newline and `task check:ts`, in the foreground → the Jobs popover shows one `task check:ts`, running, not a second

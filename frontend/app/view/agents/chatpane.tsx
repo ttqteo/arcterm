@@ -84,6 +84,8 @@ import {
 } from "./chatsuggest";
 import { markChunkDone, requestModelSuggest, useEffortDetail, useModelSuggest } from "./chatsuggeststore";
 import { TaggedPromptText } from "./chattagblock";
+import { withoutTakenBack } from "./chattakeback";
+import { noteTakenBack, useTakenBack } from "./chattakebackstore";
 import { ChatVisualHost } from "./chatvisualview";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
@@ -522,7 +524,19 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const path = agent.transcriptPath ?? "";
     const surface = useAtomValue(model.surfaceAtom);
     const { view, error, loadEarlier, requestAppend } = useTranscriptWindow(path, agent.agent);
-    const entries = view?.entries ?? NO_ENTRIES;
+    // less a message Esc took back after Claude Code wrote it (chattakeback.ts withoutTakenBack): its rewind keeps the
+    // record until the next prompt branches off before it
+    const taken = useTakenBack(agent.id);
+    const shown = useMemo(
+        () => withoutTakenBack(view?.entries ?? NO_ENTRIES, taken, Date.now()),
+        [view?.entries, taken]
+    );
+    const entries = shown.entries;
+    useEffect(() => {
+        if (shown.next != null) {
+            noteTakenBack(agent.id, shown.next);
+        }
+    }, [shown.next]);
     // where the reader left the conversation, kept while the cell shows the terminal or another agent
     const placeId = `chat:${agent.id}:${path}`;
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries, placeId);

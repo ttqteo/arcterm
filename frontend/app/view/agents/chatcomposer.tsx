@@ -99,8 +99,8 @@ import {
     type ChipRowKind,
     type RunningActions,
 } from "./chatsuggest";
-import { mergeTaken, takeBackPlan } from "./chattakeback";
-import { takeBack } from "./chattakebackstore";
+import { mergeTaken, takeBackPlan, takenBackOf } from "./chattakeback";
+import { noteTakenBack, takeBack } from "./chattakebackstore";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { fallAsleepLabel } from "./fallasleepstore";
 import { useFileMention } from "./filemention";
@@ -657,8 +657,21 @@ export function ChatComposer({
         if (plan == null) {
             return false;
         }
+        // an Esc's message may be in the transcript already: the record is kept as the text comes back, in the same tick,
+        // so its bubble goes as the text lands in the box (chattakeback.ts withoutTakenBack)
+        const held = entries ?? [];
         fireAndForget(async () => {
             await takeBack(agent.id, blockid, plan, (texts) => {
+                if (plan.kind === "interrupt") {
+                    noteTakenBack(agent.id, takenBackOf(plan, held, Date.now()));
+                    // a message that had landed still has its sent record: with the record hidden it would read as not
+                    // arrived and draw its pending bubble again (a pending one went with plan.ids)
+                    if (plan.ids.length === 0) {
+                        for (const t of texts) {
+                            dropPending(agent.id, t);
+                        }
+                    }
+                }
                 latest.current.setText(mergeTaken(texts, latest.current.text), texts.join("\n").length);
             });
         });
