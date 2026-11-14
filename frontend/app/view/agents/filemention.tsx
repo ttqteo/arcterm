@@ -11,7 +11,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { reloadFileIndex } from "@/app/view/code/codestore";
 import { makeConnRoute } from "@/util/util";
-import { File as FileGlyph, Folder } from "lucide-react";
+import { Bot, File as FileGlyph, Folder, Play, Users } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { EditorLike, KeyLike } from "./chateditor";
 import {
@@ -28,6 +28,7 @@ import {
 } from "./launchermention";
 import { homeDir } from "./pathlinkroute";
 import { PickerList, type PickerLook } from "./pickerlist";
+import { insertRef, refMatches, refToken, type RefItem } from "./refmention";
 
 export interface FileMentionState {
     // the dropdown under the box, portaled out of its container (it draws nothing while no list shows)
@@ -38,11 +39,17 @@ export interface FileMentionState {
     onCaret: (el: EditorLike) => void;
 }
 
-// a row of the list: a path of the project's own ranking, or an entry of the folder being walked (`key` is the text a
-// pick writes for it: `../src/`, `../a.ts`)
-type MentionRow = { kind: "path"; path: string } | { kind: "entry"; key: string; name: string; isdir: boolean };
+// a row of the list: a path of the project's own ranking, an entry of the folder being walked (`key` is the text a
+// pick writes for it: `../src/`, `../a.ts`), or an agent, run or council the text refers to (refmention.ts)
+type MentionRow =
+    | { kind: "path"; path: string }
+    | { kind: "entry"; key: string; name: string; isdir: boolean }
+    | { kind: "ref"; item: RefItem };
 
-const rowKey = (row: MentionRow) => (row.kind === "path" ? row.path : row.key);
+const rowKey = (row: MentionRow) =>
+    row.kind === "path" ? row.path : row.kind === "entry" ? row.key : `ref:${row.item.kind}:${row.item.id}`;
+
+const REF_ICONS = { agent: Bot, run: Play, council: Users } as const;
 
 // one folder's listing while the picker is open: nothing yet (being read), its entries, or an error
 type DirListing = { entries?: BrowseEntry[]; error?: boolean };
@@ -76,7 +83,8 @@ async function listDir(base: string, dir: string): Promise<BrowseEntry[]> {
 // instead of becoming a pill. A mention that already is a pill (the editor's `onPill`: the caret right after one, or one
 // selected) is never one being typed, so the list stays shut on it. `look: "frosted"` (only the chat box passes it)
 // draws the list as Chat's suggestion panel over `frame`, the message box (pickerlist.tsx); the launcher keeps the plain
-// list.
+// list. `refs` (the chat box's) are the live agents, runs and councils a query can also name: the ones it matches lead the
+// list, and a pick writes `kind:<id>`, a reference the agent reads, not an `@` (refmention.ts).
 export function useFileMention({
     text: task,
     setText,
@@ -87,6 +95,7 @@ export function useFileMention({
     recent,
     look,
     frame,
+    refs,
 }: {
     text: string;
     setText: (text: string, caret?: number) => void;
@@ -97,6 +106,7 @@ export function useFileMention({
     recent?: readonly string[];
     look?: PickerLook;
     frame?: RefObject<HTMLElement | null>;
+    refs?: readonly RefItem[];
 }): FileMentionState {
     const [caret, setCaret] = useState(0);
     // the selection is on a pill (the chat editor tells: EditorLike.onPill): that mention is complete, not one being typed
@@ -173,13 +183,25 @@ export function useFileMention({
             note = own?.error ? "Could not list the project's files" : "Listing files…";
         }
     }
+    // the agents, runs and councils the query names lead the files; while they show, a file list still being read
+    // says nothing
+    const refRows: MentionRow[] =
+        open && browse == null && refs != null
+            ? refMatches(mention.query, refs).map((item) => ({ kind: "ref" as const, item }))
+            : [];
+    if (refRows.length > 0) {
+        rows = [...refRows, ...rows];
+        note = null;
+    }
     const shown = note != null || rows.length > 0;
     const at = Math.min(pick, Math.max(rows.length - 1, 0));
     const choose = (row: MentionRow) => {
         const next =
             row.kind === "path"
                 ? insertFileMention(task, mention.start, caret, row.path)
-                : insertBrowsePick(task, mention.start, caret, browse.dir, row);
+                : row.kind === "ref"
+                  ? insertRef(task, mention.start, caret, row.item)
+                  : insertBrowsePick(task, mention.start, caret, browse.dir, row);
         setText(next.text, next.caret);
         setCaret(next.caret);
         setOnPill(false);
@@ -247,8 +269,26 @@ export function useFileMention({
             itemAttr={`data-${name}-mention`}
             side="above"
             itemKey={rowKey}
-            itemTitle={rowKey}
+            itemTitle={(row) => (row.kind === "ref" ? `${refToken(row.item)} · ${row.item.label}` : rowKey(row))}
             renderItem={(row) => {
+                if (row.kind === "ref") {
+                    const Icon = REF_ICONS[row.item.kind];
+                    return (
+                        <>
+                            <Icon size={14} className="shrink-0 text-muted" aria-hidden />
+                            <span
+                                className="min-w-0 shrink truncate text-[12px] text-primary"
+                                data-chat-ref={refToken(row.item)}
+                            >
+                                {row.item.label}
+                            </span>
+                            <span className="min-w-0 truncate text-[11px] text-muted">
+                                {refToken(row.item)}
+                                {row.item.detail ? ` · ${row.item.detail}` : ""}
+                            </span>
+                        </>
+                    );
+                }
                 if (row.kind === "entry") {
                     const Icon = row.isdir ? Folder : FileGlyph;
                     return (

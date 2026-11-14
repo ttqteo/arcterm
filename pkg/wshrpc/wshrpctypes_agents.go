@@ -134,6 +134,9 @@ type CommandAgentsReadRtnData struct {
 	State    string `json:"state"`
 	Answer   string `json:"answer"`   // empty when the session has not answered yet
 	AnswerTs int64  `json:"answerts"` // transcript time of Answer, unix ms
+	// the session's transcript and harness, "" while nothing says yet: `wsh read` reads its last turns from it
+	TranscriptPath string `json:"transcriptpath,omitempty"`
+	Harness        string `json:"harness,omitempty"`
 }
 
 type CommandGetSessionGroupData struct {

@@ -89,7 +89,17 @@ wsh agents list                                          # các tab agent đang 
 wsh agents send <tab> "…"                                # nhắn cho một agent
 wsh agents read <tab>                                    # đọc câu trả lời của nó
 wsh agents wait <tab>                                    # chờ đến khi nó ngừng làm việc
+wsh read <id>                                            # đọc thứ một id trỏ tới: agent, run, council, phiên cũ, initiative
 ```
+
+**Nhắc tới một id để agent đọc.** Viết "đọc agent 5065bd8c rồi …", "council:0c28170c" hay một uuid trong prompt: hook của
+arc mod đính thêm một dòng bảo agent đọc nó bằng `wsh read <id>` trước khi làm. `wsh read` tự nhận id là gì (hash trần,
+hoặc `agent:` / `run:` / `council:` / `session:` / `effort:`) và in vài lượt cuối của agent, trạng thái run, report và cả
+phần thảo luận của council, hay chunk của initiative; một hash khớp nhiều thứ thì nó liệt kê để chọn bằng `kind:id`. Đọc
+không gửi gì sang agent hay council đó. Một hash trần đứng một mình (không có chữ agent/run/council… trước nó) không tính,
+vì nó cũng có thể là commit. Trong ô chat, `@` rồi gõ `agent`, `run`, `council` hay vài chữ của tên liệt kê các agent đang
+chạy, run và council của project phía trên danh sách file; chọn một mục thì ô nhập ghi `agent:<id>`. Prompt **bắt đầu**
+bằng `@<tab id>` thì khác: nó được gửi thẳng sang tab đó.
 
 Một run mà phiên agent bắt đầu bằng `wsh runs start` ghi lại phiên đó: header của run trên surface Agent có link `↰ <phiên>` và run sheet có dòng **started from**, cả khi chạy lẫn khi đã xong; header của phiên có link `↳` ngược về các run nó đã bắt đầu. `wsh runs start` không hỏi lại route: nó lấy route từ profile ([Jarvis → Profile](jarvis.md#profile-mặc-định-của-run-và-nguyên-tắc)) trừ khi bạn truyền cờ, nên xem `wsh runs route` trước khi chạy run tốn kém.
 

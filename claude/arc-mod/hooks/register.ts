@@ -24,6 +24,7 @@ import { LiveGather, liveFile, serialWriter } from "./live-core";
 import { lintContext, lintMemory, parseMemory, referencedPaths, shouldReport, taskNames } from "./memlint-core";
 import type { Ran } from "./mention-core";
 import { leadingMention, mentionRefusal, sendArgs, sendOutcome } from "./mention-core";
+import { refsContext } from "./refs-core";
 import { idleArgs } from "./status-core";
 import { createSpawnGate, endsTurnSay, RUN_VERDICT, tokengateArgs, tokengateLine } from "./tokengate-core";
 import type { Group, SpawnVerdict } from "./tokengate-core";
@@ -734,7 +735,13 @@ export const register: Register = (on) => {
             });
             if (math !== null) {
                 hasToldMath = true;
-                return next({ ...e, context: [...(e.context ?? []), math] });
+            }
+            // an id the person names ("đọc agent 5065bd8c", council:<id>) is read with wsh read; not the ids in a
+            // subagent's hand-back, a peer's message or a background task's report
+            const refs = active && !e.command && endsTurnSay(e.origin.kind) ? refsContext(e.text) : null;
+            const added = [math, refs].filter((c): c is string => c !== null);
+            if (added.length > 0) {
+                return next({ ...e, context: [...(e.context ?? []), ...added] });
             }
             return next(e);
         }

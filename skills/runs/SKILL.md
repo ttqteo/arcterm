@@ -1,6 +1,6 @@
 ---
 name: runs
-description: Use when you need to start an arcterm run (quick, or orchestrator from a goal or a plan file), check on or cancel a run, or see what is waiting on the user — via `wsh runs`; or message a live agent tab, read its answer, or wait until it stops working — via `wsh agents`; or clean up what arcterm and its runs left on disk (run trees, old sessions, logs, build output) — via `wsh storage`.
+description: Use when you need to start an arcterm run (quick, or orchestrator from a goal or a plan file), check on or cancel a run, or see what is waiting on the user — via `wsh runs`; or message a live agent tab, read its answer, or wait until it stops working — via `wsh agents`; or read what an id the person names holds (a live agent, a run, a council, a past conversation, an initiative: "đọc agent <hash> rồi …") — via `wsh read`; or clean up what arcterm and its runs left on disk (run trees, old sessions, logs, build output) — via `wsh storage`.
 ---
 
 # arcterm runs from the command line
@@ -41,11 +41,20 @@ Message a live agent (claude or pi) with `wsh agents`:
   Rows of one project can share a name: pick the target by folder and title, never by name alone.
 - `wsh agents send <tab> "<text>"` hands the agent a prompt; `--file <path>` reads the text from a file, `--wait` blocks until it has answered.
 - `wsh agents read <tab>` prints the agent's last answer.
+- `wsh read <id>` prints what an arcterm id holds, without sending anything: a live agent's last turns (its last answer in
+  full), a run (as `wsh runs show`), a council's report and whole discussion with its follow-up questions, a past
+  conversation's last turns, or an initiative (as `wsh effort show`). It takes a bare id or a unique prefix (8
+  characters) and finds the kind; `agent:` / `run:` / `council:` / `session:` / `effort:` picks one when a prefix
+  matches several things, which it lists.
 - `wsh agents wait <tab>` blocks until the agent stops working (its turn ends, it asks the user, it sleeps or its tab
   closes). To carry on once another agent is done, run it as a background command instead of writing a polling loop:
   you are told when it ends, and the cockpit nests your row under that agent.
 
 Rules:
+- **An id the person names is to read, not to message.** "đọc agent 5065bd8c rồi …", "read run/agent <hash> and …",
+  `council:<id>` or `agent:<id>` (what the chat box's `@` list writes) means `wsh read <id>` first, then the action they
+  asked for, from what it printed. Do not `wsh agents send` to that tab or post to that council unless they ask you to
+  ask it something. A prompt that *starts* with `@<tab id>` never reaches you: arcterm sends it to that tab.
 - Before every `start`, run `wsh runs route` and tell the user the lead and worker models in one line.
   When the workers show "same as lead" from the global default (nothing saved) and the lead model is
   "(harness default model)", the run would put every worker on the harness's default (often the most

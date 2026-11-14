@@ -46966,6 +46966,33 @@ const agentChat = {
                     restored85 && back85?.typed === `theme:${bgBefore85}\r`,
                 { figure85, sized85, drawn85, prevPreset: ctx.prevPreset, next85, bgBefore85, before85, switched85, bgNext85, after85, restored85, back85 }
             );
+
+            // 86. The `@` list names the other live agents too (refmention.ts): @agent lists the roster's agents, the chat's own
+            // left out, above the files; a pick writes agent:<8 characters of the tab id> and a space, a reference the agent reads
+            // with wsh read, never an @ mention, so no pill is drawn and the prompt is not sent to that agent
+            await showAgent(A);
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+            await polishWaitFor(h, `!!${acBox(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, AC_WAIT_MS);
+            await acClear(h, acBox(A));
+            await acType(h, acBox(A), "đọc @agent", false);
+            const listed86 = await polishWaitFor(h, `!!document.querySelector('[data-chat-mention^="ref:agent:"]')`, 8000);
+            const list86 = await acMentionState(h);
+            await h.shot("cdp-shots/agent-chat-86-at-agents.png");
+            const keys86 = (list86?.rows ?? []).map((r) => r.key);
+            const firstRef86 = keys86.find((k) => k.startsWith("ref:agent:")) ?? "";
+            const picked86 = firstRef86.slice("ref:agent:".length);
+            await acKey(h, acKeys.enter);
+            const want86 = `đọc agent:${picked86.slice(0, 8)} `;
+            const written86 = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify(want86)}`, 3000);
+            const pills86 = await acPills(h, acBox(A));
+            const shut86 = await polishWaitFor(h, `!document.querySelector("[data-chat-mentions]")`, 3000);
+            await acClear(h, acBox(A));
+            rec(
+                "86. @agent lists the other live agents (not the chat's own) as ref rows ahead of any file; Enter writes `agent:<8-char id> ` in place of @agent, with no pill, and the list closes",
+                listed86 && keys86[0]?.startsWith("ref:") && !keys86.includes(`ref:agent:${A}`) &&
+                    [B, C, D, E, F].includes(picked86) && written86 && pills86.length === 0 && shut86,
+                { listed86, list86, picked86, want86, pills86, shut86 }
+            );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
         }

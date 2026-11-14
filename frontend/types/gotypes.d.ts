@@ -590,6 +590,8 @@ declare global {
         state: string;
         answer: string;
         answerts: number;
+        transcriptpath?: string;
+        harness?: string;
     };
 
     // wshrpc.CommandAgentsSendData

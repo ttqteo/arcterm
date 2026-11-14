@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Name an agent, a run or a council in a prompt ("đọc agent 5065bd8c rồi …", `council:<id>`) and the agent reads it
+  before acting, with the new `wsh read <id>`: the other agent's last turns, the run's status, the council's report and
+  whole discussion. In Chat, `@` then `agent`, `run`, `council` or a few words of a name lists them above the files, and
+  a pick writes the reference. Nothing is sent to the agent or council you name.
 - Chat draws formulas: an agent's `$…$` and `$$…$$` show as typeset math (KaTeX), and agents inside arcterm are told
   to write their formulas that way instead of as code. A price like "$5" stays as written.
 - In Chat, select any text in the conversation (a reply, your own message, a tool's output) and click Reply: it goes

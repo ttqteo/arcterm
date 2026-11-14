@@ -385,7 +385,7 @@ func (ws *WshServer) AgentsReadCommand(ctx context.Context, data wshrpc.CommandA
 	if err != nil {
 		return nil, err
 	}
-	rtn := &wshrpc.CommandAgentsReadRtnData{TabId: target.TabId, State: target.State}
+	rtn := &wshrpc.CommandAgentsReadRtnData{TabId: target.TabId, State: target.State, TranscriptPath: tpath, Harness: target.Harness}
 	if tpath != "" {
 		rtn.Answer, rtn.AnswerTs = agentsessions.LastAnswer(tpath, target.Harness)
 	}

@@ -208,6 +208,8 @@ the memory states, or has you make a fix an entry says is still to do), record i
 
 - `wsh council list` — the project's councils, newest first: id, state, round and feature.
 - `wsh council show <id>` — a council's report and matrix as markdown, without waiting.
+- `wsh read council:<id>` — the report, matrix and whole discussion, the person's follow-up questions in the room and
+  the seats' answers included: what to read when they say "đọc council <id> rồi …". It sends nothing to the council.
 - `wsh council memory <id> [add <kind> <text> | edit <m id> <text> | rm <m id>]` — read or change its memory (above).
 - `wsh council retry <id> [--expert <seat>] [--model <model>]` — run a failed call again, once; the discussion stays.
   `--all [--model <seat>=<model>]...` reruns every failed seat but the summary at once.
