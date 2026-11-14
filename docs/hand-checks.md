@@ -6,6 +6,25 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council and Doc review cards in Chat, with a real agent: in a Claude agent's Chat have it start a
+  council (`/arc:council`, or ask for one) → while it runs a Council card sits at the end of the conversation (the
+  question, a chip per expert, the step, the time, the estimate, Stop; Open council opens the room); a second council
+  started while one runs shows the queued card naming the first; a council that pauses after round 1 reads Waiting on
+  you with Continue and Stop. When one ends its card leaves on the spring and a ✓ row (Open report) stands at the
+  `wsh council start` call, ■ when you Stop it; run a follow-up on a done council from its room → its row reads
+  running again and the card never comes back to the end. Then have the agent ask a Doc review (`/arc:doc-review`) → a
+  Doc review card in the dock above the box with Review and Approve; Approve folds it into "✓ Doc review · approved ·
+  <file>", and Request changes from Review into "↺ … changes requested · N comments". An exited agent shows both cards
+  without Stop, Continue, Review and Approve. The `chat-council` scenario covers these states from fixtures, not the output of a real agent's
+  `wsh council start`. Commit: feat(chat) place the council cards and the Doc review rows in the conversation
+- [ ] (arcterm) **The brainstorm part of the Chat band on a live agent.** Link a real Claude agent to an initiative and
+  have it run a brainstorm that draws boards. While it works between two questions, its Chat band reads `Brainstorm`,
+  `N boards` and `Decided N` beside the initiative, with no Mark done on the line. Let it draw another board while
+  Chat is shown → within a few seconds `1 new` with a dot appears, and the header's Brainstorm tab carries the same
+  dot. Open the part → the decisions that are yours and the boards, the new one tagged `new`, the conversation moved
+  down and not under it. Click the new board → the Brainstorm tab opens and both dots go; from inside the band, `b`
+  opens the same tab. Checked only with fixture agents in the `chat-brainstorm-band` scenario (`chatband.tsx`,
+  `brainstormbandview.tsx`).
 - [ ] (arcterm) Esc in Chat before the reply, on Windows: after a build, in a Claude agent's Chat send a long ask
   ("write 3000 words on …") and press Esc once its bubble shows as sent, before any reply → the text comes back into the
   box and the bubble leaves the conversation at the same moment, with no Queued bubble after; send it again → it shows
@@ -471,9 +490,19 @@ does not, say what you saw and it becomes a bug row under Actionable.
   and the text is back in the box. A pty probe saw the Esc half on Claude Code 2.1.322, never ↑ on a live queue
   (`chattakeback.ts`, `chattakebackstore.ts`).
 
-- [ ] (arcterm) Heavy jobs in Auto on the 12-thread Windows PC, on a build from 921a1a485: with several agents running
-  `task check:ts`, the Jobs popover shows at most 2 running and the rest waiting with "CPU busy, 2 at a time"; a
-  council's experts still run side by side (`pkg/jobqueue` autoCap).
+- [ ] (arcterm) Tray job size tooltip, on a build from 2667a3291: with a heavy job queued, open the tray and hover a
+  job's GB figure → "The RAM the queue sets aside for it (the Jobs popover says whether it was measured)". Commit:
+  fix(tray) a job's RAM tooltip says what the figure is
+- [ ] (arcterm) A background heavy command keeps its slot on Windows, on a build with the new `wsh`: have a Claude
+  agent run `task check:ts` with `run_in_background` → `waveapp.log`'s `[jobqueue] finished jN (task check:ts), held`
+  reads about the typecheck's own time (a minute or two), not `2s`; a second and third heavy background command
+  started beside it wait their turn. Before the fix every one let go after one 2 s poll (seen 2026-11-14), because
+  under Git Bash wsh's parent is a fork that exits with wsh (`cmd/wsh/cmd/wshcmd-jobslothold.go`). Commit:
+  fix(wsh) a background heavy command keeps its slot on Windows
+- [ ] (arcterm) A server start takes no heavy-job slot, on a build from 62dd4420e: have an agent run
+  `./gradlew bootRun` or `mvn spring-boot:run` in the background (or `uvicorn app:app`) in a Java or Python project:
+  the Jobs popover shows no row for it, and a `task check:ts` started beside it starts at once
+  (`pkg/memgate` servers). 2026-11-13.
 
 - [ ] (arcterm) Jobslot never holds a command: after installing a build from 7835c75de, an agent's `ls` runs at once
   and a `task check:ts` still shows in the Jobs popover while it runs; with wavesrv stuck (or its socket gone), a heavy
@@ -638,8 +667,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Chat's compact header: a live Claude agent in Chat → its header shows the dot, the name and the project
   (and a server, the lead, an initiative or Ship/Commit/Close when they apply), with no ✳, state word, model, context
   or ⌥C; hover the dot → its state; flip to Terminal → the full header is back and Chat/Terminal did not move. An agent
-  with no initiative: … → "Link to initiative…" opens the picker under the … button, and `i` opens it too, in Chat and
-  in Terminal (`agentheader.tsx` `lean`; the `initiative-link` scenario was moved to the menu but not run).
+  with no initiative: the header shows a `+ Link to initiative` chip with an `i` keycap that opens the picker under it,
+  and `i` opens it too, in Chat and in Terminal; a linked agent's Chat header has no ◇ chip, and `i` opens its band
+  (`agentheader.tsx` `lean`; the `initiative-link` scenario is updated by the chat-initiative-link plan's Task 6).
 - [ ] (arcterm) A Chat message queued mid-turn reads as you wrote it: while a Claude agent works, send from its Chat a
   message of two lines with a pasted screenshot → once Claude takes it in, your bubble shows the two lines and the
   picture as a thumbnail, with no `<pasted_content id="…">` tags and no `Attached images:` list; a paste inside a
@@ -2731,3 +2761,10 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   `[chat-send] enter-unechoed … echo=unknown` for every send (it read so 36 of 36 times before), and an
   `enter-linebreak … retry=1` line, when one shows, is followed by the message going out. While Claude works, ↑ in an
   empty Chat box takes the queued messages back (`chattakeback.ts` splitRules; no scenario runs a live Claude Code).
+- [ ] (arcterm) **The initiative band on a live Claude agent and on a Mac.** Link a real Claude agent to an initiative,
+  let a turn end on a chunk, then click its `go on with: <label>` chip: the band moves to that chunk at once, the
+  waiting line never draws over the box, and the agent's next prompt starts with
+  `initiative: switched you to chunk <n> <label>`. Mark done from the band: the agent moves to the next chunk. Press
+  `i` from the message box: the band opens and `m`, `n`, `w` and the arrows work without a click. Once on a Mac
+  (`task dev:browser`, then `task verify:ui -- chat-initiative-band initiative-popover initiative-link`): the scenarios
+  ran only on WebView2 in run 175af141, with fixture agents (`initiativebandview.tsx`, `chatpane.tsx` goOn).

@@ -108,7 +108,7 @@ Chân hộp thoại có một dòng cho biết điều sẽ xảy ra (`Starts in
 
 Header phía trên terminal là một hàng gọn:
 
-- chấm trạng thái, **tên**, logo harness, **trạng thái** (`working`, `idle`, `asking`), **model**, **context** đã dùng (số token, đổi màu khi đầy), rồi `· <project>`. Agent gắn với initiative thì có thêm liên kết `◇ <initiative>` (bấm hoặc `i` để mở [popover của initiative](#popover-của-initiative); `Ctrl`+bấm để peek nó); chip **N to review** khi agent đã đề xuất chunk chờ bạn quyết ([Plan to review](#plan-to-review-trên-rail)); agent chưa gắn initiative có nút **+ Link to initiative** ([Link to initiative](#link-to-initiative)). Lead của run ghi `orchestrator run <id>`; worker ghi `↑ <tên lead>` (bấm để tới lead).
+- chấm trạng thái, **tên**, logo harness, **trạng thái** (`working`, `idle`, `asking`), **model**, **context** đã dùng (số token, đổi màu khi đầy), rồi `· <project>`. Agent gắn với initiative thì có thêm liên kết `◇ <initiative>` (bấm hoặc `i` để mở [popover của initiative](#popover-của-initiative); `Ctrl`+bấm để peek nó; header của [Chat](#band-của-initiative-trong-chat) không có liên kết này, initiative nằm ở band dưới header); chip **N to review** khi agent đã đề xuất chunk chờ bạn quyết ([Plan to review](#plan-to-review-trên-rail)); agent chưa gắn initiative có nút **+ Link to initiative** ([Link to initiative](#link-to-initiative)). Lead của run ghi `orchestrator run <id>`; worker ghi `↑ <tên lead>` (bấm để tới lead).
 - bên phải: nút màu cam **Spec review** / **Plan review** khi agent đang xin duyệt (xem [bên dưới](#duyệt-tài-liệu-do-agent-yêu-cầu)); nút chuyển **Terminal | Canvas | Review** khi agent có canvas hoặc Doc review; nút `…`; nút **Split**; nút **✓ Close · N tok** khi agent trông như đã xong; nút **Float** (`Shift+F`, bấm lần nữa để rời float); nút toàn màn hình; nút `×` đóng.
 
 Nút `…` (hoặc chuột phải vào header) mở menu còn lại: **Open a tool…**, **Redraw terminal**, **Interrupt turn**, **Fullscreen terminal** / **Exit fullscreen**, **Show details** / **Hide details**, **Close agent**.
@@ -367,12 +367,41 @@ Cùng những chunk đó hiện ở Jarvis: hàng của initiative ghi `N propos
 
 Chip **N to review** trên header (màu hổ phách) báo có chunk chờ ngay cả khi rail đang ở tab khác hoặc gập lại; bấm nó đưa rail về **Plan to review**.
 
+### Band của initiative trong Chat
+
+Agent Claude đang ở **Chat** và đã gắn initiative thì có một dải một dòng, **band**, ngay dưới header và trên cuộc trò chuyện. Nó thay liên kết `◇ <initiative>` và popover trên header của Chat. Band chỉ có trong Chat; Terminal vẫn dùng [popover](#popover-của-initiative). Agent chưa gắn initiative và cũng không có brainstorm thì không có band, chỉ có nút **+ Link to initiative** (kèm phím `i`) trên header ([Link to initiative](#link-to-initiative)). Agent có brainstorm gắn vào thì band có thêm [phần brainstorm](#phần-brainstorm-của-band), bên phải phần initiative.
+
+Thu gọn, phần initiative của band cho thấy: `◇` và tên initiative, thanh chunk với `done/total`, một chấm cùng `On <số> <nhãn>` là chunk agent này đang làm, **Mark done** (`m`) và một mũi tên (khi band có phần brainstorm bên cạnh, nút **Mark done** rời dòng để lấy chỗ và nằm trong phần initiative mở rộng; phím `m` vẫn dùng). Bấm vào phần initiative hoặc `i` để mở rộng ngay tại chỗ; `Esc` hoặc `i` thu lại và trả focus về ô chat. Band mở rộng đẩy cuộc trò chuyện xuống chứ không đè lên nó, và vị trí bạn đang đọc được giữ nguyên. Band nhớ mở hay đóng theo từng agent, và luôn bắt đầu ở trạng thái thu gọn.
+
+Mở rộng, band có hai cột:
+
+- **Cột trái**: `↳ Part of …` nếu là initiative con, project và trạng thái (`at work`…), rồi các chunk: chunk agent vừa làm xong (gạch ngang, mờ), chunk của chính agent này (nền chọn, nhãn `this agent`), hai chunk kế tiếp, và chunk mà agent khác đang giữ (nhãn ghi tên agent đó, hoặc `an agent` / `a run`). **All chunks (N)** mở cả kế hoạch theo thứ tự, cuộn trong khoảng 240px. `N proposed · Review on the rail` khi còn chunk chờ.
+- **Cột phải**: ghi chú mới nhất của chunk đang làm kèm tuổi của nó, rồi **Add note** (`n`) và **Open in Jarvis**.
+
+Agent chưa giữ chunk nào thì phần chunk đọc `No chunk for this agent`, kèm **Pick a chunk…** (mở band, con trỏ ở chunk đầu tiên có **Work on this**). Chunk của agent là chunk chưa xong mà agent này giữ, và không gì khác: chunk `active` của initiative không thay thế cho nó.
+
+**Đổi chunk của agent.** Mỗi chunk chưa xong mà chưa ai giữ có nút **Work on this** (hiện khi rê chuột, và trên con trỏ bàn phím; phím `w`). Nó chuyển agent này từ chunk hiện tại sang chunk được chọn: chunk được chọn thành `active`, chunk cũ về `pending` nếu nó đang `active` và không ai khác giữ. Chunk đã xong của agent vẫn giữ nguyên. Nếu việc gắn thất bại, chunk cũ được gắn lại và band hiện lý do. Agent không bị gửi gì ngay: Arc xếp một dòng `initiative: switched you to chunk <n> <nhãn> (effort:<id>)`, đi trước tin nhắn thường kế tiếp của bạn và không hiện trong bong bóng. Đổi nhiều lần trước khi gửi thì chỉ lần cuối được gửi. Trong lúc đó một dòng nhỏ trên ô chat đọc `Goes with your next message: switched to chunk <n> <nhãn>`, và ✕ bỏ dòng đó mà không hoàn tác việc đổi.
+
+**Mark done** (`m`, hoặc chip `done:` trên ô chat) đánh dấu chunk xong, chunk kế tiếp thành `active`, và agent được gắn luôn vào chunk đó nếu chưa ai giữ nó, nên agent vẫn có chunk sau Mark done. Chip `go on with: <nhãn>` đổi sang chunk đó rồi gửi chữ của chip như thường.
+
+Band hẹp hơn khoảng 640px thì bỏ thanh chunk (giữ `done/total`), cắt tên initiative và nhãn chunk, và **Mark done** thành **Done**.
+
+Phím trong band (khi focus ở trong nó, các phím đơn của Agent nhường cho nó): `m` Mark done và `n` Add note (phần nào đang mở cũng dùng được), `b` mở tab Brainstorm của agent (phím `b` chung nhường khi focus ở trong band, nên band tự xử lý nó), `w` Work on this ở hàng con trỏ, `↑` / `↓` chuyển con trỏ qua các hàng, `Enter` mở menu trạng thái / **Rename** của hàng (ba phím này chỉ khi phần initiative đang mở), `Esc` đóng phần đang mở, phần brainstorm cũng vậy, và trả focus về ô chat. `i` là phím của phần initiative: trong band nó thu phần initiative lại, hoặc mở nó đè lên phần brainstorm đang mở. Ngoài band, `i` khi focus không ở trong một ô gõ (ví dụ ở sidebar; trong ô chat `i` chỉ là chữ `i`) mở hoặc thu phần initiative của agent đang chọn, và mở ra thì focus chuyển vào band. Agent chỉ có brainstorm thì `i` mở picker **Link to initiative**.
+
+### Phần brainstorm của band
+
+Agent có một brainstorm gắn vào (`brainstorm.json`) thì band có thêm phần **brainstorm**, bên phải phần initiative và ngăn cách bằng một vạch dọc; agent chỉ có brainstorm thì band chỉ có phần này, kèm tên brainstorm. Phần này ở lại suốt lúc brainstorm còn gắn vào agent (đang hỏi, đã xong, builder check, run đã chạy), có câu hỏi đang mở hay không, nên giữa hai câu hỏi bạn vẫn thấy nó.
+
+Thu gọn, nó cho thấy: bóng đèn và `Brainstorm`, biểu tượng board cùng `N boards` (không hiện khi chưa có board), một chấm màu accent cùng `N new` khi có board mới, rồi `Decided N` và một mũi tên. `N boards` đếm board của mọi phần trong brainstorm, không lặp. Một board là **mới** khi tên nó có trong `brainstorm.json` mà lần cuối bạn mở tab **Brainstorm** chưa có. Arc nhớ tên các board bạn đã thấy theo từng `brainstorm.json` (qua cả lần khởi động lại), và một brainstorm gắn lần đầu thì mọi board của nó đều mới. Arc chỉ so tên, không đọc file board, nên một board vẽ lại dưới cùng tên không tính là mới. Tab **Brainstorm** trên header mang cùng chấm đó (khi agent đang hỏi bạn, tab chỉ có chấm hổ phách).
+
+Bấm vào phần này để mở ngay tại chỗ, đẩy cuộc trò chuyện xuống chứ không đè lên; mỗi lúc chỉ mở một phần. Hai cột: **Decided N** (mỗi quyết định của bạn một hàng: tên, rồi một câu tóm tắt) và **Boards N** (mỗi board một hàng: biểu tượng, tên file kèm `new` nếu mới, và phần nó minh họa; cuối cùng là liên kết **Open in Brainstorm (b)**). Bấm vào một board hoặc liên kết đó mở tab **Brainstorm**, và việc đó đánh dấu mọi board là đã thấy nên chấm mất; chỉ mở rộng phần brainstorm thì không. Band không tải trang board nào nên không tốn RAM dù có nhiều ô Chat. Trong ô hẹp (dưới khoảng 640px) phần brainstorm giữ biểu tượng, số board kèm chấm và `Decided N`, còn phần initiative bỏ nhãn chunk. Phần brainstorm không có phím riêng và không có con trỏ mũi tên: `Tab` đi qua các hàng board và liên kết.
+
 ### Popover của initiative
 
-Bấm liên kết `◇ <initiative>` trên header, hoặc `i`, mở popover ngay dưới nó (`i` hoặc `Esc` đóng và trả focus về chỗ cũ):
+Popover là của view **Terminal** (trong Chat, [band](#band-của-initiative-trong-chat) thay nó). Bấm liên kết `◇ <initiative>` trên header, hoặc `i`, mở popover ngay dưới nó (`i` hoặc `Esc` đóng và trả focus về chỗ cũ):
 
 - **Đầu**: project, trạng thái (`agent open`, `at work`, `blocked`, `paused`, `done`), tên, `↳ Part of …` nếu là initiative con, thanh chunk và `done/total`.
-- **This agent is on**: chunk gắn với agent này, hoặc chunk `active` khi agent chưa được gắn chunk nào, kèm ghi chú mới nhất. **Mark done** (`m`) đánh dấu xong và chunk kế tiếp thành `active`.
+- **This agent is on**: chunk chưa xong mà agent này giữ (không có thì đọc `No chunk for this agent`), kèm ghi chú mới nhất. **Mark done** (`m`) đánh dấu xong và chunk kế tiếp thành `active`.
 - **Next**: hai chunk `pending` kế tiếp. Bấm một chunk (hoặc `↑` / `↓` rồi `Enter`) mở menu nhỏ: đổi trạng thái sang `pending`, `active`, `blocked`, `deferred` hay `skipped`, hoặc **Rename**.
 - `N proposed · Review on the rail` khi còn chunk chờ: bấm để đóng popover và đưa rail về **Plan to review**.
 - Chân popover: **Add note** (`n`; gõ ghi chú rồi `Enter`) thêm ghi chú vào chunk đang làm, và **Open in Jarvis** mở initiative trong tấm chi tiết của Jarvis.
@@ -381,7 +410,7 @@ Khi popover mở, các phím đơn của Agent nhường cho nó. `Ctrl`+bấm l
 
 ### Link to initiative
 
-Agent chưa gắn initiative có nút **+ Link to initiative** trên header (hoặc `i`). Picker liệt kê initiative cùng project, các project khác sau một dòng đếm; gõ vào ô **Find an initiative** để lọc, `↑` / `↓` chọn, `Enter` gắn, `Esc` đóng.
+Agent chưa gắn initiative có nút **+ Link to initiative** trên header, cả ở Chat (kèm phím `i` trên nút) lẫn Terminal, hoặc bấm `i`. Gắn xong, ở Chat band hiện ra và `i` mở nó. Picker liệt kê initiative cùng project, các project khác sau một dòng đếm; gõ vào ô **Find an initiative** để lọc, `↑` / `↓` chọn, `Enter` gắn, `Esc` đóng.
 
 - Chọn một initiative thì phiên được gắn vào nó, và agent được gắn vào chunk `active` của nó (chưa có thì chunk `pending` đầu tiên) để chunk đó đọc là việc của agent.
 - **+ New initiative from this session** tạo một ý tưởng đặt tên theo agent và gắn phiên vào đó; ý tưởng chưa có chunk nên chưa gắn chunk nào.
@@ -489,7 +518,7 @@ Phím đơn (`j`, `k`, `d`, `f`, `r`, `c`, `Esc`…) chỉ có tác dụng khi b
 | `Ctrl+Shift+O` | Open a tool: mở lazygit, yazi, btop… trong thư mục của agent đang focus (dùng được cả trong terminal) |
 | `` Ctrl+` `` | Gấp panel terminal thành dải / mở lại (chỉ khi có terminal trong panel) |
 | `d` | Bật/tắt rail chi tiết |
-| `i` | Popover initiative của agent (hoặc picker **Link to initiative** khi agent chưa có); trong popover: `m` **Mark done**, `n` **Add note**, `↑` / `↓` chọn chunk, `Enter` mở menu chunk, `Esc` hoặc `i` đóng |
+| `i` | Initiative của agent: ở Chat mở / thu phần initiative của band dưới header (phần brainstorm không có phím riêng), ở Terminal mở popover (hoặc picker **Link to initiative** khi agent chưa có); trong band: `m` **Mark done**, `n` **Add note**, `b` mở tab Brainstorm, `w` **Work on this**, `↑` / `↓` chọn chunk, `Enter` mở menu chunk, `Esc` đóng phần đang mở, `i` thu phần initiative (hoặc mở nó đè lên phần brainstorm); popover có `m`, `n`, `↑` / `↓`, `Enter` và `Esc` / `i` đóng |
 | `f` / `F11` | Toàn màn hình terminal (`F11` dùng được trong terminal) |
 | `Shift+F` | Bật/tắt Float |
 | `⌘⇧N` | Mở Float thẳng vào tab Note, bấm lại để về terminal |

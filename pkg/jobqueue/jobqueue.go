@@ -234,7 +234,11 @@ type Slot struct {
 // Release frees the slot; twice is once.
 func (s *Slot) Release() {
 	s.once.Do(func() {
-		s.q.remove(s.e)
+		// a reclaimed slot is already out of the queue and logged there
+		if s.q.remove(s.e) {
+			log.Printf("[jobqueue] finished %s (%s), held %s", s.e.Id, s.e.Name,
+				s.q.cfg.Now().Sub(s.e.StartedAt).Round(time.Second))
+		}
 		s.q.evaluate(context.Background())
 	})
 }
@@ -249,6 +253,8 @@ type entry struct {
 	reclaim  chan struct{}
 	wait     func(Wait)
 	lastWait Wait
+	// loggedWait: the log has its first wait line
+	loggedWait bool
 }
 
 type Queue struct {
@@ -442,6 +448,7 @@ func (q *Queue) evaluate(ctx context.Context) {
 		mode = ModeOff
 	}
 	start, reason := plan(jobs, clampSlots(q.cfg.Slots()), q.cpus(), mode, available, pressure, now)
+	var started []*entry
 	for _, id := range start {
 		for _, e := range q.entries {
 			if e.Id == id {
@@ -450,9 +457,22 @@ func (q *Queue) evaluate(ctx context.Context) {
 				e.Position = 0
 				e.Reason = ""
 				close(e.admitted)
-				log.Printf("[jobqueue] started %s (%s, block %q run %q), mode %s, pressure %s, %s free", e.Id, e.Name,
-					e.Source.BlockId, e.Source.RunId, mode, pressureNames[pressure], memgate.FormatGB(available))
+				started = append(started, e)
 			}
+		}
+	}
+	if len(started) > 0 {
+		// the CPU count Auto caps, so the log alone shows how many heavy jobs ran at once
+		cpuRunning := 0
+		for _, e := range q.entries {
+			if e.Running && !e.NoCPU {
+				cpuRunning++
+			}
+		}
+		for _, e := range started {
+			log.Printf("[jobqueue] started %s (%s, block %q run %q), mode %s, pressure %s, %s free, %d heavy running",
+				e.Id, e.Name, e.Source.BlockId, e.Source.RunId, mode, pressureNames[pressure],
+				memgate.FormatGB(available), cpuRunning)
 		}
 	}
 	var oldest *entry
@@ -470,6 +490,11 @@ func (q *Queue) evaluate(ctx context.Context) {
 		position++
 		e.Position = position
 		e.Reason = reason
+		if !e.loggedWait && reason != "" {
+			// once per job: a RAM reason's numbers change every tick
+			e.loggedWait = true
+			log.Printf("[jobqueue] %s (%s) waits #%d: %s", e.Id, e.Name, position, reason)
+		}
 		w := Wait{Position: position, Reason: reason}
 		if ahead != nil {
 			w.Behind = ahead.Name
@@ -502,10 +527,13 @@ func (q *Queue) cpus() int {
 	return runtime.NumCPU()
 }
 
-func (q *Queue) remove(e *entry) {
+// remove takes e out of the queue; false when it was already out.
+func (q *Queue) remove(e *entry) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	n := len(q.entries)
 	q.entries = slices.DeleteFunc(q.entries, func(o *entry) bool { return o == e })
+	return len(q.entries) < n
 }
 
 // Snapshot is the running jobs, oldest first, then the queue in order.

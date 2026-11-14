@@ -28,6 +28,7 @@ import {
     brainstormsDir,
     builderCheckView,
     canCheck,
+    changedSentences,
     checkAsk,
     checkClock,
     checkMain,
@@ -1258,6 +1259,24 @@ describe("sentenceDiff", () => {
     it("handles an empty side", () => {
         expect(sentenceDiff("", "A.")).toEqual([{ kind: "added", text: "A." }]);
         expect(sentenceDiff("A?", "")).toEqual([{ kind: "removed", text: "A?" }]);
+    });
+});
+
+describe("changedSentences", () => {
+    it("is sentenceDiff without the sentences both sides share", () => {
+        expect(changedSentences("One. Two. Three.", "One. Deux! Three.")).toEqual([
+            { kind: "removed", text: "Two." },
+            { kind: "added", text: "Deux!" },
+        ]);
+        expect(changedSentences("One. Two.", "One. Two.")).toEqual([]);
+    });
+
+    it("keeps a whole side when the other is empty", () => {
+        expect(changedSentences("", "A. B.")).toEqual([
+            { kind: "added", text: "A." },
+            { kind: "added", text: "B." },
+        ]);
+        expect(changedSentences("A?", "")).toEqual([{ kind: "removed", text: "A?" }]);
     });
 });
 

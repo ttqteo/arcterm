@@ -502,8 +502,9 @@ describe("workingText", () => {
     });
 });
 
-// the three moments an agent item is cut at: a reviewer's verdict, the plan handoff and a `wsh runs start` call
-describe("chatItems: verdict, handoff and run-start parts", () => {
+// the moments an agent item is cut at: a reviewer's verdict, the plan handoff, a `wsh runs start` call, a
+// `wsh council start` call and a Doc review ask
+describe("chatItems: verdict, handoff, run-start, council-start and Doc review parts", () => {
     const REVIEW = {
         kind: "code",
         reviewer: "code-reviewer",
@@ -546,6 +547,30 @@ describe("chatItems: verdict, handoff and run-start parts", () => {
         });
     const runsStart = (output: string, command = "wsh runs start --plan docs/plans/p.md"): AgentEntry =>
         action("bash", { outcome: "ok", detail: { kind: "bash", command, output, exit: 0 } });
+    const councilStart = (output: string, command = 'wsh council start --feature "Scheduled tasks"'): AgentEntry =>
+        action("bash", { outcome: "ok", detail: { kind: "bash", command, output, exit: 0 } });
+    // a Doc review ask: `path` is the question's first line, which `parseDocReview` reads
+    const docReview = (
+        picked: string[] = [],
+        typed?: string,
+        path = "paper/intro.tex",
+        header = "Doc review"
+    ): AgentEntry =>
+        action("asked", {
+            outcome: picked.length > 0 ? "ok" : undefined,
+            detail: {
+                kind: "ask",
+                questions: [
+                    {
+                        question: `${path}\n- the second paragraph is new`,
+                        header,
+                        options: [{ label: "Approve" }, { label: "Request changes" }],
+                        picked,
+                        ...(typed != null ? { typed } : {}),
+                    },
+                ],
+            },
+        });
 
     describe("an arc-review block in a reply", () => {
         it("cuts a reply with a block between two paragraphs into prose, verdict, prose", () => {
@@ -770,6 +795,132 @@ describe("chatItems: verdict, handoff and run-start parts", () => {
         });
     });
 
+    describe("a wsh council start call", () => {
+        const STARTED =
+            "council 9f3a1c04d27b58e6 started: Scheduled tasks · review · UI feature panel · 4 experts · ≈ 14 calls · ~0.9M tokens\n";
+        const QUEUED =
+            "Queued after 0a1b2c3d4e5f6071 (Paper) · council 9f3a1c04d27b58e6 starts by itself when it ends\n";
+        const NOT_RUN =
+            "Not run: the person chose not to start a council now.\ncouncil 9f3a1c04d27b58e6 saved as not run; Start council in the app runs it\n";
+
+        it("splits the stretch after the call, which stays a tool line in the work before it", () => {
+            const items = chatItems([you("ask a council"), action("read"), councilStart(STARTED)]);
+            expect(kinds(items)).toEqual(["work", "councilstart"]);
+            const work = part(items, 0);
+            expect(work.kind === "work" && work.work.actions.map((a) => a.verb)).toEqual(["read", "bash"]);
+            expect(part(items, 1)).toEqual({
+                kind: "councilstart",
+                key: "councilstart:2",
+                anchor: { kind: "started", councilId: "9f3a1c04d27b58e6", estimate: "≈ 14 calls · ~0.9M tokens" },
+            });
+        });
+
+        it("reads a queued start and a refusal into their anchors", () => {
+            expect(part(chatItems([you("x"), councilStart(QUEUED)]), 1)).toMatchObject({
+                kind: "councilstart",
+                anchor: { kind: "queued", councilId: "9f3a1c04d27b58e6" },
+            });
+            expect(part(chatItems([you("x"), councilStart(NOT_RUN)]), 1)).toMatchObject({
+                kind: "councilstart",
+                anchor: {
+                    kind: "notrun",
+                    councilId: "9f3a1c04d27b58e6",
+                    reason: "Not run: the person chose not to start a council now.",
+                },
+            });
+        });
+
+        it("goes on with a work part when the stretch goes on", () => {
+            const items = chatItems([you("x"), councilStart(STARTED), action("read"), action("grep")]);
+            expect(kinds(items)).toEqual(["work", "councilstart", "work"]);
+            expect(part(items, 1)).toMatchObject({ key: "councilstart:1" });
+            const after = part(items, 2);
+            expect(after.kind === "work" && after.work.startIndex).toBe(2);
+        });
+
+        it("makes no part for a call whose output names no council, or a command that is not wsh council start", () => {
+            expect(kinds(chatItems([you("x"), councilStart("error: --feature is required\n")]))).toEqual(["work"]);
+            expect(kinds(chatItems([you("x"), councilStart(STARTED, "wsh council wait 9f3a1c04d27b58e6")]))).toEqual([
+                "work",
+            ]);
+            // a Bash call still running has no output yet, hence no part
+            expect(kinds(chatItems([you("x"), action("bash")]))).toEqual(["work"]);
+        });
+
+        it("keeps the files the stretch edited before the call after its work part", () => {
+            const items = chatItems([you("x"), edit(file("a.ts", 1, 0)), councilStart(STARTED)]);
+            expect(kinds(items)).toEqual(["work", "files", "councilstart"]);
+        });
+
+        it("leaves a wsh runs start call to the run card", () => {
+            const items = chatItems([you("x"), runsStart("started run 3fa21b0c (x)\n")]);
+            expect(kinds(items)).toEqual(["work", "runstart"]);
+        });
+    });
+
+    describe("a Doc review ask", () => {
+        it("cuts a Doc review ask out of its stretch as a docreview part holding the question, with no tool line", () => {
+            const items = chatItems([you("review it"), action("read"), docReview()]);
+            expect(kinds(items)).toEqual(["work", "docreview"]);
+            expect(part(items, 1)).toMatchObject({
+                kind: "docreview",
+                key: "docreview:2",
+                question: { header: "Doc review", picked: [] },
+            });
+            const work = part(items, 0);
+            expect(work.kind === "work" && work.work.actions.map((a) => a.verb)).toEqual(["read"]);
+        });
+
+        it("leaves no empty work part when the ask is the whole stretch", () => {
+            expect(kinds(chatItems([you("x"), docReview()]))).toEqual(["docreview"]);
+        });
+
+        it("keeps the answer on the part once it landed", () => {
+            const items = chatItems([you("x"), docReview(["Request changes"], "1. [intro] shorter")]);
+            expect(kinds(items)).toEqual(["docreview"]);
+            expect(part(items, 0)).toMatchObject({
+                question: { picked: ["Request changes"], typed: "1. [intro] shorter" },
+            });
+        });
+
+        it("splits the stretch around it: work, docreview, work", () => {
+            const items = chatItems([you("x"), action("read"), docReview(), action("bash")]);
+            expect(kinds(items)).toEqual(["work", "docreview", "work"]);
+        });
+
+        it("reads a markdown note as well as a LaTeX source", () => {
+            expect(kinds(chatItems([you("x"), docReview([], undefined, "docs/notes/ideas.md")]))).toEqual([
+                "docreview",
+            ]);
+        });
+
+        it("leaves a Spec review, a Plan review, a bad path and a plain ask in the work", () => {
+            for (const items of [
+                chatItems([you("x"), action("read"), docReview([], undefined, "docs/specs/x.md", "Spec review")]),
+                chatItems([you("x"), action("read"), docReview([], undefined, "docs/plans/p.md", "Plan review")]),
+                chatItems([you("x"), action("read"), docReview([], undefined, "notes/intro.txt")]),
+                chatItems([you("x"), action("read"), ask("Scope")]),
+            ]) {
+                expect(kinds(items)).toEqual(["work"]);
+                const work = part(items, 0);
+                expect(work.kind === "work" && work.work.actions).toHaveLength(2);
+            }
+        });
+
+        it("leaves an ask of several questions in the work even when one is a Doc review", () => {
+            const two = action("asked", {
+                detail: {
+                    kind: "ask",
+                    questions: [
+                        { question: "paper/intro.tex", header: "Doc review", options: [], picked: [] },
+                        { question: "B?", header: "Scope", options: [], picked: [] },
+                    ],
+                },
+            });
+            expect(kinds(chatItems([you("x"), two]))).toEqual(["work"]);
+        });
+    });
+
     describe("keys as the transcript grows", () => {
         it("keeps the key of each part when entries append after it", () => {
             const entries: AgentEntry[] = [
@@ -788,6 +939,22 @@ describe("chatItems: verdict, handoff and run-start parts", () => {
             const after = keysOf([...entries, says("More."), action("grep"), reported("late")]);
             expect(after.slice(0, 3)).toEqual(before);
             expect(after).toEqual([...before, "verdict:7"]);
+        });
+
+        it("keeps the key of a council start and a Doc review as entries append after them", () => {
+            const entries: AgentEntry[] = [
+                you("go"),
+                action("read"),
+                councilStart("council 9f3a1c04d27b58e6 started: x · review · g · 4 experts · ≈ 1 calls · ~1k tokens\n"),
+                docReview(),
+            ];
+            const keysOf = (es: AgentEntry[]): string[] =>
+                agentOf(chatItems(es), 1)
+                    .parts.filter((p) => p.kind === "councilstart" || p.kind === "docreview")
+                    .map((p) => (p as { key: string }).key);
+            const before = keysOf(entries);
+            expect(before).toEqual(["councilstart:2", "docreview:3"]);
+            expect(keysOf([...entries, says("More."), action("grep")])).toEqual(before);
         });
     });
 

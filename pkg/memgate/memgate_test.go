@@ -386,6 +386,36 @@ func TestPatternNeverLearnsAProgramTheClassifierHasARuleFor(t *testing.T) {
 	}
 }
 
+// A server start runs until stopped: it never takes a slot, whatever its peak, and a learned file written before this
+// rule cannot make it heavy again. A build by the same program still learns on its own peak.
+func TestServerStartIsNeverLearned(t *testing.T) {
+	learned := map[string]bool{
+		"mvn spring-boot:run": true, "gradle bootRun": true, "gradlew bootRun": true, "uvicorn app:app": true,
+		"mvn package": true,
+	}
+	for _, command := range []string{
+		"mvn spring-boot:run", "mvn -pl api spring-boot:run", "./mvnw spring-boot:run", "mvnw.cmd quarkus:dev",
+		"gradle bootRun", "./gradlew bootRun", "gradlew.bat :api:bootRun --args=x", "./gradlew -p api bootRun",
+		"uvicorn app:app --reload", "gunicorn app:app", "flask run", "rails s", "npx next dev", "next start",
+		"dotnet watch run", "nodemon server.js", "cd api && ./gradlew bootRun",
+	} {
+		if name, known, ok := Pattern(command); ok && !known {
+			t.Errorf("Pattern(%q) = %q: a server start would be learned", command, name)
+		}
+		if job, heavy := ClassifyWith(command, learned); heavy {
+			t.Errorf("ClassifyWith(%q) = %+v: a learned server start takes a slot", command, job)
+		}
+	}
+	for command, want := range map[string]string{"mvn package": "mvn package", "gradle build": "gradle build"} {
+		if name, known, ok := Pattern(command); !ok || known || name != want {
+			t.Errorf("Pattern(%q) = %q, %v, %v; want the unknown pattern %q", command, name, known, ok, want)
+		}
+	}
+	if job, heavy := ClassifyWith("mvn package", learned); !heavy || job.Name != "mvn package" {
+		t.Errorf("a learned mvn package reads %+v, %v; want heavy", job, heavy)
+	}
+}
+
 func TestClassifyWith(t *testing.T) {
 	learned := map[string]bool{"make build": true, "gradle build": true}
 	cases := []struct {

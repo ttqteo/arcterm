@@ -25,6 +25,10 @@
 // the conversation started (chatruncard.tsx: at the `wsh runs start` call that started it, the rest at the end). Each folds in
 // place into its ✓ row. Their modes and places are the pure models' (chatverdict.ts, chatruncards.ts); this file reads the
 // stores they need and keeps an item's element only while everything its cards draw from is the same (DrawnItem.cards).
+// Two more moments draw the same way (docs/superpowers/specs/2026-11-14-chat-council-design.md): a council the agent started
+// with `wsh council start` (chatcouncilcard.tsx: a card at the end of the conversation while it is queued, running or waits
+// on you, a one-line row at the call once it ended; chatcouncil.ts places it) and a Doc review ask (chatdocreviewcard.tsx:
+// the card is the dock's while the agent asks, and the ✓ row it folds into stands in place once answered).
 
 import { CopyButton } from "@/app/element/copybutton";
 import { MOTION, springReveal } from "@/app/element/motiontokens";
@@ -60,6 +64,10 @@ import {
 import { ChatBrainstormRunDone, ChatBrainstormRunRow, useDoneRuns } from "./chatbrainstormrun";
 import { brainstormAnswersAtom } from "./chatbrainstormstore";
 import { answerMessages, answeredText, pairedHidden } from "./chatbrainstormwire";
+import { councilEndedOnce, placeCouncilCards, type CouncilAnchor } from "./chatcouncil";
+import { ChatCouncilCard, ChatCouncilRow } from "./chatcouncilcard";
+import { useChatCouncils, useCouncilsEndedOnce } from "./chatcouncilstore";
+import { ChatDocReviewCard, ChatDocReviewDone } from "./chatdocreviewcard";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { canForkInChat, forkPointOfProse, forkPointOfYou, type ForkPoint } from "./chatfork";
@@ -702,7 +710,7 @@ interface DrawnItem {
     initiative: boolean;
     folds: string;
     answer: string;
-    // what its verdict, handoff and run cards draw from (ChatConversation's cardsOf)
+    // what its verdict, handoff, Doc review, run and council cards draw from (ChatConversation's cardsOf)
     cards: string;
     element: ReactNode;
 }
@@ -945,6 +953,51 @@ export function ChatConversation({
     // to be found draws nothing (and no empty slot in the column)
     const drawsRunCard = (slot: RunCardSlot): boolean =>
         slot.runId != null || ("entryId" in slot && queue.some((e) => e.id === slot.entryId));
+    // The councils this conversation started, found as the runs are: by the `wsh council start` call whose output names
+    // them (chatcouncil.ts), so a council the person started from this agent has no card here. Each is read through
+    // `useChatCouncils` (loaded once, current on `council:changed`). A council that never ended is a card at the end of the
+    // conversation; one that ended once (chatcouncil.ts councilEndedOnce) is a row at its call for good, whatever it does
+    // next. A call outside the loaded transcript draws nothing (spec, Builder decision 4): Show earlier brings its row back.
+    // The card and the row open the council's room through the cockpit (`model`), so a conversation drawn without one (an
+    // ended session's transcript, a subagent's interior) has none: its `wsh council start` call stays the tool line.
+    const councilAnchors = useMemo(
+        () =>
+            model == null
+                ? []
+                : stored.flatMap((item) =>
+                      item.kind === "agent"
+                          ? item.parts.flatMap((part) =>
+                                part.kind === "councilstart"
+                                    ? [{ key: part.key, anchor: part.anchor, order: keyIndex(part.key) }]
+                                    : []
+                            )
+                          : []
+                  ),
+        [stored, model]
+    );
+    const councilIds = useMemo(() => [...new Set(councilAnchors.map((a) => a.anchor.councilId))], [councilAnchors]);
+    const councils = useChatCouncils(councilIds);
+    const seenEnded = useCouncilsEndedOnce();
+    const placedCouncils = useMemo(() => {
+        const endedOnce = new Set<string>();
+        for (const { anchor } of councilAnchors) {
+            const id = anchor.councilId;
+            if (councilEndedOnce(councils.get(id) ?? null, anchor, seenEnded.has(id))) {
+                endedOnce.add(id);
+            }
+        }
+        return placeCouncilCards({ anchors: councilAnchors, councils, endedOnce });
+    }, [councilAnchors, councils, seenEnded]);
+    // each live council's anchor, for its card (the first call that named it, as placeCouncilCards keeps)
+    const councilAnchorOf = useMemo(() => {
+        const byId = new Map<string, CouncilAnchor>();
+        for (const { anchor } of [...councilAnchors].sort((a, b) => a.order - b.order)) {
+            if (!byId.has(anchor.councilId)) {
+                byId.set(anchor.councilId, anchor);
+            }
+        }
+        return byId;
+    }, [councilAnchors]);
     // The `[arc] Run … landed|held` messages of the runs that draw a card here (the brainstorm's included, and a call's run
     // the store has not listed yet): each draws nothing, its run's card folding into a ✓ row that carries it instead.
     // `runLines` are the runs of the `brainstorm: run` lines (below), whose ✓ row the message makes as well.
@@ -1266,9 +1319,11 @@ export function ChatConversation({
         });
     // Everything an item's cards draw from that the item itself does not hold, as one string for the kept element to be
     // compared by: whether the agent exited, the agent fields a card sends and opens through (a kept element would hold a
-    // stale one), each verdict's mode, and for each run call the place its run draws at and the run-ended message that folds
-    // it (the message is an item of its own, so its arrival does not change the item holding the call). "" for an item
-    // with no card.
+    // stale one), each verdict's mode, for each run call the place its run draws at and the run-ended message that folds
+    // it (the message is an item of its own, so its arrival does not change the item holding the call), for each council
+    // call whether its council's row draws there (a council ends after the call, so the item is unchanged), and for a
+    // handoff or a Doc review that the dock holds or the exited agent draws static (so `exited` is in the string). "" for
+    // an item with no card.
     const cardsOf = (item: ChatItem, ctx: ItemCtx): string => {
         if (item.kind !== "agent") {
             return "";
@@ -1279,10 +1334,14 @@ export function ChatConversation({
                 out.push(JSON.stringify(verdictModeOf(item, part, p, ctx)));
             } else if (part.kind === "handoff") {
                 out.push("handoff");
+            } else if (part.kind === "docreview") {
+                out.push("docreview");
             } else if (part.kind === "runstart") {
                 const slot = placed.byAnchor.get(part.key);
                 const ended = slot?.runId != null ? endedByRun.get(slot.runId) : undefined;
                 out.push(JSON.stringify([slot ?? null, slot != null && drawsRunCard(slot), ended?.text ?? null]));
+            } else if (part.kind === "councilstart") {
+                out.push(`council:${placedCouncils.atCall.get(part.key) ?? ""}`);
             }
         });
         return out.length === 0
@@ -1341,9 +1400,9 @@ export function ChatConversation({
                 );
             }
             case "work": {
-                // the work the agent is doing now: nothing but its files chip and its cards (a verdict, a handoff, a run it
-                // started) after it in the last item. It shows open, so a click on it folds it (a key of its own, which
-                // stops counting once the agent is done)
+                // the work the agent is doing now: nothing but its files chip and its cards (a verdict, a handoff, a Doc
+                // review, a run or a council it started) after it in the last item. It shows open, so a click on it folds
+                // it (a key of its own, which stops counting once the agent is done)
                 const autoOpen =
                     !!active &&
                     last &&
@@ -1354,7 +1413,9 @@ export function ChatConversation({
                                 q.kind === "files" ||
                                 q.kind === "verdict" ||
                                 q.kind === "handoff" ||
-                                q.kind === "runstart"
+                                q.kind === "docreview" ||
+                                q.kind === "runstart" ||
+                                q.kind === "councilstart"
                         );
                 return (
                     <ChatSteps
@@ -1410,6 +1471,24 @@ export function ChatConversation({
                     />
                 );
             }
+            // a council the agent started: its row, where the call is, once it ended once (it updates in place with the
+            // council). Its live card sits at the end of the conversation, so a call whose council still draws there, or
+            // another call named first, has nothing here
+            case "councilstart": {
+                const id = placedCouncils.atCall.get(part.key);
+                return id != null && model != null ? (
+                    <ChatCouncilRow councilId={id} anchor={part.anchor} model={model} />
+                ) : null;
+            }
+            // a Doc review: answered, its row. Unanswered, the live card is the dock's (chatpane.tsx), as the handoff's is,
+            // so a live agent's conversation draws nothing; an agent that exited has the static card here
+            case "docreview": {
+                const q = part.question;
+                if (q.picked.length > 0 || !!q.typed?.trim()) {
+                    return <ChatDocReviewDone question={q} agent={agent} />;
+                }
+                return exited ? <ChatDocReviewCard question={q} state="static" agent={agent} model={model} /> : null;
+            }
         }
     };
 
@@ -1445,8 +1524,9 @@ export function ChatConversation({
                         {/* a part landing in a row that was already there opens on the spring; one of a row that arrives
                             now, or of a row drawn at once, is part of it */}
                         {item.parts.map((part, p) => {
-                            // a part that draws nothing (a handoff the dock holds, a run another call named) gets no
-                            // wrapper, so it leaves no empty slot in the item's gap
+                            // a part that draws nothing (a handoff or a Doc review the dock holds, a run another call named,
+                            // a council whose card is at the end) gets no wrapper, so it leaves no empty slot in the
+                            // item's gap
                             const node = drawPart(item, part, p, last, ctx);
                             if (node == null) {
                                 return null;
@@ -1477,10 +1557,11 @@ export function ChatConversation({
     // its own components or read through a ref. The initiative cards the person opened from messages are rows of their
     // own after the row of the item they were opened after (InitiativeMessageCards: no data-chat-item, so the place kept
     // and restored never counts them, and no part of the key above); one whose item is not drawn is drawn at the end.
-    // The cards of an item (a verdict, a handoff, a run) draw from more than the item: whether it is the last thing drawn,
-    // whether your message follows (a verdict's mode), the agent, the run-ended messages (they are items of their own, so an
-    // item holding a run's call is unchanged when its message arrives) and where each run draws. `cards` is all of that in
-    // one string; the element is kept only while it stays the same.
+    // The cards of an item (a verdict, a handoff, a Doc review, a run, a council) draw from more than the item: whether it
+    // is the last thing drawn, whether your message follows (a verdict's mode), the agent, the run-ended messages (they are
+    // items of their own, so an item holding a run's call is unchanged when its message arrives), where each run draws and
+    // whether each council's row draws at its call. `cards` is all of that in one string; the element is kept only while it
+    // stays the same.
     const drawnIndex = new Map(drawnVisible.map((it, n) => [it.key, n]));
     const drawnItems = useRef(new Map<string, DrawnItem>());
     const drawnNow = new Map<string, DrawnItem>();
@@ -1595,7 +1676,9 @@ export function ChatConversation({
                 from one card to the next animates. The first render draws it at once. The run card draws its own
                 wrapper (ChatBrainstormRunRow), which a run that is over leaves out altogether: no empty row holding
                 the column's gap. The runs of the conversation that no call names (placeRunCards) come before it, each
-                one a card of its own, or its ✓ row once it is over. */}
+                one a card of its own, or its ✓ row once it is over. After them come the councils the agent started that
+                have not ended (placeCouncilCards), oldest call first, each in a wrapper of its own: the card leaves on
+                the spring when its council ends, as its row appears at the call that started it. */}
             <AnimatePresence initial={false}>
                 {placed.trailing.map((runId) => (
                     <ChatRunCard
@@ -1607,6 +1690,18 @@ export function ChatConversation({
                         rowProps={endRow}
                     />
                 ))}
+                {model != null
+                    ? placedCouncils.trailing.flatMap((id) => {
+                          const anchor = councilAnchorOf.get(id);
+                          return anchor == null
+                              ? []
+                              : [
+                                    <motion.div key={`council:${id}`} data-chat-council-tail {...endRow}>
+                                        <ChatCouncilCard councilId={id} anchor={anchor} model={model} live={!exited} />
+                                    </motion.div>,
+                                ];
+                      })
+                    : null}
                 {brainstorm?.card != null && brainstorm.state != null ? (
                     brainstorm.card.kind === "run" ? (
                         <ChatBrainstormRunRow

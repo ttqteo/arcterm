@@ -24,16 +24,53 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- Chat draws a council the agent started as a card, like its runs and verdicts: while the council runs it sits at the
+  end of the conversation with the question, a chip for each expert, the step it is on and a Stop button; it asks
+  Continue or Stop when it pauses after round 1, and shows what it waits for when it is queued. Once it ends, the card
+  folds into one row where the agent started it (✓ with the count of directions or ideas and Open report, or ■ stopped,
+  ! failed, – not run with the reason), and Open council takes you to its room.
+- Chat draws a Doc review the agent asks for as a card: the file, what to look at and Review and Approve buttons
+  (Request changes stays in the review view, where each comment sits on its passage). Once you answer, it folds into
+  one row in place: "approved", or "changes requested" with the number of comments.
+- In Chat, an agent linked to an initiative shows it in a band under the header instead of a chip with a popover over
+  the conversation: the initiative's title, its progress and the chunk the agent is on, with Mark done beside it. Open
+  the band (click it, or press `i`) and it pushes the conversation down, never over it, to the chunks around the
+  agent's own, the latest note, Add note and Open in Jarvis. Work on this, on a chunk no one holds, moves the agent
+  there, and the agent is told with your next message (a line over the box says so, and ✕ drops it). An agent with no
+  initiative shows Link to initiative in the header. <!-- big -->
+- In Chat, an agent with a brainstorm attached always shows it in the band under the header, between two questions
+  too: how many boards it has, with a dot and "N new" for the ones that arrived since you last opened the Brainstorm
+  tab (the tab carries the same dot), and how many decisions are yours. Open that part and it pushes the conversation
+  down to the decisions and the boards; a click on a board opens the Brainstorm tab. With an initiative beside it, Mark
+  done moves into the initiative's opened view (the `m` key still works).
+
 ### Changed
 
 - A message you send in Chat rises in at its place again, as in a messenger, instead of flying out of the message box.
 - Chat's suggested replies stay while you type instead of all going at the first letter; clicking one over text you
   typed asks first, in a toast whose Send replaces your text with the reply.
+- A decision the agent changed, in Chat's Confirm the design and builder check cards, now shows what changed as the
+  Brainstorm tab's review does: the removed sentences in red with −, the added ones in green with +, then why, and
+  your answer, in place of the old text under "Was:".
+- Mark done now moves the agent on to the next chunk, and an agent that holds no chunk is no longer treated as working
+  the initiative's active one: it shows "No chunk for this agent" until you pick one.
+- Chat's chips float just above the message box instead of sitting in it, so the box keeps its height as they come and
+  go and the conversation no longer jumps.
 - A resume of a past session picked in New is held too while the machine is busy, and Start now picks the same
   session up. Every held agent now says so in a toast, with Open to go to it.
 
 ### Fixed
 
+- An app server an agent starts (`mvn spring-boot:run`, `./gradlew bootRun`, `uvicorn`, `next dev` and the like) no
+  longer holds a heavy-job slot for up to an hour, which kept builds and typechecks waiting behind it.
+- arcterm's background service no longer keeps a CPU core busy once you have thousands of past runs: the servers
+  list re-read every run on each refresh.
+- The Storage scan arcterm runs at start and once a day waits until no build, typecheck or test suite is running
+  (up to 30 minutes), so it no longer slows them down or drags on for many minutes beside them.
+- On Windows, a build or typecheck an agent runs in the background keeps its heavy-job slot until it ends. It let go
+  after two seconds, so more of them ran at once than the queue allows.
 - Selecting text in Chat on a Mac highlights only the text you pick, one band per line as on Windows: no fill running
   to the column's edge or across the gaps between paragraphs, no boxes around list numbers and bullets, and no dark
   strips between the lines of a wrapped paragraph.

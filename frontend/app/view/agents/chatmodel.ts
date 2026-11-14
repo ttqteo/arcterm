@@ -27,6 +27,8 @@ import type {
     EditFile,
     ShellResult,
 } from "./agentsviewmodel";
+import { councilStartAnchor, type CouncilAnchor } from "./chatcouncil";
+import { isDocReviewAsk } from "./chatdocreview";
 import { isHandoffAsk } from "./chathandoff";
 import { runStartAnchor, type RunAnchor } from "./chatruncards";
 import {
@@ -49,15 +51,19 @@ export type AgentPart =
     | { kind: "work"; work: WorkItem }
     // the files that work edited, once per path with the summed counts; follows its work part
     | { kind: "files"; files: EditFile[]; adds: number; dels: number }
-    // Three moments Chat draws as cards of their own (chatverdict.ts, chathandoff.ts, chatruncards.ts); each `key` is
-    // `<kind>:<entry index>` of the message or call it came from, so it holds as entries append. A reviewer's verdict: an
-    // ```arc-review block cut out of a reply, or a `ReportFindings` call (`reviewer`: the Agent / Task call a block judges,
-    // when one pairs)
+    // Five moments Chat draws as cards of their own (chatverdict.ts, chathandoff.ts, chatruncards.ts, chatcouncil.ts,
+    // chatdocreview.ts); each `key` is `<kind>:<entry index>` of the message or call it came from, so it holds as entries
+    // append. A reviewer's verdict: an ```arc-review block cut out of a reply, or a `ReportFindings` call (`reviewer`: the
+    // Agent / Task call a block judges, when one pairs)
     | { kind: "verdict"; key: string; verdict: Verdict; reviewer?: ReviewerCall }
     // the plan handoff: an AskUserQuestion with the header `Handoff`, answered or not (`question.picked` / `typed`)
     | { kind: "handoff"; key: string; question: AskQuestionDetail }
     // a `wsh runs start` call's run: where that run's card sits (the call itself stays a tool line in the work before it)
-    | { kind: "runstart"; key: string; anchor: RunAnchor };
+    | { kind: "runstart"; key: string; anchor: RunAnchor }
+    // a `wsh council start` call's council: where its card or row sits (the call itself stays a tool line before it)
+    | { kind: "councilstart"; key: string; anchor: CouncilAnchor }
+    // a Doc review: an AskUserQuestion `isDocReviewAsk` reads, answered or not (`question.picked` / `typed`)
+    | { kind: "docreview"; key: string; question: AskQuestionDetail };
 
 /** Who sent a prompt arcterm typed into the session. */
 export type SentFrom = "run" | "cockpit";
@@ -169,11 +175,13 @@ function recordUuid(entry: AgentEntry | undefined): string | undefined {
 }
 
 // What a tool call is to Chat when it is more than a tool line: the review a `ReportFindings` call reports, the plan
-// handoff, or a run `wsh runs start` began.
+// handoff, a Doc review ask, a run `wsh runs start` began, or a council `wsh council start` began.
 type Moment =
     | { kind: "verdict"; verdict: Verdict }
     | { kind: "handoff"; question: AskQuestionDetail }
-    | { kind: "runstart"; anchor: RunAnchor };
+    | { kind: "docreview"; question: AskQuestionDetail }
+    | { kind: "runstart"; anchor: RunAnchor }
+    | { kind: "councilstart"; anchor: CouncilAnchor };
 
 function momentOf(action: AgentActionEntry): Moment | null {
     if (action.findings != null) {
@@ -182,11 +190,19 @@ function momentOf(action: AgentActionEntry): Moment | null {
     }
     const detail = action.detail;
     if (detail?.kind === "ask") {
-        return isHandoffAsk(detail.questions) ? { kind: "handoff", question: detail.questions[0] } : null;
+        if (isHandoffAsk(detail.questions)) {
+            return { kind: "handoff", question: detail.questions[0] };
+        }
+        return isDocReviewAsk(detail.questions) ? { kind: "docreview", question: detail.questions[0] } : null;
     }
     if (detail?.kind === "bash") {
-        const anchor = runStartAnchor(detail.command ?? "", detail.output);
-        return anchor != null ? { kind: "runstart", anchor } : null;
+        const command = detail.command ?? "";
+        const run = runStartAnchor(command, detail.output);
+        if (run != null) {
+            return { kind: "runstart", anchor: run };
+        }
+        const council = councilStartAnchor(command, detail.output);
+        return council != null ? { kind: "councilstart", anchor: council } : null;
     }
     return null;
 }
@@ -206,9 +222,10 @@ type VerdictPart = Extract<AgentPart, { kind: "verdict" }>;
  * messages, a sent card or a marker joins one group; a marker splits the agent's side in two, since it is a point in the
  * conversation of its own.
  *
- * A group is cut at three moments, each a part of its own: a reply holding an ```arc-review block (the prose before and
- * after it kept as parts), a `ReportFindings` call and a `Handoff` ask (both cut out of the stretch of tools they sit in),
- * and a `wsh runs start` call whose output names a run (the stretch is split after the call, which stays a tool line).
+ * A group is cut at five moments, each a part of its own: a reply holding an ```arc-review block (the prose before and
+ * after it kept as parts), a `ReportFindings` call, a `Handoff` ask and a Doc review ask (all cut out of the stretch of
+ * tools they sit in, no tool line left for them), and a `wsh runs start` or `wsh council start` call whose output names a
+ * run or a council (the stretch is split after the call, which stays a tool line).
  */
 export function chatItems(entries: AgentEntry[]): ChatItem[] {
     const out: ChatItem[] = [];
@@ -305,13 +322,24 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
                         parts.push({ kind: "runstart", key: `runstart:${index}`, anchor: moment.anchor });
                         return;
                     }
+                    if (moment.kind === "councilstart") {
+                        cut(k + 1);
+                        parts.push({ kind: "councilstart", key: `councilstart:${index}`, anchor: moment.anchor });
+                        return;
+                    }
                     cut(k);
                     from = k + 1;
-                    parts.push(
-                        moment.kind === "verdict"
-                            ? { kind: "verdict", key: `verdict:${index}`, verdict: moment.verdict }
-                            : { kind: "handoff", key: `handoff:${index}`, question: moment.question }
-                    );
+                    switch (moment.kind) {
+                        case "verdict":
+                            parts.push({ kind: "verdict", key: `verdict:${index}`, verdict: moment.verdict });
+                            break;
+                        case "handoff":
+                            parts.push({ kind: "handoff", key: `handoff:${index}`, question: moment.question });
+                            break;
+                        case "docreview":
+                            parts.push({ kind: "docreview", key: `docreview:${index}`, question: moment.question });
+                            break;
+                    }
                 });
                 cut(item.actions.length);
                 break;

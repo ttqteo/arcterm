@@ -67,9 +67,12 @@ import brainstormJudgeScenarios from "./scenarios-brainstorm-judge.mjs";
 import brainstormReviewScenarios from "./scenarios-brainstorm-review.mjs";
 import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
 import briefActScenarios from "./scenarios-brief-act.mjs";
+import chatBrainstormBandScenarios from "./scenarios-chat-brainstorm-band.mjs";
 import chatBrainstormReviewScenarios from "./scenarios-chat-brainstorm-review.mjs";
+import chatInitiativeBandScenarios from "./scenarios-chat-initiative-band.mjs";
 import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
 import chatVerdictHandoffScenarios from "./scenarios-chat-verdict-handoff.mjs";
+import chatCouncilScenarios from "./scenarios-chat-council.mjs";
 import codeBlameDraftScenarios from "./scenarios-code-blame-draft.mjs";
 import codeFixesSessionScenarios from "./scenarios-code-fixes-session.mjs";
 import codeFixesViewScenarios from "./scenarios-code-fixes-view.mjs";
@@ -133,28 +136,6 @@ import { CHRISTMAS_ASKER, SCENARIOS as COCKPIT_FIXTURES } from "../cockpit-fixtu
 // failure — report.mjs tallies it apart and exitCode ignores it. The detail must name what to seed, so a
 // skip stays a standing invitation to make the step real rather than a permanent shrug.
 const skipStep = (step, detail) => ({ step, skip: true, detail });
-
-// Opens the agent header's "…" menu with a real click (the menu opens at the pointer) and picks the row labelled `label`
-// (contextmenu.tsx marks each row data-menu-item). False when the header's button or the row is not there.
-async function pickHeaderMenu(h, label) {
-    const box = await h.ev(`(() => {
-        const r = document.querySelector("[data-agent-header-more]")?.getBoundingClientRect();
-        return r && r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
-    })()`);
-    if (box == null) return false;
-    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
-    for (const type of ["mousePressed", "mouseReleased"]) {
-        await h.cdp("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1 });
-    }
-    return h.ev(`(async () => {
-        for (let i = 0; i < 30; i++) {
-            const row = [...document.querySelectorAll("[data-menu-item]")].find((r) => r.dataset.menuItem === ${JSON.stringify(label)});
-            if (row) { row.click(); return true; }
-            await new Promise((r) => setTimeout(r, 100));
-        }
-        return false;
-    })()`);
-}
 
 // Clicks the agent header's Float button (data-agent-header-float). False when the header has none (a plain terminal's pane
 // head), where Shift+F from the nav floats it instead.
@@ -63780,9 +63761,12 @@ const initiativePopover = {
         ctx.skip = initFixtureSkip();
         if (ctx.skip) return ctx;
         try {
-            await initPrepare(h, ctx);
+            // `agent.chatmode` is read once at boot (chatmodestore.ts): cleared here, put back by teardown
+            await initPrepare(h, ctx, { "agent.chatmode": null });
             ctx.oid = await initCreate(h, ctx, { title: POP_TITLE, project: POP_PROJECT, chunks: [POP_C1, POP_C2, POP_C3, POP_C4] });
             ctx.agent = await initOpenAgent(h, ctx, { name: "verify-popover", project: POP_PROJECT, effort: `effort:${ctx.oid}` });
+            // the popover is the Terminal view's: in Chat the initiative is the band under the header (chat-initiative-band)
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(ctx.agent.tabId)}, "terminal")`);
             await initOps(h, ctx.oid, [
                 { op: "setChunkStatus", chunk: POP_C1, status: "done" },
                 { op: "setChunkStatus", chunk: POP_C2, status: "active" },
@@ -63935,12 +63919,49 @@ const initiativePopover = {
                 up8 === true && onJarvis === true && surface === SURFACE_LABEL.jarvis,
                 { up8, onJarvis, surface }
             );
+
+            // --- 9. an agent on no chunk: the popover says so, instead of naming the initiative's active chunk ---------------------
+            await h.goto("agent");
+            // step 3's Mark done carried the agent on: take it off every chunk it holds, and have the page read the initiative again
+            const held = (await initChunks(h, ctx.oid)).filter(
+                (c) => c.status !== "done" && c.status !== "skipped" && (c.workrefs ?? []).some((w) => w.oref === `agent:${ctx.agent.tabId}`)
+            );
+            await initOps(
+                h,
+                ctx.oid,
+                held.map((c) => ({ op: "detachWork", chunk: c.label, kind: "agent", oref: `agent:${ctx.agent.tabId}` }))
+            );
+            await AC.agentPage(
+                h,
+                `const S = await mod("app/view/jarvis/effortstore.ts");
+                await S.loadEffortDetail(${JSON.stringify("effort:" + ctx.oid)}, Number.MAX_SAFE_INTEGER);
+                return true;`
+            );
+            const detached = (await initChunks(h, ctx.oid)).every(
+                (c) => !(c.status !== "done" && c.status !== "skipped" && (c.workrefs ?? []).some((w) => w.oref === `agent:${ctx.agent.tabId}`))
+            );
+            const up9 = await popOpen(h);
+            const text9 = await h.ev(`(() => {
+                const pop = ${POP};
+                return pop ? { noChunk: pop.textContent.includes("No chunk for this agent"), current: !!pop.querySelector('[data-popover-row="current"]'),
+                    title: pop.textContent.includes(${JSON.stringify(POP_TITLE)}) } : null;
+            })()`);
+            await h.shot("cdp-shots/initiative-popover-9-no-chunk.png");
+            rec(
+                '9. with the agent on no chunk (detached over RPC) `i` opens the popover with "No chunk for this agent" and no current row, still headed by the initiative',
+                held.length > 0 && detached === true && up9 === true && text9?.noChunk === true && text9.current === false && text9.title === true,
+                { held: held.map((c) => c.label), detached, up9, text9 }
+            );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
         }
         return steps;
     },
     async teardown(h, ctx) {
+        // the Terminal view this scenario set is the agent's own mode: back to Chat, so the entry for a closed tab holds nothing
+        if (ctx.agent?.tabId != null) {
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(ctx.agent.tabId)}, "chat")`).catch((e) => console.error(`initiative-popover teardown: put the chat mode back failed: ${e?.message ?? e}`));
+        }
         await initTeardown(h, ctx, "initiative-popover");
     },
 };
@@ -63952,9 +63973,9 @@ const LINK_C1 = "First link chunk";
 const LINK_C2 = "Second link chunk";
 const tabEffort = async (h, tabId) =>
     (await waveService(h, "object", "GetObject", [`tab:${tabId}`]))?.meta?.["session:effort"] ?? null;
+// these agents report as Claude, so their cell opens in Chat: its lean header has no ◇ chip (the band under it replaces that),
+// and an agent with no initiative keeps the "+ Link to initiative" chip, with an i keycap
 const LINK_BTN = `document.querySelector("[data-agent-header] [data-initiative-link]")`;
-// these agents report as Claude, so their cell opens in Chat, whose header has no chip: the "…" button holds the row
-const LINK_MENU = `document.querySelector("[data-agent-header] [data-agent-header-more][data-initiative-link-menu]")`;
 const LINK_PICKER = `document.querySelector("[data-initiative-picker]")`;
 
 const initiativeLink = {
@@ -63984,17 +64005,21 @@ const initiativeLink = {
         const { steps, rec } = initRecorder();
         try {
             // --- 1. an agent with no initiative offers to link one --------------------------------------------------------------
-            const offered = await polishWaitFor(h, `!!${LINK_MENU}`, INIT_WAIT_MS);
-            const noChip = await h.ev(`!${LINK_BTN}`);
-            const noLink = await h.ev(`!document.querySelector("[data-agent-header] [data-initiative-link-open]")`);
+            const offered = await polishWaitFor(h, `!!${LINK_BTN}`, INIT_WAIT_MS);
+            const chip = await h.ev(`(() => {
+                const el = ${LINK_BTN};
+                return el ? { text: el.textContent.replace(/\\s+/g, " ").trim(), keycap: [...el.querySelectorAll("span")].some((s) => /^i$/i.test(s.textContent.trim())) } : null;
+            })()`);
+            const noMenuRow = await h.ev(`!document.querySelector("[data-agent-header] [data-initiative-link-menu]")`);
+            const noLink = await h.ev(`!document.querySelector("[data-agent-header] [data-initiative-link-open]") && !document.querySelector("[data-initiative-band]")`);
             rec(
-                '1. in Chat the header of an agent with no initiative offers "Link to initiative…" in its "…" menu, with no chip',
-                offered === true && noChip === true && noLink === true,
-                { offered, noChip, noLink }
+                '1. in Chat the header of an agent with no initiative shows the "+ Link to initiative" chip with its i keycap, no "…" menu row for it, no ◇ chip and no band',
+                offered === true && /Link to initiative/.test(chip?.text ?? "") && chip.keycap === true && noMenuRow === true && noLink === true,
+                { offered, chip, noMenuRow, noLink }
             );
 
-            // --- 2. the menu's row opens the picker, listing the initiative ----------------------------------------------------------
-            await pickHeaderMenu(h, "Link to initiative…");
+            // --- 2. the chip opens the picker, listing the initiative ----------------------------------------------------------------
+            await initClick(h, LINK_BTN);
             const pickerUp = await polishWaitFor(h, `!!${LINK_PICKER}`, 4000);
             const row = `document.querySelector('[data-initiative-picker] [data-picker-row="effort:${ctx.oid}"]')`;
             // an initiative of another project sits behind "others"; this one is the agent's own project's
@@ -64007,34 +64032,34 @@ const initiativeLink = {
             await polishNap(400);
             await h.shot("cdp-shots/initiative-link-2-picker.png");
             rec(
-                "2. the menu's row opens the picker, which lists the initiative and offers a new one",
+                "2. the chip opens the picker, which lists the initiative and offers a new one",
                 pickerUp === true && listed === true && picker?.filter === true && picker.newRow === true,
                 { pickerUp, listed, picker }
             );
 
-            // --- 3. picking it sets the tab's session:effort and the header links it -----------------------------------------------
+            // --- 3. picking it sets the tab's session:effort and Chat draws the band under the header ----------------------------------
             await initClick(h, row);
             const set = await initUntil(async () => (await tabEffort(h, ctx.agentA.tabId)) === `effort:${ctx.oid}`, 8000);
             const linked = await polishWaitFor(
                 h,
-                `document.querySelector("[data-agent-header] [data-initiative-link-open]")?.innerText.includes(${JSON.stringify(LINK_TITLE)}) === true`,
+                `document.querySelector('[data-initiative-band="${ctx.agentA.tabId}"] [data-band-title]')?.textContent === ${JSON.stringify(LINK_TITLE)}`,
                 INIT_WAIT_MS
             );
-            const gone = await polishWaitFor(h, `!${LINK_PICKER} && !${LINK_BTN} && !${LINK_MENU}`, 3000);
+            const gone = await polishWaitFor(h, `!${LINK_PICKER} && !${LINK_BTN}`, 3000);
             // it also puts the agent on the initiative's first pending chunk, so that chunk reads as its work
             const attached = await initUntil(
                 async () => ((await initChunk(h, ctx.oid, LINK_C1))?.workrefs ?? []).some((w) => w.oref === `agent:${ctx.agentA.tabId}`),
                 5000
             );
             rec(
-                "3. picking the initiative sets the tab's session:effort, the header shows the initiative link, and the agent is attached to its first pending chunk",
+                "3. picking the initiative sets the tab's session:effort, Chat draws the initiative band (its title) in place of the link chip, and the agent is attached to its first pending chunk",
                 set === true && linked === true && gone === true && attached === true,
                 { set, linked, gone, attached }
             );
 
             // --- 4. the second agent: `i` opens the picker, and a new initiative is made from the session -------------------------------
             await initFocusAgent(h, ctx.agentB);
-            const offeredB = await polishWaitFor(h, `!!${LINK_MENU}`, INIT_WAIT_MS);
+            const offeredB = await polishWaitFor(h, `!!${LINK_BTN}`, INIT_WAIT_MS);
             const nameB = await h.ev(`document.querySelector("[data-agent-header] .font-semibold")?.textContent.trim() ?? ""`);
             await h.ev(`document.querySelector("[data-cockpit-surface-wrap]")?.focus()`);
             await initPress(h, "i");
@@ -64051,14 +64076,14 @@ const initiativeLink = {
             // tracked now, so teardown deletes the idea it made
             if (newOref != null) ctx.oids.push(newOref.replace(/^effort:/, ""));
             const idea = newOref != null ? await initEffort(h, newOref.replace(/^effort:/, "")) : null;
-            // a session named after its initiative reads just "initiative" (initiativeLinkText), not the title twice
+            // the band names the initiative by its title, which for an idea made from the session is the session's name
             const linkedB = await polishWaitFor(
                 h,
-                `document.querySelector("[data-agent-header] [data-initiative-link-open]")?.innerText.trim() === "◇ initiative"`,
+                `document.querySelector('[data-initiative-band="${ctx.agentB.tabId}"] [data-band-title]')?.textContent === ${JSON.stringify(nameB)}`,
                 INIT_WAIT_MS
             );
             rec(
-                '4. on the second agent `i` opens the picker; "+ New initiative from this session" makes an idea titled with the agent\'s name, sets session:effort to it, and the header links it',
+                '4. on the second agent `i` opens the picker; "+ New initiative from this session" makes an idea titled with the agent\'s name, sets session:effort to it, and Chat draws its band',
                 offeredB === true && pickerB === true && nameB !== "" && idea?.title === nameB && (idea.chunks ?? []).length === 0 && linkedB === true,
                 { offeredB, pickerB, nameB, newOref, title: idea?.title, chunks: (idea?.chunks ?? []).length, linkedB }
             );
@@ -70664,8 +70689,11 @@ export const SCENARIOS = [
     chatFork,
     chatInitiative,
     ...chatRedesignScenarios(CR_KIT),
+    ...chatInitiativeBandScenarios(CR_KIT),
+    ...chatBrainstormBandScenarios(CR_KIT),
     ...chatBrainstormReviewScenarios(CBR_KIT),
     ...chatVerdictHandoffScenarios(CBR_KIT),
+    ...chatCouncilScenarios(CR_KIT),
     sidebarAgentRam,
     ...sidebarColumnsScenarios(RT_KIT),
     machineServers,

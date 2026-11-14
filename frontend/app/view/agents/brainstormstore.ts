@@ -12,6 +12,15 @@ import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import type { AgentsViewModel } from "./agents";
 import {
+    boardNames,
+    brainstormBandModel,
+    parseSeenBoards,
+    seenNamesOf,
+    withSeenBoards,
+    type BrainstormBandModel,
+    type SeenBoards,
+} from "./brainstormband";
+import {
     brainstormFilePath,
     seenMark,
     shownFile,
@@ -107,6 +116,65 @@ export function baselineBrainstormSeen(path: string, f: BrainstormFile): void {
     }
 }
 
+// The board names the user has seen per brainstorm.json path, in localStorage so a reload and a restart keep them (the
+// in-memory BrainstormState is rebuilt with `lastViewedMs: now` and could not). A path with no entry has seen nothing:
+// its boards are all new. Said once when the storage cannot be read or written, as chatbrainstormstore.ts does.
+export const SEEN_BOARDS_KEY = "chat.brainstorm.seenBoards";
+
+let warned = false;
+function warnOnce(what: string, e: unknown): void {
+    if (!warned) {
+        warned = true;
+        console.warn(`[chat] brainstorm seen boards not ${what}:`, e instanceof Error ? e.message : String(e));
+    }
+}
+
+function readSeenBoards(): SeenBoards {
+    try {
+        return parseSeenBoards(globalThis.localStorage?.getItem(SEEN_BOARDS_KEY));
+    } catch (e) {
+        warnOnce("read", e);
+        return {};
+    }
+}
+
+export const brainstormSeenBoardsAtom = atom<SeenBoards>(readSeenBoards()) as PrimitiveAtom<SeenBoards>;
+
+/** Takes the board names of `f` as seen for the brainstorm at `path`, at `now`. Writes nothing when they are the names
+ *  already stored; a storage that cannot be written leaves them in memory. */
+export function markBoardsSeen(path: string, f: BrainstormFile, now: number): void {
+    const prev = globalStore.get(brainstormSeenBoardsAtom);
+    const next = withSeenBoards(prev, path, boardNames(f), now);
+    if (next === prev) {
+        return;
+    }
+    globalStore.set(brainstormSeenBoardsAtom, next);
+    try {
+        globalThis.localStorage?.setItem(SEEN_BOARDS_KEY, JSON.stringify(next));
+    } catch (e) {
+        warnOnce("saved", e);
+    }
+}
+
+/** What the Chat band's brainstorm part draws for one agent: null while no brainstorm is attached or its file has not been
+ *  read. It reads the file as it was read (not `shownBrainstormFile`: the boards are the same, and the sent-line overlay
+ *  is no business of the store). The model is kept while neither the file nor the seen names changed, so a view that reads
+ *  it is not redrawn by every other change of the state. */
+export const brainstormBandAtom = atomFamily((agentId: string): Atom<BrainstormBandModel | null> => {
+    let last: { file: BrainstormFile; seen: readonly string[] | null; model: BrainstormBandModel } | null = null;
+    return atom((get) => {
+        const s = get(brainstormAtom(agentId));
+        if (s?.file == null) {
+            return null;
+        }
+        const seen = seenNamesOf(get(brainstormSeenBoardsAtom), s.path);
+        if (last == null || last.file !== s.file || last.seen !== seen) {
+            last = { file: s.file, seen, model: brainstormBandModel(s.file, seen) };
+        }
+        return last.model;
+    });
+});
+
 // one brainstorm per agent: the agent reveals on every write, so the same one keeps its state, and any other
 // (a new topic, or the same topic in another project) starts over in its place. The project is compared as a path, not
 // as text: one registered as C:/x and a terminal's C:\x reveal are one project, and starting the pane over in terminal
@@ -163,8 +231,15 @@ export function brainstormOwner(topic: string): string | null {
     return Object.keys(all).find((id) => all[id].topic === topic) ?? null;
 }
 
+// opening the Brainstorm tab is when the user is taken to have seen its boards
 export function setBrainstormMode(agentId: string, mode: "terminal" | "brainstorm", now: number): void {
     updateBrainstorm(agentId, (s) => (mode === "brainstorm" ? { ...s, mode, lastViewedMs: now } : { ...s, mode }));
+    if (mode === "brainstorm") {
+        const s = getBrainstorm(agentId);
+        if (s?.file != null) {
+            markBoardsSeen(s.path, s.file, now);
+        }
+    }
 }
 
 export function openBrainstormBoard(agentId: string, board: string | null): void {

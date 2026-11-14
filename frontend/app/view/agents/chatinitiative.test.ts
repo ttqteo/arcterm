@@ -30,6 +30,7 @@ import {
     kindLabel,
     messageDraftKey,
     parseInitiativeBlock,
+    pendingSwitch,
     putBackLines,
     queueLine,
     readStoredMap,
@@ -37,6 +38,7 @@ import {
     settleCard,
     startsInEditor,
     stripResultLines,
+    switchLine,
     takeLines,
     topicsOf,
     verbOf,
@@ -47,7 +49,10 @@ import {
     withKind,
     withMessageCard,
     withoutKey,
+    withoutSwitchLine,
+    withSwitchHeld,
     withResultLines,
+    withSwitchLine,
     withTopic,
     type CardPhase,
     type HandledRecord,
@@ -711,6 +716,100 @@ describe("withResultLines and stripResultLines", () => {
     it("returns a wrapped message with no lines exactly as it was", () => {
         const wrapped = `<pasted_content id="cdd1">\nsome\npasted text\n</pasted_content id="cdd1">`;
         expect(stripResultLines(wrapped)).toBe(wrapped);
+    });
+
+    it("strips a leading switched line, with the card lines around it", () => {
+        const sw = switchLine(3, "Build it", "effort:7655bf18");
+        expect(stripResultLines(withResultLines([sw], "go on"))).toBe("go on");
+        expect(stripResultLines(withResultLines([lines[0], sw], "go on"))).toBe("go on");
+        expect(stripResultLines(`<pasted_content id="cdd1">\n${sw}\n\ngo on\n</pasted_content id="cdd1">`)).toBe(
+            "go on"
+        );
+    });
+});
+
+describe("the switch line", () => {
+    it("words the chunk's place, its label and the initiative's oref", () => {
+        expect(switchLine(3, "Build it", "effort:7655bf18")).toBe(
+            "initiative: switched you to chunk 3 Build it (effort:7655bf18)"
+        );
+        expect(switchLine(3, "Build it", "7655bf18")).toBe(
+            "initiative: switched you to chunk 3 Build it (effort:7655bf18)"
+        );
+    });
+
+    it("keeps a label on one line, and leaves the oref out when there is none", () => {
+        expect(switchLine(1, "two\nlines   here", "effort:o")).toBe(
+            "initiative: switched you to chunk 1 two lines here (effort:o)"
+        );
+        expect(switchLine(1, "A", "")).toBe("initiative: switched you to chunk 1 A");
+    });
+
+    it("is read back as its number and label, a label with parentheses included", () => {
+        expect(pendingSwitch([switchLine(3, "Build it", "effort:7655bf18")])).toEqual({ n: 3, label: "Build it" });
+        expect(pendingSwitch([switchLine(12, "Fix (the bug)", "effort:o")])).toEqual({ n: 12, label: "Fix (the bug)" });
+        expect(pendingSwitch([switchLine(2, "No oref", "")])).toEqual({ n: 2, label: "No oref" });
+    });
+
+    it("is read from the last switched line among the others, and is null with none", () => {
+        const lines = [
+            switchLine(1, "First", "effort:o"),
+            resultLine(note()),
+            switchLine(4, "Last", "effort:o"),
+            resultLine(note({ outcome: "dismissed", kind: "chunk" })),
+        ];
+        expect(pendingSwitch(lines)).toEqual({ n: 4, label: "Last" });
+        expect(pendingSwitch([resultLine(note())])).toBeNull();
+        expect(pendingSwitch([])).toBeNull();
+        expect(pendingSwitch(["initiative: switched somewhere else"])).toBeNull();
+    });
+
+    it("replaces an agent's earlier switched line: only the last switch goes, the other lines stay", () => {
+        const added = resultLine(note());
+        let p = queueLine({}, "a1", added);
+        p = withSwitchLine(p, "a1", switchLine(2, "One", "effort:o"));
+        p = withSwitchLine(p, "a1", switchLine(3, "Two", "effort:o"));
+        expect(p).toEqual({ a1: [added, switchLine(3, "Two", "effort:o")] });
+    });
+
+    it("keeps the lines that came after the earlier switch, in order, and does not touch another agent", () => {
+        const added = resultLine(note());
+        let p = withSwitchLine({ a2: [switchLine(9, "Theirs", "effort:o")] }, "a1", switchLine(2, "One", "effort:o"));
+        p = queueLine(p, "a1", added);
+        p = withSwitchLine(p, "a1", switchLine(3, "Two", "effort:o"));
+        expect(p).toEqual({ a1: [added, switchLine(3, "Two", "effort:o")], a2: [switchLine(9, "Theirs", "effort:o")] });
+    });
+
+    it("does not change the map it was given", () => {
+        const before = { a1: [switchLine(2, "One", "effort:o")] };
+        withSwitchLine(before, "a1", switchLine(3, "Two", "effort:o"));
+        expect(before).toEqual({ a1: [switchLine(2, "One", "effort:o")] });
+    });
+
+    it("drops only the switched line from an agent's queue", () => {
+        const added = resultLine(note());
+        const p = { a1: [added, switchLine(3, "Two", "effort:o")], a2: [switchLine(9, "Theirs", "effort:o")] };
+        expect(withoutSwitchLine(p, "a1")).toEqual({ a1: [added], a2: [switchLine(9, "Theirs", "effort:o")] });
+        expect(p.a1).toHaveLength(2);
+    });
+
+    it("holds and lets go of an agent's waiting line, the same list when it is as asked", () => {
+        const none: readonly string[] = [];
+        const held = withSwitchHeld(none, "a1", true);
+        expect(held).toEqual(["a1"]);
+        expect(withSwitchHeld(held, "a1", true)).toBe(held);
+        expect(withSwitchHeld(held, "a2", true)).toEqual(["a1", "a2"]);
+        expect(withSwitchHeld(["a1", "a2"], "a1", false)).toEqual(["a2"]);
+        expect(withSwitchHeld(none, "a1", false)).toBe(none);
+        expect(none).toEqual([]);
+    });
+
+    it("removes an agent's entry once the switched line was its only one, and is the same map when there is none", () => {
+        expect(withoutSwitchLine({ a1: [switchLine(3, "Two", "effort:o")] }, "a1")).toEqual({});
+        const same = { a1: [resultLine(note())] };
+        expect(withoutSwitchLine(same, "a1")).toBe(same);
+        expect(withoutSwitchLine(same, "a9")).toBe(same);
+        expect(withoutSwitchLine(same, "constructor")).toBe(same);
     });
 });
 

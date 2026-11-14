@@ -4,7 +4,9 @@
 // The initiative popover on the agent header: the initiative this agent works on, opened in place so the person does not
 // leave the agent for Jarvis. The chunk the agent is on (Mark done, its latest note), the next two, the plan waiting for
 // review, and Add note. Its keys (m, n, the arrows, Enter, Esc) are its own while it is open: the root is
-// data-owns-keys, and the single-key Agent bindings yield to initiativePopoverAtom (bindings.ts).
+// data-owns-keys, and the single-key Agent bindings yield to initiativePopoverAtom (bindings.ts). It is the Terminal
+// view's: in Chat the band under the header replaced it (the lean header has no chip to open it from), and an agent that
+// holds no chunk reads "No chunk for this agent" in both, from the one definition (agentChunk).
 
 import { KeyCap } from "@/app/element/keycap";
 import { PopoverReveal } from "@/app/element/popoverreveal";
@@ -31,11 +33,11 @@ import {
     useInteractions,
 } from "@floating-ui/react";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { Check, Pencil } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { AgentsViewModel } from "./agents";
 import { formatAgo, type AgentVM } from "./agentsviewmodel";
 import { markChunkDone } from "./chatsuggeststore";
+import { BTN, ChunkStatusMenu, CURSOR_RING, ROW, STATUS_TEXT } from "./initiativechunkmenu";
 import {
     CHUNK_RENAME,
     chunkMenuItems,
@@ -44,7 +46,6 @@ import {
     popoverRows,
     popoverStatus,
     stepRow,
-    type PopoverStatusTone,
 } from "./initiativepopovermodel";
 import { planEditChunks } from "./planreviewmodel";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
@@ -59,18 +60,22 @@ export const initiativePopoverAtom = atom<string | null>(null) as PrimitiveAtom<
 // row in the Chat view (which has no chip) and the `i` key all open the one picker.
 export const initiativeLinkPickerAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
-const STATUS_TEXT: Record<PopoverStatusTone, string> = {
-    success: "text-success",
-    working: "text-working",
-    asking: "text-asking",
-    muted: "text-ink-mid",
-    faint: "text-ink-faint",
-};
+/** The selector of `agentId`'s own "+ Link to initiative" chip (agentheader.tsx puts the agent's id on it). In a split
+ *  several agents' headers are on the page at once, so a bare `[data-initiative-link]` finds another agent's chip. */
+export function linkChipSelector(agentId: string): string {
+    return `[data-initiative-link="${agentId.replace(/["\\]/g, "\\$&")}"]`;
+}
 
-const BTN =
-    "inline-flex h-[26px] cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-edge-mid bg-surface-raised px-[10px] text-[11.5px] font-semibold text-secondary hover:border-edge-strong hover:bg-surface-hover disabled:cursor-default disabled:opacity-50";
-const ROW = "flex min-h-[26px] cursor-pointer items-center gap-[9px] rounded-[6px] px-[8px] -mx-[8px]";
-const CURSOR_RING = "ring-1 ring-inset ring-accent/60";
+/** Opens the Link to initiative picker for `agentId` when its own header carries the chip (Chat's lean header and
+ *  Terminal's both do; an ended session's or a run worker's has none), and says whether it did. The `i` key asks this
+ *  way in both places it answers: the global binding (bindings.ts) and the Chat band's own handler (chatband.tsx). */
+export function openInitiativeLinkPicker(agentId: string): boolean {
+    if (document.querySelector(linkChipSelector(agentId)) == null) {
+        return false;
+    }
+    globalStore.set(initiativeLinkPickerAtom, agentId);
+    return true;
+}
 
 type Sub =
     | { kind: "menu"; label: string; at: number } // a chunk's status menu, `at` the menu's own cursor
@@ -153,7 +158,7 @@ function PopoverBody({
         if (mine == null) {
             return;
         }
-        void run(() => markChunkDone(oref, mine.label));
+        void run(() => markChunkDone(oref, mine.label, agent.id));
     };
     const pickStatus = (label: string, status: string) => {
         setSub(null);
@@ -356,41 +361,13 @@ function PopoverBody({
                     </div>
                 ) : null}
                 {menuOpen && sub?.kind === "menu" ? (
-                    <div
-                        role="menu"
-                        data-popover-menu
-                        className="mb-[2px] mt-[4px] flex flex-col rounded-[7px] border border-edge-mid bg-surface p-[3px]"
-                    >
-                        {chunkMenuItems(chunk?.status ?? "").map((item, i) => (
-                            <div
-                                key={item.id}
-                                role="menuitem"
-                                data-menu-item={item.id}
-                                onMouseDown={keepFocus}
-                                onMouseMove={() => setSub({ ...sub, at: i })}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    chooseMenu(label, item.id);
-                                }}
-                                className={cn(
-                                    "flex h-[24px] cursor-pointer items-center gap-[8px] rounded-[5px] px-[8px] text-[11.5px]",
-                                    item.id === CHUNK_RENAME && "mt-[2px] border-t border-edge-mid",
-                                    i === sub.at
-                                        ? "bg-surface-selected text-primary"
-                                        : "text-secondary hover:bg-surface-hover"
-                                )}
-                            >
-                                {item.id === CHUNK_RENAME ? (
-                                    <Pencil size={11} aria-hidden className="flex-none text-ink-mid" />
-                                ) : (
-                                    <span className="flex w-[11px] flex-none justify-center text-accent">
-                                        {item.current ? <Check size={11} strokeWidth={2.4} aria-hidden /> : null}
-                                    </span>
-                                )}
-                                {item.label}
-                            </div>
-                        ))}
-                    </div>
+                    <ChunkStatusMenu
+                        status={chunk?.status ?? ""}
+                        at={sub.at}
+                        onHover={(i) => setSub({ ...sub, at: i })}
+                        onChoose={(id) => chooseMenu(label, id)}
+                        dataAttr="data-popover-menu"
+                    />
                 ) : null}
             </div>
         );
@@ -455,9 +432,7 @@ function PopoverBody({
                 {mine != null ? (
                     rowView(rows[0], 0)
                 ) : (
-                    <div className="text-[11.5px] text-muted">
-                        {effort == null ? "" : "No chunk yet: it takes the active one."}
-                    </div>
+                    <div className="text-[11.5px] text-muted">{effort == null ? "" : "No chunk for this agent"}</div>
                 )}
             </div>
             {nextRows.length > 0 || proposed > 0 ? (

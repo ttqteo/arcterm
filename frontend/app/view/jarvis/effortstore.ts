@@ -62,6 +62,10 @@ async function mutateEffort(oref: string, ops: EffortOp[]): Promise<void> {
     void loadArchivedEfforts().catch(() => {});
 }
 
+// One batch of ops written and the cache refreshed, for a caller that builds its own ops (the initiative band's chunk
+// switch sends two batches: the server validates a batch against the state before any of its ops).
+export const mutateEffortOps = mutateEffort;
+
 // the archived initiatives the Brief can reveal (design L251, "Show N archived"); the briefing leg drops
 // archived efforts server-side, so these come from the effort list with includearchived.
 export const archivedEffortsAtom = atom<EffortSummary[]>([]) as PrimitiveAtom<EffortSummary[]>;

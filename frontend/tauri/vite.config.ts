@@ -14,6 +14,11 @@ export default defineConfig({
     // publicDir defaults to frontend/tauri/public, which does not exist, and /fontawesome/* 404s to the SPA fallback.
     publicDir: resolve(fe, "../public"),
     plugins: [react(), tailwindcss()],
+    // each checkout keeps its own optimized-deps cache, in a real directory of its own. A worktree's
+    // node_modules is a junction to the main checkout's, and every tree's config hashes differently (the
+    // aliases are absolute), so a shared node_modules/.vite is re-optimized under every other running dev
+    // app: a page then loads deps that were replaced (504) and never boots.
+    cacheDir: resolve(fe, "../.vite"),
     resolve: {
         alias: {
             "@/app": resolve(fe, "app"),

@@ -156,7 +156,9 @@ describe("chatChips", () => {
 describe("initiativeChips", () => {
     const me = { kind: "agent", oref: "agent:t1" };
     const other = { kind: "agent", oref: "agent:t2" };
-    const plan = (...chunks: { label: string; status: string; workrefs?: { kind: string; oref: string }[] }[]) => ({
+    const plan = (
+        ...chunks: { label: string; status: string; workrefs?: { kind: string; oref: string; ts?: number }[] }[]
+    ) => ({
         chunks,
     });
 
@@ -172,9 +174,49 @@ describe("initiativeChips", () => {
         expect(initiativeChips(effort, "t1", false, true)).toEqual([]);
     });
 
-    it("stands the active chunk in for an agent that holds none", () => {
+    it("does not stand the active chunk in for an agent that holds none", () => {
         const effort = plan({ label: "Decide", status: "done" }, { label: "Build", status: "active" });
-        expect(initiativeChips(effort, "t1", true, true).map((c) => c.chunk)).toEqual(["Build"]);
+        expect(initiativeChips(effort, "t1", true, true)).toEqual([]);
+        expect(initiativeChips(effort, "t1", false, true)).toEqual([]);
+    });
+
+    it("offers the live chunk the agent holds even when it also holds settled ones", () => {
+        const effort = plan(
+            { label: "Decide", status: "done", workrefs: [me] },
+            { label: "Build", status: "pending", workrefs: [me] }
+        );
+        expect(initiativeChips(effort, "t1", true, false).map((c) => c.chunk)).toEqual(["Build"]);
+    });
+
+    describe("a turn's own work", () => {
+        const stamped = (ts: number) => ({ kind: "agent", oref: "agent:t1", ts });
+        const effort = (ts: number | undefined) =>
+            plan(
+                { label: "Build", status: "active", workrefs: [ts === undefined ? me : stamped(ts)] },
+                { label: "Scenario", status: "pending" }
+            );
+
+        it("offers done for a chunk attached at or before the turn ended", () => {
+            expect(initiativeChips(effort(100), "t1", true, false, 200).map((c) => c.chunk)).toEqual(["Build"]);
+            expect(initiativeChips(effort(200), "t1", true, false, 200).map((c) => c.chunk)).toEqual(["Build"]);
+        });
+
+        it("hides done for a chunk attached after the turn ended (a switch, a carry-forward)", () => {
+            expect(initiativeChips(effort(201), "t1", true, false, 200)).toEqual([]);
+        });
+
+        it("reads the stamp only when it is given: with no turn end, or no stamp, the chip is as it was", () => {
+            expect(initiativeChips(effort(201), "t1", true, false).map((c) => c.chunk)).toEqual(["Build"]);
+            expect(initiativeChips(effort(undefined), "t1", true, false, 200).map((c) => c.chunk)).toEqual(["Build"]);
+        });
+
+        it("does not hide go on with: by the stamp", () => {
+            const e = plan(
+                { label: "Build", status: "done", workrefs: [stamped(900)] },
+                { label: "Scenario", status: "pending" }
+            );
+            expect(initiativeChips(e, "t1", false, false, 200).map((c) => c.chunk)).toEqual(["Scenario"]);
+        });
     });
 
     it("offers the next chunk once the agent's are settled, skipping one someone else is on", () => {

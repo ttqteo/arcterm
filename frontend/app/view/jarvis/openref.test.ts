@@ -574,6 +574,25 @@ describe("council landings", () => {
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
     });
 
+    it("opens a council on its report when the target names the summary", async () => {
+        const model = makeModel();
+        globalStore.set(centerModeAtom, "terminal");
+        globalStore.set(councilSelAtom, null);
+        globalStore.set(councilViewAtom, "discussion");
+        expect(await openTarget(model, { kind: "council", councilId: "c-1", view: "summary" })).toEqual({ ok: true });
+        expect(globalStore.get(councilSelAtom)).toBe("c-1");
+        expect(globalStore.get(councilViewAtom)).toBe("summary");
+        expect(globalStore.get(centerModeAtom)).toBe("council");
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+    });
+
+    it("opens a council on its default view when the target names none", async () => {
+        const model = makeModel();
+        globalStore.set(councilViewAtom, "summary");
+        expect(await openTarget(model, { kind: "council", councilId: "c-2" })).toEqual({ ok: true });
+        expect(globalStore.get(councilViewAtom)).toBe("discussion");
+    });
+
     it("is not peekable: a peek lands", async () => {
         const model = makeModel();
         const target: OpenTarget = { kind: "council", councilId: "c-1" };

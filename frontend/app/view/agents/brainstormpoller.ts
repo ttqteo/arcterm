@@ -33,6 +33,7 @@ import {
     brainstormsAtom,
     detachBrainstorm,
     getBrainstorm,
+    markBoardsSeen,
     updateBrainstorm,
     type BrainstormState,
 } from "./brainstormstore";
@@ -247,8 +248,11 @@ export function settleBrainstorm(
 }
 
 // A result that lands after the brainstorm was detached or replaced is dropped rather than written over it. The
-// sent line settles against the agent as the roster has it, before the overlay reads a question as asking.
-async function pollAndMerge(agentId: string, agent: AgentVM | undefined, io: BrainstormIO): Promise<void> {
+// sent line settles against the agent as the roster has it, before the overlay reads a question as asking. A read that
+// returned a file also takes its board names as seen while the agent's Brainstorm tab is the one shown, so a board added
+// while the user looks at the tab is not new once they leave; an agent in terminal mode (an unfocused split cell
+// included) leaves them alone, which is what lets its band report the board as new.
+export async function pollAndMerge(agentId: string, agent: AgentVM | undefined, io: BrainstormIO): Promise<void> {
     const s = getBrainstorm(agentId);
     if (s == null || s.removed) {
         return;
@@ -264,6 +268,10 @@ async function pollAndMerge(agentId: string, agent: AgentVM | undefined, io: Bra
     }
     if (patch.file != null) {
         baselineBrainstormSeen(s.path, patch.file);
+        const merged = getBrainstorm(agentId);
+        if (merged != null && merged.path === s.path && merged.mode === "brainstorm") {
+            markBoardsSeen(s.path, patch.file, Date.now());
+        }
     }
 }
 

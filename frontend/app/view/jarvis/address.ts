@@ -22,8 +22,9 @@ export type OpenTarget =
     | { kind: "memhygiene"; project: string }
     // a workflow scan's run: its live agent, else the run's own sheet (openref.ts)
     | { kind: "workflowscan"; runId: string }
-    // a council, opened on its Discussion (openref.ts)
-    | { kind: "council"; councilId: string }
+    // a council, opened on the view it was left on, else its Discussion (openref.ts); `view` "summary" opens its report
+    // (Chat's Open report). Only code names a view: an address string never carries one
+    | { kind: "council"; councilId: string; view?: "summary" }
     // a past conversation, by its session id or a unique prefix of one: reopened in a tab of its own, as its
     // Resume does (openref.ts). Not a transcript path: a Windows path holds ":"
     | { kind: "session"; sessionId: string };

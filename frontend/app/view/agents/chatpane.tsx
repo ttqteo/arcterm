@@ -40,18 +40,23 @@ import { answerAgentAsk } from "./askanswer";
 import { builderCheckView, procExited, type BuilderCheckView } from "./brainstormmodel";
 import { brainstormAtom, brainstormSeenAtom, shownBrainstormFile } from "./brainstormstore";
 import { AskRow } from "./channelsprimitives";
+import { ChatBand } from "./chatband";
 import { boxPlaceholder, type BoxState } from "./chatboxstate";
 import { brainstormCard } from "./chatbrainstorm";
 import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstormstore";
 import { boxAnswerRecord, boxPlaceholderOverride } from "./chatbrainstormwire";
 import { ChatComposer } from "./chatcomposer";
 import { BtwCard, ChatConversation, youBubbleBox } from "./chatconversation";
+import { isDocReviewAsk } from "./chatdocreview";
+import { ChatDocReviewCard } from "./chatdocreviewcard";
 import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
 import { isHandoffAsk } from "./chathandoff";
 import { ChatHandoffCard } from "./chathandoffcard";
+import { holdSwitchLine } from "./chatinitiativestore";
+import { submitIntoChatBox } from "./chatinsert";
 import { CHAT_JUMP_KEYS, registerChatJump } from "./chatjump";
 import { awaitsOwnMessage, narratesThinking, streamsLiveReply } from "./chatlive";
 import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chatlivestore";
@@ -87,6 +92,7 @@ import { TaggedPromptText } from "./chattagblock";
 import { withoutTakenBack } from "./chattakeback";
 import { noteTakenBack, useTakenBack } from "./chattakebackstore";
 import { ChatVisualHost } from "./chatvisualview";
+import { switchAgentChunk } from "./initiativebandstore";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
 import { PromptImages, useNow } from "./narrationtimeline";
@@ -127,14 +133,23 @@ function TurnStatsText({ stats }: { stats: TurnStats }) {
     );
 }
 
-// The agent's live ask under the conversation: the plan handoff (an AskUserQuestion with header `Handoff`) as its card,
-// every other ask as its plain choices. A row of the card answers with the index of the agent's own option, through the
-// answer path the cockpit's bars share (askanswer.ts), which locks the ask against a second click; the rows go dead once
-// the answer is sent, and for an exited agent, whose card is static. Words typed in the box answer the ask as for any ask.
+// The agent's live ask under the conversation: the plan handoff (an AskUserQuestion with header `Handoff`) and a Doc review
+// (header `Doc review`, over a `.md` or `.tex` file) as their cards, every other ask as its plain choices. A row of the
+// handoff card answers with the index of the agent's own option, through the answer path the cockpit's bars share
+// (askanswer.ts), which locks the ask against a second click; the rows go dead once the answer is sent, and for an exited
+// agent, whose card is static. The Doc review card answers its Approve the same way and locks it the same way (it reads
+// the lock itself); its Review opens the review view, where Request changes is made. Words typed in the box answer the
+// ask as for any ask.
 function ChatAsk({ model, agent, exited }: { model: AgentsViewModel; agent: AgentVM; exited: boolean }) {
     const sentIds = useAtomValue(model.sentIdsAtom);
-    const question = agent.ask?.questions[0];
-    if (question == null || !isHandoffAsk(agent.ask?.questions)) {
+    const questions = agent.ask?.questions;
+    const question = questions?.[0];
+    if (question != null && isDocReviewAsk(questions)) {
+        return (
+            <ChatDocReviewCard question={question} state={exited ? "static" : "waiting"} agent={agent} model={model} />
+        );
+    }
+    if (question == null || !isHandoffAsk(questions)) {
         return <AskRow model={model} agent={agent} alert />;
     }
     const sent = sentIds.has(askSentKey(agent) ?? "");
@@ -716,13 +731,44 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
         }
         fireAndForget(async () => {
             try {
-                await markChunkDone(effortOref, chunk);
+                await markChunkDone(effortOref, chunk, agent.id);
             } catch (e) {
+                // markChunkDone can fail after the chunk is done (the agent could not be moved on), so the title is no lie
                 pushToast({
-                    title: "Could not mark it done",
+                    title: "Mark done didn't finish",
                     message: e instanceof Error ? e.message : String(e),
                     level: "error",
                 });
+            }
+        });
+    };
+    // The go on with: chip: the agent moves to that chunk first, so the switched line rides in front of the chip's text
+    // (spec section 9); a switch that fails sends nothing. A second click while the switch is on its way finds it busy.
+    const goingOn = useRef(false);
+    const goOn = (chunk: string, text: string) => {
+        if (effortOref == null || goingOn.current) {
+            return;
+        }
+        goingOn.current = true;
+        // the switch queues its line and the box sends a render later: the waiting line stays hidden until the box has tried
+        // the send (it lets go itself, chatcomposer.tsx), so it never draws on this path
+        holdSwitchLine(agent.id, true);
+        fireAndForget(async () => {
+            try {
+                await switchAgentChunk(effortOref, agent.id, chunk);
+                if (!submitIntoChatBox(agent.id, text)) {
+                    // no box took the text: the line waits for the person's next message, as the switch left it
+                    holdSwitchLine(agent.id, false);
+                }
+            } catch (e) {
+                holdSwitchLine(agent.id, false);
+                pushToast({
+                    title: "Could not switch the chunk",
+                    message: e instanceof Error ? e.message : String(e),
+                    level: "error",
+                });
+            } finally {
+                goingOn.current = false;
             }
         });
     };
@@ -735,7 +781,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                   ? []
                   : [
                         ...ruleChips(agent, shipGit, vi),
-                        ...initiativeChips(effort, agent.id, agent.committed === true, vi),
+                        ...initiativeChips(effort, agent.id, agent.committed === true, vi, turnEnded),
                     ],
               model: modelSuggest,
           })
@@ -756,6 +802,11 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                 barred ? "top-[26px]" : "top-0"
             )}
         >
+            {/* The band (the initiative and the brainstorm attached to the agent): above the scroller, not inside it, so
+                opening it pushes the conversation down and never covers it. The scroller keeps its scrollTop as it shrinks
+                (a reader stays on the message at the top of the view) and useStickToBottom re-pins a followed tail, so the
+                reading position holds. */}
+            {agent.effortId != null || brainstormState != null ? <ChatBand model={model} agent={agent} /> : null}
             <div className="relative min-h-0 flex-1">
                 <div
                     ref={scrollRef}
@@ -927,6 +978,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
                             chips={chips}
                             onMarkDone={markDone}
+                            onGoOn={goOn}
                             onSendNow={queuedShown ? sendNow : undefined}
                             questionWaits={questionWaits}
                             onLocal={(route) => {

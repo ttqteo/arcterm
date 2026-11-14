@@ -808,19 +808,72 @@ describe("brainstormCard: Confirm the design", () => {
         expect(c).toMatchObject({ state: "waiting", action: "confirm-all", guesses: 2 });
         expect(c.line).toBe(reviewHead(f).line);
         expect(c.rows).toEqual([
-            { id: "motion", title: "Motion", gist: "Fade + scale", view: "guess", isNew: false },
-            { id: "tone", title: "Tone", gist: "Quiet", view: "guess", isNew: false },
+            { id: "motion", title: "Motion", gist: "Fade + scale", view: "guess", body: "", diff: [], isNew: false },
+            { id: "tone", title: "Tone", gist: "Quiet", view: "guess", body: "", diff: [], isNew: false },
             {
                 id: "icons",
                 title: "Icons",
                 gist: "Phosphor",
                 view: "changed",
-                was: "Lucide",
+                body: "",
+                diff: [{ kind: "removed", text: "Lucide" }],
                 why: "You asked for outlines",
                 isNew: false,
             },
         ]);
         expect(c.yours).toEqual([{ id: "scope", title: "Scope", gist: "Chat only" }]);
+    });
+
+    it("carries a changed decision's body, its removed and added sentences and the answer it came from", () => {
+        const limits: BrainstormPart = {
+            id: "limits",
+            title: "Limits",
+            state: "guess",
+            gist: "30 s timeout",
+            was: "Time out after 10 s. Retry twice. Log nothing.",
+            body: "Time out after 30 s. Retry twice. Log failures.",
+            why: "You said ten seconds is too short",
+            from: "your answer 3",
+        };
+        const f = review({
+            parts: [SCOPE, MOTION, limits],
+            history: [
+                { kind: "question", n: 3, q: "How long may a call take?", a: "Thirty seconds", into: ["limits"] },
+            ],
+        });
+        const row = pick(brainstormCard(inp({ file: f })), "confirm").rows.find((r) => r.id === "limits");
+        expect(row).toEqual({
+            id: "limits",
+            title: "Limits",
+            gist: "30 s timeout",
+            view: "changed",
+            body: "Time out after 30 s. Retry twice. Log failures.",
+            said: { n: 3, text: "Thirty seconds" },
+            // the sentence both sides share is left out
+            diff: [
+                { kind: "removed", text: "Time out after 10 s." },
+                { kind: "added", text: "Time out after 30 s." },
+                { kind: "removed", text: "Log nothing." },
+                { kind: "added", text: "Log failures." },
+            ],
+            why: "You said ten seconds is too short",
+            isNew: false,
+        });
+        // a part whose from names no answer the history ties to it has none
+        const lone = review({ parts: [SCOPE, MOTION, limits] });
+        const bare = pick(brainstormCard(inp({ file: lone })), "confirm").rows.find((r) => r.id === "limits");
+        expect(bare).not.toHaveProperty("said");
+        expect(bare?.diff).toHaveLength(4);
+    });
+
+    it("gives a guess row the part's body and no diff, whatever its from says", () => {
+        const guess: BrainstormPart = { ...MOTION, body: "Fade in, then scale.", from: "your answer 3" };
+        const f = review({
+            parts: [SCOPE, guess, TONE],
+            history: [{ kind: "question", n: 3, q: "Motion?", a: "Fade", into: ["motion"] }],
+        });
+        const row = pick(brainstormCard(inp({ file: f })), "confirm").rows[0];
+        expect(row).toMatchObject({ id: "motion", view: "guess", body: "Fade in, then scale.", diff: [] });
     });
 
     it("offers Confirm all from two guesses only, and shows a single guess as its own row", () => {
@@ -975,9 +1028,52 @@ describe("brainstormCard: the builder check", () => {
             ["icons", "changed"],
             ["motion", "guess"],
         ]);
-        expect(c.rows[0]).toMatchObject({ was: "Lucide", why: "You asked for outlines", isNew: false });
+        expect(c.rows[0]).toMatchObject({
+            body: "",
+            diff: [{ kind: "removed", text: "Lucide" }],
+            why: "You asked for outlines",
+            isNew: false,
+        });
+        expect(c.rows[0]).not.toHaveProperty("was");
+        expect(c.rows[0]).not.toHaveProperty("said");
+        // a guess row is not a change: it carries no diff
+        expect(c.rows[1]).toMatchObject({ id: "motion", view: "guess", diff: [] });
         expect(c.approveBlocker).toBe(approveBlocker(f, null));
         expect(c.approveBlocker).toBe("Review 1 change, confirm 1 guess");
+    });
+
+    it("draws a changed row of the review from the review's body and the answer it came from", () => {
+        const limits: BrainstormPart = {
+            id: "limits",
+            title: "Limits",
+            state: "guess",
+            gist: "30 s timeout",
+            was: "Time out after 10 s. Retry twice.",
+            body: "Time out after 30 s. Retry twice.",
+            from: "answer 2",
+        };
+        const f = settled({
+            check: BUILDER_DONE,
+            parts: [SCOPE, { ...MOTION, state: "yours" }, { ...TONE, state: "yours" }, limits],
+            history: [
+                { kind: "question", n: 2, q: "How long may a call take?", a: "Thirty seconds", into: ["limits"] },
+            ],
+        });
+        const row = pick(brainstormCard(inp({ file: f })), "check").rows.find((r) => r.id === "limits");
+        // the answer replaces the `from` as the cause, so the row has no why of its own
+        expect(row).toEqual({
+            id: "limits",
+            title: "Limits",
+            gist: "30 s timeout",
+            view: "changed",
+            body: "Time out after 30 s. Retry twice.",
+            said: { n: 2, text: "Thirty seconds" },
+            diff: [
+                { kind: "removed", text: "Time out after 10 s." },
+                { kind: "added", text: "Time out after 30 s." },
+            ],
+            isNew: false,
+        });
     });
 
     it("is the review with no rows and Approve open once nothing is left", () => {

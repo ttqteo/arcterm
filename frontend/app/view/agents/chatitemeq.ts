@@ -95,7 +95,7 @@ function samePart(a: AgentPart, b: AgentPart): boolean {
             );
         case "files":
             return b.kind === "files" && a.adds === b.adds && a.dels === b.dels && sameFiles(a.files, b.files);
-        // the three moments are small, plain data (a verdict and its reviewer call, a question, an anchor): compared whole
+        // the moments are small, plain data (a verdict and its reviewer call, a question, an anchor): compared whole
         case "verdict":
             return (
                 b.kind === "verdict" &&
@@ -107,6 +107,14 @@ function samePart(a: AgentPart, b: AgentPart): boolean {
             return b.kind === "handoff" && a.key === b.key && JSON.stringify(a.question) === JSON.stringify(b.question);
         case "runstart":
             return b.kind === "runstart" && a.key === b.key && JSON.stringify(a.anchor) === JSON.stringify(b.anchor);
+        case "councilstart":
+            return (
+                b.kind === "councilstart" && a.key === b.key && JSON.stringify(a.anchor) === JSON.stringify(b.anchor)
+            );
+        case "docreview":
+            return (
+                b.kind === "docreview" && a.key === b.key && JSON.stringify(a.question) === JSON.stringify(b.question)
+            );
     }
 }
 

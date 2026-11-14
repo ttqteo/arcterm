@@ -15,7 +15,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { briefingStateAtom, loadBriefingAsync, stateRpcTimeoutMs } from "@/app/view/jarvis/briefingstore";
 import { addChunkOp, appendChunkNote, effortDetailAtom, loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { atomFamily } from "jotai/utils";
+import { atomFamily, selectAtom } from "jotai/utils";
 import {
     addedRecord,
     blockDraftKey,
@@ -28,6 +28,7 @@ import {
     effortOref,
     fitBytes,
     messageDraftKey,
+    pendingSwitch,
     putBackLines,
     queueLine,
     readStoredMap,
@@ -38,6 +39,9 @@ import {
     withHandled,
     withMessageCard,
     withoutKey,
+    withoutSwitchLine,
+    withSwitchHeld,
+    withSwitchLine,
     type CardsMap,
     type DraftsMap,
     type HandledMap,
@@ -196,6 +200,50 @@ export function takeResultLines(agentId: string): string[] {
 /** Lines a send did not use, back at the front of the agent's queue. */
 export function putBackResultLines(agentId: string, lines: readonly string[]): void {
     update(pendingAtom, PENDING_STORAGE_KEY, (prev) => putBackLines(prev, agentId, lines));
+}
+
+// ---- the switched line (the initiative band moved the agent to another chunk) ----
+
+/** Keeps the line that tells the agent it was moved to another chunk, in place of any earlier switched line: several
+ *  switches before a message send only the last. The agent's other waiting lines stay. */
+export function queueSwitchLine(agentId: string, line: string): void {
+    update(pendingAtom, PENDING_STORAGE_KEY, (prev) => withSwitchLine(prev, agentId, line));
+}
+
+/** Drops the agent's waiting switched line (the waiting line's ✕), and only that one. */
+export function dropSwitchLine(agentId: string): void {
+    update(pendingAtom, PENDING_STORAGE_KEY, (prev) => withoutSwitchLine(prev, agentId));
+}
+
+// the chunk the agent's waiting switched line names; selectAtom keeps the same object while it names the same chunk, so
+// an unrelated agent's pending line does not redraw this agent's band
+const switchOf = atomFamily((agentId: string) =>
+    selectAtom(
+        pendingAtom,
+        (pending) => pendingSwitch(has(pending, agentId) ? pending[agentId] : []),
+        (a, b) => a?.n === b?.n && a?.label === b?.label
+    )
+);
+
+/** The chunk the agent's waiting switched line names (`n` its place in the plan from 1), or null when none waits. */
+export function usePendingSwitch(agentId: string): { n: number; label: string } | null {
+    return useAtomValue(switchOf(agentId));
+}
+
+// the agents whose `go on with:` chip is switching the chunk and then sending: the box shows the chip's text and sends it a
+// render after the switch queued its line, so the waiting line is hidden meanwhile (spec section 9: it never shows there)
+const switchHeldAtom = atom<readonly string[]>([]) as PrimitiveAtom<readonly string[]>;
+const heldOf = atomFamily((agentId: string) => atom((get) => get(switchHeldAtom).includes(agentId)));
+
+/** Hides (`true`) or shows again (`false`) the agent's waiting line. The `go on with:` click holds it for the switch and the
+ *  send; the box lets it go once it tried the send, and so does a click whose switch or send did not go through. */
+export function holdSwitchLine(agentId: string, held: boolean): void {
+    globalStore.set(switchHeldAtom, withSwitchHeld(globalStore.get(switchHeldAtom), agentId, held));
+}
+
+/** Whether the agent's waiting line is held back (see holdSwitchLine). */
+export function useSwitchLineHeld(agentId: string): boolean {
+    return useAtomValue(heldOf(agentId));
 }
 
 // ---- the write ----

@@ -38,14 +38,35 @@ describe("agentChunk", () => {
         expect(agentChunk(effort, "t1")?.label).toBe("B");
     });
 
-    it("lets the active chunk stand in for an agent with no workref of its own", () => {
-        expect(agentChunk(effort, "t9")?.label).toBe("B");
+    it("is null for an agent with no workref of its own: the active chunk does not stand in", () => {
+        expect(agentChunk(effort, "t9")).toBeNull();
     });
 
-    it("is null with no workref and no active chunk", () => {
+    it("is null with no workref, whatever the chunks are", () => {
         expect(agentChunk({ chunks: [chunk("A", "done"), chunk("C", "pending")] }, "t9")).toBeNull();
         expect(agentChunk({ chunks: [] }, "t9")).toBeNull();
         expect(agentChunk({}, "t9")).toBeNull();
+    });
+
+    it("is null once every chunk the agent holds is settled", () => {
+        const e = {
+            chunks: [
+                chunk("A", "done", { workrefs: [{ kind: "agent", oref: "agent:t1", ts: 1 }] }),
+                chunk("B", "skipped", { workrefs: [{ kind: "agent", oref: "agent:t1", ts: 2 }] }),
+                chunk("C", "active"),
+            ],
+        };
+        expect(agentChunk(e, "t1")).toBeNull();
+    });
+
+    it("prefers the active chunk when legacy data attached the agent to several live ones", () => {
+        const e = {
+            chunks: [
+                chunk("A", "pending", { workrefs: [{ kind: "agent", oref: "agent:t1", ts: 1 }] }),
+                chunk("B", "active", { workrefs: [{ kind: "agent", oref: "agent:t1", ts: 2 }] }),
+            ],
+        };
+        expect(agentChunk(e, "t1")?.label).toBe("B");
     });
 
     it("prefers the unsettled chunk when the agent was attached to several", () => {
@@ -149,6 +170,13 @@ describe("popoverRows and stepRow", () => {
 
     it("lists only the next ones when the agent is on no chunk", () => {
         expect(popoverRows({ chunks: [chunk("C", "pending")] }, "t1")).toEqual([{ kind: "next", label: "C" }]);
+    });
+
+    it("does not take the active chunk for an agent with none of its own", () => {
+        expect(popoverRows(effort, "t9")).toEqual([
+            { kind: "next", label: "C" },
+            { kind: "next", label: "D" },
+        ]);
     });
 
     it("moves the cursor and stops at the ends", () => {

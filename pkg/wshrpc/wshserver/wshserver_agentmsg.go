@@ -73,16 +73,18 @@ var blockTranscriptMeta = readBlockTranscriptMeta
 // tabAgentBlock is the block a tab's agent runs in, "" for a tab that is gone. A var so tests need no store.
 var tabAgentBlock = readTabAgentBlock
 
+// readAgentRosterFacts reads the tabs, runs and channels shared (wstore's *Shared readers): many polls ask for the
+// roster, and only what changed since the last one is decoded. The facts are read-only.
 func readAgentRosterFacts(ctx context.Context) (*agentRosterFacts, error) {
-	tabs, err := wstore.DBGetAllObjsByType[*waveobj.Tab](ctx, waveobj.OType_Tab)
+	tabs, err := wstore.DBGetAllObjsByTypeShared[*waveobj.Tab](ctx, waveobj.OType_Tab)
 	if err != nil {
 		return nil, fmt.Errorf("loading tabs: %w", err)
 	}
-	runs, err := wstore.DBGetAllObjsByType[*waveobj.Run](ctx, waveobj.OType_Run)
+	runs, err := wstore.DBGetAllObjsByTypeShared[*waveobj.Run](ctx, waveobj.OType_Run)
 	if err != nil {
 		return nil, fmt.Errorf("loading runs: %w", err)
 	}
-	chans, err := wstore.GetChannels(ctx)
+	chans, err := wstore.GetChannelsShared(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("loading channels: %w", err)
 	}

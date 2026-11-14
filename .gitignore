@@ -41,3 +41,6 @@ claude/arc-view-mod/.claude-plugin/types/
 
 # skim bench model-call cache (scripts/skim-bench.mjs)
 claude/skim-bench/cache/
+
+# the Tauri dev app's Vite deps cache, one per checkout (frontend/tauri/vite.config.ts)
+/.vite/
