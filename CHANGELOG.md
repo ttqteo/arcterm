@@ -84,6 +84,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- New agent's Task box opens with the cursor after a restored draft, so you keep typing where you left off.
 - A new agent opens on itself again: once it started, the Agent surface could jump to the next live agent below it in
   the tree.
 - On the Agent surface the arrow keys no longer jump to another agent while you read Chat: they step agents only with

@@ -611,6 +611,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
         const box = isTool || isCouncil ? null : isRun ? (goalRef.current ?? planRef.current) : taskRef.current;
         (box ?? startRef.current)?.focus();
+        // a restored draft is typed on from its end: WebKit leaves the caret at the start of a box focused from script
+        if (box != null) {
+            box.setSelectionRange(box.value.length, box.value.length);
+        }
         // once per opening: a pick made later keeps its own focus
     }, [open]);
 
