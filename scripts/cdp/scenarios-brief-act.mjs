@@ -149,7 +149,8 @@ export default function (kit) {
                 const el = document.querySelector('[data-jarvis-brief-sheet]');
                 return {
                     face: el?.dataset.jarvisBriefSheet ?? null,
-                    head: el?.querySelector('[data-jarvis-initiative-sheet-head]')?.dataset.jarvisInitiativeSheetHead ?? null,
+                    // with a chunk open the sheet draws the chunk's head, not the initiative's: its back button holds the initiative's title
+                    initiative: el?.querySelector('[data-jarvis-chunk-head] [data-jarvis-chunk-back]')?.textContent.trim() ?? null,
                     chunk: el?.querySelector('[data-jarvis-chunk-view]')?.dataset.jarvisChunkView ?? null,
                     status: el?.querySelector('[data-jarvis-chunk-status]')?.dataset.jarvisChunkStatus ?? null,
                     notes: el?.innerText.includes(${JSON.stringify(LATER)}) ?? false,
@@ -161,7 +162,7 @@ export default function (kit) {
                 ok:
                     landed &&
                     sheet.face === "effort" &&
-                    sheet.head === `effort:${ctx.effortId}` &&
+                    sheet.initiative === TITLE &&
                     sheet.chunk === CHUNK &&
                     sheet.status === "blocked" &&
                     sheet.notes === true,
