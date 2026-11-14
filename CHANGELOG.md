@@ -44,6 +44,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- In Chat, Shift+Enter on a suggested reply picked with Tab puts its text in the box so you can edit it before sending.
 - In Chat, a message that moved the agent to another initiative chunk shows a "Chunk N · name" divider above it, so
   you can tell where each chunk's work begins.
 - The initiative band in Chat shows three steps on how to use it the first time you open it; Got it hides them and

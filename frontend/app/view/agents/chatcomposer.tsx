@@ -102,6 +102,7 @@ import {
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
 import {
+    chipEditable,
     drawnChips,
     pickedChip,
     pickedHint,
@@ -895,6 +896,15 @@ function ComposerBox({
             sendSuggested(c.text);
         }
     };
+    // Shift+Enter on a picked chip whose Enter sends its text (chatsuggest.ts chipEditable) puts that text in the box
+    // instead, caret at its end, to edit before sending. It replaces what was typed, as a deliberate key may; the chip
+    // lets go, so Shift+Enter is a new line again
+    const pickedEditable = picked != null && chipEditable(picked, onGoOn != null);
+    const editChip = (c: ChatChip) => {
+        recalled.current = { at: null, shown: "" };
+        setTextAt(c.text, c.text.length);
+        editorRef.current?.focus();
+    };
     // Send is a word asleep and while the wake is in flight. The word stays what it last was while it fades out, so a
     // finished wake does not swap "Waking…" for "Send" under the eye.
     const showWord = asleep || waking;
@@ -920,7 +930,7 @@ function ComposerBox({
     // question keeps its own words); else the pane's line
     const hint: HintPart[] | string =
         picked != null
-            ? pickedHint(picked)
+            ? pickedHint(picked, pickedEditable)
             : tabChips.length > 0 && state === "idle" && !questionWaits
               ? boxTabPlaceholder(agent.name)
               : placeholder;
@@ -1117,7 +1127,8 @@ function ComposerBox({
                                 return;
                             }
                             // Tab and Shift+Tab walk the suggested replies; with one picked, Enter takes it as a click
-                            // does (asking first over typed text) and Esc lets go of it
+                            // does (asking first over typed text), Shift+Enter puts its text in the box to edit first (a
+                            // chip with no text to edit leaves Shift+Enter a new line), and Esc lets go of it
                             if (
                                 tabChips.length > 0 &&
                                 !e.altKey &&
@@ -1134,6 +1145,12 @@ function ComposerBox({
                                     e.preventDefault();
                                     setPicked(null);
                                     activateChip(picked);
+                                    return;
+                                }
+                                if (picked != null && pickedEditable && e.key === "Enter" && e.shiftKey) {
+                                    e.preventDefault();
+                                    setPicked(null);
+                                    editChip(picked);
                                     return;
                                 }
                                 if (picked != null && e.key === "Escape") {
