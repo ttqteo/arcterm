@@ -266,6 +266,7 @@ describe("what arcterm typed", () => {
             from: "cockpit",
             header: "message · from design lead",
             lines: ["tab tab-1234", "rename the helper", "and rerun the tests"],
+            tabId: "tab-1234",
         });
     });
 

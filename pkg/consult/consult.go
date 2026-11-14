@@ -46,6 +46,7 @@ type ParsedEvent struct {
 	Err      error
 	Tool     string
 	Tokens   int64
+	Result   string // claude's result event: the final turn's reply alone
 }
 
 // RuntimeSpec is how to invoke a runtime in one-shot/print mode.
@@ -146,7 +147,7 @@ func claudeParseLine(line []byte) ParsedEvent {
 	switch ev.Type {
 	case "result":
 		u := ev.Usage
-		pe := ParsedEvent{Complete: true, Tokens: u.Input + u.CacheRead + u.CacheCreation + u.Output}
+		pe := ParsedEvent{Complete: true, Tokens: u.Input + u.CacheRead + u.CacheCreation + u.Output, Result: ev.Result}
 		// A result that reports an error (a safeguard refusal, a run that hit a limit) carries the
 		// reason in result/subtype; surface it so the caller reports it instead of a bare exit code.
 		if ev.IsError || strings.HasPrefix(ev.Subtype, "error") {

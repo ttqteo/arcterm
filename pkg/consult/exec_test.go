@@ -46,6 +46,12 @@ func runFakePiHelper(args []string) {
 	case "blank":
 		fmt.Println(`{"type":"other_event"}`)
 		fmt.Println()
+	case "claude-fallback":
+		// a turn the safeguards stopped part-way, then the fallback model's whole reply, which the result repeats
+		fmt.Println(`{"type":"assistant","message":{"content":[{"type":"text","text":"{\"answers\": [{\"text\": \"cut"}]}}`)
+		fmt.Println(`{"type":"system","subtype":"model_refusal_fallback"}`)
+		fmt.Println(`{"type":"assistant","message":{"content":[{"type":"text","text":"{\"answers\": []}"}]}}`)
+		fmt.Println(`{"type":"result","subtype":"success","result":"{\"answers\": []}"}`)
 	case "claude":
 		// a claude stream-json session: a tool call, the reply, then the result with usage
 		fmt.Println(`{"type":"system","subtype":"init"}`)
@@ -126,6 +132,20 @@ func TestRunClaudeSpec_reportsToolsReplyAndUsage(t *testing.T) {
 	// a nil onTool is allowed
 	if _, _, err := runClaudeSpec(context.Background(), spec, "", "prompt", "", nil); err != nil {
 		t.Fatalf("runClaudeSpec with no onTool: %v", err)
+	}
+}
+
+func TestRunClaudeSpec_replyIsTheFinalTurn(t *testing.T) {
+	os.Setenv(fakePiHelperEnv, "1")
+	t.Cleanup(func() { os.Unsetenv(fakePiHelperEnv) })
+	spec := fakePiSpec("claude-fallback")
+	spec.ParseLine = claudeParseLine
+	full, _, err := runClaudeSpec(context.Background(), spec, "", "prompt", "opus", nil)
+	if err != nil {
+		t.Fatalf("runClaudeSpec error: %v", err)
+	}
+	if want := `{"answers": []}`; full != want {
+		t.Errorf("reply = %q, want only the fallback's %q", full, want)
 	}
 }
 

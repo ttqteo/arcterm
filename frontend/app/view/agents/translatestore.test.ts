@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/app/store/wshclientapi", () => ({
-    RpcApi: { TranslateCommand: vi.fn(), NoteScratchWriteCommand: vi.fn(), NoteScratchReadCommand: vi.fn() },
+    RpcApi: { TranslateCommand: vi.fn() },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -16,7 +16,6 @@ vi.mock("./floatstore", async () => {
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { invoke } from "@tauri-apps/api/core";
-import { floatNoteOpenAtom } from "./floatnotestore";
 import { floatModeAtom } from "./floatstore";
 import {
     DEFAULT_PAIR,
@@ -81,7 +80,6 @@ beforeEach(() => {
     clearTranslate();
     closeTranslate();
     globalStore.set(floatModeAtom, false);
-    globalStore.set(floatNoteOpenAtom, false);
     globalStore.set(translatePairAtom, { ...DEFAULT_PAIR });
     globalStore.set(translateHistoryAtom, []);
     rpc.mockImplementation(async (_c, req) => answer(`vi:${req.text}`));
@@ -353,7 +351,6 @@ describe("the panel", () => {
 
 describe("Float", () => {
     const open = () => globalStore.get(translateOpenAtom);
-    const noteOpen = () => globalStore.get(floatNoteOpenAtom);
     it("closes the panel when Float starts, so the rail's panel does not turn into Float's", () => {
         openTranslate();
         globalStore.set(floatModeAtom, true);
@@ -374,26 +371,11 @@ describe("Float", () => {
         expect(text()).toBe("hello");
         expect(result()).toEqual(answer("vi:hello"));
     });
-    it("opening the panel closes the note", () => {
-        globalStore.set(floatModeAtom, true);
-        globalStore.set(floatNoteOpenAtom, true);
-        toggleTranslate();
-        expect(open()).toBe(true);
-        expect(noteOpen()).toBe(false);
-    });
-    it("opening the note closes the panel", () => {
-        globalStore.set(floatModeAtom, true);
-        openTranslate();
-        globalStore.set(floatNoteOpenAtom, true);
-        expect(open()).toBe(false);
-        expect(noteOpen()).toBe(true);
-    });
-    it("closing the panel leaves a closed note closed and Float on", () => {
+    it("closing the panel leaves Float on", () => {
         globalStore.set(floatModeAtom, true);
         openTranslate();
         closeTranslate();
         expect(open()).toBe(false);
-        expect(noteOpen()).toBe(false);
         expect(globalStore.get(floatModeAtom)).toBe(true);
     });
 });

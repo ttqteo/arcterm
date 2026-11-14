@@ -25,7 +25,6 @@ import { BackgroundAgentsPoller } from "@/app/view/agents/backgroundagentspoller
 import { AttentionPoller } from "@/app/view/agents/attentionpoller";
 import { BrainstormPoller } from "@/app/view/agents/brainstormpoller";
 import { LauncherModal } from "@/app/view/agents/launchermodal";
-import { floatNoteOpenAtom } from "@/app/view/agents/floatnotestore";
 import { setupMouseHistoryButtons, setupPageChordKeys, setupPageReloadKey } from "@/app/view/agents/appstore";
 import { floatMiniAtom, floatModeAtom, setupFloatMode } from "@/app/view/agents/floatstore";
 import { NewInitiativeHost } from "@/app/view/jarvis/newinitiativecontrol";
@@ -45,7 +44,6 @@ import { useEffect, useMemo, useRef } from "react";
 import { CockpitAppBar } from "./app-bar";
 import { CommandPalette } from "./command-palette";
 import { FloatBar } from "./float-bar";
-import { FloatNote } from "./float-note";
 import "./cockpit.scss";
 import { ctrlHeldAtom, nextCtrlHeld } from "./ctrlheld";
 import {
@@ -124,7 +122,6 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
     // which Sprout walks
     const floating = useAtomValue(floatModeAtom);
     const folded = useAtomValue(floatMiniAtom);
-    const noteOpen = useAtomValue(floatNoteOpenAtom);
     const translateOpen = useAtomValue(translateOpenAtom);
     // remember every switch, so the next launch can reopen where this one left off
     useEffect(
@@ -225,10 +222,8 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                 {floating ? <FloatBar model={model} /> : <CockpitAppBar model={model} />}
                 <div className="relative min-h-0 flex-1">
                     <CockpitShell model={model} tabId={tabIdRef.current} />
-                    {/* Float's Note tab: over the terminal area, which stays mounted under it (float-note.tsx) */}
-                    {floating && noteOpen ? <FloatNote model={model} /> : null}
                     {/* Float's Translate tab: the same panel the rail opens, over the terminal area the same way; the rail
-                        is hidden in Float, so this is where it shows (translatestore.ts keeps it and the note apart) */}
+                        is hidden in Float, so this is where it shows */}
                     {floating && translateOpen ? <TranslateFloatPanel model={model} /> : null}
                 </div>
                 {floating ? <FloatLedge model={model} /> : <HintsFooter model={model} />}

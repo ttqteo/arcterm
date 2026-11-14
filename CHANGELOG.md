@@ -26,6 +26,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- In Chat, select any text in the conversation (a reply, your own message, a tool's output) and click Reply: it goes
+  into the message box as a quote, with the caret under it for your question.
+- In Chat, a message another agent sent you heads with a link: click "message · from <agent>" to open that agent's
+  conversation (Ctrl-click peeks it).
+- **Pin tabs in Float**: right-click a tab on the strip under a float's terminal and pick **Pin tab**. Pinned tabs
+  come first and never fold into "+N"; **Unpin tab** lets one go.
+- In Chat, `Tab` walks the suggested replies under the box (`Shift`+`Tab` back) and `Enter` sends the one it picked,
+  which shows the Enter key; the empty box says so. Reply chips lose the ↵ arrow that read as Enter on every one.
 - Chat draws a council the agent started as a card, like its runs and verdicts: while the council runs it sits at the
   end of the conversation with the question, a chip for each expert, the step it is on and a Stop button; it asks
   Continue or Stop when it pauses after round 1, and shows what it waits for when it is queued. Once it ends, the card
@@ -49,6 +57,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A long code block in Chat keeps its Wrap and Copy buttons in view as you scroll through it, just under the pinned
+  prompt.
+- Float's tabs follow the Agent tree: a run is one tab, its lead, instead of a tab for every worker it started, and a
+  brainstorm's check sessions stay under the agent that started them.
+- The Note tab in Float and its `Cmd`+`Shift`+`N` shortcut are gone. The note's text stays in `notes/scratch.md` in
+  your vault.
 - A message you send in Chat rises in at its place again, as in a messenger, instead of flying out of the message box.
 - Chat's suggested replies stay while you type instead of all going at the first letter; clicking one over text you
   typed asks first, in a toast whose Send replaces your text with the reply.
@@ -66,6 +80,23 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- On the Agent surface the arrow keys no longer jump to another agent while you read Chat: they step agents only with
+  keyboard focus in the Agent tree (`j` / `k` still step from anywhere).
+- In Chat, words typed in the box while a plan's Handoff card waits answer it, as the card says, instead of waiting
+  behind "Answer Claude's question first".
+- The blinking caret in Chat's message box shows in front of the grey hint again, not half hidden behind its first
+  letter.
+- A council you write to again after its report no longer works from an outdated memory: before the seats answer, it
+  reads what you settled since in the agent that started it and the diffs of its files, and closes or corrects the
+  Agreed and Open lines they outdate (so CLAUDE.md's Council decisions block follows). Its experts now read the files
+  that changed since the report instead of trusting the report's view of them, and an agent can update the memory
+  itself with `wsh council memory`.
+- A council seat whose answer Claude's safeguards stopped part-way, and that Claude then finished on a fallback
+  model, no longer fails with "invalid character '\n' in string": the seat's answer is the fallback's reply alone.
+- A question card with several questions or a pick-many question can be sent again. Several questions end in a
+  Submit tab, as in Claude Code's own picker, that lists your answers and sends them, with ← → to step through; a
+  lone pick-many question has a Submit button. The card no longer says "press Enter to submit", which the Chat box
+  caught.
 - An app server an agent starts (`mvn spring-boot:run`, `./gradlew bootRun`, `uvicorn`, `next dev` and the like) no
   longer holds a heavy-job slot for up to an hour, which kept builds and typechecks waiting behind it.
 - arcterm's background service no longer keeps a CPU core busy once you have thousands of past runs: the servers
@@ -1977,7 +2008,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **Note and Translate in Float**: the strip under a float's terminal has a **Note** tab, one markdown note that saves
   itself as you type (with Preview), and a **Translate** tab that opens translate-shell, its prompt showing the
   language it translates into, with `↑` recalling past lookups. `Cmd`+`Shift`+`N` floats the note.
-  <!-- try: float-note --> <!-- big -->
+  <!-- big -->
 - Office sounds: chiptune jingles when a task finishes, a run lands or someone needs you, with optional footsteps and
   day and night music (`s` or the office menu's Mute sound mutes them). Settings → Appearance turns the jingles, the
   boss's sounds and the music on or off, and sets how loud they play.

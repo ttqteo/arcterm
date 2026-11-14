@@ -44754,26 +44754,6 @@ const agentChat = {
             await AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`);
             await showAgent(A);
 
-            // 19. with the cell showing Chat, the float note opening and closing (Mod+Shift+N) hands focus back to the chat
-            // box, not to the xterm under it. Float resizes the window: the step leaves it again.
-            await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
-            await h.ev(`${acBox(A)}?.focus()`);
-            const modBit = (await h.ev(`/Mac/i.test(navigator.platform)`)) ? 4 : 2;
-            await floatNoteChord(h, { modBit });
-            const noteUp19 = await floatMiniWait(h, `!!document.querySelector("[data-float-note]")`, 8000);
-            await floatNoteChord(h, { modBit });
-            const noteGone19 = await floatMiniWait(h, `!document.querySelector("[data-float-note]")`, 3000);
-            await h.ev("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
-            const focus19 = await acFocusIn(h, A);
-            await h.shot("cdp-shots/agent-chat-19-float-note-closed.png");
-            await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
-            const unfloated19 = await floatMiniWait(h, `!document.querySelector("[data-float-bar]") && sessionStorage.getItem("arc.float.restore") == null`, 8000);
-            rec(
-                "19. with the cell showing Chat, opening and closing the float note hands focus back to the chat box, not the xterm",
-                noteUp19 && noteGone19 && focus19.box && !focus19.xterm && unfloated19,
-                { noteUp19, noteGone19, focus19, unfloated19 }
-            );
-
             // 20. a message sent while Claude works. A `queued_command` attachment line (a message queued in the terminal and
             // taken mid-turn) draws as your bubble; one sent from the box shows at once as your bubble with a "Queued" line
             // under it, and goes when a line holding the same text lands in the transcript
@@ -47917,6 +47897,233 @@ const chatFork = {
             })()`)
         );
         await step("remove the fixture transcripts", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
+// --- chat-quote: Reply to a passage (chatquote.ts, chatquotebutton.tsx). Text selected in Chat's conversation shows a
+// Reply button under it; a click puts the passage in the message box as a `> ` quote with a blank line under it, keeps
+// what was typed, and stacks a second quote under the first. A selection in the box itself shows no button.
+
+const CQ_NAME = "quote source";
+const CQ_QUESTIONS = ["is the oracle checked by hand?", "how do I check it by hand?"];
+const CQ_REPLIES = [
+    "Not yet. Every number rests on it, so it is the one real gate.\n\nThe rest can wait.",
+    "Pick thirty cases at random and rerun each in a clean tree.",
+];
+const CQ_PASSAGE = "Every number rests on it";
+
+function cqRoster(ctx) {
+    const now = Date.now();
+    return [
+        {
+            project: "arcterm",
+            state: "idle",
+            idleSince: now - 3_600_000,
+            task: "Check the oracle",
+            agent: "claude",
+            model: "opus",
+            id: ctx.tabs.main.tabId,
+            name: CQ_NAME,
+            blockId: ctx.tabs.main.blockId,
+            transcriptPath: ctx.transcript,
+            sleeping: { since: now - 3_600_000, freedBytes: 0 },
+        },
+    ];
+}
+
+const chatQuote = {
+    name: "chat-quote",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-quote-")),
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        let at = "writing the transcript";
+        try {
+            const base = Date.now() - 7_200_000;
+            const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
+            const lines = [];
+            CQ_QUESTIONS.forEach((q, i) => {
+                lines.push(AC.userText(q, { ...o(i * 10), uuid: `u${i + 1}` }));
+                lines.push(AC.assistantText(CQ_REPLIES[i], { ...o(i * 10 + 2), uuid: `a${i + 1}` }));
+            });
+            ctx.transcript = AC.writeTranscript(ctx.dir, "quote-source", lines);
+            at = "resetting the grid";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tab";
+            ctx.tabs = { main: await acMakeTab(h, ctx, { label: CQ_NAME }) };
+            at = "setting the roster";
+            await AC.setRoster(h, cqRoster(ctx));
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent and its transcript", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const you = (n) => `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-you]')[${n}]`;
+        const prose = (n) => `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-prose]')[${n}]`;
+        const btn = `document.querySelector("[data-chat-quote]")`;
+        const boxText = () =>
+            AC.agentPage(h, `const I = await mod("app/view/agents/chatinsert.ts"); return I.chatBoxText(${JSON.stringify(A)});`);
+        // selects `phrase` inside the element (or its whole text when null) as a drag would; true when it was found
+        const select = (elExpr, phrase) =>
+            h.ev(`(() => {
+                const el = ${elExpr};
+                if (!el) return false;
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                const range = document.createRange();
+                const phrase = ${JSON.stringify(phrase)};
+                if (phrase == null) {
+                    range.selectNodeContents(el);
+                    sel.addRange(range);
+                    return true;
+                }
+                const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+                for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+                    const i = n.data.indexOf(phrase);
+                    if (i >= 0) {
+                        range.setStart(n, i);
+                        range.setEnd(n, i + phrase.length);
+                        sel.addRange(range);
+                        return true;
+                    }
+                }
+                return false;
+            })()`);
+        // a real press and release on the button: its mousedown must keep the selection for the click to read
+        const pressButton = async () => {
+            const at = await h.ev(caCenter(btn));
+            if (at == null) return false;
+            for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: Math.round(at.x), y: Math.round(at.y), button: "left", clickCount: 1 });
+            }
+            return true;
+        };
+        try {
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+            await AC.focusAgent(h, A);
+            const loaded = await polishWaitFor(
+                h,
+                `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-you]').length >= 2 && document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-prose]').length >= 2`,
+                15000
+            );
+            const before = await boxText();
+
+            // 1. selecting a passage of Claude's reply shows Reply just under the selection
+            const sel1 = await select(prose(0), CQ_PASSAGE);
+            const up1 = await polishWaitFor(h, `!!${btn}`, 3000);
+            const place1 = await h.ev(`(() => {
+                const b = ${btn}?.getBoundingClientRect();
+                const r = window.getSelection().rangeCount ? window.getSelection().getRangeAt(0).getBoundingClientRect() : null;
+                return b && r ? { below: b.top >= r.bottom && b.top - r.bottom < 20, label: ${btn}.textContent.trim() } : null;
+            })()`);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-quote-1-button.png");
+            rec(
+                "1. selecting a passage of Claude's reply shows a Reply button just under the selection (the box starts empty)",
+                loaded && before === "" && sel1 && up1 && place1?.below === true && place1?.label === "Reply",
+                { loaded, before, sel1, up1, place1 }
+            );
+
+            // 2. pressing Reply puts the passage in the box as a quote, a blank line under it; the selection and the button go
+            const pressed2 = await pressButton();
+            const gone2 = await polishWaitFor(h, `!${btn}`, 3000);
+            const text2 = await boxText();
+            const cleared2 = await h.ev(`window.getSelection().isCollapsed`);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-quote-2-box.png");
+            rec(
+                "2. pressing Reply puts `> <passage>` and a blank line in the message box, and the selection and the button go",
+                pressed2 && gone2 && text2 === `> ${CQ_PASSAGE}\n\n` && cleared2 === true,
+                { pressed2, gone2, text2, cleared2 }
+            );
+
+            // 3. a passage of your own message stacks under the first quote
+            const sel3 = await select(you(1), CQ_QUESTIONS[1]);
+            const up3 = await polishWaitFor(h, `!!${btn}`, 3000);
+            const pressed3 = up3 && (await pressButton());
+            const text3 = await boxText();
+            rec(
+                "3. Reply on a passage of your own message stacks a second quote under the first",
+                sel3 && up3 && pressed3 && text3 === `> ${CQ_PASSAGE}\n\n> ${CQ_QUESTIONS[1]}\n\n`,
+                { sel3, up3, pressed3, text3 }
+            );
+
+            // 4. a reply of two paragraphs keeps one bare `>` between them
+            const sel4 = await select(prose(0), null);
+            const up4 = await polishWaitFor(h, `!!${btn}`, 3000);
+            const pressed4 = up4 && (await pressButton());
+            const text4 = await boxText();
+            const quoted4 = text4.slice(`> ${CQ_PASSAGE}\n\n> ${CQ_QUESTIONS[1]}\n\n`.length);
+            rec(
+                "4. quoting a reply of two paragraphs keeps them apart with one bare `>` line",
+                sel4 && up4 && pressed4 && /^> Not yet\..*\n>\n> The rest can wait\.\n\n$/s.test(quoted4),
+                { sel4, up4, pressed4, quoted4 }
+            );
+
+            // 5. text selected in the message box itself shows no button
+            const sel5 = await h.ev(`(() => {
+                const box = document.querySelector('[data-agent-chat="${A}"] [data-chat-input]');
+                if (!box) return false;
+                const range = document.createRange();
+                range.selectNodeContents(box);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+                return !sel.isCollapsed;
+            })()`);
+            await polishNap(400);
+            const none5 = await h.ev(`!${btn}`);
+            rec("5. text selected in the message box shows no Reply button", sel5 && none5 === true, { sel5, none5 });
+        } catch (e) {
+            rec("the scenario threw", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-quote teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the selection and the draft", () =>
+            AC.agentPage(
+                h,
+                `window.getSelection()?.removeAllRanges();
+                const S = await mod("app/view/agents/wakingstore.ts");
+                for (const id of ${JSON.stringify(ctx.tabIds ?? [])}) S.setWakeDraft(id, "");
+                return true;`
+            )
+        );
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tab", () => acCloseTabs(h, ctx));
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        await step("remove the fixture transcript", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
         await step("reload onto the live roster", () => ahReload(h));
         await step("go home", () => h.goto("cockpit"));
     },
@@ -55359,14 +55566,13 @@ const floatMini = {
     },
 };
 
-// --- Float's Note and Translate tabs ----------------------------------------------------------------------------
-// docs/superpowers/specs/2026-10-17-float-note-translate-design.md. In a float, the ledge's Note tab covers the
-// terminal with the one global markdown note (typing, Preview, a failed save, every way it closes), and its Translate
-// tab covers it with the Translate panel the rail opens (docs/superpowers/specs/2026-10-29-rail-translate-design.md):
-// typing, Note over Translate, and every way the panel closes, floating and leaving Float included. Google never answers
+// --- Float's Translate tab ------------------------------------------------------------------------------------
+// In a float, the ledge's Translate tab covers the terminal with the Translate panel the rail opens
+// (docs/superpowers/specs/2026-10-29-rail-translate-design.md): typing, and every way the panel closes, floating and
+// leaving Float included. (The Note tab beside it is gone.) Google never answers
 // here: steps 7-8 use window.__arcTranslateStub, as rail-translate does. It asserts the DOM and the PTY size only, so the
 // browser app runs it too.
-const FLOAT_NOTE_PROJECT = "verify-float-note";
+const FLOAT_NOTE_PROJECT = "verify-float-translate";
 
 // a printable key through the real input pipeline: a keyDown with its text, then a keyUp; a capital adds Shift
 async function floatNoteKey(h, key) {
@@ -55387,19 +55593,12 @@ async function floatNoteSpecial(h, key, code, keyCode, text) {
     await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...base });
 }
 
-// Mod+Shift+N: Cmd on a Mac, Ctrl elsewhere
-async function floatNoteChord(h, ctx) {
-    const base = { key: "N", code: "KeyN", windowsVirtualKeyCode: 78, modifiers: ctx.modBit | 8 };
-    await h.cdp("Input.dispatchKeyEvent", { type: "rawKeyDown", ...base });
-    await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...base });
-}
-
 // whether a terminal's pane is the one showing
 const floatNoteShowing = (tabId) =>
     `document.querySelector('[data-agent-terminal="${tabId}"]')?.checkVisibility() === true`;
 
-const floatNote = {
-    name: "float-note",
+const floatTranslate = {
+    name: "float-translate",
     surface: "agent",
     async arrange(h) {
         const ctx = { terminals: [] };
@@ -55410,16 +55609,11 @@ const floatNote = {
             ctx.workspaceId = ws.workspacedata.oid;
             ctx.modBit = (await h.ev("/Mac/i.test(navigator.platform)")) ? 4 : 2;
             await openRailTerminal(h, ctx, FLOAT_NOTE_PROJECT);
-            ctx.prevNote = await h.rpc("notescratchread", null);
             // the pair the Translate store holds is the one it read from here at boot, and teardown puts it back
             ctx.prevPair = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_TRANSLATE_PAIR_KEY)})`);
             // and the history the answers below join: teardown takes those entries back out
             ctx.prevHistory = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_TRANSLATE_HISTORY_KEY)})`);
             await h.ev(RAIL_TRANSLATE_STUB);
-            await h.rpc("notescratchwrite", { body: "" });
-            // the app's own notes folder: an app started with ARC_DEV_NO_GLOBAL_INSTALL keeps its vault in its store, not
-            // where notes-wsh.mjs's vaultRoot points, and a folder outside the store is never chmodded
-            ctx.notesDir = join((await h.rpc("waveinfo", null)).datadir, "vault", "notes");
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -55436,16 +55630,11 @@ const floatNote = {
         const click = (sel) => ttMouse(h, sel);
         const term = ctx.terminals[0];
         const termSel = `[data-agent-terminal="${term.tabId}"]`;
-        const editorSel = "[data-float-note-editor]";
-        const noteUp = `!!document.querySelector("[data-float-note]")`;
-        const noteGone = `!document.querySelector("[data-float-note]")`;
         // Leaving Float turns floatModeAtom off first, then gives the window its frame back with `busy` held, and a float
         // asked for meanwhile (the chord, Shift+F, the header menu) is ignored by enterFloat's guard; the restore's last
         // step empties this key (floatstore.ts unfloatTheWindow), so a step that floats again waits for it
         const frameBack = `sessionStorage.getItem("arc.float.restore") == null`;
         const pressed = (sel) => h.ev(`document.querySelector(${JSON.stringify(sel)})?.getAttribute("aria-pressed") ?? null`);
-        const editorFocused = `document.activeElement === document.querySelector(${JSON.stringify(editorSel)})`;
-        const editorValue = () => h.ev(`document.querySelector(${JSON.stringify(editorSel)})?.value ?? null`);
 
         // the header's Float button floats an agent; a plain terminal with no agent in focus has none (its bar is the dock's),
         // so there Shift+F, from the nav, as the button's title says
@@ -55461,7 +55650,7 @@ const floatNote = {
         await h.ev(`document.querySelector('[data-tree-terminal-row="${term.tabId}"]')?.click()`);
         await wait(floatNoteShowing(term.tabId), 3000);
 
-        // 1. board Terminal: the fixed tabs are there beside the terminal's own, even with one terminal to float
+        // 1. the Translate tab is there beside the terminal's own, even with one terminal to float, and Note is gone
         await floatTerminal();
         const floated = await wait(`!!document.querySelector("[data-float-bar]")`);
         await wait(`!!document.querySelector('[data-float-fixed="translate"]')`, 3000);
@@ -55471,170 +55660,12 @@ const floatNote = {
             own: document.querySelectorAll('[data-float-tab="${term.tabId}"]').length,
         })`);
         await h.ev("new Promise((r) => setTimeout(r, 1000))");
-        await h.shot("cdp-shots/float-note-terminal.png");
+        await h.shot("cdp-shots/float-translate-terminal.png");
         rec(
-            "1. the float shows Note, Translate and the terminal's own tab",
-            floated && tabs1.note && tabs1.translate && tabs1.own === 1,
+            "1. the float shows Translate and the terminal's own tab, and no Note tab",
+            floated && !tabs1.note && tabs1.translate && tabs1.own === 1,
             JSON.stringify({ floated, ...tabs1 })
         );
-
-        // 2. board NoteEmpty: Note covers the terminal with an empty editor, and no close button
-        const sizeBefore = await floatMiniTermSize(h, term.blockId);
-        await click('[data-float-fixed="note"]');
-        const opened = await wait(`${noteUp} && !!document.querySelector(${JSON.stringify(editorSel)})`, 5000);
-        await wait(editorFocused, 2000);
-        await h.ev("new Promise((r) => setTimeout(r, 600))");
-        const empty = await h.ev(`(() => {
-            const e = document.querySelector(${JSON.stringify(editorSel)});
-            return {
-                value: e?.value ?? null,
-                placeholder: e?.placeholder ?? null,
-                close: !!document.querySelector("[data-float-close]"),
-                title: document.querySelector("[data-float-title]")?.textContent ?? null,
-            };
-        })()`);
-        const sizeNote = await floatMiniTermSize(h, term.blockId);
-        await h.shot("cdp-shots/float-note-empty.png");
-        rec(
-            "2. Note opens an empty editor over the terminal, with no close button, and the PTY size never moves",
-            opened &&
-                empty.value === "" &&
-                empty.placeholder?.startsWith("Write markdown…") === true &&
-                !empty.close &&
-                empty.title === "Note" &&
-                (await pressed('[data-float-fixed="note"]')) === "true" &&
-                JSON.stringify(sizeNote) === JSON.stringify(sizeBefore),
-            JSON.stringify({ opened, ...empty, sizeBefore, sizeNote })
-        );
-
-        // 3. board Main: typing, capitals and single keys included, stays in the note and saves itself
-        await h.cdp("Input.insertText", { text: "## Hôm nay" });
-        await floatNoteSpecial(h, "Enter", "Enter", 13, "\r");
-        await h.cdp("Input.insertText", { text: "- " });
-        await floatNoteKey(h, "F");
-        await floatNoteKey(h, "r");
-        await floatNoteKey(h, "1");
-        const typed = await editorValue();
-        const barStill = await h.ev(`!!document.querySelector("[data-float-bar]")`);
-        await h.ev("new Promise((r) => setTimeout(r, 900))");
-        const saved3 = await h.rpc("notescratchread", null);
-        ctx.saved3 = saved3;
-        await h.shot("cdp-shots/float-note-edit.png");
-        rec(
-            "3. typing F, r and 1 goes into the note, Shift+F does not leave Float, and the text saves itself",
-            typeof typed === "string" && typed.endsWith("- Fr1") && barStill && saved3 === typed,
-            JSON.stringify({ typed, barStill, saved3 })
-        );
-
-        // 4. board NotePreview
-        await click('[data-float-note-view="preview"]');
-        await wait(`!!document.querySelector("[data-float-note-body]")`, 3000);
-        const rendered = await h.ev(`(() => {
-            const b = document.querySelector("[data-float-note-body]");
-            return {
-                h2: b?.querySelector("h2")?.textContent.trim() ?? null,
-                li: [...(b?.querySelectorAll("li") ?? [])].map((l) => l.textContent.trim()),
-                editor: !!document.querySelector(${JSON.stringify(editorSel)}),
-            };
-        })()`);
-        await h.shot("cdp-shots/float-note-preview.png");
-        rec(
-            "4. Preview renders the note: an h2 reading Hôm nay and a list item Fr1",
-            rendered.h2 === "Hôm nay" && rendered.li.includes("Fr1") && !rendered.editor,
-            JSON.stringify(rendered)
-        );
-
-        // 5. board NoteError: a save that fails keeps the text, says so, and the next edit that works clears it
-        await click('[data-float-note-view="edit"]');
-        await wait(`${editorFocused}`, 3000);
-        const notePath = join(ctx.notesDir, "scratch.md");
-        const onDisk = existsSync(notePath) ? readFileSync(notePath, "utf8") : null;
-        if (onDisk == null || onDisk !== ctx.saved3) {
-            rec(
-                "5. a failed save shows its error line, and the next edit that works clears it",
-                false,
-                `refused to lock a folder: ${notePath} is ${onDisk == null ? "missing" : "not the note the app saved"}, so the app's notes folder is somewhere else`
-            );
-        } else {
-            // What keeps the save out: the notes folder's mode on a Mac or Linux, where a read-only file does not stop the
-            // write's rename over it. Windows ignores a folder's mode but refuses a rename onto a read-only file, and
-            // fileutil.renameReplacing retries that for a second first, so the error line takes longer to show.
-            const win = process.platform === "win32";
-            ctx.notesLock = { path: win ? notePath : ctx.notesDir, mode: statSync(win ? notePath : ctx.notesDir).mode & 0o777 };
-            chmodSync(ctx.notesLock.path, win ? 0o444 : 0o555);
-            await floatNoteKey(h, "a");
-            const failed = await wait(`!!document.querySelector("[data-float-note-error]")`, win ? 6000 : 2000);
-            const errText = await h.ev(`document.querySelector("[data-float-note-error]")?.textContent.trim() ?? null`);
-            const kept = await editorValue();
-            await h.shot("cdp-shots/float-note-error.png");
-            chmodSync(ctx.notesLock.path, ctx.notesLock.mode);
-            ctx.notesLock = null;
-            await floatNoteKey(h, "b");
-            const cleared = await wait(`!document.querySelector("[data-float-note-error]")`, 2000);
-            rec(
-                "5. a failed save shows its error line, and the next edit that works clears it",
-                failed && errText?.startsWith("Couldn't save the note:") === true && kept?.endsWith("Fr1a") === true && cleared,
-                JSON.stringify({ failed, errText, kept, cleared })
-            );
-        }
-
-        // 6. toggling: every way in and out
-        await click(`[data-float-tab="${term.tabId}"]`);
-        const tabHides = await wait(noteGone, 3000);
-        rec("6a. the terminal's tab hides the note", tabHides, JSON.stringify({ tabHides }));
-
-        await floatNoteChord(h, ctx);
-        const chordShows = await wait(noteUp, 3000);
-        await wait(editorFocused, 2000);
-        await floatNoteChord(h, ctx);
-        const chordHides = await wait(noteGone, 3000);
-        rec("6b. Mod+Shift+N shows the note, and again hides it", chordShows && chordHides, JSON.stringify({ chordShows, chordHides }));
-
-        await click('[data-float-fixed="note"]');
-        await wait(`${noteUp} && ${editorFocused}`, 3000);
-        await floatNoteKey(h, "z");
-        await floatNoteSpecial(h, "Escape", "Escape", 27);
-        const escAt = Date.now();
-        const escGone = await wait(noteGone, 2000);
-        let flushed = null;
-        let flushedAt = null;
-        while (Date.now() - escAt < 300) {
-            flushed = await h.rpc("notescratchread", null);
-            if (flushed.endsWith("z")) {
-                flushedAt = Date.now() - escAt;
-                break;
-            }
-            await polishNap(30);
-        }
-        await h.ev("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
-        const focusInTerm = await h.ev(`(() => {
-            const a = document.activeElement;
-            return a?.classList.contains("xterm-helper-textarea") === true && a.closest(${JSON.stringify(termSel)}) != null;
-        })()`);
-        rec(
-            "6c. Escape closes the note at once, saves what was typed, and focus goes into the terminal",
-            escGone && flushedAt != null && focusInTerm,
-            JSON.stringify({ escGone, flushedAt, flushed, focusInTerm })
-        );
-
-        await click('[data-float-fixed="note"]');
-        await wait(noteUp, 3000);
-        await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
-        const ended = await wait(`!document.querySelector("[data-float-bar]") && ${noteGone} && ${frameBack}`, 8000);
-        rec("6d. Float ending with the note open closes both", ended, JSON.stringify({ ended }));
-
-        await floatNoteChord(h, ctx);
-        const fromOutside = await wait(`!!document.querySelector("[data-float-bar]") && ${noteUp}`, 3000);
-        rec("6e. Mod+Shift+N outside Float floats straight onto the note", fromOutside, JSON.stringify({ fromOutside }));
-
-        await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
-        await wait(`!document.querySelector("[data-float-bar]") && ${frameBack}`, 8000);
-        await wait(floatNoteShowing(term.tabId), 3000);
-        await floatTerminal();
-        const again = await wait(`!!document.querySelector("[data-float-bar]")`, 5000);
-        await h.ev("new Promise((r) => setTimeout(r, 600))");
-        const noteBack = await h.ev(`!!document.querySelector("[data-float-note]")`);
-        rec("6f. floating again shows the terminal, not the note", again && !noteBack, JSON.stringify({ again, noteBack }));
 
         // 7. board TranslatePanel: the Translate tab covers the terminal with the Translate panel, pressed, the caret in
         // its empty box, and the PTY size never moves. The rail's panel is not drawn in Float
@@ -55670,7 +55701,6 @@ const floatNote = {
                 termMounted: !!document.querySelector(${JSON.stringify(termSel)}),
                 railPanel: !!document.querySelector("[data-translate-rail]"),
                 translate: pressedOf('[data-float-fixed="translate"]'),
-                note: pressedOf('[data-float-fixed="note"]'),
                 termTab: pressedOf('[data-float-tab="${term.tabId}"]'),
                 focused: ${RAIL_TRANSLATE_INPUT_FOCUSED},
                 pair: [document.querySelector("[data-translate-source]")?.value, document.querySelector("[data-translate-target]")?.value],
@@ -55678,7 +55708,7 @@ const floatNote = {
             };
         })()`);
         const sizePanel = await floatMiniTermSize(h, term.blockId);
-        await h.shot("cdp-shots/float-note-translate.png");
+        await h.shot("cdp-shots/float-translate-panel.png");
         rec(
             "7. the Translate tab shows the panel over the terminal, pressed, with the caret in the empty box, and the PTY size never moves",
             panelUp &&
@@ -55686,7 +55716,6 @@ const floatNote = {
                 seven.termMounted &&
                 !seven.railPanel &&
                 seven.translate === "true" &&
-                seven.note === "false" &&
                 seven.termTab === "false" &&
                 seven.focused &&
                 seven.pair[0] === "en" &&
@@ -55705,7 +55734,7 @@ const floatNote = {
             details: document.querySelector("[data-translate-details]")?.textContent ?? null,
             requests: ${RAIL_TRANSLATE_SEEN}.filter((r) => r.text === ${JSON.stringify(RAIL_TRANSLATE_WORD)}),
         })`);
-        await h.shot("cdp-shots/float-note-translate-word.png");
+        await h.shot("cdp-shots/float-translate-word.png");
         rec(
             "8a. typing a word shows its translation after one request, and the row under the box reads the word, its phonetic and Noun",
             wordShown &&
@@ -55714,35 +55743,6 @@ const floatNote = {
                 eightA.requests[0].target === "vi" &&
                 eightA.details === "compaction·kəmˈpakSHən·Noun",
             JSON.stringify({ wordShown, ...eightA })
-        );
-
-        // 8b. the Note tab over Translate shows the note, closes the panel and unpresses Translate
-        await click('[data-float-fixed="note"]');
-        const overTranslate = await wait(`${noteUp} && ${translateGone}`, 3000);
-        const translateOff = await pressed(translateTab);
-        rec(
-            "8b. Note over Translate shows the note, closes the panel and unpresses Translate",
-            overTranslate && translateOff === "false",
-            JSON.stringify({ overTranslate, translateOff })
-        );
-
-        // 8c. Translate again closes the note and shows the panel with the same text and translation
-        await click(translateTab);
-        const noteClosed = await wait(`${noteGone} && ${translateFloat}`, 3000);
-        const eightC = await h.ev(`({
-            input: ${RAIL_TRANSLATE_INPUT},
-            output: ${RAIL_TRANSLATE_OUTPUT},
-            translate: document.querySelector('[data-float-fixed="translate"]')?.getAttribute("aria-pressed") ?? null,
-            note: document.querySelector('[data-float-fixed="note"]')?.getAttribute("aria-pressed") ?? null,
-        })`);
-        rec(
-            "8c. Translate again closes the note and shows the panel with the same text and translation, pressed",
-            noteClosed &&
-                eightC.input === RAIL_TRANSLATE_WORD &&
-                eightC.output === "sự nén" &&
-                eightC.translate === "true" &&
-                eightC.note === "false",
-            JSON.stringify({ noteClosed, ...eightC })
         );
 
         // 8d. Esc closes the panel at once and the terminal has the keyboard
@@ -55782,7 +55782,7 @@ const floatNote = {
         );
 
         // 8g. one open flag serves both panels: floating hides the rail's, and leaving Float hides Float's, so neither
-        // reappears over the other (step 6d's rule for the note)
+        // reappears over the other
         await click(translateTab);
         await wait(translateFloat, 3000);
         await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
@@ -55812,17 +55812,11 @@ const floatNote = {
             try {
                 await fn();
             } catch (e) {
-                console.error(`float-note teardown: ${what} failed: ${e?.message ?? e}`);
+                console.error(`float-translate teardown: ${what} failed: ${e?.message ?? e}`);
             }
         };
-        if (ctx.notesLock != null) {
-            await step("unlock the note (step 5)", () => chmodSync(ctx.notesLock.path, ctx.notesLock.mode));
-        }
         await step("leave float", () => h.ev(`document.querySelector("[data-float-exit]")?.click()`));
         await step("settle", () => h.ev("new Promise((r) => setTimeout(r, 1200))"));
-        if (ctx.prevNote != null) {
-            await step("write the note back", () => h.rpc("notescratchwrite", { body: ctx.prevNote }));
-        }
         // prevPair is undefined until arrange read it (null: nothing stored); before that nothing was changed
         if (ctx.prevPair !== undefined) {
             await step("empty the Translate box, restore its pair and history", () =>
@@ -55840,9 +55834,10 @@ const floatNote = {
 
 // --- Float's ledge with more tabs than room ------------------------------------------------------------------------
 // Six terminals in a float narrowed to a width the tabs do not fit, down to the float's least (floatwindow.ts
-// FLOAT_MIN_SIZE): the Note and Translate tabs keep their room, a press on a fixed tab's right edge reaches that tab, and
-// every tab and "+N" ends before the floor Sprout walks and the usage. It asserts the DOM only, so the browser app runs
-// it too.
+// FLOAT_MIN_SIZE): the Translate tab keeps its room, a press on its right edge reaches it, and every tab and "+N" ends
+// before the floor Sprout walks and the usage. Then pinning: a right-click pins a tab, which moves first with a pin mark
+// and stays shown when another tab is picked from "+N", and unpins it again (sproutroster.ts floatTabs). It asserts the
+// DOM only, so the browser app runs it too.
 const FLOAT_LEDGE_PROJECT = "verify-float-ledge";
 const FLOAT_LEDGE_WIDTHS = [640, 480];
 
@@ -55857,6 +55852,9 @@ const floatLedgeTabs = {
             const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
             ctx.workspaceId = ws.workspacedata.oid;
             for (let i = 0; i < 6; i++) await openRailTerminal(h, ctx, FLOAT_LEDGE_PROJECT);
+            // the pins the person has, put back by teardown; the steps start with none
+            ctx.prevPins = await h.ev(`localStorage.getItem("float.tabpins")`);
+            await h.ev(`localStorage.removeItem("float.tabpins")`);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -55893,7 +55891,7 @@ const floatLedgeTabs = {
             const probe = await h.ev(`(() => {
                 const box = (el) => { const r = el?.getBoundingClientRect(); return r ? { l: r.left, r: r.right, y: r.top + r.height / 2 } : null; };
                 const fixed = [...document.querySelectorAll("[data-float-fixed]")];
-                const fixedHit = fixed.length === 2 && fixed.every((el) => { const b = box(el); return el.contains(document.elementFromPoint(b.r - 2, b.y)); });
+                const fixedHit = fixed.length === 1 && fixed.every((el) => { const b = box(el); return el.contains(document.elementFromPoint(b.r - 2, b.y)); });
                 const tabs = [...document.querySelectorAll("[data-float-tab], [data-float-tabs-more]")].map(box);
                 const floor = box(document.querySelector("[data-pet-ledge]"));
                 const usage = box(document.querySelector("[data-float-usage]"));
@@ -55910,7 +55908,7 @@ const floatLedgeTabs = {
             })()`);
             await h.shot(`cdp-shots/float-ledge-tabs-${width}.png`);
             rec(
-                `${i + 2}. at ${width}px the fixed tabs keep their room and every tab ends before the floor and the usage`,
+                `${i + 2}. at ${width}px the Translate tab keeps its room and every tab ends before the floor and the usage`,
                 probe.fixedHit &&
                     probe.tabsLeft >= probe.transRight &&
                     probe.more != null &&
@@ -55920,6 +55918,60 @@ const floatLedgeTabs = {
                 JSON.stringify(probe)
             );
         }
+
+        // 4. pinning, at the narrowest width: a right-click on the second tab pins it; it moves first with a pin mark
+        const ledgeTabs = () =>
+            h.ev(`[...document.querySelectorAll("[data-float-tab]")].map((el) => ({ id: el.dataset.floatTab, pinned: el.hasAttribute("data-float-tab-pinned"), on: el.getAttribute("aria-pressed") === "true" }))`);
+        const tabMenu = (id) =>
+            h.ev(`(() => {
+                const el = document.querySelector('[data-float-tab="${id}"]');
+                if (!el) return false;
+                const r = el.getBoundingClientRect();
+                el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 2 }));
+                return true;
+            })()`);
+        const before4 = await ledgeTabs();
+        const pinId = before4[1]?.id;
+        await tabMenu(pinId);
+        const pinItem = await wait(`!!document.querySelector('[data-menu-item="Pin tab"]')`, 3000);
+        await ttMouse(h, '[data-menu-item="Pin tab"]');
+        await wait(`document.querySelector("[data-float-tab]")?.dataset.floatTab === ${JSON.stringify(pinId)}`, 3000);
+        const after4 = await ledgeTabs();
+        const mark4 = await h.ev(`!!document.querySelector('[data-float-tab="${pinId}"] [data-float-tab-pin]')`);
+        const stored4 = await h.ev(`localStorage.getItem("float.tabpins")`);
+        await h.shot("cdp-shots/float-ledge-tabs-pinned.png");
+        rec(
+            "4. Pin tab moves the tab first with a pin mark, and the pin is stored",
+            pinItem && after4[0]?.id === pinId && after4[0]?.pinned && mark4 && stored4 === JSON.stringify([pinId]),
+            JSON.stringify({ pinItem, pinId, before4, after4, mark4, stored4 })
+        );
+
+        // 5. picking a tab from "+N" shows that terminal, and the pinned tab keeps its place
+        await ttMouse(h, "[data-float-tabs-more]");
+        const restUp = await wait(`!!document.querySelector("[data-menu-item]")`, 3000);
+        const restPick = await h.ev(`document.querySelector("[data-menu-item]")?.dataset.menuItem ?? null`);
+        await ttMouse(h, "[data-menu-item]");
+        await h.ev("new Promise((r) => setTimeout(r, 600))");
+        const after5 = await ledgeTabs();
+        await h.shot("cdp-shots/float-ledge-tabs-pinned-more.png");
+        rec(
+            "5. a tab picked from +N shows, pressed, while the pinned tab stays first",
+            restUp && after5[0]?.id === pinId && after5[0]?.pinned && after5.some((t) => t.on && t.id !== pinId),
+            JSON.stringify({ restUp, restPick, after5 })
+        );
+
+        // 6. Unpin tab takes the pin away
+        await tabMenu(pinId);
+        await wait(`!!document.querySelector('[data-menu-item="Unpin tab"]')`, 3000);
+        await ttMouse(h, '[data-menu-item="Unpin tab"]');
+        await wait(`!document.querySelector("[data-float-tab-pinned]")`, 3000);
+        const after6 = await ledgeTabs();
+        const stored6 = await h.ev(`localStorage.getItem("float.tabpins")`);
+        rec(
+            "6. Unpin tab leaves no pinned tab and stores none",
+            after6.every((t) => !t.pinned) && stored6 === "[]",
+            JSON.stringify({ after6, stored6 })
+        );
         return steps;
     },
     async teardown(h, ctx) {
@@ -55930,6 +55982,15 @@ const floatLedgeTabs = {
                 console.error(`float-ledge-tabs teardown: ${what} failed: ${e?.message ?? e}`);
             }
         };
+        if (ctx.prevPins !== undefined) {
+            await step("put the pins back", () =>
+                h.ev(
+                    ctx.prevPins == null
+                        ? `localStorage.removeItem("float.tabpins")`
+                        : `localStorage.setItem("float.tabpins", ${JSON.stringify(ctx.prevPins)})`
+                )
+            );
+        }
         await step("restore the viewport", () => h.cdp("Emulation.clearDeviceMetricsOverride", {}));
         await step("leave float", () => h.ev(`document.querySelector("[data-float-exit]")?.click()`));
         await step("settle", () => h.ev("new Promise((r) => setTimeout(r, 1200))"));
@@ -70687,6 +70748,7 @@ export const SCENARIOS = [
     chatScrollKeep,
     chatAsleepAttachJump,
     chatFork,
+    chatQuote,
     chatInitiative,
     ...chatRedesignScenarios(CR_KIT),
     ...chatInitiativeBandScenarios(CR_KIT),
@@ -70707,7 +70769,7 @@ export const SCENARIOS = [
     jarvisHide,
     jobqueueMeasured,
     floatMini,
-    floatNote,
+    floatTranslate,
     floatLedgeTabs,
     jarvisModes,
     settingsStorage,

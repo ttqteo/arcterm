@@ -252,6 +252,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `Mod`+`Shift`+`K` | Switch a Claude agent between Chat and its terminal (the header's Chat and Terminal control, or a split cell's own switch), from inside the terminal too. From a canvas, review or brainstorm in the terminal's place it shows Chat. Acts on the agent in focus; an agent that is not Claude, or is asleep, leaves the key to the terminal. Chat or Terminal is remembered per agent |
 | `Tab` | While you read a Claude agent's Chat with the focus out of the box (after a scroll, or a click in the conversation or on a pill), put the focus back in its chat box so you type on. Not from a field or the terminal, where Tab is theirs |
 | `Mod`+`End` | While you read a Claude agent's Chat scrolled up, jump to the latest message (the round ↓ above the box), awake or asleep, from the chat box too, where the caret also goes to the end of the text. At the end already, or with no Chat on screen, the key passes |
+| `Tab` / `Shift`+`Tab` | In the chat box while suggested replies show under it: pick the next (or previous) one, wrapping round. With one picked, `Enter` takes it as a click does (over text you typed it asks first) and `Esc` lets go of it; typing lets go too. In bash mode `Tab` completes instead, and an open `/` or `@` list takes it first |
 | `Ctrl`+`Enter` (`⌘`+`Enter` on a Mac) | In an empty chat box while a message shows Queued: Send now (Claude Code's send-now chord). With text in the box it sends that text, as Enter does |
 | `Esc` | In Chat while Claude works, in the chat box or out of it: stop the turn, as `Esc` in Claude Code does. The messages that show Queued, or else the message Claude has not answered yet, come back into the box ahead of what you typed. A second `Esc` while the turn stops is swallowed. When Claude is not working, the box lets go of the keys, and out of the box `Esc` goes back as below |
 | `↑` | In an empty chat box while messages show Queued: take them back into the box, as `↑` in Claude Code's own box does; the turn runs on. Otherwise it recalls the messages you sent |
@@ -259,7 +260,6 @@ A link inside an item view does a full open, even with `Mod` held.
 | `f` | Toggle terminal fullscreen |
 | `Mod`+`Shift`+`Enter` (or `F11`) | Toggle terminal fullscreen from inside the terminal too. A Mac keyboard has no `F11` of its own, so `Cmd`+`Shift`+`Enter` is the one to use there |
 | `Shift`+`F` | Toggle float: the window shrinks to the focused terminal, and its pin keeps it on top of other apps |
-| `Mod`+`Shift`+`N` | Float the note, from anywhere, even from inside a terminal: the window shrinks to a float showing the Note tab, the one markdown scratch note that saves itself (`Esc` or the same key goes back to the terminal). The float's strip holds the Note and Translate tabs at its left; the Translate tab opens the Translate panel over the terminal, and opening one of the two closes the other |
 | `r` | Review: open the focused lead's Spec review or Plan review dialog, or show the focused agent's Doc review in place of its terminal |
 | `Esc` | Back to where you jumped from, else to Cockpit (not while a Claude agent showing Chat works: then it stops the turn, above); exits fullscreen first; from Conversation History, the Canvas gallery grid, Councils or a session transcript, back to the terminal |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |
@@ -358,7 +358,8 @@ picker instead of moving through the list. `Shift`+`Esc` goes back to the list.
 |---|---|
 | `Ctrl`+`Tab` | The tab switcher (see Global); the tab it opens follows the rule above. Works from inside a terminal, and pressed there, typing follows to the new agent's terminal |
 | `Alt`+`1`…`9` | The nth row of the project tree, agents and terminals, top to bottom as the tree shows them. Hold `Alt` a moment and each row shows its number. Works from inside a terminal, where typing follows as with `Ctrl`+`Tab` |
-| `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous agent or terminal, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
+| `j` / `k` | Next / previous agent or terminal, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
+| `↓` / `↑`, `→` / `←` | The same, only with keyboard focus in the Agent tree: elsewhere (Chat's conversation, its cards) the arrows stay the page's |
 | `f` / `Mod`+`Shift`+`Enter` / `F11` | Fullscreen shows only the focused cell; the grid returns when you leave it |
 
 Canvas mode, a review, a brainstorm, the subagent view, Conversation History, the Canvas gallery and an ended session's or a done

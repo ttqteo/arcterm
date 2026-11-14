@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/council"
 	"github.com/wavetermdev/waveterm/pkg/council/bench"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
@@ -29,8 +30,39 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
-// councilRunner runs every council in wavesrv, through the real claude caller. A test replaces it with a fake caller.
-var councilRunner = newCouncilRunner(council.ConsultCaller{})
+// councilRunner runs every council in wavesrv, through the real claude caller. A test replaces it with a fake caller,
+// with no Outside: a test council never reads a real transcript.
+var councilRunner = withOutside(newCouncilRunner(council.ConsultCaller{}))
+
+// withOutside lets r read what the person did outside a council after its report (council.Runner.Outside).
+func withOutside(r *council.Runner) *council.Runner {
+	r.Outside = councilOutsideTurns
+	return r
+}
+
+// councilOutsideTurns are the prompts and closing answers of the claude session that started council c (its SessionId,
+// `wsh council start` run in that agent) after since, oldest first, at most the transcript's last 20. A council started
+// from the app, or by a session whose transcript is gone, has none.
+func councilOutsideTurns(c *council.Council, since int64) []council.OutsideTurn {
+	if c == nil || c.SessionId == "" {
+		return nil
+	}
+	path := agentsessions.TranscriptForSession(agentsessions.SessionRoot("claude"), "claude", c.Project, c.SessionId)
+	if path == "" {
+		return nil
+	}
+	msgs, _, err := agentsessions.ClaudeTailMessages(path, 20)
+	if err != nil {
+		return nil
+	}
+	var out []council.OutsideTurn
+	for _, m := range msgs {
+		if m.Ts > since && strings.TrimSpace(m.Text) != "" {
+			out = append(out, council.OutsideTurn{Role: m.Role, Text: m.Text, Ts: m.Ts})
+		}
+	}
+	return out
+}
 
 func newCouncilRunner(caller council.Caller) *council.Runner {
 	// Trees: the verify commands run in a detached tree of the council's snapshot, which only pkg/orchestrate can make

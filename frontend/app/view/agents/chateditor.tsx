@@ -119,7 +119,8 @@ export interface ChatEditorProps {
     /** the editor lost the focus: `relatedTarget` is where it went (null for a click on something that takes none, or the
      *  window losing the focus) */
     onBlur?(e: FocusEvent): void;
-    placeholder: string;
+    /** the empty box's line: text, or text with keycaps in it */
+    placeholder: React.ReactNode;
     readOnly?: boolean;
     /** the type (size, colour) of the box, inherited by its text and its placeholder */
     className?: string;
@@ -724,7 +725,9 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                                 // underlines off there instead (main.rs no_spelling_underlines)
                                 spellCheck={isMacOS()}
                                 onBlur={(e) => props.current.onBlur?.(e.nativeEvent)}
-                                className="block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent"
+                                // relative z-[1]: the placeholder and the ghost layer are absolute, so they would paint
+                                // over the caret (a positioned box paints above in-flow content); this keeps it on top
+                                className="relative z-[1] block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent"
                                 style={{ minHeight: p.minHeight, maxHeight: p.maxHeight }}
                             />
                         }

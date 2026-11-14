@@ -470,10 +470,10 @@ func seenIds(raw, seen []string) []string {
 // entryChanges are the entry changes of a round check's reply that can apply: an add of a known kind with text, citing
 // only message ids in seen, and a drop of an id in shown (the entries the check was shown). It keeps the first
 // memoryEntryChanges of them.
-func entryChanges(raw []rawEntryChange, seen, shown []string) []EntryChange {
+func entryChanges(raw []rawEntryChange, seen, shown []string, most int) []EntryChange {
 	var out []EntryChange
 	for _, r := range raw {
-		if len(out) == memoryEntryChanges {
+		if len(out) == most {
 			break
 		}
 		switch op := strings.ToLower(strings.TrimSpace(r.Op)); op {
@@ -509,6 +509,11 @@ type rawEntryChange struct {
 // error. A message id not in seen was never shown to the check, so it is dropped, and each id is kept once; entries is
 // the ids of the entries the check was shown, the only ones it may drop.
 func parseRoundCheck(text string, seen, entries []string) (RoundCheck, error) {
+	return parseCheckReply(text, seen, entries, memoryEntryChanges)
+}
+
+// parseCheckReply is parseRoundCheck with the most entry changes it keeps: the round check's, or the outside refresh's.
+func parseCheckReply(text string, seen, entries []string, most int) (RoundCheck, error) {
 	const what = "round check"
 	var raw struct {
 		Change    *bool            `json:"change"`
@@ -520,7 +525,7 @@ func parseRoundCheck(text string, seen, entries []string) (RoundCheck, error) {
 	if err := decodeReply(text, what, &raw); err != nil {
 		return RoundCheck{}, err
 	}
-	changes := entryChanges(raw.Entries, seen, entries)
+	changes := entryChanges(raw.Entries, seen, entries, most)
 	if raw.Change != nil && !*raw.Change {
 		return RoundCheck{Entries: changes}, nil
 	}

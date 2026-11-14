@@ -1429,6 +1429,6 @@ func init() {
 	councilRetryCmd.Flags().StringArray("model", nil, "run this retry once on another model (opus, sonnet, fable, haiku, claude-opus-4-8); the seat keeps its own. With --all, <model> for every seat or <seat>=<model> (repeatable)")
 	councilRetryCmd.Flags().Bool("all", false, "retry every failed seat but the coordinator at once, in one run")
 	councilBenchCmd.AddCommand(councilBenchResultsCmd, councilBenchStopCmd)
-	councilCmd.AddCommand(councilEstimateCmd, councilStartCmd, councilListCmd, councilShowCmd, councilWaitCmd, councilStopCmd, councilRetryCmd, councilPinCmd, councilRmCmd, councilBenchCmd)
+	councilCmd.AddCommand(councilEstimateCmd, councilStartCmd, councilListCmd, councilShowCmd, councilMemoryCmd, councilWaitCmd, councilStopCmd, councilRetryCmd, councilPinCmd, councilRmCmd, councilBenchCmd)
 	rootCmd.AddCommand(councilCmd)
 }

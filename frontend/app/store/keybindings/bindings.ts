@@ -77,7 +77,6 @@ import { focusedDocReview, openReview, stepDocReviewTab } from "@/app/view/agent
 import { doneSuggestion } from "@/app/view/agents/donesuggest";
 import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
 import { listOrder, stepInList, treeModeAtom } from "@/app/view/agents/filetree";
-import { toggleFloatNote } from "@/app/view/agents/floatnotestore";
 import { minimizeRequested, toggleFloat } from "@/app/view/agents/floatstore";
 import {
     clearHistoryFilters,
@@ -567,17 +566,6 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             label: "New council",
             when: (ctx) => !ctx.modalOpen,
             run: () => openNewCouncil(model),
-        },
-        {
-            // The Float ledge's Note tab: from outside Float or from a terminal it floats straight onto the note, from the
-            // note it goes back to the terminal (floatnotestore.ts). A chord, so it works from a focused terminal, and
-            // never a bare key, which would type into the note.
-            id: "float-note",
-            keys: "Mod:Shift:n",
-            group: "Global",
-            label: "Float the note",
-            when: (ctx) => !ctx.modalOpen,
-            run: () => void toggleFloatNote(model),
         },
         {
             // The rail's Translate panel (translatestore.ts): opens it with the caret in the box, closes it again. A chord,
@@ -1217,6 +1205,11 @@ const centerAtRest = () => globalStore.get(centerModeAtom) === "terminal";
 const initiativePopoverClosed = () => globalStore.get(initiativePopoverAtom) == null;
 const agentNav = (ctx: KeyContext) =>
     navigate(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
+// The arrows step agents only with focus in the Agent tree: elsewhere on the surface (Chat's conversation, a card in
+// it) they are the page's own, to scroll or to move in what holds focus, and stepping agents there switched away
+// from the conversation being read. j, k and Ctrl+Tab still step agents anywhere off a text field.
+const inAgentTree = () =>
+    typeof document !== "undefined" && document.activeElement?.closest?.("[data-agent-tree]") != null;
 const agentNavStrict = (ctx: KeyContext) =>
     navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
 // The Canvas gallery covers the terminal as History does, with keys of its own: the arrows, Enter and `/` on its grid,
@@ -1695,7 +1688,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             group: "Agent",
             label: "Previous agent",
             // on a canvas left and right are the board's (onCanvas); up, down, j and k still move between agents
-            when: (ctx) => agentNav(ctx) && !onCanvas(ctx),
+            when: (ctx) => agentNav(ctx) && !onCanvas(ctx) && inAgentTree(),
             run: () => step(-1),
         },
         {
@@ -1703,7 +1696,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowRight",
             group: "Agent",
             label: "Next agent",
-            when: (ctx) => agentNav(ctx) && !onCanvas(ctx),
+            when: (ctx) => agentNav(ctx) && !onCanvas(ctx) && inAgentTree(),
             run: () => step(1),
         },
         // the tree lists agents top to bottom, so up and down move through it; left and right are the older keys
@@ -1712,7 +1705,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowUp",
             group: "Agent",
             label: "Previous agent",
-            when: agentNav,
+            when: (ctx) => agentNav(ctx) && inAgentTree(),
             run: () => step(-1),
         },
         {
@@ -1720,7 +1713,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowDown",
             group: "Agent",
             label: "Next agent",
-            when: agentNav,
+            when: (ctx) => agentNav(ctx) && inAgentTree(),
             run: () => step(1),
         },
         // in the brainstorm check's review j and k move between its decisions; the arrows and Ctrl+Tab still move agents

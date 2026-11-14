@@ -7,12 +7,11 @@
 // switch, and the text must outlive both (it does not outlive the launch; the pair and the history do, in
 // localStorage). The pure parts are
 // translatemodel.ts; the engine is translateengine.ts. Float shows the same panel on its own, and the lines at the end
-// keep the two variants and the Note tab from showing together.
+// keep the two variants from showing together.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { invoke } from "@tauri-apps/api/core";
 import { atom, type PrimitiveAtom } from "jotai";
-import { closeFloatNote, floatNoteOpenAtom } from "./floatnotestore";
 import { floatModeAtom } from "./floatstore";
 import { translate } from "./translateengine";
 import {
@@ -329,16 +328,5 @@ export function toggleTranslate(): void {
 
 // One open flag serves the rail's panel (drawn only outside Float, cockpitshell.tsx) and Float's (drawn only in it,
 // cockpit-root.tsx), so a flag left set across a switch would bring the other variant up over the new view: entering or
-// leaving Float closes the panel. In Float the panel and the Note tab's body cover the same terminal area, so opening
-// either one closes the other.
+// leaving Float closes the panel.
 globalStore.sub(floatModeAtom, closeTranslate);
-globalStore.sub(translateOpenAtom, () => {
-    if (globalStore.get(translateOpenAtom) && globalStore.get(floatNoteOpenAtom)) {
-        closeFloatNote();
-    }
-});
-globalStore.sub(floatNoteOpenAtom, () => {
-    if (globalStore.get(floatNoteOpenAtom)) {
-        closeTranslate();
-    }
-});

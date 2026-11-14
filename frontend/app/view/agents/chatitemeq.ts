@@ -144,7 +144,12 @@ export function sameChatItem(a: ChatItem, b: ChatItem): boolean {
         }
         case "sent": {
             const other = b as typeof a;
-            return a.from === other.from && a.header === other.header && sameStrings(a.lines, other.lines);
+            return (
+                a.from === other.from &&
+                a.header === other.header &&
+                a.tabId === other.tabId &&
+                sameStrings(a.lines, other.lines)
+            );
         }
         case "agent": {
             const other = b as typeof a;

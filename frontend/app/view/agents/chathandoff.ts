@@ -46,6 +46,15 @@ export function isHandoffAsk(questions: readonly { header?: string }[] | undefin
     return questions?.length === 1 && questions[0].header?.trim().toLowerCase() === HANDOFF_HEADER.toLowerCase();
 }
 
+/** Pure: whether words typed in the message box answer the agent's live ask, sent as its typed answer, instead of
+ *  waiting behind it as any other question's do (sendHold). The handoff card has no field of its own and points at the
+ *  box ("Or type below to answer in your own words"); a held ask is answered on its card, so it never is. */
+export function boxAnswersAsk(
+    ask: { hold?: boolean; questions?: readonly { header?: string }[] } | undefined
+): boolean {
+    return ask != null && !ask.hold && isHandoffAsk(ask.questions);
+}
+
 export type HandoffRow = {
     letter: "A" | "B" | "C" | "D";
     label: HandoffChoice;

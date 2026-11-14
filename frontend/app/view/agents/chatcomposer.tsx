@@ -42,7 +42,6 @@ import {
     ArrowUp,
     ArrowUpFromLine,
     Check,
-    CornerDownLeft,
     Diamond,
     FileDiff,
     GitCommitHorizontal,
@@ -58,14 +57,16 @@ import type { AgentsViewModel } from "./agents";
 import { sleepingLine, wakeAgent, wakeErrorToast } from "./agentsleep";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
+import { answerAgentAsk } from "./askanswer";
 import { AttachmentTray } from "./attachmenttray";
 import { useBashComplete } from "./bashcomplete";
 import { bashGhost } from "./chatbash";
 import { noteBashRun, useBashHistory } from "./chatbashstore";
 import { ChatBgLine } from "./chatbgline";
-import { boxState, type BoxState } from "./chatboxstate";
+import { boxState, boxTabPlaceholder, type BoxState, type HintPart } from "./chatboxstate";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold, usePartMotion } from "./chatfooter";
+import { boxAnswersAsk } from "./chathandoff";
 import {
     dropSwitchLine,
     holdSwitchLine,
@@ -100,8 +101,12 @@ import {
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
 import {
+    drawnChips,
+    pickedChip,
+    pickedHint,
     rowHold,
     runningActions,
+    stepPick,
     type ChatChip,
     type ChipKind,
     type ChipRowKind,
@@ -488,7 +493,11 @@ function ComposerBox({
     // once the prompt is answered.
     const permissionOref = agent.blockId != null ? `block:${agent.blockId}` : undefined;
     const permission = usePermission(permissionOref);
-    const hold = asleep ? null : sendHold(permission.length > 0, agent.ask != null && !agent.ask.hold);
+    // The plan handoff is the exception: its card points at the box, so what is typed is sent as the ask's typed answer
+    // (the answer path the card's rows use, which locks the ask) instead of waiting behind it. Files riding the message
+    // can't go in an ask's answer, so with any attached it waits as before.
+    const answersAsk = !asleep && boxAnswersAsk(agent.ask) && att.attachments.length === 0;
+    const hold = asleep ? null : sendHold(permission.length > 0, agent.ask != null && !agent.ask.hold && !answersAsk);
     const held = useHeldSend(agent.id);
     const ready = canSend && blocker == null;
     const sendable = ready && hold == null;
@@ -513,6 +522,18 @@ function ComposerBox({
         }
         if (hold != null && ready) {
             setHeldSend(agent.id, true);
+            return;
+        }
+        if (answersAsk && ready) {
+            const words = text.trim();
+            // nothing typed, or the ask was already answered (a row clicked meanwhile): nothing goes
+            if (words === "" || !answerAgentAsk(model, agent.id, {}, { 0: words })) {
+                return;
+            }
+            onSent?.(words);
+            recalled.current = { at: null, shown: "" };
+            noteSent(agent.id, words);
+            setTextAt("");
             return;
         }
         if (wakeOnly && att.attachments.length === 0) {
@@ -851,6 +872,20 @@ function ComposerBox({
         diff: acts.diff,
         terminal: acts.terminal,
     });
+    // Tab walks the suggested replies on screen (chatsuggest.ts stepPick), Shift+Tab back. The picked chip is kept by its
+    // text, so a row that changes under it lets it go; typing lets it go too. Enter takes it as a click does.
+    const tabChips = row.kind === "suggest" ? drawnChips(row.chips, onMarkDone != null) : NO_CHIPS;
+    const [pickedText, setPicked] = useState<string | null>(null);
+    const picked = pickedChip(tabChips, pickedText);
+    const activateChip = (c: ChatChip) => {
+        if (c.kind === "done" && c.chunk != null && onMarkDone != null) {
+            onMarkDone(c.chunk);
+        } else if (c.kind === "next" && c.chunk != null && onGoOn != null) {
+            onGoOn(c.chunk, c.text);
+        } else {
+            sendSuggested(c.text);
+        }
+    };
     // Send is a word asleep and while the wake is in flight. The word stays what it last was while it fades out, so a
     // finished wake does not swap "Waking…" for "Send" under the eye.
     const showWord = asleep || waking;
@@ -872,6 +907,14 @@ function ComposerBox({
     useLayoutEffect(() => {
         onBoxState?.(state);
     }, [state]);
+    // the empty box's line: what Enter does with a picked chip; while chips show, the idle line names Tab (a waiting
+    // question keeps its own words); else the pane's line
+    const hint: HintPart[] | string =
+        picked != null
+            ? pickedHint(picked)
+            : tabChips.length > 0 && state === "idle" && !questionWaits
+              ? boxTabPlaceholder(agent.name)
+              : placeholder;
     // The box's height springs to its content's measured height, so a state that adds or drops a line (the action chips,
     // the drop zone, a wrapping text) opens and closes the box instead of snapping it. The content sits at the bottom of
     // the box (justify-end), so Send and the row stay put while the top edge moves; the box clips only while it moves, so
@@ -979,7 +1022,7 @@ function ComposerBox({
                         readOnly={waking || dozing}
                         minHeight={bash ? ChatBashMinH : ChatMinH}
                         maxHeight={ChatMaxH}
-                        placeholder={placeholder}
+                        placeholder={typeof hint === "string" ? hint : <HintLine parts={hint} />}
                         bash={bash}
                         ghost={ghost}
                         // a shell command line is mono (DESIGN.md)
@@ -993,6 +1036,8 @@ function ComposerBox({
                             if (t !== told.current) {
                                 told.current = t;
                                 setText(t);
+                                // typing lets go of a chip Tab picked: Enter is for the text again
+                                setPicked(null);
                             }
                             setSaidCaret((cur) => (cur.text === t && cur.caret === caret ? cur : { text: t, caret }));
                             const box = editorRef.current;
@@ -1061,6 +1106,32 @@ function ComposerBox({
                             ) {
                                 e.preventDefault();
                                 return;
+                            }
+                            // Tab and Shift+Tab walk the suggested replies; with one picked, Enter takes it as a click
+                            // does (asking first over typed text) and Esc lets go of it
+                            if (
+                                tabChips.length > 0 &&
+                                !e.altKey &&
+                                !e.ctrlKey &&
+                                !e.metaKey &&
+                                !e.nativeEvent.isComposing
+                            ) {
+                                if (e.key === "Tab") {
+                                    e.preventDefault();
+                                    setPicked(stepPick(tabChips, pickedText, e.shiftKey));
+                                    return;
+                                }
+                                if (picked != null && e.key === "Enter" && !e.shiftKey) {
+                                    e.preventDefault();
+                                    setPicked(null);
+                                    activateChip(picked);
+                                    return;
+                                }
+                                if (picked != null && e.key === "Escape") {
+                                    e.preventDefault();
+                                    setPicked(null);
+                                    return;
+                                }
                             }
                             // Ctrl+U (Cmd+U on a Mac, where Ctrl+U is the text field's own delete-to-line-start) is Add files; an
                             // open `/` or `@` list leaves it alone. Asleep it attaches too, though the + menu is not drawn.
@@ -1149,10 +1220,13 @@ function ComposerBox({
                     ) : row.kind === "suggest" ? (
                         <SuggestChips
                             key="suggest"
-                            chips={row.chips}
-                            onSend={sendSuggested}
-                            onMarkDone={onMarkDone}
-                            onGoOn={onGoOn}
+                            chips={tabChips}
+                            picked={picked?.text ?? null}
+                            onActivate={(c) => {
+                                setPicked(null);
+                                activateChip(c);
+                            }}
+                            canGoOn={onGoOn != null}
                         />
                     ) : null}
                 </AnimatePresence>
@@ -1347,27 +1421,45 @@ function ActionChips({ onShowDiff, onOpenTerminal }: { onShowDiff?: () => void; 
     );
 }
 
-const SUGGEST_ICONS: Record<ChipKind, LucideIcon> = {
+// a reply chip has no icon: the only mark on one is the Enter key on the chip Tab picked (an arrow on every reply read
+// as Enter); the chips that do something other than send keep theirs
+const SUGGEST_ICONS: Partial<Record<ChipKind, LucideIcon>> = {
     commit: GitCommitHorizontal,
     push: ArrowUpFromLine,
-    reply: CornerDownLeft,
     done: Check,
     next: ArrowRight,
 };
 
-// The finished turn's suggested replies (chatsuggest.ts), a click sends one as typed; a chunk's done chip ticks it on
-// the initiative instead, as the band's Mark done does, and a go on with: chip moves the agent to its chunk first, then
-// sends its text (onGoOn). A chip the model adds a few seconds after the rules' fades in beside them.
+// A key named in the empty box's line (chatboxstate.ts HintPart), drawn as a keycap.
+function HintKey({ k }: { k: string }) {
+    return (
+        <kbd className="mx-0.5 inline-flex h-[18px] items-center rounded-[6px] border border-edge-strong bg-surface px-1.5 align-[1px] font-mono text-[11px] text-ink-hi">
+            {k}
+        </kbd>
+    );
+}
+
+function HintLine({ parts }: { parts: HintPart[] }) {
+    return (
+        <>{parts.map((p, i) => (typeof p === "string" ? <span key={i}>{p}</span> : <HintKey key={i} k={p.key} />))}</>
+    );
+}
+
+// The finished turn's suggested replies (chatsuggest.ts drawnChips: the ones the row can act on), a click or Enter on the
+// chip Tab picked takes one (onActivate): a reply is sent as typed, a chunk's done chip ticks it on the initiative, as the
+// band's Mark done does, and a go on with: chip moves the agent to its chunk first, then sends its text. A chip the model
+// adds a few seconds after the rules' fades in beside them.
 function SuggestChips({
     chips,
-    onSend,
-    onMarkDone,
-    onGoOn,
+    picked,
+    onActivate,
+    canGoOn,
 }: {
     chips: ChatChip[];
-    onSend: (text: string) => void;
-    onMarkDone?: (chunk: string) => void;
-    onGoOn?: (chunk: string, text: string) => void;
+    /** the text of the chip Tab picked, or null */
+    picked: string | null;
+    onActivate: (c: ChatChip) => void;
+    canGoOn: boolean;
 }) {
     const part = usePartMotion(microFade);
     return (
@@ -1375,15 +1467,13 @@ function SuggestChips({
             <AnimatePresence initial={false}>
                 {chips.map((c) => {
                     const ticks = c.kind === "done" && c.chunk != null;
-                    if (ticks && onMarkDone == null) {
-                        return null;
-                    }
-                    const goes = c.kind === "next" && c.chunk != null && onGoOn != null;
+                    const goes = c.kind === "next" && c.chunk != null && canGoOn;
                     return (
                         <motion.div key={c.text} {...part} className="min-w-0">
                             <Chip
                                 icon={SUGGEST_ICONS[c.kind]}
                                 label={c.text}
+                                picked={c.text === picked}
                                 title={
                                     ticks
                                         ? `Mark “${c.chunk}” done and move on to the next chunk`
@@ -1391,9 +1481,7 @@ function SuggestChips({
                                           ? `Move this agent to “${c.chunk}” and send “${c.text}”`
                                           : `Send “${c.text}”`
                                 }
-                                onClick={() =>
-                                    ticks ? onMarkDone!(c.chunk!) : goes ? onGoOn!(c.chunk!, c.text) : onSend(c.text)
-                                }
+                                onClick={() => onActivate(c)}
                                 data={{ "data-chat-suggest-chip": c.source, "data-chat-suggest-kind": c.kind }}
                             />
                         </motion.div>
@@ -1408,12 +1496,15 @@ function Chip({
     icon: Icon,
     label,
     title,
+    picked = false,
     onClick,
     data,
 }: {
-    icon: LucideIcon;
+    icon?: LucideIcon;
     label: string;
     title?: string;
+    /** Tab picked it: lit, with the Enter key that takes it */
+    picked?: boolean;
     onClick: () => void;
     data: Record<`data-${string}`, string>;
 }) {
@@ -1421,12 +1512,26 @@ function Chip({
         <button
             type="button"
             {...data}
+            data-chat-suggest-picked={picked ? "" : undefined}
             title={title}
             onClick={onClick}
-            className="flex h-[28px] max-w-[340px] cursor-pointer items-center gap-1.5 rounded-full border border-edge-mid bg-surface px-[11px] text-[12.5px] text-secondary transition-colors hover:border-edge-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+            className={cn(
+                "flex h-[28px] max-w-[340px] cursor-pointer items-center gap-1.5 rounded-full border pl-[11px] text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none",
+                picked
+                    ? "border-accent bg-accentbg pr-[5px] text-primary ring-2 ring-accent/35"
+                    : "border-edge-mid bg-surface pr-[11px] text-secondary hover:border-edge-strong hover:text-primary"
+            )}
         >
-            <Icon size={13} strokeWidth={1.8} aria-hidden className="flex-none" />
+            {Icon != null ? <Icon size={13} strokeWidth={1.8} aria-hidden className="flex-none" /> : null}
             <span className="min-w-0 truncate">{label}</span>
+            {picked ? (
+                <kbd
+                    aria-label="Enter"
+                    className="inline-flex h-[18px] min-w-[18px] flex-none items-center justify-center rounded-[6px] border border-accent-500 bg-accent-900 px-1 font-mono text-[11px] text-accent-50"
+                >
+                    ↵
+                </kbd>
+            ) : null}
         </button>
     );
 }

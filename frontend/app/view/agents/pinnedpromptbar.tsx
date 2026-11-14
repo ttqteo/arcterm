@@ -19,6 +19,36 @@ import { pinnedPromptIndex, pinnedPromptPush, PROMPT_JUMP_EVENT } from "./pinned
 
 const PROMPT_SELECTOR = "[data-user-prompt]";
 
+/** Set on the scroller while a pinned prompt shows: how far below the sticky line (the scroller's top padding) the
+ *  band's bottom edge sits, so another sticky row (a code block's head, codeblock.tsx) sticks under the band, not
+ *  behind it. Two bands are drawn while one leaves and the next arrives, so each reports its own and the lowest wins. */
+export const PINNED_PROMPT_HEIGHT_VAR = "--pinned-prompt-h";
+
+const bandBottoms = new WeakMap<HTMLElement, Map<object, number>>();
+
+// records (bottom) or drops (null) one band's bottom edge, and writes the lowest to the scroller only when it changes:
+// a custom property set on the scroller restyles the whole transcript, and this runs on every scroll frame
+function reportBandBottom(scroller: HTMLElement, band: object, bottom: number | null) {
+    let bands = bandBottoms.get(scroller);
+    if (bands == null) {
+        bands = new Map();
+        bandBottoms.set(scroller, bands);
+    }
+    if (bottom == null) {
+        bands.delete(band);
+    } else {
+        bands.set(band, bottom);
+    }
+    const next = bands.size === 0 ? "" : `${Math.max(0, Math.round(Math.max(...bands.values())))}px`;
+    if (scroller.style.getPropertyValue(PINNED_PROMPT_HEIGHT_VAR) !== next) {
+        if (next === "") {
+            scroller.style.removeProperty(PINNED_PROMPT_HEIGHT_VAR);
+        } else {
+            scroller.style.setProperty(PINNED_PROMPT_HEIGHT_VAR, next);
+        }
+    }
+}
+
 /** The nearest ancestor of el that scrolls vertically, or null. */
 export function scrollParent(el: HTMLElement | null): HTMLElement | null {
     for (let p = el?.parentElement; p != null; p = p.parentElement) {
@@ -173,7 +203,9 @@ function PinnedBand({
             const next = root.querySelectorAll<HTMLElement>(PROMPT_SELECTOR)[index + 1];
             const nextTop =
                 next == null ? null : next.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-            push.set(pinnedPromptPush(nextTop, band.offsetHeight));
+            const shove = pinnedPromptPush(nextTop, band.offsetHeight);
+            push.set(shove);
+            reportBandBottom(scroller, band, band.offsetHeight - pad + shove);
         };
         const schedule = () => {
             if (frame === 0) {
@@ -184,14 +216,16 @@ function PinnedBand({
         scroller.addEventListener("scroll", schedule, { passive: true });
         const ro = new ResizeObserver(schedule);
         ro.observe(root);
+        ro.observe(band);
         return () => {
             scroller.removeEventListener("scroll", schedule);
             ro.disconnect();
             if (frame !== 0) {
                 cancelAnimationFrame(frame);
             }
+            reportBandBottom(scroller, band, null);
         };
-    }, [rootRef, index, push]);
+    }, [rootRef, index, push, pad]);
     const jump = () => {
         const root = rootRef.current;
         const target = root?.querySelectorAll<HTMLElement>(PROMPT_SELECTOR)[index];
