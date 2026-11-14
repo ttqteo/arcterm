@@ -78,6 +78,7 @@ import {
     type RefObject,
 } from "react";
 import { flushSync } from "react-dom";
+import { QuoteButton, type QuoteTarget } from "./chatquotebutton";
 import type { Actions } from "./councilactions";
 import {
     DRAFT_WAIT,
@@ -3690,6 +3691,49 @@ export function CouncilChat({
         [chats, onOpenTerminal, onReopenSession]
     );
     const channel = useRef<HTMLDivElement>(null);
+    // Reply under text selected in the chat (chatquotebutton.tsx): the quote goes into the box of the thread it was
+    // selected in, else the channel's
+    const root = useRef<HTMLDivElement>(null);
+    const setQuoteDrafts = useSetAtom(councilChatDraftAtom(c.id));
+    const quoteTarget = useMemo<QuoteTarget>(() => {
+        const boxFor = (range: Range) => {
+            const node = range.commonAncestorContainer;
+            const el = node instanceof Element ? node : node.parentElement;
+            const scope = el?.closest("[data-council-thread]") != null ? "thread" : "channel";
+            return (
+                document.querySelector<HTMLTextAreaElement>(
+                    `[data-council-composer="${scope}"] [data-council-composer-input]`
+                ) ??
+                document.querySelector<HTMLTextAreaElement>(
+                    `[data-council-composer="channel"] [data-council-composer-input]`
+                )
+            );
+        };
+        return {
+            ready: (range) => {
+                const box = boxFor(range);
+                return box != null && !box.disabled;
+            },
+            read: (range) => boxFor(range)?.value ?? "",
+            write: (text, range) => {
+                const box = boxFor(range);
+                if (box == null || box.disabled) {
+                    return false;
+                }
+                if (editBox(box, text, text.length)) {
+                    return true;
+                }
+                // the browser would not make the edit: the draft takes the text, and the box shows it
+                const key = box.closest("[data-composer-for]")?.getAttribute("data-composer-for") ?? "";
+                setQuoteDrafts((d) => ({ ...d, texts: { ...d.texts, [key]: text } }));
+                requestAnimationFrame(() => {
+                    box.focus();
+                    box.setSelectionRange(text.length, text.length);
+                });
+                return true;
+            },
+        };
+    }, [setQuoteDrafts]);
     const thread = openId == null ? null : councilThread(c, openId);
     const threadOpen = thread != null;
     const sourcesOpen = !threadOpen && sources != null;
@@ -3915,7 +3959,8 @@ export function CouncilChat({
         });
     return (
         <SeatLinks.Provider value={seatLinks}>
-            <div className="flex min-h-0 flex-1">
+            <div ref={root} className="flex min-h-0 flex-1">
+                <QuoteButton rootRef={root} target={quoteTarget} />
                 <div data-council-main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                     {!railShown && !sourcesOpen && (
                         <button

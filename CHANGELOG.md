@@ -34,6 +34,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   conversation (Ctrl-click peeks it).
 - **Pin tabs in Float**: right-click a tab on the strip under a float's terminal and pick **Pin tab**. Pinned tabs
   come first and never fold into "+N"; **Unpin tab** lets one go.
+- In a council's Discussion, select text in a message and click Reply: it goes into the message box as a quote (the
+  thread's reply box when you selected it in a thread), as in Chat.
 - A council's Discussion takes `Tab` as Chat does: with the focus out of the box (after a scroll or a click on an
   idea), `Tab` puts it back in the message box, or in the open thread's reply box.
 - In Chat, `Tab` walks the suggested replies under the box (`Shift`+`Tab` back) and `Enter` sends the one it picked,

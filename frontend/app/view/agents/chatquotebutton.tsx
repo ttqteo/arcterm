@@ -4,11 +4,12 @@
 // The Reply button that floats under text selected in Chat's conversation (chatquote.ts): a click puts the passage in
 // the agent's chat box as a quote, the caret under it. It shows for any text in the conversation, Claude's reply, your
 // message or a tool's output alike, and only while the agent has a chat box to take it. It is drawn fixed in a portal,
-// so no row's layout or transform moves it, and follows the selection as the conversation scrolls.
+// so no row's layout or transform moves it, and follows the selection as the conversation scrolls. QuoteButton is the
+// same button over any box (a council's chat, councilchat.tsx): the box is named by `target`, given the selection.
 
 import { cn } from "@/util/util";
 import { Reply } from "lucide-react";
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useMemo, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { chatBoxText, hasChatBox, replaceChatBox } from "./chatinsert";
 import { withQuote } from "./chatquote";
@@ -33,17 +34,41 @@ function editable(node: Node | null): boolean {
 }
 
 export function ChatQuoteButton({ agentId, rootRef }: { agentId: string; rootRef: RefObject<HTMLElement> }) {
+    const target = useMemo<QuoteTarget>(
+        () => ({
+            ready: () => hasChatBox(agentId),
+            read: () => chatBoxText(agentId),
+            write: (text) => replaceChatBox(agentId, text),
+        }),
+        [agentId]
+    );
+    return <QuoteButton rootRef={rootRef} target={target} />;
+}
+
+/** The box a quote goes into, given the selected range (a council has two boxes: the thread's and the channel's).
+ *  `ready` false hides the button; `write` false keeps the selection, as nothing took the quote. */
+export interface QuoteTarget {
+    ready: (range: Range) => boolean;
+    read: (range: Range) => string;
+    write: (text: string, range: Range) => boolean;
+}
+
+export function QuoteButton({ rootRef, target }: { rootRef: RefObject<HTMLElement>; target: QuoteTarget }) {
     const [at, setAt] = useState<{ top: number; left: number } | null>(null);
     useEffect(() => {
         const update = () => {
             const root = rootRef.current;
             const s = window.getSelection();
-            if (root == null || s == null || s.isCollapsed || s.rangeCount === 0 || !hasChatBox(agentId)) {
+            if (root == null || s == null || s.isCollapsed || s.rangeCount === 0) {
                 setAt(null);
                 return;
             }
             const range = s.getRangeAt(0);
-            if (!root.contains(range.commonAncestorContainer) || editable(range.commonAncestorContainer)) {
+            if (
+                !root.contains(range.commonAncestorContainer) ||
+                editable(range.commonAncestorContainer) ||
+                !target.ready(range)
+            ) {
                 setAt(null);
                 return;
             }
@@ -52,7 +77,13 @@ export function ChatQuoteButton({ agentId, rootRef }: { agentId: string; rootRef
                 return;
             }
             const r = range.getBoundingClientRect();
-            const view = scrollParent(root)?.getBoundingClientRect() ?? {
+            // the pane the passage scrolls in (a council's channel or thread, inside the root), else the root's
+            const from =
+                range.startContainer instanceof HTMLElement ? range.startContainer : range.startContainer.parentElement;
+            const view = (from != null && root.contains(from)
+                ? scrollParent(from)
+                : scrollParent(root)
+            )?.getBoundingClientRect() ?? {
                 top: 0,
                 bottom: window.innerHeight,
                 left: 0,
@@ -76,15 +107,16 @@ export function ChatQuoteButton({ agentId, rootRef }: { agentId: string; rootRef
             window.removeEventListener("scroll", update, true);
             window.removeEventListener("resize", update);
         };
-    }, [agentId, rootRef]);
+    }, [rootRef, target]);
 
     if (at == null) {
         return null;
     }
     const reply = () => {
         const s = window.getSelection();
-        const next = s != null ? withQuote(chatBoxText(agentId), s.toString()) : null;
-        if (next != null && replaceChatBox(agentId, next)) {
+        const range = s != null && s.rangeCount > 0 ? s.getRangeAt(0) : null;
+        const next = range != null ? withQuote(target.read(range), s!.toString()) : null;
+        if (range != null && next != null && target.write(next, range)) {
             s?.removeAllRanges();
         }
         setAt(null);
