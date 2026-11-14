@@ -493,12 +493,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Tray job size tooltip, on a build from 2667a3291: with a heavy job queued, open the tray and hover a
   job's GB figure → "The RAM the queue sets aside for it (the Jobs popover says whether it was measured)". Commit:
   fix(tray) a job's RAM tooltip says what the figure is
-- [ ] (arcterm) A background heavy command keeps its slot on Windows, on a build with the new `wsh`: have a Claude
-  agent run `task check:ts` with `run_in_background` → `waveapp.log`'s `[jobqueue] finished jN (task check:ts), held`
-  reads about the typecheck's own time (a minute or two), not `2s`; a second and third heavy background command
-  started beside it wait their turn. Before the fix every one let go after one 2 s poll (seen 2026-11-14), because
-  under Git Bash wsh's parent is a fork that exits with wsh (`cmd/wsh/cmd/wshcmd-jobslothold.go`). Commit:
-  fix(wsh) a background heavy command keeps its slot on Windows
 - [ ] (arcterm) A server start takes no heavy-job slot, on a build from 62dd4420e: have an agent run
   `./gradlew bootRun` or `mvn spring-boot:run` in the background (or `uvicorn app:app`) in a Java or Python project:
   the Jobs popover shows no row for it, and a `task check:ts` started beside it starts at once
