@@ -30,7 +30,7 @@ import type {
 import { councilStartAnchor, type CouncilAnchor } from "./chatcouncil";
 import { isDocReviewAsk } from "./chatdocreview";
 import { isHandoffAsk } from "./chathandoff";
-import { sentSwitch } from "./chatinitiative";
+import { sentSwitch, SWITCH_NOTE } from "./chatinitiative";
 import { runStartAnchor, type RunAnchor } from "./chatruncards";
 import {
     pairReviewer,
@@ -83,6 +83,8 @@ export type ChatItem =
           images?: string[];
           uuid?: string;
           chunk?: { n: number; label: string };
+          // the message is arcterm's SWITCH_NOTE behind a switched line: the band sent it, not you
+          switchNote?: true;
       }
     // a slash command or skill you typed, as "/name args" (check with `"command" in item`), or a bash-mode command, which
     // reads "! cmd"; `shell` is what it printed once that lands. `terminal`: a panel only Claude Code's own screen drew
@@ -283,6 +285,7 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
                         ...(item.images != null ? { images: item.images } : {}),
                         ...(uuid != null ? { uuid } : {}),
                         ...(chunk != null ? { chunk } : {}),
+                        ...(chunk != null && item.text.trim() === SWITCH_NOTE ? { switchNote: true as const } : {}),
                     });
                 }
                 break;

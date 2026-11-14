@@ -6,6 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Switch to this chunk tells a real agent at once.** The CDP scenario `chat-initiative-band` (4, 4c,
+  4d) passes against fixture agents whose sends go to a mock; no real Claude Code session took one. In a real Claude
+  agent linked to an initiative, with the message box empty, open the band and press Switch to this chunk on a free
+  chunk → the agent answers on the new chunk at once, Chat shows the `Chunk N · name` divider and `Moved to chunk N ·
+  sent by arcterm` (no bubble reading `Go on with this chunk.`); while the agent works the send waits for its turn to
+  end. With a draft in the box the framed line waits and rides with the draft. Commit: feat(chat) initiative band:
+  Switch to this chunk tells the agent at once, a how-to.
 - [ ] (arcterm) **Agent composer image cap, 3.5 MB.** Unit-tested only (`composerattachments.test.ts`); no scenario
   attaches to the agent composer. Agent → paste a 4 MB image into the message box → it is refused at once with
   `over 3.5 MB`, not lost on send; a 3 MB image sends. Commit: fix(council) the Report's summary Retry needs a sent

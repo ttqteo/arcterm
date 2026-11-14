@@ -8,7 +8,8 @@
 //   [data-band-toggle], [data-band-row="done|mine|next|other|plan"][data-chunk-label], [data-band-tag],
 //   [data-band-work-on], [data-band-all], [data-band-all-list], [data-band-note], [data-band-add-note],
 //   [data-band-open-jarvis], [data-band-error], [data-chat-switch-line], [data-chat-switch-drop], and the lean header's
-//   [data-initiative-link] chip.
+//   [data-initiative-link] chip; then [data-band-help], [data-band-hint], [data-band-hint-dismiss] (the band's how-to),
+//   [data-chat-chunk-divider] and [data-chat-switch-note] (Switch to this chunk with an empty box tells the agent at once).
 //
 // Two fixture Claude agents over real tabs and a fixture roster (the page's dev mock roster), as scenarios-chat-redesign.mjs
 // makes one: a fixture transcript long enough to scroll for the main agent, and a second agent that holds a chunk of
@@ -51,6 +52,11 @@ const C = {
 };
 const NOTE = "Drew the rows, the keys are next.";
 const MESSAGE = "carry on with the keys";
+// a half-typed message: Switch to this chunk then leaves the line waiting for it instead of telling the agent at once
+const DRAFT = "a draft of mine";
+// chatinitiative.ts SWITCH_NOTE: what the band sends on its own when the box is empty
+const SWITCH_NOTE = "Go on with this chunk.";
+const HINT_KEY = "chat.initiative.hintSeen";
 
 // --- page expressions -----------------------------------------------------------------------------------------------
 
@@ -70,7 +76,7 @@ const VK = { Enter: 13, Escape: 27, ArrowUp: 38, ArrowDown: 40 };
 export default function (kit) {
     const { waveService, polishWaitFor, polishNap, ahReload, GRID_KEY, GRID_EMPTY } = kit;
     const { makeTab, closeTabs } = AC.tabFixtures({ waveService });
-    const LS_KEYS = [GRID_KEY, "agent.chatmode", BAND_KEY, PENDING_KEY];
+    const LS_KEYS = [GRID_KEY, "agent.chatmode", BAND_KEY, PENDING_KEY, HINT_KEY];
 
     const ts = (ctx, offsetMs = 0) => ({ cwd: ctx.dir, ts: new Date(Date.now() + offsetMs).toISOString() });
     const append = (ctx, ...lines) => appendFileSync(ctx.transcriptA, lines.join("\n") + "\n");
@@ -127,6 +133,10 @@ export default function (kit) {
     // a click into the band (a row's click opens its menu, a plain press on the root does nothing) or a Tab to it: the root
     // takes the focus
     const focusBand = (h, id) => h.ev(`(() => { const b = ${bandOf(id)}; b?.focus({ preventScroll: true }); return !!b && b.contains(document.activeElement); })()`);
+
+    // the box's whole text, as the page's own replace sets it (chatinsert.ts)
+    const setBox = (h, id, text) =>
+        AC.agentPage(h, `const S = await mod("app/view/agents/chatinsert.ts"); return S.replaceChatBox(${JSON.stringify(id)}, ${JSON.stringify(text)});`);
 
     async function typeInBox(h, id, text) {
         await h.ev(`(${inputOf(id)})?.focus()`);
@@ -267,6 +277,8 @@ export default function (kit) {
                 // both are read once, when the page loads: no band is open and no line waits
                 await h.ev(`localStorage.removeItem(${JSON.stringify(BAND_KEY)})`);
                 await h.ev(`localStorage.removeItem(${JSON.stringify(PENDING_KEY)})`);
+                // the band's how-to stays out of every step's rows until 4d shows it with ?
+                await h.ev(`localStorage.setItem(${JSON.stringify(HINT_KEY)}, "1")`);
                 if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
                 // the suggested replies' model call is answered here with none: no haiku call runs
                 await h.ev(`(() => { window.__chatSuggestFake = () => []; return true; })()`);
@@ -590,7 +602,8 @@ export default function (kit) {
                 await setBand(h, A, true);
                 await polishWaitFor(h, `${bandOf(A)}?.hasAttribute("data-band-open") === true && !!${workOnBtn(C.keys)}`, SHORT_MS);
                 await polishNap(600);
-                // a. Work on this on a free chunk
+                // a. Switch to this chunk on a free chunk, with a draft in the box: the line waits for that message
+                await setBox(h, A, DRAFT);
                 const clicked = await click(h, workOnBtn(C.keys));
                 const moved = await until(async () => {
                     const st = await chunkState(h, oid);
@@ -622,6 +635,7 @@ export default function (kit) {
                 const movedThird = await until(async () => (await chunkState(h, oid))[C.free1]?.holders.includes(refA) === true);
                 const queued3 = await switchLines(h, A);
                 // e. a message: the line goes in front of it and leaves the queue; the bubble is the person's own text
+                await setBox(h, A, "");
                 await typeInBox(h, A, MESSAGE);
                 await enterInBox(h);
                 const bubble = await polishWaitFor(h, `${pendingBubbles(A)}.includes(${JSON.stringify(MESSAGE)})`, SHORT_MS);
@@ -637,12 +651,12 @@ export default function (kit) {
                 await polishNap(500);
                 await shot(h, "4-sent");
                 rec(
-                    `${name}: Work on this on "${C.keys}" makes it active with the agent and sets "${C.draw}" pending without it, the band reads it and [data-chat-switch-line] waits; its ✕ drops the line; w on the cursor's row switches again with exactly one initiative: switched line queued (a third switch replaces it, still one); a message takes the line out of chat.initiative.pending, the line goes in front of the typed text, and the bubble shows the text without it`,
+                    `${name}: with a draft in the box, Switch to this chunk on "${C.keys}" makes it active with the agent and sets "${C.draw}" pending without it, the band reads it and [data-chat-switch-line] waits; its ✕ drops the line; w on the cursor's row switches again with exactly one initiative: switched line queued (a third switch replaces it, still one); a message takes the line out of chat.initiative.pending, the line goes in front of the typed text, and the bubble shows the text without it`,
                     clicked &&
                         moved &&
                         bandOn &&
                         lineUp &&
-                        /switched to chunk 3 Wire the band keys/.test(lineText) &&
+                        /Switched to chunk 3 Wire the band keys\. The agent is told with your next message/.test(lineText) &&
                         queued1.length === 1 &&
                         queued1[0].startsWith(`initiative: switched you to chunk 3 ${C.keys}`) &&
                         dropClicked &&
@@ -704,6 +718,66 @@ export default function (kit) {
                 } finally {
                     await h.ev(`delete window.__initiativeSwitchFail`);
                 }
+            });
+
+            // 4c. an empty box: Switch to this chunk tells the agent at once
+            await run("4c. switch tells the agent at once", async (name) => {
+                const oid = await makeMain();
+                await link(oid, TITLE);
+                await setBox(h, A, "");
+                await setBand(h, A, true);
+                await polishWaitFor(h, `${bandOf(A)}?.hasAttribute("data-band-open") === true && !!${workOnBtn(C.keys)}`, SHORT_MS);
+                await polishNap(600);
+                const before = (await typedInputs(h)).length;
+                const clicked = await click(h, workOnBtn(C.keys));
+                const sent = await until(async () => (await typedInputs(h)).slice(before).some((t) => t.includes(SWITCH_NOTE)), SHORT_MS);
+                const typed = (await typedInputs(h)).slice(before).find((t) => t.includes(SWITCH_NOTE)) ?? "";
+                const lineShown = await h.ev(`!!${layerOf(A)}?.querySelector("[data-chat-switch-line]")`);
+                const queued = await pendingLines(h, A);
+                // the transcript line Claude Code writes for it: Chat draws a divider and arcterm's row, no bubble of yours
+                append(ctx, AC.userText(typed, ts(ctx, 0)), AC.assistantText("On the keys now.", ts(ctx, 500)));
+                const drawn = await polishWaitFor(
+                    h,
+                    `!!${layerOf(A)}?.querySelector('[data-chat-chunk-divider="3"]') && !!${layerOf(A)}?.querySelector('[data-chat-switch-note="3"]')`,
+                    WAIT_MS
+                );
+                const youTexts = await h.ev(youBubbles(A));
+                const noteText = await h.ev(`${FLAT}(${layerOf(A)}?.querySelector("[data-chat-switch-note]"))`);
+                await polishNap(400);
+                await shot(h, "4c-told-at-once");
+                rec(
+                    `${name}: with an empty box, Switch to this chunk on "${C.keys}" types the switched line in front of "${SWITCH_NOTE}" at once, no waiting line shows and none stays queued; once the transcript holds it, Chat draws [data-chat-chunk-divider="3"] and the "Moved to chunk 3 · sent by arcterm" row, and no bubble of yours reads "${SWITCH_NOTE}"`,
+                    clicked &&
+                        sent &&
+                        typed.indexOf(`initiative: switched you to chunk 3 ${C.keys}`) >= 0 &&
+                        typed.indexOf("initiative: switched") < typed.indexOf(SWITCH_NOTE) &&
+                        !lineShown &&
+                        queued.length === 0 &&
+                        drawn &&
+                        noteText === "Moved to chunk 3 · sent by arcterm" &&
+                        !youTexts.some((t) => t.includes(SWITCH_NOTE)),
+                    { clicked, sent, typed, lineShown, queued, drawn, noteText, youTexts }
+                );
+            });
+
+            // 4d. the band's how-to: ? shows it over the rows, Got it hides it for good
+            await run("4d. how-to", async (name) => {
+                const oid = await makeMain();
+                await link(oid, TITLE);
+                const helped = await click(h, `${bandOf(A)}?.querySelector("[data-band-help]")`);
+                const shown = await polishWaitFor(h, `${bandOf(A)}?.hasAttribute("data-band-open") === true && (${bandOf(A)}?.querySelectorAll("[data-band-hint] li").length ?? 0) === 3`, SHORT_MS);
+                const steps = await h.ev(`[...(${bandOf(A)}?.querySelectorAll("[data-band-hint] li") ?? [])].map(${FLAT})`);
+                await polishNap(400);
+                await shot(h, "4d-how-to");
+                await h.ev(`localStorage.removeItem(${JSON.stringify(HINT_KEY)})`);
+                const dismissed = await click(h, `${bandOf(A)}?.querySelector("[data-band-hint-dismiss]")`);
+                const gone = await polishWaitFor(h, `!${bandOf(A)}?.querySelector("[data-band-hint]") && !!${bandOf(A)}?.querySelector("[data-band-row]")`, SHORT_MS);
+                const kept = await h.ev(`localStorage.getItem(${JSON.stringify(HINT_KEY)})`);
+                rec(
+                    `${name}: ? on the band's line opens the band with the 3-step how-to over its rows (Mark done and Switch to this chunk named); Got it hides it, the rows stay, and ${HINT_KEY} is "1"`,
+                    helped && shown && /Mark done/.test(steps[1] ?? "") && /Switch to this chunk/.test(steps[2] ?? "") && dismissed && gone && kept === "1",
+                    { helped, shown, steps, dismissed, gone, kept }
+                );
             });
 
             // 5. no chunk for this agent

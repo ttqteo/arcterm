@@ -46,8 +46,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - In Chat, a message that moved the agent to another initiative chunk shows a "Chunk N · name" divider above it, so
   you can tell where each chunk's work begins.
+- The initiative band in Chat shows three steps on how to use it the first time you open it; Got it hides them and
+  the ? beside the band's chevron brings them back.
 
 ### Changed
+
+- In the initiative band, Work on this is now Switch to this chunk, so it no longer reads like Jarvis's Work on (which
+  opens a new agent), and it tells the agent at once when the message box is empty. With a draft in the box, the
+  switch still goes with your next message, and the line above the box says so.
 
 - In a council, Chốt (set as direction) shows a compass instead of a pin, so it no longer looks like Pin to Report
   beside it on a seat's message. A pinned chat seat's Final proposal in the saved report names the chat with its key
