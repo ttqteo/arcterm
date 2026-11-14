@@ -29155,6 +29155,15 @@ const paletteScopeIndicator = {
                 return steps;
             }
 
+            // The first Tab after an app boot can stall 60 to 240 ms before its first frame (measured on a fresh dev app, in
+            // the Final's order and alone, with the panel frosted and forced solid alike: the stall is cold first renders, not the
+            // frost), and a 360 ms front-loaded ease is already over by then. Run the same All -> Needs you -> All round trip
+            // once unsampled, so the sampled Tab below is the second render of that scope.
+            await h.ev(paletteKey("Tab"));
+            await settleIndicator(h, "needs");
+            await h.ev(paletteKey("Tab", { shiftKey: true }));
+            await settleIndicator(h, "all");
+
             const toNeeds = await sampleIndicator(h, paletteKey("Tab"), "needs");
             await settleIndicator(h, "needs");
             const one = await h.ev(`(() => {
