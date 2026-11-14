@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Agent composer image cap, 3.5 MB.** Unit-tested only (`composerattachments.test.ts`); no scenario
+  attaches to the agent composer. Agent → paste a 4 MB image into the message box → it is refused at once with
+  `over 3.5 MB`, not lost on send; a 3 MB image sends. Commit: fix(council) the Report's summary Retry needs a sent
+  idea, and the composer's image cap is 3.5 MB (run a9774e84)
 - [ ] (arcterm) **Council fixes, 11-14 second batch.** Go-tested and typechecked; no dev app ran. (1) Paste a 4 MB
   image into a council's chat → its chip reads `Image too large (over 3.5 MB)` at once (`council-discussion`,
   attach-oversize). (2) In a done Review report with Also raised, press the header's `Also raised` jump link → the
