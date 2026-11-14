@@ -45,6 +45,7 @@ import {
     Diamond,
     FileDiff,
     GitCommitHorizontal,
+    Hammer,
     Moon,
     Terminal,
     X,
@@ -103,6 +104,7 @@ import {
 import { ChatPlusMenu } from "./chatplusmenu";
 import {
     chipEditable,
+    chipIcon,
     drawnChips,
     pickedChip,
     pickedHint,
@@ -111,7 +113,7 @@ import {
     stepPick,
     suggestTake,
     type ChatChip,
-    type ChipKind,
+    type ChipIcon,
     type ChipRowKind,
     type RunningActions,
 } from "./chatsuggest";
@@ -1473,8 +1475,10 @@ function ActionChips({ onShowDiff, onOpenTerminal }: { onShowDiff?: () => void; 
 }
 
 // a reply chip has no icon: the only mark on one is the Enter key on the chip Tab picked (an arrow on every reply read
-// as Enter); the chips that do something other than send keep theirs
-const SUGGEST_ICONS: Partial<Record<ChipKind, LucideIcon>> = {
+// as Enter); the chips that do something other than send keep theirs, and a reply asking for a build has the hammer
+// (chatsuggest.ts chipIcon)
+const SUGGEST_ICONS: Record<ChipIcon, LucideIcon> = {
+    build: Hammer,
     commit: GitCommitHorizontal,
     push: ArrowUpFromLine,
     done: Check,
@@ -1522,10 +1526,11 @@ function SuggestChips({
                 {chips.map((c) => {
                     const ticks = c.kind === "done" && c.chunk != null;
                     const goes = c.kind === "next" && c.chunk != null && canGoOn;
+                    const mark = chipIcon(c);
                     return (
                         <motion.div key={c.text} {...part} className="min-w-0">
                             <Chip
-                                icon={SUGGEST_ICONS[c.kind]}
+                                icon={mark != null ? SUGGEST_ICONS[mark] : undefined}
                                 label={c.text}
                                 picked={c.text === picked}
                                 armed={c.text === armed}

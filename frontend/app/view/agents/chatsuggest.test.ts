@@ -6,6 +6,7 @@ import type { AgentEntry } from "./agentsviewmodel";
 import {
     chatChips,
     chipEditable,
+    chipIcon,
     drawnChips,
     endsWithQuestion,
     initiativeChips,
@@ -422,5 +423,22 @@ describe("suggestTake", () => {
     });
     it("another chip than the armed one arms in its place", () => {
         expect(suggestTake("đổi qua ⌘↓?", "push đi", "commit đi")).toBe("arm");
+    });
+});
+
+describe("chipIcon", () => {
+    it("marks a reply that asks for a build with the hammer, and leaves other replies plain", () => {
+        expect(chipIcon({ kind: "reply", text: "build đi" })).toBe("build");
+        expect(chipIcon({ kind: "reply", text: "Build it" })).toBe("build");
+        expect(chipIcon({ kind: "reply", text: "rebuild rồi cài" })).toBe("build");
+        expect(chipIcon({ kind: "reply", text: "builder pattern?" })).toBeNull();
+        expect(chipIcon({ kind: "reply", text: "vẽ tôi xem" })).toBeNull();
+    });
+
+    it("keeps each other kind's own icon", () => {
+        expect(chipIcon({ kind: "commit", text: "commit đi" })).toBe("commit");
+        expect(chipIcon({ kind: "push", text: "build and push" })).toBe("push");
+        expect(chipIcon({ kind: "done", text: "xong: a" })).toBe("done");
+        expect(chipIcon({ kind: "next", text: "go on with: b" })).toBe("next");
     });
 });

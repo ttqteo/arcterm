@@ -40,6 +40,20 @@ export interface ChipEffort {
     chunks?: { label: string; status: string; workrefs?: { kind: string; oref: string; ts?: number }[] }[];
 }
 
+/** What a chip is drawn with: its kind's icon, and a reply that asks for a build ("build đi", "build it") the hammer. */
+export type ChipIcon = Exclude<ChipKind, "reply"> | "build";
+
+const BUILD_REPLY = /^\s*(re)?build\b/i;
+
+/** Pure: the icon a chip is drawn with, or null for a plain reply. A build reply still sends as typed; the hammer only
+ *  marks it, as commit's and push's icons mark theirs. */
+export function chipIcon(c: Pick<ChatChip, "kind" | "text">): ChipIcon | null {
+    if (c.kind !== "reply") {
+        return c.kind;
+    }
+    return BUILD_REPLY.test(c.text) ? "build" : null;
+}
+
 /** The model's answer for one turn, as the store holds it. */
 export type ModelSuggest = { status: "loading" } | { status: "done"; replies: string[] } | { status: "failed" };
 
