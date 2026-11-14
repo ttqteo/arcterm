@@ -34,6 +34,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council's verify folder left behind when arcterm closed in the middle of a check is cleaned up the next time
   arcterm starts.
 - A council started in a folder that is not one of your projects shows in the tree, in Home's folder.
+- A Token burn card raised inside a run (a worker starting subagents, or `wsh council start`) comes to you in Needs
+  you at once, instead of sitting with the run's lead until it was refused 30 minutes later.
 
 ### Changed
 

@@ -17,6 +17,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Report's header shows. (3) Quit arcterm while a council runs, reopen → the council reads stopped and its report
   file is saved (Open report works). Commit: fix(council) Chốt draws a compass, a chat seat's key in the report,
   a stale council's report
+- [ ] (arcterm) **Token burn card inside a run.** Go-tested only; no dev app ran. In an orchestrator run (autonomous
+  too), have a worker start 3+ subagents, or run `wsh council start` → the Token burn card shows at once in Needs you
+  and in the run's question card as yours, the lead gets no wake for it, and `wsh jarvis dag answer` from the lead
+  is refused. Allow there → the spawn runs. Commit: fix(orchestrate) a held card raised in a run is the person's
 - [ ] (arcterm) **Council fixes, 11-14 third batch.** Go- and unit-tested and typechecked; no dev app ran. (1) In a
   council paused after round 1, Continue with `Check it against @<a file>` → round 2's expert cards show them reading
   it. (2) In a 3-round council, attach an image to a reply in round 2 → in round 3 an expert shown that thread opens it
