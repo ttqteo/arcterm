@@ -503,11 +503,37 @@ Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
     built with `color-mix`, never a hex) sits under the box over the last lines
     of the conversation, so text scrolls under it without a hard edge. It is a
     gradient but not a wash: it carries no colour of its own;
-  - the slash / @ suggestion panel is **frosted**: a *static* `backdrop-filter`
-    blur on `--color-panel`. The blur is never animated (animating it is a perf
-    trap); the panel enters and leaves on `springPop`.
+  - the slash / @ suggestion panel has a **16px radius** on `shadow-popover-soft`
+    and enters and leaves on `springPop`. Its fill is the overlay rule below, no
+    longer Chat's alone.
+- **Overlays** (the command palette's panel, context menus, popovers, menus
+  with the picker dropdowns, and toasts) are **frosted**: the `frost` utility
+  (`tailwindsetup.css`) is `--color-panel` with a *static* 18px `backdrop-filter`
+  blur, and it takes the place of the panel's `bg-surface-raised`, `bg-surface`
+  or `bg-modalbg`. Radius, border, shadow and motion stay as each site has them.
+  - The blur is never animated (animating it is a perf trap: WebView2 re-blurs
+    the window every frame anything under it moves).
+  - `--color-panel` is the theme's `surfaceRaised` at an alpha `themes.ts`
+    computes per theme, the lowest at which muted text keeps 4.5:1 over the
+    blur, so a frosted panel meets the same text floor as a solid one.
+  - `frost` goes on the panel's **outermost element**. An ancestor with opacity
+    below 1, a `filter`, a `backdrop-filter`, a mask or a `clip-path` is a
+    backdrop root: a blur inside it samples only what that ancestor paints, so
+    the frost would be nominal. A panel nested in another frosted panel (a
+    submenu in its menu) therefore renders outside its parent, as a sibling or
+    in a portal, and each level frosts what is behind it.
+  - A card, sheet, strip or button that only carries `shadow-popover*` is not an
+    overlay and stays solid; so does the tray menu, drawn in an OS window of its
+    own with nothing of the app behind it.
+  - Two exceptions: the **palette keeps the dialog scrim** (black 60% with
+    `backdrop-blur-sm`, see Modals), and **tooltips and the hover title tip stay
+    solid** `surface-raised` chips.
 - **Modals** — `modalshell.tsx` with `role="dialog"` + `aria-modal`, Escape
-  to close, focus trap; rendered centrally via `ModalsRenderer`.
+  to close, focus trap; rendered centrally via `ModalsRenderer`. The command
+  palette passes `frosted`: its scrim is then a sibling layer behind the panel
+  instead of its parent, so the panel's `frost` blurs the dimmed cockpit and not
+  the scrim's black (the scrim's own `backdrop-filter` would make it a backdrop
+  root). Every other dialog keeps the parent scrim and its solid `bg-modalbg` panel.
 - **Accessibility** — `aria-label` on every icon-only control; `aria-live`
   on feed/result regions; `focus-visible` treatment on every interactive
   control.

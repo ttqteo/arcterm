@@ -96,6 +96,7 @@ import kael1113TimelineScenarios from "./scenarios-kael1113-timeline.mjs";
 import modalFocusHomeScenarios from "./scenarios-modal-focus-home.mjs";
 import parkedLaunchScenarios from "./scenarios-parked-launch.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
+import overlaysFrostScenarios from "./scenarios-overlays-frost.mjs";
 import paletteBrainstormResumeScenarios from "./scenarios-palette-brainstorm-resume.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
 import setupInstructionsScenarios from "./scenarios-setup-instructions.mjs";
@@ -60899,6 +60900,19 @@ const CR_KIT = {
     bsSeeHints,
 };
 
+// what the overlays-frost-* scenarios (scenarios-overlays-frost.mjs, docs/superpowers/plans/2026-11-14-overlays-chat-look.md)
+// need of this file: the Chat redesign's kit, and `scenario(name)`, the registered scenario of that name. It looks the name
+// up in SCENARIOS when it is called, not when the kit is built (SCENARIOS is still being built then), so a step can run an
+// existing scenario's arrange / teardown (consumers-popover, jobqueue-chip, notify-toast…) without this file exporting it.
+const OF_KIT = {
+    ...CR_KIT,
+    scenario(name) {
+        const found = SCENARIOS.find((s) => s.name === name);
+        if (!found) throw new Error(`scenario(${JSON.stringify(name)}): no scenario of that name is registered`);
+        return found;
+    },
+};
+
 // what the brainstorm review in Chat (scenarios-chat-brainstorm-review.mjs) needs of this file: the Chat redesign's kit, and
 // the helper that writes a fixture run's stored object (a landed run) and publishes it to the page
 const CBR_KIT = { ...CR_KIT, fstWriteRun };
@@ -70694,6 +70708,7 @@ export const SCENARIOS = [
     ...chatBrainstormReviewScenarios(CBR_KIT),
     ...chatVerdictHandoffScenarios(CBR_KIT),
     ...chatCouncilScenarios(CR_KIT),
+    ...overlaysFrostScenarios(OF_KIT),
     sidebarAgentRam,
     ...sidebarColumnsScenarios(RT_KIT),
     machineServers,
