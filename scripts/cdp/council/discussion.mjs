@@ -442,7 +442,7 @@ const headerRow = (h) =>
                     shown: b.width > 0 && b.height > 0,
                     mode: (f.querySelector("[data-council-mode]")?.textContent ?? "").trim(),
                     cost: (f.querySelector("[data-council-cost]")?.textContent ?? "").trim(),
-                    text: (f.innerText ?? "").replace(/\s+/g, " ").trim(),
+                    text: (f.innerText ?? "").replace(/\\s+/g, " ").trim(),
                 };
             })(),
             // the clock, the replies and the tokens are never in the header's row
