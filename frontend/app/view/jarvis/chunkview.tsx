@@ -482,7 +482,7 @@ function StatusMenu({
             role="menu"
             aria-label="Status"
             data-jarvis-chunk-status-menu={asking ? "reason" : "open"}
-            className="absolute left-0 top-[34px] z-10 flex w-[230px] flex-col rounded-[8px] border border-edge-mid bg-surface p-1 shadow-[0_12px_34px_var(--color-background)]"
+            className="frost absolute left-0 top-[34px] z-10 flex w-[230px] flex-col rounded-[8px] border border-edge-mid p-1 shadow-[0_12px_34px_var(--color-background)]"
         >
             {CHUNK_STATUS_KEYS.map((s, i) => {
                 const tone = chunkTone(s);

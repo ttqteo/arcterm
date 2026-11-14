@@ -17,11 +17,19 @@ import {
 import { cn } from "@/util/util";
 import { autoUpdate, flip, FloatingPortal, offset, shift, useDismiss, useFloating, useInteractions } from "@floating-ui/react";
 import { Check, ChevronRight } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { KeyCap } from "./keycap";
 import { PopoverReveal } from "./popoverreveal";
 
-const PANEL = "min-w-[200px] rounded-[8px] border border-edge-strong bg-surface-raised p-1 shadow-popover-md";
+// A panel draws on the `frost` class (tailwindsetup.css; DESIGN.md "Overlays"). Frost samples what is behind the panel up to
+// the nearest backdrop root, and an element with a backdrop-filter is one: a submenu drawn inside its parent's panel would
+// blur only that panel. So every submenu is drawn beside the root panel instead, in the floating element that holds them all
+// (MenuHost), and each level frosts what is behind it.
+const PANEL = "min-w-[200px] rounded-[8px] border border-edge-strong frost p-1 shadow-popover-md";
+
+// the menu's floating element (data-context-menu): where a submenu is drawn, as the root panel's sibling
+const MenuHost = createContext<HTMLElement | null>(null);
 const ITEM =
     "relative flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12.5px] text-secondary";
 const ITEM_ACTIVE = "bg-accent/12 text-primary";
@@ -132,6 +140,20 @@ function MenuRow({
     const ref = useRef<HTMLDivElement>(null);
     const [flipLeft, setFlipLeft] = useState(false);
     const hasSub = item.submenu != null;
+    const host = useContext(MenuHost);
+    // where the open submenu stands in the host: `top` 5px above the row (the panel's border and padding, so its first row
+    // lines up with this one) and `edge` 4px off the row's near side, measured when it opens
+    const [at, setAt] = useState<{ top: number; edge: number } | null>(null);
+    useLayoutEffect(() => {
+        const row = ref.current;
+        if (!submenuOpen || row == null || host == null) {
+            setAt(null);
+            return;
+        }
+        const r = row.getBoundingClientRect();
+        const h = host.getBoundingClientRect();
+        setAt({ top: r.top - h.top - 5, edge: flipLeft ? h.right - r.left + 4 : r.right - h.left + 4 });
+    }, [submenuOpen, flipLeft, host]);
 
     const onEnter = () => {
         if (disabled) {
@@ -172,11 +194,18 @@ function MenuRow({
             ) : item.sublabel ? (
                 <span className="ml-auto font-mono text-[11.5px] text-muted">{item.sublabel}</span>
             ) : null}
-            {submenuOpen ? (
-                <div className={cn(PANEL, "absolute top-[-5px] z-[1000]", flipLeft ? "right-full mr-1" : "left-full ml-1")}>
-                    <MenuLevel items={item.submenu!} basePath={rowPath} active={active} setActive={setActive} />
-                </div>
-            ) : null}
+            {submenuOpen && at != null && host != null
+                ? createPortal(
+                      <div
+                          data-context-submenu=""
+                          style={{ top: at.top, ...(flipLeft ? { right: at.edge } : { left: at.edge }) }}
+                          className={cn(PANEL, "absolute z-[1000]")}
+                      >
+                          <MenuLevel items={item.submenu!} basePath={rowPath} active={active} setActive={setActive} />
+                      </div>,
+                      host
+                  )
+                : null}
         </div>
     );
 }
@@ -214,6 +243,20 @@ export function ContextMenu({ state }: { state: ContextMenuState }) {
     // FloatingPortal mounts its children a render later, so the effect found no panel and the arrows
     // never reached the menu.
     const focused = useRef(false);
+    // the floating element as state too, so a row can draw its submenu into it (MenuHost). The callback is stable: a new one
+    // each render would be called with null and then the node again, and set the state twice per render.
+    const [host, setHost] = useState<HTMLElement | null>(null);
+    const attachFloating = useCallback(
+        (node: HTMLElement | null) => {
+            refs.setFloating(node);
+            setHost(node);
+            if (node != null && !focused.current) {
+                focused.current = true;
+                node.focus({ preventScroll: true });
+            }
+        },
+        [refs]
+    );
 
     const descendOrActivate = () => {
         const item = focusedItem(items, active);
@@ -265,13 +308,8 @@ export function ContextMenu({ state }: { state: ContextMenuState }) {
     return (
         <FloatingPortal>
             <div
-                ref={(node) => {
-                    refs.setFloating(node);
-                    if (node != null && !focused.current) {
-                        focused.current = true;
-                        node.focus({ preventScroll: true });
-                    }
-                }}
+                ref={attachFloating}
+                data-context-menu=""
                 tabIndex={-1}
                 style={floatingStyles}
                 className="z-[1000] outline-none"
@@ -279,10 +317,13 @@ export function ContextMenu({ state }: { state: ContextMenuState }) {
                 // replaced by useDismiss's own, and the arrows and Enter did nothing
                 {...getFloatingProps({ onKeyDown })}
             >
-                {/* the reveal sits inside: floating-ui positions the outer element with a transform of its own */}
-                <PopoverReveal open origin={revealOrigin(placement)} className={PANEL}>
-                    <MenuLevel items={items} basePath={[]} active={active} setActive={setActive} />
-                </PopoverReveal>
+                <MenuHost.Provider value={host}>
+                    {/* the reveal sits inside: floating-ui positions the outer element with a transform of its own. It is the
+                        root panel, so it carries the frost itself: its own fade is not an ancestor of the blur. */}
+                    <PopoverReveal open origin={revealOrigin(placement)} className={PANEL}>
+                        <MenuLevel items={items} basePath={[]} active={active} setActive={setActive} />
+                    </PopoverReveal>
+                </MenuHost.Provider>
             </div>
         </FloatingPortal>
     );

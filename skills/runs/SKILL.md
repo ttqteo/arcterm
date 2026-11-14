@@ -38,7 +38,9 @@ Message a live agent (claude or pi) with `wsh agents`:
 
 - `wsh agents list` shows the live agent tabs, with a tab prefix, each one's state, the folder it works in
   when that is not the project's checkout (a worktree), and its task title. `(you)` marks your own tab.
-  Rows of one project can share a name: pick the target by folder and title, never by name alone.
+  Rows of one project can share a name: pick the target by folder and title, never by name alone. It lists your
+  project's agents and those working in a folder that is no project (`(no project)` after the folder's name); a last
+  line counts the agents of other projects, which `wsh agents list --all` shows.
 - `wsh agents send <tab> "<text>"` hands the agent a prompt; `--file <path>` reads the text from a file, `--wait` blocks until it has answered.
 - `wsh agents read <tab>` prints the agent's last answer.
 - `wsh read <id>` prints what an arcterm id holds, without sending anything: a live agent's last turns (its last answer in

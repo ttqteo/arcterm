@@ -47,7 +47,9 @@ vi.mock("@/app/view/jarvis/briefingstore", async () => {
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { effortDetailAtom } from "@/app/view/jarvis/effortstore";
+import { SWITCH_NOTE } from "./chatinitiative";
 import { takeResultLines } from "./chatinitiativestore";
+import { registerChatBox } from "./chatinsert";
 import { markChunkDone } from "./chatsuggeststore";
 import {
     BAND_STORAGE_KEY,
@@ -55,6 +57,7 @@ import {
     coerceBandOpen,
     setBandPart,
     switchAgentChunk,
+    switchAndTell,
     toggleBandPart,
     withBandPart,
 } from "./initiativebandstore";
@@ -223,6 +226,60 @@ describe("switchAgentChunk", () => {
         await switchAgentChunk(OREF, TAB, "B");
         expect(rpc.EffortGetCommand).toHaveBeenCalledTimes(1);
         expect(rpc.EffortMutateCommand).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe("switchAndTell", () => {
+    // a chat box for the agent: `draft` is its text, `submitted` what it was asked to send
+    function fakeBox(draft = "") {
+        const box = {
+            submitted: [] as string[],
+            text: () => draft,
+            submit: (t: string) => {
+                box.submitted.push(t);
+                return true;
+            },
+            append: () => true,
+            replace: () => true,
+            focus: () => true,
+            interrupt: () => false,
+        };
+        return { box, unregister: registerChatBox(TAB, box) };
+    }
+
+    it("sends the switch note through an empty box of an awake agent, with the line still queued for that send", async () => {
+        seed(own());
+        rpc.EffortMutateCommand.mockResolvedValue(reply(own()));
+        const { box, unregister } = fakeBox();
+        await switchAndTell(OREF, TAB, "B", true);
+        expect(box.submitted).toEqual([SWITCH_NOTE]);
+        expect(takeResultLines(TAB)).toEqual([expect.stringMatching(/^initiative: switched you to chunk 2 B/)]);
+        unregister();
+    });
+
+    it("leaves the line waiting, sending nothing, when the box holds a draft or the agent sleeps", async () => {
+        for (const [draft, awake] of [
+            ["half a thought", true],
+            ["", false],
+        ] as const) {
+            seed(own());
+            rpc.EffortMutateCommand.mockResolvedValue(reply(own()));
+            const { box, unregister } = fakeBox(draft);
+            await switchAndTell(OREF, TAB, "B", awake);
+            expect(box.submitted).toEqual([]);
+            expect(takeResultLines(TAB)).toHaveLength(1);
+            unregister();
+        }
+    });
+
+    it("sends nothing when the agent is on that chunk already, and nothing after a failed switch", async () => {
+        seed(own());
+        const { box, unregister } = fakeBox();
+        await switchAndTell(OREF, TAB, "A", true);
+        rpc.EffortMutateCommand.mockRejectedValueOnce(new Error("refused"));
+        await expect(switchAndTell(OREF, TAB, "B", true)).rejects.toThrow("refused");
+        expect(box.submitted).toEqual([]);
+        unregister();
     });
 });
 

@@ -6,6 +6,7 @@ package council
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -82,7 +83,9 @@ func writeFinalProposal(b *strings.Builder, c *Council) {
 	fmt.Fprintf(b, "\n## Final proposal\n\n_From %s_\n\n%s\n", messageSeatName(c, c.FinalPick), body)
 }
 
-// messageSeatName is the display name of the seat that wrote an idea or a reply.
+// messageSeatName is the display name of the seat that wrote an idea or a reply. A chat seat is named for its tab, which
+// is its project's name, so two chats of one project would read alike: its name carries its key (chatSeatKey), as the
+// Report's header does (seatLabel in frontend/app/view/agents/councilmodel.ts).
 func messageSeatName(c *Council, id string) string {
 	author := ""
 	if p := findProposal(c, id); p != nil {
@@ -91,9 +94,28 @@ func messageSeatName(c *Council, id string) string {
 		author = r.Author
 	}
 	if e, ok := seatOf(c, author); ok && e.Name != "" {
+		if IsAgent(e) {
+			return e.Name + " · " + chatSeatKey(c, e)
+		}
 		return e.Name
 	}
 	return speaker(c, author)
+}
+
+// chatSeatKey is the start of a chat seat's tab id that names it: minChatKey characters, or more until no other chat
+// seat of the council shares it (any case), the way the cockpit's chatMentionKeys keys the chats. The cockpit also counts
+// the chats its picker lists, which Go does not know, so a longer key there is possible; the file's key still tells the
+// council's own chats apart once their tabs are gone.
+func chatSeatKey(c *Council, seat CouncilExpert) string {
+	id := seat.Agent
+	lower := strings.ToLower(id)
+	n := min(minChatKey, len(id))
+	for n < len(id) && slices.ContainsFunc(c.Experts, func(o CouncilExpert) bool {
+		return IsAgent(o) && o.Agent != seat.Agent && strings.HasPrefix(strings.ToLower(o.Agent), lower[:n])
+	}) {
+		n++
+	}
+	return id[:n]
 }
 
 // MessageMarkdown is one idea's or reply's markdown, the text the chat's Copy puts on the clipboard and the Final

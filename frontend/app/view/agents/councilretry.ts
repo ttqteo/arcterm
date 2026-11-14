@@ -1,6 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { sentProposals } from "./councilmodel";
+
 // The models a failed council call can be retried on instead of its seat's own: the claude aliases `claude --model`
 // takes, and Opus 4.8 by its full id. A retry on one of them runs once on it; the seat keeps its model for the calls
 // after it.
@@ -81,4 +83,21 @@ export function retryAllModels(c: RetryCouncil, picks: Record<string, string>): 
         }
     }
     return out;
+}
+
+export const RETRY_RUNNING = "The council is running: retry once it is done";
+export const RETRY_NOTHING_SENT = "No idea was sent, so there is nothing to summarize: send or drop the drafts first";
+
+/** Why a failed call's Retry is off, or null when it is on. The runner refuses a retry while the council runs (one job
+ *  at a time), and the coordinator's retry is a summary, which it refuses with no sent idea (Runner.summarizeLocked),
+ *  so the button says so instead of failing on the press. */
+export function retryHold(c: Pick<Council, "state" | "experts" | "proposals">, expertId: string): string | null {
+    if (c.state === "running") {
+        return RETRY_RUNNING;
+    }
+    const e = c.experts.find((x) => x.id === expertId);
+    if (e?.coordinator && sentProposals(c).length === 0) {
+        return RETRY_NOTHING_SENT;
+    }
+    return null;
 }

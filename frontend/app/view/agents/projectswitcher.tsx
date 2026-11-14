@@ -59,7 +59,7 @@ export function ProjectSwitcher({ model, variant }: { model: AgentsViewModel; va
             <PopoverReveal
                 open={open}
                 origin="top left"
-                className="absolute left-0 top-[calc(100%+7px)] z-[60] w-[268px] overflow-hidden rounded-lg border border-edge-strong bg-surface-raised shadow-popover"
+                className="absolute left-0 top-[calc(100%+7px)] z-[60] w-[268px] overflow-hidden rounded-lg border border-edge-strong frost shadow-popover"
             >
                         <div className="px-3 pb-1.5 pt-[9px]">
                             <span className={cn(REGION_LABEL, "text-muted")}>Switch project</span>

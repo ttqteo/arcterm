@@ -433,7 +433,12 @@ function ChunkList({
     return (
         <FloatingPortal>
             <div ref={refs.setFloating} style={floatingStyles} {...getFloatingProps(contained)} className="z-[80]">
-                <PopoverReveal open={open} origin="top left">
+                {/* the panel is the reveal's own element, so its frost is real through the fade (the listbox inside scrolls) */}
+                <PopoverReveal
+                    open={open}
+                    origin="top left"
+                    className="w-[420px] max-w-[calc(100vw-24px)] overflow-hidden rounded-[10px] border border-edge-mid frost shadow-popover-xl"
+                >
                     <ChunkListBody options={options} value={value} onPick={onPick} onClose={onClose} />
                 </PopoverReveal>
             </div>
@@ -496,7 +501,7 @@ function ChunkListBody({
             data-owns-keys
             tabIndex={-1}
             onKeyDown={onKeyDown}
-            className="flex max-h-[300px] w-[420px] max-w-[calc(100vw-24px)] flex-col gap-px overflow-y-auto rounded-[10px] border border-edge-mid bg-surface-raised p-[6px] shadow-popover-xl outline-none"
+            className="flex max-h-[298px] flex-col gap-px overflow-y-auto p-[6px] outline-none"
         >
             {options.map((o, i) => (
                 <div

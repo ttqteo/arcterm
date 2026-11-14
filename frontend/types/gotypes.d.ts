@@ -237,6 +237,7 @@ declare global {
         retry?: boolean;
         oref?: string;
         learnid?: string;
+        projectpath?: string;
         effortoid?: string;
         chunklabel?: string;
         queueid?: string;

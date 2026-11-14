@@ -1562,7 +1562,8 @@ func round2Target(c *Council, e CouncilExpert, scope round2Scope) *CouncilActivi
 // (wholePass), or the part an early pass or its catch-up covers. A live agent is sent its own prompt, and what it answers
 // that holds no JSON is heard as one plain reply. After the first pass a seat with nothing new to answer sits the pass
 // out. The call has no tools, except a seat owed a reply of the person's that asked for them (it attaches files or names
-// one): that call has the tools and the folders of the attached images (readsOf).
+// one), or, after round 2, shown such a reply in a thread (round2Carried): that call has the tools and the folders of the
+// attached images (readsOf).
 func (r *Runner) round2(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert, round int, scope round2Scope) {
 	view := withOpenAsks(snap, e)
 	target := round2Target(view, e, scope)
@@ -1576,9 +1577,9 @@ func (r *Runner) round2(ctx context.Context, rn *run, id string, snap *Council, 
 	if IsAgent(e) {
 		prompt = agentPrompt(view, e, round)
 	}
-	owed := unansweredFor(view, e.Id)
-	tools, dirs := readsOf(owed)
-	res, err := r.call(ctx, rn, id, e, view, prompt, tools, webOf(owed), dirs, *target)
+	carried := round2Carried(view, e, round, scope)
+	tools, dirs := readsOf(carried)
+	res, err := r.call(ctx, rn, id, e, view, prompt, tools, webOf(carried), dirs, *target)
 	var (
 		out   Round2Result
 		plain string
@@ -2888,8 +2889,8 @@ func (r *Runner) Continue(id string, cut []string, question string) (*Council, e
 				p.Cut = true
 			}
 			if question != "" {
-				c.Replies = append(c.Replies, CouncilReply{
-					Id: nextReplyId(c), Author: YouId, Text: question, To: idsOf(panelOf(c)), Round: c.Round, Ts: r.now(),
+				c.Replies = append(c.Replies, CouncilReply{ // an @file or a link in it turns the seats' tools on, as in a reply
+					Id: nextReplyId(c), Author: YouId, Text: question, To: idsOf(panelOf(c)), Tools: locksTools(question), Round: c.Round, Ts: r.now(),
 				})
 			}
 			c.State, c.Round, c.Error = StateRunning, from, ""
@@ -3201,6 +3202,15 @@ func (r *Runner) Draft(id, itemId, action, text string) (*Council, error) {
 	default:
 		return nil, fmt.Errorf("unknown draft action %q: use %s, %s or %s", action, draftSend, draftEdit, draftDrop)
 	}
+	// an idea or a reply that takes a stance is labelled once it is out in the room, so a draft the person sends is
+	// checked now: the checks skipped it while it was held. The folders they are read against come before the lock: a
+	// live agent's seat is a lookup of up to seatLookup, which would hold every other council call, and they rest on the
+	// seats and the project, which settling a draft does not change
+	snap, err := Load(id)
+	if err != nil {
+		return nil, err
+	}
+	rootsFor := r.checkRoots(context.Background(), snap)
 	r.mu.Lock()
 	cur, err := Load(id)
 	if err != nil {
@@ -3211,9 +3221,6 @@ func (r *Runner) Draft(id, itemId, action, text string) (*Council, error) {
 		saved *Council
 		start func()
 	)
-	// an idea or a reply that takes a stance is labelled once it is out in the room, so a draft the person sends is
-	// checked now: the checks skipped it while it was held
-	rootsFor := r.checkRoots(context.Background(), cur)
 	settle := func(c *Council) error {
 		if err := settleDraft(c, itemId, action, text); err != nil {
 			return err
@@ -3563,8 +3570,9 @@ func (r *Runner) Delete(id string) (*Council, error) {
 	return c, nil
 }
 
-// MarkStale turns every council left running (wavesrv quit mid-round) into a stopped one that says so. A council left
-// queued stays queued: StartNext starts it. Call it once at startup, before any council runs.
+// MarkStale turns every council left running (wavesrv quit mid-round) into a stopped one that says so, and saves its
+// document, as a council stopped mid-run has one. A council left queued stays queued: StartNext starts it. Call it once
+// at startup, before any council runs.
 //
 // It also routes, in the background, every message of the person's the router had not answered when wavesrv quit, in a
 // council in any state: in a done or stopped one no pass would come to do it, and its post would read "Router is choosing
@@ -3598,6 +3606,9 @@ func (r *Runner) MarkStale() {
 			log.Printf("[council] %s: not marked stopped: %v", c.Id, err)
 		}
 		r.changed(saved)
+		if saved != nil {
+			r.saveDocument(saved) // what the finished rounds hold, as a Stop mid-run saves it
+		}
 		err = nil
 	}
 	for _, c := range list {

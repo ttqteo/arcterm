@@ -17,7 +17,7 @@ import { PopoverReveal } from "@/app/element/popoverreveal";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue } from "jotai";
 import { selectAtom } from "jotai/utils";
-import { History, Info, Loader2, Pencil, Pin, PinOff, X } from "lucide-react";
+import { Compass, History, Info, Loader2, Pencil, PinOff, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentVM } from "./agentsviewmodel";
 import { correctTarget } from "./claudecontextmodel";
@@ -534,7 +534,7 @@ export function MemoryPanel({
                                                             className="animate-spin motion-reduce:animate-none"
                                                         />
                                                     ) : (
-                                                        <Pin size={13} strokeWidth={2} aria-hidden />
+                                                        <Compass size={13} strokeWidth={2} aria-hidden />
                                                     )}
                                                 </button>
                                                 <button
@@ -813,7 +813,7 @@ function Details({ children }: { children: ReactNode }) {
                     role="group"
                     aria-label="Details"
                     data-council-memory-popover
-                    className="flex flex-col gap-1 whitespace-nowrap rounded-[8px] border border-edge-strong bg-surface-raised px-[11px] py-[9px] text-[12px] leading-[1.45] text-secondary shadow-popover-sm"
+                    className="flex flex-col gap-1 whitespace-nowrap rounded-[8px] border border-edge-strong frost px-[11px] py-[9px] text-[12px] leading-[1.45] text-secondary shadow-popover-sm"
                 >
                     {children}
                 </div>

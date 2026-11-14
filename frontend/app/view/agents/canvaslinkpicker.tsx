@@ -112,7 +112,7 @@ function LinkPicker({ canvas, list, query }: { canvas: GalleryCanvas; list: Gall
             data-canvas-link-picker
             role="dialog"
             aria-label="Link an older version"
-            className="absolute left-0 top-[34px] z-20 flex max-h-[420px] w-[340px] flex-col gap-1 overflow-hidden rounded-lg border border-edge-strong bg-surface p-2 shadow-popover-md"
+            className="absolute left-0 top-[34px] z-20 flex max-h-[420px] w-[340px] flex-col gap-1 overflow-hidden rounded-lg border border-edge-strong frost p-2 shadow-popover-md"
         >
             <input
                 data-canvas-link-search

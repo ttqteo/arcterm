@@ -503,7 +503,7 @@ export function AgentFields({
                         <PopoverReveal
                             open={branchListOpen && branches.length > 0}
                             origin="bottom left"
-                            className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-[168px] overflow-y-auto rounded border border-edge-mid bg-modalbg py-1 shadow-popover"
+                            className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-[168px] overflow-y-auto rounded border border-edge-mid frost py-1 shadow-popover"
                         >
                             {branches.map((b) => (
                                 <button

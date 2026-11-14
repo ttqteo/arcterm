@@ -429,6 +429,25 @@ func TestMarkdownFinalProposal(t *testing.T) {
 	mustNotContain(t, "markdown with a pin that names nothing", Markdown(c), "## Final proposal")
 }
 
+// A chat seat is named for its project, so two chats of one project read alike: the section names it with its key, the
+// start of its tab id, run on past the ids' shared start, as the Report's header does.
+func TestMarkdownFinalProposalNamesAChatSeatByItsKey(t *testing.T) {
+	c := markdownCouncil()
+	c.Experts = append(c.Experts,
+		CouncilExpert{Id: "chat-a", Name: "arcterm", Agent: "3e19c0d2-aaaa-4000-8000-000000000001"},
+		CouncilExpert{Id: "chat-b", Name: "arcterm", Agent: "3E19C0D2-bbbb-4000-8000-000000000002"},
+		CouncilExpert{Id: "chat-c", Name: "notes", Agent: "0976023f-cccc-4000-8000-000000000003"},
+	)
+	c.Replies = append(c.Replies,
+		CouncilReply{Id: "r8", Author: "chat-a", Text: "From the first chat."},
+		CouncilReply{Id: "r9", Author: "chat-c", Text: "From the notes chat."},
+	)
+	c.FinalPick = "r8"
+	mustContain(t, "markdown", Markdown(c), "_From arcterm · 3e19c0d2-a_")
+	c.FinalPick = "r9"
+	mustContain(t, "markdown", Markdown(c), "_From notes · 0976023f_")
+}
+
 func TestMarkdownFinalProposalWithoutASummaryFollowsTheNote(t *testing.T) {
 	c := markdownCouncil()
 	c.Summary = nil

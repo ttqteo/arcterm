@@ -213,6 +213,9 @@ the memory states, or has you make a fix an entry says is still to do), record i
 - `wsh council memory <id> [add <kind> <text> | edit <m id> <text> | rm <m id>]` — read or change its memory (above).
 - `wsh council retry <id> [--expert <seat>] [--model <model>]` — run a failed call again, once; the discussion stays.
   `--all [--model <seat>=<model>]...` reruns every failed seat but the summary at once.
+- `wsh council summarize <id>` — have the coordinator write the report now, from the ideas sent so far: a council
+  paused after round 1 (the rounds left are skipped), stopped, failed, or done with a discussion that moved on. One
+  call. Only when the person asks.
 - `wsh council stop <id>` — stop a running or queued council; the rounds that finished stay. Only when the person asks.
 
 ## Writing a role

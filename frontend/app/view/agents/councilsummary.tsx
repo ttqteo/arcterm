@@ -75,6 +75,7 @@ import {
     type CouncilLang,
     type StanceLabel,
 } from "./councilmodel";
+import { retryHold } from "./councilretry";
 import { RetryWithButton } from "./councilretrymenu";
 import { revealCouncilMessage } from "./councilreveal";
 import { claimBadge, isWrongCite, wrongCiteOf } from "./councilsources";
@@ -123,6 +124,8 @@ import { projectListAtom } from "./projectsstore";
 // what the Summary keeps for a council while the person is elsewhere (the Agent surface stays mounted, this view does not)
 const openDirectionAtom = atomFamily((_id: string) => atom<number | null>(null) as PrimitiveAtom<number | null>);
 const savedDocAtom = atomFamily((_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>);
+// whether the ideas kept aside (Also raised) are unfolded: the header's jump link to them opens them too
+const keptOpenAtom = atomFamily((_id: string) => atom(false) as PrimitiveAtom<boolean>);
 interface MadeInitiative {
     oid: string;
     title: string;
@@ -426,10 +429,10 @@ function KeptCard({ row }: { row: KeptRow }) {
 }
 
 // The ideas kept aside under the ranked directions (Also raised, or Wild ideas kept aside): the long tail of the report,
-// so it starts folded behind its heading and count, and a click on them opens the grid. The fold is local state: folded
-// is the default, so losing it when the view unmounts costs nothing.
+// so it starts folded behind its heading and count, and a click on them opens the grid. The fold is the council's
+// (keptOpenAtom), so the header's jump link to this section can open it.
 function KeptSection({ c, rows }: { c: Council; rows: KeptRow[] }) {
-    const [open, setOpen] = useState(false);
+    const [open, setOpen] = useAtom(keptOpenAtom(c.id));
     const Chevron = open ? ChevronUp : ChevronDown;
     return (
         <section data-council-kept className="flex flex-col gap-4">
@@ -622,6 +625,7 @@ function glideTo(box: HTMLElement, top: number) {
 // scrolling the box under the header so the section's top lands 12px under the box's top (as far as it can scroll).
 function JumpLinks({ c, scroller }: { c: Council; scroller: RefObject<HTMLDivElement | null> }) {
     const entries = useMemo(() => jumpLinks(c), [c]);
+    const [, setKeptOpen] = useAtom(keptOpenAtom(c.id));
     if (entries.length === 0) {
         return null;
     }
@@ -630,6 +634,10 @@ function JumpLinks({ c, scroller }: { c: Council; scroller: RefObject<HTMLDivEle
         const el = box == null ? null : sectionOf(box, e.id);
         if (box == null || el == null) {
             return;
+        }
+        // the ideas kept aside are what the link is for: it opens their fold, which sits under the heading it lands on
+        if (e.id === "kept") {
+            setKeptOpen(true);
         }
         glideTo(box, box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top - 12);
     };
@@ -860,6 +868,8 @@ function NoSummary({ c, busy, onSummarize }: { c: Council; busy: boolean; onSumm
     const writing =
         c.state === "running" &&
         (c.round >= synthesisRound(c) || (coordinator != null && c.activity?.[coordinator.id] != null));
+    // a summary's retry with no sent idea is refused by the runner, and so is one while the council runs
+    const hold = coordinator != null ? retryHold(c, coordinator.id) : null;
     return (
         <div
             data-council-nosummary
@@ -880,6 +890,8 @@ function NoSummary({ c, busy, onSummarize }: { c: Council; busy: boolean; onSumm
                             <button
                                 type="button"
                                 data-council-action="retry"
+                                title={hold ?? undefined}
+                                disabled={hold != null}
                                 onClick={() => void retryExpert(c.id, coordinator.id)}
                                 className={BUTTON}
                             >
@@ -888,6 +900,7 @@ function NoSummary({ c, busy, onSummarize }: { c: Council; busy: boolean; onSumm
                             <RetryWithButton
                                 expert={coordinator}
                                 error={c.failed?.[coordinator.id]?.error}
+                                disabled={hold != null}
                                 onPick={(model) => void retryExpert(c.id, coordinator.id, model)}
                                 className={BUTTON}
                             />
@@ -1003,6 +1016,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const outdated = outdatedCount(c);
     const coordinator = c.experts.find((e) => e.coordinator);
     const coordinatorFailed = coordinator != null ? c.failed?.[coordinator.id] : undefined;
+    const retryHeld = coordinator != null ? retryHold(c, coordinator.id) : null; // the summary's Retry, as in NoSummary
     const scroller = useRef<HTMLDivElement>(null);
     const onScroll = useKeptScroll(scroller, `summary:${c.id}`);
     // the Report tab, clicked while it is shown, glides the page down past the cover to the report itself, at the top of
@@ -1193,6 +1207,8 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                             <button
                                 type="button"
                                 data-council-action="retry"
+                                title={retryHeld ?? undefined}
+                                disabled={retryHeld != null}
                                 onClick={() => void retryExpert(c.id, coordinator.id)}
                                 className={BUTTON}
                             >
@@ -1201,6 +1217,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                             <RetryWithButton
                                 expert={coordinator}
                                 error={c.failed?.[coordinator.id]?.error}
+                                disabled={retryHeld != null}
                                 onPick={(model) => void retryExpert(c.id, coordinator.id, model)}
                                 className={BUTTON}
                             />

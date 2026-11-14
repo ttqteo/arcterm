@@ -90,11 +90,14 @@ function DismissMenu({ finding, onPick }: { finding: RadarFinding; onPick: (entr
                 <ChevronDown className="h-3 w-3 text-muted" />
             </button>
             {open ? <div className="fixed inset-0 z-50" onClick={() => setOpen(false)} /> : null}
-            <PopoverReveal open={open} origin="top left" className="absolute left-0 top-[calc(100%+6px)] z-[60]">
-                <div
-                    data-radar-dismiss-menu
-                    className="flex w-[280px] flex-col gap-px rounded-xl border border-edge-strong bg-surface-raised p-1.5 shadow-popover"
-                >
+            {/* the panel's look is on the motion element, not on the list: a frost inside the fade would blur only the
+                fading layer until it ended (DESIGN.md "Overlays") */}
+            <PopoverReveal
+                open={open}
+                origin="top left"
+                className="absolute left-0 top-[calc(100%+6px)] z-[60] w-[280px] rounded-xl border border-edge-strong frost p-1.5 shadow-popover"
+            >
+                <div data-radar-dismiss-menu className="flex flex-col gap-px">
                     <div className={cn(LABEL, "px-2 py-1.5")}>Dismiss because</div>
                     {dismissReasons(finding).map((r) => (
                         <button

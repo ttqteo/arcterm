@@ -24,6 +24,43 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Fixed
+
+- Retry the summary on a council's Report is off when no idea was sent, and says why.
+- An image over 3.5 MB is refused when you add it to a message, not lost on send.
+- A council that was running when arcterm closed now gets its saved report too, like one you stopped.
+- A question you ask with Continue at a council's pause that names a file with @ is answered after the experts read it.
+- In a council's third round, an expert can open the image or file you attached to an earlier reply it is shown.
+- A council's verify folder left behind when arcterm closed in the middle of a check is cleaned up the next time
+  arcterm starts.
+- A council started in a folder that is not one of your projects shows in the tree, in Home's folder.
+- A Token burn card raised inside a run (a worker starting subagents, or `wsh council start`) comes to you in Needs
+  you at once, instead of sitting with the run's lead until it was refused 30 minutes later.
+- `wsh agents list` also shows the agents working in a folder that is not one of your projects, marked `(no
+  project)`, and ends with how many agents other projects have, so an agent can find one you opened in a scratch
+  folder.
+- In Chat, the "Goes with your next message: switched to chunk…" line above the message box has its own frame, so
+  the conversation no longer shows through its text while you scroll.
+
+### Added
+
+- In Chat, a message that moved the agent to another initiative chunk shows a "Chunk N · name" divider above it, so
+  you can tell where each chunk's work begins.
+- The initiative band in Chat shows three steps on how to use it the first time you open it; Got it hides them and
+  the ? beside the band's chevron brings them back.
+
+### Changed
+
+- In the initiative band, Work on this is now Switch to this chunk, so it no longer reads like Jarvis's Work on (which
+  opens a new agent), and it tells the agent at once when the message box is empty. With a draft in the box, the
+  switch still goes with your next message, and the line above the box says so.
+
+- In a council, Chốt (set as direction) shows a compass instead of a pin, so it no longer looks like Pin to Report
+  beside it on a seat's message. A pinned chat seat's Final proposal in the saved report names the chat with its key
+  (`notes · 0976023f`), as the Report does.
+
+## 1.1.3 — 2026-11-14
+
 ### Added
 
 - Name an agent, a run or a council in a prompt ("đọc agent 5065bd8c rồi …", `council:<id>`) and the agent reads it
@@ -65,7 +102,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In Chat, an agent with a brainstorm attached always shows it in the band under the header, between two questions
   too: how many boards it has, with a dot and "N new" for the ones that arrived since you last opened the Brainstorm
   tab (the tab carries the same dot), and how many decisions are yours. Open that part and it pushes the conversation
-  down to the decisions and the boards; a click on a board opens the Brainstorm tab. With an initiative beside it, Mark
+  down to the decisions and the boards; a click on a board opens it large over the Chat, without leaving it (Esc
+  closes it, Open in Brainstorm goes to the tab). With an initiative beside it, Mark
   done moves into the initiative's opened view (the `m` key still works).
 
 ### Changed
@@ -79,6 +117,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   brainstorm's check sessions stay under the agent that started them.
 - The Note tab in Float and its `Cmd`+`Shift`+`N` shortcut are gone. The note's text stays in `notes/scratch.md` in
   your vault.
+- `wsh council summarize <id>` has the coordinator write a council's report now, as the app's Summarize does: a
+  council paused after round 1, stopped, failed, or done with a discussion that moved on.
 - A message you send in Chat rises in at its place again, as in a messenger, instead of flying out of the message box.
 - Chat's suggested replies stay while you type instead of all going at the first letter; clicking one over text you
   typed asks first, in a toast whose Send replaces your text with the reply.
@@ -91,6 +131,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   go and the conversation no longer jumps.
 - A resume of a past session picked in New is held too while the machine is busy, and Start now picks the same
   session up. Every held agent now says so in a toast, with Open to go to it.
+- A week after a run's task, review or stage session ends, arcterm keeps only the first line of the prompt the engine
+  gave it, so the store stops growing with prompts no one reopens; the report and the evidence stay.
+- Menus, popovers, toasts and the command palette are frosted like Chat's suggestion panel: a softly blurred, see-through
+  panel in place of a solid one.
 
 ### Fixed
 
@@ -127,6 +171,21 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Selecting text in Chat on a Mac highlights only the text you pick, one band per line as on Windows: no fill running
   to the column's edge or across the gaps between paragraphs, no boxes around list numbers and bullets, and no dark
   strips between the lines of a wrapped paragraph.
+- A council waiting on you after its first round now shows in the Cockpit's Needs you too, under its project's
+  filter, and its Open takes you to its Discussion.
+- In the command palette's Needs you, Enter on a learned rule now takes you to the Cockpit, where you accept or
+  dismiss it, instead of doing nothing.
+- With a council's Ideas rail folded, the button that brings it back carries the Memory dot when a suggestion or a
+  held direction waits for you.
+- A council's Retry on a failed summary is off, and says why, when no idea was ever sent, instead of failing when
+  pressed.
+- An image pasted or dropped into a council over 3.5 MB is refused on its chip at once. The chip allowed up to
+  10 MB, but anything over 3.5 MB then failed to save.
+- A council report's jump link to Also raised now unfolds those ideas as it scrolls to them.
+- In a council of three rounds, an idea withdrawn in round 2 now reads "Withdrawn in round 2" in the report and its
+  table, not round 3.
+- Sending a held draft in a council with a live agent seated no longer holds up other council actions while it looks
+  the agent up.
 
 ## 1.1.2 — 2026-11-14
 

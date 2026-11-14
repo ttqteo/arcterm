@@ -280,7 +280,7 @@ export function JobQueuePanel({ model }: { model: AgentsViewModel }) {
                 origin={placement.origin}
                 // it hangs from the chip that opened it, wherever that sits
                 style={{ right: placement.right, top: placement.top, bottom: placement.bottom, width: PANEL_WIDTH }}
-                className="fixed z-[60] overflow-hidden rounded-lg border border-edge-strong bg-surface-raised shadow-popover"
+                className="frost fixed z-[60] overflow-hidden rounded-lg border border-edge-strong shadow-popover"
             >
                 <div data-job-queue-panel role="dialog" aria-label="Heavy jobs">
                     <div className="flex items-center gap-2 border-b border-border px-3 py-2">

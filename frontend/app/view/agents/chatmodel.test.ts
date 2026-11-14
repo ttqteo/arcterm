@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AgentActionEntry, AgentEntry, EditFile } from "./agentsviewmodel";
-import { withResultLines } from "./chatinitiative";
+import { SWITCH_NOTE, withResultLines } from "./chatinitiative";
 import {
     agentWentOn,
     bashMode,
@@ -90,6 +90,21 @@ describe("chatItems", () => {
         // a message that only mentions `initiative:` mid-text is left alone
         const mention = "see below\ninitiative: added by hand";
         expect(chatItems([you(mention)])[0]).toMatchObject({ kind: "you", text: mention });
+    });
+
+    it("carries the chunk a message moved the agent to, and none on a plain message", () => {
+        const sent = withResultLines(["initiative: switched you to chunk 3 Fix the gate (effort:e1)"], "go on");
+        const items = chatItems([you(sent), says("ok"), you("next")]);
+        expect(items[0]).toMatchObject({ kind: "you", text: "go on", chunk: { n: 3, label: "Fix the gate" } });
+        expect(items[2]).not.toHaveProperty("chunk");
+        expect(items[0]).not.toHaveProperty("switchNote");
+    });
+
+    it("marks the band's own switch message, and only behind a switched line", () => {
+        const line = "initiative: switched you to chunk 32 Agent tree refetches (effort:e1)";
+        const items = chatItems([you(withResultLines([line], SWITCH_NOTE)), says("ok"), you(SWITCH_NOTE)]);
+        expect(items[0]).toMatchObject({ kind: "you", chunk: { n: 32 }, switchNote: true });
+        expect(items[2]).not.toHaveProperty("switchNote");
     });
 
     it("gives a plain exchange one 'you' and one agent group of prose, work, files, prose", () => {

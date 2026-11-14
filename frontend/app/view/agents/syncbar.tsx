@@ -138,7 +138,7 @@ function PullConfirm({
                     onCancel();
                 }
             }}
-            className="absolute right-[8px] top-[44px] z-30 flex w-[270px] max-w-[calc(100%-16px)] flex-col gap-[8px] rounded-[10px] border border-edge-mid bg-surface-raised p-[12px] shadow-popover-md"
+            className="absolute right-[8px] top-[44px] z-30 flex w-[270px] max-w-[calc(100%-16px)] flex-col gap-[8px] rounded-[10px] border border-edge-mid frost p-[12px] shadow-popover-md"
         >
             <div className="text-[12px] font-semibold text-ink-hi">
                 {commits ? `Pull ${commits} into ${branch}?` : `Pull into ${branch}?`}

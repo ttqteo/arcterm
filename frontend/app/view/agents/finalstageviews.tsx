@@ -461,7 +461,7 @@ export function EndFinalStage({
                 End final stage
             </button>
             {ending ? (
-                <div className="absolute right-0 top-full z-10 mt-1.5 w-[340px] rounded-[9px] border border-edge-mid bg-surface-raised p-2.5">
+                <div className="absolute right-0 top-full z-10 mt-1.5 w-[340px] rounded-[9px] border border-edge-mid frost p-2.5">
                     <EndFinalForm
                         channelId={channelId}
                         runId={runId}

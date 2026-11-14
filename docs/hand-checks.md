@@ -6,6 +6,61 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Frosted overlays on a Mac, and the folded Sprout window.** The Final's frost scenarios ran only in
+  WebView2 (Windows). On a Mac build, open the command palette, a context menu with a submenu, a Chat footer menu and
+  a toast over a working agent → each panel blurs what is behind it (the palette over its dimmed scrim, a submenu
+  over the chat, not over its parent menu), and muted text stays readable. Then fold Sprout into its own window and
+  open its bubble or peek → it draws a solid panel, not a see-through one. Commit: feat(ui) Overlays in the Chat
+  look: the frosted fill (run 04bd30dc)
+- [ ] (arcterm) **Switch to this chunk tells a real agent at once.** The CDP scenario `chat-initiative-band` (4, 4c,
+  4d) passes against fixture agents whose sends go to a mock; no real Claude Code session took one. In a real Claude
+  agent linked to an initiative, with the message box empty, open the band and press Switch to this chunk on a free
+  chunk → the agent answers on the new chunk at once, Chat shows the `Chunk N · name` divider and `Moved to chunk N ·
+  sent by arcterm` (no bubble reading `Go on with this chunk.`); while the agent works the send waits for its turn to
+  end. With a draft in the box the framed line waits and rides with the draft. Commit: feat(chat) initiative band:
+  Switch to this chunk tells the agent at once, a how-to.
+- [ ] (arcterm) **Agent composer image cap, 3.5 MB.** Unit-tested only (`composerattachments.test.ts`); no scenario
+  attaches to the agent composer. Agent → paste a 4 MB image into the message box → it is refused at once with
+  `over 3.5 MB`, not lost on send; a 3 MB image sends. Commit: fix(council) the Report's summary Retry needs a sent
+  idea, and the composer's image cap is 3.5 MB (run a9774e84)
+- [ ] (arcterm) **Council decisions, 11-14.** Go-tested and typechecked; no dev app ran. (1) Hover a seat's message
+  in a council's chat → its byline shows Pin to Report as a pin and Chốt as a compass; an idea's Chốt and the Memory
+  tab's hover Chốt are compasses too (`council-discussion`, `council-memory`). (2) Pin a chat seat's message, then
+  open the saved report under `docs/council/` → its Final proposal reads `_From <project> · <key>_`, the key the
+  Report's header shows. (3) Quit arcterm while a council runs, reopen → the council reads stopped and its report
+  file is saved (Open report works). Commit: fix(council) Chốt draws a compass, a chat seat's key in the report,
+  a stale council's report
+- [ ] (arcterm) **`wsh agents list` and agents in no project.** Unit-tested; run live from this project (the count
+  line showed), but no agent was open in a scratch folder then. Open a Claude agent in a folder that is no project →
+  `wsh agents list` from an agent in arcterm lists it with `(no project)` after its folder's name. Commit:
+  fix(wsh) agents list shows sessions in no project
+- [ ] (arcterm) **Token burn card inside a run.** Go-tested only; no dev app ran. In an orchestrator run (autonomous
+  too), have a worker start 3+ subagents, or run `wsh council start` → the Token burn card shows at once in Needs you
+  and in the run's question card as yours, the lead gets no wake for it, and `wsh jarvis dag answer` from the lead
+  is refused. Allow there → the spawn runs. Commit: fix(orchestrate) a held card raised in a run is the person's
+- [ ] (arcterm) **Council fixes, 11-14 third batch.** Go- and unit-tested and typechecked; no dev app ran. (1) In a
+  council paused after round 1, Continue with `Check it against @<a file>` → round 2's expert cards show them reading
+  it. (2) In a 3-round council, attach an image to a reply in round 2 → in round 3 an expert shown that thread opens it
+  (its activity names the file). (3) Kill wavesrv while a council runs a verify command, start arcterm again → the
+  `council-<id>` folder under arc-wt is gone (`[council] … removed the verify tree` in waveapp.log). (4) `wsh council
+  start` in a folder that is not a registered project → its row is in Home's folder (`council-tree`, step 11j). Commit:
+  fix(council) Continue's @file, round 3 attachments, crash-left verify trees, councils in Home
+- [ ] (arcterm) **Council fixes, 11-14 second batch.** Go-tested and typechecked; no dev app ran. (1) Paste a 4 MB
+  image into a council's chat → its chip reads `Image too large (over 3.5 MB)` at once (`council-discussion`,
+  attach-oversize). (2) In a done Review report with Also raised, press the header's `Also raised` jump link → the
+  page scrolls there and the ideas are unfolded (`council-summary`). (3) `wsh council summarize <id>` on a council
+  paused after round 1 → it prints `summarizing`, and `wsh council wait <id>` returns its report. Commit:
+  fix(council) one image cap, kept jump unfolds, summarize command, withdrawal round, Draft lookup outside the lock
+- [ ] (arcterm) **Council small fixes, 11-14 batch.** Unit-tested and typechecked only; no dev app ran. (1) Leave a
+  council paused after round 1 in a registered project → the Cockpit's Needs you strip has a `Council` row; under
+  another project's filter it is gone; Open lands on its Discussion (`task verify:ui -- council-needs-you`, step 4b).
+  (2) Ctrl+K → Needs you → Enter on a learned rule → the Cockpit shows, with the rule's Accept and Dismiss. (3) In a
+  council with a waiting suggestion, fold the Ideas rail → the `Ideas · N` button carries the dot (`council-memory`,
+  step 1b). (4) A council whose coordinator failed with no sent idea → its Retry is greyed, and its hover says no idea
+  was sent. (5) Copy a routed message's `Router failed` row → the pasted text reads `Router failed UX`, not
+  `Router failedUX` (`council-routing`). Commit: fix(council) Needs you strip, palette learned rule, folded-rail dot,
+  summary Retry hold
+
 - [ ] (arcterm) Council and Doc review cards in Chat, with a real agent: in a Claude agent's Chat have it start a
   council (`/arc:council`, or ask for one) → while it runs a Council card sits at the end of the conversation (the
   question, a chip per expert, the step, the time, the estimate, Stop; Open council opens the room); a second council
@@ -320,8 +375,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   comments), diff-scope steps 3b (Review on a landed run lists only the run's files) and 6b (a corrupt `.git/index`
   reads as Couldn't refresh, not as not a repository). Only unit tests, the typecheck and `node --check` ran.
 
-- [ ] (arcterm) The job queue plans on measured peaks (spec 2026-11-12-measured-job-peaks), on Windows and on the Mac:
-  in a Claude agent run `task check:ts` twice → the second run's row in the Jobs popover reads "measured" and its
+- [ ] (arcterm) The job queue plans on measured peaks (spec 2026-11-12-measured-job-peaks), on the Mac (Windows held
+  on 1.1.2, 2026-11-14: check:ts peaks recorded; an unknown `memhog hog.js` at 1.54 GB was learned and its second run
+  took slot j18): in a Claude agent run `task check:ts` twice → the second run's row in the Jobs popover reads "measured" and its
   tooltip names the first run's peak, the row's figure being that peak × 1.2 rather than the table's 3 GB "est.". Then
   have the agent run a `make`-style build that peaks over 1 GB (`make build`, `gradle build`) twice → after the first,
   `~/.arc/jobslot-learned.json` lists its pattern and the second takes a slot and queues like a table command; a
@@ -493,12 +549,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Tray job size tooltip, on a build from 2667a3291: with a heavy job queued, open the tray and hover a
   job's GB figure → "The RAM the queue sets aside for it (the Jobs popover says whether it was measured)". Commit:
   fix(tray) a job's RAM tooltip says what the figure is
-- [ ] (arcterm) A background heavy command keeps its slot on Windows, on a build with the new `wsh`: have a Claude
-  agent run `task check:ts` with `run_in_background` → `waveapp.log`'s `[jobqueue] finished jN (task check:ts), held`
-  reads about the typecheck's own time (a minute or two), not `2s`; a second and third heavy background command
-  started beside it wait their turn. Before the fix every one let go after one 2 s poll (seen 2026-11-14), because
-  under Git Bash wsh's parent is a fork that exits with wsh (`cmd/wsh/cmd/wshcmd-jobslothold.go`). Commit:
-  fix(wsh) a background heavy command keeps its slot on Windows
+- [ ] (arcterm) Old engine prompts are trimmed, on a build with `pkg/runprune`: about 5 minutes after arcterm starts,
+  `waveapp.log` has `runprune: trimmed the prompts of N engine sessions that ended over 7 days ago (… MB)`; the first
+  sweep on the 2026-11-14 store should trim ~2,200 runs and ~28 MB (a read-only simulation). Then open an old run's
+  DAG and peek a task from over a week ago → its goal shows one line, its report and evidence are whole; a run you
+  started yourself still shows its whole goal. Unit tests only. Commit: feat(runs) trim finished engine sessions'
+  prompts after a week
 - [ ] (arcterm) A server start takes no heavy-job slot, on a build from 62dd4420e: have an agent run
   `./gradlew bootRun` or `mvn spring-boot:run` in the background (or `uvicorn app:app`) in a Java or Python project:
   the Jobs popover shows no row for it, and a `task check:ts` started beside it starts at once

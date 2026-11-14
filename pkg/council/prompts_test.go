@@ -1313,6 +1313,34 @@ func TestRound2PromptShowsWhatWasSaidInALaterPass(t *testing.T) {
 	mustNotContain(t, "round 2 prompt", first, "What was said about it:", laterPassNote)
 }
 
+// In a pass after round 2 a seat shown the person's answered reply that attached a file, in a thread, gets the tools,
+// the file's folder and the attachment block under that reply; the first pass shows no threads, so it gets none.
+func TestLaterPassCarriesAnAttachmentInTheThread(t *testing.T) {
+	c := promptCouncil()
+	c.Rounds = 3
+	img := filepath.Join("home", "att", "a1", "one.png")
+	c.Replies[2].Attachments, c.Replies[2].Tools, c.Replies[2].Answered = []string{img}, true, true // r3, the person's reply on P1
+	ram := c.Experts[1]                                                                             // reviews P1, owed nothing about it
+
+	p := round2PromptFor(c, ram, 3, round2Scope{Picks: true})
+	mustContain(t, "pass 3 prompt", p, round2ReadsNote, "Text-r3 why does it break?\n      Attachments (read these files):\n      - "+img)
+	if tools, dirs := readsOf(round2Carried(c, ram, 3, round2Scope{Picks: true})); !tools || !slices.Equal(dirs, []string{filepath.Dir(img)}) {
+		t.Errorf("pass 3 call reads = %v %v, want tools and the image's folder", tools, dirs)
+	}
+
+	first := round2PromptFor(c, ram, 2, round2Scope{Picks: true})
+	mustNotContain(t, "pass 2 prompt", first, round2ReadsNote, "read these files")
+	if tools, _ := readsOf(round2Carried(c, ram, 2, round2Scope{Picks: true})); tools {
+		t.Error("the first pass, which shows no threads, has tools")
+	}
+
+	// a reply whose Let them read files pointed at nothing gives a later pass no tools
+	c.Replies[2].Attachments = nil
+	if tools, _ := readsOf(round2Carried(c, ram, 3, round2Scope{Picks: true})); tools {
+		t.Error("a reply with tools on but nothing to open gave pass 3 tools")
+	}
+}
+
 func TestSynthesisPromptLeavesOutDraftsAndNamesSkips(t *testing.T) {
 	c := agentPromptCouncil()
 	c.Skips = []CouncilSkip{{Expert: "scout", Round: 2, Reason: "still working on its own task after 10 min"}}

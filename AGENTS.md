@@ -120,7 +120,9 @@ Other useful commands:
   and `dist/bin` instead of the junctions, which a build writes through into the main checkout.
   `ARC_DEV_NO_GLOBAL_INSTALL=1` keeps it from installing its hooks and `~/.arc/bin/wsh` over yours, and keeps its
   wavesrv on a vault in its own data dir with no agent sync into your harnesses (`browser-app.mjs` always sets it).
-  `scripts/cdp/final-verify.mjs` does all of it; then `CDP_PORT=<port> task verify:ui`.
+  `scripts/cdp/final-verify.mjs` does all of it and runs the scenarios itself, but only with an out dir: by hand,
+  `ARC_FINAL_OUT=<dir> node scripts/cdp/final-verify.mjs <scenario...>` (without it, it exits 3 "ARC_FINAL_OUT is not
+  set"). Against a worktree app you started yourself, `CDP_PORT=<port> task verify:ui -- <scenario...>`.
 
 ### Visual verification (dev)
 

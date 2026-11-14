@@ -400,7 +400,7 @@ export function MachineServersPanel({ model }: { model: AgentsViewModel }) {
                 open={open}
                 origin="bottom right"
                 // its chip sits at the footer's right end, so it rises from just above it
-                className="fixed bottom-[42px] right-4 z-[60] w-[520px] max-h-[60vh] overflow-y-auto rounded-lg border border-edge-strong bg-surface-raised shadow-popover"
+                className="fixed bottom-[42px] right-4 z-[60] w-[520px] max-h-[60vh] overflow-y-auto rounded-lg border border-edge-strong frost shadow-popover"
             >
                 <div data-machine-servers-panel role="dialog" aria-label="Servers on this machine">
                     <div className="flex items-center gap-2 border-b border-border px-3 py-2">

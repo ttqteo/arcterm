@@ -30,6 +30,7 @@ import type {
 import { councilStartAnchor, type CouncilAnchor } from "./chatcouncil";
 import { isDocReviewAsk } from "./chatdocreview";
 import { isHandoffAsk } from "./chathandoff";
+import { sentSwitch, SWITCH_NOTE } from "./chatinitiative";
 import { runStartAnchor, type RunAnchor } from "./chatruncards";
 import {
     pairReviewer,
@@ -73,8 +74,18 @@ export type ChatMarker = Extract<CompactItem, { kind: "compaction" | "interrupte
 
 export type ChatItem =
     // a message you typed; `images` is what you pasted with it (data URLs), left off when there were none; `uuid` the
-    // transcript record it came from, which Fork from here cuts at
-    | { kind: "you"; key: string; text: string; images?: string[]; uuid?: string }
+    // transcript record it came from, which Fork from here cuts at; `chunk` the initiative chunk the message moved the agent
+    // to (its switched result line, chatinitiative.ts sentSwitch), drawn as a divider over it
+    | {
+          kind: "you";
+          key: string;
+          text: string;
+          images?: string[];
+          uuid?: string;
+          chunk?: { n: number; label: string };
+          // the message is arcterm's SWITCH_NOTE behind a switched line: the band sent it, not you
+          switchNote?: true;
+      }
     // a slash command or skill you typed, as "/name args" (check with `"command" in item`), or a bash-mode command, which
     // reads "! cmd"; `shell` is what it printed once that lands. `terminal`: a panel only Claude Code's own screen drew
     // (/config, /usage…), which left nothing here to show. `btw`: a /btw's side answer
@@ -263,13 +274,18 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
                 if (sent != null) {
                     out.push({ kind: "sent", key: keyOf("sent", item.index), ...sent });
                 } else {
-                    const uuid = recordUuid(entries[item.index]);
+                    const entry = entries[item.index];
+                    const uuid = recordUuid(entry);
+                    // the item's text has its result lines stripped: the switched one is read from the entry
+                    const chunk = entry?.kind === "user" ? sentSwitch(entry.text) : null;
                     out.push({
                         kind: "you",
                         key: keyOf("you", item.index),
                         text: item.text,
                         ...(item.images != null ? { images: item.images } : {}),
                         ...(uuid != null ? { uuid } : {}),
+                        ...(chunk != null ? { chunk } : {}),
+                        ...(chunk != null && item.text.trim() === SWITCH_NOTE ? { switchNote: true as const } : {}),
                     });
                 }
                 break;

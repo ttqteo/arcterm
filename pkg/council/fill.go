@@ -150,7 +150,7 @@ func fillSummary(c *Council, s *CouncilSummary) {
 		case p.Cut:
 			outcomes[p.Id] = "Cut at the pause"
 		case p.Withdrawn:
-			outcomes[p.Id] = withdrawnOutcome(c)
+			outcomes[p.Id] = withdrawnOutcome(c, p)
 			if outcomes[p.Id] == "" {
 				outcomes[p.Id] = "Withdrawn"
 			}

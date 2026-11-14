@@ -120,7 +120,7 @@ export function TabSwitcher({ model }: { model: AgentsViewModel }) {
                 aria-label="Switch tab"
                 data-tab-switcher
                 className={cn(
-                    "pointer-events-auto flex max-w-full flex-col items-center rounded-[14px] border border-edge-mid bg-surface-raised shadow-popover",
+                    "pointer-events-auto flex max-w-full flex-col items-center rounded-[14px] border border-edge-mid frost shadow-popover",
                     size === "lg" ? "gap-3 px-3.5 pb-3 pt-3.5" : "gap-2.5 px-3 pb-2.5 pt-3"
                 )}
             >

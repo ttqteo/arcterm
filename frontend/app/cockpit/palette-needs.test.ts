@@ -192,4 +192,7 @@ describe("palette-needs: a learned rule", () => {
         const g = needsGroups(needsRows([learn], []));
         expect(g.map((x) => [x.group, x.rows.length])).toEqual([["reviews", 1]]);
     });
+    it("opens the Cockpit, whose Needs you holds its Accept and Dismiss", () => {
+        expect(needsTarget(needsRows([learn], [])[0])).toEqual({ kind: "cockpit" });
+    });
 });

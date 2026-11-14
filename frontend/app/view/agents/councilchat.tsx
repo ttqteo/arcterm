@@ -53,6 +53,7 @@ import {
     ChevronsLeft,
     ChevronsRight,
     CircleAlert,
+    Compass,
     Copy,
     CornerDownRight,
     Ellipsis,
@@ -167,7 +168,7 @@ import {
     type SeatableAgent,
 } from "./councilmodel";
 import { councilOpenedAtom, openedAt } from "./councilopened";
-import { offersRetryAll, retryAllModels, retryAllSeats } from "./councilretry";
+import { offersRetryAll, retryAllModels, retryAllSeats, retryHold } from "./councilretry";
 import { RetryModelPick, RetryWithButton } from "./councilretrymenu";
 import { councilRevealAtom } from "./councilreveal";
 import {
@@ -730,8 +731,8 @@ function PinnedPill({ id }: { id: string }) {
 }
 
 // Chốt: pins an idea's title, or a seat's message on one line, as the council's direction (the Memory tab). It sits beside
-// like and dislike in the same row, a pin with no word (its name is its tooltip), and on a reply shows with them while it
-// is hovered or focused. A direction is checked
+// like and dislike in the same row, a compass with no word (its name is its tooltip; not a pin, which is Pin to Report's
+// beside it on a reply), and on a reply shows with them while it is hovered or focused. A direction is checked
 // before it is set, so the icon turns while the check runs; where it landed (set, or held with a reason) is on the Memory
 // tab. An item with no text offers nothing, since the backend refuses an empty direction.
 function Chot({ councilId, item, text, acts }: { councilId: string; item: string; text: string; acts: Actions }) {
@@ -754,7 +755,7 @@ function Chot({ councilId, item, text, acts }: { councilId: string; item: string
             {busy ? (
                 <Loader2 size={13} className="animate-spin" aria-hidden />
             ) : (
-                <Pin size={13} strokeWidth={2} aria-hidden />
+                <Compass size={13} strokeWidth={2} aria-hidden />
             )}
         </button>
     );
@@ -848,7 +849,7 @@ function IdeaMore({ c, id, acts }: { c: Council; id: string; acts: Actions }) {
                 aria-label="More"
                 data-council-tools={id}
                 className={cn(
-                    "absolute right-0 z-30 min-w-[190px] flex-col rounded-[10px] border border-edge-mid bg-surface-raised p-[4px] shadow-popover-md",
+                    "absolute right-0 z-30 min-w-[190px] flex-col rounded-[10px] border border-edge-mid frost p-[4px] shadow-popover-md",
                     up ? "bottom-[calc(100%+6px)]" : "top-[calc(100%+6px)]",
                     open ? "flex" : "hidden"
                 )}
@@ -1366,6 +1367,19 @@ function PersonText({ councilId, item }: { councilId: string; item: ReplyPost })
 function ReachRow({ to }: { to: ReachChips }) {
     const failed = to.by === "failed";
     const Icon = failed ? CircleAlert : to.by === "you" ? ArrowRight : Route;
+    const pieces: ReactNode[] = [];
+    if (to.by === "choosing") {
+        pieces.push(<span key="choosing">{ROUTER_CHOOSING}</span>);
+    }
+    if (failed) {
+        pieces.push(<span key="failed">Router failed</span>);
+    }
+    if (to.everyone) {
+        pieces.push(<SeatChip key="everyone" who={null} text="Everyone" />);
+    }
+    for (const who of to.seats) {
+        pieces.push(<SeatChip key={who.author} who={who} text={who.name} />);
+    }
     return (
         <div
             data-council-reach={to.by}
@@ -1377,12 +1391,8 @@ function ReachRow({ to }: { to: ReachChips }) {
             )}
         >
             <Icon size={12} aria-hidden className="flex-none" />
-            {to.by === "choosing" && <span>{ROUTER_CHOOSING}</span>}
-            {failed && <span>Router failed</span>}
-            {to.everyone && <SeatChip who={null} text="Everyone" />}
-            {to.seats.map((who) => (
-                <SeatChip key={who.author} who={who} text={who.name} />
-            ))}
+            {/* a space between the pieces, which the flex row does not draw, keeps the DOM text 'Router failed UX' */}
+            {pieces.flatMap((p, i) => (i === 0 ? [p] : [" ", p]))}
         </div>
     );
 }
@@ -1412,7 +1422,7 @@ function QuoteRow({ quote }: { quote: AnswerQuote }) {
     const body = (
         <>
             <CornerDownRight size={11} aria-hidden className="flex-none" />
-            <span className="flex-none font-semibold text-secondary">{quote.name}</span>
+            <span className="flex-none font-semibold text-secondary">{quote.name}</span>{" "}
             <span className="min-w-0 truncate">{quote.text}</span>
         </>
     );
@@ -1947,7 +1957,8 @@ function SkippedLine({ item, onOpenTerminal }: { item: SkipLine; onOpenTerminal:
 
 function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Actions }) {
     const key = `retry:${item.author}`;
-    const running = c.state === "running"; // a retry while it runs is refused: one job at a time
+    // a retry while it runs is refused (one job at a time), and so is a summary's with no sent idea
+    const hold = retryHold(c, item.author);
     return (
         <div
             role="alert"
@@ -1965,8 +1976,8 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
                 type="button"
                 data-council-retry={item.author}
                 aria-label={`Retry ${item.name}`}
-                disabled={running || acts.busy.has(key)}
-                title={running ? "The council is running: retry once it is done" : undefined}
+                disabled={hold != null || acts.busy.has(key)}
+                title={hold ?? undefined}
                 onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, item.author))}
                 className={cn(secondaryButton, "h-[22px] px-[8px] text-[12px]")}
             >
@@ -1975,7 +1986,7 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
             <RetryWithButton
                 expert={c.experts.find((e) => e.id === item.author)}
                 error={c.failed?.[item.author]?.error}
-                disabled={running || acts.busy.has(key)}
+                disabled={hold != null || acts.busy.has(key)}
                 onPick={(model) => void acts.run(key, "Retry", () => retryExpert(c.id, item.author, model))}
                 className={cn(secondaryButton, "h-[22px] px-[6px] text-[12px]")}
             />
@@ -2526,7 +2537,7 @@ function Composer({
                               : "Seats"
                     }
                     className={cn(
-                        "absolute bottom-full left-0 z-10 m-0 mb-[4px] flex max-h-[280px] min-w-[220px] list-none flex-col overflow-y-auto rounded-[8px] border border-edge-strong bg-surface-raised p-[4px]",
+                        "absolute bottom-full left-0 z-10 m-0 mb-[4px] flex max-h-[280px] min-w-[220px] list-none flex-col overflow-y-auto rounded-[8px] border border-edge-strong frost p-[4px]",
                         (picker.chats.length > 0 || picker.files.length > 0) && "w-[460px] max-w-full"
                     )}
                 >
@@ -3837,6 +3848,8 @@ export function CouncilChat({
         }
     }, [openId, readUpTo, setRead]);
     const [folded, setFolded] = useAtom(councilIdeasRailFoldedAtom);
+    // the Memory tab's dot, carried onto the unfold button while the rail is folded, so a waiting card is not missed
+    const memoryDot = memoryDotOn(c, useAtomValue(memorySeenAtom)[c.id]);
     const [railTab, setRailTab] = useState<RailTabName>("thread");
     // a thread opened any way (its replies button, Enter on the cursor, the Summary's link) shows on the rail's second tab
     useEffect(() => {
@@ -4037,6 +4050,14 @@ export function CouncilChat({
                         >
                             <ChevronsLeft size={13} strokeWidth={2} aria-hidden />
                             Ideas · {list.ideas.length}
+                            {memoryDot && (
+                                <span
+                                    role="img"
+                                    aria-label="Something new in memory, or a suggestion or a held direction waits for you"
+                                    data-council-memory-dot
+                                    className="inline-block h-[6px] w-[6px] rounded-full bg-accent-soft"
+                                />
+                            )}
                         </button>
                     )}
                     {onlySeat != null && (

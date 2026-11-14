@@ -24,6 +24,7 @@ const KIND_LABEL: Record<string, string> = {
     "chunk-due": "Due",
     "plan-review": "Plan to review",
     "learn-proposal": "Learned rule",
+    council: "Council",
 };
 
 export type StripOpen =
@@ -32,7 +33,9 @@ export type StripOpen =
     // the run's sheet, or the channel's newest when the item names no run (what Jarvis's Open does)
     | { kind: "channel"; channelId: string; runId: string | null }
     // a chunk that came due, or a plan to review whose agent is gone: its initiative, which names no channel
-    | { kind: "effort"; effortId: string };
+    | { kind: "effort"; effortId: string }
+    // a council paused after its first round: its Discussion, where Continue is pressed
+    | { kind: "council"; councilId: string };
 
 export interface StripRow {
     key: string;
@@ -83,19 +86,26 @@ export function escalationAgent(
     );
 }
 
-/** Pure: each channel's registered project, by the project path the channel is bound to. A project filter is a
- *  registry name, so this is the only join that scopes an item by project. A channel the registry cannot name
- *  (no path, an unregistered or since-removed project) is left out. */
-export function channelProjects(
-    channels: Channel[] | null | undefined,
-    registry: Record<string, { path?: string }> | null | undefined
-): Map<string, string> {
+/** Pure: each registered project's name, by its normalized path (normProjectPath). */
+export function projectsByPath(registry: Record<string, { path?: string }> | null | undefined): Map<string, string> {
     const byPath = new Map<string, string>();
     for (const [name, p] of Object.entries(registry ?? {})) {
         if (p?.path) {
             byPath.set(normProjectPath(p.path), name);
         }
     }
+    return byPath;
+}
+
+/** Pure: each channel's registered project, by the project path the channel is bound to. A project filter is a
+ *  registry name, so this join (and pathProject's, for an item that names its folder instead of a channel) is what
+ *  scopes an item by project. A channel the registry cannot name (no path, an unregistered or since-removed project)
+ *  is left out. */
+export function channelProjects(
+    channels: Channel[] | null | undefined,
+    registry: Record<string, { path?: string }> | null | undefined
+): Map<string, string> {
+    const byPath = projectsByPath(registry);
     const out = new Map<string, string>();
     for (const c of channels ?? []) {
         const name = c.projectpath ? byPath.get(normProjectPath(c.projectpath)) : undefined;
@@ -113,6 +123,8 @@ export function buildNeedsYouRows(input: {
     attention: AttentionItem[];
     filter: string;
     channelProject: Map<string, string>;
+    // registered project names by normalized path (projectsByPath): scopes an item that names its folder, a council's
+    pathProject?: Map<string, string>;
     channelMessages: Record<string, ChannelMessage[]>;
     roster: AgentVM[];
     learn?: boolean; // false leaves learned rules out (a project's Overview: they belong to no one project); left out, they show
@@ -127,11 +139,17 @@ export function buildNeedsYouRows(input: {
         if (learnId != null && input.learn === false) {
             continue;
         }
-        // a learned rule is tied to a skill or a project folder, never a channel, so the project filter keeps it
-        if (learnId == null && input.filter !== "all" && input.channelProject.get(channelId) !== input.filter) {
+        // a learned rule is tied to a skill or a project folder, never a channel, so the project filter keeps it; an item
+        // with no channel that names its folder (a council) is scoped by that folder's project
+        const project =
+            channelId === "" && a.projectpath
+                ? input.pathProject?.get(normProjectPath(a.projectpath))
+                : input.channelProject.get(channelId);
+        if (learnId == null && input.filter !== "all" && project !== input.filter) {
             continue;
         }
         const effortId = a.kind === "chunk-due" || a.kind === "plan-review" ? idOf(a.oref, "effort") : "";
+        const councilId = a.kind === "council" ? idOf(a.oref, "council") : "";
         const run: AttentionRunRow = {
             wireKind: a.kind,
             channelId,
@@ -165,9 +183,11 @@ export function buildNeedsYouRows(input: {
                     ? { kind: "agent", agentId: agent.id }
                     : effortId !== ""
                       ? { kind: "effort", effortId }
-                      : channelId !== ""
-                        ? { kind: "channel", channelId, runId: run.runId }
-                        : null,
+                      : councilId !== ""
+                        ? { kind: "council", councilId }
+                        : channelId !== ""
+                          ? { kind: "channel", channelId, runId: run.runId }
+                          : null,
             learnId,
         });
     }

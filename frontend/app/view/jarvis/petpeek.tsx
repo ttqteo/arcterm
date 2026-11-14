@@ -757,9 +757,10 @@ function PetStayPin({ folded }: { folded: boolean }) {
                         open={open}
                         origin="top right"
                         className={cn(
-                            "min-w-[212px] rounded-[10px] border bg-surface-raised p-[4px]",
-                            // folded: no drop shadow, which smears the app behind the see-through window
-                            folded ? "border-edge-strong" : "border-edge-mid shadow-popover-md"
+                            "min-w-[212px] rounded-[10px] border p-[4px]",
+                            // folded: no drop shadow, which smears the app behind the see-through window, and a solid fill,
+                            // since a frost has nothing to blur there
+                            folded ? "border-edge-strong bg-surface-raised" : "frost border-edge-mid shadow-popover-md"
                         )}
                     >
                         <div ref={menuRef} role="menu" aria-labelledby={triggerId} data-pet-stay-menu>
@@ -1206,10 +1207,13 @@ export function PetPeek({
                                         transformOrigin: placement != null ? originOf(placement) : ORIGIN[corner],
                                     }}
                                     className={cn(
-                                        "flex w-[calc(100vw-16px)] flex-col overflow-hidden rounded-[12px] border bg-surface-raised",
+                                        "flex w-[calc(100vw-16px)] flex-col overflow-hidden rounded-[12px] border",
                                         // folded: no drop shadow, which smears the app behind the see-through window;
-                                        // a stronger edge parts the panel from it instead
-                                        corner === "mini" ? "border-edge-strong" : "border-border shadow-popover",
+                                        // a stronger edge parts the panel from it instead, and a solid fill, since a frost
+                                        // has nothing to blur there
+                                        corner === "mini"
+                                            ? "border-edge-strong bg-surface-raised"
+                                            : "frost border-border shadow-popover",
                                         // folded: Sprout's 80px box and the offset share the window with the panel
                                         corner === "mini" ? "max-h-[calc(100vh-104px)]" : "max-h-[calc(100vh-16px)]",
                                         // quiet: 300px, the width its title once had beside Full view and close, plus the stay

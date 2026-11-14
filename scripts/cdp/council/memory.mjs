@@ -419,6 +419,22 @@ export const councilMemory = {
             { dots: list.entries.filter((e) => e.dot).map((e) => e.id), ideas: railIdeas, memory: railMemory }
         );
 
+        // 1b. folded: the suggestion still waits, so the button that unfolds the rail carries the Memory dot
+        await click(h, `${RAIL} [data-council-rail-fold]`);
+        const foldedDot = await until(
+            h,
+            `!document.querySelector(${q(RAIL)}) && !!document.querySelector("[data-council-rail-unfold] [data-council-memory-dot]")`
+        );
+        await h.shot("cdp-shots/council-memory-folded-dot.png");
+        await click(h, "[data-council-rail-unfold]");
+        const unfolded = await until(h, `!!document.querySelector(${q(RAIL)})`);
+        await showMemory(h);
+        rec(
+            "folded: with the rail folded, its `Ideas · N` unfold button carries the Memory dot while the suggestion waits, and unfolding brings the rail back",
+            foldedDot && unfolded,
+            { foldedDot, unfolded }
+        );
+
         // 2. suggestion: the card, and its reason's links into the channel
         await scrollChannelToEnd(h);
         const before = await inView(h, "P1");

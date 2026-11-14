@@ -103,7 +103,8 @@ export type NeedsTarget =
     | { kind: "run"; channelId: string; runId: string }
     | { kind: "channel"; channelId: string }
     | { kind: "effort"; effortId: string } // a due chunk's initiative, or a plan to review whose agent is gone
-    | { kind: "council"; councilId: string }; // a council paused after step 1, on its Discussion
+    | { kind: "council"; councilId: string } // a council paused after step 1, on its Discussion
+    | { kind: "cockpit" }; // a learned rule: the Cockpit's Needs you, where it is accepted, edited or dismissed
 
 // Where Enter on a Needs you row lands. A dag item's key names its dag ("dag-gate:<dag>[:<task>]",
 // "dag-blocked:<dag>", pkg/jarvis/attention.go); an ask whose agent left the roster falls back to its
@@ -117,6 +118,10 @@ export function needsTarget(row: NeedsRow): NeedsTarget | null {
         return { kind: "agent", agentId: row.planAgent.id };
     }
     const { kind, key, channelid, runid, taskid, oref } = row.item;
+    // a learned rule names no channel and no agent: it is decided on its card in the Cockpit's Needs you
+    if (kind === "learn-proposal") {
+        return { kind: "cockpit" };
+    }
     if ((kind === "chunk-due" || kind === "plan-review") && oref?.startsWith("effort:")) {
         return { kind: "effort", effortId: oref.slice("effort:".length) };
     }

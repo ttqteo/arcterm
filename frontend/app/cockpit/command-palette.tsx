@@ -233,6 +233,8 @@ function needsEcho(row: NeedsRow, t: NeedsTarget | null): string {
             return "Opens the initiative";
         case "council":
             return "Opens the council’s discussion";
+        case "cockpit":
+            return "Opens the Cockpit, where the rule is accepted or dismissed";
         case "dag":
             return "Opens the run’s task graph";
         case "run":
@@ -1741,6 +1743,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         <ModalShell
             open={open}
             onClose={editing ? leaveDraft : close}
+            frosted
             className="flex h-[min(600px,80vh)] w-[min(820px,93vw)] flex-col"
         >
             {open && draft != null ? (

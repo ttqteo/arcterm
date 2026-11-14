@@ -16,7 +16,7 @@
     --color-surface-hover: #252525;
     --color-surface-code: #1a1a1a; /* diff / terminal body (design-system "Code") */
     --color-surface-selected: #2d2d2d; /* persistent selected row (design-system "Selected"); distinct from transient surface-hover */
-    --color-panel: rgba(28, 28, 28, 0.6);
+    --color-panel: rgba(28, 28, 28, 0.66); /* the default theme's panelAlpha (themes.ts), which themes.test.ts holds equal */
     --color-modalbg: #1c1c1c;
     --color-lane: #141414; /* agent-card lane fill (handoff laneBg) */
     --color-page-canvas: #ffffff; /* a previewed web page's own canvas: browsers draw white under a page with no background */
@@ -380,6 +380,18 @@
     body.nohover & {
         @slot;
     }
+}
+
+/* The frosted fill of an overlay panel (a menu, a popover, the palette's panel; DESIGN.md "Overlays"): the themed
+   --color-panel with a static 18px blur, as Chat's suggestion panel draws it. It replaces the panel's bg-surface-raised /
+   bg-surface / bg-modalbg, and goes on the panel's outermost element: an ancestor with opacity below 1, a filter, a
+   backdrop-filter, a mask or a clip-path is a backdrop root, and the blur then samples only what that ancestor paints.
+   The blur is never animated (WebView2 re-blurs the window every frame anything under it moves). The prefixed property
+   is for the macOS 13-15 WKWebView, which only knows -webkit-backdrop-filter. */
+@utility frost {
+    background-color: var(--color-panel);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
 }
 
 :root {

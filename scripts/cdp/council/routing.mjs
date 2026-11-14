@@ -669,10 +669,10 @@ const postOf = (h, id) =>
         return {
             router: router ? norm(router) : null,
             reach: reach
-                ? { by: reach.getAttribute("data-council-reach"), seats: seatsOf(reach), text: shown(reach), title: reach.getAttribute("title"), top: bubble?.firstElementChild === reach }
+                ? { by: reach.getAttribute("data-council-reach"), seats: seatsOf(reach), text: shown(reach), dom: norm(reach), title: reach.getAttribute("title"), top: bubble?.firstElementChild === reach }
                 : null,
             quote: quote
-                ? { id: quote.getAttribute("data-council-quote"), text: shown(quote), jump: quote.tagName === "BUTTON", top: bubble?.firstElementChild === quote }
+                ? { id: quote.getAttribute("data-council-quote"), text: shown(quote), dom: norm(quote), jump: quote.tagName === "BUTTON", top: bubble?.firstElementChild === quote }
                 : null,
             named: named.map((x) => ({ seat: x.getAttribute("data-council-seat-chip"), text: norm(x) })),
             waits: waits ? norm(waits) : null,
@@ -765,9 +765,10 @@ async function routerFailed(h, ctx, rec) {
     const mine = await postOf(h, "r7");
     const first = await postOf(h, "r8");
     rec(
-        "router-failed: the person's chip row reads `Router failed` and names UX, its hover `Router failed, UX answered` with the failure's reason left out, and the answer has no line above it",
+        "router-failed: the person's chip row reads `Router failed` and names UX (its DOM text spaced too), its hover `Router failed, UX answered` with the failure's reason left out, and the answer has no line above it",
         mine?.reach?.by === "failed" &&
             mine.reach.text === "Router failed UX" &&
+            mine.reach.dom === "Router failed UX" &&
             mine.reach.seats === "ux" &&
             mine.reach.title === "Router failed, UX answered" &&
             !`${mine.reach.text} ${mine.reach.title}`.includes("exited") &&
@@ -812,6 +813,7 @@ async function quoteStacked(h, ctx, rec) {
         "quote-stacked: with two posts sent before the answers, UX's answer opens on a quote of the routed post (`You` and its text) and RAM's on the `@RAM` post, each a jump button at the top of its bubble",
         ux?.quote?.id === "r7" &&
             ux.quote.text === `You ${ROUTED.stacked.text}` &&
+            ux.quote.dom === `You ${ROUTED.stacked.text}` &&
             ux.quote.jump === true &&
             ux.quote.top === true &&
             ram?.quote?.id === "r20" &&

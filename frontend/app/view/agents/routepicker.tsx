@@ -242,7 +242,7 @@ export function RoutePicker({
                 <PopoverReveal
                     open={open}
                     origin="bottom left"
-                    className="flex max-h-[var(--route-picker-max-height)] w-[320px] flex-col overflow-hidden rounded-[11px] border border-border bg-surface p-[5px] shadow-popover-md"
+                    className="flex max-h-[var(--route-picker-max-height)] w-[320px] flex-col overflow-hidden rounded-[11px] border border-border frost p-[5px] shadow-popover-md"
                 >
                     <div role="group" aria-label="Available routes" className="flex min-h-0 flex-1 flex-col">
                         <div className="flex items-center justify-between px-[9px] pb-1.5 pt-1">

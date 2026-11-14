@@ -1046,6 +1046,25 @@ describe("projectTree", () => {
             ]);
         });
 
+        it("lists a council of no registered project in Home, which gets a folder for it alone", () => {
+            const home = withCouncils({ [HOME_PROJECT]: [cvm("c1", 1)] });
+            expect(shape(build([agent("a")], [], home))).toEqual([
+                "group:waveterm:1a:0t",
+                "a:a",
+                `group:${HOME_PROJECT}:0a:0t`,
+                "c:c1:Done",
+            ]);
+            // with Home's terminals: the council sits above the divider, as in any project
+            expect(shape(build([agent("a")], [term("h", null)], home))).toEqual([
+                "group:waveterm:1a:0t",
+                "a:a",
+                `group:${HOME_PROJECT}:0a:1t`,
+                "c:c1:Done",
+                `divider:${HOME_PROJECT}`,
+                "t:h",
+            ]);
+        });
+
         it("folds the council rows with the rest of the folder", () => {
             const rows = build(
                 [agent("a")],
@@ -1627,10 +1646,11 @@ describe("councilRowsByProject", () => {
             READ,
             AT
         );
-        expect([...rows.keys()]).toEqual(["waveterm", "loom"]);
+        expect([...rows.keys()]).toEqual(["waveterm", "loom", HOME_PROJECT]);
         expect(rows.get("waveterm")?.map((r) => r.id)).toEqual(["a", "b"]);
-        // a POSIX path is case-sensitive; only a drive path is compared without case
+        // a POSIX path is case-sensitive; only a drive path is compared without case, so /home/u/Loom is no project's
         expect(rows.get("loom")?.map((r) => r.id)).toEqual(["c"]);
+        expect(rows.get(HOME_PROJECT)?.map((r) => r.id)).toEqual(["d"]);
     });
 
     it("keeps a pinned council in the tree as any other, ended or running", () => {
@@ -1736,8 +1756,10 @@ describe("councilRowsByProject", () => {
         ).toEqual(["done", "failed", "stopped", "not-run"]);
     });
 
-    it("leaves out a council of a project that is not registered, and has nothing before the list loads", () => {
-        expect(councilRowsByProject([council("x", "/elsewhere")], roots, READ, AT).size).toBe(0);
+    it("files a council of a folder that is no registered project under Home, and has nothing before the list loads", () => {
+        const rows = councilRowsByProject([council("x", "/elsewhere"), council("y", "/home/u/loom")], roots, READ, AT);
+        expect(rows.get(HOME_PROJECT)?.map((r) => r.id)).toEqual(["x"]);
+        expect(rows.get("loom")?.map((r) => r.id)).toEqual(["y"]);
         expect(councilRowsByProject(null, roots, READ, AT).size).toBe(0);
         expect(councilRowsByProject(undefined, roots, READ, AT).size).toBe(0);
     });

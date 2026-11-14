@@ -13,7 +13,7 @@ import { LightString } from "@/app/view/agents/christmaslights";
 import { useChristmasDecor } from "@/app/view/agents/christmasstore";
 import { cn } from "@/util/util";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 
 export type ModalVariant = "dialog" | "sheet";
 
@@ -31,6 +31,14 @@ const PANEL: Record<ModalVariant, string> = {
     sheet: "overflow-hidden rounded-none border-l border-edge-faint bg-surface shadow-popover outline-none",
 };
 
+// The `frosted` dialog (the command palette): the same scrim, but a layer of its own behind a click-through stage that
+// holds the panel, so the panel's blur samples the dimmed, blurred cockpit instead of the scrim's own black. Both layers
+// stay at z-[70] with the scrim first in the DOM, so the stage paints over it. `frost` replaces `bg-modalbg`.
+const SCRIM_LAYER = "fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm";
+const STAGE_LAYER = "pointer-events-none fixed inset-0 z-[70] flex justify-center";
+const PANEL_FROSTED =
+    "pointer-events-auto overflow-hidden rounded-[14px] border border-edge-strong frost shadow-popover outline-none";
+
 interface ModalShellProps {
     open: boolean;
     onClose: () => void; // Esc + (optional) backdrop click
@@ -43,6 +51,10 @@ interface ModalShellProps {
     // the Christmas lights hang from the panel's top edge while the decor shows, lit and still. Only for a dialog whose
     // header leaves the bulbs' 16px clear above its text (New agent, New project, the cheatsheet, Quick look)
     christmasLights?: boolean;
+    // the panel draws the `frost` fill over today's scrim instead of the solid `bg-modalbg`. Dialog variant only (a sheet
+    // ignores it): the scrim is then a sibling layer behind the panel's positioning container, not its parent. A scrim's
+    // backdrop-filter makes it a backdrop root, and a frosted child of one would blur only the scrim's own black.
+    frosted?: boolean;
     children: ReactNode;
 }
 
@@ -56,9 +68,11 @@ export function ModalShell({
     dismissOnBackdrop = true,
     variant = "dialog",
     christmasLights = false,
+    frosted = false,
     children,
 }: ModalShellProps) {
     const lights = useChristmasDecor() && christmasLights;
+    const layered = frosted && variant === "dialog";
     const panelRef = useRef<HTMLDivElement>(null);
     const shellId = useId();
     // Registration and focus-taking are one effect, not two: closing must check "am I still the top
@@ -114,10 +128,57 @@ export function ModalShell({
         return () => window.removeEventListener("keydown", onKey);
     }, [open, onClose, onSubmit, shellId]);
 
+    // a press that lands on the scrim itself, not on something drawn over it
+    const dismissOnScrim = dismissOnBackdrop
+        ? (e: ReactMouseEvent) => {
+              if (e.target === e.currentTarget) {
+                  onClose();
+              }
+          }
+        : undefined;
+
     return (
         <MotionConfig reducedMotion="user">
             <AnimatePresence>
-                {open && (
+                {open && layered && (
+                    <motion.div
+                        key="scrim"
+                        data-modal-scrim=""
+                        variants={modalBackdrop}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        className={SCRIM_LAYER}
+                        onMouseDown={dismissOnScrim}
+                    />
+                )}
+                {open && layered && (
+                    <div
+                        key="stage"
+                        className={cn(
+                            STAGE_LAYER,
+                            align === "center" ? "items-center p-10" : cn("items-start", topClass)
+                        )}
+                    >
+                        {/* no parent motion element hands this panel its variant labels, so it names them itself */}
+                        <motion.div
+                            ref={panelRef}
+                            variants={modalPanel}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                            role="dialog"
+                            aria-modal="true"
+                            tabIndex={-1}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className={cn(PANEL_FROSTED, lights && "relative", className)}
+                        >
+                            {lights ? <LightString place="dialog" className="top-0 z-[1]" /> : null}
+                            {children}
+                        </motion.div>
+                    </div>
+                )}
+                {open && !layered && (
                     <motion.div
                         key="backdrop"
                         variants={modalBackdrop}
@@ -130,15 +191,7 @@ export function ModalShell({
                             variant === "dialog" &&
                                 (align === "center" ? "items-center p-10" : cn("items-start", topClass))
                         )}
-                        onMouseDown={
-                            dismissOnBackdrop
-                                ? (e) => {
-                                      if (e.target === e.currentTarget) {
-                                          onClose();
-                                      }
-                                  }
-                                : undefined
-                        }
+                        onMouseDown={dismissOnScrim}
                     >
                         <motion.div
                             ref={panelRef}

@@ -154,7 +154,7 @@ export function ChatPlusMenu({
             <PopoverReveal
                 open={open}
                 origin="bottom left"
-                className="absolute bottom-[calc(100%+8px)] left-0 z-10 w-[260px] rounded-[12px] border border-edge-mid bg-surface-raised p-1.5 shadow-popover"
+                className="absolute bottom-[calc(100%+8px)] left-0 z-10 w-[260px] rounded-[12px] border border-edge-mid frost p-1.5 shadow-popover"
             >
                 <div role="menu" aria-label="Add" data-chat-plus-menu>
                     {ITEMS.map((item, i) => (
