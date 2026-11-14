@@ -45762,6 +45762,42 @@ const agentChat = {
                 { sleeping44, figure44, sized44, click44, wakeCalls44, stillAsleep44 }
             );
 
+            // 44b. a sleeping agent's box offers the finished turn's suggested replies too (the model's answer comes from
+            // window.__chatSuggestFake): its empty line names Tab and still says a message wakes it, Tab picks the chip,
+            // and Enter sends it down the wake path, one agentswake whose message is the chip's text. A new reply gives
+            // the turn a key no earlier look at F asked about, and showing A then F again reads the transcript anew
+            const CHIP44B = "vẽ tôi xem";
+            await h.ev(`(() => { window.__acSuggestAsked = []; window.__chatSuggestFake = (d) => { window.__acSuggestAsked.push(d); return [${JSON.stringify(CHIP44B)}]; }; return true; })()`);
+            acAppend(ctx.files.asleep, AC.assistantText("Xong: retry policy giờ thử lại 3 lần, cách nhau 2 s.", stamp40()));
+            await showAgent(A);
+            await polishWaitFor(h, `!!${acBox(A)}`, AC_WAIT_MS);
+            await showAgent(F);
+            const chips44b = `[...(document.querySelector('[data-agent-chat="${F}"]')?.querySelectorAll("[data-chat-suggest-chip]") ?? [])]`;
+            const shown44b = await polishWaitFor(h, `${chips44b}.some((b) => b.textContent.includes(${JSON.stringify(CHIP44B)}))`, AC_WAIT_MS);
+            await acClear(h, acBox(F));
+            const before44b = await h.ev(`({
+                asleep: !!document.querySelector('[data-sleeping-composer="${F}"] [data-chat-asleep]'),
+                hint: ${acPlaceholder(`document.querySelector('[data-sleeping-composer="${F}"]')`)},
+                chips: ${chips44b}.map((b) => b.textContent.trim()),
+                asked: (window.__acSuggestAsked ?? []).length,
+            })`);
+            await h.ev(`(${acBox(F)})?.focus()`);
+            await acKey(h, acKeys.tab);
+            const picked44b = await polishWaitFor(h, `${chips44b}.some((b) => b.hasAttribute("data-chat-suggest-picked"))`, 3000);
+            await h.shot("cdp-shots/agent-chat-44b-asleep-suggest.png");
+            const wakes44b = (await acCalls(h, "agentswake")).length;
+            await acKey(h, acKeys.enter);
+            const woke44b = await polishWaitFor(h, `(window.${AC_MOCK_KEY}?.calls ?? []).filter((c) => c.command === "agentswake").length > ${wakes44b}`, 5000);
+            const wakeCalls44b = (await acCalls(h, "agentswake")).slice(wakes44b);
+            await h.ev(`(() => { delete window.__chatSuggestFake; delete window.__acSuggestAsked; return true; })()`);
+            rec(
+                "44b. a sleeping agent's box shows the suggested reply vẽ tôi xem, its empty line names Tab and says a message wakes it, Tab picks the chip, and Enter sends one agentswake for that agent whose message is the chip",
+                shown44b && before44b.asleep && before44b.asked > 0 &&
+                    (before44b.hint ?? "").includes("to wake it") && (before44b.hint ?? "").includes("Tab") &&
+                    picked44b && woke44b && wakeCalls44b.length === 1 && wakeCalls44b[0].data.tab === F && wakeCalls44b[0].data.message === CHIP44B,
+                { shown44b, before44b, picked44b, woke44b, wakeCalls44b }
+            );
+
             // 50. "Typing /": a `/` in the main agent's box lists the session's whole command list (the mocked live list: 12
             // built-ins, 2 skills, 4 plugin commands, 1 MCP prompt), grouped with each group's count, no cap, in a box at most
             // 420 px tall whose rows scroll. The group order is In Chat (the built-ins Chat answers itself: `help` here, 44f8bef08),
