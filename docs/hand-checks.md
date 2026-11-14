@@ -10,6 +10,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   attaches to the agent composer. Agent → paste a 4 MB image into the message box → it is refused at once with
   `over 3.5 MB`, not lost on send; a 3 MB image sends. Commit: fix(council) the Report's summary Retry needs a sent
   idea, and the composer's image cap is 3.5 MB (run a9774e84)
+- [ ] (arcterm) **Council decisions, 11-14.** Go-tested and typechecked; no dev app ran. (1) Hover a seat's message
+  in a council's chat → its byline shows Pin to Report as a pin and Chốt as a compass; an idea's Chốt and the Memory
+  tab's hover Chốt are compasses too (`council-discussion`, `council-memory`). (2) Pin a chat seat's message, then
+  open the saved report under `docs/council/` → its Final proposal reads `_From <project> · <key>_`, the key the
+  Report's header shows. (3) Quit arcterm while a council runs, reopen → the council reads stopped and its report
+  file is saved (Open report works). Commit: fix(council) Chốt draws a compass, a chat seat's key in the report,
+  a stale council's report
 - [ ] (arcterm) **Council fixes, 11-14 second batch.** Go-tested and typechecked; no dev app ran. (1) Paste a 4 MB
   image into a council's chat → its chip reads `Image too large (over 3.5 MB)` at once (`council-discussion`,
   attach-oversize). (2) In a done Review report with Also raised, press the header's `Also raised` jump link → the

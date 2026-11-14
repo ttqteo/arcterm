@@ -3415,6 +3415,38 @@ func TestMarkStaleStopsWhatWavesrvLeftRunning(t *testing.T) {
 	}
 }
 
+// A council wavesrv left running gets its document at startup, as one stopped mid-run does: the rounds it finished,
+// ended stopped. A queued one is left for StartNext and gets none.
+func TestMarkStaleSavesTheStoppedCouncilsDocument(t *testing.T) {
+	useDocDay(t)
+	h := newHarness(t)
+	running := fixtureCouncil("running", StateRunning, 2)
+	running.Project = t.TempDir()
+	h.save(running)
+	queued := fixtureCouncil("queued", StateQueued, 0)
+	queued.Project = t.TempDir()
+	h.save(queued)
+	h.r.MarkStale()
+
+	c := h.load("running")
+	want := filepath.Join(running.Project, "docs", "council", "2026-10-21-idle-sleep-for-services.md")
+	if c.State != StateStopped || c.DocPath != want {
+		t.Fatalf("running = %s with the document at %q, want stopped and saved at %q", c.State, c.DocPath, want)
+	}
+	body, err := os.ReadFile(want)
+	if err != nil {
+		t.Fatalf("the document was not written: %v", err)
+	}
+	for _, w := range []string{"# Council: Idle sleep for services", "Title from ux", "It breaks.", "- Ended: stopped"} {
+		if !strings.Contains(string(body), w) {
+			t.Errorf("the document lacks %q\n%s", w, body)
+		}
+	}
+	if q := h.load("queued"); q.State != StateQueued || q.DocPath != "" {
+		t.Errorf("queued = %s with the document at %q, want it still queued with none", q.State, q.DocPath)
+	}
+}
+
 // ---- the time rounds ran ----
 
 // stillClock makes the runner's clock read a time the test sets, so a run's span is known.
