@@ -358,7 +358,8 @@ picker instead of moving through the list. `Shift`+`Esc` goes back to the list.
 |---|---|
 | `Ctrl`+`Tab` | The tab switcher (see Global); the tab it opens follows the rule above. Works from inside a terminal, and pressed there, typing follows to the new agent's terminal |
 | `Alt`+`1`…`9` | The nth row of the project tree, agents and terminals, top to bottom as the tree shows them. Hold `Alt` a moment and each row shows its number. Works from inside a terminal, where typing follows as with `Ctrl`+`Tab` |
-| `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous agent or terminal, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
+| `j` / `k` | Next / previous agent or terminal, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
+| `↓` / `↑`, `→` / `←` | The same, only with keyboard focus in the Agent tree: elsewhere (Chat's conversation, its cards) the arrows stay the page's |
 | `f` / `Mod`+`Shift`+`Enter` / `F11` | Fullscreen shows only the focused cell; the grid returns when you leave it |
 
 Canvas mode, a review, a brainstorm, the subagent view, Conversation History, the Canvas gallery and an ended session's or a done

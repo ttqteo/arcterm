@@ -346,6 +346,10 @@ describe("the Uploads lightbox over the Agent surface", () => {
 
     it("gives the keys back to the agent once it is closed", () => {
         const { picked, unbind } = setup();
+        // the arrows step agents only with focus in the Agent tree
+        vi.stubGlobal("document", {
+            activeElement: { tagName: "BUTTON", closest: (sel: string) => (sel === "[data-agent-tree]" ? {} : null) },
+        });
         for (const [key, id] of Object.entries(AGENT_KEYS)) {
             expect(picked(key), key).toBe(id);
         }

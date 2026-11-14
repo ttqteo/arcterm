@@ -75,6 +75,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- On the Agent surface the arrow keys no longer jump to another agent while you read Chat: they step agents only with
+  keyboard focus in the Agent tree (`j` / `k` still step from anywhere).
 - In Chat, words typed in the box while a plan's Handoff card waits answer it, as the card says, instead of waiting
   behind "Answer Claude's question first".
 - The blinking caret in Chat's message box shows in front of the grey hint again, not half hidden behind its first

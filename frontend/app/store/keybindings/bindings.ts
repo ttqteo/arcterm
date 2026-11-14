@@ -1205,6 +1205,11 @@ const centerAtRest = () => globalStore.get(centerModeAtom) === "terminal";
 const initiativePopoverClosed = () => globalStore.get(initiativePopoverAtom) == null;
 const agentNav = (ctx: KeyContext) =>
     navigate(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
+// The arrows step agents only with focus in the Agent tree: elsewhere on the surface (Chat's conversation, a card in
+// it) they are the page's own, to scroll or to move in what holds focus, and stepping agents there switched away
+// from the conversation being read. j, k and Ctrl+Tab still step agents anywhere off a text field.
+const inAgentTree = () =>
+    typeof document !== "undefined" && document.activeElement?.closest?.("[data-agent-tree]") != null;
 const agentNavStrict = (ctx: KeyContext) =>
     navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
 // The Canvas gallery covers the terminal as History does, with keys of its own: the arrows, Enter and `/` on its grid,
@@ -1683,7 +1688,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             group: "Agent",
             label: "Previous agent",
             // on a canvas left and right are the board's (onCanvas); up, down, j and k still move between agents
-            when: (ctx) => agentNav(ctx) && !onCanvas(ctx),
+            when: (ctx) => agentNav(ctx) && !onCanvas(ctx) && inAgentTree(),
             run: () => step(-1),
         },
         {
@@ -1691,7 +1696,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowRight",
             group: "Agent",
             label: "Next agent",
-            when: (ctx) => agentNav(ctx) && !onCanvas(ctx),
+            when: (ctx) => agentNav(ctx) && !onCanvas(ctx) && inAgentTree(),
             run: () => step(1),
         },
         // the tree lists agents top to bottom, so up and down move through it; left and right are the older keys
@@ -1700,7 +1705,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowUp",
             group: "Agent",
             label: "Previous agent",
-            when: agentNav,
+            when: (ctx) => agentNav(ctx) && inAgentTree(),
             run: () => step(-1),
         },
         {
@@ -1708,7 +1713,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowDown",
             group: "Agent",
             label: "Next agent",
-            when: agentNav,
+            when: (ctx) => agentNav(ctx) && inAgentTree(),
             run: () => step(1),
         },
         // in the brainstorm check's review j and k move between its decisions; the arrows and Ctrl+Tab still move agents
