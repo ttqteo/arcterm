@@ -9,6 +9,7 @@
 // card for what needs you, then the tasks), and the dock (the configuration line and the run's actions).
 // All derivations are runsheetmodel.ts; this file maps them to DOM and to the verbs that already exist.
 
+import { springReveal } from "@/app/element/motiontokens";
 import { PaneReveal } from "@/app/element/panereveal";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -306,7 +307,7 @@ function FinalCheckRow({ group, entry, onOpen }: { group: TaskGroup; entry: Fina
                 </span>
                 <span className="ml-auto flex-none text-[11px] tabular-nums text-secondary">{entry.right}</span>
             </button>
-            <PaneReveal open={open}>
+            <PaneReveal open={open} variants={springReveal}>
                 <div className="flex flex-col gap-2 pb-3 pl-[22px]">
                     {latest != null && entry.strip.length > 0 ? (
                         <div className="grid grid-cols-5 gap-2">

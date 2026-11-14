@@ -181,6 +181,8 @@ const initiativeSheet = (kit) => ({
             await h.cdp("Input.insertText", { text: ADDED });
             await press(h, "Enter", { vk: 13 });
             if (!(await until(h, `!!${chunkRow(ADDED)}`))) problems.push("the added chunk never drew");
+            // a chunk that arrives opens on the spring: the next click reads the rows once it has settled
+            await sleep(500);
             const afterAdd = await serverChunks(h, ctx.oid);
             const added = afterAdd.find((c) => c.label === ADDED);
             if (added?.stage !== "Build") problems.push(`added chunk's stage "${added?.stage}"`);
@@ -194,6 +196,9 @@ const initiativeSheet = (kit) => ({
                 await h.cdp("Input.insertText", { text: RENAMED });
                 await press(h, "Enter", { vk: 13 });
                 if (!(await until(h, `!!${chunkRow(RENAMED)}`))) problems.push("the renamed chunk never drew");
+                // a rename reads as one row leaving and one arriving: the old one folds away on the spring, and the
+                // cursor below must not read it
+                else if (!(await until(h, `!${chunkRow("Chunk keys")}`, 3_000))) problems.push("the old row never left");
             }
             const chunkOpen = await h.ev(`!!document.querySelector('[data-jarvis-chunk-view]')`);
             if (chunkOpen) problems.push("the double-click opened the chunk");

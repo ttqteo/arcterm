@@ -6,7 +6,7 @@
 // is reused from the run body's runtimeline.ts, so the two timelines cannot describe the same row
 // differently.
 
-import { computeEntrances, initialEntranceState, viewFade } from "@/app/element/motiontokens";
+import { computeEntrances, initialEntranceState, springReveal, viewFade } from "@/app/element/motiontokens";
 import { PaneReveal } from "@/app/element/panereveal";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -143,7 +143,11 @@ export function TimelineRail({ channelId, runId, layout, ended }: TimelineRailPr
                 onRetry={() => fireAndForget(() => retryRunEvents(runId, channelId))}
             />
             {/* flex-1 only in the rail: in the drawer a 0% basis would ignore the animated height */}
-            <PaneReveal open={open} className={cn("flex min-h-0 flex-col", layout === "rail" && "flex-1")}>
+            <PaneReveal
+                open={open}
+                variants={springReveal}
+                className={cn("flex min-h-0 flex-col", layout === "rail" && "flex-1")}
+            >
                 {/* the drawer's least useful height, so only the rail draws the strip */}
                 {layout === "rail" && (
                     <ActivityStrip

@@ -10,7 +10,7 @@
 // What is left is the sheet's Activity ↗ view: every note on every chunk, in one stream, which the per-chunk view
 // deliberately does not show.
 
-import { turnTransition } from "@/app/element/motiontokens";
+import { springReveal, turnTransition } from "@/app/element/motiontokens";
 import { PaneReveal } from "@/app/element/panereveal";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { formatAge } from "@/app/view/agents/agentsviewmodel";
@@ -313,7 +313,7 @@ function FeedGroupLine({
                             )}
                         />
                     </button>
-                    <PaneReveal open={open}>
+                    <PaneReveal open={open} variants={springReveal}>
                         <div className="mb-2 ml-[48px] mt-0.5 flex flex-col gap-1.5 rounded-lg border border-edge-faint bg-surface px-3 py-2.5 text-[12.5px] leading-[1.65] text-secondary">
                             <NoteParagraphs body={row.body} />
                         </div>
