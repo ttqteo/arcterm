@@ -38719,6 +38719,72 @@ async function dfType(h, text) {
     await railTabsNap(300);
 }
 
+// md-outline-rail: the File tab's Outline rail (docoutlineview.tsx OutlineRail) on md-comments' fixture, whose guide.md
+// has two headings, Guide at the top and Notes below the fold.
+const MOR_RAIL = `${MDC_ASIDE}?.querySelector("[data-outline-rail]")`;
+const MOR_LIST = `document.querySelector("[data-outline-list]")`;
+const morActive = `[...(${MOR_RAIL}?.querySelectorAll("[data-outline-dash]") ?? [])].findIndex((d) => d.className.includes("bg-accent"))`;
+
+const mdOutlineRail = {
+    name: "md-outline-rail",
+    surface: "agent",
+    arrange: (h) => mdComments.arrange(h),
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null || ctx.inRoster !== true) {
+            rec("0. the fixture agent is in the roster", false, ctx.arrangeError ?? "not in the roster");
+            return steps;
+        }
+
+        // 1. the rail sits centred on the right edge, right of the text and left of the scrollbar
+        const opened = await mdcOpenGuide(h);
+        const shown = await polishWaitFor(h, `!!${MOR_RAIL}`, 5000);
+        const geo = await h.ev(`(() => {
+            const doc = ${MDC_DOC}, rail = ${MOR_RAIL}, content = doc.firstElementChild;
+            const d = doc.getBoundingClientRect(), r = rail.getBoundingClientRect(), c = content.getBoundingClientRect();
+            const textRight = c.right - parseFloat(getComputedStyle(content).paddingRight);
+            return {
+                dashes: rail.querySelectorAll("[data-outline-dash]").length,
+                offCentre: Math.round(Math.abs((r.top + r.bottom) / 2 - (d.top + d.bottom) / 2)),
+                gapToText: Math.round(r.left - textRight),
+                clearOfScrollbar: r.right <= d.left + doc.clientWidth,
+                headerButton: !!${MDC_ASIDE}?.querySelector("[data-outline-button]"),
+            };
+        })()`);
+        await h.ev(`${MDC_DOC}.scrollTo({ top: 0 })`);
+        await railTabsNap(300);
+        const top1 = await h.ev(morActive);
+        await h.shot("cdp-shots/md-outline-rail.png");
+        rec("1. guide.md's Preview shows the rail (two dashes, Guide lit) centred on the right edge, clear of the text and the scrollbar, and no header Outline button", opened && shown && geo.dashes === 2 && geo.offCentre <= 2 && geo.gapToText >= 4 && geo.clearOfScrollbar && !geo.headerButton && top1 === 0, JSON.stringify({ opened, shown, geo, top1 }));
+
+        // 2. the lit dash follows the scroll
+        await h.ev(`${MDC_DOC}.scrollTo({ top: ${MDC_DOC}.scrollHeight })`);
+        const followed = await polishWaitFor(h, `${morActive} === 1`, 3000);
+        rec("2. scrolled to the end, the Notes dash is lit", followed, JSON.stringify({ active: await h.ev(morActive) }));
+
+        // 3. a hover opens the list beside the rail, leaving focus in the document
+        await h.ev(`${MDC_DOC}.focus()`);
+        const rc = await mdcCenter(h, MOR_RAIL);
+        await railTabsMouse(h, "mouseMoved", rc.x, rc.y, { button: "none" });
+        const listed = await polishWaitFor(h, `${MOR_LIST}?.querySelectorAll("[data-outline-item]").length === 2`, 3000);
+        await railTabsNap(300);
+        const side = await h.ev(`(() => {
+            const l = ${MOR_LIST}.getBoundingClientRect(), r = ${MOR_RAIL}.getBoundingClientRect();
+            return { leftOfRail: l.right <= r.left, focusInDoc: document.activeElement === ${MDC_DOC}, activeItem: ${MOR_LIST}.querySelector("[data-active]")?.textContent ?? null };
+        })()`);
+        await h.shot("cdp-shots/md-outline-rail-open.png");
+        rec("3. hovering the rail opens the two headings left of it, Notes marked, focus still in the document", listed && side.leftOfRail && side.focusInDoc && side.activeItem === "Notes", JSON.stringify({ listed, side }));
+
+        // 4. picking Guide closes the list and scrolls back to the top
+        await h.ev(`${MOR_LIST}.querySelector('[data-outline-item="0"]').click()`);
+        const back = await polishWaitFor(h, `!${MOR_LIST} && ${MDC_DOC}.scrollTop < 40`, 4000);
+        rec("4. picking Guide closes the list and scrolls to the top", back, JSON.stringify({ scrollTop: await h.ev(`${MDC_DOC}.scrollTop`) }));
+        return steps;
+    },
+    teardown: (h, ctx) => mdComments.teardown(h, ctx),
+};
+
 const docFind = {
     name: "doc-find",
     surface: "agent",
@@ -70874,6 +70940,7 @@ export const SCENARIOS = [
     agentRailChangesCommits,
     agentRailCommitMode,
     mdComments,
+    mdOutlineRail,
     docFind,
     workerCapacity,
     consumersPopover,

@@ -425,15 +425,19 @@ export function OutlineRail(p: {
     );
 }
 
-// A document pane with the Outline button over its top right corner, for a pane with no header row to hold it.
+// A document pane with the Outline rail centred on its right edge, for the Code surface's previews: their text
+// keeps px-8 (32px) on the right, which clears the rail.
 export function WithOutline(p: { selector: string; textKey: string; children: ReactNode }) {
     const ref = useRef<HTMLDivElement>(null);
     return (
         <div ref={ref} className="relative h-full min-h-0">
             {p.children}
-            <div className="absolute right-4 top-2.5 z-10">
-                <OutlineButton rootRef={ref} selector={p.selector} textKey={p.textKey} className="shadow-popover-sm" />
-            </div>
+            <OutlineRail
+                rootRef={ref}
+                selector={p.selector}
+                textKey={p.textKey}
+                className="absolute right-2 top-1/2 z-10 max-h-[calc(100%-24px)] -translate-y-1/2"
+            />
         </div>
     );
 }
