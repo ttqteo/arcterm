@@ -77,7 +77,7 @@ export const composerReveal: Variants = {
 
 // Spring reveal: composerReveal / paneReveal on MOTION.spring. The height opens 0 -> auto on the spring while opacity
 // fades on the micro ease, so a row arriving in a stuck-to-bottom feed grows rather than jumps. Chat's rows, parts and
-// folds use it, and so does every other surface but Radar, which keeps its tweens until it is moved on purpose.
+// folds use it, and so do the Cockpit, Jarvis, Diff and Setup; other surfaces keep their tweens until moved on purpose.
 export const springReveal: Variants = {
     initial: { opacity: 0, height: 0 },
     animate: {

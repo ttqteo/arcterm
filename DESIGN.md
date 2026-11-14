@@ -496,10 +496,11 @@ Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
   (height 0 → auto), `springPop` (scale 0.97 → 1, from the anchored edge) or
   `springSheet` (a drawer's x): a spring keeps its velocity when its target moves
   mid-way, so a fast change never stalls or jumps. Opacity stays on the Fluid ease
-  at `durMicro`, never on the spring (it would overshoot 1). Every surface but
-  Radar uses the spring for anything that changes shape, and a batch change (first
-  load, a filter switch, 3+ items at once) shows at once (`element/springbatch.ts`);
-  Radar keeps its tweens until it is moved on purpose.
+  at `durMicro`, never on the spring (it would overshoot 1). Chat, the Cockpit,
+  Jarvis, Diff and Setup use the spring for anything that changes shape, and a batch
+  change (first load, a filter switch, 3+ items at once) shows at once
+  (`element/springbatch.ts`); other surfaces keep their tweens until they are moved
+  on purpose.
 - **Chat's floating box** (the message box and conversation of an agent's Chat)
   makes three deliberate exceptions, and only there:
   - the box is a floating pill at **radius 22px** with `shadow-popover-soft`,
