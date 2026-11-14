@@ -69,7 +69,8 @@ async function waitForEcho(blockId: string, text: string): Promise<void> {
     }
 }
 
-function logLine(line: string): void {
+/** Writes one line to waveapp.log, never throwing: a send's own error, or its outcome, must not hide behind it. */
+export function logLine(line: string): void {
     try {
         getApi().sendLog(line);
     } catch {
