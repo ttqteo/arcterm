@@ -29,6 +29,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Retry the summary on a council's Report is off when no idea was sent, and says why.
 - An image over 3.5 MB is refused when you add it to a message, not lost on send.
 - A council that was running when arcterm closed now gets its saved report too, like one you stopped.
+- A question you ask with Continue at a council's pause that names a file with @ is answered after the experts read it.
+- In a council's third round, an expert can open the image or file you attached to an earlier reply it is shown.
+- A council's verify folder left behind when arcterm closed in the middle of a check is cleaned up the next time
+  arcterm starts.
+- A council started in a folder that is not one of your projects shows in the tree, in Home's folder.
 
 ### Changed
 

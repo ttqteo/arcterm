@@ -1390,11 +1390,12 @@ func round2Task(c *Council, round int, reads, picks bool) string {
 func round2PromptFor(c *Council, e CouncilExpert, round int, scope round2Scope) string {
 	var b strings.Builder
 	asks := unansweredFor(c, e.Id)
-	reads, _ := readsOf(asks)
+	carried := round2Carried(c, e, round, scope)
+	reads, _ := readsOf(carried)
 	toolsLine := "You have no tools in this round: work from the text below."
 	if reads {
 		toolsLine = round2ReadsNote
-		if webOf(asks) {
+		if webOf(carried) {
 			toolsLine += " " + webNote
 		}
 	}
@@ -1408,7 +1409,7 @@ func round2PromptFor(c *Council, e CouncilExpert, round int, scope round2Scope) 
 	writeThreadOf := func(p CouncilProposal) {
 		if round > 2 {
 			var thread strings.Builder
-			writeThread(&thread, c, p.Id, false)
+			writeThread(&thread, c, p.Id, false, reads)
 			if thread.Len() > 0 {
 				b.WriteString("What was said about it:\n" + thread.String() + "\n")
 			}
@@ -1418,18 +1419,7 @@ func round2PromptFor(c *Council, e CouncilExpert, round int, scope round2Scope) 
 	if isBrainstorm(c) {
 		scope.Only = nil
 	}
-	var review, reviewed, own []CouncilProposal
-	for _, p := range sentProposals(c) {
-		switch {
-		case p.Cut:
-		case p.Author == e.Id:
-			own = append(own, p)
-		case scope.Only == nil || slices.Contains(scope.Only, p.Id):
-			review = append(review, p)
-		default:
-			reviewed = append(reviewed, p)
-		}
-	}
+	review, reviewed, own := round2Split(c, e, scope)
 	none := "(none: no other expert has a proposal to review, so \"stances\" is empty)"
 	if scope.Only != nil {
 		none = "(none: nothing is left for you to review, so \"stances\" is empty)"
@@ -1466,6 +1456,52 @@ func round2PromptFor(c *Council, e CouncilExpert, round int, scope round2Scope) 
 	b.WriteString("## What to do\n\n")
 	b.WriteString(round2Task(c, round, reads, scope.Picks))
 	return b.String()
+}
+
+// round2Split sorts the sent proposals a reply pass over scope shows seat e: the ones it reviews in full, the ones out of
+// scope it already reviewed (listed by title), and its own. A cut proposal is in none. A Brainstorm's pass reviews all.
+func round2Split(c *Council, e CouncilExpert, scope round2Scope) (review, reviewed, own []CouncilProposal) {
+	if isBrainstorm(c) {
+		scope.Only = nil
+	}
+	for _, p := range sentProposals(c) {
+		switch {
+		case p.Cut:
+		case p.Author == e.Id:
+			own = append(own, p)
+		case scope.Only == nil || slices.Contains(scope.Only, p.Id):
+			review = append(review, p)
+		default:
+			reviewed = append(reviewed, p)
+		}
+	}
+	return review, reviewed, own
+}
+
+// round2Carried are the person's replies a reply pass's call for seat e carries, which decide its tools (readsOf): the
+// ones still owed an answer from e, then, in a pass after round 2, the person's sent replies in the threads the prompt
+// writes (the proposals e reviews in full and its own) that point at something to open (pointsAtMaterial), so a seat
+// shown "look at this image" can open it. As in the Discussion, Let them read files alone was the person's choice for
+// that one message, and is not carried on.
+func round2Carried(c *Council, e CouncilExpert, round int, scope round2Scope) []CouncilReply {
+	out := unansweredFor(c, e.Id)
+	if round <= 2 {
+		return out
+	}
+	review, _, own := round2Split(c, e, scope)
+	shown := map[string]bool{}
+	for _, p := range append(review, own...) {
+		shown[p.Id] = true
+	}
+	for _, r := range c.Replies {
+		if r.Author != YouId || !Sent(r.Draft) || !shown[r.ProposalId] || !r.Tools || !pointsAtMaterial(r) {
+			continue
+		}
+		if !slices.ContainsFunc(out, func(x CouncilReply) bool { return x.Id == r.Id }) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // revisedTag is the tag on a reply where the author changed its own proposal: a withdrawal says so, and a new title is
@@ -1529,13 +1565,15 @@ func writeSynthesisZones(b *strings.Builder, c *Council) {
 
 // writeThread writes the replies of one proposal (or, with an empty id, the ones to the whole council), each
 // indented under the reply it answers. A held or dropped reply is not written: it is not out in the room. With labels, a
-// reply that carries a claim label says it among its tags (the synthesis shows them; the experts' rounds do not).
-func writeThread(b *strings.Builder, c *Council, proposalId string, labels bool) {
+// reply that carries a claim label says it among its tags (the synthesis shows them; the experts' rounds do not). With
+// reads (the call has tools), a reply of the person's that attached files carries the attachment block, indented under it.
+func writeThread(b *strings.Builder, c *Council, proposalId string, labels, reads bool) {
 	for _, r := range c.Replies {
 		if r.ProposalId != proposalId || !Sent(r.Draft) {
 			continue
 		}
-		fmt.Fprintf(b, "%s- [%s] %s", strings.Repeat("  ", len(ancestorsOf(c, r))), r.Id, speaker(c, r.Author))
+		indent := strings.Repeat("  ", len(ancestorsOf(c, r)))
+		fmt.Fprintf(b, "%s- [%s] %s", indent, r.Id, speaker(c, r.Author))
 		var tags []string
 		if r.Stance != "" {
 			tags = append(tags, string(r.Stance))
@@ -1555,7 +1593,11 @@ func writeThread(b *strings.Builder, c *Council, proposalId string, labels bool)
 		if r.ParentId != "" {
 			fmt.Fprintf(b, " replying to %s", r.ParentId)
 		}
-		fmt.Fprintf(b, ": %s", strings.TrimSpace(r.Text))
+		text := strings.TrimSpace(r.Text)
+		if r.Author == YouId {
+			text = strings.ReplaceAll(personText(r, reads), "\n", "\n"+indent+"  ")
+		}
+		fmt.Fprintf(b, ": %s", text)
 		if len(r.Evidence) > 0 {
 			fmt.Fprintf(b, " Evidence: %s.", evidenceText(r.Evidence))
 		}
@@ -1661,13 +1703,13 @@ func SynthesisPrompt(c *Council) string {
 			fmt.Fprintf(&b, "Its author withdrew it in round %d.\n\n", withdrawnRound(c, p))
 		}
 		var thread strings.Builder
-		writeThread(&thread, c, p.Id, true)
+		writeThread(&thread, c, p.Id, true, false)
 		if thread.Len() > 0 {
 			b.WriteString(thread.String() + "\n")
 		}
 	}
 	var whole strings.Builder
-	writeThread(&whole, c, "", true)
+	writeThread(&whole, c, "", true, false)
 	if whole.Len() > 0 {
 		b.WriteString("### To the whole council\n\n" + whole.String() + "\n")
 	}

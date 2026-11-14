@@ -525,8 +525,8 @@ export function canResumeCouncil(
 /** Pure: the councils (councilListAtom("")) the tree lists (councilInTree, against the last-opened map `opened` at
  *  `now`), as tree rows, by the registered project each one ran in. The folders of projectTree are keyed by project
  *  name and a council holds the project's path, so each is filed under the name whose root is the same path
- *  (projectNamesByKey). A council of a folder that is no registered project has no folder to sit in and is left out:
- *  Councils (councilhistory.ts) lists it, with every other. `null` is a list not loaded yet. `unread` is the ids of the
+ *  (projectNamesByKey). A council of a folder that is no registered project (`wsh council start` in a scratch folder)
+ *  is filed under Home, as a terminal or a queued plan with no project is. `null` is a list not loaded yet. `unread` is the ids of the
  *  councils that ended unseen (councilUnreadAtom), which draw the row's unread dot. */
 export function councilRowsByProject(
     councils: readonly Council[] | null | undefined,
@@ -539,10 +539,10 @@ export function councilRowsByProject(
     const nameOf = projectNamesByKey(roots);
     const byId = new Map((councils ?? []).map((c) => [c.id, c]));
     for (const c of councils ?? []) {
-        const name = nameOf.get(councilProjectKey(c.project));
-        if (name == null || !councilInTree(c, opened, now)) {
+        if (!councilInTree(c, opened, now)) {
             continue;
         }
+        const name = nameOf.get(councilProjectKey(c.project)) ?? HOME_PROJECT;
         const row = councilRowVM(c, byId, unread);
         const list = out.get(name);
         if (list == null) {
@@ -699,8 +699,8 @@ export function newCouncilRoot(focus: AgentVM | undefined, projects: ProjectRegi
  *  has a council then holds its pinned councils at its top, above the agents, and right after its queued plans and
  *  ahead of the divider one row per other council (each part by `created`, newest first). Neither part has a label: a
  *  council is a peer of the agents. The councils the tree rule leaves out are not in it (councilInTree; Councils lists
- *  every council). A project whose only content is a council still gets a folder. A project with no root (Home, the
- *  agents with no registered project) has no council rows. The rows are no focus target, so treeNavIds skips them and
+ *  every council). A project whose only content is a council still gets a folder. Home holds the councils of folders that
+ *  are no registered project; any other project with no root has no council rows. The rows are no focus target, so treeNavIds skips them and
  *  j/k need no councils input.
  *
  *  Each project's split (`splits`, its grids of 2+ cells) is one row in its folder, where the topmost of its cells'
@@ -768,9 +768,11 @@ export function projectTree(input: {
             terminal,
             place: terminalPlace(terminal.cwd, roots.get(project)),
         }));
-    // a project's councils, newest first: nothing without the input, or for a project with no root
+    // a project's councils, newest first: nothing without the input, or for a project with no root other than Home, which
+    // holds the councils of folders that are no registered project
+    const hasCouncils = (project: string) => roots.has(project) || project === HOME_PROJECT;
     const councilsOf = (project: string): CouncilRowVM[] =>
-        input.councils == null || !roots.has(project)
+        input.councils == null || !hasCouncils(project)
             ? []
             : [...(input.councils.get(project) ?? [])].sort((a, b) => b.created - a.created || byText(a.id, b.id));
     const councilRow = (project: string, c: CouncilRowVM): ProjectTreeRow => ({ kind: "council", project, ...c });
@@ -828,7 +830,7 @@ export function projectTree(input: {
     // the agents' projects in the tree's order, then the others in the order terminals, queued plans, services and
     // councils came, Home last
     const councilFolders = [...(input.councils ?? [])].flatMap(([p, list]) =>
-        list.length > 0 && roots.has(p) ? [p] : []
+        list.length > 0 && hasCouncils(p) ? [p] : []
     );
     const order = [...bodies.keys()];
     const seen = new Set(order);

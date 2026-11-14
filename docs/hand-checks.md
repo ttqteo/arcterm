@@ -17,6 +17,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Report's header shows. (3) Quit arcterm while a council runs, reopen → the council reads stopped and its report
   file is saved (Open report works). Commit: fix(council) Chốt draws a compass, a chat seat's key in the report,
   a stale council's report
+- [ ] (arcterm) **Council fixes, 11-14 third batch.** Go- and unit-tested and typechecked; no dev app ran. (1) In a
+  council paused after round 1, Continue with `Check it against @<a file>` → round 2's expert cards show them reading
+  it. (2) In a 3-round council, attach an image to a reply in round 2 → in round 3 an expert shown that thread opens it
+  (its activity names the file). (3) Kill wavesrv while a council runs a verify command, start arcterm again → the
+  `council-<id>` folder under arc-wt is gone (`[council] … removed the verify tree` in waveapp.log). (4) `wsh council
+  start` in a folder that is not a registered project → its row is in Home's folder (`council-tree`, step 11j). Commit:
+  fix(council) Continue's @file, round 3 attachments, crash-left verify trees, councils in Home
 - [ ] (arcterm) **Council fixes, 11-14 second batch.** Go-tested and typechecked; no dev app ran. (1) Paste a 4 MB
   image into a council's chat → its chip reads `Image too large (over 3.5 MB)` at once (`council-discussion`,
   attach-oversize). (2) In a done Review report with Also raised, press the header's `Also raised` jump link → the
