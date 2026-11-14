@@ -86,10 +86,6 @@ const (
 	ConfigKey_AgentsCompactIdle              = "agents:compactidle"
 	ConfigKey_AgentsCompactAtK               = "agents:compactatk"
 
-	ConfigKey_RadarAuditRuntime              = "radar:auditruntime"
-	ConfigKey_RadarAuditModel                = "radar:auditmodel"
-	ConfigKey_RadarClassifyModel             = "radar:classifymodel"
-
 	ConfigKey_UsageInsightsLang              = "usage:insightslang"
 
 	ConfigKey_TokenGateClear                 = "tokengate:*"
