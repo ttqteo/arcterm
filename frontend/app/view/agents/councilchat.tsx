@@ -836,7 +836,7 @@ function IdeaMore({ c, id, acts }: { c: Council; id: string; acts: Actions }) {
                 aria-label="More"
                 data-council-tools={id}
                 className={cn(
-                    "absolute right-0 z-30 min-w-[190px] flex-col rounded-[10px] border border-edge-mid bg-surface-raised p-[4px] shadow-popover-md",
+                    "absolute right-0 z-30 min-w-[190px] flex-col rounded-[10px] border border-edge-mid frost p-[4px] shadow-popover-md",
                     up ? "bottom-[calc(100%+6px)]" : "top-[calc(100%+6px)]",
                     open ? "flex" : "hidden"
                 )}
@@ -2461,7 +2461,7 @@ function Composer({
                               : "Seats"
                     }
                     className={cn(
-                        "absolute bottom-full left-0 z-10 m-0 mb-[4px] flex max-h-[280px] min-w-[220px] list-none flex-col overflow-y-auto rounded-[8px] border border-edge-strong bg-surface-raised p-[4px]",
+                        "absolute bottom-full left-0 z-10 m-0 mb-[4px] flex max-h-[280px] min-w-[220px] list-none flex-col overflow-y-auto rounded-[8px] border border-edge-strong frost p-[4px]",
                         (picker.chats.length > 0 || picker.files.length > 0) && "w-[460px] max-w-full"
                     )}
                 >

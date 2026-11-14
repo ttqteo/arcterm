@@ -416,7 +416,7 @@ export function EvidenceFiles({ evidence, label = "", lang = "en", source }: Evi
                 data-council-files-list
                 data-open={isOpen ? "true" : undefined}
                 className={cn(
-                    "absolute right-0 z-30 w-[300px] max-w-[80vw] flex-col gap-[2px] rounded-[8px] border border-edge-mid bg-surface-raised p-[6px] shadow-popover-sm",
+                    "absolute right-0 z-30 w-[300px] max-w-[80vw] flex-col gap-[2px] rounded-[8px] border border-edge-mid frost p-[6px] shadow-popover-sm",
                     up ? "bottom-[calc(100%+6px)]" : "top-[calc(100%+6px)]",
                     isOpen ? "flex" : "hidden"
                 )}

@@ -186,7 +186,7 @@ export function HarnessPicker({
                     <PopoverReveal
                         open={open}
                         origin="bottom left"
-                        className="w-[300px] rounded-[11px] border border-border bg-surface p-[5px] shadow-popover-md"
+                        className="w-[300px] rounded-[11px] border border-border frost p-[5px] shadow-popover-md"
                     >
                         <div>
                             <div className={cn(REGION_LABEL, "px-[9px] pb-1.5 pt-1 text-muted")}>Harness</div>

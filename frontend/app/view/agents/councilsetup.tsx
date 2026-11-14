@@ -390,7 +390,7 @@ function MenuButton({
                 open={open}
                 origin={align === "left" ? "top left" : "top right"}
                 className={cn(
-                    "absolute top-[calc(100%+6px)] z-30 min-w-[180px] rounded-[10px] border border-edge-mid bg-surface-raised p-[4px] shadow-popover-md",
+                    "absolute top-[calc(100%+6px)] z-30 min-w-[180px] rounded-[10px] border border-edge-mid frost p-[4px] shadow-popover-md",
                     align === "left" ? "left-0" : "right-0"
                 )}
             >
