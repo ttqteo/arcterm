@@ -73,6 +73,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A council you write to again after its report no longer works from an outdated memory: before the seats answer, it
+  reads what you settled since in the agent that started it and the diffs of its files, and closes or corrects the
+  Agreed and Open lines they outdate (so CLAUDE.md's Council decisions block follows). Its experts now read the files
+  that changed since the report instead of trusting the report's view of them, and an agent can update the memory
+  itself with `wsh council memory`.
 - A council seat whose answer Claude's safeguards stopped part-way, and that Claude then finished on a fallback
   model, no longer fails with "invalid character '\n' in string": the seat's answer is the fallback's reply alone.
 - A question card with several questions or a pick-many question can be sent again. Several questions end in a

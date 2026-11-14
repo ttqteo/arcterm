@@ -2970,6 +2970,7 @@ declare global {
         entries?: CouncilMemoryEntry[];
         removed?: string[];
         nextentry?: number;
+        outsideat?: number;
     };
 
     // council.CouncilMemoryCard

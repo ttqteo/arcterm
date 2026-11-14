@@ -438,6 +438,7 @@ type CouncilMemory struct {
 	Entries    []CouncilMemoryEntry     `json:"entries,omitempty"`    // arrival order
 	Removed    []string                 `json:"removed,omitempty"`    // keys (EntryKey) of automatic entries the person removed: never added again
 	NextEntry  int                      `json:"nextentry,omitempty"`  // the number the last entry took; ids are never reused
+	OutsideAt  int64                    `json:"outsideat,omitempty"`  // when the outside refresh last read the agent session and the changed files, in ms (outside.go)
 }
 
 // CouncilAsk is a question the coordinator suggests the person ask the panel next: Text as the person would type it, in

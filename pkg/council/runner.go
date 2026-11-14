@@ -48,6 +48,10 @@ type Runner struct {
 	OnChange func(c *Council)
 	// Now is the clock in milliseconds; nil is the wall clock.
 	Now func() int64
+	// Outside reads the agent session that started council c: its prompts and closing answers after since (ms), oldest
+	// first. Nil reads nothing outside the council, and then the outside refresh (outside.go) makes no call at all, for
+	// the files either: only wavesrv sets it.
+	Outside func(c *Council, since int64) []OutsideTurn
 
 	// noEarly makes every Review wait for all of round 1 before round 2, as a council that holds drafts does (roundsWork).
 	// Nothing outside the tests sets it. With fakes that answer at once, how many passes a seat makes depends on which seat
@@ -2109,7 +2113,7 @@ func applyAnswers(c *Council, e CouncilExpert, answers []Answer, round int, now 
 // the first reply it owes.
 func (r *Runner) answerCall(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert, replies []CouncilReply, round int) {
 	carried := personRepliesIn(snap, replies)
-	tools, dirs := readsOf(carried)
+	tools, dirs := answerReads(snap, replies)
 	first := CouncilActivity{Text: actPerson, ProposalId: replies[0].ProposalId, ParentId: replies[0].Id}
 	prompt := AnswersPrompt(snap, e, replies)
 	if IsAgent(e) {
@@ -2143,10 +2147,15 @@ func (r *Runner) answerCall(ctx context.Context, rn *run, id string, snap *Counc
 // that answer and asked to add to it rather than say it again: answered all at once, three seats each opened a steer of
 // the person's with the same concession. The Summary is not rerun. Each reply is marked answered when the pass ends,
 // whatever came of its calls: a call that failed is on the council's Failed list with its Retry, and an expert already
-// on that list sits the pass out until it is retried. A message the router has not taken up yet is routed first (a router
+// on that list sits the pass out until it is retried. Before any seat answers, the outside refresh brings the memory in
+// line with what the person did outside the council since the report (refreshOutside). A message the router has not taken up yet is routed first (a router
 // already in flight is waited for), and its To, the router's order, is who answers it: the first seat in it first.
 func (r *Runner) answersPass(ctx context.Context, rn *run, id string) error {
 	r.routePending(ctx, id)
+	if ctx.Err() != nil {
+		return nil
+	}
+	r.refreshOutside(ctx, rn, id) // before any seat reads the memory
 	if ctx.Err() != nil {
 		return nil
 	}

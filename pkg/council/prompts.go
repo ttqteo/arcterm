@@ -1775,7 +1775,7 @@ func branchOf(c *Council, r CouncilReply) []CouncilReply {
 // attachment block.
 func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 	carried := personRepliesIn(c, replies)
-	tools, _ := readsOf(carried)
+	tools, _ := answerReads(c, replies)
 	var (
 		b      strings.Builder
 		others bool // a seat answered one of the replies before this one: say not to repeat it
@@ -1794,6 +1794,7 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 		b.WriteString("You have no tools this time: answer from the text below.\n\n")
 	}
 	writeReport(&b, c)
+	writeChangedFiles(&b, c)
 
 	var own []CouncilProposal
 	for _, p := range sentProposals(c) {
@@ -1858,6 +1859,14 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 	b.WriteString("## What to do\n\n")
 	b.WriteString(answersTask(c, others))
 	return b.String()
+}
+
+// answerReads says what an expert answering replies may read: what the person's replies it carries asked for (readsOf),
+// and the read-only tools as well when a file of the council changed after the report and is too big to put in the
+// prompt (changedUnread), so it opens the file as it now reads instead of trusting the report's view of it.
+func answerReads(c *Council, replies []CouncilReply) (tools bool, dirs []string) {
+	tools, dirs = readsOf(personRepliesIn(c, replies))
+	return tools || changedUnread(c), dirs
 }
 
 // answersTo are the seats' answers to the person's reply r that were not dropped, in the order they came: one seat
