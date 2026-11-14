@@ -22,6 +22,18 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- In a council, Chốt (set as direction) shows a compass instead of a pin, so it no longer looks like Pin to Report
+  beside it on a seat's message. A pinned chat seat's Final proposal in the saved report names the chat with its key
+  (`notes · 0976023f`), as the Report does.
+
+### Fixed
+
+- A council that was running when arcterm closed now gets its saved report too, like one you stopped.
+
 ## 1.1.3 — 2026-11-14
 
 ### Added

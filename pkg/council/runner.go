@@ -3569,8 +3569,9 @@ func (r *Runner) Delete(id string) (*Council, error) {
 	return c, nil
 }
 
-// MarkStale turns every council left running (wavesrv quit mid-round) into a stopped one that says so. A council left
-// queued stays queued: StartNext starts it. Call it once at startup, before any council runs.
+// MarkStale turns every council left running (wavesrv quit mid-round) into a stopped one that says so, and saves its
+// document, as a council stopped mid-run has one. A council left queued stays queued: StartNext starts it. Call it once
+// at startup, before any council runs.
 //
 // It also routes, in the background, every message of the person's the router had not answered when wavesrv quit, in a
 // council in any state: in a done or stopped one no pass would come to do it, and its post would read "Router is choosing
@@ -3604,6 +3605,9 @@ func (r *Runner) MarkStale() {
 			log.Printf("[council] %s: not marked stopped: %v", c.Id, err)
 		}
 		r.changed(saved)
+		if saved != nil {
+			r.saveDocument(saved) // what the finished rounds hold, as a Stop mid-run saves it
+		}
 		err = nil
 	}
 	for _, c := range list {

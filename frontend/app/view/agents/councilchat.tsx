@@ -44,6 +44,7 @@ import {
     ChevronsLeft,
     ChevronsRight,
     CircleAlert,
+    Compass,
     Copy,
     CornerDownRight,
     Ellipsis,
@@ -718,8 +719,8 @@ function PinnedPill({ id }: { id: string }) {
 }
 
 // Chốt: pins an idea's title, or a seat's message on one line, as the council's direction (the Memory tab). It sits beside
-// like and dislike in the same row, a pin with no word (its name is its tooltip), and on a reply shows with them while it
-// is hovered or focused. A direction is checked
+// like and dislike in the same row, a compass with no word (its name is its tooltip; not a pin, which is Pin to Report's
+// beside it on a reply), and on a reply shows with them while it is hovered or focused. A direction is checked
 // before it is set, so the icon turns while the check runs; where it landed (set, or held with a reason) is on the Memory
 // tab. An item with no text offers nothing, since the backend refuses an empty direction.
 function Chot({ councilId, item, text, acts }: { councilId: string; item: string; text: string; acts: Actions }) {
@@ -742,7 +743,7 @@ function Chot({ councilId, item, text, acts }: { councilId: string; item: string
             {busy ? (
                 <Loader2 size={13} className="animate-spin" aria-hidden />
             ) : (
-                <Pin size={13} strokeWidth={2} aria-hidden />
+                <Compass size={13} strokeWidth={2} aria-hidden />
             )}
         </button>
     );
