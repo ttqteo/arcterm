@@ -37,7 +37,7 @@ import { ContextMenuModel } from "@/app/store/contextmenu";
 import { openOrPeek } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
-import { ArrowUpRight, ChevronDown, ChevronRight, Copy, Diamond, EyeOff, Flag, GitFork } from "lucide-react";
+import { ArrowRight, ArrowUpRight, ChevronDown, ChevronRight, Copy, Diamond, EyeOff, Flag, GitFork } from "lucide-react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
@@ -855,6 +855,16 @@ function ChunkDivider({ n, label }: { n: number; label: string }) {
     );
 }
 
+// what stands for the message the band sent to tell the agent of a switch: arcterm's words, on your side of the column
+function SwitchNoteRow({ n }: { n: number }) {
+    return (
+        <div data-chat-switch-note={n} className="flex items-center gap-1.5 text-[12px] text-muted">
+            <ArrowRight size={12} strokeWidth={1.8} aria-hidden className="flex-none" />
+            Moved to chunk {n} · sent by arcterm
+        </div>
+    );
+}
+
 function Marker({ item }: { item: ChatMarker }) {
     switch (item.kind) {
         case "compaction":
@@ -1563,13 +1573,14 @@ export function ChatConversation({
                         onAddInitiative={canAddInitiative ? addToInitiative : undefined}
                     />
                 );
-                // a message that moved the agent to another chunk opens that chunk's stretch of the conversation
+                // a message that moved the agent to another chunk opens that chunk's stretch of the conversation; the band's
+                // own message (Switch to this chunk with an empty box) is a muted row of arcterm's, not a bubble of yours
                 return "command" in item || item.chunk == null ? (
                     bubble
                 ) : (
                     <>
                         <ChunkDivider n={item.chunk.n} label={item.chunk.label} />
-                        {bubble}
+                        {item.switchNote ? <SwitchNoteRow n={item.chunk.n} /> : bubble}
                     </>
                 );
             }

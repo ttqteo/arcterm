@@ -67,6 +67,7 @@ import { boxState, boxTabPlaceholder, type BoxState, type HintPart } from "./cha
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold, usePartMotion } from "./chatfooter";
 import { boxAnswersAsk } from "./chathandoff";
+import { SWITCH_NOTE } from "./chatinitiative";
 import {
     dropSwitchLine,
     holdSwitchLine,
@@ -200,7 +201,7 @@ function SwitchLine({ agent }: { agent: AgentVM }) {
                     >
                         <Diamond size={12} strokeWidth={1.8} aria-hidden className="flex-none" />
                         <span className="min-w-0 truncate">
-                            Goes with your next message: switched to chunk {switched.n} {switched.label}
+                            Switched to chunk {switched.n} {switched.label}. The agent is told with your next message.
                         </span>
                         <button
                             type="button"
@@ -591,7 +592,9 @@ function ComposerBox({
                 // pending bubble up beside it for minutes. A /btw, a bare panel command and a `! cmd` are: nothing of
                 // them lands until the side answer comes, the panel closes or the command finishes (chatpending.ts
                 // pendingKind)
-                if (entries != null && pendsAsBubble(sent)) {
+                // the band's own switch message draws as arcterm's row once it lands, never as a bubble of yours
+                const bandNote = sent === SWITCH_NOTE && lines.length > 0;
+                if (entries != null && pendsAsBubble(sent) && !bandNote) {
                     addPending(agent.id, sent, entries, agent.state !== "idle");
                 }
                 flipIfTui(sent);
