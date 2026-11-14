@@ -30,6 +30,10 @@ checklist. pi and codex keep using their own list tools (`TaskCreate`/`TaskList`
 A new arc skill teaches the block: `skills/steps/` (name it `steps`), embedded by `skills/skills.go` like the others. It
 reaches Claude through the arc mod as `arc:steps`.
 
+Agent's call: `skills/` is seeded into every harness, so the skill says, as `visual` does, that only a Claude agent's
+Chat draws the block, and tells a pi or codex agent to keep using its own list tool. `extractPiTasks` and
+`extractCodexTasks` do not read `arc-steps` blocks.
+
 ### When the agent writes it
 
 The skill tells the agent to write the block when it starts work that takes **three or more steps**. It skips questions
@@ -56,13 +60,20 @@ One step per line:
 
 - The list is drawn where the agent first wrote a block in that turn. Each later block in the same turn updates that one
   list in place, and the later blocks draw nothing where they stand. A finished turn keeps its last list.
+- What a turn is (Agent's call): a turn runs from one of your messages to the next, not one agent group in
+  `chatItems` (`chatmodel.ts:212`). A marker that cuts the group while the agent works (an auto-compaction, a background
+  `<task-notification>`, an interruption) does not end the turn: the list stays where it was first drawn, and a block
+  after the marker still updates it. A message you queue while the agent works does start a new turn: the earlier list
+  stays as it last was, and the agent's next block draws a new list.
 - Row icons: a done step has a tick in a ring, in `muted`, and its text is `muted`. The step being worked on has a
   `working` green ring with a dot that pulses through `element/pulsedriver.tsx` (not a CSS animation), and its text is
   `foreground`. A step not started has a dashed ring in `ink-faint`, and its text is `secondary`. Status is never shown
   by colour alone: each state has its own glyph.
 - The container is `border-edge-mid rounded-lg` with no fill, rows 14px, a 16px icon column and `gap` 8px between rows,
   as drawn on the board.
-- When the turn ends with a `[>]` step still open, that step stops pulsing and draws as not started.
+- When the turn ends with a `[>]` step still open, that step stops pulsing and draws as not started. Agent's call on
+  what "ends" means: while the agent waits on you (a permission prompt, an `AskUserQuestion`), a `[>]` step keeps its
+  green ring but stops pulsing; once the agent is idle or ended, or a later turn has begun, it draws as not started.
 - Motion: a step's icon changing (pending → working → done) crossfades on the Fluid ease at `MOTION.durMicro`. A step
   added to or removed from the list grows or folds through `springReveal`. The list's first appearance takes no
   entrance animation beyond the turn's own.
@@ -76,8 +87,9 @@ until the agent writes a new one, the same as today's tool-based lists.
 ## Reading Claude's list tools
 
 `extractTasks` also reads `TaskCreate` / `TaskUpdate` beside `TodoWrite`, in case a Claude Code build offers them,
-matched by task id as `extractPiTasks` does. When an agent's transcript has both a list tool call and an `arc-steps`
-block, the one written last wins, for both Chat and the card chip.
+matched by task id as `extractPiTasks` does. These tool lists feed only the card chip: Chat draws only `arc-steps`
+blocks, never a list from a tool call. When an agent's transcript has both a list tool call and an `arc-steps` block,
+the one written last wins for the chip.
 
 ## Left to the builder
 
@@ -87,8 +99,8 @@ block, the one written last wins, for both Chat and the card chip.
   `DIAGRAM_COMPONENT` next to `VISUAL_LANG`.
 - **Transcript side:** `extractTasks` reads `TaskCreate`/`TaskUpdate` and `arc-steps` blocks, with tests in
   `transcriptprojection.test.ts`.
-- **Skill:** `skills/steps/SKILL.md`. The block format, the three-step threshold, and the rule to rewrite the whole
-  block on each change.
+- **Skill:** `skills/steps/SKILL.md`. The block format, the three-step threshold, the rule to rewrite the whole
+  block on each change, and the scoping to Claude agents (Agent's call, under "Source").
 - **Verification:** a CDP scenario in `scripts/cdp/scenarios.mjs`, using a fixture transcript, that shows one list with
   a step in progress and one finished turn's list.
 - **CHANGELOG:** one line under `Added` in the `Unreleased` section.
