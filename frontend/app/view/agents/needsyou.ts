@@ -19,7 +19,7 @@ import { useMemo, useState, type MouseEvent } from "react";
 import type { AgentsViewModel } from "./agents";
 import { attentionAtom, attentionFixtureAtom, loadAttention } from "./attentionstore";
 import { channelMessagesAtom, channelsAtom } from "./channelsstore";
-import { buildNeedsYouRows, channelProjects, type StripRow } from "./needsyoustripmodel";
+import { buildNeedsYouRows, channelProjects, projectsByPath, type StripRow } from "./needsyoustripmodel";
 import { projectsAtom } from "./projectsstore";
 
 const feedback = {
@@ -57,9 +57,19 @@ export function useNeedsYou(
     const now = useAtomValue(model.structuralNowAtom);
     const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
     const channelProject = useMemo(() => channelProjects(channels, registry), [channels, registry]);
+    const pathProject = useMemo(() => projectsByPath(registry), [registry]);
     const rows = useMemo(
-        () => buildNeedsYouRows({ attention, filter, channelProject, channelMessages, roster, learn: project == null }),
-        [attention, filter, channelProject, channelMessages, roster, project]
+        () =>
+            buildNeedsYouRows({
+                attention,
+                filter,
+                channelProject,
+                pathProject,
+                channelMessages,
+                roster,
+                learn: project == null,
+            }),
+        [attention, filter, channelProject, pathProject, channelMessages, roster, project]
     );
 
     const open = (row: StripRow, e?: MouseEvent) => {
@@ -73,6 +83,10 @@ export function useNeedsYou(
         }
         if (to.kind === "effort") {
             fireAndForget(() => openOrPeek(model, { kind: "effort", effortId: to.effortId }, e));
+            return;
+        }
+        if (to.kind === "council") {
+            fireAndForget(() => openOrPeek(model, { kind: "council", councilId: to.councilId }, e));
             return;
         }
         fireAndForget(() =>

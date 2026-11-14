@@ -9,6 +9,7 @@ import {
     escalationAgent,
     foldNeedsYouRows,
     groupAge,
+    projectsByPath,
     stripAge,
     whyLines,
     type StripRow,
@@ -527,5 +528,47 @@ describe("groupAge", () => {
     it("reads one age when they read the same, and skips rows with no age", () => {
         expect(groupAge(at(now - 5 * day, now - 5 * day - 1000, null), now)).toBe("5d");
         expect(groupAge(at(null), now)).toBe("");
+    });
+});
+
+describe("buildNeedsYouRows: a council waiting on you", () => {
+    const council = item({
+        kind: "council",
+        key: "council:c1",
+        channelid: "",
+        runid: "",
+        taskid: "",
+        oref: "council:c1",
+        projectpath: "D:\\work\\alpha",
+        source: "",
+        text: "Council waiting on you: Rail apps",
+        action: "Open",
+    });
+    const pathProject = projectsByPath({ alpha: { path: "D:/work/alpha/" }, beta: { path: "/home/me/beta" } });
+    const rowsFor = (filter: string, at: Map<string, string> = pathProject) =>
+        buildNeedsYouRows({ ...base, attention: [council], filter, pathProject: at });
+
+    it("reads Council, opens its discussion, and offers Open", () => {
+        const [row] = rowsFor("all");
+        expect(row.kindLabel).toBe("Council");
+        expect(row.tone).toBe("asking");
+        expect(row.open).toEqual({ kind: "council", councilId: "c1" });
+        expect(row.act).toEqual({ label: "Open", kind: "open" });
+    });
+
+    it("is scoped by its project folder, whichever way the path is spelled", () => {
+        expect(rowsFor("alpha").map((r) => r.key)).toEqual(["council:c1"]);
+        expect(rowsFor("beta")).toEqual([]);
+    });
+
+    it("drops out under a project filter when its folder is no registered project", () => {
+        expect(rowsFor("alpha", new Map())).toEqual([]);
+        expect(buildNeedsYouRows({ ...base, attention: [council], filter: "alpha" })).toEqual([]);
+        expect(rowsFor("all", new Map())).toHaveLength(1);
+    });
+
+    it("opens nothing when its oref names no council", () => {
+        const bare = { ...council, oref: "council:" } as AttentionItem;
+        expect(buildNeedsYouRows({ ...base, attention: [bare], pathProject })[0].open).toBeNull();
     });
 });

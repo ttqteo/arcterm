@@ -76,6 +76,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Selecting text in Chat on a Mac highlights only the text you pick, one band per line as on Windows: no fill running
   to the column's edge or across the gaps between paragraphs, no boxes around list numbers and bullets, and no dark
   strips between the lines of a wrapped paragraph.
+- A council waiting on you after its first round now shows in the Cockpit's Needs you too, under its project's
+  filter, and its Open takes you to its Discussion.
+- In the command palette's Needs you, Enter on a learned rule now takes you to the Cockpit, where you accept or
+  dismiss it, instead of doing nothing.
+- With a council's Ideas rail folded, the button that brings it back carries the Memory dot when a suggestion or a
+  held direction waits for you.
+- A council's Retry on a failed summary is off, and says why, when no idea was ever sent, instead of failing when
+  pressed.
 
 ## 1.1.2 — 2026-11-14
 

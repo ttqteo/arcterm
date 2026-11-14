@@ -490,6 +490,7 @@ func councilItems(councils []*council.Council) []wshrpc.AttentionItem {
 			Kind:         AttentionCouncil,
 			Key:          "council:" + c.Id,
 			ORef:         "council:" + c.Id,
+			ProjectPath:  c.Project,
 			Text:         "Council waiting on you: " + c.Feature,
 			Action:       "Open",
 			WaitingSince: c.Updated,

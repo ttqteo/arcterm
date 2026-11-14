@@ -63,6 +63,7 @@ import {
     type SeatableAgent,
     type SegmentState,
 } from "./councilmodel";
+import { retryHold } from "./councilretry";
 import { RetryWithButton } from "./councilretrymenu";
 import { seatableAgents } from "./councilsetupmodel";
 import { claimOf } from "./councilsources";
@@ -331,14 +332,16 @@ function Header({
 function RetryButton({ expertId, label, acts, c }: { expertId: string; label: string; acts: Actions; c: Council }) {
     const key = `retry:${expertId}`;
     const busy = acts.busy.has(key);
-    const running = c.state === "running"; // a retry while it runs is refused: one job at a time
+    // a retry while it runs is refused (one job at a time), and so is a summary's with no sent idea
+    const hold = retryHold(c, expertId);
     return (
         <span className="flex items-center gap-[6px] self-start">
             <button
                 type="button"
                 data-council-retry={expertId}
                 aria-label={label}
-                disabled={busy || running}
+                title={hold ?? undefined}
+                disabled={busy || hold != null}
                 onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, expertId))}
                 className={cn(secondaryButton, "h-[26px] px-[10px] text-[12.5px]")}
             >
@@ -347,7 +350,7 @@ function RetryButton({ expertId, label, acts, c }: { expertId: string; label: st
             <RetryWithButton
                 expert={c.experts.find((e) => e.id === expertId)}
                 error={c.failed?.[expertId]?.error}
-                disabled={busy || running}
+                disabled={busy || hold != null}
                 onPick={(model) => void acts.run(key, "Retry", () => retryExpert(c.id, expertId, model))}
                 className={cn(secondaryButton, "h-[26px] px-[8px] text-[12.5px]")}
             />

@@ -6,6 +6,16 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Council small fixes, 11-14 batch.** Unit-tested and typechecked only; no dev app ran. (1) Leave a
+  council paused after round 1 in a registered project → the Cockpit's Needs you strip has a `Council` row; under
+  another project's filter it is gone; Open lands on its Discussion (`task verify:ui -- council-needs-you`, step 4b).
+  (2) Ctrl+K → Needs you → Enter on a learned rule → the Cockpit shows, with the rule's Accept and Dismiss. (3) In a
+  council with a waiting suggestion, fold the Ideas rail → the `Ideas · N` button carries the dot (`council-memory`,
+  step 1b). (4) A council whose coordinator failed with no sent idea → its Retry is greyed, and its hover says no idea
+  was sent. (5) Copy a routed message's `Router failed` row → the pasted text reads `Router failed UX`, not
+  `Router failedUX` (`council-routing`). Commit: fix(council) Needs you strip, palette learned rule, folded-rail dot,
+  summary Retry hold
+
 - [ ] (arcterm) Council and Doc review cards in Chat, with a real agent: in a Claude agent's Chat have it start a
   council (`/arc:council`, or ask for one) → while it runs a Council card sits at the end of the conversation (the
   question, a chip per expert, the step, the time, the estimate, Stop; Open council opens the room); a second council

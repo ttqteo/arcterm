@@ -96,6 +96,25 @@ export const councilNeedsYou = {
             JSON.stringify({ palOpened, palListed, palLanded, palSurface })
         );
 
+        // 4b. the Cockpit's Needs you strip lists it too, as a Council row whose Open lands on its Discussion
+        writeCouncil(ctx, "awaiting", { id: ctx.id });
+        await h.goto("cockpit");
+        const STRIP_ROW = `document.querySelector(${q(`[data-needs-you-row="council:${ctx.id}"]`)})`;
+        const stripListed = await until(`!!${STRIP_ROW}`, POLL_WAIT_MS);
+        const strip = await h.ev(`(() => {
+            const r = ${STRIP_ROW};
+            if (!r) return null;
+            return { text: (r.textContent ?? "").replace(/\\s+/g, " ").trim(), act: r.querySelector('[data-needs-you-act="open"]')?.textContent?.trim() ?? null };
+        })()`);
+        await h.shot("cdp-shots/council-needs-you-strip.png");
+        await h.ev(`${STRIP_ROW}?.querySelector('[data-needs-you-act="open"]')?.click()`);
+        const stripLanded = await until(`document.querySelector("[data-council-discussion]")?.dataset.councilId === ${q(ctx.id)}`);
+        rec(
+            "4b. the Cockpit's Needs you strip has a Council row for it whose Open lands on its Discussion",
+            stripListed && strip?.text.includes("Council") && strip.text.includes(ROW_TEXT) && strip.act === "Open" && stripLanded,
+            JSON.stringify({ stripListed, strip, stripLanded })
+        );
+
         // 5. the same council written as done: its row is gone after the next refresh, and the badge is one less
         writeCouncil(ctx, "done", { id: ctx.id });
         await h.goto("jarvis");
