@@ -109,6 +109,7 @@ import {
     rowHold,
     runningActions,
     stepPick,
+    suggestTake,
     type ChatChip,
     type ChipKind,
     type ChipRowKind,
@@ -645,22 +646,22 @@ function ComposerBox({
     };
     // A suggested reply's chip: its text goes through the box's own send, as Enter on it typed would (the pending bubble,
     // the card results in front of it, the wait behind a prompt), so the chips leave at once and a second click finds none
-    // Over text the person has typed it sends nothing yet: a warning toast says that text would go, and its Send sends.
+    // Over text the person has typed it sends nothing yet: the chip arms (chatsuggest.ts suggestTake), asking on itself
+    // where the eye already is, picked so Enter takes it from the box; a second click or Enter sends, and typing, Esc, Tab
+    // or a click anywhere else lets go of it (sendSuggested's state lives with the pick, below).
     const sendNow = (t: string) => {
         submitNext.current = true;
         setTextAt(t);
     };
     const sendSuggested = (t: string) => {
-        if (text.trim() === "") {
+        if (suggestTake(text, armed, t) === "send") {
+            setArmed(null);
             sendNow(t);
             return;
         }
-        pushToast({
-            title: "Replace what you typed?",
-            message: `Sending “${t}” drops the text in the box.`,
-            level: "warn",
-            action: { label: "Send", run: () => sendNow(t) },
-        });
+        setPicked(t);
+        setArmed(t);
+        editorRef.current?.focus();
     };
     // The + menu's Add folder and Slash commands rows: an empty box becomes `t`; a box that already starts with `/` is
     // a command being written and stays as it is; any other text gets `t` put before it. The box takes the focus, the
@@ -887,6 +888,28 @@ function ComposerBox({
     const tabChips = row.kind === "suggest" ? drawnChips(row.chips, onMarkDone != null) : NO_CHIPS;
     const [pickedText, setPicked] = useState<string | null>(null);
     const picked = pickedChip(tabChips, pickedText);
+    // the chip that asks before its text replaces the typed one (sendSuggested): it is always the picked chip, so
+    // whatever lets go of the pick (typing, Esc, Tab, a send) lets go of it too
+    const [armedText, setArmed] = useState<string | null>(null);
+    const armed = armedText != null && armedText === picked?.text ? armedText : null;
+    useEffect(() => {
+        if (armedText != null && armedText !== pickedText) {
+            setArmed(null);
+        }
+    }, [pickedText]);
+    // a press anywhere but on the armed chip lets go of it
+    useEffect(() => {
+        if (armed == null) {
+            return;
+        }
+        const off = (e: PointerEvent) => {
+            if (!(e.target instanceof Element) || e.target.closest("[data-chat-suggest-armed]") == null) {
+                setArmed(null);
+            }
+        };
+        document.addEventListener("pointerdown", off, true);
+        return () => document.removeEventListener("pointerdown", off, true);
+    }, [armed]);
     const activateChip = (c: ChatChip) => {
         if (c.kind === "done" && c.chunk != null && onMarkDone != null) {
             onMarkDone(c.chunk);
@@ -1248,6 +1271,7 @@ function ComposerBox({
                             key="suggest"
                             chips={tabChips}
                             picked={picked?.text ?? null}
+                            armed={armed}
                             onActivate={(c) => {
                                 setPicked(null);
                                 activateChip(c);
@@ -1478,12 +1502,15 @@ function HintLine({ parts }: { parts: HintPart[] }) {
 function SuggestChips({
     chips,
     picked,
+    armed,
     onActivate,
     canGoOn,
 }: {
     chips: ChatChip[];
     /** the text of the chip Tab picked, or null */
     picked: string | null;
+    /** the text of the chip asking before it replaces the typed text, or null */
+    armed: string | null;
     onActivate: (c: ChatChip) => void;
     canGoOn: boolean;
 }) {
@@ -1500,12 +1527,15 @@ function SuggestChips({
                                 icon={SUGGEST_ICONS[c.kind]}
                                 label={c.text}
                                 picked={c.text === picked}
+                                armed={c.text === armed}
                                 title={
-                                    ticks
-                                        ? `Mark “${c.chunk}” done and move on to the next chunk`
-                                        : goes
-                                          ? `Move this agent to “${c.chunk}” and send “${c.text}”`
-                                          : `Send “${c.text}”`
+                                    c.text === armed
+                                        ? `Send “${c.text}” in place of the text in the box · Esc keeps your text`
+                                        : ticks
+                                          ? `Mark “${c.chunk}” done and move on to the next chunk`
+                                          : goes
+                                            ? `Move this agent to “${c.chunk}” and send “${c.text}”`
+                                            : `Send “${c.text}”`
                                 }
                                 onClick={() => onActivate(c)}
                                 data={{ "data-chat-suggest-chip": c.source, "data-chat-suggest-kind": c.kind }}
@@ -1524,6 +1554,7 @@ export function Chip({
     label,
     title,
     picked = false,
+    armed = false,
     onClick,
     data,
 }: {
@@ -1532,6 +1563,8 @@ export function Chip({
     title?: string;
     /** Tab picked it: lit, with the Enter key that takes it */
     picked?: boolean;
+    /** taking it would replace the typed text: it says so in warning colours, and taking it again sends */
+    armed?: boolean;
     onClick: () => void;
     data: Record<`data-${string}`, string>;
 }) {
@@ -1540,21 +1573,30 @@ export function Chip({
             type="button"
             {...data}
             data-chat-suggest-picked={picked ? "" : undefined}
+            data-chat-suggest-armed={armed ? "" : undefined}
             title={title}
             onClick={onClick}
             className={cn(
                 "flex h-[28px] max-w-[340px] cursor-pointer items-center gap-1.5 rounded-full border pl-[11px] text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none",
-                picked
-                    ? "border-accent bg-accentbg pr-[5px] text-primary ring-2 ring-accent/35"
-                    : "border-edge-mid bg-surface pr-[11px] text-secondary hover:border-edge-strong hover:text-primary"
+                armed
+                    ? "border-warning bg-warning/10 pr-[5px] text-primary ring-2 ring-warning/30"
+                    : picked
+                      ? "border-accent bg-accentbg pr-[5px] text-primary ring-2 ring-accent/35"
+                      : "border-edge-mid bg-surface pr-[11px] text-secondary hover:border-edge-strong hover:text-primary"
             )}
         >
-            {Icon != null ? <Icon size={13} strokeWidth={1.8} aria-hidden className="flex-none" /> : null}
-            <span className="min-w-0 truncate">{label}</span>
-            {picked ? (
+            {Icon != null && !armed ? <Icon size={13} strokeWidth={1.8} aria-hidden className="flex-none" /> : null}
+            {armed ? <span className="flex-none text-warning">Replace &amp; send</span> : null}
+            <span className="min-w-0 truncate">{armed ? `“${label}”` : label}</span>
+            {picked || armed ? (
                 <kbd
                     aria-label="Enter"
-                    className="inline-flex h-[18px] min-w-[18px] flex-none items-center justify-center rounded-[6px] border border-accent-500 bg-accent-900 px-1 font-mono text-[11px] text-accent-50"
+                    className={cn(
+                        "inline-flex h-[18px] min-w-[18px] flex-none items-center justify-center rounded-[6px] border px-1 font-mono text-[11px]",
+                        armed
+                            ? "border-warning/60 bg-warning/20 text-primary"
+                            : "border-accent-500 bg-accent-900 text-accent-50"
+                    )}
                 >
                     ↵
                 </kbd>

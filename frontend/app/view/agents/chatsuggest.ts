@@ -319,6 +319,13 @@ export function pickedChip(chips: readonly ChatChip[], picked: string | null): C
     return picked == null ? null : (chips.find((c) => c.text === picked) ?? null);
 }
 
+/** Pure: what a click, or Enter on the picked chip, does with suggested reply `t`: over an empty box, or one already
+ *  holding `t`, it sends; over text the person typed the first one arms the chip (it asks on itself, by the box, rather
+ *  than in a toast across the screen), and the armed chip taken again sends, dropping the typed text. */
+export function suggestTake(typed: string, armed: string | null, t: string): "send" | "arm" {
+    return typed.trim() === "" || typed === t || armed === t ? "send" : "arm";
+}
+
 /** Pure: whether Shift+Enter can put the chip's text in the box to edit before sending: true for a chip whose Enter
  *  sends its text as typed (a reply, commit, push, or a `next` chip with nothing to start its chunk: `canGoOn` false).
  *  A `done` chip sends nothing and a `next` chip that starts its chunk does more than send, so neither has text to edit. */

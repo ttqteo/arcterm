@@ -20,6 +20,7 @@ import {
     runningActions,
     stepPick,
     suggestKey,
+    suggestTake,
     TERMINAL_AFTER_MS,
     wantsModelSuggest,
     writesVietnamese,
@@ -408,5 +409,20 @@ describe("Tab through the suggested replies", () => {
         expect(chipEditable(done, true)).toBe(false);
         expect(chipEditable(next, true)).toBe(false);
         expect(chipEditable(next, false)).toBe(true);
+    });
+});
+
+describe("suggestTake", () => {
+    it("sends over an empty box, or one already holding the reply", () => {
+        expect(suggestTake("", null, "commit đi")).toBe("send");
+        expect(suggestTake("  \n", null, "commit đi")).toBe("send");
+        expect(suggestTake("commit đi", null, "commit đi")).toBe("send");
+    });
+    it("over typed text arms the chip first, and the armed chip sends", () => {
+        expect(suggestTake("đổi qua ⌘↓?", null, "commit đi")).toBe("arm");
+        expect(suggestTake("đổi qua ⌘↓?", "commit đi", "commit đi")).toBe("send");
+    });
+    it("another chip than the armed one arms in its place", () => {
+        expect(suggestTake("đổi qua ⌘↓?", "push đi", "commit đi")).toBe("arm");
     });
 });
