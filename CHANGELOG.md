@@ -43,7 +43,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In Chat, an agent with a brainstorm attached always shows it in the band under the header, between two questions
   too: how many boards it has, with a dot and "N new" for the ones that arrived since you last opened the Brainstorm
   tab (the tab carries the same dot), and how many decisions are yours. Open that part and it pushes the conversation
-  down to the decisions and the boards; a click on a board opens the Brainstorm tab. With an initiative beside it, Mark
+  down to the decisions and the boards; a click on a board opens it large over the Chat, without leaving it (Esc
+  closes it, Open in Brainstorm goes to the tab). With an initiative beside it, Mark
   done moves into the initiative's opened view (the `m` key still works).
 
 ### Changed

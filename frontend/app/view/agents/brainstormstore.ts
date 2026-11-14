@@ -16,6 +16,7 @@ import {
     brainstormBandModel,
     parseSeenBoards,
     seenNamesOf,
+    withBoardSeen,
     withSeenBoards,
     type BrainstormBandModel,
     type SeenBoards,
@@ -143,8 +144,17 @@ export const brainstormSeenBoardsAtom = atom<SeenBoards>(readSeenBoards()) as Pr
 /** Takes the board names of `f` as seen for the brainstorm at `path`, at `now`. Writes nothing when they are the names
  *  already stored; a storage that cannot be written leaves them in memory. */
 export function markBoardsSeen(path: string, f: BrainstormFile, now: number): void {
+    saveSeenBoards((prev) => withSeenBoards(prev, path, boardNames(f), now));
+}
+
+/** Takes the one board `name` as seen for the brainstorm at `path`: Chat's band opened it without the Brainstorm tab. */
+export function markBoardSeen(path: string, name: string, now: number): void {
+    saveSeenBoards((prev) => withBoardSeen(prev, path, name, now));
+}
+
+function saveSeenBoards(fn: (prev: SeenBoards) => SeenBoards): void {
     const prev = globalStore.get(brainstormSeenBoardsAtom);
-    const next = withSeenBoards(prev, path, boardNames(f), now);
+    const next = fn(prev);
     if (next === prev) {
         return;
     }
