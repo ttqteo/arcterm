@@ -24,7 +24,17 @@ function invertPct(pct: number | undefined): number | undefined {
 // would wipe the retained title and drop the row label back to the project name until the next
 // titled event, i.e. the rename flicker. detail/ts are always transient (current activity / event
 // time) and are never retained.
-const RETAINED_FIELDS = ["title", "model", "agent", "provider", "cwd", "transcriptpath", "sessionid"] as const;
+// effort comes only on the hooks inside a turn, so a SessionStart or a Notification keeps the last one
+const RETAINED_FIELDS = [
+    "title",
+    "model",
+    "agent",
+    "provider",
+    "cwd",
+    "transcriptpath",
+    "sessionid",
+    "effort",
+] as const;
 
 /** Pure: fold a state-delta event onto the previous status, keeping last-known values for fields the
  *  event omits. null prev (first event) passes through unchanged. */

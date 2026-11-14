@@ -132,6 +132,7 @@ export interface AgentVM {
     state: AgentState;
     agent?: string; // coding-agent identity (claude | codex | …) — selects the transcript projector
     model?: string; // family and version label (e.g. "opus 5.5"; modelLabel)
+    effort?: string; // the reasoning effort its Claude hooks last reported (low … max), which Chat's model chip names
     project?: string; // explicit project name; preferred over the lossy transcript-path derivation
     activity?: string; // working: live activity line; idle: reason
     blockedMs?: number; // asking: how long blocked (sort + age)
@@ -598,6 +599,7 @@ export interface LiveAgentInput {
     detail?: string;
     agent?: string; // coding-agent identity (claude | codex | …)
     model?: string; // raw model id
+    effort?: string; // the status event's effort, retained across events that carry none
     ts?: number; // last status change (UnixMilli)
     transcriptPath?: string;
     blockId?: string;
@@ -646,6 +648,9 @@ export function agentVMFromInput(input: LiveAgentInput, now: number): AgentVM {
     }
     if (input.sleeping) {
         vm.sleeping = input.sleeping;
+    }
+    if (input.effort) {
+        vm.effort = input.effort;
     }
     if (input.runORef?.startsWith("run:")) {
         vm.runId = input.runORef.slice("run:".length);

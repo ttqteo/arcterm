@@ -97,6 +97,9 @@ type AgentStatusData struct {
 	// ToolKey is set only on a PostToolUse report: agentperm.ToolKey of the tool that ran, which retires the
 	// permission request that granted it (the PermissionRequest payload has no tool_use_id to match on)
 	ToolKey string `json:"toolkey,omitempty"`
+	// Effort is the reasoning effort (low, medium, high, xhigh, max) a Claude hook inside a turn reports; empty when
+	// the event carries none, which leaves the last one known standing (Chat's model chip names it)
+	Effort string `json:"effort,omitempty"`
 }
 
 // AgentPermissionRequest is one permission prompt Claude Code is showing in an agent's terminal.

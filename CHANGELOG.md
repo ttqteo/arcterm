@@ -94,6 +94,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Chat's model chip names the agent's effort ("Opus 5.5 High") from its first tool call or finished turn on, not only
+  for the few seconds after an `/effort`.
 - New agent's Task box opens with the cursor after a restored draft, so you keep typing where you left off.
 - A new agent opens on itself again: once it started, the Agent surface could jump to the next live agent below it in
   the tree.

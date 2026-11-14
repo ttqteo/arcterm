@@ -45231,6 +45231,22 @@ const agentChat = {
                 { openers28b, effortRows28b, effortPicked28b, effortClosed28b, chipText28b, typedE28b, moreRows28b, morePicked28b, digit28b, digitClosed28b, noEffortChip28b }
             );
 
+            // 28c. the effort Claude's hooks report (AgentStatusData.effort, on the roster row) names the chip with no effort line
+            // on screen, and a new report replaces the level the 28b pick set: the chip reads "… Medium"; with no report and
+            // nothing on screen the chip names the model alone
+            await AC.setRoster(h, acRoster(ctx, { effort: "medium" }));
+            const reported28c = await polishWaitFor(h, `/Medium$/.test(${chipQ28b}?.textContent.trim() ?? "")`, 4000);
+            const chipText28c = await h.ev(`${chipQ28b}?.textContent.trim() ?? null`);
+            const attr28c = await h.ev(`${chipQ28b}?.getAttribute("data-chat-effort") ?? null`);
+            await h.shot("cdp-shots/agent-chat-28c-reported-effort.png");
+            await AC.setRoster(h, acRoster(ctx));
+            const bare28c = await polishWaitFor(h, `(${chipQ28b}?.getAttribute("data-chat-effort") ?? "x") === ""`, 4000);
+            rec(
+                "28c. a reported effort (medium) names the chip, replacing the High the 28b pick set, and with no report the chip names only the model",
+                reported28c && attr28c === "medium" && bare28c,
+                { reported28c, chipText28c, attr28c, bare28c }
+            );
+
             // 29. the mode chip opens a menu of the four modes with a note each and the current one checked; Escape closes it; picking
             // another presses Shift+Tab once (the fixture's screen never redraws, so the mode never changes), and Claude Code not
             // offering it within the reads is a toast

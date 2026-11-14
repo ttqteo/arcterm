@@ -727,3 +727,25 @@ func TestSubagentApprovalAskHintsAModel(t *testing.T) {
 		t.Errorf("opus model: reason should not call the model unset: %s", opus)
 	}
 }
+
+func TestEffortOf(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{`{"hook_event_name":"PreToolUse","effort":{"level":"high"}}`, "high"},
+		{`{"hook_event_name":"Stop","effort":{"level":"XHigh"}}`, "xhigh"},
+		{`{"hook_event_name":"SessionStart"}`, ""},
+		{`{"hook_event_name":"Stop","effort":{"level":"turbo"}}`, ""},
+		{`{"hook_event_name":"Stop","effort":{}}`, ""},
+	}
+	for _, c := range cases {
+		var ev ccHookEvent
+		if err := json.Unmarshal([]byte(c.raw), &ev); err != nil {
+			t.Fatalf("unmarshal %s: %v", c.raw, err)
+		}
+		if got := effortOf(ev); got != c.want {
+			t.Errorf("effortOf(%s) = %q, want %q", c.raw, got, c.want)
+		}
+	}
+}

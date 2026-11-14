@@ -25,6 +25,7 @@ import { useCallback, useEffect, useRef, useState, type FocusEvent, type Keyboar
 import { submitToAgent } from "./agentsubmit";
 import type { AgentVM } from "./agentsviewmodel";
 import {
+    chipEffort,
     contextWarn,
     currentModelId,
     EFFORT_CHOICES,
@@ -37,6 +38,7 @@ import {
     modelCommand,
     modeStep,
     MORE_MODEL_CHOICES,
+    reportedEffort,
     ringDash,
 } from "./chatfootermodel";
 import { tuiEffort, tuiMode, type ClaudeMode, type EffortLevel } from "./tuiscreen";
@@ -624,7 +626,15 @@ function ContextRing({ pct, dim }: { pct: number; dim: boolean }) {
 
 export function ChatFooter({ agent }: { agent: AgentVM }) {
     const asleep = agent.sleeping != null;
-    const { mode, effort, setEffort, read } = useTuiMode(asleep ? undefined : agent.blockId);
+    const { mode, effort: seenEffort, setEffort, read } = useTuiMode(asleep ? undefined : agent.blockId);
+    // the effort the hooks report inside each turn: a new report replaces what the screen showed or a pick set
+    const reported = reportedEffort(agent.effort);
+    useEffect(() => {
+        if (reported != null) {
+            setEffort(null);
+        }
+    }, [reported, setEffort]);
+    const effort = chipEffort(seenEffort, reported);
     const pickEffort = (level: EffortLevel | "auto", m: ChipMenuState) => {
         m.close(true);
         const blockid = agent.blockId;

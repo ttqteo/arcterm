@@ -60,6 +60,26 @@ type ccHookEvent struct {
 	Trigger          string          `json:"trigger"`
 	// Error is the kind of API error a StopFailure turn ended on: rate_limit, authentication_failed, server_error …
 	Error string `json:"error"`
+	// Effort is the reasoning effort the turn runs at, after any downgrade for the model; Claude Code sends it on the
+	// hooks inside a turn (PreToolUse, PostToolUse, Stop …) for a model that takes effort, and leaves it out elsewhere
+	Effort *struct {
+		Level string `json:"level"`
+	} `json:"effort"`
+}
+
+// effortLevels are the levels Claude Code's /effort takes, which Chat's model chip names
+var effortLevels = map[string]bool{"low": true, "medium": true, "high": true, "xhigh": true, "max": true}
+
+// effortOf is the effort level a hook event carries, lowercased, or "" when it carries none or one Chat cannot name
+func effortOf(ev ccHookEvent) string {
+	if ev.Effort == nil {
+		return ""
+	}
+	level := strings.ToLower(strings.TrimSpace(ev.Effort.Level))
+	if !effortLevels[level] {
+		return ""
+	}
+	return level
 }
 
 // stopFailureRateLimit is the StopFailure error of a turn that hit the usage limit
@@ -864,6 +884,7 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 		Ts:             startedTs,
 		Hook:           ev.HookEventName,
 		ToolKey:        toolKeyFor(ev, agentHookAgent, agentHookShadow),
+		Effort:         effortOf(ev),
 	}
 	if em.AttachModelTitle && transcriptPath != "" {
 		if agentHookShadow != "" {

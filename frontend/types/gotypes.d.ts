@@ -112,6 +112,7 @@ declare global {
         usage?: AgentUsage;
         hook?: string;
         toolkey?: string;
+        effort?: string;
     };
 
     // wshrpc.AgentSyncAction

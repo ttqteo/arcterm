@@ -76,6 +76,7 @@ export const liveAgentBaseAtom: Atom<AgentVM[]> = atom((get) => {
                 detail: row.detail,
                 agent: resolveAgentIdentity(status.agent, row.agent, status.transcriptpath),
                 model: row.model,
+                effort: status.effort,
                 ts: status.ts,
                 transcriptPath: status.transcriptpath,
                 blockId: row.termBlockOref?.split(":")[1],

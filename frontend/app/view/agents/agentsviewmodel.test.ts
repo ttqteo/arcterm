@@ -259,6 +259,11 @@ describe("agentVMFromInput", () => {
         expect(agentVMFromInput({ id: "tab-9", name: "x", status: "idle" }, NOW).effortId).toBeUndefined();
     });
 
+    it("carries the reasoning effort the hooks reported", () => {
+        expect(agentVMFromInput({ id: "tab-9", name: "x", status: "idle", effort: "high" }, NOW).effort).toBe("high");
+        expect(agentVMFromInput({ id: "tab-9", name: "x", status: "idle" }, NOW).effort).toBeUndefined();
+    });
+
     it("carries a committed turn only while idle", () => {
         expect(agentVMFromInput({ id: "t", name: "x", status: "idle", committed: true }, NOW).committed).toBe(true);
         expect(

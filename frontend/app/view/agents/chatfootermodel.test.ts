@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    chipEffort,
     contextLabel,
     contextWarn,
     currentModelAlias,
@@ -18,6 +19,7 @@ import {
     modelCommand,
     modeStep,
     MORE_MODEL_CHOICES,
+    reportedEffort,
     ringDash,
 } from "./chatfootermodel";
 
@@ -172,5 +174,26 @@ describe("ringDash", () => {
         expect(ringDash(50, 88)).toBe(44);
         expect(ringDash(120, 88)).toBe(88);
         expect(ringDash(undefined, 88)).toBeNull();
+    });
+});
+
+describe("reportedEffort", () => {
+    it("takes the five levels, in any case", () => {
+        expect(reportedEffort("high")).toBe("high");
+        expect(reportedEffort(" XHigh ")).toBe("xhigh");
+    });
+
+    it("is null for none or a level the chip cannot name", () => {
+        expect(reportedEffort(undefined)).toBeNull();
+        expect(reportedEffort("")).toBeNull();
+        expect(reportedEffort("turbo")).toBeNull();
+    });
+});
+
+describe("chipEffort", () => {
+    it("names the screen's level first, else the reported one", () => {
+        expect(chipEffort("low", "high")).toBe("low");
+        expect(chipEffort(null, "high")).toBe("high");
+        expect(chipEffort(null, null)).toBeNull();
     });
 });

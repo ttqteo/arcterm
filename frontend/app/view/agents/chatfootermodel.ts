@@ -127,6 +127,19 @@ export function effortChoice(level: EffortLevel) {
     return EFFORT_CHOICES.find((c) => c.level === level)!;
 }
 
+// The effort an agent's Claude hooks last reported (AgentStatusData.effort, set inside a turn), as a level the chip
+// names, or null when none came or it is none of the five.
+export function reportedEffort(raw: string | undefined): EffortLevel | null {
+    const level = (raw ?? "").trim().toLowerCase();
+    return EFFORT_CHOICES.some((c) => c.level === level) ? (level as EffortLevel) : null;
+}
+
+// The effort the chip names: the level read off the screen or just picked, which is the newest word, else the one the
+// hooks reported (ChatFooter drops the screen's when a new report comes, so a silent downgrade shows).
+export function chipEffort(seen: EffortLevel | null, reported: EffortLevel | null): EffortLevel | null {
+    return seen ?? reported;
+}
+
 export function effortCommand(level: EffortLevel | "auto"): string {
     return `/effort ${level}`;
 }

@@ -95,3 +95,13 @@ describe("seedAgentStatus", () => {
         expect(seedAgentStatus(null, status({ state: "" }))).toBeNull();
     });
 });
+
+describe("mergeAgentStatusData effort", () => {
+    it("keeps the last effort through an event that carries none, and takes a new one", () => {
+        const first = { oref: "block:1", state: "working", ts: 1, effort: "high" };
+        const kept = mergeAgentStatusData(first, { oref: "block:1", state: "idle", ts: 2 });
+        expect(kept.effort).toBe("high");
+        const moved = mergeAgentStatusData(kept, { oref: "block:1", state: "working", ts: 3, effort: "low" });
+        expect(moved.effort).toBe("low");
+    });
+});
