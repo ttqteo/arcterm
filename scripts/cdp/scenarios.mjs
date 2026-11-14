@@ -46989,7 +46989,12 @@ const agentChat = {
             await showAgent(A);
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
             await polishWaitFor(h, `!!${acBox(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, AC_WAIT_MS);
-            await acClear(h, acBox(A));
+            // a message an earlier step sent can come back into the box ("not sent") a moment later: clear until it stays empty
+            for (let i = 0; i < 3; i++) {
+                await acClear(h, acBox(A));
+                await polishNap(1200);
+                if (await h.ev(`${acVal(acBox(A))} === ""`)) break;
+            }
             await acType(h, acBox(A), "đọc @agent", false);
             const listed86 = await polishWaitFor(h, `!!document.querySelector('[data-chat-mention^="ref:agent:"]')`, 8000);
             const list86 = await acMentionState(h);
