@@ -107,9 +107,10 @@ type AttentionItem struct {
 	// right action (a circuit break), not a merge the human resolves by hand.
 	TaskId string `json:"taskid,omitempty"`
 	Retry  bool   `json:"retry,omitempty"`
-	// ORef addresses the object an item is about when it is not reachable through a channel. Today only
-	// radar triage sets it; channel-backed items leave it empty because ChannelId+RunId already address
-	// them, and the frontend's rule is that an item naming no destination renders static.
+	// ORef addresses the object an item is about when it is not reachable through a channel: a standalone agent's
+	// ask (its tab), a due chunk (its initiative) and a council. Channel-backed items leave it empty because
+	// ChannelId+RunId already address them, and the frontend's rule is that an item naming no destination renders
+	// static.
 	ORef string `json:"oref,omitempty"`
 	// LearnID is the proposal a learn-proposal item decides (<target>#<key>), what LearnDecide takes.
 	LearnID string `json:"learnid,omitempty"`
