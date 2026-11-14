@@ -116,6 +116,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   session up. Every held agent now says so in a toast, with Open to go to it.
 - A week after a run's task, review or stage session ends, arcterm keeps only the first line of the prompt the engine
   gave it, so the store stops growing with prompts no one reopens; the report and the evidence stay.
+- Menus, popovers, toasts and the command palette are frosted like Chat's suggestion panel: a softly blurred, see-through
+  panel in place of a solid one.
 
 ### Fixed
 

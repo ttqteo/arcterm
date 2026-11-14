@@ -177,7 +177,7 @@ function FanoutBadge({ subs, onOpen }: { subs: SubagentVM[]; onOpen: () => void 
             <PopoverReveal
                 open={peek}
                 origin="top right"
-                className="absolute right-0 top-[24px] z-30 w-[212px] rounded-[9px] border border-edge-strong bg-surface-raised p-2 shadow-popover-lg"
+                className="absolute right-0 top-[24px] z-30 w-[212px] rounded-[9px] border border-edge-strong frost p-2 shadow-popover-lg"
             >
                 <div className="flex flex-col gap-1">
                     {subs.map((s) => (
@@ -495,7 +495,7 @@ export const AgentRow = memo(function AgentRow({
             <PopoverReveal
                 open={tasksOpen && !!tasks && !!prog}
                 origin="top right"
-                className="absolute right-2.5 top-[46px] z-30 max-h-[calc(100%-116px)] w-[min(282px,calc(100%-20px))] overflow-y-auto rounded-[11px] border border-edge-strong bg-surface-raised p-3 shadow-popover-xl"
+                className="absolute right-2.5 top-[46px] z-30 max-h-[calc(100%-116px)] w-[min(282px,calc(100%-20px))] overflow-y-auto rounded-[11px] border border-edge-strong frost p-3 shadow-popover-xl"
             >
                 {tasks && prog ? (
                     <TaskPopover

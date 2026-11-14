@@ -257,7 +257,7 @@ export function CodeSurface({ model }: { model: AgentsViewModel }) {
                             <PopoverReveal
                                 open={pickerOpen}
                                 origin="top right"
-                                className="absolute right-0 top-[calc(100%+6px)] z-[60] max-h-[70vh] min-w-[240px] overflow-y-auto rounded-[10px] border border-border bg-surface shadow-lg"
+                                className="frost absolute right-0 top-[calc(100%+6px)] z-[60] max-h-[70vh] min-w-[240px] overflow-y-auto rounded-[10px] border border-border shadow-lg"
                             >
                                 <PickerHeading first>Projects</PickerHeading>
                                 {projects.length === 0 ? (
@@ -541,7 +541,7 @@ function UnsavedDraftsMenu({ paths }: { paths: string[] }) {
             <PopoverReveal
                 open={open}
                 origin="top right"
-                className="absolute right-0 top-[calc(100%+6px)] z-[60] max-h-[70vh] min-w-[240px] overflow-y-auto rounded-[10px] border border-border bg-surface py-1 shadow-lg"
+                className="frost absolute right-0 top-[calc(100%+6px)] z-[60] max-h-[70vh] min-w-[240px] overflow-y-auto rounded-[10px] border border-border py-1 shadow-lg"
             >
                 <PickerHeading first>Unsaved edits</PickerHeading>
                 {paths.map((rel) => (

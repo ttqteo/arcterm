@@ -204,7 +204,7 @@ export function OutlineButton(p: {
                     <PopoverReveal
                         open={open}
                         origin="top right"
-                        className="flex max-h-[var(--outline-max-height)] w-[300px] flex-col overflow-hidden rounded-[11px] border border-border bg-surface shadow-popover-md"
+                        className="flex max-h-[var(--outline-max-height)] w-[300px] flex-col overflow-hidden rounded-[11px] border border-border frost shadow-popover-md"
                     >
                         <div className="flex-none px-3 pb-1 pt-2.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-muted">
                             Outline

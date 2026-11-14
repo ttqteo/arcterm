@@ -96,6 +96,7 @@ import kael1113TimelineScenarios from "./scenarios-kael1113-timeline.mjs";
 import modalFocusHomeScenarios from "./scenarios-modal-focus-home.mjs";
 import parkedLaunchScenarios from "./scenarios-parked-launch.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
+import overlaysFrostScenarios from "./scenarios-overlays-frost.mjs";
 import paletteBrainstormResumeScenarios from "./scenarios-palette-brainstorm-resume.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
 import setupInstructionsScenarios from "./scenarios-setup-instructions.mjs";
@@ -29154,6 +29155,15 @@ const paletteScopeIndicator = {
                 return steps;
             }
 
+            // The first Tab after an app boot can stall 60 to 240 ms before its first frame (measured on a fresh dev app, in
+            // the Final's order and alone, with the panel frosted and forced solid alike: the stall is cold first renders, not the
+            // frost), and a 360 ms front-loaded ease is already over by then. Run the same All -> Needs you -> All round trip
+            // once unsampled, so the sampled Tab below is the second render of that scope.
+            await h.ev(paletteKey("Tab"));
+            await settleIndicator(h, "needs");
+            await h.ev(paletteKey("Tab", { shiftKey: true }));
+            await settleIndicator(h, "all");
+
             const toNeeds = await sampleIndicator(h, paletteKey("Tab"), "needs");
             await settleIndicator(h, "needs");
             const one = await h.ev(`(() => {
@@ -29906,9 +29916,10 @@ const noteBodyExpr = (value) => `(() => {
     el.dispatchEvent(new Event('input', { bubbles: true }));
     return true;
 })()`;
-// the scrim is the dialog's parent, and it leaves only on a press that lands on itself
+// the palette's scrim is the layer behind its dialog (ModalShell frosted: a sibling of the positioning container that holds
+// the dialog, marked data-modal-scrim), and it leaves only on a press that lands on itself
 const NOTES_BACKDROP_PRESS = `(() => {
-    const scrim = ${PALETTE}?.parentElement;
+    const scrim = ${PALETTE} ? document.querySelector('[data-modal-scrim]') : null;
     if (!scrim) return false;
     scrim.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     return true;
@@ -60097,7 +60108,7 @@ const ttPickerKey = (key, code, mods = {}) =>
         el.dispatchEvent(new KeyboardEvent("keydown", ${JSON.stringify({ key, code, bubbles: true, cancelable: true, ...mods })}));
         return true;
     })()`;
-const TT_OPEN_PICKER = modChord("T", "KeyT", true);
+const TT_OPEN_PICKER = modChord("O", "KeyO", true);
 const TT_PICKER_ROW = (id) => `document.querySelector('[data-tool-picker-row="${id}"]')`;
 // the rows of the tree that read panel: the tab ids of the terminals docked
 const TT_PANEL_ROWS = `[...document.querySelectorAll('[data-tree-terminal-row] [data-terminal-place="panel"]')]
@@ -60108,7 +60119,7 @@ const TT_CTRL_I_TOOL = {
     "install:darwin": TT_SLEEP,
 };
 
-// --- tools-picker: Open a tool (board Picker), from Ctrl+Shift+T and the agent header's Tool button. Rows say what a
+// --- tools-picker: Open a tool (board Picker), from Ctrl+Shift+O and the agent header's Tool button. Rows say what a
 // tool is doing: an install under way offers Show, a failed one Try again, a command that is not on PATH its Edit. Enter
 // opens the selected tool in the centre, Shift+Enter in the panel, Ctrl+I installs one that is not installed.
 const toolsPicker = {
@@ -60149,7 +60160,7 @@ const toolsPicker = {
         })`);
         await h.shot("cdp-shots/tools-picker-1-open.png");
         rec(
-            "1. Ctrl+Shift+T opens the picker with the keyboard in its search box and a context line naming where tools open",
+            "1. Ctrl+Shift+O opens the picker with the keyboard in its search box and a context line naming where tools open",
             started.every(Boolean) && bad && up && open.focused && open.context.startsWith("Opens in") && open.context.includes(TT_PROJECT) && open.rows > 0,
             JSON.stringify({ started, bad, ...open })
         );
@@ -60958,6 +60969,19 @@ const CR_KIT = {
     GRID_KEY,
     GRID_EMPTY,
     bsSeeHints,
+};
+
+// what the overlays-frost-* scenarios (scenarios-overlays-frost.mjs, docs/superpowers/specs/2026-11-14-overlays-chat-look-design.md)
+// need of this file: the Chat redesign's kit, and `scenario(name)`, the registered scenario of that name. It looks the name
+// up in SCENARIOS when it is called, not when the kit is built (SCENARIOS is still being built then), so a step can run an
+// existing scenario's arrange / teardown (consumers-popover, jobqueue-chip, notify-toast…) without this file exporting it.
+const OF_KIT = {
+    ...CR_KIT,
+    scenario(name) {
+        const found = SCENARIOS.find((s) => s.name === name);
+        if (!found) throw new Error(`scenario(${JSON.stringify(name)}): no scenario of that name is registered`);
+        return found;
+    },
 };
 
 // what the brainstorm review in Chat (scenarios-chat-brainstorm-review.mjs) needs of this file: the Chat redesign's kit, and
@@ -66899,13 +66923,59 @@ const notificationToasts = {
             const toasts = () => [...document.querySelectorAll("[data-notification-toast]")];
             await until(() => toasts().length === ${LOOK_TOASTS.length}, 2000);
             await nap(500); // the entrance, inside the 6s the toasts live
-            const avatar = document.querySelector('[aria-label="Jarvis condition"]')?.getBoundingClientRect();
-            const overlaps = (r) => avatar != null && r.left < avatar.right && r.right > avatar.left && r.top < avatar.bottom && r.bottom > avatar.top;
+            // the stack is the polite live region; a toast's panel is its button's parent, and a plain toast draws its
+            // level as the panel's border tone (error/40, warning/40, border): read each against a probe of that class
+            const stack = document.querySelector("[data-pet-avoid][role=status]");
+            const toneOf = (cls) => {
+                const probe = document.createElement("div");
+                probe.className = "border " + cls;
+                document.body.append(probe);
+                const c = getComputedStyle(probe).borderTopColor;
+                probe.remove();
+                return c;
+            };
+            const tones = { error: toneOf("border-error/40"), warn: toneOf("border-warning/40"), info: toneOf("border-border") };
+            const drawn = ${JSON.stringify(LOOK_TOASTS.map((t) => ({ title: t.title, level: t.level })))}.map((want) => {
+                const panel = toasts().find((t) => flat(t).startsWith(want.title))?.parentElement;
+                const border = panel ? getComputedStyle(panel).borderTopColor : null;
+                return { level: want.level, border, ok: border != null && border === tones[want.level] };
+            });
+            // the stack sits above the pet (z-62 over its z-60/61, notificationtoasts.tsx), so a toast is never covered by
+            // the avatar, whichever form shows. Hit-test it: at the centre of each toast panel and at points along its
+            // edges and corners (the hologram is a circle, so a corner can sit past its rim and a centre clear of it), the
+            // topmost element is inside that panel. The floating pet, not the Office's boss sprite (data-office-boss, also
+            // named "Jarvis condition"); a new toast is a [data-pet-avoid] box Sprout steps off the stretch under, so
+            // Sprout gets 2s to leave before the count. The hologram never moves: it stays under the toasts and covered.
+            const pets = () => [...document.querySelectorAll('[aria-label="Jarvis condition"]:not([data-office-boss])')].filter((p) => getComputedStyle(p).visibility !== "hidden");
+            const INSET = 10;
+            const coveredNow = () => {
+                const out = [];
+                for (const t of toasts()) {
+                    const panel = t.parentElement;
+                    const r = panel.getBoundingClientRect();
+                    const xs = [r.left + INSET, r.left + r.width * 0.25, r.left + r.width / 2, r.left + r.width * 0.75, r.right - INSET];
+                    const ys = [r.top + INSET, r.top + r.height / 2, r.bottom - INSET];
+                    for (const y of ys) {
+                        for (const x of xs) {
+                            const hit = document.elementFromPoint(x, y);
+                            if (hit == null || !panel.contains(hit)) {
+                                out.push({ toast: flat(t).slice(0, 24), x: Math.round(x), y: Math.round(y), hit: hit == null ? null : hit.tagName.toLowerCase() + (hit.getAttribute("aria-label") ? "[" + hit.getAttribute("aria-label") + "]" : "") });
+                            }
+                        }
+                    }
+                }
+                return out;
+            };
+            await until(() => coveredNow().length === 0, 2000);
+            const covered = coveredNow();
             return {
                 text: toasts().map(flat),
-                levels: toasts().map((t) => t.querySelector("svg[role=img]")?.getAttribute("aria-label") ?? null),
-                live: toasts()[0]?.parentElement?.getAttribute("aria-live") ?? null,
-                underAvatar: toasts().filter((t) => overlaps(t.getBoundingClientRect())).length,
+                drawn,
+                distinctTones: new Set(Object.values(tones)).size === 3,
+                live: stack?.getAttribute("aria-live") ?? null,
+                covered: covered.length,
+                coveredAt: covered.slice(0, 4),
+                pets: pets().map((p) => (p.hasAttribute("data-pet-hologram") ? "hologram" : "pet")),
             };
         `);
         await h.shot(lookShot("notification-toasts"));
@@ -66920,11 +66990,15 @@ const notificationToasts = {
                 detail: JSON.stringify(shown.text),
             },
             {
-                step: "each toast names its level on an icon, in a polite live region",
-                ok: JSON.stringify([...shown.levels].sort()) === JSON.stringify(["Error", "Info", "Warning"]) && shown.live === "polite",
-                detail: JSON.stringify({ levels: shown.levels, live: shown.live }),
+                step: "the stack is a polite live region, and error, warn and info toasts each draw their level's border tone",
+                ok: shown.live === "polite" && shown.distinctTones && shown.drawn.every((d) => d.ok),
+                detail: JSON.stringify({ live: shown.live, distinctTones: shown.distinctTones, drawn: shown.drawn }),
             },
-            { step: "no toast sits under the Jarvis avatar", ok: shown.underAvatar === 0, detail: `underAvatar=${shown.underAvatar}` },
+            {
+                step: "no toast is covered by the Jarvis avatar",
+                ok: shown.covered === 0,
+                detail: `covered=${shown.covered} pets=${JSON.stringify(shown.pets)} at=${JSON.stringify(shown.coveredAt)}`,
+            },
             { step: "a click dismisses a toast", ok: dismissed === true, detail: `dismissed=${dismissed}` },
         ];
     },
@@ -70756,6 +70830,7 @@ export const SCENARIOS = [
     ...chatBrainstormReviewScenarios(CBR_KIT),
     ...chatVerdictHandoffScenarios(CBR_KIT),
     ...chatCouncilScenarios(CR_KIT),
+    ...overlaysFrostScenarios(OF_KIT),
     sidebarAgentRam,
     ...sidebarColumnsScenarios(RT_KIT),
     machineServers,

@@ -224,7 +224,7 @@ export function LineReviewTray({ repoKey, model }: { repoKey: string; model: Age
                     <PopoverReveal
                         open={menuOpen && target.kind === "menu"}
                         origin="bottom right"
-                        className="absolute bottom-[calc(100%+6px)] right-0 z-20 w-[240px] overflow-hidden rounded-[10px] border border-border bg-surface p-1 shadow-lg"
+                        className="absolute bottom-[calc(100%+6px)] right-0 z-20 w-[240px] overflow-hidden rounded-[10px] border border-border frost p-1 shadow-lg"
                     >
                         <div data-review-agent-menu role="menu" className="flex flex-col">
                             <span className="px-2 pb-1 pt-[2px] text-[10.5px] text-muted">Send to</span>

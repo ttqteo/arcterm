@@ -284,7 +284,7 @@ function AccountPicker({
                 <div
                     role="menu"
                     data-launcher-account-menu
-                    className="absolute bottom-full left-0 z-10 mb-1 flex min-w-[220px] max-w-[320px] flex-col rounded-[10px] border border-edge-mid bg-modalbg p-1 shadow-popover"
+                    className="absolute bottom-full left-0 z-10 mb-1 flex min-w-[220px] max-w-[320px] flex-col rounded-[10px] border border-edge-mid frost p-1 shadow-popover"
                 >
                     {choices.map((c) => {
                         const on = c.id === current;

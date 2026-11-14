@@ -154,7 +154,7 @@ export function CouncilSeats({ c, onOpenTerminal }: { c: Council; onOpenTerminal
                             open={open}
                             origin="top right"
                             className={cn(
-                                "flex max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-[11px] border border-border bg-surface shadow-popover-md",
+                                "flex max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-[11px] border border-border frost shadow-popover-md",
                                 // the timeline's rows hold a command and its result: wider than the list of seats
                                 timelineChip != null ? "w-[440px]" : "w-[320px]"
                             )}

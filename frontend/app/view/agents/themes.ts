@@ -382,6 +382,24 @@ function rgba(h: string, a: number): string {
     const [r, g, b] = parseHex(h);
     return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
+// WCAG 2.1 relative luminance and contrast ratio, on 0-255 channels that are not rounded to bytes (a blur and a
+// composite blend in floating point, so panelAlpha must not round its intermediate colours).
+type Rgb = [number, number, number];
+function luminanceOf([r, g, b]: Rgb): number {
+    const lin = (c: number) => {
+        const s = c / 255;
+        return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+function contrastOf(a: Rgb, b: Rgb): number {
+    const la = luminanceOf(a);
+    const lb = luminanceOf(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+function blendRgb(a: Rgb, b: Rgb, t: number): Rgb {
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
 
 // ---- ANSI derivation ----
 // The 16 terminal color slots, derived from roles the palette already defines. Two consumers:
@@ -454,6 +472,32 @@ export function deriveAnsi(palette: ThemePalette): AnsiPalette {
     };
 }
 
+// The alpha of --color-panel, the fill of a frosted overlay panel (the `frost` class, DESIGN.md "Overlays"): the
+// smallest one from today's 0.6 up, in steps of 0.02, at which muted text on the panel clears 4.5:1 once the panel is
+// composited over the blurred backdrop. The backdrop is the worst case a terminal can put behind an overlay: the
+// theme's terminal background with its brightest terminal colour covering 20% of the blur. A theme whose muted text
+// passes at 0.6 keeps 0.6; a darker, bluer one gets more panel and less show-through. Capped at 1 for a muted colour
+// that cannot reach the floor on its own surface.
+const PanelAlphaFloor = 60; // hundredths, so the steps are exact: 60, 62, ... and 0.7 never prints as 0.7000000000000001
+const PanelAlphaStep = 2;
+const PanelMutedContrast = 4.5;
+const PanelBackdropCoverage = 0.2;
+
+export function panelAlpha(palette: ThemePalette): number {
+    const brightest = [palette.text, ...Object.values(deriveAnsi(palette))]
+        .map(parseHex)
+        .reduce((a, b) => (luminanceOf(b) > luminanceOf(a) ? b : a));
+    const backdrop = blendRgb(parseHex(palette.bg), brightest, PanelBackdropCoverage);
+    const raised = parseHex(palette.surfaceRaised);
+    const muted = parseHex(palette.muted);
+    for (let hundredths = PanelAlphaFloor; hundredths < 100; hundredths += PanelAlphaStep) {
+        if (contrastOf(muted, blendRgb(backdrop, raised, hundredths / 100)) >= PanelMutedContrast) {
+            return hundredths / 100;
+        }
+    }
+    return 1;
+}
+
 // The terminal's palette. Structurally assignable to xterm's ITheme; declared locally so the theme
 // engine takes no dependency on @xterm/xterm. `background` is OPAQUE on purpose: xterm's own
 // stylesheet paints .xterm-viewport #000, and the previous transparent-background behavior is what
@@ -495,7 +539,7 @@ export function buildThemeVars(
         "--color-surface-hover": p.surfaceHover,
         "--color-surface-selected": p.surfaceSelected,
         "--color-surface-code": p.code,
-        "--color-panel": rgba(p.surfaceRaised, 0.6),
+        "--color-panel": rgba(p.surfaceRaised, panelAlpha(p)),
         "--color-modalbg": p.surfaceRaised,
         // text
         "--color-foreground": p.text,

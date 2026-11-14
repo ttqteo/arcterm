@@ -218,7 +218,7 @@ function PickerBody({
             data-owns-keys
             tabIndex={-1}
             onKeyDown={onKeyDown}
-            className="flex w-[330px] flex-col rounded-[10px] border border-edge-mid bg-surface-raised shadow-popover-xl outline-none"
+            className="frost flex w-[330px] flex-col rounded-[10px] border border-edge-mid shadow-popover-xl outline-none"
         >
             <div className="border-b border-edge-mid p-[10px]">
                 <label className="flex h-[28px] items-center gap-[8px] rounded-[7px] border border-accent-soft/60 bg-surface px-[9px]">

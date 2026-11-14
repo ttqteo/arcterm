@@ -238,8 +238,12 @@ const CHIP =
     "flex h-[28px] max-w-[200px] cursor-pointer items-center gap-1.5 rounded-full border px-[10px] text-[12.5px] text-secondary transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none";
 const chipTone = (open: boolean) =>
     open ? "border-edge-strong bg-surface-hover text-primary" : "border-edge-mid bg-surface hover:border-edge-strong";
-const MENU =
-    "absolute bottom-[calc(100%+8px)] left-0 z-10 rounded-[10px] border border-edge-mid bg-surface-raised p-[6px] shadow-popover";
+// A chip's menu is two layers: MENU_BOX, the box the menu stands in (above its chip, no fill of its own), holding the
+// main panel (MENU, frosted) and the submenus' panels (SUBMENU, frosted too) side by side. A submenu inside the main panel
+// would sit in a backdrop root (the panel's own backdrop-filter, and its reveal's fade) and blur only what that paints, so
+// each panel is a sibling and frosts the chat behind it.
+const MENU_BOX = "absolute bottom-[calc(100%+8px)] left-0 z-10";
+const MENU = "rounded-[10px] border border-edge-mid frost p-[6px] shadow-popover";
 const MENU_CAPTION = "px-2 pb-[6px] pt-1 text-[11.5px] text-muted";
 const MENU_FOOT = "px-2 pb-0.5 pt-1.5 text-[11.5px] text-ink-faint";
 const row = (on: boolean) =>
@@ -248,22 +252,27 @@ const row = (on: boolean) =>
         on && "bg-surface-selected"
     );
 
-// a submenu's panel, beside its menu's right edge with their bottoms level
+// A submenu's panel, beside its menu's right edge with their bottoms level. It is placed against MENU_BOX, which has the
+// main panel's border box, where it was once placed against that panel's padding box (inside the 1px border): 5px past
+// the right edge and 6px below the bottom edge are the 6px / 7px it had from the padding box.
 const SUBMENU =
-    "absolute bottom-[-7px] left-[calc(100%+6px)] z-10 rounded-[10px] border border-edge-mid bg-surface-raised p-[6px] shadow-popover";
+    "absolute bottom-[-6px] left-[calc(100%+5px)] z-10 rounded-[10px] border border-edge-mid frost p-[6px] shadow-popover";
 
-// a chip with a menu opening upward from it; `onKey` sees a key first while the menu is open and answers whether it used it
+// a chip with a menu opening upward from it; `onKey` sees a key first while the menu is open and answers whether it used it;
+// `submenus` are the panels of its submenus, drawn beside the main panel (see MENU_BOX)
 function ChipMenu({
     menuLabel,
     width,
     chip,
     menu,
+    submenus,
     onKey,
 }: {
     menuLabel: string;
     width: string;
     chip: (m: ChipMenuState) => ReactNode;
     menu: (m: ChipMenuState) => ReactNode;
+    submenus?: (m: ChipMenuState) => ReactNode;
     onKey?: (e: KeyboardEvent<HTMLElement>, m: ChipMenuState) => boolean;
 }) {
     const m = useChipMenu();
@@ -286,11 +295,14 @@ function ChipMenu({
             className="relative flex-none"
         >
             {chip(m)}
-            <PopoverReveal open={m.open} origin="bottom left" className={cn(MENU, width)}>
-                <div role="menu" aria-label={menuLabel}>
-                    {menu(m)}
-                </div>
-            </PopoverReveal>
+            <div className={cn(MENU_BOX, width)}>
+                <PopoverReveal open={m.open} origin="bottom left" className={MENU}>
+                    <div role="menu" aria-label={menuLabel}>
+                        {menu(m)}
+                    </div>
+                </PopoverReveal>
+                {submenus?.(m)}
+            </div>
         </div>
     );
 }
@@ -435,6 +447,10 @@ function ModelChip({
                         m={m}
                     />
                     <SubmenuRow name="more" label="More models" value={olderLabel} m={m} />
+                </>
+            )}
+            submenus={(m) => (
+                <>
                     <PopoverReveal open={m.sub === "effort"} origin="bottom left" className={cn(SUBMENU, "w-[260px]")}>
                         <div role="menu" aria-label="Effort" data-submenu="effort">
                             <EffortRows effort={effort} onPick={(level) => onPickEffort(level, m)} />

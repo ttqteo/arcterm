@@ -1047,7 +1047,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                     bottom: placement.bottom,
                     width: compact ? COMPACT_WIDTH : PANEL_WIDTH,
                 }}
-                className="fixed z-[60] overflow-hidden rounded-lg border border-edge-strong bg-surface-raised shadow-popover"
+                className="fixed z-[60] overflow-hidden rounded-lg border border-edge-strong frost shadow-popover"
             >
                 <div data-consumers-panel data-sort={sort ?? ""} role="dialog" aria-label="Consumers">
                     {compact ? (
