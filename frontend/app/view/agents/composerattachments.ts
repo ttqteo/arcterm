@@ -15,8 +15,10 @@ import base64 from "base64-js";
 import { atom, useAtomValue } from "jotai";
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent } from "react";
 import { composeTaskWithImages } from "./launcherimages";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "./uploadfile";
 
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB; base64 inflates ~33%, bounding the RPC payload
+// The pasted or dropped file travels base64 in one websocket message, so the cap is uploadfile.ts's (see the reason there).
+export const MAX_ATTACHMENT_BYTES = MAX_UPLOAD_BYTES;
 export const FILES_HEADER = "Attachments (read these files):"; // chatfiles.ts reads the block back under it
 
 export type AttachmentKind = "image" | "file";
@@ -193,7 +195,7 @@ export function useComposerAttachments({
                 const id = crypto.randomUUID();
                 const kind = classifyKind(file);
                 if (isOversize(file.size)) {
-                    const error = `${file.name} is over ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB`;
+                    const error = `${file.name} is over ${MAX_UPLOAD_LABEL}`;
                     setAttachments((cur) => [
                         ...cur,
                         { id, name: file.name, kind, status: "error", size: file.size, error },

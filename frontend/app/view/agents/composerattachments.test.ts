@@ -13,6 +13,7 @@ import {
     type Attachment,
 } from "./composerattachments";
 import { splitAttachedImages } from "./launcherimages";
+import { MAX_UPLOAD_BYTES } from "./uploadfile";
 
 function att(over: Partial<Attachment>): Attachment {
     return { id: "1", name: "f", kind: "file", status: "ready", size: 1, path: "/tmp/f", ...over };
@@ -92,6 +93,11 @@ describe("isOversize", () => {
     });
     it("rejects a file one byte over the cap", () => {
         expect(isOversize(MAX_ATTACHMENT_BYTES + 1)).toBe(true);
+    });
+    it("is the 3.5 MB one websocket message carries, the same cap as createTempFileFromBlob", () => {
+        expect(isOversize(3.5 * 1024 * 1024)).toBe(false);
+        expect(isOversize(3.5 * 1024 * 1024 + 1)).toBe(true);
+        expect(MAX_ATTACHMENT_BYTES).toBe(MAX_UPLOAD_BYTES);
     });
 });
 

@@ -3075,6 +3075,30 @@ func TestSummarizeRerunsTheSynthesis(t *testing.T) {
 	mustContain(t, "third synthesis prompt", h.f.calls("r3")[2].Prompt, "One more thought.")
 }
 
+// The Final proposal the person pinned to the Report is display only: no prompt reads it, and a re-summarize keeps it.
+func TestSummarizeKeepsTheFinalPick(t *testing.T) {
+	h := newHarness(t)
+	h.run(flowCouncil(t, "c1"))
+	pinned, err := SetFinalPick("c1", "P1")
+	if err != nil || pinned.FinalPick != "P1" {
+		t.Fatalf("SetFinalPick(P1) = %q, %v, want the pin saved", pinned.FinalPick, err)
+	}
+	h.f.setText("lead/r3", titledSynthesis("Second take.", "Only direction"))
+	if _, err := h.r.Summarize("c1"); err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	c := h.wait("c1")
+	if c.Summary == nil || c.Summary.Text != "Second take." {
+		t.Fatalf("after Summarize: summary %+v, want the new Summary", c.Summary)
+	}
+	if c.FinalPick != "P1" {
+		t.Errorf("after Summarize FinalPick = %q, want the pinned P1 kept", c.FinalPick)
+	}
+	if saved := h.load("c1"); saved.FinalPick != "P1" {
+		t.Errorf("the saved council has FinalPick %q after Summarize, want P1", saved.FinalPick)
+	}
+}
+
 func TestSummarizeAStoppedCouncilKeepsItStopped(t *testing.T) {
 	h := newHarness(t)
 	c := fixtureCouncil("c1", StateStopped, 1) // stopped in round 1: proposals only

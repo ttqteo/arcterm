@@ -255,7 +255,8 @@ function clearCouncilFiles(dataDir, ids = []) {
         }
     }
     // a fixture council's own folder (councils/<id>/, its drawn screenshot regions) goes too
-    for (const f of names) rmSync(join(dir, f), { force: true, recursive: true });
+    // wavesrv or a virus scanner may still hold a file just written: retry, as the base dir's removal does
+    for (const f of names) rmSync(join(dir, f), { force: true, recursive: true, maxRetries: 5, retryDelay: 200 });
 }
 
 /** Makes the fixture project(s), each a temp git repo registered with createproject and holding one terminal, then
