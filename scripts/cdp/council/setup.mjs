@@ -364,7 +364,7 @@ export const councilSetup = {
                     (v?.estimate ?? "").startsWith("≈ 8 calls") &&
                     v.experts.find((e) => e.coordinator)?.remove === false &&
                     v.footnote === "3 sonnet experts read the code first; then they argue over text only" &&
-                    /^Review a UI feature: Ease of use, Memory watcher and Bug hunter each read the code/.test(v.expertsLine ?? ""),
+                    /^Review a UI feature: Ease of use \(what's on screen\), Memory watcher \(memory\) and Bug hunter \(bugs\) each read the code/.test(v.expertsLine ?? ""),
                 { experts: v?.experts.map((e) => e.id), estimate: v?.estimate, footnote: v?.footnote, line: v?.expertsLine }
             );
 
@@ -379,14 +379,14 @@ export const councilSetup = {
             await until(`(document.querySelector('[data-council-expert="skeptic"] [data-council-expert-name]')?.textContent ?? "").trim() === "Bug hunter"`);
             const enSetup = await view();
             rec(
-                "3b. a Vietnamese question shows UX, Đo RAM, Tìm bug and Thư ký on the rows, the experts line in Vietnamese names and the group chip Soi một tính năng giao diện; the English question brings Ease of use, Memory watcher, Bug hunter and Summarizer back",
+                "3b. a Vietnamese question shows UX, Đo RAM, Tìm bug and Thư ký on the rows, the experts line in Vietnamese names, each with its Vietnamese phrase, and the group chip Soi một tính năng giao diện; the English question brings Ease of use, Memory watcher, Bug hunter and Summarizer back, the line reading each with its English phrase (what's on screen, memory, bugs) in full",
                 sameList(viSetup?.experts.map((e) => e.name), ["UX", "Đo RAM", "Tìm bug", "Thư ký"]) &&
                     viSetup.group === "Soi một tính năng giao diện" &&
                     viSetup.inComposer.group === "Soi một tính năng giao diện" &&
-                    /^Soi một tính năng giao diện: UX, Đo RAM and Tìm bug each read the code from their own side; the Thư ký writes the answer\.$/.test(viSetup.expertsLine ?? "") &&
+                    /^Soi một tính năng giao diện: UX \(giao diện\), Đo RAM \(bộ nhớ\) and Tìm bug \(lỗi\) each read the code from their own side; the Thư ký writes the answer\.$/.test(viSetup.expertsLine ?? "") &&
                     sameList(enSetup?.experts.map((e) => e.name), ["Ease of use", "Memory watcher", "Bug hunter", "Summarizer"]) &&
                     enSetup.group === "Review a UI feature" &&
-                    /^Review a UI feature: Ease of use, Memory watcher and Bug hunter each read the code/.test(enSetup.expertsLine ?? "") &&
+                    /^Review a UI feature: Ease of use \(what's on screen\), Memory watcher \(memory\) and Bug hunter \(bugs\) each read the code from their own side; the Summarizer writes the answer\.$/.test(enSetup.expertsLine ?? "") &&
                     (await calls("CouncilSuggestCommand")).length === 0,
                 { vi: { names: viSetup?.experts.map((e) => e.name), group: viSetup?.group, line: viSetup?.expertsLine }, en: { names: enSetup?.experts.map((e) => e.name), group: enSetup?.group, line: enSetup?.expertsLine } }
             );
@@ -843,7 +843,7 @@ export const councilSetup = {
                     noAgents.seats.length === 0 &&
                     noAgents.agentNote == null &&
                     noAgents.project === COUNCIL_PROJECT &&
-                    /^Review a UI feature: Ease of use, Memory watcher, New user and Bug hunter each read the code/.test(noAgents.expertsLine ?? "") &&
+                    /^Review a UI feature: Ease of use \(what's on screen\), Memory watcher \(memory\), New user \(a first visit\) and Bug hunter \(bugs\) each read the code/.test(noAgents.expertsLine ?? "") &&
                     noAgents.experts.length === 5 &&
                     noAgents.pause === "false" &&
                     noAgents.noPause == null &&

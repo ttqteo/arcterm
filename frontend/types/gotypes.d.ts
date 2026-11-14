@@ -2939,6 +2939,8 @@ declare global {
         context?: number;
         transcript?: string;
         namevi?: string;
+        focus?: string;
+        focusvi?: string;
     };
 
     // council.CouncilExpertStat

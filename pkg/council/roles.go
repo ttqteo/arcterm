@@ -26,27 +26,27 @@ func brief(angle string) string { return angle + " " + briefEvidenceRule }
 // person's question (NameFor). The ids never change, so a saved council still opens.
 var builtInRoles = []CouncilExpert{
 	{
-		Id: "ux", Name: "Ease of use", NameVi: "UX", Model: ModelExpert,
+		Id: "ux", Name: "Ease of use", NameVi: "UX", Focus: "what's on screen", FocusVi: "giao diện", Model: ModelExpert,
 		Brief: brief("You review the feature as the UX expert. Ask whether someone can find, read and use it without being " +
 			"told how: where its entry point is, what the first screen tells them, whether a label, a state or an error " +
 			"can be understood at a glance, and what the keyboard or a narrow window does to it. Propose concrete " +
 			"changes to what is on screen, not general principles."),
 	},
 	{
-		Id: "ram", Name: "Memory watcher", NameVi: "Đo RAM", Model: ModelExpert,
+		Id: "ram", Name: "Memory watcher", NameVi: "Đo RAM", Focus: "memory", FocusVi: "bộ nhớ", Model: ModelExpert,
 		Brief: brief("You review the feature for memory. Ask what stays in memory, for how long, and whether it is logged in " +
 			"RAM watch (docs/open-issues.md): caches, per-agent or per-terminal state, event subscriptions, timers, " +
 			"retained transcripts, views that stay mounted. Name what owns each allocation and when it is released, and " +
 			"say what you would measure and how."),
 	},
 	{
-		Id: "newuser", Name: "New user", NameVi: "Khách", Model: ModelExpert,
+		Id: "newuser", Name: "New user", NameVi: "Khách", Focus: "a first visit", FocusVi: "lần đầu dùng", Model: ModelExpert,
 		Brief: brief("You are on your first day in arcterm and know none of its names, panes or shortcuts. Ask what is " +
 			"confusing and what is missing, and where you would give up. Read the feature's words as you would meet " +
 			"them in the app, and say where a term, an icon or a step assumes something you have not been told."),
 	},
 	{
-		Id: "skeptic", Name: "Bug hunter", NameVi: "Tìm bug", Model: ModelExpert,
+		Id: "skeptic", Name: "Bug hunter", NameVi: "Tìm bug", Focus: "bugs", FocusVi: "lỗi", Model: ModelExpert,
 		Brief: brief("You are the skeptic. Name what breaks: the input nobody tried, the state two features reach at " +
 			"once, the failure the design leaves unhandled, the claim another expert made without checking it. If you " +
 			"cannot name a break, withdraw your proposal rather than pad it. Make no claim without evidence."),
@@ -58,19 +58,19 @@ var builtInRoles = []CouncilExpert{
 			"that cite nothing as weak. Name any role the panel was missing. Add no proposals of your own."),
 	},
 	{
-		Id: "reviewer-a", Name: "Reviewer A", NameVi: "Giám khảo A", Model: ModelExpert,
+		Id: "reviewer-a", Name: "Reviewer A", NameVi: "Giám khảo A", Focus: "novelty", FocusVi: "tính mới", Model: ModelExpert,
 		Brief: brief("You are a reviewer at the venue's security bar (CCS, NDSS). Judge novelty against prior work, whether " +
 			"the threat model is stated and the attacker realistic, and whether each claim is sound given the evidence " +
 			"in the paper. Say what would make you reject it and what would change your mind."),
 	},
 	{
-		Id: "reviewer-b", Name: "Reviewer B", NameVi: "Giám khảo B", Model: ModelExpert,
+		Id: "reviewer-b", Name: "Reviewer B", NameVi: "Giám khảo B", Focus: "baselines", FocusVi: "mốc so sánh", Model: ModelExpert,
 		Brief: brief("You are a reviewer who checks baselines and datasets. For every claim, ask whether it is tested on " +
 			"prior work's own data, whether the baselines are the strongest available and run fairly, and whether the " +
 			"numbers in the text match the tables. Name the comparison that is missing."),
 	},
 	{
-		Id: "reader", Name: "Reader", NameVi: "Biên tập", Model: ModelExpert,
+		Id: "reader", Name: "Reader", NameVi: "Biên tập", Focus: "the prose", FocusVi: "văn phong", Model: ModelExpert,
 		Brief: brief(`You read the prose only, not the method. Find terms used before they are defined, dense "not X but Y" ` +
 			"sentences, and sentences that read as machine-written. Quote each, cite the .tex line, and propose a " +
 			"plainer sentence."),
@@ -84,19 +84,19 @@ var builtInRoles = []CouncilExpert{
 	// The Brainstorm's roles. A Brainstorm grounds only a claim about today's code, through its own round 1 rule, so their
 	// briefs carry no evidence rule.
 	{
-		Id: "designer", Name: "Designer", NameVi: "Thiết kế", Model: ModelExpert,
+		Id: "designer", Name: "Designer", NameVi: "Thiết kế", Focus: "the flow", FocusVi: "luồng dùng", Model: ModelExpert,
 		Brief: "You are the designer. Think in what a person sees and does: the screen, the flow, the first minute. Propose " +
 			"ideas you can describe in a sentence or two and picture on a screen, not general principles, and include one " +
 			"that removes something instead of adding it.",
 	},
 	{
-		Id: "builder", Name: "Builder", NameVi: "Dev", Model: ModelExpert,
+		Id: "builder", Name: "Builder", NameVi: "Dev", Focus: "cheap first steps", FocusVi: "bước đầu rẻ", Model: ModelExpert,
 		Brief: "You are the builder. Think in what can be built small: the cheapest version that would test the idea, the " +
 			"code that already exists and could be reused, the first step that fits in a day. For every idea you propose or " +
 			"build on, say what that first step is and roughly what it costs.",
 	},
 	{
-		Id: "contrarian", Name: "Other side", NameVi: "Phản biện", Model: ModelExpert,
+		Id: "contrarian", Name: "Other side", NameVi: "Phản biện", Focus: "the opposite view", FocusVi: "góc nhìn ngược", Model: ModelExpert,
 		Brief: "You are the contrarian. Turn the problem over: what if the goal is the wrong one, what would the opposite " +
 			"approach look like, what is everyone assuming. Propose the ideas nobody else will, and mark the far-fetched ones " +
 			"wild; a wild idea is kept, not thrown away.",
@@ -160,9 +160,11 @@ func Roles() []CouncilExpert {
 		if u.Name != "" && u.Name != roles[i].Name {
 			// a name the person chose has no Vietnamese twin
 			roles[i].Name, roles[i].NameVi = u.Name, ""
+			roles[i].Focus, roles[i].FocusVi = "", "" // the stock phrase described the stock role
 		}
-		if u.Brief != "" {
+		if u.Brief != "" && u.Brief != roles[i].Brief {
 			roles[i].Brief = u.Brief
+			roles[i].Focus, roles[i].FocusVi = "", ""
 		}
 		if u.Model != "" {
 			roles[i].Model = u.Model
