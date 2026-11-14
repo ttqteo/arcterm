@@ -35,7 +35,9 @@ hand-edit generated files: change the Go type, then `task generate`.
 
 ### Task 1: Setup's experts line says what each expert looks at
 **Depends on:** none
-**Files:** `pkg/council/types.go`, `pkg/council/roles.go`, `pkg/council/roles_test.go`, `frontend/app/view/agents/councilsetupmodel.ts`, `frontend/app/view/agents/councilsetupmodel.test.ts`, `scripts/cdp/council/setup.mjs`, `CHANGELOG.md`, plus the files `task generate` rewrites
+**Files:** `pkg/council/types.go`, `pkg/council/roles.go`, `pkg/council/roles_test.go`, `frontend/app/view/agents/councilsetupmodel.ts`, `frontend/app/view/agents/councilsetupmodel.test.ts`, `scripts/cdp/council/setup.mjs`, `CHANGELOG.md`, `frontend/types/gotypes.d.ts`
+
+Plus whatever else `task generate` rewrites from the type change.
 
 Closes: "Setup's experts line names experts, not what each looks at: roles need a short per-role phrase (Go) to show
 it".
@@ -66,7 +68,9 @@ it".
 
 ### Task 2: Summarize with only drafts, a new Report shot, no overlapping tree rows
 **Depends on:** none
-**Files:** `scripts/cdp/council/discussion.mjs`, `scripts/cdp/council/summary.mjs`, `scripts/cdp/council/tree.mjs`, and `frontend/app/view/agents/agenttree.tsx` only if Step 3 finds a real overlap
+**Files:** `scripts/cdp/council/discussion.mjs`, `scripts/cdp/council/summary.mjs`, `scripts/cdp/council/tree.mjs`, `frontend/app/view/agents/agenttree.tsx`, `CHANGELOG.md`
+
+`agenttree.tsx` and `CHANGELOG.md` change only if Step 3 finds a real overlap.
 
 Closes three chunks:
 - "Bug: Council Summarize greyed out in the app on a paused council (awaiting-you, proposals present) though
@@ -109,7 +113,7 @@ No user-facing change unless Step 3 changes the tree; then add a `### Fixed` lin
 
 ### Task 3: A council change reloads that council, not every list
 **Depends on:** none
-**Files:** `frontend/app/view/agents/councilstore.ts`, `frontend/app/view/agents/councilstore.test.ts`, a new pure `frontend/app/view/agents/councillists.ts` + `councillists.test.ts`
+**Files:** `frontend/app/view/agents/councilstore.ts`, `frontend/app/view/agents/councilstore.test.ts`, `frontend/app/view/agents/councillists.ts`, `frontend/app/view/agents/councillists.test.ts`
 
 Closes: "Agent tree refetches every full council on each council:changed: add a summary-only list command for the
 tree (RAM watch candidate)".
