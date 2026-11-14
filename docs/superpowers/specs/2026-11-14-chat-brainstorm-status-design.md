@@ -66,9 +66,16 @@ and plan, `ef17d33cc` on `wave/175af141-…`), not against its plan's names.
   columns:
   - **Decided N:** one row per decision that is yours, in the design's order: title, then its gist (`yoursGists`).
   - **Boards N:** one row per board: the board icon, the file name with `new` when it is new, the part it
-    illustrates, and an `Open in Brainstorm (b)` link at the end. A click on a board opens the Brainstorm tab. No
-    thumbnail (builder question 1): the band loads no board page, so it costs no RAM in any number of Chat cells; the
-    board A draws the icon too.
+    illustrates, and an `Open in Brainstorm (b)` link at the end. No thumbnail (builder question 1): the band loads no
+    board page, so it costs no RAM in any number of Chat cells; the board A draws the icon too.
+  - **A click on a board opens it over Chat** (added 2026-11-14 after use: going to the Brainstorm tab and opening the
+    board there took two steps to look at one board). It opens large in the Brainstorm tab's board dialog
+    (`BoardDialog`), drawn over the Chat pane rather than the app: a head with the board's name, its part, `Open in
+    Brainstorm` and Close, over the board at the dialog's width. The board's page loads when the dialog opens and goes
+    when it closes, so the no-RAM rule above still holds for a band nobody clicks. Esc, the scrim or a click on the board
+    closes it and leaves the part open; `b` or `Open in Brainstorm` opens the tab. It has no marking (the tab's open
+    board keeps that). Before wavesrv serves the design folder (`base` unset) the click opens the Brainstorm tab as
+    before.
 - A click on the initiative part expands the initiative's view. One part is expanded at a time.
 - An agent with only a brainstorm: the band holds only the brainstorm part, which also shows the brainstorm's title.
 - **Keys (agent's call, builder question 2):** `i` stays the initiative's: it toggles the initiative part (opening it
@@ -118,8 +125,8 @@ When a board is new:
 - the Brainstorm tab in the header carries an accent dot, as the Canvas tab does today (`agentheader.tsx:875`);
 - the band's brainstorm part shows the accent dot and `N new`, and each new board's row is tagged `new`.
 
-Both clear when you open the Brainstorm tab. A click on a board in the band opens that tab, so it clears them too.
-Expanding the band does not.
+Both clear when you open the Brainstorm tab. A board opened from the band over Chat is taken as seen on its own
+(`withBoardSeen`: added to the stored names, the other boards stay new). Expanding the band does not.
 
 Agent's call: when the agent is asking (the amber dot), the tab shows the amber dot only; the accent dot shows when it
 is not asking.

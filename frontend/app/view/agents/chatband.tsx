@@ -13,6 +13,10 @@
 // with none open hands the keyboard back to the message box), `i` toggles the initiative part (over an open brainstorm
 // part), m / n / w / arrows / Enter belong to the initiative part, and `b` opens the Brainstorm tab, since the global `b`
 // stands down in here and the part's `Open in Brainstorm (b)` hint would otherwise be dead exactly when it shows.
+//
+// A board of the brainstorm part opens in the board dialog over the Chat pane (BoardPreview). The dialog is a child of this
+// root, positioned against the pane (nothing between them is positioned), so focus in it is focus in the band: while it is
+// open Esc closes it, `b` opens the Brainstorm tab, and no other key of the band acts behind it.
 
 import { springReveal } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
@@ -22,7 +26,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
-import { BrainstormBody, BrainstormLine } from "./brainstormbandview";
+import { BoardPreview, BrainstormBody, BrainstormLine, openBrainstorm, startBoardPreview } from "./brainstormbandview";
+import { BoardDialog } from "./brainstormrail";
 import { brainstormAtom, brainstormBandAtom } from "./brainstormstore";
 import { usePartMotion } from "./chatfooter";
 import { focusChatBox } from "./chatinsert";
@@ -84,6 +89,32 @@ function ChatBandRoot({ model, agent }: { model: AgentsViewModel; agent: AgentVM
     };
     const ini = useInitiativePart({ model, agent, part, narrow, focused, brainstormBeside: bs != null, focusRoot });
 
+    // the board open over Chat. The dialog keeps the last one drawn while it fades out; a board that leaves the brainstorm
+    // (or the brainstorm itself) closes it
+    const [preview, setPreview] = useState<string | null>(null);
+    const lastPreview = useRef<string | null>(null);
+    if (preview != null) {
+        lastPreview.current = preview;
+    }
+    const previewBoard = bs?.boards.find((b) => b.name === lastPreview.current) ?? null;
+    useEffect(() => {
+        if (preview != null && !bs?.boards.some((b) => b.name === preview)) {
+            setPreview(null);
+        }
+    }, [preview, bs]);
+    const openBoard = (name: string) => {
+        if (!startBoardPreview(agent.id, name)) {
+            openBrainstorm(agent.id);
+            return;
+        }
+        focusRoot();
+        setPreview(name);
+    };
+    const boardToBrainstorm = () => {
+        setPreview(null);
+        openBrainstorm(agent.id);
+    };
+
     // Opening a part takes the focus (a click, `i`, Pick a chunk…), so the keys answer at once; closing the band hands it
     // back to the message box when the band held it. Switching from one part to the other leaves it where it is. A band
     // that starts open (remembered) takes nothing, so this reads the stored part, not the one drawn: a brainstorm part
@@ -120,6 +151,17 @@ function ChatBandRoot({ model, agent }: { model: AgentsViewModel; agent: AgentVM
             e.preventDefault();
             e.stopPropagation();
         };
+        if (preview != null) {
+            if (e.key === "Escape") {
+                handled();
+                setPreview(null);
+            } else if (e.key === "b") {
+                handled();
+                boardToBrainstorm();
+            }
+            // Tab still moves between the dialog's buttons; no other key of the band acts behind the dialog
+            return;
+        }
         if (ini.menuOpen) {
             ini.menuKey(e, handled);
             return;
@@ -163,7 +205,7 @@ function ChatBandRoot({ model, agent }: { model: AgentsViewModel; agent: AgentVM
         shownPart === "initiative" ? (
             ini.body
         ) : shownPart === "brainstorm" && bs != null ? (
-            <BrainstormBody agent={agent} bs={bs} narrow={narrow} only={!ini.active} />
+            <BrainstormBody agent={agent} bs={bs} narrow={narrow} only={!ini.active} onBoard={openBoard} />
         ) : null;
 
     return (
@@ -211,6 +253,17 @@ function ChatBandRoot({ model, agent }: { model: AgentsViewModel; agent: AgentVM
                     </motion.div>
                 ) : null}
             </AnimatePresence>
+            <BoardDialog open={preview != null} onClose={() => setPreview(null)}>
+                {lastPreview.current != null ? (
+                    <BoardPreview
+                        agent={agent}
+                        name={lastPreview.current}
+                        part={previewBoard?.part ?? null}
+                        onClose={() => setPreview(null)}
+                        onOpenBrainstorm={boardToBrainstorm}
+                    />
+                ) : null}
+            </BoardDialog>
         </div>
     );
 }

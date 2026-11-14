@@ -10,6 +10,7 @@ import {
     brainstormBandModel,
     brainstormTabDot,
     parseSeenBoards,
+    withBoardSeen,
     withSeenBoards,
     type SeenBoards,
 } from "./brainstormband";
@@ -212,5 +213,24 @@ describe("withSeenBoards", () => {
         // the oldest, p0, went
         expect(next.p0).toBeUndefined();
         expect(next.p1).toBeDefined();
+    });
+});
+
+describe("withBoardSeen", () => {
+    it("starts a path with no entry from that one board, so the others stay new", () => {
+        const next = withBoardSeen({}, "p", "A.dc.html", 10);
+        expect(next).toEqual({ p: { names: ["A.dc.html"], at: 10 } });
+        const f = file([part("a", { boards: ["A.dc.html", "B.dc.html"] })]);
+        expect(brainstormBandModel(f, next.p.names).boards.map((b) => b.isNew)).toEqual([false, true]);
+    });
+
+    it("adds the board to the names already seen", () => {
+        const map: SeenBoards = { p: { names: ["A.dc.html"], at: 1 } };
+        expect(withBoardSeen(map, "p", "B.dc.html", 5)).toEqual({ p: { names: ["A.dc.html", "B.dc.html"], at: 5 } });
+    });
+
+    it("returns the same map when the board was seen", () => {
+        const map: SeenBoards = { p: { names: ["A.dc.html"], at: 1 } };
+        expect(withBoardSeen(map, "p", "A.dc.html", 5)).toBe(map);
     });
 });

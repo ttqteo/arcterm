@@ -134,3 +134,11 @@ export function withSeenBoards(map: SeenBoards, path: string, names: readonly st
     }
     return pruneSeenBoards({ ...map, [path]: { names: [...names], at: now } }, path);
 }
+
+/** `map` with the one board `name` added to what the user saw of the brainstorm at `path` (a path with no entry starts
+ *  from none, so its other boards stay new): a board looked at from Chat's band, without the Brainstorm tab. The same
+ *  object back when the name is already there. */
+export function withBoardSeen(map: SeenBoards, path: string, name: string, now: number): SeenBoards {
+    const names = seenNamesOf(map, path) ?? [];
+    return names.includes(name) ? map : withSeenBoards(map, path, [...names, name], now);
+}

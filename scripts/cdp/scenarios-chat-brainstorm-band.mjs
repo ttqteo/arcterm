@@ -8,7 +8,8 @@
 //   [data-initiative-band][data-band-open][data-band-narrow] on the root of a band that has an initiative part,
 //   [data-brainstorm-band="<agentId>"] (aria-expanded), [data-bsband-title], [data-bsband-boards], [data-bsband-new],
 //   [data-bsband-decided], [data-bsband-body], [data-bsband-decision="<part id>"], [data-bsband-board="<file name>"][data-new],
-//   [data-bsband-open-brainstorm], [data-band-mark-done], [data-band-on], and the header's [data-brainstorm-tab-new].
+//   [data-bsband-open-brainstorm], [data-band-mark-done], [data-band-on], and the header's [data-brainstorm-tab-new]; a board
+//   opened over Chat is [data-bsband-preview="<file name>"] (with [data-bsband-preview-open]) in [data-brainstorm-board-dialog].
 //
 // Two fixture Claude agents over real tabs and a fixture roster (the page's dev mock roster): the first is linked to a fixture
 // initiative and has a brainstorm.json attached that names a canvas, 3 boards over 2 parts and 4 decisions that are the user's,
@@ -526,7 +527,9 @@ export default function (kit) {
                 );
             });
 
-            // 4. a click on the new board opens the Brainstorm tab, which clears the dots
+            // 4. a click on the new board opens it over Chat (no tab switch), which clears the dots; Esc closes it, and its
+            // Open in Brainstorm opens the tab
+            const PREVIEW = `${layerOf(A)}?.querySelector("[data-bsband-preview]")`;
             await run("4. board-click", async (name) => {
                 await startA();
                 await setBandPart(h, A, null);
@@ -535,30 +538,63 @@ export default function (kit) {
                 await polishWaitFor(h, `!!${bandOf(A)}?.querySelector("[data-bsband-board][data-new]")`, SHORT_MS);
                 await settled(h, A);
                 const dotBefore = await h.ev(TAB_DOT);
+                const newName = await h.ev(`${bandOf(A)}?.querySelector("[data-bsband-board][data-new]")?.getAttribute("data-bsband-board") ?? null`);
                 const clicked = await click(h, `${bandOf(A)}?.querySelector("[data-bsband-board][data-new]")`);
+                const dialog = await polishWaitFor(h, `!!${PREVIEW}?.querySelector("iframe")`, SHORT_MS);
+                await polishNap(800);
+                const view = await h.ev(`(() => {
+                    const p = ${PREVIEW};
+                    const layer = ${layerOf(A)}?.getBoundingClientRect();
+                    const box = p?.closest("[data-brainstorm-board-dialog]")?.getBoundingClientRect();
+                    return {
+                        board: p?.getAttribute("data-bsband-preview") ?? null,
+                        src: p?.querySelector("iframe")?.getAttribute("src") ?? null,
+                        // the scrim covers the Chat pane, not the app
+                        covers: !!layer && !!box && Math.abs(box.top - layer.top) < 2 && Math.abs(box.height - layer.height) < 2,
+                        focusInBand: !!${bandOf(A)}?.contains(document.activeElement),
+                    };
+                })()`);
+                const mode = await modeOf(h, A);
+                await settled(h, A);
+                const got = await readBand(h, A);
+                const names = await seenNames(h, ctx.pathA);
+                await shot(h, "4-board-over-chat");
+                await press(h, "Escape", 600);
+                const closed = await polishWaitFor(h, `!${PREVIEW}`, SHORT_MS);
+                const bodyKept = await h.ev(`!!${bandOf(A)}?.querySelector("[data-bsband-body]")`);
+                await click(h, `${bandOf(A)}?.querySelector("[data-bsband-board]")`);
+                await polishWaitFor(h, `!!${PREVIEW}`, SHORT_MS);
+                const toTab = await click(h, `${PREVIEW}?.querySelector("[data-bsband-preview-open]")`);
                 const shown = await until(async () => (await modeOf(h, A)) === "brainstorm");
                 await polishNap(500);
                 await shot(h, "4-brainstorm-tab");
                 await backToChat(h, A);
                 await chatShown(A);
-                await polishWaitFor(h, `!!${bandOf(A)}?.querySelector("[data-bsband-board]")`, SHORT_MS);
-                await settled(h, A);
-                const got = await readBand(h, A);
-                const names = await seenNames(h, ctx.pathA);
-                await shot(h, "4-back-in-chat");
+                const gone = await polishWaitFor(h, `!${PREVIEW}`, SHORT_MS);
                 rec(
-                    `${name}: a click on the new board's row opens the Brainstorm tab; back in Chat [data-bsband-new] and [data-brainstorm-tab-new] are gone, no row has data-new, and all three names are stored as seen`,
+                    `${name}: a click on the new board's row opens [data-bsband-preview] for that board over the Chat pane (the agent stays in Chat, its iframe loads the board, the focus stays in the band); [data-bsband-new] and [data-brainstorm-tab-new] are gone, no row has data-new, and all three names are stored as seen; Esc closes it and leaves the part open; its Open in Brainstorm opens the Brainstorm tab, and back in Chat it is closed`,
                     opened &&
                         dotBefore === true &&
                         clicked &&
-                        shown &&
+                        dialog &&
+                        view?.board === newName &&
+                        typeof view.src === "string" &&
+                        view.src.endsWith(encodeURIComponent(newName)) &&
+                        view.covers === true &&
+                        view.focusInBand === true &&
+                        mode !== "brainstorm" &&
                         got?.newText === null &&
                         got.tabDot === false &&
                         got.boardRows.length === 3 &&
                         got.boardRows.every((b) => !b.isNew) &&
                         Array.isArray(names) &&
-                        BOARDS.every((n) => names.includes(n)),
-                    { opened, dotBefore, clicked, shown, newText: got?.newText, tabDot: got?.tabDot, rows: got?.boardRows, names }
+                        BOARDS.every((n) => names.includes(n)) &&
+                        closed &&
+                        bodyKept === true &&
+                        toTab &&
+                        shown &&
+                        gone,
+                    { opened, dotBefore, clicked, dialog, newName, view, mode, newText: got?.newText, tabDot: got?.tabDot, rows: got?.boardRows, names, closed, bodyKept, toTab, shown, gone }
                 );
             });
 
