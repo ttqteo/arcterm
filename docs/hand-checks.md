@@ -6,6 +6,16 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Council bench team cell cleans up after itself.** Only unit tests cover it; no bench ran a real team.
+  Run `wsh council bench --variant team --case <one case> --runs 1` to the end, then again and end it with
+  `wsh council bench stop` while the lead works → after each, `~/.claude/projects/` has no new folder for the cell, and
+  after the stop no `claude` or `node` process from that cell is left in Task Manager (the stop takes the same kill as a
+  timeout). Commit: fix(council-bench) a team cell removes
+  its transcripts and kills its whole tree on timeout (run e6d14c4f)
+- [ ] (arcterm) **A council change reloads only that council.** With two projects that each have councils, run a council
+  in one → its tree row and the Councils list update as it goes, the other project's councils stay as they were, and a
+  council deleted with `wsh council` leaves both lists. Commit: perf(council) a council change reloads that council,
+  not every council in every list (run e6d14c4f)
 - [ ] (arcterm) **Radar retired, on a store that had it.** The Final ran on a fresh dev store, so migration 000028 never
   dropped a real `db_radarreport` and no saved Startup surface read `radar`. Install the build over an arcterm that has
   Radar reports and Settings → General → Startup surface set to Radar → it boots on Cockpit, the rail has no Radar,
