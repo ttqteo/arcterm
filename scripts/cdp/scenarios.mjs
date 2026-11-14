@@ -47403,7 +47403,7 @@ const chatScrollKeep = {
 
 // --- chat-asleep-attach-jump: Chat's box takes a pasted picture while its agent is asleep, the picture rides the message
 // that wakes it, and the box lets go of the text and the chip at the press while the message shows as a bubble with
-// Waking… under it (a failed wake drops the bubble and puts both back); and Ctrl+↓ jumps a
+// Waking… under it (a failed wake drops the bubble and puts both back); and Mod+↓ (⌘↓ on a Mac) jumps a
 // Chat read scrolled up back to the latest message, from the conversation and from the box, as the round ↓ does, whose
 // tooltip names the key. One fixture Claude agent, asleep, over a real tab with a long transcript; a mock answers the
 // wake (ok, hold or fail) and the temp-file write a paste makes, so nothing reaches a process or the disk.
@@ -47533,7 +47533,9 @@ const chatAsleepAttachJump = {
                 await h.cdp("Input.dispatchKeyEvent", { type, key: k, code, windowsVirtualKeyCode: vk, modifiers });
             }
         };
-        const ctrlDown = () => key("ArrowDown", "ArrowDown", 40, 2);
+        // Mod+↓: ⌘↓ on a Mac, Ctrl+↓ elsewhere, and the tooltip names it as formatChordString draws it there
+        const modDown = () => key("ArrowDown", "ArrowDown", 40, MOD_BIT);
+        const JUMP_CHORD = ON_MAC ? "⌘↓" : "Ctrl+↓";
         const enter = () => key("Enter", "Enter", 13);
         const paste = (hue) =>
             h.ev(`(async () => {
@@ -47563,26 +47565,26 @@ const chatAsleepAttachJump = {
             const title = await h.ev(`document.querySelector('[data-agent-chat="${A}"] [data-chat-jump]')?.getAttribute("title") ?? null`);
             await h.shot("cdp-shots/chat-asleep-jump-button.png");
             rec(
-                "J1. the sleeping agent's Chat shows its conversation; scrolled up, the ↓ shows with \"Jump to latest (Ctrl+↓)\"",
-                loaded && asleep && top1 === 0 && jumpUp && title === "Jump to latest (Ctrl+↓)",
+                `J1. the sleeping agent's Chat shows its conversation; scrolled up, the ↓ shows with "Jump to latest (${JUMP_CHORD})"`,
+                loaded && asleep && top1 === 0 && jumpUp && title === `Jump to latest (${JUMP_CHORD})`,
                 { loaded, asleep, top1, jumpUp, title }
             );
 
-            // J2. the focus out of the box (in the conversation), Ctrl+↓ goes to the end and the ↓ leaves
+            // J2. the focus out of the box (in the conversation), Mod+↓ goes to the end and the ↓ leaves
             await h.ev(`(() => { document.activeElement?.blur?.(); ${scroller}?.focus?.(); return true; })()`);
-            await ctrlDown();
+            await modDown();
             const end2 = await polishWaitFor(h, atEnd, 3000);
             const jumpGone2 = await polishWaitFor(h, `!document.querySelector('[data-agent-chat="${A}"] [data-chat-jump]')`, 3000);
-            rec("J2. Ctrl+↓ from the conversation jumps to the latest message and the ↓ leaves", end2 && jumpGone2, { end2, jumpGone2 });
+            rec(`J2. ${JUMP_CHORD} from the conversation jumps to the latest message and the ↓ leaves`, end2 && jumpGone2, { end2, jumpGone2 });
 
-            // J3. scrolled up again with text in the box, Ctrl+↓ from the box jumps too, and the text stays
+            // J3. scrolled up again with text in the box, Mod+↓ from the box jumps too, and the text stays
             const top3 = await scrollUp();
             await h.ev(`${box}.focus()`);
             await h.cdp("Input.insertText", { text: "draft" });
-            await ctrlDown();
+            await modDown();
             const end3 = await polishWaitFor(h, atEnd, 3000);
             const text3 = await h.ev(`${box}?.textContent ?? null`);
-            rec("J3. Ctrl+↓ from the chat box jumps to the latest message, and the box keeps its text", top3 === 0 && end3 && text3 === "draft", {
+            rec(`J3. ${JUMP_CHORD} from the chat box jumps to the latest message, and the box keeps its text`, top3 === 0 && end3 && text3 === "draft", {
                 top3,
                 end3,
                 text3,
