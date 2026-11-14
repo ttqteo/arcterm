@@ -5,6 +5,8 @@
 // The columns are flex columns at least one viewport tall, so these numbers are flex shares and floors,
 // not pixel rects. No React, no atoms.
 
+import { springPop, springReveal } from "@/app/element/motiontokens";
+import type { TargetAndTransition, Transition, Variants } from "motion/react";
 import type { ChipFilter } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { leadAgentOf, roleRunId, runFinished, type Lineage, type RunInfo } from "./runlineage";
@@ -49,6 +51,83 @@ export function cardShare(isRun: boolean, needsYou: boolean): CardShare {
     }
     return { grow: needsYou ? 2 : 1, minPx: needsYou ? CARD_MIN_PX.agentAsk : CARD_MIN_PX.agent };
 }
+
+// What the grid hands one card to move on the spring (docs/superpowers/specs/2026-11-14-surfaces-chat-look-design.md, §3);
+// only the grid's own call passes it, so the Office panel's card moves on springPop alone.
+export interface GridCardMotion {
+    // mount at the end state: a first load, a batch, or a card that was in the grid already (re-dealt to another column,
+    // so this is the same card arriving by its layoutId, not a new one)
+    still: boolean;
+    // the card's layout transition: the spring for one change, no time for a batch or under reduced motion
+    layout: Transition;
+    // the grid's layout as one string (gridLayoutKey): a layout animation runs only when it changes, never on a resize
+    dep: string;
+}
+
+/** Pure: the layout props of one of a grid card's direct parts (header, banner, body). While the card slides or resizes
+ *  its box is scaled by the layout animation, which squashes everything inside it; a part that carries `layout` is
+ *  counter-scaled by motion and keeps its own size. It keys on the card's `dep` and rides the card's layout transition
+ *  (a child does not inherit it), so the parts measure and move exactly when the card does and never on a re-render of
+ *  the live feed. No `grid` (the Office panel's card): no props.
+ *  A part whose own size changes with the card's (the body, which takes what the header and strips leave) passes
+ *  "position": plain `layout` would animate its size as a scale and squash its content with it, so it takes its new size
+ *  at once and slides in place, and the card's clipped edge opens over it.
+ *  `id` is the part's own layoutId (the card's id and the part's name): a card re-dealt to the other column is a new
+ *  instance, and a part with no counterpart in the old copy has nothing to start from, so it trails its card by the
+ *  distance the card has to travel. Sharing the id gives it the old part's box to slide from, as its card has. */
+export function gridPartLayout(grid: GridCardMotion | undefined, id: string, layout: true | "position" = true) {
+    return grid
+        ? ({ layout, layoutId: id, layoutDependency: grid.dep, transition: { layout: grid.layout } } as const)
+        : {};
+}
+
+/** Pure: the grid's layout as one string, which column and which flex share each card has. A card's layout animation is
+ *  keyed on it, so cards slide only when the layout changes: a window resize re-lays the same string out at a new size
+ *  and must not set every card sliding behind the cursor. */
+export function gridLayoutKey<T>(columns: T[][], place: (t: T) => { id: string; share: CardShare }): string {
+    return columns
+        .map((col) =>
+            col
+                .map((t) => {
+                    const { id, share } = place(t);
+                    return `${id}:${share.grow}:${share.minPx}`;
+                })
+                .join(",")
+        )
+        .join("|");
+}
+
+// What a column's AnimatePresence hands a leaving card (its `custom`): the ids still in the grid, and whether this change
+// is a batch. A leaving card reads its exit from the props of its last render, so the render that removes it cannot say
+// either, and only `custom` reaches it.
+export interface GridExit {
+    stay: ReadonlySet<string>;
+    instant: boolean;
+}
+
+// gone at the next frame: opacity 0 with no time, so it never shows a frame beside the cards that took its place
+const LEAVE_AT_ONCE: TargetAndTransition = { opacity: 0, transition: { duration: 0 } };
+
+/** The variants of one grid card: springPop in, and out on springPop only when the card is really gone. A card still in
+ *  the grid (re-dealt to the other column, where its copy slides from this box) or leaving in a batch is gone at once, so
+ *  it never fades or pops beside its own copy. Without a `custom` (the Office panel's card) it is plain springPop. */
+export function gridCardVariants(id: string): Variants {
+    return {
+        ...springPop,
+        exit: (exit?: GridExit) =>
+            exit != null && (exit.instant || exit.stay.has(id))
+                ? LEAVE_AT_ONCE
+                : (springPop.exit as TargetAndTransition),
+    };
+}
+
+// a list row of the Idle, Backgrounded and Background sections: springReveal, and at once when it leaves in a batch
+// (its AnimatePresence's `custom` is true then)
+const ROW_LEAVES_AT_ONCE: TargetAndTransition = { opacity: 0, height: 0, transition: { duration: 0 } };
+export const batchReveal: Variants = {
+    ...springReveal,
+    exit: (instant?: boolean) => (instant ? ROW_LEAVES_AT_ONCE : (springReveal.exit as TargetAndTransition)),
+};
 
 // a card is a plain agent or an orchestrator run; a run's card carries its lead whenever the lead is in the roster
 export type GridCard =

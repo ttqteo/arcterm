@@ -1,10 +1,12 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { springPop, springReveal } from "@/app/element/motiontokens";
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     askerAt,
+    batchReveal,
     buildGridCards,
     CARD_MIN_PX,
     cardMatchesChip,
@@ -12,12 +14,16 @@ import {
     columnJump,
     columnNavIds,
     GRID_THREE_COL_MIN_PX,
+    gridCardVariants,
     gridColumnCount,
+    gridLayoutKey,
+    gridPartLayout,
     isBackgroundedRun,
     resolveCursor,
     splitGridColumns,
     toggleChip,
     withActiveRunLeads,
+    type GridExit,
 } from "./cardgridlayout";
 import type { Lineage, RunInfo } from "./runlineage";
 
@@ -224,5 +230,80 @@ describe("toggleChip", () => {
         expect(toggleChip("asking", "asking")).toBe("all");
         expect(toggleChip("asking", "working")).toBe("working");
         expect(toggleChip("all", "all")).toBe("all");
+    });
+});
+
+describe("gridLayoutKey", () => {
+    const place = (id: string) => ({ id, share: cardShare(id.startsWith("L"), id.endsWith("!")) });
+    it("changes when a card is re-dealt, resized by its share, or reordered", () => {
+        const base = gridLayoutKey([["a1", "a3"], ["a2"]], place);
+        expect(gridLayoutKey([["a1"], ["a2", "a3"]], place)).not.toBe(base);
+        expect(gridLayoutKey([["a1", "a3!"], ["a2"]], place)).not.toBe(base);
+        expect(gridLayoutKey([["a3", "a1"], ["a2"]], place)).not.toBe(base);
+    });
+    it("is the same string for the same layout, whatever size it is drawn at", () => {
+        expect(gridLayoutKey([["a1", "a3"], ["a2"]], place)).toBe(gridLayoutKey([["a1", "a3"], ["a2"]], place));
+    });
+});
+
+describe("gridCardVariants", () => {
+    const exitOf = (id: string, custom?: GridExit) => {
+        const exit = gridCardVariants(id).exit;
+        return typeof exit === "function" ? exit(custom, {}, {}) : exit;
+    };
+    it("enters as springPop", () => {
+        const v = gridCardVariants("a1");
+        expect(v.initial).toBe(springPop.initial);
+        expect(v.animate).toBe(springPop.animate);
+    });
+    it("leaves on springPop when the card is really gone, and with no custom (the Office panel's card)", () => {
+        expect(exitOf("a1", { stay: new Set(["a2"]), instant: false })).toBe(springPop.exit);
+        expect(exitOf("a1")).toBe(springPop.exit);
+    });
+    it("leaves at once when it is still in the grid (re-dealt) or the change is a batch", () => {
+        const gone = { opacity: 0, transition: { duration: 0 } };
+        expect(exitOf("a1", { stay: new Set(["a1"]), instant: false })).toEqual(gone);
+        expect(exitOf("a1", { stay: new Set(), instant: true })).toEqual(gone);
+    });
+});
+
+describe("gridPartLayout", () => {
+    it("gives a card's part motion's layout correction, shared by id and keyed and timed like the card", () => {
+        const layout = { duration: 0 };
+        expect(gridPartLayout({ still: false, layout, dep: "a1:1:200" }, "a1:header")).toEqual({
+            layout: true,
+            layoutId: "a1:header",
+            layoutDependency: "a1:1:200",
+            transition: { layout },
+        });
+    });
+    it("slides without scaling for a part whose size changes with the card's", () => {
+        const layout = { duration: 0 };
+        expect(gridPartLayout({ still: false, layout, dep: "a1:1:200" }, "a1:body", "position")).toEqual({
+            layout: "position",
+            layoutId: "a1:body",
+            layoutDependency: "a1:1:200",
+            transition: { layout },
+        });
+    });
+    it("gives the Office panel's card (no grid) nothing", () => {
+        expect(gridPartLayout(undefined, "a1:header")).toEqual({});
+        expect(gridPartLayout(undefined, "a1:body", "position")).toEqual({});
+    });
+});
+
+describe("batchReveal", () => {
+    const exitOf = (instant?: boolean) => {
+        const exit = batchReveal.exit;
+        return typeof exit === "function" ? exit(instant, {}, {}) : exit;
+    };
+    it("is springReveal in, and out on springReveal for a single row", () => {
+        expect(batchReveal.initial).toBe(springReveal.initial);
+        expect(batchReveal.animate).toBe(springReveal.animate);
+        expect(exitOf(false)).toBe(springReveal.exit);
+        expect(exitOf()).toBe(springReveal.exit);
+    });
+    it("folds in no time when rows leave in a batch", () => {
+        expect(exitOf(true)).toEqual({ opacity: 0, height: 0, transition: { duration: 0 } });
     });
 });
