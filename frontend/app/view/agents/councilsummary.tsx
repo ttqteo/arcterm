@@ -75,6 +75,7 @@ import {
     type CouncilLang,
     type StanceLabel,
 } from "./councilmodel";
+import { retryHold } from "./councilretry";
 import { RetryWithButton } from "./councilretrymenu";
 import { revealCouncilMessage } from "./councilreveal";
 import { claimBadge, isWrongCite, wrongCiteOf } from "./councilsources";
@@ -867,6 +868,8 @@ function NoSummary({ c, busy, onSummarize }: { c: Council; busy: boolean; onSumm
     const writing =
         c.state === "running" &&
         (c.round >= synthesisRound(c) || (coordinator != null && c.activity?.[coordinator.id] != null));
+    // a summary's retry with no sent idea is refused by the runner, and so is one while the council runs
+    const hold = coordinator != null ? retryHold(c, coordinator.id) : null;
     return (
         <div
             data-council-nosummary
@@ -887,6 +890,8 @@ function NoSummary({ c, busy, onSummarize }: { c: Council; busy: boolean; onSumm
                             <button
                                 type="button"
                                 data-council-action="retry"
+                                title={hold ?? undefined}
+                                disabled={hold != null}
                                 onClick={() => void retryExpert(c.id, coordinator.id)}
                                 className={BUTTON}
                             >
@@ -895,6 +900,7 @@ function NoSummary({ c, busy, onSummarize }: { c: Council; busy: boolean; onSumm
                             <RetryWithButton
                                 expert={coordinator}
                                 error={c.failed?.[coordinator.id]?.error}
+                                disabled={hold != null}
                                 onPick={(model) => void retryExpert(c.id, coordinator.id, model)}
                                 className={BUTTON}
                             />
@@ -1010,6 +1016,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const outdated = outdatedCount(c);
     const coordinator = c.experts.find((e) => e.coordinator);
     const coordinatorFailed = coordinator != null ? c.failed?.[coordinator.id] : undefined;
+    const retryHeld = coordinator != null ? retryHold(c, coordinator.id) : null; // the summary's Retry, as in NoSummary
     const scroller = useRef<HTMLDivElement>(null);
     const onScroll = useKeptScroll(scroller, `summary:${c.id}`);
     // the Report tab, clicked while it is shown, glides the page down past the cover to the report itself, at the top of
@@ -1200,6 +1207,8 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                             <button
                                 type="button"
                                 data-council-action="retry"
+                                title={retryHeld ?? undefined}
+                                disabled={retryHeld != null}
                                 onClick={() => void retryExpert(c.id, coordinator.id)}
                                 className={BUTTON}
                             >
@@ -1208,6 +1217,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                             <RetryWithButton
                                 expert={coordinator}
                                 error={c.failed?.[coordinator.id]?.error}
+                                disabled={retryHeld != null}
                                 onPick={(model) => void retryExpert(c.id, coordinator.id, model)}
                                 className={BUTTON}
                             />

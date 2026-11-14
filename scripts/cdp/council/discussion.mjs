@@ -965,16 +965,19 @@ async function failed(h, ctx, rec) {
     const skeptic = await text(h, '[data-council-failed="skeptic"]');
     const hasSkepticRetry = await exists(h, '[data-council-retry="skeptic"]');
     rec(
-        "failed: Skeptic's failure line in the channel reads `Skeptic failed while proposing`, shows its error and has Retry",
-        skeptic.includes("Skeptic failed while proposing") && skeptic.includes("claude -p timed out after 10 minutes") && hasSkepticRetry,
+        "failed: Skeptic's failure line in the channel reads `Skeptic failed while proposing` with no `round` in it, shows its error and has Retry",
+        skeptic.includes("Skeptic failed while proposing") &&
+            !/round/i.test(skeptic) &&
+            skeptic.includes("claude -p timed out after 10 minutes") &&
+            hasSkepticRetry,
         skeptic
     );
 
     const panel = await text(h, "[data-council-summary-failed]");
     const hasCoordinatorRetry = await exists(h, '[data-council-retry="coordinator"]');
     rec(
-        "failed: the coordinator's `Summary failed` panel shows the error with Retry",
-        panel.includes("Summary failed") && panel.includes("the reply was not valid JSON") && hasCoordinatorRetry,
+        "failed: the coordinator's `Summary failed` panel shows the error with Retry, and no `round`",
+        panel.includes("Summary failed") && !/round/i.test(panel) && panel.includes("the reply was not valid JSON") && hasCoordinatorRetry,
         panel
     );
     await h.shot("cdp-shots/council-discussion-failed.png");

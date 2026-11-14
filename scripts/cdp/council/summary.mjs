@@ -121,6 +121,15 @@ async function menuClick(h, action) {
     return click(h, row);
 }
 
+// The reason Retry is off when no idea was sent, read from its one definition (councilretry.ts, which node cannot import)
+// so a rewording there reaches this check.
+function retryNothingSent() {
+    const src = readFileSync(new URL("../../../frontend/app/view/agents/councilretry.ts", import.meta.url), "utf8");
+    const m = src.match(/RETRY_NOTHING_SENT = "([^"]+)"/);
+    if (m == null) throw new Error("RETRY_NOTHING_SENT is not defined in councilretry.ts any more");
+    return m[1];
+}
+
 // the first sentence of the fixture's summary text: what the report's bold line reads for a council with no answer
 const FIRST_SENTENCE = loadCouncilFixture("done").summary.text.match(/^.*?[.!?](?=\s|$)/)[0];
 
@@ -1053,6 +1062,66 @@ export const councilSummary = {
                 calls[1].data?.expertid === "coordinator" &&
                 calls[1].data?.model === "sonnet";
             return { ok, detail: JSON.stringify({ banner, directions, rating, menu, calls }) };
+        });
+
+        // the runner refuses a summary when no idea was sent ("has no sent idea to summarize"), so the Report holds both of
+        // its "Retry the summary" buttons, the failed banner's and the no-summary panel's, with the reason, as the
+        // Discussion's Retry does (retryHold, councilretry.ts): a click, and Retry with…, call nothing
+        await step("a failed summary with no idea sent holds Retry on the banner and on the no-summary panel, says why, and a click calls nothing", async () => {
+            const nothingSent = retryNothingSent();
+            const failedUnsent = (c) => {
+                c.state = "failed";
+                c.failed = { coordinator: { round: 3, error: "the model was overloaded" } };
+                c.error = "the coordinator failed in round 3";
+                for (const p of c.proposals) p.draft = "held";
+            };
+            // the two Retry buttons of the open Report: the title is the hold's reason, disabled shows the hold
+            const retryFacts = () =>
+                h.ev(`(() => {
+                    const retry = document.querySelector("[data-council-action='retry']");
+                    const pick = document.querySelector("[data-council-retry-with='coordinator']");
+                    return {
+                        retry: retry ? { disabled: retry.disabled, title: retry.title } : null,
+                        pick: pick ? { disabled: pick.disabled } : null,
+                    };
+                })()`);
+            await stubRpc(h, ["CouncilRetryCommand"]);
+            const before = (await rpcCalls(h, "CouncilRetryCommand")).length;
+            // a real mouse click: a disabled button takes it and does nothing
+            const clickedHeld = async () => {
+                const clicked = await mouseClick(h, "[data-council-action='retry']");
+                const picked = await mouseClick(h, "[data-council-retry-with='coordinator']");
+                await sleep(500);
+                const menu = await exists(h, "[data-menu-item]");
+                return { clicked, picked, menu, calls: (await rpcCalls(h, "CouncilRetryCommand")).length - before };
+            };
+
+            const withSummary = await seedCouncil(h, ctx, "done", { id: "fx-council-retry-held", edit: failedUnsent });
+            await openCouncil(h, withSummary, "summary");
+            const bannerShown = await until(h, `!!document.querySelector("[data-council-banner='failed']")`);
+            const banner = await retryFacts();
+            await h.shot("cdp-shots/council-summary-retry-held.png");
+            const bannerClick = await clickedHeld();
+
+            const noSummary = await seedCouncil(h, ctx, "done", {
+                id: "fx-council-retry-held-nosummary",
+                edit: (c) => {
+                    failedUnsent(c);
+                    delete c.summary;
+                },
+            });
+            await openCouncil(h, noSummary, "summary");
+            const panelShown = await until(h, `!!document.querySelector("[data-council-nosummary] [data-council-action='retry']")`);
+            const panel = await retryFacts();
+            await h.shot("cdp-shots/council-summary-retry-held-nosummary.png");
+            const panelClick = await clickedHeld();
+            await openSummary(h, ctx);
+
+            const held = (f) => f.retry?.disabled === true && f.retry.title === nothingSent && f.pick?.disabled === true;
+            // a click landed on each button, and nothing followed: no call recorded and no model menu opened
+            const quiet = (k) => k.clicked && k.picked && k.calls === 0 && !k.menu;
+            const ok = bannerShown && held(banner) && quiet(bannerClick) && panelShown && held(panel) && quiet(panelClick);
+            return { ok, detail: JSON.stringify({ nothingSent, banner, bannerClick, panel, panelClick }) };
         });
 
         // "Was this useful?" (docs/superpowers/specs/2026-10-22-council-agent-team-design.md, Storage). CouncilRateCommand is replaced, so
