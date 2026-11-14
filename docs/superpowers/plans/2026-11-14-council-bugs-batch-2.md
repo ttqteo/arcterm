@@ -68,9 +68,9 @@ it".
 
 ### Task 2: Summarize with only drafts, a new Report shot, no overlapping tree rows
 **Depends on:** none
-**Files:** `scripts/cdp/council/discussion.mjs`, `scripts/cdp/council/summary.mjs`, `scripts/cdp/council/tree.mjs`, `frontend/app/view/agents/agenttree.tsx`, `CHANGELOG.md`
+**Files:** `scripts/cdp/council/discussion.mjs`, `scripts/cdp/council/summary.mjs`, `scripts/cdp/council/tree.mjs`, `frontend/app/view/agents/agenttree.tsx`
 
-`agenttree.tsx` and `CHANGELOG.md` change only if Step 3 finds a real overlap.
+`agenttree.tsx` changes only if Step 3 finds a real overlap.
 
 Closes three chunks:
 - "Bug: Council Summarize greyed out in the app on a paused council (awaiting-you, proposals present) though
@@ -85,8 +85,8 @@ Closes three chunks:
   mode="popLayout"` (`agenttree.tsx:4111-4125`), so a pinned council sliding to the top crosses the rows above it; the
   shot at `tree.mjs:536` is taken right after `announceCouncil`, mid-slide.
 
-No user-facing change unless Step 3 changes the tree; then add a `### Fixed` line under `## Unreleased` in
-`CHANGELOG.md`.
+No changelog line here (Task 1 owns `CHANGELOG.md`): if Step 3 changes the tree, say so in the commit body, and the
+lead adds the `### Fixed` line after the run.
 
 - [ ] **Step 1: Drafts only keep Summarize off**
   `discussion.mjs`, next to the step at ~:1695: with the room fixture edited so every proposal of the paused
