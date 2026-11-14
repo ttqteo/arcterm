@@ -1139,16 +1139,15 @@ async function done(h, ctx, rec) {
     await h.shot("cdp-shots/council-discussion-done.png");
     await jumps(h, rec);
 
-    // the report's questions to ask next are the channel's last line, under the newest message, none of them over the
-    // box; a click puts one in the box, @ seat and all
+    // the report's questions to ask next sit in the channel's message box, under its text, as Chat's suggested replies,
+    // none of them in the channel's list; a click puts one in the box, @ seat and all
+    const CHANNEL_ASKS = `${CHANNEL_COMPOSER} [data-council-asks="channel"] [data-council-ask]`;
     await h.ev(`(() => { const el = document.querySelector("[data-council-channel]"); el.scrollTop = el.scrollHeight; })()`);
-    const asks = await count(h, "[data-council-channel] [data-council-ask]");
-    const last = await h.ev(
-        `document.querySelector("[data-council-channel] [data-council-asks]")?.parentElement?.lastElementChild?.hasAttribute("data-council-asks") ?? false`
-    );
-    const overBox = await count(h, `${CHANNEL_COMPOSER} [data-council-ask]`);
+    await until(h, `document.querySelectorAll(${sel(CHANNEL_ASKS)}).length === 3`).catch(() => {});
+    const asks = await count(h, CHANNEL_ASKS);
+    const inList = await count(h, "[data-council-channel] [data-council-ask]");
     await h.shot("cdp-shots/council-discussion-asknext.png");
-    await click(h, '[data-council-channel] [data-council-ask="0"]');
+    await click(h, `${CHANNEL_COMPOSER} [data-council-ask="0"]`);
     const box = sel(`${CHANNEL_COMPOSER} [data-council-composer-input]`);
     await until(h, `document.querySelector(${box})?.value !== ""`).catch(() => {});
     const filled = await h.ev(`document.querySelector(${box})?.value ?? ""`);
@@ -1170,24 +1169,24 @@ async function done(h, ctx, rec) {
         { undone, undoneKept, redone, typedUndo, typedKept }
     );
     // the box now holds text, and the questions stay: Ask next no longer hides while the person types
-    const staysAfterFill = await count(h, "[data-council-channel] [data-council-ask]");
+    const staysAfterFill = await count(h, CHANNEL_ASKS);
     rec(
-        "done: Ask next offers the report's three questions as the list's last line, not over the box, and a click fills the box with the @ seat and leaves the three questions where they are",
-        asks === 3 && last && overBox === 0 && filled.startsWith("@RAM How much RAM") && staysAfterFill === 3,
-        { asks, last, overBox, filled, staysAfterFill }
+        "done: Ask next offers the report's three questions in the channel's message box, none in the channel's list, and a click fills the box with the @ seat and leaves the three questions in the box",
+        asks === 3 && inList === 0 && filled.startsWith("@RAM How much RAM") && staysAfterFill === 3,
+        { asks, inList, filled, staysAfterFill }
     );
     // one letter in the box and the questions are still there; a click on another replaces the letter with its text
     await typeInto(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`, "W");
     await new Promise((r) => setTimeout(r, 200));
-    const typed = await count(h, "[data-council-channel] [data-council-ask]");
-    const second = await text(h, '[data-council-channel] [data-council-ask="1"]');
-    await click(h, '[data-council-channel] [data-council-ask="1"]');
+    const typed = await count(h, CHANNEL_ASKS);
+    const second = await text(h, `${CHANNEL_COMPOSER} [data-council-ask="1"]`);
+    await click(h, `${CHANNEL_COMPOSER} [data-council-ask="1"]`);
     await until(h, `document.querySelector(${box})?.value !== "W"`).catch(() => {});
     const replaced = await h.ev(`document.querySelector(${box})?.value ?? ""`);
-    const afterReplace = await count(h, "[data-council-channel] [data-council-ask]");
+    const afterReplace = await count(h, CHANNEL_ASKS);
     await h.shot("cdp-shots/council-discussion-asknext-typing.png");
     rec(
-        "done: Ask next stays while the person types: one letter in the box and all three questions are still there, and a click puts its text in the box in place of the letter",
+        "done: Ask next stays in the box while the person types: one letter in the box and all three questions are still there, and a click puts its text in the box in place of the letter",
         typed === 3 && second !== "" && replaced.replace(/\s+/g, " ").trim() === second && replaced !== "W" && afterReplace === 3,
         { typed, second, replaced, afterReplace }
     );
@@ -3392,20 +3391,21 @@ async function threadAsksTyping(h, ctx, rec) {
         },
     });
     await click(h, OPEN_THREAD("P2"));
-    await until(h, `!!document.querySelector('[data-council-thread="P2"] [data-council-thread-asks]')`);
+    const THREAD_ASKS = `${THREAD_COMPOSER} [data-council-asks="thread"] [data-council-ask]`;
+    await until(h, `!!document.querySelector(${sel(THREAD_ASKS)})`);
     const box = sel(`${THREAD_COMPOSER} [data-council-composer-input]`);
-    const asksOf = () => h.ev(`[...document.querySelectorAll("[data-council-thread-asks] [data-council-thread-ask]")].map((b) => b.textContent.trim())`);
+    const asksOf = () => h.ev(`[...document.querySelectorAll(${sel(THREAD_ASKS)})].map((b) => b.textContent.trim())`);
     const before = await asksOf();
     await typeInto(h, `${THREAD_COMPOSER} [data-council-composer-input]`, "W");
     await new Promise((r) => setTimeout(r, 200));
     const typed = await asksOf();
     await h.shot("cdp-shots/council-discussion-threadasks-typing.png");
-    await click(h, '[data-council-thread-ask="1"]');
+    await click(h, `${THREAD_COMPOSER} [data-council-ask="1"]`);
     await until(h, `document.querySelector(${box})?.value !== "W"`).catch(() => {});
     const replaced = await h.ev(`document.querySelector(${box})?.value ?? ""`);
     const after = await asksOf();
     rec(
-        "thread asks: the seat's two suggested replies stay over the thread's box while the person types one letter, and a click puts its text in the box in place of the letter",
+        "thread asks: the seat's two suggested replies stay in the thread's box while the person types one letter, and a click puts its text in the box in place of the letter",
         before.join("|") === ASKS.join("|") &&
             typed.join("|") === ASKS.join("|") &&
             replaced === ASKS[1] &&

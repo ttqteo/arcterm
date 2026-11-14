@@ -261,6 +261,77 @@ func TestTeamRunLimitFires(t *testing.T) {
 	}
 }
 
+// TestTeamRunRemovesItsTranscripts: however a cell ends, the project folder Claude Code kept its lead and teammate
+// transcripts in is gone once they are counted, and the folder of another project beside it is not touched.
+func TestTeamRunRemovesItsTranscripts(t *testing.T) {
+	cases := []struct {
+		name   string
+		limit  time.Duration
+		writes bool // the lead leaves transcripts behind
+		behave func(ctx context.Context, cancel context.CancelFunc, session string, total int64) ([]byte, error)
+	}{
+		{"done", time.Minute, true, func(ctx context.Context, cancel context.CancelFunc, s string, total int64) ([]byte, error) {
+			return leadJSON(s, wellFormedReport, false, total), nil
+		}},
+		{"failed", time.Minute, true, func(ctx context.Context, cancel context.CancelFunc, s string, total int64) ([]byte, error) {
+			return nil, errors.New("exit status 1")
+		}},
+		{"limit fires", 30 * time.Millisecond, true, func(ctx context.Context, cancel context.CancelFunc, s string, total int64) ([]byte, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}},
+		{"caller cancelled", time.Minute, true, func(ctx context.Context, cancel context.CancelFunc, s string, total int64) ([]byte, error) {
+			cancel()
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}},
+		{"no transcript", time.Minute, false, func(ctx context.Context, cancel context.CancelFunc, s string, total int64) ([]byte, error) {
+			return nil, errors.New("exit status 1")
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			captureLog(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var total int64
+			var projects string
+			fakeLead(t, func(leadCtx context.Context, rec *launch) ([]byte, error) {
+				if tc.writes {
+					total = teamTranscripts(t, rec.session, 1)
+				} else {
+					t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+				}
+				projects = filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects")
+				if err := os.MkdirAll(filepath.Join(projects, "other"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(projects, "other", "keep.jsonl"), []byte("{}\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				return tc.behave(leadCtx, cancel, rec.session, total)
+			})
+			opts := teamOpts
+			opts.Limit = tc.limit
+			out, _, err := runTeam(ctx, teamCase(t), opts)
+			if tc.name != "caller cancelled" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if tc.writes && out.Tokens != total {
+					t.Errorf("tokens = %d, want the transcripts' %d: they were removed before they were counted", out.Tokens, total)
+				}
+			}
+			if _, err := os.Stat(filepath.Join(projects, "p")); tc.writes && !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("the cell's transcript folder was not removed: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(projects, "other", "keep.jsonl")); err != nil {
+				t.Errorf("another project's folder was touched: %v", err)
+			}
+		})
+	}
+}
+
 func TestTeamRunCallerCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	fakeLead(t, func(ctx context.Context, rec *launch) ([]byte, error) {

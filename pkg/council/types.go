@@ -69,6 +69,11 @@ type CouncilExpert struct {
 	// NameVi is a stock role's Vietnamese name, so Setup can show it for a Vietnamese question. Empty on a user role and
 	// on an agent seat, which keep the one name they have.
 	NameVi string `json:"namevi,omitempty"`
+	// Focus and FocusVi are the 1-3 word phrase, in English and in Tiếng Việt, that Setup shows after a role's name
+	// ("Memory watcher (memory)"). Set on a stock expert role only: a coordinator, a role of the person's own, a
+	// suggested role and an agent seat have none and read by their name alone.
+	Focus   string `json:"focus,omitempty"`
+	FocusVi string `json:"focusvi,omitempty"`
 }
 
 // IsAgent says a seat is a live agent's, not a role expert's.

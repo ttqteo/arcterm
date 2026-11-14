@@ -10,9 +10,9 @@ import (
 	"syscall"
 )
 
-// runTree runs c in a process group of its own and, when its context ends, kills the whole group: `go test` leaves its
+// RunTree runs c in a process group of its own and, when its context ends, kills the whole group: `go test` leaves its
 // compiled test binary, and `npx` its node, running when only the launcher is killed.
-func runTree(c *exec.Cmd) error {
+func RunTree(c *exec.Cmd) error {
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	c.Cancel = func() error {
 		if c.Process != nil {

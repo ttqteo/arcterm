@@ -777,11 +777,17 @@ export function readingLine(draft: CouncilSetupDraft): string {
     return `${who} ${panel.length === 1 ? "expert reads" : "experts read"} the code first; then they argue over text only`;
 }
 
-/** Pure: the one line under the composer: the group, its experts by name, and the coordinator who writes the answer;
- *  empty with no expert. */
+/** Pure: the one line under the composer: the group, its experts by name, each with what it looks at in brackets (a
+ *  stock role's phrase in the draft's language; a role with none reads by its name alone), and the coordinator who
+ *  writes the answer; empty with no expert. */
 export function expertsLine(draft: CouncilSetupDraft, lib: RoleLibrary): string {
     const lang = setupLang(draft);
-    const names = draft.experts.filter((e) => !e.coordinator).map((e) => seatName(e, lang));
+    const names = draft.experts
+        .filter((e) => !e.coordinator)
+        .map((e) => {
+            const focus = lang === "vi" ? e.focusvi : e.focus;
+            return focus ? `${seatName(e, lang)} (${focus})` : seatName(e, lang);
+        });
     if (names.length === 0) {
         return "";
     }
