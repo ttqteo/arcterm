@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    boxAnswersAsk,
     factsLine,
     HANDOFF_CHOICES,
     HANDOFF_HEADER,
@@ -13,6 +14,21 @@ import {
     planFacts,
     planPathOf,
 } from "./chathandoff";
+
+describe("boxAnswersAsk", () => {
+    it("lets the box answer a live handoff in words", () => {
+        expect(boxAnswersAsk({ questions: [{ header: "Handoff" }] })).toBe(true);
+        expect(boxAnswersAsk({ hold: false, questions: [{ header: "Handoff" }] })).toBe(true);
+    });
+    it("leaves every other ask to wait behind its question", () => {
+        expect(boxAnswersAsk(undefined)).toBe(false);
+        expect(boxAnswersAsk({ questions: [{ header: "Approach" }] })).toBe(false);
+        expect(boxAnswersAsk({ questions: [{ header: "Handoff" }, { header: "Other" }] })).toBe(false);
+    });
+    it("never answers a held ask, which is answered on its card", () => {
+        expect(boxAnswersAsk({ hold: true, questions: [{ header: "Handoff" }] })).toBe(false);
+    });
+});
 
 describe("isHandoffAsk", () => {
     it("recognizes one question with the header Handoff", () => {

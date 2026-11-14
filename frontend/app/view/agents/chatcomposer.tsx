@@ -57,6 +57,7 @@ import type { AgentsViewModel } from "./agents";
 import { sleepingLine, wakeAgent, wakeErrorToast } from "./agentsleep";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
+import { answerAgentAsk } from "./askanswer";
 import { AttachmentTray } from "./attachmenttray";
 import { useBashComplete } from "./bashcomplete";
 import { bashGhost } from "./chatbash";
@@ -65,6 +66,7 @@ import { ChatBgLine } from "./chatbgline";
 import { boxState, boxTabPlaceholder, type BoxState, type HintPart } from "./chatboxstate";
 import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold, usePartMotion } from "./chatfooter";
+import { boxAnswersAsk } from "./chathandoff";
 import {
     dropSwitchLine,
     holdSwitchLine,
@@ -491,7 +493,11 @@ function ComposerBox({
     // once the prompt is answered.
     const permissionOref = agent.blockId != null ? `block:${agent.blockId}` : undefined;
     const permission = usePermission(permissionOref);
-    const hold = asleep ? null : sendHold(permission.length > 0, agent.ask != null && !agent.ask.hold);
+    // The plan handoff is the exception: its card points at the box, so what is typed is sent as the ask's typed answer
+    // (the answer path the card's rows use, which locks the ask) instead of waiting behind it. Files riding the message
+    // can't go in an ask's answer, so with any attached it waits as before.
+    const answersAsk = !asleep && boxAnswersAsk(agent.ask) && att.attachments.length === 0;
+    const hold = asleep ? null : sendHold(permission.length > 0, agent.ask != null && !agent.ask.hold && !answersAsk);
     const held = useHeldSend(agent.id);
     const ready = canSend && blocker == null;
     const sendable = ready && hold == null;
@@ -516,6 +522,18 @@ function ComposerBox({
         }
         if (hold != null && ready) {
             setHeldSend(agent.id, true);
+            return;
+        }
+        if (answersAsk && ready) {
+            const words = text.trim();
+            // nothing typed, or the ask was already answered (a row clicked meanwhile): nothing goes
+            if (words === "" || !answerAgentAsk(model, agent.id, {}, { 0: words })) {
+                return;
+            }
+            onSent?.(words);
+            recalled.current = { at: null, shown: "" };
+            noteSent(agent.id, words);
+            setTextAt("");
             return;
         }
         if (wakeOnly && att.attachments.length === 0) {
