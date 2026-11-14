@@ -36,6 +36,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council started in a folder that is not one of your projects shows in the tree, in Home's folder.
 - A Token burn card raised inside a run (a worker starting subagents, or `wsh council start`) comes to you in Needs
   you at once, instead of sitting with the run's lead until it was refused 30 minutes later.
+- `wsh agents list` also shows the agents working in a folder that is not one of your projects, marked `(no
+  project)`, and ends with how many agents other projects have, so an agent can find one you opened in a scratch
+  folder.
 
 ### Changed
 
