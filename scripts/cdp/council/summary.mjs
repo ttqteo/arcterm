@@ -652,6 +652,29 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify({ open, swapped, one, framedAfter }) };
         });
 
+        // the shot docs/guide/council.md shows under Báo cáo (docs/guide/images/council-report.png): the Report on this done
+        // council, its first card closed and its page at the top. The fixture's one reply after the summary is the person's
+        // own, so the Report is current: no "Outdated" anywhere on the page
+        await step("the guide's Report shot: the Report at its top with its first card closed, and no Outdated text anywhere", async () => {
+            await openSummary(h, ctx);
+            // direct scrollTop cancels a glide in flight
+            await h.ev(`document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)}).scrollTop = 0`);
+            await sleep(300);
+            const facts = await h.ev(`(() => {
+                const box = document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)});
+                return {
+                    scrollTop: box.scrollTop,
+                    firstOpen: document.querySelector(${q(DIRECTION(1))})?.getAttribute("aria-expanded") ?? null,
+                    outdated: [...document.querySelectorAll("*")]
+                        .filter((el) => el.children.length === 0 && /Outdated/.test(el.textContent ?? ""))
+                        .map((el) => (el.textContent ?? "").trim()),
+                };
+            })()`);
+            await h.shot("cdp-shots/council-report.png");
+            const ok = facts.scrollTop === 0 && facts.firstOpen === "false" && facts.outdated.length === 0;
+            return { ok, detail: JSON.stringify(facts) };
+        });
+
         await step("Ask next lists the report's three questions with whom each is for, and a click opens the Discussion with it in the box", async () => {
             await openSummary(h, ctx);
             const rows = await h.ev(
