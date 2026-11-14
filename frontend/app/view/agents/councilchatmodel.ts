@@ -1584,3 +1584,14 @@ export function composerMarks(text: string, c: Council): ComposerMark[] | null {
     }
     return segments.map((s) => (s.kind === "file" ? { kind: "file", text: `@${s.path}` } : s));
 }
+
+/** Pure: the ask Tab picks next (Shift+Tab: the one before), wrapping round; none picked starts at the first (Shift+Tab:
+ *  the last), as Chat's stepPick. */
+export function stepAsk(asks: readonly string[], picked: string | null, back: boolean): string | null {
+    const n = asks.length;
+    if (n === 0) {
+        return null;
+    }
+    const at = picked == null ? -1 : asks.indexOf(picked);
+    return asks[at < 0 ? (back ? n - 1 : 0) : (at + (back ? -1 : 1) + n) % n];
+}

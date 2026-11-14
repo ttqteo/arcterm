@@ -1492,7 +1492,8 @@ function SuggestChips({
     );
 }
 
-function Chip({
+// a suggested reply's chip, shared with the council's boxes (councilchat.tsx ComposerAsks)
+export function Chip({
     icon: Icon,
     label,
     title,

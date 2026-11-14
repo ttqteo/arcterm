@@ -27,8 +27,17 @@
 // `council-discussion`. The store's actions answer `{ ok, error }`; a refusal shows in the header (the `acts` the
 // discussion shares).
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { useCopyFeedback, type CopyState } from "@/app/element/copyfeedback";
-import { MOTION, computeEntrances, initialEntranceState, sentRise, sheetPanel } from "@/app/element/motiontokens";
+import {
+    MOTION,
+    computeEntrances,
+    initialEntranceState,
+    microFade,
+    sentRise,
+    sheetPanel,
+    springReveal,
+} from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { Tooltip } from "@/app/element/tooltip";
 import { buildCouncilBindings } from "@/app/store/keybindings/bindings";
@@ -78,6 +87,8 @@ import {
     type RefObject,
 } from "react";
 import { flushSync } from "react-dom";
+import { Chip } from "./chatcomposer";
+import { usePartMotion } from "./chatfooter";
 import { QuoteButton, type QuoteTarget } from "./chatquotebutton";
 import type { Actions } from "./councilactions";
 import {
@@ -106,12 +117,12 @@ import {
     replyTarget,
     seatChips,
     seatLink,
+    stepAsk,
     textEdit,
     threadAsks,
     toolsOfChoice,
     type AgreeSignal,
     type AnswerQuote,
-    type AskChip,
     type ChannelItem,
     type ChatPick,
     type ChatThread,
@@ -2174,6 +2185,7 @@ function Composer({
     labelledBy,
     returnTo,
     chats,
+    asks = NO_ASKS,
 }: {
     c: Council;
     scope: "channel" | "thread";
@@ -2183,6 +2195,7 @@ function Composer({
     labelledBy: string;
     returnTo: () => HTMLElement | null;
     chats: readonly SeatableAgent[]; // the live chats `@` lists under Add a live chat (the ones no seat holds)
+    asks?: readonly string[]; // what to ask next (askChips, threadAsks): chips in the box, as Chat's suggested replies
 }) {
     const [drafts, setDrafts] = useAtom(councilChatDraftAtom(c.id));
     const text = drafts.texts[proposalId] ?? "";
@@ -2300,6 +2313,41 @@ function Composer({
             box.current?.setSelectionRange(next.caret, next.caret);
         });
     };
+    // the ask Tab picked, kept by its text, so a row that changes under it lets it go; typing lets it go too
+    const [pickedText, setPickedAsk] = useState<string | null>(null);
+    const pickedAsk = pickedText != null && asks.includes(pickedText) ? pickedText : null;
+    // an ask goes into the box in place of what it holds, caret at its end, as an edit Ctrl+Z takes back
+    const takeAsk = (a: string) => {
+        setPickedAsk(null);
+        put({ text: a, caret: a.length });
+    };
+    // Enter on a picked ask sends it, as Chat's Enter sends a suggested reply: it goes into the box first, and the send
+    // runs once the box holds it, so the seats, files and chats it names are read from it as from a typed message. Over
+    // text the person typed it asks first, as Chat does
+    const [sendAsk, setSendAsk] = useState<string | null>(null);
+    useEffect(() => {
+        if (sendAsk != null && text === sendAsk) {
+            setSendAsk(null);
+            void send();
+        }
+    }, [text, sendAsk]);
+    const sendPickedAsk = (a: string) => {
+        const go = () => {
+            takeAsk(a);
+            setSendAsk(a);
+        };
+        if (text.trim() === "" || text === a) {
+            go();
+            return;
+        }
+        setPickedAsk(null);
+        pushToast({
+            title: "Replace what you typed?",
+            message: `Sending “${a}” drops the text in the box.`,
+            level: "warn",
+            action: { label: "Send", run: go },
+        });
+    };
     const chooseSeat = (seat: CouncilExpert) => {
         if (picker != null) {
             put(insertMention(text, picker.start, caret, seat));
@@ -2339,6 +2387,32 @@ function Composer({
     const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.nativeEvent.isComposing) {
             return;
+        }
+        // Tab and Shift+Tab walk the asks as they walk Chat's suggested replies; with one picked, Enter sends it as Chat's
+        // Enter does, Shift+Enter puts it in the box to edit first (a click does the same: a stray click would spend a
+        // seat's turn), and Esc lets go of it. Nothing is picked once the person types, so Shift+Enter is a new line
+        // again then. An open `@` list keeps Tab
+        if (picker == null && asks.length > 0 && !e.altKey && !e.ctrlKey && !e.metaKey) {
+            if (e.key === "Tab") {
+                e.preventDefault();
+                setPickedAsk(stepAsk(asks, pickedAsk, e.shiftKey));
+                return;
+            }
+            if (pickedAsk != null && e.key === "Enter") {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    takeAsk(pickedAsk);
+                } else {
+                    sendPickedAsk(pickedAsk);
+                }
+                return;
+            }
+            if (pickedAsk != null && e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                setPickedAsk(null);
+                return;
+            }
         }
         if (picker != null) {
             const n = rowCount;
@@ -2630,11 +2704,18 @@ function Composer({
                             rows={1}
                             value={text}
                             aria-labelledby={labelledBy}
-                            placeholder={placeholder}
+                            placeholder={
+                                pickedAsk != null
+                                    ? "Enter sends · Shift+Enter edits first · Tab next · Esc back to typing"
+                                    : asks.length > 0
+                                      ? `${placeholder} · Tab picks a suggestion`
+                                      : placeholder
+                            }
                             onChange={(e) => {
                                 setText(e.target.value);
                                 setCaret(e.target.selectionStart);
                                 setPick(0);
+                                setPickedAsk(null);
                             }}
                             onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
                             onScroll={(e) => syncMarks(e.currentTarget, marksRef.current)}
@@ -2668,6 +2749,17 @@ function Composer({
                         )}
                     </button>
                 </div>
+                <AnimatePresence initial={false}>
+                    {asks.length > 0 && (
+                        <ComposerAsks
+                            key="asks"
+                            scope={scope}
+                            asks={asks}
+                            picked={pickedAsk}
+                            onTake={(a) => takeAsk(a)}
+                        />
+                    )}
+                </AnimatePresence>
             </div>
             {/* the switch and the cost line share one row under the box; the cost line wraps under the switch when
                 the thread panel is too narrow for both. Both are about a message, so the row waits for one: hidden
@@ -2760,76 +2852,49 @@ function focusComposer(key: string) {
     );
 }
 
-// puts a suggested question in the channel's or the thread's box in place of what it holds, caret at its end, as an
-// edit Ctrl+Z takes back (editBox); with no box on the page, or one the browser will not edit, `write` stores it
-function fillComposer(which: "channel" | "thread", t: string, write: () => void) {
-    const box = document.querySelector<HTMLTextAreaElement>(
-        `[data-council-composer="${which}"] [data-council-composer-input]`
-    );
-    if (box != null && editBox(box, t, t.length)) {
-        return;
-    }
-    write();
-    requestAnimationFrame(() => {
-        const el = document.querySelector<HTMLTextAreaElement>(
-            `[data-council-composer="${which}"] [data-council-composer-input]`
-        );
-        el?.focus();
-        el?.setSelectionRange(t.length, t.length);
-    });
-}
+const NO_ASKS: readonly string[] = [];
 
-// the last line of the channel, under the newest message, so it shows to a reader at the latest and scrolls away with
-// the rest; a click puts the question in the channel's box, `@` seat and all, to edit and send
-function AskNext({ c, asks }: { c: Council; asks: AskChip[] }) {
-    const setDrafts = useSetAtom(councilChatDraftAtom(c.id));
-    const fill = (t: string) =>
-        fillComposer("channel", t, () => setDrafts((d) => ({ ...d, texts: { ...d.texts, [""]: t } })));
+// what to ask next, as a line of chips in the box under the text, drawn as Chat's suggested replies (chatcomposer.tsx
+// Chip): the row and each chip fade in and out. The channel's comes from the report (askChips), a thread's from its
+// newest seat answer (threadAsks). A click, or Shift+Enter on the one Tab picked, puts it in the box to edit and send;
+// Enter on it sends it at once, as in Chat. They stay while the person types, and a pick replaces the text.
+function ComposerAsks({
+    scope,
+    asks,
+    picked,
+    onTake,
+}: {
+    scope: "channel" | "thread";
+    asks: readonly string[];
+    picked: string | null;
+    onTake: (a: string) => void;
+}) {
+    const row = usePartMotion(springReveal);
+    const part = usePartMotion(microFade);
     return (
-        <div role="group" aria-label="Ask next" data-council-asks className="flex flex-wrap items-center gap-[6px]">
-            <span className="text-[12px] text-muted">Ask next</span>
-            {asks.map((a, i) => (
-                <button
-                    key={a.text}
-                    type="button"
-                    data-council-ask={i}
-                    onClick={() => fill(a.fill)}
-                    title="Put it in the box to edit and send"
-                    className="max-w-full cursor-pointer truncate rounded-full border border-edge-mid bg-transparent px-[12px] py-[4px] text-left text-[13px] text-secondary outline-none hover:border-edge-strong hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                    {a.fill}
-                </button>
-            ))}
-        </div>
-    );
-}
-
-// what the newest seat answer in a thread suggests the person send next (threadAsks), over the thread's box: a click
-// puts it in the box to edit and send, as Ask next does; sending at once would spend a seat's turn on a guess
-function ThreadAsks({ c, proposalId, asks }: { c: Council; proposalId: string; asks: string[] }) {
-    const setDrafts = useSetAtom(councilChatDraftAtom(c.id));
-    const fill = (t: string) =>
-        fillComposer("thread", t, () => setDrafts((d) => ({ ...d, texts: { ...d.texts, [proposalId]: t } })));
-    return (
-        <div
+        <motion.div
+            {...row}
             role="group"
-            aria-label="Suggested replies"
-            data-council-thread-asks
-            className="flex flex-none flex-wrap justify-end gap-[6px] px-3 pt-[8px]"
+            aria-label={scope === "channel" ? "Ask next" : "Suggested replies"}
+            data-council-asks={scope}
+            className="overflow-hidden"
         >
-            {asks.map((a, i) => (
-                <button
-                    key={a}
-                    type="button"
-                    data-council-thread-ask={i}
-                    onClick={() => fill(a)}
-                    title="Put it in the box to edit and send"
-                    className="max-w-full cursor-pointer truncate rounded-full border border-edge-mid bg-transparent px-[12px] py-[4px] text-left text-[13px] text-secondary outline-none hover:border-edge-strong hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                    {a}
-                </button>
-            ))}
-        </div>
+            <div className="flex flex-wrap items-center gap-1.5 pt-px">
+                <AnimatePresence initial={false}>
+                    {asks.map((a, i) => (
+                        <motion.div key={a} {...part} className="min-w-0">
+                            <Chip
+                                label={a}
+                                picked={a === picked}
+                                title={`${a}\n\nClick to put it in the box and edit it · Tab, then Enter sends it`}
+                                onClick={() => onTake(a)}
+                                data={{ "data-council-ask": String(i) }}
+                            />
+                        </motion.div>
+                    ))}
+                </AnimatePresence>
+            </div>
+        </motion.div>
     );
 }
 
@@ -2921,7 +2986,7 @@ function ThreadPanel({
     // a reply box only on a sent idea: a held one has no thread yet, and the Chat's box is the one under the list
     const replies = thread.kind === "idea";
     // what the newest seat answer suggests sending next: it stays while the person types, and a click replaces the text
-    const asks = replies ? threadAsks(items) : [];
+    const asks = useMemo(() => (replies ? threadAsks(items) : NO_ASKS), [replies, items]);
     const onScroll = useKeptScroll(scroller, `thread:${c.id}:${thread.id}`, {
         follow: true,
         start: "top",
@@ -2985,7 +3050,6 @@ function ThreadPanel({
                     )
                 )}
             </div>
-            {asks.length > 0 && <ThreadAsks c={c} proposalId={thread.id} asks={asks} />}
             {replies && (
                 <div className="flex-none px-3 pb-4 pt-[10px]">
                     <span id="council-thread-reply-label" className="sr-only">
@@ -3000,6 +3064,7 @@ function ThreadPanel({
                         labelledBy="council-thread-reply-label"
                         returnTo={() => document.querySelector<HTMLElement>("[data-council-thread]")}
                         chats={chats}
+                        asks={asks}
                     />
                 </div>
             )}
@@ -3784,7 +3849,7 @@ export function CouncilChat({
     const send = useSendState(all);
     const items = useMemo(() => shownItems(all, send.holdTyping), [all, send.holdTyping]);
     // Ask next stays while the person types: a click replaces what is in the box
-    const asks = isFollowUp(c) ? askChips(c) : [];
+    const askFills = useMemo(() => (isFollowUp(c) ? askChips(c).map((a) => a.fill) : NO_ASKS), [c]);
     const seats = useMemo(() => seatChips(c), [c]);
     const onlySeat = onlyId == null ? null : (seats.find((chip) => chip.id === onlyId) ?? null);
     const order = useMemo(() => ideaOrder(items), [items]);
@@ -4033,7 +4098,7 @@ export function CouncilChat({
                         boxRef={channel}
                         councilId={c.id}
                         view={onlyId ?? ""}
-                        count={items.length + (asks.length > 0 ? 1 : 0)}
+                        count={items.length}
                         sent={ownPosts(items)}
                     >
                         {items.map((item) => {
@@ -4082,7 +4147,6 @@ export function CouncilChat({
                                     return <TypingLine key={item.id} item={item} />;
                             }
                         })}
-                        {asks.length > 0 && <AskNext c={c} asks={asks} />}
                     </Channel>
                     {/* the channel's column: its px-6, its 10px scrollbar gutter on the right, its 860px centred */}
                     <div className="flex-none pb-4 pl-6 pr-[34px] pt-[10px]">
@@ -4099,6 +4163,7 @@ export function CouncilChat({
                                 labelledBy="council-channel-label"
                                 returnTo={() => channel.current}
                                 chats={chats}
+                                asks={askFills}
                             />
                         </div>
                     </div>

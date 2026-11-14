@@ -39,6 +39,7 @@ import {
     seatChips,
     seatLink,
     stackSeats,
+    stepAsk,
     stepChip,
     textEdit,
     threadAsks,
@@ -2656,5 +2657,22 @@ describe("agreeSignal: the agree word on an idea's signal line", () => {
             title: "Committee member and Methodologist",
         });
         expect(agreeSignal(["UX", "RAM", "Skeptic"])).toEqual({ word: "3 agree", title: "UX, RAM and Skeptic" });
+    });
+});
+
+describe("stepAsk", () => {
+    const asks = ["a", "b", "c"];
+    it("starts at the first, or the last going back", () => {
+        expect(stepAsk(asks, null, false)).toBe("a");
+        expect(stepAsk(asks, null, true)).toBe("c");
+    });
+    it("walks and wraps round both ways", () => {
+        expect(stepAsk(asks, "a", false)).toBe("b");
+        expect(stepAsk(asks, "c", false)).toBe("a");
+        expect(stepAsk(asks, "a", true)).toBe("c");
+    });
+    it("treats a pick no longer in the row as none, and an empty row as nothing", () => {
+        expect(stepAsk(asks, "gone", false)).toBe("a");
+        expect(stepAsk([], null, false)).toBeNull();
     });
 });

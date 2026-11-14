@@ -34,6 +34,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   conversation (Ctrl-click peeks it).
 - **Pin tabs in Float**: right-click a tab on the strip under a float's terminal and pick **Pin tab**. Pinned tabs
   come first and never fold into "+N"; **Unpin tab** lets one go.
+- A council's questions to ask next sit in the message box as Chat's suggested replies do, and fade in and out:
+  `Tab` picks one, `Enter` sends it, `Shift`+`Enter` (or a click) puts it in the box to edit first. A thread's
+  suggested replies sit in its reply box the same way.
 - In a council's Discussion, select text in a message and click Reply: it goes into the message box as a quote (the
   thread's reply box when you selected it in a thread), as in Chat.
 - A council's experts write formulas as LaTeX, and the Discussion draws them as typeset math, as Chat does.
