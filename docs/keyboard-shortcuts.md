@@ -315,13 +315,14 @@ Opened from a project folder's menu, Open overview. It covers the terminal as Hi
 A council's Discussion is a channel with threads: each idea is a message, and its reply chip opens the thread in a panel
 on the right. A council covers the terminal as History does, so the agent keys (`j` / `k`, the arrows, `d`, `f`…) stand
 down there and `Esc` goes back to the terminal. These keys are the chat's only while focus is inside its channel or
-thread (click it, or `Tab` to it), not in a text field; elsewhere nothing here is live.
+thread (click it, or `Esc` out of a box), not in a text field; elsewhere nothing here is live.
 
 | Keys | Action |
 |---|---|
 | `j` / `k` | Move the cursor to the next / previous idea of the channel (ringed). It stops at either end |
 | `Enter` | Open the thread of the idea under the cursor. With a button focused (Send to the others, Edit, Drop, an idea's reply chip) `Enter` presses that button instead |
 | `p` | Set the idea under the cursor as the council's direction: its title becomes the line every seat reads first (the Memory tab). The direction is checked against what the seats agreed first, so a clash is held there for you to Edit, Set anyway or Discard. Needs an idea under the cursor; a message is set with its **Set as direction** pin button |
+| `Tab` | Reading the council with the focus out of a box (after a scroll, or a click on an idea or a pill), put the focus back in the message box so you type on: the open thread's reply box when the focus is in that thread, else the channel's. Not from a field, where Tab is its own; with the Report or the Map shown it passes |
 | `Esc` | Close the open thread, which gives `j` / `k` back to the channel. With no thread open, `Esc` leaves the council for the terminal. In the message box or a thread's reply box, `Esc` returns focus to the channel or thread first |
 | `Enter` | In the message box: send. `Shift`+`Enter` adds a line. After an `@`, `↑` / `↓` pick a seat and `Enter` or `Tab` takes it, `Esc` closes the list |
 

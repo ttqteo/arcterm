@@ -34,6 +34,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   conversation (Ctrl-click peeks it).
 - **Pin tabs in Float**: right-click a tab on the strip under a float's terminal and pick **Pin tab**. Pinned tabs
   come first and never fold into "+N"; **Unpin tab** lets one go.
+- A council's Discussion takes `Tab` as Chat does: with the focus out of the box (after a scroll or a click on an
+  idea), `Tab` puts it back in the message box, or in the open thread's reply box.
 - In Chat, `Tab` walks the suggested replies under the box (`Shift`+`Tab` back) and `Enter` sends the one it picked,
   which shows the Enter key; the empty box says so. Reply chips lose the ↵ arrow that read as Enter on every one.
 - Chat draws a council the agent started as a card, like its runs and verdicts: while the council runs it sits at the

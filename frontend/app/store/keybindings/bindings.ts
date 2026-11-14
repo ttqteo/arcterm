@@ -2385,6 +2385,31 @@ export function buildCouncilBindings(): Binding[] {
             },
         },
         {
+            // Chat's Tab (agent:chat-focus-box) in the council's chat: reading it with the focus out of a box (a scroll,
+            // a click on an idea or a pill), Tab puts it back in the box, the open thread's when the focus is in that
+            // thread, else the channel's. Not from a field, where Tab is its own; it passes with no box on screen (the
+            // Report or the Map shown)
+            id: "council:focus-box",
+            keys: "Tab",
+            group: "Agent",
+            label: "Type in the council's message box",
+            when: (ctx) =>
+                navigateStrict(ctx) && ctx.surface === "agent" && globalStore.get(centerModeAtom) === "council",
+            paletteHidden: true,
+            run: () => {
+                const inThread = document.activeElement?.closest?.("[data-council-thread]") != null;
+                const pick = (scope: "channel" | "thread") =>
+                    document.querySelector<HTMLTextAreaElement>(
+                        `[data-council-composer="${scope}"] [data-council-composer-input]`
+                    );
+                const box = (inThread ? pick("thread") : null) ?? pick("channel") ?? pick("thread");
+                if (box == null || box.disabled) {
+                    return false;
+                }
+                box.focus();
+            },
+        },
+        {
             id: "council:close-thread",
             keys: "Escape",
             group: "Agent",
