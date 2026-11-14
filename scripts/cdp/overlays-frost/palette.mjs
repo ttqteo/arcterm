@@ -1,6 +1,6 @@
 // overlays-frost-palette: the command palette's panel frosted over today's dialog scrim (board B-todays-scrim.dc.html in
-// the overlays-chat-look canvas; spec docs/superpowers/specs/2026-11-14-overlays-chat-look-design.md section 3, plan
-// docs/superpowers/plans/2026-11-14-overlays-chat-look.md Task 3).
+// the overlays-chat-look canvas; spec docs/superpowers/specs/2026-11-14-overlays-chat-look-design.md section 3, the
+// plan's Task 3).
 //
 // The palette stays a ModalShell dialog with the scrim it has today (black 60% with a blur). ModalShell's `frosted` prop
 // makes that scrim a sibling layer behind the panel's click-through positioning container, so the panel's own blur samples

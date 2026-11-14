@@ -1,5 +1,5 @@
-// Overlays in the Chat look: the frosted fill (docs/superpowers/specs/2026-11-14-overlays-chat-look-design.md, plan
-// docs/superpowers/plans/2026-11-14-overlays-chat-look.md). One group of scenarios, `overlays-frost-*`, one file per area
+// Overlays in the Chat look: the frosted fill (docs/superpowers/specs/2026-11-14-overlays-chat-look-design.md;
+// the plan's tasks are named below, and git history keeps the plan). One group of scenarios, `overlays-frost-*`, one file per area
 // under overlays-frost/, so the tasks that run at the same time each own their own file:
 //   palette.mjs  overlays-frost-palette                              the command palette over today's scrim   (Task 3)
 //   menus.mjs    overlays-frost-menus                                context menus, PickerList dropdowns      (Task 2)

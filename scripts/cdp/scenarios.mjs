@@ -60910,7 +60910,7 @@ const CR_KIT = {
     bsSeeHints,
 };
 
-// what the overlays-frost-* scenarios (scenarios-overlays-frost.mjs, docs/superpowers/plans/2026-11-14-overlays-chat-look.md)
+// what the overlays-frost-* scenarios (scenarios-overlays-frost.mjs, docs/superpowers/specs/2026-11-14-overlays-chat-look-design.md)
 // need of this file: the Chat redesign's kit, and `scenario(name)`, the registered scenario of that name. It looks the name
 // up in SCENARIOS when it is called, not when the kit is built (SCENARIOS is still being built then), so a step can run an
 // existing scenario's arrange / teardown (consumers-popover, jobqueue-chip, notify-toast…) without this file exporting it.

@@ -1,5 +1,5 @@
-// overlays-frost-agents: the agent sidebar's, the launcher's and Radar's popovers, frosted (docs/superpowers/plans/
-// 2026-11-14-overlays-chat-look.md, Task 5). One step per changed site: open it, wait for its reveal to end, run the
+// overlays-frost-agents: the agent sidebar's, the launcher's and Radar's popovers, frosted (docs/superpowers/specs/
+// 2026-11-14-overlays-chat-look-design.md, the plan's Task 5). One step per changed site: open it, wait for its reveal to end, run the
 // shared frost check (frostcheck.mjs) on its panel, screenshot it, close it.
 //
 // The panel is the element that carries `frost`: the PopoverReveal motion element, or the panel itself where the site is a

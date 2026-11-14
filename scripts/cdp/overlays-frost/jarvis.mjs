@@ -1,5 +1,5 @@
 // overlays-frost-jarvis: the Jobs popover first, then Jarvis' and Code's popovers, frosted, one step per changed site
-// (docs/superpowers/plans/2026-11-14-overlays-chat-look.md, Task 6; spec 2026-11-14-overlays-chat-look-design.md section 2).
+// (docs/superpowers/specs/2026-11-14-overlays-chat-look-design.md section 2, the plan's Task 6).
 //
 // One fixture Claude agent over a real tab with a fixture roster row in state working (the page's dev mock roster) and a
 // throwaway git project registered with the app, plus one real initiative with two chunks (the Jarvis steps). Every panel

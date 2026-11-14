@@ -1,5 +1,5 @@
 // overlays-frost-menus: context menus (with a submenu) and the PickerList dropdowns, frosted, over a working agent
-// (docs/superpowers/plans/2026-11-14-overlays-chat-look.md, Task 2; spec 2026-11-14-overlays-chat-look-design.md section 2).
+// (docs/superpowers/specs/2026-11-14-overlays-chat-look-design.md section 2, the plan's Task 2).
 //
 // One fixture Claude agent over a real tab with a fixture roster row in state working (the page's dev mock roster), and a
 // throwaway git project registered with the app (the launcher's `@` list needs one). Every panel goes through frostVerdict

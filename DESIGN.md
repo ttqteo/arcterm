@@ -523,8 +523,9 @@ Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
     submenu in its menu) therefore renders outside its parent, as a sibling or
     in a portal, and each level frosts what is behind it.
   - A card, sheet, strip or button that only carries `shadow-popover*` is not an
-    overlay and stays solid; so does the tray menu, drawn in an OS window of its
-    own with nothing of the app behind it.
+    overlay and stays solid; so do the tray menu and the folded Sprout window's
+    bubble, peek and stay menu (`sprout-mini.tsx`), each drawn in an OS window of
+    its own with nothing of the app behind it.
   - Two exceptions: the **palette keeps the dialog scrim** (black 60% with
     `backdrop-blur-sm`, see Modals), and **tooltips and the hover title tip stay
     solid** `surface-raised` chips.

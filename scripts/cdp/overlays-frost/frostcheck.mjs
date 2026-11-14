@@ -1,4 +1,4 @@
-// The check every overlays-frost-* scenario runs on a panel (docs/superpowers/plans/2026-11-14-overlays-chat-look.md):
+// The check every overlays-frost-* scenario runs on a panel (docs/superpowers/specs/2026-11-14-overlays-chat-look-design.md):
 // is it drawn on the `frost` class (frontend/tailwindsetup.css), and does the blur really have a backdrop to show?
 //
 //   const r = await h.ev(frostProbe('[data-context-menu]'));

@@ -1,6 +1,6 @@
 // overlays-frost-toast: the toast's committed fill draws (frost, or solid if the measurement kept it solid), and
 // overlays-frost-toast-timing, the one-off frame-time measurement behind that choice (Final does not run it).
-// Docs/superpowers/plans/2026-11-14-overlays-chat-look.md, Task 8; spec 2026-11-14-overlays-chat-look-design.md section 4.
+// docs/superpowers/specs/2026-11-14-overlays-chat-look-design.md section 4 (the plan's Task 8).
 //
 // THE MEASUREMENT (overlays-frost-toast-timing). A toast is a backdrop-filter over whatever the app paints under the stack
 // in the bottom-right corner, so the worst case is a terminal streaming output there. The scenario floods a terminal tab

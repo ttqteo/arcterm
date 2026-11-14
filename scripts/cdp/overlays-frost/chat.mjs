@@ -1,5 +1,5 @@
-// overlays-frost-chat: Chat's and the council's popovers, frosted (docs/superpowers/plans/2026-11-14-overlays-chat-look.md,
-// Task 4). One step per changed site: it opens the panel, runs frostVerdict on it (the frost class's blur over the panel
+// overlays-frost-chat: Chat's and the council's popovers, frosted (docs/superpowers/specs/2026-11-14-overlays-chat-look-design.md,
+// the plan's Task 4). One step per changed site: it opens the panel, runs frostVerdict on it (the frost class's blur over the panel
 // colour, no backdrop root above it) and screenshots. The sites, by phase:
 //   chat      the footer's model menu, its Effort and More models submenus (each a sibling of the menu's panel, picked with a
 //             real click), the permission mode menu, the + menu, and the initiative card's chunk list
