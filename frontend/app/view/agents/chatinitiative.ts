@@ -588,19 +588,30 @@ export function withoutSwitchLine(pending: PendingMap, agentId: string): Pending
  *  whole multi-line message as one pasted block, which is what a message carrying result lines is, so a wrapped message
  *  is read as the paste first; one with lines comes back unwrapped, one with none comes back exactly as it was. */
 export function stripResultLines(text: string): string {
-    const body = unwrapWholePaste(text);
-    const lines = body.split("\n");
-    let n = 0;
-    while (n < lines.length && RESULT_LINE.test(lines[n].replace(/\r$/, ""))) {
+    const { lines, body } = splitResultLines(text);
+    return lines.length === 0 ? text : body;
+}
+
+/** Pure: the chunk a sent message moved the agent to, read from its switched result line (the last, if several); null
+ *  for a message that carries none. Chat draws it as a divider over the message, so a conversation says where each
+ *  chunk's work begins. */
+export function sentSwitch(text: string): { n: number; label: string } | null {
+    return pendingSwitch(splitResultLines(text).lines);
+}
+
+// the leading result lines of a transcript message (\r dropped) and the text after them and the one blank line that
+// follows; no lines leave the body as the unwrapped paste
+function splitResultLines(text: string): { lines: string[]; body: string } {
+    const all = unwrapWholePaste(text).split("\n");
+    const lines: string[] = [];
+    while (lines.length < all.length && RESULT_LINE.test(all[lines.length].replace(/\r$/, ""))) {
+        lines.push(all[lines.length].replace(/\r$/, ""));
+    }
+    let n = lines.length;
+    if (n > 0 && n < all.length && all[n].replace(/\r$/, "") === "") {
         n++;
     }
-    if (n === 0) {
-        return text;
-    }
-    if (n < lines.length && lines[n].replace(/\r$/, "") === "") {
-        n++;
-    }
-    return lines.slice(n).join("\n");
+    return { lines, body: all.slice(n).join("\n") };
 }
 
 // ---- topics ----

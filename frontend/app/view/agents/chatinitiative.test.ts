@@ -35,6 +35,7 @@ import {
     queueLine,
     readStoredMap,
     resultLine,
+    sentSwitch,
     settleCard,
     startsInEditor,
     stripResultLines,
@@ -675,6 +676,30 @@ describe("resultLine", () => {
 
     it("is one line whatever the title holds", () => {
         expect(resultLine(note({ initiative: "two\nlines" }))).not.toContain("\n");
+    });
+});
+
+describe("sentSwitch", () => {
+    const sw = switchLine(5, "Headless claude -p (bypass)", "effort:abc");
+
+    it("reads the chunk a sent message moved the agent to", () => {
+        expect(sentSwitch(withResultLines([sw], "go on"))).toEqual({ n: 5, label: "Headless claude -p (bypass)" });
+    });
+
+    it("takes the last switched line among the result lines, past the other kinds", () => {
+        const other = resultLine(note());
+        const first = switchLine(2, "first", "effort:abc");
+        expect(sentSwitch(withResultLines([first, other, sw], "go on"))?.n).toBe(5);
+        expect(sentSwitch(withResultLines([other], "go on"))).toBeNull();
+    });
+
+    it("reads a wrapped paste and a line with a carriage return", () => {
+        expect(sentSwitch(`<pasted_content id="a1">\n${sw}\r\n\r\ngo on\n</pasted_content id="a1">`)?.n).toBe(5);
+    });
+
+    it("is null for a plain message and for a switched line that is not leading", () => {
+        expect(sentSwitch("plain")).toBeNull();
+        expect(sentSwitch(`text\n${sw}`)).toBeNull();
     });
 });
 

@@ -194,7 +194,9 @@ function SwitchLine({ agent }: { agent: AgentVM }) {
                     <div
                         data-chat-switch-line=""
                         role="status"
-                        className="flex items-center gap-2 pb-2 pl-[18px] pr-3 text-[12px] text-muted"
+                        // a frame on the surface, as the goal strip has: the line floats over the conversation, which
+                        // scrolls under the dock, and with no ground of its own the turns below drew through its text
+                        className="mb-1.5 flex items-center gap-2 rounded-[10px] border border-edge-mid bg-surface py-[5px] pl-3 pr-1.5 text-[12px] text-muted"
                     >
                         <Diamond size={12} strokeWidth={1.8} aria-hidden className="flex-none" />
                         <span className="min-w-0 truncate">
