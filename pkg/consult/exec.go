@@ -76,10 +76,14 @@ func RunClaude(ctx context.Context, cwd, prompt string, o CallOpts, onTool func(
 
 // runClaudeSpec is RunClaude on a given spec: it wraps the spec's parser to watch the tool and result
 // events and runs it through the pipe path. The wrapper runs on the read loop's goroutine, one line at
-// a time, so the token total needs no lock.
+// a time, so the token total needs no lock. The reply is the result event's text, the final turn
+// alone, when it has one: the assistant events joined also hold a turn the model's safeguards stopped
+// part-way before claude went on on a fallback model, and that half-written reply ahead of the real
+// one broke a council's JSON ("invalid character '\n' in string").
 func runClaudeSpec(ctx context.Context, spec RuntimeSpec, cwd, prompt, model string, onTool func(string)) (string, Usage, error) {
 	parse := spec.ParseLine
 	var tokens int64
+	var result string
 	spec.ParseLine = func(line []byte) ParsedEvent {
 		ev := parse(line)
 		if ev.Tool != "" && onTool != nil {
@@ -88,9 +92,15 @@ func runClaudeSpec(ctx context.Context, spec RuntimeSpec, cwd, prompt, model str
 		if ev.Tokens > 0 {
 			tokens = ev.Tokens
 		}
+		if ev.Complete && ev.Err == nil && strings.TrimSpace(ev.Result) != "" {
+			result = ev.Result
+		}
 		return ev
 	}
 	full, err := runPipe(ctx, spec, cwd, prompt, func(string) {})
+	if err == nil && result != "" {
+		full = result
+	}
 	return full, Usage{Model: model, TotalTokens: int(tokens)}, err
 }
 

@@ -73,6 +73,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A council seat whose answer Claude's safeguards stopped part-way, and that Claude then finished on a fallback
+  model, no longer fails with "invalid character '\n' in string": the seat's answer is the fallback's reply alone.
 - A question card with several questions or a pick-many question can be sent again. Several questions end in a
   Submit tab, as in Claude Code's own picker, that lists your answers and sends them, with ← → to step through; a
   lone pick-many question has a Submit button. The card no longer says "press Enter to submit", which the Chat box
