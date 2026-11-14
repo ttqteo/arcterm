@@ -54,6 +54,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A long code block in Chat keeps its Wrap and Copy buttons in view as you scroll through it, just under the pinned
+  prompt.
 - Float's tabs follow the Agent tree: a run is one tab, its lead, instead of a tab for every worker it started, and a
   brainstorm's check sessions stay under the agent that started them.
 - The Note tab in Float and its `Cmd`+`Shift`+`N` shortcut are gone. The note's text stays in `notes/scratch.md` in
