@@ -128,7 +128,7 @@ export function AutonomyLadder() {
                 <PopoverReveal
                     open={open}
                     origin="top right"
-                    className="w-[300px] rounded-[11px] border border-border bg-surface p-[5px] shadow-popover-md"
+                    className="frost w-[300px] rounded-[11px] border border-border p-[5px] shadow-popover-md"
                 >
                     <div data-jarvis-autonomy="panel">
                         <div className="flex items-baseline gap-2 px-[9px] pb-1.5 pt-1">
@@ -151,7 +151,7 @@ export function AutonomyLadder() {
                                     onClick={() => apply(rung.tier, `Autonomy set to ${rung.label} for every project`)}
                                     className={cn(
                                         "flex w-full cursor-pointer items-start gap-2.5 rounded px-[9px] py-2 text-left hover:bg-surface-hover",
-                                        active ? "bg-surface-raised" : "bg-transparent"
+                                        active ? "bg-surface-selected" : "bg-transparent"
                                     )}
                                 >
                                     <span className="pt-[5px]">

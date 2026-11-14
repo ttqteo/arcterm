@@ -789,7 +789,7 @@ function Menu({ open, className, children }: { open: boolean; className: string;
             <div
                 data-jarvis-tracker-menu
                 onClick={(e) => e.stopPropagation()}
-                className="rounded-[8px] border border-edge-strong bg-surface-raised p-[5px] shadow-[0_12px_34px_var(--color-background)]"
+                className="frost rounded-[8px] border border-edge-strong p-[5px] shadow-[0_12px_34px_var(--color-background)]"
             >
                 {children}
             </div>

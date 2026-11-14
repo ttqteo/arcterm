@@ -152,8 +152,10 @@ export function PetBubble({
                 open={event != null}
                 origin={originOf(where)}
                 className={cn(
-                    "w-[268px] rounded-[12px] border bg-surface-raised has-[button:hover]:border-edge-strong",
-                    flat ? "border-edge-strong" : "border-border shadow-popover-md"
+                    "w-[268px] rounded-[12px] border has-[button:hover]:border-edge-strong",
+                    // flat is the folded window: it is see-through, so there is nothing for a frost to blur (the tray's
+                    // reason) and the bubble keeps a solid fill there
+                    flat ? "border-edge-strong bg-surface-raised" : "frost border-border shadow-popover-md"
                 )}
             >
                 {said != null ? (

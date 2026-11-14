@@ -113,7 +113,7 @@ export function PetHideButton({ onHidden }: { onHidden: () => void }) {
                     <PopoverReveal
                         open={open}
                         origin="top right"
-                        className="w-[232px] rounded-[10px] border border-edge-mid bg-surface-raised p-[4px] shadow-popover-md"
+                        className="frost w-[232px] rounded-[10px] border border-edge-mid p-[4px] shadow-popover-md"
                     >
                         <div ref={menuRef} role="menu" aria-labelledby={triggerId} data-pet-hide-menu>
                             {hideChoices(now).map((c) => {

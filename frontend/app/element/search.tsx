@@ -162,7 +162,7 @@ const SearchComponent = ({
         <>
             {isOpen && (
                 <FloatingPortal>
-                    <div className="search-container" style={{ ...floatingStyles }} ref={refs.setFloating}>
+                    <div className="search-container frost" style={{ ...floatingStyles }} ref={refs.setFloating}>
                         <Input
                             ref={inputRef}
                             placeholder="Search"

@@ -31,7 +31,7 @@ import { codeProjectAtom, codeWorktreesAtom, openInCode, registeredProjects } fr
 const BUTTON =
     "flex flex-none cursor-pointer items-center gap-1 rounded-[8px] border border-border bg-surface px-2 py-1 text-[12px] text-secondary hover:text-primary";
 const POPOVER =
-    "absolute right-0 top-[calc(100%+6px)] z-[60] overflow-hidden rounded-[10px] border border-border bg-surface p-2 shadow-popover-md";
+    "frost absolute right-0 top-[calc(100%+6px)] z-[60] overflow-hidden rounded-[10px] border border-border p-2 shadow-popover-md";
 const SEND_LABEL: Record<CopyState, string> = { idle: "Send review", copied: "Copied", failed: "Copy failed" };
 
 // Closes a popover on Escape and hands focus back to the button that opened it. The surface's own Escape (back to the
