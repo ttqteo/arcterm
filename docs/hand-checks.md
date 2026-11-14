@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Council fixes, 11-14 second batch.** Go-tested and typechecked; no dev app ran. (1) Paste a 4 MB
+  image into a council's chat → its chip reads `Image too large (over 3.5 MB)` at once (`council-discussion`,
+  attach-oversize). (2) In a done Review report with Also raised, press the header's `Also raised` jump link → the
+  page scrolls there and the ideas are unfolded (`council-summary`). (3) `wsh council summarize <id>` on a council
+  paused after round 1 → it prints `summarizing`, and `wsh council wait <id>` returns its report. Commit:
+  fix(council) one image cap, kept jump unfolds, summarize command, withdrawal round, Draft lookup outside the lock
 - [ ] (arcterm) **Council small fixes, 11-14 batch.** Unit-tested and typechecked only; no dev app ran. (1) Leave a
   council paused after round 1 in a registered project → the Cockpit's Needs you strip has a `Council` row; under
   another project's filter it is gone; Open lands on its Discussion (`task verify:ui -- council-needs-you`, step 4b).

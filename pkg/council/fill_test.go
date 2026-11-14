@@ -115,6 +115,35 @@ func TestFillOfAKeptItemGivesItsStancesAndAlsoRaised(t *testing.T) {
 	}
 }
 
+// The round a withdrawal reads is its withdrawing reply's, not the council's last reply pass: in a council of three
+// rounds a round-2 withdrawal says round 2, in its outcome and in the prompts that name it.
+func TestWithdrawnRoundIsItsWithdrawingReplys(t *testing.T) {
+	c := fillCouncil()
+	c.Rounds = 3
+	c.Replies = append(c.Replies,
+		CouncilReply{Id: "r20", ProposalId: "P5", Author: "ux", Revised: true, Withdraws: true, Round: 2},
+		// a held withdrawal by someone else, and another seat's revising reply, say nothing of when P5 was withdrawn
+		CouncilReply{Id: "r21", ProposalId: "P5", Author: "ram", Revised: true, Withdraws: true, Round: 3},
+	)
+	p := *findProposal(c, "P5")
+	if got := withdrawnRound(c, p); got != 2 {
+		t.Fatalf("withdrawnRound = %d, want 2", got)
+	}
+	s := CouncilSummary{Directions: []CouncilDirection{dirOf("Show", "P1")}}
+	fillSummary(c, &s)
+	if s.Outcomes["P5"] != "Withdrawn in round 2" {
+		t.Errorf("outcome of P5 withdrawn in round 2 of 3 = %q, want Withdrawn in round 2", s.Outcomes["P5"])
+	}
+	if got := withdrawnRound(c, *findProposal(c, "P1")); got != 0 {
+		t.Errorf("withdrawnRound of an idea still in the running = %d, want 0", got)
+	}
+	// a held withdrawal of its author is not out yet: the record falls back to the last reply pass
+	c.Replies[len(c.Replies)-2].Draft = DraftHeld
+	if got := withdrawnRound(c, p); got != 3 {
+		t.Errorf("withdrawnRound with only a held withdrawing reply = %d, want the last reply pass, 3", got)
+	}
+}
+
 func TestFillOutcomesOfAWithdrawnAndACutProposal(t *testing.T) {
 	c := fillCouncil()
 	// the withdrawn P5 is the first of its direction, but its fate is its own: P1 is the direction's first

@@ -1317,7 +1317,7 @@ export const councilSummary = {
             { title: "Show a woken app's memory beside its icon", why: "Waits on the measurement of a woken app." },
             { title: "Group the pins by project", why: "Three pins do not need groups." },
         ];
-        await step("a Review report shows five directions in full and folds the four also raised behind their heading and count: a click opens them, a second click folds them", async () => {
+        await step("a Review report shows five directions in full and folds the four also raised behind their heading and count: a click opens them, a second click folds them, and the header's jump link to them opens them too", async () => {
             const id = await seedCouncil(h, ctx, "done", {
                 id: "fx-council-review-five",
                 edit: (c) => {
@@ -1353,6 +1353,11 @@ export const councilSummary = {
             await click(h, toggle);
             const gone = await until(h, `!document.querySelector(${q(ideas)})`);
             const refolded = await h.ev(KEPT_FOLD_FACTS);
+            // the header's jump link to the section opens its fold as it scrolls there; folded again for the steps after
+            await click(h, `${SUMMARY} [data-council-jump="kept"]`);
+            const jumpOpened = await until(h, `document.querySelectorAll(${q(ideas)}).length === ${RAISED.length}`);
+            await click(h, toggle);
+            await until(h, `!document.querySelector(${q(ideas)})`);
             // back on the Agent surface for the steps that follow
             await h.goto("agent");
             await openSummary(h, ctx);
@@ -1378,8 +1383,9 @@ export const councilSummary = {
                 gone &&
                 refolded.expanded === "false" &&
                 refolded.ideas.length === 0 &&
-                refolded.directions.length === 5;
-            return { ok, detail: JSON.stringify({ folded, foldedInFrame, drew, open, openInFrame, gone, refolded }) };
+                refolded.directions.length === 5 &&
+                jumpOpened;
+            return { ok, detail: JSON.stringify({ folded, foldedInFrame, drew, open, openInFrame, gone, refolded, jumpOpened }) };
         });
 
         await step("on a narrow pane the glance wraps under the text and the cards keep their width", async () => {

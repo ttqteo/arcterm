@@ -112,9 +112,8 @@ const (
 // answerLine is the line of both synthesis shapes that holds the answer to the person's question.
 const answerLine = "  \"answer\": \"one short sentence that answers the person's question directly\",\n"
 
-// lastReplyRound is the round the seats' picks and withdrawals come in: the last reply pass, the one before the
-// summary. 0 for a council of one round, which has no reply pass. A withdrawal in an earlier pass of a council of three
-// rounds reads as this round too, since a proposal records only that it was withdrawn.
+// lastReplyRound is the round the seats' picks come in: the last reply pass, the one before the summary. 0 for a council
+// of one round, which has no reply pass. A withdrawal has its own round (withdrawnRound).
 func lastReplyRound(c *Council) int {
 	if r := SynthesisRound(c) - 1; r >= 2 {
 		return r
@@ -122,10 +121,29 @@ func lastReplyRound(c *Council) int {
 	return 0
 }
 
-// withdrawnOutcome is the outcome Go gives an idea its author withdrew (fill.go), "Withdrawn in round 2" for 2 rounds. A
-// council of one round has none.
-func withdrawnOutcome(c *Council) string {
-	if r := lastReplyRound(c); r > 0 {
+// withdrawnRound is the round p's author withdrew it in: the round of the sent reply of its author that withdraws it
+// (Revised, Withdraws). A record with no such reply reads the last reply pass, as every withdrawal did before. 0 when p
+// is not withdrawn, or the council has no reply pass.
+func withdrawnRound(c *Council, p CouncilProposal) int {
+	if !p.Withdrawn {
+		return 0
+	}
+	round := 0
+	for _, x := range c.Replies {
+		if x.ProposalId == p.Id && x.Author == p.Author && x.Revised && x.Withdraws && Sent(x.Draft) && x.Round > round {
+			round = x.Round
+		}
+	}
+	if round > 0 {
+		return round
+	}
+	return lastReplyRound(c)
+}
+
+// withdrawnOutcome is the outcome Go gives an idea its author withdrew (fill.go), "Withdrawn in round 2" for a
+// withdrawal in round 2. "" when the round is not known (withdrawnRound 0).
+func withdrawnOutcome(c *Council, p CouncilProposal) string {
+	if r := withdrawnRound(c, p); r > 0 {
 		return fmt.Sprintf("Withdrawn in round %d", r)
 	}
 	return ""
@@ -1639,8 +1657,8 @@ func SynthesisPrompt(c *Council) string {
 		switch {
 		case p.Cut:
 			b.WriteString("The person cut this proposal at the pause: it was not reviewed.\n\n")
-		case p.Withdrawn && lastReplyRound(c) > 0:
-			fmt.Fprintf(&b, "Its author withdrew it in round %d.\n\n", lastReplyRound(c))
+		case withdrawnRound(c, p) > 0:
+			fmt.Fprintf(&b, "Its author withdrew it in round %d.\n\n", withdrawnRound(c, p))
 		}
 		var thread strings.Builder
 		writeThread(&thread, c, p.Id, true)
@@ -1805,8 +1823,8 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 		b.WriteString("## Your own proposals\n\n")
 		for _, p := range own {
 			writeProposal(&b, c, p, "###")
-			if p.Withdrawn && lastReplyRound(c) > 0 {
-				fmt.Fprintf(&b, "You withdrew this one in round %d.\n\n", lastReplyRound(c))
+			if r := withdrawnRound(c, p); r > 0 {
+				fmt.Fprintf(&b, "You withdrew this one in round %d.\n\n", r)
 			}
 		}
 	}

@@ -8186,3 +8186,64 @@ func TestApplyRound2KeepsPicksOnlyFromAPassThatAskedForThem(t *testing.T) {
 		t.Errorf("picks = %v from a pass that asked, want P2 and P3", got)
 	}
 }
+
+// blockedSeatLink is a seatLink whose Seat lookups wait on release, saying on entered when one starts.
+type blockedSeatLink struct {
+	*seatLink
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (l *blockedSeatLink) Seat(ctx context.Context, tab string) (AgentSeatState, error) {
+	select {
+	case l.entered <- struct{}{}:
+	default:
+	}
+	<-l.release
+	return l.seatLink.Seat(ctx, tab)
+}
+
+// Draft reads the seats' folders (a lookup of up to seatLookup per agent seat) before it takes the runner's lock, so a
+// slow lookup holds no other council call (t-8 review: checkRoots ran under r.mu).
+func TestDraftLooksUpSeatsOutsideTheLock(t *testing.T) {
+	h := newHarness(t)
+	c := h.run(agentCouncil("a"))
+	ux := ideaBy(t, c, "ux")
+	link := &blockedSeatLink{
+		seatLink: newSeatLink(map[string]string{"tab-1": t.TempDir()}, func(string, string) string { return "" }),
+		entered:  make(chan struct{}, 1),
+		release:  make(chan struct{}),
+	}
+	h.r.Agents = AgentCaller{Link: link, BusyCap: time.Second, TurnCap: 5 * time.Second, Poll: time.Millisecond}
+	done := make(chan error, 1)
+	go func() {
+		_, err := h.r.Draft("a", ux, "send", "") // not the last held draft: it only settles
+		done <- err
+	}()
+	select {
+	case <-link.entered:
+	case <-time.After(5 * time.Second):
+		close(link.release)
+		t.Fatal("Draft never looked the agent seat up")
+	}
+	// another call that takes the lock gets through while the lookup waits
+	other := make(chan struct{})
+	go func() {
+		_, _ = h.r.Stop("no-such-council")
+		close(other)
+	}()
+	select {
+	case <-other:
+	case <-time.After(2 * time.Second):
+		close(link.release)
+		<-done
+		t.Fatal("a call that takes the runner's lock waited on Draft's seat lookup")
+	}
+	close(link.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if p := proposalOf(t, h.wait("a"), ux); p.Draft != "" {
+		t.Errorf("UX's idea = %+v, want sent", p)
+	}
+}

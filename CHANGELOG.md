@@ -48,6 +48,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- `wsh council summarize <id>` has the coordinator write a council's report now, as the app's Summarize does: a
+  council paused after round 1, stopped, failed, or done with a discussion that moved on.
 - A message you send in Chat rises in at its place again, as in a messenger, instead of flying out of the message box.
 - Chat's suggested replies stay while you type instead of all going at the first letter; clicking one over text you
   typed asks first, in a toast whose Send replaces your text with the reply.
@@ -84,6 +86,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   held direction waits for you.
 - A council's Retry on a failed summary is off, and says why, when no idea was ever sent, instead of failing when
   pressed.
+- An image pasted or dropped into a council over 3.5 MB is refused on its chip at once. The chip allowed up to
+  10 MB, but anything over 3.5 MB then failed to save.
+- A council report's jump link to Also raised now unfolds those ideas as it scrolls to them.
+- In a council of three rounds, an idea withdrawn in round 2 now reads "Withdrawn in round 2" in the report and its
+  table, not round 3.
+- Sending a held draft in a council with a live agent seated no longer holds up other council actions while it looks
+  the agent up.
 
 ## 1.1.2 — 2026-11-14
 

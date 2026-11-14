@@ -197,6 +197,9 @@ to wait in. It tells the person so and passes only the other tabs they named, le
 - `wsh council show <id>` — a council's report and matrix as markdown, without waiting.
 - `wsh council retry <id> [--expert <seat>] [--model <model>]` — run a failed call again, once; the discussion stays.
   `--all [--model <seat>=<model>]...` reruns every failed seat but the summary at once.
+- `wsh council summarize <id>` — have the coordinator write the report now, from the ideas sent so far: a council
+  paused after round 1 (the rounds left are skipped), stopped, failed, or done with a discussion that moved on. One
+  call. Only when the person asks.
 - `wsh council stop <id>` — stop a running or queued council; the rounds that finished stay. Only when the person asks.
 
 ## Writing a role
