@@ -319,8 +319,27 @@ export function pickedChip(chips: readonly ChatChip[], picked: string | null): C
     return picked == null ? null : (chips.find((c) => c.text === picked) ?? null);
 }
 
-/** Pure: the empty box's line while a chip is picked: what Enter does with it, then the keys that move on or let go. */
-export function pickedHint(chip: ChatChip): HintPart[] {
+/** Pure: what a click, or Enter on the picked chip, does with suggested reply `t`: over an empty box, or one already
+ *  holding `t`, it sends; over text the person typed the first one arms the chip (it asks on itself, by the box, rather
+ *  than in a toast across the screen), and the armed chip taken again sends, dropping the typed text. */
+export function suggestTake(typed: string, armed: string | null, t: string): "send" | "arm" {
+    return typed.trim() === "" || typed === t || armed === t ? "send" : "arm";
+}
+
+/** Pure: whether Shift+Enter can put the chip's text in the box to edit before sending: true for a chip whose Enter
+ *  sends its text as typed (a reply, commit, push, or a `next` chip with nothing to start its chunk: `canGoOn` false).
+ *  A `done` chip sends nothing and a `next` chip that starts its chunk does more than send, so neither has text to edit. */
+export function chipEditable(chip: ChatChip, canGoOn: boolean): boolean {
+    if (chip.chunk == null) {
+        return true;
+    }
+    return !(chip.kind === "done" || (chip.kind === "next" && canGoOn));
+}
+
+/** Pure: the empty box's line while a chip is picked: what Enter does with it, Shift+Enter when the chip's text can be
+ *  edited first (chipEditable), then the keys that move on or let go. */
+export function pickedHint(chip: ChatChip, editable = false): HintPart[] {
     const does = chip.kind === "done" && chip.chunk != null ? ` marks “${chip.chunk}” done` : ` sends “${chip.text}”`;
-    return [{ key: "Enter" }, does + " · ", { key: "Tab" }, " next · ", { key: "Esc" }, " back to typing"];
+    const edit: HintPart[] = editable ? [{ key: "Shift+Enter" }, " edits first · "] : [];
+    return [{ key: "Enter" }, does + " · ", ...edit, { key: "Tab" }, " next · ", { key: "Esc" }, " back to typing"];
 }

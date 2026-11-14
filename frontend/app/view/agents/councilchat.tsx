@@ -27,7 +27,6 @@
 // `council-discussion`. The store's actions answer `{ ok, error }`; a refusal shows in the header (the `acts` the
 // discussion shares).
 
-import { pushToast } from "@/app/cockpit/notificationstore";
 import { useCopyFeedback, type CopyState } from "@/app/element/copyfeedback";
 import {
     MOTION,
@@ -91,6 +90,7 @@ import { flushSync } from "react-dom";
 import { Chip } from "./chatcomposer";
 import { usePartMotion } from "./chatfooter";
 import { QuoteButton, type QuoteTarget } from "./chatquotebutton";
+import { suggestTake } from "./chatsuggest";
 import type { Actions } from "./councilactions";
 import {
     DRAFT_WAIT,
@@ -2327,6 +2327,15 @@ function Composer({
     // the ask Tab picked, kept by its text, so a row that changes under it lets it go; typing lets it go too
     const [pickedText, setPickedAsk] = useState<string | null>(null);
     const pickedAsk = pickedText != null && asks.includes(pickedText) ? pickedText : null;
+    // the picked ask that asks on itself before it replaces the typed text (sendPickedAsk): whatever lets go of the pick
+    // (typing, Esc, Tab) lets go of it too
+    const [armedText, setArmedAsk] = useState<string | null>(null);
+    const armedAsk = armedText != null && armedText === pickedAsk ? armedText : null;
+    useEffect(() => {
+        if (armedText != null && armedText !== pickedText) {
+            setArmedAsk(null);
+        }
+    }, [pickedText]);
     // an ask goes into the box in place of what it holds, caret at its end, as an edit Ctrl+Z takes back
     const takeAsk = (a: string) => {
         setPickedAsk(null);
@@ -2334,7 +2343,8 @@ function Composer({
     };
     // Enter on a picked ask sends it, as Chat's Enter sends a suggested reply: it goes into the box first, and the send
     // runs once the box holds it, so the seats, files and chats it names are read from it as from a typed message. Over
-    // text the person typed it asks first, as Chat does
+    // text the person typed the chip asks first, on itself, as Chat's does (chatsuggest.ts suggestTake), and Enter again
+    // sends
     const [sendAsk, setSendAsk] = useState<string | null>(null);
     useEffect(() => {
         if (sendAsk != null && text === sendAsk) {
@@ -2347,17 +2357,12 @@ function Composer({
             takeAsk(a);
             setSendAsk(a);
         };
-        if (text.trim() === "" || text === a) {
+        if (suggestTake(text, armedAsk, a) === "send") {
+            setArmedAsk(null);
             go();
             return;
         }
-        setPickedAsk(null);
-        pushToast({
-            title: "Replace what you typed?",
-            message: `Sending “${a}” drops the text in the box.`,
-            level: "warn",
-            action: { label: "Send", run: go },
-        });
+        setArmedAsk(a);
     };
     const chooseSeat = (seat: CouncilExpert) => {
         if (picker != null) {
@@ -2767,6 +2772,7 @@ function Composer({
                             scope={scope}
                             asks={asks}
                             picked={pickedAsk}
+                            armed={armedAsk}
                             onTake={(a) => takeAsk(a)}
                         />
                     )}
@@ -2873,11 +2879,14 @@ function ComposerAsks({
     scope,
     asks,
     picked,
+    armed,
     onTake,
 }: {
     scope: "channel" | "thread";
     asks: readonly string[];
     picked: string | null;
+    /** the picked ask whose Enter would replace the typed text, asking first */
+    armed: string | null;
     onTake: (a: string) => void;
 }) {
     const row = usePartMotion(springReveal);
@@ -2897,7 +2906,12 @@ function ComposerAsks({
                             <Chip
                                 label={a}
                                 picked={a === picked}
-                                title={`${a}\n\nClick to put it in the box and edit it · Tab, then Enter sends it`}
+                                armed={a === armed}
+                                title={
+                                    a === armed
+                                        ? `Enter sends “${a}” in place of the text in the box · Esc keeps your text`
+                                        : `${a}\n\nClick to put it in the box and edit it · Tab, then Enter sends it`
+                                }
                                 onClick={() => onTake(a)}
                                 data={{ "data-council-ask": String(i) }}
                             />

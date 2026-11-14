@@ -1958,8 +1958,8 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         },
         {
             // Chat's round ↓ on a key: back to the end of the conversation, awake or asleep, from the box too. It passes
-            // when the agent shows no Chat or Chat already shows its end; typing in the box, Ctrl+End still takes the
-            // caret to the end of the text, so the key does both there.
+            // when the agent shows no Chat or Chat already shows its end; typing in the box, Ctrl+↓ (⌘↓) still moves the
+            // caret down the text, to its end on a Mac, so the key does both there.
             id: "agent:chat-jump-latest",
             keys: CHAT_JUMP_KEYS,
             group: "Agent",

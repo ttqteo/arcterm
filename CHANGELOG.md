@@ -26,6 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A file link in Chat that the agent named from a folder it had cd'd into now opens instead of saying "File not found".
 - A Chat message no longer reaches Claude twice: the same words sent again within a few seconds of the first are
   dropped, so a second Enter on a box that had not cleared yet sends nothing more.
 - Retry the summary on a council's Report is off when no idea was sent, and says why.
@@ -46,6 +47,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- In Chat, Shift+Enter on a suggested reply picked with Tab puts its text in the box so you can edit it before sending.
 - In Chat, a message that moved the agent to another initiative chunk shows a "Chunk N · name" divider above it, so
   you can tell where each chunk's work begins.
 - The initiative band in Chat shows three steps on how to use it the first time you open it; Got it hides them and
@@ -53,6 +55,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A suggested reply clicked over text you typed now asks on the chip itself ("Replace & send") instead of in a notice
+  in the corner: click it again or press Enter to send, or keep typing or press Esc to keep your text. A council's
+  suggested asks work the same way.
+- Chat's jump to the latest message is now ⌘↓ (Ctrl+↓ on Windows) instead of ⌘End, which a Mac laptop has no key for.
 - In the initiative band, Work on this is now Switch to this chunk, so it no longer reads like Jarvis's Work on (which
   opens a new agent), and it tells the agent at once when the message box is empty. With a draft in the box, the
   switch still goes with your next message, and the line above the box says so.

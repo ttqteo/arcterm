@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
 import {
     chatChips,
+    chipEditable,
     drawnChips,
     endsWithQuestion,
     initiativeChips,
@@ -19,6 +20,7 @@ import {
     runningActions,
     stepPick,
     suggestKey,
+    suggestTake,
     TERMINAL_AFTER_MS,
     wantsModelSuggest,
     writesVietnamese,
@@ -384,5 +386,43 @@ describe("Tab through the suggested replies", () => {
             " back to typing",
         ]);
         expect(pickedHint(done)[1]).toBe(" marks “Tab hint” done · ");
+    });
+
+    it("pickedHint names Shift+Enter only when the chip's text can be edited first", () => {
+        expect(pickedHint(b, true)).toEqual([
+            { key: "Enter" },
+            " sends “vẽ thử” · ",
+            { key: "Shift+Enter" },
+            " edits first · ",
+            { key: "Tab" },
+            " next · ",
+            { key: "Esc" },
+            " back to typing",
+        ]);
+        expect(pickedHint(b, false)).toEqual(pickedHint(b));
+    });
+
+    it("chipEditable: a sent text is editable, a done chip and a next chip that starts its chunk are not", () => {
+        const next: ChatChip = { text: "làm tiếp: Docs", kind: "next", source: "rule", chunk: "Docs" };
+        expect(chipEditable(b, true)).toBe(true);
+        expect(chipEditable({ text: "commit đi", kind: "commit", source: "rule" }, true)).toBe(true);
+        expect(chipEditable(done, true)).toBe(false);
+        expect(chipEditable(next, true)).toBe(false);
+        expect(chipEditable(next, false)).toBe(true);
+    });
+});
+
+describe("suggestTake", () => {
+    it("sends over an empty box, or one already holding the reply", () => {
+        expect(suggestTake("", null, "commit đi")).toBe("send");
+        expect(suggestTake("  \n", null, "commit đi")).toBe("send");
+        expect(suggestTake("commit đi", null, "commit đi")).toBe("send");
+    });
+    it("over typed text arms the chip first, and the armed chip sends", () => {
+        expect(suggestTake("đổi qua ⌘↓?", null, "commit đi")).toBe("arm");
+        expect(suggestTake("đổi qua ⌘↓?", "commit đi", "commit đi")).toBe("send");
+    });
+    it("another chip than the armed one arms in its place", () => {
+        expect(suggestTake("đổi qua ⌘↓?", "push đi", "commit đi")).toBe("arm");
     });
 });

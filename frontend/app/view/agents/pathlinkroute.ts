@@ -19,7 +19,7 @@ import type { FileRef } from "./agentrailtabs";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { liveEntriesByIdAtom } from "./livetranscriptatoms";
-import { knownPathTail, matchKnownPath, resolvePath } from "./pathlinks";
+import { knownPathTail, matchKnownPath, resolvePath, transcriptCwds } from "./pathlinks";
 import { railStateAtom } from "./railstore";
 import { projectorFor } from "./transcriptregistry";
 
@@ -127,32 +127,38 @@ function liveTouched(agentId: string, cwd: string | null): string[] {
 }
 
 // the live entries hold only the stream's window, so a path they do not explain reads the transcript, a few MB, at
-// most this often per agent
+// most this often per agent: the files its tools touched, and the other folders its shell worked in
 const SNAPSHOT_MS = 5 * 60_000;
-const snapshots = new Map<string, { at: number; paths: Promise<string[]> }>();
+type Snapshot = { paths: string[]; cwds: string[] };
+const NO_SNAPSHOT: Snapshot = { paths: [], cwds: [] };
+const snapshots = new Map<string, { at: number; snap: Promise<Snapshot> }>();
 
-function snapshotTouched(agent: AgentVM, cwd: string | null): Promise<string[]> {
+function transcriptSnapshot(agent: AgentVM, cwd: string | null): Promise<Snapshot> {
     const path = agent.transcriptPath;
     if (!path) {
-        return Promise.resolve([]);
+        return Promise.resolve(NO_SNAPSHOT);
     }
     const key = `${path}|${cwd ?? ""}`;
     const hit = snapshots.get(key);
     if (hit != null && Date.now() - hit.at < SNAPSHOT_MS) {
-        return hit.paths;
+        return hit.snap;
     }
-    const paths = (async () => {
+    const snap = (async (): Promise<Snapshot> => {
         try {
             // Pi's parent-linked active branch needs the complete file; other runtimes tail the recent window
             const maxlines = agent.agent === "pi" ? -1 : 2000;
             const rtn = await RpcApi.GetAgentTranscriptCommand(TabRpcClient, { path, maxlines });
-            return touchedPaths(projectorFor(agent.agent, path).project(rtn.lines ?? []), cwd);
+            const lines = rtn.lines ?? [];
+            return {
+                paths: touchedPaths(projectorFor(agent.agent, path).project(lines), cwd),
+                cwds: transcriptCwds(lines, cwd),
+            };
         } catch {
-            return [];
+            return NO_SNAPSHOT;
         }
     })();
-    snapshots.set(key, { at: Date.now(), paths });
-    return paths;
+    snapshots.set(key, { at: Date.now(), snap });
+    return snap;
 }
 
 // the one file an agent touched that a relative path it named is the tail of: from its live entries when they have it,
@@ -166,7 +172,7 @@ async function touchedMatch(agent: AgentVM, cwd: string | null, path: string): P
     if (hit != null) {
         return hit;
     }
-    return matchKnownPath(path, [...live, ...(await snapshotTouched(agent, cwd))]);
+    return matchKnownPath(path, [...live, ...(await transcriptSnapshot(agent, cwd)).paths]);
 }
 
 // for a terminal block's path link: the file the block's agent touched that the path names from another folder than
@@ -177,14 +183,31 @@ export function touchedPathForBlock(blockId: string, cwd: string | null, path: s
     return owner == null ? Promise.resolve(null) : touchedMatch(owner, cwd, path);
 }
 
-// a path an agent named: under its working directory, else the one file it touched that the path is the tail of
+// the shell folders a path is tried under, past the agent's own: the most recent few, so a click checks a handful
+const SHELL_CWDS_TRIED = 8;
+
+// a path an agent named: under its working directory, else the one file it touched that the path is the tail of, else
+// under a folder its shell cd'd into (it named the path from there, after an ls it ran)
 async function locateAgentPath(agent: AgentVM, cwd: string | null, path: string): Promise<string | null> {
-    const abs = resolvePath(cwd, path, await homeDir());
+    const home = await homeDir();
+    const abs = resolvePath(cwd, path, home);
     if (abs != null && (await fileExists(abs))) {
         return abs;
     }
     const known = await touchedMatch(agent, cwd, path);
-    return known != null && (await fileExists(known)) ? known : null;
+    if (known != null && (await fileExists(known))) {
+        return known;
+    }
+    if (knownPathTail(path) == null) {
+        return null;
+    }
+    for (const dir of (await transcriptSnapshot(agent, cwd)).cwds.slice(0, SHELL_CWDS_TRIED)) {
+        const there = resolvePath(dir, path, home);
+        if (there != null && (await fileExists(there))) {
+            return there;
+        }
+    }
+    return null;
 }
 
 // a transcript's link: resolved against the agent's working directory, checked, then opened in its panel

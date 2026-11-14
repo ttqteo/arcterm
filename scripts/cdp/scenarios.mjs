@@ -47366,7 +47366,7 @@ const chatScrollKeep = {
 };
 
 // --- chat-asleep-attach-jump: Chat's box takes a pasted picture while its agent is asleep, the picture rides the message
-// that wakes it, and its chip goes only once the wake took the message (a failed wake keeps it); and Ctrl+End jumps a
+// that wakes it, and its chip goes only once the wake took the message (a failed wake keeps it); and Ctrl+↓ jumps a
 // Chat read scrolled up back to the latest message, from the conversation and from the box, as the round ↓ does, whose
 // tooltip names the key. One fixture Claude agent, asleep, over a real tab with a long transcript; a mock answers the
 // wake (ok, hold or fail) and the temp-file write a paste makes, so nothing reaches a process or the disk.
@@ -47496,7 +47496,7 @@ const chatAsleepAttachJump = {
                 await h.cdp("Input.dispatchKeyEvent", { type, key: k, code, windowsVirtualKeyCode: vk, modifiers });
             }
         };
-        const ctrlEnd = () => key("End", "End", 35, 2);
+        const ctrlDown = () => key("ArrowDown", "ArrowDown", 40, 2);
         const enter = () => key("Enter", "Enter", 13);
         const paste = (hue) =>
             h.ev(`(async () => {
@@ -47526,26 +47526,26 @@ const chatAsleepAttachJump = {
             const title = await h.ev(`document.querySelector('[data-agent-chat="${A}"] [data-chat-jump]')?.getAttribute("title") ?? null`);
             await h.shot("cdp-shots/chat-asleep-jump-button.png");
             rec(
-                "J1. the sleeping agent's Chat shows its conversation; scrolled up, the ↓ shows with \"Jump to latest (Ctrl+End)\"",
-                loaded && asleep && top1 === 0 && jumpUp && title === "Jump to latest (Ctrl+End)",
+                "J1. the sleeping agent's Chat shows its conversation; scrolled up, the ↓ shows with \"Jump to latest (Ctrl+↓)\"",
+                loaded && asleep && top1 === 0 && jumpUp && title === "Jump to latest (Ctrl+↓)",
                 { loaded, asleep, top1, jumpUp, title }
             );
 
-            // J2. the focus out of the box (in the conversation), Ctrl+End goes to the end and the ↓ leaves
+            // J2. the focus out of the box (in the conversation), Ctrl+↓ goes to the end and the ↓ leaves
             await h.ev(`(() => { document.activeElement?.blur?.(); ${scroller}?.focus?.(); return true; })()`);
-            await ctrlEnd();
+            await ctrlDown();
             const end2 = await polishWaitFor(h, atEnd, 3000);
             const jumpGone2 = await polishWaitFor(h, `!document.querySelector('[data-agent-chat="${A}"] [data-chat-jump]')`, 3000);
-            rec("J2. Ctrl+End from the conversation jumps to the latest message and the ↓ leaves", end2 && jumpGone2, { end2, jumpGone2 });
+            rec("J2. Ctrl+↓ from the conversation jumps to the latest message and the ↓ leaves", end2 && jumpGone2, { end2, jumpGone2 });
 
-            // J3. scrolled up again with text in the box, Ctrl+End from the box jumps too, and the text stays
+            // J3. scrolled up again with text in the box, Ctrl+↓ from the box jumps too, and the text stays
             const top3 = await scrollUp();
             await h.ev(`${box}.focus()`);
             await h.cdp("Input.insertText", { text: "draft" });
-            await ctrlEnd();
+            await ctrlDown();
             const end3 = await polishWaitFor(h, atEnd, 3000);
             const text3 = await h.ev(`${box}?.textContent ?? null`);
-            rec("J3. Ctrl+End from the chat box jumps to the latest message, and the box keeps its text", top3 === 0 && end3 && text3 === "draft", {
+            rec("J3. Ctrl+↓ from the chat box jumps to the latest message, and the box keeps its text", top3 === 0 && end3 && text3 === "draft", {
                 top3,
                 end3,
                 text3,

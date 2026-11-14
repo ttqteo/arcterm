@@ -306,6 +306,39 @@ export function matchKnownPath(p: string, known: readonly string[]): string | nu
     return found;
 }
 
+// Pure: the other folders an agent's shell has worked in, from its transcript's raw lines, the most recent first, once
+// each, without `cwd`. Claude Code writes the shell's cwd on each line, and it moves when a Bash command cds, so a
+// relative path the agent names after `cd sub; ls docs/` is under `sub`, not its own cwd. Lines with no cwd add none.
+export function transcriptCwds(lines: readonly string[], cwd: string | null): string[] {
+    const seen = new Set<string>();
+    if (cwd != null) {
+        seen.add(cwd.replace(/\\/g, "/"));
+    }
+    const out: string[] = [];
+    const re = /"cwd":("(?:[^"\\]|\\.)*")/;
+    for (let i = lines.length - 1; i >= 0; i--) {
+        const m = re.exec(lines[i]);
+        if (m == null) {
+            continue;
+        }
+        let dir: unknown;
+        try {
+            dir = JSON.parse(m[1]);
+        } catch {
+            continue;
+        }
+        if (typeof dir !== "string" || dir === "" || !isAbsolutePath(dir)) {
+            continue;
+        }
+        const norm = dir.replace(/\\/g, "/");
+        if (!seen.has(norm)) {
+            seen.add(norm);
+            out.push(dir);
+        }
+    }
+    return out;
+}
+
 // inline code that is exactly one path: with a separator, a line, or a source file's extension
 export function inlinePathOf(code: string): PathCandidate | null {
     const text = code.trim();

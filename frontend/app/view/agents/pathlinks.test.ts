@@ -11,6 +11,7 @@ import {
     matchKnownPath,
     nearbyFolders,
     resolvePath,
+    transcriptCwds,
 } from "./pathlinks";
 
 describe("nearbyFolders", () => {
@@ -275,5 +276,23 @@ describe("linkGesture", () => {
         expect(linkGesture({ ...none, shiftKey: true }, false)).toBeNull();
         expect(linkGesture({ ...none, metaKey: true }, false)).toBeNull();
         expect(linkGesture({ ...none, ctrlKey: true }, true)).toBeNull();
+    });
+});
+
+describe("transcriptCwds", () => {
+    const line = (cwd: string) => JSON.stringify({ type: "assistant", cwd, message: { content: [] } });
+
+    it("gives the folders the shell worked in, most recent first, once each, without the agent's own", () => {
+        const lines = [line("/w/thesis"), line("/w/thesis/notes"), line("/w/thesis"), line("/w/thesis/notes/related")];
+        expect(transcriptCwds(lines, "/w/thesis")).toEqual(["/w/thesis/notes/related", "/w/thesis/notes"]);
+    });
+
+    it("reads an escaped Windows cwd and folds its separators against the agent's own", () => {
+        const lines = [line("D:\\thesis\\notes"), line("D:\\thesis")];
+        expect(transcriptCwds(lines, "D:/thesis")).toEqual(["D:\\thesis\\notes"]);
+    });
+
+    it("skips lines with no cwd, a relative one, and lines that are not JSON", () => {
+        expect(transcriptCwds(["not json", JSON.stringify({ type: "user" }), line("rel/dir")], null)).toEqual([]);
     });
 });
