@@ -53,6 +53,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Chat's jump to the latest message is now ⌘↓ (Ctrl+↓ on Windows) instead of ⌘End, which a Mac laptop has no key for.
 - In the initiative band, Work on this is now Switch to this chunk, so it no longer reads like Jarvis's Work on (which
   opens a new agent), and it tells the agent at once when the message box is empty. With a draft in the box, the
   switch still goes with your next message, and the line above the box says so.

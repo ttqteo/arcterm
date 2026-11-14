@@ -6,7 +6,7 @@
 // has no imports, so no import cycle can run through it (chatinsert.ts does the same for the box).
 
 // the binding's keys, here so the ↓'s tooltip names them without importing the bindings
-export const CHAT_JUMP_KEYS = "Mod:End";
+export const CHAT_JUMP_KEYS = "Mod:ArrowDown";
 
 // false when there is nothing to jump to: the conversation already shows its end
 type ChatJump = () => boolean;
