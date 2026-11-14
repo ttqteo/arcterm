@@ -395,7 +395,8 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
 // The open board's dialog: over the question and the rail, inside the brainstorm pane rather than over the app, so the
 // pane's own keys stay live under it (Esc closes it, [ ] and ← → step the boards, through agent:brainstorm-back and the
 // canvas keys; it is not one of the app's modals, which would stand those keys down). A click on the scrim closes it.
-function BoardDialog({ open, onClose, children }: { open: boolean; onClose: () => void; children: ReactNode }) {
+// Chat's band opens a board in it too, over the Chat pane (brainstormbandview.tsx BoardPreview).
+export function BoardDialog({ open, onClose, children }: { open: boolean; onClose: () => void; children: ReactNode }) {
     return (
         <MotionConfig reducedMotion="user">
             <AnimatePresence>

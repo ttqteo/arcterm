@@ -6,6 +6,45 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Switch to this chunk tells a real agent at once.** The CDP scenario `chat-initiative-band` (4, 4c,
+  4d) passes against fixture agents whose sends go to a mock; no real Claude Code session took one. In a real Claude
+  agent linked to an initiative, with the message box empty, open the band and press Switch to this chunk on a free
+  chunk → the agent answers on the new chunk at once, Chat shows the `Chunk N · name` divider and `Moved to chunk N ·
+  sent by arcterm` (no bubble reading `Go on with this chunk.`); while the agent works the send waits for its turn to
+  end. With a draft in the box the framed line waits and rides with the draft. Commit: feat(chat) initiative band:
+  Switch to this chunk tells the agent at once, a how-to.
+- [ ] (arcterm) **Agent composer image cap, 3.5 MB.** Unit-tested only (`composerattachments.test.ts`); no scenario
+  attaches to the agent composer. Agent → paste a 4 MB image into the message box → it is refused at once with
+  `over 3.5 MB`, not lost on send; a 3 MB image sends. Commit: fix(council) the Report's summary Retry needs a sent
+  idea, and the composer's image cap is 3.5 MB (run a9774e84)
+- [ ] (arcterm) **Council decisions, 11-14.** Go-tested and typechecked; no dev app ran. (1) Hover a seat's message
+  in a council's chat → its byline shows Pin to Report as a pin and Chốt as a compass; an idea's Chốt and the Memory
+  tab's hover Chốt are compasses too (`council-discussion`, `council-memory`). (2) Pin a chat seat's message, then
+  open the saved report under `docs/council/` → its Final proposal reads `_From <project> · <key>_`, the key the
+  Report's header shows. (3) Quit arcterm while a council runs, reopen → the council reads stopped and its report
+  file is saved (Open report works). Commit: fix(council) Chốt draws a compass, a chat seat's key in the report,
+  a stale council's report
+- [ ] (arcterm) **`wsh agents list` and agents in no project.** Unit-tested; run live from this project (the count
+  line showed), but no agent was open in a scratch folder then. Open a Claude agent in a folder that is no project →
+  `wsh agents list` from an agent in arcterm lists it with `(no project)` after its folder's name. Commit:
+  fix(wsh) agents list shows sessions in no project
+- [ ] (arcterm) **Token burn card inside a run.** Go-tested only; no dev app ran. In an orchestrator run (autonomous
+  too), have a worker start 3+ subagents, or run `wsh council start` → the Token burn card shows at once in Needs you
+  and in the run's question card as yours, the lead gets no wake for it, and `wsh jarvis dag answer` from the lead
+  is refused. Allow there → the spawn runs. Commit: fix(orchestrate) a held card raised in a run is the person's
+- [ ] (arcterm) **Council fixes, 11-14 third batch.** Go- and unit-tested and typechecked; no dev app ran. (1) In a
+  council paused after round 1, Continue with `Check it against @<a file>` → round 2's expert cards show them reading
+  it. (2) In a 3-round council, attach an image to a reply in round 2 → in round 3 an expert shown that thread opens it
+  (its activity names the file). (3) Kill wavesrv while a council runs a verify command, start arcterm again → the
+  `council-<id>` folder under arc-wt is gone (`[council] … removed the verify tree` in waveapp.log). (4) `wsh council
+  start` in a folder that is not a registered project → its row is in Home's folder (`council-tree`, step 11j). Commit:
+  fix(council) Continue's @file, round 3 attachments, crash-left verify trees, councils in Home
+- [ ] (arcterm) **Council fixes, 11-14 second batch.** Go-tested and typechecked; no dev app ran. (1) Paste a 4 MB
+  image into a council's chat → its chip reads `Image too large (over 3.5 MB)` at once (`council-discussion`,
+  attach-oversize). (2) In a done Review report with Also raised, press the header's `Also raised` jump link → the
+  page scrolls there and the ideas are unfolded (`council-summary`). (3) `wsh council summarize <id>` on a council
+  paused after round 1 → it prints `summarizing`, and `wsh council wait <id>` returns its report. Commit:
+  fix(council) one image cap, kept jump unfolds, summarize command, withdrawal round, Draft lookup outside the lock
 - [ ] (arcterm) **Council small fixes, 11-14 batch.** Unit-tested and typechecked only; no dev app ran. (1) Leave a
   council paused after round 1 in a registered project → the Cockpit's Needs you strip has a `Council` row; under
   another project's filter it is gone; Open lands on its Discussion (`task verify:ui -- council-needs-you`, step 4b).

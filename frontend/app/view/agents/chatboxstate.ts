@@ -61,3 +61,12 @@ export function boxPlaceholder(state: BoxState, agentName: string, override?: st
     }
     return `Reply to ${agentName}, @ to mention, / for commands`;
 }
+
+/** A piece of a hint line: plain text, or a key drawn as a keycap. */
+export type HintPart = string | { key: string };
+
+/** The idle line while suggested replies show under the box: it names Tab, which walks them (chatsuggest.ts stepPick).
+ *  Only the idle line with no question waiting gets it; every other state keeps its own words. */
+export function boxTabPlaceholder(agentName: string): HintPart[] {
+    return [`Reply to ${agentName}, `, { key: "Tab" }, " for suggestions, @ to mention, / for commands"];
+}

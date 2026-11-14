@@ -30,6 +30,7 @@ import type {
 import { councilStartAnchor, type CouncilAnchor } from "./chatcouncil";
 import { isDocReviewAsk } from "./chatdocreview";
 import { isHandoffAsk } from "./chathandoff";
+import { sentSwitch, SWITCH_NOTE } from "./chatinitiative";
 import { runStartAnchor, type RunAnchor } from "./chatruncards";
 import {
     pairReviewer,
@@ -73,14 +74,25 @@ export type ChatMarker = Extract<CompactItem, { kind: "compaction" | "interrupte
 
 export type ChatItem =
     // a message you typed; `images` is what you pasted with it (data URLs), left off when there were none; `uuid` the
-    // transcript record it came from, which Fork from here cuts at
-    | { kind: "you"; key: string; text: string; images?: string[]; uuid?: string }
+    // transcript record it came from, which Fork from here cuts at; `chunk` the initiative chunk the message moved the agent
+    // to (its switched result line, chatinitiative.ts sentSwitch), drawn as a divider over it
+    | {
+          kind: "you";
+          key: string;
+          text: string;
+          images?: string[];
+          uuid?: string;
+          chunk?: { n: number; label: string };
+          // the message is arcterm's SWITCH_NOTE behind a switched line: the band sent it, not you
+          switchNote?: true;
+      }
     // a slash command or skill you typed, as "/name args" (check with `"command" in item`), or a bash-mode command, which
     // reads "! cmd"; `shell` is what it printed once that lands. `terminal`: a panel only Claude Code's own screen drew
     // (/config, /usage…), which left nothing here to show. `btw`: a /btw's side answer
     | { kind: "you"; key: string; command: string; shell?: ShellResult; terminal?: true; btw?: BtwAnswer }
-    // a prompt arcterm typed: `header` names it, `lines` are its fields as "label value" and its body (at most SENT_LINES)
-    | { kind: "sent"; key: string; from: SentFrom; header: string; lines: string[] }
+    // a prompt arcterm typed: `header` names it, `lines` are its fields as "label value" and its body (at most SENT_LINES);
+    // `tabId` the tab of the agent that sent it with `wsh agents send`, which the card opens
+    | { kind: "sent"; key: string; from: SentFrom; header: string; lines: string[]; tabId?: string }
     // everything the agent said and did between two of the items around it
     | { kind: "agent"; key: string; parts: AgentPart[] }
     | { kind: "marker"; key: string; item: ChatMarker };
@@ -110,7 +122,12 @@ function wakeLines(wake: Wake): string[] {
     ].slice(0, SENT_LINES);
 }
 
-type Sent = { from: SentFrom; header: string; lines: string[] };
+type Sent = { from: SentFrom; header: string; lines: string[]; tabId?: string };
+
+// the tab of the agent a `wsh agents send` message came from, or undefined for any other prompt
+function senderTab(card: Card): string | undefined {
+    return card.role === "message" ? card.fields.find((f) => f.label === "tab")?.value : undefined;
+}
 
 // what arcterm typed, or null for text a person wrote. The text is trimmed to be read only: a trailing newline must not
 // hide a line the parsers anchor to its end, and the bubble keeps the text as it was.
@@ -130,7 +147,13 @@ function readSent(text: string): Sent | null {
     }
     const sent = parseStreamPrompt(t);
     if (sent != null && !isBrainstormLineOfYours(sent)) {
-        return { from: "cockpit", header: cardHeader(sent), lines: cardLines(sent) };
+        const tabId = senderTab(sent);
+        return {
+            from: "cockpit",
+            header: cardHeader(sent),
+            lines: cardLines(sent),
+            ...(tabId != null ? { tabId } : {}),
+        };
     }
     return null;
 }
@@ -251,13 +274,18 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
                 if (sent != null) {
                     out.push({ kind: "sent", key: keyOf("sent", item.index), ...sent });
                 } else {
-                    const uuid = recordUuid(entries[item.index]);
+                    const entry = entries[item.index];
+                    const uuid = recordUuid(entry);
+                    // the item's text has its result lines stripped: the switched one is read from the entry
+                    const chunk = entry?.kind === "user" ? sentSwitch(entry.text) : null;
                     out.push({
                         kind: "you",
                         key: keyOf("you", item.index),
                         text: item.text,
                         ...(item.images != null ? { images: item.images } : {}),
                         ...(uuid != null ? { uuid } : {}),
+                        ...(chunk != null ? { chunk } : {}),
+                        ...(chunk != null && item.text.trim() === SWITCH_NOTE ? { switchNote: true as const } : {}),
                     });
                 }
                 break;

@@ -46,12 +46,13 @@ func ApplyAutonomousSwitch(ctx context.Context, channelId, runId string, on bool
 }
 
 // returnUserAsksToLead gives the lead back the run's child questions the human holds, with a fresh deadline:
-// nobody is at the cockpit to answer them. It reports whether any moved.
+// nobody is at the cockpit to answer them. A held card (Hold, a spawn's Token burn card) stays the human's: it asks
+// about the person's quota, which is not the lead's to spend (RaiseChildAsk). It reports whether any moved.
 func returnUserAsksToLead(channelId, runId string) bool {
 	returned := false
 	deadline := wakeNow() + LeadAskDeadline.Milliseconds()
 	for oref, p := range agentask.GlobalRegistry.List() {
-		if p.RunId != runId || p.DagOID == "" || p.Owner != agentask.AskOwner_User {
+		if p.RunId != runId || p.DagOID == "" || p.Owner != agentask.AskOwner_User || p.Hold {
 			continue
 		}
 		moved := agentask.GlobalRegistry.Update(oref, p.AskId, func(cur *agentask.PendingAsk) {

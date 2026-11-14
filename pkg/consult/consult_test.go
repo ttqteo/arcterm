@@ -268,7 +268,7 @@ func TestClaudeParseLineToolUse(t *testing.T) {
 
 func TestClaudeParseLineResultUsage(t *testing.T) {
 	line := `{"type":"result","subtype":"success","result":"pong","usage":{"input_tokens":10,"cache_read_input_tokens":900,"cache_creation_input_tokens":40,"output_tokens":50}}`
-	if got, want := claudeParseLine([]byte(line)), (ParsedEvent{Complete: true, Tokens: 1000}); got != want {
+	if got, want := claudeParseLine([]byte(line)), (ParsedEvent{Complete: true, Tokens: 1000, Result: "pong"}); got != want {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
 }

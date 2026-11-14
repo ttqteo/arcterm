@@ -101,6 +101,51 @@ func TestCouncilTreeHoldsTheSnapshotAndLeavesTheCheckoutAlone(t *testing.T) {
 	}
 }
 
+// A tree a crash left (wavesrv killed mid-verify) goes at startup when this store holds its council and the council is
+// not running; a running council's tree, and one whose council this store does not hold (the other app's), stay.
+func TestSweepCouncilTreesRemovesWhatACrashLeft(t *testing.T) {
+	main, snap := councilTreeFixture(t)
+	t.Cleanup(council.UseRootForTest(t.TempDir()))
+	ctx := context.Background()
+	treeOf := func(id string) string {
+		t.Helper()
+		dir, err := CouncilTrees{}.Make(ctx, main, snap, "council-"+id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { CouncilTrees{}.Remove(context.Background(), main, dir) })
+		return dir
+	}
+	left, live, foreign := treeOf("left1"), treeOf("live1"), treeOf("other1")
+	for _, c := range []*council.Council{
+		{Id: "left1", Project: main, State: council.StateStopped},
+		{Id: "live1", Project: main, State: council.StateRunning},
+		{Id: "elsewhere", Project: t.TempDir(), State: council.StateDone}, // not a repo, no tree: skipped quietly
+	} {
+		if err := council.Save(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := worktreeCount(t, main)
+
+	SweepCouncilTrees(ctx)
+
+	if _, err := os.Lstat(left); !os.IsNotExist(err) {
+		t.Errorf("the stopped council's tree %s is still there (%v)", left, err)
+	}
+	for _, kept := range []string{live, foreign} {
+		if _, err := os.Lstat(kept); err != nil {
+			t.Errorf("tree %s was removed: %v", kept, err)
+		}
+	}
+	if got := worktreeCount(t, main); got != before-1 {
+		t.Errorf("worktrees %d after the sweep, want %d: only the leftover unregistered", got, before-1)
+	}
+	if got := readTreeFile(t, filepath.Join(main, "node_modules", "marker.txt")); got != "node_modules" {
+		t.Errorf("main's node_modules marker = %q after the sweep, want it kept", got)
+	}
+}
+
 func TestCouncilTreeLinksNodeModulesAndTheCargoTargetWhenMainHasThem(t *testing.T) {
 	main, snap := councilTreeFixture(t)
 	dir, err := CouncilTrees{}.Make(context.Background(), main, snap, "council-links")

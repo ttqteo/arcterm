@@ -49,7 +49,6 @@ vi.mock("@/app/view/term/termutil", () => ({
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { MAX_ATTACHMENT_BYTES } from "./composerattachments";
 import { emptyCouncilDraft } from "./councilmodel";
 import {
     addCouncilImages,
@@ -95,6 +94,7 @@ import {
     thumbCouncil,
 } from "./councilstore";
 import { MAX_TASK_IMAGES, type TaskImage } from "./launcherimages";
+import { MAX_UPLOAD_BYTES } from "./uploadfile";
 
 const council = (id: string, project: string, extra: Partial<Council> = {}): Council => ({
     id,
@@ -716,21 +716,21 @@ describe("the images in a council's message boxes", () => {
             expect(box().images[""][0].path).toBeUndefined();
         });
 
-        it("refuses a file over 10 MB before any upload, as an error chip", async () => {
+        it("refuses a file over the upload cap (3.5 MB) before any upload, as an error chip", async () => {
             const big = png("big.png");
-            Object.defineProperty(big, "size", { value: MAX_ATTACHMENT_BYTES + 1 });
+            Object.defineProperty(big, "size", { value: MAX_UPLOAD_BYTES + 1 });
             addCouncilImages(`img-${id}`, "", [big], "paste");
             await settle();
             expect(hoisted.blob).not.toHaveBeenCalled();
             expect(hoisted.file).not.toHaveBeenCalled();
             expect(box().images[""]).toHaveLength(1);
-            expect(box().images[""][0].error).toMatch(/10 MB/);
+            expect(box().images[""][0].error).toBe("Image too large (over 3.5 MB)");
         });
 
-        it("takes a file of exactly 10 MB", async () => {
+        it("takes a file of exactly the upload cap", async () => {
             hoisted.blob.mockResolvedValue("/att/edge.png");
             const edge = png("edge.png");
-            Object.defineProperty(edge, "size", { value: MAX_ATTACHMENT_BYTES });
+            Object.defineProperty(edge, "size", { value: MAX_UPLOAD_BYTES });
             addCouncilImages(`img-${id}`, "", [edge], "paste");
             await settle();
             expect(hoisted.blob).toHaveBeenCalledTimes(1);

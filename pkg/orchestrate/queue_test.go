@@ -77,6 +77,34 @@ func TestRaisedAskIsLeadOwnedAndWakesLead(t *testing.T) {
 	}
 }
 
+// A held card (a spawn's Token burn card) raised in a worker is the human's from the start: it keeps its run and task,
+// so the timeline and the run's question card name it, but the lead is not woken and has no deadline to wait out.
+func TestRaisedHeldCardIsTheHumansAndWakesNoLead(t *testing.T) {
+	f := newFakeLead(t)
+	agentask.GlobalRegistry.Set("block:child-1", agentask.PendingAsk{
+		AskId: "a1", BlockId: "child", Questions: []baseds.AgentAskQuestion{{Question: "Start 4 agents?"}}, Hold: true,
+	})
+	g := &waveobj.TaskGroup{OID: "dag-1", ChannelId: wakeChannel, RunID: wakeRun}
+	RaiseChildAsk(context.Background(), g, AskTarget{ChannelId: wakeChannel, RunID: wakeRun, TaskId: "t-2", AskId: "a1"}, "block:child-1", "Start 4 agents?")
+
+	p, _ := agentask.GlobalRegistry.Get("block:child-1")
+	if p.Owner != agentask.AskOwner_User || p.Deadline != 0 || p.RunId != wakeRun || p.TaskId != "t-2" || p.DagOID != "dag-1" {
+		t.Fatalf("a held card is the human's, with its run and task and no lead deadline, got %+v", p)
+	}
+	if len(f.sends) != 0 {
+		t.Fatalf("the lead is not woken for a held card, got %q", f.sends)
+	}
+	if f.countKind(waveobj.RunEventKindChildAsk) != 1 {
+		t.Fatalf("want one child-ask row, got %+v", f.rows)
+	}
+	// the deadline sweep never hands it to the lead either
+	f.now += 2 * LeadAskDeadline.Milliseconds()
+	sweepAsks(context.Background())
+	if p, _ := agentask.GlobalRegistry.Get("block:child-1"); p.Owner != agentask.AskOwner_User || len(f.sends) != 0 {
+		t.Fatalf("after the sweep: owner %q, sends %q, want it still the human's and no wake", p.Owner, f.sends)
+	}
+}
+
 func TestRaisedAskGoesToUserWhenLeadIsDead(t *testing.T) {
 	f := newFakeLead(t)
 	f.state.Alive = false

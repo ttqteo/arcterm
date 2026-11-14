@@ -239,6 +239,16 @@ const ctx = (surface: SurfaceKey = "cockpit"): KeyContext => ({
     leader: null,
 });
 
+// The arrows step agents only with focus in the Agent tree (bindings.ts inAgentTree): put focus there for a test that
+// expects them to. Every test's globals are unstubbed after it.
+function focusInAgentTree() {
+    vi.stubGlobal("document", {
+        activeElement: { closest: (sel: string) => (sel === "[data-agent-tree]" ? {} : null) },
+        querySelector: () => null,
+    });
+}
+afterEach(() => vi.unstubAllGlobals());
+
 describe("closeTarget", () => {
     const items = [
         { id: "agent-tab", name: "Agent", state: "working" },
@@ -864,6 +874,7 @@ describe("brainstorm pane Escape", () => {
     });
 
     it("on a board widened in the rail [ ] and ← → step its boards, never the surfaces or the agents", () => {
+        focusInAgentTree();
         loadBoard();
         openBrainstormBoard("a1", "Split.dc.html");
         expect(claims("[")).toEqual(["agent:canvas-prev"]);
@@ -882,6 +893,7 @@ describe("brainstorm pane Escape", () => {
     });
 
     it("a board cleared (the rail no longer shows Boards for it) leaves [ ], ← → and Esc to their other owners", () => {
+        focusInAgentTree();
         loadBoard();
         openBrainstormBoard("a1", "Split.dc.html");
         expect(claims("[")).toEqual(["agent:canvas-prev"]);
@@ -1965,6 +1977,7 @@ describe("agent canvas mode keys", () => {
     });
 
     it("in canvas mode: c, [ ], ← →, m and the agent switches are live; the surface, rail, fullscreen and back keys stand down", () => {
+        focusInAgentTree();
         setCanvasMode("a1", "canvas", 1);
         for (const id of [
             "agent:canvas-close",
@@ -2000,6 +2013,7 @@ describe("agent canvas mode keys", () => {
     });
 
     it("← → stay the canvas's while its board is not ready: they do nothing, never move to another agent", () => {
+        focusInAgentTree();
         setCanvasMode("a1", "canvas", 1);
         for (const status of ["probing", "server-down", "removed"] as const) {
             updateCanvas("a1", (s) => ({ ...s, status }));
@@ -2026,6 +2040,7 @@ describe("agent canvas mode keys", () => {
     });
 
     it("while marking: m stops marking, and the board keys and m-to-mark stand down", () => {
+        focusInAgentTree();
         setCanvasMode("a1", "canvas", 1);
         setMarking("a1", true);
         expect(active("agent:mark-stop")).toBe(true);
@@ -2146,6 +2161,7 @@ describe("agent review mode keys", () => {
     });
 
     it("in review mode: [ ], c and Ctrl+Enter are the review's; the surface switch, canvas, rail, fullscreen and back keys stand down", () => {
+        focusInAgentTree();
         attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" });
         setAgentView("a1", "review", 1);
         expect(onKey("[")).toEqual(["agent:review-prev"]);
@@ -3091,6 +3107,7 @@ describe("agent:initiative", () => {
     });
 
     it("yields while the popover is open, and so does every other single-key Agent binding", () => {
+        focusInAgentTree();
         const model = modelWith("a1", [agent("a1", "e1")]);
         const ids = [
             "agent:initiative",
@@ -3292,6 +3309,7 @@ describe("brainstorm check review keys", () => {
     });
 
     it("in the review, j k Enter y u are the review's and the agent j/k stand down; the arrows still move agents", () => {
+        focusInAgentTree();
         for (const id of REVIEW_KEYS) {
             expect(active(id), id).toBe(true);
         }
@@ -4196,5 +4214,26 @@ describe("Kael sync: an open dropdown owns Escape on Code", () => {
         expect(b.when!(ctx("code"))).toBe(false);
         globalStore.set(escapeMenusOpenAtom, 0);
         expect(b.when!(ctx("code"))).toBe(true);
+    });
+});
+
+describe("agent arrows", () => {
+    const nav: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
+    const model = { ...stubModel("a1"), surfaceAtom: atom<SurfaceKey>("agent") } as any;
+    const active = (id: string) => buildAgentBindings(model).find((b) => b.id === id)!.when!(nav);
+    const ARROWS = ["agent:prev", "agent:next", "agent:prev-up", "agent:next-down"];
+
+    it("step agents only with focus in the Agent tree, so Chat's conversation keeps its arrows", () => {
+        vi.stubGlobal("document", { activeElement: null, querySelector: () => null });
+        for (const id of ARROWS) {
+            expect(active(id), id).toBe(false);
+        }
+        // j and k still step agents from anywhere off a text field
+        expect(active("agent:next-j")).toBe(true);
+        expect(active("agent:prev-k")).toBe(true);
+        focusInAgentTree();
+        for (const id of ARROWS) {
+            expect(active(id), id).toBe(true);
+        }
     });
 });

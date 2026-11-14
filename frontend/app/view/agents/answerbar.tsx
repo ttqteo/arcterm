@@ -2,11 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { cn } from "@/util/util";
-import { ArrowUpRight, Check, FileText, SquareTerminal, X } from "lucide-react";
+import { ArrowUpRight, Check, ChevronLeft, ChevronRight, FileText, SquareTerminal, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import {
     answerHint,
+    askNeedsSubmit,
+    askReviewRows,
+    askSentKey,
+    canSubmitAsk,
     nextUnansweredQuestion,
     terminalAskNote,
     type AgentAskQuestion,
@@ -356,9 +360,19 @@ export function AnswerBar({
 }) {
     const questions = agent.ask?.questions ?? [];
     const accent = agent.state === "asking" ? ACCENT_ASKING : ACCENT_DEFAULT;
+    // the Submit tab of a multi-question ask is this card's own, kept apart from the shared answer tab (the digit keys
+    // read that one as a question index), and tied to the ask so the next ask opens on its first question
+    const askKey = askSentKey(agent) ?? agent.id;
+    const [submitTabFor, setSubmitTabFor] = useState<string | null>(null);
     if (questions.length === 0) {
         return null;
     }
+    const onSubmitTab = submitTabFor === askKey;
+    const goQuestion = (qi: number) => {
+        setSubmitTabFor(null);
+        onSelectQuestion?.(qi);
+    };
+    const goSubmitTab = () => setSubmitTabFor(askKey);
     // the question here is a duplicate for a caller that already rendered it above (hideQuestion) — a
     // caller that owns the question is also the one place left to say why it came back.
     const noteLine =
@@ -396,13 +410,16 @@ export function AnswerBar({
             </div>
         );
     }
-    // after question qi is answered: go to the next unanswered question, or send once none is left
+    // after question qi is answered: go to the next unanswered question; once none is left, a lone question sends
+    // and several open the Submit tab, where the answers are read over before they go
     const advance = (qi: number) => {
         const next = nextUnansweredQuestion(questions, selections, texts ?? {}, qi);
-        if (next === -1) {
-            onSubmit();
+        if (next !== -1) {
+            goQuestion(next);
+        } else if (questions.length > 1) {
+            goSubmitTab();
         } else {
-            onSelectQuestion?.(next);
+            onSubmit();
         }
     };
 
@@ -428,21 +445,59 @@ export function AnswerBar({
         />
     );
 
-    // one ask renders inline; multiple asks become tabs so they don't stack into a tall wall
+    const ready = canSubmitAsk(questions, selections, texts ?? {});
+    const submitButton = (
+        <button
+            type="button"
+            disabled={!ready}
+            title={ready ? "Send the answers" : "Answer every question first"}
+            onClick={onSubmit}
+            className={cn(
+                "flex h-[23px] shrink-0 cursor-pointer items-center gap-1.5 rounded-[6px] border-0 px-[11px] text-[11.5px] font-bold disabled:cursor-default",
+                ready
+                    ? agent.state === "asking"
+                        ? "bg-warning text-background"
+                        : "bg-accent text-background"
+                    : "bg-white/[0.06] text-muted"
+            )}
+        >
+            <Check size={12} aria-hidden />
+            Submit
+        </button>
+    );
+
+    // one ask renders inline; a multi-select or typed answer waits for its Submit button, since Enter never reaches
+    // the card in Chat (the box holds it)
     if (questions.length === 1) {
         const hint = answerHint(questions, selections, !!numbered, texts ?? {});
+        const needsSubmit = askNeedsSubmit(questions, texts ?? {});
         return (
             <div className={className}>
                 {dismissControl}
                 {noteLine}
                 {renderGroup(0)}
-                {showHint && hint ? <div className="mt-2 text-[11px] text-secondary">{hint}</div> : null}
+                {showHint && (hint || needsSubmit) ? (
+                    <div className="mt-2 flex items-center gap-2">
+                        <span className="min-w-0 flex-1 text-[11px] text-secondary">{hint}</span>
+                        {needsSubmit ? submitButton : null}
+                    </div>
+                ) : null}
             </div>
         );
     }
 
+    // several questions become tabs, so they don't stack into a tall wall, with a Submit tab last (as in Claude Code's
+    // own picker) that reads the answers over and sends them; ← → step through all of them
     const idx = Math.max(0, Math.min(activeQuestion ?? 0, questions.length - 1));
     const hint = answerHint(questions, selections, !!numbered, texts ?? {});
+    const navBtn =
+        "flex h-[23px] w-[23px] cursor-pointer items-center justify-center rounded-[6px] border border-border text-secondary hover:bg-white/[0.04] hover:text-primary disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent";
+    const tabClass = (active: boolean) =>
+        cn(
+            "flex cursor-pointer items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[12px]",
+            active ? accent.tab : "border-border text-secondary hover:bg-white/[0.04]"
+        );
+    const rows = askReviewRows(questions, selections, texts ?? {}, cleanLabel);
     return (
         <div className={className}>
             {dismissControl}
@@ -450,25 +505,75 @@ export function AnswerBar({
             <div className="flex flex-wrap gap-1.5">
                 {questions.map((q, qi) => {
                     const answered = (selections[qi]?.size ?? 0) > 0 || (texts?.[qi] ?? "").trim() !== "";
-                    const active = qi === idx;
                     return (
                         <button
                             key={qi}
                             type="button"
-                            onClick={() => onSelectQuestion?.(qi)}
-                            className={cn(
-                                "flex cursor-pointer items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[12px]",
-                                active ? accent.tab : "border-border text-secondary hover:bg-white/[0.04]"
-                            )}
+                            onClick={() => goQuestion(qi)}
+                            className={tabClass(!onSubmitTab && qi === idx)}
                         >
                             <span className={cn("h-1.5 w-1.5 rounded-full", answered ? accent.dot : "bg-muted/40")} />
                             {q.header || `Q${qi + 1}`}
                         </button>
                     );
                 })}
+                <button type="button" onClick={goSubmitTab} className={tabClass(onSubmitTab)}>
+                    <Check size={12} aria-hidden className={ready ? accent.check : "text-muted"} />
+                    Submit
+                </button>
             </div>
-            {renderGroup(idx)}
-            {showHint && hint ? <div className="mt-2 text-[11px] text-secondary">{hint}</div> : null}
+            {onSubmitTab ? (
+                <div className="mt-3">
+                    <div className="mb-1.5 text-[13px] font-semibold text-primary">Review your answers</div>
+                    <div className="flex flex-col gap-1">
+                        {rows.map((row) => (
+                            <button
+                                key={row.qi}
+                                type="button"
+                                onClick={() => goQuestion(row.qi)}
+                                title="Change this answer"
+                                className="flex cursor-pointer items-baseline gap-3 rounded-[6px] border border-border px-3 py-1.5 text-left hover:bg-white/[0.04]"
+                            >
+                                <span className="w-[110px] shrink-0 truncate text-[11.5px] text-muted">
+                                    {row.label}
+                                </span>
+                                {row.answer != null ? (
+                                    <span className="min-w-0 flex-1 text-[12.5px] text-primary">{row.answer}</span>
+                                ) : (
+                                    <span className="min-w-0 flex-1 text-[12.5px] text-warning">Not answered</span>
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            ) : (
+                renderGroup(idx)
+            )}
+            <div className="mt-2 flex items-center gap-2">
+                <span className="min-w-0 flex-1 text-[11px] text-secondary">
+                    {showHint ? hint : null}
+                    {showHint && onSubmitTab && !ready ? " · answer every question to send" : null}
+                </span>
+                <button
+                    type="button"
+                    title="Previous"
+                    disabled={!onSubmitTab && idx === 0}
+                    onClick={() => goQuestion(onSubmitTab ? questions.length - 1 : idx - 1)}
+                    className={navBtn}
+                >
+                    <ChevronLeft size={13} aria-hidden />
+                </button>
+                <button
+                    type="button"
+                    title={idx >= questions.length - 1 ? "Submit tab" : "Next question"}
+                    disabled={onSubmitTab}
+                    onClick={() => (idx >= questions.length - 1 ? goSubmitTab() : goQuestion(idx + 1))}
+                    className={navBtn}
+                >
+                    <ChevronRight size={13} aria-hidden />
+                </button>
+                {onSubmitTab ? submitButton : null}
+            </div>
         </div>
     );
 }

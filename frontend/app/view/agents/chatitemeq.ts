@@ -140,11 +140,23 @@ export function sameChatItem(a: ChatItem, b: ChatItem): boolean {
                     JSON.stringify(a.btw) === JSON.stringify(other.btw)
                 );
             }
-            return a.text === other.text && a.uuid === other.uuid && sameStrings(a.images, other.images);
+            return (
+                a.text === other.text &&
+                a.uuid === other.uuid &&
+                sameStrings(a.images, other.images) &&
+                a.chunk?.n === other.chunk?.n &&
+                a.chunk?.label === other.chunk?.label &&
+                a.switchNote === other.switchNote
+            );
         }
         case "sent": {
             const other = b as typeof a;
-            return a.from === other.from && a.header === other.header && sameStrings(a.lines, other.lines);
+            return (
+                a.from === other.from &&
+                a.header === other.header &&
+                a.tabId === other.tabId &&
+                sameStrings(a.lines, other.lines)
+            );
         }
         case "agent": {
             const other = b as typeof a;

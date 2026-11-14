@@ -191,12 +191,29 @@ to wait in. It tells the person so and passes only the other tabs they named, le
 - **A timeout** (`wait` gives up after 30 minutes by default) leaves the council as it is, running or still queued.
   Say so, and run `wsh council wait <id>` again later if you need the answer.
 
+## Keep its memory current
+
+A council's memory (Agreed, Ruled out, Open) is what its seats take as settled when the person writes to it again, and
+what arcterm copies into the project's CLAUDE.md for every agent after. It learns only from the council's own chat, so
+when the person settles one of its points with you instead (closes an Open question, drops an option, corrects a number
+the memory states, or has you make a fix an entry says is still to do), record it in the same turn:
+
+- `wsh council memory <id>` prints the entries with their ids (m1, m2…).
+- To close an Open entry or correct an Agreed one: `wsh council memory <id> rm <m id>`, then
+  `wsh council memory <id> add agreed "<what is now true>"`. A dropped option: `add ruledout "<option>" --why "<why>"`.
+- Record only what the person decided or the files now show, one sentence in the memory's language. What you write is
+  the person's, and the council's own checks never drop it. Say in one line what you changed.
+
 ## The other commands
 
 - `wsh council list` — the project's councils, newest first: id, state, round and feature.
 - `wsh council show <id>` — a council's report and matrix as markdown, without waiting.
+- `wsh council memory <id> [add <kind> <text> | edit <m id> <text> | rm <m id>]` — read or change its memory (above).
 - `wsh council retry <id> [--expert <seat>] [--model <model>]` — run a failed call again, once; the discussion stays.
   `--all [--model <seat>=<model>]...` reruns every failed seat but the summary at once.
+- `wsh council summarize <id>` — have the coordinator write the report now, from the ideas sent so far: a council
+  paused after round 1 (the rounds left are skipped), stopped, failed, or done with a discussion that moved on. One
+  call. Only when the person asks.
 - `wsh council stop <id>` — stop a running or queued council; the rounds that finished stay. Only when the person asks.
 
 ## Writing a role

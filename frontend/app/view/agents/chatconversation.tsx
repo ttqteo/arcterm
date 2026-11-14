@@ -34,9 +34,10 @@ import { CopyButton } from "@/app/element/copybutton";
 import { MOTION, springReveal } from "@/app/element/motiontokens";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
-import { cn } from "@/util/util";
+import { openOrPeek } from "@/app/view/jarvis/openref";
+import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
-import { ArrowUpRight, ChevronDown, ChevronRight, Copy, EyeOff, Flag, GitFork } from "lucide-react";
+import { ArrowRight, ArrowUpRight, ChevronDown, ChevronRight, Copy, Diamond, EyeOff, Flag, GitFork } from "lucide-react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
@@ -61,6 +62,7 @@ import {
     ChatBrainstormCard,
     ChatBrainstormStepDone,
 } from "./chatbrainstormcard";
+import { FOCUS_RING } from "./chatbrainstormparts";
 import { ChatBrainstormRunDone, ChatBrainstormRunRow, useDoneRuns } from "./chatbrainstormrun";
 import { brainstormAnswersAtom } from "./chatbrainstormstore";
 import { answerMessages, answeredText, pairedHidden } from "./chatbrainstormwire";
@@ -76,6 +78,7 @@ import { ChatHandoffCard, ChatHandoffDone } from "./chathandoffcard";
 import { ChatInitiativeHost, InitiativeMessageCards } from "./chatinitiativecard";
 import { openMessageCard, useMessageCards } from "./chatinitiativestore";
 import { sameChatItem } from "./chatitemeq";
+import { ChatQuoteButton } from "./chatquotebutton";
 import { liveTexts, withLiveReply, type LiveReply } from "./chatlive";
 import {
     CHAT_RENDER_STEP,
@@ -497,23 +500,49 @@ function pinnedLabel(text: string, pasted: number): string {
     return said.files.length > 0 && said.images.length === 0 && pasted === 0 ? "(file)" : "(picture)";
 }
 
-// a prompt arcterm typed: an outlined card on the right naming its sender, its lines in mono, folded past three
-function SentCard({ item }: { item: Extract<ChatItem, { kind: "sent" }> }) {
+// a prompt arcterm typed: an outlined card on the right naming its sender, its lines in mono, folded past three. A message
+// another agent sent heads with a link to that agent's conversation (ctrl-click peeks it)
+function SentCard({ item, model }: { item: Extract<ChatItem, { kind: "sent" }>; model?: AgentsViewModel }) {
     const [open, setOpen] = useState(false);
     const folds = item.lines.length > SENT_FOLD_LINES;
     const lines = folds && !open ? item.lines.slice(0, SENT_FOLD_LINES) : item.lines;
+    const tabId = item.tabId;
+    const head = (
+        <>
+            <span className="min-w-0 truncate font-medium text-primary">{item.header}</span>
+            <span className="flex-none text-[11.5px] text-muted">
+                {item.from === "run" ? "from the run" : "from the cockpit"}
+            </span>
+        </>
+    );
     return (
         <div
             data-chat-sent
             data-chat-from={item.from}
             className="flex max-w-[75%] flex-col gap-[6px] self-end rounded-[12px] border border-edge-mid px-[14px] py-[9px]"
         >
-            <div className="flex min-w-0 items-baseline gap-2 text-[12.5px]">
-                <span className="min-w-0 truncate font-medium text-primary">{item.header}</span>
-                <span className="flex-none text-[11.5px] text-muted">
-                    {item.from === "run" ? "from the run" : "from the cockpit"}
-                </span>
-            </div>
+            {tabId != null && model != null ? (
+                <button
+                    type="button"
+                    data-chat-sent-open
+                    title="Open the conversation that sent this"
+                    onClick={(e) => fireAndForget(() => openOrPeek(model, { kind: "agent", tabId }, e))}
+                    className={cn(
+                        FOCUS_RING,
+                        "group flex min-w-0 cursor-pointer items-baseline gap-2 self-start rounded-[4px] border-0 bg-transparent p-0 text-left text-[12.5px]"
+                    )}
+                >
+                    {head}
+                    <ArrowUpRight
+                        size={12}
+                        strokeWidth={2}
+                        aria-hidden
+                        className="flex-none self-center text-muted group-hover:text-primary"
+                    />
+                </button>
+            ) : (
+                <div className="flex min-w-0 items-baseline gap-2 text-[12.5px]">{head}</div>
+            )}
             {lines.length > 0 ? (
                 <div className="flex flex-col font-mono text-[11.5px] leading-[1.55] text-secondary">
                     {lines.map((line, i) => (
@@ -803,6 +832,35 @@ function FileChips({
                     </motion.div>
                 ))}
             </AnimatePresence>
+        </div>
+    );
+}
+
+// where a chunk's work begins: the message that moved the agent to it (the initiative band's Work on this) carries the
+// chunk, and the rule across the column says which one the turns below are for
+function ChunkDivider({ n, label }: { n: number; label: string }) {
+    return (
+        <div data-chat-chunk-divider={n} className="mb-1 flex items-center gap-2.5 self-stretch">
+            <span className="h-px flex-1 bg-edge-mid" />
+            <span
+                title={`Chunk ${n} · ${label}`}
+                className="inline-flex min-w-0 max-w-[75%] items-center gap-1.5 rounded-full border border-edge-strong bg-surface px-2.5 py-0.5 text-[11.5px] leading-[1.6] text-secondary"
+            >
+                <Diamond size={11} strokeWidth={1.8} aria-hidden className="flex-none text-accent-soft" />
+                <span className="flex-none font-mono text-[10.5px] text-muted">Chunk {n}</span>
+                <span className="min-w-0 truncate text-ink-hi">{label}</span>
+            </span>
+            <span className="h-px flex-1 bg-edge-mid" />
+        </div>
+    );
+}
+
+// what stands for the message the band sent to tell the agent of a switch: arcterm's words, on your side of the column
+function SwitchNoteRow({ n }: { n: number }) {
+    return (
+        <div data-chat-switch-note={n} className="flex items-center gap-1.5 text-[12px] text-muted">
+            <ArrowRight size={12} strokeWidth={1.8} aria-hidden className="flex-none" />
+            Moved to chunk {n} · sent by arcterm
         </div>
     );
 }
@@ -1506,7 +1564,7 @@ export function ChatConversation({
                         </div>
                     );
                 }
-                return (
+                const bubble = (
                     <YouBubble
                         item={item}
                         onContextMenu={copyMenu}
@@ -1515,9 +1573,19 @@ export function ChatConversation({
                         onAddInitiative={canAddInitiative ? addToInitiative : undefined}
                     />
                 );
+                // a message that moved the agent to another chunk opens that chunk's stretch of the conversation; the band's
+                // own message (Switch to this chunk with an empty box) is a muted row of arcterm's, not a bubble of yours
+                return "command" in item || item.chunk == null ? (
+                    bubble
+                ) : (
+                    <>
+                        <ChunkDivider n={item.chunk.n} label={item.chunk.label} />
+                        {item.switchNote ? <SwitchNoteRow n={item.chunk.n} /> : bubble}
+                    </>
+                );
             }
             case "sent":
-                return <SentCard item={item} />;
+                return <SentCard item={item} model={model} />;
             case "agent":
                 return (
                     <div data-chat-agent className="flex min-w-0 flex-col gap-2">
@@ -1662,6 +1730,8 @@ export function ChatConversation({
             ) : null}
             {/* one wrapper per item, keyed by its first entry: the place kept and restored is found by it */}
             {rows}
+            {/* Reply under selected text: only a live agent has a box to quote it into (drawn in a portal, no row) */}
+            {agent != null ? <ChatQuoteButton agentId={agent.id} rootRef={rootRef} /> : null}
             {hasQueuedStart ? <RunQueueFeed /> : null}
             {agent != null
                 ? endAnchors.map((anchor) => (

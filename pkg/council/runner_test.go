@@ -1986,6 +1986,40 @@ func TestContinueQuestionNotRouted(t *testing.T) {
 	}
 }
 
+// A Continue question that names a file with an @ is stored with tools on, as a reply would be, so round 2 can open it.
+func TestContinueQuestionNamingAFileTurnsToolsOn(t *testing.T) {
+	for _, tc := range []struct {
+		question  string
+		wantTools bool
+	}{
+		{"Check it against @docs/plan.md", true},
+		{"What about Mac?", false},
+	} {
+		t.Run(tc.question, func(t *testing.T) {
+			h := newHarness(t)
+			c := testCouncil("c1")
+			c.PauseAfterRound1 = true
+			h.run(c)
+			if _, err := h.r.Continue("c1", nil, tc.question); err != nil {
+				t.Fatalf("Continue: %v", err)
+			}
+			got := h.wait("c1")
+			if ask := repliesBy(got, YouId)[0]; ask.Tools != tc.wantTools {
+				t.Errorf("the stored question has Tools %v, want %v", ask.Tools, tc.wantTools)
+			}
+			r2 := h.f.calls("r2")
+			if len(r2) == 0 {
+				t.Fatal("no round 2 calls")
+			}
+			for _, req := range r2 {
+				if req.Tools != tc.wantTools {
+					t.Errorf("%s's round 2 call has tools %v, want %v", req.Expert.Id, req.Tools, tc.wantTools)
+				}
+			}
+		})
+	}
+}
+
 // @all (or @everyone, in any case) asks every seat on purpose: no router, the first seat answers, and the rest answer
 // after it, shown its answer.
 func TestAtAllReachesEverySeat(t *testing.T) {
@@ -3075,6 +3109,30 @@ func TestSummarizeRerunsTheSynthesis(t *testing.T) {
 	mustContain(t, "third synthesis prompt", h.f.calls("r3")[2].Prompt, "One more thought.")
 }
 
+// The Final proposal the person pinned to the Report is display only: no prompt reads it, and a re-summarize keeps it.
+func TestSummarizeKeepsTheFinalPick(t *testing.T) {
+	h := newHarness(t)
+	h.run(flowCouncil(t, "c1"))
+	pinned, err := SetFinalPick("c1", "P1")
+	if err != nil || pinned.FinalPick != "P1" {
+		t.Fatalf("SetFinalPick(P1) = %q, %v, want the pin saved", pinned.FinalPick, err)
+	}
+	h.f.setText("lead/r3", titledSynthesis("Second take.", "Only direction"))
+	if _, err := h.r.Summarize("c1"); err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	c := h.wait("c1")
+	if c.Summary == nil || c.Summary.Text != "Second take." {
+		t.Fatalf("after Summarize: summary %+v, want the new Summary", c.Summary)
+	}
+	if c.FinalPick != "P1" {
+		t.Errorf("after Summarize FinalPick = %q, want the pinned P1 kept", c.FinalPick)
+	}
+	if saved := h.load("c1"); saved.FinalPick != "P1" {
+		t.Errorf("the saved council has FinalPick %q after Summarize, want P1", saved.FinalPick)
+	}
+}
+
 func TestSummarizeAStoppedCouncilKeepsItStopped(t *testing.T) {
 	h := newHarness(t)
 	c := fixtureCouncil("c1", StateStopped, 1) // stopped in round 1: proposals only
@@ -3388,6 +3446,38 @@ func TestMarkStaleStopsWhatWavesrvLeftRunning(t *testing.T) {
 	defer h.mu.Unlock()
 	if len(h.seen) != 2 {
 		t.Errorf("OnChange fired %d times, want once for each council marked", len(h.seen))
+	}
+}
+
+// A council wavesrv left running gets its document at startup, as one stopped mid-run does: the rounds it finished,
+// ended stopped. A queued one is left for StartNext and gets none.
+func TestMarkStaleSavesTheStoppedCouncilsDocument(t *testing.T) {
+	useDocDay(t)
+	h := newHarness(t)
+	running := fixtureCouncil("running", StateRunning, 2)
+	running.Project = t.TempDir()
+	h.save(running)
+	queued := fixtureCouncil("queued", StateQueued, 0)
+	queued.Project = t.TempDir()
+	h.save(queued)
+	h.r.MarkStale()
+
+	c := h.load("running")
+	want := filepath.Join(running.Project, "docs", "council", "2026-10-21-idle-sleep-for-services.md")
+	if c.State != StateStopped || c.DocPath != want {
+		t.Fatalf("running = %s with the document at %q, want stopped and saved at %q", c.State, c.DocPath, want)
+	}
+	body, err := os.ReadFile(want)
+	if err != nil {
+		t.Fatalf("the document was not written: %v", err)
+	}
+	for _, w := range []string{"# Council: Idle sleep for services", "Title from ux", "It breaks.", "- Ended: stopped"} {
+		if !strings.Contains(string(body), w) {
+			t.Errorf("the document lacks %q\n%s", w, body)
+		}
+	}
+	if q := h.load("queued"); q.State != StateQueued || q.DocPath != "" {
+		t.Errorf("queued = %s with the document at %q, want it still queued with none", q.State, q.DocPath)
 	}
 }
 
@@ -8184,5 +8274,66 @@ func TestApplyRound2KeepsPicksOnlyFromAPassThatAskedForThem(t *testing.T) {
 	applyRound2(c, c.Experts[0], res, 2, true, 5)
 	if got := c.Picks["ux"]; !slices.Equal(got, []string{"P2", "P3"}) {
 		t.Errorf("picks = %v from a pass that asked, want P2 and P3", got)
+	}
+}
+
+// blockedSeatLink is a seatLink whose Seat lookups wait on release, saying on entered when one starts.
+type blockedSeatLink struct {
+	*seatLink
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (l *blockedSeatLink) Seat(ctx context.Context, tab string) (AgentSeatState, error) {
+	select {
+	case l.entered <- struct{}{}:
+	default:
+	}
+	<-l.release
+	return l.seatLink.Seat(ctx, tab)
+}
+
+// Draft reads the seats' folders (a lookup of up to seatLookup per agent seat) before it takes the runner's lock, so a
+// slow lookup holds no other council call (t-8 review: checkRoots ran under r.mu).
+func TestDraftLooksUpSeatsOutsideTheLock(t *testing.T) {
+	h := newHarness(t)
+	c := h.run(agentCouncil("a"))
+	ux := ideaBy(t, c, "ux")
+	link := &blockedSeatLink{
+		seatLink: newSeatLink(map[string]string{"tab-1": t.TempDir()}, func(string, string) string { return "" }),
+		entered:  make(chan struct{}, 1),
+		release:  make(chan struct{}),
+	}
+	h.r.Agents = AgentCaller{Link: link, BusyCap: time.Second, TurnCap: 5 * time.Second, Poll: time.Millisecond}
+	done := make(chan error, 1)
+	go func() {
+		_, err := h.r.Draft("a", ux, "send", "") // not the last held draft: it only settles
+		done <- err
+	}()
+	select {
+	case <-link.entered:
+	case <-time.After(5 * time.Second):
+		close(link.release)
+		t.Fatal("Draft never looked the agent seat up")
+	}
+	// another call that takes the lock gets through while the lookup waits
+	other := make(chan struct{})
+	go func() {
+		_, _ = h.r.Stop("no-such-council")
+		close(other)
+	}()
+	select {
+	case <-other:
+	case <-time.After(2 * time.Second):
+		close(link.release)
+		<-done
+		t.Fatal("a call that takes the runner's lock waited on Draft's seat lookup")
+	}
+	close(link.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if p := proposalOf(t, h.wait("a"), ux); p.Draft != "" {
+		t.Errorf("UX's idea = %+v, want sent", p)
 	}
 }

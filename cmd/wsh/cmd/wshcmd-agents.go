@@ -4,8 +4,10 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -25,6 +27,8 @@ const (
 	// a send to a sleeping agent waits for its wake: the server gives it 60 s to report in
 	agentsSendTimeoutMs = 70_000
 	agentsSelfMark      = "(you)"
+	// after the folder name of a session in no project wsh knows
+	agentsNoProjectMark = "(no project)"
 	agentsTitleMax      = 60
 )
 
@@ -101,56 +105,85 @@ func agentsListRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	all, _ := cmd.Flags().GetBool("all")
-	projectPath := ""
-	if !all {
-		if projectPath, err = agentsCallerProject(); err != nil {
-			return err
-		}
+	projectPath, projects, err := agentsCallerProject()
+	if err != nil && !all {
+		return err
 	}
-	rows := agentsInProject(rtn.Agents, projectPath)
+	if all {
+		projectPath = ""
+	}
+	rows, hidden := agentsInProject(rtn.Agents, projectPath, projects)
 	if isJSON(cmd) {
 		return jsonOut(rows)
 	}
-	for _, line := range agentsListLines(rows, projectPath != "", getTabIdFromEnv()) {
+	for _, line := range agentsListLines(rows, projectPath != "", getTabIdFromEnv(), hidden, projects) {
 		fmt.Println(line)
 	}
 	return nil
 }
 
-// agentsCallerProject is the path of the project holding the current directory, "" when none does
-func agentsCallerProject() (string, error) {
+// agentsCallerProject is the path of the project holding the current directory ("" when none does) and the path of
+// every project wsh knows (registered, or a channel's)
+func agentsCallerProject() (string, []string, error) {
 	chans, err := runsChannels()
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	p, _, err := runsProjectAt(chans, "")
+	here, err := runsMainCheckoutPath(context.Background(), ".")
 	if err != nil {
-		return "", fmt.Errorf("resolving this project (pass --all to skip it): %w", err)
+		return "", nil, fmt.Errorf("resolving this project (pass --all to skip it): %w", err)
 	}
-	if p == nil {
-		return "", nil
+	cfg, err := wshclient.GetFullConfigCommand(RpcClient, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
+	if err != nil {
+		return "", nil, fmt.Errorf("reading the registered projects (pass --all to skip it): %w", err)
 	}
-	return p.path, nil
+	known := runsProjects(chans, cfg.Projects)
+	paths := make([]string, len(known))
+	for i, p := range known {
+		paths[i] = p.path
+	}
+	if p := runsResolveProject(known, here); p != nil {
+		return p.path, paths, nil
+	}
+	return "", paths, nil
 }
 
-// agentsInProject keeps the rows inside projectPath; an empty path keeps them all. Never nil, so --json
-// prints [] for no rows.
-func agentsInProject(rows []wshrpc.AgentInfo, projectPath string) []wshrpc.AgentInfo {
-	kept := []wshrpc.AgentInfo{}
+// agentsOutside says a row's session works in no project wsh knows (projects): no project's list would show it. nil
+// projects (--all, when they could not be read) are unknown, and say no.
+func agentsOutside(row wshrpc.AgentInfo, projects []string) bool {
+	return projects != nil && !slices.ContainsFunc(projects, func(p string) bool { return runsPathWithin(row.ProjectPath, p) })
+}
+
+// agentsInProject keeps the rows inside projectPath, and those of sessions in no project (agentsOutside), which no
+// project's list would show otherwise: a person's agent opened in a scratch folder was never found by an agent asking
+// from its own project. An empty path keeps them all. hidden counts the rows left out, in other projects. Never nil,
+// so --json prints [] for no rows.
+func agentsInProject(rows []wshrpc.AgentInfo, projectPath string, projects []string) (kept []wshrpc.AgentInfo, hidden int) {
+	kept = []wshrpc.AgentInfo{}
 	for _, row := range rows {
-		if projectPath == "" || runsPathWithin(row.ProjectPath, projectPath) {
+		if projectPath == "" || runsPathWithin(row.ProjectPath, projectPath) || agentsOutside(row, projects) {
 			kept = append(kept, row)
+		} else {
+			hidden++
 		}
 	}
-	return kept
+	return kept, hidden
 }
 
 // agentsListLines prints a row per agent. Two sessions in one project read alike by name, and a worktree's
 // session files under its main checkout's project, so a row also shows where the session works when that is
-// not the checkout, its task title, and which row is the caller's own.
-func agentsListLines(rows []wshrpc.AgentInfo, filtered bool, selfTab string) []string {
+// not the checkout, its task title, and which row is the caller's own. A session in no project (agentsOutside)
+// says so after its folder's name, and a filtered list that left agents out ends with how many and how to see them.
+func agentsListLines(rows []wshrpc.AgentInfo, filtered bool, selfTab string, hidden int, projects []string) []string {
+	more := ""
+	if filtered && hidden > 0 {
+		more = fmt.Sprintf("%d more in other projects; %s", hidden, agentsAllProjectsTip)
+	}
 	if len(rows) == 0 {
 		if filtered {
+			if more != "" {
+				return []string{"no live agents in this project; " + more}
+			}
 			return []string{"no live agents in this project; " + agentsAllProjectsTip}
 		}
 		return []string{"no live agents"}
@@ -166,10 +199,18 @@ func agentsListLines(rows []wshrpc.AgentInfo, filtered bool, selfTab string) []s
 		if r.TabId == selfTab {
 			about = strings.TrimSpace(agentsSelfMark + " " + about)
 		}
-		fmt.Fprintln(w, strings.Join([]string{agentsShort(r.TabId), r.Name, r.Project, run, r.Harness, r.State, agentsWhere(r), about}, "\t"))
+		project := r.Project
+		if agentsOutside(r, projects) {
+			project = strings.TrimSpace(project + " " + agentsNoProjectMark)
+		}
+		fmt.Fprintln(w, strings.Join([]string{agentsShort(r.TabId), r.Name, project, run, r.Harness, r.State, agentsWhere(r), about}, "\t"))
 	}
 	w.Flush()
-	return strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if more != "" {
+		lines = append(lines, more)
+	}
+	return lines
 }
 
 // agentsWhere is the session's directory when it is not its project's checkout, relative to the checkout when

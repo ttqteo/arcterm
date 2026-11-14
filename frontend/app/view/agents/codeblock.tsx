@@ -6,6 +6,7 @@ import { cn } from "@/util/util";
 import { useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { highlightLine, isPlainLang, type CodeToken } from "./highlight";
+import { PINNED_PROMPT_HEIGHT_VAR } from "./pinnedpromptbar";
 
 // Wrap long lines instead of scrolling sideways, on by default. One mode for every code block, kept across
 // reloads (atomWithStorage convention, see cockpitprefsstore.ts).
@@ -19,11 +20,16 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
     const plain = isPlainLang(lang);
     const tokens = (ln: string): CodeToken[] =>
         plain ? [{ t: ln || " ", cls: "text-syntax-ident" }] : highlightLine(ln);
+    // The head sticks to the top of the transcript's scroller while a long block scrolls past, so Wrap and Copy stay in
+    // reach; below the pinned prompt when one shows (PINNED_PROMPT_HEIGHT_VAR), and under it (z-[5] < its z-10) as the
+    // band slides. overflow-clip, not -hidden: it rounds the corners without making the block a scroller, which would
+    // pin the head to the block itself.
     return (
-        <div className="my-1.5 overflow-hidden rounded-[10px] border border-border bg-surface-code">
+        <div className="my-1.5 overflow-clip rounded-[10px] border border-border bg-surface-code">
             <div
                 data-code-head
-                className="flex select-none items-center gap-2 border-b border-edge-faint bg-surface px-[11px] py-[7px]"
+                className="sticky z-[5] flex select-none items-center gap-2 border-b border-edge-faint bg-surface px-[11px] py-[7px]"
+                style={{ top: `var(${PINNED_PROMPT_HEIGHT_VAR}, 0px)` }}
             >
                 {lang ? (
                     <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-accent">{lang}</span>

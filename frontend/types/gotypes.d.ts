@@ -2143,11 +2143,6 @@ declare global {
         id: string;
     };
 
-    // wshrpc.CommandNoteScratchWriteData
-    type CommandNoteScratchWriteData = {
-        body: string;
-    };
-
     // wshrpc.CommandNoteUpdateData
     type CommandNoteUpdateData = {
         id: string;
@@ -2976,6 +2971,7 @@ declare global {
         entries?: CouncilMemoryEntry[];
         removed?: string[];
         nextentry?: number;
+        outsideat?: number;
     };
 
     // council.CouncilMemoryCard

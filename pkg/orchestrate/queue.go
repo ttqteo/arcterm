@@ -342,11 +342,20 @@ func noCommitLine(taskID string, run *waveobj.Run, forLead bool) string {
 
 // RaiseChildAsk puts a dag child's question in its lead's queue and wakes the lead. question is the
 // first question's text, for the child-ask row.
+//
+// A held card (Hold: the Token burn card of `wsh tokengate` or `wsh council start`, memgate's) is arcterm's question
+// about the person's quota, not the child's about its task: it is the human's from the start, with no lead deadline
+// and no wake. Handed to the lead, it sat in `dag asks` for 10 minutes, or for good in an autonomous run, while the
+// spawn behind it waited out the card's 30 minutes and was refused (two council bench runs lost, one start hung 26 min).
 func RaiseChildAsk(ctx context.Context, g *waveobj.TaskGroup, target AskTarget, blockOref, question string) {
 	var raised agentask.PendingAsk
 	ok := agentask.GlobalRegistry.Update(blockOref, target.AskId, func(p *agentask.PendingAsk) {
-		p.Owner = agentask.AskOwner_Lead
-		p.Deadline = wakeNow() + LeadAskDeadline.Milliseconds()
+		if p.Hold {
+			p.Owner, p.Deadline = agentask.AskOwner_User, 0
+		} else {
+			p.Owner = agentask.AskOwner_Lead
+			p.Deadline = wakeNow() + LeadAskDeadline.Milliseconds()
+		}
 		p.ChannelId, p.RunId, p.TaskId, p.DagOID = g.ChannelId, g.RunID, target.TaskId, g.OID
 		raised = *p
 	})
@@ -355,7 +364,9 @@ func RaiseChildAsk(ctx context.Context, g *waveobj.TaskGroup, target AskTarget, 
 	}
 	publishChildAsk(raised)
 	RecordAskLifecycle(ctx, target, waveobj.RunEventKindChildAsk, question)
-	PokeWake(ctx, g.ChannelId, g.RunID)
+	if !raised.Hold {
+		PokeWake(ctx, g.ChannelId, g.RunID)
+	}
 }
 
 // expireClearsFn puts typed answers no agent confirmed back in the queue and returns them. A var so

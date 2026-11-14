@@ -15,7 +15,6 @@ import { createTempFileFromBlob, createTempFileFromFile } from "@/app/view/term/
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily, atomWithStorage } from "jotai/utils";
 import { useEffect, useState } from "react";
-import { isOversize } from "./composerattachments";
 import {
     councilProjectKey,
     withThumb,
@@ -26,6 +25,7 @@ import {
 import type { RegionCrop } from "./councilsources";
 import type { CouncilRating, KeptCouncilView } from "./councilsummarymodel";
 import { imageRoom, type TaskImage } from "./launcherimages";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "./uploadfile";
 
 const sameProject = (a: string, b: string) => councilProjectKey(a) === councilProjectKey(b);
 
@@ -519,8 +519,9 @@ export function clearDraftImages(d: CouncilChatDrafts, key: string): CouncilChat
     return { ...d, images: rest };
 }
 
-/** What a refused image says on its chip. */
-export const IMAGE_TOO_BIG = "Image too large (over 10 MB)";
+/** What a refused image says on its chip. The cap is the write's own (MAX_UPLOAD_BYTES: the bytes cross one websocket
+ *  message), so the chip refuses exactly what createTempFileFromBlob / createTempFileFromFile would. */
+export const IMAGE_TOO_BIG = `Image too large (over ${MAX_UPLOAD_LABEL})`;
 
 const setDraft = (councilId: string, next: (d: CouncilChatDrafts) => CouncilChatDrafts) =>
     globalStore.set(councilChatDraftAtom(councilId), next);
@@ -528,7 +529,7 @@ const setDraft = (councilId: string, next: (d: CouncilChatDrafts) => CouncilChat
 /** Takes the images pasted or dropped into box `key` of a council's chat (`""` the channel's, else an idea's thread): each
  *  waits at once as a chip with a preview, and is written to ~/.arc/attachments (`Keep`: the council keeps the path, and no
  *  temp sweep takes the file) as a paste's bare blob (`createTempFileFromBlob`) or a drop's file under its own name
- *  (`createTempFileFromFile`). A file over 10 MB is refused before any write, and a write that fails puts its reason on its
+ *  (`createTempFileFromFile`). A file over MAX_UPLOAD_BYTES (3.5 MB) is refused before any write, and a write that fails puts its reason on its
  *  chip; either stays on show until removed. A box holds `MAX_TASK_IMAGES`; the rest are dropped. The draft is the atom's,
  *  so a write that ends after the person left the council lands in it. */
 export function addCouncilImages(councilId: string, key: string, files: File[], from: "paste" | "drop"): void {
@@ -536,7 +537,7 @@ export function addCouncilImages(councilId: string, key: string, files: File[], 
     for (const f of files.slice(0, room)) {
         const id = crypto.randomUUID();
         const previewUrl = URL.createObjectURL(f);
-        if (isOversize(f.size)) {
+        if (f.size > MAX_UPLOAD_BYTES) {
             setDraft(councilId, (d) => addDraftImage(d, key, { id, previewUrl, error: IMAGE_TOO_BIG }));
             continue;
         }

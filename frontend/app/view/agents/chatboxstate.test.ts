@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { boxPlaceholder, boxState, type BoxState, type BoxStateInput } from "./chatboxstate";
+import { boxPlaceholder, boxState, boxTabPlaceholder, type BoxState, type BoxStateInput } from "./chatboxstate";
 
 const none: BoxStateInput = { asleep: false, running: false, dragging: false, suggesting: false, bash: false };
 const of = (patch: Partial<BoxStateInput>): BoxState => boxState({ ...none, ...patch });
@@ -102,5 +102,15 @@ describe("boxPlaceholder", () => {
         expect(boxPlaceholder("idle", "Atlas", null)).toBe("Reply to Atlas, @ to mention, / for commands");
         expect(boxPlaceholder("running", "Atlas", "")).toBe("Reply to Atlas; it waits for the turn to end");
         expect(boxPlaceholder("asleep", "Atlas", undefined)).toBe("message Atlas to wake it… (Enter)");
+    });
+});
+
+describe("boxTabPlaceholder", () => {
+    it("names Tab as a key in the idle line", () => {
+        expect(boxTabPlaceholder("Atlas")).toEqual([
+            "Reply to Atlas, ",
+            { key: "Tab" },
+            " for suggestions, @ to mention, / for commands",
+        ]);
     });
 });

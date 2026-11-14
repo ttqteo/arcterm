@@ -24,8 +24,53 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Fixed
+
+- Retry the summary on a council's Report is off when no idea was sent, and says why.
+- An image over 3.5 MB is refused when you add it to a message, not lost on send.
+- A council that was running when arcterm closed now gets its saved report too, like one you stopped.
+- A question you ask with Continue at a council's pause that names a file with @ is answered after the experts read it.
+- In a council's third round, an expert can open the image or file you attached to an earlier reply it is shown.
+- A council's verify folder left behind when arcterm closed in the middle of a check is cleaned up the next time
+  arcterm starts.
+- A council started in a folder that is not one of your projects shows in the tree, in Home's folder.
+- A Token burn card raised inside a run (a worker starting subagents, or `wsh council start`) comes to you in Needs
+  you at once, instead of sitting with the run's lead until it was refused 30 minutes later.
+- `wsh agents list` also shows the agents working in a folder that is not one of your projects, marked `(no
+  project)`, and ends with how many agents other projects have, so an agent can find one you opened in a scratch
+  folder.
+- In Chat, the "Goes with your next message: switched to chunk…" line above the message box has its own frame, so
+  the conversation no longer shows through its text while you scroll.
+
 ### Added
 
+- In Chat, a message that moved the agent to another initiative chunk shows a "Chunk N · name" divider above it, so
+  you can tell where each chunk's work begins.
+- The initiative band in Chat shows three steps on how to use it the first time you open it; Got it hides them and
+  the ? beside the band's chevron brings them back.
+
+### Changed
+
+- In the initiative band, Work on this is now Switch to this chunk, so it no longer reads like Jarvis's Work on (which
+  opens a new agent), and it tells the agent at once when the message box is empty. With a draft in the box, the
+  switch still goes with your next message, and the line above the box says so.
+
+- In a council, Chốt (set as direction) shows a compass instead of a pin, so it no longer looks like Pin to Report
+  beside it on a seat's message. A pinned chat seat's Final proposal in the saved report names the chat with its key
+  (`notes · 0976023f`), as the Report does.
+
+## 1.1.3 — 2026-11-14
+
+### Added
+
+- In Chat, select any text in the conversation (a reply, your own message, a tool's output) and click Reply: it goes
+  into the message box as a quote, with the caret under it for your question.
+- In Chat, a message another agent sent you heads with a link: click "message · from <agent>" to open that agent's
+  conversation (Ctrl-click peeks it).
+- **Pin tabs in Float**: right-click a tab on the strip under a float's terminal and pick **Pin tab**. Pinned tabs
+  come first and never fold into "+N"; **Unpin tab** lets one go.
+- In Chat, `Tab` walks the suggested replies under the box (`Shift`+`Tab` back) and `Enter` sends the one it picked,
+  which shows the Enter key; the empty box says so. Reply chips lose the ↵ arrow that read as Enter on every one.
 - Chat draws a council the agent started as a card, like its runs and verdicts: while the council runs it sits at the
   end of the conversation with the question, a chip for each expert, the step it is on and a Stop button; it asks
   Continue or Stop when it pauses after round 1, and shows what it waits for when it is queued. Once it ends, the card
@@ -43,11 +88,20 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In Chat, an agent with a brainstorm attached always shows it in the band under the header, between two questions
   too: how many boards it has, with a dot and "N new" for the ones that arrived since you last opened the Brainstorm
   tab (the tab carries the same dot), and how many decisions are yours. Open that part and it pushes the conversation
-  down to the decisions and the boards; a click on a board opens the Brainstorm tab. With an initiative beside it, Mark
+  down to the decisions and the boards; a click on a board opens it large over the Chat, without leaving it (Esc
+  closes it, Open in Brainstorm goes to the tab). With an initiative beside it, Mark
   done moves into the initiative's opened view (the `m` key still works).
 
 ### Changed
 
+- A long code block in Chat keeps its Wrap and Copy buttons in view as you scroll through it, just under the pinned
+  prompt.
+- Float's tabs follow the Agent tree: a run is one tab, its lead, instead of a tab for every worker it started, and a
+  brainstorm's check sessions stay under the agent that started them.
+- The Note tab in Float and its `Cmd`+`Shift`+`N` shortcut are gone. The note's text stays in `notes/scratch.md` in
+  your vault.
+- `wsh council summarize <id>` has the coordinator write a council's report now, as the app's Summarize does: a
+  council paused after round 1, stopped, failed, or done with a discussion that moved on.
 - A message you send in Chat rises in at its place again, as in a messenger, instead of flying out of the message box.
 - Chat's suggested replies stay while you type instead of all going at the first letter; clicking one over text you
   typed asks first, in a toast whose Send replaces your text with the reply.
@@ -67,6 +121,23 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- On the Agent surface the arrow keys no longer jump to another agent while you read Chat: they step agents only with
+  keyboard focus in the Agent tree (`j` / `k` still step from anywhere).
+- In Chat, words typed in the box while a plan's Handoff card waits answer it, as the card says, instead of waiting
+  behind "Answer Claude's question first".
+- The blinking caret in Chat's message box shows in front of the grey hint again, not half hidden behind its first
+  letter.
+- A council you write to again after its report no longer works from an outdated memory: before the seats answer, it
+  reads what you settled since in the agent that started it and the diffs of its files, and closes or corrects the
+  Agreed and Open lines they outdate (so CLAUDE.md's Council decisions block follows). Its experts now read the files
+  that changed since the report instead of trusting the report's view of them, and an agent can update the memory
+  itself with `wsh council memory`.
+- A council seat whose answer Claude's safeguards stopped part-way, and that Claude then finished on a fallback
+  model, no longer fails with "invalid character '\n' in string": the seat's answer is the fallback's reply alone.
+- A question card with several questions or a pick-many question can be sent again. Several questions end in a
+  Submit tab, as in Claude Code's own picker, that lists your answers and sends them, with ← → to step through; a
+  lone pick-many question has a Submit button. The card no longer says "press Enter to submit", which the Chat box
+  caught.
 - An app server an agent starts (`mvn spring-boot:run`, `./gradlew bootRun`, `uvicorn`, `next dev` and the like) no
   longer holds a heavy-job slot for up to an hour, which kept builds and typechecks waiting behind it.
 - arcterm's background service no longer keeps a CPU core busy once you have thousands of past runs: the servers
@@ -86,6 +157,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   held direction waits for you.
 - A council's Retry on a failed summary is off, and says why, when no idea was ever sent, instead of failing when
   pressed.
+- An image pasted or dropped into a council over 3.5 MB is refused on its chip at once. The chip allowed up to
+  10 MB, but anything over 3.5 MB then failed to save.
+- A council report's jump link to Also raised now unfolds those ideas as it scrolls to them.
+- In a council of three rounds, an idea withdrawn in round 2 now reads "Withdrawn in round 2" in the report and its
+  table, not round 3.
+- Sending a held draft in a council with a live agent seated no longer holds up other council actions while it looks
+  the agent up.
 
 ## 1.1.2 — 2026-11-14
 
@@ -1978,7 +2056,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **Note and Translate in Float**: the strip under a float's terminal has a **Note** tab, one markdown note that saves
   itself as you type (with Preview), and a **Translate** tab that opens translate-shell, its prompt showing the
   language it translates into, with `↑` recalling past lookups. `Cmd`+`Shift`+`N` floats the note.
-  <!-- try: float-note --> <!-- big -->
+  <!-- big -->
 - Office sounds: chiptune jingles when a task finishes, a run lands or someone needs you, with optional footsteps and
   day and night music (`s` or the office menu's Mute sound mutes them). Settings → Appearance turns the jingles, the
   boss's sounds and the music on or off, and sets how loud they play.

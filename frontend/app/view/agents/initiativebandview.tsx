@@ -34,7 +34,15 @@ import type { AgentsViewModel } from "./agents";
 import { formatAgo, type AgentVM } from "./agentsviewmodel";
 import { markChunkDone } from "./chatsuggeststore";
 import { bandLabels, bandRows, firstWorkOn, holderTag, type BandHolder, type BandRow } from "./initiativeband";
-import { setBandPart, switchAgentChunk, toggleBandPart, type BandPart } from "./initiativebandstore";
+import {
+    dismissBandHint,
+    setBandPart,
+    showBandHint,
+    switchAndTell,
+    toggleBandPart,
+    useBandHint,
+    type BandPart,
+} from "./initiativebandstore";
 import { BTN, ChunkStatusMenu, CURSOR_RING, ROW, STATUS_TEXT } from "./initiativechunkmenu";
 import {
     agentChunk,
@@ -50,6 +58,13 @@ import { useInitiativeReread, usePlanReview } from "./planreviewstore";
 import { openRailSection } from "./railsection";
 
 type List = "window" | "all";
+
+// the band's how-to, over its rows until Got it (initiativebandstore.ts useBandHint); ? on the line shows it again
+const HINT_STEPS = [
+    "This agent works on the highlighted chunk. The line above always says which one.",
+    "When it is finished, press Mark done (m). The agent moves on to the next chunk.",
+    "To move it, hover another chunk and press Switch to this chunk (w). The agent is told at once.",
+];
 
 // what the cursor moves over: the window's rows, the All chunks row, then the full list's rows while it is open
 type Nav = { kind: "row"; row: BandRow; list: List } | { kind: "all" };
@@ -119,6 +134,7 @@ export function useInitiativePart({
     // the band shows what the initiative is now: a card's write and the agent's own `wsh effort` land as the agent works
     useInitiativeReread(agent.effortId, agent.state, false);
     const open = active && part === "initiative";
+    const hint = useBandHint();
     const [cursor, setCursor] = useState(0);
     const [allOpen, setAllOpen] = useState(false);
     const [sub, setSub] = useState<Sub | null>(null);
@@ -243,8 +259,9 @@ export function useInitiativePart({
             void run(() => markChunkDone(oref, mine.label, agent.id));
         }
     };
+    // Switch to this chunk: the agent is told at once when its box is empty (switchAndTell); a draft takes the line along
     const workOn = (label: string) => {
-        void run(() => switchAgentChunk(oref, agent.id, label));
+        void run(() => switchAndTell(oref, agent.id, label, agent.sleeping == null));
     };
     const pickStatus = (label: string, status: string) => {
         setSub(null);
@@ -451,7 +468,7 @@ export function useInitiativePart({
                         <span
                             className={cn(
                                 "relative flex flex-none items-center justify-end",
-                                row.workOn && "min-w-[88px]"
+                                row.workOn && "min-w-[132px]"
                             )}
                         >
                             {tag !== "" ? (
@@ -475,14 +492,14 @@ export function useInitiativePart({
                                         e.stopPropagation();
                                         workOn(label);
                                     }}
-                                    title={`Move this agent to “${label}” (w)`}
+                                    title={`Move this agent to “${label}” and tell it now (w)`}
                                     className={cn(
                                         BTN,
                                         "absolute right-0 top-1/2 h-[22px] -translate-y-1/2 px-[8px] text-[11px] opacity-0 focus-visible:opacity-100 group-hover:opacity-100",
                                         isCur && "opacity-100"
                                     )}
                                 >
-                                    Work on this
+                                    Switch to this chunk
                                 </button>
                             ) : null}
                         </span>
@@ -612,6 +629,23 @@ export function useInitiativePart({
                         </button>
                     ) : null}
                     {brainstormBeside ? null : markDoneButton}
+                    {narrow ? null : (
+                        <button
+                            type="button"
+                            data-band-help
+                            aria-label="How the band works"
+                            title="How the band works"
+                            onMouseDown={keepFocus}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                showBandHint();
+                                setBandPart(agent.id, "initiative");
+                            }}
+                            className="flex size-[22px] flex-none cursor-pointer items-center justify-center rounded-[6px] border border-edge-mid bg-transparent p-0 text-[11.5px] font-semibold text-muted hover:text-primary"
+                        >
+                            ?
+                        </button>
+                    )}
                     <button
                         type="button"
                         data-band-toggle
@@ -636,166 +670,207 @@ export function useInitiativePart({
         </div>
     );
 
+    const hintView = hint ? (
+        <div className={cn("border-t border-edge-mid pr-4 pt-[14px]", narrow ? "pl-4" : "pl-[39px]")}>
+            <div
+                data-band-hint
+                className="flex items-start gap-4 rounded-[10px] border border-edge-strong bg-background px-[14px] py-3"
+            >
+                <ol className={cn("m-0 grid flex-1 list-none gap-4 p-0", narrow ? "grid-cols-1" : "grid-cols-3")}>
+                    {HINT_STEPS.map((text, i) => (
+                        <li key={i} className="flex items-start gap-[9px]">
+                            <span className="flex size-5 flex-none items-center justify-center rounded-full border border-edge-strong text-[11px] font-semibold text-ink-mid">
+                                {i + 1}
+                            </span>
+                            <span className="text-[12.5px] leading-[1.5] text-secondary">{text}</span>
+                        </li>
+                    ))}
+                </ol>
+                <button
+                    type="button"
+                    data-band-hint-dismiss
+                    onMouseDown={keepFocus}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        dismissBandHint();
+                        focusRoot();
+                    }}
+                    className={cn(BTN, "h-[26px] flex-none")}
+                >
+                    Got it
+                </button>
+            </div>
+        </div>
+    ) : null;
+
     const body =
         open && effort != null && status != null ? (
-            <div
-                className={cn(
-                    "grid gap-x-6 gap-y-3 border-t border-edge-mid pb-4 pr-4 pt-[14px]",
-                    narrow ? "grid-cols-1 pl-4" : "grid-cols-2 pl-[39px]"
-                )}
-            >
-                <div className="flex min-w-0 flex-col gap-[2px]">
-                    <div className="mb-[4px] flex flex-wrap items-baseline gap-x-[5px] text-[11px] text-muted">
-                        {parentOref != null && parent != null ? (
-                            <>
-                                <button
-                                    type="button"
-                                    data-band-parent
-                                    onMouseDown={keepFocus}
-                                    onClick={(e) => openInJarvis({ kind: "effort", effortId: effort.parentoid! }, e)}
-                                    title={`Open ${parent.title} in Jarvis`}
-                                    className="min-w-0 cursor-pointer truncate border-0 bg-transparent p-0 text-left text-[11px] text-accent-soft hover:underline"
-                                >
-                                    <span className="text-ink-mid">↳ Part of </span>
-                                    {parent.title}
-                                </button>
-                                <span aria-hidden>·</span>
-                            </>
-                        ) : null}
-                        <span>{effort.project || "no project"}</span>
-                        <span aria-hidden>·</span>
-                        <span className={cn("font-semibold", STATUS_TEXT[status.tone])}>{status.text}</span>
-                    </div>
-                    {rows.window.map((r, i) => rowView(r, "window", i))}
-                    {rows.total > 0 ? (
-                        <div
-                            data-band-all
-                            role="button"
-                            tabIndex={-1}
-                            aria-expanded={allOpen}
-                            aria-current={allIndex === cur}
-                            onMouseDown={keepFocus}
-                            onClick={() => openAt(allIndex)}
-                            className={cn(
-                                ROW,
-                                "text-[11.5px] text-muted hover:bg-surface-hover hover:text-primary",
-                                focused && allIndex === cur && CURSOR_RING
-                            )}
-                        >
-                            <ChevronDown
-                                size={12}
-                                strokeWidth={1.8}
-                                aria-hidden
+            <>
+                {hintView}
+                <div
+                    className={cn(
+                        "grid gap-x-6 gap-y-3 pb-4 pr-4 pt-[14px]",
+                        hint ? "" : "border-t border-edge-mid",
+                        narrow ? "grid-cols-1 pl-4" : "grid-cols-2 pl-[39px]"
+                    )}
+                >
+                    <div className="flex min-w-0 flex-col gap-[2px]">
+                        <div className="mb-[4px] flex flex-wrap items-baseline gap-x-[5px] text-[11px] text-muted">
+                            {parentOref != null && parent != null ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        data-band-parent
+                                        onMouseDown={keepFocus}
+                                        onClick={(e) =>
+                                            openInJarvis({ kind: "effort", effortId: effort.parentoid! }, e)
+                                        }
+                                        title={`Open ${parent.title} in Jarvis`}
+                                        className="min-w-0 cursor-pointer truncate border-0 bg-transparent p-0 text-left text-[11px] text-accent-soft hover:underline"
+                                    >
+                                        <span className="text-ink-mid">↳ Part of </span>
+                                        {parent.title}
+                                    </button>
+                                    <span aria-hidden>·</span>
+                                </>
+                            ) : null}
+                            <span>{effort.project || "no project"}</span>
+                            <span aria-hidden>·</span>
+                            <span className={cn("font-semibold", STATUS_TEXT[status.tone])}>{status.text}</span>
+                        </div>
+                        {rows.window.map((r, i) => rowView(r, "window", i))}
+                        {rows.total > 0 ? (
+                            <div
+                                data-band-all
+                                role="button"
+                                tabIndex={-1}
+                                aria-expanded={allOpen}
+                                aria-current={allIndex === cur}
+                                onMouseDown={keepFocus}
+                                onClick={() => openAt(allIndex)}
                                 className={cn(
-                                    "flex-none transition-transform motion-reduce:transition-none",
-                                    allOpen && "rotate-180"
+                                    ROW,
+                                    "text-[11.5px] text-muted hover:bg-surface-hover hover:text-primary",
+                                    focused && allIndex === cur && CURSOR_RING
                                 )}
-                            />
-                            All chunks ({rows.total})
-                        </div>
-                    ) : null}
-                    {allOpen ? (
-                        <div
-                            data-band-all-list
-                            style={{ maxHeight: ALL_MAX_H }}
-                            // the rows reach 8px past their column (-mx), which the scroller holds as padding so
-                            // it grows no horizontal bar
-                            className="-mx-[8px] flex flex-col gap-[2px] overflow-y-auto px-[8px]"
-                        >
-                            {rows.all.map((r, i) => rowView(r, "all", allIndex + 1 + i))}
-                        </div>
-                    ) : null}
-                    {proposed > 0 ? (
-                        <button
-                            type="button"
-                            data-band-review
-                            onMouseDown={keepFocus}
-                            onClick={reviewOnRail}
-                            className="mt-[4px] flex cursor-pointer items-center gap-[6px] self-start border-0 bg-transparent p-0 text-[11.5px] text-asking hover:underline"
-                        >
-                            <span
-                                aria-hidden
-                                className="h-[8px] w-[8px] rounded-full border-[1.5px] border-dashed border-asking"
-                            />
-                            {proposed} proposed · Review on the rail
-                        </button>
-                    ) : null}
-                    {errorView != null ? <div className="mt-[4px]">{errorView}</div> : null}
-                </div>
-                <div className="flex min-w-0 flex-col gap-[10px]">
-                    <div className="text-[11px] text-muted">
-                        {mine != null && mineRow != null
-                            ? note != null
-                                ? `Latest note on ${mineRow.n} · ${formatAgo(Date.now() - note.ts)}`
-                                : `No note on ${mineRow.n} yet`
-                            : "Notes go on the chunk this agent is on."}
+                            >
+                                <ChevronDown
+                                    size={12}
+                                    strokeWidth={1.8}
+                                    aria-hidden
+                                    className={cn(
+                                        "flex-none transition-transform motion-reduce:transition-none",
+                                        allOpen && "rotate-180"
+                                    )}
+                                />
+                                All chunks ({rows.total})
+                            </div>
+                        ) : null}
+                        {allOpen ? (
+                            <div
+                                data-band-all-list
+                                style={{ maxHeight: ALL_MAX_H }}
+                                // the rows reach 8px past their column (-mx), which the scroller holds as padding so
+                                // it grows no horizontal bar
+                                className="-mx-[8px] flex flex-col gap-[2px] overflow-y-auto px-[8px]"
+                            >
+                                {rows.all.map((r, i) => rowView(r, "all", allIndex + 1 + i))}
+                            </div>
+                        ) : null}
+                        {proposed > 0 ? (
+                            <button
+                                type="button"
+                                data-band-review
+                                onMouseDown={keepFocus}
+                                onClick={reviewOnRail}
+                                className="mt-[4px] flex cursor-pointer items-center gap-[6px] self-start border-0 bg-transparent p-0 text-[11.5px] text-asking hover:underline"
+                            >
+                                <span
+                                    aria-hidden
+                                    className="h-[8px] w-[8px] rounded-full border-[1.5px] border-dashed border-asking"
+                                />
+                                {proposed} proposed · Review on the rail
+                            </button>
+                        ) : null}
+                        {errorView != null ? <div className="mt-[4px]">{errorView}</div> : null}
                     </div>
-                    {note != null ? (
-                        <div
-                            data-band-note
-                            className="line-clamp-4 break-words rounded-[8px] bg-background px-[10px] py-[8px] text-[12px] leading-[1.5] text-secondary"
-                        >
-                            {note.text}
+                    <div className="flex min-w-0 flex-col gap-[10px]">
+                        <div className="text-[11px] text-muted">
+                            {mine != null && mineRow != null
+                                ? note != null
+                                    ? `Latest note on ${mineRow.n} · ${formatAgo(Date.now() - note.ts)}`
+                                    : `No note on ${mineRow.n} yet`
+                                : "Notes go on the chunk this agent is on."}
                         </div>
-                    ) : null}
-                    <div className="flex flex-wrap items-center gap-[6px]">
-                        {sub?.kind === "note" ? (
-                            <input
-                                autoFocus
-                                value={sub.draft}
-                                aria-label={`Add a note to ${mine?.label ?? "the chunk"}`}
-                                placeholder={`Note on ${mine?.label ?? "the chunk"}`}
-                                onChange={(e) => setSub({ kind: "note", draft: e.target.value })}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        saveNote();
-                                    } else if (e.key === "Escape") {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        closeSub();
-                                    }
-                                }}
-                                onBlur={() => setSub((s) => (s?.kind === "note" ? null : s))}
-                                className="h-[26px] min-w-0 flex-1 rounded-[7px] border border-edge-strong bg-surface-code px-[9px] text-[11.5px] text-primary outline-none placeholder:text-ink-faint focus:border-accent"
-                            />
-                        ) : (
-                            <>
-                                <button
-                                    type="button"
-                                    data-band-add-note
-                                    onMouseDown={keepFocus}
-                                    onClick={() => {
-                                        focusRoot();
-                                        startNote();
+                        {note != null ? (
+                            <div
+                                data-band-note
+                                className="line-clamp-4 break-words rounded-[8px] bg-background px-[10px] py-[8px] text-[12px] leading-[1.5] text-secondary"
+                            >
+                                {note.text}
+                            </div>
+                        ) : null}
+                        <div className="flex flex-wrap items-center gap-[6px]">
+                            {sub?.kind === "note" ? (
+                                <input
+                                    autoFocus
+                                    value={sub.draft}
+                                    aria-label={`Add a note to ${mine?.label ?? "the chunk"}`}
+                                    placeholder={`Note on ${mine?.label ?? "the chunk"}`}
+                                    onChange={(e) => setSub({ kind: "note", draft: e.target.value })}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            saveNote();
+                                        } else if (e.key === "Escape") {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            closeSub();
+                                        }
                                     }}
-                                    disabled={mine == null}
-                                    title={
-                                        mine == null ? "This agent is on no chunk" : `Add a note to ${mine.label} (n)`
-                                    }
-                                    className={BTN}
-                                >
-                                    Add note
-                                    <kbd className="font-mono text-[10px] font-normal text-ink-mid">n</kbd>
-                                </button>
-                                <button
-                                    type="button"
-                                    data-band-open-jarvis
-                                    onMouseDown={keepFocus}
-                                    onClick={() => openInJarvis({ kind: "effort", effortId: agent.effortId! })}
-                                    className={BTN}
-                                >
-                                    Open in Jarvis ↗
-                                </button>
-                                {brainstormBeside ? markDoneButton : null}
-                                <span className="flex-1" />
-                                <KeyCap chord="Escape" variant="inline" className="text-[10.5px] text-ink-mid" />
-                            </>
-                        )}
+                                    onBlur={() => setSub((s) => (s?.kind === "note" ? null : s))}
+                                    className="h-[26px] min-w-0 flex-1 rounded-[7px] border border-edge-strong bg-surface-code px-[9px] text-[11.5px] text-primary outline-none placeholder:text-ink-faint focus:border-accent"
+                                />
+                            ) : (
+                                <>
+                                    <button
+                                        type="button"
+                                        data-band-add-note
+                                        onMouseDown={keepFocus}
+                                        onClick={() => {
+                                            focusRoot();
+                                            startNote();
+                                        }}
+                                        disabled={mine == null}
+                                        title={
+                                            mine == null
+                                                ? "This agent is on no chunk"
+                                                : `Add a note to ${mine.label} (n)`
+                                        }
+                                        className={BTN}
+                                    >
+                                        Add note
+                                        <kbd className="font-mono text-[10px] font-normal text-ink-mid">n</kbd>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        data-band-open-jarvis
+                                        onMouseDown={keepFocus}
+                                        onClick={() => openInJarvis({ kind: "effort", effortId: agent.effortId! })}
+                                        className={BTN}
+                                    >
+                                        Open in Jarvis ↗
+                                    </button>
+                                    {brainstormBeside ? markDoneButton : null}
+                                    <span className="flex-1" />
+                                    <KeyCap chord="Escape" variant="inline" className="text-[10.5px] text-ink-mid" />
+                                </>
+                            )}
+                        </div>
                     </div>
                 </div>
-            </div>
+            </>
         ) : null;
 
     return {

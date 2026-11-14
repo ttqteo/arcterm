@@ -5,16 +5,32 @@
 // brainstorm is attached to the agent, its Chat always says how many boards it has (with a dot for the ones that are new
 // since the Brainstorm tab was last looked at) and how many decisions are yours, and opens in place to the decisions and
 // the boards. What it reads is brainstormband.ts (through `brainstormBandAtom`); this file draws it. It loads no board page
-// (no thumbnail), so it costs no RAM in any number of Chat cells. A click on a board, or on the link, opens the Brainstorm
-// tab, which is what takes the board names as seen; expanding the part never does. The root (chatband.tsx) owns the keys.
+// until one is asked for (no thumbnail), so it costs no RAM in any number of Chat cells. A click on a board opens that board
+// large in a dialog over the Chat pane (BoardPreview), whose page loads only while it is open, and takes that one board as
+// seen; the link opens the Brainstorm tab, which takes them all as seen; expanding the part never does. The root
+// (chatband.tsx) owns the keys and which board is open.
 
+import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
-import { ChevronDown, Lightbulb, PanelsTopLeft } from "lucide-react";
+import { useAtomValue } from "jotai";
+import { ChevronDown, Lightbulb, PanelsTopLeft, X } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type MouseEvent, type RefObject } from "react";
 import type { AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
 import type { BrainstormBandModel } from "./brainstormband";
+import { brainstormAtom, getBrainstorm, markBoardSeen } from "./brainstormstore";
+import {
+    boardUrl,
+    canvasLayout,
+    DEFAULT_BOARD_H,
+    DEFAULT_BOARD_W,
+    withContentHeights,
+    type CanvasBoard,
+} from "./canvasmodel";
+import { BoardFrameView, CANVAS_TOP_PAD, useContentHeights, useSteadyFitWidth } from "./canvaspane";
 import { toggleBandPart } from "./initiativebandstore";
+import { SWAP_BTN } from "./swapbar";
 
 // a mouse press must not take focus off whatever has it: the band's keys live on its root
 const keepFocus = (e: MouseEvent) => e.preventDefault();
@@ -22,8 +38,20 @@ const keepFocus = (e: MouseEvent) => e.preventDefault();
 const boardsText = (n: number) => `${n} ${n === 1 ? "board" : "boards"}`;
 
 /** Opens the agent's Brainstorm tab: the tab is what the user looks at, so it takes the board names as seen. */
-function openBrainstorm(agentId: string): void {
+export function openBrainstorm(agentId: string): void {
     setAgentView(agentId, "brainstorm", Date.now());
+}
+
+/** Whether a board of the agent's brainstorm can open over Chat now: wavesrv serves the design folder (the poller asks it
+ *  to once the file lists a board) and the file names its canvas. When not, a board's click opens the Brainstorm tab.
+ *  Takes the board as seen when it can. */
+export function startBoardPreview(agentId: string, name: string): boolean {
+    const s = getBrainstorm(agentId);
+    if (s?.base == null || s.file?.canvas == null) {
+        return false;
+    }
+    markBoardSeen(s.path, name, Date.now());
+    return true;
 }
 
 /** The part's line: a lightbulb, `Brainstorm`, the board icon and `N boards` (not drawn with none), an accent dot and
@@ -154,11 +182,14 @@ export function BrainstormBody({
     bs,
     narrow,
     only,
+    onBoard,
 }: {
     agent: AgentVM;
     bs: BrainstormBandModel;
     narrow: boolean;
     only: boolean;
+    /** a board's row was clicked: the root opens it over Chat */
+    onBoard: (name: string) => void;
 }) {
     const bodyRef = useRef<HTMLDivElement>(null);
     const beside = !narrow && !only;
@@ -193,8 +224,8 @@ export function BrainstormBody({
                         data-bsband-board={b.name}
                         data-new={b.isNew ? "" : undefined}
                         onMouseDown={keepFocus}
-                        onClick={() => openBrainstorm(agent.id)}
-                        title="Open it in Brainstorm"
+                        onClick={() => onBoard(b.name)}
+                        title="Open the board"
                         className="flex min-w-0 cursor-pointer items-center gap-[10px] rounded-[6px] border-0 bg-transparent p-0 text-left hover:bg-surface-hover"
                     >
                         <PanelsTopLeft size={16} strokeWidth={1.5} aria-hidden className="flex-none text-muted" />
@@ -218,6 +249,99 @@ export function BrainstormBody({
                 >
                     Open in Brainstorm (b)
                 </button>
+            </div>
+        </div>
+    );
+}
+
+/** One board of the brainstorm, large, in the board dialog over the Chat pane: a head (the board's name and the part it
+ *  illustrates, Open in Brainstorm, Close) over the board at the dialog's width. Its page loads when the dialog opens and
+ *  goes when it closes. A click on the board, Esc or the scrim closes it; it has no marking (the Brainstorm tab's open
+ *  board has). The board's size is canvas.json's, which the poller reads with the file. */
+export function BoardPreview({
+    agent,
+    name,
+    part,
+    onClose,
+    onOpenBrainstorm,
+}: {
+    agent: AgentVM;
+    name: string;
+    part: string | null;
+    onClose: () => void;
+    onOpenBrainstorm: () => void;
+}) {
+    const s = useAtomValue(brainstormAtom(agent.id));
+    const [measureRef, , rect] = useDimensionsWithCallbackRef<HTMLDivElement>();
+    const fitWidth = useSteadyFitWidth(rect?.width ?? 0);
+    const [heights, reportHeight] = useContentHeights(name);
+    const board: CanvasBoard = s?.boards.find((b) => b.name === name) ?? {
+        name,
+        x: 0,
+        y: 0,
+        w: DEFAULT_BOARD_W,
+        h: DEFAULT_BOARD_H,
+    };
+    const frame = canvasLayout(withContentHeights([board], heights), fitWidth).frames[0];
+    const canvas = s?.file?.canvas;
+    const src = s?.base != null && canvas != null ? boardUrl(s.base, canvas, name) : null;
+    return (
+        <div data-bsband-preview={name} className="flex h-full min-h-0 flex-col">
+            <div className="flex flex-none items-center gap-[10px] border-b border-border px-[16px] py-[8px]">
+                <PanelsTopLeft size={16} strokeWidth={1.5} aria-hidden className="flex-none text-muted" />
+                <div className="flex min-w-0 flex-1 flex-col gap-px">
+                    <span className="truncate text-[12.5px] font-semibold text-ink-hi">{name}</span>
+                    {part != null ? <span className="truncate text-[11px] text-muted">{part}</span> : null}
+                </div>
+                <button
+                    type="button"
+                    data-bsband-preview-open
+                    onMouseDown={keepFocus}
+                    onClick={onOpenBrainstorm}
+                    title={`Open in Brainstorm (${formatChordString("b")})`}
+                    className={SWAP_BTN}
+                >
+                    Open in Brainstorm
+                </button>
+                <button
+                    type="button"
+                    data-bsband-preview-close
+                    aria-label="Close the board"
+                    title="Close the board (Esc)"
+                    onMouseDown={keepFocus}
+                    onClick={onClose}
+                    className={cn(SWAP_BTN, "px-[6px]")}
+                >
+                    <X size={14} strokeWidth={1.9} aria-hidden />
+                </button>
+            </div>
+            {/* the gutter is reserved so the scrollbar appearing cannot narrow the pane, change the fit and make itself
+                disappear again (CanvasPane's reason too) */}
+            <div
+                ref={measureRef}
+                className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[16px] pb-[16px] [scrollbar-gutter:stable]"
+                style={{ paddingTop: CANVAS_TOP_PAD }}
+            >
+                <div className="relative mx-auto" style={{ width: frame.width, height: frame.height }}>
+                    <BoardFrameView
+                        frame={frame}
+                        selected
+                        tile={false}
+                        src={src}
+                        reloadKey={0}
+                        onOpen={onClose}
+                        onContentHeight={(h) => reportHeight(name, h)}
+                    >
+                        <button
+                            type="button"
+                            aria-label="Close the board"
+                            title="Close the board (Esc)"
+                            onMouseDown={keepFocus}
+                            onClick={onClose}
+                            className="absolute inset-0 cursor-zoom-out border-0 bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+                        />
+                    </BoardFrameView>
+                </div>
             </div>
         </div>
     );
