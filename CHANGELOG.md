@@ -27,8 +27,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Changed
 
 - A message you send in Chat rises in at its place again, as in a messenger, instead of flying out of the message box.
-- Chat's suggested replies stay while what you type still starts one ("bu" keeps "build đi", case and accents aside),
-  and step aside only once your text leaves them, instead of all going at the first letter.
+- Chat's suggested replies stay while you type instead of all going at the first letter; clicking one over text you
+  typed asks first, in a toast whose Send replaces your text with the reply.
 - A resume of a past session picked in New is held too while the machine is busy, and Start now picks the same
   session up. Every held agent now says so in a toast, with Open to go to it.
 

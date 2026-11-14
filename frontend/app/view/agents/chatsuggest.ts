@@ -213,22 +213,6 @@ export function chatChips(i: { question: boolean; rules: ChatChip[]; model: Mode
     return out.slice(0, MAX_CHIPS);
 }
 
-// a text as typed compares to a chip's: no case, no Vietnamese marks (đ as d), runs of spaces as one, so a reply half
-// typed in Telex ("build d" on its way to "build đi") still matches
-const foldTyped = (s: string): string =>
-    s.normalize("NFD").replace(/\p{M}/gu, "").replace(/[đĐ]/g, "d").toLowerCase().replace(/\s+/g, " ").trimStart();
-
-/** Pure: the chips that still fit what the person has typed into the box: all of them while it is empty, then those
- *  whose text starts with it (folded: case, marks, spaces), so a reply being typed keeps its chip until the text leaves
- *  it. A `done` chip ticks a chunk rather than sending words, so it steps aside once anything is typed. */
-export function chipsMatching(chips: readonly ChatChip[], typed: string): ChatChip[] {
-    const t = foldTyped(typed);
-    if (t === "") {
-        return [...chips];
-    }
-    return chips.filter((c) => c.kind !== "done" && foldTyped(c.text).startsWith(t));
-}
-
 /** Pure: the key one turn's model answer is kept under: the agent and its reply, so a new turn asks again and the same
  *  turn seen twice does not. */
 export function suggestKey(agentId: string, reply: string): string {

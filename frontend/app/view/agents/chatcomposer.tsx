@@ -9,7 +9,7 @@
 // asleep): its root is `data-chat-box` carrying `data-chat-box-state`, its height springs to its content's measured height,
 // and the parts of a state cross-fade on the micro ease: a running agent adds a line of action chips and puts Stop where
 // Send was (Send stays beside it once there is a message to send), a finished turn's suggested replies take that line
-// while what is typed still starts one of them (chatsuggest.ts), a drag of files turns the box into a dashed drop zone.
+// while the person types too (chatsuggest.ts), a drag of files turns the box into a dashed drop zone.
 // What it sends and how a sleeping agent is woken is
 // useAgentSend's (agentcomposer.tsx), the same path as the compact composer; this adds attachments
 // (composerattachments.ts: a pasted or dropped image is kept and goes as the "Attached images:" block your bubble draws
@@ -91,7 +91,6 @@ import {
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
 import {
-    chipsMatching,
     rowHold,
     runningActions,
     type ChatChip,
@@ -185,8 +184,8 @@ export function ChatComposer({
     onBoxState?: (state: BoxState) => void;
     /** the running agent's "Show the diff" chip; left out, the chip is not drawn */
     onShowDiff?: () => void;
-    /** the replies suggested once the turn ended (chatsuggest.ts chatChips), drawn as chips while the box is empty or
-     *  what is typed still starts them; a click sends one. Left out, none. */
+    /** the replies suggested once the turn ended (chatsuggest.ts chatChips), drawn as chips, typing or not; a
+     *  click sends one (asking first over typed text). Left out, none. */
     chips?: ChatChip[];
     /** a chunk's done chip: ticks it on the agent's initiative. Left out, that chip is not drawn. */
     onMarkDone?: (chunk: string) => void;
@@ -549,9 +548,22 @@ export function ChatComposer({
     };
     // A suggested reply's chip: its text goes through the box's own send, as Enter on it typed would (the pending bubble,
     // the card results in front of it, the wait behind a prompt), so the chips leave at once and a second click finds none
-    const sendSuggested = (t: string) => {
+    // Over text the person has typed it sends nothing yet: a warning toast says that text would go, and its Send sends.
+    const sendNow = (t: string) => {
         submitNext.current = true;
         setTextAt(t);
+    };
+    const sendSuggested = (t: string) => {
+        if (text.trim() === "") {
+            sendNow(t);
+            return;
+        }
+        pushToast({
+            title: "Replace what you typed?",
+            message: `Sending “${t}” drops the text in the box.`,
+            level: "warn",
+            action: { label: "Send", run: () => sendNow(t) },
+        });
     };
     // The + menu's Add folder and Slash commands rows: an empty box becomes `t`; a box that already starts with `/` is
     // a command being written and stays as it is; any other text gets `t` put before it. The box takes the focus, the
@@ -751,15 +763,9 @@ export function ChatComposer({
     };
     // not while a Sleep is under way: Esc would cut short the compaction the sleep waits on
     const showStop = !asleep && !dozing && agent.blockId != null && canStop(agent.state, agent.sleeping);
-    // the finished turn's suggested replies: those that still start with what the person types (chatsuggest.ts
-    // chipsMatching) stay, the rest step aside, and all of them once an attachment goes in
-    const suggested = useMemo(
-        () =>
-            chips != null && !asleep && !waking && !dozing && att.attachments.length === 0
-                ? chipsMatching(chips, text)
-                : NO_CHIPS,
-        [chips, asleep, waking, dozing, att.attachments.length, text]
-    );
+    // the finished turn's suggested replies: they stay while the person types (a click over typed text asks first,
+    // sendSuggested) and step aside once an attachment goes in
+    const suggested = chips != null && !asleep && !waking && !dozing && att.attachments.length === 0 ? chips : NO_CHIPS;
     // the running agent's actions that have something to show (chatsuggest.ts runningActions): the diff once the turn
     // edited a file, the terminal once a command has run a while; read again when a running command gets there
     const acts = showStop ? runningActions(entries ?? [], Date.now()) : NO_ACTS;
@@ -1064,8 +1070,7 @@ export function ChatComposer({
                 {/* A line of chips under the text (chatsuggest.ts): while the agent works, the two things Chat can show of
                     it once they hold something (the diff of what it changed, the terminal of a command running a while);
                     once its turn ends, the replies the person would
-                    likely send next, in their words, which a click sends. Those step aside once what the person writes
-                    no longer starts them. One
+                    likely send next, in their words, which a click sends (asking first over typed text). One
                     line goes before the next comes, so the box never holds both, and the actions come and go only once
                     the agent's state has held (useChipRow). */}
                 <AnimatePresence initial={false} mode="wait">
