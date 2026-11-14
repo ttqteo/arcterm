@@ -20402,7 +20402,8 @@ const lineReview = {
         // 3. collapse and expand a file; the long unchanged run is a fold that expands in place
         const before3 = await rowsIn(LR_POLICY);
         await click(LR_HEADER(LR_POLICY));
-        await nap(200);
+        // the body folds on the spring and leaves the DOM when it ends
+        await nap(1000);
         const collapsed3 = await rowsIn(LR_POLICY);
         await shot("03-collapsed");
         await click(LR_HEADER(LR_POLICY));
