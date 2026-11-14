@@ -818,15 +818,16 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         if (!el) {
             return;
         }
-        // the content box: the scroller's 20 px gutters each side; the HUD bar's space above, its 12 px foot below,
-        // so a short office still fills the view
-        const measure = () => {
-            setWidth(el.clientWidth - 40);
-            setHeight(Math.floor(el.clientHeight - HUD_SPACE_PX - 12));
-        };
-        const ro = new ResizeObserver(measure);
+        // the scroller's content box: inside its 20 px gutters each side, the HUD bar's space above and its 12 px foot
+        // below, so a short office still fills the view. The box as laid out, floored, never clientWidth or clientHeight:
+        // those round a fractional box up (1376.55 px reads 1377), so an office as wide as the rounded box overflows the
+        // real one by the difference, scrollbars come and shrink the view, go again, and the building redraws every frame
+        const ro = new ResizeObserver(([entry]) => {
+            const box = entry.contentBoxSize[0];
+            setWidth(Math.floor(box.inlineSize));
+            setHeight(Math.floor(box.blockSize));
+        });
         ro.observe(el);
-        measure();
         return () => ro.disconnect();
     }, []);
 
@@ -3516,10 +3517,9 @@ function PathDots() {
             ))}
             <span
                 data-office-dot-label
-                className="pointer-events-none absolute z-[7] w-[120px] text-center text-[11px] font-semibold text-asking"
+                className="pointer-events-none absolute left-0 top-0 z-[7] w-[120px] text-center text-[11px] font-semibold text-asking"
                 style={{
-                    left: Math.round((end.x - 60) / PLAN_CELL) * PLAN_CELL,
-                    top: Math.round((end.y + 8) / PLAN_CELL) * PLAN_CELL,
+                    transform: `translate(${Math.round((end.x - 60) / PLAN_CELL) * PLAN_CELL}px, ${Math.round((end.y + 8) / PLAN_CELL) * PLAN_CELL}px)`,
                 }}
             >
                 next Needs you

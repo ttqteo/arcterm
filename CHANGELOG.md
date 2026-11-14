@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The Office no longer redraws its building over and over, with scrollbars flashing, when the window's size leaves the
+  view a fraction of a pixel short of the Office.
 - A file link in Chat that the agent named from a folder it had cd'd into now opens instead of saying "File not found".
 - A Chat message no longer reaches Claude twice: the same words sent again within a few seconds of the first are
   dropped, so a second Enter on a box that had not cleared yet sends nothing more.
