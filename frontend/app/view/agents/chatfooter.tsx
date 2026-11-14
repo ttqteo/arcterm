@@ -14,13 +14,14 @@
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { easeFluidCss, foldX, microFade, MOTION } from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
+import { usePartMotion } from "@/app/element/springbatch";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { readTermLines } from "@/app/view/term/termpaste";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { Check, ChevronRight, ChevronUp, Lock } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import { submitToAgent } from "./agentsubmit";
 import type { AgentVM } from "./agentsviewmodel";
@@ -53,14 +54,8 @@ const SHIFT_TAB = "\x1b[Z";
 // the ring's circle: r 14 in a 36 box, so its circumference is 2π·14
 const RING_CIRC = 88;
 
-// The Framer props of one composer part entering or leaving a row. Reduced motion snaps it: opacity animations still
-// play under MotionConfig's "user" setting, so the part skips its variants instead (no initial, no exit).
-export function usePartMotion(variants: Variants) {
-    const reduce = useReducedMotion();
-    return reduce
-        ? ({ variants, initial: false, animate: "animate" } as const)
-        : ({ variants, initial: "initial", animate: "animate", exit: "exit" } as const);
-}
+// usePartMotion lives in element/springbatch.ts, shared with the other surfaces; Chat's importers still reach it here
+export { usePartMotion };
 
 /**
  * A composer part folding in or out of a row of siblings (foldX): the attach button, the mode chip, the "Asleep" word.

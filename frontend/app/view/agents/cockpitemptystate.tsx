@@ -3,19 +3,18 @@
 //
 // The cockpit's "No agents running" empty state. Extracted from cockpitsurface.tsx.
 
-import { cardVariants } from "@/app/element/motiontokens";
+import { springPop } from "@/app/element/motiontokens";
+import { usePartMotion } from "@/app/element/springbatch";
 import { formatChordString } from "@/util/keysym";
 import { motion } from "motion/react";
 import { RailSantaHat } from "./christmashat";
 
 export function CockpitEmptyState({ onNewAgent }: { onNewAgent: () => void }) {
+    const part = usePartMotion(springPop);
     return (
         <motion.div
             key="empty"
-            variants={cardVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
+            {...part}
             className="absolute inset-0 z-10 flex flex-col items-center justify-center px-[30px] py-12 text-center"
         >
             <div className="flex w-full max-w-[600px] flex-col items-center">

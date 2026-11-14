@@ -24,6 +24,7 @@ import {
     shouldFadeEntry,
     springPop,
     springReveal,
+    springSheet,
     turnTransition,
     viewFade,
 } from "./motiontokens";
@@ -35,7 +36,7 @@ describe("motiontokens", () => {
         expect(MOTION.easeFluid).toEqual([0.22, 1, 0.36, 1]);
     });
 
-    it("card entrance animates opacity/scale only (never x/y — Reorder owns the transform)", () => {
+    it("card entrance animates opacity/scale only (never x/y — a card's layout animation owns the transform)", () => {
         expect(cardVariants.initial).not.toHaveProperty("y");
         expect(cardVariants.initial).not.toHaveProperty("x");
         // Variant is a union that includes a resolver function; these presets are plain
@@ -275,6 +276,31 @@ describe("springPop", () => {
         for (const target of [springPop.initial, springPop.animate, springPop.exit]) {
             expect(target).not.toHaveProperty("x");
             expect(target).not.toHaveProperty("y");
+            expect(target).not.toHaveProperty("height");
+        }
+    });
+});
+
+describe("springSheet", () => {
+    it("slides in from the pinned edge like sheetPanel: x 24 -> 0 with opacity, out the same way", () => {
+        expect(springSheet.initial).toEqual(sheetPanel.initial);
+        expect(springSheet.animate).toMatchObject({ opacity: 1, x: 0 });
+        expect(springSheet.exit).toMatchObject({ opacity: 0, x: (sheetPanel.exit as { x: number }).x });
+    });
+
+    it("moves x on the spring and fades opacity on the Fluid ease: durMicro in, durExit out", () => {
+        const enter = (springSheet.animate as any).transition;
+        expect(enter.x).toEqual(MOTION.spring);
+        expect(enter.opacity).toEqual({ duration: MOTION.durMicro, ease: MOTION.easeFluid });
+        const leave = (springSheet.exit as any).transition;
+        expect(leave.x).toEqual(MOTION.spring);
+        expect(leave.opacity).toEqual({ duration: MOTION.durExit, ease: MOTION.easeFluid });
+    });
+
+    it("never animates y, scale or height", () => {
+        for (const target of [springSheet.initial, springSheet.animate, springSheet.exit]) {
+            expect(target).not.toHaveProperty("y");
+            expect(target).not.toHaveProperty("scale");
             expect(target).not.toHaveProperty("height");
         }
     });

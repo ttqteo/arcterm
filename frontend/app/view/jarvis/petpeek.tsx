@@ -11,8 +11,15 @@
 //
 // The derivations live in petpeekmodel.ts and petcondition.ts. This file is a renderer.
 
-import { computeEntrances, initialEntranceState, MOTION, paneReveal, popoverReveal } from "@/app/element/motiontokens";
+import {
+    computeEntrances,
+    initialEntranceState,
+    MOTION,
+    popoverReveal,
+    springReveal,
+} from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
+import { shapeTransition, usePartMotion } from "@/app/element/springbatch";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askSentKey, type AgentVM } from "@/app/view/agents/agentsviewmodel";
@@ -36,7 +43,7 @@ import {
 } from "@floating-ui/react";
 import { useAtomValue } from "jotai";
 import { ArrowUpRight, Check, ChevronDown, ChevronRight, ChevronUp, PictureInPicture2, Pin, X } from "lucide-react";
-import { AnimatePresence, motion, MotionConfig } from "motion/react";
+import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import {
     useCallback,
     useEffect,
@@ -572,6 +579,7 @@ function UpdatesDrawer({
     children: ReactNode;
 }) {
     const Chevron = open ? ChevronDown : ChevronRight;
+    const part = usePartMotion(springReveal);
     return (
         <div data-pet-updates className="flex-none border-t border-border">
             <button
@@ -593,17 +601,15 @@ function UpdatesDrawer({
                 </span>
                 <Chevron aria-hidden="true" size={12} strokeWidth={2.2} className="flex-none text-muted" />
             </button>
-            {/* the scroll container moves to an inner div: paneReveal animates the outer height and needs
+            {/* the scroll container moves to an inner div: springReveal animates the outer height and needs
                 overflow-hidden, which on the same element would fight overflow-y-auto and clip the scrollbar
                 mid-tween. */}
             <AnimatePresence initial={false}>
                 {open ? (
                     <motion.div
                         key="updates"
-                        variants={paneReveal}
-                        initial={opening ? false : "initial"}
-                        animate="animate"
-                        exit="exit"
+                        {...part}
+                        initial={opening ? false : part.initial}
                         className="overflow-hidden border-t border-border"
                     >
                         <div className="max-h-[170px] overflow-y-auto">{children}</div>
@@ -814,6 +820,9 @@ export function PetPeek({
     onRestore?: () => void;
 }) {
     const open = useAtomValue(petPeekOpenAtom);
+    // the queue's rows open and fold on the spring (snapped under reduced motion); the panel's own resize springs too
+    const rowMotion = usePartMotion(springReveal);
+    const reduce = useReducedMotion();
     const peekItem = useAtomValue(peekItemAtom);
     const facts = useAtomValue(peekFactsAtom);
     const said = useAtomValue(petSaidAtom);
@@ -1201,7 +1210,7 @@ export function PetPeek({
                                     initial="initial"
                                     animate="animate"
                                     exit="exit"
-                                    transition={{ layout: { duration: MOTION.durMacro, ease: MOTION.easeFluid } }}
+                                    transition={{ layout: shapeTransition("animate", reduce) }}
                                     data-mini-hit="chat"
                                     style={{
                                         transformOrigin: placement != null ? originOf(placement) : ORIGIN[corner],
@@ -1404,14 +1413,12 @@ export function PetPeek({
                                                             {rows.map((row, index) => (
                                                                 <motion.div
                                                                     key={row.key}
-                                                                    variants={paneReveal}
+                                                                    {...rowMotion}
                                                                     initial={
                                                                         entering.has(`row:${row.key}`)
-                                                                            ? "initial"
+                                                                            ? rowMotion.initial
                                                                             : false
                                                                     }
-                                                                    animate="animate"
-                                                                    exit="exit"
                                                                     className="overflow-hidden"
                                                                 >
                                                                     <QueueRow

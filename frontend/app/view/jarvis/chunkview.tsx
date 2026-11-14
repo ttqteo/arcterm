@@ -10,7 +10,9 @@
 // The keys are buildInitiativeSheetBindings' chunk-view half (j/k step, s the menu, 1–6 a status, Esc back), activated
 // here. The note pieces (NoteRun, RunRecord) are this view's own: chunksidebar.tsx goes with the in-place tracker.
 
+import { MOTION } from "@/app/element/motiontokens";
 import { SkeletonLine } from "@/app/element/skeleton";
+import { useSpringBatch } from "@/app/element/springbatch";
 import { buildInitiativeSheetBindings, CHUNK_STATUS_KEYS } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import * as WOS from "@/app/store/wos";
@@ -21,7 +23,8 @@ import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, type Atom } from "jotai";
 import { ArrowLeft, ArrowUpRight, ChevronDown, ChevronUp, Copy, X } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { animate, AnimatePresence, useReducedMotion, type AnimationPlaybackControls } from "motion/react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { briefingStateAtom } from "./briefingstore";
 import { briefUndo, chunkKey, noteKey, pendingDeleteKeysAtom } from "./briefundo";
 import { chunkMove, chunkTrail, trailCounts, type TrailBlock, type TrailLine } from "./chunktrail";
@@ -43,6 +46,7 @@ import { openAgentFor } from "./initiativework";
 import { workOnInitiative } from "./initiativeworkaction";
 import { TONE_FG, ToneIcon } from "./inlinetrackerview";
 import { openOrPeek, openOrPeekAddress } from "./openref";
+import { RevealItem } from "./revealitem";
 import { runRecordRows } from "./runrecord";
 import { RunReportView } from "./runreportview";
 import { noteRunFace } from "./sidebarnotes";
@@ -231,6 +235,12 @@ export function ChunkView({
     );
     const trail = chunkTrail(feed, label, Date.now(), expanded, notesOnly);
     const counts = trailCounts(chunkTrail(feed, label, Date.now(), expanded, false));
+    // an entry that lands (or goes) alone opens (or folds) on the spring; Notes only, another chunk (the view is keyed by
+    // it) and 3+ entries at once show at once
+    const trailBatch = useSpringBatch(
+        trail.map((t) => t.key),
+        notesOnly ? "notes" : "all"
+    );
     const isActiveChunk = planChunks.find((c) => c.status === "active")?.label === label;
     const move = chunkMove(chunk.status, isActiveChunk);
 
@@ -399,40 +409,47 @@ export function ChunkView({
                             : "No notes on this chunk yet. Notes from you or an agent land here."}
                     </p>
                 ) : null}
-                <div className="flex flex-col gap-1.5">
-                    {trail.map((t) =>
-                        t.kind === "note" ? (
-                            <NoteBlock
-                                key={t.key}
-                                model={model}
-                                block={t}
-                                onToggle={() =>
-                                    setExpanded((cur) => {
-                                        const next = new Set(cur);
-                                        if (!next.delete(t.key)) {
-                                            next.add(t.key);
-                                        }
-                                        return next;
-                                    })
-                                }
-                                onEdit={(text) =>
-                                    t.entry.noteAt != null &&
-                                    run(() =>
-                                        editNote(
-                                            oref,
-                                            chunkRef(planChunks, t.entry.chunk),
-                                            t.entry.noteAt!,
-                                            t.entry.ts,
-                                            text
-                                        )
-                                    )
-                                }
-                                onDelete={() => deleteNote(t.entry)}
-                            />
-                        ) : (
-                            <StatusLine key={t.key} line={t} />
-                        )
-                    )}
+                {/* the 6px between entries is each entry's own top padding, inside the height it opens, so an entry
+                    arriving does not first shove the others by a gap; -mt-1.5 takes the first one's back */}
+                <div className="-mt-1.5 flex flex-col">
+                    <AnimatePresence initial={false} custom={trailBatch}>
+                        {trail.map((t) => (
+                            <RevealItem key={t.key} batch={trailBatch}>
+                                <div className="pt-1.5">
+                                    {t.kind === "note" ? (
+                                        <NoteBlock
+                                            model={model}
+                                            block={t}
+                                            onToggle={() =>
+                                                setExpanded((cur) => {
+                                                    const next = new Set(cur);
+                                                    if (!next.delete(t.key)) {
+                                                        next.add(t.key);
+                                                    }
+                                                    return next;
+                                                })
+                                            }
+                                            onEdit={(text) =>
+                                                t.entry.noteAt != null &&
+                                                run(() =>
+                                                    editNote(
+                                                        oref,
+                                                        chunkRef(planChunks, t.entry.chunk),
+                                                        t.entry.noteAt!,
+                                                        t.entry.ts,
+                                                        text
+                                                    )
+                                                )
+                                            }
+                                            onDelete={() => deleteNote(t.entry)}
+                                        />
+                                    ) : (
+                                        <StatusLine line={t} />
+                                    )}
+                                </div>
+                            </RevealItem>
+                        ))}
+                    </AnimatePresence>
                 </div>
             </div>
             <AddNote onAdd={(text) => run(() => appendChunkNote(oref, label, text))} />
@@ -556,6 +573,50 @@ function StatusLine({ line }: { line: TrailLine }) {
     );
 }
 
+// The note's own height on the spring when Show all / Show less changes it (a line clamp has no height to animate in CSS).
+// The box is measured at the click, by the returned `mark`, before the toggle re-renders it; once it has re-rendered at its
+// new size the layout effect runs it from the one height to the other, clipped while it moves, and puts the styles back
+// when it ends. The content is already in its final layout, so Show all reads as the box opening onto it. A toggle
+// mid-spring starts from where the box is. Skipped under reduced motion.
+function useHeightSpring(ref: RefObject<HTMLElement | null>, changes: unknown): () => void {
+    const reduce = useReducedMotion();
+    const from = useRef<number | null>(null);
+    const run = useRef<AnimationPlaybackControls | null>(null);
+    useLayoutEffect(() => {
+        const el = ref.current;
+        const start = from.current;
+        from.current = null;
+        if (el == null || start == null) {
+            return;
+        }
+        run.current?.stop();
+        run.current = null;
+        el.style.removeProperty("height");
+        el.style.removeProperty("overflow");
+        const end = el.getBoundingClientRect().height;
+        if (reduce || end === start) {
+            return;
+        }
+        el.style.overflow = "hidden";
+        el.style.height = `${start}px`;
+        const playing = animate(el, { height: [start, end] }, MOTION.spring);
+        run.current = playing;
+        // a spring that was stopped for a newer one must not clear the newer one's styles
+        const rest = () => {
+            if (run.current === playing) {
+                run.current = null;
+                el.style.removeProperty("height");
+                el.style.removeProperty("overflow");
+            }
+        };
+        void playing.finished.then(rest, rest);
+    }, [changes, reduce, ref]);
+    useEffect(() => () => run.current?.stop(), []);
+    return () => {
+        from.current = ref.current?.getBoundingClientRect().height ?? null;
+    };
+}
+
 // a note: who, time, the status it set, the text clamped to four lines, its session or run, Edit and Delete on yours
 function NoteBlock({
     model,
@@ -571,6 +632,8 @@ function NoteBlock({
     onDelete: () => void;
 }) {
     const text = useRef<HTMLSpanElement>(null);
+    const box = useRef<HTMLDivElement>(null);
+    const markHeight = useHeightSpring(box, block.expanded);
     const [clamped, setClamped] = useState(false);
     const [editing, setEditing] = useState<string | null>(null);
     useLayoutEffect(() => {
@@ -596,6 +659,7 @@ function NoteBlock({
     const tagTone = block.tag != null ? chunkTone(block.tag) : null;
     return (
         <div
+            ref={box}
             data-jarvis-trail-block={block.key}
             data-jarvis-trail-tag={block.tag ?? ""}
             className={cn(
@@ -707,7 +771,10 @@ function NoteBlock({
                         <button
                             type="button"
                             data-jarvis-trail-show
-                            onClick={onToggle}
+                            onClick={() => {
+                                markHeight();
+                                onToggle();
+                            }}
                             className={cn(QUIET, "hover:text-ink-hi")}
                         >
                             {block.expanded ? "Show less ▴" : "Show all ▾"}

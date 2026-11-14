@@ -11,7 +11,8 @@
 // moves the boss's and the walkers' <img> on the DOM, and React draws them again only when they turn, set off, stop or
 // flip their walking frame; only animated people read the frame clock; no clock runs while nothing moves.
 
-import { MOTION, sheetPanel } from "@/app/element/motiontokens";
+import { MOTION, springSheet } from "@/app/element/motiontokens";
+import { shapeTransition, usePartMotion } from "@/app/element/springbatch";
 import { globalStore } from "@/app/store/jotaiStore";
 import { closePeek } from "@/app/view/jarvis/peekstore";
 import { petCharacter } from "@/app/view/jarvis/petcharacter";
@@ -96,7 +97,7 @@ import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue, type Atom, type PrimitiveAtom } from "jotai";
 import { selectAtom } from "jotai/utils";
 import { ChevronsLeft, ChevronsRight, Moon, Sun, Zap } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { animate, AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
     Fragment,
     memo,
@@ -817,15 +818,16 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         if (!el) {
             return;
         }
-        // the content box: the scroller's 20 px gutters each side; the HUD bar's space above, its 12 px foot below,
-        // so a short office still fills the view
-        const measure = () => {
-            setWidth(el.clientWidth - 40);
-            setHeight(Math.floor(el.clientHeight - HUD_SPACE_PX - 12));
-        };
-        const ro = new ResizeObserver(measure);
+        // the scroller's content box: inside its 20 px gutters each side, the HUD bar's space above and its 12 px foot
+        // below, so a short office still fills the view. The box as laid out, floored, never clientWidth or clientHeight:
+        // those round a fractional box up (1376.55 px reads 1377), so an office as wide as the rounded box overflows the
+        // real one by the difference, scrollbars come and shrink the view, go again, and the building redraws every frame
+        const ro = new ResizeObserver(([entry]) => {
+            const box = entry.contentBoxSize[0];
+            setWidth(Math.floor(box.inlineSize));
+            setHeight(Math.floor(box.blockSize));
+        });
         ro.observe(el);
-        measure();
         return () => ro.disconnect();
     }, []);
 
@@ -3515,10 +3517,9 @@ function PathDots() {
             ))}
             <span
                 data-office-dot-label
-                className="pointer-events-none absolute z-[7] w-[120px] text-center text-[11px] font-semibold text-asking"
+                className="pointer-events-none absolute left-0 top-0 z-[7] w-[120px] text-center text-[11px] font-semibold text-asking"
                 style={{
-                    left: Math.round((end.x - 60) / PLAN_CELL) * PLAN_CELL,
-                    top: Math.round((end.y + 8) / PLAN_CELL) * PLAN_CELL,
+                    transform: `translate(${Math.round((end.x - 60) / PLAN_CELL) * PLAN_CELL}px, ${Math.round((end.y + 8) / PLAN_CELL) * PLAN_CELL}px)`,
                 }}
             >
                 next Needs you
@@ -3814,7 +3815,10 @@ function OfficeCardPanel({
               : null;
     const kind = at ? (at.desk ? "agent" : "run") : (chipCard?.kind ?? "run");
     const el = scrollRef.current;
-    const viewW = el?.clientWidth ?? 0;
+    // the view's whole width, scrollbar included: the panel is set against the view's right edge, and while the office is
+    // slid the scroller's scrollbars come and go every frame (its clientWidth flaps by a scrollbar's width, as the content
+    // fills the view to the pixel), which would move the pan, and restart its spring, on every one
+    const viewW = el?.offsetWidth ?? 0;
     const w = panelWidth(viewW, big);
     const shown = card != null && el != null;
     // the boss's spot in px from the view's left, as the office stands unslid
@@ -3823,15 +3827,17 @@ function OfficeCardPanel({
     probe.popup = shown ? kind : "";
     probe.big = shown && big;
     probe.pan = pan;
-    // before paint, so a shut panel never leaves the office slid for a frame
+    // the office's x rides the spring the panel's slide does, so the two move as one; a spring keeps its velocity when
+    // the target moves mid-way (the panel shut as it opens). `moving` is off with the office's animation switch and under
+    // reduced motion: then the office lands at once. Started in a layout effect, so a shut panel never leaves it slid for a frame.
     useLayoutEffect(() => {
         const root = rootRef.current;
         if (!root) {
             return;
         }
-        root.style.transition = moving ? `transform ${MOTION.durMacro}s ${EASE_FLUID}` : "";
-        root.style.transform = pan > 0 ? `translateX(${-pan}px)` : "";
+        animate(root, { x: -pan }, shapeTransition(moving ? "animate" : "instant"));
     }, [pan, moving, rootRef]);
+    const part = usePartMotion(springSheet);
     return (
         <AnimatePresence>
             {shown ? (
@@ -3839,10 +3845,7 @@ function OfficeCardPanel({
                     key="panel"
                     data-office-popup={kind}
                     data-office-popup-big={big ? "" : undefined}
-                    variants={moving ? sheetPanel : undefined}
-                    initial={moving ? "initial" : false}
-                    animate="animate"
-                    exit="exit"
+                    {...(moving ? part : { initial: false })}
                     className="absolute z-[9]"
                     style={{ top: HUD_SPACE_PX, bottom: PANEL_EDGE_PX, right: PANEL_EDGE_PX, width: w }}
                 >

@@ -100,6 +100,7 @@ import overlaysFrostScenarios from "./scenarios-overlays-frost.mjs";
 import paletteBrainstormResumeScenarios from "./scenarios-palette-brainstorm-resume.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
 import setupInstructionsScenarios from "./scenarios-setup-instructions.mjs";
+import surfacesSpringScenarios from "./scenarios-surfaces-spring.mjs";
 import terminalStatusLineScenarios from "./scenarios-terminal-status-line.mjs";
 import usageLensScenarios from "./scenarios-usage-lens.mjs";
 import usageWorkScenarios from "./scenarios-usage-work.mjs";
@@ -20179,7 +20180,8 @@ const lineReview = {
         // 3. collapse and expand a file; the long unchanged run is a fold that expands in place
         const before3 = await rowsIn(LR_POLICY);
         await click(LR_HEADER(LR_POLICY));
-        await nap(200);
+        // the body folds on the spring and leaves the DOM when it ends
+        await nap(1000);
         const collapsed3 = await rowsIn(LR_POLICY);
         await shot("03-collapsed");
         await click(LR_HEADER(LR_POLICY));
@@ -60255,6 +60257,12 @@ const KAEL_KITS = { rt: RT_KIT, code: CODE_KIT, files: FILES_KIT, jarvis: JARVIS
 // until now only BS_KIT carried: each module gets `{ ...KAEL_KITS, run: RUN_KIT }`
 const RUN_KIT = { seedDag, seedFinalShots, fstWriteRun, fstShow, fstUntil, fstStartLive, fstPublishSteps, dagPeekPublish };
 
+// what the surfaces-spring-* scenarios (scenarios-surfaces-spring.mjs, docs/superpowers/specs/2026-11-14-surfaces-chat-look-design.md)
+// need of this file, one object so each area's file reaches whichever part it needs: OF_KIT is the Chat redesign's kit plus
+// `scenario(name)` (a registered scenario, so a step can reuse its `arrange` / `teardown`); KAEL_KITS carries the Jarvis,
+// Diff and Code helpers (`kit.jarvis`, `kit.files`, `kit.code`, `kit.rt`); `run` is the run-seeding helpers (`kit.run`)
+const SS_KIT = { ...OF_KIT, ...KAEL_KITS, run: RUN_KIT };
+
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
 // (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
 // nothing mocked. `runs:maxactive` is 1 and a run held by deferstart (it spawns nothing) is active, so no entry has room
@@ -64660,7 +64668,7 @@ async function setupMemoryAssert(h, ctx) {
                     `[...document.querySelectorAll("[data-memory-review-card] [data-memory-doclines] > span")].map((s) => s.textContent.trim())`
                 ),
                 detailsOpen: await h.ev(
-                    `document.querySelector("[data-memory-review-card] details[data-memory-details]")?.open ?? null`
+                    `document.querySelector("[data-memory-review-card] [data-memory-details] [data-memory-details-toggle]")?.getAttribute("aria-expanded") ?? null`
                 ),
                 judgedBy: await text("[data-memory-judged-by]"),
             };
@@ -64688,7 +64696,7 @@ async function setupMemoryAssert(h, ctx) {
                     cr.first.doclines.every(
                         (d, i) => got.doclines[i]?.includes(`${d.doc}:${d.line}`) && got.doclines[i]?.includes(d.text)
                     ) &&
-                    got.detailsOpen === false &&
+                    got.detailsOpen === "false" &&
                     got.judgedBy === `judged by ${MEMORY_JUDGED_BY}`,
                 detail: JSON.stringify({ ...got, rows: got.rows.length, want: openIds.length }),
             };
@@ -69906,6 +69914,7 @@ export const SCENARIOS = [
     ...chatVerdictHandoffScenarios(CBR_KIT),
     ...chatCouncilScenarios(CR_KIT),
     ...overlaysFrostScenarios(OF_KIT),
+    ...surfacesSpringScenarios(SS_KIT),
     sidebarAgentRam,
     ...sidebarColumnsScenarios(RT_KIT),
     machineServers,

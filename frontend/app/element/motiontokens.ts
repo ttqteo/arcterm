@@ -18,8 +18,8 @@ export const MOTION = {
     spring: { type: "spring", visualDuration: 0.35, bounce: 0 } satisfies Transition,
 } as const;
 
-// Card entrance/exit. IMPORTANT: opacity + scale only — never x/y. Reorder.Item
-// owns the x/y transform for drag + reorder; animating y here fights it.
+// Card entrance/exit. IMPORTANT: opacity + scale only — never x/y. A cockpit card slides to its new place on the layout
+// spring (a layout animation owns its x/y transform); an x/y entrance here would fight it.
 export const cardVariants: Variants = {
     initial: { opacity: 0, scale: 0.97 },
     animate: { opacity: 1, scale: 1, transition: { duration: MOTION.durMacro, ease: MOTION.easeFluid } },
@@ -39,12 +39,29 @@ export const modalPanel = cardVariants;
 
 // Sheet reveal (Jarvis detail sheet). A right-pinned full-height drawer slides in from the edge it is
 // pinned to: a layer arriving from off-screen reads as navigation, where a centered scale reads as a
-// dialog. x is safe here — cardVariants bans it because Reorder.Item owns that transform on cockpit
-// cards, and a sheet has no such owner.
+// dialog. x is safe here — cardVariants bans it because a cockpit card's layout animation owns that transform,
+// and a sheet has no such owner.
 export const sheetPanel: Variants = {
     initial: { opacity: 0, x: 24 },
     animate: { opacity: 1, x: 0, transition: { duration: MOTION.durMacro, ease: MOTION.easeFluid } },
     exit: { opacity: 0, x: 24, transition: { duration: MOTION.durExit, ease: MOTION.easeFluid } },
+};
+
+// Spring sheet: sheetPanel's slide with x on MOTION.spring and opacity on the Fluid ease (durMicro in, durExit out; a
+// spring on opacity overshoots 1). A sheet that opens again mid-close picks up its velocity instead of restarting.
+// sheetPanel stays for the council rail, which keeps its tween.
+export const springSheet: Variants = {
+    initial: { opacity: 0, x: 24 },
+    animate: {
+        opacity: 1,
+        x: 0,
+        transition: { x: MOTION.spring, opacity: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+    },
+    exit: {
+        opacity: 0,
+        x: 24,
+        transition: { x: MOTION.spring, opacity: { duration: MOTION.durExit, ease: MOTION.easeFluid } },
+    },
 };
 
 // Lift on grab (moment 8). Drop-settle is the Reorder.Item dragTransition already in place.
@@ -60,7 +77,7 @@ export const composerReveal: Variants = {
 
 // Spring reveal: composerReveal / paneReveal on MOTION.spring. The height opens 0 -> auto on the spring while opacity
 // fades on the micro ease, so a row arriving in a stuck-to-bottom feed grows rather than jumps. Chat's rows, parts and
-// folds use it; other surfaces keep their tween reveals.
+// folds use it, and so do the Cockpit, Jarvis, Diff and Setup; other surfaces keep their tweens until moved on purpose.
 export const springReveal: Variants = {
     initial: { opacity: 0, height: 0 },
     animate: {

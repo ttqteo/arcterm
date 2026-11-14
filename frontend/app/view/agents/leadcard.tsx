@@ -5,7 +5,8 @@
 // review answered inside its row, and the run's controls. The rows come from leadcardmodel.ts; this renders
 // them and sends the actions.
 
-import { cardVariants, composerReveal } from "@/app/element/motiontokens";
+import { springReveal } from "@/app/element/motiontokens";
+import { usePartMotion } from "@/app/element/springbatch";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { globalStore } from "@/app/store/jotaiStore";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
@@ -13,8 +14,8 @@ import { sayIfOverCapacity } from "@/app/view/jarvis/petcapacity";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom, type PrimitiveAtom } from "jotai";
 import { ArrowRight, Check, ChevronDown, ChevronRight, Network, SquareTerminal, Workflow } from "lucide-react";
-import { motion } from "motion/react";
-import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode, type Ref } from "react";
 import { AgentComposer } from "./agentcomposer";
 import { entriesToShow } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
@@ -31,7 +32,7 @@ import { AnswerBar, DocReviewSummary, TerminalAskNote } from "./answerbar";
 import { AttentionBanner } from "./attentioncard";
 import { CapacityWarn } from "./capacitywarn";
 import { diffStatsByIdAtom } from "./cardgitstore";
-import type { CardShare } from "./cardgridlayout";
+import { gridCardVariants, gridPartLayout, type CardShare, type GridCardMotion } from "./cardgridlayout";
 import {
     dagAction,
     rowAction,
@@ -114,10 +115,24 @@ export interface LeadCardProps {
     onBackground?: () => void;
     // the Office's dialog box opened this card from its Adjust: start with the Adjust panel open
     initialPanel?: "adjust";
+    // the grid's own call passes it: the card slides on the spring by its layoutId (the Office panel's card takes none)
+    grid?: GridCardMotion;
+    // the card's box: AnimatePresence pops a card that leaves out of its column by measuring it
+    ref?: Ref<HTMLDivElement>;
 }
 
 export function LeadCard(p: LeadCardProps) {
     const { model, run, lead, vm } = p;
+    // springPop in and out, and out at once for a card that is only re-dealt to the other column (gridCardVariants)
+    const cardVariants = useMemo(() => gridCardVariants(p.cardId), [p.cardId]);
+    const cardPart = usePartMotion(cardVariants);
+    // the composer and the Adjust / Cancel panels open and fold on springReveal
+    const revealPart = usePartMotion(springReveal);
+    // the card's direct parts are counter-scaled while the card slides or resizes, so nothing in it is squashed
+    const part = (name: string, layout: true | "position" = true) =>
+        gridPartLayout(p.grid, `${p.cardId}:${name}`, layout);
+    // the body is what the card's resize changes the size of, so it keeps its size and slides (gridPartLayout)
+    const bodyPart = part("body", "position");
     const answerSel = useAtomValue(model.answerSelAtom);
     const answerText = useAtomValue(model.answerTextAtom);
     const answerTab = useAtomValue(model.answerTabAtom);
@@ -170,10 +185,20 @@ export function LeadCard(p: LeadCardProps) {
 
     return (
         <motion.div
-            variants={cardVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
+            // the variants pop it in (a new card) and out (a card that is gone); in the grid it also slides to a new
+            // place or size on the layout spring, and one re-dealt to the other column arrives by its layoutId
+            {...cardPart}
+            initial={p.grid?.still ? false : cardPart.initial}
+            {...(p.grid
+                ? {
+                      layout: true,
+                      layoutId: p.cardId,
+                      layoutDependency: p.grid.dep,
+                      layoutCrossfade: false,
+                      transition: { layout: p.grid.layout },
+                  }
+                : {})}
+            ref={p.ref}
             style={{ flex: `${p.share.grow} 0 0px`, minHeight: p.share.minPx }}
             data-agent-id={p.cardId}
             onClick={() => p.onCursor(p.cardId)}
@@ -187,7 +212,10 @@ export function LeadCard(p: LeadCardProps) {
                 p.pulse && "ring-2 ring-warning ring-inset"
             )}
         >
-            <div className="flex shrink-0 items-center gap-2 border-b border-edge-mid bg-surface px-3 py-1.5">
+            <motion.div
+                {...part("header")}
+                className="flex shrink-0 items-center gap-2 border-b border-edge-mid bg-surface px-3 py-1.5"
+            >
                 {lead ? (
                     <StatusLine agent={lead} nowAtom={model.nowAtom} mark={leadIcon} className="min-w-0 flex-1" />
                 ) : (
@@ -281,19 +309,21 @@ export function LeadCard(p: LeadCardProps) {
                     </button>
                 ) : null}
                 <RunMenu channelId={run.channelId} runId={run.runId} run={run} className="rounded-sm" />
-            </div>
+            </motion.div>
 
             {runFlowing(run, lead) ? (
-                <div className="h-[2px] shrink-0 overflow-hidden bg-lane">
+                <motion.div {...part("flow")} className="h-[2px] shrink-0 overflow-hidden bg-lane">
                     <div className="h-full w-[26%] bg-gradient-to-r from-transparent via-accent to-transparent animate-[flowBar_1.9s_linear_infinite] motion-reduce:animate-none" />
-                </div>
+                </motion.div>
             ) : null}
 
             {leadAsking ? (
-                <AttentionBanner glyph="dot" pulse label="Waiting on you" meta={formatAge(displayAgeMs(lead))} />
+                <motion.div {...part("banner")} className="shrink-0">
+                    <AttentionBanner glyph="dot" pulse label="Waiting on you" meta={formatAge(displayAgeMs(lead))} />
+                </motion.div>
             ) : null}
 
-            <div className="flex shrink-0 flex-col gap-2 px-[18px] pb-2 pt-2.5">
+            <motion.div {...part("strip")} className="flex shrink-0 flex-col gap-2 px-[18px] pb-2 pt-2.5">
                 {vm.bar ? <LeadBar strip={vm.bar.strip} label={vm.bar.label} /> : null}
                 <div className="flex items-center gap-2 text-[11.5px] text-muted">
                     {vm.complete ? <Check size={12} aria-hidden className="shrink-0 text-success" /> : null}
@@ -314,9 +344,9 @@ export function LeadCard(p: LeadCardProps) {
                             .join(" · ")}
                     </span>
                 </div>
-            </div>
+            </motion.div>
 
-            <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col">
+            <motion.div {...bodyPart} ref={bodyRef} className="flex min-h-0 flex-1 flex-col">
                 <div
                     className={cn(
                         "min-h-0 overflow-y-auto overflow-x-hidden px-2.5 pb-3",
@@ -491,27 +521,33 @@ export function LeadCard(p: LeadCardProps) {
                         nowAtom={model.structuralNowAtom}
                     />
                 ) : null}
-            </div>
+            </motion.div>
 
-            {p.composerOpen && lead ? (
-                <motion.div
-                    variants={composerReveal}
-                    initial="initial"
-                    animate="animate"
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex shrink-0 flex-col overflow-hidden border-t border-edge-mid px-3 py-2"
-                >
-                    <AgentComposer
-                        blockId={lead.blockId}
-                        placeholder={`message ${lead.name}…`}
-                        onEscape={p.onComposerEscape}
-                        className="border-t-0 px-0 py-0"
-                    />
-                </motion.div>
-            ) : null}
+            <AnimatePresence initial={false}>
+                {p.composerOpen && lead ? (
+                    // the folding box has no padding or border of its own: a box folds to its padding and no further,
+                    // then vanishes in one frame, and opens from that height instead of from nothing
+                    <motion.div
+                        key="composer"
+                        {...revealPart}
+                        onClick={(e) => e.stopPropagation()}
+                        className="shrink-0 overflow-hidden"
+                    >
+                        <div className="flex flex-col border-t border-edge-mid px-3 py-2">
+                            <AgentComposer
+                                blockId={lead.blockId}
+                                placeholder={`message ${lead.name}…`}
+                                onEscape={p.onComposerEscape}
+                                className="border-t-0 px-0 py-0"
+                            />
+                        </div>
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
 
             {runAdjustable(run) || panel != null || error ? (
-                <div
+                <motion.div
+                    {...part("bar")}
                     onClick={(e) => e.stopPropagation()}
                     className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-edge-mid py-[7px] pl-3.5 pr-3"
                 >
@@ -539,71 +575,79 @@ export function LeadCard(p: LeadCardProps) {
                             Cancel run
                         </button>
                     ) : null}
-                    {panel === "adjust" ? (
-                        <div className="flex w-full flex-wrap items-center gap-2 rounded-[7px] bg-background px-2.5 py-[7px]">
-                            <span className="text-[11.5px] text-muted">Worker parallelism</span>
-                            <button
-                                type="button"
-                                onClick={() => setPar(clampParallelism(parValue - 1))}
-                                className={cn(BTN, "w-[23px] px-0")}
-                            >
-                                −
-                            </button>
-                            <span
-                                className={cn(
-                                    "min-w-[14px] text-center text-[12px] font-semibold tabular-nums",
-                                    overCapacity(cap, parExtra) ? "text-warning" : "text-primary"
-                                )}
-                            >
-                                {parValue}
-                            </span>
-                            <button
-                                type="button"
-                                onClick={() => setPar(clampParallelism(parValue + 1))}
-                                className={cn(BTN, "w-[23px] px-0")}
-                            >
-                                +
-                            </button>
-                            <CapacityWarn cap={cap} extra={parExtra} />
-                            <span className="min-w-0 flex-1 text-[11px] text-muted">applies to new dispatches</span>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    act("Parallelism", async () => {
-                                        await setRunParallelism(run, parValue);
-                                        sayIfOverCapacity({ picked: parValue, extra: parExtra, live: true });
-                                    });
-                                    setPanel(null);
-                                }}
-                                className="h-[23px] cursor-pointer rounded-[6px] border-0 bg-accent px-[11px] text-[11.5px] font-semibold text-background"
-                            >
-                                Save
-                            </button>
-                        </div>
-                    ) : null}
-                    {panel === "cancel" ? (
-                        <div className="flex w-full flex-wrap items-center gap-2 rounded-[7px] bg-error/[0.08] px-2.5 py-2">
-                            <span className="min-w-[200px] flex-1 text-[11.5px] leading-[1.45] text-primary">
-                                Stop {runningCount(vm.rows)} running tasks and cancel this run? Landed tasks,
-                                transcripts and artifacts are kept.
-                            </span>
-                            <button type="button" onClick={() => setPanel(null)} className={BTN}>
-                                Keep running
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    dag("", "cancel");
-                                    setPanel(null);
-                                }}
-                                className="h-[23px] cursor-pointer rounded-[6px] border-0 bg-error px-[11px] text-[11.5px] font-bold text-background"
-                            >
-                                Cancel run
-                            </button>
-                        </div>
-                    ) : null}
+                    <AnimatePresence initial={false}>
+                        {panel === "adjust" ? (
+                            <motion.div key="adjust" {...revealPart} className="w-full overflow-hidden">
+                                <div className="flex w-full flex-wrap items-center gap-2 rounded-[7px] bg-background px-2.5 py-[7px]">
+                                    <span className="text-[11.5px] text-muted">Worker parallelism</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPar(clampParallelism(parValue - 1))}
+                                        className={cn(BTN, "w-[23px] px-0")}
+                                    >
+                                        −
+                                    </button>
+                                    <span
+                                        className={cn(
+                                            "min-w-[14px] text-center text-[12px] font-semibold tabular-nums",
+                                            overCapacity(cap, parExtra) ? "text-warning" : "text-primary"
+                                        )}
+                                    >
+                                        {parValue}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPar(clampParallelism(parValue + 1))}
+                                        className={cn(BTN, "w-[23px] px-0")}
+                                    >
+                                        +
+                                    </button>
+                                    <CapacityWarn cap={cap} extra={parExtra} />
+                                    <span className="min-w-0 flex-1 text-[11px] text-muted">
+                                        applies to new dispatches
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            act("Parallelism", async () => {
+                                                await setRunParallelism(run, parValue);
+                                                sayIfOverCapacity({ picked: parValue, extra: parExtra, live: true });
+                                            });
+                                            setPanel(null);
+                                        }}
+                                        className="h-[23px] cursor-pointer rounded-[6px] border-0 bg-accent px-[11px] text-[11.5px] font-semibold text-background"
+                                    >
+                                        Save
+                                    </button>
+                                </div>
+                            </motion.div>
+                        ) : null}
+                        {panel === "cancel" ? (
+                            <motion.div key="cancel" {...revealPart} className="w-full overflow-hidden">
+                                <div className="flex w-full flex-wrap items-center gap-2 rounded-[7px] bg-error/[0.08] px-2.5 py-2">
+                                    <span className="min-w-[200px] flex-1 text-[11.5px] leading-[1.45] text-primary">
+                                        Stop {runningCount(vm.rows)} running tasks and cancel this run? Landed tasks,
+                                        transcripts and artifacts are kept.
+                                    </span>
+                                    <button type="button" onClick={() => setPanel(null)} className={BTN}>
+                                        Keep running
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            dag("", "cancel");
+                                            setPanel(null);
+                                        }}
+                                        className="h-[23px] cursor-pointer rounded-[6px] border-0 bg-error px-[11px] text-[11.5px] font-bold text-background"
+                                    >
+                                        Cancel run
+                                    </button>
+                                </div>
+                            </motion.div>
+                        ) : null}
+                    </AnimatePresence>
                     {error ? <div className="w-full text-[11px] text-error">{error}</div> : null}
-                </div>
+                </motion.div>
             ) : null}
         </motion.div>
     );
@@ -780,6 +824,7 @@ function Fold({
     hidden: boolean;
     children: ReactNode;
 }) {
+    const part = usePartMotion(springReveal);
     if (hidden) {
         return null;
     }
@@ -802,7 +847,13 @@ function Fold({
                     <ChevronRight size={10} aria-hidden className="ml-auto" />
                 )}
             </div>
-            {open ? children : null}
+            <AnimatePresence initial={false}>
+                {open ? (
+                    <motion.div key="rows" {...part} className="overflow-hidden">
+                        {children}
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
         </>
     );
 }

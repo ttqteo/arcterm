@@ -6,6 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **The spring's feel on the Cockpit, Jarvis, Diff and Setup, on a real roster.** The
+  `surfaces-spring-*` scenarios time each motion on fixtures (`task verify:ui -- surfaces-spring-cockpit`
+  …); no packaged build ran them on your own agents and projects. In the packaged app on a real roster: the Cockpit
+  as an agent goes from working to needing you (its card moves to its new place, no card jumps or doubles), a Jarvis
+  brief card and an initiative row open and fold, a Diff file folds in Review, a Setup section folds, and a filter
+  switch or a big update (three or more rows at once) shows at once instead of running the spring on each row.
+  Commit: feat(motion) the batch model, the scenario scaffold and the docs for the surfaces' spring (run d2a699db)
 - [ ] (arcterm) **Council bench team cell cleans up after itself.** Only unit tests cover it; no bench ran a real team.
   Run `wsh council bench --variant team --case <one case> --runs 1` to the end, then again and end it with
   `wsh council bench stop` while the lead works → after each, `~/.claude/projects/` has no new folder for the cell, and

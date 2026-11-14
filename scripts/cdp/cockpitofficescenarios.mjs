@@ -852,8 +852,10 @@ export function makeCockpitOfficeScenarios(fx) {
             const slid = { ...(await probe(h)), box: await panelBox(), boss: await bossRect() };
             await h.shot("cdp-shots/cockpit-office-panel-pan.png");
             await key(h, "Escape");
-            await sleep(700);
-            const unslid = { ...(await probe(h)), transform: await h.ev(`document.querySelector("[data-office-root]")?.style.transform ?? null`) };
+            // the pan is a spring (MOTION.spring, ~0.65 s to rest over its 200 px): wait it out before reading where it stands
+            await sleep(1100);
+            // the office's x from its computed transform: motion writes "none" for 0, where the old CSS pan left ""
+            const unslid = { ...(await probe(h)), x: await h.ev(`new DOMMatrix(getComputedStyle(document.querySelector("[data-office-root]")).transform).m41`) };
             await key(h, "Escape");
             await sleep(200);
             rec(
@@ -865,8 +867,8 @@ export function makeCockpitOfficeScenarios(fx) {
                     slid.boss.right <= slid.box.left &&
                     unslid?.popup === "" &&
                     unslid.pan === 0 &&
-                    unslid.transform === "",
-                JSON.stringify({ cursor: slid.cursor, pan: slid.pan, boss: slid.boss, panel: slid.box, back: [unslid?.popup, unslid?.pan, unslid?.transform] })
+                    unslid.x === 0,
+                JSON.stringify({ cursor: slid.cursor, pan: slid.pan, boss: slid.boss, panel: slid.box, back: [unslid?.popup, unslid?.pan, unslid?.x] })
             );
 
             // 7. a click on the floor walks the boss there; in the hall the cursor stays on the last desk
@@ -1046,26 +1048,34 @@ export function makeCockpitOfficeScenarios(fx) {
             await sleep(400);
 
             // 13c. a theme switched with the office open: the building draws once more, and the boss's ring (the
-            // accent) is drawn again in the new theme's colours, no stale cached colour
+            // accent) is drawn again in the new theme's colours, no stale cached colour. The target is a preset other
+            // than the one the app is on, whichever that is (the default preset has changed before): Claude, clay
+            // accent, unless the app is on it, then Graphite, blue. A switch to the preset already on changes nothing
+            // and answers with it, which says the other one is the target
             const ring = () => h.ev(`document.querySelector("[data-office-ring]")?.getAttribute("src") ?? ""`);
             const themeDraws = (await probe(h))?.sceneryDraws;
-            const claudeRing = await ring();
-            ctx.prevTheme = await h.ev(`window.__cockpitOfficeTheme("graphite")`);
+            const startRing = await ring();
+            ctx.otherTheme = "claude";
+            ctx.prevTheme = await h.ev(`window.__cockpitOfficeTheme("claude")`);
+            if (ctx.prevTheme === ctx.otherTheme) {
+                ctx.otherTheme = "graphite";
+                await h.ev(`window.__cockpitOfficeTheme("graphite")`);
+            }
             await sleep(500);
             p = await probe(h);
-            ctx.graphiteRing = await ring();
+            ctx.otherRing = await ring();
             await h.shot("cdp-shots/cockpit-office-theme.png");
             await h.ev(`window.__cockpitOfficeTheme(${JSON.stringify(ctx.prevTheme)})`);
             await sleep(500);
             rec(
                 "13c. a theme switched with the office open redraws the building once and the ring in the new accent",
-                ctx.prevTheme !== "graphite" &&
+                ctx.prevTheme !== ctx.otherTheme &&
                     p?.sceneryDraws === themeDraws + 1 &&
-                    claudeRing !== "" &&
-                    ctx.graphiteRing !== "" &&
-                    ctx.graphiteRing !== claudeRing &&
+                    startRing !== "" &&
+                    ctx.otherRing !== "" &&
+                    ctx.otherRing !== startRing &&
                     p.unresolved?.length === 0,
-                JSON.stringify({ prevTheme: ctx.prevTheme, draws: [themeDraws, p?.sceneryDraws], ringChanged: ctx.graphiteRing !== claudeRing })
+                JSON.stringify({ prevTheme: ctx.prevTheme, otherTheme: ctx.otherTheme, draws: [themeDraws, p?.sceneryDraws], ringChanged: ctx.otherRing !== startRing })
             );
 
             // 14. animation off
@@ -1165,7 +1175,7 @@ export function makeCockpitOfficeScenarios(fx) {
             // cached colour
             await toggleTo(h, "Cards");
             await sleep(400);
-            const prevAway = await h.ev(`window.__cockpitOfficeTheme("graphite")`);
+            const prevAway = await h.ev(`window.__cockpitOfficeTheme(${JSON.stringify(ctx.otherTheme)})`);
             ctx.prevTheme ??= prevAway;
             await sleep(400);
             await toggleTo(h, "Office");
@@ -1177,8 +1187,8 @@ export function makeCockpitOfficeScenarios(fx) {
             await sleep(500);
             rec(
                 "15b. a theme switched while the office is in Cards: opened again, it draws in the new theme",
-                backIn && prevAway !== "graphite" && awayRing !== "" && awayRing === ctx.graphiteRing,
-                JSON.stringify({ backIn, prevAway, sameAsOpen: awayRing === ctx.graphiteRing })
+                backIn && prevAway !== ctx.otherTheme && awayRing !== "" && awayRing === ctx.otherRing,
+                JSON.stringify({ backIn, prevAway, otherTheme: ctx.otherTheme, sameAsOpen: awayRing === ctx.otherRing })
             );
 
             // 16. RamPanel: the office's cost, and its button
@@ -1243,7 +1253,7 @@ export function makeCockpitOfficeScenarios(fx) {
             await fx.teardownFixtureRun(h, ctx, "cockpit-office", {
                 what: "put back the view, the roster and the dev state",
                 fn: async () => {
-                    // a run cut short between a theme switch and its restore leaves no graphite theme behind
+                    // a run cut short between a theme switch and its restore leaves no switched theme behind
                     if (ctx.prevTheme != null) await h.ev(`window.__cockpitOfficeTheme?.(${JSON.stringify(ctx.prevTheme)})`);
                     await h.ev("window.__cockpitOffice?.(null)");
                     await h.ev(

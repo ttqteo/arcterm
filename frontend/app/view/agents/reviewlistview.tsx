@@ -7,13 +7,16 @@
 // reviewlist.ts; the comments and the one box are linecommentstore.ts. Rendered rows, not Monaco, so a
 // comment card is just a row between two code rows.
 
+import { MOTION } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
+import { animate, useReducedMotion } from "motion/react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
+import { ARRIVAL_CAP_PX, arrivalFrom } from "./chatarrival";
 import { MAX_DIFF_BYTES } from "./diffcontentstore";
 import { highlightLine } from "./highlight";
 import { ImageDiff } from "./imagediffview";
@@ -118,6 +121,102 @@ function quoteOf(section: ReviewSection, box: CommentBox): string[] {
 }
 
 const endKey = (c: { side: string; endLine: number }) => `${c.side}:${c.endLine}`;
+
+// A file whose top is more than this far above the list's top is one the reader is inside (its header is the sticky one)
+const ABOVE_SLACK_PX = 1;
+
+// What a fold interrupted left: the box's height and opacity at that frame, so the fold that reverses it starts there
+interface Interrupted {
+    height: number;
+    opacity: number;
+}
+
+// A file's body in Review mode, folding and unfolding on MOTION.spring (docs/superpowers/specs/2026-11-14-surfaces-chat-look-design.md,
+// §2 Diff): the height opens 0 -> its own and the opacity fades on the micro ease. A body taller than ARRIVAL_CAP_PX opens only
+// over its last ARRIVAL_CAP_PX (arrivalFrom, as Chat's Arriving does) and a fold starts from at most ARRIVAL_CAP_PX, so the
+// view never races over a long file. It is driven by hand rather than by a motion component because the cap needs the box's
+// own height, read in the layout effect that sets the starting styles before the first paint; the rest state is no style at
+// all, so the rows keep their natural height. A file whose top is above the list's top, the one the reader is inside, folds
+// and unfolds at once: the reader's place and the scrollTo anchor hold. Under reduced motion it is at once too. The body
+// stays mounted while it folds and unmounts when the spring ends; the first render never animates.
+function FoldBody({ path, open, children }: { path: string; open: boolean; children: ReactNode }) {
+    const ref = useRef<HTMLDivElement>(null);
+    const reduce = useReducedMotion();
+    const [present, setPresent] = useState(open);
+    const wasOpen = useRef(open);
+    const interrupted = useRef<Interrupted | null>(null);
+    useLayoutEffect(() => {
+        if (wasOpen.current === open) {
+            return;
+        }
+        wasOpen.current = open;
+        if (open) {
+            setPresent(true);
+        }
+        const el = ref.current;
+        const left = interrupted.current;
+        interrupted.current = null;
+        const full = el?.getBoundingClientRect().height ?? 0;
+        const section = el?.closest("section");
+        const list = el?.closest("[data-review-list]");
+        const above =
+            section != null &&
+            list != null &&
+            section.getBoundingClientRect().top < list.getBoundingClientRect().top - ABOVE_SLACK_PX;
+        if (el == null || full <= 0 || reduce || above) {
+            if (!open) {
+                setPresent(false);
+            }
+            return;
+        }
+        const from = open ? (left?.height ?? arrivalFrom(full) ?? 0) : Math.min(left?.height ?? full, ARRIVAL_CAP_PX);
+        const fade = open ? [left?.opacity ?? 0, 1] : [left?.opacity ?? 1, 0];
+        el.style.overflow = "hidden";
+        el.style.height = `${from}px`;
+        el.style.opacity = String(fade[0]);
+        const runs = [
+            animate(el, { height: [from, open ? full : 0] }, MOTION.spring),
+            animate(el, { opacity: fade }, { duration: MOTION.durMicro, ease: MOTION.easeFluid }),
+        ];
+        let over = false;
+        const end = (finished: boolean) => {
+            if (over) {
+                return;
+            }
+            over = true;
+            if (!open && finished) {
+                // the styles stay with the element, which unmounts next, so no frame shows it open again
+                setPresent(false);
+                return;
+            }
+            for (const prop of ["height", "opacity", "overflow"]) {
+                el.style.removeProperty(prop);
+            }
+        };
+        // both are over before the styles go: a spring still running would write its value back after them
+        void Promise.all(runs.map((run) => run.finished)).then(
+            () => end(true),
+            () => end(true)
+        );
+        return () => {
+            if (!over) {
+                interrupted.current = {
+                    height: el.getBoundingClientRect().height,
+                    opacity: Number(getComputedStyle(el).opacity),
+                };
+            }
+            for (const run of runs) {
+                run.stop();
+            }
+            end(false);
+        };
+    }, [open]);
+    return open || present ? (
+        <div ref={ref} data-review-body={path}>
+            {children}
+        </div>
+    ) : null;
+}
 
 export function ReviewList({
     repoKey,
@@ -365,56 +464,65 @@ export function ReviewList({
                 return (
                     <section key={section.path} className="border-b border-edge-faint">
                         <FileHeader section={section} collapsed={isCollapsed} onToggle={() => toggle(section.path)} />
-                        {isCollapsed ? null : section.empty === "binary" && imageMime(section.path) != null ? (
-                            <ImageDiff
-                                cwd={repoKey}
-                                path={section.path}
-                                oldPath={section.oldPath}
-                                source={source}
-                                base={base}
-                                refreshKey={refreshKey}
-                            />
-                        ) : section.empty ? (
-                            <div
-                                data-review-empty={section.empty}
-                                className="px-[18px] py-[12px] text-[12px] text-muted"
-                            >
-                                {EMPTY_REASON[section.empty]}
-                                {section.empty === "toolarge" && section.size ? ` (${fmtBytes(section.size)})` : null}
-                                {section.oldPath ? (
-                                    <span className="ml-[8px] text-ink-faint">from {section.oldPath}</span>
-                                ) : null}
-                            </div>
-                        ) : (
-                            <div className="py-[4px]">
-                                {section.rows.map((row) => {
-                                    if (row.kind === "fold") {
+                        <FoldBody path={section.path} open={!isCollapsed}>
+                            {section.empty === "binary" && imageMime(section.path) != null ? (
+                                <ImageDiff
+                                    cwd={repoKey}
+                                    path={section.path}
+                                    oldPath={section.oldPath}
+                                    source={source}
+                                    base={base}
+                                    refreshKey={refreshKey}
+                                />
+                            ) : section.empty ? (
+                                <div
+                                    data-review-empty={section.empty}
+                                    className="px-[18px] py-[12px] text-[12px] text-muted"
+                                >
+                                    {EMPTY_REASON[section.empty]}
+                                    {section.empty === "toolarge" && section.size
+                                        ? ` (${fmtBytes(section.size)})`
+                                        : null}
+                                    {section.oldPath ? (
+                                        <span className="ml-[8px] text-ink-faint">from {section.oldPath}</span>
+                                    ) : null}
+                                </div>
+                            ) : (
+                                <div className="py-[4px]">
+                                    {section.rows.map((row) => {
+                                        if (row.kind === "fold") {
+                                            return (
+                                                <button
+                                                    key={row.id}
+                                                    data-review-fold={row.id}
+                                                    onClick={() => setExpanded((prev) => new Set(prev).add(row.id))}
+                                                    className="flex h-[24px] w-full items-center bg-surface pl-[106px] text-left text-[11px] text-muted hover:bg-surface-hover hover:text-ink-hi"
+                                                >
+                                                    ⋯ {row.hidden} unchanged lines
+                                                </button>
+                                            );
+                                        }
+                                        const after = mine.filter((c) => endKey(c) === row.key);
+                                        const boxAfter =
+                                            boxHere && endKey({ side: box.side, endLine: box.endLine }) === row.key;
                                         return (
-                                            <button
-                                                key={row.id}
-                                                data-review-fold={row.id}
-                                                onClick={() => setExpanded((prev) => new Set(prev).add(row.id))}
-                                                className="flex h-[24px] w-full items-center bg-surface pl-[106px] text-left text-[11px] text-muted hover:bg-surface-hover hover:text-ink-hi"
-                                            >
-                                                ⋯ {row.hidden} unchanged lines
-                                            </button>
+                                            <div key={row.key}>
+                                                <Row
+                                                    section={section}
+                                                    row={row}
+                                                    tinted={tinted(row)}
+                                                    handlers={handlers}
+                                                />
+                                                {after.map(cardView)}
+                                                {boxAfter ? boxView(section) : null}
+                                            </div>
                                         );
-                                    }
-                                    const after = mine.filter((c) => endKey(c) === row.key);
-                                    const boxAfter =
-                                        boxHere && endKey({ side: box.side, endLine: box.endLine }) === row.key;
-                                    return (
-                                        <div key={row.key}>
-                                            <Row section={section} row={row} tinted={tinted(row)} handlers={handlers} />
-                                            {after.map(cardView)}
-                                            {boxAfter ? boxView(section) : null}
-                                        </div>
-                                    );
-                                })}
-                                {orphans.map(cardView)}
-                                {boxOrphan ? boxView(section) : null}
-                            </div>
-                        )}
+                                    })}
+                                    {orphans.map(cardView)}
+                                    {boxOrphan ? boxView(section) : null}
+                                </div>
+                            )}
+                        </FoldBody>
                     </section>
                 );
             })}

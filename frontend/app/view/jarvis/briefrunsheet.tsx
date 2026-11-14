@@ -16,6 +16,7 @@
 // running at, and a save sent from the snapshot would overwrite it. So the dock reads the group through
 // WOS (a scheduler tick has to show up here) and renders no controls until it has arrived.
 
+import { springReveal } from "@/app/element/motiontokens";
 import { PaneReveal } from "@/app/element/panereveal";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -277,7 +278,13 @@ function LoadedConfig({
             </div>
         );
         // host-toggled: the note is what the host's Adjust opens, so it shows only while open
-        return hostOpen === undefined ? noteRow : <PaneReveal open={hostOpen}>{noteRow}</PaneReveal>;
+        return hostOpen === undefined ? (
+            noteRow
+        ) : (
+            <PaneReveal open={hostOpen} variants={springReveal}>
+                {noteRow}
+            </PaneReveal>
+        );
     }
     if (draft == null || baseline == null) {
         return inline ? (
@@ -491,7 +498,7 @@ function LoadedConfig({
                     </button>
                 </div>
                 {resolvedHeader != null ? <ResolvedNote header={resolvedHeader} /> : null}
-                <PaneReveal open={open}>
+                <PaneReveal open={open} variants={springReveal}>
                     <div className="flex flex-col gap-3 rounded-[9px] border border-border bg-surface px-[13px] pb-[13px] pt-[11px]">
                         {dials}
                     </div>
@@ -509,7 +516,7 @@ function LoadedConfig({
                         <ResolvedNote header={resolvedHeader} />
                     </div>
                 ) : null}
-                <PaneReveal open={hostOpen}>
+                <PaneReveal open={hostOpen} variants={springReveal}>
                     <div className="flex flex-col gap-3 px-4 pb-3.5 pt-[11px]">{dials}</div>
                 </PaneReveal>
             </div>
@@ -542,7 +549,7 @@ function LoadedConfig({
                     <ResolvedNote header={resolvedHeader} />
                 </div>
             ) : null}
-            <PaneReveal open={open}>
+            <PaneReveal open={open} variants={springReveal}>
                 <div className="flex flex-col gap-3 border-t border-edge-faint px-4 pb-3.5 pt-[11px]">{dials}</div>
             </PaneReveal>
         </div>

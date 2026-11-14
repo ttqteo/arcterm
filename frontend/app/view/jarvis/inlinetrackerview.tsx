@@ -8,6 +8,7 @@
 // in the chunk view (chunkview.tsx) inside the same sheet. IdeaDetail is the plan's place for an idea, which has none.
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
+import { useSpringBatch } from "@/app/element/springbatch";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtom } from "jotai";
@@ -30,11 +31,13 @@ import {
     X,
     type LucideIcon,
 } from "lucide-react";
+import { AnimatePresence } from "motion/react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { chunkTone, type ChunkTone } from "./effortmodel";
 import { chunkDueChip, localDay, type DetailRow } from "./inlinetracker";
 import { trackerMenuAtom } from "./jarvisstore";
 import type { ProposedRow } from "./proposedmodel";
+import { RevealItem } from "./revealitem";
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
@@ -155,6 +158,13 @@ export function InitiativeDetail({
         document.addEventListener("mousedown", close);
         return () => document.removeEventListener("mousedown", close);
     }, [menu, setMenu]);
+    // A chunk that arrives or leaves alone opens or folds on the spring; the plan's first draw, another initiative's (the
+    // filter) and 3+ chunks at once (a folded stage unfolding past its preview) show at once. A rename changes a row's id,
+    // so it reads as one chunk leaving and one arriving, which swap in place without moving the rows below.
+    const batch = useSpringBatch(
+        rows.flatMap((r) => (r.kind === "chunk" ? [r.id] : [])),
+        rows[0]?.oref
+    );
 
     if (rows.length === 0) {
         return null;
@@ -225,146 +235,148 @@ export function InitiativeDetail({
 
     return (
         <div data-jarvis-initiative-detail="sheet" className="flex flex-col pb-4">
-            {rows.map((row, i) => {
-                const tail = addAfter.get(i);
-                const add =
-                    tail != null ? (
-                        <AddChunkRow
-                            stage={tail.stage}
-                            onAdd={(label) => edits.onAddChunk(label, tail.stage, tail.at)}
-                        />
-                    ) : null;
-                if (row.kind === "pending") {
-                    return (
-                        <p key={row.id} className="px-1.5 py-2 text-[12px] leading-[1.55] text-muted">
-                            {row.message}
-                        </p>
-                    );
-                }
-                // the row head above already reads the fraction, the next chunk and what is blocked; the
-                // facts row only feeds the footer's count
-                if (row.kind === "facts") {
-                    return null;
-                }
-                if (row.kind === "proposed") {
-                    return <ProposedGroup key={row.id} rows={row.rows} edits={edits} />;
-                }
-                if (row.kind === "more") {
-                    return (
-                        <Fragment key={row.id}>
-                            <button
-                                type="button"
-                                data-jarvis-stage-more={row.n}
-                                title="Show every chunk here"
-                                onClick={() => onToggleStage(row.stageId, true)}
-                                className={cn(
-                                    "flex cursor-pointer items-center self-start px-2 py-1.5 text-[11px] text-ink-mid hover:text-ink-hi",
-                                    FOCUS
-                                )}
-                            >
-                                +{row.n} more {row.n === 1 ? "chunk" : "chunks"}
-                            </button>
-                            {add}
-                        </Fragment>
-                    );
-                }
-                if (row.kind === "stage") {
-                    const menuId = row.id + "#menu";
-                    return (
-                        <Fragment key={row.id}>
-                            <div
-                                data-jarvis-tracker-stage={row.stage}
-                                aria-expanded={!row.collapsed}
-                                className={stageHeadClass(row.first)}
-                            >
+            <AnimatePresence initial={false} custom={batch}>
+                {rows.map((row, i) => {
+                    const tail = addAfter.get(i);
+                    const add =
+                        tail != null ? (
+                            <AddChunkRow
+                                stage={tail.stage}
+                                onAdd={(label) => edits.onAddChunk(label, tail.stage, tail.at)}
+                            />
+                        ) : null;
+                    if (row.kind === "pending") {
+                        return (
+                            <p key={row.id} className="px-1.5 py-2 text-[12px] leading-[1.55] text-muted">
+                                {row.message}
+                            </p>
+                        );
+                    }
+                    // the row head above already reads the fraction, the next chunk and what is blocked; the
+                    // facts row only feeds the footer's count
+                    if (row.kind === "facts") {
+                        return null;
+                    }
+                    if (row.kind === "proposed") {
+                        return <ProposedGroup key={row.id} rows={row.rows} edits={edits} />;
+                    }
+                    if (row.kind === "more") {
+                        return (
+                            <Fragment key={row.id}>
                                 <button
                                     type="button"
-                                    aria-label="Toggle stage"
-                                    onClick={() => onToggleStage(row.id, row.collapsed)}
+                                    data-jarvis-stage-more={row.n}
+                                    title="Show every chunk here"
+                                    onClick={() => onToggleStage(row.stageId, true)}
                                     className={cn(
-                                        "flex w-3.5 flex-none cursor-pointer items-center justify-center text-ink-mid",
+                                        "flex cursor-pointer items-center self-start px-2 py-1.5 text-[11px] text-ink-mid hover:text-ink-hi",
                                         FOCUS
                                     )}
                                 >
-                                    {row.collapsed ? (
-                                        <ChevronRight size={12} aria-hidden />
-                                    ) : (
-                                        <ChevronDown size={12} aria-hidden />
-                                    )}
+                                    +{row.n} more {row.n === 1 ? "chunk" : "chunks"}
                                 </button>
-                                {renameInput(
-                                    row.id,
-                                    row.stage,
-                                    (next) => edits.onRenameStage(row.at, next),
-                                    "text-[11.5px] font-semibold"
-                                ) ?? (
+                                {add}
+                            </Fragment>
+                        );
+                    }
+                    if (row.kind === "stage") {
+                        const menuId = row.id + "#menu";
+                        return (
+                            <Fragment key={row.id}>
+                                <div
+                                    data-jarvis-tracker-stage={row.stage}
+                                    aria-expanded={!row.collapsed}
+                                    className={stageHeadClass(row.first)}
+                                >
                                     <button
                                         type="button"
-                                        title="Double-click to rename"
+                                        aria-label="Toggle stage"
                                         onClick={() => onToggleStage(row.id, row.collapsed)}
-                                        onDoubleClick={() => startEdit(row.id, row.stage)}
                                         className={cn(
-                                            "min-w-0 flex-1 cursor-pointer truncate text-left text-[11.5px] font-semibold text-primary",
+                                            "flex w-3.5 flex-none cursor-pointer items-center justify-center text-ink-mid",
                                             FOCUS
                                         )}
                                     >
-                                        {row.stage === "" ? "unstaged" : row.stage}
+                                        {row.collapsed ? (
+                                            <ChevronRight size={12} aria-hidden />
+                                        ) : (
+                                            <ChevronDown size={12} aria-hidden />
+                                        )}
                                     </button>
-                                )}
-                                <StageBar done={row.done} total={row.total} />
-                                <span className="w-7 flex-none text-[10.5px] tabular-nums text-ink-mid">
-                                    {row.fraction}
-                                </span>
-                                <button
-                                    type="button"
-                                    aria-label="Stage actions"
-                                    onClick={() => setMenu(menu === menuId ? null : menuId)}
-                                    className={cn(
-                                        "flex h-5 w-[22px] flex-none cursor-pointer items-center justify-center rounded-[5px] border text-ink-mid hover:border-edge-mid hover:text-ink-hi",
-                                        menu === menuId ? "border-edge-strong" : "border-transparent",
-                                        FOCUS
+                                    {renameInput(
+                                        row.id,
+                                        row.stage,
+                                        (next) => edits.onRenameStage(row.at, next),
+                                        "text-[11.5px] font-semibold"
+                                    ) ?? (
+                                        <button
+                                            type="button"
+                                            title="Double-click to rename"
+                                            onClick={() => onToggleStage(row.id, row.collapsed)}
+                                            onDoubleClick={() => startEdit(row.id, row.stage)}
+                                            className={cn(
+                                                "min-w-0 flex-1 cursor-pointer truncate text-left text-[11.5px] font-semibold text-primary",
+                                                FOCUS
+                                            )}
+                                        >
+                                            {row.stage === "" ? "unstaged" : row.stage}
+                                        </button>
                                     )}
-                                >
-                                    <Ellipsis size={14} aria-hidden />
-                                </button>
-                                <Menu open={menu === menuId} className="right-1 top-[calc(100%-2px)] w-40">
-                                    {/* the unstaged run has no name to rename or label to delete */}
-                                    {row.stage === "" ? (
-                                        <MenuItem onClick={() => startEdit(row.id, row.stage)}>
-                                            Name this stage
-                                        </MenuItem>
-                                    ) : (
-                                        <>
+                                    <StageBar done={row.done} total={row.total} />
+                                    <span className="w-7 flex-none text-[10.5px] tabular-nums text-ink-mid">
+                                        {row.fraction}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        aria-label="Stage actions"
+                                        onClick={() => setMenu(menu === menuId ? null : menuId)}
+                                        className={cn(
+                                            "flex h-5 w-[22px] flex-none cursor-pointer items-center justify-center rounded-[5px] border text-ink-mid hover:border-edge-mid hover:text-ink-hi",
+                                            menu === menuId ? "border-edge-strong" : "border-transparent",
+                                            FOCUS
+                                        )}
+                                    >
+                                        <Ellipsis size={14} aria-hidden />
+                                    </button>
+                                    <Menu open={menu === menuId} className="right-1 top-[calc(100%-2px)] w-40">
+                                        {/* the unstaged run has no name to rename or label to delete */}
+                                        {row.stage === "" ? (
                                             <MenuItem onClick={() => startEdit(row.id, row.stage)}>
-                                                Rename stage
+                                                Name this stage
                                             </MenuItem>
-                                            <MenuItem
-                                                danger
-                                                onClick={() => {
-                                                    setMenu(null);
-                                                    edits.onDeleteStage(row.at);
-                                                }}
-                                            >
-                                                Delete stage
-                                            </MenuItem>
-                                        </>
-                                    )}
-                                </Menu>
-                            </div>
-                            {add}
-                        </Fragment>
-                    );
-                }
-                const selected = cursor === row.id;
-                const label = row.row.label;
-                const due = chunkDueChip(row.row.due, row.row.status, localDay(new Date()));
-                const menuId = row.id + "#menu";
-                const otherStages = [...edits.stages, ""].filter((s) => s !== row.row.stage);
-                // the chunk picked up next is raised and marked with an accent →, its status word "next"
-                const next = row.next;
-                return (
-                    <Fragment key={row.id}>
-                        <div className="relative">
+                                        ) : (
+                                            <>
+                                                <MenuItem onClick={() => startEdit(row.id, row.stage)}>
+                                                    Rename stage
+                                                </MenuItem>
+                                                <MenuItem
+                                                    danger
+                                                    onClick={() => {
+                                                        setMenu(null);
+                                                        edits.onDeleteStage(row.at);
+                                                    }}
+                                                >
+                                                    Delete stage
+                                                </MenuItem>
+                                            </>
+                                        )}
+                                    </Menu>
+                                </div>
+                                {add}
+                            </Fragment>
+                        );
+                    }
+                    const selected = cursor === row.id;
+                    const label = row.row.label;
+                    const due = chunkDueChip(row.row.due, row.row.status, localDay(new Date()));
+                    const menuId = row.id + "#menu";
+                    const otherStages = [...edits.stages, ""].filter((s) => s !== row.row.stage);
+                    // the chunk picked up next is raised and marked with an accent →, its status word "next"
+                    const next = row.next;
+                    // the add row is a presence child of its own, so a chunk folding away does not hold the "+ Add chunk"
+                    // that moves to the new last row of its run
+                    return [
+                        <RevealItem key={row.id} batch={batch} className="relative">
                             <div
                                 role="button"
                                 tabIndex={-1}
@@ -522,11 +534,11 @@ export function InitiativeDetail({
                                     Delete chunk
                                 </MenuItem>
                             </Menu>
-                        </div>
-                        {add}
-                    </Fragment>
-                );
-            })}
+                        </RevealItem>,
+                        add != null ? <Fragment key={row.id + "#add"}>{add}</Fragment> : null,
+                    ];
+                })}
+            </AnimatePresence>
             {newStage?.chunk != null ? (
                 // a stage is a label on chunks, so this header is a placeholder until its first chunk lands
                 <>

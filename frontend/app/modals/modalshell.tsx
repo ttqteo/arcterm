@@ -4,9 +4,11 @@
 // Shared shell for the cockpit overlays (New Agent, New Project, Command Palette, Keyboard shortcuts).
 // Owns the backdrop scrim, the panel, open/close motion (AnimatePresence + motiontokens), the Esc
 // listener, focus (modalfocus.ts), and the optional backdrop-click dismiss. Reduced-motion drops the
-// scale, keeps the fade.
+// scale, keeps the fade. A sheet (only Jarvis's detail sheets) slides in on the spring (springSheet) and,
+// under reduced motion, mounts in place (usePartMotion).
 
-import { modalBackdrop, modalPanel, sheetPanel } from "@/app/element/motiontokens";
+import { modalBackdrop, modalPanel, springSheet } from "@/app/element/motiontokens";
+import { usePartMotion } from "@/app/element/springbatch";
 import { shellOwnsEscape, takeModalFocus } from "@/app/modals/modalfocus";
 import { isTopModal, registerModal } from "@/app/modals/modalstack";
 import { LightString } from "@/app/view/agents/christmaslights";
@@ -72,6 +74,7 @@ export function ModalShell({
     children,
 }: ModalShellProps) {
     const lights = useChristmasDecor() && christmasLights;
+    const sheetMotion = usePartMotion(springSheet);
     const layered = frosted && variant === "dialog";
     const panelRef = useRef<HTMLDivElement>(null);
     const shellId = useId();
@@ -193,9 +196,11 @@ export function ModalShell({
                         )}
                         onMouseDown={dismissOnScrim}
                     >
+                        {/* a dialog's panel takes its variant labels from the backdrop above it (overlay motion); a
+                            sheet names its own, so under reduced motion it mounts in place */}
                         <motion.div
                             ref={panelRef}
-                            variants={variant === "sheet" ? sheetPanel : modalPanel}
+                            {...(variant === "sheet" ? sheetMotion : { variants: modalPanel })}
                             role="dialog"
                             aria-modal="true"
                             tabIndex={-1} // focus target for a dialog with no field of its own (alerts, the cheatsheet)
