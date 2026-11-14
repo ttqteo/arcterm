@@ -67,7 +67,6 @@ import {
     councilSelAtom,
     councilSetupDraftAtom,
     councilSourcesAtom,
-    councilUnreadAtom,
     councilViewAtom,
     deleteCouncil,
     directionCouncil,
@@ -163,57 +162,257 @@ describe("loading", () => {
     });
 });
 
+// An event reloads the one council it names (Get), never a list. knownProjects and knownCouncils are module-level and
+// the tests above read lists, so each of these reads a module of its own.
 describe("council:changed", () => {
-    it("reloads the named council and its project's list, only if they were read", async () => {
-        get.mockResolvedValue(council("e1", "/p/e"));
-        list.mockResolvedValue([council("e1", "/p/e")]);
-        await loadCouncil("e1");
-        await loadCouncils("/p/e");
-        get.mockClear();
-        list.mockClear();
+    async function fresh() {
+        vi.resetModules();
+        const store = await import("./councilstore");
+        const { globalStore } = await import("@/app/store/jotaiStore");
+        const { RpcApi } = await import("@/app/store/wshclientapi");
+        return {
+            ...store,
+            globalStore,
+            get: vi.mocked(RpcApi.CouncilGetCommand),
+            list: vi.mocked(RpcApi.CouncilListCommand),
+        };
+    }
+    type Fresh = Awaited<ReturnType<typeof fresh>>;
+    // what the server answers for a project: its non-bench councils, newest save first, then by id
+    const serves = (m: Fresh, all: Council[]) =>
+        m.list.mockImplementation(async (_client, data) =>
+            all
+                .filter((c) => !c.bench && (data.project === "" || c.project === data.project))
+                .sort((a, b) => b.updated - a.updated || (a.id < b.id ? -1 : 1))
+        );
+    const idsOf = (m: Fresh, project: string) => m.globalStore.get(m.councilListAtom(project))?.map((c) => c.id);
 
-        get.mockResolvedValue(council("e1", "/p/e", { round: 3 }));
-        list.mockResolvedValue([council("e1", "/p/e", { round: 3 })]);
+    it("reads the one council that changed and puts it first in each list that read it, listing nothing", async () => {
+        const m = await fresh();
+        const all = [
+            council("e1", "/p/e", { updated: 1 }),
+            council("e2", "/p/e", { updated: 2 }),
+            council("e3", "/p/other", { updated: 3 }),
+        ];
+        serves(m, all);
+        m.get.mockResolvedValue(all[0]);
+        await m.loadCouncil("e1");
+        await m.loadCouncils("/p/e");
+        await m.loadCouncils("");
+        m.get.mockClear();
+        m.list.mockClear();
+
+        const saved = council("e1", "/p/e", { updated: 5, round: 3 });
+        m.get.mockResolvedValue(saved);
         emit({ id: "e1", project: "/p/e" });
         await settle();
-        expect(get).toHaveBeenCalledTimes(1);
-        expect(list).toHaveBeenCalledTimes(1);
-        expect(globalStore.get(councilAtom("e1"))?.round).toBe(3);
-        expect(globalStore.get(councilListAtom("/p/e"))?.[0].round).toBe(3);
+        expect(m.get).toHaveBeenCalledTimes(1);
+        expect(m.get).toHaveBeenCalledWith(TabRpcClient, { id: "e1" });
+        expect(m.list).not.toHaveBeenCalled();
+        expect(m.globalStore.get(m.councilAtom("e1"))).toEqual(saved);
+        expect(idsOf(m, "/p/e")).toEqual(["e1", "e2"]);
+        expect(idsOf(m, "")).toEqual(["e1", "e3", "e2"]);
 
-        get.mockClear();
-        list.mockClear();
+        // exactly what a full reload leaves
+        const spliced = {
+            project: m.globalStore.get(m.councilListAtom("/p/e")),
+            every: m.globalStore.get(m.councilListAtom("")),
+        };
+        all[0] = saved;
+        await m.loadCouncils("/p/e");
+        await m.loadCouncils("");
+        expect(m.globalStore.get(m.councilListAtom("/p/e"))).toEqual(spliced.project);
+        expect(m.globalStore.get(m.councilListAtom(""))).toEqual(spliced.every);
+    });
+
+    it("fetches a council no list holds yet and inserts it by its updated time, listing nothing", async () => {
+        const m = await fresh();
+        serves(m, [council("a", "/p/n", { updated: 3 }), council("b", "/p/n", { updated: 1 })]);
+        await m.loadCouncils("/p/n");
+        await m.loadCouncils("");
+        m.list.mockClear();
+
+        m.get.mockResolvedValue(council("n1", "/p/n", { updated: 2 }));
+        emit({ id: "n1", project: "/p/n" });
+        await settle();
+        expect(m.get).toHaveBeenCalledTimes(1);
+        expect(m.list).not.toHaveBeenCalled();
+        expect(idsOf(m, "/p/n")).toEqual(["a", "n1", "b"]);
+        expect(idsOf(m, "")).toEqual(["a", "n1", "b"]);
+        // nobody read it: no atom is made out of the event
+        expect(m.globalStore.get(m.councilAtom("n1"))).toBeNull();
+    });
+
+    it("moves a council between projects: out of the old list, into the new one, kept in the every-council list", async () => {
+        const m = await fresh();
+        const moved = council("m1", "/p/a", { updated: 2 });
+        serves(m, [moved, council("m2", "/p/b", { updated: 1 })]);
+        await m.loadCouncils("/p/a");
+        await m.loadCouncils("/p/b");
+        await m.loadCouncils("");
+        m.list.mockClear();
+
+        m.get.mockResolvedValue({ ...moved, project: "/p/b", updated: 4 });
+        emit({ id: "m1", project: "/p/b" });
+        await settle();
+        expect(m.list).not.toHaveBeenCalled();
+        expect(idsOf(m, "/p/a")).toEqual([]);
+        expect(idsOf(m, "/p/b")).toEqual(["m1", "m2"]);
+        expect(idsOf(m, "")).toEqual(["m1", "m2"]);
+    });
+
+    it("keeps a bench council out of every list, and takes one that became bench out, while its atom still reads it", async () => {
+        const m = await fresh();
+        serves(m, [council("x1", "/p/x", { updated: 2 }), council("x2", "/p/x", { updated: 1 })]);
+        m.get.mockResolvedValue(council("x1", "/p/x"));
+        await m.loadCouncil("x1");
+        await m.loadCouncils("/p/x");
+        await m.loadCouncils("");
+
+        const bench = council("x1", "/p/x", { updated: 9, bench: true });
+        m.get.mockResolvedValue(bench);
+        emit({ id: "x1", project: "/p/x" });
+        await settle();
+        expect(idsOf(m, "/p/x")).toEqual(["x2"]);
+        expect(idsOf(m, "")).toEqual(["x2"]);
+        expect(m.globalStore.get(m.councilAtom("x1"))).toEqual(bench);
+
+        m.get.mockResolvedValue(council("x9", "/p/x", { updated: 10, bench: true }));
+        emit({ id: "x9", project: "/p/x" });
+        await settle();
+        expect(idsOf(m, "/p/x")).toEqual(["x2"]);
+        expect(idsOf(m, "")).toEqual(["x2"]);
+    });
+
+    it("reads a council that is open even when no list was read, and sets only its atom", async () => {
+        const m = await fresh();
+        m.get.mockResolvedValue(council("o1", "/p/o"));
+        await m.loadCouncil("o1");
+        m.get.mockClear();
+
+        m.get.mockResolvedValue(council("o1", "/p/o", { round: 4 }));
+        emit({ id: "o1", project: "/p/o" });
+        await settle();
+        expect(m.get).toHaveBeenCalledTimes(1);
+        expect(m.list).not.toHaveBeenCalled();
+        expect(m.globalStore.get(m.councilAtom("o1"))?.round).toBe(4);
+    });
+
+    it("calls neither Get nor List for a council nothing read when no list is loaded", async () => {
+        const m = await fresh();
+        m.get.mockResolvedValue(council("other", "/p/other"));
+        await m.loadCouncil("other");
+        m.get.mockClear();
         emit({ id: "never-read", project: "/p/other" });
         await settle();
-        expect(get).not.toHaveBeenCalled();
-        expect(list).not.toHaveBeenCalled();
+        expect(m.get).not.toHaveBeenCalled();
+        expect(m.list).not.toHaveBeenCalled();
+        expect(m.globalStore.get(m.councilAtom("never-read"))).toBeNull();
     });
 
-    it("reloads the list of every council too, when something read it", async () => {
-        list.mockResolvedValue([]);
-        await loadCouncils("");
-        list.mockClear();
+    it("drops a Get answer that an event after it has overtaken, and lists the council once", async () => {
+        const m = await fresh();
+        serves(m, [council("q1", "/p/q", { updated: 1 }), council("q2", "/p/q", { updated: 0 })]);
+        await m.loadCouncils("/p/q");
+        let slow: (c: Council) => void = () => {};
+        m.get.mockImplementationOnce(() => new Promise<Council>((resolve) => (slow = resolve)));
+        emit({ id: "q1", project: "/p/q" });
+        m.get.mockResolvedValueOnce(council("q1", "/p/q", { updated: 6, round: 3 }));
+        emit({ id: "q1", project: "/p/q" });
+        await settle();
+        slow(council("q1", "/p/q", { updated: 5, round: 2 }));
+        await settle();
+        const listed = m.globalStore.get(m.councilListAtom("/p/q"));
+        expect(listed?.map((c) => c.id)).toEqual(["q1", "q2"]);
+        expect(listed?.[0].round).toBe(3);
+    });
+
+    it("drops the late answer of a list read that was already in flight when the event came", async () => {
+        const m = await fresh();
+        serves(m, [council("s1", "/p/s", { updated: 1 }), council("s2", "/p/s", { updated: 0 })]);
+        await m.loadCouncils("/p/s");
+        let late: (l: Council[]) => void = () => {};
+        m.list.mockImplementationOnce(() => new Promise<Council[]>((resolve) => (late = resolve)));
+        const reading = m.loadCouncils("/p/s");
+
+        m.get.mockResolvedValue(council("s1", "/p/s", { updated: 7, round: 2 }));
+        emit({ id: "s1", project: "/p/s" });
+        await settle();
+        late([council("s1", "/p/s", { updated: 1, round: 1 }), council("s2", "/p/s", { updated: 0 })]);
+        await reading;
+        const listed = m.globalStore.get(m.councilListAtom("/p/s"));
+        expect(listed?.map((c) => c.id)).toEqual(["s1", "s2"]);
+        expect(listed?.[0].round).toBe(2);
+    });
+
+    it("reads a list again when its first read is still on its way, and drops the first answer", async () => {
+        const m = await fresh();
+        let first: (l: Council[]) => void = () => {};
+        m.list.mockImplementationOnce(() => new Promise<Council[]>((resolve) => (first = resolve)));
+        const loading = m.loadCouncils("/p/f");
+        m.list.mockResolvedValueOnce([council("f1", "/p/f", { updated: 2, round: 2 })]);
         emit({ id: "f1", project: "/p/f" });
         await settle();
-        expect(list).toHaveBeenCalledWith(TabRpcClient, { project: "" });
+        expect(m.list).toHaveBeenCalledTimes(2);
+        expect(m.get).not.toHaveBeenCalled();
+        first([council("f1", "/p/f", { updated: 1, round: 1 })]);
+        await loading;
+        expect(m.globalStore.get(m.councilListAtom("/p/f"))?.[0].round).toBe(2);
     });
 
-    it("forgets a deleted council without loading it back, and closes it when it is open", async () => {
-        get.mockResolvedValue(council("k1", "/p/k", { state: "done" }));
-        list.mockResolvedValue([council("k1", "/p/k", { state: "done" }), council("k2", "/p/k")]);
-        await loadCouncil("k1");
-        await loadCouncils("/p/k");
-        globalStore.set(councilSelAtom, "k1");
-        globalStore.set(councilUnreadAtom, new Set(["k1", "k2"]));
-        get.mockClear();
-        list.mockResolvedValue([council("k2", "/p/k")]);
-        emit({ id: "k1", project: "/p/k", deleted: true });
-        expect(globalStore.get(councilAtom("k1"))).toBeNull();
-        expect(globalStore.get(councilListAtom("/p/k"))?.map((c) => c.id)).toEqual(["k2"]);
-        expect(globalStore.get(councilSelAtom)).toBeNull();
-        expect([...globalStore.get(councilUnreadAtom)]).toEqual(["k2"]);
+    it("falls back to reading the lists that would hold the council when its Get fails", async () => {
+        const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+        const m = await fresh();
+        serves(m, [
+            council("g1", "/p/old", { updated: 2 }),
+            council("g2", "/p/g", { updated: 1 }),
+            council("g3", "/p/unrelated", { updated: 0 }),
+        ]);
+        for (const project of ["/p/g", "/p/old", "/p/unrelated", ""]) {
+            await m.loadCouncils(project);
+        }
+        m.list.mockClear();
+        m.get.mockRejectedValue(new Error("gone"));
+        emit({ id: "g1", project: "/p/g" });
         await settle();
-        expect(get).not.toHaveBeenCalled();
+        expect(m.list.mock.calls.map(([, data]) => data.project).sort()).toEqual(["", "/p/g", "/p/old"]);
+        expect(quiet).toHaveBeenCalled();
+        quiet.mockRestore();
+    });
+
+    it("forgets a deleted council without loading anything, and closes it when it is open", async () => {
+        const m = await fresh();
+        serves(m, [council("k1", "/p/k", { state: "done" }), council("k2", "/p/k", { updated: 0 })]);
+        m.get.mockResolvedValue(council("k1", "/p/k", { state: "done" }));
+        await m.loadCouncil("k1");
+        await m.loadCouncils("/p/k");
+        await m.loadCouncils("");
+        m.globalStore.set(m.councilSelAtom, "k1");
+        m.globalStore.set(m.councilUnreadAtom, new Set(["k1", "k2"]));
+        m.get.mockClear();
+        m.list.mockClear();
+        emit({ id: "k1", project: "/p/k", deleted: true });
+        expect(m.globalStore.get(m.councilAtom("k1"))).toBeNull();
+        expect(idsOf(m, "/p/k")).toEqual(["k2"]);
+        expect(idsOf(m, "")).toEqual(["k2"]);
+        expect(m.globalStore.get(m.councilSelAtom)).toBeNull();
+        expect([...m.globalStore.get(m.councilUnreadAtom)]).toEqual(["k2"]);
+        await settle();
+        expect(m.get).not.toHaveBeenCalled();
+        expect(m.list).not.toHaveBeenCalled();
+    });
+
+    it("does not let a list read that began before a delete bring the council back", async () => {
+        const m = await fresh();
+        serves(m, [council("h1", "/p/h", { updated: 1 }), council("h2", "/p/h", { updated: 0 })]);
+        await m.loadCouncils("/p/h");
+        let late: (l: Council[]) => void = () => {};
+        m.list.mockImplementationOnce(() => new Promise<Council[]>((resolve) => (late = resolve)));
+        const reading = m.loadCouncils("/p/h");
+        emit({ id: "h1", project: "/p/h", deleted: true });
+        late([council("h1", "/p/h", { updated: 1 }), council("h2", "/p/h", { updated: 0 })]);
+        await reading;
+        expect(idsOf(m, "/p/h")).toEqual(["h2"]);
     });
 });
 
