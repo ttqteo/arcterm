@@ -6,8 +6,10 @@
 // The pure parts (grouping, status words, the install panel, what a form writes) are toolslibrarymodel.ts; the status
 // and the open / install actions are toolsstore.ts.
 
+import { PaneReveal } from "@/app/element/panereveal";
 import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
+import { RevealRows, rowReveal } from "@/app/view/jarvis/briefrowviews";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { PLATFORM } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
@@ -194,17 +196,25 @@ function ToolList({
                         <div className="px-2 pb-1 pt-2.5 text-[11px] font-semibold text-ink-mid">
                             Found on this machine
                         </div>
-                        {found.map((t) => (
-                            <FoundRow key={t.id} tool={t} selected={t.id === selected} />
-                        ))}
+                        {/* a tool added, hidden or removed opens or folds its row on the spring; the search, or three or
+                            more at once, shows the new list at once (RevealRows) */}
+                        <RevealRows
+                            rows={found}
+                            rowKey={(t) => t.id}
+                            filter={query}
+                            render={(t) => <FoundRow tool={t} selected={t.id === selected} />}
+                        />
                     </div>
                 ) : null}
                 {groups.map((g) => (
                     <div key={g.category} role="group" aria-label={g.category} className="flex flex-col gap-px">
                         <div className="px-2 pb-1 pt-2.5 text-[11px] font-semibold text-ink-mid">{g.category}</div>
-                        {g.rows.map((r) => (
-                            <ToolRow key={r.tool.id} row={r} selected={r.tool.id === selected} />
-                        ))}
+                        <RevealRows
+                            rows={g.rows}
+                            rowKey={(r) => r.tool.id}
+                            filter={query}
+                            render={(r) => <ToolRow row={r} selected={r.tool.id === selected} />}
+                        />
                     </div>
                 ))}
             </div>
@@ -895,7 +905,9 @@ function FolderSuggestions({
             </div>
             <div className="flex flex-wrap gap-1.5">{(servers.length > 0 ? servers : rest).map(chip)}</div>
             {servers.length > 0 && rest.length > 0 ? (
-                <>
+                // one child of the column: the 6px its gap put above the chips is their own padding, so it opens and
+                // folds with them on the spring (rowReveal clips only while it moves, so a chip's focus ring shows)
+                <div>
                     <button
                         type="button"
                         data-tool-suggest-others
@@ -905,8 +917,10 @@ function FolderSuggestions({
                     >
                         {others ? "Hide other scripts" : `Other scripts (${rest.length})`}
                     </button>
-                    {others ? <div className="flex flex-wrap gap-1.5">{rest.map(chip)}</div> : null}
-                </>
+                    <PaneReveal open={others} variants={rowReveal}>
+                        <div className="flex flex-wrap gap-1.5 pt-1.5">{rest.map(chip)}</div>
+                    </PaneReveal>
+                </div>
             ) : null}
         </div>
     );

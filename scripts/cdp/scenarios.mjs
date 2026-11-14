@@ -65748,7 +65748,7 @@ async function setupMemoryAssert(h, ctx) {
                     `[...document.querySelectorAll("[data-memory-review-card] [data-memory-doclines] > span")].map((s) => s.textContent.trim())`
                 ),
                 detailsOpen: await h.ev(
-                    `document.querySelector("[data-memory-review-card] details[data-memory-details]")?.open ?? null`
+                    `document.querySelector("[data-memory-review-card] [data-memory-details] [data-memory-details-toggle]")?.getAttribute("aria-expanded") ?? null`
                 ),
                 judgedBy: await text("[data-memory-judged-by]"),
             };
@@ -65776,7 +65776,7 @@ async function setupMemoryAssert(h, ctx) {
                     cr.first.doclines.every(
                         (d, i) => got.doclines[i]?.includes(`${d.doc}:${d.line}`) && got.doclines[i]?.includes(d.text)
                     ) &&
-                    got.detailsOpen === false &&
+                    got.detailsOpen === "false" &&
                     got.judgedBy === `judged by ${MEMORY_JUDGED_BY}`,
                 detail: JSON.stringify({ ...got, rows: got.rows.length, want: openIds.length }),
             };

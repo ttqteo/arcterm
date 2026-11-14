@@ -7,6 +7,7 @@
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { RevealRows } from "@/app/view/jarvis/briefrowviews";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -115,10 +116,16 @@ export function LearnedTab() {
                                 </span>
                             ) : null}
                         </div>
-                        <div className="flex flex-col gap-1">
-                            {g.lines.map((l) => (
-                                <LearnedLine key={l.id} line={l} />
-                            ))}
+                        {/* the 4px the lines' gap put between them rides on each line's own reveal (gap), so it folds with
+                            the line; the -mt-1 takes back the one above the first. A line taken out folds on the spring */}
+                        <div className="-mt-1 flex flex-col">
+                            <RevealRows
+                                rows={g.lines}
+                                rowKey={(l) => l.id}
+                                filter={g.key}
+                                gap={4}
+                                render={(l) => <LearnedLine line={l} />}
+                            />
                         </div>
                     </section>
                 ))}

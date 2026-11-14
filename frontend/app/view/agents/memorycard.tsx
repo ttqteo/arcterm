@@ -7,12 +7,15 @@
 // the actions are memorystore.ts.
 
 import { KeyCap } from "@/app/element/keycap";
-import { viewFade } from "@/app/element/motiontokens";
+import { turnTransition, viewFade } from "@/app/element/motiontokens";
+import { PaneReveal } from "@/app/element/panereveal";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { rowReveal } from "@/app/view/jarvis/briefrowviews";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
+import { ChevronRight } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { MarkdownMessage } from "./markdownmessage";
 import { doneCard, memoryCard, memoryQueue, type CardButton, type CardModel, type QueueTone } from "./memorymodel";
 import {
@@ -239,27 +242,50 @@ function ReasonSection({ card }: { card: CardModel }) {
                     ))}
                 </div>
             ) : null}
-            {r.evidence.length > 0 ? (
-                <details data-memory-details className="group">
-                    <summary className={cn(SECTION_HEAD, "cursor-pointer select-none hover:text-ink-mid")}>
-                        Details
-                    </summary>
-                    <div className="mt-2 flex flex-col gap-2">
-                        {r.evidence.map((e, i) => (
-                            <div key={i} className="flex items-start gap-2 text-[12px] leading-[1.5] text-secondary">
-                                <Dot tone={toTone(e.tone)} className="mt-1.5" />
-                                <span>
-                                    {e.text}
-                                    {e.code ? (
-                                        <span className="font-mono text-[11px] text-ink-hi">{e.code}</span>
-                                    ) : null}
-                                </span>
-                            </div>
-                        ))}
-                    </div>
-                </details>
-            ) : null}
+            {r.evidence.length > 0 ? <EvidenceDetails evidence={r.evidence} /> : null}
         </section>
+    );
+}
+
+// The evidence under the reason, folded until asked for: its head turns a chevron (the native <details> marker it replaces)
+// and the lines open and fold on the spring. rowReveal clips only while it moves.
+function EvidenceDetails({ evidence }: { evidence: MemEvidence[] }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <div data-memory-details>
+            <button
+                type="button"
+                data-memory-details-toggle
+                aria-expanded={open}
+                onClick={() => setOpen(!open)}
+                className={cn(
+                    SECTION_HEAD,
+                    "flex cursor-pointer select-none items-center gap-1 border-0 bg-transparent p-0 text-left hover:text-ink-mid"
+                )}
+            >
+                <ChevronRight
+                    size={12}
+                    strokeWidth={2}
+                    aria-hidden
+                    style={turnTransition}
+                    className={cn("flex-none transition-transform motion-reduce:transition-none", open && "rotate-90")}
+                />
+                Details
+            </button>
+            <PaneReveal open={open} variants={rowReveal}>
+                <div className="flex flex-col gap-2 pt-2">
+                    {evidence.map((e, i) => (
+                        <div key={i} className="flex items-start gap-2 text-[12px] leading-[1.5] text-secondary">
+                            <Dot tone={toTone(e.tone)} className="mt-1.5" />
+                            <span>
+                                {e.text}
+                                {e.code ? <span className="font-mono text-[11px] text-ink-hi">{e.code}</span> : null}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </PaneReveal>
+        </div>
     );
 }
 

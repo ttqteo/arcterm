@@ -11,7 +11,7 @@
 
 import { openFileInCode } from "@/app/cockpit/openfilestore";
 import { Markdown } from "@/app/element/markdown";
-import { composerReveal } from "@/app/element/motiontokens";
+import { springReveal } from "@/app/element/motiontokens";
 import { PaneReveal } from "@/app/element/panereveal";
 import { globalStore } from "@/app/store/jotaiStore";
 import { FrontmatterCard } from "@/app/view/code/frontmattercard";
@@ -461,7 +461,7 @@ function SharedEditor({ rows }: { rows: AgentSyncHarness[] }) {
                     {busy ? "Saving…" : `Save to ${n} ${n === 1 ? "harness" : "harnesses"}`}
                 </button>
             </div>
-            <PaneReveal open={!!ed.conflict} variants={composerReveal} className="flex-none">
+            <PaneReveal open={!!ed.conflict} variants={springReveal} className="flex-none">
                 <ConflictNotice
                     busy={busy}
                     onReload={() => fireAndForget(reloadShared)}
@@ -527,7 +527,7 @@ function SharedRail({ rows }: { rows: AgentSyncHarness[] }) {
 
 function ErrorBanner({ error }: { error: string | null }) {
     return (
-        <PaneReveal open={!!error} variants={composerReveal} className="flex-none">
+        <PaneReveal open={!!error} variants={springReveal} className="flex-none">
             <div role="alert" className="border-b border-error/30 bg-error/10 px-5 py-2 text-[12.5px] text-error-soft">
                 {error}
             </div>
@@ -915,7 +915,7 @@ function SkillRail({
                             machine.
                         </div>
                     </div>
-                    <PaneReveal open={!!ed.conflict} variants={composerReveal} className="flex-none">
+                    <PaneReveal open={!!ed.conflict} variants={springReveal} className="flex-none">
                         <ConflictNotice
                             busy={busy}
                             onReload={() => fireAndForget(() => reloadSkill(row.name))}
