@@ -725,7 +725,9 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                                 // underlines off there instead (main.rs no_spelling_underlines)
                                 spellCheck={isMacOS()}
                                 onBlur={(e) => props.current.onBlur?.(e.nativeEvent)}
-                                className="block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent"
+                                // relative z-[1]: the placeholder and the ghost layer are absolute, so they would paint
+                                // over the caret (a positioned box paints above in-flow content); this keeps it on top
+                                className="relative z-[1] block overflow-y-auto leading-[1.9] whitespace-pre-wrap outline-none [overflow-wrap:anywhere] data-[pill-selected]:caret-transparent"
                                 style={{ minHeight: p.minHeight, maxHeight: p.maxHeight }}
                             />
                         }

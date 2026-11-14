@@ -73,6 +73,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The blinking caret in Chat's message box shows in front of the grey hint again, not half hidden behind its first
+  letter.
 - A council you write to again after its report no longer works from an outdated memory: before the seats answer, it
   reads what you settled since in the agent that started it and the diffs of its files, and closes or corrects the
   Agreed and Open lines they outdate (so CLAUDE.md's Council decisions block follows). Its experts now read the files
