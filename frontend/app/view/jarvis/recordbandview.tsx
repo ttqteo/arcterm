@@ -5,7 +5,8 @@
 // legible at a glance — a weak inferred link must not read like a confirmed one — so the collapsed line
 // carries each edge's state, confidence and line style.
 
-import { composerReveal } from "@/app/element/motiontokens";
+import { springReveal } from "@/app/element/motiontokens";
+import { usePartMotion } from "@/app/element/springbatch";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AmbientTag } from "@/app/view/agents/ambient";
 import { cn } from "@/util/util";
@@ -68,6 +69,8 @@ export function RecordBand({
     const expandable = band.case === "one" || band.case === "several";
     const showPanel = band.case === "subject" || (expandable && open);
     const [attaching, setAttaching] = useState(false);
+    // the panel and the edges open and fold on the spring (snapped under reduced motion)
+    const reveal = usePartMotion(springReveal);
     const detachedByKey = useAtomValue(detachedEdgesAtom);
     const detached = runORef != null ? (detachedByKey[runORef] ?? []) : [];
     // a run whose only record was detached has no band to expand, and Restore must still be reachable
@@ -190,14 +193,7 @@ export function RecordBand({
                 you left expanded is already open when you come back rather than replaying the reveal. */}
             <AnimatePresence initial={false}>
                 {showPanel && detail != null ? (
-                    <motion.div
-                        key="panel"
-                        variants={composerReveal}
-                        initial="initial"
-                        animate="animate"
-                        exit="exit"
-                        className="flex min-h-0 flex-col overflow-hidden"
-                    >
+                    <motion.div key="panel" {...reveal} className="flex min-h-0 flex-col overflow-hidden">
                         <div
                             className={cn(
                                 STAGE_SCROLLER,
@@ -212,14 +208,7 @@ export function RecordBand({
                     and the correction controls are siblings, never nested: a control inside a control is the
                     keyboard defect JC19 was filed to fix. */}
                 {showEdges ? (
-                    <motion.div
-                        key="edges"
-                        variants={composerReveal}
-                        initial="initial"
-                        animate="animate"
-                        exit="exit"
-                        className="flex min-h-0 flex-col overflow-hidden"
-                    >
+                    <motion.div key="edges" {...reveal} className="flex min-h-0 flex-col overflow-hidden">
                         {/* a scroller like the panel above, so it reserves the same 10px the inset did */}
                         <div className={cn(STAGE_SCROLLER, "min-h-0 flex-1 border-t border-border")}>
                             <div className={cn(STAGE_GUTTER, "flex flex-col gap-px py-2")}>

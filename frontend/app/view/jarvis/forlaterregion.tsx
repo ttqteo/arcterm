@@ -8,12 +8,15 @@
 
 import { cn } from "@/util/util";
 import type { LaterRow, LaterSession } from "./briefforlater";
+import { RevealRows } from "./briefrowviews";
 import { CURSOR_RING, cursorAttrs, FAINT_TEXT, REGION_LABEL, ROW_BORDER, SMALL_BTN } from "./briefstyle";
 
 export const FOR_LATER_EMPTY = "Nothing marked for later.";
 
 export function ForLaterRegion<S extends LaterSession>({
     rows,
+    keys,
+    filter,
     total,
     more,
     expanded,
@@ -24,6 +27,8 @@ export function ForLaterRegion<S extends LaterSession>({
     onDone,
 }: {
     rows: LaterRow<S>[]; // the rows drawn, past the window when expanded
+    keys: readonly string[]; // every mark the search keeps, before the window: "+N more" opens the rest on the spring
+    filter: string; // the search: a new one shows its rows at once
     total: number; // every mark the search keeps, drawn or not
     more: number; // what the window hid
     expanded: boolean;
@@ -47,16 +52,21 @@ export function ForLaterRegion<S extends LaterSession>({
                         {FOR_LATER_EMPTY}
                     </p>
                 ) : null}
-                {rows.map((r) => (
-                    <LaterRowView
-                        key={r.key}
-                        row={r}
-                        focused={cursor === r.navId}
-                        onOpen={onOpen}
-                        onResume={onResume}
-                        onDone={onDone}
-                    />
-                ))}
+                <RevealRows
+                    rows={rows}
+                    rowKey={(r) => r.key}
+                    keys={keys}
+                    filter={filter}
+                    render={(r) => (
+                        <LaterRowView
+                            row={r}
+                            focused={cursor === r.navId}
+                            onOpen={onOpen}
+                            onResume={onResume}
+                            onDone={onDone}
+                        />
+                    )}
+                />
                 {more > 0 || expanded ? (
                     <button
                         type="button"

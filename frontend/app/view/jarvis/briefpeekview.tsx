@@ -13,6 +13,7 @@
 // Brief's modal and the avatar popup's record item both render it.
 
 import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
+import { shapeTransition } from "@/app/element/springbatch";
 import { ModalShell } from "@/app/modals/modalshell";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
@@ -23,8 +24,9 @@ import type { RunStatusTone } from "@/app/view/agents/runmodel";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue, useSetAtom } from "jotai";
 import { Check, ChevronDown, ChevronUp, X } from "lucide-react";
-import { useEffect, useState } from "react";
-import { buildRecordPeek, type PeekRunRow, type PeekStatusRow } from "./briefpeek";
+import { animate, useReducedMotion, type AnimationPlaybackControls } from "motion/react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { buildRecordPeek, type PeekRunRow, type PeekStatusRow, type RecordPeek } from "./briefpeek";
 import { FAINT_TEXT, META_TEXT, SMALL_BTN } from "./briefstyle";
 import { fleetForRecord } from "./fleetscope";
 import { briefPeekRecordAtom } from "./jarvisstore";
@@ -70,6 +72,112 @@ const BODY_LINK =
 const SEGMENT = "rounded-[6px] px-3 py-1 text-[11.5px] font-semibold";
 
 const CONFIRM_BTN = cn(SMALL_BTN, "flex-none px-[9px] text-[11px]");
+
+// the objective's clamp: line-clamp-4 of its text-[13px] leading-[1.6] paragraph
+const OBJECTIVE_CLAMP_PX = 4 * 13 * 1.6;
+
+// The objective and its Show the full objective / Show less. line-clamp cannot animate, so the box springs its own height
+// between the clamped text and the whole of it by hand, as Chat's Arriving does (chatconversation.tsx): opening takes the
+// clamp off first and grows from the height the clamp had; folding keeps the text whole while the box shrinks to the clamp,
+// and puts the clamp back when it lands. Reduced motion jumps (shapeTransition).
+function Objective({
+    peek,
+    open,
+    onToggle,
+}: {
+    peek: Pick<RecordPeek, "body" | "bodyIsAbsence" | "bodyMore">;
+    open: boolean;
+    onToggle: () => void;
+}) {
+    const reduce = useReducedMotion();
+    const box = useRef<HTMLDivElement>(null);
+    const run = useRef<AnimationPlaybackControls | null>(null);
+    const shutPx = useRef(0);
+    const seen = useRef(open);
+    // the box has finished folding back, so the clamp can go on again
+    const [folded, setFolded] = useState(!open);
+    const clamp = peek.bodyMore != null && !open && folded;
+
+    // every render, so a width change keeps the shut height current; the animation starts only when `open` flips
+    useLayoutEffect(() => {
+        const el = box.current;
+        if (el == null) {
+            return;
+        }
+        if (clamp) {
+            // shut and settled: the box is exactly as tall as the clamp left the text
+            shutPx.current = el.offsetHeight;
+        }
+        if (seen.current === open) {
+            return;
+        }
+        seen.current = open;
+        if (peek.bodyMore == null) {
+            setFolded(!open);
+            return;
+        }
+        run.current?.stop();
+        // a height left on the box is a fold or an unfold this one interrupts: it starts from where that had got to
+        const midway = el.style.height !== "";
+        const whole = el.scrollHeight;
+        const from = midway || !open ? el.offsetHeight : shutPx.current;
+        const to = open ? whole : Math.min(whole, OBJECTIVE_CLAMP_PX);
+        if (open) {
+            setFolded(false);
+        }
+        if (from === to) {
+            el.style.removeProperty("height");
+            el.style.removeProperty("overflow");
+            setFolded(!open);
+            return;
+        }
+        el.style.overflow = "hidden";
+        el.style.height = `${from}px`;
+        const mine = animate(el, { height: [from, to] }, shapeTransition("animate", reduce));
+        run.current = mine;
+        const rest = () => {
+            if (run.current === mine) {
+                el.style.removeProperty("height");
+                el.style.removeProperty("overflow");
+                setFolded(!open);
+            }
+        };
+        void mine.finished.then(rest, rest);
+    });
+    useEffect(() => () => run.current?.stop(), []);
+
+    if (peek.body == null) {
+        return null;
+    }
+    return (
+        <div className="flex flex-col gap-1.5">
+            <div ref={box}>
+                <p
+                    data-jarvis-peek-body
+                    className={cn(
+                        "m-0 whitespace-pre-line text-[13px] leading-[1.6]",
+                        peek.bodyIsAbsence ? "text-muted" : "text-ink-mid",
+                        clamp && "line-clamp-4"
+                    )}
+                >
+                    {peek.body}
+                </p>
+            </div>
+            {peek.bodyMore != null ? (
+                <button
+                    type="button"
+                    data-jarvis-peek-body-toggle
+                    aria-expanded={open}
+                    onClick={onToggle}
+                    className={BODY_LINK}
+                >
+                    {open ? "Show less" : peek.bodyMore}
+                    {open ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                </button>
+            ) : null}
+        </div>
+    );
+}
 
 // DEV-only: ids whose load __recordPeekFor holds (linkingdevhooks.ts), so the skeleton stays up long enough to
 // photograph. It lives here rather than in that module because the module is imported only in a dev build.
@@ -375,32 +483,7 @@ export function RecordPeekBody({
                     />
                 ) : null}
                 <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-[18px] pt-4 pb-[18px]">
-                    {peek.body != null ? (
-                        <div className="flex flex-col gap-1.5">
-                            <p
-                                data-jarvis-peek-body
-                                className={cn(
-                                    "m-0 whitespace-pre-line text-[13px] leading-[1.6]",
-                                    peek.bodyIsAbsence ? "text-muted" : "text-ink-mid",
-                                    peek.bodyMore != null && !objectiveOpen && "line-clamp-4"
-                                )}
-                            >
-                                {peek.body}
-                            </p>
-                            {peek.bodyMore != null ? (
-                                <button
-                                    type="button"
-                                    data-jarvis-peek-body-toggle
-                                    aria-expanded={objectiveOpen}
-                                    onClick={() => setObjectiveOpen((v) => !v)}
-                                    className={BODY_LINK}
-                                >
-                                    {objectiveOpen ? "Show less" : peek.bodyMore}
-                                    {objectiveOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                                </button>
-                            ) : null}
-                        </div>
-                    ) : null}
+                    <Objective peek={peek} open={objectiveOpen} onToggle={() => setObjectiveOpen((v) => !v)} />
                     <div className="flex flex-col">
                         <div className="flex items-baseline gap-2.5 px-0.5 pb-2">
                             <span className="text-[12.5px] font-semibold text-secondary">Runs on this record</span>

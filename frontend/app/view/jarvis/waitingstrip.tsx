@@ -6,11 +6,13 @@
 // action, and Show all N, which opens every item under the strip as today's queue rows. Not drawn with nothing waiting.
 // Presentational: the lines come in the queue's order (briefingmodel.ts buildAttentionQueue), every act is a prop.
 
+import { usePartMotion } from "@/app/element/springbatch";
 import { cn } from "@/util/util";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import type { QueueAct } from "./briefingmodel";
 import type { BriefLine } from "./briefrows";
-import { WaitingRow } from "./briefrowviews";
+import { RevealRows, rowReveal, WaitingRow } from "./briefrowviews";
 import { CURSOR_RING, cursorAttrs } from "./briefstyle";
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -28,6 +30,8 @@ export type WaitingStripProps = {
     total: number;
     open: boolean;
     onToggle: () => void;
+    // what chose the lines (the Brief's search): a new one shows the rows at once instead of one by one
+    filter?: string;
     // every button an item carries: one for most, Unblock and Done for a blocked chunk
     actsOf: (line: BriefLine) => QueueAct[];
     onAct: (line: BriefLine, act: QueueAct) => void;
@@ -44,6 +48,7 @@ export function WaitingStrip({
     total,
     open,
     onToggle,
+    filter,
     actsOf,
     onAct,
     onOpen,
@@ -51,6 +56,7 @@ export function WaitingStrip({
     ack,
     summary,
 }: WaitingStripProps) {
+    const reveal = usePartMotion(rowReveal);
     if (total === 0) {
         return null;
     }
@@ -59,7 +65,8 @@ export function WaitingStrip({
     // with the rows open the strip's own line is the first row too, so the cursor rides the rows instead
     const focused = !open && head != null && cursor === head.id;
     return (
-        <section data-jarvis-brief-region="waiting" data-jarvis-waiting-strip className="flex min-w-0 flex-col gap-1.5">
+        // no gap: the rows' own top margin is the space under the head, so it opens and folds with them
+        <section data-jarvis-brief-region="waiting" data-jarvis-waiting-strip className="flex min-w-0 flex-col">
             <div
                 data-jarvis-waiting-head
                 data-jarvis-waiting-item={head?.id}
@@ -146,29 +153,38 @@ export function WaitingStrip({
                     </button>
                 ) : null}
             </div>
-            {open ? (
-                <div
-                    id="jarvis-attention-details"
-                    data-jarvis-waiting-rows
-                    className="flex flex-col rounded-[10px] border border-edge-mid bg-surface p-1"
-                >
-                    {summary ? (
-                        <span data-jarvis-waiting-summary className="px-2 pb-1 pt-0.5 text-[11px] text-ink-mid">
-                            {summary}
-                        </span>
-                    ) : null}
-                    {lines.map((l) => (
-                        <WaitingRow
-                            key={l.id}
-                            line={l}
-                            focused={cursor === l.id}
-                            acts={actsOf(l)}
-                            onOpen={l.target != null ? (e) => onOpen(l, e) : undefined}
-                            onAct={(act) => onAct(l, act)}
-                        />
-                    ))}
-                </div>
-            ) : null}
+            {/* the reveal is its own box, with no border or padding: those would hold it open at height 0 */}
+            <AnimatePresence initial={false}>
+                {open ? (
+                    <motion.div key="rows" {...reveal} data-jarvis-waiting-reveal>
+                        <div
+                            id="jarvis-attention-details"
+                            data-jarvis-waiting-rows
+                            className="mt-1.5 flex flex-col rounded-[10px] border border-edge-mid bg-surface p-1"
+                        >
+                            {summary ? (
+                                <span data-jarvis-waiting-summary className="px-2 pb-1 pt-0.5 text-[11px] text-ink-mid">
+                                    {summary}
+                                </span>
+                            ) : null}
+                            <RevealRows
+                                rows={lines}
+                                rowKey={(l) => l.id}
+                                filter={filter}
+                                render={(l) => (
+                                    <WaitingRow
+                                        line={l}
+                                        focused={cursor === l.id}
+                                        acts={actsOf(l)}
+                                        onOpen={l.target != null ? (e) => onOpen(l, e) : undefined}
+                                        onAct={(act) => onAct(l, act)}
+                                    />
+                                )}
+                            />
+                        </div>
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
         </section>
     );
 }

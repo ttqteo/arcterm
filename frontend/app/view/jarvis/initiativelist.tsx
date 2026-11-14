@@ -8,7 +8,7 @@
 import { cn } from "@/util/util";
 import type { ReactNode } from "react";
 import type { InitiativeFace } from "./briefcards";
-import { SegmentBar } from "./briefrowviews";
+import { RevealRows, SegmentBar } from "./briefrowviews";
 import { CURSOR_RING, cursorAttrs } from "./briefstyle";
 import {
     NOTE_LABEL_TEXT,
@@ -113,6 +113,8 @@ export function InitiativeList({
     more,
     expanded,
     onToggleMore,
+    keys,
+    filter,
     tabs,
     empty,
     footer,
@@ -126,6 +128,11 @@ export function InitiativeList({
     more: number;
     expanded: boolean;
     onToggleMore: () => void;
+    // the list's rows before the window cut them, and what chose them (the search, the project tab): the rows arrive and
+    // leave one at a time on the spring, a new filter or three or more at once shows at once, and "+N more" is a
+    // disclosure that always springs (RevealRows)
+    keys: readonly string[];
+    filter: string;
     // today's project tabs, beside the label
     tabs?: ReactNode;
     // drawn in the box's place when there is no row (a filter that matched nothing, no initiatives yet)
@@ -144,15 +151,20 @@ export function InitiativeList({
             </div>
             {hasRows ? (
                 <div className="flex min-w-0 flex-col rounded-[8px] border border-edge-faint p-1">
-                    {faces.map((f) => (
-                        <InitiativeListRow
-                            key={f.oref}
-                            face={f}
-                            focused={cursor === f.oref}
-                            opened={opened === f.oref}
-                            actions={actions}
-                        />
-                    ))}
+                    <RevealRows
+                        rows={faces}
+                        rowKey={(f) => f.oref}
+                        keys={keys}
+                        filter={filter}
+                        render={(f) => (
+                            <InitiativeListRow
+                                face={f}
+                                focused={cursor === f.oref}
+                                opened={opened === f.oref}
+                                actions={actions}
+                            />
+                        )}
+                    />
                     {more > 0 || expanded || footer != null ? (
                         <div className="flex flex-wrap items-center gap-2 px-1.5 pb-0.5 pt-1 empty:hidden">
                             {more > 0 || expanded ? (

@@ -7,9 +7,13 @@
 // with a chunk blocked by a note ("needs: ...") and a later note on it. kit is scenarios.mjs's JARVIS_KIT: it has no
 // briefCloseSheet, so that is duplicated here, as the plan says.
 //
-// The dev store may hold blocked chunks of its own, so every row is found by this scenario's initiative title.
+// The dev store may hold blocked chunks of its own, so every row is found by this scenario's initiative title. A store
+// that holds none (the Final's fresh one) would leave this chunk the strip's only line, and a strip with one line draws no
+// Show all to open its rows with: the companion's blocked chunk is the second line, so the rows open there too.
 
 const TITLE = "verify-brief-act-blocked";
+// no title of the scenario's contains the other: OUR_ROW finds a row by TITLE
+const COMPANION = "verify-brief-act-companion";
 const CHUNK = "Stuck";
 const NEEDS = "needs: a DEV soak";
 const LATER = "the blocker is gone on DEV";
@@ -57,9 +61,13 @@ export default function (kit) {
             const ctx = {};
             try {
                 await briefDeleteEfforts(h, TITLE);
+                await briefDeleteEfforts(h, COMPANION);
                 ctx.effortId = await briefSeedInitiative(h, TITLE, [CHUNK, "Next"], [
                     { op: "setChunkStatus", chunk: CHUNK, status: "blocked", note: NEEDS },
                     { op: "appendNote", chunk: CHUNK, note: LATER },
+                ]);
+                ctx.companionId = await briefSeedInitiative(h, COMPANION, [CHUNK, "Next"], [
+                    { op: "setChunkStatus", chunk: CHUNK, status: "blocked", note: NEEDS },
                 ]);
             } catch (e) {
                 ctx.arrangeError = String(e?.message ?? e);
@@ -164,10 +172,13 @@ export default function (kit) {
         },
         async teardown(h, ctx) {
             await closeSheet(h).catch(() => {});
-            if (ctx?.effortId != null) {
-                await h.rpc("effortdelete", { effortoid: ctx.effortId }).catch(() => {});
+            for (const id of [ctx?.effortId, ctx?.companionId]) {
+                if (id != null) {
+                    await h.rpc("effortdelete", { effortoid: id }).catch(() => {});
+                }
             }
             await briefDeleteEfforts(h, TITLE).catch(() => {});
+            await briefDeleteEfforts(h, COMPANION).catch(() => {});
         },
     };
     return [scenario];
