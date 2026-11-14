@@ -164,6 +164,33 @@ func TestApplyAutonomousSwitchOnReturnsHumansWorkerAsksToLead(t *testing.T) {
 	}
 }
 
+// A worker's held card (a spawn's Token burn card) asks about the person's quota: switching the run to autonomous
+// leaves it with the person instead of handing it to the lead.
+func TestApplyAutonomousSwitchOnLeavesAHeldCardWithTheHuman(t *testing.T) {
+	f := newFakeLead(t)
+	f.state.State = baseds.AgentState_Working
+	stubLeadDelivery(t, nil)
+	card := "block:card"
+	agentask.GlobalRegistry.Set(card, agentask.PendingAsk{
+		AskId: "a-1", BlockId: "child", Questions: []baseds.AgentAskQuestion{singleSelect()}, Hold: true,
+		Owner: agentask.AskOwner_User, ChannelId: wakeChannel, RunId: wakeRun, TaskId: "t-1", DagOID: "dag-1",
+	})
+
+	if err := ApplyAutonomousSwitch(context.Background(), wakeChannel, wakeRun, true); err != nil {
+		t.Fatalf("ON: %v", err)
+	}
+	if got, _ := agentask.GlobalRegistry.Get(card); got.Owner != agentask.AskOwner_User || got.Deadline != 0 {
+		t.Fatalf("a held card stays the human's, got %+v", got)
+	}
+	f.state.State = baseds.AgentState_Idle
+	NoteLeadStatus(context.Background(), f.status(baseds.AgentState_Idle))
+	for _, s := range f.sends {
+		if strings.Contains(s, "question waiting") {
+			t.Fatalf("the ON wake names no question for a held card, got %q", f.sends)
+		}
+	}
+}
+
 func TestApplyAutonomousSwitchOffWakesAndMovesNothing(t *testing.T) {
 	f := newFakeLead(t)
 	f.state.State = baseds.AgentState_Asking
