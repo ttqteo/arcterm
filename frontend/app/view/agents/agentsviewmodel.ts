@@ -941,6 +941,20 @@ export function canSubmitAsk(
     );
 }
 
+/** Pure: whether an ask's card needs a Submit button: a click sends on its own only for one single-select question
+ *  with nothing typed. A multi-select question, several questions or a typed answer wait for a confirm, which in Chat
+ *  Enter never gives (the box has the key), so without the button the card could not be sent. */
+export function askNeedsSubmit(questions: AgentAskQuestion[], texts: Record<number, string> = {}): boolean {
+    if (questions.length === 0) {
+        return false;
+    }
+    return (
+        questions.length > 1 ||
+        questions.some((q) => q.multiSelect) ||
+        questions.some((_, qi) => (texts[qi] ?? "").trim() !== "")
+    );
+}
+
 /** Pure: the single muted footer hint for an ask, so one consistent line always renders.
  *  - one single-select question, no typed text: prompt to answer (mentions 1–9 only when the picker is numbered)
  *  - a typed answer in any question: "press Enter to send" (replaces "press Enter to submit" when both apply)

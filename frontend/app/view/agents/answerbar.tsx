@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { cn } from "@/util/util";
-import { ArrowUpRight, Check, FileText, SquareTerminal, X } from "lucide-react";
+import { ArrowUpRight, Check, ChevronLeft, ChevronRight, FileText, SquareTerminal, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import {
     answerHint,
+    askNeedsSubmit,
+    canSubmitAsk,
     nextUnansweredQuestion,
     terminalAskNote,
     type AgentAskQuestion,
@@ -428,21 +430,80 @@ export function AnswerBar({
         />
     );
 
+    // The hint, and the controls Enter stands in for elsewhere: in Chat the box holds Enter, so a multi-select or
+    // multi-question card had no way to move on or send. ← → step through the questions; Submit sends once every
+    // question has an answer.
+    const footer = (idx: number) => {
+        const hint = answerHint(questions, selections, !!numbered, texts ?? {});
+        const needsSubmit = askNeedsSubmit(questions, texts ?? {});
+        if (!showHint || (!hint && !needsSubmit)) {
+            return null;
+        }
+        const multi = questions.length > 1;
+        const ready = canSubmitAsk(questions, selections, texts ?? {});
+        const navBtn =
+            "flex h-[23px] w-[23px] cursor-pointer items-center justify-center rounded-[6px] border border-border text-secondary hover:bg-white/[0.04] hover:text-primary disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent";
+        return (
+            <div className="mt-2 flex items-center gap-2">
+                <span className="min-w-0 flex-1 text-[11px] text-secondary">{hint}</span>
+                {multi ? (
+                    <>
+                        <button
+                            type="button"
+                            title="Previous question"
+                            disabled={idx === 0}
+                            onClick={() => onSelectQuestion?.(idx - 1)}
+                            className={navBtn}
+                        >
+                            <ChevronLeft size={13} aria-hidden />
+                        </button>
+                        <button
+                            type="button"
+                            title="Next question"
+                            disabled={idx >= questions.length - 1}
+                            onClick={() => onSelectQuestion?.(idx + 1)}
+                            className={navBtn}
+                        >
+                            <ChevronRight size={13} aria-hidden />
+                        </button>
+                    </>
+                ) : null}
+                {needsSubmit ? (
+                    <button
+                        type="button"
+                        disabled={!ready}
+                        title={ready ? "Send the answers" : "Answer every question first"}
+                        onClick={onSubmit}
+                        className={cn(
+                            "flex h-[23px] shrink-0 cursor-pointer items-center gap-1.5 rounded-[6px] border-0 px-[11px] text-[11.5px] font-bold disabled:cursor-default",
+                            ready
+                                ? agent.state === "asking"
+                                    ? "bg-warning text-background"
+                                    : "bg-accent text-background"
+                                : "bg-white/[0.06] text-muted"
+                        )}
+                    >
+                        <Check size={12} aria-hidden />
+                        Submit
+                    </button>
+                ) : null}
+            </div>
+        );
+    };
+
     // one ask renders inline; multiple asks become tabs so they don't stack into a tall wall
     if (questions.length === 1) {
-        const hint = answerHint(questions, selections, !!numbered, texts ?? {});
         return (
             <div className={className}>
                 {dismissControl}
                 {noteLine}
                 {renderGroup(0)}
-                {showHint && hint ? <div className="mt-2 text-[11px] text-secondary">{hint}</div> : null}
+                {footer(0)}
             </div>
         );
     }
 
     const idx = Math.max(0, Math.min(activeQuestion ?? 0, questions.length - 1));
-    const hint = answerHint(questions, selections, !!numbered, texts ?? {});
     return (
         <div className={className}>
             {dismissControl}
@@ -468,7 +529,7 @@ export function AnswerBar({
                 })}
             </div>
             {renderGroup(idx)}
-            {showHint && hint ? <div className="mt-2 text-[11px] text-secondary">{hint}</div> : null}
+            {footer(idx)}
         </div>
     );
 }

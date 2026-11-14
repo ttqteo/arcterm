@@ -3,6 +3,7 @@ import {
     agentVMFromInput,
     aggregateEditBurst,
     answerHint,
+    askNeedsSubmit,
     applyAgentOrder,
     ASK_STALE_GRACE_MS,
     askingCount,
@@ -1424,6 +1425,24 @@ describe("terminalName", () => {
 
     it("takes a multi-line command's first non-empty line, its whitespace collapsed", () => {
         expect(terminalName(undefined, "\n  go test   ./pkg/x \\\n  -run Foo", 1)).toBe("go test ./pkg/x \\");
+    });
+});
+
+describe("askNeedsSubmit", () => {
+    const q = (multiSelect = false): AgentAskQuestion => ({
+        question: "Q?",
+        options: [{ label: "a" }, { label: "b" }],
+        multiSelect,
+    });
+    it("no button for no questions or one single-select question, which a click sends", () => {
+        expect(askNeedsSubmit([])).toBe(false);
+        expect(askNeedsSubmit([q()])).toBe(false);
+        expect(askNeedsSubmit([q()], { 0: "  " })).toBe(false);
+    });
+    it("a button for a multi-select question, several questions or a typed answer", () => {
+        expect(askNeedsSubmit([q(true)])).toBe(true);
+        expect(askNeedsSubmit([q(), q()])).toBe(true);
+        expect(askNeedsSubmit([q()], { 0: "my own" })).toBe(true);
     });
 });
 
