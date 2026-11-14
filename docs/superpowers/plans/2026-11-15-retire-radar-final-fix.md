@@ -45,7 +45,7 @@ Cockpit state behind, or the arrange step never reset it. Confirm the cause befo
 
 ### Task 2: settings-pages index accepts a hairline rule at any display scale
 
-**Depends on:** none
+**Depends on:** Task 1
 **Files:** `scripts/cdp/scenarios.mjs`
 
 Scope: the `settings-pages` scenario's index step.
