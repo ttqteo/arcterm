@@ -1743,6 +1743,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         <ModalShell
             open={open}
             onClose={editing ? leaveDraft : close}
+            frosted
             className="flex h-[min(600px,80vh)] w-[min(820px,93vw)] flex-col"
         >
             {open && draft != null ? (

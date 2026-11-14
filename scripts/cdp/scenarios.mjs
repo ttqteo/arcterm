@@ -29907,9 +29907,10 @@ const noteBodyExpr = (value) => `(() => {
     el.dispatchEvent(new Event('input', { bubbles: true }));
     return true;
 })()`;
-// the scrim is the dialog's parent, and it leaves only on a press that lands on itself
+// the palette's scrim is the layer behind its dialog (ModalShell frosted: a sibling of the positioning container that holds
+// the dialog, marked data-modal-scrim), and it leaves only on a press that lands on itself
 const NOTES_BACKDROP_PRESS = `(() => {
-    const scrim = ${PALETTE}?.parentElement;
+    const scrim = ${PALETTE} ? document.querySelector('[data-modal-scrim]') : null;
     if (!scrim) return false;
     scrim.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     return true;
