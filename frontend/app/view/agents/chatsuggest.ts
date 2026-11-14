@@ -19,6 +19,7 @@
 // model's answers and makes the call, chatpane.tsx wires the two.
 
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
+import type { HintPart } from "./chatboxstate";
 import { agentChunk } from "./initiativepopovermodel";
 import { shipOffer, type ShipGit } from "./shipmodel";
 
@@ -293,4 +294,33 @@ export function runningActions(entries: readonly AgentEntry[], now: number): Run
         }
     }
     return { diff, terminal, terminalAt: terminal ? null : terminalAt };
+}
+
+/** Pure: the chips the row draws: a `done` chip needs a way to tick its chunk (`canMarkDone`), or it is left out. Tab
+ *  walks these, so the picked chip is always one on screen. */
+export function drawnChips(chips: readonly ChatChip[], canMarkDone: boolean): ChatChip[] {
+    return chips.filter((c) => !(c.kind === "done" && c.chunk != null && !canMarkDone));
+}
+
+/** Pure: the chip Tab picks next (Shift+Tab: the one before), by its text, wrapping round; none picked starts at the
+ *  first (Shift+Tab: the last). A picked text no longer in the row counts as none picked. No chips, none. */
+export function stepPick(chips: readonly ChatChip[], picked: string | null, back: boolean): string | null {
+    const n = chips.length;
+    if (n === 0) {
+        return null;
+    }
+    const at = picked == null ? -1 : chips.findIndex((c) => c.text === picked);
+    const next = at < 0 ? (back ? n - 1 : 0) : (at + (back ? -1 : 1) + n) % n;
+    return chips[next].text;
+}
+
+/** Pure: the picked chip, or null when the text is no longer one of the row's (the row changed under it). */
+export function pickedChip(chips: readonly ChatChip[], picked: string | null): ChatChip | null {
+    return picked == null ? null : (chips.find((c) => c.text === picked) ?? null);
+}
+
+/** Pure: the empty box's line while a chip is picked: what Enter does with it, then the keys that move on or let go. */
+export function pickedHint(chip: ChatChip): HintPart[] {
+    const does = chip.kind === "done" && chip.chunk != null ? ` marks “${chip.chunk}” done` : ` sends “${chip.text}”`;
+    return [{ key: "Enter" }, does + " · ", { key: "Tab" }, " next · ", { key: "Esc" }, " back to typing"];
 }

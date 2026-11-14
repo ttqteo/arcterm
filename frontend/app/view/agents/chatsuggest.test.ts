@@ -5,15 +5,19 @@ import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
 import {
     chatChips,
+    drawnChips,
     endsWithQuestion,
     initiativeChips,
     lastReply,
+    pickedChip,
+    pickedHint,
     recentPrompts,
     ROW_ENTER_ACTIONS_MS,
     ROW_LEAVE_ACTIONS_MS,
     rowHold,
     ruleChips,
     runningActions,
+    stepPick,
     suggestKey,
     TERMINAL_AFTER_MS,
     wantsModelSuggest,
@@ -334,5 +338,51 @@ describe("runningActions", () => {
             terminalAt: now - 2_000 + TERMINAL_AFTER_MS,
         });
         expect(runningActions([user, ran(now - 60_000, "ok")], now).terminal).toBe(false);
+    });
+});
+
+describe("Tab through the suggested replies", () => {
+    const a: ChatChip = { text: "làm theo cách này", kind: "reply", source: "model" };
+    const b: ChatChip = { text: "vẽ thử", kind: "reply", source: "model" };
+    const done: ChatChip = { text: "xong: Tab hint", kind: "done", source: "rule", chunk: "Tab hint" };
+    const row = [a, b, done];
+
+    it("drawnChips leaves a done chip out when nothing can tick it", () => {
+        expect(drawnChips(row, true)).toEqual(row);
+        expect(drawnChips(row, false)).toEqual([a, b]);
+    });
+
+    it("stepPick starts at the first, Shift+Tab at the last", () => {
+        expect(stepPick(row, null, false)).toBe(a.text);
+        expect(stepPick(row, null, true)).toBe(done.text);
+    });
+
+    it("stepPick walks and wraps both ways", () => {
+        expect(stepPick(row, a.text, false)).toBe(b.text);
+        expect(stepPick(row, done.text, false)).toBe(a.text);
+        expect(stepPick(row, a.text, true)).toBe(done.text);
+    });
+
+    it("stepPick treats a text gone from the row as none picked, and an empty row picks none", () => {
+        expect(stepPick(row, "commit đi", false)).toBe(a.text);
+        expect(stepPick([], null, false)).toBeNull();
+    });
+
+    it("pickedChip finds the chip by text, or none once the row changed", () => {
+        expect(pickedChip(row, b.text)).toBe(b);
+        expect(pickedChip(row, "commit đi")).toBeNull();
+        expect(pickedChip(row, null)).toBeNull();
+    });
+
+    it("pickedHint says what Enter does: send the text, or tick the chunk", () => {
+        expect(pickedHint(b)).toEqual([
+            { key: "Enter" },
+            " sends “vẽ thử” · ",
+            { key: "Tab" },
+            " next · ",
+            { key: "Esc" },
+            " back to typing",
+        ]);
+        expect(pickedHint(done)[1]).toBe(" marks “Tab hint” done · ");
     });
 });

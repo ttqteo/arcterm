@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- In Chat, `Tab` walks the suggested replies under the box (`Shift`+`Tab` back) and `Enter` sends the one it picked,
+  which shows the Enter key; the empty box says so. Reply chips lose the ↵ arrow that read as Enter on every one.
 - Chat draws a council the agent started as a card, like its runs and verdicts: while the council runs it sits at the
   end of the conversation with the question, a chip for each expert, the step it is on and a Stop button; it asks
   Continue or Stop when it pauses after round 1, and shows what it waits for when it is queued. Once it ends, the card
