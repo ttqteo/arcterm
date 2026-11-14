@@ -11,9 +11,13 @@
 // `<listAttr>-group` (its value the group's title). The keys belong to the caller and see rows only: a header is no option.
 //
 // `look: "frosted"` is Chat's suggestion panel instead (the chat box passes it; the launcher keeps the plain list): the
-// same list and rows inside `[data-chat-suggest-panel]`, a 16 px panel on `--color-panel` with a static blur that stands
-// just above `frame` (the message box) as wide as it is, under a key line (↑↓ to navigate, ⏎ to select, esc to close),
-// and enters and leaves on `springPop` from its bottom edge. The blur is never animated, only the scale and opacity.
+// same list and rows inside `[data-chat-suggest-panel]`, a 16 px panel that stands just above `frame` (the message box) as
+// wide as it is, under a key line (↑↓ to navigate, ⏎ to select, esc to close), and enters and leaves on `springPop` from its
+// bottom edge. The blur is never animated, only the scale and opacity.
+//
+// Both looks draw their panel on the `frost` class (tailwindsetup.css; DESIGN.md "Overlays"), the themed `--color-panel` with
+// a static 18 px blur, so they differ in placement, radius, border and shadow, not in fill. The class sits on the panel's
+// own outermost element (the frosted look's motion.div, the plain look's box or list), under no ancestor that fades or filters.
 
 import { springPop } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
@@ -129,7 +133,7 @@ function FrostedPanel({ children }: { children: (present: boolean) => ReactNode 
             animate="animate"
             exit="exit"
             style={{ originX: 0.5, originY: 1 }}
-            className="flex max-h-[min(420px,var(--mention-avail))] flex-col overflow-hidden rounded-[16px] border border-edge-mid bg-panel shadow-popover-soft backdrop-blur-[18px]"
+            className="flex max-h-[min(420px,var(--mention-avail))] flex-col overflow-hidden rounded-[16px] border border-edge-mid frost shadow-popover-soft"
         >
             {children(present)}
         </motion.div>
@@ -292,7 +296,7 @@ export function PickerList<T>({
                 className={
                     frosted
                         ? "flex min-h-0 flex-1 flex-col overflow-hidden"
-                        : "flex max-h-[min(420px,var(--mention-avail))] flex-col overflow-hidden rounded-[11px] border border-border bg-surface shadow-popover-md"
+                        : "flex max-h-[min(420px,var(--mention-avail))] flex-col overflow-hidden rounded-[11px] border border-border frost shadow-popover-md"
                 }
             >
                 <ul
@@ -320,7 +324,7 @@ export function PickerList<T>({
                 className={
                     frosted
                         ? "relative m-0 flex min-h-0 flex-1 list-none flex-col overflow-y-auto p-[6px] pt-0"
-                        : "relative m-0 flex max-h-[var(--mention-max-height)] list-none flex-col overflow-y-auto rounded-[11px] border border-border bg-surface p-[5px] shadow-popover-md"
+                        : "relative m-0 flex max-h-[var(--mention-max-height)] list-none flex-col overflow-y-auto rounded-[11px] border border-border frost p-[5px] shadow-popover-md"
                 }
             >
                 {rows}
