@@ -47902,6 +47902,233 @@ const chatFork = {
     },
 };
 
+// --- chat-quote: Reply to a passage (chatquote.ts, chatquotebutton.tsx). Text selected in Chat's conversation shows a
+// Reply button under it; a click puts the passage in the message box as a `> ` quote with a blank line under it, keeps
+// what was typed, and stacks a second quote under the first. A selection in the box itself shows no button.
+
+const CQ_NAME = "quote source";
+const CQ_QUESTIONS = ["is the oracle checked by hand?", "how do I check it by hand?"];
+const CQ_REPLIES = [
+    "Not yet. Every number rests on it, so it is the one real gate.\n\nThe rest can wait.",
+    "Pick thirty cases at random and rerun each in a clean tree.",
+];
+const CQ_PASSAGE = "Every number rests on it";
+
+function cqRoster(ctx) {
+    const now = Date.now();
+    return [
+        {
+            project: "arcterm",
+            state: "idle",
+            idleSince: now - 3_600_000,
+            task: "Check the oracle",
+            agent: "claude",
+            model: "opus",
+            id: ctx.tabs.main.tabId,
+            name: CQ_NAME,
+            blockId: ctx.tabs.main.blockId,
+            transcriptPath: ctx.transcript,
+            sleeping: { since: now - 3_600_000, freedBytes: 0 },
+        },
+    ];
+}
+
+const chatQuote = {
+    name: "chat-quote",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-quote-")),
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        let at = "writing the transcript";
+        try {
+            const base = Date.now() - 7_200_000;
+            const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
+            const lines = [];
+            CQ_QUESTIONS.forEach((q, i) => {
+                lines.push(AC.userText(q, { ...o(i * 10), uuid: `u${i + 1}` }));
+                lines.push(AC.assistantText(CQ_REPLIES[i], { ...o(i * 10 + 2), uuid: `a${i + 1}` }));
+            });
+            ctx.transcript = AC.writeTranscript(ctx.dir, "quote-source", lines);
+            at = "resetting the grid";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tab";
+            ctx.tabs = { main: await acMakeTab(h, ctx, { label: CQ_NAME }) };
+            at = "setting the roster";
+            await AC.setRoster(h, cqRoster(ctx));
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent and its transcript", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const you = (n) => `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-you]')[${n}]`;
+        const prose = (n) => `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-prose]')[${n}]`;
+        const btn = `document.querySelector("[data-chat-quote]")`;
+        const boxText = () =>
+            AC.agentPage(h, `const I = await mod("app/view/agents/chatinsert.ts"); return I.chatBoxText(${JSON.stringify(A)});`);
+        // selects `phrase` inside the element (or its whole text when null) as a drag would; true when it was found
+        const select = (elExpr, phrase) =>
+            h.ev(`(() => {
+                const el = ${elExpr};
+                if (!el) return false;
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                const range = document.createRange();
+                const phrase = ${JSON.stringify(phrase)};
+                if (phrase == null) {
+                    range.selectNodeContents(el);
+                    sel.addRange(range);
+                    return true;
+                }
+                const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+                for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+                    const i = n.data.indexOf(phrase);
+                    if (i >= 0) {
+                        range.setStart(n, i);
+                        range.setEnd(n, i + phrase.length);
+                        sel.addRange(range);
+                        return true;
+                    }
+                }
+                return false;
+            })()`);
+        // a real press and release on the button: its mousedown must keep the selection for the click to read
+        const pressButton = async () => {
+            const at = await h.ev(caCenter(btn));
+            if (at == null) return false;
+            for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: Math.round(at.x), y: Math.round(at.y), button: "left", clickCount: 1 });
+            }
+            return true;
+        };
+        try {
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+            await AC.focusAgent(h, A);
+            const loaded = await polishWaitFor(
+                h,
+                `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-you]').length >= 2 && document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-prose]').length >= 2`,
+                15000
+            );
+            const before = await boxText();
+
+            // 1. selecting a passage of Claude's reply shows Reply just under the selection
+            const sel1 = await select(prose(0), CQ_PASSAGE);
+            const up1 = await polishWaitFor(h, `!!${btn}`, 3000);
+            const place1 = await h.ev(`(() => {
+                const b = ${btn}?.getBoundingClientRect();
+                const r = window.getSelection().rangeCount ? window.getSelection().getRangeAt(0).getBoundingClientRect() : null;
+                return b && r ? { below: b.top >= r.bottom && b.top - r.bottom < 20, label: ${btn}.textContent.trim() } : null;
+            })()`);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-quote-1-button.png");
+            rec(
+                "1. selecting a passage of Claude's reply shows a Reply button just under the selection (the box starts empty)",
+                loaded && before === "" && sel1 && up1 && place1?.below === true && place1?.label === "Reply",
+                { loaded, before, sel1, up1, place1 }
+            );
+
+            // 2. pressing Reply puts the passage in the box as a quote, a blank line under it; the selection and the button go
+            const pressed2 = await pressButton();
+            const gone2 = await polishWaitFor(h, `!${btn}`, 3000);
+            const text2 = await boxText();
+            const cleared2 = await h.ev(`window.getSelection().isCollapsed`);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-quote-2-box.png");
+            rec(
+                "2. pressing Reply puts `> <passage>` and a blank line in the message box, and the selection and the button go",
+                pressed2 && gone2 && text2 === `> ${CQ_PASSAGE}\n\n` && cleared2 === true,
+                { pressed2, gone2, text2, cleared2 }
+            );
+
+            // 3. a passage of your own message stacks under the first quote
+            const sel3 = await select(you(1), CQ_QUESTIONS[1]);
+            const up3 = await polishWaitFor(h, `!!${btn}`, 3000);
+            const pressed3 = up3 && (await pressButton());
+            const text3 = await boxText();
+            rec(
+                "3. Reply on a passage of your own message stacks a second quote under the first",
+                sel3 && up3 && pressed3 && text3 === `> ${CQ_PASSAGE}\n\n> ${CQ_QUESTIONS[1]}\n\n`,
+                { sel3, up3, pressed3, text3 }
+            );
+
+            // 4. a reply of two paragraphs keeps one bare `>` between them
+            const sel4 = await select(prose(0), null);
+            const up4 = await polishWaitFor(h, `!!${btn}`, 3000);
+            const pressed4 = up4 && (await pressButton());
+            const text4 = await boxText();
+            const quoted4 = text4.slice(`> ${CQ_PASSAGE}\n\n> ${CQ_QUESTIONS[1]}\n\n`.length);
+            rec(
+                "4. quoting a reply of two paragraphs keeps them apart with one bare `>` line",
+                sel4 && up4 && pressed4 && /^> Not yet\..*\n>\n> The rest can wait\.\n\n$/s.test(quoted4),
+                { sel4, up4, pressed4, quoted4 }
+            );
+
+            // 5. text selected in the message box itself shows no button
+            const sel5 = await h.ev(`(() => {
+                const box = document.querySelector('[data-agent-chat="${A}"] [data-chat-input]');
+                if (!box) return false;
+                const range = document.createRange();
+                range.selectNodeContents(box);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+                return !sel.isCollapsed;
+            })()`);
+            await polishNap(400);
+            const none5 = await h.ev(`!${btn}`);
+            rec("5. text selected in the message box shows no Reply button", sel5 && none5 === true, { sel5, none5 });
+        } catch (e) {
+            rec("the scenario threw", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-quote teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the selection and the draft", () =>
+            AC.agentPage(
+                h,
+                `window.getSelection()?.removeAllRanges();
+                const S = await mod("app/view/agents/wakingstore.ts");
+                for (const id of ${JSON.stringify(ctx.tabIds ?? [])}) S.setWakeDraft(id, "");
+                return true;`
+            )
+        );
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tab", () => acCloseTabs(h, ctx));
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        await step("remove the fixture transcript", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- chat-initiative: Add to an initiative from Chat (docs/superpowers/specs/2026-11-12-chat-add-to-initiative-design.md, plan
 // 2026-11-13-chat-add-to-initiative.md Task 6). A Claude agent's reply holds three ```arc-initiative blocks (a note on its own
 // initiative, a chunk, a new initiative under a topic) and a fourth that is broken JSON; Chat draws the three as cards and
@@ -70521,6 +70748,7 @@ export const SCENARIOS = [
     chatScrollKeep,
     chatAsleepAttachJump,
     chatFork,
+    chatQuote,
     chatInitiative,
     ...chatRedesignScenarios(CR_KIT),
     ...chatInitiativeBandScenarios(CR_KIT),

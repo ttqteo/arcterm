@@ -78,6 +78,7 @@ import { ChatHandoffCard, ChatHandoffDone } from "./chathandoffcard";
 import { ChatInitiativeHost, InitiativeMessageCards } from "./chatinitiativecard";
 import { openMessageCard, useMessageCards } from "./chatinitiativestore";
 import { sameChatItem } from "./chatitemeq";
+import { ChatQuoteButton } from "./chatquotebutton";
 import { liveTexts, withLiveReply, type LiveReply } from "./chatlive";
 import {
     CHAT_RENDER_STEP,
@@ -1690,6 +1691,8 @@ export function ChatConversation({
             ) : null}
             {/* one wrapper per item, keyed by its first entry: the place kept and restored is found by it */}
             {rows}
+            {/* Reply under selected text: only a live agent has a box to quote it into (drawn in a portal, no row) */}
+            {agent != null ? <ChatQuoteButton agentId={agent.id} rootRef={rootRef} /> : null}
             {hasQueuedStart ? <RunQueueFeed /> : null}
             {agent != null
                 ? endAnchors.map((anchor) => (
