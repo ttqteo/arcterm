@@ -31,22 +31,20 @@ let latestAttentionLoad = 0;
 
 // splitAttention keeps the nav-rail badges disjoint by construction rather than by derivations agreeing.
 // Each item goes to the surface that clears it: an ask to the Cockpit, where the asking agent is a card;
-// radar triage to Radar; everything else (gates, blocked tasks, runs to acknowledge or land, escalations,
+// everything else (gates, blocked tasks, runs to acknowledge or land, escalations,
 // due chunks, learn proposals) to Jarvis, whose Brief lists it under "waiting on you" and whose sheets hold
 // its actions. The Cockpit's Needs-you strip still shows those, but its badge no longer counts them, so it
 // agrees with the "need you" tab above them.
 export function splitAttention(items: AttentionItem[]): {
     cockpit: AttentionItem[];
     jarvis: AttentionItem[];
-    radar: AttentionItem[];
 } {
     const cockpit: AttentionItem[] = [];
     const jarvis: AttentionItem[] = [];
-    const radar: AttentionItem[] = [];
     for (const i of items ?? []) {
-        (i.kind === "ask" ? cockpit : i.kind === "radar-triage" ? radar : jarvis).push(i);
+        (i.kind === "ask" ? cockpit : jarvis).push(i);
     }
-    return { cockpit, jarvis, radar };
+    return { cockpit, jarvis };
 }
 
 // cockpitWaitingCount is what the Cockpit's nav badge counts: every agent that needs you, as the Cockpit's

@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The banner a "subject"-posture surface (Agent, Code, Radar) shows when what it is showing is not the app bar's
+// The banner a "subject"-posture surface (Agent, Code) shows when what it is showing is not the app bar's
 // project. A subject surface hides nothing, so it offers a rejoin rather than a reveal, and it renders nothing at all
 // when aligned: the app bar already carries the answer, and silence is the reward for being in sync.
 

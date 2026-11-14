@@ -39,18 +39,9 @@ const ESCALATION = item({ kind: "escalation", key: "esc:m1", source: "gatekeeper
 const DAG_BLOCKED = item({ kind: "dag-blocked", key: "dag-blocked:g2", text: "3 consecutive failures — decide retry/skip." }); // prettier-ignore
 const ASK = item({ kind: "ask", key: "ask:block:b1", source: "phase-2 worker", action: "Answer", text: "Keep the no-transcript fallback for pi workers, or drop it?" }); // prettier-ignore
 
-const RADAR = item({ kind: "radar-triage", key: "radar:rep-1", source: "waveterm", action: "Triage", text: "4 findings need triage.", channelid: "", runid: "", oref: "radarreport:rep-1" } as Partial<AttentionItem> & Pick<AttentionItem, "kind" | "key">); // prettier-ignore
-
-describe("queueRows — the creature only holds what it can resolve", () => {
-    // Radar triage names no channel and no run, so actsForAttention has nothing to offer it and the row
-    // rendered as a project name, an age, and nothing to press. The Radar rail's badge and the Brief's
-    // queue both address it through its ORef; the peek cannot, so it must not claim it is waiting here.
-    it("drops radar triage, whose destination the peek cannot reach", () => {
-        expect(queueRows([RADAR])).toEqual([]);
-    });
-
-    it("keeps every other waiting kind in wire order", () => {
-        expect(queueRows([GATE, RADAR, ESCALATION]).map((r) => r.kind)).toEqual(["gate", "escalation"]);
+describe("queueRows — every waiting kind, in wire order", () => {
+    it("keeps every waiting kind in wire order", () => {
+        expect(queueRows([GATE, ESCALATION]).map((r) => r.kind)).toEqual(["gate", "escalation"]);
     });
 });
 

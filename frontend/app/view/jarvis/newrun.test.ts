@@ -9,7 +9,6 @@ import {
     launchGoal,
     launchOptsFromConfig,
     prefillToLaunch,
-    radarDraftLanding,
     rankProjects,
     resolveChannelTarget,
 } from "./newrun";
@@ -44,31 +43,6 @@ describe("resolveChannelTarget", () => {
 
     it("refuses to decide while the channel list is still unread", () => {
         expect(resolveChannelTarget(null, "b", "/repo/b")).toBeNull();
-    });
-});
-
-describe("radarDraftLanding", () => {
-    const draft = { projectName: "b", projectPath: "C:/repo/b" };
-
-    it("lands on the project's existing channel", () => {
-        expect(radarDraftLanding([ch("c1", "C:\\repo\\b")], draft)).toEqual({ kind: "existing", oid: "c1" });
-    });
-
-    it("mints the channel for a project that has none, instead of dropping the draft", () => {
-        expect(radarDraftLanding([ch("c1", "/repo/a")], draft)).toEqual({
-            kind: "create",
-            name: "b",
-            path: "C:/repo/b",
-        });
-    });
-
-    it("waits for the channel list rather than spending its one attempt on an unread list", () => {
-        expect(radarDraftLanding(null, draft)).toBe("wait");
-    });
-
-    it("has nowhere to land a draft that names no project", () => {
-        expect(radarDraftLanding([], { projectName: "b" })).toBe("none");
-        expect(radarDraftLanding([], { projectPath: "C:/repo/b" })).toBe("none");
     });
 });
 

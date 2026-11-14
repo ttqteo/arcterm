@@ -18,7 +18,6 @@ import {
     GitCompare,
     Languages,
     LayoutDashboard,
-    Radar,
     Settings,
     type LucideIcon,
 } from "lucide-react";
@@ -48,7 +47,6 @@ const ICON: Record<SurfaceKey, LucideIcon> = {
     cockpit: LayoutDashboard,
     jarvis: JarvisReactor,
     agent: Bot,
-    radar: Radar,
     files: GitCompare,
     usage: Gauge,
     code: FileCode2,

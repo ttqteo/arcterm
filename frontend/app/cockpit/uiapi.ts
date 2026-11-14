@@ -33,7 +33,6 @@ export interface SelectionSnapshot {
     subject: { kind: string; id: string } | null;
     activeRunIds: Record<string, string | undefined>; // by channel id
     peekRecordId: string | null;
-    radarReportId: string | undefined;
 }
 
 // addresses in the openref dialect, so anything reported here can be handed straight back to reveal
@@ -43,8 +42,6 @@ export function selectionFor(surface: SurfaceKey, s: SelectionSnapshot): string[
             return s.focusId ? [`agent:${s.focusId}`] : [];
         case "jarvis":
             return jarvisSelection(s);
-        case "radar":
-            return s.radarReportId ? [`radarreport:${s.radarReportId}`] : [];
         default:
             return [];
     }

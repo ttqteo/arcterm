@@ -19,7 +19,6 @@
 // the control recipe, a borderless one is a label. Dressing something inert as a control and camouflaging
 // a real control among labels are the same lie, so neither happens here.
 
-import { pushToast } from "@/app/cockpit/notificationstore";
 import { MOTION, paneReveal, springReveal } from "@/app/element/motiontokens";
 import { contextMenuAtom, ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -32,13 +31,13 @@ import { showSession } from "@/app/view/agents/agentcenter";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { formatAgeShort } from "@/app/view/agents/agentsviewmodel";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
-import { channelsAtom, createChannel, loadChannels, runAtom } from "@/app/view/agents/channelsstore";
+import { channelsAtom, loadChannels, runAtom } from "@/app/view/agents/channelsstore";
 import { useCouncils } from "@/app/view/agents/councilstore";
 import { clearLaterMark, laterMarksAtom } from "@/app/view/agents/laterstore";
 import { openLauncher } from "@/app/view/agents/launcherstore";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
 import { RollingCount } from "@/app/view/agents/rollingcount";
-import { pendingRunDraftAtom, resumePausedRun, resumingRunIdsAtom } from "@/app/view/agents/runactions";
+import { resumePausedRun, resumingRunIdsAtom } from "@/app/view/agents/runactions";
 import { leadAsker } from "@/app/view/agents/runmodel";
 import { queuedRowsAtom, useRunQueueFeed } from "@/app/view/agents/runqueuestore";
 import {
@@ -218,11 +217,10 @@ import {
     briefSheetOpenAtom,
     initiativeSheetRequestAtom,
 } from "./jarvisstore";
-import { activeSubjectAtom, persistedSubjectAtom, setComposingRun, stageRunAtom } from "./jarvissubjectstore";
+import { activeSubjectAtom, persistedSubjectAtom, stageRunAtom } from "./jarvissubjectstore";
 import { JarvisTour, TourButton, TourOffer } from "./jarvistourview";
 import { NewInitiativeControl } from "./newinitiativecontrol";
-import { radarDraftLanding } from "./newrun";
-import { openChannelSheet, openOrPeek, openOrPeekAddress } from "./openref";
+import { openOrPeek, openOrPeekAddress } from "./openref";
 import { planReviewORef } from "./planreviewtarget";
 import {
     eventAge,
@@ -647,43 +645,9 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     // composition the Subjects column does not mount, and that column is what loads both of these today.
     useEffect(() => {
         loadTaskList();
-        // channels, because a Radar draft names a project and the landing has to resolve it to a channel
         loadChannels();
     }, []);
-
-    // A Radar draft moved off the Stage with the panes it drew. It is one-shot — `landed` bounds it to a single
-    // attempt, because a channel that never resolves must not re-fire on every change and yank the user back.
-    const pendingDraft = useAtomValue(pendingRunDraftAtom);
-    const setPendingDraft = useSetAtom(pendingRunDraftAtom);
     const channels = useAtomValue(channelsAtom);
-
-    // Radar "Start investigation": put its project's channel on the subject, so the sheet opens on that
-    // channel's launcher holding the draft rather than dropping it on the queue. A project with no channel yet
-    // gets one minted, as + Run does.
-    useEffect(() => {
-        if (pendingDraft == null || pendingDraft.landed) {
-            return;
-        }
-        const landing = radarDraftLanding(channels, pendingDraft);
-        if (landing === "wait") {
-            return;
-        }
-        setPendingDraft({ ...pendingDraft, landed: true });
-        if (landing === "none") {
-            return;
-        }
-        fireAndForget(async () => {
-            try {
-                const oid = landing.kind === "existing" ? landing.oid : await createChannel(landing.name, landing.path);
-                // composing, as New run does: otherwise a channel with any past run opens on that run's
-                // report, and the launcher holding the draft is one click away and looks like nothing happened
-                setComposingRun(oid, true);
-                await openChannelSheet(oid, null);
-            } catch (e) {
-                pushToast({ title: "Couldn't open the investigation's project", message: String(e), level: "error" });
-            }
-        });
-    }, [pendingDraft, channels, setPendingDraft]);
 
     // Boot restore, Brief edition. A stored record lands on the record peek; a stored channel is forgotten
     // (briefrestore.ts). One-shot: this
