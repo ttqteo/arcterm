@@ -79,8 +79,9 @@ export type ChatItem =
     // reads "! cmd"; `shell` is what it printed once that lands. `terminal`: a panel only Claude Code's own screen drew
     // (/config, /usage…), which left nothing here to show. `btw`: a /btw's side answer
     | { kind: "you"; key: string; command: string; shell?: ShellResult; terminal?: true; btw?: BtwAnswer }
-    // a prompt arcterm typed: `header` names it, `lines` are its fields as "label value" and its body (at most SENT_LINES)
-    | { kind: "sent"; key: string; from: SentFrom; header: string; lines: string[] }
+    // a prompt arcterm typed: `header` names it, `lines` are its fields as "label value" and its body (at most SENT_LINES);
+    // `tabId` the tab of the agent that sent it with `wsh agents send`, which the card opens
+    | { kind: "sent"; key: string; from: SentFrom; header: string; lines: string[]; tabId?: string }
     // everything the agent said and did between two of the items around it
     | { kind: "agent"; key: string; parts: AgentPart[] }
     | { kind: "marker"; key: string; item: ChatMarker };
@@ -110,7 +111,12 @@ function wakeLines(wake: Wake): string[] {
     ].slice(0, SENT_LINES);
 }
 
-type Sent = { from: SentFrom; header: string; lines: string[] };
+type Sent = { from: SentFrom; header: string; lines: string[]; tabId?: string };
+
+// the tab of the agent a `wsh agents send` message came from, or undefined for any other prompt
+function senderTab(card: Card): string | undefined {
+    return card.role === "message" ? card.fields.find((f) => f.label === "tab")?.value : undefined;
+}
 
 // what arcterm typed, or null for text a person wrote. The text is trimmed to be read only: a trailing newline must not
 // hide a line the parsers anchor to its end, and the bubble keeps the text as it was.
@@ -130,7 +136,13 @@ function readSent(text: string): Sent | null {
     }
     const sent = parseStreamPrompt(t);
     if (sent != null && !isBrainstormLineOfYours(sent)) {
-        return { from: "cockpit", header: cardHeader(sent), lines: cardLines(sent) };
+        const tabId = senderTab(sent);
+        return {
+            from: "cockpit",
+            header: cardHeader(sent),
+            lines: cardLines(sent),
+            ...(tabId != null ? { tabId } : {}),
+        };
     }
     return null;
 }

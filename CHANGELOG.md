@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- In Chat, a message another agent sent you heads with a link: click "message · from <agent>" to open that agent's
+  conversation (Ctrl-click peeks it).
 - **Pin tabs in Float**: right-click a tab on the strip under a float's terminal and pick **Pin tab**. Pinned tabs
   come first and never fold into "+N"; **Unpin tab** lets one go.
 - In Chat, `Tab` walks the suggested replies under the box (`Shift`+`Tab` back) and `Enter` sends the one it picked,

@@ -34,7 +34,8 @@ import { CopyButton } from "@/app/element/copybutton";
 import { MOTION, springReveal } from "@/app/element/motiontokens";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
-import { cn } from "@/util/util";
+import { openOrPeek } from "@/app/view/jarvis/openref";
+import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import { ArrowUpRight, ChevronDown, ChevronRight, Copy, EyeOff, Flag, GitFork } from "lucide-react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
@@ -61,6 +62,7 @@ import {
     ChatBrainstormCard,
     ChatBrainstormStepDone,
 } from "./chatbrainstormcard";
+import { FOCUS_RING } from "./chatbrainstormparts";
 import { ChatBrainstormRunDone, ChatBrainstormRunRow, useDoneRuns } from "./chatbrainstormrun";
 import { brainstormAnswersAtom } from "./chatbrainstormstore";
 import { answerMessages, answeredText, pairedHidden } from "./chatbrainstormwire";
@@ -497,23 +499,49 @@ function pinnedLabel(text: string, pasted: number): string {
     return said.files.length > 0 && said.images.length === 0 && pasted === 0 ? "(file)" : "(picture)";
 }
 
-// a prompt arcterm typed: an outlined card on the right naming its sender, its lines in mono, folded past three
-function SentCard({ item }: { item: Extract<ChatItem, { kind: "sent" }> }) {
+// a prompt arcterm typed: an outlined card on the right naming its sender, its lines in mono, folded past three. A message
+// another agent sent heads with a link to that agent's conversation (ctrl-click peeks it)
+function SentCard({ item, model }: { item: Extract<ChatItem, { kind: "sent" }>; model?: AgentsViewModel }) {
     const [open, setOpen] = useState(false);
     const folds = item.lines.length > SENT_FOLD_LINES;
     const lines = folds && !open ? item.lines.slice(0, SENT_FOLD_LINES) : item.lines;
+    const tabId = item.tabId;
+    const head = (
+        <>
+            <span className="min-w-0 truncate font-medium text-primary">{item.header}</span>
+            <span className="flex-none text-[11.5px] text-muted">
+                {item.from === "run" ? "from the run" : "from the cockpit"}
+            </span>
+        </>
+    );
     return (
         <div
             data-chat-sent
             data-chat-from={item.from}
             className="flex max-w-[75%] flex-col gap-[6px] self-end rounded-[12px] border border-edge-mid px-[14px] py-[9px]"
         >
-            <div className="flex min-w-0 items-baseline gap-2 text-[12.5px]">
-                <span className="min-w-0 truncate font-medium text-primary">{item.header}</span>
-                <span className="flex-none text-[11.5px] text-muted">
-                    {item.from === "run" ? "from the run" : "from the cockpit"}
-                </span>
-            </div>
+            {tabId != null && model != null ? (
+                <button
+                    type="button"
+                    data-chat-sent-open
+                    title="Open the conversation that sent this"
+                    onClick={(e) => fireAndForget(() => openOrPeek(model, { kind: "agent", tabId }, e))}
+                    className={cn(
+                        FOCUS_RING,
+                        "group flex min-w-0 cursor-pointer items-baseline gap-2 self-start rounded-[4px] border-0 bg-transparent p-0 text-left text-[12.5px]"
+                    )}
+                >
+                    {head}
+                    <ArrowUpRight
+                        size={12}
+                        strokeWidth={2}
+                        aria-hidden
+                        className="flex-none self-center text-muted group-hover:text-primary"
+                    />
+                </button>
+            ) : (
+                <div className="flex min-w-0 items-baseline gap-2 text-[12.5px]">{head}</div>
+            )}
             {lines.length > 0 ? (
                 <div className="flex flex-col font-mono text-[11.5px] leading-[1.55] text-secondary">
                     {lines.map((line, i) => (
@@ -1517,7 +1545,7 @@ export function ChatConversation({
                 );
             }
             case "sent":
-                return <SentCard item={item} />;
+                return <SentCard item={item} model={model} />;
             case "agent":
                 return (
                     <div data-chat-agent className="flex min-w-0 flex-col gap-2">
