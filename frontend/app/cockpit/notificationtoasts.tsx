@@ -97,7 +97,7 @@ export function NotificationToasts(): React.JSX.Element {
                             onPointerEnter={() => holdToast(t.id)}
                             onPointerLeave={() => releaseToast(t.id)}
                             className={cn(
-                                "pointer-events-auto flex rounded-lg border bg-surface text-primary shadow-popover-md",
+                                "pointer-events-auto flex rounded-lg border frost text-primary shadow-popover-md",
                                 t.level === "error"
                                     ? "border-error/40"
                                     : t.level === "warn" || t.eyebrow?.tone === "asking"

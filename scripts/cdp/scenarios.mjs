@@ -66853,13 +66853,59 @@ const notificationToasts = {
             const toasts = () => [...document.querySelectorAll("[data-notification-toast]")];
             await until(() => toasts().length === ${LOOK_TOASTS.length}, 2000);
             await nap(500); // the entrance, inside the 6s the toasts live
-            const avatar = document.querySelector('[aria-label="Jarvis condition"]')?.getBoundingClientRect();
-            const overlaps = (r) => avatar != null && r.left < avatar.right && r.right > avatar.left && r.top < avatar.bottom && r.bottom > avatar.top;
+            // the stack is the polite live region; a toast's panel is its button's parent, and a plain toast draws its
+            // level as the panel's border tone (error/40, warning/40, border): read each against a probe of that class
+            const stack = document.querySelector("[data-pet-avoid][role=status]");
+            const toneOf = (cls) => {
+                const probe = document.createElement("div");
+                probe.className = "border " + cls;
+                document.body.append(probe);
+                const c = getComputedStyle(probe).borderTopColor;
+                probe.remove();
+                return c;
+            };
+            const tones = { error: toneOf("border-error/40"), warn: toneOf("border-warning/40"), info: toneOf("border-border") };
+            const drawn = ${JSON.stringify(LOOK_TOASTS.map((t) => ({ title: t.title, level: t.level })))}.map((want) => {
+                const panel = toasts().find((t) => flat(t).startsWith(want.title))?.parentElement;
+                const border = panel ? getComputedStyle(panel).borderTopColor : null;
+                return { level: want.level, border, ok: border != null && border === tones[want.level] };
+            });
+            // the stack sits above the pet (z-62 over its z-60/61, notificationtoasts.tsx), so a toast is never covered by
+            // the avatar, whichever form shows. Hit-test it: at the centre of each toast panel and at points along its
+            // edges and corners (the hologram is a circle, so a corner can sit past its rim and a centre clear of it), the
+            // topmost element is inside that panel. The floating pet, not the Office's boss sprite (data-office-boss, also
+            // named "Jarvis condition"); a new toast is a [data-pet-avoid] box Sprout steps off the stretch under, so
+            // Sprout gets 2s to leave before the count. The hologram never moves: it stays under the toasts and covered.
+            const pets = () => [...document.querySelectorAll('[aria-label="Jarvis condition"]:not([data-office-boss])')].filter((p) => getComputedStyle(p).visibility !== "hidden");
+            const INSET = 10;
+            const coveredNow = () => {
+                const out = [];
+                for (const t of toasts()) {
+                    const panel = t.parentElement;
+                    const r = panel.getBoundingClientRect();
+                    const xs = [r.left + INSET, r.left + r.width * 0.25, r.left + r.width / 2, r.left + r.width * 0.75, r.right - INSET];
+                    const ys = [r.top + INSET, r.top + r.height / 2, r.bottom - INSET];
+                    for (const y of ys) {
+                        for (const x of xs) {
+                            const hit = document.elementFromPoint(x, y);
+                            if (hit == null || !panel.contains(hit)) {
+                                out.push({ toast: flat(t).slice(0, 24), x: Math.round(x), y: Math.round(y), hit: hit == null ? null : hit.tagName.toLowerCase() + (hit.getAttribute("aria-label") ? "[" + hit.getAttribute("aria-label") + "]" : "") });
+                            }
+                        }
+                    }
+                }
+                return out;
+            };
+            await until(() => coveredNow().length === 0, 2000);
+            const covered = coveredNow();
             return {
                 text: toasts().map(flat),
-                levels: toasts().map((t) => t.querySelector("svg[role=img]")?.getAttribute("aria-label") ?? null),
-                live: toasts()[0]?.parentElement?.getAttribute("aria-live") ?? null,
-                underAvatar: toasts().filter((t) => overlaps(t.getBoundingClientRect())).length,
+                drawn,
+                distinctTones: new Set(Object.values(tones)).size === 3,
+                live: stack?.getAttribute("aria-live") ?? null,
+                covered: covered.length,
+                coveredAt: covered.slice(0, 4),
+                pets: pets().map((p) => (p.hasAttribute("data-pet-hologram") ? "hologram" : "pet")),
             };
         `);
         await h.shot(lookShot("notification-toasts"));
@@ -66874,11 +66920,15 @@ const notificationToasts = {
                 detail: JSON.stringify(shown.text),
             },
             {
-                step: "each toast names its level on an icon, in a polite live region",
-                ok: JSON.stringify([...shown.levels].sort()) === JSON.stringify(["Error", "Info", "Warning"]) && shown.live === "polite",
-                detail: JSON.stringify({ levels: shown.levels, live: shown.live }),
+                step: "the stack is a polite live region, and error, warn and info toasts each draw their level's border tone",
+                ok: shown.live === "polite" && shown.distinctTones && shown.drawn.every((d) => d.ok),
+                detail: JSON.stringify({ live: shown.live, distinctTones: shown.distinctTones, drawn: shown.drawn }),
             },
-            { step: "no toast sits under the Jarvis avatar", ok: shown.underAvatar === 0, detail: `underAvatar=${shown.underAvatar}` },
+            {
+                step: "no toast is covered by the Jarvis avatar",
+                ok: shown.covered === 0,
+                detail: `covered=${shown.covered} pets=${JSON.stringify(shown.pets)} at=${JSON.stringify(shown.coveredAt)}`,
+            },
             { step: "a click dismisses a toast", ok: dismissed === true, detail: `dismissed=${dismissed}` },
         ];
     },
