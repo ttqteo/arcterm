@@ -6,6 +6,12 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Frosted overlays on a Mac, and the folded Sprout window.** The Final's frost scenarios ran only in
+  WebView2 (Windows). On a Mac build, open the command palette, a context menu with a submenu, a Chat footer menu and
+  a toast over a working agent → each panel blurs what is behind it (the palette over its dimmed scrim, a submenu
+  over the chat, not over its parent menu), and muted text stays readable. Then fold Sprout into its own window and
+  open its bubble or peek → it draws a solid panel, not a see-through one. Commit: feat(ui) Overlays in the Chat
+  look: the frosted fill (run 04bd30dc)
 - [ ] (arcterm) **Switch to this chunk tells a real agent at once.** The CDP scenario `chat-initiative-band` (4, 4c,
   4d) passes against fixture agents whose sends go to a mock; no real Claude Code session took one. In a real Claude
   agent linked to an initiative, with the message box empty, open the band and press Switch to this chunk on a free
