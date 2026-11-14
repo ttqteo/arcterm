@@ -32,7 +32,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
   that will work in your current context.
 - **Held modifier.** Hold `Mod` or `Alt` on its own a moment and the bottom bar lists every chord on that key that
   works right now — inside the terminal, the only keys that reach the cockpit. The digit jumps show as one chip
-  (`Mod`+`1`–`7`, `Alt`+`1`–`9`) while the rail and the Agent surface's project tree number their rows.
+  (`Mod`+`1`–`6`, `Alt`+`1`–`9`) while the rail and the Agent surface's project tree number their rows.
 - **Cheat sheet.** Press `?` (while not typing), or click the `?` button at the right end of the bottom bar (on every
   surface, while typing too), to open a searchable modal of every shortcut. From the keyboard while typing, open it via
   Search (`Mod`+`P`) → Commands → "Keyboard shortcuts".
@@ -115,7 +115,6 @@ agent's header `…` menu, and Search → Commands → "Open a tool…". The sea
 | `Mod`+`G` `c` | Cockpit (home) |
 | `Mod`+`G` `a` | Agent |
 | `Mod`+`G` `j` | Jarvis — channels, records, recall |
-| `Mod`+`G` `r` | Radar (off the rail and the number chords while it is retired; this is the way in) |
 | `Mod`+`G` `s` | Conversation History (in the Agent surface) |
 | `Mod`+`G` `v` | Canvas gallery — every project's design canvases (in the Agent surface) |
 | `Mod`+`G` `o` | Councils — every project's councils, closed ones too (in the Agent surface) |
@@ -167,7 +166,7 @@ cancelled now, in All and in Commands, so it never starts a run named "cancel".
 | `j` / `k` (or `↓` / `↑`) | Move the cursor within the active region |
 | `Enter` | Open / activate the item under the cursor |
 | `Space` | Peek the item under the cursor in the avatar popup, without leaving the surface (see Peek below) |
-| `Esc` | On a deep surface (Jarvis, Radar, Files, Usage, Code), go back to the surface you jumped from (opening a run, file, diff or agent from elsewhere), else return to the Cockpit. On Usage's By work, first go back from an item to its scope, then from a project or initiative to All usage. In a composer or text field, leave Type posture first. |
+| `Esc` | On a deep surface (Jarvis, Files, Usage, Code), go back to the surface you jumped from (opening a run, file, diff or agent from elsewhere), else return to the Cockpit. On Usage's By work, first go back from an item to its scope, then from a project or initiative to All usage. In a composer or text field, leave Type posture first. |
 
 ## The avatar popup (what's waiting)
 
@@ -195,7 +194,7 @@ The answer form (a question with several parts or several picks; `Enter` or **An
 
 ## Peek (the avatar popup's item view)
 
-A peek shows a run, agent, record, initiative, radar finding or memory note in the avatar popup. It writes no
+A peek shows a run, agent, record, initiative or memory note in the avatar popup. It writes no
 selection on the surface underneath. `Space` on a row cursor peeks it;
 holding `Mod` underlines every link that can be peeked, and `Mod`+click on one peeks it instead of opening it
 (`Cmd`+click on macOS, where `Ctrl`+click is the right click).
