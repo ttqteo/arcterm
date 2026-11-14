@@ -21,7 +21,8 @@
 //
 // Steps 1 to 11 expect the four councils and no agent rows. Steps 12 on (docs/superpowers/plans/2026-10-29-council-live-agents.md,
 // Task 10) put the room's two live agents in the tree (the fixture roster, writeRoomRoster, which reloads the page), seat
-// them in the `room` councils and a queued one behind them, and drive the tree's multi-select with real clicks: Ctrl+click,
+// them in the `room` councils and a queued one behind them, check that j and k skip the council rows (step 14b), and
+// drive the tree's multi-select with real clicks: Ctrl+click,
 // Shift+click, a plain click, the right-click menu and its Discuss together, which opens Setup with both agents seated.
 // The second agent works in a second registered project (ROOM_AGENTS), so Discuss together can find its path.
 
@@ -186,6 +187,40 @@ async function pressEscape(h) {
         await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
     }
 }
+
+// a bare letter through the real input pipeline (j, k), after taking focus off whatever the last click left it on: the
+// agent keys stand down in a text field and the terminal
+async function pressLetter(h, letter) {
+    const upper = letter.toUpperCase();
+    await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
+    for (const type of ["keyDown", "keyUp"]) {
+        await h.cdp("Input.dispatchKeyEvent", {
+            type,
+            key: letter,
+            code: `Key${upper}`,
+            windowsVirtualKeyCode: upper.charCodeAt(0),
+            ...(type === "keyDown" ? { text: letter } : {}),
+        });
+    }
+}
+
+// the agent, terminal and council rows of the Active tree in the order drawn, each with its id and, for the first two,
+// whether it reads as selected: the focused row has no data attribute, only the selected fill. j and k step through the
+// first two (treeNavIds); a council row is no focus target.
+const NAV_ROWS = `(() => {
+    const tree = document.querySelector("[data-agent-active-rows]");
+    const rows = tree?.querySelectorAll("[data-agent-row], [data-agent-terminal-row], [data-council-row]") ?? [];
+    return [...rows].map((r) => {
+        if (r.hasAttribute("data-council-row")) return { kind: "council", id: r.dataset.councilRow };
+        const terminal = r.hasAttribute("data-agent-terminal-row");
+        return {
+            kind: terminal ? "terminal" : "agent",
+            id: terminal ? r.dataset.agentTerminalRow : r.dataset.agentRow,
+            selected: r.classList.contains("bg-surface-selected"),
+        };
+    });
+})()`;
+const selectedNavId = (id) => `${NAV_ROWS}.find((r) => r.selected)?.id === ${JSON.stringify(id)}`;
 
 // the agent rows the tree draws as picked (Ctrl/Cmd+click, Shift+click), and the right-click menu's rows, as the page shows them
 const PICKED = `[...document.querySelectorAll("[data-agent-picked]")].map((e) => e.dataset.agentRow).sort()`;
@@ -908,6 +943,36 @@ export const councilTree = {
             "14. a council queued behind the room reads Queued · after Rail apps · waiting for Witness synthesis, in the muted tone",
             namesBoth && behindRow?.tone === "muted",
             JSON.stringify({ waiting, behindRow })
+        );
+
+        // 14b. j and k step through the agent and terminal rows and skip the council rows between them (treeNavIds, which
+        // the unit tests cover alone). Witness is the one agent in its folder and the councils are drawn right under it,
+        // so j lands on the next row the tree draws that is not a council, whichever it is, and k comes back. The
+        // expected id is read off the rows the page draws, in document order.
+        await mouseOn(h, rowOf(witness));
+        const jkStart = await until(selectedNavId(witness));
+        const navRows = await h.ev(NAV_ROWS);
+        const witnessAt = navRows.findIndex((r) => r.id === witness);
+        const councilNext = navRows[witnessAt + 1]?.kind === "council";
+        const skipsTo = navRows.slice(witnessAt + 1).find((r) => r.kind !== "council");
+        await pressLetter(h, "j");
+        const jMoved = skipsTo != null && (await until(selectedNavId(skipsTo.id)));
+        await h.shot("cdp-shots/council-tree-jk-skip.png");
+        const afterJ = (await h.ev(NAV_ROWS)).find((r) => r.selected)?.id ?? null;
+        await pressLetter(h, "k");
+        const kBack = await until(selectedNavId(witness));
+        rec(
+            "14b. j from the agent whose next row is a council lands on the next agent or terminal row, skipping the councils, and k comes back to the agent",
+            jkStart && witnessAt >= 0 && councilNext && jMoved && kBack,
+            JSON.stringify({
+                jkStart,
+                order: navRows.map((r) => `${r.kind}:${r.id}`),
+                councilNext,
+                skipsTo,
+                afterJ,
+                jMoved,
+                kBack,
+            })
         );
 
         // 15. Ctrl/Cmd+click picks agent rows and picks a picked one off again. The focus goes to the project's terminal
