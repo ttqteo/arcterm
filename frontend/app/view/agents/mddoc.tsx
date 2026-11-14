@@ -29,6 +29,7 @@ import { openFileInPanel, openRefInCode, railMdModeAtom } from "./agentrailstore
 import type { FileRef } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
+import { OUTLINE_SELECTOR, OutlineRail } from "./docoutlineview";
 import { savedScroll, saveScroll } from "./filescroll";
 import { toggleTaskInFile } from "./filetabload";
 import { CardSlot, MdDocContext, type MdDocCtx } from "./mdcommentcards";
@@ -104,8 +105,10 @@ export function MdDoc({
 }) {
     const agentId = agent.id;
     const state = useAtomValue(mdCommentAtom(agentId));
+    const frameRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
+    const [railOn, setRailOn] = useState(false);
     const doc = useMemo(() => splitFrontmatter(text), [text]);
     const offset = useMemo(() => bodyOffset(text, doc.body), [text, doc]);
     const fileLines = useMemo(() => text.split(/\r?\n/), [text]);
@@ -420,120 +423,133 @@ export function MdDoc({
     );
 
     return (
-        <div
-            ref={scrollRef}
-            tabIndex={-1}
-            data-md-doc
-            onKeyDown={onKeyDown}
-            onScroll={onScroll}
-            className="min-h-0 flex-1 overflow-y-auto bg-background outline-none focus:ring-1 focus:ring-inset focus:ring-accent/40"
-        >
+        <div ref={frameRef} className="relative flex min-h-0 flex-1 flex-col">
             <div
-                ref={contentRef}
-                onMouseMove={onMove}
-                onMouseLeave={() => {
-                    setHover(null);
-                    setHoverImg(null);
-                }}
-                className="relative pb-10 pr-[18px] pt-4"
-                style={{ paddingLeft: GUTTER }}
+                ref={scrollRef}
+                tabIndex={-1}
+                data-md-doc
+                onKeyDown={onKeyDown}
+                onScroll={onScroll}
+                className="min-h-0 flex-1 overflow-y-auto bg-background outline-none focus:ring-1 focus:ring-inset focus:ring-accent/40"
             >
-                <div data-md-overlay aria-hidden className="pointer-events-none absolute inset-0">
-                    {geo.marks.map((m) => (
-                        <div
-                            key={m.kind}
-                            data-md-mark={m.kind}
-                            data-lines={m.lines}
-                            className="absolute left-5 right-3 rounded-r-[4px] bg-surface-hover"
-                            style={{ top: m.top - 4, height: m.height + 8 }}
+                <div
+                    ref={contentRef}
+                    onMouseMove={onMove}
+                    onMouseLeave={() => {
+                        setHover(null);
+                        setHoverImg(null);
+                    }}
+                    className={cn("relative pb-10 pt-4", railOn ? "pr-9" : "pr-[18px]")}
+                    style={{ paddingLeft: GUTTER }}
+                >
+                    <div data-md-overlay aria-hidden className="pointer-events-none absolute inset-0">
+                        {geo.marks.map((m) => (
+                            <div
+                                key={m.kind}
+                                data-md-mark={m.kind}
+                                data-lines={m.lines}
+                                className={cn(
+                                    "absolute left-5 rounded-r-[4px] bg-surface-hover",
+                                    railOn ? "right-8" : "right-3"
+                                )}
+                                style={{ top: m.top - 4, height: m.height + 8 }}
+                            >
+                                <div className="absolute inset-y-0 left-0 w-0.5 bg-accent" />
+                            </div>
+                        ))}
+                        {geo.bars.map((b, i) => (
+                            <div
+                                key={i}
+                                data-md-bar
+                                data-lines={b.lines}
+                                className="absolute left-5 w-0.5 rounded-[1px] bg-edge-strong"
+                                style={{ top: b.top + 2, height: Math.max(b.height - 4, 4) }}
+                            />
+                        ))}
+                    </div>
+                    {/* positioned, and after the overlay, so the text paints over the marks' fill */}
+                    <div className="relative">
+                        <MdDocContext.Provider value={ctx}>
+                            <Markdown
+                                text={doc.body}
+                                header={header}
+                                scrollable={false}
+                                className="markdown-doc markdown-rail"
+                                contentClassName="p-0"
+                                fontSizeOverride={14}
+                                resolveOpts={resolveOpts}
+                                srcLineOffset={offset}
+                                contentBlocks={false}
+                                blockAfter={blockAfter}
+                                onClickLink={onClickLink}
+                                onToggleTask={onToggleTask}
+                            />
+                        </MdDocContext.Provider>
+                    </div>
+                    {hover != null && sel == null ? (
+                        <button
+                            type="button"
+                            data-md-overlay
+                            data-md-plus
+                            title="Comment on this block (Shift+click another for a range)"
+                            aria-label="Comment on this block"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={(e) => plus(hover.index, e.shiftKey)}
+                            className="absolute left-1.5 flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[5px] border-0 bg-accent p-0 text-background hover:bg-accenthover"
+                            style={{ top: hover.top }}
                         >
-                            <div className="absolute inset-y-0 left-0 w-0.5 bg-accent" />
-                        </div>
-                    ))}
-                    {geo.bars.map((b, i) => (
-                        <div
-                            key={i}
-                            data-md-bar
-                            data-lines={b.lines}
-                            className="absolute left-5 w-0.5 rounded-[1px] bg-edge-strong"
-                            style={{ top: b.top + 2, height: Math.max(b.height - 4, 4) }}
-                        />
-                    ))}
-                </div>
-                {/* positioned, and after the overlay, so the text paints over the marks' fill */}
-                <div className="relative">
-                    <MdDocContext.Provider value={ctx}>
-                        <Markdown
-                            text={doc.body}
-                            header={header}
-                            scrollable={false}
-                            className="markdown-doc markdown-rail"
-                            contentClassName="p-0"
-                            fontSizeOverride={14}
-                            resolveOpts={resolveOpts}
-                            srcLineOffset={offset}
-                            contentBlocks={false}
-                            blockAfter={blockAfter}
-                            onClickLink={onClickLink}
-                            onToggleTask={onToggleTask}
-                        />
-                    </MdDocContext.Provider>
-                </div>
-                {hover != null && sel == null ? (
-                    <button
-                        type="button"
-                        data-md-overlay
-                        data-md-plus
-                        title="Comment on this block (Shift+click another for a range)"
-                        aria-label="Comment on this block"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={(e) => plus(hover.index, e.shiftKey)}
-                        className="absolute left-1.5 flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[5px] border-0 bg-accent p-0 text-background hover:bg-accenthover"
-                        style={{ top: hover.top }}
-                    >
-                        <Plus size={12} strokeWidth={2.6} aria-hidden />
-                    </button>
-                ) : null}
-                {/* one per image and always in the DOM, so Tab reaches it (spec item 17); seen while its image is
+                            <Plus size={12} strokeWidth={2.6} aria-hidden />
+                        </button>
+                    ) : null}
+                    {/* one per image and always in the DOM, so Tab reaches it (spec item 17); seen while its image is
                     hovered or it has keyboard focus */}
-                {geo.images.map((m) => (
-                    <button
-                        key={m.index}
-                        type="button"
-                        data-md-overlay
-                        data-md-image-comment
-                        title="Comment on this image"
-                        // the pointer can reach the corner before the image: show the button it is over
-                        onMouseEnter={() => setHoverImg(m.index)}
-                        onClick={() => commentImage(m.index)}
-                        className={cn(
-                            FLOAT_BTN,
-                            hoverImg === m.index && sel == null ? null : "opacity-0 focus-visible:opacity-100"
-                        )}
-                        style={{ top: m.top, right: m.right }}
-                    >
-                        <MessageSquarePlus size={13} strokeWidth={2.2} aria-hidden />
-                        Comment
-                    </button>
-                ))}
-                {sel != null ? (
-                    <button
-                        type="button"
-                        data-md-overlay
-                        data-md-comment
-                        title={`Comment on the selection (${formatChordString("c")})`}
-                        // keep the selection: a press would otherwise collapse it before the click
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={commentSelection}
-                        className={FLOAT_BTN}
-                        style={{ top: sel.top, left: sel.left }}
-                    >
-                        <MessageSquarePlus size={13} strokeWidth={2.2} aria-hidden />
-                        Comment
-                        <span className={KBD}>{formatChordString("c")}</span>
-                    </button>
-                ) : null}
+                    {geo.images.map((m) => (
+                        <button
+                            key={m.index}
+                            type="button"
+                            data-md-overlay
+                            data-md-image-comment
+                            title="Comment on this image"
+                            // the pointer can reach the corner before the image: show the button it is over
+                            onMouseEnter={() => setHoverImg(m.index)}
+                            onClick={() => commentImage(m.index)}
+                            className={cn(
+                                FLOAT_BTN,
+                                hoverImg === m.index && sel == null ? null : "opacity-0 focus-visible:opacity-100"
+                            )}
+                            style={{ top: m.top, right: m.right }}
+                        >
+                            <MessageSquarePlus size={13} strokeWidth={2.2} aria-hidden />
+                            Comment
+                        </button>
+                    ))}
+                    {sel != null ? (
+                        <button
+                            type="button"
+                            data-md-overlay
+                            data-md-comment
+                            title={`Comment on the selection (${formatChordString("c")})`}
+                            // keep the selection: a press would otherwise collapse it before the click
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={commentSelection}
+                            className={FLOAT_BTN}
+                            style={{ top: sel.top, left: sel.left }}
+                        >
+                            <MessageSquarePlus size={13} strokeWidth={2.2} aria-hidden />
+                            Comment
+                            <span className={KBD}>{formatChordString("c")}</span>
+                        </button>
+                    ) : null}
+                </div>
             </div>
+            {/* centred on the right edge, clear of the scrollbar; the text keeps pr-9 off it */}
+            <OutlineRail
+                rootRef={frameRef}
+                selector={OUTLINE_SELECTOR.markdown}
+                textKey={text}
+                onShown={setRailOn}
+                className="absolute right-2.5 top-1/2 z-10 max-h-[calc(100%-24px)] -translate-y-1/2"
+            />
         </div>
     );
 }

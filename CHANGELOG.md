@@ -58,6 +58,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A Markdown file's outline in the File tab is now a row of short dashes down the middle of its right edge, the one
+  you are reading lit as you scroll; hover it for the list of headings. The text keeps clear of it.
 - A long code block in Chat keeps its Wrap and Copy buttons in view as you scroll through it, just under the pinned
   prompt.
 - Float's tabs follow the Agent tree: a run is one tab, its lead, instead of a tab for every worker it started, and a

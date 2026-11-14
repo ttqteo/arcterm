@@ -34,7 +34,6 @@ import { currentFileView, fileLabel, filePinTarget, fileRel, fileViews, type Fil
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { DocFindBar } from "./docfindbar";
-import { OUTLINE_SELECTOR, OutlineButton } from "./docoutlineview";
 import { savedScroll, saveScroll } from "./filescroll";
 import { FileTabDiff } from "./filetabdiff";
 import { afterReread, canOpenInOsApp, formatSize, readPanelFile, type PanelFile } from "./filetabload";
@@ -519,14 +518,6 @@ export function FileTab({
                             </button>
                         ))}
                     </div>
-                ) : null}
-                {markdown && preview && state.kind === "text" ? (
-                    <OutlineButton
-                        rootRef={bodyRef}
-                        selector={OUTLINE_SELECTOR.markdown}
-                        textKey={state.text}
-                        iconOnly
-                    />
                 ) : null}
                 {topable ? (
                     <button
