@@ -16,7 +16,7 @@
     --color-surface-hover: #252525;
     --color-surface-code: #1a1a1a; /* diff / terminal body (design-system "Code") */
     --color-surface-selected: #2d2d2d; /* persistent selected row (design-system "Selected"); distinct from transient surface-hover */
-    --color-panel: rgba(28, 28, 28, 0.6);
+    --color-panel: rgba(28, 28, 28, 0.66); /* the default theme's panelAlpha (themes.ts), which themes.test.ts holds equal */
     --color-modalbg: #1c1c1c;
     --color-lane: #141414; /* agent-card lane fill (handoff laneBg) */
     --color-page-canvas: #ffffff; /* a previewed web page's own canvas: browsers draw white under a page with no background */

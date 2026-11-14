@@ -13,7 +13,9 @@ import {
     DEFAULT_THEME_PRESET,
     deriveAnsi,
     deriveTermTheme,
+    panelAlpha,
     THEMES,
+    type ThemePalette,
 } from "./themes";
 
 // The @theme block of tailwindsetup.css with comments stripped, so neither a comment that quotes a token nor a
@@ -100,6 +102,86 @@ describe("christmas — text and status colours clear 4.5:1 (DESIGN.md)", () => 
     }
 });
 
+// The panel of a frosted overlay (frost class, DESIGN.md "Overlays") is --color-panel over the blurred backdrop. The
+// backdrop is the worst case a terminal can put behind it: its background with its brightest colour covering 20% of
+// the blur. This is the test's own statement of that rule, so panelAlpha is checked against it, not against itself.
+// The blend is not rounded to bytes: that is how the plan-review numbers below were measured.
+function brightestTerminalColor(p: ThemePalette): string {
+    const ansi = deriveAnsi(p) as unknown as Record<string, string>;
+    return [p.text, ...Object.values(ansi)].reduce((a, b) => (luminance(b) > luminance(a) ? b : a));
+}
+function blend(fg: number[], bg: number[], alpha: number): number[] {
+    return fg.map((c, i) => c * alpha + bg[i] * (1 - alpha));
+}
+// Muted text on the panel at `alpha`, over the blurred backdrop.
+function mutedOnPanel(p: ThemePalette, alpha: number): number {
+    const backdrop = blend(rgbOf(brightestTerminalColor(p)), rgbOf(p.bg), 0.2);
+    return contrastRgb(rgbOf(p.muted), blend(rgbOf(p.surfaceRaised), backdrop, alpha));
+}
+function panelAlphaOf(p: ThemePalette): number {
+    const m = /^rgba\(\d+, \d+, \d+, ([\d.]+)\)$/.exec(buildThemeVars(p, {})["--color-panel"]);
+    if (!m) {
+        throw new Error("--color-panel is not an rgba()");
+    }
+    return Number(m[1]);
+}
+
+describe("--color-panel — the panel alpha keeps muted text at 4.5:1 over the blurred backdrop", () => {
+    // Measured at plan review; a different number means the rule was read differently, not that the number moved.
+    const EXPECTED: Record<string, number> = {
+        graphite: 0.66,
+        claude: 0.66,
+        midnight: 0.82,
+        slate: 0.7,
+        carbon: 0.72,
+        nocturne: 0.8,
+        spider: 0.66,
+        onedark: 0.6,
+        monokai: 0.6,
+        christmas: 0.6,
+    };
+    it("the table lists every built-in theme", () => {
+        expect(Object.keys(EXPECTED).sort()).toEqual(THEMES.map((t) => t.id).sort());
+    });
+    for (const theme of THEMES) {
+        const p = theme.palette;
+        it(`${theme.id}: --color-panel is ${EXPECTED[theme.id]} and muted text clears 4.5:1 on it`, () => {
+            const alpha = panelAlphaOf(p);
+            expect(alpha).toBe(EXPECTED[theme.id]);
+            expect(mutedOnPanel(p, alpha)).toBeGreaterThanOrEqual(4.5);
+        });
+    }
+    it("a theme that already passes at 0.6 keeps 0.6", () => {
+        for (const id of ["onedark", "monokai", "christmas"]) {
+            expect(mutedOnPanel(activePalette(id), 0.6), id).toBeGreaterThanOrEqual(4.5);
+            expect(panelAlpha(activePalette(id)), id).toBe(0.6);
+        }
+    });
+    it("a low-contrast palette gets a raised alpha that passes, and one step lower does not", () => {
+        const p = { ...activePalette("graphite"), muted: "#888888" };
+        const alpha = panelAlpha(p);
+        expect(alpha).toBeGreaterThan(0.6);
+        expect(alpha).toBeLessThan(1);
+        expect(mutedOnPanel(p, alpha)).toBeGreaterThanOrEqual(4.5);
+        expect(mutedOnPanel(p, Math.round((alpha - 0.02) * 100) / 100)).toBeLessThan(4.5);
+    });
+    it("steps in whole hundredths, so the alpha prints as two decimals at most", () => {
+        for (const muted of ["#858585", "#888888", "#8a8a8a", "#8c8c8c"]) {
+            const alpha = panelAlpha({ ...activePalette("graphite"), muted });
+            expect(String(alpha), muted).toMatch(/^\d(\.\d{1,2})?$/);
+        }
+    });
+    it("is capped at 1 when muted text cannot reach 4.5:1 at any alpha", () => {
+        expect(panelAlpha({ ...activePalette("graphite"), muted: "#202020" })).toBe(1);
+    });
+    it("follows a role override, as the rest of buildThemeVars does", () => {
+        const vars = buildThemeVars(activePalette("graphite"), { accent: "#66d9ef" });
+        expect(vars["--color-panel"]).toBe(
+            `rgba(28, 28, 28, ${panelAlpha({ ...activePalette("graphite"), accent: "#66d9ef" })})`
+        );
+    });
+});
+
 describe("the Claude runtime mark", () => {
     it("is the brand clay in a theme that does not tint it, the same as the provider dot", () => {
         const vars = buildThemeVars(activePalette("graphite"), {});
@@ -169,22 +251,29 @@ describe("helpers", () => {
 });
 
 // --- ANSI derivation -----------------------------------------------------------------------------
-// Contrast per WCAG 2.1 relative luminance. Local to the test: production code never needs it.
+// Contrast per WCAG 2.1 relative luminance. The test keeps its own copy, apart from the one panelAlpha uses in
+// themes.ts, so the panel alpha is judged by a second implementation of the formula.
 function channel(c: number): number {
     const s = c / 255;
     return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
 }
-function luminance(hex: string): number {
+function rgbOf(hex: string): number[] {
     const s = hex.replace("#", "");
-    const r = parseInt(s.slice(0, 2), 16);
-    const g = parseInt(s.slice(2, 4), 16);
-    const b = parseInt(s.slice(4, 6), 16);
+    return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
+}
+function luminanceRgb([r, g, b]: number[]): number {
     return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 }
-function contrast(a: string, b: string): number {
-    const la = luminance(a);
-    const lb = luminance(b);
+function contrastRgb(a: number[], b: number[]): number {
+    const la = luminanceRgb(a);
+    const lb = luminanceRgb(b);
     return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+function luminance(hex: string): number {
+    return luminanceRgb(rgbOf(hex));
+}
+function contrast(a: string, b: string): number {
+    return contrastRgb(rgbOf(a), rgbOf(b));
 }
 // Hue in degrees, from RGB. Only used to assert magenta/cyan land in the right part of the wheel.
 function hue(hex: string): number {
