@@ -48,8 +48,9 @@ Every reveal on the four surfaces that changes a size or a position moves to the
 - a height reveal (`composerReveal`, `paneReveal`, `foldReveal`, a hand-written height tween) → `springReveal`, or its
   height transition on `MOTION.spring` where a site keeps its own variant (e.g. `foldReveal`'s clip-while-moving);
 - a scale entrance (`cardVariants` on a card, a panel that pops in) → scale on the spring, as `springPop`;
-- `sheetPanel`'s x slide and the existing `layout` animations (Office positions, Diff's layout move) keep what they
-  animate, with the transition on `MOTION.spring`.
+- the Office's two shape changes are its card panel (`sheetPanel`'s x slide, now `springSheet`) and its pan, both with
+  the transition on `MOTION.spring`; Diff has no layout animation (amended 2026-11-15 after plan review: the first
+  draft named existing `layout` animations on the Office's positions and in Diff, and neither exists).
 
 Opacity stays on the Fluid ease everywhere (a spring on opacity overshoots 1). Durations of pure fades are unchanged.
 

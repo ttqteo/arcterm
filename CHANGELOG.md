@@ -55,6 +55,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The Cockpit, Jarvis, Diff and Setup move on the same smooth spring as Chat: rows and cards open and fold instead of
+  jumping, and a filter switch or a big update still shows at once.
 - A suggested reply clicked over text you typed now asks on the chip itself ("Replace & send") instead of in a notice
   in the corner: click it again or press Enter to send, or keep typing or press Esc to keep your text. A council's
   suggested asks work the same way.

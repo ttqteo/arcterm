@@ -19,15 +19,20 @@ work: the north star, the shared primitives, the moments, and the guardrails.
   genuinely needs a new primitive, add it to the token module first, then use it — never inline a
   one-off duration/ease/keyframe.
 - **Reduced-motion is not optional.** Every surface honors it (`<MotionConfig reducedMotion="user">`
-  for Framer + `motion-reduce:animate-none` on CSS loops).
+  for Framer + `motion-reduce:animate-none` on CSS loops). `MotionConfig` drops only transform and layout
+  animations, so a `springReveal` / `springPop` / `springSheet` site also spreads `usePartMotion`
+  (`springbatch.ts`), and a hand-rolled layout or height uses `shapeTransition`.
 - **No entrance cascade.** `initial={false}` at the `AnimatePresence`/list level, so mounting a
-  populated view does not fire N staggered entrances — only items arriving *after* mount animate.
+  populated view does not fire N staggered entrances — only items arriving *after* mount animate. On the
+  spring surfaces `useSpringBatch` extends that: a filter switch, or 3+ items arriving or leaving at
+  once, shows at once too.
 
 ## Shared foundation
 
 | Artifact | Role |
 |---|---|
-| `frontend/app/element/motiontokens.ts` | Durations (`durMacro`/`durMicro`/`durExit`), `easeFluid`, the no-bounce `spring` (what Chat's shape changes ride, with `springReveal` / `springPop`), variant presets (`cardVariants`, `reorderLift`, `composerReveal`, `paneReveal`, `popoverReveal`, `microFade`, `reflowProps`, `indicatorSlide`), `turnTransition` (chevron turn timing), `settleClass` (moment 4), `computeEntrances` (no-cascade guard) + the `shouldFadeEntry` burst guard. **Import from here; do not inline motion values.** |
+| `frontend/app/element/motiontokens.ts` | Durations (`durMacro`/`durMicro`/`durExit`), `easeFluid`, the no-bounce `spring` (what every surface but Radar's shape changes ride, with `springReveal` / `springPop` / `springSheet`), variant presets (`cardVariants`, `reorderLift`, `composerReveal`, `paneReveal`, `popoverReveal`, `microFade`, `reflowProps`, `indicatorSlide`), `turnTransition` (chevron turn timing), `settleClass` (moment 4), `computeEntrances` (no-cascade guard) + the `shouldFadeEntry` burst guard. **Import from here; do not inline motion values.** |
+| `frontend/app/element/springbatch.ts` | When a list moves on the spring and when it shows at once: `batchMotion` / `useSpringBatch` (a first load, a filter switch, or 3+ keys added plus removed is `"instant"`; one or two, a reorder, a re-deal or a size change `"animate"`), `shapeTransition` (the spring, or no time for a batch or reduced motion, for a layout or height a surface animates by hand) and `usePartMotion` (a part mounts at its end state with no exit under reduced motion; `MotionConfig` leaves height and opacity animating). |
 | `frontend/app/element/crossfade.tsx` | Micro cross-fade for a mark swapping in place (DAG state glyph, copy -> copied); never plays on mount. |
 | `frontend/app/element/copyfeedback.ts` | `useCopyFeedback`: the one copy-to-clipboard outcome (copied / failed) and its hold, for every copy affordance. |
 | `frontend/app/element/popoverreveal.tsx` | Shared dropdown/popover reveal. Wraps the panel only; callers own positioning + backdrop. Adopted across all live cockpit popovers. |

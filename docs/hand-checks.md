@@ -6,6 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **The spring's feel on the Cockpit, Jarvis, Diff and Setup, on a real roster.** The
+  `surfaces-spring-*` scenarios time each motion on fixtures (`task verify:ui -- surfaces-spring-cockpit`
+  …); no packaged build ran them on your own agents and projects. In the packaged app on a real roster: the Cockpit
+  as an agent goes from working to needing you (its card moves to its new place, no card jumps or doubles), a Jarvis
+  brief card and an initiative row open and fold, a Diff file folds in Review, a Setup section folds, and a filter
+  switch or a big update (three or more rows at once) shows at once instead of running the spring on each row.
+  Commit: feat(motion) the batch model, the scenario scaffold and the docs for the surfaces' spring (run d2a699db)
 - [ ] (arcterm) **Frosted overlays on a Mac, and the folded Sprout window.** The Final's frost scenarios ran only in
   WebView2 (Windows). On a Mac build, open the command palette, a context menu with a submenu, a Chat footer menu and
   a toast over a working agent → each panel blurs what is behind it (the palette over its dimmed scrim, a submenu

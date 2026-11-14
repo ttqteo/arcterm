@@ -486,15 +486,20 @@ Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
 - **Motion** — `motion/react` only; shared variants/timing from
   `element/motiontokens.ts` (`MOTION.durMacro` ~360ms on
   `cubic-bezier(0.22,1,0.36,1)`, micro ~140ms, exits ~280ms); card entrances
-  animate opacity + scale, never x/y; `MotionConfig reducedMotion="user"`.
+  animate opacity + scale, never x/y (a cockpit card may slide to its new place on
+  the layout spring); `MotionConfig reducedMotion="user"`, which drops only
+  transform and layout animations, so a spring site also spreads `usePartMotion`
+  (`element/springbatch.ts`) to mount at its end state under reduced motion.
   **Anything that changes shape** (a box's height, a panel's scale, a row
   opening or folding) rides the no-bounce spring `MOTION.spring`
   (`visualDuration` 0.35s, ~`durMacro`) instead of a tween, through `springReveal`
-  (height 0 → auto) or `springPop` (scale 0.97 → 1, from the anchored edge): a
-  spring keeps its velocity when its target moves mid-way, so a fast change never
-  stalls or jumps. Opacity stays on the Fluid ease at `durMicro`, never on the
-  spring (it would overshoot 1). Chat uses these; other surfaces keep their
-  tween reveals until they are moved on purpose.
+  (height 0 → auto), `springPop` (scale 0.97 → 1, from the anchored edge) or
+  `springSheet` (a drawer's x): a spring keeps its velocity when its target moves
+  mid-way, so a fast change never stalls or jumps. Opacity stays on the Fluid ease
+  at `durMicro`, never on the spring (it would overshoot 1). Every surface but
+  Radar uses the spring for anything that changes shape, and a batch change (first
+  load, a filter switch, 3+ items at once) shows at once (`element/springbatch.ts`);
+  Radar keeps its tweens until it is moved on purpose.
 - **Chat's floating box** (the message box and conversation of an agent's Chat)
   makes three deliberate exceptions, and only there:
   - the box is a floating pill at **radius 22px** with `shadow-popover-soft`,
