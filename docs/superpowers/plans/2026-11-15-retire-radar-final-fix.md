@@ -9,7 +9,8 @@ holds each step's detail and `cdp-shots/` the screenshots.
 
 ## Global Constraints
 
-- Edit only the files named in each task's Files line. Never weaken a step until it checks nothing: the fix has to
+- Edit only the files named in each task's Files line (Task 1 may also edit the app file that holds the root cause,
+  and names it in its report). Never weaken a step until it checks nothing: the fix has to
   make the step check what its title says.
 - If the root cause is in app code rather than the scenario, fix the app code. Say which it was in your report.
 - Never run prettier on `scripts/*.mjs`. Those files use hand-formatted 4-space indentation.
@@ -17,8 +18,9 @@ holds each step's detail and `cdp-shots/` the screenshots.
 ### Task 1: agent-rail-tabs steps 2-8 find the fixture agent's Cockpit card
 
 **Depends on:** none
-**Files:** `scripts/cdp/scenarios.mjs` (the `agent-rail-tabs` scenario and its `railTabs*` helpers), plus app code
-only if the root cause is there.
+**Files:** `scripts/cdp/scenarios.mjs`
+
+Scope: the `agent-rail-tabs` scenario and its `railTabs*` helpers, plus app code only if the root cause is there.
 
 **Failure.** Step 2 reports `{"clicked2":false,"editor2":false,"surface2":"Cockpit","tabs2":[...],"w2":0}`. Steps 3-8
 then fail in a cascade, because each depends on the same click or on the File tab it opens. `railTabsClickLink` goes
@@ -44,7 +46,9 @@ Cockpit state behind, or the arrange step never reset it. Confirm the cause befo
 ### Task 2: settings-pages index accepts a hairline rule at any display scale
 
 **Depends on:** none
-**Files:** `scripts/cdp/scenarios.mjs` (the `settings-pages` scenario's index step)
+**Files:** `scripts/cdp/scenarios.mjs`
+
+Scope: the `settings-pages` scenario's index step.
 
 **Failure.** The step "index: one flat list of nine pages in order, About alone at the foot under a 1px rule and a
 10px gap" got `foot={"sections":["about"],"borderTop":"0.909091px","marginTop":"10px"}`. The page order, the About
