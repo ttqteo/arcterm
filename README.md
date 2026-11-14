@@ -34,7 +34,6 @@ The cockpit is one window with several surfaces on its nav rail. `Ctrl+P` (`Cmd+
 | **Usage** | 5-hour and weekly quota, tokens, estimated cost | [usage.md](docs/guide/usage.md) |
 | **Code** | Browse and edit project files | [code.md](docs/guide/code.md) |
 | **Diff** | Git history, changed files and diffs, line review | [diff.md](docs/guide/diff.md) |
-| **Radar** | Findings from auditing bug-fix commits, turned into runs | [radar.md](docs/guide/radar.md) |
 | **Setup** | Instructions and skills shared across every harness | [setup.md](docs/guide/setup.md) |
 | **Settings** | Claude accounts, run routes, appearance, terminal | [settings.md](docs/guide/settings.md) |
 

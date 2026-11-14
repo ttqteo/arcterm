@@ -8,13 +8,12 @@ import type { PeekFacts, PeekTarget } from "./peekstore";
 
 type PeekKind = PeekTarget["kind"];
 
-// the word a kind goes by in the item view, which for an effort and a radar report is not its code name
+// the word a kind goes by in the item view, which for an effort is not its code name
 const KIND_NOUN: Record<PeekKind, string> = {
     run: "run",
     agent: "agent",
     record: "record",
     effort: "initiative",
-    radar: "finding",
     note: "note",
 };
 

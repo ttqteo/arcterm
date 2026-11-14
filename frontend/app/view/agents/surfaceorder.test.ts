@@ -16,7 +16,7 @@ describe("SURFACE_ORDER", () => {
         expect(SURFACE_ORDER.slice(4)).toEqual(["code", "files"]);
     });
 
-    it("keeps Radar off the rail and the chords while it is being retired", () => {
+    it("has no Radar surface: it is off the rail and the chords", () => {
         expect(SURFACE_ORDER).not.toContain("radar");
         expect(ITEMS.map((i) => i.key)).not.toContain("radar");
     });

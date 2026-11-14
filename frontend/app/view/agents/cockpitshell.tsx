@@ -33,7 +33,6 @@ import { setupRosterSeededLatch } from "./liveagents";
 import { NavRail } from "./navrail";
 import { NotifySync } from "./notifysync";
 import { useUnreadTracking } from "./unreadagentsstore";
-import { RadarSurface } from "./radarsurface";
 import { SettingsSurface } from "./settingssurface";
 import { SetupSurface } from "./setupsurface";
 import { useSleeperTitles } from "./sleepertitles";
@@ -186,8 +185,6 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
                             <CockpitSurface model={model} />
                         ) : surface === "jarvis" ? (
                             <JarvisSurface model={model} />
-                        ) : surface === "radar" ? (
-                            <RadarSurface model={model} />
                         ) : surface === "files" ? (
                             <FilesSurface model={model} />
                         ) : surface === "usage" ? (

@@ -169,7 +169,6 @@ Nhiều chỗ trong app mở thẳng một file trong Code:
 | Từ đâu | Cách | Mở ở |
 |---|---|---|
 | [Diff](diff.md) | Nút **Open in Code** | File, tại dòng đầu tiên khác nhau |
-| [Radar](radar.md) | Đường dẫn `file:dòng` trên finding | File, tại dòng của site anh em |
 | Search trong Code | Bấm một kết quả | File, tại dòng khớp |
 | Ô tìm kiếm chung (`Ctrl+P`) | Phạm vi Files, chọn một file | File (từ surface Agent, file nằm dưới thư mục của agent đang chọn thì mở ở File tab của agent) |
 | Markdown preview | Liên kết tương đối | File được liên kết |

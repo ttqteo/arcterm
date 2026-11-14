@@ -364,28 +364,6 @@ func TestBlockedWithNothingToNameSaysSo(t *testing.T) {
 	}
 }
 
-func TestTriageWhySplitsNewFromRecurring(t *testing.T) {
-	dismissed := &waveobj.RadarDisposition{}
-	items := BuildAttention(AttentionInput{Radar: []*waveobj.RadarReport{{
-		OID: uuid.NewString(), ProjectPath: "/p", ProjectName: "p", Status: radarStatusCompleted, CompletedTs: 7,
-		Findings: []waveobj.RadarFinding{
-			{Group: radarGroupNew},
-			{Group: radarGroupRecurring},
-			{Group: radarGroupRecurring},
-			{Group: radarGroupNew, Disposition: dismissed},
-		},
-	}}})
-	if len(items) != 1 {
-		t.Fatalf("want one triage row, got %+v", items)
-	}
-	if items[0].Text != "3 findings need triage." {
-		t.Fatalf("the total must still exclude the decided finding: %q", items[0].Text)
-	}
-	if items[0].Why != "1 new and 2 recurring, none of them ruled on yet." {
-		t.Fatalf("triage why-line: %q", items[0].Why)
-	}
-}
-
 func TestBlockedMergeNamesWhereToFixIt(t *testing.T) {
 	blocked := func(run *waveobj.Run, state string) string {
 		t.Helper()

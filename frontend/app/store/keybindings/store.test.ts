@@ -106,7 +106,6 @@ const SURFACES: SurfaceKey[] = [
     "cockpit",
     "agent",
     "jarvis",
-    "radar",
     "files",
     "usage",
     "code",

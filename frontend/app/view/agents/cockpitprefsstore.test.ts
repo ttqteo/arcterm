@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+import type { SurfaceKey } from "./agents";
 import {
     bootSurface,
     coerceFontSize,
@@ -12,6 +13,7 @@ import {
     startupMenuEntries,
     startupSurfaceOptions,
     vaultPathError,
+    type StartupSurface,
 } from "./cockpitprefsstore";
 
 describe("startupSurfaceOptions", () => {
@@ -49,7 +51,7 @@ describe("bootSurface", () => {
     it("reopens the remembered surface when the choice is last", () => {
         expect(bootSurface("last", "agent")).toBe("agent");
     });
-    it("boots on the cockpit when the remembered surface is Radar, now off the rail", () => {
+    it("boots on the cockpit when the remembered surface is Radar, which no longer exists", () => {
         expect(bootSurface("last", "radar")).toBe("cockpit");
     });
     it("falls back to the cockpit for a remembered value that is not a surface", () => {
@@ -130,8 +132,8 @@ describe("coerceStartupSurface", () => {
         expect(coerceStartupSurface("files")).toBe("files");
         expect(coerceStartupSurface("cockpit")).toBe("cockpit");
     });
-    it("sends a stored Radar startup surface, now off the rail, to the cockpit", () => {
-        expect(coerceStartupSurface("radar")).toBe("cockpit");
-        expect(bootSurface("radar", "agent")).toBe("cockpit");
+    it("sends a stored Radar startup surface, a surface that no longer exists, to the cockpit", () => {
+        expect(coerceStartupSurface("radar" as string as SurfaceKey)).toBe("cockpit");
+        expect(bootSurface("radar" as string as StartupSurface, "agent")).toBe("cockpit");
     });
 });

@@ -162,7 +162,7 @@ describe("queueLine", () => {
             "asking",
             "asking",
         ]);
-        expect(["chunk-due", "radar-triage", "run-unverified"].map((k) => tone(k))).toEqual([
+        expect(["chunk-due", "run-unverified", "learn-proposal"].map((k) => tone(k))).toEqual([
             "muted",
             "muted",
             "muted",
@@ -733,7 +733,7 @@ describe("sinceSections", () => {
                 oref: "run:" + key,
                 effortOid,
             });
-        const efforts = new Map([["e2", { oref: "effort:e2", title: "Radar", chunkStages: {} }]]);
+        const efforts = new Map([["e2", { oref: "effort:e2", title: "Ledger", chunkStages: {} }]]);
         const sections = sinceSections(
             [
                 run("r1", NOW - MIN, "run-created", "e1"),
@@ -753,7 +753,7 @@ describe("sinceSections", () => {
             ],
             [
                 ["behind:effort:effort:e1", "SIEM", "1 note · 1 run"],
-                ["behind:effort:effort:e2", "Radar", "1 run"],
+                ["behind:effort:effort:e2", "Ledger", "1 run"],
             ],
         ]);
     });
@@ -827,7 +827,7 @@ describe("sinceWindow", () => {
             key: "k" + i,
             ts: NOW - i * MIN,
             kind: "effort-note",
-            title: i === n - 1 ? "the hidden radar initiative" : `initiative ${i}`,
+            title: i === n - 1 ? "the hidden ledger initiative" : `initiative ${i}`,
             wording: "",
             detail: "A · note",
             oref: "effort:e" + i,
@@ -843,8 +843,8 @@ describe("sinceWindow", () => {
 
     it("finds a row behind the fold when searched", () => {
         const [inits] = sinceSections(notes(SINCE_CAP + 3), NOW);
-        expect(sinceWindow(inits, false, "").lines.map((l) => l.title)).not.toContain("the hidden radar initiative");
-        expect(sinceWindow(inits, false, "radar").lines.map((l) => l.title)).toEqual(["the hidden radar initiative"]);
+        expect(sinceWindow(inits, false, "").lines.map((l) => l.title)).not.toContain("the hidden ledger initiative");
+        expect(sinceWindow(inits, false, "ledger").lines.map((l) => l.title)).toEqual(["the hidden ledger initiative"]);
     });
 
     it("shows the records' summary closed, its rows under it open, and only matching rows when searched", () => {
@@ -921,7 +921,7 @@ describe("filterLines", () => {
     });
 
     it("matches any column the line shows, ignoring case", () => {
-        const lines = [line("a", { title: "SIEM", meta: "cad" }), line("b", { title: "Radar", note: "trust fixes" })];
+        const lines = [line("a", { title: "SIEM", meta: "cad" }), line("b", { title: "Ledger", note: "trust fixes" })];
         expect(filterLines(lines, "TRUST").map((l) => l.id)).toEqual(["b"]);
         expect(filterLines(lines, "cad").map((l) => l.id)).toEqual(["a"]);
         expect(filterLines(lines, "  ").map((l) => l.id)).toEqual(["a", "b"]);
@@ -1230,7 +1230,7 @@ describe("a search reaches every fold", () => {
     it("opens a fold for a typed query, and for nothing else", () => {
         expect(foldOpen(false, "")).toBe(false);
         expect(foldOpen(false, "   ")).toBe(false);
-        expect(foldOpen(false, "radar")).toBe(true);
+        expect(foldOpen(false, "ledger")).toBe(true);
         expect(foldOpen(true, "")).toBe(true);
     });
 });

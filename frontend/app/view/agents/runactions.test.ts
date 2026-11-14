@@ -137,7 +137,6 @@ describe("createRun", () => {
                 runtime: "pi",
                 mode: "orchestrator",
                 deferstart: true,
-                radarorigin: undefined,
             },
             expect.objectContaining({ timeout: expect.any(Number) }),
         );

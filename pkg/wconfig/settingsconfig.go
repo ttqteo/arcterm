@@ -123,10 +123,6 @@ type SettingsType struct {
 	AgentsCompactIdle   *bool  `json:"agents:compactidle,omitempty"`
 	AgentsCompactAtK    *int64 `json:"agents:compactatk,omitempty"`
 
-	RadarAuditRuntime  string `json:"radar:auditruntime,omitempty"`
-	RadarAuditModel    string `json:"radar:auditmodel,omitempty"`
-	RadarClassifyModel string `json:"radar:classifymodel,omitempty"`
-
 	UsageInsightsLang string `json:"usage:insightslang,omitempty"` // language the usage analysis answers in; empty is English
 
 	TokenGateClear      bool     `json:"tokengate:*,omitempty"`

@@ -95,32 +95,22 @@ describe("splitAttention", () => {
         expect(out.jarvis.map((i) => i.key)).toEqual(["c", "d", "e", "f", "g", "h", "i"]);
     });
 
-    it("routes radar triage to the Radar badge, even though it names no channel", () => {
-        const out = splitAttention([
-            item({ key: "r", kind: "radar-triage", channelid: "", oref: "radarreport:x" }),
-            item({ key: "b", kind: "ask" }),
-        ]);
-        expect(out.radar.map((i) => i.key)).toEqual(["r"]);
-        expect(out.cockpit.map((i) => i.key)).toEqual(["b"]);
-    });
-
-    it("keeps the three groups disjoint and complete, in server order", () => {
+    it("keeps the two groups disjoint and complete, in server order", () => {
         const items = [
             item({ key: "a", kind: "ask" }),
-            item({ key: "r", kind: "radar-triage" }),
             item({ key: "g", kind: "dag-gate" }),
             item({ key: "b", kind: "ask" }),
         ];
         const out = splitAttention(items);
-        expect(out.cockpit.length + out.jarvis.length + out.radar.length).toBe(items.length);
+        expect(out.cockpit.length + out.jarvis.length).toBe(items.length);
         expect(out.cockpit.map((i) => i.key)).toEqual(["a", "b"]);
+        expect(out.jarvis.map((i) => i.key)).toEqual(["g"]);
     });
 
     it("reads a missing list as empty", () => {
         const out = splitAttention(undefined as unknown as AttentionItem[]);
         expect(out.cockpit).toHaveLength(0);
         expect(out.jarvis).toHaveLength(0);
-        expect(out.radar).toHaveLength(0);
     });
 });
 

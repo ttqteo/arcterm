@@ -39,15 +39,14 @@ type CommandCreateRunData struct {
 	ReviewerPicks *bool             `json:"reviewerpicks,omitempty"` // Reviewer picks; nil = the profile's workers setting, non-nil = the caller owns it and a nil WorkerRoute means Same as lead
 	ReviewerRoute *waveobj.RoutePin `json:"reviewerroute,omitempty"` // route for task reviewers and stage sessions (nil = the profile's, else the lead's)
 	// route for the plan review's lens and follow-up reviewers (nil = the profile's, else claude/sonnet)
-	LightReviewerRoute *waveobj.RoutePin       `json:"lightreviewerroute,omitempty"`
-	Orchestration      string                  `json:"orchestration,omitempty"` // engine | adaptive (empty = legacy runtime fork)
-	Parallelism        int                     `json:"parallelism,omitempty"`   // engine width the user picked in the Run rail; 0 = let the lead choose
-	PlaybookId         string                  `json:"playbookid,omitempty"`
-	Mode               string                  `json:"mode,omitempty"`        // quick | pipeline | orchestrator (empty = resolved profile default)
-	Landing            string                  `json:"landing,omitempty"`     // branch | checkout for an engine run; wins over the profile (empty = the profile's, else branch)
-	RadarOrigin        *waveobj.RunRadarOrigin `json:"radarorigin,omitempty"` // set when started from a Radar finding
-	EffortOID          string                  `json:"effortoid,omitempty"`   // optional effort tracker link (composer picker)
-	ChunkLabel         string                  `json:"chunklabel,omitempty"`
+	LightReviewerRoute *waveobj.RoutePin `json:"lightreviewerroute,omitempty"`
+	Orchestration      string            `json:"orchestration,omitempty"` // engine | adaptive (empty = legacy runtime fork)
+	Parallelism        int               `json:"parallelism,omitempty"`   // engine width the user picked in the Run rail; 0 = let the lead choose
+	PlaybookId         string            `json:"playbookid,omitempty"`
+	Mode               string            `json:"mode,omitempty"`      // quick | pipeline | orchestrator (empty = resolved profile default)
+	Landing            string            `json:"landing,omitempty"`   // branch | checkout for an engine run; wins over the profile (empty = the profile's, else branch)
+	EffortOID          string            `json:"effortoid,omitempty"` // optional effort tracker link (composer picker)
+	ChunkLabel         string            `json:"chunklabel,omitempty"`
 	// DeferStart persists the run in planning without spawning phase workers; the caller (the
 	// draft-first composer) submits the TaskGroup explicitly and DagSubmit transitions it to executing.
 	DeferStart bool `json:"deferstart,omitempty"`

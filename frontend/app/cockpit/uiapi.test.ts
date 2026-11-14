@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { CommandItem } from "@/app/cockpit/palette-commands";
+import type { SurfaceKey } from "@/app/view/agents/agents";
+import { parseAddress } from "@/app/view/jarvis/address";
 import { describe, expect, it } from "vitest";
 import {
     BUSY_POLL_MS,
@@ -25,7 +27,6 @@ const empty: SelectionSnapshot = {
     subject: null,
     activeRunIds: {},
     peekRecordId: null,
-    radarReportId: undefined,
 };
 
 const item = (key: string, over: Partial<CommandItem> = {}): CommandItem => ({
@@ -66,12 +67,13 @@ describe("selectionFor", () => {
         expect(selectionFor("jarvis", same)).toEqual(["task:d1"]);
     });
 
-    it("reports the radar report", () => {
-        expect(selectionFor("radar", { ...empty, radarReportId: "rr1" })).toEqual(["radarreport:rr1"]);
+    it("reports nothing for the removed Radar surface, whatever a stale snapshot still holds", () => {
+        const stale = { ...empty, radarReportId: "rr1" } as SelectionSnapshot;
+        expect(selectionFor("radar" as string as SurfaceKey, stale)).toEqual([]);
     });
 
     it("reports nothing on surfaces without an addressed selection, whatever else is set", () => {
-        const s = { ...empty, focusId: "t1", radarReportId: "rr1" };
+        const s = { ...empty, focusId: "t1" };
         expect(selectionFor("usage", s)).toEqual([]);
         expect(selectionFor("cockpit", s)).toEqual([]);
     });
@@ -114,6 +116,17 @@ describe("parseSurfaceAddress", () => {
     it("rejects an unknown surface and lists the valid ones", () => {
         const r = parseSurfaceAddress("surface:nope");
         expect(r != null && "error" in r && r.error).toMatch(/^unknown surface "nope"; one of cockpit, /);
+    });
+
+    it("refuses surface:radar as an unknown surface, not a blank one", () => {
+        const r = parseSurfaceAddress("surface:radar");
+        expect(r != null && "error" in r && r.error).toMatch(/^unknown surface "radar"; one of cockpit, /);
+        expect(r != null && "error" in r && r.error).not.toMatch(/radar.*radar/);
+    });
+
+    it("refuses a radarreport: address as unsupported", () => {
+        expect(parseAddress("radarreport:rr1").kind).toBe("unsupported");
+        expect(parseAddress("radarreport:rr1", { anchor: "f1" }).kind).toBe("unsupported");
     });
 
     it("takes surface:history, and its old name sessions, to Conversation History in the Agent surface", () => {

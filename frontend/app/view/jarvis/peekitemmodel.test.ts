@@ -30,7 +30,6 @@ describe("openLabel", () => {
         expect(openLabel("agent")).toBe("Open agent");
         expect(openLabel("record")).toBe("Open record");
         expect(openLabel("effort")).toBe("Open initiative");
-        expect(openLabel("radar")).toBe("Open finding");
     });
 
     it("the gone line uses the same word", () => {

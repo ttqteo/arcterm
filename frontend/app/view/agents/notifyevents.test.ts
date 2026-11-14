@@ -98,8 +98,8 @@ describe("diffEvents", () => {
         });
         expect(diffEvents(after, after)).toEqual([]);
     });
-    it("skips asks and radar triage in attention (the roster covers asks)", () => {
-        expect(diffEvents(snap([], []), snap([], [item("ask:b", "ask"), item("r", "radar-triage")]))).toEqual([]);
+    it("skips asks in attention (the roster covers asks)", () => {
+        expect(diffEvents(snap([], []), snap([], [item("ask:b", "ask")]))).toEqual([]);
     });
     it("takes the first loaded attention list as a baseline", () => {
         expect(diffEvents(snap([], [], false), snap([], [item("g1")], true))).toEqual([]);

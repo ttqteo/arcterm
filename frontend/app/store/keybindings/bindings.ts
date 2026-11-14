@@ -235,7 +235,6 @@ const GO_TARGETS: {
     { letter: "c", surface: "cockpit", label: "Cockpit (home)" },
     { letter: "a", surface: "agent", label: "Agent" },
     { letter: "j", surface: "jarvis", label: "Jarvis (projects, records, recall)" },
-    { letter: "r", surface: "radar", label: "Radar" },
     { letter: "s", surface: "agent", label: "Conversation History", id: "go:history", open: showHistory },
     { letter: "v", surface: "agent", label: "Canvas gallery", id: "go:canvases", open: showCanvases },
     { letter: "o", surface: "agent", label: "Councils", id: "go:councils", open: showCouncils },
@@ -260,7 +259,7 @@ const navigateStrict = (ctx: KeyContext) => !ctx.editable && !ctx.modalOpen;
 
 // Deep (non-home) surfaces whose Escape returns to the Cockpit. Excludes cockpit (already home), agent
 // (owns Escape via buildAgentBindings: exit fullscreen / back), and settings.
-const ESC_HOME_SURFACES = new Set<SurfaceKey>(["jarvis", "radar", "files", "usage", "code"]);
+const ESC_HOME_SURFACES = new Set<SurfaceKey>(["jarvis", "files", "usage", "code"]);
 
 // Escape on a deep surface navigates (back, else home) only when nothing on screen owns it.
 // The autonomy panel owns Escape while it is open: closing an overlay is what the user means by

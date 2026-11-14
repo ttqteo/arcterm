@@ -129,10 +129,6 @@ export type QueueTone = "asking" | "error";
 export type QueueNav =
     | { kind: "channel"; channelId: string; runId: string | null }
     | { kind: "effort"; oref: string }
-    // radar triage names no channel — a scan belongs to a project — so it is the one row addressed by
-    // the oref the server sent. The full oref is carried, matching the effort variant: the consumer
-    // strips the otype, so the model never has to know which surface answers for it.
-    | { kind: "radar"; oref: string }
     | { kind: "record"; oref: string }
     // a plan to review whose agent is still open: the agent's rail is where it is decided (planreviewtarget.ts)
     | { kind: "agent"; oref: string }
@@ -178,8 +174,8 @@ export type QueueChunk = { effortOref: string; label: string; needs: string; lat
 // none: the decision a row waits on (a plan gate, an escalation, a released task) is resolved by the run
 // body, so a row that cannot open its run cannot be acted on at all. A run is addressed through its channel
 // because that is what a subject is — the run id rides along so the sheet lands on THAT run rather than on
-// whatever the channel last showed. A triage row and a blocked chunk name no channel, and both already have
-// a surface of their own, so they route by oref through the same router everything else uses.
+// whatever the channel last showed. A blocked chunk, a due chunk and a council name no channel, and each already has
+// a surface of its own, so they route by oref through the same router everything else uses.
 export type QueueOpenTarget =
     | { kind: "channel"; channelId: string; runId: string | null }
     | { kind: "oref"; oref: string };
@@ -202,7 +198,6 @@ const QUEUE_KIND_LABEL: Record<string, string> = {
     "run-land-held": "land held",
     "run-queue-blocked": "not started",
     "run-unverified": "unverified",
-    "radar-triage": "triage",
     "chunk-due": "due",
     "plan-review": "plan",
     "learn-proposal": "Learned rule",
@@ -223,11 +218,9 @@ export function buildAttentionQueue(input: {
     // kind — pkg/jarvis/attention.go), so this preserves it rather than re-sorting on age.
     const rows: QueueRow[] = (input.attention ?? []).map((a) => {
         const channelId = a.channelid ?? "";
-        // a triage row's only destination is its report. If the kind arrived without one it falls
-        // through to the channel rule below and ends up static — inventing a target would be worse than
-        // saying nothing, which is the same rule the no-channel case has always followed.
-        const radarORef = a.kind === "radar-triage" && a.oref != null && a.oref !== "" ? a.oref : null;
-        // a chunk that came due names its initiative the same way, and opens it on the chunk's row
+        // a chunk that came due names its initiative by its oref, and opens it on the chunk's row. If the kind
+        // arrived without one it falls through to the channel rule below and ends up static — inventing a
+        // target would be worse than saying nothing, which is the same rule the no-channel case has always followed.
         const dueORef = a.kind === "chunk-due" && a.oref != null && a.oref !== "" ? a.oref : null;
         // a plan to review opens the agent that proposed it while one is open, else its initiative
         // a waiting council opens on its Discussion, addressed by the oref the server sent
@@ -249,26 +242,21 @@ export function buildAttentionQueue(input: {
             ts: a.waitingsince > 0 ? a.waitingsince : null,
             // a standalone item names no channel, so there is no run body to land on; it renders as
             // static info rather than a button that would navigate nowhere (NeedsRow's rule, kept).
-            action:
-                channelId !== "" || radarORef != null || dueORef != null || planNav != null || councilORef != null
-                    ? a.action
-                    : null,
+            action: channelId !== "" || dueORef != null || planNav != null || councilORef != null ? a.action : null,
             nav:
-                radarORef != null
-                    ? { kind: "radar", oref: radarORef }
-                    : dueORef != null
-                      ? { kind: "effort", oref: dueORef }
-                      : planNav != null
-                        ? planNav
-                        : councilORef != null
-                          ? { kind: "council", oref: councilORef }
-                          : channelId !== ""
-                            ? {
-                                  kind: "channel",
-                                  channelId,
-                                  runId: a.runid != null && a.runid !== "" ? a.runid : null,
-                              }
-                            : null,
+                dueORef != null
+                    ? { kind: "effort", oref: dueORef }
+                    : planNav != null
+                      ? planNav
+                      : councilORef != null
+                        ? { kind: "council", oref: councilORef }
+                        : channelId !== ""
+                          ? {
+                                kind: "channel",
+                                channelId,
+                                runId: a.runid != null && a.runid !== "" ? a.runid : null,
+                            }
+                          : null,
             tone: a.kind === "dag-blocked" ? "error" : "asking",
             // a due chunk IS the initiative's row (detail carries the title), as a blocked chunk is below; so is
             // a plan to review, whose source is the initiative's title
@@ -364,7 +352,6 @@ export type KindWord =
     | "ask"
     | "failed"
     | "blocked"
-    | "triage"
     | "due"
     | "plan"
     | "unverified"
@@ -383,8 +370,6 @@ export function kindWord(wireKind: string, retry = false): KindWord {
             return "ask";
         case "dag-blocked":
             return retry ? "failed" : "blocked";
-        case "radar-triage":
-            return "triage";
         case "chunk-due":
             return "due";
         case "plan-review":
@@ -476,7 +461,6 @@ const KIND_PLURAL: Record<KindWord, string> = {
     ask: "asks",
     failed: "failed",
     blocked: "blocked",
-    triage: "triage",
     due: "due",
     plan: "plans",
     unverified: "unverified",

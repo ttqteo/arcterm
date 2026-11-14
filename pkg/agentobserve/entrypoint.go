@@ -5,7 +5,7 @@ package agentobserve
 
 // HeadlessEntrypoint is the `entrypoint` value Claude Code records on every user and assistant record
 // of a print-mode (`claude -p`) run; an interactive session records "cli". Wave's own backend model
-// calls are all print-mode — the memory distiller and gardener, radar clustering, the recall answer,
+// calls are all print-mode — the memory distiller and gardener, the recall answer,
 // the continuity summary, the channel gatekeeper, the proactive and volunteer judges, and the
 // channel consultation. So this one field identifies them all, no matter which package built the
 // prompt or which working directory the run used.

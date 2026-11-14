@@ -272,8 +272,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
-- Radar is off the nav rail and the number chords while it waits to be removed: `Cmd`+`1`…`6` (`Ctrl` on Windows)
-  now go from Cockpit to Diff, pinned apps sit under Diff, and `Cmd`+`G` `r` still opens Radar until then.
+- **Radar is gone**: the surface, its badge, `Ctrl+G r` and its Settings rows are removed; `Ctrl+1`…`Ctrl+6` now cover
+  the six surfaces left, and pinned apps sit under Diff.
 - An agent in Chat adds chunks and notes to an initiative itself instead of handing you a card to add: what you
   asked for goes straight in, and a chunk you did not ask for waits as proposed on the initiative for you to accept
   or drop (a yes in the conversation accepts it).

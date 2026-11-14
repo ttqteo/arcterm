@@ -35,7 +35,6 @@ var snapshotMustSkip = []string{
 	"runTelebot",
 	"wavevault.StartSyncLoop",
 	"harnessupdate.StartLoop",
-	"reporadar.RecoverInterruptedScans",
 	"sessiontrash.StartPurgeLoop",
 	"wshserver.StartStorage",
 	"wshserver.SweepCanvasFeedback", // deletes inside the registered projects' real checkouts
