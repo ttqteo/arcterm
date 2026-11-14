@@ -6,6 +6,7 @@ import {
     ASSEMBLE_DONE_S,
     ASSEMBLE_PARTS,
     assembleReveal,
+    DEFAULT_PET_FORM,
     easeMix,
     HOLOGRAM_FAIL_WINDOW_MS,
     HOLOGRAM_IDLE_FPS,
@@ -23,11 +24,12 @@ import {
 const calm = { asking: 0, working: 0, speaking: false, peekOpen: false };
 
 describe("petForm", () => {
-    it("keeps the two choices and turns anything else into Sprout", () => {
+    it("keeps the two choices and turns anything else into the hologram, the default", () => {
+        expect(DEFAULT_PET_FORM).toBe("hologram");
         expect(petForm("hologram")).toBe("hologram");
         expect(petForm("sprout")).toBe("sprout");
-        expect(petForm("orb")).toBe("sprout");
-        expect(petForm(undefined)).toBe("sprout");
+        expect(petForm("orb")).toBe("hologram");
+        expect(petForm(undefined)).toBe("hologram");
     });
 });
 

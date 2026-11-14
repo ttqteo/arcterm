@@ -109,7 +109,7 @@ import {
     type PeekState,
 } from "./launcherpeek";
 import { LauncherPeekPane } from "./launcherpeekpanel";
-import { pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey } from "./launcherresume";
+import { pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey, sessionTitle } from "./launcherresume";
 import { ResumeList } from "./launcherresumelist";
 import { ColumnLabel, digitOf, FilterLine, Keycap, NoTaskBox, rowTone } from "./launcherrows";
 import { startLauncherRun } from "./launcherrun";
@@ -152,7 +152,7 @@ import {
 import { ToolFields, ToolList } from "./launchertoolfields";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { busyLine } from "./parkedmodel";
-import { parkLaunch, settleParkedLaunch, showHeld, useMachine } from "./parkedstore";
+import { notifyHeld, parkLaunch, settleParkedLaunch, showHeld, useMachine } from "./parkedstore";
 import {
     noteRecentProject,
     projectListAtom,
@@ -500,10 +500,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     // fallback route is a fresh object each call
     const profileRoute = useMemo(() => leadRouteSeed(rawRoute, harnesses), [rawRoute, harnesses]);
     // While the machine reads busy (memory pressure high, or the CPU pegged), Launch agent holds a new agent instead
-    // of starting it (parkedmodel.ts); the dialog itself is the same, only its warning line says so. A resume has its
-    // own row in Conversations and a plain terminal is light, so neither is held; the machine is read only while the
-    // dialog is open on an agent that would be.
-    const holdable = isAgent && runtimeShowsTask(runtime) && resume == null;
+    // of starting it (parkedmodel.ts), a resume of a past session too; the dialog itself is the same, only its warning
+    // line says so. A plain terminal is light, so it is never held; the machine is read only while the dialog is open on
+    // an agent that would be.
+    const holdable = isAgent && runtimeShowsTask(runtime);
     const machineBusy = useMachine(open && holdable).busy;
     const holds = holdable && machineBusy != null;
     // a tool is a terminal running one program, and a council's Setup starts nothing: neither asks for room
@@ -911,8 +911,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             if (!atHome) {
                 noteRecentProject(p.name);
             }
-            // a held agent opened in New and started is no longer held; one switched to a terminal or a resume was not
-            // what was held, so it stays
+            // a held agent opened in New and started is no longer held; one switched to a terminal was not what was
+            // held, so it stays
             if (holdable) {
                 settleParkedLaunch();
             }
@@ -940,17 +940,29 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         if (!beginLauncherLaunch()) {
             return;
         }
+        // a resume keeps the spec New would resume it with, so Start now picks up the same session
+        const spec = resume != null ? resumeLaunchSpec(resume, runtime, naFlags[runtime] ?? {}) : null;
         try {
             const held = await parkLaunch({
                 project: p.name,
                 projectPath: p.path,
                 runtime,
-                command: composeStartupCommand(
-                    commands[runtime] ?? runtimeStartupCommand(runtime),
-                    runtime,
-                    naFlags[runtime] ?? {}
-                ),
+                command:
+                    spec?.startupCommand ??
+                    composeStartupCommand(
+                        commands[runtime] ?? runtimeStartupCommand(runtime),
+                        runtime,
+                        naFlags[runtime] ?? {}
+                    ),
                 branch,
+                ...(resume != null
+                    ? {
+                          args: spec?.startupArgs,
+                          resumePath: spec?.resumePath,
+                          resumeOf: resume.transcriptpath,
+                          resumeTitle: sessionTitle(resume),
+                      }
+                    : {}),
                 task,
                 images: images.flatMap((i) => (i.path ? [i.path] : [])),
                 reason: machineBusy,
@@ -961,6 +973,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             endLauncherDraft();
             close();
             showHeld(model, held.id);
+            notifyHeld(model, held);
         } catch (e) {
             setError(`Could not hold it: ${String(e)}`);
         } finally {

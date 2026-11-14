@@ -22,7 +22,7 @@ import { fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect } from "react";
 import { centerModeAtom, heldSelAtom, showTerminal } from "./agentcenter";
-import { runtimeStartupCommand, type Runtime } from "./launch";
+import { runtimeStartupCommand, sessionIdFromTranscript, type Runtime } from "./launch";
 import { HOME_NAME, HOME_PICK } from "./launcher";
 import { composeTaskWithImages, type TaskImage } from "./launcherimages";
 import {
@@ -30,12 +30,14 @@ import {
     launcherImagesAtom,
     launcherParkedIdAtom,
     launcherRestoredAtom,
+    launcherResumeAtom,
     openAgentLauncher,
     pickLauncherRuntime,
     type LauncherModel,
 } from "./launcherstore";
 import {
     busyReason,
+    heldToast,
     keepReadings,
     parkedChunk,
     parkedTitle,
@@ -74,6 +76,11 @@ export async function parkLaunch(input: {
     runtime: Runtime;
     command: string;
     branch?: string;
+    // a resume: the spec New would launch it with (launcherresume.ts resumeLaunchSpec) and the session it picks up
+    args?: string[];
+    resumeOf?: string;
+    resumePath?: string;
+    resumeTitle?: string;
     task: string;
     images: string[];
     reason: string | null;
@@ -85,6 +92,10 @@ export async function parkLaunch(input: {
         runtime: input.runtime,
         command: input.command,
         ...(input.branch ? { branch: input.branch } : {}),
+        ...(input.args?.length ? { args: input.args } : {}),
+        ...(input.resumeOf ? { resumeof: input.resumeOf } : {}),
+        ...(input.resumePath ? { resumepath: input.resumePath } : {}),
+        ...(input.resumeTitle ? { resumetitle: input.resumeTitle } : {}),
         task: input.task,
         ...(input.images.length > 0 ? { images: input.images } : {}),
         ts: Date.now(),
@@ -93,6 +104,20 @@ export async function parkLaunch(input: {
     await writeParked(withParked(globalStore.get(parkedLaunchesAtom), entry));
     globalStore.set(launcherParkedIdAtom, null);
     return entry;
+}
+
+/** Say an agent was held, with a way to it: a launch that started nothing is never silent, even after the person has
+ *  moved on from the centre that shows it. */
+export function notifyHeld(model: Pick<AgentsViewModel, "surfaceAtom">, p: ParkedLaunch): void {
+    const { title, message } = heldToast(p);
+    pushToast({
+        title,
+        message,
+        level: "warn",
+        ttlMs: 10_000,
+        onOpen: () => showHeld(model, p.id),
+        action: { label: "Open", run: () => showHeld(model, p.id) },
+    });
 }
 
 /** Show a held agent in the Agent surface's centre, as picking an agent shows it. */
@@ -134,7 +159,8 @@ export async function removeParkedWithUndo(p: ParkedLaunch): Promise<void> {
  *  held entry goes. A failed start leaves the entry, and its toast says why. */
 export async function startHeld(model: AgentsViewModel, p: ParkedLaunch): Promise<void> {
     const runtime = p.runtime as Runtime;
-    const { task, extraArgs } = composeTaskWithImages(runtime, p.task, p.images ?? [], false);
+    const resuming = !!p.resumeof;
+    const { task, extraArgs } = composeTaskWithImages(runtime, p.task, p.images ?? [], resuming);
     try {
         await launchAgent(model, {
             runtime,
@@ -145,6 +171,9 @@ export async function startHeld(model: AgentsViewModel, p: ParkedLaunch): Promis
             projectName: p.project,
             branch: p.branch,
             startupCommand: p.command || runtimeStartupCommand(runtime),
+            ...(p.args?.length ? { startupArgs: p.args } : {}),
+            ...(p.resumepath ? { resumePath: p.resumepath } : {}),
+            ...(resuming ? { resumeOf: p.resumeof } : {}),
         });
     } catch (e) {
         pushToast({ title: "Could not start the held agent", message: errorText(e), level: "error" });
@@ -230,6 +259,8 @@ export function openParked(model: LauncherModel, p: ParkedLaunch): void {
     clearLauncherDraft();
     openAgentLauncher(model, { project: p.project === HOME_NAME ? HOME_PICK : p.project, task: p.task });
     pickLauncherRuntime(p.runtime as Runtime);
+    // a held resume picks its session again, once the list has it (launcherresume.ts pickedResume)
+    globalStore.set(launcherResumeAtom, p.resumeof ? (sessionIdFromTranscript(p.resumeof) ?? null) : null);
     globalStore.set(launcherParkedIdAtom, p.id);
     globalStore.set(launcherRestoredAtom, false);
     const images: TaskImage[] = (p.images ?? []).map((path) => ({ id: crypto.randomUUID(), previewUrl: "", path }));

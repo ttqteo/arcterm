@@ -201,10 +201,14 @@ export default function () {
             const held = afterHold.parked?.[0] ?? null;
             const rows = await readRows(h);
             const pane = await readPane(h);
+            const toast = await waitFor(
+                h,
+                `[...document.querySelectorAll('[data-notification-toast]')].map((t) => t.textContent.replace(/\\s+/g, ' ')).find((t) => t.includes('Agent held: memory pressure is high')) ?? null`
+            );
             await nap(250);
             await h.shot("cdp-shots/parked-launch-held.png");
             rec(
-                "2. held: one entry (Home, its folder, the claude command, the task, the reason), its dashed row selected, the held view in the centre",
+                "2. held: one entry (Home, its folder, the claude command, the task, the reason), its dashed row selected, the held view in the centre, and a toast that says so",
                 afterHold.parked?.length === 1 &&
                     held?.project === "Home" &&
                     (held?.projectpath ?? "") !== "" &&
@@ -215,8 +219,10 @@ export default function () {
                     rows[0].selected &&
                     rows[0].dashed &&
                     rows[0].meta === "held for RAM" &&
-                    pane?.id === held?.id,
-                JSON.stringify({ parked: afterHold.parked, rows, pane })
+                    pane?.id === held?.id &&
+                    typeof toast === "string" &&
+                    toast.includes("It waits in its project's folder until you start it."),
+                JSON.stringify({ parked: afterHold.parked, rows, pane, toast })
             );
             if (held == null) {
                 return steps;

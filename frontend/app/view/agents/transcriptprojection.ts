@@ -400,7 +400,12 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
             }
             for (const block of content) {
                 if (block?.type === "text" && typeof block.text === "string" && block.text.trim() !== "") {
-                    entries.push({ kind: "message", text: block.text, ...tag });
+                    entries.push({
+                        kind: "message",
+                        text: block.text,
+                        ...tag,
+                        ...(rec.isApiErrorMessage === true ? { apiError: true as const } : {}),
+                    });
                     continue;
                 }
                 if (isNarration(rec, block)) {

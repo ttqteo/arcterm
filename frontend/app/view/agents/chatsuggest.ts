@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Chat's suggested replies: the chips in the message box once an agent's turn ends (chatcomposer.tsx draws them, and
-// while the agent works draws its own two, Show the diff and Open the terminal). They are what the person would likely
+// while the agent works draws its own two, Show the diff and Open the terminal, each once it has something to show:
+// runningActions). They are what the person would likely
 // send next, in their own words ("commit đi", not "Commit"), and a click sends one. They come from two places:
 //
 // - rules over what Chat already knows, shown at once: the turn left its edits uncommitted ("commit đi") or its commits
@@ -48,12 +49,13 @@ export const MAX_CHIPS = 3;
 const RECENT = 6;
 
 /** Pure: the agent's message that closed its last turn, or null when the person spoke last, the turn was interrupted,
- *  or the agent wrote no text since. Tool calls, notifications and compactions after it do not hide it. */
+ *  an API error ended it (the usage limit's line is no reply to answer), or the agent wrote no text since. Tool calls,
+ *  notifications and compactions after it do not hide it. */
 export function lastReply(entries: readonly AgentEntry[]): string | null {
     for (let i = entries.length - 1; i >= 0; i--) {
         const e = entries[i];
         if (e.kind === "message") {
-            return e.text.trim() === "" ? null : e.text;
+            return e.text.trim() === "" || e.apiError === true ? null : e.text;
         }
         if (e.kind === "user" || e.kind === "command" || e.kind === "interrupted") {
             return null;
@@ -220,4 +222,75 @@ export function suggestKey(agentId: string, reply: string): string {
         h = ((h << 5) + h + reply.charCodeAt(i)) | 0;
     }
     return `${agentId}:${reply.length}:${(h >>> 0).toString(36)}`;
+}
+
+/** What the box's chip line shows: the running agent's actions, the finished turn's suggested replies, or nothing. */
+export type ChipRowKind = "actions" | "suggest" | "none";
+
+/** how long the agent must keep working before its actions take the line */
+export const ROW_ENTER_ACTIONS_MS = 1000;
+/** how long the agent must keep still before its actions leave the line */
+export const ROW_LEAVE_ACTIONS_MS = 500;
+
+/** Pure: how long the line waits before it changes from what it shows to what the agent's state now asks for; 0 changes
+ *  it at once. Only a change to or from the actions waits: those follow the agent's state, which can flip and come back
+ *  inside a second (a turn the usage limit ends as it starts, a blip between two hook events), and each flip swapped
+ *  the line and sprang the box's height under the eye. Replies coming or going follow the person (writing, sending)
+ *  and change at once. */
+export function rowHold(shown: ChipRowKind, target: ChipRowKind): number {
+    if (shown === target) {
+        return 0;
+    }
+    if (target === "actions") {
+        return ROW_ENTER_ACTIONS_MS;
+    }
+    if (shown === "actions") {
+        return ROW_LEAVE_ACTIONS_MS;
+    }
+    return 0;
+}
+
+/** the verbs of the tools whose call changes a file (transcriptprojection.ts verbFor) */
+const EDIT_VERBS = new Set(["edited", "wrote", "multiedit", "notebookedit"]);
+
+/** how long a command runs before its terminal is worth a look: its live output is there, not in Chat */
+export const TERMINAL_AFTER_MS = 10_000;
+
+/** Which of a running agent's two actions have something to show, and when the terminal will if a command still short
+ *  of TERMINAL_AFTER_MS keeps running (null when none runs). */
+export interface RunningActions {
+    diff: boolean;
+    terminal: boolean;
+    terminalAt: number | null;
+}
+
+/** Pure: the running agent's actions worth a chip, from its transcript since the person's last message: Show the diff
+ *  once the turn has edited a file (an edit that failed or was refused changed nothing), Open the terminal while a
+ *  command has run TERMINAL_AFTER_MS or more. A turn that only reads and searches offers neither: the header's Terminal
+ *  and the rail's Diff are there all the time. */
+export function runningActions(entries: readonly AgentEntry[], now: number): RunningActions {
+    let diff = false;
+    let terminal = false;
+    let terminalAt: number | null = null;
+    for (let i = entries.length - 1; i >= 0; i--) {
+        const e = entries[i];
+        if (e.kind === "user") {
+            break;
+        }
+        if (e.kind !== "action") {
+            continue;
+        }
+        if (EDIT_VERBS.has(e.verb) && e.outcome !== "fail" && e.outcome !== "blocked") {
+            diff = true;
+        }
+        if (e.verb === "ran" && e.outcome == null && e.startedAt != null) {
+            const due = e.startedAt + TERMINAL_AFTER_MS;
+            if (now >= due) {
+                terminal = true;
+            } else {
+                terminalAt = terminalAt == null ? due : Math.min(terminalAt, due);
+            }
+        }
+    }
+    return { diff, terminal, terminalAt: terminal ? null : terminalAt };
 }

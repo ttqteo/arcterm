@@ -1,12 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// A triple-click selects a paragraph or list item together with the line break after it. WebKit (the Mac app's
-// WKWebView) paints that break as a band running on to the scroller's right edge, so a picked short line in Chat showed
-// a bar across the whole column; Chromium paints only the text. Pulling the selection's end back to its last character
-// keeps the pick inside its own line in both engines, and the copy no longer ends in a stray newline. CSS cannot do it:
-// a block made its own selection root and shrunk to its text stops that band, but WebKit then paints the margin between
-// it and the next block as a thin bar across the column.
+// A triple-click selects a paragraph or list item together with the line break after it, so its copy ended in a stray
+// newline. Pulling the selection's end back to its last character keeps the copy to the text picked. (How the pick is
+// painted is selectionpaint.ts's job: it draws only the selected text, never the break.)
 
 // where the trailing whitespace of `text` begins: its length when it ends on a character, 0 when it is all whitespace
 export function inkEnd(text: string): number {
@@ -58,7 +55,8 @@ export function trimTripleClick(e: { detail: number }): void {
     }
     const range = sel.getRangeAt(0);
     const end = lastInk(range);
-    if (end != null) {
-        sel.setBaseAndExtent(range.startContainer, range.startOffset, end.node, end.offset);
+    if (end == null) {
+        return;
     }
+    sel.setBaseAndExtent(range.startContainer, range.startOffset, end.node, end.offset);
 }

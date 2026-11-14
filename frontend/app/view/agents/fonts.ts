@@ -13,8 +13,8 @@ export interface FontDef {
 }
 
 export const SANS_FONTS: FontDef[] = [
-    { id: "inter", label: "Inter", stack: '"Inter", system-ui, sans-serif' },
     { id: "googlesans", label: "Google Sans Flex", stack: '"Google Sans Flex", system-ui, sans-serif' },
+    { id: "inter", label: "Inter", stack: '"Inter", system-ui, sans-serif' },
     { id: "hanken", label: "Hanken Grotesk", stack: '"Hanken Grotesk", system-ui, sans-serif' },
     { id: "system", label: "System UI", stack: "system-ui, sans-serif" },
 ];
@@ -30,7 +30,7 @@ export const MONO_FONTS: FontDef[] = [
     { id: "firacode", label: "Fira Code", stack: `"Fira Code", ${VI_MONO_FALLBACK}` },
 ];
 
-export const DEFAULT_SANS = "inter";
+export const DEFAULT_SANS = "googlesans";
 export const DEFAULT_MONO = "jetbrains";
 export const DEFAULT_TERM_FONT = "jetbrains"; // matches term.tsx's fallback and defaultconfig's term:fontfamily
 

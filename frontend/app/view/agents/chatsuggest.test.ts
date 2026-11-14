@@ -9,8 +9,13 @@ import {
     initiativeChips,
     lastReply,
     recentPrompts,
+    ROW_ENTER_ACTIONS_MS,
+    ROW_LEAVE_ACTIONS_MS,
+    rowHold,
     ruleChips,
+    runningActions,
     suggestKey,
+    TERMINAL_AFTER_MS,
     wantsModelSuggest,
     writesVietnamese,
     type ChatChip,
@@ -29,6 +34,15 @@ describe("lastReply", () => {
             act,
         ];
         expect(lastReply(entries)).toBe("Bạn chọn A, B hay C?");
+    });
+
+    it("is null when an API error ended the turn: the usage limit's line is no reply", () => {
+        const entries: AgentEntry[] = [
+            { kind: "message", text: "Làm theo hướng này được không?" },
+            { kind: "user", text: "được" },
+            { kind: "message", text: "You've hit your 5-hour limit · resets 12:20am", apiError: true },
+        ];
+        expect(lastReply(entries)).toBeNull();
     });
 
     it("is null when the person spoke last, ran a command, or interrupted", () => {
@@ -257,5 +271,68 @@ describe("suggestKey", () => {
         expect(suggestKey("a", "Bạn chọn A?")).toBe(suggestKey("a", "Bạn chọn A?"));
         expect(suggestKey("a", "Bạn chọn A?")).not.toBe(suggestKey("a", "Bạn chọn B?"));
         expect(suggestKey("a", "x")).not.toBe(suggestKey("b", "x"));
+    });
+});
+
+describe("rowHold", () => {
+    it("changes at once between replies and nothing, and when nothing changes", () => {
+        expect(rowHold("suggest", "none")).toBe(0);
+        expect(rowHold("none", "suggest")).toBe(0);
+        expect(rowHold("actions", "actions")).toBe(0);
+    });
+    it("waits before the actions come, from replies or from nothing", () => {
+        expect(rowHold("suggest", "actions")).toBe(ROW_ENTER_ACTIONS_MS);
+        expect(rowHold("none", "actions")).toBe(ROW_ENTER_ACTIONS_MS);
+    });
+    it("waits before the actions go", () => {
+        expect(rowHold("actions", "suggest")).toBe(ROW_LEAVE_ACTIONS_MS);
+        expect(rowHold("actions", "none")).toBe(ROW_LEAVE_ACTIONS_MS);
+    });
+});
+
+describe("runningActions", () => {
+    const now = 1_000_000;
+    const edit = (outcome?: "ok" | "fail" | "blocked"): AgentEntry => ({
+        kind: "action",
+        verb: "edited",
+        target: "a.ts",
+        outcome,
+    });
+    const ran = (startedAt: number, outcome?: "ok"): AgentEntry => ({
+        kind: "action",
+        verb: "ran",
+        target: "npm test",
+        startedAt,
+        outcome,
+    });
+
+    it("offers neither while the turn only reads", () => {
+        expect(runningActions([{ kind: "user", text: "xem giúp" }, act], now)).toEqual({
+            diff: false,
+            terminal: false,
+            terminalAt: null,
+        });
+    });
+    it("offers the diff once the turn edited a file, not for an edit that failed or was refused", () => {
+        expect(runningActions([{ kind: "user", text: "sửa đi" }, edit("ok"), act], now).diff).toBe(true);
+        expect(runningActions([{ kind: "user", text: "sửa đi" }, edit()], now).diff).toBe(true);
+        expect(runningActions([{ kind: "user", text: "sửa đi" }, edit("fail"), edit("blocked")], now).diff).toBe(false);
+    });
+    it("reads only the turn since the person's last message", () => {
+        expect(runningActions([edit("ok"), { kind: "user", text: "giải thích thôi" }, act], now).diff).toBe(false);
+    });
+    it("offers the terminal once a command has run long enough, and says when one will", () => {
+        const user: AgentEntry = { kind: "user", text: "chạy test đi" };
+        expect(runningActions([user, ran(now - TERMINAL_AFTER_MS)], now)).toEqual({
+            diff: false,
+            terminal: true,
+            terminalAt: null,
+        });
+        expect(runningActions([user, ran(now - 2_000)], now)).toEqual({
+            diff: false,
+            terminal: false,
+            terminalAt: now - 2_000 + TERMINAL_AFTER_MS,
+        });
+        expect(runningActions([user, ran(now - 60_000, "ok")], now).terminal).toBe(false);
     });
 });

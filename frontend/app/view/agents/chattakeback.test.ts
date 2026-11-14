@@ -2,7 +2,18 @@ import { describe, expect, it } from "vitest";
 import type { AgentEntry } from "./agentsviewmodel";
 import { withResultLines } from "./chatinitiative";
 import type { PendingMessage } from "./chatpending";
-import { boxHolds, boxShowsTyped, enterEcho, inputBoxRows, mergeTaken, takeBackPlan, typedEcho } from "./chattakeback";
+import {
+    boxHolds,
+    boxShowsTyped,
+    enterEcho,
+    inputBoxRows,
+    mergeTaken,
+    takeBackPlan,
+    TAKEN_BACK_LANDS_MS,
+    takenBackOf,
+    typedEcho,
+    withoutTakenBack,
+} from "./chattakeback";
 
 const rule = "─".repeat(40);
 const pend = (id: string, text: string, queued: boolean, kind?: PendingMessage["kind"]): PendingMessage => ({
@@ -206,5 +217,43 @@ describe("mergeTaken", () => {
     it("puts the taken-back messages ahead of what the box holds, one per line, as Claude Code does", () => {
         expect(mergeTaken(["first", "second"], "")).toBe("first\nsecond");
         expect(mergeTaken(["first"], "draft")).toBe("first\ndraft");
+    });
+});
+
+describe("withoutTakenBack", () => {
+    const reply: AgentEntry = { kind: "message", text: "cce381a4 is the run's lead.", uuid: "r1" };
+    const said = (uuid: string, text: string): AgentEntry => ({ kind: "user", text, uuid });
+    const plan = (texts: string[]) => ({ kind: "interrupt" as const, ids: [], texts });
+
+    it("hides a message that had landed when Esc took it back (2026-11-14, Windows)", () => {
+        const entries = [said("u0", "đóng đi rồi xếp lại"), reply, said("u1", "đóng đi rồi xếp lại")];
+        const taken = takenBackOf(plan(["đóng đi rồi xếp lại"]), entries, 1000);
+        expect(taken.uuids).toEqual(["u1"]);
+        // the same words sent and answered before are not it
+        expect(withoutTakenBack(entries, taken, 1500).entries).toEqual([entries[0], reply]);
+    });
+
+    it("hides the record when it reaches Chat after the take-back, and keeps it hidden past the wait", () => {
+        const before = [reply];
+        const taken = takenBackOf(plan(["viết bài luận"]), before, 1000);
+        expect(taken.texts).toEqual(["viết bài luận"]);
+        const after = [reply, said("u2", "viết bài luận")];
+        const { entries, next } = withoutTakenBack(after, taken, 1600);
+        expect(entries).toEqual([reply]);
+        expect(next?.uuids).toEqual(["u2"]);
+        expect(withoutTakenBack(after, next!, 1000 + TAKEN_BACK_LANDS_MS * 3).entries).toEqual([reply]);
+    });
+
+    it("shows the message sent again: a record past the wait, or one Chat held at the take-back, is not it", () => {
+        const taken = takenBackOf(plan(["viết bài luận"]), [reply], 1000);
+        const resent = [reply, said("u3", "viết bài luận")];
+        expect(withoutTakenBack(resent, taken, 1000 + TAKEN_BACK_LANDS_MS + 1).entries).toEqual(resent);
+        const held = takenBackOf(plan(["khác"]), resent, 1000);
+        expect(withoutTakenBack(resent, held, 1200).entries).toBe(resent);
+    });
+
+    it("leaves the entries as they are with no take-back", () => {
+        const entries = [reply];
+        expect(withoutTakenBack(entries, undefined, 0)).toEqual({ entries, next: null });
     });
 });

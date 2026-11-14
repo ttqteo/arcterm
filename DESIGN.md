@@ -98,7 +98,7 @@ colors:
   imagematte: "#e9ecef"
 typography:
   font-sans:
-    fontFamily: "Inter, system-ui, sans-serif"
+    fontFamily: "Google Sans Flex, system-ui, sans-serif"
   font-mono:
     fontFamily: "JetBrains Mono, monospace"
   text-xxs:
@@ -176,7 +176,7 @@ The clay accent (`#d97757`) is used sparingly (the primary CTA, focus and
 links) so it still reads as a signal, and never for status. Status is semantic and
 never color-alone: amber = asking, green = working, red = error.
 
-Typography is **Inter** throughout the UI, with **JetBrains Mono** reserved for
+Typography is **Google Sans Flex** (the default sans; Inter is a choice) throughout the UI, with **JetBrains Mono** reserved for
 the terminal, code and diff bodies, keycaps, and verbatim machine tokens (SHAs,
 ids, config keys) — never for file paths, names or labels. Motion is functional-first: it exists only
 to make state changes more legible, honors `prefers-reduced-motion`, and draws
@@ -299,7 +299,7 @@ green, `mem-feedback` amber, `mem-user` purple), **jarvis graph node kinds**
 
 ### Runtime theming
 
-`themes.ts` (`THEMES`: claude (default), graphite, midnight, slate, carbon, nocturne,
+`themes.ts` (`THEMES`: graphite (default), claude, midnight, slate, carbon, nocturne,
 onedark, monokai) maps each base palette to the full `--color-*` override set and writes
 them as inline styles on `document.documentElement` — highest specificity,
 beats `:root`, re-skins everything with zero component edits. Subtle greys
@@ -311,11 +311,12 @@ status tokens and the Claude mark (guarded by `themes.test.ts`). All dark only �
 (Paper) was declined 2026-08-24 (see `docs/deferred.md`); an unknown preset
 id falls back to the default. Someone who already picked a preset keeps it
 (it is stored in localStorage), so a user who once reverted to an old
-default stays on it (Midnight, or Graphite before Claude took over).
+default stays on it (Midnight, Graphite before Claude took over, or Claude before Graphite came back as the
+default in 1.1.2).
 
 ## Typography
 
-- **`font-sans` — Inter** (bundled) for all UI: labels, headings, badges,
+- **`font-sans` — Google Sans Flex** (bundled; Inter, Hanken Grotesk and System UI are choices) for all UI: labels, headings, badges,
   buttons, names, and every number, count, cost, duration and timestamp. It is
   the body default, so most elements carry no font class at all. Falls back to
   `system-ui, sans-serif`. Rendered markdown uses it too.
@@ -329,20 +330,20 @@ default stays on it (Midnight, or Graphite before Claude took over).
      character: git commit SHAs, UUID / run-id / session-id fragments, hashes,
      env var names and config keys shown as such, JSON / TOML / YAML snippets.
 
-  Everything else is Inter — simply carry no `font-mono`: file names and file
+  Everything else is the sans face — simply carry no `font-mono`: file names and file
   PATHS in lists, rows, headers, breadcrumbs and chips, branch names, worktree
   names, model names, project names, runtime names, labels, counts, durations,
   timestamps, tab titles, verbs, badges and placeholders. A file path is mono only
   when it is part of a code line (a diff, grep or read body row); as a row title,
-  header, chip or list item it is Inter. A shell command (the `$ cmd` line, a bash
+  header, chip or list item it is sans. A shell command (the `$ cmd` line, a bash
   tool's target) is mono; a non-shell tool's target (a file path, a pattern label)
-  is Inter. It is also the terminal default.
-- **Numbers** in Inter get `tabular-nums` wherever they align or update (usage
+  is sans. It is also the terminal default.
+- **Numbers** in the sans face get `tabular-nums` wherever they align or update (usage
   meters, token and cost tables, durations, timestamps, diff stats) so columns do
   not jitter.
 
 Fonts are registered via `FontFace` in `frontend/util/fontutil.ts`
-(`loadFonts()` at boot). The settings font picker offers Inter / Hanken
+(`loadFonts()` at boot). The settings font picker offers Google Sans Flex / Inter / Hanken
 Grotesk / System UI (sans) and JetBrains Mono / Hack / Fira Code (mono);
 `applyFontVars` re-fonts the whole app by overriding `--font-sans` /
 `--font-mono` on the root. A bundled face must cover Vietnamese: the bundled

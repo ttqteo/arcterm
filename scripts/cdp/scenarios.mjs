@@ -7885,6 +7885,8 @@ const PET_PX = 48;
 const PET_HOME_KEY = "wave:pet.home";
 // the character Settings → Appearance picks (petstore.ts petCharacterAtom)
 const PET_CHARACTER_KEY = "jarvis.pet.character";
+// Jarvis's form (petstore.ts petFormAtom): the hologram by default, so a scenario about the walking Sprout picks it
+const PET_FORM_KEY = "jarvis.pet.form";
 // the preset Settings → Appearance → Theme picks (themestore.ts themePresetAtom)
 const PET_THEME_KEY = "cockpit.theme.preset";
 const PET_PROJECT = "verify-jarvis-pet";
@@ -8302,6 +8304,7 @@ const jarvisPet = {
             prevHome: await h.ev(`localStorage.getItem(${JSON.stringify(PET_HOME_KEY)})`),
             prevCharacter: await h.ev(`localStorage.getItem(${JSON.stringify(PET_CHARACTER_KEY)})`),
             prevTheme: await h.ev(`localStorage.getItem(${JSON.stringify(PET_THEME_KEY)})`),
+            prevForm: await h.ev(`localStorage.getItem(${JSON.stringify(PET_FORM_KEY)})`),
             // a fixture the developer had active goes back in teardown rather than away
             prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
         };
@@ -8338,6 +8341,9 @@ const jarvisPet = {
                 )
             );
             ctx.wroteFixture = true;
+            // Sprout walks the footer only in its form; the hologram is the default. The form is read once at boot,
+            // like the fixture roster, so the reload below brings both
+            await h.ev(`localStorage.setItem(${JSON.stringify(PET_FORM_KEY)}, JSON.stringify("sprout"))`);
             // the fixture roster is read once at boot
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await h.goto("agent");
@@ -9568,6 +9574,7 @@ const jarvisPet = {
         );
         // step 23 picked the Spider theme; the key goes back, or away when the run found none
         await step("restore the theme preset", () => h.ev(restoreStorageKey(PET_THEME_KEY, ctx.prevTheme)));
+        await step("restore Jarvis's form", () => h.ev(restoreStorageKey(PET_FORM_KEY, ctx.prevForm)));
         // the fixture roster is read once at boot
         await step("reload onto the live roster", async () => {
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
@@ -11864,6 +11871,8 @@ const XMAS_KEYS = {
     effectsOff: "cockpit.theme.christmasEffectsOff",
     snow: "cockpit.theme.christmasSnow",
     character: "jarvis.pet.character",
+    // the fold button wears the hat only on Sprout: the hologram, the default, draws its own glyph there
+    form: "jarvis.pet.form",
     outfit: "jarvis.pet.outfit",
     view: "cockpit.view",
     layout: "cockpit.office.layout",
@@ -12146,6 +12155,7 @@ const christmasTheme = {
             await set(XMAS_KEYS.effectsOff, null);
             await set(XMAS_KEYS.snow, null);
             await set(XMAS_KEYS.character, "sprout");
+            await set(XMAS_KEYS.form, "sprout");
             await set(XMAS_KEYS.outfit, "shirt");
             await set(XMAS_KEYS.view, "office");
             await set(XMAS_KEYS.layout, null);
@@ -55943,8 +55953,13 @@ const jarvisModes = {
     host: true,
     surface: "agent",
     async arrange(h) {
-        const ctx = { terminals: [] };
+        const ctx = { terminals: [], prevForm: await h.ev(`localStorage.getItem(${JSON.stringify(PET_FORM_KEY)})`) };
         try {
+            // Full opens the chat from the walking Sprout, which shows only in its form (the hologram is the default);
+            // the form is read once at boot
+            await h.ev(`localStorage.setItem(${JSON.stringify(PET_FORM_KEY)}, JSON.stringify("sprout"))`);
+            ctx.formSet = true;
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
             const wslist = await h.rpc("workspacelist", null);
             const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
@@ -56099,6 +56114,12 @@ const jarvisModes = {
             await step(`close the terminal tab ${t.tabId}`, () =>
                 waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
             );
+        }
+        if (ctx.formSet) {
+            await step("restore Jarvis's form", () => h.ev(restoreStorageKey(PET_FORM_KEY, ctx.prevForm)));
+            await step("reload onto the restored form", async () => {
+                if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            });
         }
     },
 };
@@ -62931,6 +62952,7 @@ const setupSkillAdditions = {
 };
 
 // --- setup-learned: Setup → Learned, every accepted line grouped by skill and by project -----------------------------
+// (step 5: the usual replies, the short messages sent often that Chat suggests word for word)
 const SL_KEYS = { skill: "cdp-learned-skill", memory: "cdp-learned-memory" };
 const SL_TEXT = {
     skill: "Say cdp learned skill in every reply",
@@ -63052,6 +63074,25 @@ const setupLearned = {
             JSON.stringify({ file, existed, lineGone, fileLeft: existsSync(file) })
         );
         await shot("4-removed");
+
+        // 5. Your usual replies: the short messages sent often, read from the Claude Code transcripts (None yet on a
+        // machine with none), and x takes one out for good: the next read leaves it out
+        const HABITS = `document.querySelector("[data-learned-habits]")`;
+        const habitsRead = await polishWaitFor(h, `!!${HABITS}?.querySelector("[data-learned-habit], [data-learned-habits-empty]")`, 60000);
+        const habitsBefore = await h.ev(`[...(${HABITS}?.querySelectorAll("[data-learned-habit]") ?? [])].map((c) => c.dataset.learnedHabit)`);
+        await h.ev(`${HABITS}?.scrollIntoView({ block: "center" })`);
+        await shot("5-habits");
+        let habitGone = null;
+        if (habitsBefore.length > 0) {
+            await h.ev(`${HABITS}.querySelector("[data-learned-habit-remove]").click()`);
+            await polishNap(1500);
+            habitGone = await h.ev(`![...${HABITS}.querySelectorAll("[data-learned-habit]")].some((c) => c.dataset.learnedHabit === ${JSON.stringify(habitsBefore[0])})`);
+        }
+        rec(
+            "5. Your usual replies: listed from the sessions (or None yet), and x takes one out",
+            habitsRead && (habitsBefore.length === 0 || habitGone === true),
+            JSON.stringify({ habitsRead, habitsBefore, habitGone })
+        );
         return steps;
     },
     async teardown(h, ctx) {

@@ -285,6 +285,18 @@ func CanvasServeCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (s
 	return resp, err
 }
 
+// command "chathabithide", wshserver.ChatHabitHideCommand
+func ChatHabitHideCommand(w *wshutil.WshRpc, data wshrpc.CommandChatHabitHideData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "chathabithide", data, opts)
+	return err
+}
+
+// command "chathabits", wshserver.ChatHabitsCommand
+func ChatHabitsCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandChatHabitsRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandChatHabitsRtnData](w, "chathabits", nil, opts)
+	return resp, err
+}
+
 // command "chatsuggest", wshserver.ChatSuggestCommand
 func ChatSuggestCommand(w *wshutil.WshRpc, data wshrpc.CommandChatSuggestData, opts *wshrpc.RpcOpts) (*wshrpc.CommandChatSuggestRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandChatSuggestRtnData](w, "chatsuggest", data, opts)

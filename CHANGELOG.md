@@ -53,6 +53,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   your answer, in place of the old text under "Was:".
 - Mark done now moves the agent on to the next chunk, and an agent that holds no chunk is no longer treated as working
   the initiative's active one: it shows "No chunk for this agent" until you pick one.
+- Chat's chips float just above the message box instead of sitting in it, so the box keeps its height as they come and
+  go and the conversation no longer jumps.
+- A resume of a past session picked in New is held too while the machine is busy, and Start now picks the same
+  session up. Every held agent now says so in a toast, with Open to go to it.
 
 ### Fixed
 
@@ -64,6 +68,40 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   (up to 30 minutes), so it no longer slows them down or drags on for many minutes beside them.
 - On Windows, a build or typecheck an agent runs in the background keeps its heavy-job slot until it ends. It let go
   after two seconds, so more of them ran at once than the queue allows.
+- Selecting text in Chat on a Mac highlights only the text you pick, one band per line as on Windows: no fill running
+  to the column's edge or across the gaps between paragraphs, no boxes around list numbers and bullets, and no dark
+  strips between the lines of a wrapped paragraph.
+
+## 1.1.2 — 2026-11-14
+
+### Added
+
+- Chat's suggested replies learn the short messages you send often ("build đi", "pull về và build"): counted over your
+  Claude Code sessions of the last 30 days, one is offered word for word when it fits the turn. Setup → Learned lists
+  them under Your usual replies, where × takes one out for good.
+
+### Changed
+
+- Graphite is the default theme and Google Sans Flex the default interface font, in place of Claude and Inter; a
+  theme or font you already picked in Settings → Appearance stays. <!-- try: go:settings -->
+- Jarvis shows as the hologram by default, in the window's bottom-right corner; Settings → Jarvis & Office → Form
+  brings Sprout back to the footer. If you already picked a form, it stays.
+- A message you send in Chat flies from the box to its place: its text lifts out of where you typed it and becomes the
+  bubble, and the conversation slides up to make room instead of jumping.
+- While an agent works, Chat's Show the diff appears only once the turn has edited a file, and Open the terminal only
+  while a command has run 10 seconds or more: a turn that only reads and searches shows neither.
+
+### Fixed
+
+- With Google Sans Flex as the interface font, `->`, `=>`, `<-`, `<->` and `<=>` draw as arrows again, as they do in
+  Inter, and the arrows agents write (→ ⇒ ↑) draw in Google Sans Flex instead of the system font.
+- Esc in Chat before the agent answers no longer leaves your message standing in the conversation: it goes back into
+  the box, and its bubble goes with it, instead of staying as sent beside its own text.
+- Triple-clicking text in Chat on a Mac no longer flashes a wide highlight before it settles, and a paragraph or list
+  item that runs over several lines is highlighted as one solid block, without dark strips between its lines.
+- Chat's chip line no longer flickers. Show the diff and Open the terminal come once the agent has worked a second and
+  leave half a second after it stops, so a turn the usage limit ends at once shows nothing, and the usage limit's line
+  gets no suggested replies.
 
 ## 1.1.1 — 2026-11-13
 

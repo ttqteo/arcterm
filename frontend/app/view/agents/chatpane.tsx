@@ -19,7 +19,7 @@
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { KeyCap } from "@/app/element/keycap";
-import { layerFade, MOTION, sentRise, springPop } from "@/app/element/motiontokens";
+import { layerFade, MOTION, sentFlight, sentRise, springPop } from "@/app/element/motiontokens";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { loadEffortDetail } from "@/app/view/jarvis/effortstore";
@@ -28,7 +28,7 @@ import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ArrowDown, Highlighter } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, useIsPresent, useReducedMotion, type Variants } from "motion/react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
 import { canStop } from "./agentcomposer";
 import { getProcExitAtom } from "./agentcontrollerstore";
@@ -73,8 +73,8 @@ import {
     type PendingKind,
     type PendingMessage,
 } from "./chatpending";
-import { usePending } from "./chatpendingstore";
-import { risesFromBox } from "./chatsentrise";
+import { useFlyingPending, usePending } from "./chatpendingstore";
+import { useSentFlight, type SentEntrance } from "./chatsentflightview";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import {
     chatChips,
@@ -89,6 +89,8 @@ import {
 } from "./chatsuggest";
 import { markChunkDone, requestModelSuggest, useEffortDetail, useModelSuggest } from "./chatsuggeststore";
 import { TaggedPromptText } from "./chattagblock";
+import { withoutTakenBack } from "./chattakeback";
+import { noteTakenBack, useTakenBack } from "./chattakebackstore";
 import { ChatVisualHost } from "./chatvisualview";
 import { switchAgentChunk } from "./initiativebandstore";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
@@ -167,111 +169,155 @@ function ChatAsk({ model, agent, exited }: { model: AgentsViewModel; agent: Agen
     );
 }
 
-// Whether a pending bubble rises in from the box (sentRise), decided once as it mounts: the message just sent does, one
-// drawn again later (back to this agent, Terminal back to Chat) shows at once (chatsentrise.ts)
-function useRisesFromBox(sentAt: number): boolean {
-    const [rises] = useState(() => risesFromBox(sentAt, Date.now()));
-    return rises;
+// The row a sent bubble lands in (chatsentflightview.ts useSentFlight decides how it comes in). Flying from the box, it
+// opens its height on the spring a little ahead of the bubble, so the conversation above slides up to make room instead
+// of jumping; with no place in the box to fly from (or under reduced motion) it rises in on sentRise from `origin`; drawn
+// again later, it is just there.
+function SentRow({
+    entrance,
+    rowRef,
+    origin,
+    children,
+}: {
+    entrance: SentEntrance;
+    rowRef: RefObject<HTMLDivElement | null>;
+    origin: string;
+    children: ReactNode;
+}) {
+    if (entrance === "fly") {
+        return (
+            <motion.div
+                ref={rowRef}
+                initial={{ height: 0 }}
+                animate={{ height: "auto" }}
+                transition={{ height: MOTION.spring }}
+                className="flex flex-col"
+            >
+                {children}
+            </motion.div>
+        );
+    }
+    return (
+        <motion.div
+            ref={rowRef}
+            variants={sentRise}
+            initial={entrance === "rise" ? "initial" : false}
+            animate="animate"
+            style={{ transformOrigin: origin }}
+            className="flex flex-col"
+        >
+            {children}
+        </motion.div>
+    );
 }
 
 // a /btw, a bare panel command or a `! cmd` sent and not in the transcript yet. A /btw is its card asking (BtwCard), the
 // side answer the arc mod is asking a fork of the session for still to come. The others are the command, dimmed, as its
 // card will draw it, and under it what it waits on: the panel open on Claude Code's own screen (its row lands only once
 // it closes), or the command running (its row and output land only once it finishes, or goes to the background at
-// 120 s), with a way to the terminal
+// 120 s), with a way to the terminal. The command flies from the box as a message does, and the line under it shows as
+// it lands; a /btw's card rises in.
 function PendingCommand({
-    text,
+    pending,
     kind,
-    sentAt,
     onOpenTerminal,
 }: {
-    text: string;
+    pending: PendingMessage;
     kind: PendingKind;
-    sentAt: number;
     onOpenTerminal?: () => void;
 }) {
-    const rises = useRisesFromBox(sentAt);
+    const text = pending.text;
+    const row = useRef<HTMLDivElement>(null);
+    const fly = useRef<HTMLDivElement>(null);
+    const entrance = useSentFlight(
+        kind === "btw" ? { id: pending.id, sentAt: pending.sentAt } : pending,
+        { row, fly, text: fly },
+        0.6
+    );
     if (kind === "btw") {
         // the card the transcript's copy will draw, asking: only its body changes when the answer lands
         return (
-            <motion.div
-                data-chat-pending
-                data-chat-pending-kind={kind}
-                variants={sentRise}
-                initial={rises ? "initial" : false}
-                animate="animate"
-                style={{ transformOrigin: "bottom center" }}
-                className="flex flex-col"
-            >
-                <BtwCard question={btwQuestion(text) ?? text.trim()} btw={null} />
-            </motion.div>
+            <SentRow entrance={entrance} rowRef={row} origin="bottom center">
+                <div data-chat-pending data-chat-pending-kind={kind} className="flex flex-col">
+                    <BtwCard question={btwQuestion(text) ?? text.trim()} btw={null} />
+                </div>
+            </SentRow>
         );
     }
     return (
-        <motion.div
-            data-chat-pending
-            data-chat-pending-kind={kind}
-            variants={sentRise}
-            initial={rises ? "initial" : false}
-            animate="animate"
-            style={{ transformOrigin: "bottom right" }}
-            className="flex flex-col items-end gap-1"
-        >
-            <div className="max-w-[75%] min-w-[220px] rounded-[12px] border border-edge-mid bg-surface-raised px-[14px] py-[8px] font-mono text-[12.5px] text-primary opacity-60 [overflow-wrap:anywhere]">
-                {text.trim()}
+        <SentRow entrance={entrance} rowRef={row} origin="bottom right">
+            <div data-chat-pending data-chat-pending-kind={kind} className="flex flex-col items-end gap-1">
+                <div
+                    ref={fly}
+                    className="max-w-[75%] min-w-[220px] rounded-[12px] border border-edge-mid bg-surface-raised px-[14px] py-[8px] font-mono text-[12.5px] text-primary opacity-60 [overflow-wrap:anywhere]"
+                >
+                    {text.trim()}
+                </div>
+                <motion.div
+                    initial={entrance === "fly" ? { opacity: 0 } : false}
+                    animate={{ opacity: 1 }}
+                    transition={{
+                        duration: MOTION.durMicro,
+                        ease: MOTION.easeFluid,
+                        delay: sentFlight.duration * 0.7,
+                    }}
+                    className="flex items-center gap-2"
+                >
+                    <span className="text-[11px] text-muted">{kind === "bash" ? "Running…" : "Open in Terminal"}</span>
+                    {onOpenTerminal != null ? (
+                        <button
+                            type="button"
+                            onClick={onOpenTerminal}
+                            className="cursor-pointer text-[11px] text-secondary hover:text-primary"
+                        >
+                            Show Terminal
+                        </button>
+                    ) : null}
+                </motion.div>
             </div>
-            <div className="flex items-center gap-2">
-                <span className="text-[11px] text-muted">{kind === "bash" ? "Running…" : "Open in Terminal"}</span>
-                {onOpenTerminal != null ? (
-                    <button
-                        type="button"
-                        onClick={onOpenTerminal}
-                        className="cursor-pointer text-[11px] text-secondary hover:text-primary"
-                    >
-                        Show Terminal
-                    </button>
-                ) : null}
-            </div>
-        </motion.div>
+        </SentRow>
     );
 }
 
 // A message sent and not in the transcript yet: your bubble, drawn as the transcript will draw it and where
 // (chatconversation.tsx YouBubble's box, spacing and letter spacing; @mentions as pills, files as cards under it), so the
-// transcript's copy taking its place draws nothing new. What it waits on is PendingLine's, under the last of them. A
-// Queued one (sent while Claude works) is dimmed until Claude Code takes it: it waits for minutes, and the full-strength
-// transcript row taking its place is the news that it was read. One sent to an idle agent stays full strength, since the
-// transcript takes it in a moment and a dim bubble would only blink. It goes when the transcript holds the text
-// (pendingStill). `first` is the conversation's first message (the task a session was launched on), with no
-// conversation above it to stand clear of.
+// transcript's copy taking its place draws nothing new. It flies there from where its text sat in the box
+// (useSentFlight). What it waits on is PendingLine's, under the last of them. A Queued one (sent while Claude works) is
+// dimmed until Claude Code takes it: it waits for minutes, and the full-strength transcript row taking its place is the
+// news that it was read. One sent to an idle agent stays full strength, since the transcript takes it in a moment and a
+// dim bubble would only blink. It goes when the transcript holds the text (pendingStill), once it has landed. `first`
+// is the conversation's first message (the task a session was launched on), with no conversation above it to stand
+// clear of.
 function PendingBubble({ pending, first }: { pending: PendingMessage; first: boolean }) {
     const said = splitAttachments(pending.text);
     const body = said.text.trim();
-    const rises = useRisesFromBox(pending.sentAt);
+    const row = useRef<HTMLDivElement>(null);
+    const fly = useRef<HTMLDivElement>(null);
+    const bubble = useRef<HTMLDivElement>(null);
+    const entrance = useSentFlight(pending, { row, fly, text: bubble }, pending.queued === true ? 0.55 : undefined);
     return (
-        <motion.div
-            data-chat-pending
-            variants={sentRise}
-            initial={rises ? "initial" : false}
-            animate="animate"
-            style={{ transformOrigin: "bottom right" }}
-            // where its transcript row lands: mt-2 over the conversation's pb-2 is the conversation's gap-4 above it,
-            // and -mb-1 under the bubble's mb-1 leaves the tail's gap-3 as the row's mb-1 + pb-2 under it
-            className={cn("-mb-1 flex flex-col items-end tracking-[-0.01em]", first ? undefined : "mt-2")}
-        >
+        <SentRow entrance={entrance} rowRef={row} origin="bottom right">
             <div
-                data-chat-pending-queued={pending.queued === true ? "" : undefined}
-                className={cn("flex max-w-[75%] flex-col items-end gap-2", pending.queued === true && "opacity-55")}
+                data-chat-pending
+                // where its transcript row lands: mt-2 over the conversation's pb-2 is the conversation's gap-4 above it,
+                // and -mb-1 under the bubble's mb-1 leaves the tail's gap-3 as the row's mb-1 + pb-2 under it
+                className={cn("-mb-1 flex flex-col items-end tracking-[-0.01em]", first ? undefined : "mt-2")}
             >
-                {body !== "" || said.images.length > 0 ? (
-                    <div className={youBubbleBox(said.files.length > 0)}>
-                        {body !== "" ? <TaggedPromptText text={body} /> : null}
-                        {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
-                    </div>
-                ) : null}
-                {said.files.length > 0 ? <ChatFileCards paths={said.files} /> : null}
+                <div
+                    ref={fly}
+                    data-chat-pending-queued={pending.queued === true ? "" : undefined}
+                    className={cn("flex max-w-[75%] flex-col items-end gap-2", pending.queued === true && "opacity-55")}
+                >
+                    {body !== "" || said.images.length > 0 ? (
+                        <div ref={bubble} className={youBubbleBox(said.files.length > 0)}>
+                            {body !== "" ? <TaggedPromptText text={body} /> : null}
+                            {said.images.length > 0 ? <PromptImages paths={said.images} /> : null}
+                        </div>
+                    ) : null}
+                    {said.files.length > 0 ? <ChatFileCards paths={said.files} /> : null}
+                </div>
             </div>
-        </motion.div>
+        </SentRow>
     );
 }
 
@@ -430,9 +476,12 @@ export function ChatLayer({ model, agent, barred }: { model: AgentsViewModel; ag
 // the dock's place in the pane, and the room kept between the last line and the box (px)
 const DOCK_BOTTOM = 20;
 const DOCK_MARGIN = 16;
+// the chip line floating above the dock (a 28px chip and its 8px gap), kept clear under the last line whether it shows or
+// not, so the line coming and going never moves the conversation
+const CHIP_LINE = 36;
 
-// The scroller's bottom padding = the dock's height (the box, and the goal strip above it) + its 20px from the bottom + a
-// 16px margin, so the last line scrolls to rest above the box whatever its height. It is written to the element, not kept
+// The scroller's bottom padding = the dock's height (the box, and the goal strip above it) + its 20px from the bottom + the
+// chip line's room + a 16px margin, so the last line scrolls to rest above the box and its chips whatever its height. It is written to the element, not kept
 // in state: the box's height spring is a new height every frame, and a re-render of the pane per frame would redraw the
 // conversation. The padding takes height from the scroller's content box, which useStickToBottom's observer sees and
 // re-pins a stuck tail on, so the tail rides the box as it grows; a reader scrolled up is left where they are. The
@@ -448,7 +497,7 @@ function useDockPadding(scrollRef: RefObject<HTMLDivElement | null>, dockRef: Re
             // a cell that is not on screen has no size: keep the padding it had, the observer writes the real one when
             // the cell is shown again
             if (dock.offsetHeight > 0) {
-                scroller.style.paddingBottom = `${dock.offsetHeight + DOCK_BOTTOM + DOCK_MARGIN}px`;
+                scroller.style.paddingBottom = `${dock.offsetHeight + DOCK_BOTTOM + CHIP_LINE + DOCK_MARGIN}px`;
             }
         };
         apply();
@@ -493,7 +542,19 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const path = agent.transcriptPath ?? "";
     const surface = useAtomValue(model.surfaceAtom);
     const { view, error, loadEarlier, requestAppend } = useTranscriptWindow(path, agent.agent);
-    const entries = view?.entries ?? NO_ENTRIES;
+    // less a message Esc took back after Claude Code wrote it (chattakeback.ts withoutTakenBack): its rewind keeps the
+    // record until the next prompt branches off before it
+    const taken = useTakenBack(agent.id);
+    const shown = useMemo(
+        () => withoutTakenBack(view?.entries ?? NO_ENTRIES, taken, Date.now()),
+        [view?.entries, taken]
+    );
+    const entries = shown.entries;
+    useEffect(() => {
+        if (shown.next != null) {
+            noteTakenBack(agent.id, shown.next);
+        }
+    }, [shown.next]);
     // where the reader left the conversation, kept while the cell shows the terminal or another agent
     const placeId = `chat:${agent.id}:${path}`;
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries, placeId);
@@ -563,6 +624,9 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
         asleep ? "asleep" : agent.blockId != null && canStop(agent.state, agent.sleeping) ? "running" : "idle"
     );
     const dockRef = useRef<HTMLDivElement>(null);
+    // the slot above the dock the box draws its chip line into, and whether the line shows (the jump pill rises over it)
+    const [chipSlot, setChipSlot] = useState<HTMLDivElement | null>(null);
+    const [chipLineShown, setChipLineShown] = useState(false);
     useDockPadding(scrollRef, dockRef);
     // false while ChatLayer's exit plays: the pane is still drawn (fading) but already gone as far as input goes
     const present = useIsPresent();
@@ -624,7 +688,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const sent = usePending(agent.id);
     const [now, setNow] = useState(() => Date.now());
     const idleSince = useIdleSince(agent.state === "idle");
-    const pending = pendingStill(sent, entries, now, idleSince);
+    const flying = useFlyingPending();
+    const pending = pendingStill(sent, entries, now, idleSince, flying);
     const showsPending = pending.length > 0;
     // the live reply, which ChatConversation reads itself so its ticks redraw only the conversation: held back while the
     // message that started its turn has not landed (its bubble is drawn under the conversation, and the reply belongs
@@ -796,6 +861,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
             <div className="relative min-h-0 flex-1">
                 <div
                     ref={scrollRef}
+                    data-chat-scroller
                     onScroll={onScroll}
                     // the bottom padding is the dock's (useDockPadding)
                     className="flex h-full flex-col overflow-y-auto px-[22px]"
@@ -843,9 +909,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                 p.kind != null ? (
                                     <PendingCommand
                                         key={p.id}
-                                        text={p.text}
+                                        pending={p}
                                         kind={p.kind}
-                                        sentAt={p.sentAt}
                                         onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
                                     />
                                 ) : (
@@ -917,10 +982,22 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     `[data-sleeping-composer] [data-chat-input]`. */}
                 <div ref={dockRef} data-chat-dock className="pointer-events-none absolute inset-x-6 bottom-5 z-10">
                     <div className="pointer-events-auto relative mx-auto w-full max-w-[720px]">
+                        {/* the box's chip line (chatcomposer.tsx), floated just above the dock so it never changes the box's
+                            height; it takes the pointer only on its chips */}
+                        <div
+                            ref={setChipSlot}
+                            data-chat-chip-slot
+                            className="pointer-events-none absolute bottom-full left-0 right-0 mb-2 flex px-1"
+                        />
                         {/* Chat's own jump-to-latest: a ↓ pill naming its key, centred just above the box while the reader is scrolled
                             up; it pops in and out on the spring (the wrapper carries the centring, so the pop's scale is the
                             button's alone) */}
-                        <div className="absolute bottom-full left-1/2 z-10 mb-4 -translate-x-1/2">
+                        <div
+                            className={cn(
+                                "absolute bottom-full left-1/2 z-10 -translate-x-1/2 transition-[margin] duration-[140ms] motion-reduce:transition-none",
+                                chipLineShown ? "mb-[48px]" : "mb-4"
+                            )}
+                        >
                             <AnimatePresence initial={false}>
                                 {!atBottom ? (
                                     <motion.button
@@ -961,6 +1038,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                             entries={entries}
                             onSent={onBoxSent}
                             onBoxState={setBoxNow}
+                            chipSlot={chipSlot}
+                            onChipLine={setChipLineShown}
                             onShowDiff={() => openDiff(model, agentDiffScope(agent.id, agent.name))}
                             chips={chips}
                             onMarkDone={markDone}

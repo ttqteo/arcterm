@@ -53,6 +53,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { createPortal } from "react-dom";
 import { canStop, useAgentSend } from "./agentcomposer";
 import type { AgentsViewModel } from "./agents";
 import { sleepingLine, wakeAgent, wakeErrorToast } from "./agentsleep";
@@ -99,9 +100,17 @@ import {
     useHeldSend,
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
-import type { ChatChip, ChipKind } from "./chatsuggest";
-import { mergeTaken, takeBackPlan } from "./chattakeback";
-import { takeBack } from "./chattakebackstore";
+import type { SentFrom } from "./chatsentflight";
+import {
+    rowHold,
+    runningActions,
+    type ChatChip,
+    type ChipKind,
+    type ChipRowKind,
+    type RunningActions,
+} from "./chatsuggest";
+import { mergeTaken, takeBackPlan, takenBackOf } from "./chattakeback";
+import { noteTakenBack, takeBack } from "./chattakebackstore";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { fallAsleepLabel } from "./fallasleepstore";
 import { useFileMention } from "./filemention";
@@ -112,6 +121,33 @@ import { permissionCardKey, usePermission } from "./permissionstore";
 import { projectsAtom } from "./projectsstore";
 import { opensTui } from "./slashcommands";
 import { useSlashMenu } from "./slashmenu";
+
+// Where the message's text sits in the box, read as it sends, for its bubble to fly from (chatsentflight.ts): the left
+// edge of its first line (a bash command's `!` marker, which its bubble starts with too) and that line's centre, kept
+// inside the editor's view when a long message has scrolled its first line out of it. None when the box is not on screen.
+function sentFromBox(box: HTMLElement | null): SentFrom | undefined {
+    const input = box?.querySelector<HTMLElement>("[data-chat-input]");
+    if (input == null) {
+        return undefined;
+    }
+    const view = input.getBoundingClientRect();
+    if (view.width === 0 || view.height === 0) {
+        return undefined;
+    }
+    const style = getComputedStyle(input);
+    const read = parseFloat(style.fontSize);
+    const fontSize = Number.isFinite(read) ? read : 14;
+    const readLine = parseFloat(style.lineHeight);
+    const lineHeight = Number.isFinite(readLine) ? readLine : fontSize * 1.9;
+    const line = (input.firstElementChild ?? input).getBoundingClientRect();
+    const bang = box?.querySelector<HTMLElement>("[data-chat-bang]")?.getBoundingClientRect();
+    const top = Math.max(view.top, Math.min(line.top, view.bottom - lineHeight));
+    return {
+        x: bang != null && bang.width > 0 ? bang.left : line.left,
+        y: top + lineHeight / 2,
+        fontSize,
+    };
+}
 
 // two lines, as the board's box; grows as the text wraps, then scrolls
 const ChatMinH = 38;
@@ -128,6 +164,7 @@ const dragNamesPaths = (dt: DataTransfer | null) => {
 
 const NO_BLOCK: Atom<Block | undefined> = atom(undefined as Block | undefined);
 const NO_CHIPS: ChatChip[] = [];
+const NO_ACTS: RunningActions = { diff: false, terminal: false, terminalAt: null };
 
 let picking = false; // the native dialog takes a moment to appear; a second click must not open another
 
@@ -212,6 +249,8 @@ function ComposerBox({
     entries,
     onSent,
     onBoxState,
+    chipSlot,
+    onChipLine,
     onShowDiff,
     chips,
     onMarkDone,
@@ -233,6 +272,11 @@ function ComposerBox({
     /** the box's state (chatboxstate.ts) whenever it changes, and once as the box mounts: the pane words the empty box's
      *  placeholder from it */
     onBoxState?: (state: BoxState) => void;
+    /** where the chip line is drawn: a slot the pane floats above the dock, so the line coming and going never changes
+     *  the box's height (nor moves the conversation). Left out, the line sits in the box above its bottom row. */
+    chipSlot?: HTMLElement | null;
+    /** whether the chip line shows, whenever that changes: the pane lifts its jump-to-latest pill over it */
+    onChipLine?: (shown: boolean) => void;
     /** the running agent's "Show the diff" chip; left out, the chip is not drawn */
     onShowDiff?: () => void;
     /** the replies suggested once the turn ended (chatsuggest.ts chatChips), drawn as chips while the box is empty; a
@@ -515,6 +559,8 @@ function ComposerBox({
             return;
         }
         const sent = message;
+        // read before the send empties the box: where the text is, for its bubble to fly from
+        const from = sentFromBox(boxRef.current);
         const riding = att.attachments.map((a) => a.id);
         // What became of the cards the person handled (chatinitiativestore.ts) goes in front of their next plain message
         // only: a /command or /btw (a line before one breaks it), a `!` command, a wake send, and an answer typed while a
@@ -561,7 +607,7 @@ function ComposerBox({
                 // them lands until the side answer comes, the panel closes or the command finishes (chatpending.ts
                 // pendingKind)
                 if (entries != null && pendsAsBubble(sent)) {
-                    addPending(agent.id, sent, entries, agent.state !== "idle");
+                    addPending(agent.id, sent, entries, agent.state !== "idle", from);
                 }
                 flipIfTui(sent);
                 for (const a of att.attachments) {
@@ -685,8 +731,21 @@ function ComposerBox({
         if (plan == null) {
             return false;
         }
+        // an Esc's message may be in the transcript already: the record is kept as the text comes back, in the same tick,
+        // so its bubble goes as the text lands in the box (chattakeback.ts withoutTakenBack)
+        const held = entries ?? [];
         fireAndForget(async () => {
             await takeBack(agent.id, blockid, plan, (texts) => {
+                if (plan.kind === "interrupt") {
+                    noteTakenBack(agent.id, takenBackOf(plan, held, Date.now()));
+                    // a message that had landed still has its sent record: with the record hidden it would read as not
+                    // arrived and draw its pending bubble again (a pending one went with plan.ids)
+                    if (plan.ids.length === 0) {
+                        for (const t of texts) {
+                            dropPending(agent.id, t);
+                        }
+                    }
+                }
                 latest.current.setText(mergeTaken(texts, latest.current.text), texts.join("\n").length);
             });
         });
@@ -800,6 +859,48 @@ function ComposerBox({
         chips != null && !asleep && !waking && !dozing && text === "" && att.attachments.length === 0
             ? chips
             : NO_CHIPS;
+    // the running agent's actions that have something to show (chatsuggest.ts runningActions): the diff once the turn
+    // edited a file, the terminal once a command has run a while; read again when a running command gets there
+    const acts = showStop ? runningActions(entries ?? [], Date.now()) : NO_ACTS;
+    const [, tick] = useState(0);
+    useEffect(() => {
+        if (acts.terminalAt == null) {
+            return;
+        }
+        const t = setTimeout(() => tick((n) => n + 1), Math.max(0, acts.terminalAt - Date.now()) + 50);
+        return () => clearTimeout(t);
+    }, [acts.terminalAt]);
+    // the chip line: those actions while the agent works, else the replies; a change to or from the actions shows once
+    // the agent's state has held it (chatsuggest.ts rowHold), so a state that flips and comes back leaves the line alone
+    const row = useChipRow({
+        kind: showStop && (acts.diff || acts.terminal) ? "actions" : suggested.length > 0 ? "suggest" : "none",
+        chips: suggested,
+        diff: acts.diff,
+        terminal: acts.terminal,
+    });
+    const chipLine = (
+        <AnimatePresence initial={false} mode="wait">
+            {row.kind === "actions" ? (
+                <ActionChips
+                    key="actions"
+                    onShowDiff={row.diff ? onShowDiff : undefined}
+                    onOpenTerminal={row.terminal ? showTerminal : undefined}
+                />
+            ) : row.kind === "suggest" ? (
+                <SuggestChips
+                    key="suggest"
+                    chips={row.chips}
+                    onSend={sendSuggested}
+                    onMarkDone={onMarkDone}
+                    onGoOn={onGoOn}
+                />
+            ) : null}
+        </AnimatePresence>
+    );
+    const chipShown = row.kind !== "none";
+    useLayoutEffect(() => {
+        onChipLine?.(chipShown);
+    }, [chipShown]);
     // Send is a word asleep and while the wake is in flight. The word stays what it last was while it fades out, so a
     // finished wake does not swap "Waking…" for "Send" under the eye.
     const showWord = asleep || waking;
@@ -1083,22 +1184,15 @@ function ComposerBox({
                 {bashList.list}
                 {mention.list}
                 {/* A line of chips under the text (chatsuggest.ts): while the agent works, the two things Chat can show of
-                    it (the diff of what it is changing, its terminal); once its turn ends, the replies the person would
+                    it once they hold something (the diff of what it changed, the terminal of a command running a while);
+                    once its turn ends, the replies the person would
                     likely send next, in their words, which a click sends. Those step aside while the person writes. One
-                    line goes before the next comes, so the box never holds both. */}
-                <AnimatePresence initial={false} mode="wait">
-                    {showStop ? (
-                        <ActionChips key="actions" onShowDiff={onShowDiff} onOpenTerminal={showTerminal} />
-                    ) : suggested.length > 0 ? (
-                        <SuggestChips
-                            key="suggest"
-                            chips={suggested}
-                            onSend={sendSuggested}
-                            onMarkDone={onMarkDone}
-                            onGoOn={onGoOn}
-                        />
-                    ) : null}
-                </AnimatePresence>
+                    line goes before the next comes, so the box never holds both, and the actions come and go only once
+                    the agent's state has held (useChipRow). */}
+                {chipSlot == null ? chipLine : null}
+                {chipSlot != null
+                    ? createPortal(<div className="pointer-events-auto">{chipLine}</div>, chipSlot)
+                    : null}
                 {/* one row through a sleep and a wake: its parts fold and crossfade in place (reduced motion snaps them) */}
                 <MotionConfig reducedMotion="user">
                     <div className="flex items-center gap-1.5">
@@ -1232,26 +1326,60 @@ function ComposerBox({
     );
 }
 
-// The running agent's actions: what Chat already offers (no new commands), as chips with their names. They fade in on
-// the micro ease; the box's own height spring makes room for them.
-function ActionChips({ onShowDiff, onOpenTerminal }: { onShowDiff?: () => void; onOpenTerminal: () => void }) {
+// The chip line as shown: the one the agent's state asks for, once it has held as long as rowHold says (chatsuggest.ts).
+// While a change waits, the line shown stays with its chips as they last were: the replies kept while a turn starts are
+// still the finished turn's, and a click on one sends it as before.
+function useChipRow<T extends { kind: ChipRowKind }>(target: T): T {
+    const shown = useRef(target);
+    const latest = useRef(target);
+    latest.current = target;
+    const [, redraw] = useState(0);
+    const hold = rowHold(shown.current.kind, target.kind);
+    if (hold === 0) {
+        shown.current = target;
+    }
+    const shownKind = shown.current.kind;
+    useEffect(() => {
+        if (hold === 0) {
+            return;
+        }
+        const t = setTimeout(() => {
+            shown.current = latest.current;
+            redraw((n) => n + 1);
+        }, hold);
+        return () => clearTimeout(t);
+    }, [shownKind, target.kind, hold]);
+    return shown.current;
+}
+
+// The running agent's actions: what Chat already offers (no new commands), as chips with their names, each drawn only
+// when given (it has something to show). They fade in on the micro ease; the box's own height spring makes room for them.
+function ActionChips({ onShowDiff, onOpenTerminal }: { onShowDiff?: () => void; onOpenTerminal?: () => void }) {
     const part = usePartMotion(microFade);
     return (
         <motion.div {...part} className="flex flex-wrap items-center gap-1.5">
-            {onShowDiff != null ? (
-                <Chip
-                    icon={FileDiff}
-                    label="Show the diff"
-                    onClick={onShowDiff}
-                    data={{ "data-chat-action-chip": "" }}
-                />
-            ) : null}
-            <Chip
-                icon={Terminal}
-                label="Open the terminal"
-                onClick={onOpenTerminal}
-                data={{ "data-chat-action-chip": "" }}
-            />
+            <AnimatePresence initial={false}>
+                {onShowDiff != null ? (
+                    <motion.div key="diff" {...part}>
+                        <Chip
+                            icon={FileDiff}
+                            label="Show the diff"
+                            onClick={onShowDiff}
+                            data={{ "data-chat-action-chip": "diff" }}
+                        />
+                    </motion.div>
+                ) : null}
+                {onOpenTerminal != null ? (
+                    <motion.div key="terminal" {...part}>
+                        <Chip
+                            icon={Terminal}
+                            label="Open the terminal"
+                            onClick={onOpenTerminal}
+                            data={{ "data-chat-action-chip": "terminal" }}
+                        />
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
         </motion.div>
     );
 }

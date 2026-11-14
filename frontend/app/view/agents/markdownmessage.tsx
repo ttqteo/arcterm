@@ -8,7 +8,7 @@ import remarkMark from "@/app/element/remark-mark";
 import { openLink } from "@/app/store/global";
 import { cn } from "@/util/util";
 import { Lightbulb } from "lucide-react";
-import { Fragment, memo, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useRef, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { PluggableList } from "unified";
@@ -24,6 +24,7 @@ import { splitInsightBlocks } from "./insightblocks";
 import { PathLink } from "./pathlinkcontext";
 import { inlinePathOf } from "./pathlinks";
 import remarkFileMention from "./remarkfilemention";
+import { paintSelectionIn } from "./selectionpaint";
 import { trimTripleClick } from "./selectiontrim";
 
 // Lightweight inline markdown for narration lines. Deliberately NOT the full element/markdown.tsx
@@ -201,8 +202,23 @@ export const MarkdownMessage = memo(function MarkdownMessage({
     mentions,
 }: { text: string; className?: string } & MarkdownExtras) {
     const segments = splitInsightBlocks(text);
+    // the selection is drawn over the text by selectionpaint.ts, not by the engine (WebKit fills the margins)
+    const rootRef = useRef<HTMLDivElement>(null);
+    const layerRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (rootRef.current == null || layerRef.current == null) {
+            return;
+        }
+        return paintSelectionIn(rootRef.current, layerRef.current);
+    }, []);
     return (
-        <div className={cn("agent-md", className)} onMouseUp={trimTripleClick}>
+        <div ref={rootRef} className={cn("agent-md relative", className)} onMouseUp={trimTripleClick}>
+            <div
+                ref={layerRef}
+                aria-hidden
+                data-md-selection-layer
+                className="pointer-events-none absolute inset-0 z-[1]"
+            />
             {segments.map((seg, i) =>
                 seg.kind === "insight" ? (
                     <InsightCallout key={i} text={seg.text} extras={{ marks, diagrams, mentions }} />

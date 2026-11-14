@@ -112,10 +112,12 @@ function loadFiraCodeFont() {
 // Google Sans Flex (SIL OFL 1.1, Antigravity's default UI face) as Google Fonts serves it: the weight axis only,
 // cut into three files by script. Each FontFace carries its file's unicode-range, so a page fetches only the
 // subsets its text uses; the Vietnamese file holds the precomposed letters and the marks they combine with.
+// The face has no arrows of its own: scripts/gen-gsf-arrows.py added them to the latin file (← ↑ → ↓ ↔ ⇐ ⇒ ⇔, and
+// -> => <- <-> <=> drawn as arrows in calt, as Inter does), so its range names those characters too.
 const GOOGLE_SANS_FLEX_SUBSETS: { file: string; range: string }[] = [
     {
         file: "google-sans-flex-latin.woff2",
-        range: "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+        range: "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2190-2194, U+21D0, U+21D2, U+21D4, U+2212, U+2215, U+FEFF, U+FFFD",
     },
     {
         file: "google-sans-flex-latin-ext.woff2",

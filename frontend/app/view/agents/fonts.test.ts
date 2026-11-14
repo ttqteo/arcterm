@@ -34,9 +34,10 @@ describe("font catalog", () => {
 });
 
 describe("defaults", () => {
-    // the bundled Hanken Grotesk, Hack and Fira Code have no Vietnamese; Inter and the variable JetBrains Mono do
+    // the bundled Hanken Grotesk, Hack and Fira Code have no Vietnamese; Google Sans Flex (its vietnamese file) and the
+    // variable JetBrains Mono do
     it("default faces are the Vietnamese-capable ones", () => {
-        expect(DEFAULT_SANS).toBe("inter");
+        expect(DEFAULT_SANS).toBe("googlesans");
         expect(DEFAULT_MONO).toBe("jetbrains");
         expect(DEFAULT_TERM_FONT).toBe("jetbrains");
     });

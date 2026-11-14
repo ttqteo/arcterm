@@ -1064,6 +1064,17 @@ describe("projectTranscript SubagentHandback", () => {
         ];
         expect(projectTranscript(lines)).toEqual([{ kind: "message", text: "Found it." }]);
     });
+
+    it("marks Claude Code's line for an API error that ended the turn", () => {
+        const limit = JSON.stringify({
+            type: "assistant",
+            isApiErrorMessage: true,
+            message: { content: [{ type: "text", text: "You've hit your 5-hour limit · resets 12:20am" }] },
+        });
+        expect(projectTranscript([limit])).toEqual([
+            { kind: "message", text: "You've hit your 5-hour limit · resets 12:20am", apiError: true },
+        ]);
+    });
 });
 
 describe("extractBackgroundTasks", () => {
