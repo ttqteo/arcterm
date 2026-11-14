@@ -96,6 +96,53 @@ func (CouncilTrees) Remove(ctx context.Context, project, dir string) error {
 	return removeCouncilTree(ctx, top, wt)
 }
 
+// SweepCouncilTrees removes the verify trees councils left behind. A tree lives only while its council runs the
+// commands its experts asked for (RunVerifiesBy removes it when they end), so one still there when wavesrv starts is a
+// crash's: wavesrv was killed mid-verify. Call it once at startup, after MarkStale and before any council starts. It
+// looks only at the councils this app's store holds, since the dev app and the packaged one share the tree root, each
+// with its own councils, and it leaves a council marked running alone. A council already deleted is not seen, so its
+// tree stays for Storage to list.
+func SweepCouncilTrees(ctx context.Context) {
+	all, err := council.List("")
+	if err != nil {
+		log.Printf("[council] sweeping verify trees: %v", err)
+		return
+	}
+	root := worktreeRoot()
+	tops := map[string]string{}
+	for _, c := range all {
+		if c.Project == "" || c.State == council.StateRunning {
+			continue
+		}
+		key := councilTreePrefix + c.Id
+		// the cheap look first: no git call for a council that left no tree, which is nearly all of them
+		places := []string{legacyWorktreeDir(c.Project, key)}
+		if root != "" {
+			places = append(places, filepath.Join(root, key))
+		}
+		if !slices.ContainsFunc(places, func(dir string) bool { _, err := os.Lstat(dir); return err == nil }) {
+			continue
+		}
+		top, seen := tops[c.Project]
+		if !seen {
+			top, _, _ = repoTop(ctx, c.Project) // "" for a project that is not a repo
+			tops[c.Project] = top
+		}
+		if top == "" {
+			continue
+		}
+		wt := worktreeDir(top, key)
+		if _, err := os.Lstat(wt); err != nil {
+			continue
+		}
+		if err := (CouncilTrees{}).Remove(ctx, top, wt); err != nil {
+			log.Printf("[council] %s: removing the verify tree %s a crash left: %v", c.Id, wt, err)
+			continue
+		}
+		log.Printf("[council] %s: removed the verify tree %s a crash left", c.Id, wt)
+	}
+}
+
 // repoTop is project's repo root and project's folder within it ("" at the root, else "sub/dir/", forward slashes).
 func repoTop(ctx context.Context, project string) (top, prefix string, err error) {
 	out, err := git(ctx, project, "rev-parse", "--show-toplevel", "--show-prefix")

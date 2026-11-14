@@ -1562,7 +1562,8 @@ func round2Target(c *Council, e CouncilExpert, scope round2Scope) *CouncilActivi
 // (wholePass), or the part an early pass or its catch-up covers. A live agent is sent its own prompt, and what it answers
 // that holds no JSON is heard as one plain reply. After the first pass a seat with nothing new to answer sits the pass
 // out. The call has no tools, except a seat owed a reply of the person's that asked for them (it attaches files or names
-// one): that call has the tools and the folders of the attached images (readsOf).
+// one), or, after round 2, shown such a reply in a thread (round2Carried): that call has the tools and the folders of the
+// attached images (readsOf).
 func (r *Runner) round2(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert, round int, scope round2Scope) {
 	view := withOpenAsks(snap, e)
 	target := round2Target(view, e, scope)
@@ -1576,9 +1577,9 @@ func (r *Runner) round2(ctx context.Context, rn *run, id string, snap *Council, 
 	if IsAgent(e) {
 		prompt = agentPrompt(view, e, round)
 	}
-	owed := unansweredFor(view, e.Id)
-	tools, dirs := readsOf(owed)
-	res, err := r.call(ctx, rn, id, e, view, prompt, tools, webOf(owed), dirs, *target)
+	carried := round2Carried(view, e, round, scope)
+	tools, dirs := readsOf(carried)
+	res, err := r.call(ctx, rn, id, e, view, prompt, tools, webOf(carried), dirs, *target)
 	var (
 		out   Round2Result
 		plain string
@@ -2888,8 +2889,8 @@ func (r *Runner) Continue(id string, cut []string, question string) (*Council, e
 				p.Cut = true
 			}
 			if question != "" {
-				c.Replies = append(c.Replies, CouncilReply{
-					Id: nextReplyId(c), Author: YouId, Text: question, To: idsOf(panelOf(c)), Round: c.Round, Ts: r.now(),
+				c.Replies = append(c.Replies, CouncilReply{ // an @file or a link in it turns the seats' tools on, as in a reply
+					Id: nextReplyId(c), Author: YouId, Text: question, To: idsOf(panelOf(c)), Tools: locksTools(question), Round: c.Round, Ts: r.now(),
 				})
 			}
 			c.State, c.Round, c.Error = StateRunning, from, ""

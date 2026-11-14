@@ -892,6 +892,24 @@ export const councilTree = {
             })
         );
 
+        // 11j. a council started in a folder that is no registered project (`wsh council start` in a scratch folder) is
+        // listed in Home's folder, where the tree files what names no project, instead of in no folder at all
+        const scratchId = `${COUNCIL_ID_PREFIX}scratch`;
+        await seedCouncil(h, ctx, "done", { id: scratchId, edit: (c) => (c.project = "C:\\arc-council-scratch-folder") });
+        const scratchDrawn = await until(present(`[data-council-row="${scratchId}"]`), ROWS_WAIT_MS);
+        const homeRows = folderRows(await h.ev(TREE_ROWS), "~home");
+        const inHome = (homeRows ?? []).some((r) => r.kind === "council" && r.id === scratchId);
+        await h.shot("cdp-shots/council-tree-home.png");
+        // Close takes it off again, so the steps after read the tree as before
+        await hoverUntil(h, `[data-council-row="${scratchId}"] [data-council-feature]`, actShown(scratchId, "close"));
+        await h.ev(`${actOf(scratchId, "close")}?.click()`);
+        const scratchClosed = await until(`!${present(`[data-council-row="${scratchId}"]`)}`);
+        rec(
+            "11j. a council of a folder that is no registered project is listed in Home's folder",
+            scratchDrawn && inHome && scratchClosed,
+            JSON.stringify({ scratchDrawn, homeFolder: homeRows != null, inHome, scratchClosed })
+        );
+
         // ---- the room's agents (steps 12 on) ----
         // The roster write reloads the page onto the Jarvis surface, so go back to Agent. The councils so far seat no agent.
         ctx.roster = await writeRoomRoster(h);

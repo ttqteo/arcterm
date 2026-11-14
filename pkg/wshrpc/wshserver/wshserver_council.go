@@ -76,12 +76,14 @@ func publishCouncilChanged(c *council.Council) {
 }
 
 // StartCouncilRunner is called once at startup: a council left running when wavesrv last quit has no run behind it, so
-// it is marked stopped. A council with a live run is left alone. A council that was queued when wavesrv quit stays
+// it is marked stopped. A council with a live run is left alone. A verify tree a council left when wavesrv was killed
+// mid-verify is removed, before any council can start one again. A council that was queued when wavesrv quit stays
 // queued, and the oldest one starts now. Then the councils folder is watched, so a council synced in from another
 // machine, or a file changed or removed by hand, shows in the cockpit without waiting for an unrelated change, and each
 // project's instruction file gets what its councils settled (startCouncilDocs).
 func StartCouncilRunner() {
 	councilRunner.MarkStale()
+	orchestrate.SweepCouncilTrees(context.Background())
 	stopQueuedBenchCouncils()
 	councilRunner.StartNext()
 	startCouncilWatch()

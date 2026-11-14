@@ -1986,6 +1986,40 @@ func TestContinueQuestionNotRouted(t *testing.T) {
 	}
 }
 
+// A Continue question that names a file with an @ is stored with tools on, as a reply would be, so round 2 can open it.
+func TestContinueQuestionNamingAFileTurnsToolsOn(t *testing.T) {
+	for _, tc := range []struct {
+		question  string
+		wantTools bool
+	}{
+		{"Check it against @docs/plan.md", true},
+		{"What about Mac?", false},
+	} {
+		t.Run(tc.question, func(t *testing.T) {
+			h := newHarness(t)
+			c := testCouncil("c1")
+			c.PauseAfterRound1 = true
+			h.run(c)
+			if _, err := h.r.Continue("c1", nil, tc.question); err != nil {
+				t.Fatalf("Continue: %v", err)
+			}
+			got := h.wait("c1")
+			if ask := repliesBy(got, YouId)[0]; ask.Tools != tc.wantTools {
+				t.Errorf("the stored question has Tools %v, want %v", ask.Tools, tc.wantTools)
+			}
+			r2 := h.f.calls("r2")
+			if len(r2) == 0 {
+				t.Fatal("no round 2 calls")
+			}
+			for _, req := range r2 {
+				if req.Tools != tc.wantTools {
+					t.Errorf("%s's round 2 call has tools %v, want %v", req.Expert.Id, req.Tools, tc.wantTools)
+				}
+			}
+		})
+	}
+}
+
 // @all (or @everyone, in any case) asks every seat on purpose: no router, the first seat answers, and the rest answer
 // after it, shown its answer.
 func TestAtAllReachesEverySeat(t *testing.T) {
