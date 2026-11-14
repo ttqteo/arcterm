@@ -73,6 +73,26 @@ func leadTranscript(session string) (string, error) {
 	return found[0], nil
 }
 
+// removeTranscripts removes the project folder Claude Code kept a cell's session in: the lead's transcript and its
+// teammates' (they sit under it, in <session>/subagents). The cell ran in a folder of its own, so the project folder is
+// the cell's alone. It is found as the count finds the transcript, from the session; a session with no transcript leaves
+// nothing to remove. A folder that is not directly under the projects folder is never removed.
+func removeTranscripts(session string) error {
+	lead, err := leadTranscript(session)
+	if err != nil {
+		return nil // nothing was written (and the count has said if the projects folder could not be found)
+	}
+	projects, err := claudeProjectsDir()
+	if err != nil {
+		return err
+	}
+	folder := filepath.Dir(lead)
+	if filepath.Dir(folder) != projects {
+		return fmt.Errorf("%s is not directly under %s, so it was left alone", folder, projects)
+	}
+	return os.RemoveAll(folder)
+}
+
 // transcriptLine is the part of a transcript line this file reads. The message stays raw until the line is known to be an
 // assistant's: a user line's content can be a megabyte of tool output.
 type transcriptLine struct {
