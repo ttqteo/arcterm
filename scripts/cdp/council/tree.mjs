@@ -182,6 +182,40 @@ async function hoverUntil(h, selector, shown, tries = 5, ms = 1500) {
     return false;
 }
 
+// every agent and council row of the Active tree that is on screen, with its box, as the page draws it this instant
+const ROW_RECTS = `(() => [...document.querySelectorAll("[data-agent-active-rows] :is([data-agent-row], [data-council-row])")].flatMap((el) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0
+        ? [{ id: el.dataset.councilRow ?? el.dataset.agentRow, top: r.top, bottom: r.bottom }]
+        : [];
+}))()`;
+
+// The tree has settled once two reads of every row's box, 100 ms apart, are equal. The rows are layout-animated, so a
+// council just pinned slides to its folder's top across the rows above it: a shot or a measure taken mid-slide sees them
+// cross. False when it is still moving after `ms`.
+async function treeSettled(h, ms = 2_000) {
+    let last = JSON.stringify(await h.ev(ROW_RECTS));
+    for (const end = Date.now() + ms; Date.now() < end; ) {
+        await sleep(100);
+        const now = JSON.stringify(await h.ev(ROW_RECTS));
+        if (now === last) return true;
+        last = now;
+    }
+    return false;
+}
+
+// the pairs of rows (as `idA|idB`, with the pixels they share) whose vertical ranges overlap by more than 1 px
+function overlappingRows(rects) {
+    const pairs = [];
+    for (let i = 0; i < rects.length; i++) {
+        for (let j = i + 1; j < rects.length; j++) {
+            const shared = Math.min(rects[i].bottom, rects[j].bottom) - Math.max(rects[i].top, rects[j].top);
+            if (shared > 1) pairs.push(`${rects[i].id}|${rects[j].id}:${Math.round(shared)}px`);
+        }
+    }
+    return pairs;
+}
+
 async function pressEscape(h) {
     for (const type of ["keyDown", "keyUp"]) {
         await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
@@ -529,6 +563,21 @@ export const councilTree = {
         // what wavesrv saves for that pin
         writeCouncil(ctx, "done", { edit: (c) => (c.pinned = Date.now()) });
         await announceCouncil(h, ctx, doneId);
+        // the pinned council climbs to its folder's top: wait for it to be there, then for the slide to end, before the rows
+        // are measured and the shot below is taken (the first read of a tree that has not started to move would pass for settled)
+        const atTop = await until(`(() => {
+            const first = document.querySelector("[data-agent-active-rows] [data-council-row]");
+            return first?.dataset.councilRow === ${JSON.stringify(doneId)};
+        })()`);
+        const settled = atTop && (await treeSettled(h));
+        const rects = await h.ev(ROW_RECTS);
+        const crossed = overlappingRows(rects);
+        rec(
+            "11a. once the pinned council has slid to its folder's top and the tree has settled, no two rows overlap by more than a pixel",
+            // the councils are measured, or no pair would overlap either
+            atTop && settled && rects.length >= SEEDED.length && crossed.length === 0,
+            JSON.stringify({ atTop, settled, measured: rects.length, crossed })
+        );
         const markedPinned = await until(`document.querySelector(${JSON.stringify(menuButton)})?.dataset.pinned === "true"`);
         await h.ev(click(menuButton));
         const pinnedShown = markedPinned && (await until(`${pinIn}?.dataset.councilPin === "pinned" && ${pinText} === "Unpin"`));

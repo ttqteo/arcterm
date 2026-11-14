@@ -30,7 +30,6 @@ const (
 	OType_Block          = "block"
 	OType_MainServer     = "mainserver"
 	OType_Temp           = "temp"
-	OType_RadarReport    = "radarreport"
 	OType_Run            = "run"
 	OType_ChannelMessage = "channelmessage"
 	OType_Effort         = "effort"
@@ -46,7 +45,6 @@ var ValidOTypes = map[string]bool{
 	OType_Block:          true,
 	OType_MainServer:     true,
 	OType_Temp:           true,
-	OType_RadarReport:    true,
 	OType_Run:            true,
 	OType_ChannelMessage: true,
 	OType_Effort:         true,
@@ -228,30 +226,29 @@ type RunPhase struct {
 }
 
 type Run struct {
-	OID         string          `json:"oid"`
-	Version     int             `json:"version"`
-	ChannelOID  string          `json:"channeloid,omitempty"` // parent channel oid; indexed for per-channel run queries
-	ID          string          `json:"id"`                   // == OID
-	Goal        string          `json:"goal"`
-	Runtime     string          `json:"runtime,omitempty"` // the harness running every phase and child; empty means legacy Claude-only
-	Model       string          `json:"model,omitempty"`   // exact model id override (flat route); empty means the runtime default
-	PlaybookId  string          `json:"playbookid,omitempty"`
-	Mode        string          `json:"mode,omitempty"`       // pipeline | orchestrator (empty = pipeline, legacy-safe)
-	WorkspaceId string          `json:"workspaceid"`          // where phase-worker tabs are created (frontend supplies at CreateRun)
-	ProjectPath string          `json:"projectpath"`          // worker cwd (copied from the channel)
-	LandPath    string          `json:"landpath,omitempty"`   // tree the engine lands lanes in (a wave/<runId> worktree); empty = ProjectPath
-	BaseBranch  string          `json:"basebranch,omitempty"` // branch ProjectPath had checked out at run creation, which the run merges back into; empty = detached HEAD
-	BaseCommit  string          `json:"basecommit,omitempty"` // HEAD of ProjectPath at run creation; anchors the evidence diff
-	EndCommit   string          `json:"endcommit,omitempty"`  // commit the worker reported as its finished work; scopes the evidence diff to BaseCommit..EndCommit (else falls back to the working-tree diff)
-	Report      string          `json:"report,omitempty"`     // lead's final report, sent with `wsh jarvis complete --report <file>`; the only way it survives the engine closing the lead's tab mid-turn on complete
-	Principles  PrincipleList   `json:"principles,omitempty"` // resolved at CreateRun; fed to every phase worker prompt
-	Status      string          `json:"status"`               // planning | awaiting-review | executing | blocked | done | cancelled
-	Phases      []RunPhase      `json:"phases"`
-	RadarOrigin *RunRadarOrigin `json:"radarorigin,omitempty"` // set when started from a Radar finding
-	CreatedTs   int64           `json:"createdts"`
-	CompletedTs int64           `json:"completedts,omitempty"` // set at seal, when Status becomes done
-	CancelledTs int64           `json:"cancelledts,omitempty"` // set by CancelRun; 0 on a run cancelled before it was recorded
-	Evidence    *RunEvidence    `json:"evidence,omitempty"`    // sealed once at completion; immutable
+	OID         string        `json:"oid"`
+	Version     int           `json:"version"`
+	ChannelOID  string        `json:"channeloid,omitempty"` // parent channel oid; indexed for per-channel run queries
+	ID          string        `json:"id"`                   // == OID
+	Goal        string        `json:"goal"`
+	Runtime     string        `json:"runtime,omitempty"` // the harness running every phase and child; empty means legacy Claude-only
+	Model       string        `json:"model,omitempty"`   // exact model id override (flat route); empty means the runtime default
+	PlaybookId  string        `json:"playbookid,omitempty"`
+	Mode        string        `json:"mode,omitempty"`       // pipeline | orchestrator (empty = pipeline, legacy-safe)
+	WorkspaceId string        `json:"workspaceid"`          // where phase-worker tabs are created (frontend supplies at CreateRun)
+	ProjectPath string        `json:"projectpath"`          // worker cwd (copied from the channel)
+	LandPath    string        `json:"landpath,omitempty"`   // tree the engine lands lanes in (a wave/<runId> worktree); empty = ProjectPath
+	BaseBranch  string        `json:"basebranch,omitempty"` // branch ProjectPath had checked out at run creation, which the run merges back into; empty = detached HEAD
+	BaseCommit  string        `json:"basecommit,omitempty"` // HEAD of ProjectPath at run creation; anchors the evidence diff
+	EndCommit   string        `json:"endcommit,omitempty"`  // commit the worker reported as its finished work; scopes the evidence diff to BaseCommit..EndCommit (else falls back to the working-tree diff)
+	Report      string        `json:"report,omitempty"`     // lead's final report, sent with `wsh jarvis complete --report <file>`; the only way it survives the engine closing the lead's tab mid-turn on complete
+	Principles  PrincipleList `json:"principles,omitempty"` // resolved at CreateRun; fed to every phase worker prompt
+	Status      string        `json:"status"`               // planning | awaiting-review | executing | blocked | done | cancelled
+	Phases      []RunPhase    `json:"phases"`
+	CreatedTs   int64         `json:"createdts"`
+	CompletedTs int64         `json:"completedts,omitempty"` // set at seal, when Status becomes done
+	CancelledTs int64         `json:"cancelledts,omitempty"` // set by CancelRun; 0 on a run cancelled before it was recorded
+	Evidence    *RunEvidence  `json:"evidence,omitempty"`    // sealed once at completion; immutable
 	// Land is the merge of a branch-landed run's wave/<runId> back into BaseBranch, which runs after the seal.
 	// It lives beside the evidence, not in it, because a held land is retried after the seal is frozen.
 	Land *RunLand `json:"land,omitempty"`
@@ -897,15 +894,6 @@ type RunEffortRef struct {
 	ChunkLabel string `json:"chunklabel"`
 }
 
-// RunRadarOrigin links a Run back to the Radar finding it was started from. The Run lifecycle acts on it:
-// create/done/cancel write a RadarInvestigation back onto the finding, keyed by Fingerprint (the durable key
-// across scan reconciliation) — see reporadar.RecordInvestigation.
-type RunRadarOrigin struct {
-	ReportID    string `json:"reportid"`
-	FindingID   string `json:"findingid"`
-	Fingerprint string `json:"fingerprint"`
-}
-
 // Effort is a Wave-owned tracker for work too big for one Run: ordered chunks with statuses,
 // owners, an append-only note trail, and a lightweight event log that drives ledger delta events.
 // The trail is the record; Events are the delta source — never the reverse.
@@ -1037,143 +1025,6 @@ type UserNote struct {
 	Day   string `json:"day"`            // the day it was added, YYYY-MM-DD
 }
 
-type RadarSignal struct {
-	ID          string         `json:"id"`
-	Collector   string         `json:"collector"` // git: a finding's source fix commit
-	SourceRef   string         `json:"sourceref"`
-	ObservedTs  int64          `json:"observedts"`
-	Paths       []string       `json:"paths,omitempty"`
-	Subsystem   string         `json:"subsystem,omitempty"`
-	Summary     string         `json:"summary"`
-	Facts       map[string]any `json:"facts,omitempty"`
-	Snippet     string         `json:"snippet,omitempty"`
-	ContentHash string         `json:"contenthash"`
-}
-
-type RadarDisposition struct {
-	Action      string `json:"action"` // dismiss|suppress
-	Reason      string `json:"reason,omitempty"`
-	Note        string `json:"note,omitempty"`
-	Ts          int64  `json:"ts"`
-	User        string `json:"user,omitempty"`
-	EvidenceRev string `json:"evidencerev,omitempty"`
-}
-
-type RadarFinding struct {
-	ID            string              `json:"id"`
-	Fingerprint   string              `json:"fingerprint"`
-	Group         string              `json:"group"` // new|recurring|nolonger|dismissed|suppressed
-	RiskKind      string              `json:"riskkind"`
-	Subsystem     string              `json:"subsystem"` // deterministic canonical subsystem
-	Risk          string              `json:"risk"`
-	Why           string              `json:"why"`
-	Severity      string              `json:"severity"` // low|medium|high
-	SignalIDs     []string            `json:"signalids"`
-	Files         []string            `json:"files"`
-	Mission       string              `json:"mission"`
-	Disposition   *RadarDisposition   `json:"disposition,omitempty"`
-	Investigation *RadarInvestigation `json:"investigation,omitempty"`
-	MissCount     int                 `json:"misscount,omitempty"` // consecutive scans that did not detect it (0 = detected this scan)
-	SourceCommit  string              `json:"sourcecommit,omitempty"`
-	SourceSubject string              `json:"sourcesubject,omitempty"`
-	RootCause     string              `json:"rootcause,omitempty"`
-	Sites         []RadarSite         `json:"sites,omitempty"`
-	FixSubjects   []string            `json:"fixsubjects,omitempty"`
-}
-
-// RadarSite is one place a fix-audit found the same bug as the source fix commit.
-type RadarSite struct {
-	Line          int    `json:"line"`
-	Trigger       string `json:"trigger"`
-	Actual        string `json:"actual"`
-	Expected      string `json:"expected"`
-	WhyNotCovered string `json:"whynotcovered"`
-}
-
-// RadarAudit is one audit session within a scan. For a hotspot audit, Commit, Subject and CommitTs are the
-// reviewed revision's and Files is the one file.
-type RadarAudit struct {
-	Kind            string   `json:"kind,omitempty"` // sibling|introduced|hotspot; empty reads as sibling
-	Commit          string   `json:"commit"`
-	Subject         string   `json:"subject"`
-	CommitTs        int64    `json:"committs"`
-	Files           []string `json:"files"`
-	Status          string   `json:"status"` // queued|running|ok|failed
-	RootCause       string   `json:"rootcause,omitempty"`
-	HitCount        int      `json:"hitcount,omitempty"`
-	KeptCount       int      `json:"keptcount,omitempty"`
-	Error           string   `json:"error,omitempty"`
-	ResolvedModel   string   `json:"resolvedmodel,omitempty"`
-	TotalTokens     int      `json:"totaltokens,omitempty"` // input, cache writes and output
-	CacheReadTokens int      `json:"cachereadtokens,omitempty"`
-	DurationMs      int64    `json:"durationms,omitempty"`
-	RawResponse     string   `json:"rawresponse,omitempty"`
-	FixSubjects     []string `json:"fixsubjects,omitempty"` // hotspot
-}
-
-// RadarCommitClass is the classifier's label for one window commit.
-type RadarCommitClass struct {
-	Fix      bool `json:"fix"`
-	Behavior bool `json:"behavior"`
-}
-
-// RadarInvestigation is the latest Run outcome recorded against a finding (by fingerprint). It closes the
-// Radar -> Run -> outcome loop WITHOUT asserting the risk is fixed: it says "an investigation ran, here is
-// what it produced." Disposition (dismiss/keep) stays a human decision. Evidence essentials are denormalized
-// so the finding is self-contained across scan reconciliation and channel archive; RunID/ChannelID exist only
-// for an "Open run" deep-link.
-type RadarInvestigation struct {
-	RunID        string `json:"runid"`
-	ChannelID    string `json:"channelid"`
-	Status       string `json:"status"` // executing | done | cancelled | failed | orphaned (run no longer exists)
-	StartedTs    int64  `json:"startedts"`
-	CompletedTs  int64  `json:"completedts,omitempty"`
-	Summary      string `json:"summary,omitempty"`
-	FilesTouched int    `json:"filestouched,omitempty"`
-	AddTotal     int    `json:"addtotal,omitempty"`
-	DelTotal     int    `json:"deltotal,omitempty"`
-	VerifsPass   int    `json:"verifspass,omitempty"`
-	VerifsFail   int    `json:"verifsfail,omitempty"`
-}
-
-type RadarReport struct {
-	OID              string                      `json:"oid"`
-	Version          int                         `json:"version"`
-	ProjectName      string                      `json:"projectname"`
-	ProjectPath      string                      `json:"projectpath"`
-	Status           string                      `json:"status"` // collecting|clustering|completed|partial|failed|cancelled
-	Phase            string                      `json:"phase,omitempty"`
-	StartHead        string                      `json:"starthead,omitempty"`
-	EndHead          string                      `json:"endhead,omitempty"`
-	StartDirty       string                      `json:"startdirty,omitempty"`
-	EndDirty         string                      `json:"enddirty,omitempty"`
-	PrevReportId     string                      `json:"prevreportid,omitempty"`
-	PrevHead         string                      `json:"prevhead,omitempty"`
-	WindowStartTs    int64                       `json:"windowstartts,omitempty"`
-	WindowEndTs      int64                       `json:"windowendts,omitempty"`
-	StartedTs        int64                       `json:"startedts"`
-	CompletedTs      int64                       `json:"completedts,omitempty"`
-	FatalError       string                      `json:"fatalerror,omitempty"`
-	ClusterError     string                      `json:"clustererror,omitempty"`
-	ConfiguredModel  string                      `json:"configuredmodel,omitempty"`
-	ResolvedModel    string                      `json:"resolvedmodel,omitempty"`
-	TotalTokens      int                         `json:"totaltokens,omitempty"`
-	Candidates       []RadarSignal               `json:"candidates,omitempty"` // retained while clustering is retryable
-	Signals          []RadarSignal               `json:"signals,omitempty"`    // referenced-by-findings after prune
-	Findings         []RadarFinding              `json:"findings,omitempty"`
-	ClusterStartedTs int64                       `json:"clusterstartedts,omitempty"`
-	Audits           []RadarAudit                `json:"audits,omitempty"`
-	CommitClasses    map[string]RadarCommitClass `json:"commitclasses,omitempty"` // full hash -> label
-	ClassifyCount    int                         `json:"classifycount,omitempty"`
-	ClassifyError    string                      `json:"classifyerror,omitempty"`
-	ClassifyTokens   int                         `json:"classifytokens,omitempty"`
-	Meta             MetaMapType                 `json:"meta"`
-}
-
-func (*RadarReport) GetOType() string {
-	return OType_RadarReport
-}
-
 func (t *Tab) GetBlockORefs() []ORef {
 	rtn := make([]ORef, 0, len(t.BlockIds))
 	for _, blockId := range t.BlockIds {
@@ -1239,7 +1090,6 @@ func AllWaveObjTypes() []reflect.Type {
 		reflect.TypeOf(&Workspace{}),
 		reflect.TypeOf(&Tab{}),
 		reflect.TypeOf(&Channel{}),
-		reflect.TypeOf(&RadarReport{}),
 		reflect.TypeOf(&Block{}),
 		reflect.TypeOf(&MainServer{}),
 		reflect.TypeOf(&Run{}),

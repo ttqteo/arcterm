@@ -182,7 +182,6 @@ describe("workingOrefs and askingOrefs", () => {
     it("finds the initiatives something waits on you for: a queue item, or an agent asking", () => {
         const attention = [
             { kind: "plan-review", effortoid: "p1" },
-            { kind: "radar-triage" },
             { kind: "ask", effortoid: "" },
         ];
         const agents = [{ state: "asking", effortId: "a1" }, { state: "working", effortId: "w1" }, { state: "asking" }];

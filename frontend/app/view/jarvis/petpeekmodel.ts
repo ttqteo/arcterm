@@ -119,46 +119,37 @@ function formFor(agent: AgentVM | undefined): string | null {
     return inlineAnswerOptions(agent).length === 0 ? agent.id : null;
 }
 
-// Radar triage is the one attention kind the creature has no business holding. It names no channel and no
-// run, so it arrives with no act behind it (petacts.actsForAttention) and renders as a project name, an age
-// and nothing to press; the avatar's own signals never counted it either (petview.usePetSignals reads
-// gates, escalations and asks). It is addressed through its ORef by the Radar rail's badge and the Brief's
-// queue, which is the same routing splitAttention already does to keep it off Cockpit.
-const PEEK_EXCLUDED_KIND = "radar-triage";
-
 export function queueRows(
     items: AttentionItem[],
     agents: ReadonlyArray<AgentVM> = [],
     messages: Record<string, ChannelMessage[]> = {}
 ): PeekRow[] {
-    return (items ?? [])
-        .filter((item) => item.kind !== PEEK_EXCLUDED_KIND)
-        .map((item) => {
-            // actsForAttention returns [] with no runid, [in-place act, escort] for a dag gate, a retryable failed
-            // task or an unverified run, [land, dismiss, escort] for a held land, [escort] otherwise (a plan to
-            // review's escort opens its agent: that is why the agents go in)
-            const [first, ...links] = actsForAttention(item, agents);
-            const asker = askingAgent(item, agents, messages);
-            const answers = answersFor(item, asker);
-            const form = formFor(asker);
-            // "Review" / "Decide" / "Answer" is the same navigation as "Open", named by what it is for. An
-            // in-place act keeps its own label: the item's action ("Review") names the escort, not the
-            // approve, retry, ack or land. Where the options or the form answer, the escort is only the way to
-            // read it.
-            const escortLabel = answers.length > 0 || form != null ? "Open" : item.action;
-            const primary = first ?? answerInAgent(item, agents);
-            return {
-                key: item.key,
-                kind: item.kind,
-                source: item.source,
-                detail: DETAIL_KINDS.has(item.kind) ? item.text : null,
-                waitingsince: item.waitingsince,
-                primary: primary?.verb === "open" ? { ...primary, label: escortLabel } : primary,
-                links,
-                answers,
-                form,
-            };
-        });
+    return (items ?? []).map((item) => {
+        // actsForAttention returns [] with no runid, [in-place act, escort] for a dag gate, a retryable failed
+        // task or an unverified run, [land, dismiss, escort] for a held land, [escort] otherwise (a plan to
+        // review's escort opens its agent: that is why the agents go in)
+        const [first, ...links] = actsForAttention(item, agents);
+        const asker = askingAgent(item, agents, messages);
+        const answers = answersFor(item, asker);
+        const form = formFor(asker);
+        // "Review" / "Decide" / "Answer" is the same navigation as "Open", named by what it is for. An
+        // in-place act keeps its own label: the item's action ("Review") names the escort, not the
+        // approve, retry, ack or land. Where the options or the form answer, the escort is only the way to
+        // read it.
+        const escortLabel = answers.length > 0 || form != null ? "Open" : item.action;
+        const primary = first ?? answerInAgent(item, agents);
+        return {
+            key: item.key,
+            kind: item.kind,
+            source: item.source,
+            detail: DETAIL_KINDS.has(item.kind) ? item.text : null,
+            waitingsince: item.waitingsince,
+            primary: primary?.verb === "open" ? { ...primary, label: escortLabel } : primary,
+            links,
+            answers,
+            form,
+        };
+    });
 }
 
 // An ask waiting on the user is both an AttentionItem keyed "ask:<block oref>" and a PetEvent carrying that

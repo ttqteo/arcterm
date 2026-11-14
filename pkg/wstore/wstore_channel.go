@@ -40,7 +40,7 @@ func stampRunIdentity(channelId string, run *waveobj.Run) {
 }
 
 // normProjectPath is the comparison key for a project path. A channel stores what the user registered
-// (backslashes on Windows) while a radar report stores it canonPath'd, so two spellings of one project
+// (backslashes on Windows) while other stores keep it canonPath'd, so two spellings of one project
 // must land on one key. Mirrors the frontend's normProjectPath in channelderive.ts.
 func normProjectPath(p string) string {
 	return strings.TrimRight(strings.ReplaceAll(p, "\\", "/"), "/")
@@ -501,7 +501,7 @@ func selectMessages(ctx context.Context, query string, args ...any) ([]*waveobj.
 }
 
 // GetChannelProjectPaths returns channelOID -> projectpath for every channel via a scalar json_extract
-// query — no blob deserialize. Used by radar collect to pick matching channels without loading history.
+// query — no blob deserialize, so reading it never loads a channel's history.
 func GetChannelProjectPaths(ctx context.Context) (map[string]string, error) {
 	return WithReadTxRtn(ctx, func(tx *TxWrap) (map[string]string, error) {
 		type row struct {

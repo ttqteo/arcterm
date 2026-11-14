@@ -76,17 +76,21 @@ const role = (id: string, name: string, extra: Partial<CouncilExpert> = {}): Cou
 // the library as wavesrv answers it: the plain English names, each with its Vietnamese one
 const lib: RoleLibrary = {
     roles: [
-        role("ux", "Ease of use", { namevi: "UX" }),
-        role("ram", "Memory watcher", { namevi: "Đo RAM" }),
-        role("newuser", "New user", { namevi: "Khách" }),
-        role("skeptic", "Bug hunter", { namevi: "Tìm bug" }),
+        role("ux", "Ease of use", { namevi: "UX", focus: "what's on screen", focusvi: "giao diện" }),
+        role("ram", "Memory watcher", { namevi: "Đo RAM", focus: "memory", focusvi: "bộ nhớ" }),
+        role("newuser", "New user", { namevi: "Khách", focus: "a first visit", focusvi: "lần đầu dùng" }),
+        role("skeptic", "Bug hunter", { namevi: "Tìm bug", focus: "bugs", focusvi: "lỗi" }),
         role("coordinator", "Summarizer", { model: "opus", coordinator: true, namevi: "Thư ký" }),
-        role("reviewer-a", "Reviewer A", { namevi: "Giám khảo A" }),
-        role("reader", "Reader", { namevi: "Biên tập" }),
+        role("reviewer-a", "Reviewer A", { namevi: "Giám khảo A", focus: "novelty", focusvi: "tính mới" }),
+        role("reader", "Reader", { namevi: "Biên tập", focus: "the prose", focusvi: "văn phong" }),
         role("areachair", "Final judge", { model: "opus", coordinator: true, namevi: "Tổng hợp" }),
-        role("designer", "Designer", { namevi: "Thiết kế" }),
-        role("builder", "Builder", { namevi: "Dev" }),
-        role("contrarian", "Other side", { namevi: "Phản biện" }),
+        role("designer", "Designer", { namevi: "Thiết kế", focus: "the flow", focusvi: "luồng dùng" }),
+        role("builder", "Builder", { namevi: "Dev", focus: "cheap first steps", focusvi: "bước đầu rẻ" }),
+        role("contrarian", "Other side", {
+            namevi: "Phản biện",
+            focus: "the opposite view",
+            focusvi: "góc nhìn ngược",
+        }),
         role("facilitator", "Host", { model: "opus", coordinator: true, namevi: "Điều phối" }),
     ],
     groups: [
@@ -719,13 +723,13 @@ describe("the estimate and the footer", () => {
 });
 
 describe("expertsLine", () => {
-    it("names the group's experts and the coordinator who writes the answer", () => {
+    it("names the group's experts, what each looks at, and the coordinator who writes the answer", () => {
         const d = initialPanel(draft(), lib);
         expect(expertsLine(d, lib)).toBe(
-            "Review a UI feature: Ease of use, Memory watcher, New user and Bug hunter each read the code from their own side; the Summarizer writes the answer."
+            "Review a UI feature: Ease of use (what's on screen), Memory watcher (memory), New user (a first visit) and Bug hunter (bugs) each read the code from their own side; the Summarizer writes the answer."
         );
         expect(expertsLine(removeExpert(removeExpert(removeExpert(d, "ux"), "ram"), "newuser"), lib)).toBe(
-            "Review a UI feature: Bug hunter reads the code from its own side; the Summarizer writes the answer."
+            "Review a UI feature: Bug hunter (bugs) reads the code from its own side; the Summarizer writes the answer."
         );
     });
 
@@ -733,10 +737,36 @@ describe("expertsLine", () => {
         expect(expertsLine(draft(), lib)).toBe("");
     });
 
-    it("names them in Vietnamese when the typed question reads Vietnamese", () => {
+    it("names them and their focus in Vietnamese when the typed question reads Vietnamese", () => {
         const d = initialPanel(draft({ feature: "Ghim ứng dụng", question: "Có đáng ghim không?" }), lib);
         expect(expertsLine(d, lib)).toBe(
-            "Soi một tính năng giao diện: UX, Đo RAM, Khách and Tìm bug each read the code from their own side; the Thư ký writes the answer."
+            "Soi một tính năng giao diện: UX (giao diện), Đo RAM (bộ nhớ), Khách (lần đầu dùng) and Tìm bug (lỗi) each read the code from their own side; the Thư ký writes the answer."
+        );
+    });
+
+    it("reads a role with no focus phrase by its name alone, in either language", () => {
+        const mac = role("mac", "Mac user");
+        const d = { ...initialPanel(draft(), lib), experts: [lib.roles[0], mac, lib.roles[4]] };
+        expect(expertsLine(d, lib)).toBe(
+            "Review a UI feature: Ease of use (what's on screen) and Mac user each read the code from their own side; the Summarizer writes the answer."
+        );
+        // a Vietnamese line never shows the English phrase of a role that has no Vietnamese one
+        const vi = {
+            ...d,
+            feature: "Ghim ứng dụng",
+            question: "Có đáng ghim không?",
+            experts: [mac, { ...lib.roles[0], focusvi: "" }],
+        };
+        expect(expertsLine(vi, lib)).toBe(
+            "Soi một tính năng giao diện: Mac user and UX each read the code from their own side."
+        );
+    });
+
+    it("never puts a phrase on the coordinator", () => {
+        const lead = role("coordinator", "Summarizer", { coordinator: true, focus: "stray", focusvi: "lạc" });
+        const d = { ...initialPanel(draft(), lib), experts: [lib.roles[3], lead] };
+        expect(expertsLine(d, lib)).toBe(
+            "Review a UI feature: Bug hunter (bugs) reads the code from its own side; the Summarizer writes the answer."
         );
     });
 });

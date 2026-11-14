@@ -74,22 +74,6 @@ export function sectionRows(section: SettingSectionDef): SettingRowDef[] {
 // Underscore, not colon: SetSecret validates against the shell env-var charset and rejects colons.
 export const OPENROUTER_SECRET_NAME = "jarvis_embedapikey";
 
-// The Radar audit route. Its sessions read and grep the repository, so only a runtime with tools can run
-// them; the empty-key defaults mirror pkg/reporadar's.
-export const RADAR_AUDIT_RUNTIME_KEY = "radar:auditruntime";
-export const RADAR_AUDIT_MODEL_KEY = "radar:auditmodel";
-export const RADAR_CLASSIFY_MODEL_KEY = "radar:classifymodel";
-export const RADAR_AUDIT_RUNTIMES: readonly string[] = ["claude", "pi"];
-const RADAR_AUDIT_DEFAULT_RUNTIME = "claude";
-const RADAR_AUDIT_DEFAULT_CLAUDE_MODEL = "sonnet";
-
-// The route the two settings select. An unset model on pi stays unset: pi runs its own default.
-export function radarAuditRoute(runtime: string, model: string): RoutePin {
-    const rt = runtime || RADAR_AUDIT_DEFAULT_RUNTIME;
-    const m = model || (rt === RADAR_AUDIT_DEFAULT_RUNTIME ? RADAR_AUDIT_DEFAULT_CLAUDE_MODEL : "");
-    return { runtime: rt, ...(m ? { model: m } : {}) };
-}
-
 // agents:sleepaftermin, the minutes an agent stays idle before it sleeps: the stepper moves by 5 within [5, 240]
 // (4 h), and the shipped default is pkg/wconfig/defaultconfig/settings.json's
 export const SLEEP_AFTER_MIN = { step: 5, min: 5, max: 240, default: 30 };
@@ -121,11 +105,6 @@ export const RUNS_MAX_ACTIVE = { step: 1, min: 0, max: 10, default: 3 };
 export const TOKENGATE_PCT = { step: 5, min: 0, max: 100 };
 export const TOKENGATE_AGENTS = { step: 1, min: 0, max: 10 };
 export const TOKENGATE_DEFAULTS = { sharepct: 10, windowpct: 70, agents: 3, weekpct: 80, sessionpct: 25 };
-
-// What an unset radar:classifymodel runs on the audit runtime; pi takes no bare model id, so it keeps its own.
-export function radarClassifyDefault(runtime: string): string {
-    return (runtime || RADAR_AUDIT_DEFAULT_RUNTIME) === RADAR_AUDIT_DEFAULT_RUNTIME ? "haiku" : "pi default";
-}
 
 const THEME_OVERRIDE_KEY = "cockpit.theme.overrides";
 const LAUNCH_FLAGS_KEY = "agent.launch.flags";
@@ -590,7 +569,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
         {
             id: "headless",
             name: "Background AI",
-            blurb: "The runtime behind session classify, continuity, the volunteer judge and pi titles, and the route Radar audits run on.",
+            blurb: "The runtime behind session classify, continuity, the volunteer judge and pi titles.",
             cards: [
                 {
                     id: "runtime",
@@ -622,29 +601,6 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             title: "Cheap model",
                             desc: "The OpenRouter model for session classify, continuity, the volunteer judge and pi titles. Used only when the runtime is OpenRouter.",
                             key: "headless:openroutercheapmodel",
-                            scope: "synced",
-                            config: true,
-                        },
-                    ],
-                },
-                {
-                    id: "radar",
-                    label: "Radar",
-                    rows: [
-                        {
-                            id: "headless.radaraudit",
-                            title: "Radar audit",
-                            desc: "Each scan runs up to 8 sibling, 3 introduced and 2 hotspot read-only sessions on this route. OpenRouter cannot be used: it has no tools.",
-                            key: RADAR_AUDIT_RUNTIME_KEY,
-                            morekeys: [RADAR_AUDIT_MODEL_KEY],
-                            scope: "synced",
-                            config: true,
-                        },
-                        {
-                            id: "headless.radarclassify",
-                            title: "Commit classifier",
-                            desc: "One call per scan sorts commits that lack a conventional prefix, on the audit runtime. Empty means haiku on claude, pi's default on pi.",
-                            key: RADAR_CLASSIFY_MODEL_KEY,
                             scope: "synced",
                             config: true,
                         },

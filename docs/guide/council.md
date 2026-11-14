@@ -283,7 +283,7 @@ agrees with which idea in Map" mở nó.
   điều câu trích nói. `wsh council cites <báo cáo.md>` chạy cùng bước kiểm trên một báo cáo đã có (`--root` để chọn thư
   mục); với báo cáo cũ nó đọc file của hôm nay, nên một file đổi tên sau đó hiện là wrong.
 
-![Báo cáo của council: dải "Outdated · 1 reply since" với Summarize again, câu bạn hỏi, câu trả lời in đậm, các hướng đi đánh số kèm chip lập trường của từng chuyên gia, một hướng mở ra lý lẽ của từng người; cột thông tin bên phải với mục lục và các chuyên gia](images/council-report.png)
+![Báo cáo của council: câu bạn hỏi, câu trả lời in đậm và dòng nói ai viết nó, từ bao nhiêu reply; cột thông tin bên phải với số chuyên gia, số phút, số token và từng chuyên gia cùng model của họ; bên dưới là các hướng đi đánh số, đang đóng, kèm chip lập trường và các chuyên gia đã góp vào](images/council-report.png)
 
 ## Khi một lượt gọi bị lỗi
 

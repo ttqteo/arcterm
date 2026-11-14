@@ -45,10 +45,7 @@ const (
 	AttentionRunUnverified = "run-unverified"
 	// a queued start (pkg/runqueue) the engine could not make: it names no channel or run, only the queue entry
 	AttentionRunQueueBlocked = "run-queue-blocked"
-	// radar triage is the only kind that names no channel: a scan belongs to a project, not a
-	// conversation, so its row addresses the report through ORef instead.
-	AttentionRadarTriage = "radar-triage"
-	// a chunk whose due date has come, still open: it names no channel either, so it addresses the
+	// a chunk whose due date has come, still open: it names no channel, so it addresses the
 	// initiative through ORef and the chunk through ChunkLabel.
 	AttentionChunkDue = "chunk-due"
 	// a plan an agent proposed: one item per initiative in play with proposed chunks, waiting since the oldest
@@ -61,8 +58,7 @@ const (
 	AttentionCouncil = "council"
 )
 
-// mirrors orchestrate.TaskState_* and the two RadarReport/RadarFinding vocabularies, spelled here
-// for the same reason as the dag statuses above.
+// mirrors orchestrate.TaskState_*, spelled here for the same reason as the dag statuses above.
 const (
 	taskStateDone          = "done"
 	taskStateSkipped       = "skipped"
@@ -70,10 +66,6 @@ const (
 	taskStatePending       = "pending"
 	taskStateReviewFailed  = "review-failed"
 	maxConsecutiveFailures = 3 // mirrors orchestrate.MaxConsecutiveFailures
-	radarStatusCompleted   = "completed"
-	radarStatusPartial     = "partial"
-	radarGroupNew          = "new"
-	radarGroupRecurring    = "recurring"
 )
 
 // AttentionChannel is one channel's contribution: its identity plus the rows the builder reads.
@@ -96,9 +88,6 @@ type AttentionInput struct {
 	AskWorker     map[string]string
 	AskWorkerORef map[string]string
 	Dags          []*waveobj.TaskGroup // engine-owned task DAGs (awaiting-review/blocked surface items)
-	// Radar is every scan report, newest-first, as GetRadarReports returns them. radarTriageItems
-	// depends on that order to pick the current report per project, so a caller must not re-sort it.
-	Radar []*waveobj.RadarReport
 	// Efforts are every initiative, for their due chunks; Today is the local date to hold their Due
 	// against (DueLayout). Passed in, not read off the clock, so the builder stays pure.
 	Efforts []*waveobj.Effort
@@ -439,13 +428,12 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 
 	// Kind is the priority claim — a gate blocks a whole pipeline, an ask blocks one worker. Age only
 	// breaks ties inside a kind. Key is the final tiebreak so map iteration cannot reorder equal items.
-	triage := radarTriageItems(in.Radar)
 	due := chunkDueItems(in.Efforts, in.Today)
 	plans := planReviewItems(in.Efforts)
 	queued := queueBlockedItems(in.Queue)
 	learned := learnItems(in.Learn)
 	councils := councilItems(in.Councils)
-	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, queued, plans, triage, unverified, due, learned, councils} {
+	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, queued, plans, unverified, due, learned, councils} {
 		g := group
 		sort.SliceStable(g, func(i, j int) bool {
 			if g[i].WaitingSince != g[j].WaitingSince {
@@ -455,7 +443,7 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 		})
 	}
 
-	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(queued)+len(plans)+len(triage)+len(unverified)+len(due)+len(learned)+len(councils))
+	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(queued)+len(plans)+len(unverified)+len(due)+len(learned)+len(councils))
 	out = append(out, gates...)
 	out = append(out, escalations...)
 	out = append(out, asks...)
@@ -464,9 +452,6 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	out = append(out, queued...)
 	// a proposed plan waits on the person, but nothing runs while it does
 	out = append(out, plans...)
-	// triage is last because it is the weakest claim in the list: an untriaged finding blocks nothing
-	// that is running, where every kind above it is holding a worker or a pipeline in place.
-	out = append(out, triage...)
 	// an unverified outcome holds nothing at all: the run is done
 	out = append(out, unverified...)
 	// a due chunk is a date you set yourself, about work nothing is running yet
@@ -816,66 +801,6 @@ func dagGateItems(in AttentionInput, g *waveobj.TaskGroup) []wshrpc.AttentionIte
 	return out
 }
 
-// radarTriageItems is ONE row per project, never one per finding: a scan routinely produces dozens,
-// and the Brief's invariant is that nothing unbounded sits on the surface. Only the current report for
-// a path counts — scan reconciliation carries an older report's live findings forward into the newer
-// one, so counting both would report the same risk twice.
-func radarTriageItems(reports []*waveobj.RadarReport) []wshrpc.AttentionItem {
-	var out []wshrpc.AttentionItem
-	claimed := map[string]bool{}
-	for _, r := range reports {
-		if r == nil || claimed[r.ProjectPath] {
-			continue
-		}
-		// a scan still collecting has nothing settled to triage, and failed/cancelled has nothing
-		// trustworthy. Both are skipped WITHOUT claiming the path, because the findings of the last
-		// completed scan are still untriaged and a rescan in flight does not answer them.
-		if r.Status != radarStatusCompleted && r.Status != radarStatusPartial {
-			continue
-		}
-		claimed[r.ProjectPath] = true
-		fresh, recurring := 0, 0
-		for _, f := range r.Findings {
-			// nolonger, dismissed and suppressed are already-decided states; a disposition IS the
-			// decision. What is left is what nobody has ruled on.
-			if f.Disposition != nil {
-				continue
-			}
-			switch f.Group {
-			case radarGroupNew:
-				fresh++
-			case radarGroupRecurring:
-				recurring++
-			}
-		}
-		n := fresh + recurring
-		if n == 0 {
-			continue
-		}
-		text := fmt.Sprintf("%d findings need triage.", n)
-		if n == 1 {
-			text = "1 finding needs triage."
-		}
-		source := r.ProjectName
-		if source == "" {
-			source = r.ProjectPath
-		}
-		out = append(out, wshrpc.AttentionItem{
-			Kind:         AttentionRadarTriage,
-			Key:          "radar:" + r.OID,
-			Source:       source,
-			Text:         text,
-			Action:       "Triage",
-			ORef:         waveobj.MakeORef(waveobj.OType_RadarReport, r.OID).String(),
-			WaitingSince: r.CompletedTs,
-			// the split is what the total cannot say: a recurring finding has already survived one scan
-			// without anyone ruling on it, which is a different claim on your time than a new one.
-			Why: fmt.Sprintf("%d new and %d recurring, none of them ruled on yet.", fresh, recurring),
-		})
-	}
-	return out
-}
-
 // askQuestionMax bounds the ask row's text. Every other row carries one short sentence, and an agent's
 // question can run to a paragraph — a row that wraps to five lines pushes the rest of the queue off the
 // screen, which is the opposite of what this list is for.
@@ -1006,15 +931,8 @@ func GatherAttentionFromLedger(ctx context.Context, chans []*waveobj.Channel, ru
 			}
 		}
 	}
-	// read whole because a triage count comes off a report's findings. A failed read degrades to no
-	// triage rows rather than failing the list — same posture as the non-loadable dag above, since a
-	// queue missing one kind is still worth showing — but it is logged, not swallowed.
-	if reports, rerr := wstore.GetRadarReportsShared(ctx); rerr != nil {
-		log.Printf("jarvis attention: radar reports unreadable, triage rows omitted: %v", rerr)
-	} else {
-		in.Radar = reports
-	}
-	// the same posture for initiatives: unreadable means no due rows, logged
+	// initiatives: unreadable means no due rows, logged rather than failing the list, same posture as the
+	// non-loadable dag above, since a queue missing one kind is still worth showing
 	if efforts, eerr := effortstore.GetAll(ctx); eerr != nil {
 		log.Printf("jarvis attention: efforts unreadable, due rows omitted: %v", eerr)
 	} else {

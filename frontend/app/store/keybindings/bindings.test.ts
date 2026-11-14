@@ -408,7 +408,7 @@ describe("surface switch [ / ]", () => {
         expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
 
         globalStore.set(model.surfaceAtom, "files");
-        next.run(ctx()); // files (Diff) is last now that Radar is off the rail: it wraps to the cockpit
+        next.run(ctx()); // files (Diff) is last: it wraps to the cockpit
         expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
 
         globalStore.set(model.surfaceAtom, SURFACE_ORDER[SURFACE_ORDER.length - 1]);
@@ -465,12 +465,11 @@ describe("surface switch [ / ]", () => {
         expect(next.when!(ctx())).toBe(true);
     });
 
-    it("exposes a g r leader teleport to radar", () => {
+    it("has no g r leader teleport now that Radar is gone", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
-        const b = buildGlobalBindings(model).find((x) => x.id === "go:radar")!;
-        expect(b.keys).toBe("g r");
-        b.run(ctx());
-        expect(globalStore.get(model.surfaceAtom)).toBe("radar");
+        const all = buildGlobalBindings(model);
+        expect(all.find((x) => x.id === "go:radar")).toBeUndefined();
+        expect(all.find((x) => x.keys === "g r")).toBeUndefined();
     });
 });
 

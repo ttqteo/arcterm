@@ -1359,8 +1359,8 @@ async function walkTo(h: History): Promise<void> {
     await openPath(entry.path, { pushHistory: false });
 }
 
-// The one way into this surface from anywhere else: a content-search hit, a diff row, a Radar
-// finding, a finder query with a line. Takes the view model because surfaceAtom lives on the
+// The one way into this surface from anywhere else: a content-search hit, a diff row,
+// a finder query with a line. Takes the view model because surfaceAtom lives on the
 // AgentsViewModel instance rather than in a module — the same type-only seam bindings.ts uses.
 // reach a directory by path, under its registered name when it has one
 export async function selectPath(path: string): Promise<void> {

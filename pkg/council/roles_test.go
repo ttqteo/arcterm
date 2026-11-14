@@ -530,6 +530,59 @@ func TestNameSeats(t *testing.T) {
 	NameSeats(nil) // no council, nothing to do
 }
 
+// Setup's experts line shows a stock expert as `name (focus)`: every stock role but a coordinator carries a short
+// lower case phrase in each language, and a coordinator carries none.
+func TestEveryStockRoleButACoordinatorHasAFocusPhrase(t *testing.T) {
+	useTempConfig(t)
+	for _, r := range Roles() {
+		if r.Coordinator {
+			if r.Focus != "" || r.FocusVi != "" {
+				t.Errorf("coordinator %s has a focus phrase: %q / %q", r.Id, r.Focus, r.FocusVi)
+			}
+			continue
+		}
+		for lang, phrase := range map[string]string{"Focus": r.Focus, "FocusVi": r.FocusVi} {
+			if phrase == "" {
+				t.Errorf("%s has no %s", r.Id, lang)
+				continue
+			}
+			if n := len(strings.Fields(phrase)); n > 3 {
+				t.Errorf("%s %s = %q is %d words, want at most 3", r.Id, lang, phrase, n)
+			}
+			if phrase != strings.ToLower(phrase) || strings.HasSuffix(phrase, ".") {
+				t.Errorf("%s %s = %q, want lower case and no full stop", r.Id, lang, phrase)
+			}
+		}
+	}
+}
+
+func TestUserFileKeepsAStockRoleFocusUnlessItRenamesOrRewritesTheRole(t *testing.T) {
+	dir := useTempConfig(t)
+	writeRolesFile(t, dir, `{"roles":[{"id":"ux","name":"Accessibility"},{"id":"ram","brief":"Only the brief changes."},{"id":"newuser","model":"haiku"},{"id":"skeptic","name":"Bug hunter"}]}`)
+	stock := func(id string) CouncilExpert {
+		for _, r := range builtInRoles {
+			if r.Id == id {
+				return r
+			}
+		}
+		t.Fatalf("no stock role %q", id)
+		return CouncilExpert{}
+	}
+	if ux := roleById(t, "ux"); ux.Focus != "" || ux.FocusVi != "" {
+		t.Errorf("a renamed role keeps a stock focus: %q / %q", ux.Focus, ux.FocusVi)
+	}
+	if ram := roleById(t, "ram"); ram.Focus != "" || ram.FocusVi != "" {
+		t.Errorf("a role with a new brief keeps a stock focus: %q / %q", ram.Focus, ram.FocusVi)
+	}
+	if nu, want := roleById(t, "newuser"), stock("newuser"); nu.Model != "haiku" || nu.Focus != want.Focus || nu.FocusVi != want.FocusVi {
+		t.Errorf("a role with only its model changed = %q / %q / %q, want haiku and the stock phrases %q / %q", nu.Model, nu.Focus, nu.FocusVi, want.Focus, want.FocusVi)
+	}
+	// an entry that names the role as it already is changes nothing, so it keeps the phrases too
+	if sk, want := roleById(t, "skeptic"), stock("skeptic"); sk.Focus != want.Focus || sk.FocusVi != want.FocusVi {
+		t.Errorf("a role re-saved under its own name = %q / %q, want %q / %q", sk.Focus, sk.FocusVi, want.Focus, want.FocusVi)
+	}
+}
+
 func TestRenamingABuiltInRoleInTheUserFileDropsItsVietnameseName(t *testing.T) {
 	dir := useTempConfig(t)
 	writeRolesFile(t, dir, `{"roles":[{"id":"ux","name":"Accessibility"},{"id":"ram","brief":"Only the brief changes."}]}`)

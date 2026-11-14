@@ -27,12 +27,6 @@ describe("parseAddress", () => {
         // an empty anchor is no anchor, not a highlight of nothing
         ["task:d-1", { anchor: "" }, { kind: "record", dossierId: "d-1" }],
         ["effort:e-1", undefined, { kind: "effort", effortId: "e-1" }],
-        ["radarreport:rr-1", undefined, { kind: "radar", reportId: "rr-1" }],
-        [
-            "radarreport:rr-1",
-            { sourceType: "radar", anchor: "f-1" },
-            { kind: "radar", reportId: "rr-1", findingId: "f-1" },
-        ],
     ])("reads %s with hint %j", (address, hint, want) => {
         expect(parseAddress(address, hint)).toEqual(want);
     });
@@ -176,8 +170,7 @@ describe("parseAddress", () => {
         });
     });
 
-    // radar: is the attachment namespace (resolveAttached), not an address
-    it.each(["commit:abc", "radar:f-1", "decision:dec-1"])("leaves %s unsupported", (address) => {
+    it.each(["commit:abc", "decision:dec-1"])("leaves %s unsupported", (address) => {
         expect(parseAddress(address)).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
     });
 
