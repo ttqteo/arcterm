@@ -1462,12 +1462,18 @@ export const councilSummary = {
                 await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1000, height: 950, deviceScaleFactor: 1, mobile: false });
                 await openSummary(h, ctx);
                 await sleep(400);
+                // the Report keeps its scroll per council, and the step before left a jump link's glide on the box: a
+                // direct scrollTop cancels a glide in flight, so the box is at its top for the shot and the measure
+                await h.ev(`document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)}).scrollTop = 0`);
+                await sleep(300);
                 const m = await h.ev(`(() => {
                     const root = document.querySelector(${q(SUMMARY)});
                     const box = root.querySelector("[data-council-scroll]");
                     const glance = root.querySelector("[data-council-glance]").getBoundingClientRect();
-                    const column = root.querySelector("h1").parentElement.getBoundingClientRect();
+                    // the cover's own title: the header row above the box has an h1 of its own, 44px tall at the top
+                    const column = root.querySelector("[data-council-cover] h1").parentElement.getBoundingClientRect();
                     return {
+                        scrollTop: box.scrollTop,
                         glanceTop: Math.round(glance.top),
                         columnBottom: Math.round(column.bottom),
                         widths: [...root.querySelectorAll("[data-council-direction]")].map((d) => Math.round(d.getBoundingClientRect().width)),
