@@ -135,7 +135,7 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
                                     onClick={() => show(t.agent.id)}
                                     onContextMenu={(e) => showTabMenu(t, e)}
                                     className={cn(
-                                        "flex h-[26px] min-w-[44px] max-w-[120px] shrink-0 cursor-pointer items-center gap-1.5 rounded-[7px] px-2 text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                        "flex h-[26px] min-w-[44px] max-w-[120px] cursor-pointer items-center gap-1.5 rounded-[7px] px-2 text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                                         on
                                             ? "bg-surface-hover font-semibold text-primary ring-1 ring-edge-mid"
                                             : "text-secondary hover:bg-surface-hover hover:text-primary"
