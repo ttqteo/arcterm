@@ -26,6 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A file link in Chat that the agent named from a folder it had cd'd into now opens instead of saying "File not found".
 - Retry the summary on a council's Report is off when no idea was sent, and says why.
 - An image over 3.5 MB is refused when you add it to a message, not lost on send.
 - A council that was running when arcterm closed now gets its saved report too, like one you stopped.
