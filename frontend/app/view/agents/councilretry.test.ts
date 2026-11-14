@@ -6,8 +6,11 @@ import {
     isSafeguardFlag,
     offersRetryAll,
     RETRY_MODELS,
+    RETRY_NOTHING_SENT,
+    RETRY_RUNNING,
     retryAllModels,
     retryAllSeats,
+    retryHold,
     retryModelChoices,
     retryModelLabel,
 } from "./councilretry";
@@ -104,5 +107,35 @@ describe("retryModelLabel", () => {
     it("names the model", () => {
         expect(retryModelLabel("sonnet")).toBe("Retry on sonnet");
         expect(retryModelLabel("claude-opus-4-8")).toBe("Retry on Opus 4.8");
+    });
+});
+
+describe("retryHold", () => {
+    const council = (state: string, proposals: Partial<CouncilProposal>[]) =>
+        ({
+            state,
+            experts: [
+                { id: "ux", name: "UX", model: "sonnet" },
+                { id: "lead", name: "Lead", model: "opus", coordinator: true },
+            ],
+            proposals,
+        }) as unknown as Council;
+    const sent = { id: "P1", author: "ux", title: "Wake on hover" };
+    const held = { id: "P2", author: "ux", title: "Sleep", draft: "held" };
+
+    it("holds every Retry while the council runs", () => {
+        expect(retryHold(council("running", [sent]), "ux")).toBe(RETRY_RUNNING);
+        expect(retryHold(council("running", [sent]), "lead")).toBe(RETRY_RUNNING);
+    });
+
+    it("holds the coordinator's Retry, a summary, when no idea was sent, as the runner refuses it", () => {
+        expect(retryHold(council("failed", []), "lead")).toBe(RETRY_NOTHING_SENT);
+        expect(retryHold(council("failed", [held]), "lead")).toBe(RETRY_NOTHING_SENT);
+    });
+
+    it("leaves a seat's Retry on with no sent idea, and the coordinator's once one is sent", () => {
+        expect(retryHold(council("failed", []), "ux")).toBeNull();
+        expect(retryHold(council("failed", [held, sent]), "lead")).toBeNull();
+        expect(retryHold(council("awaiting-you", [sent]), "lead")).toBeNull();
     });
 });

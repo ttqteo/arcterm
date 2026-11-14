@@ -155,7 +155,7 @@ import {
     type SeatableAgent,
 } from "./councilmodel";
 import { councilOpenedAtom, openedAt } from "./councilopened";
-import { offersRetryAll, retryAllModels, retryAllSeats } from "./councilretry";
+import { offersRetryAll, retryAllModels, retryAllSeats, retryHold } from "./councilretry";
 import { RetryModelPick, RetryWithButton } from "./councilretrymenu";
 import { councilRevealAtom } from "./councilreveal";
 import {
@@ -1354,6 +1354,19 @@ function PersonText({ councilId, item }: { councilId: string; item: ReplyPost })
 function ReachRow({ to }: { to: ReachChips }) {
     const failed = to.by === "failed";
     const Icon = failed ? CircleAlert : to.by === "you" ? ArrowRight : Route;
+    const pieces: ReactNode[] = [];
+    if (to.by === "choosing") {
+        pieces.push(<span key="choosing">{ROUTER_CHOOSING}</span>);
+    }
+    if (failed) {
+        pieces.push(<span key="failed">Router failed</span>);
+    }
+    if (to.everyone) {
+        pieces.push(<SeatChip key="everyone" who={null} text="Everyone" />);
+    }
+    for (const who of to.seats) {
+        pieces.push(<SeatChip key={who.author} who={who} text={who.name} />);
+    }
     return (
         <div
             data-council-reach={to.by}
@@ -1365,12 +1378,8 @@ function ReachRow({ to }: { to: ReachChips }) {
             )}
         >
             <Icon size={12} aria-hidden className="flex-none" />
-            {to.by === "choosing" && <span>{ROUTER_CHOOSING}</span>}
-            {failed && <span>Router failed</span>}
-            {to.everyone && <SeatChip who={null} text="Everyone" />}
-            {to.seats.map((who) => (
-                <SeatChip key={who.author} who={who} text={who.name} />
-            ))}
+            {/* a space between the pieces, which the flex row does not draw, keeps the DOM text 'Router failed UX' */}
+            {pieces.flatMap((p, i) => (i === 0 ? [p] : [" ", p]))}
         </div>
     );
 }
@@ -1400,7 +1409,7 @@ function QuoteRow({ quote }: { quote: AnswerQuote }) {
     const body = (
         <>
             <CornerDownRight size={11} aria-hidden className="flex-none" />
-            <span className="flex-none font-semibold text-secondary">{quote.name}</span>
+            <span className="flex-none font-semibold text-secondary">{quote.name}</span>{" "}
             <span className="min-w-0 truncate">{quote.text}</span>
         </>
     );
@@ -1935,7 +1944,8 @@ function SkippedLine({ item, onOpenTerminal }: { item: SkipLine; onOpenTerminal:
 
 function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Actions }) {
     const key = `retry:${item.author}`;
-    const running = c.state === "running"; // a retry while it runs is refused: one job at a time
+    // a retry while it runs is refused (one job at a time), and so is a summary's with no sent idea
+    const hold = retryHold(c, item.author);
     return (
         <div
             role="alert"
@@ -1953,8 +1963,8 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
                 type="button"
                 data-council-retry={item.author}
                 aria-label={`Retry ${item.name}`}
-                disabled={running || acts.busy.has(key)}
-                title={running ? "The council is running: retry once it is done" : undefined}
+                disabled={hold != null || acts.busy.has(key)}
+                title={hold ?? undefined}
                 onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, item.author))}
                 className={cn(secondaryButton, "h-[22px] px-[8px] text-[12px]")}
             >
@@ -1963,7 +1973,7 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
             <RetryWithButton
                 expert={c.experts.find((e) => e.id === item.author)}
                 error={c.failed?.[item.author]?.error}
-                disabled={running || acts.busy.has(key)}
+                disabled={hold != null || acts.busy.has(key)}
                 onPick={(model) => void acts.run(key, "Retry", () => retryExpert(c.id, item.author, model))}
                 className={cn(secondaryButton, "h-[22px] px-[6px] text-[12px]")}
             />
@@ -3728,6 +3738,8 @@ export function CouncilChat({
         }
     }, [openId, readUpTo, setRead]);
     const [folded, setFolded] = useAtom(councilIdeasRailFoldedAtom);
+    // the Memory tab's dot, carried onto the unfold button while the rail is folded, so a waiting card is not missed
+    const memoryDot = memoryDotOn(c, useAtomValue(memorySeenAtom)[c.id]);
     const [railTab, setRailTab] = useState<RailTabName>("thread");
     // a thread opened any way (its replies button, Enter on the cursor, the Summary's link) shows on the rail's second tab
     useEffect(() => {
@@ -3927,6 +3939,14 @@ export function CouncilChat({
                         >
                             <ChevronsLeft size={13} strokeWidth={2} aria-hidden />
                             Ideas · {list.ideas.length}
+                            {memoryDot && (
+                                <span
+                                    role="img"
+                                    aria-label="Something new in memory, or a suggestion or a held direction waits for you"
+                                    data-council-memory-dot
+                                    className="inline-block h-[6px] w-[6px] rounded-full bg-accent-soft"
+                                />
+                            )}
                         </button>
                     )}
                     {onlySeat != null && (

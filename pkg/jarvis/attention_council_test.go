@@ -13,7 +13,7 @@ import (
 
 func TestBuildAttentionCouncilWaitingOnYou(t *testing.T) {
 	in := AttentionInput{Councils: []*council.Council{
-		{Id: "c-wait", Feature: "Rail apps", State: council.StateAwaiting, Updated: 1700},
+		{Id: "c-wait", Feature: "Rail apps", State: council.StateAwaiting, Updated: 1700, Project: `D:\code\app`},
 		{Id: "c-done", Feature: "Other", State: council.StateDone, Updated: 1800},
 		{Id: "c-run", Feature: "Running", State: council.StateRunning, Updated: 1900},
 	}}
@@ -24,7 +24,7 @@ func TestBuildAttentionCouncilWaitingOnYou(t *testing.T) {
 		}
 	}
 	want := []wshrpc.AttentionItem{{
-		Kind: AttentionCouncil, Key: "council:c-wait", ORef: "council:c-wait",
+		Kind: AttentionCouncil, Key: "council:c-wait", ORef: "council:c-wait", ProjectPath: `D:\code\app`,
 		Text: "Council waiting on you: Rail apps", Action: "Open", WaitingSince: 1700,
 	}}
 	if !reflect.DeepEqual(got, want) {

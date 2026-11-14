@@ -3,6 +3,7 @@
 //
 // Where a Needs you item lands: the palette's Enter and a click on a notification share it.
 
+import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { openReview } from "@/app/view/agents/docreviewstore";
 import { openRunDag } from "@/app/view/agents/runrailsections";
@@ -47,6 +48,9 @@ export function openNeedsTarget(model: AgentsViewModel, t: NeedsTarget | null): 
             return true;
         case "council":
             fireAndForget(() => openTarget(model, { kind: "council", councilId: t.councilId }));
+            return true;
+        case "cockpit":
+            globalStore.set(model.surfaceAtom, "cockpit");
             return true;
         default:
             return false;

@@ -113,6 +113,9 @@ type AttentionItem struct {
 	ORef string `json:"oref,omitempty"`
 	// LearnID is the proposal a learn-proposal item decides (<target>#<key>), what LearnDecide takes.
 	LearnID string `json:"learnid,omitempty"`
+	// ProjectPath is the project folder of an item that names no channel to scope it by: today a council's (its
+	// experts' cwd). The cockpit's project filter maps it to a registry name the way it maps a channel's path.
+	ProjectPath string `json:"projectpath,omitempty"`
 
 	// EffortOID/ChunkLabel are the initiative this waiting thing belongs to, read off the owning run's
 	// EffortRef. Only the oid travels: the effort's title is already on the Brief, so joining it here
