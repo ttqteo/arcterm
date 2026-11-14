@@ -116,7 +116,8 @@ The runner keeps every activity of every expert, not only the last, capped at 20
 kind (Read, Search, Ran command, Proposed, Replied), target (file, pattern, command) and result when there is one
 (pass, fail, matches found). Commands render in mono, per DESIGN.md.
 
-The timeline opens in the Seats popover when a seat is clicked, and from an expert card on the Map tab.
+The timeline opens in the Seats popover when a seat is clicked, and from an expert card on the Map tab or among the
+Discussion's round-1 cards.
 
 ### 3. The Map tab (UI)
 
