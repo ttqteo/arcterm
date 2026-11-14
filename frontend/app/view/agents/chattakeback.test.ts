@@ -5,7 +5,6 @@ import type { PendingMessage } from "./chatpending";
 import {
     boxHolds,
     boxShowsTyped,
-    enterEcho,
     inputBoxRows,
     mergeTaken,
     takeBackPlan,
@@ -161,29 +160,6 @@ describe("typedEcho", () => {
     });
 });
 
-describe("enterEcho", () => {
-    const screen = (...box: string[]) => ["> earlier message", "", rule, ...box, rule, "  ⏵⏵ auto mode on"];
-    const sent = "có, và ví dụ tôi muốn cockpit fullscreen ở màn 2 có được không?";
-    it("is gone once the text left the box: submitted, or queued while Claude works", () => {
-        expect(enterEcho(screen("❯ "), sent)).toBe("gone");
-        expect(enterEcho(screen("❯ something typed since"), sent)).toBe("gone");
-    });
-    it("is a line break when the text sits over an empty row (2026-11-13, a message read Queued for 15 min)", () => {
-        expect(enterEcho(screen(`❯ ${sent}`, "  "), sent)).toBe("linebreak");
-        expect(enterEcho(screen("❯ [Pasted text #1 +3 lines]", ""), "a\nb\nc\nd")).toBe("linebreak");
-    });
-    it("is held while the text sits alone, wrapped or not, its Enter not read yet", () => {
-        expect(enterEcho(screen(`❯ ${sent}`), sent)).toBe("held");
-        expect(enterEcho(screen("❯ có, và ví dụ tôi muốn cockpit fullscreen", "  ở màn 2 có được không?"), sent)).toBe(
-            "held"
-        );
-    });
-    it("is unknown with no screen or no box on it", () => {
-        expect(enterEcho(null, sent)).toBe("unknown");
-        expect(enterEcho(["a /model menu"], sent)).toBe("unknown");
-    });
-});
-
 // the screen as the terminal reads it: each full-width rule is joined to the row drawn after it (a wrap to xterm), so no
 // rule stands alone; read from a live Claude Code 2.1.323 on 2026-11-13, where every send logged echo=unknown
 describe("a rule joined to the row after it", () => {
@@ -199,12 +175,9 @@ describe("a rule joined to the row after it", () => {
         expect(inputBoxRows(joined("❯ "))).toEqual(["❯ "]);
         expect(inputBoxRows(joined(`❯ ${sent}`, "  "))).toEqual([`❯ ${sent}`, "  "]);
     });
-    it("reads the box's text, a line break and an empty box from it", () => {
+    it("reads the box's text and an empty box from it", () => {
         expect(typedEcho(joined("❯ "), sent)).toBe("absent");
         expect(typedEcho(joined(`❯ ${sent}`), sent)).toBe("shown");
-        expect(enterEcho(joined(`❯ ${sent}`), sent)).toBe("held");
-        expect(enterEcho(joined(`❯ ${sent}`, "  "), sent)).toBe("linebreak");
-        expect(enterEcho(joined("❯ "), sent)).toBe("gone");
         expect(boxHolds(joined(`❯ ${sent}`), [sent])).toBe(true);
     });
     it("leaves a line that is a rule alone, and one that only starts with a short dash run", () => {

@@ -4,16 +4,14 @@ import { withResultLines } from "./chatinitiative";
 import {
     ECHO_ABSENT_MAX_MS,
     ECHO_WAIT_MAX_MS,
-    ENTER_CONFIRM_MAX_MS,
-    ENTER_RETRIES,
     PASTE_OVER,
     PENDING_IDLE_MS,
     PENDING_MAX_MS,
     PENDING_QUEUED_MAX_MS,
+    REPEAT_SEND_MS,
     SubmitError,
     btwQuestion,
     echoStep,
-    enterStep,
     holdLine,
     isSendNowKey,
     pastesBody,
@@ -26,6 +24,7 @@ import {
     queuedBubbleUp,
     recall,
     releasesHeld,
+    repeatsSend,
     sendFailLogLine,
     sendFailure,
     sendHold,
@@ -312,6 +311,29 @@ describe("releasesHeld", () => {
     });
 });
 
+describe("repeatsSend", () => {
+    const last = { text: "trong ngân sách nhưng max 64k nhé", at: 10_000 };
+
+    it("is the same text to the same agent again within REPEAT_SEND_MS (the 2026-11-14 double send came 2.4 s after)", () => {
+        expect(repeatsSend(last, last.text, 12_360)).toBe(true);
+        expect(repeatsSend(last, last.text, 10_000 + REPEAT_SEND_MS - 1)).toBe(true);
+    });
+
+    it("lets a different text, a later one, or a first send go", () => {
+        expect(repeatsSend(last, "khác", 11_000)).toBe(false);
+        expect(repeatsSend(last, last.text, 10_000 + REPEAT_SEND_MS)).toBe(false);
+        expect(repeatsSend(undefined, last.text, 11_000)).toBe(false);
+    });
+
+    it("compares the text as sent, so spaces around it do not make it a new one", () => {
+        expect(repeatsSend(last, `  ${last.text}\n`, 11_000)).toBe(true);
+    });
+
+    it("never takes a clock that went back for a repeat", () => {
+        expect(repeatsSend(last, last.text, 9_000)).toBe(false);
+    });
+});
+
 describe("pendsAsBubble", () => {
     it("is true for a message, false for a /command (the projection draws it as a command entry, never your bubble)", () => {
         expect(pendsAsBubble("hello")).toBe(true);
@@ -403,22 +425,6 @@ describe("echoStep", () => {
         expect(echoStep("absent", ECHO_ABSENT_MAX_MS - 1)).toBe("wait");
         expect(echoStep("absent", ECHO_ABSENT_MAX_MS)).toBe("fail");
         expect(ECHO_ABSENT_MAX_MS).toBeGreaterThan(ECHO_WAIT_MAX_MS);
-    });
-});
-
-describe("enterStep", () => {
-    it("is done once the text left the box, or when there is no box to read", () => {
-        expect(enterStep("gone", 0, 0)).toBe("done");
-        expect(enterStep("unknown", 0, 0)).toBe("done");
-    });
-    it("waits on a box still holding the text alone, then lets it be: its Enter is on its way", () => {
-        expect(enterStep("held", ENTER_CONFIRM_MAX_MS - 1, 0)).toBe("wait");
-        expect(enterStep("held", ENTER_CONFIRM_MAX_MS, 0)).toBe("done");
-    });
-    it("retries an Enter that went in as a line break, then fails so the person presses it", () => {
-        expect(enterStep("linebreak", 0, 0)).toBe("retry");
-        expect(enterStep("linebreak", 0, ENTER_RETRIES - 1)).toBe("retry");
-        expect(enterStep("linebreak", 0, ENTER_RETRIES)).toBe("fail");
     });
 });
 

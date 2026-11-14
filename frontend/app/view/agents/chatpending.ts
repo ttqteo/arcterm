@@ -8,7 +8,7 @@
 import type { AgentEntry } from "./agentsviewmodel";
 import { stripResultLines } from "./chatinitiative";
 import { unwrapWholePaste } from "./chattagblocks";
-import type { EnterEcho, TypedEcho } from "./chattakeback";
+import type { TypedEcho } from "./chattakeback";
 import { opensPanel } from "./slashcommands";
 
 /** What a pending command stands for until its row lands: a side question the arc mod is answering (`btw`), a panel
@@ -231,6 +231,29 @@ export function releasesHeld(held: boolean, hold: string | null, sendable: boole
     return held && hold == null && sendable;
 }
 
+/** How long after a message goes to an agent the same text going again counts as the same send repeated, not a message
+ *  of its own. 2026-11-14 a Chat message went to Claude Code twice, 2.4 s apart, two prompts of the same text (two
+ *  `enqueue` records in the transcript); 2026-11-05 another, 1.9 s apart. Nobody sends the very same words again within
+ *  seconds on purpose, before the first has even reached Claude. */
+export const REPEAT_SEND_MS = 5_000;
+
+/** The last message the box sent to an agent: its text as sent and when. */
+export interface LastSend {
+    text: string;
+    at: number;
+}
+
+/** Pure: whether sending `text` at `now` repeats `last`, the message just sent to the same agent: the same text, trimmed,
+ *  within REPEAT_SEND_MS. useAgentSend drops such a send, whatever pressed it (a second Enter on a box that had not
+ *  cleared yet, a held send let go, a chip), so one message never reaches Claude Code twice. */
+export function repeatsSend(last: LastSend | undefined, text: string, now: number): boolean {
+    if (last == null) {
+        return false;
+    }
+    const since = now - last.at;
+    return text.trim() === last.text.trim() && since >= 0 && since < REPEAT_SEND_MS;
+}
+
 /** A message longer than this goes in as a paste even on one line: Claude Code reads a big chunk of typed input as a
  *  paste, and then takes an Enter that rides in the same chunk as one more line, so the message sat in its box. */
 export const PASTE_OVER = 200;
@@ -269,29 +292,6 @@ export function echoStep(echo: TypedEcho, waitedMs: number): "enter" | "wait" | 
             return waitedMs >= ECHO_WAIT_MAX_MS ? "enter" : "wait";
         case "absent":
             return waitedMs >= ECHO_ABSENT_MAX_MS ? "fail" : "wait";
-    }
-}
-
-/** How long a send watches Claude Code's box after its Enter for the text to leave it. Past it the send is taken as
- *  done: an Enter not read yet is still on its way. */
-export const ENTER_CONFIRM_MAX_MS = 10_000;
-
-/** How many times a send takes back an Enter that went in as a line break and presses it again before it gives up. */
-export const ENTER_RETRIES = 2;
-
-/** Pure: what a send does `waitedMs` after its Enter, from what the box shows (chattakeback.ts enterEcho) and how many
- *  retries it made: `done` once the text left the box (or there is no box to read, or the watch is over), `retry` when
- *  the Enter went in as a line break (Backspace, then Enter again), `fail` when it did so after every retry, so the
- *  message waits in Claude Code's box for an Enter of the person's. */
-export function enterStep(echo: EnterEcho, waitedMs: number, retries: number): "done" | "wait" | "retry" | "fail" {
-    switch (echo) {
-        case "gone":
-        case "unknown":
-            return "done";
-        case "held":
-            return waitedMs >= ENTER_CONFIRM_MAX_MS ? "done" : "wait";
-        case "linebreak":
-            return retries < ENTER_RETRIES ? "retry" : "fail";
     }
 }
 
