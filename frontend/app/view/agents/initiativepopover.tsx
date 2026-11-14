@@ -386,7 +386,7 @@ function PopoverBody({
             data-owns-keys
             tabIndex={-1}
             onKeyDown={onKeyDown}
-            className="flex w-[340px] flex-col rounded-[10px] border border-edge-mid bg-surface-raised shadow-popover-xl outline-none"
+            className="flex flex-col outline-none"
         >
             <div className="flex flex-col gap-[8px] border-b border-edge-mid px-[14px] pb-[11px] pt-[13px]">
                 <div className="flex items-center gap-[8px]">
@@ -602,7 +602,13 @@ export function InitiativePopover({
     return (
         <FloatingPortal>
             <div ref={refs.setFloating} style={floatingStyles} {...getFloatingProps(contained)} className="z-[80]">
-                <PopoverReveal open={open} origin="top left">
+                {/* the panel's look is on the motion element, not on the body: a frost inside the fade would blur only the
+                    fading layer until it ended (DESIGN.md "Overlays") */}
+                <PopoverReveal
+                    open={open}
+                    origin="top left"
+                    className="w-[340px] rounded-[10px] border border-edge-mid frost shadow-popover-xl"
+                >
                     <PopoverBody model={model} agent={agent} close={close} />
                 </PopoverReveal>
             </div>

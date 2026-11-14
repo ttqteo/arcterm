@@ -54,7 +54,7 @@ import {
 import { SurfaceError } from "./surfacescaffold";
 
 const POPOVER =
-    "absolute top-[calc(100%+6px)] z-[60] box-border flex flex-col rounded-xl border border-edge-strong bg-surface-raised p-1.5 shadow-popover";
+    "absolute top-[calc(100%+6px)] z-[60] box-border flex flex-col rounded-xl border border-edge-strong frost p-1.5 shadow-popover";
 
 // Scan-scope selector: the Radar surface owns its scanned repo, initialized from the cockpit's global
 // project but explicitly selectable here so the surface is self-contained. Reuses the project registry —

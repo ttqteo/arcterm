@@ -36,7 +36,7 @@ function Suggestions({
         <PopoverReveal
             open={shown.length > 0}
             origin="top"
-            className="absolute left-0 top-full z-20 mt-1 w-[240px] overflow-hidden rounded border border-border bg-modalbg py-1 shadow-popover"
+            className="absolute left-0 top-full z-20 mt-1 w-[240px] overflow-hidden rounded border border-border frost py-1 shadow-popover"
         >
             {groups.map((g) =>
                 g.rows.length === 0 ? null : (

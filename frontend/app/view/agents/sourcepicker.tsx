@@ -89,7 +89,7 @@ export function SourcePicker(props: SourceTreeProps) {
                             close();
                         }
                     }}
-                    className="absolute left-0 top-[calc(100%+6px)] z-30 w-[328px] rounded-[10px] border border-edge-mid bg-surface-raised p-[6px] shadow-popover-md"
+                    className="absolute left-0 top-[calc(100%+6px)] z-30 w-[328px] rounded-[10px] border border-edge-mid frost p-[6px] shadow-popover-md"
                 >
                     <SourceTree {...props} onPicked={close} />
                 </div>

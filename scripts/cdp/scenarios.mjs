@@ -60038,7 +60038,7 @@ const ttPickerKey = (key, code, mods = {}) =>
         el.dispatchEvent(new KeyboardEvent("keydown", ${JSON.stringify({ key, code, bubbles: true, cancelable: true, ...mods })}));
         return true;
     })()`;
-const TT_OPEN_PICKER = modChord("T", "KeyT", true);
+const TT_OPEN_PICKER = modChord("O", "KeyO", true);
 const TT_PICKER_ROW = (id) => `document.querySelector('[data-tool-picker-row="${id}"]')`;
 // the rows of the tree that read panel: the tab ids of the terminals docked
 const TT_PANEL_ROWS = `[...document.querySelectorAll('[data-tree-terminal-row] [data-terminal-place="panel"]')]
@@ -60049,7 +60049,7 @@ const TT_CTRL_I_TOOL = {
     "install:darwin": TT_SLEEP,
 };
 
-// --- tools-picker: Open a tool (board Picker), from Ctrl+Shift+T and the agent header's Tool button. Rows say what a
+// --- tools-picker: Open a tool (board Picker), from Ctrl+Shift+O and the agent header's Tool button. Rows say what a
 // tool is doing: an install under way offers Show, a failed one Try again, a command that is not on PATH its Edit. Enter
 // opens the selected tool in the centre, Shift+Enter in the panel, Ctrl+I installs one that is not installed.
 const toolsPicker = {
@@ -60090,7 +60090,7 @@ const toolsPicker = {
         })`);
         await h.shot("cdp-shots/tools-picker-1-open.png");
         rec(
-            "1. Ctrl+Shift+T opens the picker with the keyboard in its search box and a context line naming where tools open",
+            "1. Ctrl+Shift+O opens the picker with the keyboard in its search box and a context line naming where tools open",
             started.every(Boolean) && bad && up && open.focused && open.context.startsWith("Opens in") && open.context.includes(TT_PROJECT) && open.rows > 0,
             JSON.stringify({ started, bad, ...open })
         );

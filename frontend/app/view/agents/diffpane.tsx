@@ -272,7 +272,7 @@ function OptionsMenu({ items, onPick }: { items: OptionItem[]; onPick: (id: Opti
             {open ? (
                 <div
                     role="menu"
-                    className="absolute right-0 top-[calc(100%+6px)] z-30 w-[236px] rounded-[10px] border border-edge-mid bg-surface-raised p-[4px] shadow-popover-md"
+                    className="absolute right-0 top-[calc(100%+6px)] z-30 w-[236px] rounded-[10px] border border-edge-mid frost p-[4px] shadow-popover-md"
                 >
                     {items.map((i) => (
                         <button

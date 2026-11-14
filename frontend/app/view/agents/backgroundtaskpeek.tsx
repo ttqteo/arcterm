@@ -586,7 +586,7 @@ export function BackgroundTaskPeek({
                 data-task-kind={monitor ? "monitor" : "shell"}
                 data-task-state={state}
                 onKeyDown={onKeyDown}
-                className="z-[60] overflow-hidden rounded-[9px] border border-edge-strong bg-surface-raised shadow-popover-lg focus:outline-none"
+                className="z-[60] overflow-hidden rounded-[9px] border border-edge-strong frost shadow-popover-lg focus:outline-none"
             >
                 <div className="flex items-center gap-[8px] px-[10px] py-[8px]">
                     <Mark size={12} aria-hidden className="flex-none text-accent" />
