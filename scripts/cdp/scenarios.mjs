@@ -186,7 +186,7 @@ const surfaceSmoke = {
             });
             await h.shot(`cdp-shots/surface-${surface}.png`);
         }
-        // Radar is retired (docs/superpowers/plans/2026-11-13-retire-radar.md): the rail, Mod+1..6 and the go-to
+        // Radar is retired (run c2a6aebb): the rail, Mod+1..6 and the go-to
         // leader name six surfaces and nothing else. Keys go to the document the way the Ctrl+P scenarios send them.
         const key = (k, code, mods = "") =>
             h.ev(
