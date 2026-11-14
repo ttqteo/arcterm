@@ -65,8 +65,12 @@ export function boxPlaceholder(state: BoxState, agentName: string, override?: st
 /** A piece of a hint line: plain text, or a key drawn as a keycap. */
 export type HintPart = string | { key: string };
 
-/** The idle line while suggested replies show under the box: it names Tab, which walks them (chatsuggest.ts stepPick).
- *  Only the idle line with no question waiting gets it; every other state keeps its own words. */
-export function boxTabPlaceholder(agentName: string): HintPart[] {
+/** The idle or asleep line while suggested replies show under the box: it names Tab, which walks them (chatsuggest.ts
+ *  stepPick). Asleep it still says a message wakes the agent, as a chip's does. Only those two lines with no question
+ *  waiting get it; every other state keeps its own words. */
+export function boxTabPlaceholder(agentName: string, asleep = false): HintPart[] {
+    if (asleep) {
+        return [`message ${agentName} to wake it, `, { key: "Tab" }, " for suggestions… (Enter)"];
+    }
     return [`Reply to ${agentName}, `, { key: "Tab" }, " for suggestions, @ to mention, / for commands"];
 }

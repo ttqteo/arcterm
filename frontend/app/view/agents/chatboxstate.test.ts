@@ -113,4 +113,12 @@ describe("boxTabPlaceholder", () => {
             " for suggestions, @ to mention, / for commands",
         ]);
     });
+
+    it("asleep, names Tab and keeps saying a message wakes the agent", () => {
+        expect(boxTabPlaceholder("Atlas", true)).toEqual([
+            "message Atlas to wake it, ",
+            { key: "Tab" },
+            " for suggestions… (Enter)",
+        ]);
+    });
 });

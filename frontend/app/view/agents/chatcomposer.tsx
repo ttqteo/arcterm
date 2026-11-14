@@ -862,8 +862,9 @@ function ComposerBox({
     // not while a Sleep is under way: Esc would cut short the compaction the sleep waits on
     const showStop = !asleep && !dozing && agent.blockId != null && canStop(agent.state, agent.sleeping);
     // the finished turn's suggested replies: they stay while the person types (a click over typed text asks first,
-    // sendSuggested) and step aside once an attachment goes in
-    const suggested = chips != null && !asleep && !waking && !dozing && att.attachments.length === 0 ? chips : NO_CHIPS;
+    // sendSuggested) and step aside once an attachment goes in. Asleep they show too, and one sent wakes the agent as a
+    // typed message does; they hide while the agent falls asleep or wakes, when the box is shut
+    const suggested = chips != null && !waking && !dozing && att.attachments.length === 0 ? chips : NO_CHIPS;
     // the running agent's actions that have something to show (chatsuggest.ts runningActions): the diff once the turn
     // edited a file, the terminal once a command has run a while; read again when a running command gets there
     const acts = showStop ? runningActions(entries ?? [], Date.now()) : NO_ACTS;
@@ -949,13 +950,13 @@ function ComposerBox({
     useLayoutEffect(() => {
         onBoxState?.(state);
     }, [state]);
-    // the empty box's line: what Enter does with a picked chip; while chips show, the idle line names Tab (a waiting
-    // question keeps its own words); else the pane's line
+    // the empty box's line: what Enter does with a picked chip; while chips show, the idle or asleep line names Tab (a
+    // waiting question keeps its own words); else the pane's line
     const hint: HintPart[] | string =
         picked != null
             ? pickedHint(picked, pickedEditable)
-            : tabChips.length > 0 && state === "idle" && !questionWaits
-              ? boxTabPlaceholder(agent.name)
+            : tabChips.length > 0 && (state === "idle" || state === "asleep") && !questionWaits
+              ? boxTabPlaceholder(agent.name, state === "asleep")
               : placeholder;
     // The box's height springs to its content's measured height, so a state that adds or drops a line (the action chips,
     // the drop zone, a wrapping text) opens and closes the box instead of snapping it. The content sits at the bottom of

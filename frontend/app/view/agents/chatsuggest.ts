@@ -177,19 +177,18 @@ export function initiativeChips(
           ];
 }
 
-/** Pure: whether Chat asks the model about this turn: the agent is back at its prompt, awake, with a reply to read and
- *  nothing else asking the person (its own question card, a brainstorm question, a message on its way), and the person
+/** Pure: whether Chat asks the model about this turn: the agent is back at its prompt or asleep after it, with a reply
+ *  to read and nothing else asking the person (its own question card, a brainstorm question, a message on its way), and the person
  *  has it in front of them, so an agent nobody looks at costs no call. */
 export function wantsModelSuggest(i: {
     reply: string | null;
     idle: boolean;
-    asleep: boolean;
     asking: boolean;
     questionWaits: boolean;
     pending: boolean;
     seen: boolean;
 }): boolean {
-    return i.reply != null && i.idle && !i.asleep && !i.asking && !i.questionWaits && !i.pending && i.seen;
+    return i.reply != null && i.idle && !i.asking && !i.questionWaits && !i.pending && i.seen;
 }
 
 /** Pure: the row's chips. A question's are the model's answers (with "ok" only once the call failed or found none); any

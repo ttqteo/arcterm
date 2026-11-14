@@ -250,7 +250,6 @@ describe("wantsModelSuggest", () => {
     const base = {
         reply: "x",
         idle: true,
-        asleep: false,
         asking: false,
         questionWaits: false,
         pending: false,
@@ -264,7 +263,6 @@ describe("wantsModelSuggest", () => {
     it("asks nothing while anything else holds the turn, or nobody looks", () => {
         expect(wantsModelSuggest({ ...base, reply: null })).toBe(false);
         expect(wantsModelSuggest({ ...base, idle: false })).toBe(false);
-        expect(wantsModelSuggest({ ...base, asleep: true })).toBe(false);
         expect(wantsModelSuggest({ ...base, asking: true })).toBe(false);
         expect(wantsModelSuggest({ ...base, questionWaits: true })).toBe(false);
         expect(wantsModelSuggest({ ...base, pending: true })).toBe(false);

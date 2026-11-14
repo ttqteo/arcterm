@@ -700,10 +700,10 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const questionWaits = boxPlaceholderOverride(card) != null;
     const turnKey = useMemo(() => (reply != null ? suggestKey(agent.id, reply) : null), [agent.id, reply]);
     const modelSuggest = useModelSuggest(turnKey);
+    // asleep the turn is over too (one read of the transcript holds its reply), so its chips show and a pick wakes it
     const turnOpen = {
         reply,
-        idle: agent.state === "idle",
-        asleep,
+        idle: agent.state === "idle" || asleep,
         asking,
         questionWaits,
         pending: showsPending,
