@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Radar retired, on a store that had it.** The Final ran on a fresh dev store, so migration 000028 never
+  dropped a real `db_radarreport` and no saved Startup surface read `radar`. Install the build over an arcterm that has
+  Radar reports and Settings → General → Startup surface set to Radar → it boots on Cockpit, the rail has no Radar,
+  `Ctrl+G` `r` does nothing, and `waveapp.log` shows no migration error. Commit: refactor: Retire Radar (run c2a6aebb)
 - [ ] (arcterm) **Frosted overlays on a Mac, and the folded Sprout window.** The Final's frost scenarios ran only in
   WebView2 (Windows). On a Mac build, open the command palette, a context menu with a submenu, a Chat footer menu and
   a toast over a working agent → each panel blurs what is behind it (the palette over its dimmed scrim, a submenu

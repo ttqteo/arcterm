@@ -66,6 +66,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In a council, Chốt (set as direction) shows a compass instead of a pin, so it no longer looks like Pin to Report
   beside it on a seat's message. A pinned chat seat's Final proposal in the saved report names the chat with its key
   (`notes · 0976023f`), as the Report does.
+- Radar is gone: its surface, its scans and their saved findings, its Settings card, and `Ctrl+G` `r`. The nav rail
+  now runs Cockpit, Jarvis, Agent, Usage, then Code and Diff, so `Ctrl+6` opens Diff, and a Startup surface set to
+  Radar opens Cockpit.
 
 ## 1.1.3 — 2026-11-14
 
