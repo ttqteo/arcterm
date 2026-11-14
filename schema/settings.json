@@ -207,15 +207,6 @@
         "agents:compactatk": {
           "type": "integer"
         },
-        "radar:auditruntime": {
-          "type": "string"
-        },
-        "radar:auditmodel": {
-          "type": "string"
-        },
-        "radar:classifymodel": {
-          "type": "string"
-        },
         "usage:insightslang": {
           "type": "string"
         },

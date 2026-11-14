@@ -563,12 +563,12 @@ describe("buildAttentionQueue", () => {
     });
 
     it("writes a label for every kind the server can emit", () => {
-        const kinds = ["escalation", "ask", "dag-gate", "dag-blocked", "radar-triage"];
+        const kinds = ["escalation", "ask", "dag-gate", "dag-blocked"];
         const q = buildAttentionQueue({
             attention: kinds.map((k, i) => item({ kind: k, key: k + i })),
             efforts: [],
         });
-        expect(q.map((r) => r.kind)).toEqual(["escalation", "ask", "dag gate", "dag blocked", "triage"]);
+        expect(q.map((r) => r.kind)).toEqual(["escalation", "ask", "dag gate", "dag blocked"]);
     });
 
     it("gives a dag-blocked row the error tone and the rest the asking tone", () => {
@@ -618,43 +618,10 @@ describe("buildAttentionQueue", () => {
         expect(new Set(q.map((r) => r.title)).size).toBe(2);
     });
 
-    it("addresses a triage row by its report rather than a channel", () => {
-        const q = buildAttentionQueue({
-            attention: [
-                item({
-                    kind: "radar-triage",
-                    key: "radar:r-1",
-                    channelid: "",
-                    channelname: "",
-                    runid: "",
-                    source: "arc",
-                    text: "4 findings need triage.",
-                    action: "Triage",
-                    oref: "radarreport:r-1",
-                }),
-            ],
-            efforts: [],
-        });
-        expect(q[0]!.nav).toEqual({ kind: "radar", oref: "radarreport:r-1" });
-        // the no-channel rule used to strip the action off any row without a channel, which would have
-        // left the one row that DOES have a destination looking inert.
-        expect(q[0]!.action).toBe("Triage");
-        expect(q[0]!.detail).toBe("arc");
-    });
-
-    it("degrades a triage row with no report to static rather than inventing a target", () => {
-        const q = buildAttentionQueue({
-            attention: [item({ kind: "radar-triage", key: "radar:r-1", channelid: "", channelname: "", runid: "" })],
-            efforts: [],
-        });
-        expect(q[0]!.nav).toBeNull();
-        expect(q[0]!.action).toBeNull();
-    });
-
     // a channel-backed item must not be re-routed just because a stray oref rode along.
-    it("prefers the channel for any kind that is not triage", () => {
+    it("prefers the channel for any kind that does not route by its oref", () => {
         const q = buildAttentionQueue({
-            attention: [item({ kind: "dag-gate", oref: "radarreport:r-1" })],
+            attention: [item({ kind: "dag-gate", oref: "effort:e-1" })],
             efforts: [],
         });
         expect(q[0]!.nav).toEqual({ kind: "channel", channelId: "ch-1", runId: "r1" });
@@ -880,7 +847,7 @@ describe("oldestWaitingTs", () => {
             attention: [
                 attentionItem({ kind: "dag-gate", key: "g1", waitingsince: 0 }),
                 attentionItem({ kind: "ask", key: "a1", waitingsince: T0 - HOUR }),
-                attentionItem({ kind: "radar-triage", key: "radar:two", waitingsince: T0 - DAY }),
+                attentionItem({ kind: "escalation", key: "e2", waitingsince: T0 - DAY }),
             ],
             efforts: [],
         });
@@ -938,10 +905,9 @@ describe("queueOpenTarget", () => {
         });
     });
 
-    // a triage row and a blocked chunk are the two kinds addressed by oref instead of by channel; both have
-    // their own surface, and routing them through the same router is what stops a second one existing.
+    // a due or blocked chunk and a council are the kinds addressed by oref instead of by channel; each has
+    // its own surface, and routing them through the same router is what stops a second one existing.
     it.each([
-        { kind: "radar" as const, oref: "radarreport:rr1" },
         { kind: "effort" as const, oref: "effort:e1" },
         { kind: "council" as const, oref: "council:c1" },
     ])("routes $kind through its own oref", (nav) => {

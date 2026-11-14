@@ -15,7 +15,6 @@ export type OpenTarget =
     | { kind: "record"; dossierId: string; anchor?: string }
     // view "activity" is the initiative's Activity sheet even while a plan waits to review (openref.ts selectEffort)
     | { kind: "effort"; effortId: string; view?: "activity" }
-    | { kind: "radar"; reportId: string; findingId?: string }
     | { kind: "note"; noteId: string }
     | { kind: "canvas"; topic: string; board?: string }
     | { kind: "brainstorm"; topic: string }
@@ -70,8 +69,6 @@ export function parseAddress(address: string, hint?: AddressHint): OpenTarget | 
             return { kind: "note", noteId: id };
         case "effort":
             return { kind: "effort", effortId: id };
-        case "radarreport":
-            return { kind: "radar", reportId: id, findingId: anchor };
         case "vault":
             return parseVaultNode(id, hint?.sourceType);
         case "canvas":

@@ -67,6 +67,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   beside it on a seat's message. A pinned chat seat's Final proposal in the saved report names the chat with its key
   (`notes · 0976023f`), as the Report does.
 - A council's Setup says what each expert looks at, such as Memory watcher (memory).
+- Radar is gone: its surface, its scans and their saved findings, its Settings card, and `Ctrl+G` `r`. The nav rail
+  now runs Cockpit, Jarvis, Agent, Usage, then Code and Diff, so `Ctrl+6` opens Diff, and a Startup surface set to
+  Radar opens Cockpit.
 
 ## 1.1.3 — 2026-11-14
 
@@ -273,8 +276,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
-- Radar is off the nav rail and the number chords while it waits to be removed: `Cmd`+`1`…`6` (`Ctrl` on Windows)
-  now go from Cockpit to Diff, pinned apps sit under Diff, and `Cmd`+`G` `r` still opens Radar until then.
+- **Radar is gone**: the surface, its badge, `Ctrl+G r` and its Settings rows are removed; `Ctrl+1`…`Ctrl+6` now cover
+  the six surfaces left, and pinned apps sit under Diff.
 - An agent in Chat adds chunks and notes to an initiative itself instead of handing you a card to add: what you
   asked for goes straight in, and a chunk you did not ask for waits as proposed on the initiative for you to accept
   or drop (a yes in the conversation accepts it).

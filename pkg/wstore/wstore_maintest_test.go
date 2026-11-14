@@ -11,8 +11,7 @@ import (
 )
 
 // TestMain points the wave data dir at a throwaway temp dir and initializes the wstore SQLite DB
-// (running the embedded migrations) so DB-backed tests in this package have a real store. No such
-// harness existed before RadarReport added the first DB-backed wstore test.
+// (running the embedded migrations) so DB-backed tests in this package have a real store.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "wstore-test-*")
 	if err != nil {

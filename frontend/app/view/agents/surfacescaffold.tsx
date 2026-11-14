@@ -71,8 +71,8 @@ export function SurfaceHeader({
 // className exists for one reason: the Jarvis Stage stacks this directly above and below bands that all
 // share one gutter (jarvis/stagemeasure.ts), and px-[30px] put it 6px right of every one of them. A
 // surface that owns its own horizontal measure passes it in; everyone else keeps the default.
-// children sit between the body and the buttons, for a state that has to show what it is working on
-// (Radar's collector list). secondaryAction sits beside the primary, or alone when a state has no
+// children sit between the body and the buttons, for a state that has to show what it is working on.
+// secondaryAction sits beside the primary, or alone when a state has no
 // accent action to offer.
 export function SurfaceEmptyState({
     glyph,

@@ -41,7 +41,6 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/projectactivity"
 	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
-	"github.com/wavetermdev/waveterm/pkg/reporadar"
 	"github.com/wavetermdev/waveterm/pkg/runpause"
 	"github.com/wavetermdev/waveterm/pkg/runprune"
 	"github.com/wavetermdev/waveterm/pkg/runregulator"
@@ -97,7 +96,6 @@ var snapshotBootSkips = []string{
 	"xmastree.EnableVaultSync",
 	"wavevault.StartSyncLoop",
 	"harnessupdate.StartLoop",
-	"reporadar.RecoverInterruptedScans",
 	"sessiontrash.StartPurgeLoop",
 	"sessionarchive.StartSweepLoop",
 	"wshserver.StartStorage",
@@ -563,9 +561,6 @@ func main() {
 	if firstLaunch {
 		log.Printf("first launch detected")
 	}
-	if !snapshotSkips("reporadar.RecoverInterruptedScans") {
-		reporadar.RecoverInterruptedScans(context.Background())
-	}
 	err = clearTempFiles()
 	if err != nil {
 		log.Printf("error clearing temp files: %v\n", err)
@@ -593,7 +588,7 @@ func main() {
 	if err := jarvis.MigrateTierPins(context.Background()); err != nil {
 		log.Printf("error migrating route tier pins: %v\n", err)
 	}
-	// a headless claude run (council, radar, background AI) in a project tied to a Claude account runs on it
+	// a headless claude run (council, background AI) in a project tied to a Claude account runs on it
 	consult.ExtraEnvFor = func(bin, cwd string) []string {
 		return claudeaccount.HeadlessEnv(bin, cwd, wconfig.GetWatcher().GetFullConfig().Projects, wavebase.GetHomeDir())
 	}

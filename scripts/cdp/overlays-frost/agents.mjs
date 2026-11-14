@@ -1,4 +1,4 @@
-// overlays-frost-agents: the agent sidebar's, the launcher's and Radar's popovers, frosted (docs/superpowers/specs/
+// overlays-frost-agents: the agent sidebar's and the launcher's popovers, frosted (docs/superpowers/specs/
 // 2026-11-14-overlays-chat-look-design.md, the plan's Task 5). One step per changed site: open it, wait for its reveal to end, run the
 // shared frost check (frostcheck.mjs) on its panel, screenshot it, close it.
 //
@@ -11,12 +11,11 @@
 //   card        5 subagent peek, 6 task popover                       a working agent's Cockpit card (agentrow.tsx)
 //   tabs        7 tab switcher                                        two fixture agents, the switcher's atom set
 //   bg          8 background-task peek                                the chat-bg-tasks scenario's arrange
-//   radar       9 scope selector, 10 audits popover, 11 dismiss menu  the Radar surface's dev scenario
-//   git        12 diff options, 13 source picker, 14 ref picker, 15 pull confirm, 16 launcher branch list,
-//              17 launcher account menu                               a throwaway repo with a remote, registered as a project
-//   canvas     18 canvas link picker                                  the canvas-versions scenario's arrange
-//   final      19 End final stage                                     the final-stage scenario's arrange, its stage seeded running
-// A site that opens inside the New agent dialog (16, 17) has the dialog's scrim above it, and that scrim has a backdrop
+//   git         9 diff options, 10 source picker, 11 ref picker, 12 pull confirm, 13 launcher branch list,
+//              14 launcher account menu                               a throwaway repo with a remote, registered as a project
+//   canvas     15 canvas link picker                                  the canvas-versions scenario's arrange
+//   final      16 End final stage                                     the final-stage scenario's arrange, its stage seeded running
+// A site that opens inside the New agent dialog (13, 14) has the dialog's scrim above it, and that scrim has a backdrop
 // blur, so it is the panel's backdrop root: the panel frosts the dialog panel behind it, which is the frost there is to
 // have (the plan's header decisions). Those two steps accept that one root and no other.
 //
@@ -329,57 +328,6 @@ export default (kit) => {
         ],
     };
 
-    const radarOpenView = async (h) => {
-        await AC.agentPage(h, `globalStore.set(agentsModel().surfaceAtom, "radar"); return true;`);
-        if (!(await waitFor(h, `typeof window.__setRadarScenario === "function"`, WAIT_MS))) return "the Radar surface never mounted";
-        await h.ev(`window.__setRadarScenario("results", ${JSON.stringify({ projectPath: process.cwd() })})`);
-        if (!(await waitFor(h, q('[data-radar-view="report"]'), WAIT_MS))) return `the Radar fixture report never showed: ${await seen(h)}`;
-        await polishNap(600);
-        return true;
-    };
-    const radarBackdrop = (h) => click(h, q(".fixed.inset-0.z-50"));
-    const radar = {
-        surface: "radar",
-        async arrange(h) {
-            const err = await radarOpenView(h);
-            if (err !== true) throw new Error(err);
-        },
-        async teardown(h) {
-            await h.ev(`window.__setRadarScenario?.("live")`).catch(() => {});
-        },
-        sites: [
-            {
-                id: "radar-scope",
-                title: "Radar's scope selector",
-                open: (h) =>
-                    h.ev(`(() => { const b = ${q('button[aria-label^="Scanned project:"], button[aria-label="Select a project to scan"]')}; if (!b) return "no scope selector"; b.click(); return true; })()`),
-                panel: `${q('button[aria-label^="Scanned project:"], button[aria-label="Select a project to scan"]')}?.parentElement.querySelector('[style*="transform-origin"]')`,
-                close: radarBackdrop,
-            },
-            {
-                id: "radar-audits",
-                title: "Radar's audited-commits popover",
-                open: (h) =>
-                    h.ev(`(() => { const b = ${q("[data-radar-audits-toggle]")}; if (!b) return "the report has no audits toggle"; b.click(); return true; })()`),
-                panel: motionOf("[data-radar-audits-popover]"),
-                close: radarBackdrop,
-            },
-            {
-                id: "radar-dismiss",
-                title: "Radar's Dismiss menu",
-                open: (h) =>
-                    h.ev(`(() => {
-                        const b = [...document.querySelectorAll("[data-radar-finding-detail] button")].find((x) => (x.textContent || "").trim() === "Dismiss");
-                        if (!b) return "the detail has no Dismiss button";
-                        b.click();
-                        return true;
-                    })()`),
-                panel: motionOf("[data-radar-dismiss-menu]"),
-                close: radarBackdrop,
-            },
-        ],
-    };
-
     // a registered git project: the Diff surface's menus, the sync bar's Pull confirm and the New agent dialog's pickers
     const gitCtl = {
         async pickSource(h, name) {
@@ -665,7 +613,7 @@ export default (kit) => {
         ],
     };
 
-    const GROUPS = [plain, initiative, card, tabs, bg, radar, gitGroup, canvas, finalGroup];
+    const GROUPS = [plain, initiative, card, tabs, bg, gitGroup, canvas, finalGroup];
 
     // --- the check ---------------------------------------------------------------------------------------------------
 
@@ -710,7 +658,7 @@ export default (kit) => {
                     const ctx = {};
                     let arranged = true;
                     try {
-                        await h.goto(group.surface === "radar" ? "cockpit" : group.surface);
+                        await h.goto(group.surface);
                         await group.arrange?.(h, ctx);
                     } catch (e) {
                         arranged = false;

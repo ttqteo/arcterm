@@ -150,45 +150,28 @@ Claude Code's auto memory only. Three pieces of the spec's design were left out:
 
 Nothing was built for these, so there is nothing to recover from git.
 
-## Radar security review audits (deferred 2026-10-13)
+## Radar (retired 2026-11-13)
 
-- **Deferred:** an audit kind that reviews a window commit for security vulnerabilities it introduced. Radar ships
-  the sibling, introduced and hotspot kinds (`docs/superpowers/specs/2026-10-13-radar-audit-kinds-design.md`).
-- **Why:** the probe found 0 hits in 3 audits, and a keyword filter cannot pick security-relevant commits: it
-  matched "session" and "token" in usage code.
-- **Revive when** the commit classifier gains a flag for trust-boundary commits, then run a fresh probe on the
-  commits it picks. The probe's prompt (`CONTRACT.security` in `%TEMP%\radarprobe\audit.mjs`), quoted so it
-  survives the temp dir:
-
-  > You are reviewing commit <h> for security vulnerabilities it introduced that are still present in the
-  > current tree. 1. Work out what the change does and which inputs cross a trust boundary (rootcause: that
-  > summary). 2. Check: injection (SQL, command, template, path traversal), missing or wrong authentication or
-  > authorization, tenant or user isolation leaks, secrets in code or logs, unsafe deserialization, XSS, SSRF,
-  > open redirects, session handling. 3. Report only a vulnerability with a concrete attacker input or position
-  > that reaches it in the current code; not hardening advice. 4. trigger: the attacker input and where it
-  > enters. whynotcovered: why existing checks do not stop it.
-
-  Nothing-found sentence: "The change introduced no vulnerability".
-- Nothing was built for this, so there is nothing to recover from git.
-
-## Radar missing test coverage audits (deferred 2026-10-13)
-
-- **Deferred:** an audit kind that checks whether the behavior a window commit added or changed is exercised by
-  any test (`docs/superpowers/specs/2026-10-13-radar-audit-kinds-design.md` section 8).
-- **Why:** the probe was accurate (2 of 2), but it reports test gaps, not bugs, and Radar's findings are bugs.
-- **Revive when** Radar is to report test gaps as their own finding type. The probe's prompt
-  (`CONTRACT.coverage` in `%TEMP%\radarprobe\audit.mjs`):
-
-  > You are checking whether the behavior commit <h> added or changed is exercised by any test in the current
-  > tree. 1. List the behaviors the commit added or changed (rootcause: that list in one or two sentences).
-  > 2. For each, search the test suites for a test that reaches it (grep for the function, component, endpoint
-  > or string). 3. Report a hit only for behavior with a real chance of breaking (a branch, a calculation, a
-  > state transition, an error path), not trivial wiring or styling. 4. The hit's file and line are the
-  > untested code. trigger: the case a test should drive. actual: what no test checks today. expected: what
-  > that test should assert. whynotcovered: which nearby tests exist and why they miss it.
-
-  Nothing-found sentence: "Every changed behavior with real risk is tested".
-- Nothing was built for this, so there is nothing to recover from git.
+- **Retired:** the Radar surface and everything behind it: the fix-sibling audit and its scan (`pkg/reporadar`), the
+  `db_radarreport` table, the `radar-triage` attention kind, the nav badge and `Ctrl+G` `r`, the `radar:*` settings and
+  the Headless AI Radar card, the `radarreport:` address and its peek item view, the CDP scenarios and the guide page.
+- **Why:** measured 2026-11-13 on the packaged Mac store: 5 scans (2026-10-11 to 2026-11-03), every one started by
+  hand and none since; 49 findings (21 in the newest report), 0 triaged; 1 investigation run (2026-11-05), which
+  found a real bug (`59935b14d`, Float's `MAC` constant frozen before boot); about 2.4M tokens over the 5 scans.
+  The kaeltran16 fork measured the same on 2026-10-21 (26 hand-started scans, the newest report's findings never
+  triaged, 7 investigation runs for 2 real fixes, ~14.5M tokens in October) and retired it. The fix-sibling idea
+  has value; a surface with a badge counting findings nobody opens does not.
+- **Revive when** a fix-sibling check is wanted again. Prefer a step after a `fix:` commit in an agent over a
+  surface.
+- **Recover** with `git show 2a13c415d:<path>`, a commit with all of Radar in it: `pkg/reporadar/` (the audit
+  prompts are in `audit.go` and `kinds.go`), the frontend `radar*` files in `frontend/app/view/agents/` and
+  `peekradar*` in `frontend/app/view/jarvis/peek/`, and `docs/guide/radar.md`. The probe prompts of the two audit
+  kinds held on 2026-10-13 (security review, missing test coverage) are quoted in that commit's `docs/deferred.md`.
+- **Earlier retirement, the metadata collectors and clustering pipeline (2026-10-06):** recover with
+  `git show 78fe087a:pkg/reporadar/<file>`, where `<file>` is one of `collect.go`,
+  `collect_config.go`, `collect_dependency.go`, `collect_git.go`, `collect_runs.go`, `collect_structure.go`,
+  `collect_transcript.go`, `modes.go`, `prepare.go`, `security.go`, `synth.go`, `validate.go` (each with its
+  `_test.go`), or the old `scan.go`, `lifecycle.go` and `types.go` they plugged into.
 
 ## (arcterm) agy harness kept but unverified (2026-10-15)
 
@@ -337,23 +320,6 @@ Nothing was built for these, so there is nothing to recover from git.
   (`1dce9cf9-1464-456b-831c-7c5d13a12fc9`) holds the v1 and v2 live checks (chunks 1 and 4, due 2026-10-14) and the
   week-later review with `wsh tokengate review` (chunk 3, due 2026-10-19), which decides the next of these.
 
-## Radar's metadata collectors and clustering pipeline (retired 2026-10-06)
-
-- **Retired:** the scan that collected metadata signals and clustered them in one model call that never read
-  code: the structure, transcript, runs, config and dependency collectors, the per-commit git signal collector,
-  the no-test signal and its admissibility gate, candidate preparation and the payload budget, the clustering
-  prompt and synthesis call, the per-mode lenses (correctness, security) and their risk taxonomies, the security
-  gate, evidence strength, and the finding cap. Radar now audits each recent fix commit for the same bug at
-  sibling sites (`docs/superpowers/specs/2026-10-06-radar-fix-sibling-audit-design.md`).
-- **Why:** its last two scans kept 0 findings and 9 finished investigations found no defect. A hand trial on
-  2026-10-06 that read the code around 5 fix commits found a real sibling bug in 2 and a conditional one in 1.
-- **Revive when** chunk 8 of `effort:1557171a-e61d-4b29-83fd-fc7f818e6131` measures the audit as not worth
-  keeping and metadata signals are wanted back.
-- **Recover** with `git show 78fe087a:pkg/reporadar/<file>`, where `<file>` is one of `collect.go`,
-  `collect_config.go`, `collect_dependency.go`, `collect_git.go`, `collect_runs.go`, `collect_structure.go`,
-  `collect_transcript.go`, `modes.go`, `prepare.go`, `security.go`, `synth.go`, `validate.go` (each with its
-  `_test.go`), or the old `scan.go`, `lifecycle.go` and `types.go` they plugged into.
-
 ## (arcterm) Preview pane: localhost dev servers and HTML files (deferred 2026-10-08)
 
 - **Deferred:** an in-app preview limited to two things: a dev server on `http://localhost:<port>`, and an `.html`
@@ -495,14 +461,14 @@ Nothing was built for these, so there is nothing to recover from git.
 
 ## Code and Diff in the nav rail (deferred 2026-10-06)
 
-- **Deferred:** taking Code and Diff out of the nav rail. The rail now groups them with Radar as tools, under Cockpit,
+- **Deferred:** taking Code and Diff out of the nav rail. The rail now groups them as tools, under Cockpit,
   Jarvis, Agent and Usage (`docs/superpowers/specs/2026-10-06-agent-rail-tabs-design.md`).
 - **Why:** the Agent panel's File tab (and later its Review tab) covers reading a file and an agent's changes, not
   browsing, searching or editing a project, nor history or compare. Whether the nav items still earn their place is
   only known after using the panel for a while.
 - **Revive when** around 2026-10-20, after the 2026-10-15 re-measure of Code's "Send to agent": if Code and Diff are
   reached almost only through the panel's "Open in…" buttons, the palette and `g b` / `g f`, drop them from
-  `TOOL_ITEMS` in `navrail.tsx` and from `SURFACE_ORDER` in `agents.tsx` (Radar becomes Ctrl+5).
+  `TOOL_ITEMS` in `navrail.tsx` and from `SURFACE_ORDER` in `agents.tsx`.
 
 ## Sessions "All activity" feed rows peeking a run, agent or initiative (deferred 2026-10-01)
 

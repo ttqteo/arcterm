@@ -4,7 +4,7 @@
 //   palette.mjs  overlays-frost-palette                              the command palette over today's scrim   (Task 3)
 //   menus.mjs    overlays-frost-menus                                context menus, PickerList dropdowns      (Task 2)
 //   chat.mjs     overlays-frost-chat                                 Chat and council popovers                (Task 4)
-//   agents.mjs   overlays-frost-agents                               sidebar, launcher and Radar popovers     (Task 5)
+//   agents.mjs   overlays-frost-agents                               sidebar and launcher popovers            (Task 5)
 //   jarvis.mjs   overlays-frost-jarvis                               Jarvis, Code and Jobs popovers           (Task 6)
 //   toast.mjs    overlays-frost-toast, overlays-frost-toast-timing   the toast fill, and its one-off timing    (Task 8)
 // frostcheck.mjs is the shared check (frostProbe / frostVerdict / solidVerdict) every area runs on its panels.

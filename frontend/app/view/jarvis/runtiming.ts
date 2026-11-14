@@ -5,9 +5,12 @@
 // shared since-launch axis. Go derives the intervals once (digest.timing); this only lays them out and words
 // them. Pure.
 
-import { joinAnd } from "../agents/radarmodel";
 import { isTerminal } from "../agents/runmodel";
 import { formatElapsed } from "../orchestrate/dagdigest";
+
+function joinAnd(items: string[]): string {
+    return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
 
 export type TimingKey = "planning" | "execution" | "review" | "merge" | "final" | "landing";
 // left/width in percent of the axis

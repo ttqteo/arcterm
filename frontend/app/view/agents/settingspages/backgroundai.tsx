@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Settings > Background AI: the runtime behind session classify, continuity, the volunteer judge and pi
-// titles, and the route Radar audits run on.
+// titles.
 
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -11,16 +11,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import { harnessPickerItems } from "../harnesspicker";
-import { RoutePicker } from "../routepicker";
-import {
-    OPENROUTER_SECRET_NAME,
-    RADAR_AUDIT_MODEL_KEY,
-    RADAR_AUDIT_RUNTIME_KEY,
-    RADAR_AUDIT_RUNTIMES,
-    RADAR_CLASSIFY_MODEL_KEY,
-    radarAuditRoute,
-    radarClassifyDefault,
-} from "../settingsmodel";
+import { OPENROUTER_SECRET_NAME } from "../settingsmodel";
 import {
     CardWarning,
     ChoiceRow,
@@ -73,9 +64,6 @@ function RuntimeChoices({ rowId, label, children }: { rowId: string; label: stri
 export function BackgroundAIPage() {
     const runtime = (useAtomValue(getSettingsKeyAtom("headless:runtime")) as string) ?? "";
     const cheapModel = (useAtomValue(getSettingsKeyAtom("headless:openroutercheapmodel")) as string) ?? "";
-    const auditRuntime = (useAtomValue(getSettingsKeyAtom(RADAR_AUDIT_RUNTIME_KEY)) as string) ?? "";
-    const auditModel = (useAtomValue(getSettingsKeyAtom(RADAR_AUDIT_MODEL_KEY)) as string) ?? "";
-    const classifyModel = (useAtomValue(getSettingsKeyAtom(RADAR_CLASSIFY_MODEL_KEY)) as string) ?? "";
 
     const [hasKey, setHasKey] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -232,30 +220,6 @@ export function BackgroundAIPage() {
                         placeholder="deepseek/deepseek-v4-flash"
                         disabled={!isOpenRouter}
                         onCommit={(v) => writeConfig({ "headless:openroutercheapmodel": v })}
-                    />
-                </SettingRow>
-            </SettingCard>
-            <SettingCard id="radar" label="Radar">
-                <SettingRow id="headless.radaraudit">
-                    <RoutePicker
-                        value={radarAuditRoute(auditRuntime, auditModel)}
-                        title="Radar audit route"
-                        runtimes={RADAR_AUDIT_RUNTIMES}
-                        size="select"
-                        onChange={(route) =>
-                            route &&
-                            writeConfig({
-                                [RADAR_AUDIT_RUNTIME_KEY]: route.runtime,
-                                [RADAR_AUDIT_MODEL_KEY]: route.model ?? null,
-                            })
-                        }
-                    />
-                </SettingRow>
-                <SettingRow id="headless.radarclassify">
-                    <CommitText
-                        value={classifyModel}
-                        placeholder={radarClassifyDefault(auditRuntime)}
-                        onCommit={(v) => writeConfig({ [RADAR_CLASSIFY_MODEL_KEY]: v })}
                     />
                 </SettingRow>
             </SettingCard>

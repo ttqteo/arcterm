@@ -57,7 +57,7 @@ const base = {
 };
 
 describe("buildNeedsYouRows — which items", () => {
-    it("keeps the five non-ask kinds and leaves asks and radar triage out", () => {
+    it("keeps the five non-ask kinds and leaves asks out", () => {
         const rows = buildNeedsYouRows({
             ...base,
             attention: [
@@ -65,7 +65,6 @@ describe("buildNeedsYouRows — which items", () => {
                 item({ key: "b", kind: "dag-blocked" }),
                 item({ key: "a", kind: "ask" }),
                 item({ key: "e", kind: "escalation" }),
-                item({ key: "r", kind: "radar-triage", channelid: "" }),
                 item({ key: "u", kind: "run-unverified" }),
                 item({ key: "l", kind: "run-land-held" }),
             ],

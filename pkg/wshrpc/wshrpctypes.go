@@ -51,7 +51,6 @@ type WshRpcInterface interface {
 	DagCommands
 	JobQueueCommands
 	MachineCommands
-	RadarCommands
 	JarvisCommands
 	EffortCommands
 	NoteCommands

@@ -29,7 +29,6 @@ import { jumpToAgent } from "../agents/channelsprimitives";
 import { selectChannel } from "../agents/channelsstore";
 import { currentSize, restoreFromSprout } from "../agents/floatstore";
 import { selectMemoryProject } from "../agents/memorystore";
-import { initRadarScope, radarScopeAtom, radarSelectedIdAtom, scopeOfReport, selectReport } from "../agents/radarstore";
 import { setupTabAtom } from "../agents/setupstore";
 import { afterOpen } from "../agents/windowsize";
 import { openDagLive, openDagTask } from "../orchestrate/dagmodalstate";
@@ -58,7 +57,6 @@ export type OpenGesture = { ctrlKey: boolean; metaKey?: boolean; preventDefault(
 type ChannelTarget = Extract<OpenTarget, { kind: "channel" }>;
 type DagTarget = Extract<OpenTarget, { kind: "dag" }>;
 type RecordTarget = Extract<OpenTarget, { kind: "record" }>;
-type RadarTarget = Extract<OpenTarget, { kind: "radar" }>;
 type CanvasTarget = Extract<OpenTarget, { kind: "canvas" }>;
 type BrainstormTarget = Extract<OpenTarget, { kind: "brainstorm" }>;
 type NoteTarget = Extract<OpenTarget, { kind: "note" }>;
@@ -97,8 +95,6 @@ function targetName(target: OpenTarget): string {
             return `record ${target.dossierId}`;
         case "effort":
             return `initiative ${target.effortId}`;
-        case "radar":
-            return `scan report ${target.reportId}`;
         case "canvas":
             return `canvas ${target.topic}`;
         case "brainstorm":
@@ -302,8 +298,6 @@ async function land(
             return select(await loadEffort(target.effortId, current), (effort) =>
                 selectEffort(model, effort, target.view)
             );
-        case "radar":
-            return select(await loadRadar(target, current), (r) => selectRadar(model, r, current));
         case "canvas":
             return select(await loadCanvas(model, target, current, caller), (c) => selectCanvas(model, target, c));
         case "brainstorm":
@@ -388,8 +382,6 @@ function loadPeek(
             return loadRecord(target, current);
         case "effort":
             return loadEffort(target.effortId, current);
-        case "radar":
-            return loadRadar(target, current);
         case "note":
             return loadNote(target.noteId, current);
     }
@@ -703,44 +695,6 @@ function selectRecord(model: AgentsViewModel, target: RecordTarget): OpenResult 
 function openRecordPeek(dossierId: string): void {
     loadRecordDetail(dossierId);
     globalStore.set(briefPeekRecordAtom, dossierId);
-}
-
-// initRadarScope selects its project's newest report, and Radar's first mount derives a scope unless one is
-// already owned — so the report's own project is owned first and the report selected after it. selectReport,
-// not radarSelectedIdAtom, pins the report: that atom holds the selected FINDING.
-type RadarLanding = { report: RadarReport; findingId?: string };
-
-async function loadRadar(target: RadarTarget, current: () => boolean): Promise<Loaded<RadarLanding>> {
-    const report = await WOS.loadAndPinWaveObject<RadarReport>(WOS.makeORef("radarreport", target.reportId));
-    if (!current()) {
-        return SUPERSEDED;
-    }
-    if (report == null) {
-        return unavailable("That scan report no longer exists");
-    }
-    const findingId = target.findingId;
-    const found = findingId != null && (report.findings ?? []).some((f) => f.id === findingId);
-    if (findingId != null && !found) {
-        return loaded({ report }, "That finding is no longer in this report");
-    }
-    return loaded({ report, findingId });
-}
-
-async function selectRadar(model: AgentsViewModel, landing: RadarLanding, current: () => boolean): Promise<OpenResult> {
-    const scope = scopeOfReport(landing.report);
-    if (globalStore.get(radarScopeAtom)?.path !== scope.path) {
-        await initRadarScope(scope);
-        if (!current()) {
-            return SUPERSEDED;
-        }
-    }
-    await selectReport(landing.report.oid);
-    if (!current()) {
-        return SUPERSEDED;
-    }
-    globalStore.set(radarSelectedIdAtom, landing.findingId);
-    landOn(model.surfaceAtom, "radar");
-    return OK;
 }
 
 // A rejected fetch and one that leaves no entry both mean the initiative is gone: the store throws on a missing

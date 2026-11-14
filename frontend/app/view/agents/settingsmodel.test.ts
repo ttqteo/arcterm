@@ -10,9 +10,6 @@ import {
     flagRowId,
     keyPillTitle,
     OPENROUTER_SECRET_NAME,
-    RADAR_AUDIT_RUNTIMES,
-    radarAuditRoute,
-    radarClassifyDefault,
     resolveSectionId,
     resolveSelection,
     rowKeys,
@@ -243,9 +240,6 @@ describe("settingsSections", () => {
             "term:rightclickpaste",
             "headless:runtime",
             "headless:openroutercheapmodel",
-            "radar:auditruntime",
-            "radar:auditmodel",
-            "radar:classifymodel",
             "window:minimize",
             "window:autosprout",
             "memory:vaultpath",
@@ -256,60 +250,20 @@ describe("settingsSections", () => {
         ]);
     });
 
-    it("lists the Radar audit route in Background AI, and no mid model", () => {
+    it("lists the runtime and the OpenRouter rows in Background AI, with no mid model and no Radar card", () => {
         const headless = sections().find((s) => s.id === "headless")!;
         expect(sectionRows(headless).map((r) => r.id)).toEqual([
             "headless.runtime",
             "headless.apikey",
             "headless.cheap",
-            "headless.radaraudit",
-            "headless.radarclassify",
         ]);
-        expect(sectionRows(headless).find((r) => r.id === "headless.radaraudit")!.title).toBe("Radar audit");
+        expect(headless.cards.map((c) => c.id)).toEqual(["runtime", "openrouter"]);
         const prose = [headless.blurb, ...sectionRows(headless).flatMap((r) => [r.title, r.desc])]
             .join(" ")
             .toLowerCase();
-        for (const gone of ["mid model", "gatekeeper", "decompose"]) {
+        for (const gone of ["mid model", "gatekeeper", "decompose", "radar"]) {
             expect(prose).not.toContain(gone);
         }
-    });
-
-    it("finds the Radar audit row by either of its keys", () => {
-        expect(sectionRows(filterSections(sections(), "radar:auditmodel")[0]).map((r) => r.id)).toEqual([
-            "headless.radaraudit",
-        ]);
-        expect(sectionRows(filterSections(sections(), "radar:classifymodel")[0]).map((r) => r.id)).toEqual([
-            "headless.radarclassify",
-        ]);
-    });
-
-    it("defaults the classifier to haiku on claude and pi's own on pi", () => {
-        expect(radarClassifyDefault("")).toBe("haiku");
-        expect(radarClassifyDefault("claude")).toBe("haiku");
-        expect(radarClassifyDefault("pi")).toBe("pi default");
-    });
-});
-
-describe("radarAuditRoute", () => {
-    it("shows claude on sonnet when both keys are unset", () => {
-        expect(radarAuditRoute("", "")).toEqual({ runtime: "claude", model: "sonnet" });
-        expect(radarAuditRoute("claude", "")).toEqual({ runtime: "claude", model: "sonnet" });
-    });
-
-    it("leaves pi on its own default when no model is set", () => {
-        expect(radarAuditRoute("pi", "")).toEqual({ runtime: "pi" });
-    });
-
-    it("shows the configured route", () => {
-        expect(radarAuditRoute("pi", "opencode/deepseek-v4-pro")).toEqual({
-            runtime: "pi",
-            model: "opencode/deepseek-v4-pro",
-        });
-        expect(radarAuditRoute("", "opus")).toEqual({ runtime: "claude", model: "opus" });
-    });
-
-    it("offers only runtimes that have tools", () => {
-        expect(RADAR_AUDIT_RUNTIMES).toEqual(["claude", "pi"]);
     });
 });
 
@@ -334,7 +288,7 @@ describe("settings pages", () => {
             "agents/claudeaccount", "agents/sleep", "agents/flags",
             "runs/runs", "runs/whilework", "runs/tokenburn",
             "terminal/text", "terminal/cursor", "terminal/behavior",
-            "headless/runtime", "headless/openrouter", "headless/radar",
+            "headless/runtime", "headless/openrouter",
             "jarvis/jarvis", "jarvis/form", "jarvis/behaviour", "jarvis/folding", "jarvis/office",
             "storage/vault", "storage/runworktrees", "storage/sessions", "storage/housekeeping", "storage/buildoutput",
             "storage/packagecaches", "storage/canvases", "storage/autoclean",
@@ -373,7 +327,6 @@ describe("settings pages", () => {
         ]);
         expect(cards["headless/runtime"]).toEqual(["headless.runtime"]);
         expect(cards["headless/openrouter"]).toEqual(["headless.apikey", "headless.cheap"]);
-        expect(cards["headless/radar"]).toEqual(["headless.radaraudit", "headless.radarclassify"]);
         expect(cards["jarvis/jarvis"]).toEqual(["appearance.petcharacter", "appearance.petoutfit"]);
         expect(cards["jarvis/form"]).toEqual(["appearance.petform", "appearance.petholosize"]);
         expect(cards["jarvis/behaviour"]).toEqual(["appearance.petstay", "appearance.petquotes"]);
@@ -397,8 +350,8 @@ describe("settings pages", () => {
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
         // today's 60, the nine rows the reorganization added, the two compaction rows, the pet's stay row, Chat's fold
-        // , the agent row's RAM, and the pet's form and hologram size
-        expect(ids).toHaveLength(76 + RUNTIME_FLAGS.claude.length);
+        // , the agent row's RAM, and the pet's form and hologram size, less the two Radar rows that went with Radar
+        expect(ids).toHaveLength(74 + RUNTIME_FLAGS.claude.length);
     });
 
     it("finds moved rows by search", () => {
@@ -466,11 +419,11 @@ describe("keyPillTitle", () => {
                 id: "c",
                 title: "",
                 desc: "",
-                key: "radar:auditruntime",
-                morekeys: ["radar:auditmodel"],
+                key: "window:minimize",
+                morekeys: ["window:autosprout"],
                 scope: "synced",
             })
-        ).toBe("Copy radar:auditruntime · radar:auditmodel · synced in settings.json");
+        ).toBe("Copy window:minimize · window:autosprout · synced in settings.json");
     });
 
     it("has no pill for a row that stores no setting", () => {

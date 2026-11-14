@@ -88,7 +88,7 @@ describe("return to the surface a jump left", () => {
 
     it("forgets the trail once the user moves by hand", () => {
         landOn(surfaceAtom, "jarvis", "sheet");
-        globalStore.set(surfaceAtom, "radar");
+        globalStore.set(surfaceAtom, "usage");
         globalStore.set(surfaceAtom, "jarvis");
         returnToOrigin("sheet");
         expect(backToOrigin()).toBe(false);

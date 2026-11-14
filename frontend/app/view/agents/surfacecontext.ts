@@ -18,7 +18,6 @@ export const SURFACE_CONTEXT = {
     cockpit: { project: "filter" },
     jarvis: { project: "subject" },
     agent: { project: "filter" },
-    radar: { project: "subject" },
     files: { project: "subject" },
     usage: { project: "unsupported" },
     code: { project: "subject" },

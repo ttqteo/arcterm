@@ -252,7 +252,7 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     );
     // The Agent surface stays mounted, hidden, with its centre mode kept, so History can be mounted while another
     // surface is showing. Publish only while this surface is: a hidden History would otherwise take listNavAtom
-    // from the visible surface's own list (Radar, Usage, Diff, Brief), whose j/k then go dead.
+    // from the visible surface's own list (Usage, Diff, Brief), whose j/k then go dead.
     useSurfaceListNav(onSurface ? listNav : null);
 
     const runTitles = Object.fromEntries(runRows.map((r) => [r.run!.group.runId, r.run!.view.title]));

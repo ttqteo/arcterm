@@ -27,3 +27,21 @@ func TestRetiredEmbedKeysStillLoad(t *testing.T) {
 		t.Fatalf("cheap model = %q, want deepseek/deepseek-v4-flash", s.HeadlessOpenRouterCheapModel)
 	}
 }
+
+// A settings.json written before Radar was retired still carries its three keys; loading it must neither
+// fail nor lose the settings beside them.
+func TestRetiredRadarKeysStillLoad(t *testing.T) {
+	part := waveobj.MetaMapType{
+		"radar:auditruntime":  "pi",
+		"radar:auditmodel":    "x",
+		"radar:classifymodel": "haiku",
+		"term:fontsize":       13.0,
+	}
+	var s SettingsType
+	if err := utilfn.ReUnmarshal(&s, part); err != nil {
+		t.Fatalf("settings with retired radar keys failed to load: %v", err)
+	}
+	if s.TermFontSize != 13 {
+		t.Fatalf("term:fontsize = %v, want 13", s.TermFontSize)
+	}
+}
