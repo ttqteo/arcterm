@@ -85,6 +85,7 @@ import { setChatMode } from "./chatmodestore";
 import {
     holdLine,
     isSendNowKey,
+    pendingKind,
     pendingStill,
     pendsAsBubble,
     recall,
@@ -95,11 +96,13 @@ import {
 import {
     addPending,
     dropPending,
+    dropPendingIds,
     getPending,
     noteSent,
     sentHistory,
     setHeldSend,
     useHeldSend,
+    wokenPending,
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
 import {
@@ -244,8 +247,8 @@ function ComposerBox({
     model: AgentsViewModel;
     agent: AgentVM;
     placeholder: string;
-    /** the conversation as drawn: a send of an awake agent is shown as a pending bubble until the transcript holds it.
-     *  The sleeping overlay passes none (a wake delivers the message, no bubble stands in for it). */
+    /** the conversation as drawn: a send is shown as a pending bubble until the transcript holds it, a wake send's (to a
+     *  sleeping agent) with Waking… under it until the wake delivers it. Left out, no bubble stands in for a send. */
     entries?: AgentEntry[];
     /** called as soon as a message is taken (a wake send too), before its pending bubble is added, with the text that
      *  went to the agent (a bare panel command Chat answers itself, and a command the + menu types, pass theirs): the chat
@@ -289,19 +292,36 @@ function ComposerBox({
         }
     };
     // Asleep the attachments ride the wake's message as they ride any other: a pasted file is already on disk (wavesrv
-    // wrote it), and the message reaches the agent once it is back. Their chips go only when the wake took the message,
-    // so a wake that failed keeps them with the text. `wakeSent` is the chips that went with the wake in flight.
-    const wakeSent = useRef<string[]>([]);
+    // wrote it), and the message reaches the agent once it is back, seconds later. The box lets go of the text and the
+    // chips at the press, as an awake send does, and the message's pending bubble rises from the box and stands in with
+    // Waking… under it until the transcript holds it. A wake that failed drops the bubble and puts the text
+    // (useAgentSend) and the chips back. `wake` is the wake send in flight: its bubble and the paths of what rode along.
+    const wake = useRef<{ pendingId: string | null; paths: string[] } | null>(null);
     const { text, setText, message, canSend, waking, fallingAsleep, send } = useAgentSend(
         agent.blockId,
         agent,
         att.attachments,
         {
             onWoken: () => {
-                for (const id of wakeSent.current) {
-                    att.remove(id);
+                const w = wake.current;
+                wake.current = null;
+                if (w?.pendingId != null) {
+                    wokenPending(agent.id, w.pendingId);
                 }
-                wakeSent.current = [];
+            },
+            wakeClears: true,
+            onWakeFailed: () => {
+                const w = wake.current;
+                wake.current = null;
+                if (w == null) {
+                    return;
+                }
+                if (w.pendingId != null) {
+                    dropPendingIds(agent.id, [w.pendingId]);
+                }
+                if (w.paths.length > 0) {
+                    att.addPaths(w.paths);
+                }
             },
             keepDraft: true,
             // a /btw no mod took was typed into the terminal, where Claude Code answers it on its own screen: show that
@@ -555,7 +575,6 @@ function ComposerBox({
             return;
         }
         const sent = message;
-        const riding = att.attachments.map((a) => a.id);
         // What became of the cards the person handled (chatinitiativestore.ts) goes in front of their next plain message
         // only: a /command or /btw (a line before one breaks it), a `!` command, a wake send, and an answer typed while a
         // brainstorm question waits (its record pairs with the transcript by exact text) leave the lines queued for the
@@ -583,9 +602,6 @@ function ComposerBox({
             putBackResultLines(agent.id, lines);
         }
         if (taken) {
-            if (asleep) {
-                wakeSent.current = riding;
-            }
             onSent?.(sent);
             recalled.current = { at: null, shown: "" };
             noteSent(agent.id, sent);
@@ -606,6 +622,15 @@ function ComposerBox({
                     addPending(agent.id, sent, entries, agent.state !== "idle");
                 }
                 flipIfTui(sent);
+                for (const a of att.attachments) {
+                    att.remove(a.id);
+                }
+            } else {
+                // the wake carries it, and a plain message's bubble shows from the press; a command draws none (its
+                // row lands once the agent runs it)
+                const plain = pendsAsBubble(sent) && pendingKind(sent) == null;
+                const pendingId = entries != null && plain ? addPending(agent.id, sent, entries, false, true) : null;
+                wake.current = { pendingId, paths: ridingPaths };
                 for (const a of att.attachments) {
                     att.remove(a.id);
                 }

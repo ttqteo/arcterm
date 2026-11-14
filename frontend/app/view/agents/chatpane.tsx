@@ -70,6 +70,7 @@ import {
     pendingLine,
     pendingStill,
     queuedBubbleUp,
+    wakingBubbleUp,
     type PendingKind,
     type PendingMessage,
 } from "./chatpending";
@@ -105,6 +106,7 @@ import { shipGitAtom } from "./shipstore";
 import { useStickToBottom } from "./sticktobottom";
 import { turnStats, type TurnStats } from "./transcriptprojection";
 import { TranscriptSkeleton } from "./transcriptskeleton";
+import { useWaking } from "./wakingstore";
 import { WorkingGlyph } from "./workingglyph";
 
 // Send now's key in the chat box (chatpending.ts isSendNowKey), as its button shows it
@@ -677,6 +679,10 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const startingView = opening && !asleep ? chatEmptyView(agent) : null;
     const startingTitle = startingView?.phase === "starting" ? startingView.title : undefined;
     const line = pendingLine(pending, startingTitle);
+    // a message sent to the sleeping agent waits on the wake: its line pulses as the starting line does, with no Send now
+    const wakingShown = wakingBubbleUp(pending);
+    // a wake under way, from this box or anywhere else: the empty box says so rather than offering to wake it
+    const wakingNow = useWaking(agent.id);
 
     // a message taken from the box: the chat scrolls to the end so its bubble lands in view, and while a question waits the
     // message is its answer, kept with how many same-text messages the transcript held before it (`entries` is what the
@@ -872,7 +878,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                 <PendingLine
                                     key="line"
                                     text={line}
-                                    starting={startingTitle != null}
+                                    starting={startingTitle != null || wakingShown}
                                     onSendNow={sendNow}
                                 />
                             ) : null}
@@ -988,7 +994,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                     showLocalCard(agent.id, route.panel, route.command);
                                 }
                             }}
-                            placeholder={boxPlaceholder(boxNow, agent.name, boxPlaceholderOverride(card))}
+                            placeholder={boxPlaceholder(boxNow, agent.name, boxPlaceholderOverride(card), wakingNow)}
                             dataAttrs={asleep ? { "data-sleeping-composer": agent.id } : undefined}
                         />
                     </div>

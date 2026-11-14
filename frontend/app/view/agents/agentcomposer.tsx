@@ -89,7 +89,7 @@ export interface AgentSend {
 
 // Sends free text to an agent's terminal block (submitToAgent: the text, then Enter on its own). A sleeping agent has no process to type into: given
 // its agent, the message goes through Wake instead, which delivers it once the agent is back, and the text stays in
-// the box until then (and for good when the wake fails). A sleeping agent's text is its wake draft (wakingstore), so
+// the box until then (and for good when the wake fails), unless the caller shows it meanwhile (wakeClears). A sleeping agent's text is its wake draft (wakingstore), so
 // it outlives the box: picking another agent mid-wake and coming back still shows what is being sent.
 // The one send path of both composers (this file's and chatcomposer.tsx's): `attachments`, when given, ride the message
 // (messageWithAttachments: images as the "Attached images:" block chat draws as pictures, other files as the "read
@@ -104,11 +104,22 @@ export function useAgentSend(
     // no mod took it and it was typed into the terminal instead
     // onWoken: a wake this send started took its message (the agent is back and has it), so the caller can let go of
     // what rode along; a wake that failed keeps the draft, and the caller keeps its attachments too
+    // wakeClears: a wake send empties the box at the press, as an awake send does (Chat, whose pending bubble shows the
+    // message meanwhile), and puts the text back when the wake fails, telling onWakeFailed so the caller puts back what it
+    // let go of; without it the text stays in the box until the agent is back (the composers with no conversation)
     {
         keepDraft = false,
         onBtwTyped,
         onWoken,
-    }: { keepDraft?: boolean; onBtwTyped?: (sent: string) => void; onWoken?: () => void } = {}
+        wakeClears = false,
+        onWakeFailed,
+    }: {
+        keepDraft?: boolean;
+        onBtwTyped?: (sent: string) => void;
+        onWoken?: () => void;
+        wakeClears?: boolean;
+        onWakeFailed?: () => void;
+    } = {}
 ): AgentSend {
     const draftId = agent != null && (agent.sleeping || keepDraft) ? agent.id : undefined;
     const draft = useWakeDraft(draftId);
@@ -136,13 +147,25 @@ export function useAgentSend(
         }
         if (agent?.sleeping) {
             const id = agent.id;
+            const own = text.trim();
             setSending(true);
+            if (wakeClears) {
+                setWakeDraft(id, "");
+            }
             fireAndForget(async () => {
                 try {
                     await wakeAgent(id, { message });
-                    setWakeDraft(id, "");
+                    if (!wakeClears) {
+                        setWakeDraft(id, "");
+                    }
                     onWoken?.();
                 } catch (e) {
+                    if (wakeClears) {
+                        if (own !== "") {
+                            putBack(own);
+                        }
+                        onWakeFailed?.();
+                    }
                     wakeErrorToast(agent.name, e);
                 } finally {
                     setSending(false);

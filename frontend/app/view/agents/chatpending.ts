@@ -28,6 +28,11 @@ export interface PendingMessage {
      *  push it. Decided at the send, not from the agent's state as it draws: a message sent to an idle agent starts the
      *  turn that sets the agent working, and read live it flashed Queued before the transcript took it. */
     queued?: boolean;
+    /** Sent to a sleeping agent: the wake relaunches it and types the message once it is back, which takes seconds, so the
+     *  bubble stands in from the press (rising from the box as any send's does) and the line under it says Waking…. The
+     *  idle rule does not drop it meanwhile (the agent reads idle, asleep); once the wake delivers it the mark goes
+     *  (wokenPending) and its idle wait starts from then. */
+    waking?: boolean;
 }
 
 /** The pending message for `text` sent at `now`: how many of `entries` (the transcript as drawn then) already hold its
@@ -37,7 +42,8 @@ export function pendingMessage(
     text: string,
     entries: AgentEntry[],
     now: number,
-    busy: boolean
+    busy: boolean,
+    waking = false
 ): PendingMessage {
     const kind = pendingKind(text);
     return {
@@ -47,11 +53,27 @@ export function pendingMessage(
         seen: userTextCount(entries, text),
         queued: busy,
         ...(kind != null ? { kind } : {}),
+        ...(waking ? { waking: true } : {}),
     };
 }
 
-/** The one line under the pending messages' bubbles, or null: the harness's starting line while a session starts, else
- *  Queued ("2 queued" for more) while messages sent as the agent worked wait. Messages sent to an idle agent have none:
+/** The pending message once the wake that carried it has delivered it at `now`: no longer waking, and its idle wait
+ *  (PENDING_IDLE_MS) counted from the delivery, not from the press seconds before. */
+export function woken(p: PendingMessage, now: number): PendingMessage {
+    const { waking: _, ...rest } = p;
+    return { ...rest, sentAt: now };
+}
+
+/** The line under a message sent to a sleeping agent while the wake brings it back. */
+export const WAKING_LINE = "Waking…";
+
+/** Whether a message bubble waits on a wake (its line reads Waking…, with the starting dot). */
+export function wakingBubbleUp(pending: PendingMessage[]): boolean {
+    return pending.some((p) => p.kind == null && p.waking === true);
+}
+
+/** The one line under the pending messages' bubbles, or null: the harness's starting line while a session starts, then
+ *  Waking… while a wake brings a sleeping agent back for one of them, else Queued ("2 queued" for more) while messages sent as the agent worked wait. Messages sent to an idle agent have none:
  *  the transcript takes them in a moment, and a Sending… line there only blinked as the transcript's copy replaced the
  *  bubble. A command's card (a /btw, a panel, a `! cmd`) says what it waits on itself. */
 export function pendingLine(pending: PendingMessage[], starting?: string): string | null {
@@ -61,6 +83,9 @@ export function pendingLine(pending: PendingMessage[], starting?: string): strin
     }
     if (starting != null) {
         return starting;
+    }
+    if (wakingBubbleUp(messages)) {
+        return WAKING_LINE;
     }
     const queued = messages.filter((p) => p.queued === true).length;
     return queued === 0 ? null : queued === 1 ? "Queued" : `${queued} queued`;
@@ -158,7 +183,10 @@ export function pendingStill(
     return pending.filter(
         (p) =>
             now - p.sentAt < (p.kind != null ? PENDING_MAX_MS : PENDING_QUEUED_MAX_MS) &&
-            (p.kind != null || idleSince == null || now - Math.max(idleSince, p.sentAt) < PENDING_IDLE_MS) &&
+            (p.kind != null ||
+                p.waking === true ||
+                idleSince == null ||
+                now - Math.max(idleSince, p.sentAt) < PENDING_IDLE_MS) &&
             userTextCount(entries, p.text) <= p.seen
     );
 }

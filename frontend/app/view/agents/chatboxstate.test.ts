@@ -76,6 +76,11 @@ describe("boxPlaceholder", () => {
         expect(boxPlaceholder("asleep", "Atlas")).toBe("message Atlas to wake it… (Enter)");
     });
 
+    it("asleep with a wake under way says the agent is coming back", () => {
+        expect(boxPlaceholder("asleep", "Atlas", null, true)).toBe("waking Atlas…");
+        expect(boxPlaceholder("idle", "Atlas", null, true)).toBe("Reply to Atlas, @ to mention, / for commands");
+    });
+
     it("the states that show text over the placeholder fall back to the idle line", () => {
         for (const s of ["drop", "suggest"] as const) {
             expect(boxPlaceholder(s, "Atlas")).toBe("Reply to Atlas, @ to mention, / for commands");

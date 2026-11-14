@@ -10,6 +10,7 @@ import {
     PENDING_QUEUED_MAX_MS,
     REPEAT_SEND_MS,
     SubmitError,
+    WAKING_LINE,
     btwQuestion,
     echoStep,
     holdLine,
@@ -31,6 +32,8 @@ import {
     submitDelayMs,
     submitSteps,
     userTextCount,
+    wakingBubbleUp,
+    woken,
     type PendingMessage,
 } from "./chatpending";
 
@@ -172,6 +175,39 @@ describe("pendingStill", () => {
 // Whether a message is queued is decided when it is sent. Read from the agent's state as it drew, a message sent to an
 // idle agent flashed a caption, then Queued with Send now as the turn it started set the agent working, then went as the
 // transcript took it.
+// A message sent to a sleeping agent reaches it only once the wake has relaunched it, seconds later. Its bubble shows from
+// the press with Waking… under it; the agent reads idle the whole time, which must not drop the bubble.
+describe("a message a wake carries", () => {
+    const entries: AgentEntry[] = [];
+    it("reads Waking… under its bubble, never Queued", () => {
+        const p = pendingMessage("w1", "pick up where we left off", entries, 1_000, false, true);
+        expect(p.waking).toBe(true);
+        expect(pendingLine([p])).toBe(WAKING_LINE);
+        expect(wakingBubbleUp([p])).toBe(true);
+        expect(queuedBubbleUp([p])).toBe(false);
+    });
+    it("lets the harness's starting line stand in for Waking…", () => {
+        const p = pendingMessage("w2", "go", entries, 1_000, false, true);
+        expect(pendingLine([p], "Starting Claude Code…")).toBe("Starting Claude Code…");
+    });
+    it("stays while the agent sits idle asleep, however long the wake takes", () => {
+        const p = pendingMessage("w3", "go on", entries, 1_000, false, true);
+        expect(pendingStill([p], entries, 1_000 + 20_000, 0)).toHaveLength(1);
+    });
+    it("once delivered loses the mark and waits on the idle agent from the delivery", () => {
+        const p = woken(pendingMessage("w4", "go on", entries, 1_000, false, true), 21_000);
+        expect(p.waking).toBeUndefined();
+        expect(p.sentAt).toBe(21_000);
+        expect(pendingLine([p])).toBeNull();
+        expect(pendingStill([p], entries, 21_000 + PENDING_IDLE_MS - 1, 0)).toHaveLength(1);
+        expect(pendingStill([p], entries, 21_000 + PENDING_IDLE_MS, 0)).toEqual([]);
+    });
+    it("goes once the transcript holds it", () => {
+        const p = pendingMessage("w5", "go on", entries, 1_000, false, true);
+        expect(pendingStill([p], [user("go on")], 2_000, 0)).toEqual([]);
+    });
+});
+
 describe("pendingMessage and the line under it", () => {
     const entries: AgentEntry[] = [];
     it("gives a message sent to an idle agent no line while the turn it started runs", () => {

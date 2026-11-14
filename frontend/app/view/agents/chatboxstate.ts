@@ -44,14 +44,18 @@ export function boxState(i: BoxStateInput): BoxState {
 
 /** What the empty box says. Bash mode says it takes a shell command and how to leave it: its `!` is drawn beside the
  *  editor, so the editor is empty after a bare `!`. `override` (a null or empty one is not given) wins in every other
- *  state: a waiting brainstorm question asks for its answer here. The states that put a list or a drop zone over the box
- *  fall back to the idle line, which is never seen under them. */
-export function boxPlaceholder(state: BoxState, agentName: string, override?: string | null): string {
+ *  state: a waiting brainstorm question asks for its answer here. Asleep with a wake under way (`waking`), it says the
+ *  agent is coming back: the box takes nothing until then. The states that put a list or a drop zone over the box fall
+ *  back to the idle line, which is never seen under them. */
+export function boxPlaceholder(state: BoxState, agentName: string, override?: string | null, waking = false): string {
     if (state === "bash") {
         return "a command for the agent's shell; Backspace leaves bash mode";
     }
     if (override != null && override !== "") {
         return override;
+    }
+    if (state === "asleep" && waking) {
+        return `waking ${agentName}…`;
     }
     if (state === "asleep") {
         return `message ${agentName} to wake it… (Enter)`;

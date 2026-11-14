@@ -47402,7 +47402,8 @@ const chatScrollKeep = {
 };
 
 // --- chat-asleep-attach-jump: Chat's box takes a pasted picture while its agent is asleep, the picture rides the message
-// that wakes it, and its chip goes only once the wake took the message (a failed wake keeps it); and Ctrl+↓ jumps a
+// that wakes it, and the box lets go of the text and the chip at the press while the message shows as a bubble with
+// Waking… under it (a failed wake drops the bubble and puts both back); and Ctrl+↓ jumps a
 // Chat read scrolled up back to the latest message, from the conversation and from the box, as the round ↓ does, whose
 // tooltip names the key. One fixture Claude agent, asleep, over a real tab with a long transcript; a mock answers the
 // wake (ok, hold or fail) and the temp-file write a paste makes, so nothing reaches a process or the disk.
@@ -47596,7 +47597,10 @@ const chatAsleepAttachJump = {
             await h.shot("cdp-shots/chat-asleep-attach-chip.png");
             rec("A1. asleep, a picture pasted into the box shows as a chip", chip1 && writes.length >= 1, { chip1, writes, chipPath });
 
-            // A2. Enter wakes the agent with the text and the picture; while the wake is held the chip stays
+            // A2. Enter wakes the agent with the text and the picture. While the wake is held the box has let go of both, as
+            // an awake send does: the message shows as a pending bubble with Waking… under it, and the empty box says so
+            const pendingAt = `[...document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-pending]')]`;
+            const waitLine = `(document.querySelector('[data-agent-chat="${A}"] [data-chat-pending-label]')?.textContent.trim() ?? null)`;
             await caaMode(h, "hold");
             const wakesBefore = (await caaCalls(h, "agentswake")).length;
             await h.ev(`${box}.focus()`);
@@ -47604,22 +47608,28 @@ const chatAsleepAttachJump = {
             await enter();
             const called = await polishWaitFor(h, `(window.${CAA_MOCK_KEY}?.calls ?? []).filter((c) => c.command === "agentswake").length > ${wakesBefore}`, 3000);
             const wake = (await caaCalls(h, "agentswake")).slice(wakesBefore)[0];
-            const chipsWhileWaking = await h.ev(`${chips}.length`);
+            const lineWaking = await polishWaitFor(h, `${waitLine} === "Waking…"`, 3000);
+            const whileWaking = await h.ev(`({
+                chips: ${chips}.length,
+                text: ${box}?.textContent ?? null,
+                bubble: ${pendingAt}.some((b) => b.textContent.includes("look at this")),
+            })`);
             await h.shot("cdp-shots/chat-asleep-attach-waking.png");
             const msg = wake?.data?.message ?? "";
             rec(
-                "A2. Enter wakes the agent with the text and the picture's path in its message; the chip stays while the wake runs",
-                called && wake?.data?.tab === A && msg.includes("look at this") && msg.includes(ctx.pasted) && chipsWhileWaking === 1,
-                { called, wake, chipsWhileWaking }
+                "A2. Enter wakes the agent with the text and the picture's path in its message; while the wake runs the box is empty with no chip, and the message shows as a bubble with Waking… under it",
+                called && wake?.data?.tab === A && msg.includes("look at this") && msg.includes(ctx.pasted) &&
+                    whileWaking.chips === 0 && whileWaking.text === "" && whileWaking.bubble && lineWaking,
+                { called, wake, whileWaking, lineWaking }
             );
 
-            // A3. the wake took the message: the chip goes, and the box is empty
+            // A3. the wake took the message: Waking… goes, the box stays empty with no chip
             await caaRelease(h);
-            const chipGone = await polishWaitFor(h, `${chips}.length === 0`, 3000);
-            const textAfter = await h.ev(`${box}?.textContent ?? null`);
-            rec("A3. once the wake took the message, the chip goes and the box is empty", chipGone && textAfter === "", { chipGone, textAfter });
+            const wakingGone = await polishWaitFor(h, `${waitLine} !== "Waking…"`, 3000);
+            const after3 = await h.ev(`({ chips: ${chips}.length, text: ${box}?.textContent ?? null })`);
+            rec("A3. once the wake took the message, Waking… goes and the box stays empty with no chip", wakingGone && after3.chips === 0 && after3.text === "", { wakingGone, after3 });
 
-            // A4. a wake that fails keeps the chip and the text, to send again
+            // A4. a wake that fails drops its bubble and puts the chip and the text back in the box, to send again
             await caaMode(h, "fail");
             await paste(20);
             const chip4 = await polishWaitFor(h, `${chips}.length === 1`, 5000);
@@ -47629,9 +47639,17 @@ const chatAsleepAttachJump = {
             await enter();
             const failed = await polishWaitFor(h, `(window.${CAA_MOCK_KEY}?.calls ?? []).filter((c) => c.command === "agentswake").length > ${failsBefore}`, 3000);
             await new Promise((r) => setTimeout(r, 800));
-            const kept = await h.ev(`({ chips: ${chips}.length, text: ${box}?.textContent ?? null })`);
+            const kept = await h.ev(`({
+                chips: ${chips}.length,
+                text: ${box}?.textContent ?? null,
+                bubble: ${pendingAt}.some((b) => b.textContent.includes("again")),
+            })`);
             await h.shot("cdp-shots/chat-asleep-attach-failed.png");
-            rec("A4. a wake that fails keeps the chip and the text", chip4 && failed && kept.chips === 1 && kept.text === "again", { chip4, failed, kept });
+            rec(
+                "A4. a wake that fails drops its bubble and puts the chip and the text back in the box",
+                chip4 && failed && kept.chips === 1 && kept.text === "again" && !kept.bubble,
+                { chip4, failed, kept }
+            );
         } catch (e) {
             rec("the steps ran to the end", false, String(e?.message ?? e));
         }

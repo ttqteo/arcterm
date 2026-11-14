@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A message sent in Chat to a sleeping agent now leaves the box at once and shows as your bubble with "Waking…" under
+  it while the agent comes back, instead of sitting in the box until the wake finished and then popping in. If the
+  wake fails, the text and its files go back in the box.
 - A file link in Chat that the agent named from a folder it had cd'd into now opens instead of saying "File not found".
 - A Chat message no longer reaches Claude twice: the same words sent again within a few seconds of the first are
   dropped, so a second Enter on a box that had not cleared yet sends nothing more.
