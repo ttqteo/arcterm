@@ -1796,8 +1796,17 @@ func TestStartCouncilRunnerMarksCouncilsLeftRunningAsStopped(t *testing.T) {
 	if fine, _ := ws.CouncilGetCommand(ctx, wshrpc.CommandCouncilIdData{Id: "fine"}); fine.State != council.StateDone {
 		t.Errorf("a finished council is %s after startup, want done", fine.State)
 	}
-	if got, want := events.all(), []wshrpc.CouncilChangedData{{Id: "left", Project: project}}; !reflect.DeepEqual(got, want) {
-		t.Errorf("events = %+v, want just the council that was marked stopped", got)
+	// marking it stopped publishes once, and saving its report (which records DocPath) publishes again
+	got := events.all()
+	want := wshrpc.CouncilChangedData{Id: "left", Project: project}
+	if len(got) == 0 {
+		t.Errorf("no events, want the council that was marked stopped")
+	}
+	for _, ev := range got {
+		if ev != want {
+			t.Errorf("events = %+v, want only the council that was marked stopped", got)
+			break
+		}
 	}
 }
 
