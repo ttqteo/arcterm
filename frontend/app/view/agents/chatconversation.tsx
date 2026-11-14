@@ -37,7 +37,7 @@ import { ContextMenuModel } from "@/app/store/contextmenu";
 import { openOrPeek } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
-import { ArrowUpRight, ChevronDown, ChevronRight, Copy, EyeOff, Flag, GitFork } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronRight, Copy, Diamond, EyeOff, Flag, GitFork } from "lucide-react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
@@ -836,6 +836,25 @@ function FileChips({
     );
 }
 
+// where a chunk's work begins: the message that moved the agent to it (the initiative band's Work on this) carries the
+// chunk, and the rule across the column says which one the turns below are for
+function ChunkDivider({ n, label }: { n: number; label: string }) {
+    return (
+        <div data-chat-chunk-divider={n} className="mb-1 flex items-center gap-2.5 self-stretch">
+            <span className="h-px flex-1 bg-edge-mid" />
+            <span
+                title={`Chunk ${n} · ${label}`}
+                className="inline-flex min-w-0 max-w-[75%] items-center gap-1.5 rounded-full border border-edge-strong bg-surface px-2.5 py-0.5 text-[11.5px] leading-[1.6] text-secondary"
+            >
+                <Diamond size={11} strokeWidth={1.8} aria-hidden className="flex-none text-accent-soft" />
+                <span className="flex-none font-mono text-[10.5px] text-muted">Chunk {n}</span>
+                <span className="min-w-0 truncate text-ink-hi">{label}</span>
+            </span>
+            <span className="h-px flex-1 bg-edge-mid" />
+        </div>
+    );
+}
+
 function Marker({ item }: { item: ChatMarker }) {
     switch (item.kind) {
         case "compaction":
@@ -1535,7 +1554,7 @@ export function ChatConversation({
                         </div>
                     );
                 }
-                return (
+                const bubble = (
                     <YouBubble
                         item={item}
                         onContextMenu={copyMenu}
@@ -1543,6 +1562,15 @@ export function ChatConversation({
                         onFork={canFork ? forkHere : undefined}
                         onAddInitiative={canAddInitiative ? addToInitiative : undefined}
                     />
+                );
+                // a message that moved the agent to another chunk opens that chunk's stretch of the conversation
+                return "command" in item || item.chunk == null ? (
+                    bubble
+                ) : (
+                    <>
+                        <ChunkDivider n={item.chunk.n} label={item.chunk.label} />
+                        {bubble}
+                    </>
                 );
             }
             case "sent":

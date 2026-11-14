@@ -140,7 +140,13 @@ export function sameChatItem(a: ChatItem, b: ChatItem): boolean {
                     JSON.stringify(a.btw) === JSON.stringify(other.btw)
                 );
             }
-            return a.text === other.text && a.uuid === other.uuid && sameStrings(a.images, other.images);
+            return (
+                a.text === other.text &&
+                a.uuid === other.uuid &&
+                sameStrings(a.images, other.images) &&
+                a.chunk?.n === other.chunk?.n &&
+                a.chunk?.label === other.chunk?.label
+            );
         }
         case "sent": {
             const other = b as typeof a;

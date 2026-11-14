@@ -34,6 +34,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council's verify folder left behind when arcterm closed in the middle of a check is cleaned up the next time
   arcterm starts.
 - A council started in a folder that is not one of your projects shows in the tree, in Home's folder.
+- In Chat, the "Goes with your next message: switched to chunk…" line above the message box has its own frame, so
+  the conversation no longer shows through its text while you scroll.
+
+### Added
+
+- In Chat, a message that moved the agent to another initiative chunk shows a "Chunk N · name" divider above it, so
+  you can tell where each chunk's work begins.
 
 ### Changed
 
