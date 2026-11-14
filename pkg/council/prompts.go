@@ -366,8 +366,14 @@ const (
 		"or numbers, or weighs options, becomes a list or a table. Most good ideas have one; the second idea in the " +
 		"shape below is a message with a table and a list."
 
+	// mathRule is in every prompt whose fields the Discussion shows as messages: it draws `$…$` and `$$…$$` with KaTeX
+	// (markdownmessage.tsx), as Chat does. A backslash left single in the JSON string is repaired where it can be
+	// (escapeControls), but `\theta` would still read as a tab, so the rule asks for it doubled.
+	mathRule = "A formula goes in LaTeX, which the chat draws as math: $…$ inside a sentence, $$…$$ on a line of its " +
+		"own, never in backticks. In the JSON string double each backslash: \"$\\\\frac{a}{b}$\" reads as $\\frac{a}{b}$."
+
 	// messageRules are the rules every prompt whose fields the Discussion shows as messages ends with, before its shape.
-	messageRules = voiceRule + "\n\n" + visualRule + "\n\n" + markRule
+	messageRules = voiceRule + "\n\n" + visualRule + "\n\n" + mathRule + "\n\n" + markRule
 
 	// othersAnsweredRule is in an answers prompt where another seat answered a reply first (answersPass). Answered at
 	// once, three seats each opened a steer of the person's with the same concession ("You're right, …"), which read as

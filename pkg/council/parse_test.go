@@ -73,6 +73,32 @@ func TestRawLineBreaksInsideStringsAreRead(t *testing.T) {
 	}
 }
 
+// a formula (mathRule) whose backslashes a model left single: an invalid escape (\sum) is read doubled instead of
+// failing the reply, \frac and \beta instead of a form feed and a backspace; a doubled one, a real escape and a \u
+// escape stay as they are
+func TestDecodeReplyKeepsLatexBackslashes(t *testing.T) {
+	var v struct {
+		Text string `json:"text"`
+	}
+	single := "```json\n{\"text\": \"$\\sum_i \\frac{a}{b} + \\beta$ \\\"x\\\" \\u00e9\\n\\\\alpha\"}\n```"
+	if err := decodeReply(single, "round 1", &v); err != nil || v.Text != "$\\sum_i \\frac{a}{b} + \\beta$ \"x\" \u00e9\n\\alpha" {
+		t.Fatalf("single backslashes: %q %v, want the formula's backslashes kept", v.Text, err)
+	}
+	v.Text = ""
+	bare := "Here: {\"text\": \"$\\alpha$\"}"
+	if err := decodeReply(bare, "round 1", &v); err != nil || v.Text != "$\\alpha$" {
+		t.Fatalf("no fence: %q %v, want the object found and read", v.Text, err)
+	}
+	v.Text = ""
+	if err := decodeReply("{\"text\": \"a\\fb\"}", "round 1", &v); err != nil || v.Text != "a\\fb" {
+		t.Fatalf("\\f before a letter: %q %v, want it read as the command", v.Text, err)
+	}
+	v.Text = ""
+	if err := decodeReply("{\"text\": \"a\\f1\"}", "round 1", &v); err != nil || v.Text != "a\f1" {
+		t.Fatalf("\\f before a digit: %q %v, want the escape kept", v.Text, err)
+	}
+}
+
 func TestEscapeControlsMapsBackToTheOriginal(t *testing.T) {
 	s := "{\"a\": \"x\ny\"}\n"
 	fixed, at := escapeControls(s)

@@ -242,7 +242,11 @@ func lastObject(reply string) ([]byte, bool) {
 
 // escapeControls returns s with each raw control character inside a JSON string (a line break, a tab: models write them
 // in long text fields, and encoding/json rejects them) written as its escape, and, for each byte of the result and its
-// end, the offset in s it came from. Outside strings nothing changes.
+// end, the offset in s it came from. A backslash a model left single in a LaTeX formula (mathRule) is doubled too: one
+// before a character no JSON escape starts with (`\alpha`, `\sum`, `\underline`), which encoding/json rejects, and one
+// before f or b and a letter (`\frac`, `\beta`), which it would read as a form feed or a backspace; `\theta` and
+// `\nabla` read as a tab and a line break, and only the prompt's doubled backslash saves them. Outside strings nothing
+// changes.
 func escapeControls(s string) (string, []int) {
 	var b strings.Builder
 	at := make([]int, 0, len(s)+1)
@@ -261,6 +265,10 @@ func escapeControls(s string) (string, []int) {
 		case esc:
 			esc = false
 		case c == '\\':
+			if latexBackslash(s, i) {
+				put(`\\`, i)
+				continue
+			}
 			esc = true
 		case c == '"':
 			inStr = false
@@ -283,17 +291,48 @@ func escapeControls(s string) (string, []int) {
 	return b.String(), at
 }
 
-// decodeReply finds the reply's JSON and decodes it into v. what names the round for the error.
+// latexBackslash reports whether the backslash at s[i], inside a JSON string, is a LaTeX command's left single rather
+// than an escape (escapeControls)
+func latexBackslash(s string, i int) bool {
+	if i+1 >= len(s) {
+		return false
+	}
+	switch n := s[i+1]; n {
+	case '"', '\\', '/', 'n', 'r', 't':
+		return false
+	case 'f', 'b':
+		return i+2 < len(s) && isASCIILetter(s[i+2])
+	case 'u':
+		if i+5 >= len(s) {
+			return true
+		}
+		for _, h := range s[i+2 : i+6] {
+			if !strings.ContainsRune("0123456789abcdefABCDEF", h) {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
+func isASCIILetter(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+// decodeReply finds the reply's JSON and decodes it into v. what names the round for the error. It reads the repaired
+// JSON first (escapeControls): a raw line break inside a string is the usual slip, and a `\frac` left single is valid
+// JSON that would decode wrong; a reply that fails both ways reports the original's error.
 func decodeReply(reply, what string, v any) error {
 	b, ok := extractJSON(reply)
 	if !ok {
 		return fmt.Errorf("%s reply has no JSON block", what)
 	}
+	if fixed, _ := escapeControls(string(b)); fixed != string(b) && json.Unmarshal([]byte(fixed), v) == nil {
+		return nil
+	}
 	if err := json.Unmarshal(b, v); err != nil {
-		// a raw line break inside a string is the usual slip; a reply that still fails reports the first error
-		if fixed, _ := escapeControls(string(b)); fixed == string(b) || json.Unmarshal([]byte(fixed), v) != nil {
-			return fmt.Errorf("%s reply: %w", what, err)
-		}
+		return fmt.Errorf("%s reply: %w", what, err)
 	}
 	return nil
 }
