@@ -708,8 +708,12 @@ export const councilTree = {
             JSON.stringify({ readGone, readListed })
         );
 
-        // 11f. Unpin from that pinned council's Report takes it off the tree at once
+        // 11f. Unpin from that pinned council's Report takes it off the tree at once. The Pin row is in the Report's actions
+        // menu (…), so the menu is opened before the row is read; a click on the row closes it, so it is opened again once
+        // the unpin is saved
         await openCouncil(h, oldPinned, "summary");
+        await until(present(menuButton));
+        await h.ev(click(menuButton));
         const reportPinned = await until(`${pinIn}?.dataset.councilPin === "pinned"`);
         await stubRpc(h, ["CouncilPinCommand"]);
         await h.ev(`${pinIn}?.click()`);
@@ -719,10 +723,19 @@ export const councilTree = {
         // what wavesrv saves for that unpin
         writeCouncil(ctx, "done", { id: oldPinned, now: threeDaysAgo });
         await announceCouncil(h, ctx, oldPinned);
-        const unpinnedGone = await until(
-            `${pinIn}?.dataset.councilPin === "pin" && !${present(`[data-council-row="${oldPinned}"]`)}`
+        // the menu's button is no longer marked pinned and the council has left the tree; then the menu reads Pin again
+        const oldPinnedRow = present(`[data-council-row="${oldPinned}"]`);
+        const savedUnpinned = await until(
+            `document.querySelector(${JSON.stringify(menuButton)})?.dataset.pinned === "false" && !${oldPinnedRow}`
         );
+        await h.ev(click(menuButton));
+        const unpinnedGone =
+            savedUnpinned && (await until(`${pinIn}?.dataset.councilPin === "pin" && !${oldPinnedRow}`));
         await h.shot("cdp-shots/council-tree-unpinned-gone.png");
+        // the menu holds the focus, so the first Escape closes it; the second goes back to the terminal for the steps that
+        // follow
+        await pressEscape(h);
+        await until(`!document.querySelector("[data-menu-item]")`);
         await pressEscape(h);
         rec(
             "11f. Unpin in the Report of a council that ended more than a day ago asks wavesrv to unpin it, and once saved the council leaves the tree",
@@ -731,7 +744,7 @@ export const councilTree = {
                 reportUnpins[0].data?.id === oldPinned &&
                 reportUnpins[0].data?.pinned === false &&
                 unpinnedGone,
-            JSON.stringify({ reportPinned, reportUnpins, unpinnedGone })
+            JSON.stringify({ reportPinned, reportUnpins, savedUnpinned, unpinnedGone })
         );
 
         // 11g. the same rule for a council with no summary (docs/superpowers/plans/2026-11-03-council-ux-fix-1.md): its
