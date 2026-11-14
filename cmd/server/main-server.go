@@ -43,6 +43,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
 	"github.com/wavetermdev/waveterm/pkg/reporadar"
 	"github.com/wavetermdev/waveterm/pkg/runpause"
+	"github.com/wavetermdev/waveterm/pkg/runprune"
 	"github.com/wavetermdev/waveterm/pkg/runregulator"
 	"github.com/wavetermdev/waveterm/pkg/secretstore"
 	"github.com/wavetermdev/waveterm/pkg/service"
@@ -649,6 +650,9 @@ func main() {
 	if !snapshotSkips("wshserver.StartStorage") { // its auto-clean removes worktrees, old sessions and package caches on the real machine
 		wshserver.StartStorage(context.Background())
 	}
+	// a week after an engine session (task, review, stage) ends, its stored prompt keeps only its first line: 5 min
+	// after start, then daily
+	runprune.StartLoop(context.Background())
 	// the machine slept: the pet says so when agents were working through it
 	sleepwatch.StartLoop(context.Background(), func(d baseds.SleptData) {
 		wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_Slept, Data: d})

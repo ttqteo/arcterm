@@ -493,6 +493,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Tray job size tooltip, on a build from 2667a3291: with a heavy job queued, open the tray and hover a
   job's GB figure → "The RAM the queue sets aside for it (the Jobs popover says whether it was measured)". Commit:
   fix(tray) a job's RAM tooltip says what the figure is
+- [ ] (arcterm) Old engine prompts are trimmed, on a build with `pkg/runprune`: about 5 minutes after arcterm starts,
+  `waveapp.log` has `runprune: trimmed the prompts of N engine sessions that ended over 7 days ago (… MB)`; the first
+  sweep on the 2026-11-14 store should trim ~2,200 runs and ~28 MB (a read-only simulation). Then open an old run's
+  DAG and peek a task from over a week ago → its goal shows one line, its report and evidence are whole; a run you
+  started yourself still shows its whole goal. Unit tests only. Commit: feat(runs) trim finished engine sessions'
+  prompts after a week
 - [ ] (arcterm) A server start takes no heavy-job slot, on a build from 62dd4420e: have an agent run
   `./gradlew bootRun` or `mvn spring-boot:run` in the background (or `uvicorn app:app`) in a Java or Python project:
   the Jobs popover shows no row for it, and a `task check:ts` started beside it starts at once
