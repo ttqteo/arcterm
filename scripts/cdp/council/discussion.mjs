@@ -2081,7 +2081,8 @@ const PNG_B64 = PNG.toString("base64");
 // the project file the picker offers and the sent message names; each line names its own number
 // (its name holds `ec`, which the Security seat and the recap chat hold too, so one `@ec` lists all three groups)
 const ATTACH_FILE = "docs/recap-notes.md";
-const TEN_MB = 10 * 1024 * 1024;
+// past the upload cap (MAX_UPLOAD_BYTES, 3.5 MB: one websocket message), which the chip refuses as the write would
+const OVER_CAP = 4 * 1024 * 1024;
 
 // writes the PNG under the scenario's temp folder (teardown removes it with the rest) and the project file; answers the
 // PNG's path as WriteTempFileCommand would
@@ -2242,10 +2243,10 @@ async function attachPaste(h, ctx, rec) {
     await clearChips(h, CHANNEL_COMPOSER);
     await typeInto(h, CHAT_INPUT, "");
 
-    // a file over 10 MB is refused before any upload; an upload that fails says why on its chip
+    // a file over the 3.5 MB upload cap is refused before any upload; an upload that fails says why on its chip
     await stubRpc(h, ["WriteTempFileCommand"], { WriteTempFileCommand: { value: files.path } });
     const before = (await rpcCalls(h, "WriteTempFileCommand")).length;
-    await pasteImage(h, CHAT_INPUT, TEN_MB);
+    await pasteImage(h, CHAT_INPUT, OVER_CAP);
     await until(h, `!!document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-image-error]`)})`);
     const big = {
         chips: await chipsOf(h, CHANNEL_COMPOSER),
@@ -2264,11 +2265,11 @@ async function attachPaste(h, ctx, rec) {
         disabled: await sendDisabled(h),
     };
     rec(
-        "attach-oversize: a paste over 10 MB shows an error chip that says so and makes no WriteTempFileCommand call; a paste whose upload rejects shows the error chip with its message and leaves Send ready",
+        "attach-oversize: a paste over 3.5 MB shows an error chip that says so and makes no WriteTempFileCommand call; a paste whose upload rejects shows the error chip with its message and leaves Send ready",
         big.chips.length === 1 &&
             big.chips[0].state === "error" &&
             big.errors.length === 1 &&
-            /10 MB/.test(big.errors[0]) &&
+            big.errors[0] === "Image too large (over 3.5 MB)" &&
             big.writes === 0 &&
             failed.chips.length === 1 &&
             failed.chips[0].state === "error" &&

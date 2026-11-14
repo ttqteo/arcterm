@@ -964,6 +964,24 @@ was. "wsh council rm" removes an ended one for good (into ~/.arc/trash).`,
 	},
 }
 
+var councilSummarizeCmd = &cobra.Command{
+	Use:   "summarize <id>",
+	Short: "have the coordinator write (or rewrite) a council's report now, from the ideas sent so far",
+	Long: `Have the coordinator summarize a council that is not running: one paused after round 1 (the rounds left are
+skipped), one stopped or failed, or a done one whose discussion moved on since its report. It is one coordinator call,
+not a new council, and the app's Summarize does the same. A council with no sent idea has nothing to summarize and is
+refused, as is a running one. Read the report back with "wsh council wait <id>".`,
+	Args:    cobra.ExactArgs(1),
+	PreRunE: preRunSetupRpcClient,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := wshclient.CouncilSummarizeCommand(RpcClient, wshrpc.CommandCouncilIdData{Id: args[0]}, nil); err != nil {
+			return err
+		}
+		fmt.Printf("council %s: summarizing; run `wsh council wait %s` for the report\n", args[0], args[0])
+		return nil
+	},
+}
+
 var councilRetryCmd = &cobra.Command{
 	Use:   "retry <id>",
 	Short: "run a failed council call again, once, optionally on another model; the discussion so far stays",
@@ -1429,6 +1447,6 @@ func init() {
 	councilRetryCmd.Flags().StringArray("model", nil, "run this retry once on another model (opus, sonnet, fable, haiku, claude-opus-4-8); the seat keeps its own. With --all, <model> for every seat or <seat>=<model> (repeatable)")
 	councilRetryCmd.Flags().Bool("all", false, "retry every failed seat but the coordinator at once, in one run")
 	councilBenchCmd.AddCommand(councilBenchResultsCmd, councilBenchStopCmd)
-	councilCmd.AddCommand(councilEstimateCmd, councilStartCmd, councilListCmd, councilShowCmd, councilMemoryCmd, councilWaitCmd, councilStopCmd, councilRetryCmd, councilPinCmd, councilRmCmd, councilBenchCmd)
+	councilCmd.AddCommand(councilEstimateCmd, councilStartCmd, councilListCmd, councilShowCmd, councilMemoryCmd, councilWaitCmd, councilStopCmd, councilSummarizeCmd, councilRetryCmd, councilPinCmd, councilRmCmd, councilBenchCmd)
 	rootCmd.AddCommand(councilCmd)
 }

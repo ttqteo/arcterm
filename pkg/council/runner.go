@@ -3201,6 +3201,15 @@ func (r *Runner) Draft(id, itemId, action, text string) (*Council, error) {
 	default:
 		return nil, fmt.Errorf("unknown draft action %q: use %s, %s or %s", action, draftSend, draftEdit, draftDrop)
 	}
+	// an idea or a reply that takes a stance is labelled once it is out in the room, so a draft the person sends is
+	// checked now: the checks skipped it while it was held. The folders they are read against come before the lock: a
+	// live agent's seat is a lookup of up to seatLookup, which would hold every other council call, and they rest on the
+	// seats and the project, which settling a draft does not change
+	snap, err := Load(id)
+	if err != nil {
+		return nil, err
+	}
+	rootsFor := r.checkRoots(context.Background(), snap)
 	r.mu.Lock()
 	cur, err := Load(id)
 	if err != nil {
@@ -3211,9 +3220,6 @@ func (r *Runner) Draft(id, itemId, action, text string) (*Council, error) {
 		saved *Council
 		start func()
 	)
-	// an idea or a reply that takes a stance is labelled once it is out in the room, so a draft the person sends is
-	// checked now: the checks skipped it while it was held
-	rootsFor := r.checkRoots(context.Background(), cur)
 	settle := func(c *Council) error {
 		if err := settleDraft(c, itemId, action, text); err != nil {
 			return err

@@ -333,6 +333,7 @@ agrees with which idea in Map" mở nó.
 | `wsh council list` | Các council của project, mới nhất trước |
 | `wsh council show <id>` / `wait <id>` | In Summary và Matrix dạng markdown; `wait` chờ council dừng rồi mới in |
 | `wsh council retry <id>` | Chạy lại một lượt lỗi; `--expert <seat>`, `--model <model>`, `--all` cho mọi ghế lỗi |
+| `wsh council summarize <id>` | Cho thư ký viết (hay viết lại) báo cáo ngay từ các ý đã gửi, kể cả council đang dừng sau vòng 1 |
 | `wsh council stop <id>` | Dừng council đang chạy hay đang xếp hàng |
 | `wsh council pin <id>` / `pin --off` | Ghim / bỏ ghim một council, ở bất kỳ trạng thái nào |
 | `wsh council rm <id>` | Xóa hẳn một council đã kết thúc |

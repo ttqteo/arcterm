@@ -123,6 +123,8 @@ import { projectListAtom } from "./projectsstore";
 // what the Summary keeps for a council while the person is elsewhere (the Agent surface stays mounted, this view does not)
 const openDirectionAtom = atomFamily((_id: string) => atom<number | null>(null) as PrimitiveAtom<number | null>);
 const savedDocAtom = atomFamily((_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>);
+// whether the ideas kept aside (Also raised) are unfolded: the header's jump link to them opens them too
+const keptOpenAtom = atomFamily((_id: string) => atom(false) as PrimitiveAtom<boolean>);
 interface MadeInitiative {
     oid: string;
     title: string;
@@ -426,10 +428,10 @@ function KeptCard({ row }: { row: KeptRow }) {
 }
 
 // The ideas kept aside under the ranked directions (Also raised, or Wild ideas kept aside): the long tail of the report,
-// so it starts folded behind its heading and count, and a click on them opens the grid. The fold is local state: folded
-// is the default, so losing it when the view unmounts costs nothing.
+// so it starts folded behind its heading and count, and a click on them opens the grid. The fold is the council's
+// (keptOpenAtom), so the header's jump link to this section can open it.
 function KeptSection({ c, rows }: { c: Council; rows: KeptRow[] }) {
-    const [open, setOpen] = useState(false);
+    const [open, setOpen] = useAtom(keptOpenAtom(c.id));
     const Chevron = open ? ChevronUp : ChevronDown;
     return (
         <section data-council-kept className="flex flex-col gap-4">
@@ -622,6 +624,7 @@ function glideTo(box: HTMLElement, top: number) {
 // scrolling the box under the header so the section's top lands 12px under the box's top (as far as it can scroll).
 function JumpLinks({ c, scroller }: { c: Council; scroller: RefObject<HTMLDivElement | null> }) {
     const entries = useMemo(() => jumpLinks(c), [c]);
+    const [, setKeptOpen] = useAtom(keptOpenAtom(c.id));
     if (entries.length === 0) {
         return null;
     }
@@ -630,6 +633,10 @@ function JumpLinks({ c, scroller }: { c: Council; scroller: RefObject<HTMLDivEle
         const el = box == null ? null : sectionOf(box, e.id);
         if (box == null || el == null) {
             return;
+        }
+        // the ideas kept aside are what the link is for: it opens their fold, which sits under the heading it lands on
+        if (e.id === "kept") {
+            setKeptOpen(true);
         }
         glideTo(box, box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top - 12);
     };
