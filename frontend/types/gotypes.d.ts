@@ -2142,11 +2142,6 @@ declare global {
         id: string;
     };
 
-    // wshrpc.CommandNoteScratchWriteData
-    type CommandNoteScratchWriteData = {
-        body: string;
-    };
-
     // wshrpc.CommandNoteUpdateData
     type CommandNoteUpdateData = {
         id: string;

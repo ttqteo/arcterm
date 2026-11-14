@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- **Pin tabs in Float**: right-click a tab on the strip under a float's terminal and pick **Pin tab**. Pinned tabs
+  come first and never fold into "+N"; **Unpin tab** lets one go.
 - In Chat, `Tab` walks the suggested replies under the box (`Shift`+`Tab` back) and `Enter` sends the one it picked,
   which shows the Enter key; the empty box says so. Reply chips lose the ↵ arrow that read as Enter on every one.
 - Chat draws a council the agent started as a card, like its runs and verdicts: while the council runs it sits at the
@@ -50,6 +52,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Float's tabs follow the Agent tree: a run is one tab, its lead, instead of a tab for every worker it started, and a
+  brainstorm's check sessions stay under the agent that started them.
+- The Note tab in Float and its `Cmd`+`Shift`+`N` shortcut are gone. The note's text stays in `notes/scratch.md` in
+  your vault.
 - A message you send in Chat rises in at its place again, as in a messenger, instead of flying out of the message box.
 - Chat's suggested replies stay while you type instead of all going at the first letter; clicking one over text you
   typed asks first, in a toast whose Send replaces your text with the reply.
@@ -1972,7 +1978,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **Note and Translate in Float**: the strip under a float's terminal has a **Note** tab, one markdown note that saves
   itself as you type (with Preview), and a **Translate** tab that opens translate-shell, its prompt showing the
   language it translates into, with `↑` recalling past lookups. `Cmd`+`Shift`+`N` floats the note.
-  <!-- try: float-note --> <!-- big -->
+  <!-- big -->
 - Office sounds: chiptune jingles when a task finishes, a run lands or someone needs you, with optional footsteps and
   day and night music (`s` or the office menu's Mute sound mutes them). Settings → Appearance turns the jingles, the
   boss's sounds and the music on or off, and sets how loud they play.

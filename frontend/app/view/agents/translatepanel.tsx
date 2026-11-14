@@ -476,7 +476,7 @@ export function TranslateRailPanel() {
     return open ? <RailFrame /> : null;
 }
 
-/** Float's Translate panel: the column over the terminal area, as the Note tab's body covers it (float-note.tsx), while
+/** Float's Translate panel: the column over the terminal area, while
  *  it is open in Float (cockpit-root.tsx). The terminal stack stays mounted under it, so the terminal never refits or
  *  replays. Esc, the Translate tab, Ctrl+Shift+D and any change of focus close it. */
 export function TranslateFloatPanel({ model }: { model: AgentsViewModel }) {

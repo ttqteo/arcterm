@@ -257,51 +257,12 @@ func TestAnIDThatWouldLeaveTheNotesDirIsRejected(t *testing.T) {
 	}
 }
 
-func TestScratchReadsEmptyWhenMissing(t *testing.T) {
-	useTempRoot(t)
-	got, err := ReadScratch()
-	if err != nil || got != "" {
-		t.Fatalf("ReadScratch() = %q, %v; want \"\", nil", got, err)
-	}
-}
-
-func TestScratchWriteThenReadKeepsTheBytes(t *testing.T) {
-	root := useTempRoot(t)
-	wavevault.PokedForTest()
-	const body = "# Plan\n\n- one\n  "
-	if err := WriteScratch(body); err != nil {
-		t.Fatal(err)
-	}
-	got, err := ReadScratch()
-	if err != nil || got != body {
-		t.Fatalf("ReadScratch() = %q, %v; want %q", got, err, body)
-	}
-	b, err := os.ReadFile(filepath.Join(root, NotesDir, "scratch.md"))
-	if err != nil || string(b) != body {
-		t.Fatalf("file = %q, %v; want %q", b, err, body)
-	}
-	if !wavevault.PokedForTest() {
-		t.Fatal("write did not poke the vault sync")
-	}
-}
-
-func TestScratchWriteEmptyClearsIt(t *testing.T) {
-	useTempRoot(t)
-	if err := WriteScratch("x"); err != nil {
-		t.Fatal(err)
-	}
-	if err := WriteScratch(""); err != nil {
-		t.Fatal(err)
-	}
-	got, err := ReadScratch()
-	if err != nil || got != "" {
-		t.Fatalf("ReadScratch() = %q, %v; want \"\", nil", got, err)
-	}
-}
-
 func TestListSkipsTheScratchNote(t *testing.T) {
-	useTempRoot(t)
-	if err := WriteScratch("x"); err != nil {
+	root := useTempRoot(t)
+	if err := os.MkdirAll(filepath.Join(root, NotesDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, NotesDir, "scratch.md"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Add("Real", ""); err != nil {

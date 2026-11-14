@@ -77,7 +77,6 @@ import { focusedDocReview, openReview, stepDocReviewTab } from "@/app/view/agent
 import { doneSuggestion } from "@/app/view/agents/donesuggest";
 import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
 import { listOrder, stepInList, treeModeAtom } from "@/app/view/agents/filetree";
-import { toggleFloatNote } from "@/app/view/agents/floatnotestore";
 import { minimizeRequested, toggleFloat } from "@/app/view/agents/floatstore";
 import {
     clearHistoryFilters,
@@ -567,17 +566,6 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             label: "New council",
             when: (ctx) => !ctx.modalOpen,
             run: () => openNewCouncil(model),
-        },
-        {
-            // The Float ledge's Note tab: from outside Float or from a terminal it floats straight onto the note, from the
-            // note it goes back to the terminal (floatnotestore.ts). A chord, so it works from a focused terminal, and
-            // never a bare key, which would type into the note.
-            id: "float-note",
-            keys: "Mod:Shift:n",
-            group: "Global",
-            label: "Float the note",
-            when: (ctx) => !ctx.modalOpen,
-            run: () => void toggleFloatNote(model),
         },
         {
             // The rail's Translate panel (translatestore.ts): opens it with the caret in the box, closes it again. A chord,
