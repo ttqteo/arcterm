@@ -36787,13 +36787,15 @@ const railServers = {
 // dev app after the run lands. The pieces:
 //   - a temp repo, registered as a project so the palette can search it, where a.txt is modified;
 //   - files outside it for the File tab's states;
-//   - a fixture agent whose transcript edited a.txt, names `a.txt:3` in a message and read the other files;
+//   - a fixture agent whose transcript edited a.txt, names `a.txt:3` in a message and read the other files, on a
+//     terminal block of its own (a block the store lacks would fail to start and fold the agent to idle);
 //   - a plain terminal that prints a.txt's absolute path with :2. It starts in ~, because a shell in the temp dir
 //     would lock it until the app exits.
 // Teardown puts back the user's fixture roster and every key this touches.
 const RAIL_TABS_AGENT = "fx-rail-tabs";
-const RAIL_TABS_BLOCK = "fx-blk-rail-tabs";
 const RAIL_TABS_PROJECT = "verify-rail-tabs";
+// agent.projectFilter and cockpit.view are the Cockpit's two persisted choices that can leave the card off the grid
+// (another project's scope, the Office); the scenario sets both and puts them back
 const RAIL_TABS_KEYS = [
     RAIL_VISIBLE_KEY,
     RAIL_SECTIONS_KEY,
@@ -36802,6 +36804,8 @@ const RAIL_TABS_KEYS = [
     "code.project.last",
     "agent.launch.recentprojects",
     "agent.chatmode",
+    "agent.projectFilter",
+    "cockpit.view",
 ];
 const RAIL_TABS_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
 const RAIL_TABS_CARD = `document.querySelector('[data-cockpit-surface] [data-agent-id="${RAIL_TABS_AGENT}"]')`;
@@ -36909,6 +36913,14 @@ const agentRailTabs = {
             const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
             ctx.workspaceId = ws.workspacedata.oid;
             await openRailTerminal(h, ctx, RAIL_TABS_PROJECT);
+            // the fixture agent's own terminal block, a real one: the pane of an agent shown on Terminal starts its
+            // block's controller, and a block id the store lacks makes that start fail, which folds the agent to idle
+            // ("failed to start", agentcontrollerstore.ts withStartError) and takes its card off the Cockpit grid.
+            // It is the second terminal, so ctx.terminals[0] stays the one that prints the path. Without cmd:cwd:
+            // that key is read before the transcript's (agentcwdresolve.ts), and the repo must come from the transcript
+            await openRailTerminal(h, ctx, RAIL_TABS_PROJECT);
+            ctx.agentBlock = ctx.terminals[1].blockId;
+            await h.rpc("setmeta", { oref: `block:${ctx.agentBlock}`, meta: { "cmd:cwd": null } });
             mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
             writeFileSync(
                 TREE_RAIL_FIXTURE,
@@ -36923,7 +36935,7 @@ const agentRailTabs = {
                             agent: "claude",
                             model: "opus",
                             activeMs: 60_000,
-                            blockId: RAIL_TABS_BLOCK,
+                            blockId: ctx.agentBlock,
                             transcriptPath: ctx.transcript,
                         },
                     ],
@@ -36937,6 +36949,10 @@ const agentRailTabs = {
                 localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
                 for (const k of ${JSON.stringify([RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth"])}) localStorage.removeItem(k);
                 localStorage.setItem("agent.launch.recentprojects", ${JSON.stringify(JSON.stringify([RAIL_TABS_PROJECT]))});
+                // the Cockpit's grid of every project, as cards: both are read at boot, so an earlier scenario's
+                // project scope or the Office cannot keep the fixture agent's card off it
+                localStorage.setItem("agent.projectFilter", ${JSON.stringify(JSON.stringify("all"))});
+                localStorage.setItem("cockpit.view", ${JSON.stringify(JSON.stringify("cards"))});
                 // the Transcript tab belongs to an agent showing its terminal: a Claude agent opens in Chat, which has no
                 // such tab, so the fixture agent is pinned to Terminal (read at boot; the restore loop puts the key back)
                 localStorage.setItem("agent.chatmode", ${JSON.stringify(JSON.stringify({ [RAIL_TABS_AGENT]: "terminal" }))});
@@ -52400,15 +52416,22 @@ const settingsPages = {
                 sections: [...el.querySelectorAll("button[data-section]")].map((b) => b.getAttribute("data-section")),
                 borderTop: cs.borderTopWidth,
                 marginTop: cs.marginTop,
+                dpr: window.devicePixelRatio,
             };
         })()`);
+        // a 1px rule is a hairline at any display scale: Chromium snaps a border to whole device pixels, so at a 110%
+        // display scale it reports 0.909091px, and below 100% 1.11px. A missing rule (0) still fails; so does a 2px one.
+        const hairline = foot != null && (() => {
+            const w = parseFloat(foot.borderTop);
+            return w > 0 && w <= Math.max(1, 1 / foot.dpr) + 0.001;
+        })();
         await h.shot("cdp-shots/settings-pages-index.png");
         rec(
             "index: one flat list of nine pages in order, About alone at the foot under a 1px rule and a 10px gap",
             JSON.stringify(index) === JSON.stringify(SP_PAGES.map((p) => p.id)) &&
                 foot != null &&
                 JSON.stringify(foot.sections) === JSON.stringify(["about"]) &&
-                foot.borderTop === "1px" &&
+                hairline &&
                 foot.marginTop === "10px",
             `index=${JSON.stringify(index)} foot=${JSON.stringify(foot)}`
         );
