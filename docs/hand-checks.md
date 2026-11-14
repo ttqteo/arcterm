@@ -320,8 +320,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   comments), diff-scope steps 3b (Review on a landed run lists only the run's files) and 6b (a corrupt `.git/index`
   reads as Couldn't refresh, not as not a repository). Only unit tests, the typecheck and `node --check` ran.
 
-- [ ] (arcterm) The job queue plans on measured peaks (spec 2026-11-12-measured-job-peaks), on Windows and on the Mac:
-  in a Claude agent run `task check:ts` twice → the second run's row in the Jobs popover reads "measured" and its
+- [ ] (arcterm) The job queue plans on measured peaks (spec 2026-11-12-measured-job-peaks), on the Mac (Windows held
+  on 1.1.2, 2026-11-14: check:ts peaks recorded; an unknown `memhog hog.js` at 1.54 GB was learned and its second run
+  took slot j18): in a Claude agent run `task check:ts` twice → the second run's row in the Jobs popover reads "measured" and its
   tooltip names the first run's peak, the row's figure being that peak × 1.2 rather than the table's 3 GB "est.". Then
   have the agent run a `make`-style build that peaks over 1 GB (`make build`, `gradle build`) twice → after the first,
   `~/.arc/jobslot-learned.json` lists its pattern and the second takes a slot and queues like a table command; a
