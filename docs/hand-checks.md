@@ -247,10 +247,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `waveapp.log` has `[chat-send] repeat-dropped … after=…ms`. The same words sent after 5 s go as a new message. A send
   that failed and came back into the box sends again at once. Agent surface, Chat (`agentcomposer.tsx` useAgentSend,
   `chatpending.ts` repeatsSend). Unit-tested and typechecked only.
-- [ ] (arcterm) An Enter Claude Code takes as a line break is pressed again: on a machine under memory pressure, send
-  from Chat → the message lands; when a retry happened `waveapp.log` has `[chat-send] enter-linebreak … retry=1`. Watch
-  for a message submitted twice, or a toast "not sent … press Enter in the terminal" on a message that did go. Agent
-  surface, Chat (`agentsubmit.ts` confirmEnter, `chattakeback.ts` enterEcho). Unit-tested and typechecked only.
 
 - [ ] (arcterm) Hologram amber only on a question: with Settings → Jarvis → Form on Hologram, leave a gate or a run to
   land in Jarvis's queue and no agent asking → the corner keeps its rings; have an agent ask (`wsh ask`, or a

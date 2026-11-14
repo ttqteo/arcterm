@@ -8,7 +8,7 @@
 import type { AgentEntry } from "./agentsviewmodel";
 import { stripResultLines } from "./chatinitiative";
 import { unwrapWholePaste } from "./chattagblocks";
-import type { EnterEcho, TypedEcho } from "./chattakeback";
+import type { TypedEcho } from "./chattakeback";
 import { opensPanel } from "./slashcommands";
 
 /** What a pending command stands for until its row lands: a side question the arc mod is answering (`btw`), a panel
@@ -292,29 +292,6 @@ export function echoStep(echo: TypedEcho, waitedMs: number): "enter" | "wait" | 
             return waitedMs >= ECHO_WAIT_MAX_MS ? "enter" : "wait";
         case "absent":
             return waitedMs >= ECHO_ABSENT_MAX_MS ? "fail" : "wait";
-    }
-}
-
-/** How long a send watches Claude Code's box after its Enter for the text to leave it. Past it the send is taken as
- *  done: an Enter not read yet is still on its way. */
-export const ENTER_CONFIRM_MAX_MS = 10_000;
-
-/** How many times a send takes back an Enter that went in as a line break and presses it again before it gives up. */
-export const ENTER_RETRIES = 2;
-
-/** Pure: what a send does `waitedMs` after its Enter, from what the box shows (chattakeback.ts enterEcho) and how many
- *  retries it made: `done` once the text left the box (or there is no box to read, or the watch is over), `retry` when
- *  the Enter went in as a line break (Backspace, then Enter again), `fail` when it did so after every retry, so the
- *  message waits in Claude Code's box for an Enter of the person's. */
-export function enterStep(echo: EnterEcho, waitedMs: number, retries: number): "done" | "wait" | "retry" | "fail" {
-    switch (echo) {
-        case "gone":
-        case "unknown":
-            return "done";
-        case "held":
-            return waitedMs >= ENTER_CONFIRM_MAX_MS ? "done" : "wait";
-        case "linebreak":
-            return retries < ENTER_RETRIES ? "retry" : "fail";
     }
 }
 
