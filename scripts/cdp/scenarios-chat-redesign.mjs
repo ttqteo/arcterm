@@ -991,6 +991,51 @@ export default function (kit) {
                 );
             });
 
+            // 18b. a narrow box (a float window) keeps the suggested replies on one line: three long answers shrink side by
+            // side, the longest ends in … (its text wider than its label), and the row is one chip tall
+            await run("18b. suggested replies stay on one line", async (name) => {
+                await clearBox(h, A);
+                const LONG = ["Có, mở bundle ca mồi đầu giải thích giúp", "Không cần, tôi tự chấm luôn", "Để tôi đọc lại phần thứ tự làm trước đã"];
+                await h.ev(`(() => { window.__chatSuggestFake = () => ${JSON.stringify(LONG)}; return true; })()`);
+                append(
+                    ctx,
+                    AC.userText("hướng dẫn tôi cách chấm", ts(ctx, -1000)),
+                    AC.assistantText("Mỗi check là một kiểu giả. Bạn muốn mình mở bundle ca đầu và giải thích không?", ts(ctx, 0))
+                );
+                await setRoster({ idleSince: Date.now() + 2000 });
+                const BOX = `${layerOf(A)}?.querySelector("[data-chat-box]")`;
+                const up = await polishWaitFor(h, `${layerOf(A)}?.querySelectorAll("[data-chat-suggest-chip]").length === 3`, WAIT_MS);
+                // as narrow as the float window's box in the report (about 560 px)
+                await h.ev(`(() => { const b = ${BOX}; if (b) { b.dataset.crWas = b.style.maxWidth; b.style.maxWidth = "560px"; } return true; })()`);
+                await polishNap(400);
+                const line = await h.ev(`(() => {
+                    const row = ${layerOf(A)}?.querySelector("[data-chat-suggest]");
+                    const chips = [...(row?.querySelectorAll("[data-chat-suggest-chip]") ?? [])];
+                    const label = (b) => b.querySelector("span.truncate");
+                    return {
+                        tops: chips.map((b) => Math.round(b.getBoundingClientRect().top)),
+                        rowH: row ? Math.round(row.getBoundingClientRect().height) : null,
+                        rowW: row ? Math.round(row.getBoundingClientRect().width) : null,
+                        right: chips.length ? Math.round(chips.at(-1).getBoundingClientRect().right - row.getBoundingClientRect().right) : null,
+                        cut: chips.map((b) => { const l = label(b); return !!l && l.scrollWidth > l.clientWidth + 1; }),
+                        titles: chips.map((b) => b.title),
+                    };
+                })()`);
+                await shot(h, "18b-suggest-one-line");
+                await h.ev(`(() => { const b = ${BOX}; if (b) { b.style.maxWidth = b.dataset.crWas ?? ""; delete b.dataset.crWas; } delete window.__chatSuggestFake; return true; })()`);
+                rec(
+                    `${name}: in a 560 px box the three long answers share one line (one top, the row at most 30 px tall, the last chip inside the row), at least one ends in … and each keeps its whole text in its tooltip`,
+                    up &&
+                        line.tops.length === 3 &&
+                        new Set(line.tops).size === 1 &&
+                        line.rowH != null && line.rowH <= 30 &&
+                        line.right != null && line.right <= 1 &&
+                        line.cut.some(Boolean) &&
+                        LONG.every((t, i) => (line.titles[i] ?? "").includes(t)),
+                    line
+                );
+            });
+
             // 20. a new turn whose command has run 15 s with no result yet: Open the terminal alone (it edited nothing)
             await run("20. running chips terminal", async (name) => {
                 append(

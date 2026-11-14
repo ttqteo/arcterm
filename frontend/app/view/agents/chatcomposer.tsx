@@ -1546,14 +1546,16 @@ function SuggestChips({
 }) {
     const part = usePartMotion(microFade);
     return (
-        <motion.div {...part} data-chat-suggest="" className="flex flex-wrap items-center gap-1.5">
+        // one line however narrow the box (a float window, a cell of a split): the chips shrink, a long one ends in …,
+        // and its whole text is in its tooltip and, once Tab picks it, in the box's line (pickedHint)
+        <motion.div {...part} data-chat-suggest="" className="flex min-w-0 flex-nowrap items-center gap-1.5">
             <AnimatePresence initial={false}>
                 {chips.map((c) => {
                     const ticks = c.kind === "done" && c.chunk != null;
                     const goes = c.kind === "next" && c.chunk != null && canGoOn;
                     const mark = chipIcon(c);
                     return (
-                        <motion.div key={c.text} {...part} className="min-w-0">
+                        <motion.div key={c.text} {...part} className="min-w-0 shrink">
                             <Chip
                                 icon={mark != null ? SUGGEST_ICONS[mark] : undefined}
                                 label={c.text}
@@ -1608,7 +1610,7 @@ export function Chip({
             title={title}
             onClick={onClick}
             className={cn(
-                "flex h-[28px] max-w-[340px] cursor-pointer items-center gap-1.5 rounded-full border pl-[11px] text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none",
+                "flex h-[28px] min-w-0 max-w-[min(340px,100%)] cursor-pointer items-center gap-1.5 rounded-full border pl-[11px] text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none",
                 armed
                     ? "border-warning bg-warning/10 pr-[5px] text-primary ring-2 ring-warning/30"
                     : picked
