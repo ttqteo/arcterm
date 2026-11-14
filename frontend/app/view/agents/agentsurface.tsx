@@ -21,6 +21,7 @@
 
 import { CockpitFocusPane } from "@/app/cockpit/focus-pane";
 import { restoringModalFocus, setModalFocusFallback } from "@/app/modals/modalfocus";
+import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
 import { buildAgentBindings } from "@/app/store/keybindings/bindings";
 import { focusClaimed, isEditableTarget } from "@/app/store/keybindings/dispatcher";
@@ -53,7 +54,7 @@ import { appShows } from "./appmodel";
 import { AppPane } from "./apppane";
 import { appStatesAtom } from "./appstore";
 import { ConversationHistory } from "./conversationhistory";
-import { asksInTerminal, projectOf } from "./agentsviewmodel";
+import { asksInTerminal, projectOf, type AgentVM } from "./agentsviewmodel";
 import { compactedSummary } from "./brainstormmodel";
 import { BrainstormPane } from "./brainstormpane";
 import { brainstormAtom } from "./brainstormstore";
@@ -65,7 +66,7 @@ import { cellInputOf } from "./cellinput";
 import { chatCapable, shownChatMode } from "./chatmode";
 import { chatModeAtom } from "./chatmodestore";
 import { ChatLayer } from "./chatpane";
-import { closedNeighbour, resolveShownAgent, rosterLoadPhase } from "./cockpitsurfacemodel";
+import { closedNeighbour, keepFocused, resolveShownAgent, rosterLoadPhase } from "./cockpitsurfacemodel";
 import { CouncilHistory } from "./councilhistoryview";
 import { CouncilPane } from "./councilpane";
 import { autoOpenedAskIdsAtom, shouldAutoOpen } from "./docreview";
@@ -148,7 +149,16 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // default, never empty). A done task's worker has no terminal to mount, so it is focusable without being
     // mountable; so is a run's final stage before a verifier session stands for it.
     const mountable = [...agents, ...terminals];
-    const chosen = focusId != null ? (mountable.find((a) => a.id === focusId) ?? ended?.agent ?? stage?.agent) : undefined;
+    const found = focusId != null ? (mountable.find((a) => a.id === focusId) ?? ended?.agent ?? stage?.agent) : undefined;
+    // a tab that drops off the roster for a moment without closing keeps the centre and the focus (keepFocused)
+    const tabIds = useAtomValue(atoms.workspace)?.tabids;
+    const lastFoundRef = useRef<AgentVM | undefined>(undefined);
+    const chosen = keepFocused(focusId, found, lastFoundRef.current, (id) => tabIds?.includes(id) ?? false);
+    useEffect(() => {
+        if (found != null) {
+            lastFoundRef.current = found;
+        }
+    }, [found]);
     // A terminal chosen takes the centre, as an agent does, and focusIdAtom keeps its id (Ctrl+Tab's recent list follows
     // it, which is how the quick flip returns to the agent). The terminal in the panel (moved there by "Move to the
     // panel") is the one thing splitDock keeps out of the centre; the effect below writes the dock atom to what it says.

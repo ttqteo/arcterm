@@ -79,6 +79,23 @@ export function resolveShownAgent<T extends { id: string }>(input: ShownAgentInp
     return { agent, hold: false };
 }
 
+// The focused item while the roster lists it, else the one last shown for that id while its tab is still open: a tab
+// can drop off the roster for a moment without closing (a just-launched agent between its booting row and its status,
+// a status read again), and treating that gap as a close handed the centre and the focus to the row below it (a new
+// agent opened on whatever live agent came next in the tree). Undefined once the tab is closed, so a close still hands
+// over to the neighbour.
+export function keepFocused<T extends { id: string }>(
+    focusId: string | undefined,
+    found: T | undefined,
+    lastShown: T | undefined,
+    tabOpen: (id: string) => boolean
+): T | undefined {
+    if (found != null || focusId == null) {
+        return found;
+    }
+    return lastShown?.id === focusId && tabOpen(focusId) ? lastShown : undefined;
+}
+
 // Where a closed item's place goes, as a closed browser tab hands it to the one beside it: the first live id below
 // `goneId` in the tree's nav order from before the close (activeNavOrder), else the nearest live one above.
 export function closedNeighbour(

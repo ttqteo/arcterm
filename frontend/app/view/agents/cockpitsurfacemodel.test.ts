@@ -9,6 +9,7 @@ import {
     closedNeighbour,
     dismissKey,
     hiddenAgentIds,
+    keepFocused,
     resolveShownAgent,
     rosterLoadPhase,
     rosterOverlay,
@@ -216,6 +217,26 @@ describe("resolveShownAgent", () => {
         expect(resolveShownAgent(input({ neighbour: "term" })).agent).toBe(term);
         expect(resolveShownAgent(input({ neighbour: "b", grid: grid(["a"]) })).agent).toBe(a);
         expect(resolveShownAgent(input({ neighbour: "gone" })).agent).toBe(c);
+    });
+});
+
+describe("keepFocused", () => {
+    const a = { id: "new" };
+    const open = (...ids: string[]) => (id: string) => ids.includes(id);
+
+    it("is the roster's item while the roster lists it", () => {
+        const found = { id: "new", fresh: true };
+        expect(keepFocused("new", found, a, open())).toBe(found);
+    });
+    it("keeps the item last shown while its tab is open but off the roster, so focus does not move to the next row", () => {
+        expect(keepFocused("new", undefined, a, open("new"))).toBe(a);
+    });
+    it("lets go once the tab is closed, so a close still hands over to the neighbour", () => {
+        expect(keepFocused("new", undefined, a, open())).toBeUndefined();
+    });
+    it("never stands in an item last shown for another id, nor with nothing in focus", () => {
+        expect(keepFocused("other", undefined, a, open("other", "new"))).toBeUndefined();
+        expect(keepFocused(undefined, undefined, a, open("new"))).toBeUndefined();
     });
 });
 
