@@ -6,10 +6,10 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { cn, fireAndForget } from "@/util/util";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { wakeAgent, wakeErrorToast } from "./agentsleep";
-import { askBtw, submitToAgent } from "./agentsubmit";
+import { askBtw, logLine, submitToAgent } from "./agentsubmit";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
 import { withResultLines } from "./chatinitiative";
-import { btwQuestion, sendFailure, type SendFailure } from "./chatpending";
+import { btwQuestion, repeatsSend, sendFailure, type LastSend, type SendFailure } from "./chatpending";
 import { mergeTaken } from "./chattakeback";
 import { messageWithAttachments, type Attachment } from "./composerattachments";
 import { useFallingAsleep, type FallAsleepPhase } from "./fallasleepstore";
@@ -18,6 +18,10 @@ import { setWakeDraft, useWakeDraft, useWaking, wakeDraftsAtom } from "./wakings
 // one line at 12px (rows={1}: the default two rows would set the floor instead); it grows as text wraps
 const ComposerMinH = 32;
 const ComposerMaxH = 160; // grows up to here, then the textarea scrolls
+
+// the last message each agent's box sent (by block id), shared by every box on that agent: a second send of the same
+// text right after it is dropped (chatpending.ts repeatsSend)
+const lastSends = new Map<string, LastSend>();
 
 /** Pure: a composer can send only with non-empty text AND a live terminal block. Shared by send(), the
  *  Enter guard, and the button's disabled state so all three agree (T4). */
@@ -147,6 +151,25 @@ export function useAgentSend(
             return true;
         }
         const target = blockId!;
+        // the same message again right after it went is the one send repeated, whatever pressed it: it never reaches
+        // Claude Code a second time. The box lets go of it as a send would, and the caller adds no second bubble.
+        const now = Date.now();
+        const last = lastSends.get(target);
+        if (repeatsSend(last, message, now)) {
+            logLine(
+                `[chat-send] repeat-dropped block=${target.slice(0, 8)} len=${Array.from(message).length} after=${now - last!.at}ms`
+            );
+            setText("");
+            return false;
+        }
+        const sentNow: LastSend = { text: message, at: now };
+        lastSends.set(target, sentNow);
+        // a send that failed lets its text go again at once (the box got it back to resend)
+        const forget = () => {
+            if (lastSends.get(target) === sentNow) {
+                lastSends.delete(target);
+            }
+        };
         const question = btwQuestion(message);
         if (question != null) {
             fireAndForget(async () => {
@@ -163,6 +186,9 @@ export function useAgentSend(
                     await submitToAgent(target, withResultLines(lines ?? [], message));
                 } catch (e) {
                     const f = sendFailure(e);
+                    if (f.restore) {
+                        forget();
+                    }
                     if (f.restore && own !== "") {
                         putBack(own);
                     }

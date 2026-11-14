@@ -231,6 +231,29 @@ export function releasesHeld(held: boolean, hold: string | null, sendable: boole
     return held && hold == null && sendable;
 }
 
+/** How long after a message goes to an agent the same text going again counts as the same send repeated, not a message
+ *  of its own. 2026-11-14 a Chat message went to Claude Code twice, 2.4 s apart, two prompts of the same text (two
+ *  `enqueue` records in the transcript); 2026-11-05 another, 1.9 s apart. Nobody sends the very same words again within
+ *  seconds on purpose, before the first has even reached Claude. */
+export const REPEAT_SEND_MS = 5_000;
+
+/** The last message the box sent to an agent: its text as sent and when. */
+export interface LastSend {
+    text: string;
+    at: number;
+}
+
+/** Pure: whether sending `text` at `now` repeats `last`, the message just sent to the same agent: the same text, trimmed,
+ *  within REPEAT_SEND_MS. useAgentSend drops such a send, whatever pressed it (a second Enter on a box that had not
+ *  cleared yet, a held send let go, a chip), so one message never reaches Claude Code twice. */
+export function repeatsSend(last: LastSend | undefined, text: string, now: number): boolean {
+    if (last == null) {
+        return false;
+    }
+    const since = now - last.at;
+    return text.trim() === last.text.trim() && since >= 0 && since < REPEAT_SEND_MS;
+}
+
 /** A message longer than this goes in as a paste even on one line: Claude Code reads a big chunk of typed input as a
  *  paste, and then takes an Enter that rides in the same chunk as one more line, so the message sat in its box. */
 export const PASTE_OVER = 200;

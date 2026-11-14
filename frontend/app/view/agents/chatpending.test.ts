@@ -10,6 +10,7 @@ import {
     PENDING_IDLE_MS,
     PENDING_MAX_MS,
     PENDING_QUEUED_MAX_MS,
+    REPEAT_SEND_MS,
     SubmitError,
     btwQuestion,
     echoStep,
@@ -26,6 +27,7 @@ import {
     queuedBubbleUp,
     recall,
     releasesHeld,
+    repeatsSend,
     sendFailLogLine,
     sendFailure,
     sendHold,
@@ -309,6 +311,29 @@ describe("releasesHeld", () => {
         expect(releasesHeld(true, "Answer the permission prompt first", false)).toBe(false);
         expect(releasesHeld(true, null, false)).toBe(false);
         expect(releasesHeld(false, null, true)).toBe(false);
+    });
+});
+
+describe("repeatsSend", () => {
+    const last = { text: "trong ngân sách nhưng max 64k nhé", at: 10_000 };
+
+    it("is the same text to the same agent again within REPEAT_SEND_MS (the 2026-11-14 double send came 2.4 s after)", () => {
+        expect(repeatsSend(last, last.text, 12_360)).toBe(true);
+        expect(repeatsSend(last, last.text, 10_000 + REPEAT_SEND_MS - 1)).toBe(true);
+    });
+
+    it("lets a different text, a later one, or a first send go", () => {
+        expect(repeatsSend(last, "khác", 11_000)).toBe(false);
+        expect(repeatsSend(last, last.text, 10_000 + REPEAT_SEND_MS)).toBe(false);
+        expect(repeatsSend(undefined, last.text, 11_000)).toBe(false);
+    });
+
+    it("compares the text as sent, so spaces around it do not make it a new one", () => {
+        expect(repeatsSend(last, `  ${last.text}\n`, 11_000)).toBe(true);
+    });
+
+    it("never takes a clock that went back for a repeat", () => {
+        expect(repeatsSend(last, last.text, 9_000)).toBe(false);
     });
 });
 
