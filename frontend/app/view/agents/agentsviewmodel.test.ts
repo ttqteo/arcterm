@@ -4,6 +4,7 @@ import {
     aggregateEditBurst,
     answerHint,
     askNeedsSubmit,
+    askReviewRows,
     applyAgentOrder,
     ASK_STALE_GRACE_MS,
     askingCount,
@@ -1461,14 +1462,37 @@ describe("answerHint", () => {
     it("single single-select, not numbered: prompts click only", () => {
         expect(answerHint([q()], {}, false)).toBe("Click to answer");
     });
-    it("single multi-select: press Enter to submit", () => {
-        expect(answerHint([q(true)], {}, true)).toBe("press Enter to submit");
+    it("single multi-select: points at Submit, never at Enter", () => {
+        expect(answerHint([q(true)], {}, true)).toBe("pick one or more, then Submit");
     });
     it("multi question single-select: shows answered progress", () => {
         expect(answerHint([q(), q()], { 0: new Set([1]) }, true)).toBe("1/2 answered");
     });
-    it("multi question with a multi-select: progress + Enter", () => {
-        expect(answerHint([q(), q(true)], { 0: new Set([0]) }, true)).toBe("1/2 answered · press Enter to submit");
+    it("multi question with a multi-select: progress only (the Submit tab sends)", () => {
+        expect(answerHint([q(), q(true)], { 0: new Set([0]) }, true)).toBe("1/2 answered");
+    });
+});
+
+describe("askReviewRows", () => {
+    const qs = [
+        { header: "Note", question: "a", options: [{ label: "Whole (Recommended)" }, { label: "Button" }] },
+        { question: "b", options: [{ label: "x" }, { label: "y" }, { label: "z" }], multiSelect: true },
+        { header: "Direction", question: "c", options: [{ label: "p" }] },
+    ] as AgentAskQuestion[];
+    const clean = (l: string) => l.replace(/\s*\(recommended\)\s*/i, " ").trim();
+    it("names each question by header (Q<n> without one) with its picks in option order, typed text first", () => {
+        expect(askReviewRows(qs, { 0: new Set([0]), 1: new Set([2, 0]) }, { 2: " my own " }, clean)).toEqual([
+            { qi: 0, label: "Note", answer: "Whole" },
+            { qi: 1, label: "Q2", answer: "x, z" },
+            { qi: 2, label: "Direction", answer: "my own" },
+        ]);
+    });
+    it("leaves the answer out of a question with none yet", () => {
+        expect(askReviewRows(qs, {}, { 0: "  " }, clean).map((r) => r.answer)).toEqual([
+            undefined,
+            undefined,
+            undefined,
+        ]);
     });
 });
 
@@ -1493,8 +1517,8 @@ describe("answerHint with typed text", () => {
         { question: "a", options: [{ label: "x" }] },
         { question: "b", options: [{ label: "y" }] },
     ] as AgentAskQuestion[];
-    it("counts a question answered by typed text, and says Enter sends when any question has text", () => {
-        expect(answerHint(two, {}, true, { 0: "my own answer" })).toBe("1/2 answered · press Enter to send");
+    it("counts a question answered by typed text", () => {
+        expect(answerHint(two, {}, true, { 0: "my own answer" })).toBe("1/2 answered");
     });
     it("counts nothing answered when no question has a selection or text", () => {
         expect(answerHint(two, {}, true)).toBe("0/2 answered");

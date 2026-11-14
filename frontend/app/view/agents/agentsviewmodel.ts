@@ -955,12 +955,13 @@ export function askNeedsSubmit(questions: AgentAskQuestion[], texts: Record<numb
     );
 }
 
-/** Pure: the single muted footer hint for an ask, so one consistent line always renders.
+/** Pure: the single muted footer hint for an ask. It never says "press Enter to submit": in Chat the box holds Enter,
+ *  so a card that waits for a confirm has a Submit button (one question) or a Submit tab (several), and the hint points
+ *  there.
  *  - one single-select question, no typed text: prompt to answer (mentions 1–9 only when the picker is numbered)
- *  - a typed answer in any question: "press Enter to send" (replaces "press Enter to submit" when both apply)
- *  - one multi-select question: "press Enter to submit" (multi-select needs a confirm)
- *  - multiple questions: "N/M answered" (typed text counts as answered), plus "press Enter to submit"/"press
- *    Enter to send" if any is multi-select or has typed text */
+ *  - one question with a typed answer: "press Enter to send" (the field sends on its own Enter)
+ *  - one multi-select question: "pick one or more, then Submit"
+ *  - several questions: "N/M answered" (typed text counts as answered) */
 export function answerHint(
     questions: AgentAskQuestion[],
     selections: Record<number, Set<number>>,
@@ -970,23 +971,46 @@ export function answerHint(
     if (questions.length === 0) {
         return "";
     }
-    const total = questions.length;
-    const hasTyped = questions.some((_, qi) => (texts[qi] ?? "").trim() !== "");
-    const needsConfirm = questions.some((q) => q.multiSelect) || hasTyped;
-    if (total === 1 && !needsConfirm) {
-        return numbered ? "Press 1–9 or click to answer" : "Click to answer";
+    const isAnswered = (qi: number) => (selections[qi]?.size ?? 0) > 0 || (texts[qi] ?? "").trim() !== "";
+    if (questions.length > 1) {
+        return `${questions.filter((_, qi) => isAnswered(qi)).length}/${questions.length} answered`;
     }
-    const parts: string[] = [];
-    if (total > 1) {
-        const answered = questions.filter(
-            (_, qi) => (selections[qi]?.size ?? 0) > 0 || (texts[qi] ?? "").trim() !== ""
-        ).length;
-        parts.push(`${answered}/${total} answered`);
+    if ((texts[0] ?? "").trim() !== "") {
+        return "press Enter to send";
     }
-    if (needsConfirm) {
-        parts.push(hasTyped ? "press Enter to send" : "press Enter to submit");
+    if (questions[0].multiSelect) {
+        return "pick one or more, then Submit";
     }
-    return parts.join(" · ");
+    return numbered ? "Press 1–9 or click to answer" : "Click to answer";
+}
+
+/** One row of a multi-question ask's Submit tab: the question's short name and its answer so far (the typed text, or
+ *  the picked options' labels), or undefined when it has none yet. */
+export interface AskReviewRow {
+    qi: number;
+    label: string;
+    answer?: string;
+}
+
+/** Pure: the rows of the Submit tab, one per question in order; `cleanLabel` strips the "(Recommended)" marker. */
+export function askReviewRows(
+    questions: AgentAskQuestion[],
+    selections: Record<number, Set<number>>,
+    texts: Record<number, string>,
+    cleanLabel: (label: string) => string
+): AskReviewRow[] {
+    return questions.map((q, qi) => {
+        const label = q.header || `Q${qi + 1}`;
+        const typed = (texts[qi] ?? "").trim();
+        if (typed) {
+            return { qi, label, answer: typed };
+        }
+        const picked = Array.from(selections[qi] ?? [])
+            .sort((a, b) => a - b)
+            .map((oi) => cleanLabel(q.options?.[oi]?.label ?? ""))
+            .filter(Boolean);
+        return { qi, label, answer: picked.length ? picked.join(", ") : undefined };
+    });
 }
 
 /** Pure: the question to move to once question `qi` has an answer, or -1 when every other question has one (a

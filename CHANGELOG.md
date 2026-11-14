@@ -65,8 +65,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
-- A question card with several questions or a pick-many question can be sent again: it has ← → buttons to move
-  between the questions and a Submit button, so it no longer waits on an Enter that the Chat box catches.
+- A question card with several questions or a pick-many question can be sent again. Several questions end in a
+  Submit tab, as in Claude Code's own picker, that lists your answers and sends them, with ← → to step through; a
+  lone pick-many question has a Submit button. The card no longer says "press Enter to submit", which the Chat box
+  caught.
 - An app server an agent starts (`mvn spring-boot:run`, `./gradlew bootRun`, `uvicorn`, `next dev` and the like) no
   longer holds a heavy-job slot for up to an hour, which kept builds and typechecks waiting behind it.
 - arcterm's background service no longer keeps a CPU core busy once you have thousands of past runs: the servers
