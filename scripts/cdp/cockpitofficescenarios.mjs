@@ -852,8 +852,10 @@ export function makeCockpitOfficeScenarios(fx) {
             const slid = { ...(await probe(h)), box: await panelBox(), boss: await bossRect() };
             await h.shot("cdp-shots/cockpit-office-panel-pan.png");
             await key(h, "Escape");
-            await sleep(700);
-            const unslid = { ...(await probe(h)), transform: await h.ev(`document.querySelector("[data-office-root]")?.style.transform ?? null`) };
+            // the pan is a spring (MOTION.spring, ~0.65 s to rest over its 200 px): wait it out before reading where it stands
+            await sleep(1100);
+            // the office's x from its computed transform: motion writes "none" for 0, where the old CSS pan left ""
+            const unslid = { ...(await probe(h)), x: await h.ev(`new DOMMatrix(getComputedStyle(document.querySelector("[data-office-root]")).transform).m41`) };
             await key(h, "Escape");
             await sleep(200);
             rec(
@@ -865,8 +867,8 @@ export function makeCockpitOfficeScenarios(fx) {
                     slid.boss.right <= slid.box.left &&
                     unslid?.popup === "" &&
                     unslid.pan === 0 &&
-                    unslid.transform === "",
-                JSON.stringify({ cursor: slid.cursor, pan: slid.pan, boss: slid.boss, panel: slid.box, back: [unslid?.popup, unslid?.pan, unslid?.transform] })
+                    unslid.x === 0,
+                JSON.stringify({ cursor: slid.cursor, pan: slid.pan, boss: slid.boss, panel: slid.box, back: [unslid?.popup, unslid?.pan, unslid?.x] })
             );
 
             // 7. a click on the floor walks the boss there; in the hall the cursor stays on the last desk
