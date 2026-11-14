@@ -31,6 +31,9 @@ func agentsTestRoster() []wshrpc.AgentInfo {
 	}
 }
 
+// the projects wsh knows in these tests: every roster row above is in one
+var agentsTestProjects = []string{`C:\work\arc`, `C:\work\arc-siem`}
+
 func agentsTabIds(rows []wshrpc.AgentInfo) []string {
 	ids := []string{}
 	for _, r := range rows {
@@ -40,7 +43,7 @@ func agentsTabIds(rows []wshrpc.AgentInfo) []string {
 }
 
 func TestAgentsListLines(t *testing.T) {
-	lines := agentsListLines(agentsTestRoster(), false, "")
+	lines := agentsListLines(agentsTestRoster(), false, "", 0, agentsTestProjects)
 	want := [][]string{
 		{"aaaaaaaa", "design", "lead", "arc", "0f9e8d7c", "claude", "idle", "-"},
 		{"bbbbbbbb", "scratch", "arc", "-", "pi", "working", "-"},
@@ -57,10 +60,10 @@ func TestAgentsListLines(t *testing.T) {
 }
 
 func TestAgentsListEmptyRoster(t *testing.T) {
-	if got := agentsListLines(nil, false, ""); !reflect.DeepEqual(got, []string{"no live agents"}) {
+	if got := agentsListLines(nil, false, "", 0, agentsTestProjects); !reflect.DeepEqual(got, []string{"no live agents"}) {
 		t.Errorf("unfiltered empty roster = %q", got)
 	}
-	got := agentsListLines(nil, true, "")
+	got := agentsListLines(nil, true, "", 0, agentsTestProjects)
 	if len(got) != 1 || !strings.Contains(got[0], "no live agents") || !strings.Contains(got[0], "wsh agents list --all") {
 		t.Errorf("filtered empty roster = %q, want one line naming --all", got)
 	}
@@ -75,7 +78,7 @@ func TestAgentsListLinesTellSessionsOfOneProjectApart(t *testing.T) {
 		{TabId: agentsTestTabB, Name: "waveterm", ProjectPath: `C:\work\arc`, Project: "arc", Harness: "claude", State: wshrpc.AgentsState_Idle, Cwd: `C:\work\arc\.claude\worktrees\bench`, Title: "Benchmark\nsonnet workers"},
 		{TabId: agentsTestTabC, Name: "waveterm", ProjectPath: `C:\work\arc`, Project: "arc", RunId: agentsTestRun, Harness: "claude", State: wshrpc.AgentsState_Working, Cwd: `C:\wt\0f9e8d7c-t-1`, Title: long},
 	}
-	lines := agentsListLines(rows, true, agentsTestTabA)
+	lines := agentsListLines(rows, true, agentsTestTabA, 0, agentsTestProjects)
 	if len(lines) != 3 {
 		t.Fatalf("got %d lines, want 3: %q", len(lines), lines)
 	}
@@ -110,18 +113,56 @@ func TestAgentsListProjectFilter(t *testing.T) {
 		{"caller in no project", "", []string{agentsTestTabA, agentsTestTabB, agentsTestTabC}},
 	}
 	for _, tc := range cases {
-		if got := agentsTabIds(agentsInProject(roster, tc.project)); !reflect.DeepEqual(got, tc.want) {
-			t.Errorf("%s: kept %q, want %q", tc.name, got, tc.want)
+		if got, _ := agentsInProject(roster, tc.project, agentsTestProjects); !reflect.DeepEqual(agentsTabIds(got), tc.want) {
+			t.Errorf("%s: kept %q, want %q", tc.name, agentsTabIds(got), tc.want)
 		}
 	}
 }
 
+// A session in a folder that is no project (a person's agent opened in a scratch folder) is in every project's list,
+// marked, since no project's list would show it otherwise; another project's agents are left out and counted, and the
+// list ends with how to see them.
+func TestAgentsListKeepsAgentsInNoProject(t *testing.T) {
+	scratchTab := "dddddddd-4444-4444-8444-444444444444"
+	roster := append(agentsTestRoster(), wshrpc.AgentInfo{
+		TabId: scratchTab, Name: "probe", ProjectPath: `C:\tmp\teamprobe`, Project: "teamprobe", Harness: "claude", State: wshrpc.AgentsState_Idle,
+	})
+	kept, hidden := agentsInProject(roster, "C:/work/arc", agentsTestProjects)
+	if got := agentsTabIds(kept); !reflect.DeepEqual(got, []string{agentsTestTabA, agentsTestTabB, scratchTab}) || hidden != 1 {
+		t.Fatalf("kept %q, hidden %d; want arc's two and the scratch one, arc-siem's hidden", got, hidden)
+	}
+	lines := agentsListLines(kept, true, "", hidden, agentsTestProjects)
+	if len(lines) != 4 {
+		t.Fatalf("got %d lines, want 3 rows and the hint: %q", len(lines), lines)
+	}
+	if !strings.Contains(lines[2], "teamprobe "+agentsNoProjectMark) || strings.Contains(lines[0], agentsNoProjectMark) {
+		t.Errorf("only the scratch row is marked as in no project: %q", lines)
+	}
+	if want := "1 more in other projects; " + agentsAllProjectsTip; lines[3] != want {
+		t.Errorf("last line = %q, want %q", lines[3], want)
+	}
+	// none of the caller's own: still the scratch agent, and the hint
+	kept, hidden = agentsInProject(roster, `C:\work\other`, append(agentsTestProjects, `C:\work\other`))
+	if got := agentsTabIds(kept); !reflect.DeepEqual(got, []string{scratchTab}) || hidden != 3 {
+		t.Errorf("from another project: kept %q, hidden %d; want the scratch agent and 3 hidden", got, hidden)
+	}
+	if got := agentsListLines(nil, true, "", 2, agentsTestProjects); len(got) != 1 || !strings.Contains(got[0], "2 more in other projects") {
+		t.Errorf("an empty filtered list with hidden agents = %q, want the count", got)
+	}
+	// --all with the projects unread marks nothing
+	if got := agentsListLines(roster, false, "", 0, nil); strings.Contains(strings.Join(got, "\n"), agentsNoProjectMark) {
+		t.Errorf("unknown projects mark no row: %q", got)
+	}
+}
+
 func TestAgentsListJSON(t *testing.T) {
-	empty, err := json.Marshal(agentsInProject(nil, "C:/work/arc"))
+	none, _ := agentsInProject(nil, "C:/work/arc", agentsTestProjects)
+	empty, err := json.Marshal(none)
 	if err != nil || string(empty) != "[]" {
 		t.Fatalf("no rows marshals to %s (%v), want []", empty, err)
 	}
-	b, err := json.Marshal(agentsInProject(agentsTestRoster(), "C:/work/arc"))
+	kept, _ := agentsInProject(agentsTestRoster(), "C:/work/arc", agentsTestProjects)
+	b, err := json.Marshal(kept)
 	if err != nil {
 		t.Fatal(err)
 	}

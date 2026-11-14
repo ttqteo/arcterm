@@ -17,6 +17,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Report's header shows. (3) Quit arcterm while a council runs, reopen → the council reads stopped and its report
   file is saved (Open report works). Commit: fix(council) Chốt draws a compass, a chat seat's key in the report,
   a stale council's report
+- [ ] (arcterm) **`wsh agents list` and agents in no project.** Unit-tested; run live from this project (the count
+  line showed), but no agent was open in a scratch folder then. Open a Claude agent in a folder that is no project →
+  `wsh agents list` from an agent in arcterm lists it with `(no project)` after its folder's name. Commit:
+  fix(wsh) agents list shows sessions in no project
 - [ ] (arcterm) **Token burn card inside a run.** Go-tested only; no dev app ran. In an orchestrator run (autonomous
   too), have a worker start 3+ subagents, or run `wsh council start` → the Token burn card shows at once in Needs you
   and in the run's question card as yours, the lead gets no wake for it, and `wsh jarvis dag answer` from the lead
