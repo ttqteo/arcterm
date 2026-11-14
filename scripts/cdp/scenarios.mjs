@@ -48129,6 +48129,141 @@ const chatQuote = {
     },
 };
 
+// --- chat-math: formulas in Chat (markdownmessage.tsx, mathdollars.ts). A Claude reply holds inline `$…$` math, a `$$…$$`
+// display block, a one-line `$$…$$`, a price ("$5 and $10") and a code span with `$HOME`; Chat draws the three formulas with
+// KaTeX (two as display blocks) and leaves the price and the code as written.
+
+const CM_NAME = "math source";
+const CM_QUESTION = "sketch the reporting formula";
+const CM_REPLY = [
+    "Per stratum $h$, the residual rate is $\\hat p_h = c_h / n_h$, weighted by $w_h = N_h / N$:",
+    "",
+    "$$",
+    "\\hat p = \\sum_h w_h \\cdot \\hat p_h",
+    "$$",
+    "",
+    "$$N_{\\text{valid}} = \\sum_h N_h \\,(1 - \\hat p_h)$$",
+    "",
+    "The audit costs $5 and $10 per case; the script reads `echo $HOME` first.",
+].join("\n");
+
+function cmRoster(ctx) {
+    const now = Date.now();
+    return [
+        {
+            project: "arcterm",
+            state: "idle",
+            idleSince: now - 3_600_000,
+            task: "Report formula",
+            agent: "claude",
+            model: "opus",
+            id: ctx.tabs.main.tabId,
+            name: CM_NAME,
+            blockId: ctx.tabs.main.blockId,
+            transcriptPath: ctx.transcript,
+            sleeping: { since: now - 3_600_000, freedBytes: 0 },
+        },
+    ];
+}
+
+const chatMath = {
+    name: "chat-math",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-math-")),
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        let at = "writing the transcript";
+        try {
+            const base = Date.now() - 7_200_000;
+            const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
+            ctx.transcript = AC.writeTranscript(ctx.dir, "math-source", [
+                AC.userText(CM_QUESTION, { ...o(0), uuid: "u1" }),
+                AC.assistantText(CM_REPLY, { ...o(2), uuid: "a1" }),
+            ]);
+            at = "resetting the grid";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tab";
+            ctx.tabs = { main: await acMakeTab(h, ctx, { label: CM_NAME }) };
+            at = "setting the roster";
+            await AC.setRoster(h, cmRoster(ctx));
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent and its transcript", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const prose = `document.querySelector('[data-agent-chat="${A}"] [data-chat-prose]')`;
+        try {
+            await AC.focusAgent(h, A);
+            const loaded = await polishWaitFor(h, `!!${prose}?.querySelector(".katex")`, 15000);
+            const seen = await h.ev(`(() => {
+                const p = ${prose};
+                if (!p) return null;
+                const text = p.textContent;
+                return {
+                    katex: p.querySelectorAll(".katex").length,
+                    display: p.querySelectorAll(".katex-display").length,
+                    errors: p.querySelectorAll(".katex-error").length,
+                    rawDollars: text.replace("costs $5 and $10", "").replace("echo $HOME", "").includes("$"),
+                    price: text.includes("costs $5 and $10 per case"),
+                    code: [...p.querySelectorAll("code")].some((c) => c.textContent === "echo $HOME"),
+                };
+            })()`);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-math.png");
+            rec(
+                "1. Chat draws the reply's five formulas with KaTeX, the two `$$` ones as display blocks, with no error and no raw `$`",
+                loaded && seen?.katex === 5 && seen?.display === 2 && seen?.errors === 0 && seen?.rawDollars === false,
+                { loaded, seen }
+            );
+            rec(
+                "2. a price ($5 and $10) and a code span (`echo $HOME`) stay as written",
+                seen?.price === true && seen?.code === true,
+                seen
+            );
+        } catch (e) {
+            rec("the scenario threw", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-math teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tab", () => acCloseTabs(h, ctx));
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        await step("remove the fixture transcript", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- chat-initiative: Add to an initiative from Chat (docs/superpowers/specs/2026-11-12-chat-add-to-initiative-design.md, plan
 // 2026-11-13-chat-add-to-initiative.md Task 6). A Claude agent's reply holds three ```arc-initiative blocks (a note on its own
 // initiative, a chunk, a new initiative under a topic) and a fourth that is broken JSON; Chat draws the three as cards and
@@ -70749,6 +70884,7 @@ export const SCENARIOS = [
     chatAsleepAttachJump,
     chatFork,
     chatQuote,
+    chatMath,
     chatInitiative,
     ...chatRedesignScenarios(CR_KIT),
     ...chatInitiativeBandScenarios(CR_KIT),

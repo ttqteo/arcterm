@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Chat draws formulas: an agent's `$…$` and `$$…$$` show as typeset math (KaTeX), and agents inside arcterm are told
+  to write their formulas that way instead of as code. A price like "$5" stays as written.
 - In Chat, select any text in the conversation (a reply, your own message, a tool's output) and click Reply: it goes
   into the message box as a quote, with the caret under it for your question.
 - In Chat, a message another agent sent you heads with a link: click "message · from <agent>" to open that agent's

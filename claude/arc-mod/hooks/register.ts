@@ -10,6 +10,7 @@ import { drawCacheMiss } from "./cache-band";
 import { drawGoal } from "./goal-band";
 import { goalState, type GoalEntry, type GoalState } from "./goal-core";
 import { cacheMissNotice, transcriptEntries } from "./cache-core";
+import { MATH_SECTION, MATH_SECTION_ID, mathContext } from "./chatmath-core";
 import { claudecmdsArgs, commandsPayload } from "./commands-core";
 import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
 import type { Turn } from "./control-core";
@@ -33,6 +34,12 @@ const WSH = "__WSH_PATH__";
 
 // set at session.start; a reload runs register and session.start again, so it never goes stale
 let active = false;
+
+// Chat's formulas (chatmath-core.ts): whether the system prompt holds the section, and whether a prompt carried it.
+// prompt.submit runs before the first prompt is composed, so session.start composes one to learn it early
+let isInteractive = true;
+let isMathComposed = false;
+let hasToldMath = false;
 
 // the session's transcript, worked out at its latest prompt; a status report carries it so a cockpit that
 // replays the report still follows the file. null after a reload until the next prompt
@@ -654,6 +661,15 @@ async function lintMemoryDir($: EngineInterface, cwd: string): Promise<void> {
 export const register: Register = (on) => {
     on("session.start", async ($, e, next) => {
         active = Boolean((await $.env.get("WAVETERM_BLOCKID")) && (await $.env.get("WAVETERM_JWT")));
+        isInteractive = e.isInteractive;
+        if (active && isInteractive) {
+            try {
+                const { sections } = await $.prompt.compose();
+                isMathComposed ||= sections.some((section) => section.id === MATH_SECTION_ID);
+            } catch {
+                // left to the prompt.compose hook below
+            }
+        }
         spawnGate.sessionStarted();
         sessionCwd = e.cwd;
         isKnownNonWorker = false;
@@ -688,6 +704,18 @@ export const register: Register = (on) => {
         return next(e);
     });
 
+    // inside arcterm, the section telling claude Chat draws LaTeX; a headless run draws nothing, so it is not told
+    on("prompt.compose", async ($, e, next) => {
+        const composed = await next(e);
+        if (!active || e.traits.includes("print") || e.traits.includes("bare")) {
+            return composed;
+        }
+        isMathComposed = true;
+        return {
+            sections: [...composed.sections, { id: MATH_SECTION_ID, text: MATH_SECTION, scope: "session" as const }],
+        };
+    });
+
     // "@<tab id> text" typed at this prompt goes to that agent's session and never reaches this one's model.
     // only the person's own Enter: the cockpit's prompts and a peer's arrive with another origin
     on("prompt.submit", async ($, e, next) => {
@@ -696,6 +724,18 @@ export const register: Register = (on) => {
             await promptStarted($, e.origin.kind);
             // a skill or an MCP server added since the last prompt shows on the next `/`; not awaited
             void publishCommands($);
+            // where the system prompt never took Chat's math section, the first prompt carries it
+            const math = mathContext({
+                isActive: active,
+                isInteractive,
+                isCommand: !!e.command,
+                isComposed: isMathComposed,
+                hasTold: hasToldMath,
+            });
+            if (math !== null) {
+                hasToldMath = true;
+                return next({ ...e, context: [...(e.context ?? []), math] });
+            }
             return next(e);
         }
         const putBack = () =>

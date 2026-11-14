@@ -11,6 +11,7 @@ import { Lightbulb } from "lucide-react";
 import { Fragment, memo, useEffect, useRef, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import type { PluggableList } from "unified";
 import { FilePill } from "./chatfilepill";
 import { INITIATIVE_LANG } from "./chatinitiative";
@@ -21,8 +22,10 @@ import { VISUAL_LANG } from "./chatvisual";
 import { VisualBlock } from "./chatvisualview";
 import { CodeBlock } from "./codeblock";
 import { splitInsightBlocks } from "./insightblocks";
+import { guardDollars } from "./mathdollars";
 import { PathLink } from "./pathlinkcontext";
 import { inlinePathOf } from "./pathlinks";
+import { MathToken } from "./prosetokens";
 import remarkFileMention from "./remarkfilemention";
 import { paintSelectionIn } from "./selectionpaint";
 import { trimTripleClick } from "./selectiontrim";
@@ -42,6 +45,17 @@ function fencedOf(children: unknown): { lang?: string; raw: string } {
     const lang = /language-([\w+-]+)/.exec(props.className ?? "")?.[1];
     const raw = Array.isArray(props.children) ? props.children.join("") : String(props.children ?? "");
     return { lang, raw };
+}
+
+// remark-math's `$$…$$` block (and a ```math fence): the formula on its own line, centred, scrolling sideways when wide.
+// MathToken's span is the sideways scroller; padded and clipped on y, so a \sum's limits never raise a vertical bar.
+// katex.min.css is unlayered, so its 1em margin on .katex-display beats a layered utility unless it is important
+function DisplayMath({ tex }: { tex: string }) {
+    return (
+        <div data-math className="my-2 text-center [&>span]:overflow-y-hidden [&>span]:py-1 [&_.katex-display]:my-0!">
+            <MathToken tex={tex.trim()} display />
+        </div>
+    );
 }
 
 const MD_COMPONENTS: Components = {
@@ -71,10 +85,14 @@ const MD_COMPONENTS: Components = {
     ),
     pre: ({ children }) => {
         const { lang, raw } = fencedOf(children);
-        return <CodeBlock code={raw} lang={lang} />;
+        return lang === "math" ? <DisplayMath tex={raw} /> : <CodeBlock code={raw} lang={lang} />;
     },
     code: ({ className, children }) => {
         const text = typeof children === "string" ? children : null;
+        // remark-math's `$…$`: a formula in the line
+        if (text != null && className?.includes("math-inline")) {
+            return <MathToken tex={text} />;
+        }
         const found = className == null && text != null ? inlinePathOf(text) : null;
         if (found == null) {
             return <code className={className}>{children}</code>;
@@ -125,6 +143,9 @@ const DIAGRAM_COMPONENT: Components = {
         if (lang === INITIATIVE_LANG) {
             return <InitiativeBlockView raw={raw} />;
         }
+        if (lang === "math") {
+            return <DisplayMath tex={raw} />;
+        }
         return lang === "mermaid" ? <Mermaid chart={raw} /> : <CodeBlock code={raw} lang={lang} />;
     },
 };
@@ -150,6 +171,8 @@ function pluginsFor(extras: MarkdownExtras): PluggableList {
     if (out == null) {
         out = [
             remarkGfm,
+            // `$…$` and `$$…$$` as formulas (KaTeX, prosetokens.tsx); guardDollars has already escaped a `$` that is no math
+            remarkMath,
             ...(extras.marks ? [remarkMark] : []),
             // after the marks, so a mention inside a ==mark== is found too
             ...(extras.mentions ? [remarkFileMention] : []),
@@ -177,7 +200,7 @@ function componentsFor(extras: MarkdownExtras): Components {
 function renderMd(text: string, extras: MarkdownExtras = {}) {
     return (
         <ReactMarkdown remarkPlugins={pluginsFor(extras)} components={componentsFor(extras)}>
-            {text}
+            {guardDollars(text)}
         </ReactMarkdown>
     );
 }
