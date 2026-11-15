@@ -26,6 +26,7 @@ import {
     leadPhaseFailed,
     leadRunTabIds,
     leadStandingBy,
+    lineageOf,
     mergeGateLine,
     runAgentsOf,
     runEngineBusy,
@@ -78,6 +79,35 @@ describe("runRoleOf", () => {
         });
         expect(runRoleOf({ oid: "quick", mode: "quick" } as Run, undefined)).toBeNull();
         expect(runRoleOf(undefined, undefined)).toBeNull();
+    });
+});
+
+describe("lineageOf", () => {
+    const leadRun = { oid: "lead-run", dagoref: "dag-1", mode: "orchestrator" } as Run;
+    const reads = (runs: Run[]) => ({
+        run: (id: string) => runs.find((r) => r.oid === id),
+        dag: (id: string) => (id === "dag-1" ? dag : undefined),
+        block: (): Block => undefined,
+        digests: {},
+    });
+    const lead = { id: "lead", runId: "lead-run" };
+    const worker = { id: "w", runId: "child-run" };
+    const workerRole = { kind: "worker", leadRunId: "lead-run", taskId: "t-1" };
+
+    // F3: the tab must sit in its task's row from its first frame, not as a row of its own that later moves
+    it("places a worker whose own run has not loaded by the lead's dag naming its run, wherever it sits", () => {
+        expect(lineageOf([lead, worker], reads([leadRun])).roles.w).toEqual(workerRole);
+        expect(lineageOf([worker, lead], reads([leadRun])).roles.w).toEqual(workerRole);
+    });
+
+    it("places it the same once its run loads", () => {
+        const childRun = { oid: "child-run", dagoref: "dag-1", mode: "quick" } as Run;
+        expect(lineageOf([lead, worker], reads([leadRun, childRun])).roles.w).toEqual(workerRole);
+    });
+
+    it("leaves a tab no dag in view names as a plain agent", () => {
+        expect(lineageOf([worker], reads([])).roles.w).toBeUndefined();
+        expect(lineageOf([lead, { id: "x", runId: "other-run" }], reads([leadRun])).roles.x).toBeUndefined();
     });
 });
 

@@ -19,18 +19,15 @@ import { finalStageRunId } from "./finalstage";
 import {
     endedReviewerOf,
     endedReviewerVM,
-    endedRoles,
     endedVerifierOf,
     endedVerifierVM,
     endedWorkerVM,
-    finalStageRoles,
     finalStageVM,
     isEndedWorkerId,
+    lineageOf,
     runInfoOf,
-    runRoleOf,
     type Lineage,
     type RunInfo,
-    type RunRole,
 } from "./runlineage";
 
 export const runDigestsAtom = atom<Record<string, DagStatusDigest>>({}) as PrimitiveAtom<
@@ -109,36 +106,15 @@ export function toggleTaskExtrasOpen(runId: string, taskId: string): void {
 // lineageAtomFor derives the lineage of the agents in agentsAtom. Reading a run or dag atom loads it on
 // first use, so an agent nests as soon as its run and dag arrive.
 export function lineageAtomFor(agentsAtom: Atom<AgentVM[]>): Atom<Lineage> {
-    return atom((get) => {
-        const digests = get(runDigestsAtom);
-        const runOf = (id: string) => get(WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", id)));
-        const roles: Record<string, RunRole> = {};
-        const runs: Record<string, RunInfo> = {};
-        for (const a of get(agentsAtom)) {
-            if (!a.runId) {
-                continue;
-            }
-            const run = runOf(a.runId);
+    return atom((get) =>
+        lineageOf(get(agentsAtom), {
+            run: (id) => get(WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", id))),
             // dagoref holds the dag's bare id, whatever its name says
-            const dag = run?.dagoref
-                ? get(WOS.getWaveObjectAtom<TaskGroup>(WOS.makeORef("dag", run.dagoref)))
-                : undefined;
-            const block = a.blockId ? get(WOS.getWaveObjectAtom<Block>(WOS.makeORef("block", a.blockId))) : undefined;
-            const role = runRoleOf(run, dag, block?.meta?.["agent:taskid"]);
-            if (role == null) {
-                continue;
-            }
-            roles[a.id] = role;
-            const leadRunId = role.kind === "lead" ? role.runId : role.leadRunId;
-            if (runs[leadRunId]) {
-                continue;
-            }
-            const leadRun = role.kind === "lead" ? run : runOf(leadRunId);
-            const info = runInfoOf(leadRunId, leadRun, dag, digests[leadRunId]);
-            runs[leadRunId] = { ...info, channelId: info.channelId || run.channeloid || "" };
-        }
-        return { roles: { ...roles, ...endedRoles(runs), ...finalStageRoles(runs) }, runs };
-    });
+            dag: (id) => get(WOS.getWaveObjectAtom<TaskGroup>(WOS.makeORef("dag", id))),
+            block: (id) => get(WOS.getWaveObjectAtom<Block>(WOS.makeORef("block", id))),
+            digests: get(runDigestsAtom),
+        })
+    );
 }
 
 export interface RunInfoRead {

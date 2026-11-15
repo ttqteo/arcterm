@@ -128,6 +128,64 @@ export function runRoleOf(run: Run | undefined, dag: TaskGroup | undefined, stam
     return run.mode === "orchestrator" ? { kind: "lead", runId: run.oid } : null;
 }
 
+// LineageReads is what lineageOf reads from the object store; a read of something not loaded yet is undefined.
+export interface LineageReads {
+    run(id: string): Run | undefined;
+    dag(id: string): TaskGroup | undefined; // by the dag's bare id, as a run's dagoref holds it
+    block(id: string): Block | undefined;
+    digests: Record<string, DagStatusDigest>;
+}
+
+// dagTaskRoleOf places a run from a dag already in view: a lead's dag names each task's current run and reviewer.
+function dagTaskRoleOf(runId: string, runs: Record<string, RunInfo>): RunRole | null {
+    for (const run of Object.values(runs)) {
+        const task = run.dag?.tasks?.find((t) => t.runid === runId || t.reviewrunid === runId);
+        if (task) {
+            return { kind: "worker", leadRunId: run.runId, taskId: task.id };
+        }
+    }
+    return null;
+}
+
+// lineageOf is the lineage of the roster's agents. A worker tab joins the roster before its own run object loads;
+// the lead's dag already names that run, so the tab is placed in its task's row from its first frame instead of
+// rendering as a row of its own that moves once the run arrives.
+export function lineageOf(agents: Pick<AgentVM, "id" | "runId" | "blockId">[], reads: LineageReads): Lineage {
+    const roles: Record<string, RunRole> = {};
+    const runs: Record<string, RunInfo> = {};
+    const unplaced: { id: string; runId: string }[] = [];
+    for (const a of agents) {
+        if (!a.runId) {
+            continue;
+        }
+        const run = reads.run(a.runId);
+        // dagoref holds the dag's bare id, whatever its name says
+        const dag = run?.dagoref ? reads.dag(run.dagoref) : undefined;
+        const block = a.blockId ? reads.block(a.blockId) : undefined;
+        const role = runRoleOf(run, dag, block?.meta?.["agent:taskid"]);
+        if (role == null) {
+            unplaced.push({ id: a.id, runId: a.runId });
+            continue;
+        }
+        roles[a.id] = role;
+        const leadRunId = roleRunId(role);
+        if (runs[leadRunId]) {
+            continue;
+        }
+        const leadRun = role.kind === "lead" ? run : reads.run(leadRunId);
+        const info = runInfoOf(leadRunId, leadRun, dag, reads.digests[leadRunId]);
+        runs[leadRunId] = { ...info, channelId: info.channelId || run.channeloid || "" };
+    }
+    // after the loop, so a tab is placed whichever side of its lead it sits in the roster
+    for (const a of unplaced) {
+        const role = dagTaskRoleOf(a.runId, runs);
+        if (role != null) {
+            roles[a.id] = role;
+        }
+    }
+    return { roles: { ...roles, ...endedRoles(runs), ...finalStageRoles(runs) }, runs };
+}
+
 // holdsTask reports whether agent's run is the one taskId currently points at, its worker or its reviewer, rather
 // than a tab left from an earlier attempt or a finished review.
 export function holdsTask(run: RunInfo, taskId: string, agent: Pick<AgentVM, "runId">): boolean {
