@@ -53,13 +53,26 @@ export function runsStartedBy(agent: Pick<AgentVM, "id" | "transcriptPath">, run
         );
 }
 
-// startedRunsText is what the header says for them: one run by its goal, several by how many and how many still go
-export function startedRunsText(runs: readonly Pick<Run, "goal" | "status">[]): string {
-    if (runs.length === 1) {
-        return runs[0].goal?.trim().split("\n")[0] || "an untitled run";
+// startedRunsShown is the runs the header counts and its menu lists: a cancelled run counts for none of them, as on the
+// tree's run chip (originLinks); when cancelled runs are all there is, the newest stands for them alone
+export function startedRunsShown<T extends Pick<Run, "status"> & { createdts?: number }>(runs: readonly T[]): T[] {
+    const counted = runs.filter((r) => r.status !== "cancelled");
+    if (counted.length > 0 || runs.length === 0) {
+        return counted;
     }
-    const active = runs.filter((r) => !isTerminal(r.status)).length;
-    return active > 0 ? `${runs.length} runs, ${active} active` : `${runs.length} runs`;
+    return [runs.reduce((a, b) => ((b.createdts ?? 0) > (a.createdts ?? 0) ? b : a))];
+}
+
+// startedRunsText is what the header says for them (startedRunsShown): one run by its goal, marked when it was
+// cancelled, several by how many and how many still go
+export function startedRunsText(runs: readonly (Pick<Run, "goal" | "status"> & { createdts?: number })[]): string {
+    const shown = startedRunsShown(runs);
+    if (shown.length === 1) {
+        const goal = shown[0].goal?.trim().split("\n")[0] || "an untitled run";
+        return shown[0].status === "cancelled" ? `${goal} · cancelled` : goal;
+    }
+    const active = shown.filter((r) => !isTerminal(r.status)).length;
+    return active > 0 ? `${shown.length} runs, ${active} active` : `${shown.length} runs`;
 }
 
 // What the tree needs of a run to say where it stands: RunInfo's, which the lineage builds for a run that has an agent

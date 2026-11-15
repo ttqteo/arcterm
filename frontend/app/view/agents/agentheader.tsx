@@ -84,7 +84,7 @@ import { useInitiativeReread, usePlanReview } from "./planreviewstore";
 import { openRailSection } from "./railsection";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
-import { startedRunsText } from "./runorigin";
+import { startedRunsShown, startedRunsText } from "./runorigin";
 import { openRunOrigin, useRunOrigin, useRunsStartedBy } from "./runoriginstore";
 import { runQueueAtom } from "./runqueuestore";
 import { RuntimeMark } from "./runtimemark";
@@ -338,9 +338,9 @@ function RunOriginLink({ model, runId }: { model: AgentsViewModel; runId: string
 }
 
 // The other way round: the runs this session started with `wsh runs start`. One opens its run sheet; several offer a
-// menu of them, the ones still going first.
+// menu of them, the ones still going first. A cancelled run is neither counted nor listed (startedRunsShown).
 function StartedRunsLink({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
-    const runs = useRunsStartedBy(agent);
+    const runs = startedRunsShown(useRunsStartedBy(agent));
     if (runs.length === 0) {
         return null;
     }
