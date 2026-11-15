@@ -46,6 +46,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Fixed
 
 - Jarvis's panel opens beside the hologram in Float again, inside the window, instead of off past its edge and cut off.
+- On a Mac, Chat's jump-to-latest button shows its ↓ once: the ⌘↓ beside it said the same arrow again (it stays in the
+  tooltip).
 - The tabs under a Float window's terminal are readable again: a narrow float shows fewer tabs, each wide enough for
   its name, instead of four cut to "Tr…", "M…". An agent waiting on you is never hidden under "+N", and "+N" shows a
   dot when one it holds is asking you or working.

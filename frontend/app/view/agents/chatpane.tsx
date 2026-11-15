@@ -514,6 +514,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     // where the reader left the conversation, kept while the cell shows the terminal or another agent
     const placeId = `chat:${agent.id}:${path}`;
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries, placeId);
+    // ⌘↓ on a Mac draws the pill's own ↓ again; Ctrl+End elsewhere says something the arrow does not
+    const jumpKeyIsArrow = formatChordString(CHAT_JUMP_KEYS).includes("↓");
     // the jump-to-latest key (agent:chat-jump-latest) presses the ↓ below, and passes while the ↓ is not drawn
     const jumpState = useRef({ atBottom, jumpToBottom });
     jumpState.current = { atBottom, jumpToBottom };
@@ -942,7 +944,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                     <div className="pointer-events-auto relative mx-auto w-full max-w-[720px]">
                         {/* Chat's own jump-to-latest: a ↓ pill naming its key, centred just above the box while the reader is scrolled
                             up; it pops in and out on the spring (the wrapper carries the centring, so the pop's scale is the
-                            button's alone) */}
+                            button's alone). A key that is itself an arrow (⌘↓ on a Mac) would say ↓ twice: the round ↓
+                            alone then, its key in the tooltip */}
                         <div className="absolute bottom-full left-1/2 z-10 mb-4 -translate-x-1/2">
                             <AnimatePresence initial={false}>
                                 {!atBottom ? (
@@ -958,12 +961,17 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                         onClick={jumpToBottom}
                                         title={`Jump to latest (${formatChordString(CHAT_JUMP_KEYS)})`}
                                         aria-label="Jump to latest"
-                                        className="group flex h-[32px] cursor-pointer items-center justify-center gap-1.5 rounded-full border border-edge-strong bg-surface-raised pl-[9px] pr-3 text-secondary shadow-popover-sm hover:border-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                        className={cn(
+                                            "group flex h-[32px] cursor-pointer items-center justify-center gap-1.5 rounded-full border border-edge-strong bg-surface-raised text-secondary shadow-popover-sm hover:border-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                            jumpKeyIsArrow ? "w-[32px]" : "pl-[9px] pr-3"
+                                        )}
                                     >
                                         <ArrowDown size={14} strokeWidth={2} aria-hidden />
-                                        <kbd className="font-sans text-[10.5px] text-muted group-hover:text-secondary">
-                                            {formatChordString(CHAT_JUMP_KEYS)}
-                                        </kbd>
+                                        {jumpKeyIsArrow ? null : (
+                                            <kbd className="font-sans text-[10.5px] text-muted group-hover:text-secondary">
+                                                {formatChordString(CHAT_JUMP_KEYS)}
+                                            </kbd>
+                                        )}
                                     </motion.button>
                                 ) : null}
                             </AnimatePresence>
