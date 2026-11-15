@@ -1,14 +1,18 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Sidecar's title bar (board D-fit-by-count). The window has no frame of its own, so the page draws the name, the three
-// counts in the wall's words and the window buttons. It runs on the slim page (frontend/tauri/sidecar.tsx), which boots
-// no cockpit store: this file may import only the Tauri window API and the shared types.
+// Sidecar's title bar (boards D-fit-by-count, E-strain-band and F-small-asks). The window has no frame of its own, so the
+// page draws the name, the three counts in the wall's words, the machine's figures and the window buttons; in the small
+// layout it shrinks to the name, the short figures and the S, pin and close buttons (the counts move into the small
+// form's head). It runs on the slim page (frontend/tauri/sidecar.tsx), which boots no cockpit store: this file may
+// import only the Tauri window API and the shared types.
 
 import { cn } from "@/util/util";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState, type ReactNode } from "react";
-import type { SidecarSnapshot } from "./sidecartypes";
+import { pinButtonChange, smallButtonChange, type FormChange, type SidecarLayout } from "./sidecarlayout";
+import { machineReadout } from "./sidecarstrainmodel";
+import type { SidecarForm, SidecarMachine, SidecarSnapshot, SidecarStrain } from "./sidecartypes";
 
 type Counts = SidecarSnapshot["counts"];
 
@@ -59,10 +63,59 @@ function Count(props: { kind: keyof Counts; n: number; label: string; tone: stri
     );
 }
 
+/** The three counts in the wall's words: the title bar's, and the small form's head (the same words, a different place). */
+export function SidecarCounts(props: { counts: Counts; className?: string }) {
+    const { counts } = props;
+    return (
+        <div className={cn("flex items-baseline text-secondary", props.className)}>
+            <Count kind="asking" n={counts.asking} label="need you" tone="text-asking" />
+            <Count kind="working" n={counts.working} label="working" tone="text-working" />
+            <Count kind="idle" n={counts.idle} label="idle" tone="text-primary" />
+        </div>
+    );
+}
+
+// the figure's colour: amber and red are the warning and error tokens the band uses, so the bar and the band agree
+const TONE = { normal: "text-primary", amber: "text-warning", red: "text-error" } as const;
+
+// "RAM 2.1 GB free · CPU 93%" on the wide bar, the bare numbers ("2.1 GB · 93%") where the small bar has no room for the
+// words. One span of inline text either way, so a reader gets the whole line.
+function Machine(props: {
+    machine: SidecarMachine;
+    strain: SidecarStrain | undefined;
+    short: boolean;
+    className?: string;
+}) {
+    const r = machineReadout(props.machine, props.strain);
+    const ram = <b className={cn("font-semibold", TONE[r.ramTone])}>{r.ram}</b>;
+    const cpu = <b className={cn("font-semibold", TONE[r.cpuTone])}>{r.cpu}</b>;
+    return (
+        <span
+            data-sidecar-machine
+            data-ram-tone={r.ramTone}
+            data-cpu-tone={r.cpuTone}
+            className={cn(
+                "min-w-0 truncate whitespace-nowrap text-[12px] tabular-nums text-secondary",
+                props.className
+            )}
+        >
+            {props.short ? (
+                <>
+                    {ram} · {cpu}
+                </>
+            ) : (
+                <>
+                    RAM {ram} free · CPU {cpu}
+                </>
+            )}
+        </span>
+    );
+}
+
 // tabIndex -1 and no focus on press: a button left focused would take the Enter that opens the selected agent and the
 // arrow keys of the wall, and a frameless window's controls are the mouse's anyway (F11 is the keyboard's).
 function TitleButton(props: {
-    name: "minimize" | "maximize" | "fullscreen" | "close";
+    name: "small" | "pin" | "minimize" | "maximize" | "fullscreen" | "close";
     label: string;
     onClick: () => void;
     pressed?: boolean;
@@ -87,14 +140,106 @@ function TitleButton(props: {
 }
 
 const WINDOW_BTN = "h-full w-11 hover:bg-hover";
+// the wide bar's boxed buttons (S, full screen); a pressed one reads as held down
+const BOXED_BTN = "h-[26px] w-[30px] rounded-md border border-edge-mid bg-surface-raised hover:bg-surface-hover";
+const BOXED_PRESSED = "bg-surface-selected text-primary";
+// the small bar's buttons (board F): 26 × 24, flat, a pressed one filled
+const SMALL_BTN = "h-6 w-[26px] shrink-0 rounded-md hover:bg-surface-hover";
 
-export function SidecarTitleBar(props: { counts: Counts | null }) {
+function SmallGlyph({ small }: { small: boolean }) {
+    // arrows in (shrink to the small form) / arrows out (grow back to the wall)
+    return (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            {small ? (
+                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+            ) : (
+                <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+            )}
+        </svg>
+    );
+}
+
+function CloseGlyph() {
+    return (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+    );
+}
+
+export interface SidecarTitleBarProps {
+    counts: Counts | null;
+    machine?: SidecarMachine;
+    strain?: SidecarStrain;
+    layout: SidecarLayout;
+    // the host's form, and a request to change it (the page invokes sidecar_form and takes the answer)
+    form: SidecarForm;
+    onForm: (change: FormChange) => void;
+}
+
+export function SidecarTitleBar(props: SidecarTitleBarProps) {
     const win = getCurrentWindow();
     const fullscreen = useFullscreen();
-    const counts = props.counts;
+    const { counts, machine, strain, layout, form } = props;
+    const small = layout === "small";
+
+    // S is in both layouts: it is the way into the small form and the way back out
+    const sButton = (
+        <TitleButton
+            name="small"
+            label={form.small ? "Back to the full Sidecar" : "Small form, pinned on top"}
+            pressed={form.small}
+            onClick={() => props.onForm(smallButtonChange(form))}
+            className={cn(
+                small ? SMALL_BTN : BOXED_BTN,
+                form.small && (small ? "bg-surface-selected text-primary" : BOXED_PRESSED)
+            )}
+        >
+            <SmallGlyph small={form.small} />
+        </TitleButton>
+    );
+
+    if (small) {
+        return (
+            <div
+                data-sidecar-titlebar
+                data-sidecar-layout="small"
+                data-tauri-drag-region="deep"
+                className="flex h-8 shrink-0 select-none items-center gap-2 border-b border-border bg-surface pl-3 pr-1"
+            >
+                <span className="shrink-0 text-[12px] font-semibold text-primary">Sidecar</span>
+                {import.meta.env.DEV ? <span className="shrink-0 text-[12px] text-muted">(dev)</span> : null}
+                {machine == null ? null : <Machine machine={machine} strain={strain} short className="ml-1" />}
+                <span className="flex-1" />
+                {sButton}
+                <TitleButton
+                    name="pin"
+                    label="Pin on top"
+                    pressed={form.pinned}
+                    onClick={() => props.onForm(pinButtonChange(form))}
+                    className={cn(SMALL_BTN, form.pinned && "bg-surface-selected text-primary")}
+                >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                        <path d="M12 17v5M9 10.8V4h6v6.8l3 3.2H6z" />
+                    </svg>
+                </TitleButton>
+                {/* the person's own close: the host reads it as "do not reopen Sidecar next launch" */}
+                <TitleButton
+                    name="close"
+                    label="Close"
+                    onClick={windowAction("closing", () => win.close())}
+                    className={cn(SMALL_BTN, "hover:bg-error hover:text-white")}
+                >
+                    <CloseGlyph />
+                </TitleButton>
+            </div>
+        );
+    }
+
     return (
         <div
             data-sidecar-titlebar
+            data-sidecar-layout="wall"
             // "deep": the whole bar drags, the buttons opt out (the main window's app bar does the same)
             data-tauri-drag-region="deep"
             className="flex h-[38px] shrink-0 select-none items-center gap-4 border-b border-border bg-surface pl-3.5"
@@ -107,22 +252,17 @@ export function SidecarTitleBar(props: { counts: Counts | null }) {
                 <span className="font-semibold text-primary">Sidecar</span>
             </div>
             {/* no counts before the first snapshot: a 0 there would read as "nothing needs you" */}
-            {counts == null ? null : (
-                <div className="ml-3 flex items-baseline gap-3.5 text-[13px] text-secondary">
-                    <Count kind="asking" n={counts.asking} label="need you" tone="text-asking" />
-                    <Count kind="working" n={counts.working} label="working" tone="text-working" />
-                    <Count kind="idle" n={counts.idle} label="idle" tone="text-primary" />
-                </div>
-            )}
+            {counts == null ? null : <SidecarCounts counts={counts} className="ml-3 gap-3.5 text-[13px]" />}
+            {/* the machine's two figures, always once a snapshot carries them: the band speaks only past a threshold */}
+            {machine == null ? null : <Machine machine={machine} strain={strain} short={false} className="ml-3" />}
             <div className="ml-auto flex h-full items-center gap-4">
-                {/* the S button's place (part 2): empty, so it takes no room and no dead button shows */}
-                <span data-sidecar-slot="small" className="empty:hidden" />
+                {sButton}
                 <TitleButton
                     name="fullscreen"
                     label={fullscreen ? "Exit full screen (F11)" : "Full screen (F11)"}
                     pressed={fullscreen}
                     onClick={windowAction("toggling full screen", toggleSidecarFullscreen)}
-                    className="h-[26px] w-[30px] rounded-md border border-edge-mid bg-surface-raised hover:bg-surface-hover"
+                    className={BOXED_BTN}
                 >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                         {fullscreen ? (
@@ -176,16 +316,7 @@ export function SidecarTitleBar(props: { counts: Counts | null }) {
                         onClick={windowAction("closing", () => win.close())}
                         className="h-full w-11 hover:bg-error hover:text-white"
                     >
-                        <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.6"
-                        >
-                            <path d="M6 6l12 12M18 6 6 18" />
-                        </svg>
+                        <CloseGlyph />
                     </TitleButton>
                 </div>
             </div>

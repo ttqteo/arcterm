@@ -280,7 +280,7 @@ describe("sleepWithConfirm", () => {
         const call = sleepWithConfirm(agent);
         // marked from the press, so the box and the menus shut at once
         expect(fallingAsleepOf("tab-1", false)).toBe("sleeping");
-        await call;
+        await expect(call).resolves.toBe("slept");
         // kept until the roster reads the agent asleep (useFallAsleepSync drops it then)
         expect(fallingAsleepOf("tab-1", false)).toBe("sleeping");
         expect(sleepCmd).toHaveBeenCalledTimes(1);
@@ -294,7 +294,7 @@ describe("sleepWithConfirm", () => {
 
     it("asks first when background tasks run, and sleeps anyway with force once confirmed", async () => {
         sleepCmd.mockResolvedValueOnce({ background: ["npm run build"] });
-        await sleepWithConfirm(agent);
+        await expect(sleepWithConfirm(agent)).resolves.toBe("asked");
         expect(pushToast).not.toHaveBeenCalled();
         // nothing slept: the mark goes while the confirm asks
         expect(fallingAsleepOf("tab-1", false)).toBeUndefined();
@@ -313,7 +313,7 @@ describe("sleepWithConfirm", () => {
 
     it("says the agent compacts first when the server compacts before the sleep", async () => {
         sleepCmd.mockResolvedValue({ compacting: true });
-        await sleepWithConfirm(agent);
+        await expect(sleepWithConfirm(agent)).resolves.toBe("compacting");
         expect(pushModal).not.toHaveBeenCalled();
         expect(pushToast).toHaveBeenCalledWith(
             expect.objectContaining({ title: compactingToastText("Lumen"), level: "info" })
@@ -325,13 +325,14 @@ describe("sleepWithConfirm", () => {
     it("does not send a second Sleep while one is under way", async () => {
         sleepCmd.mockResolvedValue({ compacting: true });
         await sleepWithConfirm(agent);
-        await sleepWithConfirm(agent);
+        // the second press changes nothing, and says so: the band's row reads "Already going to sleep"
+        await expect(sleepWithConfirm(agent)).resolves.toBe("busy");
         expect(sleepCmd).toHaveBeenCalledTimes(1);
     });
 
     it("toasts the server's error and never throws", async () => {
         sleepCmd.mockRejectedValue(new Error("Lumen did not stop"));
-        await expect(sleepWithConfirm(agent)).resolves.toBeUndefined();
+        await expect(sleepWithConfirm(agent)).resolves.toBe("failed");
         expect(fallingAsleepOf("tab-1", false)).toBeUndefined();
         expect(pushToast).toHaveBeenCalledWith(
             expect.objectContaining({ title: "Couldn't put Lumen to sleep", level: "error" })

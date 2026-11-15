@@ -25,6 +25,34 @@ does not, say what you saw and it becomes a bug row under Actionable.
   200×207 back), so step 2 only checks the page's own window calls. Open Sidecar, drag its bottom-right corner toward the
   top-left → it stops at 340×440 and the wall still draws whole tiles (no tile under 300 px wide). Commit: test(sidecar)
   the sidecar-wall CDP scenario
+- [ ] (arcterm) **Sidecar's RAM against the 100 MB budget, on a release build.** The run could not take it: it needs
+  `task tauri:build` and a day on screen. Install the build, run 12 agents, open Sidecar and leave it a day with the
+  strain band showing for part of it (a heavy build, or one `yes > /dev/null` per core), then read the private working set of
+  its WebView2 renderer plus the GPU process's growth when it opened (Task Manager → Details, or `Get-Process
+  msedgewebview2` with Sidecar closed and open). Under 100 MB and level after the day → write the figures into the
+  part-2 row of `docs/open-issues.md` "RAM watch" and tick this; over → a defect to fix before the next release (the
+  spec's section 5). Part 1 read ~48 MB with 11 agents. Commit: test(sidecar) the sidecar-wall scenario for part 2
+- [ ] (arcterm) **The S button shrinks and restores a real window, and the relaunch keeps it.** The scenario presses S
+  and the pin on a real window (340×440 pinned, then back to the size it had, in the wall), but cannot relaunch the app,
+  so the relaunch is a Rust test of the decision only. Open Sidecar on a screen of a different scale from the main
+  window's and press S → it shrinks to 340×440 at that screen's top-right corner, pinned above other windows; drag it
+  wider than 1100 px → the wall shows and S stays pressed; press S → it returns to its first frame. Press S, then quit
+  arcterm (tray icon → Quit) and launch → Sidecar reopens small and pinned, and S still returns to the old frame. With
+  Sidecar full screen or maximized, press S → it leaves that and shrinks; S again → full screen or maximized comes
+  back. On a Mac, press S from macOS full screen and again. Commit: feat(sidecar) the host's small form — S shrinks and
+  pins, S again restores, a relaunch reopens as it was
+- [ ] (arcterm) **The strain band on a real strained machine.** The scenario drives the band with fixture readings. With
+  Sidecar open and 10+ agents working, start something that fills the memory (or lets the OS report pressure `high`) →
+  the amber band appears within seconds saying `RAM high for … (… free of …)` over the three agents that weigh most,
+  heaviest first, each with its heaviest process, and Stop (asks in place; the process ends, the agent keeps running)
+  and Sleep agent (its RAM is freed); let the CPU run over 90% for 2 minutes → the same band says `CPU over 90% for 2
+  min` with rows by CPU. Free it → the band clears after 30 s without flicker. × hides it until the level changes. At
+  `critical` it turns red and names your OS. Commit: feat(sidecar) the strain band and tile scrollback on the wall
+- [ ] (arcterm) **The macOS per-agent CPU sampler (`pkg/agentcpu`) on a Mac.** It compiles on Windows but has only run
+  against a fake process table. On a Mac with Sidecar open and an agent running a build, make the CPU run over 90% for 2
+  minutes → the band's rows are the CPU's, the agent that runs the build first, its busiest process named and `Stop`
+  ending it; with the CPU calm the band clears and wavesrv's own CPU stays near 0 (the sampler runs only while a CPU
+  band shows). Commit: feat(sidecar) CPU per agent: resmon on Windows, a new sampler on macOS
 
 - [ ] (arcterm) **The version's tooltip, About and a dirty dev build name the commit.** The footer of installed 1.1.3
   read `v1.1.3 · 38f41b95b`, the installer's commit, on 2026-11-15. Still unseen: its tooltip adds "commit <sha>",

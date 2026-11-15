@@ -2,20 +2,30 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import type { SidecarTile } from "./sidecartypes";
+import type { SidecarMessage, SidecarTile } from "./sidecartypes";
 import {
     ageText,
+    applyOlder,
     canAnswer,
+    EMPTY_HISTORY,
+    foldSlid,
     formatTileAge,
+    markAsked,
     MIN_TILE_H,
     MIN_TILE_W,
     moveSelection,
     nameSizePx,
+    olderRequest,
     resolveSelection,
+    returnedToBottom,
+    SCROLL_EDGE_PX,
+    scrollEdges,
+    slidOut,
     tileAgeMs,
     WALL_GAP,
     wallKey,
     wallShape,
+    type TileHistory,
 } from "./sidecarwallmodel";
 
 // 1920×1080's wall area: the window less the title bar (38), the footer (28) and the wall's padding (16 / 20 a side).
@@ -259,5 +269,141 @@ describe("keys", () => {
         expect(canAnswer(tile({ ask: { question: "Q?", options: ["A"], answerable: false } }), 0)).toBe(false);
         expect(canAnswer({}, 0)).toBe(false);
         expect(canAnswer(undefined, 0)).toBe(false);
+    });
+});
+
+const row = (say: string): SidecarMessage => ({ say });
+const rows = (...says: string[]) => says.map(row);
+const says = (list: readonly SidecarMessage[]) => list.map((m) => m.say);
+
+describe("scrollEdges", () => {
+    it("is at the top at 0 and at the bottom when the viewport reaches the content's end", () => {
+        expect(scrollEdges(0, 100, 300)).toEqual({ top: true, bottom: false });
+        expect(scrollEdges(100, 100, 300)).toEqual({ top: false, bottom: false });
+        expect(scrollEdges(200, 100, 300)).toEqual({ top: false, bottom: true });
+    });
+
+    it("counts a position within the tolerance as the end, and one just past it as not", () => {
+        expect(scrollEdges(SCROLL_EDGE_PX, 100, 300).top).toBe(true);
+        expect(scrollEdges(SCROLL_EDGE_PX + 1, 100, 300).top).toBe(false);
+        expect(scrollEdges(200 - SCROLL_EDGE_PX, 100, 300).bottom).toBe(true);
+        expect(scrollEdges(200 - SCROLL_EDGE_PX - 1, 100, 300).bottom).toBe(false);
+        // a fractional scrollTop (a zoomed page) still reaches the bottom
+        expect(scrollEdges(199.4, 100, 300).bottom).toBe(true);
+    });
+
+    it("puts a list that does not overflow at both ends", () => {
+        expect(scrollEdges(0, 200, 150)).toEqual({ top: true, bottom: true });
+        expect(scrollEdges(0, 200, 200)).toEqual({ top: true, bottom: true });
+    });
+});
+
+describe("a tile's history", () => {
+    it("asks for the page above the snapshot's rows first (before null), once", () => {
+        expect(olderRequest(undefined)).toEqual({ before: null });
+        expect(olderRequest(EMPTY_HISTORY)).toEqual({ before: null });
+        const out = markAsked(undefined);
+        expect(out).toEqual({ ...EMPTY_HISTORY, pending: true });
+        // one request per cursor: while it is out nothing more is asked
+        expect(olderRequest(out)).toBeNull();
+    });
+
+    it("joins an answer's rows above the loaded ones and asks the next cursor after it", () => {
+        let h = markAsked(undefined);
+        h = applyOlder(h, { before: null, rows: rows("r6", "r7"), next: "m:6" });
+        expect(says(h.rows)).toEqual(["r6", "r7"]);
+        expect(h).toMatchObject({ before: "m:6", start: false, pending: false });
+        expect(olderRequest(h)).toEqual({ before: "m:6" });
+        h = applyOlder(markAsked(h), { before: "m:6", rows: rows("r4", "r5"), next: "m:4" });
+        expect(says(h.rows)).toEqual(["r4", "r5", "r6", "r7"]);
+        expect(olderRequest(h)).toEqual({ before: "m:4" });
+    });
+
+    it("ends at a null next: the start, and nothing more is asked", () => {
+        let h = applyOlder(markAsked(undefined), { before: null, rows: rows("r0"), next: null });
+        expect(says(h.rows)).toEqual(["r0"]);
+        expect(h).toMatchObject({ start: true, pending: false });
+        expect(olderRequest(h)).toBeNull();
+        // a tile with only what the snapshot shows: an empty page that is the start
+        h = applyOlder(markAsked(undefined), { before: null, rows: [], next: null });
+        expect(h).toMatchObject({ rows: [], start: true });
+    });
+
+    it("drops a stale answer: none is out, or it answers another cursor", () => {
+        const none = applyOlder(undefined, { before: null, rows: rows("x"), next: "m:1" });
+        expect(none).toEqual(EMPTY_HISTORY);
+        const out = markAsked({ ...EMPTY_HISTORY, rows: rows("r6"), before: "m:6" });
+        const stale = applyOlder(out, { before: "m:9", rows: rows("x"), next: "m:3" });
+        expect(stale).toBe(out);
+        // an answer applied once is not applied again by a duplicate
+        const done = applyOlder(out, { before: "m:6", rows: rows("r5"), next: "m:5" });
+        expect(applyOlder(done, { before: "m:6", rows: rows("r5"), next: "m:5" })).toBe(done);
+        expect(says(done.rows)).toEqual(["r5", "r6"]);
+    });
+
+    it("an empty answer with a cursor changes nothing but lets the same cursor be asked again", () => {
+        const h = applyOlder(markAsked({ ...EMPTY_HISTORY, before: "m:6" }), { before: "m:6", rows: [], next: "m:6" });
+        expect(h).toMatchObject({ rows: [], before: "m:6", pending: false, start: false });
+    });
+});
+
+describe("slidOut and foldSlid", () => {
+    const eight = rows("r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8");
+
+    it("finds the rows that left the top when new rows arrived at the bottom", () => {
+        expect(says(slidOut(eight, rows("r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9")))).toEqual(["r1"]);
+        expect(says(slidOut(eight, rows("r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10")))).toEqual(["r1", "r2"]);
+    });
+
+    it("sees the slide although the last row changed in place (a tool row that got its result)", () => {
+        const prev: SidecarMessage[] = [
+            ...rows("r1", "r2", "r3", "r4", "r5", "r6", "r7"),
+            { tool: { verb: "Bash", target: "go test" } },
+        ];
+        const next: SidecarMessage[] = [
+            ...rows("r2", "r3", "r4", "r5", "r6", "r7"),
+            { tool: { verb: "Bash", target: "go test", outcome: "ok" } },
+            row("r9"),
+        ];
+        expect(says(slidOut(prev, next))).toEqual(["r1"]);
+    });
+
+    it("finds nothing when the window did not move, or the rows do not line up", () => {
+        expect(slidOut(eight, eight)).toEqual([]);
+        expect(slidOut(eight, rows("a", "b", "c", "d", "e", "f", "g", "h"))).toEqual([]);
+        expect(slidOut([], eight)).toEqual([]);
+        expect(slidOut(eight, [])).toEqual([]);
+        expect(slidOut(rows("r1", "r2"), rows("r2", "r3"))).toEqual([]);
+    });
+
+    it("takes a window that only grew, or that changed only in its last row, for no slide (even a repeating transcript)", () => {
+        const ab = rows("a", "b", "a", "b", "a", "b", "a");
+        const growing = [...ab, row("b")];
+        expect(slidOut(ab, growing)).toEqual([]);
+        const prev: SidecarMessage[] = [...ab, { tool: { verb: "Read", target: "x" } }];
+        const next: SidecarMessage[] = [...ab, { tool: { verb: "Read", target: "x", outcome: "ok" } }];
+        expect(slidOut(prev, next)).toEqual([]);
+        expect(slidOut(growing, growing)).toEqual([]);
+    });
+
+    it("does not take one repeated row for a slide", () => {
+        const prev = rows("same", "x", "y", "z");
+        expect(slidOut(prev, rows("same", "q", "w", "e"))).toEqual([]);
+    });
+
+    it("appends the rows to a history that has loaded rows, and leaves one without alone", () => {
+        const h: TileHistory = { ...EMPTY_HISTORY, rows: rows("r-1", "r0"), before: "m:3" };
+        expect(says(foldSlid(h, rows("r1")).rows)).toEqual(["r-1", "r0", "r1"]);
+        expect(foldSlid(h, [])).toBe(h);
+        expect(foldSlid(EMPTY_HISTORY, rows("r1"))).toBe(EMPTY_HISTORY);
+    });
+});
+
+describe("returnedToBottom", () => {
+    it("is the user arriving at the bottom, not a list that stayed there", () => {
+        expect(returnedToBottom(false, true)).toBe(true);
+        expect(returnedToBottom(true, true)).toBe(false);
+        expect(returnedToBottom(false, false)).toBe(false);
+        expect(returnedToBottom(true, false)).toBe(false);
     });
 });

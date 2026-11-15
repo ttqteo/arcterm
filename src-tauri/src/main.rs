@@ -454,7 +454,8 @@ fn main() {
             foreground::raise_topmost,
             tray::set_tray_status,
             tray::tray_popover_size,
-            sidecar::open_sidecar
+            sidecar::open_sidecar,
+            sidecar::sidecar_form
         ])
         .on_window_event(|window, event| {
             // the main window destroyed closes Sidecar; Sidecar destroyed tells the main window

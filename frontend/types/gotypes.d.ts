@@ -58,6 +58,27 @@ declare global {
         btw?: string;
     };
 
+    // wshrpc.AgentCpuAgent
+    type AgentCpuAgent = {
+        blockid: string;
+        cpu: number;
+        top?: AgentCpuProcess;
+    };
+
+    // wshrpc.AgentCpuData
+    type AgentCpuData = {
+        supported: boolean;
+        ready: boolean;
+        agents: AgentCpuAgent[];
+    };
+
+    // wshrpc.AgentCpuProcess
+    type AgentCpuProcess = {
+        pid: number;
+        command: string;
+        cpu: number;
+    };
+
     // wshrpc.AgentInfo
     type AgentInfo = {
         tabid: string;

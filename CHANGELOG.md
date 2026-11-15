@@ -36,6 +36,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   maximized on your other screen (centred when you have one), F11 or its full-screen button toggles full screen, and
   it closes with arcterm's window, and opens again where you left it (screen, size, full screen) the next time arcterm
   starts, unless you closed it yourself. <!-- try: open-sidecar -->
+- Sidecar warns you when the machine is strained. Its title bar always shows the memory free and the CPU; when the
+  memory runs low, or the CPU stays over 90% for 2 minutes, a band over the wall says which and since when, and names
+  the three agents that weigh most. Stop ends the process that weighs most (after you confirm, the agent keeps running)
+  and Sleep agent frees the whole agent. The band turns red when the machine is about to run out of memory, the × hides
+  it until it changes, and it clears 30 seconds after the machine calms down.
+- Sidecar's tiles scroll back: scroll up inside a tile to read earlier messages, and an agent that is asleep or has been
+  idle a while still shows its last two messages instead of "No recent messages".
+- Sidecar's small form: drag the window narrower than about 1100 px and it shows only what waits on you, one card per
+  question with its options as 1–9 keys (arrows move between cards, Enter opens the agent). The S button on its title
+  bar shrinks it to 340×440 and pins it on top of your other windows; pressed again it goes back to where it was, and
+  it reopens small and pinned after a restart. <!-- try: open-sidecar -->
 
 ### Changed
 

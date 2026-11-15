@@ -57,6 +57,12 @@ func AgentControlCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentControlData,
 	return sendRpcRequestResponseStreamHelper[wshrpc.AgentControlMsg](w, "agentcontrol", data, opts)
 }
 
+// command "agentcpu", wshserver.AgentCpuCommand
+func AgentCpuCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.AgentCpuData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.AgentCpuData](w, "agentcpu", nil, opts)
+	return resp, err
+}
+
 // command "agentpermissionanswer", wshserver.AgentPermissionAnswerCommand
 func AgentPermissionAnswerCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentPermissionAnswerData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "agentpermissionanswer", data, opts)
