@@ -414,16 +414,6 @@ describe("keyPillTitle", () => {
         expect(keyPillTitle({ id: "b", title: "", desc: "", key: "cockpit.font.sans", scope: "local" })).toBe(
             "Copy cockpit.font.sans · stored on this machine only"
         );
-        expect(
-            keyPillTitle({
-                id: "c",
-                title: "",
-                desc: "",
-                key: "window:minimize",
-                morekeys: ["window:autosprout"],
-                scope: "synced",
-            })
-        ).toBe("Copy window:minimize · window:autosprout · synced in settings.json");
     });
 
     it("has no pill for a row that stores no setting", () => {

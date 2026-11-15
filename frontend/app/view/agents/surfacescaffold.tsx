@@ -71,7 +71,6 @@ export function SurfaceHeader({
 // className exists for one reason: the Jarvis Stage stacks this directly above and below bands that all
 // share one gutter (jarvis/stagemeasure.ts), and px-[30px] put it 6px right of every one of them. A
 // surface that owns its own horizontal measure passes it in; everyone else keeps the default.
-// children sit between the body and the buttons, for a state that has to show what it is working on.
 // secondaryAction sits beside the primary, or alone when a state has no
 // accent action to offer.
 export function SurfaceEmptyState({
@@ -80,7 +79,6 @@ export function SurfaceEmptyState({
     body,
     action,
     secondaryAction,
-    children,
     className,
 }: {
     glyph?: ReactNode;
@@ -88,7 +86,6 @@ export function SurfaceEmptyState({
     body?: ReactNode;
     action?: { label: ReactNode; onClick: () => void; hint?: ReactNode; disabled?: boolean };
     secondaryAction?: { label: ReactNode; onClick: () => void };
-    children?: ReactNode;
     className?: string;
 }) {
     return (
@@ -109,7 +106,6 @@ export function SurfaceEmptyState({
                 {body != null ? (
                     <div className="mb-[30px] max-w-[400px] text-[14px] leading-[1.6] text-muted">{body}</div>
                 ) : null}
-                {children != null ? <div className="mb-[26px] w-full">{children}</div> : null}
                 {action != null || secondaryAction != null ? (
                     <div className="flex items-center gap-2.5">
                         {action != null ? (
