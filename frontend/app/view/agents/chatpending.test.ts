@@ -444,6 +444,25 @@ describe("submitSteps", () => {
     it("presses Enter alone for an empty line", () => {
         expect(submitSteps("")).toEqual([{ kind: "enter" }]);
     });
+
+    // A message that ends on `@word` left Claude Code's @ suggestions open, so the Enter took the suggestion (writing
+    // `@path ` back) and the message sat in its box until the next send joined it (2026-11-16)
+    it("types a space after a message that ends on an @ mention, so the Enter submits it", () => {
+        const path = "@results/study/audit_prefill.json";
+        expect(submitSteps(path)).toEqual([
+            { kind: "type", text: `${path} ` },
+            { kind: "wait", ms: 80, echo: `${path} ` },
+            { kind: "enter" },
+        ]);
+        expect(submitSteps(`read this ${path}`)[0]).toEqual({ kind: "type", text: `read this ${path} ` });
+        expect(submitSteps(`a\n${path}`)[0]).toEqual({ kind: "paste", text: `a\n${path} ` });
+    });
+
+    it("adds nothing when the @ mention is not the last word", () => {
+        const text = "@src/app.ts read it";
+        expect(submitSteps(text)[0]).toEqual({ kind: "type", text });
+        expect(submitSteps("mail me at a@b.co")[0]).toEqual({ kind: "type", text: "mail me at a@b.co" });
+    });
 });
 
 describe("submitDelayMs", () => {

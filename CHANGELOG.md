@@ -48,6 +48,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A Chat message that ends with a file you mentioned is sent: Claude Code's file suggestions took its Enter, so the
+  message sat unsent in Claude Code's box until your next one joined it.
 - Chat's suggested replies no longer repeat one answer in other words ("build đi", "ok build đi"): each offers a
   different choice.
 - In a narrow window (Float), the New agent dialog keeps its Agent column to a strip of keys and icons (each name in its

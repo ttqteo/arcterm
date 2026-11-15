@@ -389,11 +389,15 @@ export function sendFailLogLine(blockId: string, text: string, f: SendFailure): 
  *  between the two writes was not enough: Claude Code reads its input only when its event loop is free, and both writes
  *  waiting there land in one read (a 65-character message to an idle Claude took the next message's text on the line
  *  after it, and both went as one prompt). Once the box shows the text it has been read, so the Enter comes alone. A line
- *  with a break or past PASTE_OVER goes as a paste, any other is typed. */
-export function submitSteps(text: string): SubmitStep[] {
-    if (text === "") {
+ *  with a break or past PASTE_OVER goes as a paste, any other is typed. A line that ends on an `@` word (a file
+ *  mention) gets a space after it: with the caret still on that word Claude Code's @ suggestions stay open, and the Enter
+ *  took the suggestion (writing `@path ` back) instead of submitting, so the message sat in its box until the next send
+ *  joined it (2026-11-16). The echo check and the pending bubble's match both ignore edge whitespace. */
+export function submitSteps(line: string): SubmitStep[] {
+    if (line === "") {
         return [{ kind: "enter" }];
     }
+    const text = /(^|\s)@\S*$/.test(line) ? `${line} ` : line;
     return [
         pastesBody(text) ? { kind: "paste", text } : { kind: "type", text },
         { kind: "wait", ms: submitDelayMs(text.length), echo: text },
