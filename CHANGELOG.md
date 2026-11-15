@@ -30,6 +30,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   run sheet, instead of Working.
 - Deleting or editing an initiative chunk whose name is only digits no longer hits another chunk when the plan
   changed elsewhere in the meantime: the edit is refused instead.
+- Renaming or deleting a stage in the Brief right after deleting a chunk now acts on the stage you clicked, not the
+  one after it.
 - The initiative link in an agent's header now says that Ctrl+click (⌘-click) peeks at the initiative in Sprout,
   which is what it does.
 - A submenu opened the moment its context menu appears now sits beside its row, instead of a few pixels off until
