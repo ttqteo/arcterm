@@ -1571,37 +1571,41 @@ function SuggestChips({
 }) {
     const part = usePartMotion(microFade);
     return (
-        // one line however narrow the box (a float window, a cell of a split): the chips shrink, a long one ends in …,
-        // and its whole text is in its tooltip and, once Tab picks it, in the box's line (pickedHint)
-        <motion.div {...part} data-chat-suggest="" className="flex min-w-0 flex-nowrap items-center gap-1.5">
-            <AnimatePresence initial={false}>
-                {chips.map((c) => {
-                    const ticks = c.kind === "done" && c.chunk != null;
-                    const goes = c.kind === "next" && c.chunk != null && canGoOn;
-                    const mark = chipIcon(c);
-                    return (
-                        <motion.div key={c.text} {...part} className="min-w-0 shrink">
-                            <Chip
-                                icon={mark != null ? SUGGEST_ICONS[mark] : undefined}
-                                label={c.text}
-                                picked={c.text === picked}
-                                armed={c.text === armed}
-                                title={
-                                    c.text === armed
-                                        ? `Send “${c.text}” in place of the text in the box · Esc keeps your text`
-                                        : ticks
-                                          ? `Mark “${c.chunk}” done and move on to the next chunk`
-                                          : goes
-                                            ? `Move this agent to “${c.chunk}” and send “${c.text}”`
-                                            : `Send “${c.text}”`
-                                }
-                                onClick={() => onActivate(c)}
-                                data={{ "data-chat-suggest-chip": c.source, "data-chat-suggest-kind": c.kind }}
-                            />
-                        </motion.div>
-                    );
-                })}
-            </AnimatePresence>
+        // A box 560px wide or more (the Chat column) wraps the chips that do not fit onto a second line, so each shows
+        // whole up to its 340px; a narrower one (a float window, a cell of a split) keeps them on one line, where they
+        // shrink and a long one ends in …. A cut chip's whole text is in its tooltip and, once Tab picks it, in the
+        // box's line (pickedHint). The @container sits on the outer div: the row it queries is its own width.
+        <motion.div {...part} data-chat-suggest="" className="@container min-w-0">
+            <div className="flex min-w-0 flex-nowrap items-center gap-1.5 @min-[560px]:flex-wrap">
+                <AnimatePresence initial={false}>
+                    {chips.map((c) => {
+                        const ticks = c.kind === "done" && c.chunk != null;
+                        const goes = c.kind === "next" && c.chunk != null && canGoOn;
+                        const mark = chipIcon(c);
+                        return (
+                            <motion.div key={c.text} {...part} className="min-w-0 shrink">
+                                <Chip
+                                    icon={mark != null ? SUGGEST_ICONS[mark] : undefined}
+                                    label={c.text}
+                                    picked={c.text === picked}
+                                    armed={c.text === armed}
+                                    title={
+                                        c.text === armed
+                                            ? `Send “${c.text}” in place of the text in the box · Esc keeps your text`
+                                            : ticks
+                                              ? `Mark “${c.chunk}” done and move on to the next chunk`
+                                              : goes
+                                                ? `Move this agent to “${c.chunk}” and send “${c.text}”`
+                                                : `Send “${c.text}”`
+                                    }
+                                    onClick={() => onActivate(c)}
+                                    data={{ "data-chat-suggest-chip": c.source, "data-chat-suggest-kind": c.kind }}
+                                />
+                            </motion.div>
+                        );
+                    })}
+                </AnimatePresence>
+            </div>
         </motion.div>
     );
 }

@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Chat's suggested replies show in full when the message box is wide enough: the ones that do not fit go on a second
+  line instead of every chip being cut short with "…". A narrow box (a Float window, a cell of a split) keeps them on one line.
 - A Chat message holding tabs (a row pasted from a spreadsheet) no longer shows twice while the agent works: its
   Queued bubble now goes once the conversation holds it.
 - A question you answer in Chat no longer leaves a "Wants to use AskUserQuestion" card behind it, which held your
