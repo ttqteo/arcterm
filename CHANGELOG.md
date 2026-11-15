@@ -46,6 +46,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Chat's suggested replies no longer repeat one answer in other words ("build đi", "ok build đi"): each offers a
+  different choice.
 - In Float, Jarvis's hologram sits small in a fixed box at the ledge's right corner, with what waits on you as a badge:
   it no longer walks the floor, grows, drifts or stands over the Jobs chip when a heavy job shows.
 - Float's ledge holds its layout while a heavy job runs: the Jobs chip is its icon and count, and the tabs narrow

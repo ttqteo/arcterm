@@ -48,6 +48,18 @@ func TestParseSkipsNoneLongAndRepeated(t *testing.T) {
 	}
 }
 
+func TestParseKeepsOneOfRepliesThatSayTheSame(t *testing.T) {
+	// "build luôn rồi push không?" answered three ways that all say build
+	got := Parse("build di\nok build đi\nchưa push, build thôi\nBuild đi!", true)
+	want := []string{"build di", "chưa push, build thôi"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Parse = %q, want %q", got, want)
+	}
+	if got := Parse("ok\nOK nhé\nB", true); !reflect.DeepEqual(got, []string{"ok", "OK nhé", "B"}) {
+		t.Fatalf("Parse = %q: filler alone is its own reply", got)
+	}
+}
+
 func TestBuildPromptKeepsTheEndAndTheLastMessages(t *testing.T) {
 	reply := strings.Repeat("đầu câu trả lời\n", 200) + "Bạn chọn A, B hay C?"
 	recent := []string{"m1", "m2", "m3", "m4", "m5", "m6", "m7 with\na newline"}

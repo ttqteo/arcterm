@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/wavetermdev/waveterm/pkg/consult"
@@ -64,7 +65,7 @@ const systemPrompt = `You suggest what a person will send next to a coding agent
 
 Write each reply the way this person writes: their language and their short, casual wording, as in their messages. At most 60 characters each.
 
-When the agent's reply ends with a question, give up to 3 replies that answer it. First the answer the agent recommends, spelled out in full when the question asks several things (for example "B, và ẩn thẻ Pin"), then the other options it named. Never a bare "ok" or "yes" when the question offers options.
+When the agent's reply ends with a question, give up to 3 replies that answer it. First the answer the agent recommends, spelled out in full when the question asks several things (for example "B, và ẩn thẻ Pin"), then the other options it named. Each reply must pick a different answer: never two that say the same thing in other words ("build đi" and "ok build đi" are one answer). Fewer replies are better than repeats. Never a bare "ok" or "yes" when the question offers options.
 
 When it does not end with a question, give at most 1 reply, and only for a clear next step: one the agent offered, or a natural follow-up such as drawing a mockup of a layout it described in words, running the tests, or building. Never suggest commit or push: the app offers those itself. When no next step is clear, write NONE.
 
@@ -155,8 +156,8 @@ var (
 )
 
 // Parse reads the model's answer: one reply per line, numbering, bullets and quotes taken off, NONE and empty lines
-// skipped, a reply past replyRunes dropped (a cut reply would send half a sentence), the same reply kept once, and at
-// most three answers to a question or one next step. A next step never commits or pushes: the rules offer those.
+// skipped, a reply past replyRunes dropped (a cut reply would send half a sentence), the same reply kept once (sameReply:
+// "build di", "ok build đi" and "Build đi!" are one), and at most three answers to a question or one next step. A next step never commits or pushes: the rules offer those.
 func Parse(text string, question bool) []string {
 	limit := maxNext
 	if question {
@@ -173,7 +174,7 @@ func Parse(text string, question bool) []string {
 		if !question && commitPushRe.MatchString(s) {
 			continue
 		}
-		key := strings.ToLower(s)
+		key := sameReply(s)
 		if seen[key] {
 			continue
 		}
@@ -184,6 +185,28 @@ func Parse(text string, question bool) []string {
 		}
 	}
 	return out
+}
+
+// replyFiller is the words that change how a reply sounds, not what it answers: "ok build đi" says "build"
+var replyFiller = map[string]bool{
+	"ok": true, "oke": true, "okay": true, "okie": true, "yes": true, "uh": true, "um": true, "u": true, "vang": true,
+	"di": true, "thoi": true, "nhe": true, "nha": true, "luon": true, "nao": true, "please": true, "pls": true,
+}
+
+// sameReply is what counts as one reply twice: its words with the marks, case and punctuation taken off (HabitKey), less
+// the filler, in order. A reply of filler alone ("ok") is itself.
+func sameReply(s string) string {
+	words := strings.FieldsFunc(HabitKey(s), func(r rune) bool { return unicode.IsSpace(r) || unicode.IsPunct(r) })
+	kept := words[:0]
+	for _, w := range words {
+		if !replyFiller[w] {
+			kept = append(kept, w)
+		}
+	}
+	if len(kept) == 0 {
+		return HabitKey(s)
+	}
+	return strings.Join(kept, " ")
 }
 
 // Runner makes the one call: the prompt in, the model's whole answer out.
