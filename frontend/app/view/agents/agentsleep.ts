@@ -208,11 +208,16 @@ export function wakeErrorToast(name: string | undefined, e: unknown): void {
     });
 }
 
+/** What a Sleep did: "slept" (the server ended the process), "compacting" (it compacts first and sleeps once the summary
+ *  lands), "asked" (background work runs under the agent: nothing slept, a confirm opened in this window), "failed" (the
+ *  server refused; toasted) or "busy" (the agent is already falling asleep: nothing sent). */
+export type SleepOutcome = "slept" | "compacting" | "asked" | "failed" | "busy";
+
 // The agent stays marked (fallasleepstore) from the press until the roster reads it asleep: through the call, and
 // through the compaction the server may run first. A Sleep that did nothing (asked first, or failed) drops the mark.
-async function sleepNow(agent: Pick<AgentVM, "id" | "name">, force: boolean): Promise<void> {
+async function sleepNow(agent: Pick<AgentVM, "id" | "name">, force: boolean): Promise<SleepOutcome> {
     if (fallingAsleepOf(agent.id, false) != null) {
-        return;
+        return "busy";
     }
     setFallingAsleep(agent.id, "sleeping");
     try {
@@ -231,23 +236,26 @@ async function sleepNow(agent: Pick<AgentVM, "id" | "name">, force: boolean): Pr
                 destructive: true,
                 onConfirm: () => fireAndForget(() => sleepNow(agent, true)),
             });
-            return;
+            return "asked";
         }
         if (rtn?.compacting) {
             setFallingAsleep(agent.id, "compacting");
             pushToast({ title: compactingToastText(agent.name), message: "", level: "info" });
-            return;
+            return "compacting";
         }
         pushToast({ title: sleepToastText(agent.name, rtn?.freedbytes), message: "", level: "info" });
+        return "slept";
     } catch (e) {
         setFallingAsleep(agent.id, null);
         pushToast({ title: `Couldn't put ${agent.name} to sleep`, message: errorText(e), level: "error" });
+        return "failed";
     }
 }
 
-/** The one Sleep action (the row's menu, the Consumers panel): sleep the agent, or when background tasks run under it
- *  ask first and, once confirmed, sleep anyway. Toasts the result or the server's error; never rejects. */
-export function sleepWithConfirm(agent: Pick<AgentVM, "id" | "name">): Promise<void> {
+/** The one Sleep action (the row's menu, the Consumers panel, the Sidecar band): sleep the agent, or when background
+ *  tasks run under it ask first and, once confirmed, sleep anyway. Toasts the result or the server's error; never
+ *  rejects. Resolves to what happened (the callers that only act ignore it). */
+export function sleepWithConfirm(agent: Pick<AgentVM, "id" | "name">): Promise<SleepOutcome> {
     return sleepNow(agent, false);
 }
 

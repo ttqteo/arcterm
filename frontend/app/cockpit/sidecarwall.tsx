@@ -3,21 +3,55 @@
 //
 // The Sidecar wall: one tile per agent, fitted by count (spec 2026-11-13-sidecar-design.md, section 3; board
 // D-fit-by-count.dc.html), and the footer that lists its keys. It draws the snapshot it is given and sends SidecarActs;
-// it holds only the selection. The pure shape, selection and age rules are in sidecarwallmodel.ts, never a
-// sidecarwall.ts: Vite and TS resolve .ts before .tsx, so that name would shadow this file. Nothing here animates.
+// it holds the selection, whether the × hid the strain band, and each tile's loaded history (the rows scrolled up to).
+// The pure shape, selection, age and scrollback rules are in sidecarwallmodel.ts, never a sidecarwall.ts: Vite and TS
+// resolve .ts before .tsx, so that name would shadow this file. Nothing here animates. The page is storeless: this file
+// imports only the types, the pure models, the Tauri event API and React.
 
 import { cn } from "@/util/util";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { SidecarAct, SidecarMessage, SidecarSnapshot, SidecarTile, SidecarTileState } from "./sidecartypes";
+import { listen } from "@tauri-apps/api/event";
+import {
+    useCallback,
+    useEffect,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+    type CSSProperties,
+    type UIEvent,
+    type WheelEvent,
+} from "react";
+import { SidecarBand } from "./sidecarband";
+import { bandShows, nextHidden } from "./sidecarstrainmodel";
+import {
+    SIDECAR_OLDER_EVENT,
+    type SidecarAct,
+    type SidecarMessage,
+    type SidecarOlder,
+    type SidecarSnapshot,
+    type SidecarTile,
+    type SidecarTileState,
+    type StrainLevel,
+} from "./sidecartypes";
 import {
     ageText,
+    applyOlder,
     canAnswer,
+    EMPTY_HISTORY,
+    foldSlid,
+    markAsked,
     moveSelection,
     nameSizePx,
+    OLDER_COUNT,
+    olderRequest,
     resolveSelection,
+    returnedToBottom,
+    scrollEdges,
+    slidOut,
     WALL_GAP,
     wallKey,
     wallShape,
+    type TileHistory,
 } from "./sidecarwallmodel";
 
 export interface SidecarWallProps {
@@ -47,6 +81,11 @@ function innerBox(el: HTMLElement): { w: number; h: number } {
     };
 }
 
+// the histories without `id`'s (the same object when it has none)
+function without(all: Record<string, TileHistory>, id: string): Record<string, TileHistory> {
+    return all[id] == null ? all : Object.fromEntries(Object.entries(all).filter(([key]) => key !== id));
+}
+
 export function SidecarWall({ snap, receivedAt, clock, send }: SidecarWallProps) {
     const tiles = snap.tiles;
     const count = tiles.length;
@@ -54,22 +93,117 @@ export function SidecarWall({ snap, receivedAt, clock, send }: SidecarWallProps)
     const tileRefs = useRef(new Map<string, HTMLElement>());
     const [area, setArea] = useState({ w: 0, h: 0 });
 
+    // the strain band: a flex sibling above the wall, so the wall's box is already what the band leaves. The × hides it
+    // until its level differs from the one it was hidden at; `nextHidden` forgets the memory once the level changes or goes.
+    const strain = snap.strain;
+    const level = strain?.level ?? null;
+    const [hidden, setHidden] = useState<StrainLevel | null>(null);
+    const keptHidden = nextHidden(hidden, level);
+    if (keptHidden !== hidden) {
+        setHidden(keptHidden);
+    }
+    const showBand = strain != null && bandShows(level, keptHidden);
+
+    // the wall's inner box (its padding left out), read synchronously: `wallShape` below runs on the area the band leaves
+    const measureWall = useCallback(() => {
+        const el = wallRef.current;
+        if (el == null) {
+            return;
+        }
+        const { w, h } = innerBox(el);
+        setArea((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
+    }, []);
+
     useLayoutEffect(() => {
         const el = wallRef.current;
         if (el == null) {
             return;
         }
-        const measure = () => {
-            const { w, h } = innerBox(el);
-            setArea((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
-        };
-        measure();
-        const observer = new ResizeObserver(measure);
+        measureWall();
+        const observer = new ResizeObserver(measureWall);
         observer.observe(el);
         return () => observer.disconnect();
-    }, []);
+    }, [measureWall]);
+
+    // the band appearing or going changes the wall's height in this very commit: measure it before the first paint, so
+    // the tiles are never drawn at the shape of the wall without the band (the observer would only say so a frame later)
+    useLayoutEffect(() => {
+        measureWall();
+    }, [showBand, measureWall]);
 
     const shape = useMemo(() => wallShape(area.w, area.h, count), [area.w, area.h, count]);
+
+    // ---- scrollback: what each tile has loaded above the snapshot's rows (spec 3, decisions 5 and 6) ----
+    // `histRef` is the latest, written before the state is set, so two scroll events in a row see one request out
+    const [hist, setHist] = useState<Record<string, TileHistory>>({});
+    const histRef = useRef(hist);
+    const updateHist = useCallback((change: (all: Record<string, TileHistory>) => Record<string, TileHistory>) => {
+        const next = change(histRef.current);
+        if (next !== histRef.current) {
+            histRef.current = next;
+            setHist(next);
+        }
+    }, []);
+
+    // an answer to an older act: only the one in flight for its tile counts (applyOlder drops any other)
+    useEffect(() => {
+        const unlisten = listen<SidecarOlder>(SIDECAR_OLDER_EVENT, (e) => {
+            const a = e.payload;
+            updateHist((all) => {
+                const cur = all[a.id];
+                if (cur == null) {
+                    return all;
+                }
+                const next = applyOlder(cur, a);
+                return next === cur ? all : { ...all, [a.id]: next };
+            });
+        });
+        unlisten.catch((err) => console.error("sidecar: cannot listen for older rows", err));
+        return () => {
+            void unlisten.then((off) => off()).catch(() => {});
+        };
+    }, [updateHist]);
+
+    // an agent that left drops its history; while rows are loaded, the rows that slid off the top of the snapshot's window
+    // join them, so none goes missing between the loaded rows and the snapshot's
+    const prevRows = useRef(new Map<string, SidecarMessage[]>());
+    useLayoutEffect(() => {
+        const seen = new Map(tiles.map((t) => [t.id, t.messages]));
+        const before = prevRows.current;
+        prevRows.current = seen;
+        updateHist((all) => {
+            let next = all;
+            for (const [id, h] of Object.entries(all)) {
+                const rows = seen.get(id);
+                const prev = before.get(id);
+                if (rows == null) {
+                    next = without(next, id);
+                } else if (prev != null && prev !== rows) {
+                    const folded = foldSlid(h, slidOut(prev, rows));
+                    if (folded !== h) {
+                        next = { ...next, [id]: folded };
+                    }
+                }
+            }
+            return next;
+        });
+    }, [tiles, updateHist]);
+
+    const askOlder = useCallback(
+        (id: string) => {
+            const cur = histRef.current[id];
+            const request = olderRequest(cur);
+            if (request == null) {
+                return;
+            }
+            updateHist((all) => ({ ...all, [id]: markAsked(cur) }));
+            live.current.send({ kind: "older", id, before: request.before, count: OLDER_COUNT });
+        },
+        [updateHist]
+    );
+
+    // back at the bottom: what was loaded and its cursor are dropped (the page keeps only what is on screen)
+    const dropHistory = useCallback((id: string) => updateHist((all) => without(all, id)), [updateHist]);
 
     // the selection is an id, so it stays on its agent when the order changes; an agent that leaves moves it to the
     // tile now at the same index
@@ -147,6 +281,15 @@ export function SidecarWall({ snap, receivedAt, clock, send }: SidecarWallProps)
 
     return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {showBand && (
+                <SidecarBand
+                    strain={strain}
+                    machine={snap.machine}
+                    now={snap.now + Math.max(0, sinceArrived)}
+                    onHide={() => setHidden(level)}
+                    send={send}
+                />
+            )}
             <div
                 ref={wallRef}
                 data-sidecar-wall
@@ -175,6 +318,9 @@ export function SidecarWall({ snap, receivedAt, clock, send }: SidecarWallProps)
                             msgs={shape.msgs}
                             nameSize={nameSize}
                             fit={shape.scroll ? "floor" : count <= 4 ? "roomy" : "normal"}
+                            history={hist[tile.id]}
+                            onOlder={() => askOlder(tile.id)}
+                            onBottom={() => dropHistory(tile.id)}
                             tileRef={(el) => {
                                 if (el != null) {
                                     tileRefs.current.set(tile.id, el);
@@ -205,6 +351,9 @@ function Tile(props: {
     msgs: number;
     nameSize: number;
     fit: TileFit;
+    history: TileHistory | undefined;
+    onOlder: () => void;
+    onBottom: () => void;
     tileRef: (el: HTMLElement | null) => void;
     onSelect: () => void;
     onOpen: () => void;
@@ -213,7 +362,6 @@ function Tile(props: {
     const { tile, age, selected, msgs, fit } = props;
     const asking = tile.state === "asking";
     const dim = tile.state === "idle" || tile.state === "asleep";
-    const rows = tile.messages.slice(-msgs);
     // at the floor size an asking tile is all header, band and ask: no whole message row fits, and a cut one would only
     // be a sliver under the band, so it shows none
     const hideRows = fit === "floor" && asking;
@@ -255,26 +403,14 @@ function Tile(props: {
                     {age !== "" && <span className="ml-1.5 font-medium tracking-normal">{age}</span>}
                 </div>
             )}
-            {/* Newest at the bottom, whole rows only. The column fills from the bottom (column-reverse) and wraps what
-                does not fit into a second column that overflow clips, so a tile too short for every row drops its
-                oldest ones outright instead of showing one cut in half. The DOM stays oldest first; `order` puts the
-                newest at the bottom. */}
-            <div className="flex min-h-0 flex-1 flex-col-reverse flex-wrap content-start gap-2 overflow-hidden px-3 pt-2">
-                {hideRows ? null : rows.length === 0 ? (
-                    <div data-sidecar-nomsgs className="text-[12px] text-muted">
-                        No recent messages
-                    </div>
-                ) : (
-                    rows.map((m, i) => (
-                        <MessageRow
-                            key={i}
-                            m={m}
-                            order={rows.length - 1 - i}
-                            clamp={msgs <= 2 ? "line-clamp-2" : "line-clamp-3"}
-                        />
-                    ))
-                )}
-            </div>
+            <MessageList
+                rows={tile.messages}
+                history={props.history}
+                msgs={msgs}
+                hidden={hideRows}
+                onOlder={props.onOlder}
+                onBottom={props.onBottom}
+            />
             <div className="shrink-0 px-3 pb-2.5 pt-2">
                 {tile.ask != null ? (
                     <AskBlock tile={tile} fit={fit} onAnswer={props.onAnswer} />
@@ -286,10 +422,126 @@ function Tile(props: {
     );
 }
 
-function MessageRow({ m, clamp, order }: { m: SidecarMessage; clamp: string; order: number }) {
+// A tile's messages: the snapshot's rows (up to 8) in a list that scrolls, newest at the bottom. It sits at the bottom
+// on mount and while new rows arrive with it there, so the newest `msgs` show; a row at its top edge may be cut, which
+// says there is more above. Reaching the top asks for older rows (once per cursor while one is out); the answer's rows
+// join above the snapshot's, `data-sidecar-older`, and the view stays on the rows it showed. Coming back to the bottom
+// drops them. The list takes no focus: Enter and the arrows belong to the wall.
+function MessageList(props: {
+    rows: SidecarMessage[];
+    history: TileHistory | undefined;
+    msgs: number;
+    hidden: boolean;
+    onOlder: () => void;
+    onBottom: () => void;
+}) {
+    const { rows, msgs } = props;
+    const hist = props.history ?? EMPTY_HISTORY;
+    const listRef = useRef<HTMLDivElement>(null);
+    // at the bottom now, and at the previous scroll event (a return to the bottom drops the history, staying there does not)
+    const atBottom = useRef(true);
+    const wasBottom = useRef(true);
+    // the list's scrollHeight after the last layout, and the first loaded row it held: a page added above changes the
+    // first loaded row and pushes the content down by the difference, which the scroll position takes back. Rows that slid
+    // out of the snapshot's window into the loaded ones (foldSlid) keep it: they only move from one group to the other.
+    const lastHeight = useRef(0);
+    const lastFirst = useRef<SidecarMessage | undefined>(undefined);
+
+    useLayoutEffect(() => {
+        const el = listRef.current;
+        if (el == null) {
+            return;
+        }
+        const first = hist.rows[0];
+        if (first != null && first !== lastFirst.current && !atBottom.current) {
+            el.scrollTop += el.scrollHeight - lastHeight.current;
+        } else if (atBottom.current) {
+            el.scrollTop = el.scrollHeight;
+        }
+        lastFirst.current = first;
+        lastHeight.current = el.scrollHeight;
+    });
+
+    // a tile that resizes (the wall refitted) holds its bottom if it was there
+    useLayoutEffect(() => {
+        const el = listRef.current;
+        if (el == null) {
+            return;
+        }
+        const observer = new ResizeObserver(() => {
+            if (atBottom.current) {
+                el.scrollTop = el.scrollHeight;
+            }
+            lastHeight.current = el.scrollHeight;
+        });
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
+
+    const onScroll = (e: UIEvent<HTMLDivElement>) => {
+        const el = e.currentTarget;
+        const edges = scrollEdges(el.scrollTop, el.clientHeight, el.scrollHeight);
+        atBottom.current = edges.bottom;
+        if (returnedToBottom(wasBottom.current, edges.bottom) && props.history != null) {
+            props.onBottom();
+        }
+        wasBottom.current = edges.bottom;
+        if (edges.top && !edges.bottom) {
+            props.onOlder();
+        }
+    };
+    // a list with nothing to scroll sends no scroll event: the wheel pushing up at its top asks for older rows too
+    const onWheel = (e: WheelEvent<HTMLDivElement>) => {
+        const el = e.currentTarget;
+        if (e.deltaY < 0 && scrollEdges(el.scrollTop, el.clientHeight, el.scrollHeight).top) {
+            props.onOlder();
+        }
+    };
+
+    const clamp = msgs <= 2 ? "line-clamp-2" : "line-clamp-3";
+    const empty = rows.length === 0 && hist.rows.length === 0;
+    return (
+        <div
+            ref={listRef}
+            data-sidecar-msgs
+            tabIndex={-1}
+            onScroll={onScroll}
+            onWheel={onWheel}
+            // the scroll position is kept by hand above (a prepend, a refit), so the browser's own anchoring stays out of it
+            className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-3 pt-2 [overflow-anchor:none]"
+        >
+            {props.hidden ? null : empty ? (
+                <div data-sidecar-nomsgs className="text-[12px] text-muted">
+                    No recent messages
+                </div>
+            ) : (
+                // the first child's auto margin sits a short list at the bottom, and collapses to nothing once it overflows
+                <div className="mt-auto flex shrink-0 flex-col gap-2">
+                    {hist.start && (
+                        <div data-sidecar-history-start className="text-center text-[11px] text-muted">
+                            Start of what arcterm holds
+                        </div>
+                    )}
+                    {hist.rows.map((m, i) => (
+                        <MessageRow key={`o${i}`} m={m} clamp={clamp} older />
+                    ))}
+                    {rows.map((m, i) => (
+                        <MessageRow key={`s${i}`} m={m} clamp={clamp} />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function MessageRow({ m, clamp, older }: { m: SidecarMessage; clamp: string; older?: boolean }) {
     const tool = m.tool;
     return (
-        <div data-sidecar-msg style={{ order }} className="flex w-full min-w-0 shrink-0 flex-col gap-1">
+        <div
+            data-sidecar-msg
+            data-sidecar-older={older ? "" : undefined}
+            className="flex w-full min-w-0 shrink-0 flex-col gap-1"
+        >
             {m.say != null && m.say !== "" && (
                 <div className={cn("break-words text-[13px] leading-[1.4] text-primary", clamp)}>{m.say}</div>
             )}

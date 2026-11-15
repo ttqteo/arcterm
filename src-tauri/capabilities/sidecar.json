@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "sidecar",
-  "description": "Sidecar, the second window (spec 2026-11-13-sidecar-design.md): its events and the window calls its own title bar makes, nothing else. Its page boots no cockpit; opening an agent goes through sidecar:act to the main window. inner-size, set-size, set-position and set-always-on-top are for the S button (part 2); internal-toggle-maximize is the double click on the drag region.",
+  "description": "Sidecar, the second window (spec 2026-11-13-sidecar-design.md): its events and the window calls its own title bar makes, nothing else. Its page boots no cockpit; opening an agent goes through sidecar:act to the main window. The S button and the pin button are the host command sidecar_form, not window calls (an app command needs no entry here), so set-position and set-always-on-top are not granted; inner-size and set-size stay for the CDP scenario's own window calls; internal-toggle-maximize is the double click on the drag region.",
   "windows": ["sidecar"],
   "permissions": [
     "core:event:default",
@@ -13,8 +13,6 @@
     "core:window:allow-set-fullscreen",
     "core:window:allow-is-fullscreen",
     "core:window:allow-inner-size",
-    "core:window:allow-set-size",
-    "core:window:allow-set-position",
-    "core:window:allow-set-always-on-top"
+    "core:window:allow-set-size"
   ]
 }
