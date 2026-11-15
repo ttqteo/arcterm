@@ -12,6 +12,10 @@ import {
     foldFade,
     minimizeAction,
     minimizeChoice,
+    MORPH_FADE_FROM,
+    morphBox,
+    morphFade,
+    morphTransform,
     move,
     onReopen,
     onSurfaceChange,
@@ -244,5 +248,52 @@ describe("settleWithin", () => {
     it("ends a failed wait as done", async () => {
         const t = manualTimer();
         await expect(settleWithin(Promise.reject(new Error("gone")), 100, t.timer)).resolves.toBe("done");
+    });
+});
+
+describe("morphBox", () => {
+    it("is the frame's content box in the window's CSS px", () => {
+        expect(morphBox({ x: 2000, y: 1000, width: 1440, height: 920 }, { x: 0, y: 50 }, 2)).toEqual({
+            x: 1000,
+            y: 475,
+            width: 720,
+            height: 460,
+        });
+    });
+    it("reads a scale of zero as one", () => {
+        expect(morphBox({ x: 10, y: 20, width: 30, height: 40 }, { x: 0, y: 0 }, 0)).toEqual({
+            x: 10,
+            y: 20,
+            width: 30,
+            height: 40,
+        });
+    });
+});
+
+describe("morphTransform", () => {
+    it("draws the viewport into the box from its top-left", () => {
+        expect(morphTransform({ x: 1000, y: 475, width: 720, height: 460 }, { width: 1440, height: 920 })).toEqual({
+            x: 1000,
+            y: 475,
+            scaleX: 0.5,
+            scaleY: 0.5,
+        });
+    });
+    it("leaves a viewport with no size as it stands", () => {
+        expect(morphTransform({ x: 5, y: 5, width: 10, height: 10 }, { width: 0, height: 900 })).toEqual({
+            x: 0,
+            y: 0,
+            scaleX: 1,
+            scaleY: 1,
+        });
+    });
+});
+
+describe("morphFade", () => {
+    it("stays solid into the float and is gone at its end", () => {
+        expect(morphFade("float")).toEqual({ opacity: [1, 1, 0], times: [0, MORPH_FADE_FROM, 1] });
+    });
+    it("comes in early growing into Full", () => {
+        expect(morphFade("full")).toEqual({ opacity: [0, 1, 1], times: [0, 1 - MORPH_FADE_FROM, 1] });
     });
 });

@@ -85,6 +85,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Going from Full to Float and back no longer jumps: the window's content glides into the float's place and
+  grows back out of it, while the window changes size out of sight. Reduced motion keeps the instant switch.
 - Reply to selected text takes less room: in Chat and a council's Discussion the big Reply button under a selection is
   now a small ↩ at the end of its last line, so it no longer covers the line below. Right-clicking the selection also
   offers Reply (and Copy).
