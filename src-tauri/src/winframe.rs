@@ -85,14 +85,13 @@ pub fn hold_window_frame(held: bool) {
     HELD.store(held, Ordering::SeqCst);
 }
 
-fn keep<R: Runtime>(window: &WebviewWindow<R>) {
-    if HELD.load(Ordering::SeqCst) {
-        return;
-    }
+// The window as it is now; None while its position or size cannot be read. Sidecar keeps its own frame from the same
+// reading (sidecar.rs).
+pub fn seen<R: Runtime>(window: &WebviewWindow<R>) -> Option<Seen> {
     let (Ok(pos), Ok(size)) = (window.outer_position(), window.inner_size()) else {
-        return;
+        return None;
     };
-    let seen = Seen {
+    Some(Seen {
         x: pos.x,
         y: pos.y,
         width: size.width,
@@ -100,6 +99,15 @@ fn keep<R: Runtime>(window: &WebviewWindow<R>) {
         maximized: window.is_maximized().unwrap_or(false),
         minimized: window.is_minimized().unwrap_or(false),
         fullscreen: window.is_fullscreen().unwrap_or(false),
+    })
+}
+
+fn keep<R: Runtime>(window: &WebviewWindow<R>) {
+    if HELD.load(Ordering::SeqCst) {
+        return;
+    }
+    let Some(seen) = seen(window) else {
+        return;
     };
     let mut last = LAST.lock().unwrap();
     *last = next_frame(*last, seen);

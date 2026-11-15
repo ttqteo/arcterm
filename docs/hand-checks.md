@@ -15,6 +15,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) **Sidecar closes when the main window is destroyed, and stays when it is only hidden.** Tray icon off
   (Settings → `app:tray`): open Sidecar, close the main window → Sidecar closes with it and arcterm quits. Tray icon
   on: close the main window → it hides to the icon and Sidecar stays open; Quit from the icon closes both. Commit: same.
+- [ ] (arcterm) **Sidecar reopens as last time.** Unit tests of the state and the restore decision only: no scenario can
+  relaunch the app. With two screens, open Sidecar, drag or resize it, press F11 (or its full-screen button), then quit
+  arcterm (tray icon → Quit, and once by closing the main window with the tray icon off) → the next launch reopens
+  Sidecar on the same screen, at the same frame, full screen, without taking the focus from the main window. Close
+  Sidecar with its own close button, quit, launch → it stays shut. Quit with Sidecar maximized, unplug that screen,
+  launch → Sidecar comes up maximized on the main window's screen. Commit: feat(sidecar) Sidecar reopens as last time
 - [ ] (arcterm) **Part 1 of Sidecar has no release-build RAM measurement.** The dev prototype read about 80 MB for the
   slim page against the spec's 100 MB budget. Before part 2 merges, measure a `task tauri:build` with 12 agents
   running: Sidecar's renderer and GPU process in Task Manager (WebView2 processes with the Sidecar window open, minus
