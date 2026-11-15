@@ -6,6 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **The version names the commit it was built from.** Unit tests, the typecheck, and the dev Vite
+  server's `/@vite/env` (it served `__ARC_COMMIT__` from `ARC_BUILD_COMMIT`, and from git without it) only; no app ran.
+  `task tauri:build`, install → the footer's bottom right reads `v<version> · <short commit>` (the commit in the
+  installer's name in `releases/`, with no `-dirty`), its tooltip adds "commit <sha>", and Settings → About shows
+  the same under Commit. `task dev` with an uncommitted edit → `· <sha>-dirty`. Commit: feat(cockpit) "the version
+  names the commit the build was made from".
+
 - [ ] (arcterm) **An agent's run counts leave cancelled runs out.** Unit tests and the typecheck only; no dev app ran.
   From an agent, `wsh runs start` two runs, cancel one → that agent's row in the Agent sidebar shows the live run's
   chip (its progress such as `1/3`, or no words while it plans), not "2 runs", and its header reads "↳ <the live

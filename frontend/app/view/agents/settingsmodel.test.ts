@@ -340,7 +340,13 @@ describe("settings pages", () => {
             expect(cards[`storage/${cat}`]).toEqual([]);
         }
         expect(cards["storage/autoclean"]).toEqual(["storage.autoclean", "storage.nudge", "storage.canvasonship"]);
-        expect(cards["about/versions"]).toEqual(["about.app", "about.server", "about.buildtime", "about.platform"]);
+        expect(cards["about/versions"]).toEqual([
+            "about.app",
+            "about.commit",
+            "about.server",
+            "about.buildtime",
+            "about.platform",
+        ]);
         expect(cards["about/agents"]).toEqual(["about.harnesses", "about.updatecheck"]);
     });
 
@@ -350,8 +356,9 @@ describe("settings pages", () => {
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
         // today's 60, the nine rows the reorganization added, the two compaction rows, the pet's stay row, Chat's fold
-        // , the agent row's RAM, and the pet's form and hologram size, less the two Radar rows that went with Radar
-        expect(ids).toHaveLength(74 + RUNTIME_FLAGS.claude.length);
+        // , the agent row's RAM, the pet's form and hologram size, and About's build commit, less the two Radar rows
+        // that went with Radar
+        expect(ids).toHaveLength(75 + RUNTIME_FLAGS.claude.length);
     });
 
     it("finds moved rows by search", () => {
