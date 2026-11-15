@@ -18,3 +18,8 @@ export async function listen<T>(event: string, handler: (e: TauriEvent<T>) => vo
 export async function emit(event: string, payload?: unknown): Promise<void> {
     for (const h of [...(handlers.get(event) ?? [])]) h({ event, id: nextId++, payload });
 }
+
+// the browser app has one page and no other window, so a target is only a label here (the Sidecar bridge's emitTo)
+export async function emitTo(_target: string, event: string, payload?: unknown): Promise<void> {
+    await emit(event, payload);
+}

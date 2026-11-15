@@ -27,6 +27,7 @@ export const BROWSER_COMMANDS: readonly string[] = [
     "set_window_init_status",
     "app_foreground",
     "capture_webview",
+    "open_sidecar",
     "app_frame_action",
     "clipboard_text",
     ...NO_OPS,
@@ -51,6 +52,9 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
             return "ours" as T;
         case "capture_webview":
             throw new Error("window capture needs the Tauri host");
+        case "open_sidecar":
+            // Open Sidecar's toast shows this: a page has no second window to open
+            throw new Error("Sidecar is a window of the Tauri host");
         case "app_frame_action":
             return false as T; // a page cannot reach into a cross-origin frame: Home and the window's history stand in
         case "clipboard_text":

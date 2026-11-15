@@ -136,6 +136,11 @@ function assertNoConflicts(bindings: Binding[]) {
         const active = bindings.filter((b) => (b.when ? b.when(ctx) : true));
         const seen = new Map<string, string>();
         for (const b of active) {
+            // a binding with no chord is reached by name (the palette, a Try it) and no keypress matches it (matcher.ts):
+            // two of them share no key
+            if (b.keys === "") {
+                continue;
+            }
             const prev = seen.get(b.keys);
             if (prev != null) {
                 throw new Error(

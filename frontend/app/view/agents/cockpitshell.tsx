@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { SidecarBridge } from "@/app/cockpit/sidecarbridge";
 import { TrayBridge } from "@/app/cockpit/traybridge";
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { atoms } from "@/app/store/global-atoms";
@@ -222,6 +223,8 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
             <StorageNudge model={model} />
             {/* the menu bar / tray icon's count and its popover's feed: what waits can change while any surface shows */}
             <TrayBridge model={model} />
+            {/* the Sidecar window's feed and acts: it emits only while a Sidecar page is live */}
+            <SidecarBridge model={model} />
         </div>
     );
 }

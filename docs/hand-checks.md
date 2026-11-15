@@ -6,6 +6,31 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Sidecar's first open is maximized on the other screen.** Unit tests of the screen choice only; no
+  second screen was at hand. With two screens and the arcterm window on one, Ctrl+P → "Open Sidecar" → the Sidecar
+  window comes up maximized on the other screen (the larger one, with three), takes the title `arcterm Sidecar`
+  (`arcterm Sidecar (dev)` in a dev build), and un-maximizing leaves a 1280×800 window centred there (smaller on a
+  small screen, never past 90% of it). On a screen of a different scale from the main window's the size is still right.
+  With one screen it opens centred, not maximized. Commit: feat(sidecar) the Sidecar window from the Tauri host
+- [ ] (arcterm) **Sidecar closes when the main window is destroyed, and stays when it is only hidden.** Tray icon off
+  (Settings → `app:tray`): open Sidecar, close the main window → Sidecar closes with it and arcterm quits. Tray icon
+  on: close the main window → it hides to the icon and Sidecar stays open; Quit from the icon closes both. Commit: same.
+- [ ] (arcterm) **Sidecar reopens as last time.** Unit tests of the state and the restore decision only: no scenario can
+  relaunch the app. With two screens, open Sidecar, drag or resize it, press F11 (or its full-screen button), then quit
+  arcterm (tray icon → Quit, and once by closing the main window with the tray icon off) → the next launch reopens
+  Sidecar on the same screen, at the same frame, full screen, without taking the focus from the main window. Close
+  Sidecar with its own close button, quit, launch → it stays shut. Quit with Sidecar maximized, unplug that screen,
+  launch → Sidecar comes up maximized on the main window's screen. Commit: feat(sidecar) Sidecar reopens as last time
+- [ ] (arcterm) **Sidecar will not drag below 340×440.** The `sidecar-wall` scenario cannot check it: on Windows the
+  host's `min_inner_size` clamps a person dragging an edge, not a programmatic `set_size` (a live run set 200×200 and read
+  200×207 back), so step 2 only checks the page's own window calls. Open Sidecar, drag its bottom-right corner toward the
+  top-left → it stops at 340×440 and the wall still draws whole tiles (no tile under 300 px wide). Commit: test(sidecar)
+  the sidecar-wall CDP scenario
+- [ ] (arcterm) **Part 1 of Sidecar has no release-build RAM measurement.** The dev prototype read about 80 MB for the
+  slim page against the spec's 100 MB budget. Before part 2 merges, measure a `task tauri:build` with 12 agents
+  running: Sidecar's renderer and GPU process in Task Manager (WebView2 processes with the Sidecar window open, minus
+  with it closed), at open and after 15 minutes, and log the figure in open-issues.md's "RAM watch".
+
 - [ ] (arcterm) **The version names the commit it was built from.** Unit tests, the typecheck, and the dev Vite
   server's `/@vite/env` (it served `__ARC_COMMIT__` from `ARC_BUILD_COMMIT`, and from git without it) only; no app ran.
   `task tauri:build`, install → the footer's bottom right reads `v<version> · <short commit>` (the commit in the

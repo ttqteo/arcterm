@@ -3,7 +3,9 @@
 
 /* Tailwind entry for the Tauri cockpit. Re-exports the shared setup and adds @source so Tailwind v4
    scans the cockpit's source trees (the Tauri vite root is frontend/tauri/, so automatic detection
-   would otherwise miss frontend/app/** and frontend/layout/**). Mirrors preview/preview.css. */
+   would otherwise miss frontend/app/** and frontend/layout/**). Mirrors preview/preview.css. The last @source names the
+   pages in this folder (tray.tsx, sidecar.tsx) outright, so their own classes do not rest on automatic detection. */
 @import "../tailwindsetup.css";
 @source "../app";
 @source "../layout";
+@source "./*.tsx";

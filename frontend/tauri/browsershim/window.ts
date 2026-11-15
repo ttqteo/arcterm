@@ -83,6 +83,11 @@ export function getCurrentWindow(): Window {
     return current as unknown as Window;
 }
 
+// the browser app has the one page and no other window
+export async function getAllWindows(): Promise<Window[]> {
+    return [getCurrentWindow()];
+}
+
 export async function cursorPosition(): Promise<PhysicalPosition> {
     return origin();
 }
