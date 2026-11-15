@@ -89,7 +89,7 @@ import {
 import { flushSync } from "react-dom";
 import { Chip } from "./chatcomposer";
 import { usePartMotion } from "./chatfooter";
-import { QuoteButton, type QuoteTarget } from "./chatquotebutton";
+import { QuoteMenu, type QuoteTarget } from "./chatquotemenu";
 import { suggestTake } from "./chatsuggest";
 import type { Actions } from "./councilactions";
 import {
@@ -3781,8 +3781,8 @@ export function CouncilChat({
         [chats, onOpenTerminal, onReopenSession]
     );
     const channel = useRef<HTMLDivElement>(null);
-    // Reply under text selected in the chat (chatquotebutton.tsx): the quote goes into the box of the thread it was
-    // selected in, else the channel's
+    // Reply on the right-click menu of text selected in the chat (chatquotemenu.tsx): the quote goes into the box of
+    // the thread it was selected in, else the channel's
     const root = useRef<HTMLDivElement>(null);
     const setQuoteDrafts = useSetAtom(councilChatDraftAtom(c.id));
     const quoteTarget = useMemo<QuoteTarget>(() => {
@@ -4052,7 +4052,7 @@ export function CouncilChat({
     return (
         <SeatLinks.Provider value={seatLinks}>
             <div ref={root} className="flex min-h-0 flex-1">
-                <QuoteButton rootRef={root} target={quoteTarget} />
+                <QuoteMenu rootRef={root} target={quoteTarget} />
                 <div data-council-main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                     {!railShown && !sourcesOpen && (
                         <button

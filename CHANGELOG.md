@@ -77,6 +77,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Reply to selected text moved to the right-click menu: in Chat and a council's Discussion, right-click the text you
+  selected and pick Reply (or Copy). No button pops up over the conversation each time you select something.
 - Jarvis's initiatives stop jumping around while you look at them: the order is set when you open Jarvis, and one
   that changes after that keeps its place and gets a dot instead. Leave Jarvis and come back to re-sort.
 - Finished initiatives no longer count in Jarvis's "Pinned N of M": the heading says how many are done, and the

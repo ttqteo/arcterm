@@ -47113,9 +47113,10 @@ const chatFork = {
     },
 };
 
-// --- chat-quote: Reply to a passage (chatquote.ts, chatquotebutton.tsx). Text selected in Chat's conversation shows a
-// Reply button under it; a click puts the passage in the message box as a `> ` quote with a blank line under it, keeps
-// what was typed, and stacks a second quote under the first. A selection in the box itself shows no button.
+// --- chat-quote: Reply to a passage (chatquote.ts, chatquotemenu.tsx). A right-click on text selected in Chat's
+// conversation opens a menu of Reply and Copy; Reply puts the passage in the message box as a `> ` quote with a blank
+// line under it, keeps what was typed, and stacks a second quote under the first. A right-click on a row with nothing
+// selected keeps the row's own menu (Copy text…), with no Reply.
 
 const CQ_NAME = "quote source";
 const CQ_QUESTIONS = ["is the oracle checked by hand?", "how do I check it by hand?"];
@@ -47187,7 +47188,8 @@ const chatQuote = {
         const A = ctx.tabs.main.tabId;
         const you = (n) => `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-you]')[${n}]`;
         const prose = (n) => `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-prose]')[${n}]`;
-        const btn = `document.querySelector("[data-chat-quote]")`;
+        const btn = `document.querySelector("[data-context-menu] [data-chat-quote]")`;
+        const menuOpen = `!!document.querySelector("[data-context-menu]")`;
         const boxText = () =>
             AC.agentPage(h, `const I = await mod("app/view/agents/chatinsert.ts"); return I.chatBoxText(${JSON.stringify(A)});`);
         // selects `phrase` inside the element (or its whole text when null) as a drag would; true when it was found
@@ -47216,7 +47218,25 @@ const chatQuote = {
                 }
                 return false;
             })()`);
-        // a real press and release on the button: its mousedown must keep the selection for the click to read
+        // a real right-click at (x, y): the press is what the menu reads the selection from
+        const rightClickAt = async (at) => {
+            if (at == null) return false;
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(at.x), y: Math.round(at.y) });
+            for (const type of ["mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: Math.round(at.x), y: Math.round(at.y), button: "right", clickCount: 1 });
+            }
+            return true;
+        };
+        // right-clicks the middle of the selection's first line, then waits for the menu's Reply
+        const openReply = async () => {
+            const at = await h.ev(`(() => {
+                const s = window.getSelection();
+                const r = s.rangeCount ? s.getRangeAt(0).getClientRects()[0] : null;
+                return r ? { x: r.left + Math.min(r.width / 2, 40), y: r.top + r.height / 2 } : null;
+            })()`);
+            return (await rightClickAt(at)) && (await polishWaitFor(h, `!!${btn}`, 3000));
+        };
+        // a real press and release on the menu's Reply
         const pressButton = async () => {
             const at = await h.ev(caCenter(btn));
             if (at == null) return false;
@@ -47235,38 +47255,39 @@ const chatQuote = {
             );
             const before = await boxText();
 
-            // 1. selecting a passage of Claude's reply shows Reply just under the selection
+            // 1. a right-click on a selected passage of Claude's reply opens a menu with Reply and Copy, and no
+            // floating button shows under a selection
             const sel1 = await select(prose(0), CQ_PASSAGE);
-            const up1 = await polishWaitFor(h, `!!${btn}`, 3000);
-            const place1 = await h.ev(`(() => {
-                const b = ${btn}?.getBoundingClientRect();
-                const r = window.getSelection().rangeCount ? window.getSelection().getRangeAt(0).getBoundingClientRect() : null;
-                return b && r ? { below: b.top >= r.bottom && b.top - r.bottom < 20, label: ${btn}.textContent.trim() } : null;
-            })()`);
             await polishNap(300);
-            await h.shot("cdp-shots/chat-quote-1-button.png");
+            const noFloat1 = await h.ev(`!document.querySelector("[data-chat-quote]")`);
+            const up1 = await openReply();
+            const menu1 = await h.ev(
+                `[...document.querySelectorAll("[data-context-menu] [data-menu-item]")].map((el) => el.getAttribute("data-menu-item"))`
+            );
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-quote-1-menu.png");
             rec(
-                "1. selecting a passage of Claude's reply shows a Reply button just under the selection (the box starts empty)",
-                loaded && before === "" && sel1 && up1 && place1?.below === true && place1?.label === "Reply",
-                { loaded, before, sel1, up1, place1 }
+                "1. right-clicking a selected passage of Claude's reply opens Reply and Copy (no floating button; the box starts empty)",
+                loaded && before === "" && sel1 && noFloat1 === true && up1 && JSON.stringify(menu1) === JSON.stringify(["Reply", "Copy"]),
+                { loaded, before, sel1, noFloat1, up1, menu1 }
             );
 
-            // 2. pressing Reply puts the passage in the box as a quote, a blank line under it; the selection and the button go
+            // 2. pressing Reply puts the passage in the box as a quote, a blank line under it; the selection and the menu go
             const pressed2 = await pressButton();
-            const gone2 = await polishWaitFor(h, `!${btn}`, 3000);
+            const gone2 = await polishWaitFor(h, `!${menuOpen}`, 3000);
             const text2 = await boxText();
             const cleared2 = await h.ev(`window.getSelection().isCollapsed`);
             await polishNap(300);
             await h.shot("cdp-shots/chat-quote-2-box.png");
             rec(
-                "2. pressing Reply puts `> <passage>` and a blank line in the message box, and the selection and the button go",
+                "2. pressing Reply puts `> <passage>` and a blank line in the message box, and the selection and the menu go",
                 pressed2 && gone2 && text2 === `> ${CQ_PASSAGE}\n\n` && cleared2 === true,
                 { pressed2, gone2, text2, cleared2 }
             );
 
             // 3. a passage of your own message stacks under the first quote
             const sel3 = await select(you(1), CQ_QUESTIONS[1]);
-            const up3 = await polishWaitFor(h, `!!${btn}`, 3000);
+            const up3 = await openReply();
             const pressed3 = up3 && (await pressButton());
             const text3 = await boxText();
             rec(
@@ -47277,7 +47298,7 @@ const chatQuote = {
 
             // 4. a reply of two paragraphs keeps one bare `>` between them
             const sel4 = await select(prose(0), null);
-            const up4 = await polishWaitFor(h, `!!${btn}`, 3000);
+            const up4 = await openReply();
             const pressed4 = up4 && (await pressButton());
             const text4 = await boxText();
             const quoted4 = text4.slice(`> ${CQ_PASSAGE}\n\n> ${CQ_QUESTIONS[1]}\n\n`.length);
@@ -47287,20 +47308,22 @@ const chatQuote = {
                 { sel4, up4, pressed4, quoted4 }
             );
 
-            // 5. text selected in the message box itself shows no button
-            const sel5 = await h.ev(`(() => {
-                const box = document.querySelector('[data-agent-chat="${A}"] [data-chat-input]');
-                if (!box) return false;
-                const range = document.createRange();
-                range.selectNodeContents(box);
-                const sel = window.getSelection();
-                sel.removeAllRanges();
-                sel.addRange(range);
-                return !sel.isCollapsed;
-            })()`);
-            await polishNap(400);
-            const none5 = await h.ev(`!${btn}`);
-            rec("5. text selected in the message box shows no Reply button", sel5 && none5 === true, { sel5, none5 });
+            // 5. a right-click on a row with nothing selected keeps the row's own menu, with no Reply
+            await h.ev(`window.getSelection().removeAllRanges()`);
+            await polishWaitFor(h, `!${menuOpen}`, 3000);
+            const at5 = await h.ev(caCenter(prose(1)));
+            const clicked5 = await rightClickAt(at5);
+            const open5 = await polishWaitFor(h, menuOpen, 3000);
+            const menu5 = await h.ev(
+                `[...document.querySelectorAll("[data-context-menu] [data-menu-item]")].map((el) => el.getAttribute("data-menu-item"))`
+            );
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+            rec(
+                "5. right-clicking a row with nothing selected opens the row's own menu (Copy text), with no Reply",
+                clicked5 && open5 && Array.isArray(menu5) && menu5.includes("Copy text") && !menu5.includes("Reply"),
+                { clicked5, open5, menu5 }
+            );
         } catch (e) {
             rec("the scenario threw", false, String(e?.stack ?? e));
         }
