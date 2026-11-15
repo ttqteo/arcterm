@@ -311,9 +311,9 @@ fn find_wsh_binary_for(bin_dir: &std::path::Path, version: &str) -> Option<PathB
     best.map(|(_, p)| p)
 }
 
-// Fire-and-forget: idempotently provision arcterm's Claude Code hooks into the user's
-// ~/.claude/settings.json. Runs every launch; wsh does the idempotent merge. Any
-// failure is ignored — a missing hook only means degraded cockpit display.
+// Idempotently provision arcterm's Claude Code hooks into the user's ~/.claude/settings.json.
+// Runs every launch; wsh does the idempotent merge. A failure only means degraded cockpit
+// display, so it is logged to waveapp.log, never raised.
 fn install_agent_hooks(app_path: &std::path::Path, child_path: Option<&str>) {
     let bin = app_path.join("bin");
     let Some(wsh) = find_wsh_binary(&bin) else {
@@ -324,19 +324,38 @@ fn install_agent_hooks(app_path: &std::path::Path, child_path: Option<&str>) {
     if let Some(path) = child_path {
         cmd.env("PATH", path);
     }
+    // stderr is captured by output(): it says why an install failed (a settings.json that does not parse)
     cmd.arg("install-agent-hooks")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdin(Stdio::null())
+        .stdout(Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    match cmd.spawn() {
-        Ok(_) => applog::log_line(&format!("[tauri] triggered agent-hooks install via {:?}", wsh)),
+    applog::log_line(&format!("[tauri] triggered agent-hooks install via {:?}", wsh));
+    // wsh runs on its own thread so the launch never waits on it
+    std::thread::spawn(move || match cmd.output() {
+        Ok(out) => {
+            if let Some(line) = hook_install_failure(out.status, &out.stderr) {
+                applog::log_line(&line);
+            }
+        }
         Err(e) => applog::log_line(&format!("[tauri] agent-hooks install spawn failed: {}", e)),
+    });
+}
+
+// the waveapp.log line for a finished hook install; None when it succeeded
+fn hook_install_failure(status: std::process::ExitStatus, stderr: &[u8]) -> Option<String> {
+    if status.success() {
+        return None;
     }
+    Some(format!(
+        "[tauri] agent-hooks install failed ({}): {}",
+        status,
+        String::from_utf8_lossy(stderr).trim()
+    ))
 }
 
 // Clears the webview cache when Settings → Storage asked for it (webcache.rs). Runs before the builder, since the
@@ -644,6 +663,24 @@ fn show_behind_foreground(win: &tauri::WebviewWindow) {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn a_failed_hook_install_is_logged_with_its_stderr() {
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+        #[cfg(windows)]
+        use std::os::windows::process::ExitStatusExt;
+        use std::process::ExitStatus;
+        // a unix wait status carries the exit code in its high byte; a Windows one is the code itself
+        let code = |n: i32| ExitStatus::from_raw(if cfg!(windows) { n } else { n << 8 } as _);
+        let ok = code(0);
+        let failed = code(1);
+        assert_eq!(hook_install_failure(ok, b"anything"), None);
+        let line = hook_install_failure(failed, b"parsing settings.json: invalid character\r\n").unwrap();
+        assert!(line.starts_with("[tauri] agent-hooks install failed ("), "{line}");
+        assert!(line.contains(&failed.to_string()), "{line}");
+        assert!(line.ends_with("parsing settings.json: invalid character"), "{line}");
+    }
 
     #[test]
     fn finds_versioned_wsh_binary() {
