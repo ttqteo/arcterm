@@ -71,6 +71,14 @@ function InitiativeListRow({
             ) : null}
             <span title={face.title} className="flex min-w-0 items-baseline gap-1.5">
                 <span className="truncate text-[12.5px] font-semibold text-ink-hi">{face.title}</span>
+                {face.moved ? (
+                    <span
+                        aria-label="Changed since you opened Jarvis"
+                        title="Changed since you opened Jarvis"
+                        data-jarvis-initiative-moved
+                        className="size-1.5 flex-none self-center rounded-full bg-accent"
+                    />
+                ) : null}
                 <span data-jarvis-initiative-meta className="min-w-0 flex-none truncate text-[11px] text-muted">
                     · {face.meta}
                 </span>

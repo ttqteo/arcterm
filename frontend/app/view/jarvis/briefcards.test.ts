@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
     cardFace,
-    countLive,
     countPinned,
+    isDoneInitiative,
     LIST_CAP,
     listAfterCards,
     listRowFace,
@@ -137,8 +137,41 @@ describe("the heading", () => {
             idea("i"),
             card("d", { status: "paused" }),
         ];
-        expect([countPinned(cards), countLive(cards)]).toEqual([1, 3]);
-        expect(pinnedHeading(countPinned(cards), countLive(cards))).toBe("Pinned 1 of 3");
+        expect(countPinned(cards)).toBe(1);
+        expect(pinnedHeading(cards)).toBe("Pinned 1 of 3");
+    });
+
+    it("leaves the done ones out of M and names them after it, a done pin still a card", () => {
+        const allDone = [
+            { label: "One", status: "done" },
+            { label: "Two", status: "done" },
+        ];
+        const cards: EffortCardModel[] = [
+            card("a", { pinnedts: 5 }),
+            card("b"),
+            card("c", { status: "completed" }),
+            card("d", { pinnedts: 6 }, allDone),
+        ];
+        expect(pinnedHeading(cards)).toBe("Pinned 1 of 2 · 2 done");
+        // the grid still holds the done pin, so the pin slot counts it
+        expect(countPinned(cards)).toBe(2);
+        expect(orefs(pinnedCards(cards, cards))).toEqual(["a", "d"]);
+    });
+});
+
+describe("isDoneInitiative", () => {
+    it("is done when marked completed or when every chunk is done; a topic with no chunks of its own is not", () => {
+        const allDone = [{ label: "One", status: "done" }];
+        expect(isDoneInitiative(card("a", { status: "completed" }))).toBe(true);
+        expect(isDoneInitiative(card("b", {}, allDone))).toBe(true);
+        expect(isDoneInitiative(card("c"))).toBe(false);
+        const topic: EffortCardModel = { ...card("t", {}, []), topic: true };
+        expect(isDoneInitiative(topic)).toBe(false);
+    });
+
+    it("keeps a done initiative out of the fallback cards", () => {
+        const cards = [card("a", { status: "completed" }), card("b"), card("c")];
+        expect(orefs(pinnedCards(cards, cards))).toEqual(["b", "c"]);
     });
 
     it("offers the Pin an initiative slot only while one to five are pinned", () => {
@@ -155,6 +188,12 @@ describe("cardFace", () => {
         expect([f.noteLabel, f.note]).toEqual(["Next", "Two"]);
         expect(f.segments).toEqual(["done", "pending"]);
         expect(f.pinned).toBe(false);
+    });
+
+    it("says done for a finished initiative, and wears the moved dot only when asked", () => {
+        const f = cardFace(card("a", { status: "completed" }), { now: NOW, moved: true });
+        expect([f.status, f.moved]).toEqual([{ text: "✓ done", tone: "muted" }, true]);
+        expect(cardFace(card("b"), { now: NOW }).moved).toBe(false);
     });
 
     it("says no project when there is none, and is pinned when the effort says so", () => {

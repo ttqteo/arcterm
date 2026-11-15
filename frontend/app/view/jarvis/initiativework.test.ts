@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
     chunkPrompt,
     dueChunkPrompt,
+    holdOrder,
     initiativeLinkText,
     initiativeResume,
     noteStamp,
@@ -202,6 +203,31 @@ describe("orderInitiatives", () => {
             "effort:new",
             "effort:old",
             "effort:paused",
+        ]);
+    });
+});
+
+describe("holdOrder", () => {
+    const rows = (...ids: string[]) => ids.map((oref) => ({ oref }));
+    const ids = (r: { rows: { oref: string }[] }) => r.rows.map((c) => c.oref);
+
+    it("takes the order given when nothing is held yet", () => {
+        const r = holdOrder([], rows("b", "a", "c"));
+        expect([ids(r), r.held]).toEqual([
+            ["b", "a", "c"],
+            ["b", "a", "c"],
+        ]);
+    });
+
+    it("keeps every row's place when the order under it changes", () => {
+        expect(ids(holdOrder(["b", "a", "c"], rows("c", "a", "b")))).toEqual(["b", "a", "c"]);
+    });
+
+    it("puts a new one first and drops one that went away", () => {
+        const r = holdOrder(["b", "a", "c"], rows("a", "n", "c"));
+        expect([ids(r), r.held]).toEqual([
+            ["n", "a", "c"],
+            ["n", "a", "c"],
         ]);
     });
 });

@@ -77,6 +77,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Jarvis's initiatives stop jumping around while you look at them: the order is set when you open Jarvis, and one
+  that changes after that keeps its place and gets a dot instead. Leave Jarvis and come back to re-sort.
+- Finished initiatives no longer count in Jarvis's "Pinned N of M": the heading says how many are done, and the
+  done ones leave the cards and the list for a "Show N done" button under it. A pinned one stays a card.
 - Jarvis set to the hologram now shows as the hologram in Float too, on the float bar where Sprout would stand, and
   when the window folds, in Sprout's place on your screen. Before, both kept Sprout.
 - The Cockpit, Jarvis, Diff and Setup move on the same smooth spring as Chat: rows and cards open and fold instead of

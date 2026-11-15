@@ -28,6 +28,18 @@ function isLive(c: Pinnable): boolean {
     return c.status !== "archived" && !isIdea(c as EffortCardModel);
 }
 
+// finished: marked completed, or every chunk done though nobody marked it (initiativepickermodel reads it the same way).
+// A done initiative leaves the count, the fallback cards and the list, and waits behind "Show N done"; a pinned one
+// stays a card until you archive or unpin it.
+export function isDoneInitiative(c: Pick<EffortCardModel, "status" | "done" | "remaining">): boolean {
+    return c.status === "completed" || c.status === "done" || (c.remaining === 0 && c.done > 0);
+}
+
+// a live tracker that still has work in it
+function isOpen(c: Pinnable): boolean {
+    return isLive(c) && !isDoneInitiative(c);
+}
+
 // The card set. Once any live initiative is pinned, the cards are the pins only, oldest pin first (pin order); with
 // none pinned, the first six of `ordered` (orderInitiatives' order). A pin can outnumber the grid only when two machines
 // pinned at once and the vault merged both: the oldest six win.
@@ -39,21 +51,21 @@ export function pinnedCards<T extends Pinnable>(cards: T[], ordered: T[]): T[] {
         return pins.slice(0, MAX_PINNED);
     }
     // a topic stays in the list, where its sub-initiatives hang under it: as a card it would show no progress
-    return ordered.filter((c) => isLive(c) && c.topic !== true).slice(0, FALLBACK_CARDS);
+    return ordered.filter((c) => isOpen(c) && c.topic !== true).slice(0, FALLBACK_CARDS);
 }
 
-// N in "Pinned N of M": the live pins
+// the live pins: the cards the grid holds, a done one included (what showPinSlot reads)
 export function countPinned(cards: Pinnable[]): number {
     return cards.filter((c) => isLive(c) && c.pinnedTs > 0).length;
 }
 
-// M in "Pinned N of M": the live initiatives, ideas and archived ones left out
-export function countLive(cards: Pinnable[]): number {
-    return cards.filter(isLive).length;
-}
-
-export function pinnedHeading(pinnedCount: number, liveCount: number): string {
-    return `Pinned ${pinnedCount} of ${liveCount}`;
+// "Pinned N of M · K done": M the initiatives with work left (ideas, archived and done ones out), N the pins among them,
+// K the done ones, said only when there are any
+export function pinnedHeading(cards: Pinnable[]): string {
+    const open = cards.filter(isOpen);
+    const pinned = open.filter((c) => c.pinnedTs > 0).length;
+    const done = cards.filter((c) => isLive(c) && isDoneInitiative(c)).length;
+    return `Pinned ${pinned} of ${open.length}` + (done > 0 ? ` · ${done} done` : "");
 }
 
 // the quiet "Pin an initiative" slot closes a grid that has room for another pin; with no pins the fallback fills it
@@ -132,6 +144,8 @@ export type InitiativeFace = {
     subCount: number;
     // what the action button does: Work on (a new agent) or Go to agent (one is open on it); absent without a resume
     action?: InitiativeResume["kind"];
+    // changed since the Brief took its order: a dot by the title, where a re-sort would have moved the row
+    moved: boolean;
 };
 
 export type FaceInput = {
@@ -140,6 +154,8 @@ export type FaceInput = {
     resume?: InitiativeResume;
     // "idle 2w" when the review model says it sat idle
     idle?: string;
+    // it moved after the Brief took its order (holdOrder): it keeps its place and wears a dot instead of jumping
+    moved?: boolean;
 };
 
 function lastMoved(card: EffortCardModel): string {
@@ -154,6 +170,9 @@ function statusCell(card: EffortCardModel, input: FaceInput): StatusCell {
     }
     if (input.resume?.kind === "go") {
         return { text: "● agent open", tone: "ok" };
+    }
+    if (isDoneInitiative(card)) {
+        return { text: "✓ done", tone: "muted" };
     }
     if (card.status === "paused") {
         return { text: "paused", tone: "muted" };
@@ -184,6 +203,7 @@ function face(card: EffortCardModel, meta: string, depth: number, subCount: numb
         depth,
         subCount,
         ...(input.resume != null ? { action: input.resume.kind } : {}),
+        moved: input.moved === true,
     };
 }
 

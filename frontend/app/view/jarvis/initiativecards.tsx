@@ -195,7 +195,17 @@ function InitiativeCard({
                     >
                         {face.title}
                     </span>
-                    <span className="truncate text-[11px] text-muted">{face.meta}</span>
+                    <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted">
+                        {face.moved ? (
+                            <span
+                                aria-label="Changed since you opened Jarvis"
+                                title="Changed since you opened Jarvis"
+                                data-jarvis-initiative-moved
+                                className="size-1.5 flex-none self-center rounded-full bg-accent"
+                            />
+                        ) : null}
+                        <span className="truncate">{face.meta}</span>
+                    </span>
                 </div>
                 <PinButton face={face} shown={focused} onPin={actions.onPin} className="-mr-1 -mt-0.5" />
             </div>

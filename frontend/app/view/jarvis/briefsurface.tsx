@@ -90,8 +90,8 @@ import {
 } from "./briefactivity";
 import {
     cardFace,
-    countLive,
     countPinned,
+    isDoneInitiative,
     listAfterCards,
     listRowFace,
     listWindow,
@@ -206,7 +206,7 @@ import { InitiativePicker } from "./initiativepicker";
 import { descendantOrefs } from "./initiativepickermodel";
 import { InitiativeChunkList, InitiativeSheetHead } from "./initiativesheet";
 import { initiativeSheetOpenAtom, openInitiativeChunk } from "./initiativesheetstore";
-import { initiativeResume, openAgentFor, orderInitiatives, shortDate } from "./initiativework";
+import { holdOrder, initiativeResume, openAgentFor, orderInitiatives, shortDate } from "./initiativework";
 import { workOnDueChunk, workOnInitiative } from "./initiativeworkaction";
 import {
     briefCursorInitiativeAtom,
@@ -761,6 +761,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
 
     // archived initiatives come off the effort list, not the briefing, and show only on request
     const [showArchived, setShowArchived] = useState(false);
+    // the done ones (isDoneInitiative) leave the list for the same kind of fold
+    const [showDone, setShowDone] = useState(false);
     // the Ideas column's inline input
     const [jot, setJot] = useState("");
     const archivedSummaries = useAtomValue(archivedEffortsAtom);
@@ -782,8 +784,11 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     // the project tabs narrow the list only: the cards always show
     const [pickedProject, setPickedProject] = useAtom(briefInitiativeProjectAtom);
     const projectCards = useMemo(
-        () => (showArchived ? [...effortGroups.trackers, ...archivedKept] : effortGroups.trackers),
-        [effortGroups, archivedKept, showArchived]
+        () => [
+            ...effortGroups.trackers.filter((c) => showDone || !isDoneInitiative(c)),
+            ...(showArchived ? archivedKept : []),
+        ],
+        [effortGroups, archivedKept, showArchived, showDone]
     );
     const projectOptions = useMemo(() => initiativeProjects(projectCards), [projectCards]);
     const perProject = useMemo(() => projectCounts(projectCards), [projectCards]);
@@ -970,22 +975,35 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
 
     // --- Initiatives: the cards (the pins, else the first six in order) and the list of the rest (briefcards.ts) -----
     const liveCards = useMemo(() => new Map(efforts.map((e) => [e.oref, e])), [efforts]);
-    const ordered = useMemo(() => orderInitiatives(effortGroups.trackers, agents), [effortGroups, agents]);
+    // the order taken when the Brief opened and held while it stays open (holdOrder), and the time it was taken: what
+    // moves after it keeps its place and wears a dot
+    const heldOrder = useRef<string[]>([]);
+    const [heldAt] = useState(() => Date.now());
+    const ordered = useMemo(() => {
+        const r = holdOrder(heldOrder.current, orderInitiatives(effortGroups.trackers, agents));
+        heldOrder.current = r.held;
+        return r.rows;
+    }, [effortGroups, agents]);
     const cardSet = useMemo(
         () => pinnedCards([...effortGroups.trackers, ...archivedKept], ordered),
         [effortGroups, archivedKept, ordered]
     );
     const allTrackers = useMemo(() => [...effortGroups.trackers, ...archivedKept], [effortGroups, archivedKept]);
     const pinnedN = countPinned(allTrackers);
-    const heading = pinnedHeading(pinnedN, countLive(allTrackers));
+    const heading = pinnedHeading(allTrackers);
     // the live trackers nobody has touched for a week (the pin counts leave them in; the count says they stopped)
     const quietN = useMemo(() => quietCount(effortGroups.trackers, Date.now()), [effortGroups]);
     const cards = useMemo(() => cardSet.filter(matches), [cardSet, matches]);
     const listAll = useMemo(() => {
-        const projectTrackers = effortGroups.trackers.filter((e) => keepsProject(project, e.project));
-        const items = listAfterCards(nestInitiatives(orderInitiatives(projectTrackers, agents)), cardSet);
+        const projectTrackers = ordered.filter((e) => keepsProject(project, e.project) && !isDoneInitiative(e));
+        const items = listAfterCards(nestInitiatives(projectTrackers), cardSet);
         return items.filter(matches);
-    }, [effortGroups, project, agents, cardSet, matches]);
+    }, [ordered, project, cardSet, matches]);
+    // the done ones of the project tab that are not a card, behind "Show N done"
+    const doneShown = useMemo(() => {
+        const onCards = new Set(cardSet.map((c) => c.oref));
+        return ordered.filter((e) => isDoneInitiative(e) && keepsProject(project, e.project) && !onCards.has(e.oref));
+    }, [ordered, project, cardSet]);
     const list = useMemo(
         () => listWindow(listAll, foldOpen(initiativesOpen, query)),
         [listAll, initiativesOpen, query]
@@ -995,7 +1013,11 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         () => (showArchived ? archivedShown.filter(matches).map((c) => ({ ...c, depth: 0, subCount: 0 })) : []),
         [showArchived, archivedShown, matches]
     );
-    const listItems = useMemo(() => [...list.rows, ...archivedItems], [list, archivedItems]);
+    const doneItems = useMemo<ListItem[]>(
+        () => (showDone ? doneShown.filter(matches).map((c) => ({ ...c, depth: 0, subCount: 0 })) : []),
+        [showDone, doneShown, matches]
+    );
+    const listItems = useMemo(() => [...list.rows, ...doneItems, ...archivedItems], [list, doneItems, archivedItems]);
     const ideaLines = useMemo(() => filterLines(ideaWindow.rows.map(initiativeLine), query), [ideaWindow, query]);
 
     // --- Activity: Runs and Councils merged (briefactivity.ts) -----------------------------------------------------
@@ -1520,6 +1542,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             ? initiativeResume(c.oref.replace(/^effort:/, ""), c.lastnote, agents, faceNow)
             : undefined,
         idle: reviewMarks.idle.get(c.oref),
+        moved: Math.max(c.updatedts, c.lastnote?.ts ?? 0) > heldAt,
     });
     const cardFaces = cards.map((c) => cardFace(c, faceInput(c)));
     const listFaces = listItems.map((c) => listRowFace(c, faceInput(c)));
@@ -2080,19 +2103,39 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                             )
                                                         }
                                                         footer={
-                                                            archivedShown.length > 0 ? (
-                                                                <button
-                                                                    type="button"
-                                                                    data-jarvis-brief-archived={
-                                                                        showArchived ? "hide" : "show"
-                                                                    }
-                                                                    onClick={() => setShowArchived(!showArchived)}
-                                                                    className={LINK_BTN}
-                                                                >
-                                                                    {showArchived
-                                                                        ? "Hide archived"
-                                                                        : `Show ${archivedShown.length} archived`}
-                                                                </button>
+                                                            doneShown.length > 0 || archivedShown.length > 0 ? (
+                                                                <>
+                                                                    {doneShown.length > 0 ? (
+                                                                        <button
+                                                                            type="button"
+                                                                            data-jarvis-brief-done={
+                                                                                showDone ? "hide" : "show"
+                                                                            }
+                                                                            onClick={() => setShowDone(!showDone)}
+                                                                            className={LINK_BTN}
+                                                                        >
+                                                                            {showDone
+                                                                                ? "Hide done"
+                                                                                : `Show ${doneShown.length} done`}
+                                                                        </button>
+                                                                    ) : null}
+                                                                    {archivedShown.length > 0 ? (
+                                                                        <button
+                                                                            type="button"
+                                                                            data-jarvis-brief-archived={
+                                                                                showArchived ? "hide" : "show"
+                                                                            }
+                                                                            onClick={() =>
+                                                                                setShowArchived(!showArchived)
+                                                                            }
+                                                                            className={LINK_BTN}
+                                                                        >
+                                                                            {showArchived
+                                                                                ? "Hide archived"
+                                                                                : `Show ${archivedShown.length} archived`}
+                                                                        </button>
+                                                                    ) : null}
+                                                                </>
                                                             ) : undefined
                                                         }
                                                         cursor={listRowAt(cursor)}

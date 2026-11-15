@@ -68,6 +68,26 @@ export function orderInitiatives<T extends Orderable>(cards: T[], agents: AgentV
     return [...cards].sort((a, b) => rank(a) - rank(b) || b.updatedts - a.updatedts);
 }
 
+// The order the Brief holds while it stays open: orderInitiatives' order taken once, when the Brief mounts (`held`
+// empty), then every initiative keeps its place however its rank or update time moves, so a note an agent writes never
+// moves a row under the cursor. One that was not there comes first, in `next`'s order (what you just made, where you
+// see it), and one that went away drops out. Leaving Jarvis and coming back re-sorts. Returns the rows and the order to
+// hold for the next call.
+export function holdOrder<T extends { oref: string }>(
+    held: readonly string[],
+    next: T[]
+): { rows: T[]; held: string[] } {
+    const byOref = new Map(next.map((c) => [c.oref, c]));
+    const known = new Set(held);
+    const fresh = next.filter((c) => !known.has(c.oref));
+    const kept = held.flatMap((o) => {
+        const c = byOref.get(o);
+        return c != null ? [c] : [];
+    });
+    const rows = [...fresh, ...kept];
+    return { rows, held: rows.map((c) => c.oref) };
+}
+
 export type InitiativeResume =
     | { kind: "go"; agentId: string; status: string }
     | { kind: "work"; status: string; when: string; note: string };
