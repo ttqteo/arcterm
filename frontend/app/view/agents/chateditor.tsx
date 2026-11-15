@@ -49,6 +49,7 @@ import {
     KEY_DELETE_COMMAND,
     KEY_DOWN_COMMAND,
     PASTE_COMMAND,
+    TextNode,
     type ElementNode,
     type LexicalEditor,
     type LexicalNode,
@@ -67,6 +68,7 @@ import {
     type EditorPlace,
 } from "./chateditornodes";
 import { $createFileMentionNode, $isFileMentionNode, FileMentionNode } from "./chateditorpill";
+import { gapAfterMention, gapBeforeMention } from "./filementiontokens";
 
 /** The part of an `HTMLTextAreaElement` the box's callers (the slash menu, the `@` picker, recall, insert) use, so a
  *  textarea (the New launcher's Task box) passes as one and floating-ui can anchor a picker to it as a virtual element. */
@@ -153,6 +155,28 @@ function segmentOfNode(node: LexicalNode): Segment {
         return { kind: "pill", path: node.getPath() };
     }
     return { kind: "text", text: $isLineBreakNode(node) ? "\n" : node.getTextContent() };
+}
+
+/** Text typed right against a pill would join its mention (`@a/b.json` + `đọc` is a mention of `a/b.jsonđọc`, a file
+ *  that does not exist; filementiontokens.ts gapAfterMention): the text node takes a space on the pill's side, the caret
+ *  staying where it was in the text. */
+function $gapAroundPills(node: TextNode): void {
+    const text = node.getTextContent();
+    const front = $isFileMentionNode(node.getPreviousSibling()) && gapAfterMention(text);
+    const back = $isFileMentionNode(node.getNextSibling()) && gapBeforeMention(text);
+    if (!front && !back) {
+        return;
+    }
+    const key = node.getKey();
+    const selection = $getSelection();
+    const points = $isRangeSelection(selection)
+        ? [selection.anchor, selection.focus].filter((p) => p.type === "text" && p.key === key)
+        : [];
+    const offsets = points.map((p) => p.offset);
+    node.setTextContent(`${front ? " " : ""}${text}${back ? " " : ""}`);
+    if (front) {
+        points.forEach((p, i) => p.set(key, offsets[i] + 1, "text"));
+    }
 }
 
 function $readDoc(): Doc {
@@ -504,6 +528,36 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
             ),
         [editor]
     );
+
+    // a space between a pill and text typed against it ($gapAroundPills). Not while composing: changing the text under an
+    // IME drops the syllable being typed, so the text nodes are looked at again once the composition ends
+    useLayoutEffect(() => {
+        const offTransform = editor.registerNodeTransform(TextNode, (node) => {
+            if (!editor.isComposing()) {
+                $gapAroundPills(node);
+            }
+        });
+        const offComposed = editor.registerCommand(
+            COMPOSITION_END_COMMAND,
+            () => {
+                queueMicrotask(() =>
+                    editor.update(() => {
+                        for (const paragraph of $getRoot().getChildren()) {
+                            if ($isElementNode(paragraph)) {
+                                paragraph.getChildren().filter($isTextNode).forEach($gapAroundPills);
+                            }
+                        }
+                    })
+                );
+                return false;
+            },
+            COMMAND_PRIORITY_HIGH
+        );
+        return () => {
+            offTransform();
+            offComposed();
+        };
+    }, [editor]);
 
     // what the user does in the editor goes out as text and a caret. Selecting a pill leaves both as they were (the caret is
     // the selection's end, the pill's end), so whether the selection is on a pill is told too: the `@` picker closes on it.

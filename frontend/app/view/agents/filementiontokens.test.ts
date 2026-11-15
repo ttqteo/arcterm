@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { mentionBaseName, mentionTokens } from "./filementiontokens";
+import { gapAfterMention, gapBeforeMention, mentionBaseName, mentionTokens } from "./filementiontokens";
 
 const paths = (text: string, caret?: number) => mentionTokens(text, caret).map((t) => t.path);
 
@@ -37,5 +37,31 @@ describe("mentionBaseName", () => {
         expect(mentionBaseName("D:\\a\\b\\x.pdf")).toBe("x.pdf");
         expect(mentionBaseName("src/views/")).toBe("views");
         expect(mentionBaseName("README.md")).toBe("README.md");
+    });
+});
+
+// Text typed against a pill joined its mention (`@a/b.jsonđọc`): the pill turned into a file that does not exist, and
+// Claude Code read it so (2026-11-16)
+describe("gapAfterMention / gapBeforeMention", () => {
+    it("asks for a space when the text after a mention would join its path", () => {
+        expect(gapAfterMention("đọc file này đi")).toBe(true);
+        expect(gapAfterMention("x")).toBe(true);
+        expect(paths("@a/b.json" + "đọc")).toEqual(["a/b.jsonđọc"]);
+        expect(paths("@a/b.json " + "đọc")).toEqual(["a/b.json"]);
+    });
+
+    it("leaves text after a mention alone when it starts with whitespace or punctuation the mention ends at", () => {
+        for (const text of ["", " đọc", "\n", ", then", ". done", ")", "?"]) {
+            expect(gapAfterMention(text)).toBe(false);
+        }
+        expect(paths("@a/b.json, then")).toEqual(["a/b.json"]);
+    });
+
+    it("asks for a space when the text before a mention would keep its @ from starting one", () => {
+        expect(gapBeforeMention("đọc")).toBe(true);
+        expect(paths("đọc@a/b.json")).toEqual([]);
+        for (const text of ["", "read ", "(", "a\n"]) {
+            expect(gapBeforeMention(text)).toBe(false);
+        }
     });
 });

@@ -53,6 +53,18 @@ export function mentionTokens(text: string, caret?: number): MentionToken[] {
     return out;
 }
 
+/** Pure: whether text right after a mention needs a space in front to stay out of its path: anything but whitespace or
+ *  the punctuation a mention ends at would join the path (`@a/b.json` + `đọc` is a mention of `a/b.jsonđọc`). */
+export function gapAfterMention(text: string): boolean {
+    return text !== "" && !/^\s/.test(text) && !TRAILING_PUNCT.test(text[0]);
+}
+
+/** Pure: whether text right before a mention needs a space at its end for the `@` to start one (`đọc@a/b.json` is no
+ *  mention). */
+export function gapBeforeMention(text: string): boolean {
+    return text !== "" && !LEADING.test(text[text.length - 1]);
+}
+
 /** Pure: the name a pill shows for a path, its last segment. */
 export function mentionBaseName(path: string): string {
     return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
