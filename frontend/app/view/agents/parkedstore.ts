@@ -37,7 +37,6 @@ import {
 } from "./launcherstore";
 import {
     busyReason,
-    heldToast,
     keepReadings,
     parkedChunk,
     parkedTitle,
@@ -104,20 +103,6 @@ export async function parkLaunch(input: {
     await writeParked(withParked(globalStore.get(parkedLaunchesAtom), entry));
     globalStore.set(launcherParkedIdAtom, null);
     return entry;
-}
-
-/** Say an agent was held, with a way to it: a launch that started nothing is never silent, even after the person has
- *  moved on from the centre that shows it. */
-export function notifyHeld(model: Pick<AgentsViewModel, "surfaceAtom">, p: ParkedLaunch): void {
-    const { title, message } = heldToast(p);
-    pushToast({
-        title,
-        message,
-        level: "warn",
-        ttlMs: 10_000,
-        onOpen: () => showHeld(model, p.id),
-        action: { label: "Open", run: () => showHeld(model, p.id) },
-    });
 }
 
 /** Show a held agent in the Agent surface's centre, as picking an agent shows it. */

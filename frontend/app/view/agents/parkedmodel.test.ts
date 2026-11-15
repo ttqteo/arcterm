@@ -7,7 +7,6 @@ import {
     busyLine,
     busyReason,
     heldLine,
-    heldToast,
     keepReadings,
     machineNow,
     matchWords,
@@ -263,13 +262,5 @@ describe("a held resume", () => {
         expect(parkedTitle(resume({ resumetitle: undefined }))).toBe("Resume session");
         expect(parkedTitle(resume({ task: "and add tests" }))).toBe("and add tests");
         expect(parkedMeta(resume({ images: ["/x.png"] }))).toBe("held for RAM · resume · 1 image");
-    });
-
-    it("toasts that it was held and why, for a new agent and a resume", () => {
-        expect(heldToast(resume())).toEqual({
-            title: "Resume held: memory pressure is high",
-            message: "Resume Fix the tree. It waits in its project's folder until you start it.",
-        });
-        expect(heldToast(pk("a", { reason: "CPU is 92% busy" })).title).toBe("Agent held: cpu is 92% busy");
     });
 });

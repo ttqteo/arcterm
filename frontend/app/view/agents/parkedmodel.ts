@@ -90,15 +90,6 @@ export function parkedMeta(p: ParkedLaunch): string {
     );
 }
 
-/** Pure: the toast that says an agent was held, so a launch that started nothing is never silent. */
-export function heldToast(p: ParkedLaunch): { title: string; message: string } {
-    const why = p.reason ? `: ${p.reason.toLowerCase()}` : "";
-    return {
-        title: `${p.resumeof ? "Resume" : "Agent"} held${why}`,
-        message: `${parkedTitle(p)}. It waits in its project's folder until you start it.`,
-    };
-}
-
 /** Pure: how long it has been held, as the agent rows say an age ("3h", "<1m"). */
 export function parkedAge(p: ParkedLaunch, now: number): string {
     return formatAgeShort(Math.max(0, now - p.ts));

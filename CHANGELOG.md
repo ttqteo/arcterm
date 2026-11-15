@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An agent held because the machine is busy no longer also pops a toast over its own held page, where it covered the
+  bar's buttons; the page already says it was held and why.
 - The New agent dialog keeps its columns readable in a Float window: project and session names no longer shrink to a
   few letters, and the column hints stay on one line.
 - An agent waiting on your answer to its question is no longer put to sleep: the question card stayed gone from Chat

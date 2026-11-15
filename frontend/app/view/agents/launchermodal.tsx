@@ -152,7 +152,7 @@ import {
 import { ToolFields, ToolList } from "./launchertoolfields";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { busyLine } from "./parkedmodel";
-import { notifyHeld, parkLaunch, settleParkedLaunch, showHeld, useMachine } from "./parkedstore";
+import { parkLaunch, settleParkedLaunch, showHeld, useMachine } from "./parkedstore";
 import {
     noteRecentProject,
     projectListAtom,
@@ -976,8 +976,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             }
             endLauncherDraft();
             close();
+            // the held view it lands on says it was held and why; a toast over it would only cover its bar
             showHeld(model, held.id);
-            notifyHeld(model, held);
         } catch (e) {
             setError(`Could not hold it: ${String(e)}`);
         } finally {
