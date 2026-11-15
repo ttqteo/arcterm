@@ -23,6 +23,7 @@ import {
     isEndedWorkerId,
     laneLabel,
     leadAgentOf,
+    leadPhaseFailed,
     leadRunTabIds,
     leadStandingBy,
     mergeGateLine,
@@ -675,5 +676,16 @@ describe("ended verifier", () => {
         expect(verifierStepTarget(run, [])).toBe(endedVerifierId("r1", "vr-1"));
         expect(verifierStepTarget(noVerifier, [{ id: "tab-v", runId: "vr-1" }])).toBeUndefined();
         expect(verifierStepTarget({ ...run, dag: undefined }, [])).toBeUndefined();
+    });
+});
+
+describe("leadPhaseFailed", () => {
+    const run = (...states: string[]) => ({ phases: states.map((state) => ({ state })) }) as unknown as Run;
+    it("reads the first open phase, the one the run's status comes from", () => {
+        expect(leadPhaseFailed(run("done", "failed"))).toBe(true);
+        expect(leadPhaseFailed(run("skipped", "failed", "pending"))).toBe(true);
+        expect(leadPhaseFailed(run("running", "failed"))).toBe(false);
+        expect(leadPhaseFailed(run("done", "done"))).toBe(false);
+        expect(leadPhaseFailed(undefined)).toBe(false);
     });
 });

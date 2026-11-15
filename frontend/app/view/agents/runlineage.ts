@@ -33,6 +33,9 @@ export interface RunInfo {
     createdTs?: number;
     // the run's own status, the only truth for a run that has no dag to measure progress against
     status?: string;
+    // the run's lead phase failed (its process died, jarvis.FailPhase): the status then reads blocked, the same as a
+    // run that waits on a question, so only this tells the two apart
+    leadFailed?: boolean;
     // "quick" for a run whose one worker does the job: it never plans, so it never has a dag, a final or a land
     mode?: string;
     // the run's own wave/<runId> tree, when its lanes land there instead of the checkout
@@ -79,6 +82,7 @@ export function runInfoOf(
         originId: leadRun?.origintabid || undefined,
         createdTs: leadRun?.createdts,
         status: leadRun?.status,
+        leadFailed: leadPhaseFailed(leadRun) || undefined,
         mode: leadRun?.mode || undefined,
         landPath: leadRun?.landpath,
         base: leadRun?.basebranch || undefined,
@@ -88,6 +92,13 @@ export function runInfoOf(
         pausedBy: leadRun?.pause?.by || undefined,
         pausedUntil: leadRun?.pause?.noautoresumeuntil || undefined,
     };
+}
+
+// leadPhaseFailed is whether the run's first open phase failed, the phase its status is derived from (jarvis
+// derivePhaseStatus): a failed one stays failed until ResumePhase restarts it.
+export function leadPhaseFailed(run: Pick<Run, "phases"> | undefined): boolean {
+    const open = (run?.phases ?? []).find((p) => p.state !== "done" && p.state !== "skipped");
+    return open?.state === "failed";
 }
 
 // runRoleOf is an agent's part in a run. A dag's owning run is its lead's, a run the engine started for a stage
@@ -417,7 +428,7 @@ export function verifyFailLine(task: TaskNode, td: DagTaskDigest | undefined): s
     return reason !== "" ? reason : undefined;
 }
 
-export type WorkerAsk ={ owner: "lead"; deadline?: number } | { owner: "you" };
+export type WorkerAsk = { owner: "lead"; deadline?: number } | { owner: "you" };
 
 // workerAsk says who holds a task's open question, if it has one.
 export function workerAsk(digest: DagStatusDigest | undefined, taskId: string): WorkerAsk | undefined {

@@ -190,7 +190,7 @@ function InitiativeLink({ model, agent }: { model: AgentsViewModel; agent: Agent
                     }
                     globalStore.set(initiativePopoverAtom, open ? null : agent.id);
                 }}
-                title={`${effort?.title ?? "This initiative"}: details here (i), ${peekClickLabel()} to open it in Jarvis`}
+                title={`${effort?.title ?? "This initiative"}: details here (i), ${peekClickLabel()} to peek at it in Sprout`}
                 className={cn(
                     "cursor-pointer rounded-[5px] px-[5px] py-[1px] text-accent-soft hover:underline",
                     open && "bg-surface-selected"

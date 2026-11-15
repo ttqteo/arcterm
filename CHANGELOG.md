@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run whose lead stopped working (its process died) now reads Failed, in red, in the Agent tree, the Brief and the
+  run sheet, instead of Working.
+- The initiative link in an agent's header now says that Ctrl+click (⌘-click) peeks at the initiative in Sprout,
+  which is what it does.
 - A submenu opened the moment its context menu appears now sits beside its row, instead of a few pixels off until
   you reopen it.
 - A reply holding a review verdict no longer shows twice in Chat for a moment while it lands.
