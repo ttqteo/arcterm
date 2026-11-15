@@ -126,6 +126,47 @@ func TestMergeEffort(t *testing.T) {
 			},
 		},
 		{
+			name: "a note removed on one side stays removed, the other side's addition is kept",
+			base: &waveobj.Effort{OID: "e1", Notes: []waveobj.EffortNote{note(1, "a"), note(2, "gone")}},
+			ours: &waveobj.Effort{OID: "e1", UpdatedTs: 5, Notes: []waveobj.EffortNote{note(1, "a")}},
+			theirs: &waveobj.Effort{OID: "e1", UpdatedTs: 6,
+				Notes: []waveobj.EffortNote{note(1, "a"), note(2, "gone"), note(3, "new")}},
+			check: func(t *testing.T, got *waveobj.Effort) {
+				wantNotes(t, got.Notes, "a", "new")
+			},
+		},
+		{
+			name:   "an edited note replaces the original",
+			base:   &waveobj.Effort{OID: "e1", Notes: []waveobj.EffortNote{note(1, "draft")}},
+			ours:   &waveobj.Effort{OID: "e1", UpdatedTs: 5, Notes: []waveobj.EffortNote{note(1, "draft"), note(4, "b")}},
+			theirs: &waveobj.Effort{OID: "e1", UpdatedTs: 6, Notes: []waveobj.EffortNote{note(1, "final")}},
+			check: func(t *testing.T, got *waveobj.Effort) {
+				wantNotes(t, got.Notes, "final", "b")
+			},
+		},
+		{
+			name: "a detached workref and a removed chunk note stay gone on a chunk both sides changed",
+			base: func() *waveobj.Effort {
+				c := chunk("a", 10, note(1, "old"))
+				c.WorkRefs = []waveobj.ChunkWorkRef{{Kind: "run", ORef: "run:1", Ts: 1}}
+				return effort(10, c)
+			}(),
+			ours: effort(20, chunk("a", 20, note(1, "old"), note(5, "ours"))),
+			theirs: func() *waveobj.Effort {
+				c := chunk("a", 30)
+				c.WorkRefs = []waveobj.ChunkWorkRef{{Kind: "run", ORef: "run:1", Ts: 1}, {Kind: "run", ORef: "run:2", Ts: 6}}
+				return effort(30, c)
+			}(),
+			check: func(t *testing.T, got *waveobj.Effort) {
+				c := findChunk(got, "a")
+				wantNotes(t, c.Notes, "ours")
+				want := []waveobj.ChunkWorkRef{{Kind: "run", ORef: "run:2", Ts: 6}}
+				if !reflect.DeepEqual(c.WorkRefs, want) {
+					t.Fatalf("workrefs = %+v, want %+v", c.WorkRefs, want)
+				}
+			},
+		},
+		{
 			name: "events union",
 			base: &waveobj.Effort{OID: "e1", Events: []waveobj.EffortEvent{{Ts: 1, Kind: "effort-created"}}},
 			ours: &waveobj.Effort{OID: "e1", UpdatedTs: 5, Events: []waveobj.EffortEvent{

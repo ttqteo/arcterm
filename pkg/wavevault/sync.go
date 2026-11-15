@@ -323,11 +323,11 @@ func (v *Vault) revParse(ctx context.Context, rev string) (string, bool) {
 }
 
 func (v *Vault) syncGit(ctx context.Context, args ...string) ([]byte, error) {
-	return runGitSync(ctx, v.Root, gitTimeout, args...)
+	return runGitSync(ctx, v.Root, gitTimeout, true, args...)
 }
 
 func (v *Vault) syncGitNet(ctx context.Context, args ...string) ([]byte, error) {
-	return runGitSync(ctx, v.Root, syncGitTimeout, args...)
+	return runGitSync(ctx, v.Root, syncGitTimeout, false, args...)
 }
 
 func (v *Vault) hasOrigin(ctx context.Context) (bool, error) {

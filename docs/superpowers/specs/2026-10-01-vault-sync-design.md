@@ -135,8 +135,10 @@ Pure function, three-way against git's base (stage 1; empty when the file is new
 - **Chunks**, keyed by `Label`: on one side only and absent from base → added, keep. In base, missing on
   one side, unchanged on the other → removed. Missing on one side and changed on the other → keep the
   changed one (an edit outlives a concurrent delete). On both sides → the chunk with the newer
-  `UpdatedTs`, with `Notes` and `WorkRefs` unioned.
-- **Notes, Events, chunk Notes, WorkRefs:** union, de-duplicated by full value, sorted by `Ts`.
+  `UpdatedTs`, with `Notes` and `WorkRefs` merged as below.
+- **Notes, Events, chunk Notes, WorkRefs:** a set merge against the base, by full value: kept on both
+  sides → kept; added on either side → kept; in base and dropped by either side (removed, or edited into a
+  new value) → dropped. With no base this is the union. De-duplicated, sorted by `Ts`.
 - **Chunk order:** the newer side's order; chunks only on the other side appended in their order.
 - **Version:** `max + 1`; **UpdatedTs:** max.
 

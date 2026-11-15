@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wavevault"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
@@ -221,6 +222,68 @@ func TestUpdateAndDeleteOfAMissingNoteAreNotFound(t *testing.T) {
 	}
 	if notes, _ := List(); len(notes) != 0 {
 		t.Fatalf("an update of a missing note must not create it: %+v", notes)
+	}
+}
+
+// a sync holds the vault lock while it merges the other machine's changes in; an Update that arrives
+// meanwhile checks the note exists against the merged vault, so a note the merge removed is not
+// written back (ours has no baseRev: an Update overwrites, so the existence check is what the lock guards)
+func TestUpdateWaitingOnSyncSeesItsMerge(t *testing.T) {
+	root := useTempRoot(t)
+	note, err := Add("Shared", "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, NotesDir, note.ID+".md")
+	unlockSync := wavevault.LockRoot(root)
+	done := make(chan error, 1)
+	go func() { done <- Update(note.ID, "Shared", "mine") }()
+	time.Sleep(100 * time.Millisecond) // let Update reach the vault lock
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	unlockSync()
+	if err := <-done; !errors.Is(err, wstore.ErrNotFound) {
+		t.Fatalf("err = %v, want not found", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the update wrote back a note the merge removed: stat err = %v", err)
+	}
+}
+
+// the same for Add: a note with its id that a sync merged in while Add waited is not overwritten, Add
+// numbers past it
+func TestAddWaitingOnSyncSeesItsMerge(t *testing.T) {
+	root := useTempRoot(t)
+	path := filepath.Join(root, NotesDir, testDay+"-shared.md")
+	unlockSync := wavevault.LockRoot(root)
+	type added struct {
+		note *waveobj.UserNote
+		err  error
+	}
+	done := make(chan added, 1)
+	go func() {
+		n, err := Add("Shared", "mine")
+		done <- added{n, err}
+	}()
+	time.Sleep(100 * time.Millisecond) // let Add reach the vault lock
+	merged := "# Shared\n\nfrom the other machine\n"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(merged), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unlockSync()
+	got := <-done
+	if got.err != nil {
+		t.Fatal(got.err)
+	}
+	if want := testDay + "-shared-2"; got.note.ID != want {
+		t.Fatalf("id = %q, want %q: the add did not see the merged note", got.note.ID, want)
+	}
+	if b, _ := os.ReadFile(path); string(b) != merged {
+		t.Fatalf("the add wrote over the merge: %q", b)
 	}
 }
 
