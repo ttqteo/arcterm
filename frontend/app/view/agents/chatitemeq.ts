@@ -137,6 +137,7 @@ export function sameChatItem(a: ChatItem, b: ChatItem): boolean {
                     a.shell?.output === other.shell?.output &&
                     a.shell?.error === other.shell?.error &&
                     a.terminal === other.terminal &&
+                    a.asleep === other.asleep &&
                     JSON.stringify(a.btw) === JSON.stringify(other.btw)
                 );
             }

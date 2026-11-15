@@ -154,7 +154,8 @@ export function useAgentSend(
             }
             fireAndForget(async () => {
                 try {
-                    await wakeAgent(id, { message });
+                    // the wake carries the lines too (the `!` runs made while it slept, chatsleepbash.ts)
+                    await wakeAgent(id, { message: withResultLines(lines ?? [], message) });
                     if (!wakeClears) {
                         setWakeDraft(id, "");
                     }

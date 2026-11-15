@@ -30,8 +30,9 @@ import type {
 import { councilStartAnchor, type CouncilAnchor } from "./chatcouncil";
 import { isDocReviewAsk } from "./chatdocreview";
 import { isHandoffAsk } from "./chathandoff";
-import { sentSwitch, SWITCH_NOTE } from "./chatinitiative";
+import { sentSleepRuns, sentSwitch, SWITCH_NOTE } from "./chatinitiative";
 import { runStartAnchor, type RunAnchor } from "./chatruncards";
+import { runShell, runStatus } from "./chatsleepbash";
 import {
     pairReviewer,
     REVIEW_LANG,
@@ -89,7 +90,17 @@ export type ChatItem =
     // a slash command or skill you typed, as "/name args" (check with `"command" in item`), or a bash-mode command, which
     // reads "! cmd"; `shell` is what it printed once that lands. `terminal`: a panel only Claude Code's own screen drew
     // (/config, /usage…), which left nothing here to show. `btw`: a /btw's side answer
-    | { kind: "you"; key: string; command: string; shell?: ShellResult; terminal?: true; btw?: BtwAnswer }
+    // `asleep`: a `!` command that ran while the agent slept and rode the message after it (chatsleepbash.ts), the
+    // status line it ended with
+    | {
+          kind: "you";
+          key: string;
+          command: string;
+          shell?: ShellResult;
+          terminal?: true;
+          btw?: BtwAnswer;
+          asleep?: string;
+      }
     // a prompt arcterm typed: `header` names it, `lines` are its fields as "label value" and its body (at most SENT_LINES);
     // `tabId` the tab of the agent that sent it with `wsh agents send`, which the card opens
     | { kind: "sent"; key: string; from: SentFrom; header: string; lines: string[]; tabId?: string }
@@ -278,6 +289,18 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
                     const uuid = recordUuid(entry);
                     // the item's text has its result lines stripped: the switched one is read from the entry
                     const chunk = entry?.kind === "user" ? sentSwitch(entry.text) : null;
+                    // the `!` commands that ran while the agent slept, which this message carried: each its own row
+                    // over the bubble, as it showed before the message went
+                    const ran = entry?.kind === "user" ? sentSleepRuns(entry.text) : [];
+                    ran.forEach((r, n) =>
+                        out.push({
+                            kind: "you",
+                            key: `you:${item.index}.ran${n}`,
+                            command: `! ${r.command}`,
+                            shell: runShell(r),
+                            asleep: `Ran while asleep · ${runStatus(r)}`,
+                        })
+                    );
                     out.push({
                         kind: "you",
                         key: keyOf("you", item.index),

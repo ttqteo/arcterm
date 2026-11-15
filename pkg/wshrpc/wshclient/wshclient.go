@@ -1692,6 +1692,12 @@ func ShellCompleteCommand(w *wshutil.WshRpc, data wshrpc.CommandShellCompleteDat
 	return resp, err
 }
 
+// command "shellrun", wshserver.ShellRunCommand
+func ShellRunCommand(w *wshutil.WshRpc, data wshrpc.CommandShellRunData, opts *wshrpc.RpcOpts) (*wshrpc.ShellRunResult, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.ShellRunResult](w, "shellrun", data, opts)
+	return resp, err
+}
+
 // command "stopdevserver", wshserver.StopDevServerCommand
 func StopDevServerCommand(w *wshutil.WshRpc, data wshrpc.CommandStopDevServerData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "stopdevserver", data, opts)

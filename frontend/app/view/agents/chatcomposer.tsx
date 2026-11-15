@@ -105,6 +105,8 @@ import {
     wokenPending,
 } from "./chatpendingstore";
 import { ChatPlusMenu } from "./chatplusmenu";
+import { asleepCommand, runBlocks, runsAsleep, type SleepRun } from "./chatsleepbash";
+import { putBackSleepRuns, runWhileAsleep, takeSleepRuns } from "./chatsleepbashstore";
 import {
     chipEditable,
     chipIcon,
@@ -297,7 +299,7 @@ function ComposerBox({
     // chips at the press, as an awake send does, and the message's pending bubble rises from the box and stands in with
     // Waking… under it until the transcript holds it. A wake that failed drops the bubble and puts the text
     // (useAgentSend) and the chips back. `wake` is the wake send in flight: its bubble and the paths of what rode along.
-    const wake = useRef<{ pendingId: string | null; paths: string[] } | null>(null);
+    const wake = useRef<{ pendingId: string | null; paths: string[]; runs: SleepRun[] } | null>(null);
     const { text, setText, message, canSend, waking, fallingAsleep, send } = useAgentSend(
         agent.blockId,
         agent,
@@ -323,6 +325,7 @@ function ComposerBox({
                 if (w.paths.length > 0) {
                     att.addPaths(w.paths);
                 }
+                putBackSleepRuns(agent.id, w.runs);
             },
             keepDraft: true,
             // a /btw no mod took was typed into the terminal, where Claude Code answers it on its own screen: show that
@@ -552,6 +555,18 @@ function ComposerBox({
             onLocal(local);
             return;
         }
+        // a `! cmd` to a sleeping agent runs here, without waking it (chatsleepbash.ts): its row shows under the
+        // conversation, and what it printed rides the next message you send
+        if (!waking && !dozing && runsAsleep(text, asleep, att.attachments.length)) {
+            const command = asleepCommand(text);
+            onSent?.(text);
+            recalled.current = { at: null, shown: "" };
+            noteSent(agent.id, text);
+            noteBashRun(cwd, command);
+            setTextAt("");
+            fireAndForget(() => runWhileAsleep(agent.id, cwd ?? agent.cwd ?? "", command));
+            return;
+        }
         if (hold != null && ready) {
             setHeldSend(agent.id, true);
             return;
@@ -581,6 +596,10 @@ function ComposerBox({
         // brainstorm question waits (its record pairs with the transcript by exact text) leave the lines queued for the
         // next one. `sent` and everything kept of it (recall, the pending bubble, onSent) stay the person's own text.
         const lines = !asleep && !questionWaits && !bash && !sent.startsWith("/") ? takeResultLines(agent.id) : [];
+        // the `!` runs made while the agent slept ride the next plain message too, the wake send's included: that is
+        // the message the agent reads first, so it learns what ran (chatsleepbash.ts)
+        const runs = !questionWaits && !bash && !sent.startsWith("/") ? takeSleepRuns(agent.id) : [];
+        const wire = [...lines, ...runBlocks(runs)];
         // the paths of the files riding the message, put back as chips if it never reaches Claude Code
         const ridingPaths = att.attachments.map((a) => a.path).filter((p): p is string => p != null);
         const agentId = agent.id;
@@ -594,13 +613,17 @@ function ComposerBox({
             if (lines.length > 0) {
                 putBackResultLines(agentId, lines);
             }
+            putBackSleepRuns(agentId, runs);
             if (ridingPaths.length > 0) {
                 att.addPaths(ridingPaths);
             }
         };
-        const taken = send(lines, onFailed);
+        const taken = send(wire, onFailed);
         if (!taken && lines.length > 0) {
             putBackResultLines(agent.id, lines);
+        }
+        if (!taken) {
+            putBackSleepRuns(agent.id, runs);
         }
         if (taken) {
             onSent?.(sent);
@@ -631,7 +654,7 @@ function ComposerBox({
                 // row lands once the agent runs it)
                 const plain = pendsAsBubble(sent) && pendingKind(sent) == null;
                 const pendingId = entries != null && plain ? addPending(agent.id, sent, entries, false, true) : null;
-                wake.current = { pendingId, paths: ridingPaths };
+                wake.current = { pendingId, paths: ridingPaths, runs };
                 for (const a of att.attachments) {
                     att.remove(a.id);
                 }

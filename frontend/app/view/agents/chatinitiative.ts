@@ -7,6 +7,7 @@
 // halves of the maps chatinitiativestore.ts keeps in localStorage. No React, no jotai, no RPC: the store does the I/O, the
 // card (chatinitiativecard.tsx) draws.
 
+import { splitSleepRuns, type CarriedRun } from "./chatsleepbash";
 import { unwrapWholePaste } from "./chattagblocks";
 import { hashText } from "./texthash";
 
@@ -593,6 +594,18 @@ export function withoutSwitchLine(pending: PendingMap, agentId: string): Pending
  *  whole multi-line message as one pasted block, which is what a message carrying result lines is, so a wrapped message
  *  is read as the paste first; one with lines comes back unwrapped, one with none comes back exactly as it was. */
 export function stripResultLines(text: string): string {
+    return splitSleepRuns(afterResultLines(text)).body;
+}
+
+/** Pure: the `!` commands that ran while the agent slept which a sent message carries (chatsleepbash.ts), after its
+ *  result lines; none for most messages. Chat draws each as a `!` row over the bubble. */
+export function sentSleepRuns(text: string): CarriedRun[] {
+    return splitSleepRuns(afterResultLines(text)).runs;
+}
+
+// the message without its leading result lines (and the blank line after them), or the text as it was with none; the
+// runs that ran asleep, when it carries any, come next (chatsleepbash.ts)
+function afterResultLines(text: string): string {
     const { lines, body } = splitResultLines(text);
     return lines.length === 0 ? text : body;
 }

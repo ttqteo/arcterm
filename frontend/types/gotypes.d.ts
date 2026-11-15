@@ -2426,6 +2426,13 @@ declare global {
         word: string;
     };
 
+    // wshrpc.CommandShellRunData
+    type CommandShellRunData = {
+        cwd: string;
+        command: string;
+        timeoutms?: number;
+    };
+
     // wshrpc.CommandStopDevServerData
     type CommandStopDevServerData = {
         pid: number;
@@ -4721,6 +4728,16 @@ declare global {
         "runs:wakeorigin"?: boolean;
         "power:*"?: boolean;
         "power:keepawake"?: boolean;
+    };
+
+    // wshrpc.ShellRunResult
+    type ShellRunResult = {
+        stdout: string;
+        stderr: string;
+        exitcode: number;
+        timedout?: boolean;
+        truncated?: boolean;
+        durms: number;
     };
 
     // wshrpc.ShippedItem

@@ -77,6 +77,7 @@ import {
 import { usePending } from "./chatpendingstore";
 import { risesFromBox } from "./chatsentrise";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
+import { SleepRunRows } from "./chatsleepbashrows";
 import {
     chatChips,
     endsWithQuestion,
@@ -892,6 +893,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                 onClose={() => closeLocalCard(agent.id, c.id)}
                             />
                         ))}
+                        {/* the `!` commands run while the agent slept, until a message carries them */}
+                        <SleepRunRows agent={agent} entries={entries} />
                         {error != null && view != null ? (
                             <div data-chat-error role="alert" className="text-[12px] leading-[1.5] text-error">
                                 Could not read the transcript: {error}

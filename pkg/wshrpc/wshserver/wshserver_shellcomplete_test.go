@@ -80,3 +80,28 @@ func TestShellCompleteCommandRefusesACwdThatIsNotAFolder(t *testing.T) {
 func jsonString(s string) string {
 	return `"` + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`) + `"`
 }
+
+func TestShellRunCommandRefusesAnEmptyCommand(t *testing.T) {
+	ws := &WshServer{}
+	if _, err := ws.ShellRunCommand(context.Background(), wshrpc.CommandShellRunData{Cwd: t.TempDir(), Command: "  "}); err == nil {
+		t.Fatal("want an error")
+	}
+}
+
+func TestShellRunCommandRefusesACwdThatIsNotAFolder(t *testing.T) {
+	ws := &WshServer{}
+	if _, err := ws.ShellRunCommand(context.Background(), wshrpc.CommandShellRunData{Cwd: "/no/such/folder", Command: "true"}); err == nil {
+		t.Fatal("want an error")
+	}
+}
+
+func TestShellRunCommandAnswersTheExitCode(t *testing.T) {
+	ws := &WshServer{}
+	res, err := ws.ShellRunCommand(context.Background(), wshrpc.CommandShellRunData{Cwd: t.TempDir(), Command: "echo hi; exit 2"})
+	if err != nil {
+		t.Skipf("no shell: %v", err)
+	}
+	if res.ExitCode != 2 || res.Stdout == "" {
+		t.Fatalf("got %+v", res)
+	}
+}

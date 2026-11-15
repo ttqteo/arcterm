@@ -21,6 +21,7 @@ import {
     type AgentPart,
     type ChatItem,
 } from "./chatmodel";
+import { runBlock } from "./chatsleepbash";
 
 // the engine's own texts, written by pkg/orchestrate's TestViewModFixtures (the arc view mod reads them the same way)
 const TESTDATA = fileURLToPath(new URL("../../../../claude/arc-view-mod/testdata/", import.meta.url));
@@ -90,6 +91,22 @@ describe("chatItems", () => {
         // a message that only mentions `initiative:` mid-text is left alone
         const mention = "see below\ninitiative: added by hand";
         expect(chatItems([you(mention)])[0]).toMatchObject({ kind: "you", text: mention });
+    });
+
+    it("draws the `!` runs a message carried from the agent's sleep as rows over its bubble", () => {
+        const ran = runBlock({ command: "npm test", stdout: "1 failing\n", stderr: "boom\n", exit: 1 });
+        const sent = withResultLines(["initiative: added note to Auth (effort:ab12)", ran], "fix it");
+        const wrapped = `<pasted_content id="45ce">\n${sent}\n</pasted_content id="45ce">`;
+        for (const text of [sent, wrapped]) {
+            const items = chatItems([{ kind: "user", text, uuid: "u1" }, says("ok")]);
+            expect(items[0]).toMatchObject({
+                kind: "you",
+                command: "! npm test",
+                shell: { output: "1 failing", error: "boom" },
+                asleep: "Ran while asleep · exit 1",
+            });
+            expect(items[1]).toMatchObject({ kind: "you", text: "fix it", uuid: "u1" });
+        }
     });
 
     it("carries the chunk a message moved the agent to, and none on a plain message", () => {

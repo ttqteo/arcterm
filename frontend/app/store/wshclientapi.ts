@@ -1698,6 +1698,12 @@ export class RpcApiType {
         return client.wshRpcCall("shellcomplete", data, opts);
     }
 
+    // command "shellrun" [call]
+    ShellRunCommand(client: WshClient, data: CommandShellRunData, opts?: RpcOpts): Promise<ShellRunResult> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "shellrun", data, opts);
+        return client.wshRpcCall("shellrun", data, opts);
+    }
+
     // command "stopdevserver" [call]
     StopDevServerCommand(client: WshClient, data: CommandStopDevServerData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "stopdevserver", data, opts);

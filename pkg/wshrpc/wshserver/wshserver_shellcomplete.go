@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/shellcomplete"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -53,4 +55,33 @@ func (ws *WshServer) ShellCompleteCommand(ctx context.Context, data wshrpc.Comma
 		items = []string{}
 	}
 	return items, nil
+}
+
+// ShellRunCommand runs one bash-mode command in a sleeping agent's folder (Chat's `! cmd`, which no longer wakes it).
+func (ws *WshServer) ShellRunCommand(ctx context.Context, data wshrpc.CommandShellRunData) (*wshrpc.ShellRunResult, error) {
+	if data.Cwd == "" {
+		return nil, errors.New("cwd is required")
+	}
+	if strings.TrimSpace(data.Command) == "" {
+		return nil, errors.New("command is required")
+	}
+	if info, err := os.Stat(data.Cwd); err != nil || !info.IsDir() {
+		return nil, fmt.Errorf("cwd %q is not a folder", data.Cwd)
+	}
+	timeout := time.Duration(data.TimeoutMs) * time.Millisecond
+	if timeout <= 0 || timeout > shellcomplete.RunTimeout {
+		timeout = shellcomplete.RunTimeout
+	}
+	res, err := shellcomplete.Run(ctx, data.Cwd, data.Command, timeout)
+	if err != nil {
+		return nil, err
+	}
+	return &wshrpc.ShellRunResult{
+		Stdout:    res.Stdout,
+		Stderr:    res.Stderr,
+		ExitCode:  res.ExitCode,
+		TimedOut:  res.TimedOut,
+		Truncated: res.Truncated,
+		DurMs:     res.Dur.Milliseconds(),
+	}, nil
 }

@@ -35,3 +35,7 @@ func bashPath() string {
 func hideWindow(c *exec.Cmd) {
 	c.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
 }
+
+// stopTree leaves the default stop on Windows: the context's end kills the shell, and WaitDelay lets go of a child
+// that holds the pipes.
+func stopTree(*exec.Cmd) {}

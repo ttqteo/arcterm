@@ -240,12 +240,17 @@ type CopyMenu = (text: string, fork?: ForkPoint | null, initiative?: string | nu
 // before its output lands, is the command alone; a slash command has a card only once it printed something, or (`terminal`)
 // when its panel showed on Claude Code's own screen, which the card says with a way there (`onOpenTerminal`, when the
 // agent is live).
-function CommandCard({
+// `note` is a muted line under it, as the status of a `!` run made while the agent slept ("Ran while asleep · exit 1"),
+// and `actions` sit at that line's end (chatpane.tsx's asleep runs: Ask agent to fix, ×).
+export function CommandCard({
     command,
     bash,
     shell,
     terminal,
     onOpenTerminal,
+    note,
+    noteTone,
+    actions,
     onContextMenu,
 }: {
     command: string;
@@ -253,7 +258,10 @@ function CommandCard({
     shell?: ShellResult;
     terminal?: boolean;
     onOpenTerminal?: () => void;
-    onContextMenu: CopyMenu;
+    note?: ReactNode;
+    noteTone?: "error";
+    actions?: ReactNode;
+    onContextMenu?: CopyMenu;
 }) {
     const printed = shell != null && (shell.output !== "" || shell.error !== "");
     // what Copy takes: the command and what it printed, as the terminal shows them
@@ -265,7 +273,7 @@ function CommandCard({
             data-chat-you
             data-chat-command
             data-chat-shell={bash ? "" : undefined}
-            onContextMenu={onContextMenu(copyText)}
+            onContextMenu={onContextMenu?.(copyText)}
             className="group relative mb-1 max-w-[75%] min-w-[220px] self-end"
         >
             <div className="flex flex-col overflow-hidden rounded-[12px] border border-edge-mid bg-surface-raised">
@@ -307,6 +315,17 @@ function CommandCard({
                         ) : (
                             <span className="font-sans text-muted">No output</span>
                         )}
+                    </div>
+                ) : null}
+                {note != null || actions != null ? (
+                    <div
+                        data-chat-command-note
+                        className="flex items-center justify-between gap-3 border-t border-edge-faint px-[14px] py-[6px] text-[11.5px]"
+                    >
+                        <span className={cn("min-w-0 truncate", noteTone === "error" ? "text-error" : "text-muted")}>
+                            {note}
+                        </span>
+                        {actions != null ? <span className="flex flex-none items-center gap-3">{actions}</span> : null}
                     </div>
                 ) : null}
             </div>
@@ -409,7 +428,15 @@ function YouBubble({
     onAddInitiative?: (text: string) => void;
 }) {
     if ("command" in item && item.command.startsWith("! ")) {
-        return <CommandCard command={item.command.slice(2)} bash shell={item.shell} onContextMenu={onContextMenu} />;
+        return (
+            <CommandCard
+                command={item.command.slice(2)}
+                bash
+                shell={item.shell}
+                note={item.asleep}
+                onContextMenu={onContextMenu}
+            />
+        );
     }
     if ("command" in item && item.btw != null) {
         return (
