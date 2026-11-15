@@ -476,26 +476,78 @@ export function deriveAnsi(palette: ThemePalette): AnsiPalette {
 // smallest one from today's 0.6 up, in steps of 0.02, at which muted text on the panel clears 4.5:1 once the panel is
 // composited over the blurred backdrop. The backdrop is the worst case a terminal can put behind an overlay: the
 // theme's terminal background with its brightest terminal colour covering 20% of the blur. A theme whose muted text
-// passes at 0.6 keeps 0.6; a darker, bluer one gets more panel and less show-through. Capped at 1 for a muted colour
-// that cannot reach the floor on its own surface.
+// passes at 0.6 keeps 0.6; a darker, bluer one gets more panel and less show-through. The theme's text must also clear
+// 4.5:1 on a hovered row (below), which only One Dark, whose text sits near the floor, needs more panel for. Capped at 1
+// for a muted colour that cannot reach the floor on its own surface.
 const PanelAlphaFloor = 60; // hundredths, so the steps are exact: 60, 62, ... and 0.7 never prints as 0.7000000000000001
 const PanelAlphaStep = 2;
 const PanelMutedContrast = 4.5;
 const PanelBackdropCoverage = 0.2;
 
-export function panelAlpha(palette: ThemePalette): number {
+// A row highlighted on a frosted panel is lifted by translucent white, not filled with the opaque surfaceHover /
+// surfaceSelected: over a bright backdrop the panel turns lighter than those, and an opaque highlight would read darker
+// than the panel or vanish (initiative chunk 27 measured 1.01-1.07:1). The `frost` class maps the two tokens to these
+// lifts inside the panel (tailwindsetup.css), and every theme in THEMES is dark, so white suits them all. The selected
+// lift is the largest up to PanelSelectedLift at which the theme's text still clears 4.5:1 (panelLift).
+export const PanelHoverLift = 0.07;
+export const PanelSelectedLift = 0.1;
+const White: Rgb = [255, 255, 255];
+
+function panelBackdrop(palette: ThemePalette): Rgb {
     const brightest = [palette.text, ...Object.values(deriveAnsi(palette))]
         .map(parseHex)
         .reduce((a, b) => (luminanceOf(b) > luminanceOf(a) ? b : a));
-    const backdrop = blendRgb(parseHex(palette.bg), brightest, PanelBackdropCoverage);
+    return blendRgb(parseHex(palette.bg), brightest, PanelBackdropCoverage);
+}
+
+export function panelAlpha(palette: ThemePalette): number {
+    const backdrop = panelBackdrop(palette);
     const raised = parseHex(palette.surfaceRaised);
     const muted = parseHex(palette.muted);
+    const text = parseHex(palette.text);
     for (let hundredths = PanelAlphaFloor; hundredths < 100; hundredths += PanelAlphaStep) {
-        if (contrastOf(muted, blendRgb(backdrop, raised, hundredths / 100)) >= PanelMutedContrast) {
+        const panel = blendRgb(backdrop, raised, hundredths / 100);
+        if (
+            contrastOf(muted, panel) >= PanelMutedContrast &&
+            contrastOf(text, blendRgb(panel, White, PanelHoverLift)) >= PanelMutedContrast
+        ) {
             return hundredths / 100;
         }
     }
     return 1;
+}
+
+function panelOverBackdrop(palette: ThemePalette): Rgb {
+    return blendRgb(panelBackdrop(palette), parseHex(palette.surfaceRaised), panelAlpha(palette));
+}
+
+export function panelLift(palette: ThemePalette, want: number): number {
+    const panel = panelOverBackdrop(palette);
+    const text = parseHex(palette.text);
+    for (let hundredths = Math.round(want * 100); hundredths > 0; hundredths--) {
+        if (contrastOf(text, blendRgb(panel, White, hundredths / 100)) >= PanelMutedContrast) {
+            return hundredths / 100;
+        }
+    }
+    return 0;
+}
+
+// The colour muted (or secondary) text takes inside a frosted panel: the role's own colour moved toward the theme's
+// text, by the least that keeps 4.5:1 on the panel's strongest lift (the selected row) over the worst backdrop. The
+// palette keeps muted at the floor on its opaque surfaceHover, so on a lift, which is lighter, it falls short (4.0-4.4)
+// unless it is raised a little; it stays dimmer than the text, so a row keeps its hierarchy. A role that already
+// passes keeps its colour.
+export function panelTextColor(palette: ThemePalette, role: "muted" | "secondary"): string {
+    const lifted = blendRgb(panelOverBackdrop(palette), White, panelLift(palette, PanelSelectedLift));
+    const base = parseHex(palette[role]);
+    const text = parseHex(palette.text);
+    for (let hundredths = 0; hundredths <= 100; hundredths += PanelAlphaStep) {
+        const rgb = blendRgb(base, text, hundredths / 100).map(Math.round) as Rgb;
+        if (contrastOf(rgb, lifted) >= PanelMutedContrast) {
+            return colord({ r: rgb[0], g: rgb[1], b: rgb[2] }).toHex();
+        }
+    }
+    return palette.text;
 }
 
 // The terminal's palette. Structurally assignable to xterm's ITheme; declared locally so the theme
@@ -540,6 +592,10 @@ export function buildThemeVars(
         "--color-surface-selected": p.surfaceSelected,
         "--color-surface-code": p.code,
         "--color-panel": rgba(p.surfaceRaised, panelAlpha(p)),
+        "--color-panel-hover": `rgba(255, 255, 255, ${panelLift(p, PanelHoverLift)})`,
+        "--color-panel-selected": `rgba(255, 255, 255, ${panelLift(p, PanelSelectedLift)})`,
+        "--color-panel-muted": panelTextColor(p, "muted"),
+        "--color-panel-secondary": panelTextColor(p, "secondary"),
         "--color-modalbg": p.surfaceRaised,
         // text
         "--color-foreground": p.text,

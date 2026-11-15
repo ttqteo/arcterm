@@ -522,6 +522,15 @@ Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
   - `--color-panel` is the theme's `surfaceRaised` at an alpha `themes.ts`
     computes per theme, the lowest at which muted text keeps 4.5:1 over the
     blur, so a frosted panel meets the same text floor as a solid one.
+  - A hovered or selected row on a frosted panel **lifts by translucent white**
+    (7% and 10%), never the opaque `surface-hover` / `surface-selected`: over a
+    bright backdrop the panel turns lighter than those, and the row would read
+    darker than the panel or vanish. `frost` remaps the hover, selected, muted
+    and secondary tokens inside the panel, so a row keeps writing
+    `bg-surface-hover` / `text-muted`. Muted and secondary text there take the
+    theme's panel colours, nudged toward the text just enough to keep 4.5:1 on
+    the selected lift; a theme whose text itself is near the floor (One Dark)
+    gets a smaller selected lift and more panel.
   - `frost` goes on the panel's **outermost element**. An ancestor with opacity
     below 1, a `filter`, a `backdrop-filter`, a mask or a `clip-path` is a
     backdrop root: a blur inside it samples only what that ancestor paints, so

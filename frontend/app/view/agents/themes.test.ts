@@ -14,6 +14,9 @@ import {
     deriveAnsi,
     deriveTermTheme,
     panelAlpha,
+    PanelHoverLift,
+    PanelSelectedLift,
+    panelTextColor,
     THEMES,
     type ThemePalette,
 } from "./themes";
@@ -47,6 +50,10 @@ describe("buildThemeVars — the default preset equals the @theme literals", () 
         "--color-surface-selected",
         "--color-surface-code",
         "--color-panel",
+        "--color-panel-hover",
+        "--color-panel-selected",
+        "--color-panel-muted",
+        "--color-panel-secondary",
         "--color-modalbg",
         "--color-foreground",
         "--color-primary",
@@ -136,7 +143,7 @@ describe("--color-panel — the panel alpha keeps muted text at 4.5:1 over the b
         carbon: 0.72,
         nocturne: 0.8,
         spider: 0.66,
-        onedark: 0.6,
+        onedark: 0.88, // for its text on a hovered row (panelAlpha), not its muted
         monokai: 0.6,
         christmas: 0.6,
     };
@@ -152,7 +159,7 @@ describe("--color-panel — the panel alpha keeps muted text at 4.5:1 over the b
         });
     }
     it("a theme that already passes at 0.6 keeps 0.6", () => {
-        for (const id of ["onedark", "monokai", "christmas"]) {
+        for (const id of ["monokai", "christmas"]) {
             expect(mutedOnPanel(activePalette(id), 0.6), id).toBeGreaterThanOrEqual(4.5);
             expect(panelAlpha(activePalette(id)), id).toBe(0.6);
         }
@@ -173,6 +180,50 @@ describe("--color-panel — the panel alpha keeps muted text at 4.5:1 over the b
     });
     it("is capped at 1 when muted text cannot reach 4.5:1 at any alpha", () => {
         expect(panelAlpha({ ...activePalette("graphite"), muted: "#202020" })).toBe(1);
+    });
+    // The white each theme lifts a hovered and a selected row by, measured at implementation; One Dark's text is
+    // near the floor already: its panel is raised to 0.88 for the hover lift, and its selected lift stops there.
+    const LIFTS: Record<string, [number, number]> = {
+        graphite: [PanelHoverLift, PanelSelectedLift],
+        claude: [PanelHoverLift, PanelSelectedLift],
+        midnight: [PanelHoverLift, PanelSelectedLift],
+        slate: [PanelHoverLift, PanelSelectedLift],
+        carbon: [PanelHoverLift, PanelSelectedLift],
+        nocturne: [PanelHoverLift, PanelSelectedLift],
+        spider: [PanelHoverLift, PanelSelectedLift],
+        onedark: [PanelHoverLift, PanelHoverLift],
+        monokai: [PanelHoverLift, PanelSelectedLift],
+        christmas: [PanelHoverLift, PanelSelectedLift],
+    };
+    function liftOf(vars: Record<string, string>, key: string): number {
+        const m = /^rgba\(255, 255, 255, ([\d.]+)\)$/.exec(vars[key]);
+        if (!m) {
+            throw new Error(`${key} is not a white rgba(): ${vars[key]}`);
+        }
+        return Number(m[1]);
+    }
+    for (const theme of THEMES) {
+        const p = theme.palette;
+        it(`${theme.id}: a highlighted row lifts off the panel, and text, muted and secondary on it clear 4.5:1`, () => {
+            const vars = buildThemeVars(p, {});
+            const lifts = [liftOf(vars, "--color-panel-hover"), liftOf(vars, "--color-panel-selected")];
+            expect(lifts).toEqual(LIFTS[theme.id]);
+            const backdrop = blend(rgbOf(brightestTerminalColor(p)), rgbOf(p.bg), 0.2);
+            const panel = blend(rgbOf(p.surfaceRaised), backdrop, panelAlphaOf(p));
+            for (const lift of lifts) {
+                const row = blend([255, 255, 255], panel, lift);
+                for (const color of [p.text, vars["--color-panel-muted"], vars["--color-panel-secondary"]]) {
+                    expect(contrastRgb(rgbOf(color), row), `${color} on a ${lift} lift`).toBeGreaterThanOrEqual(4.5);
+                }
+            }
+            // a selected row reads apart from a hovered one, and muted stays dimmer than the text
+            expect(lifts[0]).toBeLessThanOrEqual(lifts[1]);
+            expect(luminance(vars["--color-panel-muted"])).toBeLessThanOrEqual(luminance(p.text));
+        });
+    }
+    it("a role that already clears 4.5:1 on the lift keeps its own colour", () => {
+        expect(panelTextColor(activePalette("christmas"), "muted")).toBe(activePalette("christmas").muted);
+        expect(panelTextColor(activePalette("graphite"), "secondary")).toBe(activePalette("graphite").secondary);
     });
     it("follows a role override, as the rest of buildThemeVars does", () => {
         const vars = buildThemeVars(activePalette("graphite"), { accent: "#66d9ef" });
