@@ -97,6 +97,40 @@ func TestFormatEffortShowLeavesProposedOutOfProgress(t *testing.T) {
 	}
 }
 
+func TestFormatEffortShowLeavesSkippedOutOfProgress(t *testing.T) {
+	e := &waveobj.Effort{Title: "T", Status: "active", Chunks: []waveobj.EffortChunk{
+		{Label: "A", Status: "done"},
+		{Label: "B", Status: "skipped"},
+		{Label: "C", Status: "deferred"},
+		{Label: "D", Status: "pending"},
+	}}
+	got := formatEffortShow(e)
+	want := "# T (active) — 1/3\n" + // skipped has left the plan, as the band counts; deferred is still in it
+		"  1. [done] A\n" +
+		"  2. [skipped] B\n" +
+		"  3. [deferred] C\n" +
+		"  4. [pending] D\n"
+	if got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestSummaryProgressTotalCountsLikeShow(t *testing.T) {
+	s := wshrpc.EffortSummary{Done: 1, Total: 4, Chunks: []wshrpc.EffortChunkSummary{
+		{Label: "A", Status: "done"},
+		{Label: "B", Status: "skipped"},
+		{Label: "C", Status: "pending"},
+		{Label: "D", Status: "active"},
+		{Label: "P", Status: "proposed"},
+	}}
+	if got := summaryProgressTotal(s); got != 3 {
+		t.Fatalf("summaryProgressTotal = %d, want 3 (skipped and proposed left out)", got)
+	}
+	if got := summaryProgressTotal(wshrpc.EffortSummary{Total: 4}); got != 4 {
+		t.Fatalf("summaryProgressTotal with no chunks = %d, want the summary's own 4", got)
+	}
+}
+
 func TestFormatEffortShowGroupsConsecutiveStages(t *testing.T) {
 	e := &waveobj.Effort{Title: "T", Status: "active", Chunks: []waveobj.EffortChunk{
 		{Label: "a", Status: "done", Stage: "Evidence"},

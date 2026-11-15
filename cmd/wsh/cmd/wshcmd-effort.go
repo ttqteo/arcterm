@@ -115,7 +115,7 @@ var effortListCmd = &cobra.Command{
 			return jsonOut(rtn)
 		}
 		for _, s := range rtn.Efforts {
-			fmt.Printf("%s\t%s\t%s\t%d/%d\t%s\n", s.ORef, s.Title, s.Status, s.Done, s.Total, s.ActiveChunk)
+			fmt.Printf("%s\t%s\t%s\t%d/%d\t%s\n", s.ORef, s.Title, s.Status, s.Done, summaryProgressTotal(s), s.ActiveChunk)
 		}
 		return nil
 	},
@@ -633,11 +633,33 @@ func countDone(e *waveobj.Effort) int {
 	return n
 }
 
-// countProgress is the progress total: every chunk but a proposed one, which is not work until accepted.
+// countProgress is the progress total.
 func countProgress(e *waveobj.Effort) int {
 	n := 0
 	for _, c := range e.Chunks {
-		if c.Status != "proposed" {
+		if inProgressTotal(c.Status) {
+			n++
+		}
+	}
+	return n
+}
+
+// inProgressTotal says whether a chunk counts toward the progress total, as the cockpit counts it (the initiative band
+// and its popover, popoverProgress in initiativepopovermodel.ts, and the Brief's row): a proposed chunk is not work until
+// it is accepted, and a skipped one has left the plan.
+func inProgressTotal(status string) bool {
+	return status != "proposed" && status != "skipped"
+}
+
+// summaryProgressTotal is a listed effort's total, counted from its chunks the way countProgress counts. The summary's own
+// Total counts skipped chunks (the Brief takes them out itself), so it stands only for a summary without chunks.
+func summaryProgressTotal(s wshrpc.EffortSummary) int {
+	if len(s.Chunks) == 0 {
+		return s.Total
+	}
+	n := 0
+	for _, c := range s.Chunks {
+		if inProgressTotal(c.Status) {
 			n++
 		}
 	}

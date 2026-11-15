@@ -38,6 +38,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- `wsh effort show` and `wsh effort list` count an initiative's progress the way Chat's initiative band does: a
+  skipped chunk leaves the total, so they read 29/33 where they read 29/35.
 - Jarvis' peek no longer stutters when it grows or shrinks, as it does when you open or shut its Earlier list: it
   dropped about one frame in three while it resized, and now holds the screen's frame rate.
 - Runs you cancelled no longer count toward an agent's runs, neither on the run chip of its row in the Agent sidebar
