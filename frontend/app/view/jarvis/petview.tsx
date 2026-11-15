@@ -335,6 +335,16 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     const reduce = useReducedMotion() === true;
     // state, not a ref: the bubble and the peek re-position when it lands
     const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
+    // A creature lets go of the anchor only while it is still the anchor. Float gives the hologram a new size, so a new
+    // one enters while AnimatePresence keeps the old one for its power-down; the old one's late release left the peek
+    // with no anchor, placed once at no size beside the form and never again, cut off by the window's edge.
+    const holdAnchor = useCallback((el: HTMLDivElement | null) => {
+        if (el == null) {
+            return;
+        }
+        setAnchor(el);
+        return () => setAnchor((cur) => (cur === el ? null : cur));
+    }, []);
     // set by the sprite only when it crosses the window's middle, so the walk does not re-render the peek
     const [corner, setCorner] = useState<PetCorner>("bottom-right");
     const officeBoss = useAtomValue(petOfficeBossAtom);
@@ -503,7 +513,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                 unread={unread}
                 peekOpen={peekOpen}
                 reduce={reduce}
-                setAnchor={setAnchor}
+                setAnchor={holdAnchor}
                 openPeek={openPeek}
                 onFail={onHologramFail}
             />
@@ -517,7 +527,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                 unread={unread}
                 reduce={reduce}
                 layout={`${surface}${floating ? " float" : ""}${folded ? " folded" : ""}`}
-                setAnchor={setAnchor}
+                setAnchor={holdAnchor}
                 onCorner={setCorner}
                 openPeek={openPeek}
                 chip={floating && waiting > 0 ? waiting : null}

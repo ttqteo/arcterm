@@ -202,50 +202,8 @@ export function sproutCenter(sprout: WinRect, frame: Pt, scale: number, viewport
     };
 }
 
-// The morph between Full and Float: the content moves into the box of the frame it is going to (or out of the one it
-// came from) on the motion tokens' easing, while the page is see-through around it, so the window reads as changing
-// shape instead of jumping. The window's own resize happens with the content hidden, and the content then settles in.
-export const MORPH_MS = 280;
-// how long the content takes to settle in, or to leave, at the far side of the window's resize
-export const MORPH_SETTLE_MS = 140;
-// the share of MORPH_MS the content stays solid as it shrinks into the float, so the eye follows it there
-export const MORPH_FADE_FROM = 0.7;
-// the scale the content settles in from (and leaves to) beside the resize
-export const MORPH_SETTLE_SCALE = 0.98;
-
-/** A frame's content box in the window's CSS px, for the morph: target is in physical px (its outer position and inner
- *  size, floatstore.ts shadowedFrameOf), inner the window content's top-left in physical px, scale the window's scale
- *  factor. */
-export function morphBox(target: WinRect, inner: Pt, scale: number): WinRect {
-    const s = scale > 0 ? scale : 1;
-    return {
-        x: (target.x - inner.x) / s,
-        y: (target.y - inner.y) / s,
-        width: target.width / s,
-        height: target.height / s,
-    };
-}
-
-export interface MorphTransform {
-    x: number;
-    y: number;
-    scaleX: number;
-    scaleY: number;
-}
-
-/** The transform, about the top-left corner, that draws content the size of viewport into box. A viewport with no
- *  size draws as it stands. */
-export function morphTransform(box: WinRect, viewport: Viewport): MorphTransform {
-    if (!(viewport.width > 0) || !(viewport.height > 0)) {
-        return { x: 0, y: 0, scaleX: 1, scaleY: 1 };
-    }
-    return { x: box.x, y: box.y, scaleX: box.width / viewport.width, scaleY: box.height / viewport.height };
-}
-
-/** The content's fade as it shrinks into the float (solid, then gone at the end), or grows out of it into Full (in
- *  early, so the growth is seen). */
-export function morphFade(to: "float" | "full"): FoldFade {
-    return to === "float"
-        ? { opacity: [1, 1, 0], times: [0, MORPH_FADE_FROM, 1] }
-        : { opacity: [0, 1, 1], times: [0, 1 - MORPH_FADE_FROM, 1] };
-}
+// The crossfade between Full and Float: the content fades out in place, the window changes size with nothing drawn (the
+// page is see-through), and the new layout fades in from a hint smaller. Out is quicker than in, as exits are.
+export const SWITCH_FADE_OUT_MS = 120;
+export const SWITCH_FADE_IN_MS = 180;
+export const SWITCH_FADE_SCALE = 0.98;

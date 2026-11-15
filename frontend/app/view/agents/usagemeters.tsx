@@ -120,7 +120,8 @@ export function HeaderUsage({ model }: { model: AgentsViewModel }) {
 }
 
 /** Float's usage, on the ledge (float-ledge.tsx): the free RAM (the GB alone), then each provider's first window, its
- *  logo, a short bar, the percent and the 5-hour countdown, and every window in the tooltip. One borderless button, as
+ *  logo and the percent alone, kept compact for a narrow float; the bars, the 5-hour countdown and every window are in
+ *  the tooltip. One borderless button, as
  *  HeaderUsage is: the RAM half opens the Consumers panel ranked by RAM, where an agent is put to sleep or stopped to
  *  free memory, anywhere else ranked by tokens; the panel narrows to the float (PANEL_MAX_WIDTH). */
 export function FloatUsage({ model }: { model: AgentsViewModel }) {
@@ -145,28 +146,23 @@ export function FloatUsage({ model }: { model: AgentsViewModel }) {
                     e.currentTarget
                 )
             }
-            className="mr-1.5 flex h-[26px] flex-none cursor-pointer items-center gap-2 rounded-[7px] border-0 bg-transparent px-1.5 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="mr-1.5 flex h-[26px] flex-none cursor-pointer items-center gap-1.5 rounded-[7px] border-0 bg-transparent px-1.5 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
             {cap != null ? <WorkerCapacityChip cap={cap} busy={arc.busy} arc={arc.ready ? arc : null} short /> : null}
             {cap != null && shown.length > 0 ? <span aria-hidden className="h-3.5 w-px bg-edge-mid" /> : null}
             {shown.map((m) => {
                 const lvl = usageLevel(m.pct);
                 return (
-                    <span key={m.key} className="flex items-center gap-1.5">
+                    <span key={m.key} className="flex items-center gap-1">
                         <RuntimeMark
                             runtime={m.provider}
                             imageClassName="h-3 w-3 shrink-0"
                             className={cn("h-1.5 w-1.5 shrink-0 rounded-full", providerDot(m.provider))}
                         />
-                        <Meter pct={m.pct} fill={LEVEL_BAR[lvl]} height={4} radius={2} className="w-7" />
+                        {/* Float keeps to the number: the bar and the reset countdown are in the tooltip's line */}
                         <span className={cn("text-[11px] font-semibold tabular-nums", LEVEL_TXT[lvl])}>
                             {Math.round(m.pct)}%
                         </span>
-                        {m.countdown != null ? (
-                            <span className="whitespace-nowrap text-[10.5px] tabular-nums text-muted">
-                                {m.countdown}
-                            </span>
-                        ) : null}
                     </span>
                 );
             })}

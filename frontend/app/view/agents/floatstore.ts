@@ -3,9 +3,9 @@
 //
 // The window's sizes and their Tauri window calls: the arithmetic is floatwindow.ts, the rules windowsize.ts. Entering
 // Float keeps the window's frame to give back, turns the terminal fullscreen, lifts the minimum size and shrinks the
-// window to the last float's place; leaving gives the frame back. Both morph: the content moves into the float's place
-// (or grows out of it) on a see-through page, and the window changes size behind the hidden content. The window is never left pinned on top outside Float
-// and the fold. Folding (foldToSprout), from Full or Float, scales the content toward the screen's bottom-right corner
+// window to the last float's place; leaving gives the frame back. Both crossfade: the content fades out on a see-through
+// page, the window changes size with nothing drawn, and the new layout fades in. The window is never left pinned on top
+// outside Float and the fold. Folding (foldToSprout), from Full or Float, scales the content toward the screen's bottom-right corner
 // and shrinks the same window, see-through, around Sprout there; a restore gives back the size and frame it was folded
 // from.
 // The pet teleports across both (teleportstore.ts): it departs from where it walks and arrives in the corner, and back.
@@ -82,18 +82,15 @@ import {
     FRAME_WAIT_MS,
     minimizeAction,
     minimizeChoice,
-    MORPH_MS,
-    MORPH_SETTLE_MS,
-    MORPH_SETTLE_SCALE,
-    morphBox,
-    morphFade,
-    morphTransform,
     move,
     onReopen,
     onSurfaceChange,
     settleWithin,
     sizeState,
     sproutCenter,
+    SWITCH_FADE_IN_MS,
+    SWITCH_FADE_OUT_MS,
+    SWITCH_FADE_SCALE,
     windowSize,
     type FoldOrigin,
     type Foreground,
@@ -201,13 +198,13 @@ async function leaveNativeFullscreen(win: Window): Promise<void> {
     await new Promise((r) => setTimeout(r, 300));
 }
 
-// morphing: the Full ↔ Float morph is under way and gives the window its buttons back at its end (endMorph)
-async function giveFrameBack(win: Window, restore: FloatRestore | null, morphing = false): Promise<void> {
+// fading: the Full ↔ Float crossfade is under way and gives the window its buttons back at its end (endFade)
+async function giveFrameBack(win: Window, restore: FloatRestore | null, fading = false): Promise<void> {
     await win.setAlwaysOnTop(false);
     // a reload mid-fold left the window see-through, frameless and deaf to the cursor
     await win.setIgnoreCursorEvents(false).catch(() => {});
     await win.setShadow(true).catch(() => {});
-    if (!morphing) {
+    if (!fading) {
         await setFoldedChrome(false).catch(() => {});
     }
     writeJson(session, MINI_RESTORE_KEY, null);
@@ -249,12 +246,12 @@ async function leaveMaximized(win: Window): Promise<void> {
     }
 }
 
-// The window part of entering Float, from the Full frame, which it keeps to give back. Inside busy. morph: the content
-// shrinks into the float's place before the window does (windowsize.ts MORPH_MS); off when the shell is hidden (a
-// restore from Sprout into Float, which grows the content itself).
-async function floatTheWindow(model: AgentsViewModel, morph = false): Promise<void> {
+// The window part of entering Float, from the Full frame, which it keeps to give back. Inside busy. fade: crossfade
+// (windowsize.ts SWITCH_FADE_OUT_MS); off when the shell is hidden (a restore from Sprout into Float, which grows the
+// content itself).
+async function floatTheWindow(model: AgentsViewModel, fade = false): Promise<void> {
     const win = getCurrentWindow();
-    let morphing = false;
+    let fading = false;
     try {
         await leaveNativeFullscreen(win);
         const maximized = await win.isMaximized();
@@ -271,11 +268,10 @@ async function floatTheWindow(model: AgentsViewModel, morph = false): Promise<vo
         }
         const screen = screenFor(last, monitors.map(screenOf), screenOf(current));
         const rect = floatRect(last, screen.area, screen.scale);
-        if (morph && morphOn()) {
-            morphing = true;
-            const [inner, scale] = await Promise.all([win.innerPosition(), win.scaleFactor()]);
-            await beginMorph(win);
-            await morphContent(morphBox(rect, inner, scale), "float");
+        if (fade && fadeOn()) {
+            fading = true;
+            await beginFade(win);
+            await fadeContent("out");
             hideContent();
             await shadowBeforeFrame(win);
         }
@@ -290,11 +286,11 @@ async function floatTheWindow(model: AgentsViewModel, morph = false): Promise<vo
         globalStore.set(terminalFullscreenAtom, true);
         globalStore.set(floatPinnedAtom, true);
         globalStore.set(floatModeAtom, true);
-        if (morphing) {
-            // the float's layout settles in once the page has the float's size, not drawn first at the old one
+        if (fading) {
+            // the float's layout fades in once the page has the float's size, not drawn first at the old one
             await pageTakesWindow(win);
             await nextFrame();
-            await settleContent("in");
+            await fadeContent("in");
         }
     } catch (e) {
         console.error("entering float mode failed", e);
@@ -302,8 +298,8 @@ async function floatTheWindow(model: AgentsViewModel, morph = false): Promise<vo
         await giveFrameBack(win, parseRestore(readJson(session, RESTORE_KEY))).catch(() => {});
         writeJson(session, RESTORE_KEY, null);
     } finally {
-        if (morphing) {
-            await endMorph(win);
+        if (fading) {
+            await endFade(win);
         }
     }
 }
@@ -340,19 +336,18 @@ export async function exitFloat(restoreFullscreen: boolean): Promise<void> {
     }
 }
 
-// The window part of leaving Float, back to the Full frame it kept. Inside busy. morph: the float's content leaves, and
-// the Full layout grows out of the float's place once the window is back (windowsize.ts MORPH_MS); off when the shell
-// is hidden (a return from Sprout, which grows the content itself).
-async function unfloatTheWindow(restoreFullscreen: boolean, morph = false): Promise<void> {
+// The window part of leaving Float, back to the Full frame it kept. Inside busy. fade: crossfade, as entering does; off
+// when the shell is hidden (a return from Sprout, which grows the content itself).
+async function unfloatTheWindow(restoreFullscreen: boolean, fade = false): Promise<void> {
     const win = getCurrentWindow();
     const restore = parseRestore(readJson(session, RESTORE_KEY));
     const floatFrame = await shadowedFrameOf(win).catch(() => null);
     writeJson(local, RECT_KEY, floatFrame);
-    const morphing = morph && floatFrame != null && morphOn();
+    const fading = fade && fadeOn();
     try {
-        if (morphing) {
-            await beginMorph(win);
-            await settleContent("out");
+        if (fading) {
+            await beginFade(win);
+            await fadeContent("out");
             hideContent();
         }
         globalStore.set(floatPinnedAtom, false);
@@ -360,16 +355,16 @@ async function unfloatTheWindow(restoreFullscreen: boolean, morph = false): Prom
         if (restoreFullscreen && restore != null) {
             globalStore.set(terminalFullscreenAtom, restore.terminalFullscreen);
         }
-        await giveFrameBack(win, restore, morphing);
+        await giveFrameBack(win, restore, fading);
         writeJson(session, RESTORE_KEY, null);
-        if (morphing && floatFrame != null) {
+        if (fading) {
             await pageTakesWindow(win);
-            const [inner, scale] = await Promise.all([win.innerPosition(), win.scaleFactor()]);
-            await morphContent(morphBox(floatFrame, inner, scale), "full");
+            await nextFrame();
+            await fadeContent("in");
         }
     } finally {
-        if (morphing) {
-            await endMorph(win);
+        if (fading) {
+            await endFade(win);
         }
     }
 }
@@ -559,83 +554,55 @@ async function scaleContent(at: Pt, to: "sprout" | "window"): Promise<void> {
     }
 }
 
-// The Full ↔ Float morph plays unless motion is reduced, or the page is hidden, where nobody sees it and it would not
-// end, or there is no page at all (the unit tests)
-function morphOn(): boolean {
+// The Full ↔ Float crossfade plays unless motion is reduced, or the page is hidden, where nobody sees it and it would
+// not end, or there is no page at all (the unit tests)
+function fadeOn(): boolean {
     if (typeof window === "undefined" || typeof document === "undefined") {
         return false;
     }
     return !reducedMotion() && !pageHidden();
 }
 
-// The page goes see-through and the window drops its shadow and its buttons, so the content alone is seen changing
-// shape; the window's own resize then happens with the content hidden.
-async function beginMorph(win: Window): Promise<void> {
+// The page goes see-through and the window drops its shadow and its buttons, so nothing is drawn while the window
+// changes size between the fade out and the fade in.
+async function beginFade(win: Window): Promise<void> {
     document.documentElement.dataset.floatMini = "";
     await setFoldedChrome(true).catch(() => {});
     await win.setShadow(false).catch(() => {});
 }
 
 // The shadow back before a frame is set on Windows: a frame set with it off grows by its border once it is back
-// (shadowedFrameOf). macOS sizes the same with or without it, and draws it from the content, so it waits for endMorph.
+// (shadowedFrameOf). macOS sizes the same with or without it, and draws it from the content, so it waits for endFade.
 async function shadowBeforeFrame(win: Window): Promise<void> {
     if (!isMacOS()) {
         await win.setShadow(true).catch(() => {});
     }
 }
 
-async function endMorph(win: Window): Promise<void> {
+async function endFade(win: Window): Promise<void> {
     clearContentMotion();
     delete document.documentElement.dataset.floatMini;
     await win.setShadow(true).catch(() => {});
     await setFoldedChrome(false).catch(() => {});
 }
 
-// Move the content into box, a frame's content box in the window's CSS px (into the float), or out of it to fill the
-// window (into Full), fading as windowsize.ts morphFade says.
-async function morphContent(box: WinRect, to: "float" | "full"): Promise<void> {
+// The content fades out in place before the window changes size, or in after it, with a hint of scale
+async function fadeContent(dir: "in" | "out"): Promise<void> {
     const el = content();
     if (el == null) {
         return;
     }
-    const r = el.getBoundingClientRect();
-    const t = morphTransform({ ...box, x: box.x - r.left, y: box.y - r.top }, { width: r.width, height: r.height });
-    const there = (here: number, at: number) => (to === "float" ? [here, at] : [at, here]);
-    el.style.transformOrigin = "0 0";
-    const duration = MORPH_MS / 1000;
-    const fade = morphFade(to);
-    const run = animate(
-        el,
-        {
-            x: there(0, t.x),
-            y: there(0, t.y),
-            scaleX: there(1, t.scaleX),
-            scaleY: there(1, t.scaleY),
-            opacity: fade.opacity,
-        },
-        { duration, ease: MOTION.easeFluid, opacity: { duration, ease: "linear", times: fade.times } }
-    );
-    if ((await settleWithin(run.finished, MORPH_MS + FRAME_WAIT_MS, wait)) === "timeout") {
-        run.stop();
-    }
-}
-
-// The content settles in at the far side of the window's resize, or leaves before it, in place
-async function settleContent(dir: "in" | "out"): Promise<void> {
-    const el = content();
-    if (el == null) {
-        return;
-    }
+    const ms = dir === "in" ? SWITCH_FADE_IN_MS : SWITCH_FADE_OUT_MS;
     el.style.transformOrigin = "50% 50%";
     const run = animate(
         el,
         {
             opacity: dir === "in" ? [0, 1] : [1, 0],
-            scale: dir === "in" ? [MORPH_SETTLE_SCALE, 1] : [1, MORPH_SETTLE_SCALE],
+            scale: dir === "in" ? [SWITCH_FADE_SCALE, 1] : [1, SWITCH_FADE_SCALE],
         },
-        { duration: MORPH_SETTLE_MS / 1000, ease: MOTION.easeFluid }
+        { duration: ms / 1000, ease: MOTION.easeFluid }
     );
-    if ((await settleWithin(run.finished, MORPH_SETTLE_MS + FRAME_WAIT_MS, wait)) === "timeout") {
+    if ((await settleWithin(run.finished, ms + FRAME_WAIT_MS, wait)) === "timeout") {
         run.stop();
     }
 }

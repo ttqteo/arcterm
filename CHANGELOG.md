@@ -45,6 +45,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Jarvis's panel opens beside the hologram in Float again, inside the window, instead of off past its edge and cut off.
 - The tabs under a Float window's terminal are readable again: a narrow float shows fewer tabs, each wide enough for
   its name, instead of four cut to "Tr…", "M…". An agent waiting on you is never hidden under "+N", and "+N" shows a
   dot when one it holds is asking you or working.
@@ -158,8 +159,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
-- Going from Full to Float and back no longer jumps: the window's content glides into the float's place and
-  grows back out of it, while the window changes size out of sight. Reduced motion keeps the instant switch.
+- Going from Full to Float and back no longer jumps: the window fades out, changes size out of sight and fades back
+  in. Reduced motion keeps the instant switch.
+- Float's usage on its ledge is compact: the free RAM and each plan's percent alone; the bars and the 5-hour countdown
+  are in its tooltip.
 - Reply to selected text takes less room: in Chat and a council's Discussion the big Reply button under a selection is
   now a small ↩ at the end of its last line, so it no longer covers the line below. Right-clicking the selection also
   offers Reply (and Copy).
