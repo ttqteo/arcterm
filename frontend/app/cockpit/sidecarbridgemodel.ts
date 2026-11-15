@@ -6,7 +6,7 @@
 // these functions what to do at each change, hello and close, so the throttle and the last-sent memory are tested here
 // and not through a timer.
 
-import type { SidecarAct, SidecarSnapshot } from "./sidecartypes";
+import type { SidecarAct, SidecarHeavy, SidecarSnapshot } from "./sidecartypes";
 
 // At most one snapshot per this long (decision 1): a burst of store changes goes out as one trailing emit.
 export const SNAPSHOT_THROTTLE_MS = 500;
@@ -15,6 +15,32 @@ export type ActCheck = { ok: true; act: SidecarAct } | { ok: false; reason: stri
 
 function isRecord(v: unknown): v is Record<string, unknown> {
     return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+// How many rows one older act may ask for (decision 5: the page asks for 10).
+const OLDER_MIN = 1;
+const OLDER_MAX = 50;
+
+/** The heavy row of the last snapshot's strain band that a stop or a sleep names; the page can only act on a row it was shown. */
+function heavyRow(
+    kind: "stop" | "sleep",
+    raw: Record<string, unknown>,
+    last: SidecarSnapshot | null
+): { ok: true; heavy: SidecarHeavy } | { ok: false; reason: string } {
+    if (typeof raw.id !== "string") {
+        return { ok: false, reason: `${kind}: no id` };
+    }
+    if (last == null) {
+        return { ok: false, reason: `${kind}: no snapshot has gone out yet` };
+    }
+    if (last.strain == null) {
+        return { ok: false, reason: `${kind}: the last snapshot has no strain band` };
+    }
+    const heavy = last.strain.heavy.find((h) => h.id === raw.id);
+    if (heavy == null) {
+        return { ok: false, reason: `${kind}: no heavy row "${raw.id}" in the last snapshot` };
+    }
+    return { ok: true, heavy };
 }
 
 /**
@@ -71,6 +97,58 @@ export function validateAct(raw: unknown, last: SidecarSnapshot | null): ActChec
             }
             return { ok: true, act: { kind: "answer", id: tile.id, option } };
         }
+        case "older": {
+            const id = raw.id;
+            if (typeof id !== "string") {
+                return { ok: false, reason: "older: no id" };
+            }
+            if (last == null) {
+                return { ok: false, reason: "older: no snapshot has gone out yet" };
+            }
+            if (!last.tiles.some((t) => t.id === id)) {
+                return { ok: false, reason: `older: no tile "${id}" in the last snapshot` };
+            }
+            const cursor = raw.before;
+            let before: string | null;
+            if (cursor === null) {
+                before = null;
+            } else if (typeof cursor === "string") {
+                before = cursor;
+            } else {
+                return { ok: false, reason: `older: before ${String(cursor)} is neither a cursor nor null` };
+            }
+            const count = raw.count;
+            if (typeof count !== "number" || !Number.isInteger(count) || count < OLDER_MIN || count > OLDER_MAX) {
+                return {
+                    ok: false,
+                    reason: `older: count ${String(count)} is not a whole number from ${OLDER_MIN} to ${OLDER_MAX}`,
+                };
+            }
+            return { ok: true, act: { kind: "older", id, before, count } };
+        }
+        case "stop": {
+            const row = heavyRow("stop", raw, last);
+            if (row.ok === false) {
+                return row;
+            }
+            if (row.heavy.process == null) {
+                return { ok: false, reason: `stop: "${row.heavy.id}" has no process to stop` };
+            }
+            if (raw.pid !== row.heavy.process.pid) {
+                return {
+                    ok: false,
+                    reason: `stop: pid ${String(raw.pid)} is not the process of "${row.heavy.id}" in the band`,
+                };
+            }
+            return { ok: true, act: { kind: "stop", id: row.heavy.id, pid: row.heavy.process.pid } };
+        }
+        case "sleep": {
+            const row = heavyRow("sleep", raw, last);
+            if (row.ok === false) {
+                return row;
+            }
+            return { ok: true, act: { kind: "sleep", id: row.heavy.id } };
+        }
         default:
             return { ok: false, reason: `unknown act kind "${raw.kind}"` };
     }
@@ -99,12 +177,15 @@ function same(a: unknown, b: unknown): boolean {
     return false;
 }
 
-/** Whether two snapshots say the same thing: everything but `now`, which moves on every build. Nothing sent is never the same. */
+/**
+ * Whether two snapshots say the same thing: everything but `now`, which moves on every build. Nothing sent is never the
+ * same. The machine figures reach it already rounded (decision 8), so a reading that only jitters does not differ.
+ */
 export function sameSnapshot(a: SidecarSnapshot | null, b: SidecarSnapshot | null): boolean {
     if (a == null || b == null) {
         return false;
     }
-    return same(a.counts, b.counts) && same(a.tiles, b.tiles);
+    return same(a.counts, b.counts) && same(a.tiles, b.tiles) && same(a.machine, b.machine) && same(a.strain, b.strain);
 }
 
 /** What the bridge remembers of its feed: the snapshot the page last got, and when it went out. */

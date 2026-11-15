@@ -8,6 +8,27 @@ import "context"
 // MachineCommands back the menu bar / tray popover (spec 2026-10-15-tray-popover-design.md).
 type MachineCommands interface {
 	GetMachineStatsCommand(ctx context.Context) (*MachineStatsData, error) // memory, its pressure, swap, the last second's CPU and the disks
+	AgentCpuCommand(ctx context.Context) (*AgentCpuData, error)            // each agent's CPU, sampled only while asked (Sidecar's strain band)
+}
+
+// AgentCpuData is one reading of each agent's CPU: the strain band in the Sidecar window names the heaviest agents by
+// it (spec 2026-11-13-sidecar-design.md, section 4).
+type AgentCpuData struct {
+	Supported bool            `json:"supported"` // false where no sampler exists (Linux)
+	Ready     bool            `json:"ready"`     // false until a second sample gives deltas
+	Agents    []AgentCpuAgent `json:"agents"`
+}
+
+type AgentCpuAgent struct {
+	BlockId string           `json:"blockid"`
+	Cpu     float64          `json:"cpu"`           // percent of the whole machine, 0-100, as resmon's groups
+	Top     *AgentCpuProcess `json:"top,omitempty"` // its busiest descendant; absent when it runs nothing but itself
+}
+
+type AgentCpuProcess struct {
+	Pid     int32   `json:"pid"`
+	Command string  `json:"command"` // memusage.ShortCommand of its command line
+	Cpu     float64 `json:"cpu"`
 }
 
 type MachineStatsData struct {

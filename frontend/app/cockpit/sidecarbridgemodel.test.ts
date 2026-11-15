@@ -12,7 +12,7 @@ import {
     sameSnapshot,
     validateAct,
 } from "./sidecarbridgemodel";
-import type { SidecarSnapshot, SidecarTile } from "./sidecartypes";
+import type { SidecarMachine, SidecarSnapshot, SidecarStrain, SidecarTile } from "./sidecartypes";
 
 function tile(id: string, over: Partial<SidecarTile> = {}): SidecarTile {
     return { id, name: id, runtime: "Claude · opus", state: "working", messages: [], ...over };
@@ -20,6 +20,27 @@ function tile(id: string, over: Partial<SidecarTile> = {}): SidecarTile {
 
 function snap(tiles: SidecarTile[], now = 1000): SidecarSnapshot {
     return { now, counts: { asking: 0, working: tiles.length, idle: 0 }, tiles };
+}
+
+const machine: SidecarMachine = { memFree: 2e9, memTotal: 16e9, cpuPct: 40, platform: "windows" };
+
+function strain(over: Partial<SidecarStrain> = {}): SidecarStrain {
+    return {
+        level: "amber",
+        by: "ram",
+        ram: { since: 500, critical: false },
+        working: 3,
+        heavyJobs: 1,
+        heavy: [
+            { id: "w1", name: "w1", ramBytes: 3e9, process: { pid: 4242, command: "cargo build" } },
+            { id: "w2", name: "w2", ramBytes: 1e9 },
+        ],
+        ...over,
+    };
+}
+
+function snapWith(over: Partial<SidecarSnapshot>): SidecarSnapshot {
+    return { ...snap([tile("w1"), tile("w2")]), ...over };
 }
 
 const asking = tile("a1", {
@@ -45,8 +66,8 @@ describe("validateAct", () => {
                 expect(r.reason.length).toBeGreaterThan(0);
             }
         }
-        const r = validateAct({ kind: "older", id: "a1" }, roster);
-        expect(r).toEqual({ ok: false, reason: 'unknown act kind "older"' });
+        const r = validateAct({ kind: "scroll", id: "a1" }, roster);
+        expect(r).toEqual({ ok: false, reason: 'unknown act kind "scroll"' });
     });
 
     it("takes an open of a tile in the last snapshot", () => {
@@ -105,6 +126,142 @@ describe("validateAct", () => {
         const r = validateAct({ kind: "open", id: "w1", extra: "x" }, roster);
         expect(r).toEqual({ ok: true, act: { kind: "open", id: "w1" } });
     });
+
+    describe("older", () => {
+        it("takes an older of a tile in the last snapshot, with a cursor or null, count 1 to 50", () => {
+            expect(validateAct({ kind: "older", id: "w1", before: null, count: 10 }, roster)).toEqual({
+                ok: true,
+                act: { kind: "older", id: "w1", before: null, count: 10 },
+            });
+            expect(validateAct({ kind: "older", id: "a1", before: "m:12", count: 1 }, roster)).toEqual({
+                ok: true,
+                act: { kind: "older", id: "a1", before: "m:12", count: 1 },
+            });
+            expect(validateAct({ kind: "older", id: "a1", before: "f:300", count: 50 }, roster)).toEqual({
+                ok: true,
+                act: { kind: "older", id: "a1", before: "f:300", count: 50 },
+            });
+        });
+
+        it("refuses an id with no tile, no id, no snapshot, and a before that is neither a string nor null", () => {
+            expect(validateAct({ kind: "older", id: "ghost", before: null, count: 10 }, roster)).toEqual({
+                ok: false,
+                reason: 'older: no tile "ghost" in the last snapshot',
+            });
+            expect(validateAct({ kind: "older", before: null, count: 10 }, roster)).toEqual({
+                ok: false,
+                reason: "older: no id",
+            });
+            expect(validateAct({ kind: "older", id: "w1", before: null, count: 10 }, null)).toEqual({
+                ok: false,
+                reason: "older: no snapshot has gone out yet",
+            });
+            for (const before of [undefined, 3, {}, [], true]) {
+                const r = validateAct({ kind: "older", id: "w1", before, count: 10 }, roster);
+                expect(r).toEqual({
+                    ok: false,
+                    reason: `older: before ${String(before)} is neither a cursor nor null`,
+                });
+            }
+        });
+
+        it("refuses a count that is not a whole number from 1 to 50", () => {
+            for (const count of [0, 51, 1.5, -3, NaN, Infinity, "10", null, undefined]) {
+                const r = validateAct({ kind: "older", id: "w1", before: null, count }, roster);
+                expect(r.ok).toBe(false);
+                if (r.ok === false) {
+                    expect(r.reason).toMatch(/^older: count /);
+                }
+            }
+        });
+
+        it("keeps only the fields of an older", () => {
+            const r = validateAct({ kind: "older", id: "w1", before: "m:3", count: 5, extra: 1 }, roster);
+            expect(r).toEqual({ ok: true, act: { kind: "older", id: "w1", before: "m:3", count: 5 } });
+        });
+    });
+
+    describe("stop", () => {
+        const withStrain = snapWith({ strain: strain() });
+
+        it("takes a stop of the pid a heavy row names", () => {
+            expect(validateAct({ kind: "stop", id: "w1", pid: 4242 }, withStrain)).toEqual({
+                ok: true,
+                act: { kind: "stop", id: "w1", pid: 4242 },
+            });
+        });
+
+        it("refuses a pid that is not the row's process", () => {
+            expect(validateAct({ kind: "stop", id: "w1", pid: 1 }, withStrain)).toEqual({
+                ok: false,
+                reason: 'stop: pid 1 is not the process of "w1" in the band',
+            });
+            expect(validateAct({ kind: "stop", id: "w1", pid: "4242" }, withStrain).ok).toBe(false);
+            expect(validateAct({ kind: "stop", id: "w1" }, withStrain).ok).toBe(false);
+        });
+
+        it("refuses a row with no process (Sleep only) and an agent not in the band", () => {
+            expect(validateAct({ kind: "stop", id: "w2", pid: 4242 }, withStrain)).toEqual({
+                ok: false,
+                reason: 'stop: "w2" has no process to stop',
+            });
+            expect(validateAct({ kind: "stop", id: "a1", pid: 4242 }, withStrain)).toEqual({
+                ok: false,
+                reason: 'stop: no heavy row "a1" in the last snapshot',
+            });
+        });
+
+        it("refuses with no strain in the snapshot, no id, or no snapshot", () => {
+            expect(validateAct({ kind: "stop", id: "w1", pid: 4242 }, roster)).toEqual({
+                ok: false,
+                reason: "stop: the last snapshot has no strain band",
+            });
+            expect(validateAct({ kind: "stop", pid: 4242 }, withStrain)).toEqual({ ok: false, reason: "stop: no id" });
+            expect(validateAct({ kind: "stop", id: "w1", pid: 4242 }, null)).toEqual({
+                ok: false,
+                reason: "stop: no snapshot has gone out yet",
+            });
+        });
+    });
+
+    describe("sleep", () => {
+        const withStrain = snapWith({ strain: strain() });
+
+        it("takes a sleep of any heavy row, with or without a process", () => {
+            for (const id of ["w1", "w2"]) {
+                expect(validateAct({ kind: "sleep", id }, withStrain)).toEqual({
+                    ok: true,
+                    act: { kind: "sleep", id },
+                });
+            }
+        });
+
+        it("refuses an agent not in the band, even one with a tile", () => {
+            expect(validateAct({ kind: "sleep", id: "a1" }, withStrain)).toEqual({
+                ok: false,
+                reason: 'sleep: no heavy row "a1" in the last snapshot',
+            });
+        });
+
+        it("refuses with no strain in the snapshot, no id, or no snapshot", () => {
+            expect(validateAct({ kind: "sleep", id: "w1" }, roster)).toEqual({
+                ok: false,
+                reason: "sleep: the last snapshot has no strain band",
+            });
+            expect(validateAct({ kind: "sleep" }, withStrain)).toEqual({ ok: false, reason: "sleep: no id" });
+            expect(validateAct({ kind: "sleep", id: "w1" }, null)).toEqual({
+                ok: false,
+                reason: "sleep: no snapshot has gone out yet",
+            });
+        });
+
+        it("keeps only the fields of a sleep", () => {
+            expect(validateAct({ kind: "sleep", id: "w1", pid: 4242 }, withStrain)).toEqual({
+                ok: true,
+                act: { kind: "sleep", id: "w1" },
+            });
+        });
+    });
 });
 
 describe("sameSnapshot", () => {
@@ -126,6 +283,33 @@ describe("sameSnapshot", () => {
         expect(sameSnapshot(base, snap([tile("a", { since: 6, ctxPct: 10 })]))).toBe(false);
         expect(sameSnapshot(base, snap([tile("a", { since: 5, ctxPct: 11 })]))).toBe(false);
         expect(sameSnapshot(base, snap([tile("a", { since: 5, ctxPct: 10, sent: true })]))).toBe(false);
+    });
+
+    it("sees a changed strain level and a changed machine reading", () => {
+        const base = snapWith({ machine, strain: strain() });
+        expect(sameSnapshot(base, snapWith({ machine, strain: strain() }))).toBe(true);
+        expect(sameSnapshot(base, snapWith({ machine, strain: strain({ level: "red" }) }))).toBe(false);
+        expect(sameSnapshot(base, snapWith({ machine: { ...machine, cpuPct: 41 }, strain: strain() }))).toBe(false);
+        expect(sameSnapshot(base, snapWith({ machine: { ...machine, memFree: 1e9 }, strain: strain() }))).toBe(false);
+    });
+
+    it("sees a strain that appears or goes, and a heavy row's note", () => {
+        const base = snapWith({ machine, strain: strain() });
+        expect(sameSnapshot(base, snapWith({ machine }))).toBe(false);
+        expect(sameSnapshot(snapWith({ machine }), base)).toBe(false);
+        expect(sameSnapshot(snapWith({}), snapWith({ machine }))).toBe(false);
+        const noted = strain();
+        noted.heavy[0].note = "Not run (fixture)";
+        expect(sameSnapshot(base, snapWith({ machine, strain: noted }))).toBe(false);
+    });
+
+    it("still ignores now with a machine and a strain in it", () => {
+        expect(
+            sameSnapshot(
+                snapWith({ now: 1, machine, strain: strain() }),
+                snapWith({ now: 9, machine, strain: strain() })
+            )
+        ).toBe(true);
     });
 
     it("treats nothing sent as different from any snapshot", () => {
