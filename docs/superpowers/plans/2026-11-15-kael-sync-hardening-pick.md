@@ -253,7 +253,7 @@ signals, and say so in the commit body. Run `go test ./cmd/wsh/cmd -run 'Agents'
 The re-answerable ask is shown by Task 10's `kael1113-pick` step.
 
 ### Task 8: an exited agent leaves the roster, and a prompt to no terminal is refused
-**Depends on:** Task 1, Task 7
+**Depends on:** Task 1 (the install hook list and its tests), Task 7 (wshserver_agentmsg.go and its tests)
 **Files:** `cmd/wsh/cmd/wshcmd-agenthook.go`, `cmd/wsh/cmd/wshcmd-agenthook_test.go`, `cmd/wsh/cmd/wshcmd-installhooks.go`, `cmd/wsh/cmd/wshcmd-installhooks_test.go`, `frontend/app/store/services.ts`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `frontend/types/waveevent.d.ts`, `pkg/baseds/baseds.go`, `pkg/waveobj/metaconsts.go`, `pkg/wconfig/metaconsts.go`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/wshrpc/wshserver/wshserver_agentmsg.go`, `pkg/wshrpc/wshserver/wshserver_agentmsg_test.go`
 
 Commits: `9ea34975e`, `52939d137`.
@@ -303,7 +303,7 @@ Run `npx vitest run` on the touched test files.
 The row placement is shown by Task 10's `kael1113-pick` step.
 
 ### Task 10: a scenario for the visible fixes
-**Depends on:** Task 7, Task 8, Task 9
+**Depends on:** Task 7 (the ask unlock that step 2 shows), Task 9 (the row placement that step 1 shows)
 **Files:** `scripts/cdp/scenarios-kael1113-pick.mjs`, `scripts/cdp/scenarios.mjs`
 
 Write `scripts/cdp/scenarios-kael1113-pick.mjs` with one scenario named exactly `kael1113-pick`, and register it in
@@ -321,7 +321,7 @@ both were skipped, the scenario still opens the Agent surface and asserts the ru
 resolves. Run it against a dev app with `task verify:ui -- kael1113-pick` if one is up; otherwise Final runs it.
 
 ### Task 11: changelog, hand checks and the spec's skip list
-**Depends on:** Task 1, Task 2, Task 3, Task 4, Task 5, Task 6, Task 7, Task 8, Task 9, Task 10
+**Depends on:** Task 1 (its commit bodies), Task 2 (its commit bodies), Task 3 (its commit bodies), Task 4 (its commit bodies), Task 5 (its commit bodies), Task 6 (its commit bodies), Task 7 (its commit bodies), Task 8 (its commit bodies), Task 9 (its commit bodies), Task 10 (its commit body)
 **Files:** `CHANGELOG.md`, `docs/hand-checks.md`, `docs/open-issues.md`, `docs/superpowers/specs/2026-11-13-kael-sync-engine-hardening-overview-design.md`, `docs/superpowers/plans/2026-11-15-kael-sync-hardening-pick.md`
 
 Read every commit the run landed (`git log main..HEAD`) and their bodies before writing.
