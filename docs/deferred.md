@@ -1083,7 +1083,8 @@ Two self-healing cleanups ship with it, because a removed subcommand that is sti
 keeps firing: the `agent-memory-*` forms stay in `isManagedCommand`'s allowlist (recognition is what lets
 a stale hook be *pruned*, not what preserves it), `mergeAgentHooks`/`configIsHealthy` now scan every event
 present in `settings.json` rather than only the ones arcterm currently manages (`SessionEnd` left
-`managedHooks` entirely with `agent-memory-hook`), and `install-agent-hooks` deletes a leftover
+`managedHooks` entirely with `agent-memory-hook`; 2026-11-16: it is managed again, by `agent-hook`, to report
+an exited Claude as ended, `00e9930f6`), and `install-agent-hooks` deletes a leftover
 `~/.pi/agent/extensions/waveterm-memory.ts`.
 
 Revive only on evidence that note bodies — not index lines — are what changes an agent's behaviour.
