@@ -69,6 +69,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Jarvis set to the hologram now shows as the hologram in Float too, on the float bar where Sprout would stand, and
+  when the window folds, in Sprout's place on your screen. Before, both kept Sprout.
 - The Cockpit, Jarvis, Diff and Setup move on the same smooth spring as Chat: rows and cards open and fold instead of
   jumping, and a filter switch or a big update still shows at once.
 - A suggested reply clicked over text you typed now asks on the chip itself ("Replace & send") instead of in a notice

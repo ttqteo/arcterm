@@ -42,6 +42,8 @@ import { writeConfig } from "@/app/view/agents/settingsui";
 import { foldedList, workingCount } from "@/app/view/agents/sproutroster";
 import { StatusDot } from "@/app/view/agents/statusdot";
 import { autoSproutOn, type Foreground } from "@/app/view/agents/windowsize";
+import { hologramPose, petForm, type HologramPose } from "@/app/view/jarvis/hologrammodel";
+import { useAskingCount, useHologramCanvas } from "@/app/view/jarvis/hologramview";
 import { closePeek, openPetPeek } from "@/app/view/jarvis/peekstore";
 import { PetBubble } from "@/app/view/jarvis/petbubble";
 import { petCharacter } from "@/app/view/jarvis/petcharacter";
@@ -61,6 +63,7 @@ import {
     petBubbleAtom,
     petCharacterAtom,
     petErrandAtom,
+    petFormAtom,
     petOutfitChoiceAtom,
     petPeekOpenAtom,
 } from "@/app/view/jarvis/petstore";
@@ -76,6 +79,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { CornerDownLeft, MessageCircle, Pause, PictureInPicture2, X } from "lucide-react";
+import { useReducedMotion } from "motion/react";
 import {
     useEffect,
     useMemo,
@@ -141,6 +145,25 @@ function SpideyRoof({ f }: { f: SpideyFoldLook }) {
             {cells.overlay.map(cell)}
             {f.sense ? SPIDEY_SENSE.map(({ x, y }, i) => cell({ x, y, token: "--color-asking" }, 1000 + i)) : null}
         </svg>
+    );
+}
+
+// Jarvis as the hologram (Settings → Jarvis → Form), filling Sprout's 64px box on a see-through canvas, so the box, the
+// drag, the card and the window's sizes stay as they are for Sprout. A GL failure shows Sprout until the next fold.
+const MINI_HOLOGRAM_PX = 64;
+
+function MiniHologram({ pose, onFail }: { pose: HologramPose; onFail: () => void }) {
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const reduce = useReducedMotion() === true;
+    useHologramCanvas(canvasRef, { sizePx: MINI_HOLOGRAM_PX, pose, reduce, onFail });
+    return (
+        <canvas
+            ref={canvasRef}
+            aria-hidden="true"
+            data-mini-hologram
+            className="block"
+            style={{ width: MINI_HOLOGRAM_PX, height: MINI_HOLOGRAM_PX }}
+        />
     );
 }
 
@@ -335,8 +358,14 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
         petOutfit(petOutfitChoice(outfitChoice), new Date(), christmas),
         character
     );
+    // the hologram form draws in Sprout's place, whichever character is picked
+    const form = petForm(useAtomValue(petFormAtom));
+    const [hologramFailed, setHologramFailed] = useState(false);
+    useEffect(() => setHologramFailed(false), [form]);
+    const hologram = form === "hologram" && !hologramFailed;
+    const asking = useAskingCount(model);
     // Spider-Man's rooftop: what it draws (lit windows, spider-sense, swinging legs, the unread mark) and the working dots
-    const spidey = character === "spidey";
+    const spidey = character === "spidey" && !hologram;
     const roofLook = spideyFoldLook(look, frame);
     const roof: SpideyFoldLook | null = spidey
         ? { ...roofLook, thinking: forced?.thinking ?? roofLook.thinking }
@@ -505,6 +534,13 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     const dots = teleport == null && (look.working != null || roof?.thinking === true);
     const card = (forced?.hover ?? (hovered || typing || held)) && !chatOpen;
     const speaking = bubble != null && !chatOpen && !card;
+    // solid while the card or the chat is up, faint at rest as in the window's corner
+    const holoPose = hologramPose({
+        asking,
+        working: liveWorking,
+        speaking: bubble != null,
+        peekOpen: chatOpen || card,
+    });
     const told = unread && !chatOpen && errand != null && bubble == null && !card;
     const fromFloat = origin !== "full";
 
@@ -526,14 +562,16 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                     onClick={onClick}
                     className={cn(
                         "absolute cursor-pointer rounded-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                        // the rooftop's 60px sits centred in the 64px box; Sprout's 48px, 8px in
-                        roofed ? "left-0.5 top-0.5" : "left-2 top-2",
-                        chatOpen && "bg-accentbg",
-                        // his legs swing on the bob's beat instead
-                        look.bob && !spidey && "-translate-y-1"
+                        // the hologram fills the 64px box; the rooftop's 60px sits centred in it; Sprout's 48px, 8px in
+                        hologram ? "left-0 top-0 rounded-full" : roofed ? "left-0.5 top-0.5" : "left-2 top-2",
+                        chatOpen && !hologram && "bg-accentbg",
+                        // his legs swing on the bob's beat instead; the hologram turns in place
+                        look.bob && !spidey && !hologram && "-translate-y-1"
                     )}
                 >
-                    {teleport != null ? (
+                    {hologram ? (
+                        <MiniHologram pose={holoPose} onFail={() => setHologramFailed(true)} />
+                    ) : teleport != null ? (
                         <PetTeleportSvg run={teleport} sprite={sprite} cellPx={PET_CELL_PX} character={character} />
                     ) : roof != null ? (
                         <SpideyRoof f={roof} />

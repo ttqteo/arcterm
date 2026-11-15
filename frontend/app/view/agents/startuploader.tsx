@@ -8,7 +8,7 @@
 //   animation, which would hold the page at display rate (pulse.ts).
 // - Hologram: Jarvis's HUD a size up from its corner, built layer by layer (the core, then the rings from the inside out),
 //   then swaying with pulses running in along its struts until the roster is read. While it shows, the corner hologram stands down
-//   (hologramLoadersShownAtom). Float's small window keeps Sprout, as the corner does, and so does a GL failure.
+//   (hologramLoadersShownAtom). Float's small window keeps Sprout for the loader, and so does a GL failure.
 // With reduced motion either stands still. While Jarvis is hidden (pethide.ts) neither shows, only the line, so a hidden
 // Jarvis makes no WebGL context even at launch.
 

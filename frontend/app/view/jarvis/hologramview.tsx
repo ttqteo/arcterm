@@ -11,6 +11,7 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom, cockpitWaitingCount, splitAttention } from "@/app/view/agents/attentionstore";
 import { channelMessagesAtom } from "@/app/view/agents/channelsstore";
 import { answeredAskIdsAcross } from "@/app/view/agents/jarvisderive";
+import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { motion, type TargetAndTransition, type Transition } from "motion/react";
 import { useEffect, useMemo, useRef, type RefObject } from "react";
@@ -160,9 +161,11 @@ export function useHologramCanvas(canvasRef: RefObject<HTMLCanvasElement | null>
     }, []);
 }
 
-// The size is read once, when the scene is built: PetView keys this view by it, so a new size is a new canvas.
+// The size is read once, when the scene is built: PetView keys this view by it, so a new size is a new canvas. With a
+// spot (Float: Sprout's home on the float bar) it stands there instead of in the window's bottom-right corner.
 export function HologramView({
     sizePx,
+    spot,
     pose,
     unread,
     peekOpen,
@@ -172,6 +175,7 @@ export function HologramView({
     onFail,
 }: {
     sizePx: number;
+    spot?: { left: number; top: number };
     pose: HologramPose;
     unread: boolean;
     peekOpen: boolean;
@@ -206,8 +210,11 @@ export function HologramView({
             whileFocus={{ opacity: 1 }}
             transition={reduce ? { duration: 0 } : POWER_ON}
             // round, so the corner of the terminal outside the form still takes clicks
-            className="fixed bottom-[40px] right-[18px] z-[60] cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            style={{ width: sizePx, height: sizePx }}
+            className={cn(
+                "fixed z-[60] cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                spot == null && "bottom-[40px] right-[18px]"
+            )}
+            style={{ width: sizePx, height: sizePx, left: spot?.left, top: spot?.top }}
         >
             <canvas ref={canvasRef} aria-hidden="true" className="block h-full w-full" />
             {/* the unread marker: a kind of thing happened, never how many; on the form's rim at every size */}

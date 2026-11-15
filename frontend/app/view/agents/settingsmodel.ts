@@ -640,7 +640,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         {
                             id: "appearance.petform",
                             title: "Shows as",
-                            desc: "The hologram, the default, sits bottom-right, blue when calm, amber when something waits on you (WebGL, about 20–40 MB more). Sprout walks the footer. Float and the fold keep Sprout.",
+                            desc: "The hologram, the default, sits bottom-right, blue when calm, amber when something waits on you (WebGL, about 20–40 MB more). In Float it stands on the float bar, folded it takes Sprout's place. Sprout walks the footer.",
                             key: "jarvis.pet.form",
                             scope: "local",
                         },
