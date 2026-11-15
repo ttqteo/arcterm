@@ -52,9 +52,10 @@ terminal.
   button returns to). Persist it the way `src-tauri/src/winframe.rs` keeps the main window's frame
   (`restore_and_track`, `save`). If the remembered screen is gone, open it on the main screen.
 - Its own capability file (`src-tauri/capabilities/sidecar.json`): `core:event:default` plus the window permissions
-  its title bar uses (start-dragging, minimize, toggle-maximize, close, set-fullscreen, is-fullscreen, and for the S
-  button inner-size, set-size, set-position, set-always-on-top: the S button reads the size it returns to), or the S
-  button is a host command instead. Nothing else.
+  its title bar uses (start-dragging, minimize, toggle-maximize, close, set-fullscreen, is-fullscreen, and inner-size
+  and set-size, which the CDP scenario's own window-call step uses). **The S button and the pin are a host command
+  instead** (`sidecar_form`, section 1a), so the capability grants no set-position or set-always-on-top: nothing in the
+  page calls them. Nothing else.
 
 ### 1a. Free resizing, the S button and the small form
 
@@ -71,6 +72,14 @@ Board `F-small-asks.dc.html`.
   (always on top); pressed again, it returns to the size, position and full-screen state it had before. In the small
   form a pin button turns always-on-top off and on. Dragging the window narrower than ~1100 px also shows the small
   form, but does not pin it.
+- **The S button and the pin are one host command, `sidecar_form`, not page window calls.** Reopen has to restore the
+  small form, the pin and the frame S returns to (section 1), and only the host can persist them, so the window's frame
+  has one owner: the command shrinks, restores and pins, and keeps `{frame, fullscreen}` of what S returns to, the small
+  form and the pin in the file the reopen already reads. The small frame is 340×440 logical, keeping the window's
+  top-right corner, clamped into the work area of the screen that holds the window's centre; before shrinking the host
+  leaves full screen and unmaximizes, and S again puts back the frame, maximized if it was, then full screen if it was.
+  Dragging the small window wider keeps the host's small flag (S stays pressed and still restores); the layout follows
+  the width alone.
 - The 1100 px switch point and the 340×440 size are proposals; the builder tunes them against the boards.
 
 ### 2. How it is built: a slim page fed a snapshot
@@ -149,18 +158,28 @@ battery.
   agent's CPU (processes grouped by job object and owner block, CPU deltas between samples, its own 80%-over-3-samples
   busy rule in `group.go`), polled by the main window every 2 s while it is visible (`resmonstore.ts`,
   `RESMON_POLL_MS`). A second sampler over `pkg/memusage` trees would give two CPU figures per agent that can
-  disagree. resmon answers `supported:false` elsewhere, so a macOS sampler is the only new Go: it fills the same
-  per-agent CPU figure that resmon's snapshot carries, so the band reads one shape on both platforms, and it runs only
-  while the band shows. The RAM reading likewise runs only while the band shows; the machine figures on the title bar
-  come from what the main window already polls or receives.
+  disagree. resmon answers `supported:false` elsewhere, so a macOS sampler is the only new Go. **As built, per-agent CPU
+  is one RPC with one shape on both platforms:** `AgentCpuCommand` answers `AgentCpuData` (each agent's CPU and its busiest
+  descendant process). Windows fills it from `resmon.Snapshot` (the groups owned by an agent tab or a run worker); macOS
+  from a new sampler, `pkg/agentcpu`; elsewhere it says `supported: false`. The macOS sampler does not fill resmon's own
+  snapshot, because that snapshot's `supported` flag turns on the Resource Manager readout, which would then show
+  half-filled groups. It runs only while a CPU band shows. The RAM reading likewise runs only while a RAM band shows.
+  **The title bar's figures** are the bridge's own: while a Sidecar page is live it subscribes to `memorypressure` and
+  reads `GetMachineStatsCommand` at hello and every 5 s (nothing in the main window polls the CPU outside the tray
+  popover, and wavesrv samples it once a second anyway, so the read is a cached value plus the disk sizes); nothing
+  polls while no page is live.
 - The bridge in the main window reads the machine and the per-agent figures and puts them in the snapshot; the page
   stays storeless.
 
 ### 5. RAM budget
 
 Sidecar costs at most **100 MB** private (its renderer plus what it adds to the GPU process) with 12 agents, and holds
-there after a day on screen. The prototype measured ~80 MB on a dev build. Measure it again on a release build
-(`task tauri:build`), add the figures to `docs/open-issues.md` "RAM watch", and do not merge over budget.
+there after a day on screen. The prototype measured ~80 MB on a dev build, and part 1's release build ~48 MB. **Measure
+the release build after the part-2 run lands** (`task tauri:build`, 12 agents, Sidecar open a day with the band showing
+for part of it), add the figures to `docs/open-issues.md` "RAM watch"; over budget is a defect to fix before the next
+release. (It was "before merging" until part 2: a release build and a day on screen do not fit a run's Final, and part 2
+adds no long-lived renderer state beyond the snapshot's new fields and a tile's loaded rows, which a scroll back to the
+bottom drops.)
 
 ## Testing
 
@@ -172,10 +191,15 @@ there after a day on screen. The prototype measured ~80 MB on a dev build. Measu
 - Vitest for the transcript-tail read of an agent that is not streamed (last 2 messages, kept after its stream stops).
 - A CDP scenario (`scripts/cdp/scenarios.mjs`) that opens Sidecar through the host and screenshots its page with a
   fixture roster (4, 12 and 20 agents), with the band at amber and red, and in the small form after the S button
-  (and back). Vitest for the width → wall-or-small-form switch and the S button's frame memory. Sidecar's page is a separate CDP target on
-  the same port (the prototype's `cdpeval` found it by its `sidecar.html` url). It needs the Tauri host: mark it
-  `host: true`.
-- Measure RAM as above before merging.
+  (and back). Vitest for the width → wall-or-small-form switch; **Rust tests (`sidecar.rs`) for the S button's frame
+  memory** (shrink then restore returns the first frame and full screen, a maximized frame comes back maximized, the
+  small frame on one and two screens and at another scale, and the relaunch decision of a small, pinned file), since the
+  host owns it. Sidecar's page is a separate CDP target on the same port (the prototype's `cdpeval` found it by its
+  `sidecar.html` url). It needs the Tauri host: mark it `host: true`. The scenario drives the band through the bridge's
+  DEV seams (`__sidecarMachine`, `__sidecarHeavy`, `__sidecarRefresh`, `__sidecarFeed`) and gives one asleep agent a
+  checked-in transcript file, so the real tail read runs; it presses the real S button and the pin on the real window.
+- Measure the release build's RAM after the part-2 run lands, as section 5 says (the person's, by hand: it is a
+  `docs/hand-checks.md` line), not before merging.
 
 ## Out of scope
 
