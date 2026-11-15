@@ -46,6 +46,7 @@ import {
     closePickedLabel,
     COMPACT_WIDTH,
     holdOrder,
+    PANEL_MAX_WIDTH,
     PANEL_WIDTH,
     panelPlacement,
     pickedRows,
@@ -1046,6 +1047,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                     top: placement.top,
                     bottom: placement.bottom,
                     width: compact ? COMPACT_WIDTH : PANEL_WIDTH,
+                    maxWidth: PANEL_MAX_WIDTH,
                 }}
                 className="fixed z-[60] overflow-hidden rounded-lg border border-edge-strong frost shadow-popover"
             >

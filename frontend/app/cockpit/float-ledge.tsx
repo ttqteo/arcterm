@@ -6,8 +6,10 @@
 // left, the fixed Translate tab (the Translate panel over the terminal), a divider, then the tabs Float can switch to:
 // the Agent tree's top level, so a run is one tab (its lead) however many sessions it spawned, then the plain terminals
 // (sproutroster.ts floatTabs), their dots pulsing while that agent works or asks. A right-click pins a tab: pinned tabs
-// come first, in the order they were pinned, and are never cut (floattabsstore.ts). On its right, the plan usage
-// (usagemeters.tsx FloatUsage), since Float has no app bar. What lies between is the floor Sprout walks. The fixed tab
+// come first, in the order they were pinned, and are never cut (floattabsstore.ts). A tab is at least 80px, so its name
+// reads; an agent that asks you is never hidden under "+N", and "+N" carries the dot of the most urgent tab it hides. On
+// its right, since Float has no app bar, the Jobs chip while heavy jobs wait (jobqueuechip.tsx) and the free RAM and
+// plan usage (usagemeters.tsx FloatUsage), which open the Jobs popover and the Consumers panel as they do there. What lies between is the floor Sprout walks. The fixed tab
 // and the usage keep their width; the tabs take what is left past the floor's least, so a narrow float shows fewer and
 // puts the rest under "+N" instead of painting them over their neighbours. A press on the strip, away from a tab, drags
 // the window like the float bar.
@@ -19,7 +21,7 @@ import { STATE_LABEL } from "@/app/view/agents/agentheader";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askingLabel } from "@/app/view/agents/agentsviewmodel";
 import { floatTabPinsAtom, setTabPinned } from "@/app/view/agents/floattabsstore";
-import { floatTabs, floatTabUnits, type FloatTab } from "@/app/view/agents/sproutroster";
+import { floatTabs, floatTabUnits, restState, type FloatTab } from "@/app/view/agents/sproutroster";
 import { StatusDot } from "@/app/view/agents/statusdot";
 import { closeTranslate, toggleTranslate, translateOpenAtom } from "@/app/view/agents/translatestore";
 import { FloatUsage } from "@/app/view/agents/usagemeters";
@@ -28,6 +30,7 @@ import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Languages, Pin, SquareTerminal } from "lucide-react";
 import { useMemo, type MouseEvent } from "react";
+import { JobQueueChip } from "./jobqueuechip";
 
 function tabTitle(t: FloatTab): string {
     const a = t.agent;
@@ -98,6 +101,7 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
             ],
             e
         );
+    const hidden = restState(tabs.rest);
     return (
         <div data-tauri-drag-region className="flex h-[52px] shrink-0 select-none border-t border-border bg-surface">
             <div data-tauri-drag-region className="flex flex-none items-center gap-1 pl-2">
@@ -135,7 +139,7 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
                                     onClick={() => show(t.agent.id)}
                                     onContextMenu={(e) => showTabMenu(t, e)}
                                     className={cn(
-                                        "flex h-[26px] min-w-[44px] max-w-[120px] cursor-pointer items-center gap-1.5 rounded-[7px] px-2 text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                        "flex h-[26px] min-w-[80px] max-w-[140px] cursor-pointer items-center gap-1.5 rounded-[7px] px-2 text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                                         on
                                             ? "bg-surface-hover font-semibold text-primary ring-1 ring-edge-mid"
                                             : "text-secondary hover:bg-surface-hover hover:text-primary"
@@ -163,11 +167,13 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
                             <button
                                 type="button"
                                 data-float-tabs-more
-                                aria-label={`${tabs.rest.length} more`}
+                                data-float-tabs-more-state={hidden ?? undefined}
+                                aria-label={`${tabs.rest.length} more${hidden === "asking" ? ", one asks you" : hidden === "working" ? ", working" : ""}`}
+                                title={tabs.rest.map(tabTitle).join("\n")}
                                 onClick={showRest}
-                                className="flex h-[26px] flex-none cursor-pointer items-center rounded-[7px] px-1.5 text-[11px] text-muted tabular-nums hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                className="flex h-[26px] flex-none cursor-pointer items-center gap-1 rounded-[7px] px-1.5 text-[11px] text-muted tabular-nums hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                             >
-                                +{tabs.rest.length}
+                                {hidden != null ? <StatusDot state={hidden} pulse /> : null}+{tabs.rest.length}
                             </button>
                         ) : null}
                     </div>
@@ -175,7 +181,10 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
                 {/* the floor Sprout walks: what the tabs and the usage leave, never less than the sprite and a step */}
                 <div data-pet-ledge data-pet-ledge-holds data-tauri-drag-region className="min-w-[64px] flex-1" />
             </div>
-            <FloatUsage model={model} />
+            <div className="flex flex-none items-center gap-1">
+                <JobQueueChip />
+                <FloatUsage model={model} />
+            </div>
         </div>
     );
 }

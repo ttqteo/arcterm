@@ -6,11 +6,13 @@ import type { AgentVM } from "./agentsviewmodel";
 import { NO_LINEAGE, type Lineage, type RunInfo } from "./runlineage";
 import {
     FLOAT_TAB_MAX,
+    FLOAT_TAB_MIN,
     floatTabOrder,
     floatTabs,
     floatTabUnits,
     foldedList,
     parseTabPins,
+    restState,
     withTabPin,
     workingCount,
     type FloatTab,
@@ -20,6 +22,10 @@ const a = (id: string, state: AgentVM["state"], kind?: string): AgentVM =>
     ({ id, name: id, task: "", state, kind }) as AgentVM;
 const ids = (list: AgentVM[]) => list.map((x) => x.id);
 const tids = (list: FloatTab[]) => list.map((x) => x.agent.id);
+// the room n tabs take on the ledge: a 4px inset, then FLOAT_TAB_MIN per tab and 4px between
+const roomFor = (n: number) => 4 + n * FLOAT_TAB_MIN + (n - 1) * 4;
+// and with "+N" beside them: 4px and 40px more
+const roomWithMore = (n: number) => roomFor(n) + 4 + 40;
 
 // run r1 led by "lead", worked by "w1" and "w2", its plan reviewed by "rev"
 const run: Lineage = {
@@ -113,7 +119,7 @@ describe("floatTabs", () => {
             expect(tids(tabs.rest)).toEqual(["a", "b", "d"]);
         });
         it("keeps the one in view in the last unpinned place past the cut", () => {
-            const tabs = floatTabs(six, [], "e", NO_LINEAGE, 4 + 3 * 44 + 2 * 4 + 4 + 32, ["f"]);
+            const tabs = floatTabs(six, [], "e", NO_LINEAGE, roomWithMore(3), ["f"]);
             expect(tids(tabs.shown)).toEqual(["f", "a", "e"]);
         });
         it("ignores a pin whose tab is gone", () =>
@@ -128,15 +134,10 @@ describe("floatTabs", () => {
     });
     describe("in the room the ledge has", () => {
         const six = "abcdef".split("").map((id) => a(id, "idle"));
-        // 4px inset, then 44px per tab and 4px between; "+N" takes 4px and 32px more
         it("shows every tab that fits", () =>
-            expect(tids(floatTabs(six.slice(0, 3), [], "a", NO_LINEAGE, 4 + 3 * 44 + 2 * 4).shown)).toEqual([
-                "a",
-                "b",
-                "c",
-            ]));
+            expect(tids(floatTabs(six.slice(0, 3), [], "a", NO_LINEAGE, roomFor(3)).shown)).toEqual(["a", "b", "c"]));
         it("cuts to what fits beside +N and keeps the rest for its menu", () => {
-            const tabs = floatTabs(six.slice(0, 3), [], "a", NO_LINEAGE, 4 + 3 * 44 + 2 * 4 - 1);
+            const tabs = floatTabs(six.slice(0, 3), [], "a", NO_LINEAGE, roomFor(3) - 1);
             expect(tids(tabs.shown)).toEqual(["a", "b"]);
             expect(tids(tabs.rest)).toEqual(["c"]);
         });
@@ -144,7 +145,47 @@ describe("floatTabs", () => {
             expect(floatTabs(six, [], "a", NO_LINEAGE, 2000).shown).toHaveLength(FLOAT_TAB_MAX));
         it("keeps the one in view when only one fits", () =>
             expect(tids(floatTabs(six, [], "e", NO_LINEAGE, 10).shown)).toEqual(["e"]));
+        it("a 530px float's ledge holds tabs a name can be read in, not four cut to two letters", () =>
+            // 530 less the Translate tab and divider (~48), the floor's least (64) and the usage (~150)
+            expect(floatTabs(six, [], "a", NO_LINEAGE, 530 - 48 - 64 - 150).shown).toHaveLength(2));
     });
+    describe("an agent that asks you", () => {
+        const six = "abcdef".split("").map((id) => a(id, "idle"));
+        it("is pulled out of +N into the last unpinned place, the tabs kept in the ledge's order", () => {
+            const list = [...six.slice(0, 4), a("e", "asking"), a("f", "idle")];
+            const tabs = floatTabs(list, [], "a", NO_LINEAGE, roomWithMore(3));
+            expect(tids(tabs.shown)).toEqual(["a", "b", "e"]);
+            expect(tids(tabs.rest)).toEqual(["c", "d", "f"]);
+        });
+        it("never pushes out the one in view", () => {
+            const list = [...six.slice(0, 4), a("e", "asking"), a("f", "idle")];
+            expect(tids(floatTabs(list, [], "d", NO_LINEAGE, roomWithMore(2)).shown)).toEqual(["d", "e"]);
+        });
+        it("takes two places when two ask", () => {
+            const list = [a("a", "idle"), a("b", "idle"), a("c", "idle"), a("d", "asking"), a("e", "asking")];
+            expect(tids(floatTabs(list, [], "a", NO_LINEAGE, roomWithMore(3)).shown)).toEqual(["a", "d", "e"]);
+        });
+        it("stays under +N when the pinned tabs fill the ledge", () => {
+            const list = [...six.slice(0, 4), a("e", "asking")];
+            const tabs = floatTabs(list, [], "a", NO_LINEAGE, 10, ["b"]);
+            expect(tids(tabs.shown)).toEqual(["b", "a"]);
+            expect(tids(tabs.rest)).toContain("e");
+        });
+    });
+});
+
+describe("restState", () => {
+    const tab = (id: string, state: AgentVM["state"]): FloatTab => ({
+        key: id,
+        agent: a(id, state),
+        label: id,
+        members: [id],
+    });
+    it("is asking when any hidden tab asks", () =>
+        expect(restState([tab("a", "working"), tab("b", "asking"), tab("c", "idle")])).toBe("asking"));
+    it("is working when one works and none asks", () =>
+        expect(restState([tab("a", "idle"), tab("b", "working")])).toBe("working"));
+    it("is none when every hidden tab is idle", () => expect(restState([tab("a", "idle")])).toBeNull());
 });
 
 describe("floatTabOrder", () => {

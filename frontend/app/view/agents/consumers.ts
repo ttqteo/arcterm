@@ -439,6 +439,9 @@ export const PANEL_WIDTH = 620;
 export const COMPACT_WIDTH = 560;
 const PANEL_GAP = 6; // between the opener and the panel
 const PANEL_MARGIN = 8; // the nearest it comes to the window's edge
+/** The most a panel takes: the window less its margins, so a narrow float (about 530px) still shows the whole panel,
+ *  its name column narrower. */
+export const PANEL_MAX_WIDTH = `calc(100vw - ${2 * PANEL_MARGIN}px)`;
 
 /** Where the panel hangs: its right edge on its opener's right edge, above an opener in the window's lower half (the
  * footer) and below one in the upper half, kept inside the window. No opener (opened from code) keeps the footer's

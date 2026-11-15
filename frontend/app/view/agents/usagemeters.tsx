@@ -7,7 +7,8 @@
 // how much is used (usageLevel, not by pace: a fast start read red at 27%), and the 5-hour window's countdown. Tokens
 // and the time each window resets are on hover. RAM and tokens open the one Consumers panel (consumerspanel.tsx), so
 // they are one button: a click on the RAM half ranks it by RAM, anywhere else by tokens. Float has no app bar: its
-// ledge shows FloatUsage, each provider's first window alone (the 5-hour one), the rest in its tooltip.
+// ledge shows FloatUsage, the free RAM short, then each provider's first window alone (the 5-hour one), the rest in its
+// tooltip, one borderless button onto the same Consumers panel.
 
 import { readout } from "@/app/cockpit/resmon";
 import { resmonSnapshotAtom } from "@/app/cockpit/resmonstore";
@@ -118,21 +119,36 @@ export function HeaderUsage({ model }: { model: AgentsViewModel }) {
     );
 }
 
-/** Float's usage, on the ledge (float-ledge.tsx): each provider's first window, its logo, a short bar, the percent and
- *  the 5-hour countdown, and every window in the tooltip. No border and no button: the float is small, and the
- *  Consumers panel it would open is not. */
+/** Float's usage, on the ledge (float-ledge.tsx): the free RAM (the GB alone), then each provider's first window, its
+ *  logo, a short bar, the percent and the 5-hour countdown, and every window in the tooltip. One borderless button, as
+ *  HeaderUsage is: the RAM half opens the Consumers panel ranked by RAM, where an agent is put to sleep or stopped to
+ *  free memory, anywhere else ranked by tokens; the panel narrows to the float (PANEL_MAX_WIDTH). */
 export function FloatUsage({ model }: { model: AgentsViewModel }) {
     const items = useMeterItems(model);
+    const cap = useWorkerCapacity();
+    const arc = readout(useAtomValue(resmonSnapshotAtom));
     const shown = items.filter((m) => m.first);
-    if (shown.length === 0) {
+    if (cap == null && shown.length === 0) {
         return null;
     }
     return (
-        <span
+        <button
+            type="button"
             data-float-usage
-            title={items.map((m) => m.title).join("\n")}
-            className="flex flex-none items-center gap-2 pr-3"
+            aria-haspopup="dialog"
+            title={[cap != null ? "RAM: click for what uses it" : null, ...items.map((m) => m.title)]
+                .filter(Boolean)
+                .join("\n")}
+            onClick={(e) =>
+                toggleConsumers(
+                    (e.target as Element).closest("[data-worker-capacity]") != null ? "ram" : "tokens",
+                    e.currentTarget
+                )
+            }
+            className="mr-1.5 flex h-[26px] flex-none cursor-pointer items-center gap-2 rounded-[7px] border-0 bg-transparent px-1.5 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
+            {cap != null ? <WorkerCapacityChip cap={cap} busy={arc.busy} arc={arc.ready ? arc : null} short /> : null}
+            {cap != null && shown.length > 0 ? <span aria-hidden className="h-3.5 w-px bg-edge-mid" /> : null}
             {shown.map((m) => {
                 const lvl = usageLevel(m.pct);
                 return (
@@ -154,7 +170,7 @@ export function FloatUsage({ model }: { model: AgentsViewModel }) {
                     </span>
                 );
             })}
-        </span>
+        </button>
     );
 }
 

@@ -15,12 +15,13 @@ export interface RosterCut {
 
 // tabs, not dots: past five the names get too short to read in a float
 export const FLOAT_TAB_MAX = 5;
-// a tab's least width, the gap between tabs and the tabs' inset on the ledge (float-ledge.tsx: min-w-[44px], gap-1,
-// pl-1), and the most "+N" takes
-const FLOAT_TAB_MIN = 44;
+// a tab's least width, the gap between tabs and the tabs' inset on the ledge (float-ledge.tsx: min-w-[80px], gap-1,
+// pl-1), and the most "+N" takes. 80px leaves a name about eight letters: at 44 a 530px float fit four tabs read as
+// "Tr…", "M…", so fewer tabs that read beat more that do not.
+export const FLOAT_TAB_MIN = 80;
 const FLOAT_TAB_GAP = 4;
 const FLOAT_TAB_INSET = 4;
-const FLOAT_TAB_MORE = 32;
+const FLOAT_TAB_MORE = 40;
 export const FOLDED_LIST_MAX = 4;
 
 // a run's workers and stage sessions, which the Agent tree nests under the run's lead (agenttreemodel.ts buildAgentTree)
@@ -219,8 +220,10 @@ function tabsThatFit(room: number, count: number): number {
 
 /** The float's tabs: the Agent tree's top level and the plain terminals (floatTabUnits), the pinned ones first, cut at
  *  what fits in room (the px the ledge leaves them; unmeasured, FLOAT_TAB_MAX). A pinned tab is never cut, however
- *  little room there is, and the tab of the one in view is always among those shown: past the cut it takes the last
- *  unpinned place, or comes after the pinned ones when they fill the ledge. None only when nothing at all floats. */
+ *  little room there is. The tab of the one in view is always among those shown, then every tab whose agent asks you,
+ *  so nothing that waits on you hides behind "+N": each takes the last unpinned place not already held by one of them,
+ *  and the one in view comes after the pinned ones when they fill the ledge. The shown tabs keep the ledge's order.
+ *  None only when nothing at all floats. */
 export function floatTabs(
     agents: readonly AgentVM[],
     terminals: readonly AgentVM[],
@@ -236,16 +239,47 @@ export function floatTabs(
     const pinnedCount = order.filter((u) => u.pinned).length;
     const n = Math.max(tabsThatFit(room, order.length), pinnedCount);
     const shown = order.slice(0, n);
-    const inView = focusId == null ? -1 : order.findIndex((u) => u.members.includes(focusId));
-    if (inView >= n) {
-        if (n > pinnedCount) {
-            shown[n - 1] = order[inView];
-        } else {
-            shown.push(order[inView]);
+    const inView = focusId == null ? undefined : order.find((u) => u.members.includes(focusId));
+    const asking = order.filter((u) => u.agent.state === "asking");
+    const must = [...(inView == null ? [] : [inView]), ...asking.filter((u) => u !== inView)];
+    const held = new Set<FloatTab>();
+    for (const u of must) {
+        if (shown.includes(u)) {
+            held.add(u);
+            continue;
         }
+        let at = -1;
+        for (let i = shown.length - 1; i >= 0; i--) {
+            if (!shown[i].pinned && !held.has(shown[i])) {
+                at = i;
+                break;
+            }
+        }
+        if (at >= 0) {
+            shown[at] = u;
+        } else if (u === inView) {
+            shown.push(u);
+        } else {
+            continue;
+        }
+        held.add(u);
     }
+    const index = new Map(order.map((u, i) => [u, i] as const));
+    shown.sort((p, q) => (index.get(p) ?? 0) - (index.get(q) ?? 0));
     const kept = new Set(shown.map((u) => u.key));
     return { shown, rest: order.filter((u) => !kept.has(u.key)) };
+}
+
+/** The state "+N" shows a dot for: asking when a tab it hides asks you, working when one works, none when all idle. */
+export function restState(rest: readonly FloatTab[]): AgentState | null {
+    let best: AgentState | null = null;
+    for (const u of rest) {
+        const s = u.agent.state;
+        if (s !== "idle" && (best == null || URGENCY[s] < URGENCY[best])) {
+            best = s;
+        }
+    }
+    return best;
 }
 
 const URGENCY: Record<AgentState, number> = { asking: 0, working: 1, idle: 2 };

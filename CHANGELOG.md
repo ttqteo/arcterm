@@ -26,6 +26,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The tabs under a Float window's terminal are readable again: a narrow float shows fewer tabs, each wide enough for
+  its name, instead of four cut to "Tr…", "M…". An agent waiting on you is never hidden under "+N", and "+N" shows a
+  dot when one it holds is asking you or working.
+- A Float window now shows how much RAM is free beside the usage meter, and clicking it opens the panel where you can
+  put an agent to sleep or stop it to free memory, as the RAM chip in the app bar does. The Jobs chip shows there too
+  while heavy jobs wait their turn.
+- A held agent's buttons (Remove, Add to, Start now) go onto a second line in a narrow window, such as a Float window,
+  instead of running off its edge.
 - Chat's suggested replies show in full when the message box is wide enough: the ones that do not fit go on a second
   line instead of every chip being cut short with "…". A narrow box (a Float window, a cell of a split) keeps them on one line.
 - A Chat message holding tabs (a row pasted from a spreadsheet) no longer shows twice while the agent works: its

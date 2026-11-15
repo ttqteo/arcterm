@@ -160,12 +160,14 @@ function HeldBody({ model, p }: { model: AgentsViewModel; p: ParkedLaunch }) {
                 </div>
             </div>
 
+            {/* the bar wraps where it is narrow (a float, about 250px beside the tree): the machine line keeps a row of its
+                own and the buttons go under it, Start now last, so none is cut off past the window's edge */}
             <div className="flex-none px-[22px] pb-[22px]">
-                <div className="mx-auto flex w-full max-w-[760px] items-center gap-2 rounded-[22px] border border-edge-mid bg-surface-raised py-[10px] pl-[16px] pr-[10px] shadow-popover-soft">
+                <div className="mx-auto flex w-full max-w-[760px] flex-wrap items-center gap-2 rounded-[22px] border border-edge-mid bg-surface-raised py-[10px] pl-[16px] pr-[10px] shadow-popover-soft">
                     <span
                         data-held-now={state?.tone ?? ""}
                         className={cn(
-                            "flex min-w-0 flex-1 items-center gap-1.5 text-[12.5px]",
+                            "flex min-w-0 flex-1 basis-[180px] items-center gap-1.5 text-[12.5px]",
                             state?.tone === "busy" ? "text-warning" : "text-secondary"
                         )}
                     >
@@ -186,7 +188,7 @@ function HeldBody({ model, p }: { model: AgentsViewModel; p: ParkedLaunch }) {
                         Remove
                     </button>
                     {/* one click adds it to the suggested initiative; the chevron picks another */}
-                    <span className="flex flex-none items-stretch overflow-hidden rounded-full border border-edge-mid">
+                    <span className="flex min-w-0 flex-initial items-stretch overflow-hidden rounded-full border border-edge-mid">
                         <button
                             type="button"
                             data-held-act="add"

@@ -15,7 +15,7 @@ import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { PANEL_WIDTH } from "@/app/view/agents/consumers";
+import { PANEL_MAX_WIDTH, PANEL_WIDTH } from "@/app/view/agents/consumers";
 import { usePanelPlacement } from "@/app/view/agents/consumerspanel";
 import { runTitle } from "@/app/view/agents/runlineage";
 import { openTarget } from "@/app/view/jarvis/openref";
@@ -279,7 +279,13 @@ export function JobQueuePanel({ model }: { model: AgentsViewModel }) {
                 open={open}
                 origin={placement.origin}
                 // it hangs from the chip that opened it, wherever that sits
-                style={{ right: placement.right, top: placement.top, bottom: placement.bottom, width: PANEL_WIDTH }}
+                style={{
+                    right: placement.right,
+                    top: placement.top,
+                    bottom: placement.bottom,
+                    width: PANEL_WIDTH,
+                    maxWidth: PANEL_MAX_WIDTH,
+                }}
                 className="frost fixed z-[60] overflow-hidden rounded-lg border border-edge-strong shadow-popover"
             >
                 <div data-job-queue-panel role="dialog" aria-label="Heavy jobs">
