@@ -6,6 +6,27 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **The spring's feel on the Cockpit, Jarvis, Diff and Setup, on a real roster.** The
+  `surfaces-spring-*` scenarios time each motion on fixtures (`task verify:ui -- surfaces-spring-cockpit`
+  …); no packaged build ran them on your own agents and projects. In the packaged app on a real roster: the Cockpit
+  as an agent goes from working to needing you (its card moves to its new place, no card jumps or doubles), a Jarvis
+  brief card and an initiative row open and fold, a Diff file folds in Review, a Setup section folds, and a filter
+  switch or a big update (three or more rows at once) shows at once instead of running the spring on each row.
+  Commit: feat(motion) the batch model, the scenario scaffold and the docs for the surfaces' spring (run d2a699db)
+- [ ] (arcterm) **Council bench team cell cleans up after itself.** Only unit tests cover it; no bench ran a real team.
+  Run `wsh council bench --variant team --case <one case> --runs 1` to the end, then again and end it with
+  `wsh council bench stop` while the lead works → after each, `~/.claude/projects/` has no new folder for the cell, and
+  after the stop no `claude` or `node` process from that cell is left in Task Manager (the stop takes the same kill as a
+  timeout). Commit: fix(council-bench) a team cell removes
+  its transcripts and kills its whole tree on timeout (run e6d14c4f)
+- [ ] (arcterm) **A council change reloads only that council.** With two projects that each have councils, run a council
+  in one → its tree row and the Councils list update as it goes, the other project's councils stay as they were, and a
+  council deleted with `wsh council` leaves both lists. Commit: perf(council) a council change reloads that council,
+  not every council in every list (run e6d14c4f)
+- [ ] (arcterm) **Radar retired, on a store that had it.** The Final ran on a fresh dev store, so migration 000028 never
+  dropped a real `db_radarreport` and no saved Startup surface read `radar`. Install the build over an arcterm that has
+  Radar reports and Settings → General → Startup surface set to Radar → it boots on Cockpit, the rail has no Radar,
+  `Ctrl+G` `r` does nothing, and `waveapp.log` shows no migration error. Commit: refactor: Retire Radar (run c2a6aebb)
 - [ ] (arcterm) **Frosted overlays on a Mac, and the folded Sprout window.** The Final's frost scenarios ran only in
   WebView2 (Windows). On a Mac build, open the command palette, a context menu with a submenu, a Chat footer menu and
   a toast over a working agent → each panel blurs what is behind it (the palette over its dimmed scrim, a submenu

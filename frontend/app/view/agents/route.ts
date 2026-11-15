@@ -181,7 +181,7 @@ export function scopePickerSections(sections: PickerSection[], runtime: string |
     return scoped.length > 0 ? scoped : sections;
 }
 
-// A picker limited to some runtimes (the Radar audit needs one with tools). No allowlist leaves the
+// A picker limited to some runtimes (a run's lead needs one that can orchestrate). No allowlist leaves the
 // sections as they are.
 export function allowPickerSections(sections: PickerSection[], runtimes?: readonly string[]): PickerSection[] {
     if (runtimes == null) {

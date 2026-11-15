@@ -29,6 +29,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A message sent in Chat to a sleeping agent now leaves the box at once and shows as your bubble with "Waking…" under
   it while the agent comes back, instead of sitting in the box until the wake finished and then popping in. If the
   wake fails, the text and its files go back in the box.
+- The Office no longer redraws its building over and over, with scrollbars flashing, when the window's size leaves the
+  view a fraction of a pixel short of the Office.
 - A file link in Chat that the agent named from a folder it had cd'd into now opens instead of saying "File not found".
 - A Chat message no longer reaches Claude twice: the same words sent again within a few seconds of the first are
   dropped, so a second Enter on a box that had not cleared yet sends nothing more.
@@ -58,6 +60,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The Cockpit, Jarvis, Diff and Setup move on the same smooth spring as Chat: rows and cards open and fold instead of
+  jumping, and a filter switch or a big update still shows at once.
 - A suggested reply clicked over text you typed now asks on the chip itself ("Replace & send") instead of in a notice
   in the corner: click it again or press Enter to send, or keep typing or press Esc to keep your text. A council's
   suggested asks work the same way.
@@ -74,6 +78,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In a council, Chốt (set as direction) shows a compass instead of a pin, so it no longer looks like Pin to Report
   beside it on a seat's message. A pinned chat seat's Final proposal in the saved report names the chat with its key
   (`notes · 0976023f`), as the Report does.
+- A council's Setup says what each expert looks at, such as Memory watcher (memory).
+- Radar is gone: its surface, its scans and their saved findings, its Settings card, and `Ctrl+G` `r`. The nav rail
+  now runs Cockpit, Jarvis, Agent, Usage, then Code and Diff, so `Ctrl+6` opens Diff, and a Startup surface set to
+  Radar opens Cockpit.
 
 ## 1.1.3 — 2026-11-14
 
@@ -280,8 +288,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
-- Radar is off the nav rail and the number chords while it waits to be removed: `Cmd`+`1`…`6` (`Ctrl` on Windows)
-  now go from Cockpit to Diff, pinned apps sit under Diff, and `Cmd`+`G` `r` still opens Radar until then.
+- **Radar is gone**: the surface, its badge, `Ctrl+G r` and its Settings rows are removed; `Ctrl+1`…`Ctrl+6` now cover
+  the six surfaces left, and pinned apps sit under Diff.
 - An agent in Chat adds chunks and notes to an initiative itself instead of handing you a card to add: what you
   asked for goes straight in, and a chunk you did not ask for waits as proposed on the initiative for you to accept
   or drop (a yes in the conversation accepts it).

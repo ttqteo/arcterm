@@ -33,19 +33,6 @@ export function resolveChannelTarget(
     return { kind: "create", name: projectName, path: projectPath };
 }
 
-// Where a Radar "Start investigation" draft lands on the Brief. Its project may have no channel yet (channels
-// are minted on demand since one-per-project), and a find-only landing silently dropped those drafts.
-// "wait": the channel list has not arrived, and the landing is one-shot, so it must not spend its attempt.
-export function radarDraftLanding(
-    channels: Channel[] | null,
-    draft: { projectName?: string; projectPath?: string }
-): ChannelTarget | "wait" | "none" {
-    if (!draft.projectName || !draft.projectPath) {
-        return "none";
-    }
-    return resolveChannelTarget(channels, draft.projectName, draft.projectPath) ?? "wait";
-}
-
 export interface RunConfig {
     shape: RunShape;
     // null is auto: CreateRun leaves the width to the profile, then the lead

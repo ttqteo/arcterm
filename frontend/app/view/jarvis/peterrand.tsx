@@ -12,7 +12,8 @@
 // channel selected", "Select a channel to ask Jarvis", "No destination") inside a 90px band.
 
 import { useSettle } from "@/app/element/motionhooks";
-import { composerReveal, viewFade } from "@/app/element/motiontokens";
+import { springReveal, viewFade } from "@/app/element/motiontokens";
+import { usePartMotion } from "@/app/element/springbatch";
 import { globalStore } from "@/app/store/jotaiStore";
 import { HarnessPicker } from "@/app/view/agents/harnesspicker";
 import { harnessPreferenceAtom, harnessesAtom } from "@/app/view/agents/harnessstore";
@@ -40,12 +41,10 @@ function ErrandReply({ errand }: { errand: PetErrandState }) {
     const status = REPLY_STATUS[errand.status];
     const streaming = errand.status === "streaming";
     const settling = useSettle(errand.status === "done");
+    const part = usePartMotion(springReveal);
     return (
         <motion.div
-            variants={composerReveal}
-            initial="initial"
-            animate="animate"
-            exit="exit"
+            {...part}
             className={cn(
                 "relative overflow-hidden rounded-[8px] border border-border bg-surface px-[9px] py-[7px]",
                 settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"

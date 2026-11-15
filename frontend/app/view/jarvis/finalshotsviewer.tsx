@@ -4,12 +4,15 @@
 // The Final check's screenshots, every finished round (.superpowers/design/final-shots: Viewer and States
 // boards). Opened from the run sheet; everything it shows is derived in finalshotsmodel.ts.
 
+import { MOTION } from "@/app/element/motiontokens";
+import { usePartMotion } from "@/app/element/springbatch";
 import { focusTrapTarget, takeModalFocus } from "@/app/modals/modalfocus";
 import { registerModal } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { buildFinalShotsBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { cn } from "@/util/util";
+import { AnimatePresence, motion, type Variants } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -42,6 +45,23 @@ const STEP_BADGE: Record<FinalShotStep["state"], { label: string; cls: string }>
     pass: { label: "PASS", cls: "border-success text-success-soft" },
     fail: { label: "FAIL", cls: "border-error text-error-soft" },
     skip: { label: "SKIP", cls: "border-warning text-warning-soft" },
+};
+
+// The steps drawer is a column beside the shot, so it opens its width (0 -> its own 360px, the aside's) on the spring and
+// fades on the micro ease, and the shot beside it gives way as it grows. springReveal's height would grow it down from
+// the top instead. The aside keeps its fixed width inside, so its text never rewraps while the box opens.
+const stepsDrawer: Variants = {
+    initial: { opacity: 0, width: 0 },
+    animate: {
+        opacity: 1,
+        width: "auto",
+        transition: { width: MOTION.spring, opacity: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+    },
+    exit: {
+        opacity: 0,
+        width: 0,
+        transition: { width: MOTION.spring, opacity: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+    },
 };
 
 function baseName(file: string): string {
@@ -79,6 +99,7 @@ export function FinalShotsViewer({
     // null: the drawer follows the scenario (open where a step failed) until the human toggles it
     const [stepsToggle, setStepsToggle] = useState<boolean | null>(null);
     const panelRef = useRef<HTMLDivElement>(null);
+    const drawer = usePartMotion(stepsDrawer);
 
     // a dag update can shrink the round on screen
     const { s, k } = round ? clampSelection(round, sel.s, sel.k) : { s: 0, k: 0 };
@@ -240,7 +261,18 @@ export function FinalShotsViewer({
                                     onPick={(i) => setSel({ s, k: i })}
                                 />
                             </div>
-                            {stepsOpen && <StepsDrawer scenario={scenario} />}
+                            <AnimatePresence initial={false}>
+                                {stepsOpen && (
+                                    <motion.div
+                                        key="steps"
+                                        data-final-shots-steps=""
+                                        {...drawer}
+                                        className="flex flex-none overflow-hidden"
+                                    >
+                                        <StepsDrawer scenario={scenario} />
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
                     </>
                 )}

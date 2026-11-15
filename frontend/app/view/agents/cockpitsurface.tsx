@@ -4,8 +4,9 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, useSetAtom, type PrimitiveAtom } from "jotai";
-import { AnimatePresence, MotionConfig } from "motion/react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { shapeTransition, useSpringBatch } from "@/app/element/springbatch";
+import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { buildCockpitBindings } from "@/app/store/keybindings/bindings";
 import { focusClaimed } from "@/app/store/keybindings/dispatcher";
 import { openTarget } from "@/app/view/jarvis/openref";
@@ -34,6 +35,7 @@ import {
     cardMatchesChip,
     cardShare,
     columnNavIds,
+    gridLayoutKey,
     isBackgroundedRun,
     resolveCursor,
     gridColumnCount,
@@ -42,6 +44,8 @@ import {
     withActiveRunLeads,
     type CardShare,
     type GridCard,
+    type GridCardMotion,
+    type GridExit,
     type RowTarget,
 } from "./cardgridlayout";
 import { hiddenAgentIds, rosterLoadPhase, rosterOverlay, splitRecentlyIdle } from "./cockpitsurfacemodel";
@@ -332,6 +336,36 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     // counted by card, as the tab filters: a run's idle workers and a lead between wakes are not up for review
     const readyCount = shownCards.filter((c) => cardMatchesChip(c, "idle", cardNeedsYou(c))).length;
     const columns = splitGridColumns(cards, (c) => c.kind === "run", gridColumnCount(gridWidthPx));
+    // How the grid moves (spec §3): one card arriving or leaving, with the re-deal and the resizes it causes, is one
+    // change and runs on the spring; a first load, a status tab and 3 or more cards at once land in one frame.
+    // `placed` is the ids of the last committed render: a card in it that mounts in another column is the same card
+    // re-dealt, and arrives by its layoutId instead of popping in. The filter is the status tab and whether the roster
+    // has been read: the list mounts empty and fills when it has, and that fill is a first load whatever its size.
+    const reduceMotion = useReducedMotion();
+    const batch = useSpringBatch(
+        cards.map((c) => c.id),
+        `${chip}:${seeded}`
+    );
+    const placed = useRef<ReadonlySet<string>>(new Set());
+    const shareOf = (c: GridCard) => cardShare(c.kind === "run", cardNeedsYou(c));
+    const gridKey = gridLayoutKey(columns, (c) => ({ id: c.id, share: shareOf(c) }));
+    // A layout animation runs when a card's layoutDependency changes. A batch (or reduced motion) lands in one frame, so
+    // its render hands every card the key it already had: motion never measures it, and the cards take their new place
+    // at once. (A zero-length layout animation left a stale snapshot that started a second, spring one from the old box
+    // when the leaving cards were removed a few frames later.) The next render carries the new key, and finds nothing moved.
+    const layoutDep = useRef<string>(undefined);
+    const dep = batch === "instant" || reduceMotion ? (layoutDep.current ?? gridKey) : gridKey;
+    useLayoutEffect(() => {
+        placed.current = new Set(cards.map((c) => c.id));
+        layoutDep.current = dep;
+    });
+    const gridMotion = (c: GridCard): GridCardMotion => ({
+        still: batch === "instant" || placed.current.has(c.id),
+        layout: shapeTransition(batch, reduceMotion),
+        dep,
+    });
+    // what a leaving card reads (it cannot re-render): the ids that stay, and whether this change is a batch
+    const gridExit: GridExit = { stay: new Set(cards.map((c) => c.id)), instant: batch === "instant" };
     // cursor stops: cards, and each lead card's shown task rows; a worker's id aliases to its row
     const rowsOf = (c: GridCard) => {
         const vm = c.kind === "run" ? leadVMs.get(c.id) : undefined;
@@ -865,13 +899,14 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     };
 
     // one AgentRow with every callback wired
-    const renderAgent = (a: AgentVM, share: CardShare) => (
+    const renderAgent = (a: AgentVM, share: CardShare, grid?: GridCardMotion) => (
         <AgentRow
             key={a.id}
             model={model}
             agent={a}
             nowAtom={model.nowAtom}
             share={share}
+            grid={grid}
             isCursor={cursorId === a.id}
             pulse={pulseId === a.id}
             selections={answerSel[a.id] ?? {}}
@@ -897,9 +932,16 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         />
     );
 
-    const renderCard = (c: GridCard, share = cardShare(c.kind === "run", cardNeedsYou(c)), adjust?: boolean) => {
+    // `grid` is the grid's own call only (its cards slide on the spring); the Office's card panel draws the same cards
+    // without it
+    const renderCard = (
+        c: GridCard,
+        share = cardShare(c.kind === "run", cardNeedsYou(c)),
+        adjust?: boolean,
+        grid?: GridCardMotion
+    ) => {
         if (c.kind === "agent") {
-            return renderAgent(c.agent, share);
+            return renderAgent(c.agent, share, grid);
         }
         const vm = leadVMs.get(c.id)!;
         return (
@@ -907,6 +949,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                 key={c.id}
                 model={model}
                 cardId={c.id}
+                grid={grid}
                 run={c.run}
                 lead={c.lead}
                 vm={vm}
@@ -1134,21 +1177,33 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                             />
                         )
                     ) : (
-                        <div ref={gridScrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-3 pt-2.5">
-                            <div className="flex items-start gap-2.5">
-                                {columns.map((col, ci) => (
-                                    <div
-                                        key={ci}
-                                        className="flex min-w-0 flex-1 flex-col gap-2.5"
-                                        style={{ minHeight: gridViewportPx }}
-                                    >
-                                        <AnimatePresence initial={false}>
-                                            {col.map((c) => renderCard(c))}
-                                        </AnimatePresence>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                        // relative: a card that leaves is popped out of its column (popLayout) at the box it had, so
+                        // its neighbours reflow at once, and that box is measured from this scroller
+                        // layoutScroll: the cards' layout animations measure inside this scroller, so a scroll (or the
+                        // clamp when cards leave and the grid gets shorter) is not read as the cards having moved
+                        <motion.div
+                            ref={gridScrollRef}
+                            layoutScroll
+                            className="relative min-h-0 flex-1 overflow-y-auto px-5 pb-3 pt-2.5"
+                        >
+                            {/* one layout group over every column: a card re-dealt to the other column is the same
+                                card by its layoutId and slides from the box it had */}
+                            <LayoutGroup>
+                                <div className="flex items-start gap-2.5">
+                                    {columns.map((col, ci) => (
+                                        <div
+                                            key={ci}
+                                            className="flex min-w-0 flex-1 flex-col gap-2.5"
+                                            style={{ minHeight: gridViewportPx }}
+                                        >
+                                            <AnimatePresence initial={false} mode="popLayout" custom={gridExit}>
+                                                {col.map((c) => renderCard(c, undefined, undefined, gridMotion(c)))}
+                                            </AnimatePresence>
+                                        </div>
+                                    ))}
+                                </div>
+                            </LayoutGroup>
+                        </motion.div>
                     )}
 
                     <div className="shrink-0 px-5">

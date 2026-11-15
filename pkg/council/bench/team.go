@@ -82,7 +82,8 @@ type leadLaunch struct {
 }
 
 // startLead runs the lead to its end and returns what it printed. Its error is a launch that failed or an exit that was
-// not zero; ctx killing it is one too. It is the seam a test replaces, so no test starts claude.
+// not zero; ctx ending kills the lead's whole process tree (council.RunTree) and is one too. It is the seam a test
+// replaces, so no test starts claude.
 var startLead = func(ctx context.Context, l leadLaunch) ([]byte, error) {
 	bin := "claude"
 	if spec, ok := consult.SpecFor("claude"); ok {
@@ -97,7 +98,7 @@ var startLead = func(ctx context.Context, l leadLaunch) ([]byte, error) {
 	cmd.Stderr = &stderr
 	// a killed lead's children can hold its pipes open: give up on them a little after the kill
 	cmd.WaitDelay = 10 * time.Second
-	if err := cmd.Run(); err != nil {
+	if err := council.RunTree(cmd); err != nil {
 		if tail := strings.TrimSpace(stderr.String()); tail != "" {
 			err = fmt.Errorf("%w: %s", err, abbreviate(tail))
 		}
@@ -173,6 +174,13 @@ func runTeam(ctx context.Context, c Case, opts TeamOptions) (TeamOutcome, teamSt
 
 	// the session id is chosen here, so a lead that never prints a result (a timeout, a crash) still has a transcript to count
 	session := uuid.NewString()
+	// Claude Code keeps the cell's sessions in ~/.claude/projects too, and nothing else removes them. This runs after the
+	// count below (defers run last in, first out) and on every return after it, the caller's cancel included.
+	defer func() {
+		if err := removeTranscripts(session); err != nil {
+			log.Printf("[council-bench] case %s team: the cell's transcripts were not removed: %v", c.Id, err)
+		}
+	}()
 	limitCtx, cancel := context.WithTimeout(ctx, opts.Limit)
 	defer cancel()
 	started := time.Now()

@@ -85,7 +85,7 @@ var runModel = func(ctx context.Context, prompt string) (string, error) {
 }
 
 // modelGuard watches a claude session's stream for the init event and fails the session when it
-// lists any tool, the radar audit's guard (pkg/reporadar/audit.go).
+// lists any tool.
 type modelGuard struct {
 	cancel  context.CancelFunc
 	sawInit bool

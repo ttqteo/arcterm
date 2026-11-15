@@ -3,6 +3,8 @@
 //
 // The run sheet's Timing section: one bar per activity on a since-launch axis (model: runtiming.ts).
 
+import { springReveal } from "@/app/element/motiontokens";
+import { PaneReveal } from "@/app/element/panereveal";
 import { cn } from "@/util/util";
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
@@ -66,7 +68,7 @@ function TimingBody({ view }: { view: RunTimingView }) {
                     ))}
                 </div>
             ) : null}
-            {open ? (
+            <PaneReveal open={open} variants={springReveal}>
                 <div className="flex flex-col gap-3 pb-3.5">
                     <div className="ml-[144px] mr-[54px] flex justify-between text-[10.5px] tabular-nums text-ink-mid">
                         {view.axis.map((label, i) => (
@@ -95,7 +97,7 @@ function TimingBody({ view }: { view: RunTimingView }) {
                         ))}
                     </div>
                 </div>
-            ) : null}
+            </PaneReveal>
         </div>
     );
 }

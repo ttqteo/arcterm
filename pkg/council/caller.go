@@ -61,7 +61,7 @@ var callTimeout = 10 * time.Minute
 // It goes into open-issues' RAM watch once it is measured.
 const toolSlotBytes uint64 = 512 << 20
 
-// readOnlyTools is the tool list a council gives an expert that reads code, the one Radar's audit uses.
+// readOnlyTools is the tool list a council gives an expert that reads code.
 var readOnlyTools = []string{"Read", "Grep", "Glob"}
 
 // webTool is the tool a call with Web adds to readOnlyTools: it reads a page, and writes nothing.

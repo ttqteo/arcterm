@@ -22,7 +22,7 @@ export interface AmbientDecisionCard {
 }
 
 // AmbientRef is an object's handle into the attribution map. `oref` covers what D attributes directly —
-// a Run, and a Radar finding through the run that investigated it. `links` covers vault notes, whose
+// a Run. `links` covers vault notes, whose
 // attribution is their own [[wikilinks]] to a dossier. Both may be absent: then there is no tag.
 export interface AmbientRef {
     oref?: string;
@@ -51,13 +51,6 @@ export function ageLabel(ageMs: number): string {
     if (ageMs < HOUR) return `${Math.floor(ageMs / MIN)}m ago`;
     if (ageMs < DAY) return `${Math.floor(ageMs / HOUR)}h ago`;
     return `${Math.floor(ageMs / DAY)}d ago`;
-}
-
-// ambientRefForFinding maps a Radar finding to its attribution handle. A finding has no dossier edge of
-// its own; it inherits the attribution of the run that investigated it. Never investigated -> no tag.
-export function ambientRefForFinding(finding: { investigation?: RadarInvestigation }): AmbientRef {
-    const runId = finding.investigation?.runid;
-    return runId ? { oref: "run:" + runId } : {};
 }
 
 export function makeAmbientProvider(

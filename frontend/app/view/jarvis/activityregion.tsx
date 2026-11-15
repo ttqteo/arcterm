@@ -19,6 +19,7 @@ import {
     type ActivityModel,
 } from "./briefactivity";
 import type { BriefLine, LineTone } from "./briefrows";
+import { RevealRows } from "./briefrowviews";
 import { CURSOR_RING, cursorAttrs, LINK_BTN, SMALL_BTN, TONE_TEXT } from "./briefstyle";
 
 const DOT: Record<LineTone, string> = {
@@ -36,6 +37,8 @@ const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:rin
 export type ActivityRegionProps = {
     model: ActivityModel;
     filter: ActivityFilter;
+    // the Brief's search: with the tab, what chose the rows, so a new one shows them at once instead of one by one
+    search: string;
     onFilter: (f: ActivityFilter) => void;
     earlierOpen: boolean;
     onToggleEarlier: () => void;
@@ -72,6 +75,7 @@ export function ActivityRegion(p: ActivityRegionProps) {
     const open = (item: ActivityItem, e?: React.MouseEvent) =>
         item.source === "council" ? p.onOpenCouncil(item.councilId, e) : p.onOpenRun(item.line, e);
     const empty = model.live.length === 0 && model.earlierAll.length === 0 && p.queued === 0;
+    const chose = `${p.filter}|${p.search}`;
     return (
         <section data-jarvis-brief-region="activity" data-jarvis-activity className="flex flex-col gap-2">
             <div className="flex items-baseline gap-2">
@@ -117,17 +121,26 @@ export function ActivityRegion(p: ActivityRegionProps) {
                     {p.act}
                 </div>
             ) : null}
-            {model.live.map((item) => (
-                <LiveCard
-                    key={item.id}
-                    item={item}
-                    focused={p.cursor === item.line.id}
-                    selected={p.selected === item.id}
-                    onOpen={(e) => open(item, e)}
-                    onResume={() => p.onResume(item.line)}
-                    resuming={item.line.runOid != null && p.resuming.has(item.line.runOid)}
+            {/* the section's gap-2 (8px) above each card rides on the card's own reveal (gap), so it folds with the
+                card; the -mt-2 takes back the gap the section puts above this box, and an empty box is not drawn */}
+            <div className="-mt-2 flex flex-col empty:hidden">
+                <RevealRows
+                    rows={model.live}
+                    rowKey={(item) => item.id}
+                    filter={chose}
+                    gap={8}
+                    render={(item) => (
+                        <LiveCard
+                            item={item}
+                            focused={p.cursor === item.line.id}
+                            selected={p.selected === item.id}
+                            onOpen={(e) => open(item, e)}
+                            onResume={() => p.onResume(item.line)}
+                            resuming={item.line.runOid != null && p.resuming.has(item.line.runOid)}
+                        />
+                    )}
                 />
-            ))}
+            </div>
             {p.queued > 0 ? (
                 <button
                     type="button"
@@ -145,15 +158,21 @@ export function ActivityRegion(p: ActivityRegionProps) {
             {model.earlierAll.length > 0 || model.older.length > 0 ? (
                 <div className="mt-1 flex flex-col">
                     <span className="text-[10.5px] text-ink-faint">Earlier · 7 days</span>
-                    {model.earlier.map((item) => (
-                        <EarlierLine
-                            key={item.id}
-                            item={item}
-                            focused={p.cursor === item.line.id}
-                            selected={p.selected === item.id}
-                            onOpen={(e) => open(item, e)}
-                        />
-                    ))}
+                    <RevealRows
+                        rows={model.earlier}
+                        rowKey={(item) => item.id}
+                        // the rows before the window cut them: "+N more" opens the rest on the spring
+                        keys={model.earlierAll.map((item) => item.id)}
+                        filter={chose}
+                        render={(item) => (
+                            <EarlierLine
+                                item={item}
+                                focused={p.cursor === item.line.id}
+                                selected={p.selected === item.id}
+                                onOpen={(e) => open(item, e)}
+                            />
+                        )}
+                    />
                     {model.earlierMore > 0 || p.earlierOpen ? (
                         <button
                             type="button"
@@ -164,17 +183,20 @@ export function ActivityRegion(p: ActivityRegionProps) {
                             {p.earlierOpen ? "Show less" : `+${model.earlierMore} more`}
                         </button>
                     ) : null}
-                    {p.olderOpen
-                        ? model.older.map((item) => (
-                              <EarlierLine
-                                  key={item.id}
-                                  item={item}
-                                  focused={p.cursor === item.line.id}
-                                  selected={p.selected === item.id}
-                                  onOpen={(e) => open(item, e)}
-                              />
-                          ))
-                        : null}
+                    <RevealRows
+                        rows={p.olderOpen ? model.older : []}
+                        rowKey={(item) => item.id}
+                        keys={model.older.map((item) => item.id)}
+                        filter={chose}
+                        render={(item) => (
+                            <EarlierLine
+                                item={item}
+                                focused={p.cursor === item.line.id}
+                                selected={p.selected === item.id}
+                                onOpen={(e) => open(item, e)}
+                            />
+                        )}
+                    />
                     {model.older.length > 0 ? (
                         <button
                             type="button"

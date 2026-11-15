@@ -56,8 +56,7 @@ export interface NotifySnapshot {
     attentionLoaded: boolean;
 }
 
-// attention kinds that wait on a decision of yours. An ask is left to the roster (its agent turns asking) and radar
-// triage is a backlog, not a block. A chunk that came due is a decision you dated yourself, told once when it comes;
+// attention kinds that wait on a decision of yours. An ask is left to the roster (its agent turns asking). A chunk that came due is a decision you dated yourself, told once when it comes;
 // a plan an agent proposed waits on you to accept it, told once when its initiative first has one to review.
 export const DECISION_KINDS: ReadonlySet<string> = new Set([
     "gate",

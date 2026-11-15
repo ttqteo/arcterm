@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Councils (pkg/council), as the Agent tree and the council centre mode read them. One atom per council id and one
-// list atom per project, loaded over wshrpc and reloaded when wavesrv says a council changed (`council:changed`, which
-// every save of a running council, `wsh council` and the UI's own actions publish). After the load/event plumbing come
-// the actions, one per wshrpc command, and the UI state that outlives a view: which council is open and on which view,
-// which proposal is open in it, and a Setup draft per project. Pure rules are in councilmodel.ts.
+// list atom per project, loaded over wshrpc on the first read; when wavesrv says a council changed (`council:changed`,
+// which every save of a running council, `wsh council` and the UI's own actions publish) the one council it names is
+// read again and put in its atom and in every list loaded (councillists.ts), not every list read whole. After the
+// load/event plumbing come the actions, one per wshrpc command, and the UI state that outlives a view: which council is
+// open and on which view, which proposal is open in it, and a Setup draft per project. Pure rules are in
+// councilmodel.ts.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
@@ -15,6 +17,7 @@ import { createTempFileFromBlob, createTempFileFromFile } from "@/app/view/term/
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily, atomWithStorage } from "jotai/utils";
 import { useEffect, useState } from "react";
+import { spliceCouncil } from "./councillists";
 import {
     councilProjectKey,
     withThumb,
@@ -63,18 +66,77 @@ function subscribeCouncilChanged() {
             }
             if (data.deleted) {
                 forgetCouncil(data.id);
-            } else if (knownCouncils.has(data.id)) {
-                void loadCouncil(data.id);
-            }
-            // the project's own list, and the list of every council (the empty project) if something read it
-            for (const key of new Set([councilProjectKey(data.project), ""])) {
-                const project = knownProjects.get(key);
-                if (project != null) {
-                    void loadCouncils(project);
-                }
+                supersedeListReads();
+            } else {
+                void reloadChanged(data);
             }
         },
     });
+}
+
+// A list read that began before an event may carry the council as it was. A list already read drops that late answer
+// (the caller puts the council right in the list itself); one with nothing yet (its first read is on its way, or failed)
+// is read again, which drops the earlier answer too. Answers the projects whose list holds something. A null list is never
+// bumped without that new read: a list the late answer was dropped from would stay null, and useCouncils only reads
+// again when its project changes.
+function supersedeListReads(): string[] {
+    const read: string[] = [];
+    for (const [key, project] of knownProjects) {
+        if (globalStore.get(councilListAtom(project)) == null) {
+            void loadCouncils(project);
+        } else {
+            listSeq.set(key, (listSeq.get(key) ?? 0) + 1);
+            read.push(project);
+        }
+    }
+    return read;
+}
+
+// One council changed: read just it (the event names it) and leave each list read as a full reload would, instead of
+// listing every council of every list on each save of a running council. Nothing to do when no list holds anything and
+// nobody read the council. A failed read falls back to listing the lists that would hold it.
+async function reloadChanged(data: CouncilChangedData): Promise<void> {
+    const id = data.id;
+    const read = supersedeListReads();
+    if (read.length === 0 && !knownCouncils.has(id)) {
+        return;
+    }
+    const seq = (councilSeq.get(id) ?? 0) + 1;
+    councilSeq.set(id, seq);
+    let changed: Council;
+    try {
+        changed = await RpcApi.CouncilGetCommand(TabRpcClient, { id });
+    } catch (err) {
+        console.error(`reloading council ${id} failed`, err);
+        if (councilSeq.get(id) === seq) {
+            const own = new Set([councilProjectKey(data.project), ""]);
+            for (const project of read) {
+                if (
+                    own.has(councilProjectKey(project)) ||
+                    globalStore.get(councilListAtom(project))?.some((c) => c.id === id)
+                ) {
+                    void loadCouncils(project);
+                }
+            }
+        }
+        return;
+    }
+    // an event after this one (or a delete) has taken over
+    if (councilSeq.get(id) !== seq) {
+        return;
+    }
+    if (knownCouncils.has(id)) {
+        globalStore.set(councilAtom(id), changed);
+    }
+    for (const project of knownProjects.values()) {
+        const list = globalStore.get(councilListAtom(project));
+        if (list != null) {
+            const next = spliceCouncil(list, changed, project);
+            if (next !== list) {
+                globalStore.set(councilListAtom(project), next);
+            }
+        }
+    }
 }
 
 /** Reads one council into its atom. A failure leaves the atom as it was and logs. */

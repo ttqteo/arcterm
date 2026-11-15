@@ -384,7 +384,7 @@ type CallOpts struct {
 // ClaudeArgs is claude's argument list for one call (prompt excluded): the one-shot base, then
 // --model when set, then one --add-dir per folder in AddDirs, then --tools and --strict-mcp-config. --tools "" is
 // the empty list, which gives the run no tools; --strict-mcp-config stops the account's connector tools loading
-// despite --tools (Radar's audit and the memory judge pass the same pair).
+// despite --tools (the memory judge passes the same pair).
 func ClaudeArgs(o CallOpts) []string {
 	args := append([]string{}, runtimeSpecs["claude"].BaseArgs...)
 	if o.Model != "" {

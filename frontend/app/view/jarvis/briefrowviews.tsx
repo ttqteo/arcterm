@@ -6,10 +6,13 @@
 // design gives them different anatomies: Waiting acts in place, an initiative row carries its segment bar,
 // Since you looked is two lines under a wording column. Activity's runs and councils are cards (activityregion.tsx).
 
+import { MOTION, springReveal } from "@/app/element/motiontokens";
+import { usePartMotion, useSpringBatch, type BatchMotion } from "@/app/element/springbatch";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { ArrowLeft, ArrowRight, ChevronRight, Ellipsis, Lightbulb } from "lucide-react";
-import type { ReactNode } from "react";
+import { AnimatePresence, motion, type TargetAndTransition, type Variants } from "motion/react";
+import { useMemo, type ReactNode } from "react";
 import type { QueueAct } from "./briefingmodel";
 import { initiativeLine, type BriefLine } from "./briefrows";
 import { CURSOR_RING, cursorAttrs, FAINT_TEXT, REGION_LABEL, ROW_BORDER, SMALL_BTN, TONE_TEXT } from "./briefstyle";
@@ -19,6 +22,84 @@ import type { EventTone } from "./reviewmodel";
 
 // a sub-initiative's row is indented this many px per level under the one it is part of
 const NEST_INDENT = 20;
+
+// springReveal for a Brief row, or a detail under one: it clips only while it moves, so a cursor ring past a row's edge
+// (or a menu an editor in a detail opens) shows once it has opened. A leaving row reads `custom`, the batch its list was in
+// on the render that removed it, since its own props are the last it drew: a batch folds at once, one row on the spring.
+// `gap` is the space a flex gap in the row's parent puts above it: it opens and folds with the row, so the space does not
+// vanish in one jump when the folded row is removed.
+function revealOf(gap: number): Variants {
+    const clipped = (target: TargetAndTransition, marginTop: number): TargetAndTransition => ({
+        ...target,
+        ...(gap > 0 ? { marginTop, transition: { ...target.transition, marginTop: MOTION.spring } } : {}),
+        overflow: "hidden",
+    });
+    return {
+        initial: clipped(springReveal.initial as TargetAndTransition, 0),
+        animate: {
+            ...clipped(springReveal.animate as TargetAndTransition, gap),
+            transitionEnd: { overflow: "visible" },
+        },
+        exit: (batch?: BatchMotion) => {
+            const shut = clipped(springReveal.exit as TargetAndTransition, 0);
+            return batch === "instant" ? { ...shut, transition: { duration: 0 } } : shut;
+        },
+    };
+}
+export const rowReveal = revealOf(0);
+
+// The rows of one Brief region, each opening and folding on its own when it arrives or leaves one at a time; a batch (the
+// first load, a changed filter, three or more rows at once) shows at once (springbatch.ts). `keys` are the region's rows
+// before its window ("+N more") cut them, so opening the window is a disclosure that always springs, not a batch of N
+// arrivals; `filter` names what chose them (the search, a tab), so a new one shows its rows at once. `gap`, in px, is the
+// space the rows' parent puts above each one (see revealOf); the parent then has no gap of its own around them.
+export function RevealRows<T>({
+    rows,
+    rowKey,
+    keys,
+    filter,
+    gap = 0,
+    render,
+}: {
+    rows: readonly T[];
+    rowKey: (row: T) => string;
+    keys?: readonly string[];
+    filter?: string;
+    gap?: number;
+    render: (row: T) => ReactNode;
+}) {
+    const batch = useSpringBatch(keys ?? rows.map(rowKey), filter);
+    const variants = useMemo(() => (gap > 0 ? revealOf(gap) : rowReveal), [gap]);
+    const part = usePartMotion(variants);
+    return (
+        <AnimatePresence initial={false} custom={batch}>
+            {rows.map((row) => (
+                <motion.div
+                    key={rowKey(row)}
+                    {...part}
+                    initial={batch === "instant" ? false : part.initial}
+                    custom={batch}
+                >
+                    {render(row)}
+                </motion.div>
+            ))}
+        </AnimatePresence>
+    );
+}
+
+// A row's detail, opening and folding under it on the spring. The detail is drawn only while it is open.
+function RowDetail({ open, className, children }: { open: boolean; className?: string; children: ReactNode }) {
+    const part = usePartMotion(rowReveal);
+    return (
+        <AnimatePresence initial={false}>
+            {open ? (
+                <motion.div key="detail" {...part} className={className}>
+                    {children}
+                </motion.div>
+            ) : null}
+        </AnimatePresence>
+    );
+}
 
 // the kind chip's fill for the tone queueLine gives it (briefrows.ts queueTone)
 const KIND_CHIP: Partial<Record<BriefLine["kindTone"], string>> = {
@@ -413,12 +494,12 @@ export function InitiativeRow({
                     )}
                 </div>
             </div>
-            {expanded && children != null ? (
-                // the editor's own clicks must not fold the row
+            <RowDetail open={expanded && children != null}>
+                {/* the editor's own clicks must not fold the row */}
                 <div className="border-t border-edge-mid" onClick={(e) => e.stopPropagation()}>
                     {children}
                 </div>
-            ) : null}
+            </RowDetail>
         </div>
     );
 }
@@ -451,7 +532,9 @@ export function IdeaRow({
             {...cursorAttrs(focused)}
             onContextMenu={onContextMenu}
             className={cn(
-                "group flex flex-col border-b border-edge-faint last:border-b-0",
+                // no `last:border-b-0`: the Ideas box always ends with the jot field, so no idea row was ever its last
+                // child, and each row now sits in its own reveal wrapper where every row would be
+                "group flex flex-col border-b border-edge-faint",
                 expanded && "rounded-[8px] bg-surface-selected",
                 focused && CURSOR_RING,
                 fresh && "fresh-mark"
@@ -488,7 +571,9 @@ export function IdeaRow({
                 <ProposedCount text={line.proposed} className="mt-px flex-none leading-[17px]" />
                 {onContextMenu != null ? <MenuButton title={line.title} onMenu={onContextMenu} /> : null}
             </div>
-            {expanded && children != null ? <div onClick={(e) => e.stopPropagation()}>{children}</div> : null}
+            <RowDetail open={expanded && children != null}>
+                <div onClick={(e) => e.stopPropagation()}>{children}</div>
+            </RowDetail>
         </div>
     );
 }

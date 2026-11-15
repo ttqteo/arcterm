@@ -18,7 +18,6 @@ Mới bắt đầu thì đọc [Bắt đầu với arcterm](getting-started.md):
 | [Usage](usage.md) | Quota 5 giờ và tuần, token, chi phí ước tính, hàng đợi lệnh nặng |
 | [Code](code.md) | Duyệt và sửa file của project, xem Markdown |
 | [Diff](diff.md) | Lịch sử git, file đã đổi, diff, đánh dấu đã review, comment từng dòng, commit và sync, so sánh hai ref |
-| [Radar](radar.md) | Audit lỗi anh em, lỗi do thay đổi đưa vào và file hotspot; biến phát hiện thành run |
 | [Setup](setup.md) | Instructions và skills dùng chung cho mọi harness |
 | [Settings](settings.md) | Tài khoản Claude, route của run, giao diện, terminal, thông báo |
 

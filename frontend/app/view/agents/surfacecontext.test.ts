@@ -5,18 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { SurfaceKey } from "./agents";
 import { projectControlCopy, SURFACE_CONTEXT } from "./surfacecontext";
 
-const ALL_SURFACES: SurfaceKey[] = [
-    "cockpit",
-    "jarvis",
-    "agent",
-    "radar",
-    "files",
-    "usage",
-    "code",
-    "settings",
-    "setup",
-    "app",
-];
+const ALL_SURFACES: SurfaceKey[] = ["cockpit", "jarvis", "agent", "files", "usage", "code", "settings", "setup", "app"];
 
 describe("surface context capabilities", () => {
     it("classifies every surface", () => {
@@ -28,7 +17,6 @@ describe("surface context capabilities", () => {
             cockpit: { project: "filter" },
             jarvis: { project: "subject" },
             agent: { project: "filter" },
-            radar: { project: "subject" },
             files: { project: "subject" },
             usage: { project: "unsupported" },
             code: { project: "subject" },

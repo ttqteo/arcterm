@@ -8,9 +8,11 @@
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { Markdown } from "@/app/element/markdown";
+import { PaneReveal } from "@/app/element/panereveal";
 import { splitFrontmatter } from "@/app/view/code/codefrontmatter";
 import { liveAgentsForProject } from "@/app/view/code/codehandoff";
 import { FrontmatterCard } from "@/app/view/code/frontmattercard";
+import { rowReveal } from "@/app/view/jarvis/briefrowviews";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { RotateCw } from "lucide-react";
@@ -133,11 +135,13 @@ function ContextRow({ row, selected, showNote }: { row: ClaudeContextFile; selec
 }
 
 // Global starts folded: those files apply to every project, and the tab is about this one. A memory row's note is its
-// frontmatter type, which the section head already says, so memory rows draw none.
+// frontmatter type, which the section head already says, so memory rows draw none. The rows open and fold on the spring
+// (rowReveal clips only while it moves, so a row's focus outline past the list's edge shows once it has opened); the 2px
+// the section's gap used to put between the head and the rows is the rows' own padding, so it opens and folds with them.
 function ContextGroupView({ group, selected }: { group: ContextGroup; selected: string | null }) {
     const [open, setOpen] = useState(group.key !== "global");
     return (
-        <section data-context-group={group.key} className="flex flex-col gap-0.5">
+        <section data-context-group={group.key} className="flex flex-col">
             <button
                 type="button"
                 aria-expanded={open}
@@ -147,25 +151,31 @@ function ContextGroupView({ group, selected }: { group: ContextGroup; selected: 
                 <span className={SECTION_HEAD}>{group.label}</span>
                 <span className="text-[11px] text-muted">{group.count}</span>
             </button>
-            {!open ? null : group.sections.length === 0 ? (
-                <div data-context-empty className="px-2.5 py-[7px] text-[12.5px] text-ink-faint">
-                    —
+            <PaneReveal open={open} variants={rowReveal}>
+                <div className="flex flex-col gap-0.5 pt-0.5">
+                    {group.sections.length === 0 ? (
+                        <div data-context-empty className="px-2.5 py-[7px] text-[12.5px] text-ink-faint">
+                            —
+                        </div>
+                    ) : (
+                        group.sections.map((s) => (
+                            <Fragment key={s.head ?? ""}>
+                                {s.head != null ? (
+                                    <div className="px-2.5 pt-1.5 text-[11px] text-muted">{s.head}</div>
+                                ) : null}
+                                {s.rows.map((r) => (
+                                    <ContextRow
+                                        key={r.path}
+                                        row={r}
+                                        selected={r.path === selected}
+                                        showNote={group.key !== "memory"}
+                                    />
+                                ))}
+                            </Fragment>
+                        ))
+                    )}
                 </div>
-            ) : (
-                group.sections.map((s) => (
-                    <Fragment key={s.head ?? ""}>
-                        {s.head != null ? <div className="px-2.5 pt-1.5 text-[11px] text-muted">{s.head}</div> : null}
-                        {s.rows.map((r) => (
-                            <ContextRow
-                                key={r.path}
-                                row={r}
-                                selected={r.path === selected}
-                                showNote={group.key !== "memory"}
-                            />
-                        ))}
-                    </Fragment>
-                ))
-            )}
+            </PaneReveal>
         </section>
     );
 }

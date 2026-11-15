@@ -30,7 +30,7 @@ Các trang liên quan: [Agent](agent.md) (terminal thật của từng agent), [
 ## Mở Cockpit
 
 - Bấm **Cockpit** ở đầu nav rail, hoặc `Ctrl+1`, hoặc `Ctrl+G` rồi `c`.
-- Từ Jarvis, Usage, Code, Diff hoặc Radar, `Esc` (khi không đang gõ) đưa bạn về Cockpit. Từ Agent, `Esc` cũng về Cockpit (xem [Agent](agent.md)).
+- Từ Jarvis, Usage, Code hoặc Diff, `Esc` (khi không đang gõ) đưa bạn về Cockpit. Từ Agent, `Esc` cũng về Cockpit (xem [Agent](agent.md)).
 - Khi mở app, arcterm vào lại surface bạn dùng lần trước. Đổi ở **Settings → General → Startup surface** (mặc định **Last opened**; nếu không đọc được thì vào Cockpit).
 
 ## Đọc màn Cockpit
@@ -276,7 +276,7 @@ Chip RAM và thanh quota chỉ hiện khi đã có số liệu.
 `/ <project> ▾` đặt phạm vi project cho cả app. Nhãn đổi theo surface:
 
 - Trên **Cockpit** và **Agent**: tên project (hoặc *All projects*), là **bộ lọc** — các thẻ và sidebar chỉ còn project đó.
-- Trên các surface khác (Jarvis, Radar, Diff, Code): `Default · <project>`, là project mặc định; surface giữ target bạn chọn rõ ràng.
+- Trên các surface khác (Jarvis, Diff, Code): `Default · <project>`, là project mặc định; surface giữ target bạn chọn rõ ràng.
 - Trên Usage, Setup, Settings: cũng `Default · …`, nhưng surface không lọc theo project.
 
 Danh sách thả xuống ("Switch project") có *All projects* kèm tổng số agent, rồi từng project với chấm vàng nếu có agent đang hỏi, số agent đang hỏi và số agent. Rê chuột vào một dòng thì hiện biểu tượng thùng rác; bấm rồi xác nhận `Remove?` sẽ bỏ project khỏi arcterm (file và run của project không bị đụng tới). Dưới cùng là **New project**: tìm trong danh sách project Claude Code đã từng làm việc (chỉ thư mục là project: có `.git` hoặc file như `package.json`, `pom.xml`, `pyproject.toml`; session mở ở thư mục con được tính cho repo chứa nó). Khi gõ, mục **Found on disk** bên dưới còn tìm các project trên ổ đĩa quanh những thư mục chứa project của bạn, cho folder Claude Code chưa từng mở. Hoặc bấm **Choose a folder…** để nhập tên và đường dẫn (**Browse…** mở hộp chọn thư mục), rồi **Create project**.
@@ -322,7 +322,7 @@ Trên Windows, arcterm đọc được từng tiến trình mà agent khởi ch�
 
 ## Nav rail bên trái
 
-Chín mục, chia ba nhóm:
+Tám mục, chia ba nhóm:
 
 | Nhóm | Mục | Phím nhảy |
 |---|---|---|
@@ -330,7 +330,7 @@ Chín mục, chia ba nhóm:
 | Công cụ | **Code**, **Diff** | `Ctrl+5` … `Ctrl+6` |
 | Đáy rail | **Setup**, **Settings** | `Ctrl+G` `.` và `Ctrl+G` `,` (không có `Ctrl+số`) |
 
-Phím `Ctrl+G` rồi: `c` Cockpit, `j` Jarvis, `a` Agent, `s` Conversation History, `u` Usage, `b` Code, `f` Diff, `r` Radar (đã rời rail, đang chờ gỡ hẳn), `.` Setup, `,` Settings, `p` Search, `w` việc đang chờ (popup của Jarvis). `[` và `]` đi lùi/tiến qua các surface.
+Phím `Ctrl+G` rồi: `c` Cockpit, `j` Jarvis, `a` Agent, `s` Conversation History, `u` Usage, `b` Code, `f` Diff, `.` Setup, `,` Settings, `p` Search, `w` việc đang chờ (popup của Jarvis). `[` và `]` đi lùi/tiến qua các surface.
 
 Các huy hiệu trên rail:
 

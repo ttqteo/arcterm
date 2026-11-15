@@ -802,7 +802,7 @@ func realVerifyCmd(ctx context.Context, dir string, argv []string) (string, int,
 	c.Stdout, c.Stderr = buf, buf
 	// a grandchild that outlives the command and holds the pipe must not hold the wait
 	c.WaitDelay = 5 * time.Second
-	err := runTree(c)
+	err := RunTree(c)
 	out := buf.String()
 	var ee *exec.ExitError
 	switch {

@@ -5,8 +5,11 @@
 // (docs/superpowers/specs/2026-11-05-jarvis-revamp-design.md decision 3, board Main.dc.html). Presentational: the faces
 // come from briefcards.ts and every action is a prop, wired by briefsurface.tsx.
 
+import { springPop } from "@/app/element/motiontokens";
+import { usePartMotion, useSpringBatch, type BatchMotion } from "@/app/element/springbatch";
 import { cn } from "@/util/util";
 import { Ellipsis, Pin } from "lucide-react";
+import { AnimatePresence, motion, type TargetAndTransition, type Variants } from "motion/react";
 import type { ReactNode } from "react";
 import type { InitiativeFace, StatusTone } from "./briefcards";
 import { SegmentBar } from "./briefrowviews";
@@ -130,20 +133,38 @@ function WorkButton({ face, onWork }: { face: InitiativeFace; onWork: (oref: str
     );
 }
 
+// springPop for a card in the grid: a card pinned or unpinned one at a time pops in and out on the spring. A leaving card
+// reads `custom`, the batch the grid was in on the render that removed it (its own props are the last it drew): a batch
+// leaves at once. The card pops from where it is: the grid's cells reflow when it goes, as they do for any change.
+const cardPop: Variants = {
+    initial: springPop.initial,
+    animate: springPop.animate,
+    exit: (batch?: BatchMotion) =>
+        batch === "instant"
+            ? { ...(springPop.exit as TargetAndTransition), transition: { duration: 0 } }
+            : (springPop.exit as TargetAndTransition),
+};
+
 function InitiativeCard({
     face,
     focused,
     opened,
+    batch,
     actions,
 }: {
     face: InitiativeFace;
     focused: boolean;
     opened: boolean;
+    batch: BatchMotion;
     actions: InitiativeActions;
 }) {
     const { onMenu, onWork } = actions;
+    const part = usePartMotion(cardPop);
     return (
-        <div
+        <motion.div
+            {...part}
+            initial={batch === "instant" ? false : part.initial}
+            custom={batch}
             role="button"
             tabIndex={-1}
             aria-label={`Open ${face.title}`}
@@ -219,7 +240,7 @@ function InitiativeCard({
                 <span className="flex-1" />
                 {onMenu != null ? <MoreMenuButton face={face} onMenu={onMenu} /> : null}
             </div>
-        </div>
+        </motion.div>
     );
 }
 
@@ -244,11 +265,15 @@ export function InitiativeCards({
     heading,
     pinSlot,
     review,
+    filter,
     cursor,
     opened,
     ...actions
 }: {
     faces: InitiativeFace[];
+    // what chose the cards (the search): a card arriving or leaving alone springs, a new filter or three or more at once
+    // shows at once (springbatch.ts)
+    filter: string;
     // "Pinned N of M" (pinnedHeading)
     heading: string;
     // close the grid with the "Pin an initiative" slot (showPinSlot)
@@ -260,6 +285,10 @@ export function InitiativeCards({
     // the oref open in the sheet
     opened?: string | null;
 } & InitiativeActions) {
+    const batch = useSpringBatch(
+        faces.map((f) => f.oref),
+        filter
+    );
     return (
         <div data-jarvis-cards className="flex min-w-0 flex-col gap-3">
             <div data-jarvis-cards-heading className="flex min-h-6 items-center gap-2.5">
@@ -273,15 +302,18 @@ export function InitiativeCards({
             {faces.length > 0 ? (
                 // two columns until the Brief (the @container in briefsurface.tsx) is about as wide as a 1280px window
                 <div data-jarvis-cards-grid className="grid grid-cols-2 gap-3 @min-[1180px]:grid-cols-3">
-                    {faces.map((f) => (
-                        <InitiativeCard
-                            key={f.oref}
-                            face={f}
-                            focused={cursor === f.oref}
-                            opened={opened === f.oref}
-                            actions={actions}
-                        />
-                    ))}
+                    <AnimatePresence initial={false} custom={batch}>
+                        {faces.map((f) => (
+                            <InitiativeCard
+                                key={f.oref}
+                                face={f}
+                                focused={cursor === f.oref}
+                                opened={opened === f.oref}
+                                batch={batch}
+                                actions={actions}
+                            />
+                        ))}
+                    </AnimatePresence>
                     {pinSlot ? <PinSlot /> : null}
                 </div>
             ) : null}

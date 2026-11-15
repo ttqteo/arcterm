@@ -21,16 +21,10 @@ describe("palette-needs", () => {
         expect(askAgent(item("dag-gate", "ask:block:b1"), [agent({})])).toBeUndefined();
     });
 
-    it("groups by kind and drops radar triage", () => {
+    it("groups by kind", () => {
         const g = needsGroups(
             needsRows(
-                [
-                    item("dag-gate"),
-                    item("ask", "ask:block:b1"),
-                    item("dag-blocked"),
-                    item("radar-triage"),
-                    item("run-unverified"),
-                ],
+                [item("dag-gate"), item("ask", "ask:block:b1"), item("dag-blocked"), item("run-unverified")],
                 [agent({ ask: oneQ })]
             )
         );

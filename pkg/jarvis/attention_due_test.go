@@ -104,15 +104,16 @@ func TestChunkDueNeedsToday(t *testing.T) {
 	}
 }
 
-// a due chunk is the weakest claim in the list, behind even radar triage
+// a due chunk is a date you set yourself, behind even a finished run's unverified outcome, the kind just ahead of it
 func TestChunkDueSortsLast(t *testing.T) {
+	unverified := &waveobj.RunEvidence{Verification: &waveobj.RunVerification{State: "unverified", Reasons: []string{"no check"}}}
 	in := AttentionInput{
-		Efforts: []*waveobj.Effort{dueEffort("e1", "active", dueChunk("m", "pending", "2026-01-01"))},
-		Today:   "2026-10-20",
-		Radar:   []*waveobj.RadarReport{report("r1", "/p", radarStatusCompleted, untriaged("f1", radarGroupNew))},
+		Channels: []AttentionChannel{{OID: "c1", Name: "alpha", Runs: []*waveobj.Run{finishedRun("r1", unverified, nil)}}},
+		Efforts:  []*waveobj.Effort{dueEffort("e1", "active", dueChunk("m", "pending", "2026-01-01"))},
+		Today:    "2026-10-20",
 	}
 	items := BuildAttention(in)
-	if len(items) != 2 || items[0].Kind != AttentionRadarTriage || items[1].Kind != AttentionChunkDue {
+	if len(items) != 2 || items[0].Kind != AttentionRunUnverified || items[1].Kind != AttentionChunkDue {
 		t.Fatalf("order: %+v", items)
 	}
 }

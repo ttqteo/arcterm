@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Meter } from "@/app/element/meter";
-import { cardVariants, composerReveal } from "@/app/element/motiontokens";
+import { springReveal } from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
+import { usePartMotion } from "@/app/element/springbatch";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -22,8 +23,8 @@ import {
     SquareTerminal,
     X,
 } from "lucide-react";
-import { motion } from "motion/react";
-import { memo, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { memo, useEffect, useMemo, useRef, useState, type Ref } from "react";
 import { confirmCloseSession, driveAgent, NUDGE_INPUT } from "./agentactions";
 import { AgentComposer, type AgentComposerHandle } from "./agentcomposer";
 import {
@@ -50,7 +51,7 @@ import {
 import { AnswerBar, DocReviewSummary, TerminalAskNote } from "./answerbar";
 import { AttentionBanner, BannerChip } from "./attentioncard";
 import { diffStatsByIdAtom } from "./cardgitstore";
-import type { CardShare } from "./cardgridlayout";
+import { gridCardVariants, gridPartLayout, type CardShare, type GridCardMotion } from "./cardgridlayout";
 import { canDrive } from "./consumers";
 import { parseDocReview } from "./docreview";
 import { entriesAtomFor, tasksAtomFor } from "./livetranscriptatoms";
@@ -227,6 +228,8 @@ export const AgentRow = memo(function AgentRow({
     onDismiss,
     pulse,
     share,
+    grid,
+    ref,
 }: {
     model: AgentsViewModel;
     agent: AgentVM;
@@ -251,10 +254,23 @@ export const AgentRow = memo(function AgentRow({
     onDismiss?: () => void;
     pulse?: boolean;
     share: CardShare; // flex share of its column and its floor (cardgridlayout.ts)
+    // the grid's own call passes it: the card slides on the spring by its layoutId (the Office panel's card takes none)
+    grid?: GridCardMotion;
+    // the card's box: AnimatePresence pops a card that leaves out of its column by measuring it
+    ref?: Ref<HTMLDivElement>;
 }) {
     const composerRef = useRef<AgentComposerHandle>(null);
-    const cardRef = useRef<HTMLDivElement>(null);
     const [tasksOpen, setTasksOpen] = useState(false);
+    // springPop in and out, and out at once for a card that is only re-dealt to the other column (gridCardVariants)
+    const cardVariants = useMemo(() => gridCardVariants(agent.id), [agent.id]);
+    const cardPart = usePartMotion(cardVariants);
+    // the composer opens and folds on springReveal, and the "message…" row it trades places with the other way
+    const footerPart = usePartMotion(springReveal);
+    // the card's direct parts are counter-scaled while the card slides or resizes, so nothing in it is squashed
+    const part = (name: string, layout: true | "position" = true) =>
+        gridPartLayout(grid, `${agent.id}:${name}`, layout);
+    // the body is what the card's resize changes the size of, so it keeps its size and slides (gridPartLayout)
+    const bodyPart = part("body", "position");
 
     const liveEntries = useAtomValue(entriesAtomFor(agent.id));
     const entries = entriesToShow(liveEntries, agent.previousInfo);
@@ -329,12 +345,20 @@ export const AgentRow = memo(function AgentRow({
     return (
         <motion.div
             // a flex item in its column: `share` sets its part of the column's height and its floor.
-            // variants animate opacity+scale for genuine mount/unmount only
-            variants={cardVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            ref={cardRef}
+            // the variants pop it in (a new card) and out (a card that is gone); in the grid it also slides to a new
+            // place or size on the layout spring, and one re-dealt to the other column arrives by its layoutId
+            {...cardPart}
+            initial={grid?.still ? false : cardPart.initial}
+            {...(grid
+                ? {
+                      layout: true,
+                      layoutId: agent.id,
+                      layoutDependency: grid.dep,
+                      layoutCrossfade: false,
+                      transition: { layout: grid.layout },
+                  }
+                : {})}
+            ref={ref}
             style={{ flex: `${share.grow} 0 0px`, minHeight: share.minPx }}
             data-agent-id={agent.id}
             onClick={onCursor}
@@ -352,7 +376,10 @@ export const AgentRow = memo(function AgentRow({
             )}
         >
             {/* header bar */}
-            <div className="flex shrink-0 items-center gap-2 border-b border-edge-mid bg-surface px-3 py-1.5">
+            <motion.div
+                {...part("header")}
+                className="flex shrink-0 items-center gap-2 border-b border-edge-mid bg-surface px-3 py-1.5"
+            >
                 <StatusLine agent={agent} nowAtom={nowAtom} className="min-w-0 flex-1" />
                 {subs.length > 0 ? <FanoutBadge subs={subs} onOpen={onOpen} /> : null}
                 {diff ? (
@@ -406,59 +433,68 @@ export const AgentRow = memo(function AgentRow({
                         </svg>
                     </button>
                 ) : null}
-            </div>
+            </motion.div>
 
             {/* streaming flow bar — a subtle green sweep under the header while the agent works */}
             {working ? (
-                <div className="h-[2px] shrink-0 overflow-hidden bg-lane">
+                <motion.div {...part("flow")} className="h-[2px] shrink-0 overflow-hidden bg-lane">
                     <div className="h-full w-[26%] bg-gradient-to-r from-transparent via-working to-transparent animate-[flowBar_1.9s_linear_infinite] motion-reduce:animate-none" />
-                </div>
+                </motion.div>
             ) : null}
 
             {/* asking banner (4b) — amber strip carries the "your turn" signal; question reads neutral */}
             {asking ? (
                 <>
-                    <AttentionBanner
-                        glyph="dot"
-                        pulse
-                        label="Waiting on you"
-                        meta={formatAge(displayAgeMs(agent))}
-                        right={
-                            prog ? (
-                                <button
-                                    type="button"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setTasksOpen((v) => !v);
-                                    }}
-                                    title="Show task list"
-                                    className="cursor-pointer"
-                                >
-                                    <BannerChip>{tasksLabel(prog.done, prog.total)}</BannerChip>
-                                </button>
-                            ) : null
-                        }
-                    />
+                    <motion.div {...part("banner")} className="shrink-0">
+                        <AttentionBanner
+                            glyph="dot"
+                            pulse
+                            label="Waiting on you"
+                            meta={formatAge(displayAgeMs(agent))}
+                            right={
+                                prog ? (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setTasksOpen((v) => !v);
+                                        }}
+                                        title="Show task list"
+                                        className="cursor-pointer"
+                                    >
+                                        <BannerChip>{tasksLabel(prog.done, prog.total)}</BannerChip>
+                                    </button>
+                                ) : null
+                            }
+                        />
+                    </motion.div>
                     {agent.ask?.note ? (
-                        <div className="shrink-0 border-b border-edge-mid px-3.5 pt-2 text-[11px] text-warning">
+                        <motion.div
+                            {...part("note")}
+                            className="shrink-0 border-b border-edge-mid px-3.5 pt-2 text-[11px] text-warning"
+                        >
                             {agent.ask.note}
-                        </div>
+                        </motion.div>
                     ) : null}
                     {review ? (
-                        <div className="shrink-0 border-b border-edge-mid px-3.5 py-2.5">
+                        <motion.div {...part("ask")} className="shrink-0 border-b border-edge-mid px-3.5 py-2.5">
                             <DocReviewSummary model={model} agentId={agent.id} review={review} />
-                        </div>
+                        </motion.div>
                     ) : question ? (
-                        <p className="shrink-0 whitespace-pre-line border-b border-edge-mid px-3.5 py-2.5 text-[14px] font-semibold leading-[1.5] text-primary">
+                        <motion.p
+                            {...part("ask")}
+                            className="shrink-0 whitespace-pre-line border-b border-edge-mid px-3.5 py-2.5 text-[14px] font-semibold leading-[1.5] text-primary"
+                        >
                             {question}
-                        </p>
+                        </motion.p>
                     ) : null}
                 </>
             ) : null}
 
             {/* finished: the card keeps its place and says so, with the two things you do next */}
             {idle ? (
-                <div
+                <motion.div
+                    {...part("idle")}
                     onClick={(e) => e.stopPropagation()}
                     className="flex shrink-0 items-center gap-2 border-b border-edge-mid bg-accent/[0.06] py-[5px] pl-3.5 pr-2"
                 >
@@ -488,7 +524,7 @@ export const AgentRow = memo(function AgentRow({
                         Open
                         <ArrowUpRight size={11} aria-hidden />
                     </button>
-                </div>
+                </motion.div>
             ) : null}
 
             {/* task popover */}
@@ -513,7 +549,7 @@ export const AgentRow = memo(function AgentRow({
                 grows to keep the composer pinned to the bottom when content is short; the region scrolls
                 when it overflows. Header + asking band stay pinned above. The relative wrapper anchors
                 the jump-to-latest pill to the viewport bottom (it must not scroll with the feed). */}
-            <div className="relative flex min-h-0 flex-1 flex-col">
+            <motion.div {...bodyPart} className="relative flex min-h-0 flex-1 flex-col">
                 <div
                     ref={scrollRef}
                     onScroll={onScroll}
@@ -583,42 +619,49 @@ export const AgentRow = memo(function AgentRow({
                     on R / click. The structured AnswerBar above is the single suggestion affordance —
                     the free-form reply chips were removed so an ask never shows two suggestion rows. */}
                     <div className="shrink-0 border-t border-edge-mid">
-                        {showComposer ? (
-                            <motion.div
-                                variants={composerReveal}
-                                initial="initial"
-                                animate="animate"
-                                className="flex flex-col gap-1.5 overflow-hidden px-3 py-2"
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                <AgentComposer
-                                    ref={composerRef}
-                                    blockId={agent.blockId}
-                                    agent={agent}
-                                    placeholder={`message ${agent.name}…`}
-                                    onEscape={onComposerEscape}
-                                    className="border-t-0 px-0 py-0"
-                                />
-                            </motion.div>
-                        ) : (
-                            <div
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onOpenComposer();
-                                }}
-                                className="flex cursor-text items-center gap-2 px-3 py-1.5 hover:bg-surface-hover"
-                            >
-                                <Plus size={13} aria-hidden className="shrink-0 text-muted" />
-                                <span className="min-w-0 flex-1 truncate text-[12px] text-secondary">{`message ${agent.name}…`}</span>
-                                <span className="shrink-0 rounded-[5px] border border-edge-mid px-1.5 py-px font-mono text-[10.5px] text-muted">
-                                    R
-                                </span>
-                            </div>
-                        )}
+                        <AnimatePresence initial={false}>
+                            {showComposer ? (
+                                // the folding box has no padding of its own: a box folds to its padding and no further, then
+                                // vanishes in one frame, and opens from that height instead of from nothing
+                                <motion.div
+                                    key="composer"
+                                    {...footerPart}
+                                    className="overflow-hidden"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <div className="flex flex-col gap-1.5 px-3 py-2">
+                                        <AgentComposer
+                                            ref={composerRef}
+                                            blockId={agent.blockId}
+                                            agent={agent}
+                                            placeholder={`message ${agent.name}…`}
+                                            onEscape={onComposerEscape}
+                                            className="border-t-0 px-0 py-0"
+                                        />
+                                    </div>
+                                </motion.div>
+                            ) : (
+                                <motion.div key="reply" {...footerPart} className="overflow-hidden">
+                                    <div
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onOpenComposer();
+                                        }}
+                                        className="flex cursor-text items-center gap-2 px-3 py-1.5 hover:bg-surface-hover"
+                                    >
+                                        <Plus size={13} aria-hidden className="shrink-0 text-muted" />
+                                        <span className="min-w-0 flex-1 truncate text-[12px] text-secondary">{`message ${agent.name}…`}</span>
+                                        <span className="shrink-0 rounded-[5px] border border-edge-mid px-1.5 py-px font-mono text-[10.5px] text-muted">
+                                            R
+                                        </span>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
                 </div>
                 <JumpToLatestPill show={!atBottom} onClick={jumpToBottom} />
-            </div>
+            </motion.div>
         </motion.div>
     );
 });

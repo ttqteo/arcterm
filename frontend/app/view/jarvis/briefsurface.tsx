@@ -19,8 +19,8 @@
 // the control recipe, a borderless one is a label. Dressing something inert as a control and camouflaging
 // a real control among labels are the same lie, so neither happens here.
 
-import { pushToast } from "@/app/cockpit/notificationstore";
-import { MOTION, paneReveal, springReveal } from "@/app/element/motiontokens";
+import { MOTION, springReveal } from "@/app/element/motiontokens";
+import { usePartMotion } from "@/app/element/springbatch";
 import { contextMenuAtom, ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { buildJarvisBindings } from "@/app/store/keybindings/bindings";
@@ -32,13 +32,13 @@ import { showSession } from "@/app/view/agents/agentcenter";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { formatAgeShort } from "@/app/view/agents/agentsviewmodel";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
-import { channelsAtom, createChannel, loadChannels, runAtom } from "@/app/view/agents/channelsstore";
+import { channelsAtom, loadChannels, runAtom } from "@/app/view/agents/channelsstore";
 import { useCouncils } from "@/app/view/agents/councilstore";
 import { clearLaterMark, laterMarksAtom } from "@/app/view/agents/laterstore";
 import { openLauncher } from "@/app/view/agents/launcherstore";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
 import { RollingCount } from "@/app/view/agents/rollingcount";
-import { pendingRunDraftAtom, resumePausedRun, resumingRunIdsAtom } from "@/app/view/agents/runactions";
+import { resumePausedRun, resumingRunIdsAtom } from "@/app/view/agents/runactions";
 import { leadAsker } from "@/app/view/agents/runmodel";
 import { queuedRowsAtom, useRunQueueFeed } from "@/app/view/agents/runqueuestore";
 import {
@@ -170,6 +170,7 @@ import {
     IdeaRow,
     InitiativeRow,
     RecordsSummaryRow,
+    RevealRows,
     ReviewBody,
     ReviewDone,
     ReviewTools,
@@ -218,11 +219,10 @@ import {
     briefSheetOpenAtom,
     initiativeSheetRequestAtom,
 } from "./jarvisstore";
-import { activeSubjectAtom, persistedSubjectAtom, setComposingRun, stageRunAtom } from "./jarvissubjectstore";
+import { activeSubjectAtom, persistedSubjectAtom, stageRunAtom } from "./jarvissubjectstore";
 import { JarvisTour, TourButton, TourOffer } from "./jarvistourview";
 import { NewInitiativeControl } from "./newinitiativecontrol";
-import { radarDraftLanding } from "./newrun";
-import { openChannelSheet, openOrPeek, openOrPeekAddress } from "./openref";
+import { openOrPeek, openOrPeekAddress } from "./openref";
 import { planReviewORef } from "./planreviewtarget";
 import {
     eventAge,
@@ -631,6 +631,9 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     // not depend on the tree being mounted.
     useRunQueueFeed();
     const queued = useAtomValue(queuedRowsAtom);
+    // the stale band, the load error and the records fold: each opens and folds its height on the spring (snapped under
+    // reduced motion)
+    const reveal = usePartMotion(springReveal);
 
     useEffect(() => {
         loadBriefing();
@@ -647,43 +650,9 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     // composition the Subjects column does not mount, and that column is what loads both of these today.
     useEffect(() => {
         loadTaskList();
-        // channels, because a Radar draft names a project and the landing has to resolve it to a channel
         loadChannels();
     }, []);
-
-    // A Radar draft moved off the Stage with the panes it drew. It is one-shot — `landed` bounds it to a single
-    // attempt, because a channel that never resolves must not re-fire on every change and yank the user back.
-    const pendingDraft = useAtomValue(pendingRunDraftAtom);
-    const setPendingDraft = useSetAtom(pendingRunDraftAtom);
     const channels = useAtomValue(channelsAtom);
-
-    // Radar "Start investigation": put its project's channel on the subject, so the sheet opens on that
-    // channel's launcher holding the draft rather than dropping it on the queue. A project with no channel yet
-    // gets one minted, as + Run does.
-    useEffect(() => {
-        if (pendingDraft == null || pendingDraft.landed) {
-            return;
-        }
-        const landing = radarDraftLanding(channels, pendingDraft);
-        if (landing === "wait") {
-            return;
-        }
-        setPendingDraft({ ...pendingDraft, landed: true });
-        if (landing === "none") {
-            return;
-        }
-        fireAndForget(async () => {
-            try {
-                const oid = landing.kind === "existing" ? landing.oid : await createChannel(landing.name, landing.path);
-                // composing, as New run does: otherwise a channel with any past run opens on that run's
-                // report, and the launcher holding the draft is one click away and looks like nothing happened
-                setComposingRun(oid, true);
-                await openChannelSheet(oid, null);
-            } catch (e) {
-                pushToast({ title: "Couldn't open the investigation's project", message: String(e), level: "error" });
-            }
-        });
-    }, [pendingDraft, channels, setPendingDraft]);
 
     // Boot restore, Brief edition. A stored record lands on the record peek; a stored channel is forgotten
     // (briefrestore.ts). One-shot: this
@@ -1911,10 +1880,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 {staleSnapshot ? (
                     <motion.div
                         key="stale"
-                        variants={paneReveal}
-                        initial="initial"
-                        animate="animate"
-                        exit="exit"
+                        {...reveal}
                         data-jarvis-brief-band="stale"
                         className="flex flex-none items-center gap-2 overflow-hidden border-b border-edge-faint px-[22px] py-1 text-[10.5px] text-error"
                     >
@@ -1934,10 +1900,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                         {loadFailed ? (
                             <motion.div
                                 key="load-error"
-                                variants={paneReveal}
-                                initial="initial"
-                                animate="animate"
-                                exit="exit"
+                                {...reveal}
                                 data-jarvis-brief-state="error"
                                 className="flex flex-col gap-2 overflow-hidden rounded-[10px] border border-border bg-surface px-4 py-3"
                             >
@@ -2004,6 +1967,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                             total={queue.length}
                                             open={foldOpen(waitingOpen, query)}
                                             onToggle={() => toggleRegion("waiting")}
+                                            filter={query}
                                             actsOf={queueActsOf}
                                             onAct={actOnQueue}
                                             onOpen={(l, e) => {
@@ -2019,6 +1983,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                         >
                                             <InitiativeCards
                                                 faces={pass != null ? [] : cardFaces}
+                                                filter={query}
                                                 heading={heading}
                                                 pinSlot={pass == null && !filtering && showPinSlot(pinnedN)}
                                                 review={
@@ -2079,6 +2044,9 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                         more={list.more}
                                                         expanded={initiativesOpen}
                                                         onToggleMore={() => toggleRegion("initiatives")}
+                                                        // the archived rows are left out: Show N archived is a disclosure
+                                                        keys={listAll.map((c) => c.oref)}
+                                                        filter={`${query}|${project ?? ""}`}
                                                         tabs={
                                                             projectOptions.length > 1
                                                                 ? filterNode({
@@ -2173,30 +2141,35 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                                     "rounded-[10px] border border-border bg-surface p-1"
                                                             )}
                                                         >
-                                                            {ideaLines.map((l) => (
-                                                                <IdeaRow
-                                                                    key={l.id}
-                                                                    line={l}
-                                                                    focused={cursor === l.id}
-                                                                    fresh={freshIdeas.has(keyOf(l))}
-                                                                    // an idea opens in the sheet, which offers the ways
-                                                                    // to plan it; the open one is marked as a card is
-                                                                    expanded={
-                                                                        l.target != null &&
-                                                                        "oref" in l.target &&
-                                                                        l.target.oref === openedOref
-                                                                    }
-                                                                    onContextMenu={(ev) =>
-                                                                        l.target != null && "oref" in l.target
-                                                                            ? showMenu(l.target.oref, ev)
-                                                                            : undefined
-                                                                    }
-                                                                    onOpen={() => {
-                                                                        setCursor(l.id);
-                                                                        openLine(l.target);
-                                                                    }}
-                                                                />
-                                                            ))}
+                                                            <RevealRows
+                                                                rows={ideaLines}
+                                                                rowKey={(l) => l.id}
+                                                                keys={effortGroups.ideas.map((e) => e.oref)}
+                                                                filter={query}
+                                                                render={(l) => (
+                                                                    <IdeaRow
+                                                                        line={l}
+                                                                        focused={cursor === l.id}
+                                                                        fresh={freshIdeas.has(keyOf(l))}
+                                                                        // an idea opens in the sheet, which offers the ways
+                                                                        // to plan it; the open one is marked as a card is
+                                                                        expanded={
+                                                                            l.target != null &&
+                                                                            "oref" in l.target &&
+                                                                            l.target.oref === openedOref
+                                                                        }
+                                                                        onContextMenu={(ev) =>
+                                                                            l.target != null && "oref" in l.target
+                                                                                ? showMenu(l.target.oref, ev)
+                                                                                : undefined
+                                                                        }
+                                                                        onOpen={() => {
+                                                                            setCursor(l.id);
+                                                                            openLine(l.target);
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                            />
                                                             <label
                                                                 data-jarvis-jot-idea
                                                                 className={cn(
@@ -2244,6 +2217,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                 {laterAll.length > 0 || !filtering ? (
                                                     <ForLaterRegion
                                                         rows={laterWindow.rows}
+                                                        keys={laterAll.map((r) => r.key)}
+                                                        filter={query}
                                                         total={laterAll.length}
                                                         more={laterWindow.more}
                                                         expanded={laterOpen}
@@ -2268,6 +2243,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                         <ActivityRegion
                                             model={activity}
                                             filter={activityFilter}
+                                            search={query}
                                             onFilter={setActivityFilter}
                                             earlierOpen={earlierOpen}
                                             onToggleEarlier={() => setEarlierOpen(!earlierOpen)}
@@ -2380,7 +2356,6 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                             const kind = w.section.kind;
                                                             const row = (l: BriefLine) => (
                                                                 <DeltaRowView
-                                                                    key={l.id}
                                                                     line={l}
                                                                     // the section names an initiative or a record;
                                                                     // a run keeps its started / completed word
@@ -2424,23 +2399,33 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                                             {w.lines.length > 0 ? (
                                                                                 <motion.div
                                                                                     key="records"
-                                                                                    variants={springReveal}
-                                                                                    initial="initial"
-                                                                                    animate="animate"
-                                                                                    exit="exit"
+                                                                                    {...reveal}
                                                                                     data-jarvis-since-records
                                                                                     className={cn(
                                                                                         "flex flex-col overflow-hidden",
                                                                                         w.summary != null && "pl-4"
                                                                                     )}
                                                                                 >
-                                                                                    {w.lines.map(row)}
+                                                                                    <RevealRows
+                                                                                        rows={w.lines}
+                                                                                        rowKey={(l) => l.id}
+                                                                                        filter={query}
+                                                                                        render={row}
+                                                                                    />
                                                                                 </motion.div>
                                                                             ) : null}
                                                                         </AnimatePresence>
                                                                     ) : (
                                                                         <>
-                                                                            {w.lines.map(row)}
+                                                                            <RevealRows
+                                                                                rows={w.lines}
+                                                                                rowKey={(l) => l.id}
+                                                                                // the section's rows before its window
+                                                                                // (+N more) cut them: opening it springs
+                                                                                keys={w.section.lines.map((l) => l.id)}
+                                                                                filter={query}
+                                                                                render={row}
+                                                                            />
                                                                             <MoreControl
                                                                                 n={w.more}
                                                                                 noun={
@@ -2488,25 +2473,30 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                                     : SHIPPED_EMPTY}
                                                             </p>
                                                         ) : null}
-                                                        {shippedLines.map((l) => (
-                                                            <ShippedRowView
-                                                                key={l.id}
-                                                                line={l}
-                                                                focused={cursor === l.id}
-                                                                selected={
-                                                                    sheetOpen &&
-                                                                    stageRun != null &&
-                                                                    l.target != null &&
-                                                                    "oref" in l.target &&
-                                                                    l.target.oref === "run:" + stageRun.id
-                                                                }
-                                                                onOpen={
-                                                                    l.target != null
-                                                                        ? (e) => openLine(l.target, e)
-                                                                        : undefined
-                                                                }
-                                                            />
-                                                        ))}
+                                                        <RevealRows
+                                                            rows={shippedLines}
+                                                            rowKey={(l) => l.id}
+                                                            keys={shippedAll.map((s) => s.oref)}
+                                                            filter={`${query}|${activityFilter}`}
+                                                            render={(l) => (
+                                                                <ShippedRowView
+                                                                    line={l}
+                                                                    focused={cursor === l.id}
+                                                                    selected={
+                                                                        sheetOpen &&
+                                                                        stageRun != null &&
+                                                                        l.target != null &&
+                                                                        "oref" in l.target &&
+                                                                        l.target.oref === "run:" + stageRun.id
+                                                                    }
+                                                                    onOpen={
+                                                                        l.target != null
+                                                                            ? (e) => openLine(l.target, e)
+                                                                            : undefined
+                                                                    }
+                                                                />
+                                                            )}
+                                                        />
                                                         {shippedAll.length > SHIPPED_CAP && !filtering ? (
                                                             <button
                                                                 type="button"
