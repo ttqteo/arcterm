@@ -284,6 +284,12 @@ export function restState(rest: readonly FloatTab[]): AgentState | null {
 
 const URGENCY: Record<AgentState, number> = { asking: 0, working: 1, idle: 2 };
 
+/** A tab has a turn you have not read: one of its members (a run's lead or a session it spawned) finished one while you
+ *  were not looking (unreadagentsstore.ts). A dot says so, never how many: a tab is one agent's place. */
+export function tabUnread(tab: FloatTab, unread: ReadonlyMap<string, number>): boolean {
+    return tab.members.some((id) => (unread.get(id) ?? 0) > 0);
+}
+
 /** The folded Sprout's list: what needs you first, then what works, then the rest, each in roster order, a run as its
  *  lead, cut at four so nothing that waits on you hides behind "+N". */
 export function foldedList(

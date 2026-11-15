@@ -21,9 +21,10 @@ import { STATE_LABEL } from "@/app/view/agents/agentheader";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askingLabel } from "@/app/view/agents/agentsviewmodel";
 import { floatTabPinsAtom, setTabPinned } from "@/app/view/agents/floattabsstore";
-import { floatTabs, floatTabUnits, restState, type FloatTab } from "@/app/view/agents/sproutroster";
+import { floatTabs, floatTabUnits, restState, tabUnread, type FloatTab } from "@/app/view/agents/sproutroster";
 import { StatusDot } from "@/app/view/agents/statusdot";
 import { closeTranslate, toggleTranslate, translateOpenAtom } from "@/app/view/agents/translatestore";
+import { unreadAgentsAtom } from "@/app/view/agents/unreadagentsstore";
 import { FloatUsage } from "@/app/view/agents/usagemeters";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
@@ -63,6 +64,7 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
     const terminals = useAtomValue(model.terminalsAtom);
     const lineage = useAtomValue(model.lineageAtom);
     const pins = useAtomValue(floatTabPinsAtom);
+    const unread = useAtomValue(unreadAgentsAtom);
     // the tabs and the floor share what the fixed tab and the usage leave
     const [roomRef, , roomRect] = useDimensionsWithCallbackRef<HTMLDivElement>(null);
     const room = roomRect == null ? undefined : roomRect.width - FLOOR_MIN;
@@ -127,19 +129,21 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
                     >
                         {tabs.shown.map((t) => {
                             const on = focusId != null && t.members.includes(focusId) && !translateOpen;
+                            const fresh = tabUnread(t, unread);
                             return (
                                 <button
                                     key={t.key}
                                     type="button"
                                     data-float-tab={t.agent.id}
                                     data-float-tab-pinned={t.pinned ? "" : undefined}
-                                    aria-label={tabTitle(t)}
+                                    data-float-tab-unread={fresh ? "" : undefined}
+                                    aria-label={fresh ? `${tabTitle(t)}, unread reply` : tabTitle(t)}
                                     aria-pressed={on}
                                     title={tabTitle(t)}
                                     onClick={() => show(t.agent.id)}
                                     onContextMenu={(e) => showTabMenu(t, e)}
                                     className={cn(
-                                        "flex h-[26px] min-w-[80px] max-w-[140px] cursor-pointer items-center gap-1.5 rounded-[7px] px-2 text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                        "relative flex h-[26px] min-w-[80px] max-w-[140px] cursor-pointer items-center gap-1.5 rounded-[7px] px-2 text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                                         on
                                             ? "bg-surface-hover font-semibold text-primary ring-1 ring-edge-mid"
                                             : "text-secondary hover:bg-surface-hover hover:text-primary"
@@ -158,6 +162,14 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
                                             strokeWidth={2}
                                             className="flex-none text-muted"
                                             aria-hidden
+                                        />
+                                    ) : null}
+                                    {/* a reply you have not read: a small accent dot on the tab's corner, as the
+                                        hologram's unread mark sits on its rim */}
+                                    {fresh ? (
+                                        <span
+                                            aria-hidden
+                                            className="pointer-events-none absolute right-[3px] top-[3px] h-[6px] w-[6px] rounded-full bg-accent"
                                         />
                                     ) : null}
                                 </button>

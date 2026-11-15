@@ -31,6 +31,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A Float tab whose agent replied while you were elsewhere carries a small dot until you look at it.
 - Sidecar, a second window for another screen that shows every agent at a glance: Ctrl+P → Open Sidecar. It opens
   maximized on your other screen (centred when you have one), F11 or its full-screen button toggles full screen, and
   it closes with arcterm's window, and opens again where you left it (screen, size, full screen) the next time arcterm
@@ -45,6 +46,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- In Float, Jarvis's hologram and its marks keep to the floor when the ledge narrows (the Jobs chip showing, a tab
+  coming): they stood over the chip instead.
 - Jarvis's panel opens beside the hologram in Float again, inside the window, instead of off past its edge and cut off.
 - On a Mac, Chat's jump-to-latest button shows its ↓ once: the ⌘↓ beside it said the same arrow again (it stays in the
   tooltip).

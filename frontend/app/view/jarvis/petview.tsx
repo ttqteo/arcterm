@@ -585,14 +585,26 @@ function useFloatHome(on: boolean): { left: number; top: number } | null {
         }
         const place = () => {
             const ledge = readLedge();
-            setSpot({ left: homeX(globalStore.get(petHomeAtom), ledge), top: ledge.top - PET_PX });
+            const next = { left: homeX(globalStore.get(petHomeAtom), ledge), top: ledge.top - PET_PX };
+            setSpot((cur) => (cur != null && cur.left === next.left && cur.top === next.top ? cur : next));
         };
+        // the floor narrows without the window changing: the Jobs chip shows on the ledge, a tab comes or goes. Measured
+        // only on a resize, the hologram and its marks stood where the floor had been, over the chip.
+        const floor = new ResizeObserver(place);
+        const watch = () => document.querySelectorAll("[data-pet-ledge]").forEach((el) => floor.observe(el));
         place();
+        watch();
         // the float bar mounts after the window has shrunk, as PetSprite's settle measures allow for
-        const timers = SWITCH_SETTLE_MS.map((ms) => setTimeout(place, ms));
+        const timers = SWITCH_SETTLE_MS.map((ms) =>
+            setTimeout(() => {
+                place();
+                watch();
+            }, ms)
+        );
         window.addEventListener("resize", place);
         return () => {
             timers.forEach(clearTimeout);
+            floor.disconnect();
             window.removeEventListener("resize", place);
         };
     }, [on]);

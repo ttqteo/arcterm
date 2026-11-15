@@ -13,6 +13,7 @@ import {
     foldedList,
     parseTabPins,
     restState,
+    tabUnread,
     withTabPin,
     workingCount,
     type FloatTab,
@@ -186,6 +187,15 @@ describe("restState", () => {
     it("is working when one works and none asks", () =>
         expect(restState([tab("a", "idle"), tab("b", "working")])).toBe("working"));
     it("is none when every hidden tab is idle", () => expect(restState([tab("a", "idle")])).toBeNull());
+});
+
+describe("tabUnread", () => {
+    const run: FloatTab = { key: "run", agent: a("lead", "idle"), label: "lead", members: ["lead", "w1"] };
+    it("is unread when a member has an unread turn", () => expect(tabUnread(run, new Map([["w1", 2]]))).toBe(true));
+    it("is read when no member has one, or its count is zero", () => {
+        expect(tabUnread(run, new Map([["other", 1]]))).toBe(false);
+        expect(tabUnread(run, new Map([["lead", 0]]))).toBe(false);
+    });
 });
 
 describe("floatTabOrder", () => {
