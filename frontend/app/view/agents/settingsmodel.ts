@@ -29,8 +29,6 @@ export type SettingRowDef = {
     // value against the shipped default, and revert by deleting the user's override; every other row's
     // value lives somewhere only the surface knows how to reach.
     config?: boolean;
-    // Further wconfig keys a config row writes beside `key` (a route is a runtime key and a model key).
-    morekeys?: string[];
 };
 
 // A labelled group of rows on a page. A card may hold no rows: the Claude account card renders a list
@@ -875,9 +873,9 @@ export function flagRowId(runtime: Runtime, flagId: string): string {
     return `newagent.flag.${runtime}.${flagId}`;
 }
 
-// Every settings key a row stores under, primary first. Empty for a row that stores no setting.
+// The settings key a row stores under, or none for a row that stores no setting.
 export function rowKeys(row: SettingRowDef): string[] {
-    return row.key == null ? [] : [row.key, ...(row.morekeys ?? [])];
+    return row.key == null ? [] : [row.key];
 }
 
 // The key pill's tooltip: what a click copies, then where the value lives. Null — no pill — for a row that

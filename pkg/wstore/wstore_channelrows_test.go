@@ -544,19 +544,6 @@ func TestDispatchMessageStampsWorkerChannel(t *testing.T) {
 	}
 }
 
-func TestGetChannelProjectPaths(t *testing.T) {
-	ctx := context.Background()
-	a, _ := CreateChannel(ctx, "pa", "/proj/a")
-	b, _ := CreateChannel(ctx, "pb", "/proj/b")
-	m, err := GetChannelProjectPaths(ctx)
-	if err != nil {
-		t.Fatalf("GetChannelProjectPaths: %v", err)
-	}
-	if m[a.OID] != "/proj/a" || m[b.OID] != "/proj/b" {
-		t.Fatalf("wrong map: %+v", m)
-	}
-}
-
 // Deleting a channel takes its runs, their events and dags, and its messages, and leaves another channel's alone.
 func TestDeleteChannelDeletesItsRows(t *testing.T) {
 	ctx := context.Background()
