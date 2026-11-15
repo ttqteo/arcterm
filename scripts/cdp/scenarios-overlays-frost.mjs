@@ -7,18 +7,21 @@
 //   agents.mjs   overlays-frost-agents                               sidebar and launcher popovers            (Task 5)
 //   jarvis.mjs   overlays-frost-jarvis                               Jarvis, Code and Jobs popovers           (Task 6)
 //   toast.mjs    overlays-frost-toast, overlays-frost-toast-timing   the toast fill, and its one-off timing    (Task 8)
+//   frames.mjs   overlays-frost-frames                               the find bar's and pet peek's frame cost (chunk 28)
 // frostcheck.mjs is the shared check (frostProbe / frostVerdict / solidVerdict) every area runs on its panels.
 //
 // kit is scenarios.mjs's CR_KIT (what the Chat redesign's scenario takes of it) plus `scenario(name)`, which returns the
 // registered scenario object of that name, resolved when it is called (not when the group is built), so a step can run an
 // existing scenario's `arrange` / `teardown` (the consumers-popover, jobqueue-chip and notify-toast fixtures) without
-// scenarios.mjs having to export it. Final runs every overlays-frost-* scenario except overlays-frost-toast-timing.
+// scenarios.mjs having to export it. Final runs every overlays-frost-* scenario except the two measurements,
+// overlays-frost-toast-timing and overlays-frost-frames, which run only when named.
 
 import agents from "./overlays-frost/agents.mjs";
 import chat from "./overlays-frost/chat.mjs";
+import frames from "./overlays-frost/frames.mjs";
 import jarvis from "./overlays-frost/jarvis.mjs";
 import menus from "./overlays-frost/menus.mjs";
 import palette from "./overlays-frost/palette.mjs";
 import toast from "./overlays-frost/toast.mjs";
 
-export default (kit) => [...palette(kit), ...menus(kit), ...chat(kit), ...agents(kit), ...jarvis(kit), ...toast(kit)];
+export default (kit) => [...palette(kit), ...menus(kit), ...chat(kit), ...agents(kit), ...jarvis(kit), ...toast(kit), ...frames(kit)];
