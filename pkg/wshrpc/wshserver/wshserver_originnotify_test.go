@@ -174,10 +174,17 @@ func TestNotifyOriginsWaitsForAWorkingOrigin(t *testing.T) {
 		t.Fatalf("an asking origin was messaged: %+v, stamps %v", *w.sent, w.stamped())
 	}
 
+	// a permission prompt or another dialog: a typed message would land in it
 	setState(agentsTabB, baseds.AgentState_Waiting)
 	notifyOrigins(context.Background())
+	if len(*w.sent) != 0 || len(w.stamped()) != 0 {
+		t.Fatalf("an origin in a dialog was messaged: %+v, stamps %v", *w.sent, w.stamped())
+	}
+
+	setState(agentsTabB, baseds.AgentState_Idle)
+	notifyOrigins(context.Background())
 	if len(*w.sent) != 1 || len(w.stamped()) != 1 {
-		t.Fatalf("a waiting origin was not messaged: %+v, stamps %v", *w.sent, w.stamped())
+		t.Fatalf("an idle origin was not messaged: %+v, stamps %v", *w.sent, w.stamped())
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -241,6 +242,11 @@ const agentsTestSentTs = int64(1_000_000)
 // sleeping moves, and reports how many reads it took
 func agentsWaitScript(t *testing.T, timeout time.Duration, reads ...wshrpc.CommandAgentsReadRtnData) (*wshrpc.CommandAgentsReadRtnData, int, error) {
 	t.Helper()
+	return agentsWaitScriptSent(t, &wshrpc.CommandAgentsSendRtnData{TabId: agentsTestTabA, SentTs: agentsTestSentTs}, timeout, reads...)
+}
+
+func agentsWaitScriptSent(t *testing.T, sent *wshrpc.CommandAgentsSendRtnData, timeout time.Duration, reads ...wshrpc.CommandAgentsReadRtnData) (*wshrpc.CommandAgentsReadRtnData, int, error) {
+	t.Helper()
 	clock := time.UnixMilli(agentsTestSentTs)
 	n := 0
 	read := func() (*wshrpc.CommandAgentsReadRtnData, error) {
@@ -255,7 +261,6 @@ func agentsWaitScript(t *testing.T, timeout time.Duration, reads ...wshrpc.Comma
 		}
 		clock = clock.Add(d)
 	}
-	sent := &wshrpc.CommandAgentsSendRtnData{TabId: agentsTestTabA, SentTs: agentsTestSentTs}
 	r, err := agentsWait(read, sleep, func() time.Time { return clock }, sent, timeout)
 	return r, n, err
 }
@@ -309,6 +314,55 @@ func TestAgentsWaitTimesOut(t *testing.T) {
 	}
 	if n != 4 {
 		t.Errorf("reads = %d, want 4 (one at the start, one per poll until the timeout)", n)
+	}
+}
+
+// a send that never started a turn left the target idle on its older answer, and --wait sat out the full
+// timeout before saying anything
+func TestAgentsWaitFailsFastWhenNoTurnStarts(t *testing.T) {
+	stale := wshrpc.CommandAgentsReadRtnData{State: wshrpc.AgentsState_Idle, Answer: "old", AnswerTs: agentsTestSentTs}
+	r, n, err := agentsWaitScript(t, 10*time.Minute, stale)
+	if r != nil || err == nil || !strings.Contains(err.Error(), "did not start a turn") {
+		t.Fatalf("got %+v, %v; want an error saying no turn started", r, err)
+	}
+	if want := int(orchestrate.WakeConfirmTimeout/agentsWaitPoll) + 1; n != want {
+		t.Errorf("reads = %d, want %d (the gate is the engine's wake-confirm window, not the timeout)", n, want)
+	}
+}
+
+func TestAgentsWaitStallGateOnlyBeforeATurnStarts(t *testing.T) {
+	stale := wshrpc.CommandAgentsReadRtnData{State: wshrpc.AgentsState_Idle, Answer: "old", AnswerTs: agentsTestSentTs}
+	// a send that joined a running turn: the target may read idle briefly between turns, and a timeout there
+	// names the idle state it ended in
+	joined := &wshrpc.CommandAgentsSendRtnData{TabId: agentsTestTabA, SentTs: agentsTestSentTs, MidTurn: true}
+	if _, _, err := agentsWaitScriptSent(t, joined, 2*time.Minute, stale); err == nil || !strings.Contains(err.Error(), "is idle after") ||
+		strings.Contains(err.Error(), "working") || !strings.Contains(err.Error(), "wsh agents read aaaaaaaa") {
+		t.Errorf("mid-turn send: err = %v, want the plain timeout naming the idle state", err)
+	}
+	// a turn that started and is slow is not a stall
+	working := wshrpc.CommandAgentsReadRtnData{State: wshrpc.AgentsState_Working, Answer: "old", AnswerTs: agentsTestSentTs}
+	if _, _, err := agentsWaitScript(t, 2*time.Minute, stale, working); err == nil || !strings.Contains(err.Error(), "still working after") {
+		t.Errorf("started turn: err = %v, want the plain timeout", err)
+	}
+	// a woken agent reads asleep until it reports in, which takes up to a minute: that is not a stall either
+	asleep := wshrpc.CommandAgentsReadRtnData{State: wshrpc.AgentsState_Sleeping, Answer: "old", AnswerTs: agentsTestSentTs}
+	if _, _, err := agentsWaitScript(t, 2*time.Minute, asleep, stale); err == nil || !strings.Contains(err.Error(), "is idle after") {
+		t.Errorf("woken target: err = %v, want the plain timeout naming the idle state", err)
+	}
+}
+
+// a permission prompt reads as asking (the server folds it in), so the printed line has to name it
+func TestAgentsWaitNamesAPermissionPrompt(t *testing.T) {
+	lines := agentsWaitLines(&wshrpc.CommandAgentsReadRtnData{TabId: agentsTestTabA, State: wshrpc.AgentsState_Asking})
+	if len(lines) != 1 || !strings.Contains(lines[0], "a question or a permission prompt open") {
+		t.Errorf("agentsWaitLines = %q, want the question or permission prompt named", lines)
+	}
+	list := func() ([]wshrpc.AgentInfo, error) {
+		return []wshrpc.AgentInfo{{TabId: agentsTestTabA, Name: "design", State: wshrpc.AgentsState_Asking}}, nil
+	}
+	line, err := agentsWaitFor(list, func(time.Duration) { t.Fatal("slept on an asking agent") }, time.Now, agentsTestTabA, time.Minute)
+	if err != nil || !strings.Contains(line, "a question or a permission prompt open") {
+		t.Errorf("agentsWaitFor = %q, %v, want the question or permission prompt named", line, err)
 	}
 }
 

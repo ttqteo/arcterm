@@ -1,10 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { fireAndForget } from "@/util/util";
 import type { AgentsViewModel } from "./agents";
 import { askSentKey, buildAskAnswers, canSubmitAsk } from "./agentsviewmodel";
 
@@ -44,7 +44,8 @@ export function markAskSent(model: AskModel, askKey: string): void {
 }
 
 // The one answer send, shared by the Cockpit's answer bar and the palette's inline answers. Validates the
-// answer against the agent's live ask, fires the RPC once, and marks the ask sent so the answer bar locks.
+// answer against the agent's live ask, sends it once, and marks the ask sent so the answer bar locks. A send the
+// agent never receives unlocks the ask again and says so.
 // Returns false when nothing was sent (no such agent, already sent, incomplete answer, no oref). The creature's
 // peek sends the same answer but awaits it, so a failure lands on its button (petactrun.ts).
 export function answerAgentAsk(
@@ -57,7 +58,18 @@ export function answerAgentAsk(
     if (answer == null) {
         return false;
     }
-    fireAndForget(() => RpcApi.AnswerAgentCommand(TabRpcClient, { oref: answer.oref, answers: answer.answers }));
     markAskSent(model, answer.askKey);
+    // the lock is released only by the ask clearing or re-raising, which a lost answer never causes: without
+    // this the card would read "Answered" with the agent still blocked and no way to send again
+    RpcApi.AnswerAgentCommand(TabRpcClient, { oref: answer.oref, answers: answer.answers }).catch((err) => {
+        const sent = new Set(globalStore.get(model.sentIdsAtom));
+        sent.delete(answer.askKey);
+        globalStore.set(model.sentIdsAtom, sent);
+        pushToast({
+            title: "The answer did not reach the agent",
+            message: `${err instanceof Error ? err.message : String(err)}. Answer again to resend.`,
+            level: "error",
+        });
+    });
     return true;
 }

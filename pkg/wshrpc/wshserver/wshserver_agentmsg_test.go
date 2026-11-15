@@ -150,7 +150,8 @@ func TestAgentsRosterStates(t *testing.T) {
 		want    string
 	}{
 		{baseds.AgentState_Idle, false, wshrpc.AgentsState_Idle},
-		{baseds.AgentState_Waiting, false, wshrpc.AgentsState_Idle},
+		// a permission prompt or another dialog: a typed message would land in it
+		{baseds.AgentState_Waiting, false, wshrpc.AgentsState_Asking},
 		{baseds.AgentState_Working, false, wshrpc.AgentsState_Working},
 		{baseds.AgentState_Asking, false, wshrpc.AgentsState_Asking},
 		// a Notification mid-question reports waiting, so the open ask alone has to say asking
@@ -202,6 +203,8 @@ func TestAgentsResolve(t *testing.T) {
 func TestAgentsSendRefusals(t *testing.T) {
 	asking := threeAgents()
 	asking.Tabs[1].OpenAsk = true
+	permission := threeAgents()
+	permission.Tabs[1].Status.State = baseds.AgentState_Waiting
 	cases := []struct {
 		name    string
 		facts   *agentRosterFacts
@@ -218,6 +221,7 @@ func TestAgentsSendRefusals(t *testing.T) {
 			arrange: func() { agentmsg.NoteSent(agentsBlockB, agentsBlockA) }, want: "wsh agents read"},
 		{name: "empty text", data: wshrpc.CommandAgentsSendData{Tab: agentsTabB, Text: " \n\t", FromORef: blockORef(agentsBlockA)}, want: "message is empty"},
 		{name: "asking with no stream", facts: asking, data: wshrpc.CommandAgentsSendData{Tab: agentsTabB, Text: "hi", FromORef: blockORef(agentsBlockA)}, want: "question open"},
+		{name: "permission prompt with no stream", facts: permission, data: wshrpc.CommandAgentsSendData{Tab: agentsTabB, Text: "hi", FromORef: blockORef(agentsBlockA)}, want: "permission prompt open"},
 	}
 	seen := map[string]string{}
 	for _, c := range cases {
@@ -242,6 +246,46 @@ func TestAgentsSendRefusals(t *testing.T) {
 			}
 			seen[err.Error()] = c.name
 		})
+	}
+}
+
+// what an asking agent waits on the user for: an open ask is a question, a waiting status with no ask is a question or
+// a permission prompt (the status does not say which)
+func TestAgentOpenPromptNamesWhatTheAgentWaitsOn(t *testing.T) {
+	cases := []struct {
+		name    string
+		state   string
+		openAsk bool
+		want    string
+	}{
+		{"an open ask", baseds.AgentState_Asking, true, "question"},
+		{"an open ask over a Notification", baseds.AgentState_Waiting, true, "question"},
+		{"an asking status", baseds.AgentState_Asking, false, "question"},
+		{"a dialog with no ask", baseds.AgentState_Waiting, false, "question or a permission prompt"},
+	}
+	for _, c := range cases {
+		tf := agentFacts(agentsTabA, "a", agentsBlockA, "claude", c.state)
+		tf.OpenAsk = c.openAsk
+		rows := buildAgentRoster(&agentRosterFacts{Tabs: []agentTabFacts{tf}})
+		if len(rows) != 1 {
+			t.Fatalf("%s: rows = %+v", c.name, rows)
+		}
+		if got := agentOpenPrompt(&rows[0]); got != c.want {
+			t.Errorf("%s: agentOpenPrompt = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// a send into an agent showing a permission prompt goes over the control stream like one into a question, and
+// counts as joining its turn: the target was not at its prompt
+func TestAgentsSendToAPermissionPromptOverAStream(t *testing.T) {
+	facts := threeAgents()
+	facts.Tabs[1].Status.State = baseds.AgentState_Waiting
+	facts.Tabs[1].HasStream = true
+	sent := scriptAgents(t, facts)
+	rtn, err := (&WshServer{}).AgentsSendCommand(context.Background(), wshrpc.CommandAgentsSendData{Tab: agentsTabB, Text: "hi", FromORef: blockORef(agentsBlockA)})
+	if err != nil || !rtn.MidTurn || len(*sent) != 1 {
+		t.Fatalf("rtn = %+v, err = %v, deliveries = %d; want a mid-turn send delivered once", rtn, err, len(*sent))
 	}
 }
 

@@ -57,6 +57,7 @@ type agentRow struct {
 	wshrpc.AgentInfo
 	blockId   string
 	status    baseds.AgentStatusData
+	openAsk   bool
 	hasStream bool
 }
 
@@ -138,12 +139,14 @@ func readBlockTranscriptMeta(ctx context.Context, blockId string) (string, error
 }
 
 // agentsState folds a session's latest status and its open ask into the three states a caller acts on. The
-// ask counts on its own: a Notification a few seconds into a question reports the session as waiting.
+// ask counts on its own: a Notification a few seconds into a question reports the session as waiting. Waiting
+// is a permission prompt or another dialog, which waits on the user as a question does and would take a typed
+// message as its answer.
 func agentsState(status string, openAsk bool) string {
 	switch {
-	case openAsk || status == baseds.AgentState_Asking:
+	case openAsk || status == baseds.AgentState_Asking || status == baseds.AgentState_Waiting:
 		return wshrpc.AgentsState_Asking
-	case status == baseds.AgentState_Idle || status == baseds.AgentState_Waiting:
+	case status == baseds.AgentState_Idle:
 		return wshrpc.AgentsState_Idle
 	}
 	return wshrpc.AgentsState_Working
@@ -205,6 +208,7 @@ func buildAgentRoster(facts *agentRosterFacts) []agentRow {
 			},
 			blockId:   tf.BlockId,
 			status:    tf.Status,
+			openAsk:   tf.OpenAsk,
 			hasStream: tf.HasStream,
 		}
 		if asleep {
@@ -340,7 +344,7 @@ func (ws *WshServer) AgentsSendCommand(ctx context.Context, data wshrpc.CommandA
 // after the wake of a sleeping one, so a wake that failed leaves no lock.
 func deliverToAgent(ctx context.Context, rows []agentRow, target *agentRow, message string, noteSent func()) error {
 	if target.State == wshrpc.AgentsState_Asking && !target.hasStream {
-		return fmt.Errorf("agent %q has a question open in its terminal, and a typed message would answer it; send again once it is answered", target.Name)
+		return fmt.Errorf("agent %q has a %s open in its terminal, and a typed message would answer it; send again once it is answered", target.Name, agentOpenPrompt(target))
 	}
 	if target.State == wshrpc.AgentsState_Sleeping {
 		if err := heldElsewhere(rows, target); err != nil {
@@ -359,6 +363,15 @@ func deliverToAgent(ctx context.Context, rows []agentRow, target *agentRow, mess
 	}
 	deliverAgentMessage(target.blockId, message)
 	return nil
+}
+
+// agentOpenPrompt names what an asking agent waits on the user for. An open ask is a question; a waiting status
+// with no ask is a permission prompt or another dialog, and the status does not say which.
+func agentOpenPrompt(row *agentRow) string {
+	if !row.openAsk && row.status.State == baseds.AgentState_Waiting {
+		return "question or a permission prompt"
+	}
+	return "question"
 }
 
 // AgentPromptCommand hands the cockpit's own prompt to a block's session. A session whose mod holds a
