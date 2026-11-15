@@ -592,12 +592,17 @@ export function useInitiativePart({
                     </span>
                     {narrow ? null : <span aria-hidden className="h-[16px] w-px flex-none bg-edge-mid" />}
                     {mine != null && mineRow != null ? (
-                        <span data-band-on className="flex min-w-0 flex-1 items-center gap-[6px]">
+                        // no min-w-0 here: the span's floor is the dot, On and the number (the label is w-0, so it adds
+                        // nothing to it), and the title shrinks before them instead of the "?" button drawing over them
+                        <span data-band-on className="flex flex-1 items-center gap-[6px]">
                             <span aria-hidden className="h-[8px] w-[8px] flex-none rounded-full bg-working" />
                             <span className="flex-none text-[12px] text-muted">On</span>{" "}
                             <span className="flex-none font-mono text-[11px] text-muted">{mineRow.n}</span>{" "}
                             {labels.chunkLabel ? (
-                                <span title={mine.label} className="min-w-0 truncate text-[12.5px] text-ink-hi">
+                                <span
+                                    title={mine.label}
+                                    className="w-0 min-w-0 flex-1 truncate text-[12.5px] text-ink-hi"
+                                >
                                     {mine.label}
                                 </span>
                             ) : null}
