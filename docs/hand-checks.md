@@ -6,6 +6,16 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **↑ in Chat's empty box falls through to history when the take-back finds nothing.** Only the typecheck
+  covers it. While Claude works, send a message from Chat so it shows as Queued, wait until Claude takes it but its
+  bubble still stands, then press ↑ in the empty box → after about 2 s the last message sent comes back into the box
+  (it did nothing before). With a message still truly queued, ↑ still takes it back instead. Commit: fix(chat) ↑ falls
+  through to history when the take-back finds nothing, and the bash ghost layer wraps at the editor's width
+- [ ] (arcterm) **A long bash command's ghost stays after its last character.** In Chat type `!` and a command long
+  enough to wrap past the box's max height so it scrolls, with a suggestion showing → the faint suggestion sits right
+  after the last character, on the same wrapped lines as the text (the layer is now padded by the scrollbar's width).
+  Same commit.
+
 - [ ] (arcterm) **Sixel images draw in a terminal of the installed app.** The dev app applies no CSP, so only a
   packaged build shows it. In a terminal run
   `printf 'Pq#0;2;0;0;0#1;2;100;100;0#2;2;0;100;0#1~~@@vv@@~~@@~~$#2??}}GG}}??}}??-#1!14@\'` → a small
