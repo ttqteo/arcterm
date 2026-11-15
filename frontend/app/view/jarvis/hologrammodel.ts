@@ -32,6 +32,20 @@ export const DEFAULT_HOLOGRAM_SIZE: HologramSize = "l";
 
 export const HOLOGRAM_SIZE_PX: Record<HologramSize, number> = { s: 80, m: 104, l: 132 };
 
+// How far the hologram sits above the window's bottom edge (hologramview.tsx, bottom-[40px])
+export const HOLOGRAM_BOTTOM_PX = 40;
+// The toast stack's bottom edge in the corner (notificationtoasts.tsx, the bottom-4 it had) and its gap over the hologram
+const TOAST_EDGE_PX = 16;
+const TOAST_GAP_PX = 8;
+
+/**
+ * Where the toast stack's bottom edge sits: in the corner, or, while the hologram of that size draws there, just above
+ * it. The hologram never steps aside as Sprout does (data-pet-avoid), so the stack does instead.
+ */
+export function toastStackBottom(hologramPx: number | null): number {
+    return hologramPx == null ? TOAST_EDGE_PX : HOLOGRAM_BOTTOM_PX + hologramPx + TOAST_GAP_PX;
+}
+
 export const HOLOGRAM_SIZE_NAME: Record<HologramSize, string> = { s: "S", m: "M", l: "L" };
 
 /** A stored choice, or L for anything that is not one of the three. */

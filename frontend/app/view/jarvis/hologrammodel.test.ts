@@ -11,6 +11,7 @@ import {
     HOLOGRAM_FAIL_WINDOW_MS,
     HOLOGRAM_IDLE_FPS,
     HOLOGRAM_LIVE_FPS,
+    HOLOGRAM_BOTTOM_PX,
     HOLOGRAM_SIZE_PX,
     hologramFps,
     hologramPose,
@@ -19,6 +20,7 @@ import {
     morphPose,
     petForm,
     stepMix,
+    toastStackBottom,
 } from "./hologrammodel";
 
 const calm = { asking: 0, working: 0, speaking: false, peekOpen: false };
@@ -43,6 +45,19 @@ describe("hologramSize", () => {
         expect(HOLOGRAM_SIZE_PX.s).toBeLessThan(HOLOGRAM_SIZE_PX.m);
         expect(HOLOGRAM_SIZE_PX.m).toBeLessThan(HOLOGRAM_SIZE_PX.l);
         expect(HOLOGRAM_SIZE_PX.l).toBe(132);
+    });
+});
+
+describe("toastStackBottom", () => {
+    it("keeps the stack in the corner while no hologram draws there", () => {
+        expect(toastStackBottom(null)).toBe(16);
+    });
+
+    it("stands the stack just above the hologram, whatever its size", () => {
+        for (const px of Object.values(HOLOGRAM_SIZE_PX)) {
+            expect(toastStackBottom(px)).toBeGreaterThan(HOLOGRAM_BOTTOM_PX + px);
+        }
+        expect(toastStackBottom(HOLOGRAM_SIZE_PX.l)).toBe(180);
     });
 });
 

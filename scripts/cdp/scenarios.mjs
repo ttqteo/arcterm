@@ -66118,7 +66118,7 @@ const toastsShown = (h) =>
         // edges and corners (the hologram is a circle, so a corner can sit past its rim and a centre clear of it), the
         // topmost element is inside that panel. The floating pet, not the Office's boss sprite (data-office-boss, also
         // named "Jarvis condition"); a new toast is a [data-pet-avoid] box Sprout steps off the stretch under, so
-        // Sprout gets 2s to leave before the count. The hologram never moves: it stays under the toasts and covered.
+        // Sprout gets 2s to leave before the count. The hologram never moves: the stack stands above it instead.
         const pets = () => [...document.querySelectorAll('[aria-label="Jarvis condition"]:not([data-office-boss])')].filter((p) => getComputedStyle(p).visibility !== "hidden");
         const INSET = 10;
         const coveredNow = () => {
@@ -66141,7 +66141,17 @@ const toastsShown = (h) =>
         };
         await until(() => coveredNow().length === 0, 2000);
         const covered = coveredNow();
+        // the hologram never steps aside, so the stack stands above it (toastStackBottom): the px between the stack's
+        // bottom edge and the hologram's top, once the stack has slid there; null with no hologram
+        const holoGap = () => {
+            const holo = document.querySelector("[data-pet-hologram]");
+            return holo == null || stack == null ? null : Math.round(holo.getBoundingClientRect().top - stack.getBoundingClientRect().bottom);
+        };
+        await until(() => (holoGap() ?? 0) >= 0, 2000);
+        await nap(400); // the spring settles
         return {
+            holoGap: holoGap(),
+            cornerGap: stack == null ? null : Math.round(innerHeight - stack.getBoundingClientRect().bottom),
             text: toasts().map(flat),
             drawn,
             distinctTones: new Set(Object.values(tones)).size === 3,
@@ -66159,7 +66169,7 @@ const toastsDismissed = (h) =>
         return until(() => document.querySelector("[data-notification-toast]") == null, 2000);
     `);
 
-// the toasts are checked in each of Jarvis's forms: the hologram (the default) stays put under the stack, and Sprout
+// the toasts are checked in each of Jarvis's forms: the hologram (the default) stays put and the stack stands above it, and Sprout
 // steps off the stretch under a new toast within 2 s. The form is read once at boot, so each pass reloads into it
 const notificationToasts = {
     name: "notification-toasts",
@@ -66197,11 +66207,21 @@ const notificationToasts = {
                 ok: shown.covered === 0 && shown.pets.includes("hologram"),
                 detail: `covered=${shown.covered} pets=${JSON.stringify(shown.pets)} at=${JSON.stringify(shown.coveredAt)}`,
             },
+            {
+                step: "the stack stands just above the hologram, so no toast covers it",
+                ok: shown.holoGap != null && shown.holoGap >= 0 && shown.holoGap <= 16,
+                detail: `gap=${shown.holoGap}px cornerGap=${shown.cornerGap}px`,
+            },
             { step: "a click dismisses a toast", ok: dismissed === true, detail: `dismissed=${dismissed}` },
             {
                 step: "no toast is covered by Sprout: it steps off the stretch under the stack within 2 s",
                 ok: sprout.covered === 0 && sprout.pets.includes("pet"),
                 detail: `covered=${sprout.covered} pets=${JSON.stringify(sprout.pets)} at=${JSON.stringify(sprout.coveredAt)}`,
+            },
+            {
+                step: "with Sprout the stack is back in the corner",
+                ok: sprout.holoGap == null && sprout.cornerGap === 16,
+                detail: `cornerGap=${sprout.cornerGap}px holoGap=${sprout.holoGap}`,
             },
         ];
     },

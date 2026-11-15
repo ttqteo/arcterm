@@ -1,10 +1,12 @@
 // Toast stack for transient cockpit notifications. Thin render over toastsAtom; colors come
 // from @theme tokens only.
-import { cardVariants } from "@/app/element/motiontokens";
+import { cardVariants, MOTION } from "@/app/element/motiontokens";
 import { RuntimeMark } from "@/app/view/agents/runtimemark";
+import { toastStackBottom } from "@/app/view/jarvis/hologrammodel";
+import { hologramCornerPxAtom } from "@/app/view/jarvis/petstore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
 import {
     Bell,
     Check,
@@ -72,17 +74,23 @@ function AgentToastBody({ t, eyebrow }: { t: ToastNotification; eyebrow: ToastEy
 
 export function NotificationToasts(): React.JSX.Element {
     const toasts = useAtomValue(toastsAtom);
+    // the hologram stays in its corner, so the stack stands above it while it draws there and back in the corner after
+    const bottom = toastStackBottom(useAtomValue(hologramCornerPxAtom));
+    const reduce = useReducedMotion();
     // the stack stays mounted while empty so the last toast can play its exit; popLayout takes a leaving toast
     // out of flow at once, so the rest slide into its place instead of waiting for it
     return (
         // above the pet (z-60) and its bubble (z-61), below its open peek (z-64): a toast is never covered by a sprite
         // passing under it, and data-pet-avoid sends the pet off the stretch of ledge beneath the stack
         <MotionConfig reducedMotion="user">
-            <div
+            <motion.div
                 data-pet-avoid
                 role="status"
                 aria-live="polite"
-                className="pointer-events-none fixed bottom-4 right-4 z-[62] flex w-80 flex-col gap-2"
+                initial={false}
+                animate={{ bottom }}
+                transition={reduce ? { duration: 0 } : MOTION.spring}
+                className="pointer-events-none fixed right-4 z-[62] flex w-80 flex-col gap-2"
             >
                 <AnimatePresence mode="popLayout">
                     {toasts.map((t) => (
@@ -160,7 +168,7 @@ export function NotificationToasts(): React.JSX.Element {
                         </motion.div>
                     ))}
                 </AnimatePresence>
-            </div>
+            </motion.div>
         </MotionConfig>
     );
 }

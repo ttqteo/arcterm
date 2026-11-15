@@ -153,6 +153,10 @@ export const petHologramSizeAtom = atomWithStorage<HologramSize>(
 // hologram, so arcterm starts with one Jarvis rather than two; the corner one fades in once the roster is read.
 export const hologramLoadersShownAtom = atom(0) as PrimitiveAtom<number>;
 
+// The size in px of the hologram PetView draws in the bottom-right corner now, else null (Sprout, Float, the fold, the
+// Office's boss, hidden, or a startup loader drawing it instead). The toast stack stands above it (toastStackBottom).
+export const hologramCornerPxAtom = atom<number | null>(null) as PrimitiveAtom<number | null>;
+
 // Whether the pet says a quote now and then (petquotes.ts, Settings → Appearance), persisted like the outfit.
 export const DEFAULT_PET_QUOTES = true;
 export const petQuotesOnAtom = atomWithStorage<boolean>("jarvis.pet.quotes", DEFAULT_PET_QUOTES, undefined, {

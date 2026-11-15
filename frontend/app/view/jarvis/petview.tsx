@@ -91,6 +91,7 @@ import {
 import { isStaying, stayEndsInMs } from "./petstay";
 import {
     clearExpiredPetStay,
+    hologramCornerPxAtom,
     hologramLoadersShownAtom,
     petBubbleAtom,
     petCharacterAtom,
@@ -383,6 +384,12 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     // the startup loader is drawing Jarvis in the middle: no second one in the corner until it is done
     const loaderHologram = useAtomValue(hologramLoadersShownAtom) > 0;
     const hologramPx = HOLOGRAM_SIZE_PX[hologramSize(useAtomValue(petHologramSizeAtom))];
+    // the corner hologram the toast stack stands above: the creature below, while it is the hologram and shows
+    const cornerHologramPx = hologram && !inOffice && !loaderHologram && !hidden ? hologramPx : null;
+    useEffect(() => {
+        globalStore.set(hologramCornerPxAtom, cornerHologramPx);
+    }, [cornerHologramPx]);
+    useEffect(() => () => globalStore.set(hologramCornerPxAtom, null), []);
     const asking = useAskingCount(model);
     const shownAnchor = hidden ? hiddenAnchor : inOffice ? officeBoss : anchor;
     const shownCorner = hidden ? "bottom-right" : inOffice ? officeCorner : hologram ? "bottom-right" : corner;
