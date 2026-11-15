@@ -6,6 +6,15 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Jarvis and initiatives polish batch, in the app.** Unit tests and the typecheck only; no dev app
+  ran. Check each: (1) the initiative link in an agent's header has the tooltip "… Ctrl+click to peek at it in
+  Sprout"; (2) the initiative band's Mark done and Add note show their m / n hints as key caps that sit level in the
+  button; (3) a run whose lead process died (kill the lead's claude) reads "Failed · n/m" in red in the Agent tree,
+  "failed" on the Brief and Failed in the run sheet; (4) on a fresh launch, open Sprout before Jarvis: the "N
+  initiatives changed · M idle" line shows once the briefing loads; (5) a plan a run worker proposes
+  (`wsh effort chunk add ... --proposed` from its terminal) opens that worker from Needs you; (6) in the Brief, delete a
+  stage's last chunks, then within 5 s rename the next stage: the stage you clicked is renamed. Commits: branch
+  fix/jarvis-initiatives-polish (c6fa4470b … ffacae754)
 - [ ] (arcterm) **The spring's feel on the Cockpit, Jarvis, Diff and Setup, on a real roster.** The
   `surfaces-spring-*` scenarios time each motion on fixtures (`task verify:ui -- surfaces-spring-cockpit`
   …); no packaged build ran them on your own agents and projects. In the packaged app on a real roster: the Cockpit
