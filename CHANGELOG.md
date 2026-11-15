@@ -38,6 +38,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A reply in Chat no longer draws twice, then flickers back to one, when you send the next message (or press Send now) as it finishes.
 - `wsh effort show`, `wsh effort list` and an initiative's row in the Brief's search count its progress the way Chat's
   initiative band does: a skipped chunk leaves the total, so they read 29/33 where they read 29/35.
 - Jarvis' peek no longer stutters when it grows or shrinks, as it does when you open or shut its Earlier list: it
