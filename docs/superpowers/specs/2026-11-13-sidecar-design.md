@@ -53,7 +53,8 @@ terminal.
   (`restore_and_track`, `save`). If the remembered screen is gone, open it on the main screen.
 - Its own capability file (`src-tauri/capabilities/sidecar.json`): `core:event:default` plus the window permissions
   its title bar uses (start-dragging, minimize, toggle-maximize, close, set-fullscreen, is-fullscreen, and for the S
-  button set-size, set-position, set-always-on-top), or the S button is a host command instead. Nothing else.
+  button inner-size, set-size, set-position, set-always-on-top: the S button reads the size it returns to), or the S
+  button is a host command instead. Nothing else.
 
 ### 1a. Free resizing, the S button and the small form
 
@@ -102,7 +103,9 @@ the cockpit, the wsh client or WOS, and keeps no store.
   (builder question 1):** Sidecar never makes the main window stream more agents. An agent that is not streamed (idle
   past 5 min, asleep) gets a one-time read of the tail of its transcript, enough for its last 2 messages, taken when
   its stream stops (`dropLiveId` clears its live entries) or when Sidecar first sees it, and kept in the bridge as
-  those few messages only; a tile never shows its messages vanish.
+  those few messages only; a tile never shows its messages vanish. Part 1 (before the tail read lands) keeps, in the
+  bridge, the last rows each tile showed, so an agent whose stream stops keeps them; an agent never streamed since
+  launch shows "No recent messages" until part 2.
 - Keys: arrows move the selection, Enter opens the selected agent in the main window, 1–9 answers its ask, F11 full
   screen. Double-click opens. A footer lists them.
 - **Tiles fit the agent count** (board `D-fit-by-count.dc.html`): the wall always fills one screen without a page
