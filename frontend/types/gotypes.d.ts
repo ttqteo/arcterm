@@ -1254,6 +1254,17 @@ declare global {
         runoref: string;
     };
 
+    // wshrpc.CommandEffortBackfillBaseData
+    type CommandEffortBackfillBaseData = {
+        effortoid?: string;
+    };
+
+    // wshrpc.CommandEffortBackfillBaseRtnData
+    type CommandEffortBackfillBaseRtnData = {
+        chunks: number;
+        efforts: number;
+    };
+
     // wshrpc.CommandEffortChunkDriftData
     type CommandEffortChunkDriftData = {
         effortoid: string;
@@ -1266,6 +1277,8 @@ declare global {
         base?: string;
         behind: number;
         basets?: number;
+        inferred?: boolean;
+        files?: EffortStaleFile[];
     };
 
     // wshrpc.CommandEffortChunkSeed
@@ -1341,6 +1354,17 @@ declare global {
         pinned: boolean;
         capreached?: boolean;
         oldest?: EffortPinRef;
+    };
+
+    // wshrpc.CommandEffortStaleData
+    type CommandEffortStaleData = {
+        effortoid?: string;
+    };
+
+    // wshrpc.CommandEffortStaleRtnData
+    type CommandEffortStaleRtnData = {
+        efforts: EffortStaleEntry[];
+        scannedts: number;
     };
 
     // wshrpc.CommandEnsureNoFolderRtnData
@@ -3372,6 +3396,16 @@ declare global {
         latest?: EffortLastNote;
     };
 
+    // wshrpc.EffortChunkStale
+    type EffortChunkStale = {
+        chunk: string;
+        index: number;
+        base?: string;
+        inferred?: boolean;
+        landed: number;
+        files: EffortStaleFile[];
+    };
+
     // wshrpc.EffortChunkSummary
     type EffortChunkSummary = {
         label: string;
@@ -3434,6 +3468,23 @@ declare global {
     type EffortPinRef = {
         oid: string;
         title: string;
+    };
+
+    // wshrpc.EffortStaleEntry
+    type EffortStaleEntry = {
+        effortoid: string;
+        title: string;
+        project?: string;
+        chunks: EffortChunkStale[];
+    };
+
+    // wshrpc.EffortStaleFile
+    type EffortStaleFile = {
+        mention: string;
+        path: string;
+        changes: number;
+        gone?: boolean;
+        renamedto?: string;
     };
 
     // wshrpc.EffortSummary

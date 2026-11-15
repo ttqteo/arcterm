@@ -824,6 +824,12 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                     rows: [
                         { id: "about.app", title: "App version", desc: "This shell.", key: "tauri.conf.json" },
                         {
+                            id: "about.commit",
+                            title: "Commit",
+                            desc: "The commit this build was made from; -dirty when it held uncommitted edits.",
+                            key: "git",
+                        },
+                        {
                             id: "about.server",
                             title: "Backend version",
                             desc: "The wavesrv this app spawned.",

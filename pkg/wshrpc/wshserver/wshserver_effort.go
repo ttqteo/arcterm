@@ -240,17 +240,43 @@ func (ws *WshServer) EffortChunkDriftCommand(ctx context.Context, data wshrpc.Co
 	if err != nil {
 		return nil, err
 	}
-	base := e.Chunks[idx].BaseCommit
+	c := e.Chunks[idx]
+	base := c.BaseCommit
 	dir := effortProjectPath(e.Project)
-	if base == "" || dir == "" {
+	if dir == "" {
 		return &wshrpc.CommandEffortChunkDriftRtnData{Base: base}, nil
+	}
+	// a chunk older than BaseCommit is measured from the commit HEAD was at when it was last updated
+	written := jarvis.ChunkWrittenTs(e, c)
+	var hist *jarvis.StaleHistory
+	if written > 0 {
+		hist, _ = staleHistoryFor(ctx, dir, written-staleMarginMs)
+	}
+	inferred := false
+	if base == "" {
+		if hist != nil {
+			base = hist.InferredBase(c, written)
+		}
+		if base == "" && written > 0 {
+			base, _ = gitinfo.CommitBefore(ctx, dir, written/1000)
+		}
+		if base == "" {
+			return &wshrpc.CommandEffortChunkDriftRtnData{}, nil
+		}
+		inferred = true
 	}
 	n, ts, err := gitinfo.CommitsSince(ctx, dir, base)
 	if err != nil {
 		// a base gone from the checkout (history rewritten, another clone) measures nothing
-		return &wshrpc.CommandEffortChunkDriftRtnData{Base: base}, nil
+		return &wshrpc.CommandEffortChunkDriftRtnData{Base: base, Inferred: inferred}, nil
 	}
-	return &wshrpc.CommandEffortChunkDriftRtnData{Known: true, Base: base, Behind: n, BaseTs: ts}, nil
+	rtn := &wshrpc.CommandEffortChunkDriftRtnData{Known: true, Base: base, Behind: n, BaseTs: ts, Inferred: inferred}
+	if hist != nil {
+		if res, ok := hist.AssessChunk(c, written); ok {
+			rtn.Files = res.Files
+		}
+	}
+	return rtn, nil
 }
 
 func (ws *WshServer) EffortDeleteCommand(ctx context.Context, data wshrpc.CommandEffortDeleteData) error {

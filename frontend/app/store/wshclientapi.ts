@@ -678,6 +678,12 @@ export class RpcApiType {
         return client.wshRpcCall("docpdffind", data, opts);
     }
 
+    // command "effortbackfillbase" [call]
+    EffortBackfillBaseCommand(client: WshClient, data: CommandEffortBackfillBaseData, opts?: RpcOpts): Promise<CommandEffortBackfillBaseRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "effortbackfillbase", data, opts);
+        return client.wshRpcCall("effortbackfillbase", data, opts);
+    }
+
     // command "effortchunkdrift" [call]
     EffortChunkDriftCommand(client: WshClient, data: CommandEffortChunkDriftData, opts?: RpcOpts): Promise<CommandEffortChunkDriftRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "effortchunkdrift", data, opts);
@@ -718,6 +724,12 @@ export class RpcApiType {
     EffortPinCommand(client: WshClient, data: CommandEffortPinData, opts?: RpcOpts): Promise<CommandEffortPinRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "effortpin", data, opts);
         return client.wshRpcCall("effortpin", data, opts);
+    }
+
+    // command "effortstale" [call]
+    EffortStaleCommand(client: WshClient, data: CommandEffortStaleData, opts?: RpcOpts): Promise<CommandEffortStaleRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "effortstale", data, opts);
+        return client.wshRpcCall("effortstale", data, opts);
     }
 
     // command "ensurenofolder" [call]

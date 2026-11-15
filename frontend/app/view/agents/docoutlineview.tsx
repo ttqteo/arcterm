@@ -134,9 +134,13 @@ function OutlineList(p: {
             <div className="flex-none px-3 pb-1 pt-2.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-muted">
                 Outline
             </div>
+            {/* data-owns-keys: the list is portalled out of the File tab's own data-owns-keys region, so without it the
+            dispatcher read focus here as nowhere in particular and agent:back (or, while the agent works in Chat,
+            agent:chat-interrupt) took Escape before this list could close */}
             <div
                 ref={p.listRef}
                 data-outline-list
+                data-owns-keys
                 onKeyDown={onListKey}
                 className="sc flex min-h-0 flex-col overflow-y-auto px-[5px] pb-[5px]"
             >
@@ -409,7 +413,7 @@ export function OutlineRail(p: {
                     <PopoverReveal
                         open={open}
                         origin="center right"
-                        className="flex max-h-[var(--outline-max-height)] w-[280px] flex-col overflow-hidden rounded-[11px] border border-border bg-surface shadow-popover-md"
+                        className="flex max-h-[var(--outline-max-height)] w-[280px] flex-col overflow-hidden rounded-[11px] border border-border frost shadow-popover-md"
                     >
                         <OutlineList
                             listRef={listRef}

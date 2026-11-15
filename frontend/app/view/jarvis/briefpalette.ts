@@ -82,16 +82,19 @@ export function buildBriefIndex(input: BriefPaletteInput): BriefRow[] {
             r.updated
         )
     );
-    const efforts = (input.efforts ?? []).map((e) =>
-        row(
+    const efforts = (input.efforts ?? []).map((e) => {
+        // counted as the initiative band and the Brief's card count it: the summary's total leaves out a proposed chunk
+        // but keeps a skipped one, which has left the plan
+        const total = e.total - (e.chunks?.filter((c) => c.status === "skipped").length ?? 0);
+        return row(
             "effort",
             e.oref,
             e.title || "(untitled initiative)",
-            metaLine([e.status, e.total > 0 && `${e.done}/${e.total}`, e.project, e.ticket]),
+            metaLine([e.status, total > 0 && `${e.done}/${total}`, e.project, e.ticket]),
             isArchivedStatus(e.status),
             e.updatedts
-        )
-    );
+        );
+    });
     // sessions are never archived — a finished session reads as done, not filed away
     const sessions = (input.sessions ?? []).map((s) =>
         row(

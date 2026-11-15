@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { jobQueueOpenAtom } from "@/app/cockpit/jobqueuestore";
 import { registerModal } from "@/app/modals/modalstack";
 import { contextMenuAtom } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -289,6 +290,19 @@ describe("deriveKeyContext", () => {
         globalStore.set(machineServersOpenAtom, false);
         expect(deriveKeyContext().modalOpen).toBe(false);
         unbind();
+    });
+
+    // the app bar's Jobs popover the same way: uncounted, surface:back-home took Escape on Jarvis and left the popover
+    // open behind the Cockpit
+    it("counts the Jobs popover as a modal", () => {
+        for (const surface of ["jarvis", "agent"] as SurfaceKey[]) {
+            const unbind = bindModel(surface);
+            globalStore.set(jobQueueOpenAtom, true);
+            expect(deriveKeyContext().modalOpen, surface).toBe(true);
+            globalStore.set(jobQueueOpenAtom, false);
+            expect(deriveKeyContext().modalOpen, surface).toBe(false);
+            unbind();
+        }
     });
 });
 

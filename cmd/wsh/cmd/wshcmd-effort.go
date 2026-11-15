@@ -115,7 +115,7 @@ var effortListCmd = &cobra.Command{
 			return jsonOut(rtn)
 		}
 		for _, s := range rtn.Efforts {
-			fmt.Printf("%s\t%s\t%s\t%d/%d\t%s\n", s.ORef, s.Title, s.Status, s.Done, s.Total, s.ActiveChunk)
+			fmt.Printf("%s\t%s\t%s\t%d/%d\t%s\n", s.ORef, s.Title, s.Status, s.Done, summaryProgressTotal(s), s.ActiveChunk)
 		}
 		return nil
 	},
@@ -587,17 +587,18 @@ func formatEffortShow(e *waveobj.Effort) string {
 	return formatEffortShowWith(e, nil)
 }
 
-// chunkDrift answers how many commits the project has moved since a chunk was written; ok false when unknown.
-type chunkDrift func(label string) (behind int, ok bool)
+// chunkDrift answers how far the project has moved since a chunk was written, and which files it names changed or
+// went away; nil when unknown.
+type chunkDrift func(label string) *wshrpc.CommandEffortChunkDriftRtnData
 
 // rpcChunkDrift asks wavesrv, which reads the initiative's project checkout rather than this terminal's directory.
 func rpcChunkDrift(effortOID string) chunkDrift {
-	return func(label string) (int, bool) {
+	return func(label string) *wshrpc.CommandEffortChunkDriftRtnData {
 		rtn, err := wshclient.EffortChunkDriftCommand(RpcClient, wshrpc.CommandEffortChunkDriftData{EffortOID: effortOID, Chunk: label}, nil)
 		if err != nil || rtn == nil || !rtn.Known {
-			return 0, false
+			return nil
 		}
-		return rtn.Behind, true
+		return rtn
 	}
 }
 
@@ -632,11 +633,33 @@ func countDone(e *waveobj.Effort) int {
 	return n
 }
 
-// countProgress is the progress total: every chunk but a proposed one, which is not work until accepted.
+// countProgress is the progress total.
 func countProgress(e *waveobj.Effort) int {
 	n := 0
 	for _, c := range e.Chunks {
-		if c.Status != "proposed" {
+		if inProgressTotal(c.Status) {
+			n++
+		}
+	}
+	return n
+}
+
+// inProgressTotal says whether a chunk counts toward the progress total, as the cockpit counts it (the initiative band
+// and its popover, popoverProgress in initiativepopovermodel.ts, and the Brief's row): a proposed chunk is not work until
+// it is accepted, and a skipped one has left the plan.
+func inProgressTotal(status string) bool {
+	return status != "proposed" && status != "skipped"
+}
+
+// summaryProgressTotal is a listed effort's total, counted from its chunks the way countProgress counts. The summary's own
+// Total counts skipped chunks (the Brief takes them out itself), so it stands only for a summary without chunks.
+func summaryProgressTotal(s wshrpc.EffortSummary) int {
+	if len(s.Chunks) == 0 {
+		return s.Total
+	}
+	n := 0
+	for _, c := range s.Chunks {
+		if inProgressTotal(c.Status) {
 			n++
 		}
 	}
@@ -657,26 +680,138 @@ func dueSuffix(due string) string {
 	return " (due " + due + ")"
 }
 
-// baseSuffix names the commit an open chunk was written at; a settled chunk (done, skipped) has nothing left to
-// go stale, so it prints none.
+// baseSuffix names the commit an open chunk was written at, how far the code moved since and the files it names that
+// changed; a settled chunk (done, skipped) has nothing left to go stale, so it prints none. A chunk from before bases
+// were kept is "written around" the commit HEAD was at when it was added.
 func baseSuffix(c waveobj.EffortChunk, drift chunkDrift) string {
-	if c.BaseCommit == "" || c.Status == "done" || c.Status == "skipped" {
+	if c.Status == "done" || c.Status == "skipped" {
 		return ""
 	}
-	at := " (written at " + jarvis.ShortCommit(c.BaseCommit)
-	if drift == nil {
+	var d *wshrpc.CommandEffortChunkDriftRtnData
+	if drift != nil {
+		d = drift(c.Label)
+	}
+	base, verb := c.BaseCommit, "written at"
+	if base == "" && d != nil && d.Inferred {
+		base, verb = d.Base, "written around"
+	}
+	if base == "" {
+		return ""
+	}
+	at := " (" + verb + " " + jarvis.ShortCommit(base)
+	if d == nil {
 		return at + ")"
 	}
-	n, ok := drift(c.Label)
-	switch {
-	case !ok:
-		return at + ")"
-	case n == 0:
-		return at + ", the code has not moved since)"
-	case n == 1:
-		return at + ", 1 commit ago)"
+	switch d.Behind {
+	case 0:
+		at += ", the code has not moved since"
+	case 1:
+		at += ", 1 commit ago"
+	default:
+		at += fmt.Sprintf(", %d commits ago", d.Behind)
 	}
-	return fmt.Sprintf("%s, %d commits ago)", at, n)
+	if files := staleFilesText(d.Files); files != "" {
+		at += "; " + files
+	}
+	return at + ")"
+}
+
+// staleFilesText names the files a chunk mentions that changed or went away since it was written:
+// "IMAGE.md deleted, councilstore.ts changed 4 times".
+func staleFilesText(files []wshrpc.EffortStaleFile) string {
+	var parts []string
+	for _, f := range files {
+		switch {
+		case f.Gone && f.RenamedTo != "":
+			parts = append(parts, f.Mention+" renamed to "+f.RenamedTo)
+		case f.Gone:
+			parts = append(parts, f.Mention+" deleted")
+		case f.Changes == 1:
+			parts = append(parts, f.Mention+" changed once")
+		default:
+			parts = append(parts, fmt.Sprintf("%s changed %d times", f.Mention, f.Changes))
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+var effortStaleCmd = &cobra.Command{
+	Use:   "stale [effort]",
+	Short: "list the open chunks whose named files changed or went away since they were written",
+	Long: `List the open chunks of one initiative, or of every active and paused one, that name a file which
+changed or went away since the chunk was written. A chunk names a file in its label or notes
+("councilstore.ts", "pkg/x/y.go"); one that names none is not listed. wavesrv also runs this scan on
+its own, two minutes after start and every 15 minutes. Read each listed chunk against the code: rename
+it, note it, skip it, or run "wsh effort chunk recheck" when it still holds.`,
+	Args:    cobra.MaximumNArgs(1),
+	PreRunE: preRunSetupRpcClient,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		data := wshrpc.CommandEffortStaleData{}
+		if len(args) == 1 {
+			data.EffortOID = args[0]
+		}
+		rtn, err := wshclient.EffortStaleCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: 120000})
+		if err != nil {
+			return err
+		}
+		if isJSON(cmd) {
+			return jsonOut(rtn)
+		}
+		fmt.Print(formatEffortStale(rtn.Efforts))
+		return nil
+	},
+}
+
+// formatEffortStale renders the stale scan: one block per initiative, each flagged chunk with its files.
+func formatEffortStale(efforts []wshrpc.EffortStaleEntry) string {
+	var b strings.Builder
+	n := 0
+	for _, e := range efforts {
+		if len(e.Chunks) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "# %s (effort:%s)\n", e.Title, e.EffortOID)
+		for _, c := range e.Chunks {
+			n++
+			verb := "written at"
+			if c.Inferred {
+				verb = "written around"
+			}
+			fmt.Fprintf(&b, "  %d. %s\n", c.Index, c.Chunk)
+			fmt.Fprintf(&b, "      %s %s, %d landed since: %s\n", verb, jarvis.ShortCommit(c.Base), c.Landed, staleFilesText(c.Files))
+		}
+	}
+	if n == 0 {
+		return "No open chunk names a file that changed since it was written.\n"
+	}
+	fmt.Fprintf(&b, "\n%d chunks to recheck: rename, note or skip each, or `wsh effort chunk recheck` when it still holds.\n", n)
+	return b.String()
+}
+
+var effortChunkBackfillBaseCmd = &cobra.Command{
+	Use:   "backfill-base [effort]",
+	Short: "stamp a base commit on the open chunks written before chunks kept one",
+	Long: `Stamp a base commit on the open chunks of one initiative, or of every active and paused one, that have
+none because they were written before chunks kept one: the commit the project's HEAD was at when each
+was added. Their staleness then counts from that commit. wavesrv does this on its own too, two minutes
+after start and every 15 minutes; the stamp adds no note and does not change when a chunk was updated.`,
+	Args:    cobra.MaximumNArgs(1),
+	PreRunE: preRunSetupRpcClient,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		data := wshrpc.CommandEffortBackfillBaseData{}
+		if len(args) == 1 {
+			data.EffortOID = args[0]
+		}
+		rtn, err := wshclient.EffortBackfillBaseCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: 120000})
+		if err != nil {
+			return err
+		}
+		if isJSON(cmd) {
+			return jsonOut(rtn)
+		}
+		fmt.Printf("stamped a base on %d chunks in %d initiatives\n", rtn.Chunks, rtn.Efforts)
+		return nil
+	},
 }
 
 func timeStr(ms int64) string {
@@ -713,13 +848,15 @@ func init() {
 	effortChunkAttachCmd.Flags().String("agent", "", "agent tab id")
 	effortChunkDetachCmd.Flags().String("run", "", "run oid")
 	effortChunkDetachCmd.Flags().String("agent", "", "agent tab id")
+	effortStaleCmd.Flags().Bool("json", false, "JSON output")
+	effortChunkBackfillBaseCmd.Flags().Bool("json", false, "JSON output")
 
 	effortCmd.AddCommand(effortCreateCmd, effortListCmd, effortShowCmd, effortRenameCmd,
 		effortProjectCmd, effortTicketCmd, effortStatusCmd, effortUnarchiveCmd, effortPinCmd, effortUnpinCmd,
 		effortLinkCmd, effortUnlinkCmd,
-		effortDeleteCmd, effortAdvanceCmd, effortReopenCmd, effortChunkCmd)
+		effortDeleteCmd, effortAdvanceCmd, effortReopenCmd, effortStaleCmd, effortChunkCmd)
 	effortChunkCmd.AddCommand(effortChunkAddCmd, effortChunkRenameCmd, effortChunkRecheckCmd, effortChunkMoveCmd,
 		effortChunkRemoveCmd, effortChunkStatusCmd, effortChunkNoteCmd, effortChunkOwnerCmd,
-		effortChunkStageCmd, effortChunkDueCmd, effortChunkAttachCmd, effortChunkDetachCmd)
+		effortChunkStageCmd, effortChunkDueCmd, effortChunkAttachCmd, effortChunkDetachCmd, effortChunkBackfillBaseCmd)
 	rootCmd.AddCommand(effortCmd)
 }

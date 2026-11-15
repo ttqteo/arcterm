@@ -244,12 +244,18 @@ export default function (kit) {
                 const clicked = await click(h, "[data-job-queue-chip]");
                 const v = await look(h, PANEL.jobs, "1-jobs");
                 const rows = await h.ev(`document.querySelectorAll("[data-job-queue-panel] [data-job-row]").length`);
-                // a click away closes it: on the Agent surface the surface's own Escape ("back") takes the key before the panel's
-                // listener, so Escape is left to the jobqueue-chip scenario, which runs on the Cockpit
+                // Escape closes it and nothing else: the dispatcher counts the open popover as a modal, so the Agent
+                // surface's own Escape (back, or stopping the working agent's turn) stands down
+                await key(h, KEYS.escape);
+                const escClosed = await gone(h, "[data-job-queue-panel]");
+                const stayed = await h.ev(`!!${layerOf(A)}?.querySelector("[data-chat-box]")?.checkVisibility()`);
+                // a click away closes it too
+                const reopened = await click(h, "[data-job-queue-chip]");
+                await polishWaitFor(h, `!!document.querySelector("[data-job-queue-panel]")`, SHORT_MS);
                 const away = await click(h, "[data-job-queue-backdrop]");
                 const closed = await gone(h, "[data-job-queue-panel]");
                 await h.ev(`window.__jobQueueInject({ slots: 1, jobs: [] })`);
-                rec(`${name}: the Jobs chip opens the popover over the working agent, which draws the frost class with no backdrop root above it, and a click away closes it`, chip && clicked && rows === 2 && v.up && v.faded && v.ok && away && closed, { rows, away, closed, ...v });
+                rec(`${name}: the Jobs chip opens the popover over the working agent, which draws the frost class with no backdrop root above it; Escape closes it and leaves the agent's Chat on screen, and a click away closes it`, chip && clicked && rows === 2 && v.up && v.faded && v.ok && escClosed && stayed && reopened && away && closed, { rows, escClosed, stayed, reopened, away, closed, ...v });
             });
 
             // 2. Jarvis' pet: the bubble, the peek and the peek's two menus
@@ -275,12 +281,34 @@ export default function (kit) {
             await run("2c. pet stay menu", async (name) => {
                 if (!creature) return rec(`${name}: the peek's pin opens the stay menu`, false, noCreature);
                 const pinned = await polishWaitFor(h, `!!document.querySelector("[data-pet-peek] [data-pet-stay-pin]")`, SHORT_MS);
+                // the menu positions itself only while open (petpeek.tsx PetStayPin), so the pin is moved first: two more
+                // updates give the peek its Earlier drawer, and opening it grows the peek upward, taking the pin with it
+                await AC.agentPage(
+                    h,
+                    `const P = await mod("app/view/jarvis/petstore.ts");
+                    for (let i = 0; i < 2; i++) P.rememberSaid({ id: "of-jarvis-said-" + i, at: Date.now() - (i + 1) * 60000, kind: "notify", level: "info", text: "overlays frost: an earlier update " + (i + 1) });
+                    return true;`
+                );
+                const drawer = await polishWaitFor(h, `!!document.querySelector("[data-pet-peek] [data-pet-updates] > button")`, SHORT_MS);
+                const pinBefore = await h.ev(`document.querySelector("[data-pet-peek] [data-pet-stay-pin]")?.getBoundingClientRect().top ?? null`);
+                await click(h, "[data-pet-peek] [data-pet-updates] > button");
+                await polishNap(900);
+                const pinAfter = await h.ev(`document.querySelector("[data-pet-peek] [data-pet-stay-pin]")?.getBoundingClientRect().top ?? null`);
+                const moved = pinBefore != null && pinAfter != null && pinBefore - pinAfter > 20;
                 await click(h, "[data-pet-peek] [data-pet-stay-pin]");
                 const v = await look(h, PANEL.stay, "2c-pet-stay-menu");
+                // it opens under the pin where the pin is now, flush with its right edge (bottom-end, 6px off)
+                const at = await h.ev(`(() => {
+                    const pin = document.querySelector("[data-pet-peek] [data-pet-stay-pin]")?.getBoundingClientRect();
+                    const menu = document.querySelector(${JSON.stringify(PANEL.stay)})?.getBoundingClientRect();
+                    if (!pin || !menu) return null;
+                    return { gap: Math.round(menu.top - pin.bottom), rightOff: Math.round(menu.right - pin.right) };
+                })()`);
+                const placed = at != null && at.gap >= 2 && at.gap <= 12 && Math.abs(at.rightOff) <= 2;
                 await key(h, KEYS.escape);
                 const closed = await gone(h, "[data-pet-stay-menu]");
                 const peekStays = await h.ev(`!!document.querySelector("[data-pet-peek]")`);
-                rec(`${name}: the peek's pin opens the stay menu, which draws the frost class with no backdrop root above it (the frosted peek is no ancestor of it), and Escape closes only the menu`, pinned && v.up && v.faded && v.ok && closed && peekStays, { pinned, closed, peekStays, ...v });
+                rec(`${name}: with the peek's drawer opened (the pin moved up), the pin opens the stay menu under where the pin now is, which draws the frost class with no backdrop root above it (the frosted peek is no ancestor of it), and Escape closes only the menu`, pinned && drawer && moved && v.up && v.faded && v.ok && placed && closed && peekStays, { pinned, drawer, pinMovedPx: pinBefore != null && pinAfter != null ? Math.round(pinBefore - pinAfter) : null, at, placed, closed, peekStays, ...v });
             });
             await run("2d. pet hide menu", async (name) => {
                 if (!creature) return rec(`${name}: the peek's Hide button opens the hide menu`, false, noCreature);
@@ -417,10 +445,18 @@ export default function (kit) {
                 await click(h, "[data-code-review-count]");
                 const v = await look(h, PANEL.codeList, "7b-code-review-list");
                 const rows = await h.ev(`document.querySelectorAll("[data-code-review-row]").length`);
-                // the count button toggles it (the Code surface's own Escape goes home when focus is not in the bar)
+                // the count button toggles it
                 await click(h, "[data-code-review-count]");
                 const closed = await gone(h, "[data-code-review-list]");
-                rec(`${name}: the review count opens the list of comments, which draws the frost class with no backdrop root above it, and the button closes it`, there && rows === 2 && v.up && v.faded && v.ok && closed, { seeded, there, rows, closed, ...v });
+                // and Escape closes it even with focus moved out of the bar, staying on Code: the list counts itself
+                // in escapeMenusOpenAtom, so the surface's Escape (home) stands down
+                await click(h, "[data-code-review-count]");
+                const again = await polishWaitFor(h, `!!document.querySelector("[data-code-review-list]")`, SHORT_MS);
+                await h.ev(`document.activeElement?.blur?.()`);
+                await key(h, KEYS.escape);
+                const escClosed = await gone(h, "[data-code-review-list]");
+                const onCode = await h.ev(`!!document.querySelector("[data-code-review-count]")?.checkVisibility()`);
+                rec(`${name}: the review count opens the list of comments, which draws the frost class with no backdrop root above it; the button closes it, and so does Escape with focus out of the bar, which stays on Code`, there && rows === 2 && v.up && v.faded && v.ok && closed && again && escClosed && onCode, { seeded, there, rows, closed, again, escClosed, onCode, ...v });
             });
             await run("7c. Code send review", async (name) => {
                 const there = await polishWaitFor(h, `!!document.querySelector("[data-code-review-send]")`, SHORT_MS);

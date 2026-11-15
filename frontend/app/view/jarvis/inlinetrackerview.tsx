@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { Fragment, useEffect, useRef, useState } from "react";
+import { staleChip } from "./chunkdrift";
 import { chunkTone, type ChunkTone } from "./effortmodel";
 import { chunkDueChip, localDay, type DetailRow } from "./inlinetracker";
 import { trackerMenuAtom } from "./jarvisstore";
@@ -125,6 +126,7 @@ export function InitiativeDetail({
     onSelectChunk,
     onToggleStage,
     onOpenChunk,
+    stale,
 }: {
     // the initiative sheet's plan (spec decision 7): rows with a glyph, a two-line label, a note count and a status
     // word, the next chunk raised with an accent →, a folded stage's preview with its "+N more", and no footer (the
@@ -136,6 +138,8 @@ export function InitiativeDetail({
     onToggleStage: (id: string, open: boolean) => void;
     // the way into a chunk: a click opens it once no second click follows (a double-click renames)
     onOpenChunk?: (id: string) => void;
+    // the stale scan's flagged chunks, by label: a chip on each row whose named files changed or went away
+    stale?: Map<string, EffortChunkStale>;
 }) {
     // one menu and one inline editor at a time, across every row of this plan
     // an atom, not local state: Escape closing it is a keybinding (jarvis:close-tracker-menu)
@@ -369,6 +373,7 @@ export function InitiativeDetail({
                     const selected = cursor === row.id;
                     const label = row.row.label;
                     const due = chunkDueChip(row.row.due, row.row.status, localDay(new Date()));
+                    const chip = staleChip(row.row.status, stale?.get(label));
                     const menuId = row.id + "#menu";
                     const otherStages = [...edits.stages, ""].filter((s) => s !== row.row.stage);
                     // the chunk picked up next is raised and marked with an accent →, its status word "next"
@@ -436,6 +441,18 @@ export function InitiativeDetail({
                                         )}
                                     >
                                         {due.text}
+                                    </span>
+                                ) : null}
+                                {chip != null ? (
+                                    <span
+                                        data-jarvis-chunk-stale={chip.gone ? "gone" : "changed"}
+                                        title={chip.title}
+                                        className={cn(
+                                            "flex-none whitespace-nowrap text-[10.5px] leading-[17px]",
+                                            chip.gone ? "font-semibold text-asking" : "text-ink-mid"
+                                        )}
+                                    >
+                                        {chip.text}
                                     </span>
                                 ) : null}
                                 {/* a column of its own, so the status words line up down the plan */}

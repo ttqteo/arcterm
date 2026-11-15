@@ -3,7 +3,7 @@
 //
 // Settings > About: versions of the shell, the backend it spawned, and the coding agents on this machine.
 
-import { formatBuildTime, versionInfoAtom } from "@/app/cockpit/versioninfo";
+import { formatBuildTime, UNKNOWN_VERSION, versionInfoAtom } from "@/app/cockpit/versioninfo";
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -108,6 +108,9 @@ export function AboutPage() {
             >
                 <SettingRow id="about.app" compact>
                     <VersionValue>{version.app}</VersionValue>
+                </SettingRow>
+                <SettingRow id="about.commit" compact>
+                    <VersionValue>{version.commit || UNKNOWN_VERSION}</VersionValue>
                 </SettingRow>
                 <SettingRow id="about.server" compact>
                     <VersionValue warn={version.mismatch}>{version.server}</VersionValue>

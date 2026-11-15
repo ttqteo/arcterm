@@ -10,10 +10,17 @@ export type VersionInfo = {
     server: string;
     buildTime: number;
     platform: string;
+    // the commit the frontend was bundled from (frontend/tauri/buildcommit.ts), "" when unknown
+    commit: string;
     mismatch: boolean;
 };
 
 export const UNKNOWN_VERSION = "unknown";
+
+declare const __ARC_COMMIT__: string | undefined;
+
+// Baked in by vite.config.ts; absent under vitest, which bundles nothing.
+export const BUILD_COMMIT: string = typeof __ARC_COMMIT__ === "string" ? __ARC_COMMIT__ : "";
 
 // The two versions are stamped by different build steps — `cargo tauri build` bakes the shell's,
 // `task build:backend` passes -X main.WaveVersion to the Go binaries — so a stale dist/bin runs an
@@ -23,7 +30,8 @@ export function deriveVersionInfo(
     appVersion: string,
     serverVersion: string,
     buildTime: number,
-    platform: string
+    platform: string,
+    commit = ""
 ): VersionInfo {
     const app = normalizeVersion(appVersion);
     const server = normalizeVersion(serverVersion);
@@ -32,6 +40,7 @@ export function deriveVersionInfo(
         server: server || UNKNOWN_VERSION,
         buildTime: Number.isFinite(buildTime) && buildTime > 0 ? buildTime : 0,
         platform: platform || UNKNOWN_VERSION,
+        commit: (commit ?? "").trim(),
         // an absent version is a backend that never reported, not a disagreement — claiming a
         // mismatch there would fire on every slow or failed start.
         mismatch: app !== "" && server !== "" && app !== server,

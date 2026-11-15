@@ -8,6 +8,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+The section decides the version: `task tauri:build BUMP=auto` makes a release with an `Added` or `<!-- big -->` line
+a minor bump and one with only `Changed` and `Fixed` a patch. A major bump is for a release that breaks something for
+the person (a feature removed, a config, `wsh` or hook contract changed without migrating it) and is passed by hand.
+Each bumped build tags its commit `v<version>`.
+
 The app reads this file for What's new (the version at the bottom right). A line about something you can open may end
 with `<!-- try: <id> -->`, the id of a global keybinding (`buildGlobalBindings` in
 `frontend/app/store/keybindings/bindings.ts`, such as `go:usage` or `open-tool`): its note gets a Try it button that
@@ -33,11 +38,33 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Building the Activity graph's token history in the background, which on a fresh install reads every transcript on
+  disk, now uses half your cores, so the machine stays responsive while it runs.
 - Find in a document (Ctrl+F in the File tab) floats on the same frosted glass as find in a terminal.
 - The highlighted row in a frosted menu, picker or popover stays visible over a bright terminal: it lifts with a light tint instead of a solid grey, and the dim text in those panels is a shade brighter so it stays readable on it.
 
 ### Fixed
 
+- A reply in Chat no longer draws twice, then flickers back to one, when you send the next message (or press Send now) as it finishes.
+- `wsh effort show`, `wsh effort list` and an initiative's row in the Brief's search count its progress the way Chat's
+  initiative band does: a skipped chunk leaves the total, so they read 29/33 where they read 29/35.
+- Jarvis' peek no longer stutters when it grows or shrinks, as it does when you open or shut its Earlier list: it
+  dropped about one frame in three while it resized, and now holds the screen's frame rate.
+- Runs you cancelled no longer count toward an agent's runs, neither on the run chip of its row in the Agent sidebar
+  nor in the "↳ N runs" link of its header, and the header's menu no longer lists them: an agent with one live run and
+  one cancelled one shows that live run, not "2 runs". When every run the agent started was cancelled, both show the
+  newest of them, marked cancelled.
+- Escape closes the Jobs popover (the app bar's heavy-jobs chip) on every surface. Before, on Jarvis, Diff, Usage or
+  Code it went back to the Cockpit with the popover still open, and on the Agent surface it could stop a working
+  agent's turn.
+- Escape in a document's Outline list closes the list, instead of leaving the agent or stopping its turn. The list
+  that opens from the File tab's Outline rail is frosted like the other popovers.
+- Escape closes Code's review list or Send review menu even after a click elsewhere on the surface, instead of going
+  back to the Cockpit with it still open.
+- Commenting on a table in a Markdown file's Preview (the + beside its rows) opens the comment box under the table
+  again, and the comment's card shows there; the box stayed hidden, so Ctrl+Enter sent the comments you had instead.
+- The agent details panel's tab strip fits its counts on Overview with files open: the tabs sit a little closer, so
+  Files changed and Uploads no longer fade out at the edge.
 - ↑ in Chat's empty box recalls your last message again while a Queued bubble lingers after Claude already took it,
   instead of doing nothing.
 - A long bash command (`!`) that scrolls in Chat's box keeps its suggestion right after the last character.
@@ -86,6 +113,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- The version at the bottom right names the commit the build was made from (`v1.1.3 · e999f3db4`, `-dirty` when it
+  held uncommitted edits), and Settings → About has it as a Commit row, so two builds of one version can be told apart.
 - In Chat, Shift+Enter on a suggested reply picked with Tab puts its text in the box so you can edit it before sending.
 - In Chat, a message that moved the agent to another initiative chunk shows a "Chunk N · name" divider above it, so
   you can tell where each chunk's work begins.
@@ -94,6 +123,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An initiative chunk not yet done now says when the code has moved since it was written ("Written 23 commits ago:
   check it still holds"), with Mark checked once it is still right. Agents started on a chunk check it against the
   current code before following it, and reread the open chunks after finishing one.
+- An open initiative chunk that names a file now says when that file changed or went away since the chunk was written
+  ("councilstore.ts changed 4 times since this was written"), on the chunk and as a "changed since" or "file gone"
+  chip on its row in the plan. Chunks written before this get the commit of the day they were added, and arcterm
+  checks every initiative on its own every 15 minutes; `wsh effort stale` lists the flagged chunks.
 
 ### Changed
 

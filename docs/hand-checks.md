@@ -31,6 +31,28 @@ does not, say what you saw and it becomes a bug row under Actionable.
   running: Sidecar's renderer and GPU process in Task Manager (WebView2 processes with the Sidecar window open, minus
   with it closed), at open and after 15 minutes, and log the figure in open-issues.md's "RAM watch".
 
+- [ ] (arcterm) **The version names the commit it was built from.** Unit tests, the typecheck, and the dev Vite
+  server's `/@vite/env` (it served `__ARC_COMMIT__` from `ARC_BUILD_COMMIT`, and from git without it) only; no app ran.
+  `task tauri:build`, install → the footer's bottom right reads `v<version> · <short commit>` (the commit in the
+  installer's name in `releases/`, with no `-dirty`), its tooltip adds "commit <sha>", and Settings → About shows
+  the same under Commit. `task dev` with an uncommitted edit → `· <sha>-dirty`. Commit: feat(cockpit) "the version
+  names the commit the build was made from".
+
+- [ ] (arcterm) **An agent's run counts leave cancelled runs out.** Unit tests and the typecheck only; no dev app ran.
+  From an agent, `wsh runs start` two runs, cancel one → that agent's row in the Agent sidebar shows the live run's
+  chip (its progress such as `1/3`, or no words while it plans), not "2 runs", and its header reads "↳ <the live
+  run's goal>", which opens it with no menu; cancel the other too → the chip reads "cancelled" and the header
+  "↳ <newest goal> · cancelled", both opening the newest of them. Commits: fix(agents) "the run chip leaves cancelled
+  runs out", fix(agents) "the header's started runs leave cancelled runs out".
+- [ ] (arcterm) **An open chunk names the files that changed since it was written.** Unit tests, the typecheck and
+  a scan over the real initiatives' JSON only; no dev app ran. Rebuild, wait two minutes after start (the first scan),
+  then open "Repo hygiene: lint, prettier, stale comments, test gaps" in the initiative sheet → rows such as
+  "chatpane.tsx fails prettier --check…" carry a grey "changed since" chip whose tooltip lists "chatpane.tsx changed
+  15 times"; open one → under its status reads "chatpane.tsx changed 15 times since this was written (<day>): check
+  it still holds" with Mark checked; Mark checked → the chip and the line go. "ReleaseHub parser image + GitHub
+  follow-ups" chunk 4 (IMAGE.md) → an amber "file gone" chip, and "rewrite or skip it". `wsh effort stale` lists the
+  same chunks; `wsh effort show <effort>` prints "(written around <sha>, N commits ago; … changed N times)" on old
+  chunks, and after the first scan "written at" (the backfilled base).
 - [ ] (arcterm) **An open chunk counts the commits since it was written.** Unit tests and the typecheck only; no dev
   app ran. In an initiative whose project is registered, `wsh effort chunk add <effort> "probe"`, make a commit in that
   project, then open the chunk in the initiative sheet → under its status reads "Written 1 commit ago (<day>): check it
@@ -2903,3 +2925,7 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   `i` from the message box: the band opens and `m`, `n`, `w` and the arrows work without a click. Once on a Mac
   (`task dev:browser`, then `task verify:ui -- chat-initiative-band initiative-popover initiative-link`): the scenarios
   ran only on WebView2 in run 175af141, with fixture agents (`initiativebandview.tsx`, `chatpane.tsx` goOn).
+- [ ] (arcterm) **A reply draws once when you send the next message as it ends.** In a Claude agent's Chat, send a
+  message while the reply's last paragraph is still streaming (once queued, once with Send now), and once right after it
+  ends: the reply stays one copy above your message, with no second copy under it and no flicker (`chatlive.ts`
+  withLiveReply; unit tests only, no scenario streams a live reply).

@@ -435,6 +435,102 @@ func CommitsSince(ctx context.Context, cwd, base string) (int, int64, error) {
 	return n, secs * 1000, nil
 }
 
+// LandedCommit is one commit on HEAD's first-parent line, with the files it changed against its first parent: for
+// a merge, everything its branch brought in. Ts is the commit time in unix ms, when the change landed.
+type LandedCommit struct {
+	SHA   string
+	Ts    int64
+	Files []LandedFile
+}
+
+// LandedFile is one name-status row. Status is git's letter (A, M, D, R, C, T); From is the old path of a rename
+// or copy.
+type LandedFile struct {
+	Status byte
+	Path   string
+	From   string
+}
+
+const landedLogTimeout = 90 * time.Second
+
+// FirstParentLog lists the commits on HEAD's first-parent line, newest first, with their files: those landed
+// after afterMs (unix ms, 0 for all) when since is "", else only since..HEAD. The first-parent line is the order
+// changes reached the branch, so a commit made on a worktree branch counts from its merge, not its authoring.
+func FirstParentLog(ctx context.Context, cwd string, afterMs int64, since string) ([]LandedCommit, error) {
+	ctx, cancel := context.WithTimeout(ctx, landedLogTimeout)
+	defer cancel()
+	args := []string{"log", "--first-parent", "--diff-merges=first-parent", "--name-status", "-M", "--format=%x00%H %ct"}
+	if since != "" {
+		args = append(args, since+"..HEAD")
+	} else {
+		if afterMs > 0 {
+			args = append(args, "--after="+time.UnixMilli(afterMs).UTC().Format(time.RFC3339))
+		}
+		args = append(args, "HEAD")
+	}
+	out, err := run(ctx, cwd, args...)
+	if err != nil {
+		return nil, errors.New(describeGitError(args, err))
+	}
+	return parseLandedLog(out), nil
+}
+
+// parseLandedLog reads FirstParentLog's output: a NUL, "<sha> <unix secs>", then name-status rows.
+func parseLandedLog(out string) []LandedCommit {
+	var commits []LandedCommit
+	for _, rec := range strings.Split(out, "\x00") {
+		lines := strings.Split(strings.ReplaceAll(rec, "\r\n", "\n"), "\n")
+		head := strings.Fields(lines[0])
+		if len(head) != 2 {
+			continue
+		}
+		secs, err := strconv.ParseInt(head[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		c := LandedCommit{SHA: head[0], Ts: secs * 1000}
+		for _, line := range lines[1:] {
+			f := strings.Split(line, "\t")
+			if len(f) < 2 || f[0] == "" {
+				continue
+			}
+			lf := LandedFile{Status: f[0][0], Path: f[len(f)-1]}
+			if len(f) >= 3 {
+				lf.From = f[1]
+			}
+			c.Files = append(c.Files, lf)
+		}
+		commits = append(commits, c)
+	}
+	return commits
+}
+
+// TrackedFiles lists the paths in the index of cwd's repo, relative to its root (as `git log` names them, even when
+// cwd is a subfolder), with forward slashes.
+func TrackedFiles(ctx context.Context, cwd string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	out, err := run(ctx, cwd, "ls-files", "--full-name", "--", ":/")
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, p := range strings.Split(strings.ReplaceAll(out, "\r\n", "\n"), "\n") {
+		if p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths, nil
+}
+
+// IsAncestor reports whether a is an ancestor of (or equal to) b in cwd.
+func IsAncestor(ctx context.Context, cwd, a, b string) bool {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	_, err := run(ctx, cwd, "merge-base", "--is-ancestor", a, b)
+	return err == nil
+}
+
 // ResolveCommit returns the SHA rev names in cwd. Errors when rev names no commit.
 func ResolveCommit(ctx context.Context, cwd, rev string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)

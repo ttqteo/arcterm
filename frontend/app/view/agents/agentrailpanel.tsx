@@ -48,7 +48,7 @@ import { agentTreeWidth } from "./rowfields";
 import { rowFieldsAtom } from "./rowfieldsstore";
 
 const TAB =
-    "flex min-w-[40px] cursor-pointer items-center justify-center gap-[5px] border-0 border-b-2 bg-transparent px-[9px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent";
+    "flex min-w-[34px] cursor-pointer items-center justify-center gap-[5px] border-0 border-b-2 bg-transparent px-[9px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent";
 const TAB_ON = "border-primary text-primary";
 const TAB_OFF = "border-transparent text-muted hover:text-secondary";
 
@@ -232,9 +232,11 @@ function RailFileTab({
                 {...tabProps}
                 aria-label={`File ${label}`}
                 title={folded != null && folded > 1 ? `${folded} files open` : file.abs}
+                // folded, it sits on Overview's 300px beside the counts, so it is drawn tighter
                 className={cn(
-                    "flex min-w-0 cursor-pointer items-center gap-[7px] border-0 bg-transparent py-0 pl-2.5 text-inherit outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
-                    closable ? "pr-1" : "pr-2.5"
+                    "flex min-w-0 cursor-pointer items-center border-0 bg-transparent py-0 text-inherit outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                    folded == null ? "gap-[7px] pl-2.5" : "gap-[4px] pl-2",
+                    closable ? "pr-1" : "pr-2"
                 )}
             >
                 <FileText size={15} strokeWidth={1.8} aria-hidden className="shrink-0" />
