@@ -8,6 +8,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+The section decides the version: `task tauri:build BUMP=auto` makes a release with an `Added` or `<!-- big -->` line
+a minor bump and one with only `Changed` and `Fixed` a patch. A major bump is for a release that breaks something for
+the person (a feature removed, a config, `wsh` or hook contract changed without migrating it) and is passed by hand.
+Each bumped build tags its commit `v<version>`.
+
 The app reads this file for What's new (the version at the bottom right). A line about something you can open may end
 with `<!-- try: <id> -->`, the id of a global keybinding (`buildGlobalBindings` in
 `frontend/app/store/keybindings/bindings.ts`, such as `go:usage` or `open-tool`): its note gets a Try it button that

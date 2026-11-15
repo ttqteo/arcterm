@@ -9,9 +9,13 @@
 // target junction the bundle lands in the main checkout's src-tauri/target, where `task install` looks, and a
 // copy goes to releases/ named with the commit it was built from.
 //
-//   node scripts/release-build.mjs [--bump none|patch|minor|major] [--from <commit>|tree] [--dry-run]
+//   node scripts/release-build.mjs [--bump none|patch|minor|major|auto] [--force] [--from <commit>|tree] [--dry-run]
 //
 // --bump    bumps package.json in the main checkout (commit the bump after) and builds the commit at that version.
+//           `auto` picks it from the built commit's CHANGELOG.md Unreleased lines (release-bump.mjs: Added or big ->
+//           minor, else patch, none when empty). A bump passed by hand that is smaller than those lines call for
+//           stops the build before anything is written, unless --force. A bumped build of a commit is tagged
+//           v<version> on that commit (local, never pushed), so `git log v1.1.3..v1.1.4` is what 1.1.4 holds.
 // --from    the commit to build (default HEAD); `tree` builds the main checkout as it stands, uncommitted edits
 //           included, and names the installer <commit>-dirty when the tree has any.
 // --dry-run sets the worktree up and removes it again, building nothing.
@@ -19,6 +23,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFi
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { bumpTooSmall, describeCounts, suggestBump } from "./release-bump.mjs";
 import { linkShared, unlinkShared } from "./worktree-junctions.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/, "");
@@ -87,9 +92,21 @@ function copyInstaller(version, stamp) {
     return `releases/${out}`;
 }
 
-const bump = arg("bump", "none");
+// tag the built commit v<version>, beside the "release: <version>" commit that follows it; an existing tag is kept
+function tagRelease(version, commit, stamp) {
+    const tag = `v${version}`;
+    if (spawnSync("git", ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}`], { cwd: ROOT }).status === 0) {
+        console.warn(`\ntag ${tag} already exists (on ${git(["rev-parse", "--short", `${tag}^{commit}`])}): left as it is`);
+        return;
+    }
+    git(["tag", "-a", tag, commit, "-m", `arcterm ${version}, built from ${stamp}`]);
+    console.log(`\ntagged ${tag} on ${stamp} (local; push it with the release if you push)`);
+}
+
+const requested = arg("bump", "none");
 const from = arg("from", "HEAD");
 const dryRun = process.argv.includes("--dry-run");
+const force = process.argv.includes("--force");
 const fromTree = from === "tree";
 
 const commit = git(["rev-parse", "--verify", `${fromTree ? "HEAD" : from}^{commit}`]);
@@ -97,6 +114,32 @@ const short = git(["rev-parse", "--short", commit]);
 const subject = git(["log", "-1", "--format=%s", commit]);
 const dirty = git(["status", "--porcelain"]).split("\n").filter(Boolean);
 const stamp = fromTree && dirty.length > 0 ? `${short}-dirty` : short;
+
+// the lines the build carries: the commit's CHANGELOG.md, or the checkout's own for --from tree
+const changelog = fromTree ? readFileSync(join(ROOT, "CHANGELOG.md"), "utf8") : git(["show", `${commit}:CHANGELOG.md`]);
+const suggested = suggestBump(changelog);
+let bump = requested;
+if (requested === "auto") {
+    bump = suggested.bump;
+    console.log(`BUMP=auto: CHANGELOG.md's Unreleased has ${describeCounts(suggested.counts)} -> ${bump}`);
+    if (bump === "none") {
+        console.log("nothing a user would notice since the last release: building without a bump");
+    }
+} else {
+    if (!["none", "patch", "minor", "major"].includes(requested)) {
+        console.error(`unknown bump "${requested}": use none, patch, minor, major or auto`);
+        process.exit(1);
+    }
+    const tooSmall = bumpTooSmall(requested, suggested.bump);
+    if (tooSmall && !force) {
+        console.error(`${tooSmall} (${describeCounts(suggested.counts)}).`);
+        console.error(`Pass BUMP=${suggested.bump} or BUMP=auto, or FORCE=1 to bump ${requested} anyway.`);
+        process.exit(1);
+    }
+    if (tooSmall) {
+        console.warn(`${tooSmall}; FORCE=1, bumping ${requested} anyway`);
+    }
+}
 
 if (bump !== "none" && !dryRun) {
     // the bump is written to the main checkout, where it gets committed; the snapshot is given the same version below
@@ -140,6 +183,13 @@ try {
 if (!dryRun) {
     const out = copyInstaller(version, stamp);
     console.log(`\nbuilt arcterm ${version} from ${stamp} (${subject})${out ? `\n  -> ${out}` : ""}`);
+    if (bump !== "none") {
+        if (fromTree) {
+            console.log(`\nnot tagged: --from tree builds uncommitted edits no commit holds`);
+        } else {
+            tagRelease(version, commit, stamp);
+        }
+    }
 }
 if (!fromTree && dirty.length > 0) {
     console.log(`\nleft out: ${dirty.length} uncommitted change(s) in the checkout:`);
