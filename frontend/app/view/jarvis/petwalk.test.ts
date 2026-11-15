@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+import { PET_PX } from "./petsprite";
 import {
     clearSpot,
     CRAWL_MIN_MS,
@@ -16,6 +17,7 @@ import {
     homeX,
     HOP_LIFT_PX,
     initialWalker,
+    keepOnFloor,
     nextTick,
     PASTIMES,
     placeAt,
@@ -1158,4 +1160,16 @@ describe("slideFrom", () => {
     it("never slides a drop, which is placed where the pointer let go", () =>
         expect(slideFrom({ x: 400, name: "dragged" }, 100)).toBe(0));
     it("has nothing to slide from on the first frame", () => expect(slideFrom(null, 300)).toBe(0));
+});
+
+describe("keepOnFloor", () => {
+    const floor = (left: number, right: number) => ({ ...LEDGE, left, right });
+    it("stays put while the floor still holds it", () => {
+        expect(keepOnFloor(300, floor(100, 600))).toBe(300);
+        expect(keepOnFloor(300, floor(100, 590))).toBe(300);
+    });
+    it("steps inside the floor's end when the floor no longer reaches it", () => {
+        expect(keepOnFloor(500, floor(100, 400))).toBe(400 - PET_PX);
+        expect(keepOnFloor(50, floor(100, 400))).toBe(100);
+    });
 });

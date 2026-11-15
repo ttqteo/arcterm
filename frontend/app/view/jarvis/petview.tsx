@@ -123,6 +123,7 @@ import {
     homeFraction,
     homeX,
     initialWalker,
+    keepOnFloor,
     nextTick,
     placeAt,
     REST_POSES,
@@ -589,8 +590,21 @@ function useFloatHome(on: boolean): { left: number; top: number } | null {
             setSpot((cur) => (cur != null && cur.left === next.left && cur.top === next.top ? cur : next));
         };
         // the floor narrows without the window changing: the Jobs chip shows on the ledge, a tab comes or goes. Measured
-        // only on a resize, the hologram and its marks stood where the floor had been, over the chip.
-        const floor = new ResizeObserver(place);
+        // only on a resize, the hologram and its marks stood where the floor had been, over the chip. They stay put as
+        // the floor changes and only step in when it no longer reaches them: placed again from home, every few px of a
+        // RAM reading's digits moved them along the ledge.
+        const keep = () => {
+            const ledge = readLedge();
+            setSpot((cur) => {
+                if (cur == null) {
+                    return { left: homeX(globalStore.get(petHomeAtom), ledge), top: ledge.top - PET_PX };
+                }
+                const left = keepOnFloor(cur.left, ledge);
+                const top = ledge.top - PET_PX;
+                return left === cur.left && top === cur.top ? cur : { left, top };
+            });
+        };
+        const floor = new ResizeObserver(keep);
         const watch = () => document.querySelectorAll("[data-pet-ledge]").forEach((el) => floor.observe(el));
         place();
         watch();

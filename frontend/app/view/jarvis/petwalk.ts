@@ -190,6 +190,13 @@ export function homeX(fraction: number, ledge: Ledge): number {
     return clampX(ledge.left + f * (ledge.right - PET_PX - ledge.left), ledge);
 }
 
+/** Where a creature standing at left edge x stays when the floor changes width under it (Float's ledge narrowing for the
+ *  Jobs chip, a tab coming): put, unless the floor no longer reaches it, then just inside its nearer end. Re-placed by
+ *  homeX instead, every few px of the floor (a RAM reading's digits) moved it. */
+export function keepOnFloor(x: number, ledge: Ledge): number {
+    return clampX(x, ledge);
+}
+
 /** Where left edge x sits along the ledge's travel, 0..1: what petstore persists as home. */
 export function homeFraction(x: number, ledge: Ledge): number {
     const span = ledge.right - PET_PX - ledge.left;

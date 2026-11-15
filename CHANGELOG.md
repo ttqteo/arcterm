@@ -47,7 +47,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Fixed
 
 - In Float, Jarvis's hologram and its marks keep to the floor when the ledge narrows (the Jobs chip showing, a tab
-  coming): they stood over the chip instead.
+  coming): they stood over the chip instead. They stay put otherwise, rather than drifting along the ledge each time
+  the free RAM's digits change.
 - Jarvis's panel opens beside the hologram in Float again, inside the window, instead of off past its edge and cut off.
 - On a Mac, Chat's jump-to-latest button shows its ↓ once: the ⌘↓ beside it said the same arrow again (it stays in the
   tooltip).
