@@ -295,8 +295,41 @@ func update(oid string, fn func(*waveobj.Effort) error, keepTs bool) error {
 	return write(root, path, e)
 }
 
-// Delete removes the effort's file. A missing effort is not an error, as with wstore.DBDelete.
+// Delete removes the effort's file. A missing effort is not an error, as with wstore.DBDelete. The efforts linked
+// under it lose the link (their ParentOID is cleared, their UpdatedTs kept), so none points at an effort that is gone;
+// one that fails to clear is logged and left, as the List and the cycle walk already read a missing parent as none.
 func Delete(ctx context.Context, oid string) error {
+	if err := remove(oid); err != nil {
+		return err
+	}
+	unlinkChildren(ctx, BareOID(oid))
+	return nil
+}
+
+// unlinkChildren clears the parent link of every effort under parent.
+func unlinkChildren(ctx context.Context, parent string) {
+	all, err := GetAll(ctx)
+	if err != nil {
+		log.Printf("effortstore: unlink the children of %s: %v", parent, err)
+		return
+	}
+	for _, e := range all {
+		if e.ParentOID != parent {
+			continue
+		}
+		err := UpdateKeepTs(ctx, e.OID, func(c *waveobj.Effort) error {
+			if c.ParentOID == parent {
+				c.ParentOID = ""
+			}
+			return nil
+		})
+		if err != nil && !errors.Is(err, wstore.ErrNotFound) {
+			log.Printf("effortstore: unlink %s from deleted %s: %v", e.OID, parent, err)
+		}
+	}
+}
+
+func remove(oid string) error {
 	root := vaultRoot()
 	path, err := effortPath(root, oid)
 	if err != nil {
