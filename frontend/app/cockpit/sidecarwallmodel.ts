@@ -6,7 +6,7 @@
 // This file is sidecarwallmodel.ts, never sidecarwall.ts: Vite and TS resolve .ts before .tsx, so a sidecarwall.ts
 // beside the component would shadow it.
 
-import type { SidecarTile } from "./sidecartypes";
+import type { SidecarMessage, SidecarOlder, SidecarTile } from "./sidecartypes";
 
 /** The gap between tiles, px. */
 export const WALL_GAP = 12;
@@ -189,4 +189,118 @@ export function wallKey(key: string): WallKeyAction | null {
 export function canAnswer(tile: Pick<SidecarTile, "ask" | "sent"> | undefined, option: number): boolean {
     const ask = tile?.ask;
     return ask != null && ask.answerable && tile?.sent !== true && option >= 0 && option < ask.options.length;
+}
+
+// ---- A tile's scrollback (spec section 3 "Scrollback"; decisions 5 and 6) ----
+
+/** How many rows one older act asks for. */
+export const OLDER_COUNT = 10;
+/** A scroll position within this many px of an end counts as at it (fractional scroll positions and borders). */
+export const SCROLL_EDGE_PX = 2;
+
+/** Whether a scroll list sits at its top and at its bottom. A list that does not overflow is at both. */
+export function scrollEdges(
+    scrollTop: number,
+    clientHeight: number,
+    scrollHeight: number
+): { top: boolean; bottom: boolean } {
+    return {
+        top: scrollTop <= SCROLL_EDGE_PX,
+        bottom: scrollTop + clientHeight >= scrollHeight - SCROLL_EDGE_PX,
+    };
+}
+
+/**
+ * What the page holds of one tile's history, beyond the snapshot's own rows: the rows loaded above them (oldest
+ * first), the cursor the next page is asked at (`null`: the page above the snapshot's rows), whether the answer said
+ * nothing is earlier, and whether an older act is out. A tile with no history is `EMPTY_HISTORY`, or has no entry.
+ */
+export interface TileHistory {
+    rows: SidecarMessage[];
+    before: string | null;
+    start: boolean;
+    pending: boolean;
+}
+
+export const EMPTY_HISTORY: TileHistory = { rows: [], before: null, start: false, pending: false };
+
+/** The cursor to ask for, or null when nothing is to be asked: one is already out, or the start was reached. */
+export function olderRequest(h: TileHistory | undefined): { before: string | null } | null {
+    const cur = h ?? EMPTY_HISTORY;
+    return cur.pending || cur.start ? null : { before: cur.before };
+}
+
+/** The history once its older act is sent: one request per cursor, until the answer (or a drop) comes. */
+export function markAsked(h: TileHistory | undefined): TileHistory {
+    return { ...(h ?? EMPTY_HISTORY), pending: true };
+}
+
+/**
+ * The history after an older answer: its rows join the top and its `next` is the cursor to ask next (null: the start).
+ * An answer that is not the one in flight (none out, or another `before`: a dropped history, a late reply) changes nothing.
+ */
+export function applyOlder(
+    h: TileHistory | undefined,
+    answer: Pick<SidecarOlder, "before" | "rows" | "next">
+): TileHistory {
+    const cur = h ?? EMPTY_HISTORY;
+    if (!cur.pending || answer.before !== cur.before) {
+        return cur;
+    }
+    return { rows: [...answer.rows, ...cur.rows], before: answer.next, start: answer.next === null, pending: false };
+}
+
+function sameRow(a: SidecarMessage, b: SidecarMessage): boolean {
+    return (
+        a.say === b.say &&
+        a.tool?.verb === b.tool?.verb &&
+        a.tool?.target === b.tool?.target &&
+        a.tool?.outcome === b.tool?.outcome
+    );
+}
+
+/**
+ * The rows that left the top of a tile's snapshot rows when its window moved forward over new rows: `prev` lines up
+ * with the start of `next` from row k on (its last row is left out of the comparison, because a tool row changes in
+ * place when its result comes), and the k rows before it are the ones now missing. While history is loaded they are
+ * appended to it, so no row goes missing between the loaded rows and the snapshot's. A window only slides once it is
+ * full, so the two have to be the same length, and a window that is the same but for its last row did not move (a
+ * transcript that repeats itself would otherwise line up with itself). At least two rows have to line up, so one
+ * repeated row does not pass for a match. Empty when the window did not move or the two do not line up (nothing to go on).
+ */
+export function slidOut(prev: readonly SidecarMessage[], next: readonly SidecarMessage[]): SidecarMessage[] {
+    const keep = prev.length - 1;
+    if (keep < 0 || prev.length !== next.length) {
+        return [];
+    }
+    if (prev.slice(0, keep).every((m, i) => sameRow(m, next[i]))) {
+        return [];
+    }
+    for (let k = 1; k <= keep - 2; k++) {
+        const overlap = keep - k;
+        if (next.length < overlap) {
+            continue;
+        }
+        let same = true;
+        for (let i = 0; i < overlap && same; i++) {
+            same = sameRow(prev[k + i], next[i]);
+        }
+        if (same) {
+            return prev.slice(0, k);
+        }
+    }
+    return [];
+}
+
+/** The history with `rows` (the rows `slidOut` found) added below its loaded rows. */
+export function foldSlid(h: TileHistory, rows: readonly SidecarMessage[]): TileHistory {
+    return rows.length === 0 || h.rows.length === 0 ? h : { ...h, rows: [...h.rows, ...rows] };
+}
+
+/**
+ * Whether a scroll that ended at `bottom` is the user coming back to the bottom (they were not there before): that
+ * drops a tile's loaded history. A list that stays at its bottom (a loaded page was added above it) does not.
+ */
+export function returnedToBottom(wasBottom: boolean, bottom: boolean): boolean {
+    return bottom && !wasBottom;
 }
