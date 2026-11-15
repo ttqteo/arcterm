@@ -253,6 +253,60 @@ does not, say what you saw and it becomes a bug row under Actionable.
   verifier has ended and click the Verifier step → the verifier's read-only transcript opens (the scenario's seeded
   run has none, so only the "Session ended · read-only transcript" banner was checked). Commit: dbd4023d6
   (`finalstagepane.tsx`, `runlineage.ts` `verifierStepTarget`).
+- [ ] (arcterm) Kael sync 11-13 step 2: a `settings.json` locked at launch is left alone. Back up
+  `~/.claude/settings.json`, then in PowerShell hold it with no read sharing
+  (`$f = [IO.File]::Open("$HOME\.claude\settings.json", 'Open', 'ReadWrite', 'None')`) and restart arcterm → the file is
+  byte for byte what it was (model, permissions, env and your hooks still there), and `waveapp.log` has `[tauri]
+  agent-hooks install failed (exit code: 1): … reading …`; `$f.Close()` and restart → no failure line and the hooks
+  installed. Then put invalid JSON in `~/.claude/settings.json` and launch the dev app under its own home → the log
+  line says `parsing …`, pi's settings and the agy and Codex hooks are still installed; restore the file and relaunch
+  for no failure line. Unit-tested only (a directory stands in for the locked file). Commit: b56cb4efd
+  (`wshcmd-installhooks.go` `readSettingsFile`, `src-tauri/src/main.rs`).
+- [ ] (arcterm) Kael sync 11-13 step 2: links open without a shell. In a Chat message or a previewed markdown file click
+  an https link, one with `&` in its query (`https://example.com/?a=1&b=2`) and a `mailto:` link → the default browser
+  or mail app opens each, the `&` link with both parameters. A link whose address holds a raw `"` (`[x](https://x/"&calc.exe&")`)
+  does nothing, no calculator opens, and `waveapp.log` has an `[open-external] rejected URL …` line. The unit tests
+  cannot reach `ShellExecuteExW`. Commit: f3ba29fb9 (`src-tauri/src/commands.rs`).
+- [ ] (arcterm) Kael sync 11-13 step 2: the vault does not stick. With a vault that has a remote, start a Sync and end
+  its `git.exe` (or `git-remote-https.exe`) from Task Manager while it fetches or pushes → the vault releases within
+  the timeout and the next Sync runs, with no `Unable to create index.lock: File exists` in the log or the Vault row.
+  On two machines, remove a note from an initiative on one and add a note to the same initiative on the other, sync
+  both → the removed note stays gone and the added one is kept. Save a note or an initiative while a sync runs → what the sync merged in is
+  still there. Put the vault in a folder with a `[` in its name (`vault [work]`) → the initiatives list is not empty.
+  Unit-tested only. Commit: 6a992172d (`pkg/wavevault/git.go`, `effortmerge.go`, `pkg/effortstore`, `pkg/notestore`).
+- [ ] (arcterm) Kael sync 11-13 step 2: skills and steering keep the user's own. Setup → Skills: with a vault skill
+  `Review` and your own `review` folder in a harness's skills directory (Windows), the matrix reads that harness
+  "unmanaged" and a sync leaves the folder's files as they were. Put your own `design-local` skill folder in a harness
+  and Adopt → it stays in the harness, not moved into the vault and not lost (arcterm retired that name). Delete the
+  `<!-- ARC-STEERING:END … -->` line of the arcterm block in a harness's steering file (`CLAUDE.md`), write a line
+  below the begin marker's text, sync → your lines are still there, with one fresh block appended and the orphan begin
+  marker gone. Unit-tested only. Commit: 405ce9871
+  (`pkg/agentsync/skills.go`, `adopt.go`, `steering.go`).
+- [ ] (arcterm) Kael sync 11-13 step 2: the Claude mod's checks in a live Claude session, after the next launch has
+  installed the mod (`~/.arc/claude-mod`). In a run's worktree, have the agent run a `git commit -m "tests how git push
+  is refused"` → it commits instead of being refused for the words in the message, while a bare `git push` is still
+  refused. On Windows have it edit `tsconfig.json` to set `"strict": false`, and run `rm tests\x.test.ts` in
+  PowerShell → the goalpost finding shows for both. From the cockpit's box send an agent `/tmp/build.log has the failing test, read
+  it` → the agent receives it as a message, and `/src needs a cleanup` reaches it as plain text. Unit-tested only.
+  Commit: e669b62b0 (`claude/arc-mod/hooks/guard-core.ts`, `goalpost-core.ts`, `control-core.ts`).
+- [ ] (arcterm) Kael sync 11-13 step 2: Usage and the temp folder. Run `/fork` in a pi session, let both sessions
+  answer, and open Usage → the forked file's copied entries are not billed a second time. On Windows, after a council
+  has run, `Get-ChildItem $env:TEMP -Filter wave-consult-stderr-*` lists nothing (or only a file of a call still
+  going). Unit-tested only. Commit: d4df8a46e (`pkg/usagestats/pi.go`,
+  `pkg/consult/exec.go`).
+- [ ] (arcterm) Kael sync 11-13 step 2: a permission prompt reads as asking. With a Claude agent stopped at a
+  permission prompt, `wsh agents list` shows it as asking (not idle), and `wsh agents send <tab> "x"` is refused with
+  "a question or a permission prompt" open, so nothing is typed into the dialog; after you answer it the send goes
+  through. `wsh agents send --wait <tab> "x"` to an agent that stays idle after the message (the message started no
+  turn) fails after about 30 s instead of the 10-minute default, and a `--wait` that times out names the agent's state.
+  Unit-tested only.
+  Commit: 2388c6bb6 (`cmd/wsh/cmd/wshcmd-agents.go`, `pkg/wshrpc/wshserver/wshserver_agentmsg.go`).
+- [ ] (arcterm) Kael sync 11-13 step 2: a Claude agent that exits to its shell leaves `wsh agents list`. Launch the dev
+  app (its next launch writes the `SessionEnd` hook), run claude in an agent tab and type `/exit` → `wsh agents list`
+  no longer lists the tab, so a send is not typed into the shell; start claude again in it and, once it has its first
+  prompt, the tab is listed again. A `/clear` or `/resume` in a running claude does not remove the tab. A prompt shipped
+  (Ship to agent, a brainstorm or comment send) to a tab whose terminal is gone shows the error toast "…nothing was
+  sent" instead of reporting sent. Unit-tested only. Commit: 00e9930f6 (`wshcmd-agenthook.go`, `wshserver_agentmsg.go`).
 
 - [ ] (arcterm) Jarvis For later on real sessions: mark a session older than a week for later (History → its menu →
   Mark for later), and one of a running agent → open Jarvis: For later, beside Ideas under the initiatives list, names both
