@@ -7,10 +7,12 @@
 // the Agent tree's top level, so a run is one tab (its lead) however many sessions it spawned, then the plain terminals
 // (sproutroster.ts floatTabs), their dots pulsing while that agent works or asks. A right-click pins a tab: pinned tabs
 // come first, in the order they were pinned, and are never cut (floattabsstore.ts). The count is set so each tab gets
-// 80px and its name reads; a tab still shrinks below that rather than be cut off when the ledge narrows under it; an agent that asks you is never hidden under "+N", and "+N" carries the dot of the most urgent tab it hides. On
-// its right, since Float has no app bar, the Jobs chip while heavy jobs wait (jobqueuechip.tsx) and the free RAM and
-// plan usage (usagemeters.tsx FloatUsage), which open the Jobs popover and the Consumers panel as they do there, then
-// Jarvis's hologram in a fixed box at the end (petview.tsx), the ledge's corner as the window's is in Full. What lies between is the floor Sprout walks. The fixed tab
+// 80px and its name reads; a tab still shrinks below that rather than be cut off when the ledge narrows under it. An
+// agent that asks you is never hidden under "+N", and "+N" carries, on its corner, the dot of the most urgent tab it
+// hides. On its right, since Float has no app bar, the Jobs chip while heavy jobs wait (jobqueuechip.tsx, compact) and
+// the free RAM and plan usage (usagemeters.tsx FloatUsage), which open the Jobs popover and the Consumers panel as they
+// do there, then Jarvis's hologram in a fixed box at the end (petview.tsx), the ledge's corner as the window's is in
+// Full. What lies between is the floor Sprout walks. The fixed tab
 // and the usage keep their width; the tabs take what is left past the floor's least, so a narrow float shows fewer and
 // puts the rest under "+N" instead of painting them over their neighbours. A press on the strip, away from a tab, drags
 // the window like the float bar.
@@ -185,12 +187,21 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
                                 type="button"
                                 data-float-tabs-more
                                 data-float-tabs-more-state={hidden ?? undefined}
-                                aria-label={`${tabs.rest.length} more${hidden === "asking" ? ", one asks you" : hidden === "working" ? ", working" : ""}`}
+                                aria-label={`${tabs.rest.length} more${hidden === "asking" ? ", one asks you" : hidden === "working" ? ", one of them working" : ""}`}
                                 title={tabs.rest.map(tabTitle).join("\n")}
                                 onClick={showRest}
-                                className="flex h-[26px] flex-none cursor-pointer items-center gap-1 rounded-[7px] px-1.5 text-[11px] text-muted tabular-nums hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                className="relative flex h-[26px] flex-none cursor-pointer items-center rounded-[7px] px-1.5 text-[11px] text-muted tabular-nums hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                             >
-                                {hidden != null ? <StatusDot state={hidden} pulse /> : null}+{tabs.rest.length}
+                                +{tabs.rest.length}
+                                {/* on the corner, not before the count: in front of "+5" it read as five tabs working,
+                                    where it says one of them is (or asks you) */}
+                                {hidden != null ? (
+                                    <StatusDot
+                                        state={hidden}
+                                        pulse
+                                        className="absolute right-0 top-[2px] h-[6px] w-[6px]"
+                                    />
+                                ) : null}
                             </button>
                         ) : null}
                     </div>

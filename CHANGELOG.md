@@ -50,6 +50,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   it no longer walks the floor, grows, drifts or stands over the Jobs chip when a heavy job shows.
 - Float's ledge holds its layout while a heavy job runs: the Jobs chip is its icon and count, and the tabs narrow
   instead of being cut off at the edge.
+- Float's "+N" wears the dot of what its hidden tabs are doing on its corner: in front of the count, "● +5" read as
+  five tabs working when one was.
 - Float's title bar gives the agent's name the room: the dot says the state (the word shows only when it asks), and
   the model is in the name's tooltip.
 - Jarvis's panel opens beside the hologram in Float again, inside the window, instead of off past its edge and cut off.
