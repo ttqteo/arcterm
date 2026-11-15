@@ -4,10 +4,12 @@
 package agentsync
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"testing/fstest"
 )
 
 func TestAdoptSeedsTheFirstCopyIntoTheVault(t *testing.T) {
@@ -405,5 +407,60 @@ func TestAdoptSkipList(t *testing.T) {
 		if got := readFile(t, filepath.Join(p.Home, rt, "skills", "review", skillFile)); got != "---\nname: review\n---\n"+body+"\n" {
 			t.Errorf("%s copy was touched: %q", rt, got)
 		}
+	}
+}
+
+// a seed deletes a vault skill under a name arcterm once shipped and ships no longer, so adopting the user's own skill
+// under one would lose it from both places: it stays in the harness, where the reconcile never writes an entry arcterm
+// does not own. The fixture ships only the new names, as the app does.
+func TestAdoptLeavesASkillUnderARetiredShippedName(t *testing.T) {
+	for _, name := range []string{"design-local", "cockpit-runs", "cockpit-ui", "effort-tracking", "ideas", "Design-Local"} {
+		t.Run(name, func(t *testing.T) {
+			p := testPaths(t, "", ".claude")
+			p.Shipped = fstest.MapFS{"design/SKILL.md": {Data: []byte("---\nname: design\n---\nshipped\n")}}
+			own := filepath.Join(p.Home, ".claude", "skills", name)
+			writeFile(t, filepath.Join(own, skillFile), "---\nname: "+name+"\n---\nmine\n")
+
+			plan, err := Adopt(p, true, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(plan.Moves) != 0 {
+				t.Errorf("plan = %+v, want no move: the seed deletes a retired name from the vault", plan)
+			}
+			if got := readFile(t, filepath.Join(own, skillFile)); got != "---\nname: "+name+"\n---\nmine\n" {
+				t.Errorf("the user's own skill = %q, want it left where it was", got)
+			}
+		})
+	}
+}
+
+// only a name the seed retires is left out: one arcterm ships again is not retired, and a seed with no shipped skills
+// (nil) retires nothing
+func TestAdoptStillTakesANameThatIsNotRetired(t *testing.T) {
+	cases := []struct {
+		name    string
+		skill   string
+		shipped fs.FS
+	}{
+		{"a removed name that ships again", "ideas", fstest.MapFS{"ideas/SKILL.md": {Data: []byte("---\nname: ideas\n---\nback\n")}}},
+		{"a renamed name that ships again", "design-local", fstest.MapFS{"design-local/SKILL.md": {Data: []byte("---\nname: design-local\n---\nback\n")}}},
+		{"no shipped skills", "design-local", nil},
+		{"an ordinary name", "graphify", fstest.MapFS{"design/SKILL.md": {Data: []byte("---\nname: design\n---\nshipped\n")}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := testPaths(t, "", ".claude")
+			p.Shipped = tc.shipped
+			writeFile(t, filepath.Join(p.Home, ".claude", "skills", tc.skill, skillFile), "---\nname: "+tc.skill+"\n---\nmine\n")
+
+			plan, err := PlanAdopt(p, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(plan.Moves) != 1 || !plan.Moves[0].Seed || plan.Moves[0].Name != tc.skill {
+				t.Errorf("plan = %+v, want one seeding move of %s", plan, tc.skill)
+			}
+		})
 	}
 }

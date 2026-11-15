@@ -36,8 +36,9 @@ func withoutMarkers(body string) string {
 }
 
 // applyRegion returns existing with the ARC-STEERING region set to body. Content outside the markers
-// is untouched, except stray end markers right after the region, which only a nested region leaves; a
-// file with no region gets one appended.
+// is untouched, except stray end markers right after the region, which only a nested region leaves, and a
+// begin marker whose end is gone, which is dropped with its text kept; a file with no region gets one
+// appended.
 func applyRegion(existing, body string) string {
 	region := renderRegion(body)
 	if start := strings.Index(existing, steeringBegin); start >= 0 {
@@ -46,6 +47,8 @@ func applyRegion(existing, body string) string {
 			tail := withoutStrayEnds(rest[endIdx+len(steeringEnd):])
 			return existing[:start] + region + strings.TrimPrefix(tail, "\n")
 		}
+		// the end marker is gone, so where the region ended is unknown: keep its text, drop the orphan begin
+		existing = existing[:start] + strings.TrimPrefix(rest[len(steeringBegin):], "\n")
 	}
 	if strings.TrimSpace(existing) == "" {
 		return region

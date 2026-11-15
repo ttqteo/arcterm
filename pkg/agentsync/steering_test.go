@@ -74,3 +74,16 @@ func TestSteeringStateBlank(t *testing.T) {
 		}
 	}
 }
+
+// a region whose end marker was lost: the sync cannot tell where it ended, so it keeps every line and
+// drops only the orphan begin, or the next sync would replace everything from it to the new end
+func TestApplyRegionWithALostEndMarkerKeepsTheText(t *testing.T) {
+	existing := "# Prefs\n\n" + steeringBegin + "\nold rules\n## my own notes\nkeep me\n"
+	got := applyRegion(applyRegion(existing, "new rules"), "new rules")
+	if !strings.Contains(got, "## my own notes\nkeep me\n") {
+		t.Fatalf("text after the orphan begin marker was lost: %q", got)
+	}
+	if strings.Count(got, steeringBegin) != 1 || !strings.Contains(got, renderRegion("new rules")) {
+		t.Fatalf("want one fresh region: %q", got)
+	}
+}
