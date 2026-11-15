@@ -1299,9 +1299,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 role="radio"
                 aria-checked={selected}
                 data-start-row={row.id}
-                title={row.desc ?? undefined}
+                aria-label={row.name}
+                title={row.desc != null ? `${row.name}: ${row.desc}` : row.name}
                 onClick={() => pickRow(row)}
-                className={cn(rowTone(selected, startFocused), "shrink-0 gap-[9px] py-2")}
+                className={cn(rowTone(selected, startFocused), "shrink-0 gap-[9px] py-2 max-[640px]:gap-[7px]")}
             >
                 <Keycap k={row.key} lit={startFocused} />
                 <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
@@ -1309,15 +1310,17 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     {/* the Christmas decor's hat, as on the nav rail's icons; nothing off the theme */}
                     <RailSantaHat iconSize={16} />
                 </span>
+                {/* a narrow window (Float) keeps the column to its keys and marks: the name is in the title, the pick in
+                    the row's tone */}
                 <span
                     className={cn(
-                        "min-w-0 flex-1 truncate text-[12.5px] font-semibold",
+                        "min-w-0 flex-1 truncate text-[12.5px] font-semibold max-[640px]:hidden",
                         selected ? "text-primary" : "text-muted-foreground"
                     )}
                 >
                     {row.name}
                 </span>
-                {selected ? <Check size={14} strokeWidth={2.4} className="text-accent" /> : null}
+                {selected ? <Check size={14} strokeWidth={2.4} className="text-accent max-[640px]:hidden" /> : null}
             </div>
         );
     };
@@ -1489,8 +1492,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             animate="animate"
                             className="shrink-0"
                         >
-                            {/* a narrow window (Float) takes room from the Start column and gives Session the rest */}
-                            <div className="grid grid-cols-[236px_minmax(0,1fr)_minmax(0,1fr)] max-[900px]:grid-cols-[188px_minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                            {/* a narrow window (Float) takes room from the Start column and gives Session the rest; a
+                                narrower one keeps Start to a strip of keys and marks, so Project and Session read */}
+                            <div className="grid grid-cols-[236px_minmax(0,1fr)_minmax(0,1fr)] max-[900px]:grid-cols-[188px_minmax(0,0.8fr)_minmax(0,1.2fr)] max-[640px]:grid-cols-[64px_minmax(0,0.85fr)_minmax(0,1.15fr)]">
                                 <div
                                     ref={startRef}
                                     role="radiogroup"
@@ -1503,10 +1507,11 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                         setResumeStep(false);
                                     }}
                                     onBlur={() => setZone(null)}
-                                    className="flex min-h-[300px] flex-col gap-px border-r border-border px-2 py-3 outline-none"
+                                    className="flex min-h-[300px] flex-col gap-px border-r border-border px-2 py-3 outline-none max-[640px]:px-1.5"
                                 >
                                     <ColumnLabel
                                         label="Agent"
+                                        className="max-[640px]:hidden"
                                         focused={startFocused}
                                         hint={
                                             startFocused
@@ -1517,11 +1522,11 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                         }
                                     />
                                     {startList.filter((r) => r.kind === "agent").map(renderStartRow)}
-                                    <ColumnLabel label="Run" focused={startFocused} className="pt-[10px]" />
+                                    <StartGroup label="Run" focused={startFocused} />
                                     {startList.filter((r) => r.kind === "run").map(renderStartRow)}
-                                    <ColumnLabel label="Tool" focused={startFocused} className="pt-[10px]" />
+                                    <StartGroup label="Tool" focused={startFocused} />
                                     {startList.filter((r) => r.kind === "tool").map(renderStartRow)}
-                                    <ColumnLabel label="Council" focused={startFocused} className="pt-[10px]" />
+                                    <StartGroup label="Council" focused={startFocused} />
                                     {startList.filter((r) => r.kind === "council").map(renderStartRow)}
                                 </div>
                                 <div
@@ -1816,5 +1821,16 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 </div>
             ) : null}
         </ModalShell>
+    );
+}
+
+// A group's head in the Start column: its label, or in a narrow window, where the column is a strip of keys and marks,
+// a thin rule between the groups
+function StartGroup({ label, focused }: { label: string; focused: boolean }) {
+    return (
+        <>
+            <ColumnLabel label={label} focused={focused} className="pt-[10px] max-[640px]:hidden" />
+            <div aria-hidden className="mx-1.5 my-[7px] hidden h-px bg-border max-[640px]:block" />
+        </>
     );
 }
