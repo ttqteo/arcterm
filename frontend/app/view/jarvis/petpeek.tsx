@@ -56,7 +56,7 @@ import {
     type MouseEvent,
     type ReactNode,
 } from "react";
-import { briefingStateAtom } from "./briefingstore";
+import { briefingStateAtom, loadBriefingIfNone } from "./briefingstore";
 import { splitIdeas } from "./briefrows";
 import { buildEffortCards } from "./effortmodel";
 import { peekAddress } from "./openref";
@@ -833,6 +833,12 @@ export function PetPeek({
     // badge: review is not urgent.
     const briefing = useAtomValue(briefingStateAtom);
     const reviewed = useAtomValue(reviewedAtom);
+    // on a fresh launch nothing has loaded the briefing until Jarvis opens: the peek loads it the first time it opens
+    useEffect(() => {
+        if (open) {
+            loadBriefingIfNone();
+        }
+    }, [open]);
     const review = useMemo(() => {
         const snapshot = briefing.snapshot;
         if (snapshot == null) {

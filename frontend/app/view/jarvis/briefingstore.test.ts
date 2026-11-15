@@ -63,10 +63,14 @@ describe("briefing cursor", () => {
     it("first use falls back to seven days ago for the fetch; the cursor moves only on acknowledge", async () => {
         mockStateRpc(completeState());
         await loadBriefingAsync();
-        expect(RpcApi.JarvisStateCommand).toHaveBeenCalledWith(expect.anything(), {
-            project: "",
-            sincems: T0 - SEVEN_DAYS_MS,
-        }, { timeout: 180_000 });
+        expect(RpcApi.JarvisStateCommand).toHaveBeenCalledWith(
+            expect.anything(),
+            {
+                project: "",
+                sincems: T0 - SEVEN_DAYS_MS,
+            },
+            { timeout: 180_000 }
+        );
         // load alone must not mark the delta seen
         expect(globalStore.get(briefingCursorAtom)).toBe(null);
         expect(globalStore.get(briefingAckAtom)).toBe("waiting");
@@ -86,10 +90,14 @@ describe("briefing cursor", () => {
         lsMock.store.set("jarvis.briefing.lastseen", stored);
         mockStateRpc(completeState());
         await loadBriefingAsync();
-        expect(RpcApi.JarvisStateCommand).toHaveBeenCalledWith(expect.anything(), {
-            project: "",
-            sincems: T0 - SEVEN_DAYS_MS,
-        }, { timeout: 180_000 });
+        expect(RpcApi.JarvisStateCommand).toHaveBeenCalledWith(
+            expect.anything(),
+            {
+                project: "",
+                sincems: T0 - SEVEN_DAYS_MS,
+            },
+            { timeout: 180_000 }
+        );
     });
 
     it("acknowledgment advances from queryStartedAt, never response time", async () => {
@@ -160,5 +168,24 @@ describe("briefing cursor", () => {
         await loadBriefingAsync();
         ackBriefingVisit();
         expect(globalStore.get(briefingCursorAtom)).toBe(T0 + 10_000);
+    });
+});
+
+describe("loadBriefingIfNone", () => {
+    it("loads the briefing once when none is in, and not again while it loads or once it has", async () => {
+        vi.resetModules();
+        const store = await import("./briefingstore");
+        const fresh = (await import("@/app/store/jotaiStore")).globalStore;
+        const rpc = (await import("@/app/store/wshclientapi")).RpcApi.JarvisStateCommand as ReturnType<typeof vi.fn>;
+        rpc.mockReset();
+        let finish: (v: unknown) => void = () => {};
+        rpc.mockReturnValue(new Promise((r) => (finish = r)));
+        store.loadBriefingIfNone();
+        store.loadBriefingIfNone();
+        expect(rpc).toHaveBeenCalledTimes(1);
+        finish({ state: completeState() });
+        await vi.waitFor(() => expect(fresh.get(store.briefingStateAtom).snapshot).not.toBeNull());
+        store.loadBriefingIfNone();
+        expect(rpc).toHaveBeenCalledTimes(1);
     });
 });

@@ -32,6 +32,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   changed elsewhere in the meantime: the edit is refused instead.
 - A plan an agent proposed now opens that agent from Needs you and the palette, even when it is a worker in a run,
   instead of the initiative.
+- Sprout's "initiatives changed · idle" line now shows the first time you open Sprout after a launch, without
+  opening Jarvis first.
 - Accept all and continue now tells you when the plan was accepted but the message to start could not reach the
   agent's terminal, instead of failing silently.
 - Renaming or deleting a stage in the Brief right after deleting a chunk now acts on the stage you clicked, not the
