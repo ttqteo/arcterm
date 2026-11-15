@@ -400,7 +400,13 @@ export function ChunkView({
                     ) : null}
                 </div>
                 {driftLine != null ? (
-                    <div data-jarvis-chunk-drift className="flex items-center gap-2 text-[11px] text-ink-mid">
+                    <div
+                        data-jarvis-chunk-drift={driftLine.gone ? "gone" : "moved"}
+                        className={cn(
+                            "flex items-center gap-2 text-[11px]",
+                            driftLine.gone ? "text-asking" : "text-ink-mid"
+                        )}
+                    >
                         <span title={driftLine.title} className="min-w-0 truncate">
                             {driftLine.text}
                         </span>

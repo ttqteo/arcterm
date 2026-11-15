@@ -100,6 +100,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An initiative chunk not yet done now says when the code has moved since it was written ("Written 23 commits ago:
   check it still holds"), with Mark checked once it is still right. Agents started on a chunk check it against the
   current code before following it, and reread the open chunks after finishing one.
+- An open initiative chunk that names a file now says when that file changed or went away since the chunk was written
+  ("councilstore.ts changed 4 times since this was written"), on the chunk and as a "changed since" or "file gone"
+  chip on its row in the plan. Chunks written before this get the commit of the day they were added, and arcterm
+  checks every initiative on its own every 15 minutes; `wsh effort stale` lists the flagged chunks.
 
 ### Changed
 

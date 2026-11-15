@@ -127,17 +127,28 @@ func TestFormatEffortShowPrintsOpenChunksBase(t *testing.T) {
 		{Label: "B", Status: "pending", BaseCommit: sha},
 		{Label: "C", Status: "pending", BaseCommit: sha},
 		{Label: "D", Status: "blocked", BaseCommit: sha},
-		{Label: "E", Status: "pending"}, // written before bases were kept
+		{Label: "E", Status: "pending"}, // written before bases were kept, unplaceable
+		{Label: "F", Status: "pending"}, // written before bases were kept, placed by its add event
 	}}
-	behind := map[string]int{"B": 23, "C": 0}
-	drift := func(label string) (int, bool) { n, ok := behind[label]; return n, ok }
+	drifts := map[string]*wshrpc.CommandEffortChunkDriftRtnData{
+		"B": {Known: true, Base: sha, Behind: 23, Files: []wshrpc.EffortStaleFile{
+			{Mention: "IMAGE.md", Gone: true},
+			{Mention: "old.ts", Gone: true, RenamedTo: "src/new.ts"},
+			{Mention: "store.ts", Changes: 4},
+			{Mention: "a.go", Changes: 1},
+		}},
+		"C": {Known: true, Base: sha},
+		"F": {Known: true, Base: "fedcba9876543210", Inferred: true, Behind: 1},
+	}
+	drift := func(label string) *wshrpc.CommandEffortChunkDriftRtnData { return drifts[label] }
 	got := formatEffortShowWith(e, drift)
-	want := "# T (active) — 1/5\n" +
+	want := "# T (active) — 1/6\n" +
 		"  1. [done] A\n" +
-		"  2. [pending] B (written at 012345678, 23 commits ago)\n" +
+		"  2. [pending] B (written at 012345678, 23 commits ago; IMAGE.md deleted, old.ts renamed to src/new.ts, store.ts changed 4 times, a.go changed once)\n" +
 		"  3. [pending] C (written at 012345678, the code has not moved since)\n" +
 		"  4. [blocked] D (written at 012345678)\n" + // drift unknown: the base alone
-		"  5. [pending] E\n"
+		"  5. [pending] E\n" +
+		"  6. [pending] F (written around fedcba987, 1 commit ago)\n"
 	if got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
@@ -231,5 +242,24 @@ func TestTopicEffortsKeepsOnlyParents(t *testing.T) {
 func TestEffortListHasTopicsFlag(t *testing.T) {
 	if effortListCmd.Flags().Lookup("topics") == nil {
 		t.Fatal("`effort list` has no --topics flag")
+	}
+}
+
+func TestFormatEffortStale(t *testing.T) {
+	if got := formatEffortStale(nil); got != "No open chunk names a file that changed since it was written.\n" {
+		t.Fatalf("empty: %q", got)
+	}
+	got := formatEffortStale([]wshrpc.EffortStaleEntry{
+		{EffortOID: "e1", Title: "Quiet", Chunks: []wshrpc.EffortChunkStale{}},
+		{EffortOID: "e2", Title: "Busy", Chunks: []wshrpc.EffortChunkStale{
+			{Chunk: "fix store.ts", Index: 3, Base: "0123456789abcdef", Inferred: true, Landed: 12, Files: []wshrpc.EffortStaleFile{{Mention: "store.ts", Changes: 2}}},
+		}},
+	})
+	want := "# Busy (effort:e2)\n" +
+		"  3. fix store.ts\n" +
+		"      written around 012345678, 12 landed since: store.ts changed 2 times\n" +
+		"\n1 chunks to recheck: rename, note or skip each, or `wsh effort chunk recheck` when it still holds.\n"
+	if got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
