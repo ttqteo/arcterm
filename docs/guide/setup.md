@@ -130,7 +130,7 @@ Chi tiết cần biết:
 
 ### Skills đi kèm arcterm
 
-arcterm mang theo mười một skill, được đưa vào `<vault>/skills/` ở mỗi lần đồng bộ (nên chúng luôn nằm ở nhóm **Ships with arcterm**) và từ đó chiếu vào mọi harness:
+arcterm mang theo mười ba skill, được đưa vào `<vault>/skills/` ở mỗi lần đồng bộ (nên chúng luôn nằm ở nhóm **Ships with arcterm**) và từ đó chiếu vào mọi harness:
 
 | Skill | Dùng khi |
 |---|---|
@@ -145,8 +145,10 @@ arcterm mang theo mười một skill, được đưa vào `<vault>/skills/` ở
 | `arc:detach` | Agent khởi động dev server, database hay watcher mà bạn còn dùng tiếp (`wsh detach`). |
 | `arc:learn` | Bạn sửa agent hoặc dặn "từ giờ luôn…"; lời đó thành một luật chờ bạn duyệt (`wsh learn note`). |
 | `arc:notes` | Bạn bảo agent ghi lại một điều (`wsh note add`). |
+| `arc:steps` | Agent bắt đầu việc từ ba bước trở lên; Chat hiện các bước thành checklist (khối `arc-steps`; Chat chỉ vẽ nó cho agent Claude Code). |
+| `arc:visual` | Một biểu đồ, hình minh họa hay widget nhỏ giải thích tốt hơn chữ; Chat vẽ nó ngay trong cuộc trò chuyện (khối `arc-visual`; Chat chỉ vẽ nó cho agent Claude Code). |
 
-Với Claude Code, các skill này nằm trong arc mod (`~/.arc/claude-mod/skills/`, kèm luật bạn đã duyệt qua `wsh learn`) nên hiện tên `arc:<skill>`; harness khác (codex, pi…) đọc chúng từ vault với tên không có prefix (`runs`, `cockpit`, `initiatives`, `doc-review`, `handoff`, `design`, `brainstorm`, `council`, `detach`, `learn`, `notes`).
+Với Claude Code, các skill này nằm trong arc mod (`~/.arc/claude-mod/skills/`, kèm luật bạn đã duyệt qua `wsh learn`) nên hiện tên `arc:<skill>`; harness khác (codex, pi…) đọc chúng từ vault với tên không có prefix (`runs`, `cockpit`, `initiatives`, `doc-review`, `handoff`, `design`, `brainstorm`, `council`, `detach`, `learn`, `notes`, `steps`, `visual`).
 
 Chúng dạy agent cách dùng `wsh` và các quy ước của cockpit; xem [Tích hợp agent](agent-integration.md#skills-đi-kèm).
 

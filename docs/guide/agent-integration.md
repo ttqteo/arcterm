@@ -130,8 +130,10 @@ arcterm mang theo vài skill dạy agent dùng `wsh` và quy ước của cockpi
 | `arc:detach` | Chạy dev server, database hay watcher bằng `wsh detach` để nó sống tiếp khi terminal đóng hay arcterm khởi động lại |
 | `arc:learn` | Ghi lại lời sửa hay lời dặn lặp lại của bạn (`wsh learn note`) để nó thành một luật bạn duyệt |
 | `arc:notes` | Viết một ghi chú khi bạn bảo "note lại" (`wsh note add`); ghi chú nằm trong Search → Notes |
+| `arc:steps` | Với việc từ ba bước trở lên, viết các bước thành một khối `arc-steps` trong câu trả lời và viết lại cả khối mỗi khi một bước đổi, để Chat hiện kế hoạch thành checklist; Chat chỉ vẽ khối này cho agent Claude Code |
+| `arc:visual` | Khi một biểu đồ, hình minh họa, widget tương tác, quiz hay bản phác UI nhỏ giải thích tốt hơn chữ, viết một file HTML dưới `~/.arc/visuals` và nêu nó trong khối `arc-visual` để Chat vẽ ngay trong cuộc trò chuyện; Chat chỉ vẽ khối này cho agent Claude Code |
 
-Với Claude Code, các skill này nằm trong arc mod (`~/.arc/claude-mod/skills/`, kèm luật bạn đã duyệt qua `wsh learn`) nên hiện tên `arc:<skill>`; harness khác (codex, pi…) đọc chúng từ vault với tên không có prefix (`runs`, `cockpit`, `initiatives`, `doc-review`, `handoff`, `design`, `brainstorm`, `council`, `detach`, `learn`, `notes`).
+Với Claude Code, các skill này nằm trong arc mod (`~/.arc/claude-mod/skills/`, kèm luật bạn đã duyệt qua `wsh learn`) nên hiện tên `arc:<skill>`; harness khác (codex, pi…) đọc chúng từ vault với tên không có prefix (`runs`, `cockpit`, `initiatives`, `doc-review`, `handoff`, `design`, `brainstorm`, `council`, `detach`, `learn`, `notes`, `steps`, `visual`).
 
 ## Xem thêm
 
