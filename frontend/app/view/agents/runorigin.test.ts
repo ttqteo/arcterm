@@ -8,6 +8,7 @@ import {
     originRunInfo,
     runOrigin,
     runsStartedBy,
+    startedRunsShown,
     startedRunsText,
     type OriginRun,
 } from "./runorigin";
@@ -122,6 +123,23 @@ describe("startedRunsText", () => {
         const done = { goal: "b", status: "done" };
         expect(startedRunsText([going, done, done])).toBe("3 runs, 1 active");
         expect(startedRunsText([done, done])).toBe("2 runs");
+    });
+
+    it("leaves cancelled runs out of the count", () => {
+        const going = { goal: "a", status: "executing" };
+        const done = { goal: "b", status: "done" };
+        const cancelled = { goal: "c", status: "cancelled" };
+        expect(startedRunsText([going, done, cancelled])).toBe("2 runs, 1 active");
+        // one left once the cancelled one is out reads by its goal
+        expect(startedRunsText([going, cancelled, cancelled])).toBe("a");
+    });
+
+    it("reads the newest cancelled run, marked, when cancelled runs are all there is", () => {
+        const old = { goal: "old plan", status: "cancelled", createdts: 1 };
+        const fresh = { goal: "new plan\nmore", status: "cancelled", createdts: 5 };
+        expect(startedRunsText([old, fresh])).toBe("new plan · cancelled");
+        expect(startedRunsShown([old, fresh])).toEqual([fresh]);
+        expect(startedRunsShown([])).toEqual([]);
     });
 });
 
