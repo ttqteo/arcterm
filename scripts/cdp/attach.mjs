@@ -113,7 +113,25 @@ function connect(wsUrl) {
     });
 }
 
-async function pickTarget(port) {
+// the app's other windows have pages of their own, listed beside the main window's in the same /json/list: the tray
+// popover (tray.html) and the Sidecar window (sidecar.html). A scenario drives the main page, so the pick skips them.
+const SECONDARY_PAGE_URL = /\/(?:tray|sidecar)\.html(?:[?#]|$)/i;
+
+// The page every scenario attaches to: the main window's. Prefers the app's own url, then any other page, and never a
+// secondary window's page, which may be listed first. undefined when no main page is open.
+export function pickMainTarget(targets) {
+    const pages = targets.filter((t) => t.type === "page" && !SECONDARY_PAGE_URL.test(t.url ?? ""));
+    return pages.find((t) => /localhost:5174|wave|arc/i.test(t.url ?? "")) ?? pages[0];
+}
+
+// The first page target whose url matches (a RegExp, or a string it contains): how a scenario finds a secondary
+// window's page, such as /sidecar\.html/.
+export function findPageByUrl(targets, match) {
+    const hit = (url) => (match instanceof RegExp ? match.test(url) : url.includes(match));
+    return targets.find((t) => t.type === "page" && hit(t.url ?? ""));
+}
+
+async function listTargets(port) {
     let res;
     try {
         res = await fetch(`http://localhost:${port}/json/list`, { signal: AbortSignal.timeout(5000) });
@@ -126,21 +144,36 @@ async function pickTarget(port) {
                 `(task dev; the flag is dev-only in src-tauri/src/main.rs)`
         );
     }
-    const targets = await res.json();
-    return (
-        targets.find((t) => t.type === "page" && /localhost:5174|wave|arc/i.test(t.url ?? "")) ??
-        targets.find((t) => t.type === "page")
-    );
+    return res.json();
 }
 
 export async function attach(port = 9222) {
-    const target = await pickTarget(port);
+    const target = pickMainTarget(await listTargets(port));
     if (!target) {
         throw new Error(
             `no page target on :${port} — is the dev app running with the debug flag? ` +
                 `(task dev; the flag is dev-only in src-tauri/src/main.rs)`
         );
     }
+    return attachTarget(target);
+}
+
+// Attaches to another window's page by url match on the harness's CDP port (CDP_PORT, default 9222), waiting up to
+// waitMs for it to open: Sidecar's window opens a moment after the command that opens it. The handle is attach()'s, with
+// pageReady (a JS expression, default: the main page's nav and RPC client) deciding when reload() and ready() are done,
+// and shots (default: its own list) the array shot() records into, so a scenario can share the main handle's contact sheet.
+export async function attachByUrl(match, { port = Number(process.env.CDP_PORT) || 9222, waitMs = 15_000, pageReady, shots } = {}) {
+    for (const start = Date.now(); ; ) {
+        const target = findPageByUrl(await listTargets(port), match);
+        if (target) return attachTarget(target, { pageReady, shots });
+        if (Date.now() - start >= waitMs) {
+            throw new Error(`no page matching ${match} on :${port} after ${waitMs / 1000}s`);
+        }
+        await sleep(250);
+    }
+}
+
+async function attachTarget(target, { pageReady = PAGE_READY, shots = [] } = {}) {
     const client = await connect(target.webSocketDebuggerUrl);
     await client.send("Runtime.enable");
     await client.send("Page.enable");
@@ -152,8 +185,6 @@ export async function attach(port = 9222) {
         }
         return x.result?.value;
     }
-
-    const shots = [];
 
     return {
         url: target.url,
@@ -170,11 +201,11 @@ export async function attach(port = 9222) {
         // the nav has rendered. Polling the nav alone could read the old page before the reload commits.
         async reload() {
             await ev("window.__cdpReloading = true; location.reload()");
-            const booted = await waitFor(ev, `!window.__cdpReloading && ${PAGE_READY}`, NAV_WAIT_MS);
+            const booted = await waitFor(ev, `!window.__cdpReloading && ${pageReady}`, NAV_WAIT_MS);
             if (!booted) throw new Error(`the page did not render its nav within ${NAV_WAIT_MS / 1000}s of a reload`);
         },
-        // true once the page can be driven (PAGE_READY), false past ms: a scenario that starts before then fails on it
-        ready: (ms = NAV_WAIT_MS) => waitFor(ev, PAGE_READY, ms),
+        // true once the page can be driven (pageReady), false past ms: a scenario that starts before then fails on it
+        ready: (ms = NAV_WAIT_MS) => waitFor(ev, pageReady, ms),
         async goto(surface) {
             const label = SURFACE_LABEL[surface];
             if (!label) throw new Error(`unknown surface "${surface}"`);

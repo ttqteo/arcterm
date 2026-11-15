@@ -101,6 +101,7 @@ import overlaysFrostScenarios from "./scenarios-overlays-frost.mjs";
 import paletteBrainstormResumeScenarios from "./scenarios-palette-brainstorm-resume.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
 import setupInstructionsScenarios from "./scenarios-setup-instructions.mjs";
+import sidecarScenarios from "./scenarios-sidecar.mjs";
 import surfacesSpringScenarios from "./scenarios-surfaces-spring.mjs";
 import terminalStatusLineScenarios from "./scenarios-terminal-status-line.mjs";
 import usageLensScenarios from "./scenarios-usage-lens.mjs";
@@ -69995,6 +69996,7 @@ export const SCENARIOS = [
     ...agentSubagentsScenarios(RT_KIT),
     ...modalFocusHomeScenarios(RT_KIT),
     ...parkedLaunchScenarios(),
+    ...sidecarScenarios(),
     ...terminalStatusLineScenarios(RT_KIT),
     ...jarvisCardsScenarios(JARVIS_KIT),
     ...jarvisActivityScenarios(JARVIS_KIT),

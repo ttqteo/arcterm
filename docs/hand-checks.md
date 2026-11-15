@@ -21,6 +21,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Sidecar on the same screen, at the same frame, full screen, without taking the focus from the main window. Close
   Sidecar with its own close button, quit, launch → it stays shut. Quit with Sidecar maximized, unplug that screen,
   launch → Sidecar comes up maximized on the main window's screen. Commit: feat(sidecar) Sidecar reopens as last time
+- [ ] (arcterm) **Sidecar will not drag below 340×440.** The `sidecar-wall` scenario cannot check it: on Windows the
+  host's `min_inner_size` clamps a person dragging an edge, not a programmatic `set_size` (a live run set 200×200 and read
+  200×207 back), so step 2 only checks the page's own window calls. Open Sidecar, drag its bottom-right corner toward the
+  top-left → it stops at 340×440 and the wall still draws whole tiles (no tile under 300 px wide). Commit: test(sidecar)
+  the sidecar-wall CDP scenario
 - [ ] (arcterm) **Part 1 of Sidecar has no release-build RAM measurement.** The dev prototype read about 80 MB for the
   slim page against the spec's 100 MB budget. Before part 2 merges, measure a `task tauri:build` with 12 agents
   running: Sidecar's renderer and GPU process in Task Manager (WebView2 processes with the Sidecar window open, minus
