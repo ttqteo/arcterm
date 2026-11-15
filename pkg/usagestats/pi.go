@@ -29,9 +29,21 @@ func piMessageRole(e pisession.Entry) string {
 	return m.Role
 }
 
+// piUsageModel is the model a type:"usage" entry names; pisession keeps only model_change's modelId.
+func piUsageModel(e pisession.Entry) string {
+	var u struct {
+		Model string `json:"model"`
+	}
+	if json.Unmarshal(e.Raw, &u) != nil {
+		return ""
+	}
+	return u.Model
+}
+
 // extractPi parses every physical entry of one Pi v3 session into usage records. Billing sources
-// are assistant messages, tool-result messages, compaction, and branch-summary records — exactly
-// the four entry kinds that carry billed usage. The current provider/model is tracked forward
+// are assistant messages, tool-result messages, compaction, branch-summary and usage records —
+// exactly the five entry kinds that carry billed usage. A usage record is billed under its own
+// provider/model. The current provider/model is tracked forward
 // through the file: model_change entries switch it, and assistant messages that carry their own
 // provider/model update it (a record inherits the current provider/model when it lacks one).
 // Reasoning is a subset of output and cacheWrite1h a subset of cache-write usage, so both are
@@ -64,6 +76,8 @@ func extractPi(file *pisession.File, cutoff time.Time) []Record {
 			}
 		case "compaction", "branch_summary":
 			// inherit the current provider/model
+		case "usage":
+			// billed outside the conversation (pi's cache warmer); it names its own model below
 		default:
 			continue
 		}
@@ -86,8 +100,14 @@ func extractPi(file *pisession.File, cutoff time.Time) []Record {
 			output = 0
 		}
 		cost := e.Usage.Cost.Total
+		recProvider, recModel := provider, model
+		if e.Type == "usage" {
+			recProvider, recModel = e.Provider, piUsageModel(e)
+		}
 		out = append(out, Record{
-			TS: ts, Harness: "pi", Provider: provider, Model: model,
+			// a fork copies its parent's entries verbatim; the 8-hex id alone collides across sessions
+			ID: "pi:" + e.ID + ":" + e.Timestamp,
+			TS: ts, Harness: "pi", Provider: recProvider, Model: recModel,
 			Input: e.Usage.Input, Output: output, Reasoning: reasoning,
 			CacheRead: e.Usage.CacheRead, CacheCreate: e.Usage.CacheWrite,
 			CacheCreate1h: e.Usage.CacheWrite1h, ReportedCostUsd: &cost,

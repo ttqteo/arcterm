@@ -294,7 +294,9 @@ export class TermViewModel implements ViewModel {
 
     sendDataToController(data: string) {
         const b64data = stringToBase64(data);
-        RpcApi.ControllerInputCommand(TabRpcClient, { blockid: this.blockId, inputdata64: b64data });
+        RpcApi.ControllerInputCommand(TabRpcClient, { blockid: this.blockId, inputdata64: b64data }).catch((e) =>
+            console.error("terminal input", this.blockId, e)
+        );
     }
 
     getTermRenderer(): "webgl" | "dom" {

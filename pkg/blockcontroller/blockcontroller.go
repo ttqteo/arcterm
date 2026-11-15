@@ -6,6 +6,7 @@ package blockcontroller
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -396,21 +397,33 @@ func isLocalConnName(connName string) bool {
 	return strings.HasPrefix(connName, "local:") || connName == "local" || connName == ""
 }
 
+var errNoController = errors.New("no controller found for block")
+
 func SendInput(blockId string, inputUnion *BlockInputUnion) error {
 	err := sendInput(blockId, inputUnion)
 	if err != nil && inputUnion.TermSize != nil {
 		// no process took the resize: keep it, so the next one starts at the terminal's size
-		if perr := persistTermSize(blockId, *inputUnion.TermSize); perr != nil {
+		perr := persistTermSize(blockId, *inputUnion.TermSize)
+		if perr != nil {
 			log.Printf("error keeping term size for block %s: %v\n", blockId, perr)
+		}
+		// a resize alone to a block with nothing running is kept, not a failure: a terminal resizes before its
+		// process starts. A resize that could not be kept is still reported
+		if errors.Is(err, errNoController) && isResizeOnly(inputUnion) {
+			return perr
 		}
 	}
 	return err
 }
 
+func isResizeOnly(inputUnion *BlockInputUnion) bool {
+	return inputUnion.TermSize != nil && len(inputUnion.InputData) == 0 && inputUnion.SigName == ""
+}
+
 func sendInput(blockId string, inputUnion *BlockInputUnion) error {
 	controller := getController(blockId)
 	if controller == nil {
-		return fmt.Errorf("no controller found for block %s", blockId)
+		return fmt.Errorf("%w %s", errNoController, blockId)
 	}
 	noteInput(blockId, inputUnion.InputData, time.Now())
 	return controller.SendInput(inputUnion)

@@ -632,6 +632,102 @@ func TestStreamTranscriptFileCreatedLater(t *testing.T) {
 	}
 }
 
+// runTranscriptStream starts streamTranscript on path and returns its channel and a channel that yields
+// its return value.
+func runTranscriptStream(ctx context.Context, path string) (chan wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate], chan error) {
+	ch := make(chan wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate], 16)
+	done := make(chan error, 1)
+	go func() { done <- streamTranscript(ctx, path, 100, ch) }()
+	return ch, done
+}
+
+// collectTranscriptLines reads chunks until want lines arrived, failing on an error, an early return or
+// the timeout.
+func collectTranscriptLines(t *testing.T, ch chan wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate], done chan error, want int, timeout time.Duration) []string {
+	t.Helper()
+	var got []string
+	deadline := time.After(timeout)
+	for len(got) < want {
+		select {
+		case msg := <-ch:
+			if msg.Error != nil {
+				t.Fatalf("stream error: %v", msg.Error)
+			}
+			got = append(got, msg.Response.Lines...)
+		case err := <-done:
+			t.Fatalf("streamTranscript returned early after %v: %v", got, err)
+		case <-deadline:
+			t.Fatalf("timeout: want %d lines, got %v", want, got)
+		}
+	}
+	return got
+}
+
+// A run member reports its transcript path before Claude creates ~/.claude/projects/<slug>/, so the
+// stream must wait for the missing folders (here two levels) rather than fail: ported from the fork's
+// 828356a12, whose fix watches the nearest existing ancestor. Ours polls for the file instead (see
+// watchTranscriptFile), which covers a missing folder the same way.
+func TestStreamTranscriptWaitsForMissingDir(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "a", "b")
+	path := filepath.Join(dir, "s.jsonl")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, done := runTranscriptStream(ctx, path)
+
+	select {
+	case msg := <-ch:
+		if msg.Error != nil || len(msg.Response.Lines) != 0 {
+			t.Fatalf("want one empty backlog, got %+v", msg)
+		}
+	case err := <-done:
+		t.Fatalf("streamTranscript returned on a missing folder: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for empty backlog")
+	}
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, path, `{"type":"user","n":1}`+"\n"+`{"type":"user","n":2}`+"\n")
+	got := collectTranscriptLines(t, ch, done, 2, 5*time.Second)
+	if len(got) != 2 {
+		t.Fatalf("want exactly 2 lines, got %v", got)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("cancel: want nil, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("streamTranscript did not return after cancel")
+	}
+}
+
+// the folder and a line can both land before the stream finds the file: the first read after it appears
+// must pick the line up.
+func TestStreamTranscriptReadsLinesWrittenBeforeWatch(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "a")
+	path := filepath.Join(dir, "s.jsonl")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, done := runTranscriptStream(ctx, path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, path, `{"type":"user","n":1}`+"\n")
+
+	got := collectTranscriptLines(t, ch, done, 1, 5*time.Second)
+	if len(got) != 1 {
+		t.Fatalf("want exactly 1 line, got %v", got)
+	}
+}
+
 // openFDCount counts this process's open descriptors through /dev/fd (macOS and Linux both have it).
 func openFDCount(t *testing.T) int {
 	t.Helper()

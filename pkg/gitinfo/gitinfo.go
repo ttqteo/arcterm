@@ -84,12 +84,24 @@ func describeGitError(args []string, err error) string {
 	return msg
 }
 
-func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
-	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
-	defer cancel()
+// repoFacts is what GetChanges needs to know about cwd's checkout before listing changes.
+type repoFacts struct {
+	isRepo               bool
+	prefix, head, branch string
+}
+
+// readRepoFacts asks rev-parse for all four facts in one process. With an unborn HEAD that call fails,
+// so it falls back to asking one at a time, which tolerates the missing HEAD.
+func readRepoFacts(ctx context.Context, cwd string) repoFacts {
+	out, err := run(ctx, cwd, "rev-parse", "--is-inside-work-tree", "--show-prefix", "HEAD", "--abbrev-ref", "HEAD")
+	// one line per flag; the prefix line is empty at the root, so the output is not trimmed first
+	lines := strings.Split(strings.ReplaceAll(out, "\r\n", "\n"), "\n")
+	if err == nil && len(lines) >= 4 {
+		return repoFacts{isRepo: lines[0] == "true", prefix: lines[1], head: lines[2], branch: lines[3]}
+	}
 	inside, err := run(ctx, cwd, "rev-parse", "--is-inside-work-tree")
 	if err != nil || strings.TrimSpace(inside) != "true" {
-		return &Changes{IsRepo: false}, nil
+		return repoFacts{}
 	}
 	branch, _ := run(ctx, cwd, "rev-parse", "--abbrev-ref", "HEAD")
 	// A repository with no commits has no HEAD, which is not a failure of this read — every file there
@@ -100,13 +112,24 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 	if out, herr := run(ctx, cwd, "rev-parse", "HEAD"); herr == nil {
 		head = strings.TrimSpace(out)
 	}
+	prefix, _ := run(ctx, cwd, "rev-parse", "--show-prefix")
+	return repoFacts{isRepo: true, prefix: strings.TrimSpace(prefix), head: head, branch: strings.TrimSpace(branch)}
+}
+
+func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	facts := readRepoFacts(ctx, cwd)
+	if !facts.isRepo {
+		return &Changes{IsRepo: false}, nil
+	}
+	branch, head := facts.branch, facts.head
 	up, ahead, behind := upstreamCounts(ctx, cwd)
 	// cwd's path within the repo (e.g. "services/foo/"), empty when cwd is the repo root. When cwd is
 	// a subdirectory — a microservice inside a monorepo — this scopes the surface to cwd's subtree and
 	// makes every path cwd-relative, so a path fed back as a `git -C cwd` pathspec
 	// resolves. Without it, `status` prints repo-root-relative paths that don't round-trip.
-	prefix, _ := run(ctx, cwd, "rev-parse", "--show-prefix")
-	prefix = strings.TrimSpace(prefix)
+	prefix := facts.prefix
 	// `-- .` scopes to cwd's subtree; status has no --relative, so we strip the prefix ourselves below.
 	// `-uall` lists untracked files individually instead of collapsing a wholly-new directory into one
 	// "dir/" entry — that collapsed row can't be diffed (a directory has no file content to diff) and
@@ -114,7 +137,10 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 	// a failed status in a work tree (a corrupt .git/index) is a failed read, not "not a repository": the error carries
 	// git's own words, which a bare exit status lacks
 	statusArgs := []string{"status", "--porcelain=v1", "-z", "-uall", "--", "."}
-	statusZ, err := run(ctx, cwd, statusArgs...)
+	// --no-optional-locks: this read runs in the background, and refreshing the index would take
+	// index.lock out from under an agent committing in the same checkout. It is left out of statusArgs so
+	// the error above still names the command as it always did.
+	statusZ, err := run(ctx, cwd, append([]string{"--no-optional-locks"}, statusArgs...)...)
 	if err != nil {
 		return nil, errors.New(describeGitError(statusArgs, err))
 	}

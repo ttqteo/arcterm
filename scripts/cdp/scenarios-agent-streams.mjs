@@ -8,7 +8,7 @@
 // background subagent spawn with its own file. Nothing runs and nothing is written into ~/.claude/projects.
 // kit is scenarios.mjs's RT_KIT (waveService, polishWaitFor).
 
-import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -39,6 +39,7 @@ const SUB = {
     read: "config.ts",
 };
 const WAIT_MS = 15_000;
+const STREAM_OPEN_MS = 1_500;
 
 const RAIL = `document.querySelector('aside[aria-label="Agent details"]')`;
 const COCKPIT_CARD = (id) => `document.querySelector('[data-cockpit-surface] [data-agent-id="${id}"]')`;
@@ -134,7 +135,7 @@ export default function (kit) {
                         globalStore.set(S.railSectionOpenAtom, { ...prev.sections, subagents: true, bgtasks: true, status: true });
                         return prev;`
                     );
-                    await setRoster(h, [
+                    ctx.roster = [
                         {
                             id: tabId,
                             name: AGENT_NAME,
@@ -147,7 +148,8 @@ export default function (kit) {
                             blockId,
                             transcriptPath: ctx.path,
                         },
-                    ]);
+                    ];
+                    await setRoster(h, ctx.roster);
                     await focusAgent(h, tabId);
                 } catch (e) {
                     ctx.arrangeError = String(e?.message ?? e);
@@ -205,6 +207,49 @@ export default function (kit) {
                         "3. after a Cockpit visit (its card showed the transcript) and back, the rail's Background tasks, Subagents and Tools stay and the stream still delivers",
                         carded && !back.cockpit && hasBg(back) && hasSub(back) && hasTools(back, ["read", "edited", "ran", "grep", "glob"]),
                         JSON.stringify({ carded, ...back })
+                    );
+
+                    // a run member reports its transcript path before Claude makes the project folder (two levels
+                    // here), so the stream opens on a missing folder and must still deliver once it appears (ported
+                    // from the fork's 828356a12 step 4). No blockId: a made-up block fails its controller resync and
+                    // reads failed to start; a working agent with a transcript path is streamed by the shell
+                    const lateId = `${ctx.id}-late`;
+                    const lateDir = join(ctx.dir, "late-project", "nested");
+                    const latePath = join(lateDir, "late.jsonl");
+                    const lateLines = ["Late folder fixture: first line.", "Late folder fixture: second line."];
+                    await setRoster(h, [
+                        ...ctx.roster,
+                        {
+                            id: lateId,
+                            name: `${AGENT_NAME} late`,
+                            project: "fx-streams",
+                            task: "",
+                            state: "working",
+                            agent: "claude",
+                            model: "opus",
+                            activeMs: 60_000,
+                            transcriptPath: latePath,
+                        },
+                    ]);
+                    await h.goto("cockpit");
+                    // no card to wait for here: the Cockpit keeps a card with no transcript entries off its grid until
+                    // one arrives (cardHasContent), and the fork's card shows at once. The shell starts the stream once
+                    // the roster has the agent, so give its rpc time to reach the backend before the folder exists
+                    await new Promise((r) => setTimeout(r, STREAM_OPEN_MS));
+                    const missingAtOpen = !existsSync(join(ctx.dir, "late-project"));
+                    mkdirSync(lateDir, { recursive: true });
+                    appendFileSync(latePath, lateLines.map((t) => assistantText(t, o)).join("\n") + "\n");
+                    const lateText = `(${COCKPIT_CARD(lateId)}?.textContent ?? "")`;
+                    const rendered = await polishWaitFor(
+                        h,
+                        `${JSON.stringify(lateLines)}.every((t) => ${lateText}.includes(t))`,
+                        WAIT_MS
+                    );
+                    await h.shot("cdp-shots/agent-streams-offsurface-5-late-folder.png");
+                    rec(
+                        "4. an agent whose transcript folder did not exist when its stream opened shows both lines written once the folder appears",
+                        missingAtOpen && rendered,
+                        JSON.stringify({ missingAtOpen, rendered, card: await h.ev(lateText) })
                     );
                 } catch (e) {
                     rec("the scenario ran to its end", false, String(e?.message ?? e));

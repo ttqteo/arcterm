@@ -9,6 +9,7 @@ package usagestats
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -442,5 +443,52 @@ func TestTranscriptUsagePiNoSubagents(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Input != 100 || got[0].Output != 50 || got[0].Msgs != 1 {
 		t.Fatalf("buckets = %+v, want the parent's single 100/50 bucket", got)
+	}
+}
+
+// pi's /fork copies the parent's entries, ids, timestamps and usage included, into a new session file:
+// that usage was billed once. A separate session that happens to reuse an 8-hex entry id is still billed.
+// Ported from the fork's 81cfba592.
+func TestScanRootsBillsForkedPiEntriesOnce(t *testing.T) {
+	piRoot := filepath.Join(t.TempDir(), "pi", "agent", "sessions")
+	if err := os.MkdirAll(piRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fork := strings.Replace(piFixture, `"id":"s1",`, `"id":"s2","parentSession":"s.jsonl",`, 1)
+	other := strings.ReplaceAll(strings.Replace(piFixture, `"id":"s1",`, `"id":"s3",`, 1), "2026-08-11T03:", "2026-08-12T03:")
+	for name, content := range map[string]string{"s.jsonl": piFixture, "s2.jsonl": fork, "s3.jsonl": other} {
+		if err := os.WriteFile(filepath.Join(piRoot, name), []byte(content+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ := scanRoots(filepath.Join(piRoot, "claude-missing"), filepath.Join(piRoot, "codex-missing"), filepath.Join(piRoot, "opencode-missing"), piRoot, filepath.Join(piRoot, "agy-missing"), 0)
+	input, msgs := 0, 0
+	for _, b := range got {
+		input += b.Input
+		msgs += b.Msgs
+	}
+	if want := 2 * (100 + 40 + 5 + 300 + 15); input != want || msgs != 10 {
+		t.Errorf("input = %d, msgs = %d; want %d, 10 (the fork's copies billed once)", input, msgs, want)
+	}
+}
+
+// pi's cache warmer bills a request outside the conversation as a type:"usage" entry naming its own
+// model; it is billed under that model and switches the current one for nothing after it.
+// Ported from the fork's 7f0627eb4.
+func TestExtractPi_BillsUsageEntries(t *testing.T) {
+	content := `{"type":"session","version":3,"id":"s1","timestamp":"2026-08-11T03:00:00Z","cwd":"C:\repo"}` + "\n" +
+		`{"type":"model_change","id":"mc1","parentId":null,"timestamp":"2026-08-11T03:00:01Z","provider":"openai-codex","modelId":"gpt-5.5"}` + "\n" +
+		`{"type":"usage","id":"w1","parentId":"mc1","timestamp":"2026-08-11T03:05:00Z","kind":"cache_warm","provider":"anthropic","model":"claude-opus-5-5","usage":{"input":3,"output":1,"cacheRead":900,"cacheWrite":0,"totalTokens":904,"cost":{"total":0.02}}}` + "\n" +
+		`{"type":"compaction","id":"c1","parentId":"w1","timestamp":"2026-08-11T03:06:00Z","usage":{"input":7,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":8,"cost":{"total":0.001}}}`
+	records := extractPi(parsePiFixture(t, content), time.Time{})
+	if len(records) != 2 {
+		t.Fatalf("want the usage entry and the compaction billed, got %d: %+v", len(records), records)
+	}
+	warm, after := records[0], records[1]
+	if warm.Provider != "anthropic" || warm.Model != "claude-opus-5-5" || warm.CacheRead != 900 || *warm.ReportedCostUsd != 0.02 {
+		t.Errorf("usage record = %+v", warm)
+	}
+	if after.Provider != "openai-codex" || after.Model != "gpt-5.5" {
+		t.Errorf("the record after a usage entry = %s/%s, want the current openai-codex/gpt-5.5", after.Provider, after.Model)
 	}
 }

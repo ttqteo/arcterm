@@ -6,6 +6,7 @@ package agentsessions
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -473,6 +474,108 @@ func TestExtractSession_opencode(t *testing.T) {
 	}
 	if s == nil || s.ID != "ses_abc" {
 		t.Fatalf("want ses_abc, got %+v", s)
+	}
+}
+
+// opencodeCandidate is ses_abc's info file in a fresh opencode tree, as a scan candidate with nothing cached.
+func opencodeCandidate(t *testing.T) (candidate, string) {
+	t.Helper()
+	storage := buildOpencodeTree(t, t.TempDir())
+	path := filepath.Join(storage, "session", "proj1", "ses_abc.json")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return candidate{path: path, stem: "ses_abc", mtime: info.ModTime(), size: info.Size(), p: opencodeProvider(storage)}, storage
+}
+
+// scanCached reports whether the scan cache holds c's current state.
+func scanCached(c candidate) bool {
+	scanCacheMu.Lock()
+	defer scanCacheMu.Unlock()
+	e, ok := scanCache[c.path]
+	return ok && e.mtime.Equal(c.mtime) && e.size == c.size
+}
+
+// A transient failure reading an opencode session's message or part files (a lock, a handle limit) left an empty
+// or partial session, which the scan cached under an info file whose mtime and size never change again: the
+// session stayed missing or wrong until wavesrv restarted. Ported from the fork's 57dff0eb5.
+func TestOpencodeSessionWhoseMessageReadFailedIsNotCached(t *testing.T) {
+	c, _ := opencodeCandidate(t)
+	orig := readOpencodeFile
+	readOpencodeFile = func(p string) ([]byte, error) {
+		return nil, &fs.PathError{Op: "open", Path: p, Err: fs.ErrPermission}
+	}
+	t.Cleanup(func() { readOpencodeFile = orig })
+	if s, _ := scanSessionCached(c); s != nil {
+		t.Fatalf("a session whose message files could not be read was listed: %+v", s)
+	}
+	if scanCached(c) {
+		t.Fatal("an opencode session whose message files could not be read was cached")
+	}
+	readOpencodeFile = orig
+	if s, _ := scanSessionCached(c); s == nil {
+		t.Fatal("want the session once the read succeeds")
+	}
+	if !scanCached(c) {
+		t.Fatal("a session read in full should be cached")
+	}
+}
+
+func TestOpencodeSessionWhoseMessageDirReadFailedIsNotCached(t *testing.T) {
+	c, _ := opencodeCandidate(t)
+	orig := readOpencodeDir
+	readOpencodeDir = func(p string) ([]os.DirEntry, error) {
+		return nil, &fs.PathError{Op: "open", Path: p, Err: fs.ErrPermission}
+	}
+	t.Cleanup(func() { readOpencodeDir = orig })
+	scanSessionCached(c)
+	if scanCached(c) {
+		t.Fatal("an opencode session whose message dir could not be read was cached")
+	}
+}
+
+func TestOpencodeSessionWithNoMessageDirIsCached(t *testing.T) {
+	c, storage := opencodeCandidate(t)
+	if err := os.RemoveAll(filepath.Join(storage, "message", "ses_abc")); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := scanSessionCached(c); s != nil {
+		t.Fatal("a session with no messages has no task, want no session")
+	}
+	if !scanCached(c) {
+		t.Fatal("a missing message dir is an empty session, want it cached")
+	}
+}
+
+func TestOpencodeSessionWhosePartReadFailedIsNotCached(t *testing.T) {
+	c, storage := opencodeCandidate(t)
+	parts := filepath.Join(storage, "part")
+	orig := readOpencodeFile
+	readOpencodeFile = func(p string) ([]byte, error) {
+		if strings.HasPrefix(p, parts) {
+			return nil, &fs.PathError{Op: "open", Path: p, Err: fs.ErrPermission}
+		}
+		return orig(p)
+	}
+	t.Cleanup(func() { readOpencodeFile = orig })
+	scanSessionCached(c)
+	if scanCached(c) {
+		t.Fatal("an opencode session whose part files could not be read was cached")
+	}
+}
+
+// ExtractSession has no cache, but it reported (nil, nil) for a session it could not read in full, which a caller
+// takes for a file with no session; it now says why.
+func TestExtractSessionReportsAnOpencodeReadFailure(t *testing.T) {
+	c, _ := opencodeCandidate(t)
+	orig := readOpencodeFile
+	readOpencodeFile = func(p string) ([]byte, error) {
+		return nil, &fs.PathError{Op: "open", Path: p, Err: fs.ErrPermission}
+	}
+	t.Cleanup(func() { readOpencodeFile = orig })
+	if s, err := ExtractSession(c.path, "opencode"); err == nil || s != nil {
+		t.Fatalf("ExtractSession = %+v, %v; want the read error", s, err)
 	}
 }
 
