@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An agent waiting on your answer to its question is no longer put to sleep: the question card stayed gone from Chat
+  while the terminal still showed the question.
 - A message sent in Chat to a sleeping agent now leaves the box at once and shows as your bubble with "Waking…" under
   it while the agent comes back, instead of sitting in the box until the wake finished and then popping in. If the
   wake fails, the text and its files go back in the box.

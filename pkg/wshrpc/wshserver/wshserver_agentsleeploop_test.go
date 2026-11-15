@@ -319,6 +319,11 @@ func TestSleepTickSpares(t *testing.T) {
 			w.facts.Tabs[0].OpenAsk = true
 			w.facts.Tabs[0].Status.State = baseds.AgentState_Asking
 		}},
+		{"an agent with a question open whose status reads idle", func(t *testing.T, w *loopWorld) {
+			// the arc mod's card skips agent-hook's PreToolUse asking report, and Claude's idle_prompt reports idle
+			// a minute into the open dialog: only the open ask says it waits on the person
+			w.facts.Tabs[0].OpenAsk = true
+		}},
 		{"a run's worker", func(t *testing.T, w *loopWorld) {
 			run := &waveobj.Run{OID: "run-a", Phases: []waveobj.RunPhase{{WorkerOrefs: []string{"tab:" + agentsTabA}}}}
 			w.facts.Runs = append(w.facts.Runs, run)

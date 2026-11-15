@@ -320,8 +320,11 @@ func (l *sleepLoop) tick(ctx context.Context) {
 		}
 		live[row.blockId] = true
 		rows[row.TabId] = row
-		// raw state: agentsState folds a permission prompt into idle, and an agent waiting on one is not idle
-		idle := row.status.State == baseds.AgentState_Idle
+		// raw state: agentsState folds a permission prompt into idle, and an agent waiting on one is not idle. An
+		// open question is no idle either, whatever its status reads: the arc mod's card skips agent-hook's asking
+		// report, and Claude's idle_prompt reports idle a minute into the open dialog. Slept, the card went and
+		// the question stood unanswerable in the terminal
+		idle := row.status.State == baseds.AgentState_Idle && row.State != wshrpc.AgentsState_Asking
 		c := agentsleep.Candidate{
 			TabId:     row.TabId,
 			BlockId:   row.blockId,
