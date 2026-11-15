@@ -29,6 +29,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A submenu opened the moment its context menu appears now sits beside its row, instead of a few pixels off until
   you reopen it.
 - A reply holding a review verdict no longer shows twice in Chat for a moment while it lands.
+- Notifications no longer cover Jarvis's hologram: while the hologram shows in the corner, they stack just above it.
 - The Office no longer redraws its building over and over, with scrollbars flashing, when the window's size leaves the
   view a fraction of a pixel short of the Office.
 - A file link in Chat that the agent named from a folder it had cd'd into now opens instead of saying "File not found".

@@ -205,7 +205,8 @@ export function HologramView({
             whileHover={{ opacity: 1 }}
             whileFocus={{ opacity: 1 }}
             transition={reduce ? { duration: 0 } : POWER_ON}
-            // round, so the corner of the terminal outside the form still takes clicks
+            // round, so the corner of the terminal outside the form still takes clicks. The bottom is HOLOGRAM_BOTTOM_PX: the
+            // toast stack stands above the form from it (toastStackBottom)
             className="fixed bottom-[40px] right-[18px] z-[60] cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
             style={{ width: sizePx, height: sizePx }}
         >
