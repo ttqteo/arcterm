@@ -104,6 +104,23 @@ describe("brief palette index", () => {
         expect(byKey.get("session:claude:s-1").meta).toBe("done · waveterm · main");
     });
 
+    it("counts an initiative's progress as the band does: a skipped chunk leaves the total", () => {
+        const chunks = [
+            { label: "A", status: "done" },
+            { label: "B", status: "done" },
+            { label: "C", status: "skipped" },
+            { label: "D", status: "pending" },
+        ] as EffortSummary["chunks"];
+        // the summary's total keeps the skipped chunk (it leaves out only a proposed one)
+        const rows = buildBriefIndex({ efforts: [effort({ done: 2, total: 4, chunks })] });
+        expect(rows[0].meta).toBe("active · 2/3 · waveterm");
+        // every chunk skipped: nothing left to count, so no count
+        const allSkipped = [{ label: "A", status: "skipped" }] as EffortSummary["chunks"];
+        expect(buildBriefIndex({ efforts: [effort({ done: 0, total: 1, chunks: allSkipped })] })[0].meta).toBe(
+            "active · waveterm"
+        );
+    });
+
     it("survives absent and empty input lists", () => {
         expect(buildBriefIndex({})).toEqual([]);
         expect(buildBriefIndex({ records: null, efforts: undefined, sessions: null })).toEqual([]);
