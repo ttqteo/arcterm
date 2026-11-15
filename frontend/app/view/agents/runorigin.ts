@@ -113,7 +113,9 @@ function runLink(run: OriginRun): { label: string; title: string } {
 
 /** Pure: the run chip on the session `agentId`'s (its tab id) meta line: where the runs it started with
  *  `wsh runs start` stand, and the plans it queued that have not started. One link reads as itself (`3/5`,
- *  `plan queued #2`, `merged`, `held`); two or more read `2 runs` and point at the newest. Null when there is none.
+ *  `plan queued #2`, `merged`, `held`); two or more read `2 runs` and point at the newest. A cancelled run counts
+ *  for none of them: the chip reads `cancelled` (the newest) only when cancelled runs are all there is. Null when
+ *  there is none.
  *  A queued link names the plan, since the chip also sits on a lead's own working run line: a bare `queued #1` there
  *  read as that run waiting in line, when it is the next part the lead queued. */
 export function originLinks(
@@ -122,9 +124,16 @@ export function originLinks(
     queue: readonly RunQueueEntry[]
 ): OriginLink | null {
     const links: (OriginLink & { ts: number })[] = [];
+    // a cancelled run is not counted among them; it stands for itself only while the session has nothing else
+    const cancelled: (OriginLink & { ts: number })[] = [];
     for (const run of Object.values(runs)) {
         if (run.originId === agentId) {
-            links.push({ ...runLink(run), target: { kind: "run", runId: run.runId }, ts: run.createdTs ?? 0 });
+            const link = {
+                ...runLink(run),
+                target: { kind: "run", runId: run.runId } as const,
+                ts: run.createdTs ?? 0,
+            };
+            (link.label === "cancelled" ? cancelled : links).push(link);
         }
     }
     for (const row of queuedRows(queue, {})) {
@@ -138,14 +147,19 @@ export function originLinks(
             });
         }
     }
+    const newestOf = (of: typeof links) => of.reduce((a, b) => (b.ts > a.ts ? b : a));
     if (links.length === 0) {
-        return null;
+        if (cancelled.length === 0) {
+            return null;
+        }
+        const { label, title, target } = newestOf(cancelled);
+        return { label, title, target };
     }
     if (links.length === 1) {
         const { label, title, target } = links[0];
         return { label, title, target };
     }
-    const newest = links.reduce((a, b) => (b.ts > a.ts ? b : a));
+    const newest = newestOf(links);
     return {
         label: `${links.length} runs`,
         title: `${links.length} runs · newest: ${newest.title}`,

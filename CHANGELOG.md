@@ -33,6 +33,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The run chip on an agent's row in the Agent sidebar no longer counts runs you cancelled: an agent with one live run
+  and one cancelled one shows that live run's progress, not "2 runs". It reads "cancelled" only when every run the
+  agent started was cancelled.
 - Escape closes the Jobs popover (the app bar's heavy-jobs chip) on every surface. Before, on Jarvis, Diff, Usage or
   Code it went back to the Cockpit with the popover still open, and on the Agent surface it could stop a working
   agent's turn.

@@ -221,6 +221,40 @@ describe("originLinks", () => {
             target: { kind: "queued", entryId: "q1" },
         });
     });
+
+    it("leaves a cancelled run out of the count and out of the newest", () => {
+        const runs = byId(
+            run("r1", { createdTs: 100, dag: dag("executing", ["done", "pending"]) }),
+            run("r2", { createdTs: 300, status: "cancelled" })
+        );
+        expect(originLinks("tab-a", runs, [])).toEqual({
+            label: "1/2",
+            title: "Title r1 · 1/2",
+            target: { kind: "run", runId: "r1" },
+        });
+        // the dag's cancelled status counts too, and two live links still read as N runs without it
+        const three = byId(
+            run("r1", { createdTs: 100 }),
+            run("r2", { createdTs: 200 }),
+            run("r3", { createdTs: 300, dag: dag("cancelled", ["pending"]) })
+        );
+        expect(originLinks("tab-a", three, [])).toMatchObject({
+            label: "2 runs",
+            target: { kind: "run", runId: "r2" },
+        });
+    });
+
+    it("reads cancelled, at the newest, when cancelled runs are all the session started", () => {
+        const runs = byId(
+            run("r1", { createdTs: 100, status: "cancelled" }),
+            run("r2", { createdTs: 300, status: "cancelled" })
+        );
+        expect(originLinks("tab-a", runs, [])).toEqual({
+            label: "cancelled",
+            title: "Title r2 · cancelled",
+            target: { kind: "run", runId: "r2" },
+        });
+    });
 });
 
 describe("originRunInfo", () => {
