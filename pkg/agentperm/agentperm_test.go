@@ -399,6 +399,24 @@ func TestNoteStatusRetiresAnsweredQuestion(t *testing.T) {
 	})
 }
 
+// an answer from the cockpit's card types no key and runs no PostToolUse the queue sees: the delivery itself retires
+// the question's request, and only that one
+func TestNoteAskAnswered(t *testing.T) {
+	resetGlobal(t)
+	ask := json.RawMessage(`{"questions":[{"question":"Fold?"}]}`)
+	GlobalRegistry.Raise(testORef, "AskUserQuestion", ask, 1)
+	GlobalRegistry.Raise(testORef, "Bash", bash("two"), 2)
+	if !NoteAskAnswered(testORef) {
+		t.Fatal("an answered question reported no change")
+	}
+	if got := ids(GlobalRegistry.Snapshot(testORef)); !sameStrings(got, []string{"two"}) {
+		t.Fatalf("queue = %v, want only the Bash request", got)
+	}
+	if NoteAskAnswered(testORef) || NoteAskAnswered("") {
+		t.Fatal("an answer with no question queued reported a change")
+	}
+}
+
 // two identical parallel calls are two prompts; the first call's PostToolUse must not take the second, still-pending entry
 func TestIdenticalParallelCalls(t *testing.T) {
 	r := MakeRegistry()

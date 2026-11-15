@@ -340,6 +340,18 @@ func NoteStatus(data *baseds.AgentStatusData) bool {
 	return changed
 }
 
+// NoteAskAnswered applies an answer delivered to oref's question (the cockpit's ask card, Gatekeeper, a dag lead) to
+// the global queue: the question is over, so the request its dialog raised goes. Nothing else retires it in time: an
+// answer from the card types no key, and the arc mod skips the PostToolUse of a question the card raced, so without
+// this the request sat until the agent's next tool call and the chat drew it as a stale card the moment the question
+// left the screen. It reports whether the queue changed.
+func NoteAskAnswered(oref string) bool {
+	if oref == "" {
+		return false
+	}
+	return GlobalRegistry.DropTool(oref, askTool)
+}
+
 // askAnswered reports whether a tool report shows the question oref's queue holds is over: the agent is running
 // tools again and its transcript has no question left without a result. Claude Code writes a call's tool_use before
 // any of its hooks run, so the question is in the transcript while its dialog is up.

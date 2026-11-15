@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A question you answer in Chat no longer leaves a "Wants to use AskUserQuestion" card behind it, which held your
+  next message back until the agent ran another tool.
 - An agent held because the machine is busy no longer also pops a toast over its own held page, where it covered the
   bar's buttons; the page already says it was held and why.
 - The New agent dialog keeps its columns readable in a Float window: project and session names no longer shrink to a

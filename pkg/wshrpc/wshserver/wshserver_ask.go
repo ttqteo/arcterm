@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/agentask"
 	"github.com/wavetermdev/waveterm/pkg/agentobserve"
+	"github.com/wavetermdev/waveterm/pkg/agentperm"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
@@ -290,8 +291,10 @@ func recordAskTransition(oref, askId, kind, detail string) {
 // closes the ask the child raised. DeliverAnswer claims the ask out of the registry but publishes
 // nothing, so without this an answered question stayed on screen until it aged out. The publish goes
 // first: recordAskTransition walks block -> run -> dag against the store, and the dismissal must not
-// wait on it.
+// wait on it. The answer also retires the permission request Claude Code raised for the question's dialog,
+// which nothing else would take down before the agent's next tool call (agentperm.NoteAskAnswered).
 func RecordAskAnswered(oref, askId string) {
 	publishAgentAsk(baseds.AgentAskData{ORef: oref, AskId: askId, Cleared: true})
+	updatePermission(oref, func() bool { return agentperm.NoteAskAnswered(oref) })
 	recordAskTransition(oref, askId, waveobj.RunEventKindChildAnswered, "")
 }
