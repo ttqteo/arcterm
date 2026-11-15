@@ -43420,7 +43420,8 @@ const agentChat = {
             })()`);
             rec(
                 "9. two queued Bash requests show the command, Allow, Deny, More options in Terminal and 1 more waiting; Allow sends the answer with the head's id and allow: true, the buttons locked while it is in flight, then the next request is the card",
-                cardUp && card9.summary === "$ npm test -- --run" && card9.allow === "Allow" && card9.deny === "Deny" &&
+                // Allow carries its key (a kbd reading Enter) since the card took ↑ ↓ Enter (step 11b)
+                cardUp && card9.summary === "$ npm test -- --run" && (card9.allow ?? "").startsWith("Allow") && card9.deny === "Deny" &&
                     card9.terminal === "More options in Terminal" && card9.more === "1 more waiting" &&
                     asked && locked && answers9.length === 1 && JSON.stringify(answers9[0].data) === JSON.stringify({ oref: orefA, id: "perm-1", allow: true }) &&
                     second.summary === "$ git status --short" && second.more === null && second.enabled,
@@ -44334,6 +44335,10 @@ const agentChat = {
                     closed29 && stayed29 && closedAfter29 && toast29 && JSON.stringify(typed29) === JSON.stringify(["\x1b[Z"]),
                 { screen29, chip29, menu29, closed29, stayed29, closedAfter29, toast29, typed29 }
             );
+            // the captured screen holds Claude Code's box, empty: a send now waits for its text to show there and, the
+            // fixture never echoing it, gives up with no Enter (agentsubmit.ts waitForEcho). Clear it, so the later sends
+            // read no box and press Enter at once, as they do before step 24
+            await acWriteScreen(h, blockA, []);
 
             // 30. the context is a ring with its percent: the fixture's 42 reads 42% (title Context 42%), with no words
             await AC.setRoster(h, acRoster(ctx, { usage: { contextpct: 42 } }));

@@ -843,7 +843,7 @@ export default function (kit) {
                 const atEnd = await polishWaitFor(h, `(() => { const s = ${scrollerOf(A)}; return !!s && s.scrollHeight - s.scrollTop - s.clientHeight <= 8; })()`, SHORT_MS);
                 const gone = await polishWaitFor(h, `!${SEEN}(${layerOf(A)}?.querySelector("[data-chat-jump]"))`, SHORT_MS);
                 await shot(h, "15-jump-gone");
-                rec(`${name}: scrolled up [data-chat-jump] is visible (a 32px-high pill above the box naming its key); a click returns to the end and it leaves`, shown && geo?.h === 32 && geo.w > 32 && /End/.test(geo.key ?? "") && geo.aboveBox === true && atEnd && gone, { scrolled, shown, geo, atEnd, gone });
+                rec(`${name}: scrolled up [data-chat-jump] is visible (a 32px-high pill above the box naming its key); a click returns to the end and it leaves`, shown && geo?.h === 32 && geo.w > 32 && /↓/.test(geo.key ?? "") && geo.aboveBox === true && atEnd && gone, { scrolled, shown, geo, atEnd, gone });
             });
 
             // 16. frame timing while 30 blocks stream in
