@@ -38,6 +38,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Jarvis' peek no longer stutters when it grows or shrinks, as it does when you open or shut its Earlier list: it
+  dropped about one frame in three while it resized, and now holds the screen's frame rate.
 - Runs you cancelled no longer count toward an agent's runs, neither on the run chip of its row in the Agent sidebar
   nor in the "↳ N runs" link of its header, and the header's menu no longer lists them: an agent with one live run and
   one cancelled one shows that live run, not "2 runs". When every run the agent started was cancelled, both show the

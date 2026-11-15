@@ -30,6 +30,17 @@
 //   DECISION: KEEP THE BLUR on both. The blur moves no median. What costs frames is the peek's size animation itself:
 //   its p95 is 26.8 ms with no blur at all, in a run where a still panel over the same flood holds 13.4 ms. Re-run it
 //   when the peek's resize or the terminal renderer changes.
+//
+//   THE PEEK'S RESIZE (initiative chunk 35). A traced pass put it on floating-ui, not the blur or the flood (the drawer
+//   flipping with no flood measured the same): the peek stands above the pet with its bottom edge held, so its top moves
+//   on every frame it resizes, and useFloating's update commits each new position with flushSync, which re-rendered the
+//   whole PetPeek synchronously, ~300 times in a 5 s pass (6 with the drawer still), and the stay pin's always-on
+//   autoUpdate re-rendered the pin ~450 times. Fixed in petpeek.tsx: the position lives in PeekFloat, which re-renders
+//   only itself and the focus manager (the panel is its children), and the pin's autoUpdate runs only while its menu is
+//   open: 17 renders a pass for each. Measured after, peek wholly over the screen, 319 px shut, 490 px open:
+//     find bar                        median p95 blur 13.5 ms, none 13.5 ms
+//     pet peek, drawer flipping       median p95 blur 13.6 ms, none 26.6 ms   6-22 frames over 20 ms a pass (was 56-138);
+//                                     ~5% of a pass's frames, so its p95 sits on the line between one and two vsyncs
 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -281,12 +281,34 @@ export default function (kit) {
             await run("2c. pet stay menu", async (name) => {
                 if (!creature) return rec(`${name}: the peek's pin opens the stay menu`, false, noCreature);
                 const pinned = await polishWaitFor(h, `!!document.querySelector("[data-pet-peek] [data-pet-stay-pin]")`, SHORT_MS);
+                // the menu positions itself only while open (petpeek.tsx PetStayPin), so the pin is moved first: two more
+                // updates give the peek its Earlier drawer, and opening it grows the peek upward, taking the pin with it
+                await AC.agentPage(
+                    h,
+                    `const P = await mod("app/view/jarvis/petstore.ts");
+                    for (let i = 0; i < 2; i++) P.rememberSaid({ id: "of-jarvis-said-" + i, at: Date.now() - (i + 1) * 60000, kind: "notify", level: "info", text: "overlays frost: an earlier update " + (i + 1) });
+                    return true;`
+                );
+                const drawer = await polishWaitFor(h, `!!document.querySelector("[data-pet-peek] [data-pet-updates] > button")`, SHORT_MS);
+                const pinBefore = await h.ev(`document.querySelector("[data-pet-peek] [data-pet-stay-pin]")?.getBoundingClientRect().top ?? null`);
+                await click(h, "[data-pet-peek] [data-pet-updates] > button");
+                await polishNap(900);
+                const pinAfter = await h.ev(`document.querySelector("[data-pet-peek] [data-pet-stay-pin]")?.getBoundingClientRect().top ?? null`);
+                const moved = pinBefore != null && pinAfter != null && pinBefore - pinAfter > 20;
                 await click(h, "[data-pet-peek] [data-pet-stay-pin]");
                 const v = await look(h, PANEL.stay, "2c-pet-stay-menu");
+                // it opens under the pin where the pin is now, flush with its right edge (bottom-end, 6px off)
+                const at = await h.ev(`(() => {
+                    const pin = document.querySelector("[data-pet-peek] [data-pet-stay-pin]")?.getBoundingClientRect();
+                    const menu = document.querySelector(${JSON.stringify(PANEL.stay)})?.getBoundingClientRect();
+                    if (!pin || !menu) return null;
+                    return { gap: Math.round(menu.top - pin.bottom), rightOff: Math.round(menu.right - pin.right) };
+                })()`);
+                const placed = at != null && at.gap >= 2 && at.gap <= 12 && Math.abs(at.rightOff) <= 2;
                 await key(h, KEYS.escape);
                 const closed = await gone(h, "[data-pet-stay-menu]");
                 const peekStays = await h.ev(`!!document.querySelector("[data-pet-peek]")`);
-                rec(`${name}: the peek's pin opens the stay menu, which draws the frost class with no backdrop root above it (the frosted peek is no ancestor of it), and Escape closes only the menu`, pinned && v.up && v.faded && v.ok && closed && peekStays, { pinned, closed, peekStays, ...v });
+                rec(`${name}: with the peek's drawer opened (the pin moved up), the pin opens the stay menu under where the pin now is, which draws the frost class with no backdrop root above it (the frosted peek is no ancestor of it), and Escape closes only the menu`, pinned && drawer && moved && v.up && v.faded && v.ok && placed && closed && peekStays, { pinned, drawer, pinMovedPx: pinBefore != null && pinAfter != null ? Math.round(pinBefore - pinAfter) : null, at, placed, closed, peekStays, ...v });
             });
             await run("2d. pet hide menu", async (name) => {
                 if (!creature) return rec(`${name}: the peek's Hide button opens the hide menu`, false, noCreature);
