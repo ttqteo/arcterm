@@ -251,6 +251,8 @@ export default function (kit) {
                 decidedText: text("[data-bsband-decided]"),
                 markDoneOnBand: !!q("[data-band-mark-done]"),
                 on: text("[data-band-on]"),
+                // "On <n>" stays inside its own span: a squeezed span let it spill under the "?" button beside it
+                onClear: ((on) => !on ? null : [...on.children].every((c) => c.getBoundingClientRect().right <= on.getBoundingClientRect().right + 1))(q("[data-band-on]")),
                 decisions: [...band.querySelectorAll("[data-bsband-decision]")].map((d) => d.getAttribute("data-bsband-decision")),
                 boardRows: boards.map((b) => ({ name: b.getAttribute("data-bsband-board"), isNew: b.hasAttribute("data-new"), part: flat(b.lastElementChild?.lastElementChild) })),
                 linkCount: band.querySelectorAll("[data-bsband-open-brainstorm]").length,
@@ -447,7 +449,8 @@ export default function (kit) {
                         got.decidedText === "Decided 4" &&
                         got.markDoneOnBand === false &&
                         got.tabDot === true &&
-                        got.fits === true,
+                        got.fits === true &&
+                        got.onClear === true,
                     { up, ...got }
                 );
             });
@@ -694,8 +697,9 @@ export default function (kit) {
                         narrow.newText != null &&
                         narrow.decidedText === "Decided 4" &&
                         narrow.fits === true &&
+                        narrow.onClear === true &&
                         wide?.narrow === false,
-                    { wide: { width: wide?.width, narrow: wide?.narrow, on: wide?.on }, narrow: { width: narrow?.width, narrow: narrow?.narrow, on: narrow?.on, boards: narrow?.boardsText, newText: narrow?.newText, decided: narrow?.decidedText, fits: narrow?.fits } }
+                    { wide: { width: wide?.width, narrow: wide?.narrow, on: wide?.on }, narrow: { width: narrow?.width, narrow: narrow?.narrow, on: narrow?.on, onClear: narrow?.onClear, boards: narrow?.boardsText, newText: narrow?.newText, decided: narrow?.decidedText, fits: narrow?.fits } }
                 );
             });
 
@@ -738,8 +742,9 @@ export default function (kit) {
                         got.open === "brainstorm" &&
                         geo != null &&
                         geo.initiativeWidth < 375 &&
+                        got.onClear === true &&
                         Math.abs(geo.columnLeft - geo.contentLeft) <= 2,
-                    { width: got?.width, narrow: got?.narrow, open: got?.open, ...geo, off: geo != null ? Math.round((geo.columnLeft - geo.contentLeft) * 10) / 10 : null, wasOff: geo != null ? Math.round((geo.old - geo.contentLeft) * 10) / 10 : null }
+                    { width: got?.width, narrow: got?.narrow, open: got?.open, on: got?.on, onClear: got?.onClear, ...geo, off: geo != null ? Math.round((geo.columnLeft - geo.contentLeft) * 10) / 10 : null, wasOff: geo != null ? Math.round((geo.old - geo.contentLeft) * 10) / 10 : null }
                 );
             });
 

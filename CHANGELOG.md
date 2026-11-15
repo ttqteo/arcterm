@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- On an agent's initiative band beside a Brainstorm part, the "?" button no longer draws over "On <chunk>": the
+  initiative's title gives way first.
 - A submenu opened the moment its context menu appears now sits beside its row, instead of a few pixels off until
   you reopen it.
 - A reply holding a review verdict no longer shows twice in Chat for a moment while it lands.
