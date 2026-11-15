@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The agent details panel's tab strip fits its counts on Overview with files open: the tabs sit a little closer, so
+  Files changed and Uploads no longer fade out at the edge.
 - ↑ in Chat's empty box recalls your last message again while a Queued bubble lingers after Claude already took it,
   instead of doing nothing.
 - A long bash command (`!`) that scrolls in Chat's box keeps its suggestion right after the last character.
