@@ -73,18 +73,18 @@ describe("ops", () => {
         ]);
     });
 
-    it("sends an all-digit label as its position, which the server would read as an index", () => {
+    it("sends an all-digit label as an exact label, which the server never reads as an index", () => {
         const numbered = [
             { label: "Intro", status: "done" },
             { label: "2", status: "proposed" },
         ];
-        expect(dropOps(numbered as any, ["2"])).toEqual([{ op: "removeChunk", chunk: "2" }]);
+        expect(dropOps(numbered as any, ["2"])).toEqual([{ op: "removeChunk", chunk: "=2" }]);
         const shifted = [
             { label: "Intro", status: "done" },
             { label: "Mid", status: "pending" },
             { label: "2", status: "proposed" },
         ];
-        expect(dropOps(shifted as any, ["2"])).toEqual([{ op: "removeChunk", chunk: "3" }]);
+        expect(dropOps(shifted as any, ["2"])).toEqual([{ op: "removeChunk", chunk: "=2" }]);
     });
 
     it("restores a dropped chunk as proposed at its old stage and 1-based position, the Undo of a drop", () => {

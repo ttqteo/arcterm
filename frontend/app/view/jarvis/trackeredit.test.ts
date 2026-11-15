@@ -81,9 +81,12 @@ describe("chunkRef", () => {
     it("passes a normal label through", () => {
         expect(chunkRef(plan, "b")).toBe("b");
     });
-    it("sends an all-digit label as its own index, because the server reads digits as an index", () => {
+    it("sends an all-digit label as an exact label, never a position the server could read as another chunk", () => {
         const odd = [c("2"), c("x")];
-        expect(chunkRef(odd, "2")).toBe("1");
+        expect(chunkRef(odd, "2")).toBe("=2");
+        // a label no longer in the list still goes by label, so the server refuses it instead of picking position 7
+        expect(chunkRef(odd, "7")).toBe("=7");
+        expect(chunkRef(odd, "=x")).toBe("==x");
     });
 });
 

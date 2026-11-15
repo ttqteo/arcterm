@@ -208,9 +208,24 @@ describe("togglePin", () => {
 });
 
 describe("chunk writes resolve their ref when they run", () => {
-    // a mirror of the server's chunk ref: all digits is a 1-based position, anything else a label
-    const find = (e: Effort, ref: string) =>
-        /^[0-9]+$/.test(ref) ? Number(ref) - 1 : e.chunks.findIndex((c) => c.label === ref);
+    // a mirror of the server's chunk ref (ResolveChunkIndex): "=<label>" is that label only, all digits a 1-based
+    // position, anything else a label; a ref that names nothing is refused
+    const find = (e: Effort, ref: string) => {
+        const byLabel = (l: string) => e.chunks.findIndex((c) => c.label === l);
+        let i = -1;
+        if (ref.startsWith("=")) {
+            i = byLabel(ref.slice(1));
+            if (i < 0) {
+                i = byLabel(ref);
+            }
+        } else {
+            i = /^[0-9]+$/.test(ref) ? Number(ref) - 1 : byLabel(ref);
+        }
+        if (i < 0 || i >= e.chunks.length) {
+            throw new Error(`EC-UNKNOWN-CHUNK: ${ref}`);
+        }
+        return i;
+    };
     let sent: EffortOp[] = [];
     const server = (e: Effort) =>
         rpc.EffortMutateCommand.mockImplementation(async (_c: unknown, data: { ops: EffortOp[] }) => {
@@ -258,13 +273,13 @@ describe("chunk writes resolve their ref when they run", () => {
         expect(e.chunks.map((c) => c.label)).toEqual(["3"]);
     });
 
-    it("a batch removes the highest position first, as the live plan counts it", async () => {
+    it("a batch removes the highest position first, each all-digit chunk sent by its label", async () => {
         const e = plan("b", ["x", "1", "2", "y"]);
         server(e);
         cached("effort:b", e);
         await removeChunks("effort:b", rows(e), ["1", "2"]);
         expect(e.chunks.map((c) => c.label)).toEqual(["x", "y"]);
-        expect(sent.map((o) => o.chunk)).toEqual(["3", "2"]);
+        expect(sent.map((o) => o.chunk)).toEqual(["=2", "=1"]);
     });
 
     it("an undo that moves an all-digit chunk back reads the plan as it is now, not as it was drawn", async () => {
@@ -277,7 +292,7 @@ describe("chunk writes resolve their ref when they run", () => {
         expect(e.chunks.map((c) => c.label)).toEqual(["3", "2"]);
     });
 
-    it("a rename of an all-digit chunk is sent as its live position", async () => {
+    it("a rename of an all-digit chunk is sent by its label", async () => {
         const e = plan("r", ["1", "2", "3"]);
         server(e);
         cached("effort:r", e);
@@ -303,6 +318,17 @@ describe("chunk writes resolve their ref when they run", () => {
         await renameChunk("effort:f", rows(f), "P2", "P2b");
         expect(rpc.EffortGetCommand).not.toHaveBeenCalled();
         expect(f.chunks.map((c) => c.label)).toEqual(["P1", "P2b"]);
+    });
+
+    // the bug a position ref had: "2" went as position 2, which after "2" was removed out of band named "3"
+    it("a queued delete of a chunk removed out of band is refused, not applied to the chunk now in its place", async () => {
+        const e = plan("o", ["1", "2", "3"]);
+        server(e);
+        cached("effort:o", e);
+        e.chunks.splice(1, 1);
+        const drawn = rows(plan("o", ["1", "2", "3"]));
+        await expect(removeChunks("effort:o", drawn, ["2"])).rejects.toThrow("EC-UNKNOWN-CHUNK");
+        expect(e.chunks.map((c) => c.label)).toEqual(["1", "3"]);
     });
 
     it("falls back to the plan the caller drew when even the read fails", async () => {
