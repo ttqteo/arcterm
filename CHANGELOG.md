@@ -81,6 +81,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   it while the agent comes back, instead of sitting in the box until the wake finished and then popping in. If the
   wake fails, the text and its files go back in the box.
 - A reply in Chat no longer draws twice, then flickers back to one, when you send the next message (or press Send now) as it finishes.
+- A `! command` that restarts arcterm (`! task install`) stays in Chat afterwards, where you ran it, with a note that its output was not kept.
 - `wsh effort show`, `wsh effort list` and an initiative's row in the Brief's search count its progress the way Chat's
   initiative band does: a skipped chunk leaves the total, so they read 29/33 where they read 29/35.
 - Jarvis' peek no longer stutters when it grows or shrinks, as it does when you open or shut its Earlier list: it

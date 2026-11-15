@@ -93,6 +93,7 @@ import {
     sendHold,
     type SendFailure,
 } from "./chatpending";
+import { noteLostBash } from "./chatlostbashstore";
 import {
     addPending,
     dropPending,
@@ -644,6 +645,8 @@ function ComposerBox({
                 const bandNote = sent === SWITCH_NOTE && lines.length > 0;
                 if (entries != null && pendsAsBubble(sent) && !bandNote) {
                     addPending(agent.id, sent, entries, agent.state !== "idle");
+                    // a `! cmd` is kept past a restart too: one that closes arcterm never reaches the transcript
+                    noteLostBash(agent.transcriptPath, sent, entries);
                 }
                 flipIfTui(sent);
                 for (const a of att.attachments) {

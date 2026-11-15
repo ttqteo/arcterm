@@ -2922,3 +2922,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   message while the reply's last paragraph is still streaming (once queued, once with Send now), and once right after it
   ends: the reply stays one copy above your message, with no second copy under it and no flicker (`chatlive.ts`
   withLiveReply; unit tests only, no scenario streams a live reply).
+- [ ] (arcterm) **A `! command` that restarts arcterm stays in Chat.** In a Claude agent's Chat, send `! task install`
+  (or any `!` command, then quit arcterm while it runs): after arcterm reopens, the agent's Chat shows the `!` row right
+  after the reply it was sent after, before your next message, with "Sent before arcterm restarted · its output was not
+  kept". A `!` that finished normally shows once, with its output, never a second time (`chatlostbash.ts`; unit tests
+  and the typecheck only, no scenario restarts the app).
