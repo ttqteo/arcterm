@@ -120,18 +120,19 @@ function bashCommand(text: string): string | null {
     return cmd !== "" ? cmd : null;
 }
 
-/** How many of the entries are your messages with exactly this text (edge whitespace aside), or commands typed as it.
- *  A message Claude Code wrapped whole as a paste (a send with a picture or a line break goes in as one) counts as its
+/** How many of the entries are your messages with this text (every run of whitespace one space), or commands typed as
+ *  it. Whitespace is not compared: Claude Code writes a typed tab as four spaces (a row pasted from a sheet, 2026-11-15),
+ *  so an exact match never found the message and its bubble stood under the transcript's copy as a second one. A
+ *  message Claude Code wrapped whole as a paste (a send with a picture or a line break goes in as one) counts as its
  *  body, or its Queued bubble never goes. A `! cmd` counts as its bash row (name `!`, the command as args). */
 export function userTextCount(entries: AgentEntry[], text: string): number {
-    const want = text.trim();
     const wantFlat = flat(text);
     const bash = bashCommand(text);
     let n = 0;
     for (const e of entries) {
         // the result lines Arc put in front of the message are no part of what the person wrote (stripResultLines also
         // unwraps a whole paste, so a message that carried them is compared by its own text)
-        if (e.kind === "user" && unwrapWholePaste(stripResultLines(e.text)).trim() === want) {
+        if (e.kind === "user" && flat(unwrapWholePaste(stripResultLines(e.text))) === wantFlat) {
             n++;
         } else if (e.kind === "command" && e.name === "!") {
             if (bash != null && flat(e.args ?? "") === bash) {

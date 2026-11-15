@@ -47,6 +47,13 @@ describe("userTextCount", () => {
         expect(userTextCount(entries, "nope")).toBe(0);
     });
 
+    it("counts a message whose tabs Claude Code wrote as spaces (a row pasted from a sheet), 2026-11-15", () => {
+        const sent = "bài Y Khoa IT2039\tXử lý tín hiệu\t3\t—\t9";
+        const entries = [user("bài Y Khoa IT2039    Xử lý tín hiệu    3    —    9")];
+        expect(userTextCount(entries, sent)).toBe(1);
+        expect(userTextCount(entries, "bài Y Khoa IT2039")).toBe(0);
+    });
+
     it("counts a command entry as the text it was typed as, whitespace runs aside", () => {
         const entries: AgentEntry[] = [
             { kind: "command", name: "/config", shell: { output: "Config dialog dismissed", error: "" } },

@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A Chat message holding tabs (a row pasted from a spreadsheet) no longer shows twice while the agent works: its
+  Queued bubble now goes once the conversation holds it.
 - A question you answer in Chat no longer leaves a "Wants to use AskUserQuestion" card behind it, which held your
   next message back until the agent ran another tool.
 - An agent held because the machine is busy no longer also pops a toast over its own held page, where it covered the
