@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The New agent dialog keeps its columns readable in a Float window: project and session names no longer shrink to a
+  few letters, and the column hints stay on one line.
 - An agent waiting on your answer to its question is no longer put to sleep: the question card stayed gone from Chat
   while the terminal still showed the question.
 - A message sent in Chat to a sleeping agent now leaves the box at once and shows as your bubble with "Waking…" under

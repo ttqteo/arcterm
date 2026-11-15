@@ -1459,7 +1459,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             data-launcher-step="resume"
                             style={bandHeight != null ? { height: bandHeight } : undefined}
                             className={cn(
-                                "grid min-h-[220px] grid-cols-[272px_minmax(0,1fr)] [flex-shrink:4]",
+                                "grid min-h-[220px] grid-cols-[272px_minmax(0,1fr)] [flex-shrink:4] max-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]",
                                 bandHeight == null && "h-[360px]"
                             )}
                         >
@@ -1489,7 +1489,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             animate="animate"
                             className="shrink-0"
                         >
-                            <div className="grid grid-cols-[236px_minmax(0,1fr)_minmax(0,1fr)]">
+                            {/* a narrow window (Float) takes room from the Start column and gives Session the rest */}
+                            <div className="grid grid-cols-[236px_minmax(0,1fr)_minmax(0,1fr)] max-[900px]:grid-cols-[188px_minmax(0,0.8fr)_minmax(0,1.2fr)]">
                                 <div
                                     ref={startRef}
                                     role="radiogroup"

@@ -54,7 +54,8 @@ export function ColumnLabel({
     return (
         <div className={cn("flex shrink-0 items-baseline gap-2 px-2 pb-[7px] pt-0.5", className)}>
             <span className={cn(LAUNCHER_LABEL, "flex-1", focused && "text-secondary")}>{label}</span>
-            {hint ? <span className="text-[10.5px] tabular-nums text-muted">{hint}</span> : null}
+            {/* one line: a narrow column cuts the hint rather than wrapping it under the label */}
+            {hint ? <span className="min-w-0 truncate text-[10.5px] tabular-nums text-muted">{hint}</span> : null}
         </div>
     );
 }
