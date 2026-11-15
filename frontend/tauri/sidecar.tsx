@@ -6,18 +6,22 @@
 // popover's page (tray.tsx) it never boots the cockpit, the wsh client, WOS or a store: the main window owns all of
 // them, and a second copy here would cost its RAM again. Spec 2026-11-13-sidecar-design.md, section 2.
 
+import { layoutFor, type FormChange } from "@/app/cockpit/sidecarlayout";
+import { SidecarSmall } from "@/app/cockpit/sidecarsmall";
 import { SidecarTitleBar, toggleSidecarFullscreen } from "@/app/cockpit/sidecartitlebar";
 import {
     SIDECAR_ACT_EVENT,
     SIDECAR_SNAPSHOT_EVENT,
     type SidecarAct,
+    type SidecarForm,
     type SidecarSnapshot,
 } from "@/app/cockpit/sidecartypes";
 import { SidecarWall } from "@/app/cockpit/sidecarwall";
 import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
 import { loadFonts } from "@/util/fontutil";
+import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./tailwind.css";
 
@@ -36,9 +40,49 @@ interface Heard {
     at: number; // Date.now() when it arrived
 }
 
+// the form the page shows until the host has answered: the full Sidecar, unpinned
+const FULL_FORM: SidecarForm = { small: false, pinned: false };
+
+// The layout follows the window's width alone (one pure rule, no hysteresis), so a drag across the line just switches and
+// nothing reloads: the same snapshot feeds either layout.
+function useInnerWidth(): number {
+    const [width, setWidth] = useState(() => window.innerWidth);
+    useEffect(() => {
+        const onResize = () => setWidth(window.innerWidth);
+        window.addEventListener("resize", onResize);
+        onResize();
+        return () => window.removeEventListener("resize", onResize);
+    }, []);
+    return width;
+}
+
+// The host's form (the S button's small form, the pin) is the host's to keep: the page reads it once at load and takes the
+// host's answer to each change. A failure is logged and the state left as it was: a read that fails reads as the full
+// Sidecar, a press that fails changes nothing.
+function useSidecarForm(): [SidecarForm, (change: FormChange) => void] {
+    const [form, setForm] = useState<SidecarForm>(FULL_FORM);
+    useEffect(() => {
+        let live = true;
+        invoke<SidecarForm>("sidecar_form", { change: null })
+            .then((f) => live && setForm(f))
+            .catch((err) => console.error("sidecar: reading the window's form failed", err));
+        return () => {
+            live = false;
+        };
+    }, []);
+    const change = useCallback((change: FormChange) => {
+        invoke<SidecarForm>("sidecar_form", { change })
+            .then(setForm)
+            .catch((err) => console.error("sidecar: changing the window's form failed", err));
+    }, []);
+    return [form, change];
+}
+
 function SidecarRoot() {
     useApplyCockpitTheme();
     const [heard, setHeard] = useState<Heard | null>(null);
+    const layout = layoutFor(useInnerWidth());
+    const [form, changeForm] = useSidecarForm();
     // Date.now() too: the wall adds (clock - heard.at) to the snapshot's own `now`, so the two must share one clock
     const [clock, setClock] = useState(() => Date.now());
 
@@ -94,7 +138,14 @@ function SidecarRoot() {
     return (
         // nothing on this page animates (spec decision 14), so the base layer's button transitions go too
         <div className="flex h-screen w-screen flex-col overflow-hidden bg-background font-sans text-primary [&_button]:transition-none">
-            <SidecarTitleBar counts={heard?.snap.counts ?? null} />
+            <SidecarTitleBar
+                counts={heard?.snap.counts ?? null}
+                machine={heard?.snap.machine}
+                strain={heard?.snap.strain}
+                layout={layout}
+                form={form}
+                onForm={changeForm}
+            />
             {heard == null ? (
                 <div
                     data-sidecar-waiting
@@ -103,6 +154,8 @@ function SidecarRoot() {
                 >
                     Waiting for arcterm…
                 </div>
+            ) : layout === "small" ? (
+                <SidecarSmall snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
             ) : (
                 <SidecarWall snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
             )}

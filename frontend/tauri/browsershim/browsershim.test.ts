@@ -110,6 +110,13 @@ describe("core stand-in", () => {
         await expect(invoke("capture_webview")).rejects.toThrow(/Tauri host/);
         await expect(invoke("no_such_command")).rejects.toThrow(/no_such_command/);
     });
+
+    it("refuses the Sidecar window's commands: a page has no second window to open, shrink or pin", async () => {
+        const { invoke } = await import("./core");
+        await expect(invoke("open_sidecar")).rejects.toThrow(/Tauri host/);
+        await expect(invoke("sidecar_form", { change: null })).rejects.toThrow(/Tauri host/);
+        await expect(invoke("sidecar_form", { change: { small: true } })).rejects.toThrow(/Tauri host/);
+    });
 });
 
 describe("window stand-in", () => {
