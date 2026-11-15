@@ -15,6 +15,7 @@ mod notify;
 mod pagekeys;
 mod paths;
 mod shellenv;
+mod sidecar;
 mod tray;
 mod trayicon;
 mod webcache;
@@ -433,9 +434,12 @@ fn main() {
             foreground::app_foreground,
             foreground::raise_topmost,
             tray::set_tray_status,
-            tray::tray_popover_size
+            tray::tray_popover_size,
+            sidecar::open_sidecar
         ])
         .on_window_event(|window, event| {
+            // the main window destroyed closes Sidecar; Sidecar destroyed tells the main window
+            sidecar::on_window_event(window, event);
             // the close button only hides the window while the menu bar / tray icon shows, so the agents and the
             // icon's memory reading keep running; Quit (⌘Q, the popover's, the Dock's) still quits
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

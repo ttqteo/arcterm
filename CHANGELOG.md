@@ -24,6 +24,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- Sidecar, a second window for another screen that shows every agent at a glance: Ctrl+P → Open Sidecar. It opens
+  maximized on your other screen (centred when you have one), F11 or its full-screen button toggles full screen, and
+  it closes with arcterm's window. <!-- try: open-sidecar -->
+
 ### Changed
 
 - Find in a document (Ctrl+F in the File tab) floats on the same frosted glass as find in a terminal.
