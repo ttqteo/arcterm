@@ -32,6 +32,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   changed elsewhere in the meantime: the edit is refused instead.
 - A plan an agent proposed now opens that agent from Needs you and the palette, even when it is a worker in a run,
   instead of the initiative.
+- Accept all and continue now tells you when the plan was accepted but the message to start could not reach the
+  agent's terminal, instead of failing silently.
 - Renaming or deleting a stage in the Brief right after deleting a chunk now acts on the stage you clicked, not the
   one after it.
 - The initiative link in an agent's header now says that Ctrl+click (⌘-click) peeks at the initiative in Sprout,
