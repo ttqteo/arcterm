@@ -30,6 +30,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   few letters, and the column hints stay on one line.
 - An agent waiting on your answer to its question is no longer put to sleep: the question card stayed gone from Chat
   while the terminal still showed the question.
+- A question or permission prompt left open over a minute no longer reads the agent as idle: once answered, the agent
+  shows as working again instead of idle for the rest of its turn, and one waiting on a permission is no longer slept.
 - A message sent in Chat to a sleeping agent now leaves the box at once and shows as your bubble with "Waking…" under
   it while the agent comes back, instead of sitting in the box until the wake finished and then popping in. If the
   wake fails, the text and its files go back in the box.

@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/agentask"
+	"github.com/wavetermdev/waveterm/pkg/agentperm"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wps"
@@ -623,5 +624,64 @@ func TestAskCommandRaisesPublishInRegistryOrder(t *testing.T) {
 	mu.Unlock()
 	if last != pending.AskId {
 		t.Fatalf("the cockpit was last told of ask %s while the registry holds %s", last, pending.AskId)
+	}
+}
+
+// publishStatus sends a Claude hook's status report through the publish path, as agent-hook does.
+func publishStatus(oref, state, hook string, ts int64) {
+	publishEvent(context.Background(), wps.WaveEvent{
+		Event:   wps.Event_AgentStatus,
+		Scopes:  []string{oref},
+		Persist: 1,
+		Data:    baseds.AgentStatusData{ORef: oref, State: state, Agent: "claude", Hook: hook, Ts: ts},
+	})
+}
+
+// Claude's idle_prompt lands a minute into an open AskUserQuestion dialog. Published, it read the agent as at its
+// prompt: the sleep loop could sleep it, and the answer's next tool reports were dropped as out of turn, so the agent
+// read idle for the rest of the turn while it worked.
+func TestIdlePromptDuringAnOpenAskIsNotPublished(t *testing.T) {
+	oref := waveobj.MakeORef("block", uuid.NewString()).String()
+	agentask.GlobalRegistry = agentask.MakeRegistry()
+	agentask.GlobalRegistry.Set(oref, agentask.PendingAsk{AskId: "ask-idle-prompt", Questions: askData(oref, true).Questions})
+	now := time.Now().UnixMilli()
+	publishStatus(oref, baseds.AgentState_Waiting, baseds.AgentHook_Notification, now)
+	publishStatus(oref, baseds.AgentState_Idle, baseds.AgentHook_Notification, now+60_000)
+	if got := lastStatus(oref); got.State != baseds.AgentState_Waiting {
+		t.Fatalf("status = %s, want the idle_prompt held back while the question is open", got.State)
+	}
+	// answered: the next tool's working is the turn going on
+	agentask.GlobalRegistry.Claim(oref, "ask-idle-prompt")
+	publishStatus(oref, baseds.AgentState_Working, baseds.AgentHook_PreToolUse, now+90_000)
+	if got := lastStatus(oref); got.State != baseds.AgentState_Working {
+		t.Fatalf("status = %s, want the turn read working again after the answer", got.State)
+	}
+}
+
+// with no question open, idle_prompt is the session back at its prompt, as before
+func TestIdlePromptWithNoAskIsPublished(t *testing.T) {
+	oref := waveobj.MakeORef("block", uuid.NewString()).String()
+	agentask.GlobalRegistry = agentask.MakeRegistry()
+	now := time.Now().UnixMilli()
+	publishStatus(oref, baseds.AgentState_Idle, baseds.AgentHook_Stop, now)
+	publishStatus(oref, baseds.AgentState_Idle, baseds.AgentHook_Notification, now+60_000)
+	if got := lastStatus(oref); got.Hook != baseds.AgentHook_Notification {
+		t.Fatalf("last status hook = %s, want the idle_prompt published", got.Hook)
+	}
+}
+
+// a permission prompt open a minute gets the same idle_prompt: it read the agent idle, which the sleep loop takes as
+// not waiting on the person
+func TestIdlePromptDuringAPermissionPromptIsNotPublished(t *testing.T) {
+	oref := waveobj.MakeORef("block", uuid.NewString()).String()
+	agentask.GlobalRegistry = agentask.MakeRegistry()
+	agentperm.GlobalRegistry = agentperm.MakeRegistry()
+	t.Cleanup(func() { agentperm.GlobalRegistry = agentperm.MakeRegistry() })
+	now := time.Now().UnixMilli()
+	agentperm.GlobalRegistry.Raise(oref, "Bash", []byte(`{"command":"rm -rf build"}`), now)
+	publishStatus(oref, baseds.AgentState_Waiting, baseds.AgentHook_Notification, now)
+	publishStatus(oref, baseds.AgentState_Idle, baseds.AgentHook_Notification, now+60_000)
+	if got := lastStatus(oref); got.State != baseds.AgentState_Waiting {
+		t.Fatalf("status = %s, want the idle_prompt held back while the permission prompt is open", got.State)
 	}
 }

@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 
 	"github.com/skratchdot/open-golang/open"
+	"github.com/wavetermdev/waveterm/pkg/agentask"
+	"github.com/wavetermdev/waveterm/pkg/agentperm"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/runroute"
@@ -184,9 +186,26 @@ func outOfTurnStatus(ev *wps.WaveEvent) bool {
 	return false
 }
 
+// idleWhileDialogOpen reports Claude's idle_prompt for a session with a question or a permission prompt still open:
+// Claude Code sends it a minute into a dialog as it does a minute after a turn ends, and agent-hook maps it to idle.
+// Taken as the session back at its prompt, it slept an agent the person had yet to answer (its card left Chat, the
+// dialog stayed in the terminal), and outOfTurnStatus dropped every working the answered turn reported after it.
+// Only the Notification's idle: a Stop or the mod's turn-end idle still ends the turn.
+func idleWhileDialogOpen(ev *wps.WaveEvent) bool {
+	var data baseds.AgentStatusData
+	if utilfn.ReUnmarshal(&data, ev.Data) != nil || data.State != baseds.AgentState_Idle ||
+		data.Hook != baseds.AgentHook_Notification || data.ORef == "" {
+		return false
+	}
+	if _, asking := agentask.GlobalRegistry.Get(data.ORef); asking {
+		return true
+	}
+	return len(agentperm.GlobalRegistry.Snapshot(data.ORef)) > 0
+}
+
 // publishEvent is EventPublishCommand past its caller check, which a test cannot satisfy.
 func publishEvent(ctx context.Context, data wps.WaveEvent) {
-	if data.Event == wps.Event_AgentStatus && (staleAgentStatus(&data) || outOfTurnStatus(&data)) {
+	if data.Event == wps.Event_AgentStatus && (staleAgentStatus(&data) || outOfTurnStatus(&data) || idleWhileDialogOpen(&data)) {
 		return
 	}
 	if data.Event == wps.Event_AgentStatus {
