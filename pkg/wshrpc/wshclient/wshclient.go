@@ -674,6 +674,12 @@ func DocPdfFindCommand(w *wshutil.WshRpc, data wshrpc.CommandDocPdfFindData, opt
 	return resp, err
 }
 
+// command "effortchunkdrift", wshserver.EffortChunkDriftCommand
+func EffortChunkDriftCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortChunkDriftData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEffortChunkDriftRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEffortChunkDriftRtnData](w, "effortchunkdrift", data, opts)
+	return resp, err
+}
+
 // command "effortcreate", wshserver.EffortCreateCommand
 func EffortCreateCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortCreateData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEffortCreateRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEffortCreateRtnData](w, "effortcreate", data, opts)

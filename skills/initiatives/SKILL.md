@@ -50,7 +50,7 @@ An effort too foggy to name its phases gets a tracker of decisions first, not bu
 | Command | What it does |
 |---|---|
 | `wsh effort list [--project P] [--archived] [--topics]` | efforts: oid, title, status, done/total, active chunk; archived hidden unless `--archived`; `--topics` keeps only the efforts others are linked under |
-| `wsh effort show <effort>` | full detail: chunks, statuses, owners, note trails |
+| `wsh effort show <effort>` | full detail: chunks, statuses, owners, note trails, and for each open chunk the commit it was written at and the commits since |
 | `wsh effort rename <effort> <title>` | retitle |
 | `wsh effort project <effort> <project\|"">` | set/clear project |
 | `wsh effort ticket <effort> <ticket\|"">` | set/clear ticket |
@@ -62,7 +62,8 @@ An effort too foggy to name its phases gets a tracker of decisions first, not bu
 | `wsh effort advance <effort> [--note "..."]` | active chunk → done; marker moves to the next non-done chunk |
 | `wsh effort reopen <effort> <chunk>` | undo an advance (done → active, previous active back to pending) |
 | `wsh effort chunk add <effort> "<label>" [--at N] [--owner X] [--due YYYY-MM-DD\|+Nd] [--proposed]` | add a chunk; `--proposed` leaves it for the person to accept or drop |
-| `wsh effort chunk rename <effort> <chunk> "<label>"` | rename a chunk |
+| `wsh effort chunk rename <effort> <chunk> "<label>"` | rename a chunk (its commit moves to today's HEAD) |
+| `wsh effort chunk recheck <effort> <chunk> [--note "..."]` | mark an open chunk still right for today's code: its commit moves to the project's HEAD |
 | `wsh effort chunk move <effort> <chunk> <at>` | reorder (1-based target position) |
 | `wsh effort chunk remove <effort> <chunk>` | remove a chunk |
 | `wsh effort chunk status <effort> <chunk> <pending\|active\|done\|deferred\|blocked\|skipped> [--note "..."]` | set a chunk's status |
@@ -96,6 +97,16 @@ Chunks are always referenced by exact label, never index.
 - **Propose, don't add, what nobody asked for.** Chunks you add on your own (scope you found, a split you
   suggest, a whole plan for an idea) go in with `--proposed`. The person accepts or drops them on your rail; a
   proposed chunk is not progress and `advance` never starts it. Once you have proposed a plan, stop and say so.
+- **A chunk not yet done goes stale when the code moves under it.** Each chunk keeps the commit its text was written
+  at (set on `chunk add`, `chunk rename` and `chunk recheck`); `wsh effort show` prints it beside every open chunk
+  with how many commits ago that was. So:
+  - **After you tick a chunk done**, reread the chunks still open in that initiative. One your work has changed
+    the premise of gets rewritten (`chunk rename`), or a note saying what changed and what it now needs
+    (`chunk note`); one your work made pointless is `skipped` with the reason.
+  - **Before you pick up an open chunk**, check it still holds: `git log --oneline <commit>..HEAD` from the commit
+    `show` prints. If the code has moved past it, say so and rewrite it instead of following it.
+  - **Once it is right for today's code**, `wsh effort chunk recheck <effort> "<chunk>" [--note "what you checked"]`
+    moves its commit to the project's HEAD, and the chunk card stops counting.
 - **Skipped shrinks the denominator**: an effort that finishes by skipping still reads 100%.
 - Run↔chunk links detach automatically when the run's evidence seals; session workrefs detach at
   session end. Nothing auto-ticks — completion is always a deliberate action.

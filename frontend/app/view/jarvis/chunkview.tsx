@@ -27,6 +27,7 @@ import { animate, AnimatePresence, useReducedMotion, type AnimationPlaybackContr
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { briefingStateAtom } from "./briefingstore";
 import { briefUndo, chunkKey, noteKey, pendingDeleteKeysAtom } from "./briefundo";
+import { chunkDriftLine } from "./chunkdrift";
 import { chunkMove, chunkTrail, trailCounts, type TrailBlock, type TrailLine } from "./chunktrail";
 import { effortFeed, type FeedEntry } from "./effortfeed";
 import { chunkTone, type EffortCardModel } from "./effortmodel";
@@ -34,7 +35,9 @@ import {
     advanceChunk,
     appendChunkNote,
     editNote,
+    loadChunkDrift,
     loadEffortDetail,
+    recheckChunk,
     removeNote,
     reopenChunk,
     setChunkStatus,
@@ -89,6 +92,23 @@ function useFreshDetail(oref: string) {
     useEffect(() => {
         fireAndForget(() => loadEffortDetail(oref, freshTs));
     }, [oref, freshTs]);
+}
+
+// how far the code has moved since the chunk was written, read again whenever the initiative changes (a Mark checked
+// included); a failed read draws no line, as an unknown count does
+function useChunkDrift(oref: string, label: string, updatedts: number | undefined) {
+    const [drift, setDrift] = useState<CommandEffortChunkDriftRtnData | null>(null);
+    useEffect(() => {
+        let live = true;
+        loadChunkDrift(oref, label).then(
+            (d) => live && setDrift(d),
+            () => live && setDrift(null)
+        );
+        return () => {
+            live = false;
+        };
+    }, [oref, label, updatedts]);
+    return drift;
 }
 
 /**
@@ -319,6 +339,7 @@ export function ChunkView({
         );
     };
     const tone = chunkTone(chunk.status);
+    const driftLine = chunkDriftLine(chunk.status, useChunkDrift(oref, label, effort?.updatedts));
 
     return (
         <div data-jarvis-chunk-view={label} className="flex min-h-0 flex-1 flex-col bg-background">
@@ -378,6 +399,22 @@ export function ChunkView({
                         />
                     ) : null}
                 </div>
+                {driftLine != null ? (
+                    <div data-jarvis-chunk-drift className="flex items-center gap-2 text-[11px] text-ink-mid">
+                        <span title={driftLine.title} className="min-w-0 truncate">
+                            {driftLine.text}
+                        </span>
+                        <button
+                            type="button"
+                            data-jarvis-chunk-recheck
+                            title="It still holds: count from today's code"
+                            onClick={() => run(() => recheckChunk(oref, ref(label)))}
+                            className={LINK}
+                        >
+                            Mark checked
+                        </button>
+                    </div>
+                ) : null}
                 {mutateError != null ? <p className="m-0 text-[11px] text-error">{mutateError}</p> : null}
             </div>
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-edge-faint px-5 pb-4 pt-1">

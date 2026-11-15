@@ -113,6 +113,18 @@ export async function setChunkStatus(oref: string, chunk: string, status: string
 export async function reopenChunk(oref: string, chunk: string): Promise<void> {
     await mutateEffort(oref, [{ op: "reopen", chunk }]);
 }
+// Mark a chunk still right for today's code: its base moves to the project's HEAD (EffortOp recheckChunk).
+export async function recheckChunk(oref: string, chunk: string): Promise<void> {
+    await mutateEffort(oref, [{ op: "recheckChunk", chunk }]);
+}
+// How far the project's code has moved since the chunk was written; read on demand by the chunk view.
+export async function loadChunkDrift(oref: string, chunk: string): Promise<CommandEffortChunkDriftRtnData> {
+    return RpcApi.EffortChunkDriftCommand(
+        TabRpcClient,
+        { effortoid: effortOid(oref), chunk },
+        { timeout: stateRpcTimeoutMs }
+    );
+}
 export async function addChunkOp(oref: string, label: string): Promise<void> {
     await mutateEffort(oref, [{ op: "addChunk", label }]);
 }

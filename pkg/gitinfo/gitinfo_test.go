@@ -114,6 +114,25 @@ func commitAt(t *testing.T, dir, file, content string, unixSec int64) string {
 	return sha
 }
 
+func TestCommitsSince(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	c1 := commitAt(t, dir, "a.txt", "1\n", 1000)
+	_ = commitAt(t, dir, "a.txt", "1\n2\n", 2000)
+	c3 := commitAt(t, dir, "a.txt", "1\n2\n3\n", 3000)
+
+	n, ts, err := CommitsSince(context.Background(), dir, c1)
+	if err != nil || n != 2 || ts != 1000*1000 {
+		t.Fatalf("since c1 = %d, %d, %v; want 2, 1000000, nil", n, ts, err)
+	}
+	if n, _, err := CommitsSince(context.Background(), dir, c3); err != nil || n != 0 {
+		t.Fatalf("since HEAD = %d, %v; want 0, nil", n, err)
+	}
+	if _, _, err := CommitsSince(context.Background(), dir, strings.Repeat("e", 40)); err == nil {
+		t.Fatal("a commit not in the repo should error")
+	}
+}
+
 func TestCommitBefore(t *testing.T) {
 	dir := t.TempDir()
 	git(t, dir, "init", "-b", "main")

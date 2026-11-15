@@ -157,7 +157,7 @@ var effortShowCmd = &cobra.Command{
 		if isJSON(cmd) {
 			return jsonOut(rtn)
 		}
-		fmt.Print(formatEffortShow(rtn.Effort))
+		fmt.Print(formatEffortShowWith(rtn.Effort, rpcChunkDrift(rtn.Effort.OID)))
 		return nil
 	},
 }
@@ -366,6 +366,21 @@ var effortChunkRenameCmd = &cobra.Command{
 	},
 }
 
+var effortChunkRecheckCmd = &cobra.Command{
+	Use:   "recheck <effort> <chunk> [--note \"<what was checked>\"]",
+	Short: "mark a chunk still right for today's code (moves its base to the project's HEAD)",
+	Long: "Mark a chunk not yet done as checked against the code as it is now: its base moves to the project's HEAD, so " +
+		"the card and `wsh effort show` count commits from here. Run it after reading the chunk against the current code, " +
+		"or after rewriting it with `wsh effort chunk rename`.",
+	Args:    cobra.ExactArgs(2),
+	PreRunE: preRunSetupRpcClient,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		op := wshrpc.EffortOp{Op: "recheckChunk", Note: mustFlagString(cmd, "note")}
+		chunkRef(&op, args[1])
+		return mutateOne(args[0], op, isJSON(cmd))
+	},
+}
+
 var effortChunkMoveCmd = &cobra.Command{
 	Use:     "move <effort> <chunk> <at>",
 	Short:   "reorder a chunk (1-based target position)",
@@ -569,6 +584,26 @@ func parseAt(s string) (int, error) {
 // later prints again rather than the chunks being reordered to gather them. A proposed chunk prints but is
 // left out of the progress total, as the summary's Done/Total leaves it out.
 func formatEffortShow(e *waveobj.Effort) string {
+	return formatEffortShowWith(e, nil)
+}
+
+// chunkDrift answers how many commits the project has moved since a chunk was written; ok false when unknown.
+type chunkDrift func(label string) (behind int, ok bool)
+
+// rpcChunkDrift asks wavesrv, which reads the initiative's project checkout rather than this terminal's directory.
+func rpcChunkDrift(effortOID string) chunkDrift {
+	return func(label string) (int, bool) {
+		rtn, err := wshclient.EffortChunkDriftCommand(RpcClient, wshrpc.CommandEffortChunkDriftData{EffortOID: effortOID, Chunk: label}, nil)
+		if err != nil || rtn == nil || !rtn.Known {
+			return 0, false
+		}
+		return rtn.Behind, true
+	}
+}
+
+// formatEffortShowWith is formatEffortShow with each open chunk's base: the commit its text was written against, and
+// with drift, how far the code has moved since, so an agent picking it up knows to check it still holds.
+func formatEffortShowWith(e *waveobj.Effort, drift chunkDrift) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s (%s) — %d/%d\n", e.Title, e.Status, countDone(e), countProgress(e))
 	stage := ""
@@ -579,7 +614,7 @@ func formatEffortShow(e *waveobj.Effort) string {
 				fmt.Fprintf(&b, "  -- %s --\n", stage)
 			}
 		}
-		fmt.Fprintf(&b, "  %d. [%s] %s%s%s\n", i+1, c.Status, c.Label, ownerSuffix(c.Owner), dueSuffix(c.Due))
+		fmt.Fprintf(&b, "  %d. [%s] %s%s%s%s\n", i+1, c.Status, c.Label, ownerSuffix(c.Owner), dueSuffix(c.Due), baseSuffix(c, drift))
 		for _, n := range c.Notes {
 			fmt.Fprintf(&b, "      · %s: %s\n", timeStr(n.Ts), n.Text)
 		}
@@ -622,6 +657,28 @@ func dueSuffix(due string) string {
 	return " (due " + due + ")"
 }
 
+// baseSuffix names the commit an open chunk was written at; a settled chunk (done, skipped) has nothing left to
+// go stale, so it prints none.
+func baseSuffix(c waveobj.EffortChunk, drift chunkDrift) string {
+	if c.BaseCommit == "" || c.Status == "done" || c.Status == "skipped" {
+		return ""
+	}
+	at := " (written at " + jarvis.ShortCommit(c.BaseCommit)
+	if drift == nil {
+		return at + ")"
+	}
+	n, ok := drift(c.Label)
+	switch {
+	case !ok:
+		return at + ")"
+	case n == 0:
+		return at + ", the code has not moved since)"
+	case n == 1:
+		return at + ", 1 commit ago)"
+	}
+	return fmt.Sprintf("%s, %d commits ago)", at, n)
+}
+
 func timeStr(ms int64) string {
 	return time.UnixMilli(ms).Format("01-02 15:04")
 }
@@ -649,6 +706,7 @@ func init() {
 	effortChunkAddCmd.Flags().String("due", "", "the day it comes due: YYYY-MM-DD or +Nd")
 	effortChunkAddCmd.Flags().Bool("proposed", false, "propose the chunk; it counts once accepted")
 	effortChunkStatusCmd.Flags().String("note", "", "annotation")
+	effortChunkRecheckCmd.Flags().String("note", "", "what was checked")
 	effortChunkNoteCmd.Flags().String("note", "", "annotation text (required)")
 	effortChunkNoteCmd.MarkFlagRequired("note")
 	effortChunkAttachCmd.Flags().String("run", "", "run oid")
@@ -660,7 +718,7 @@ func init() {
 		effortProjectCmd, effortTicketCmd, effortStatusCmd, effortUnarchiveCmd, effortPinCmd, effortUnpinCmd,
 		effortLinkCmd, effortUnlinkCmd,
 		effortDeleteCmd, effortAdvanceCmd, effortReopenCmd, effortChunkCmd)
-	effortChunkCmd.AddCommand(effortChunkAddCmd, effortChunkRenameCmd, effortChunkMoveCmd,
+	effortChunkCmd.AddCommand(effortChunkAddCmd, effortChunkRenameCmd, effortChunkRecheckCmd, effortChunkMoveCmd,
 		effortChunkRemoveCmd, effortChunkStatusCmd, effortChunkNoteCmd, effortChunkOwnerCmd,
 		effortChunkStageCmd, effortChunkDueCmd, effortChunkAttachCmd, effortChunkDetachCmd)
 	rootCmd.AddCommand(effortCmd)

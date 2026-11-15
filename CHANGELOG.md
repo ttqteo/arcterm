@@ -79,6 +79,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   you can tell where each chunk's work begins.
 - The initiative band in Chat shows three steps on how to use it the first time you open it; Got it hides them and
   the ? beside the band's chevron brings them back.
+- An initiative chunk not yet done now says when the code has moved since it was written ("Written 23 commits ago:
+  check it still holds"), with Mark checked once it is still right. Agents started on a chunk check it against the
+  current code before following it, and reread the open chunks after finishing one.
 
 ### Changed
 

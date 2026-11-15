@@ -1254,6 +1254,20 @@ declare global {
         runoref: string;
     };
 
+    // wshrpc.CommandEffortChunkDriftData
+    type CommandEffortChunkDriftData = {
+        effortoid: string;
+        chunk: string;
+    };
+
+    // wshrpc.CommandEffortChunkDriftRtnData
+    type CommandEffortChunkDriftRtnData = {
+        known: boolean;
+        base?: string;
+        behind: number;
+        basets?: number;
+    };
+
     // wshrpc.CommandEffortChunkSeed
     type CommandEffortChunkSeed = {
         label: string;
@@ -3345,6 +3359,7 @@ declare global {
         stage?: string;
         owner?: string;
         due?: string;
+        basecommit?: string;
         workrefs?: ChunkWorkRef[];
         notes?: EffortNote[];
         updatedts: number;
@@ -3412,6 +3427,7 @@ declare global {
         notets?: number;
         kind?: string;
         oref?: string;
+        base?: string;
     };
 
     // wshrpc.EffortPinRef

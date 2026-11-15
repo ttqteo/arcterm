@@ -20,6 +20,8 @@ type EffortCommands interface {
 	// EffortPinCommand pins or unpins an effort to the Brief's cards. A pin is a view preference: it writes
 	// no event or note and keeps UpdatedTs.
 	EffortPinCommand(ctx context.Context, data CommandEffortPinData) (*CommandEffortPinRtnData, error)
+	// EffortChunkDriftCommand counts the commits on the initiative's project since the chunk was written.
+	EffortChunkDriftCommand(ctx context.Context, data CommandEffortChunkDriftData) (*CommandEffortChunkDriftRtnData, error)
 }
 
 // CommandEffortPinData pins (Pin true) or unpins an effort. Past the cap (jarvis.MaxPinnedEfforts), a pin
@@ -103,7 +105,7 @@ type CommandEffortDeleteData struct {
 // EffortOp is one typed mutation. Op selects the behavior; the remaining fields are the op's
 // arguments (validation picks which are required per op).
 type EffortOp struct {
-	Op        string `json:"op"`                  // rename | setProject | setTicket | setStatus | unarchive | link | addChunk | removeChunk | renameChunk | moveChunk | setChunkStatus | setChunkStage | setChunkDue | appendNote | editNote | removeNote | setOwner | advance | reopen
+	Op        string `json:"op"`                  // rename | setProject | setTicket | setStatus | unarchive | link | addChunk | removeChunk | renameChunk | recheckChunk | moveChunk | setChunkStatus | setChunkStage | setChunkDue | appendNote | editNote | removeNote | setOwner | advance | reopen
 	Title     string `json:"title,omitempty"`     // rename
 	Project   string `json:"project,omitempty"`   // setProject ("" clears)
 	Ticket    string `json:"ticket,omitempty"`    // setTicket ("" clears)
@@ -119,6 +121,24 @@ type EffortOp struct {
 	NoteTs    int64  `json:"notets,omitempty"`    // editNote/removeNote: the note's ts, a stale guard beside At
 	Kind      string `json:"kind,omitempty"`      // attachWork: "run" | "agent"
 	ORef      string `json:"oref,omitempty"`      // attachWork/detachWork: "run:<oid>" | "agent:<tabid>"
+	// Base is the project's HEAD that addChunk, renameChunk and recheckChunk stamp on the chunk (BaseCommit).
+	// The server fills it from the initiative's project; a caller's value is overwritten.
+	Base string `json:"base,omitempty"`
+}
+
+// CommandEffortChunkDriftData asks how far the code has moved since a chunk was written.
+type CommandEffortChunkDriftData struct {
+	EffortOID string `json:"effortoid"`
+	Chunk     string `json:"chunk"` // exact label or 1-based index string
+}
+
+// CommandEffortChunkDriftRtnData answers it. Known is false when there is nothing to measure: the chunk has no
+// base, the initiative no project with a git checkout, or the base is not in that checkout's history.
+type CommandEffortChunkDriftRtnData struct {
+	Known  bool   `json:"known"`
+	Base   string `json:"base,omitempty"`
+	Behind int    `json:"behind"`           // commits on HEAD since Base
+	BaseTs int64  `json:"basets,omitempty"` // unix ms of Base's commit
 }
 
 // EffortSummary is the ledger-friendly projection of an effort (no note trails).
