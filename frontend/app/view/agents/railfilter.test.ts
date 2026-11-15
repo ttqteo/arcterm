@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { filterRows, matchSpan } from "./railfilter";
+import { filterRows, matchSpan, rowMatchSpan } from "./railfilter";
 
 const PATHS = [
     "README.md",
@@ -43,5 +43,35 @@ describe("filterRows", () => {
 
     it("is empty on a miss", () => {
         expect(filterRows(PATHS, "zzz")).toEqual({ rows: [], count: 0 });
+    });
+
+    it("matches the whole path when the query has a slash", () => {
+        expect(filterRows(PATHS, "obsidian_harness/").count).toBe(2);
+        expect(filterRows(PATHS, "sections/harness.tex").count).toBe(1);
+        expect(filterRows(PATHS, "Paper/Sections/Harness.TEX").count).toBe(1);
+        expect(filterRows(PATHS, "./paper/main.tex").count).toBe(1);
+        expect(filterRows(PATHS, "paper\\main.tex").count).toBe(1);
+    });
+
+    it("finds a file from a longer path that ends with it", () => {
+        expect(filterRows(PATHS, "/Users/me/thesis/paper/main.tex").count).toBe(1);
+        expect(filterRows(PATHS, "thesis/paper/main.tex").count).toBe(1);
+        expect(filterRows(PATHS, "thesis/paper/other.tex").count).toBe(0);
+    });
+});
+
+describe("rowMatchSpan", () => {
+    const file = { kind: "file" as const, path: "paper/sections/harness.tex", name: "harness.tex" };
+
+    it("bolds the query in the name for a name query", () => {
+        expect(rowMatchSpan(file, "harn")).toEqual([0, 4]);
+    });
+
+    it("bolds the part of the name a path query covers", () => {
+        expect(rowMatchSpan(file, "sections/harn")).toEqual([0, 4]);
+        expect(rowMatchSpan(file, "sections/harness.tex")).toEqual([0, 11]);
+        expect(rowMatchSpan(file, "/abs/paper/sections/harness.tex")).toEqual([0, 11]);
+        expect(rowMatchSpan(file, "paper/sec")).toBeNull();
+        expect(rowMatchSpan({ kind: "dir", path: "paper", name: "paper" }, "paper/")).toBeNull();
     });
 });

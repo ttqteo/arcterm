@@ -42,7 +42,7 @@ import type { AgentsViewModel } from "./agents";
 import { encodePathsDrag, isPathsDrag, setDraggedPathsCount } from "./pathdrop";
 import { dropDirFor, dropHintLabel, type DropEntryLike } from "./railfiledrop";
 import { copyDropInto, moveRowsInto, railDropProgressAtom } from "./railfiledropstore";
-import { filterRows, matchSpan } from "./railfilter";
+import { filterRows, isPathQuery, rowMatchSpan } from "./railfilter";
 import { moveHintLabel, planMove, setTreeDrag, treeDrag } from "./railmove";
 import {
     clickRow,
@@ -113,7 +113,8 @@ export function RailTreePane({
     // whether what is over the tree is its own rows, which move, rather than OS files, which copy
     const [dropMoves, setDropMoves] = useState(false);
     const copying = useAtomValue(railDropProgressAtom)[cwd];
-    // the filter box: while it holds text the tree lists only the files whose name has it, their folders open
+    // the filter box: while it holds text the tree lists only the files whose name has it (whose path, once it holds a
+    // "/"), their folders open
     const [query, setQuery] = useState("");
     const filtering = query.trim() !== "";
     const filterRef = useRef<HTMLInputElement>(null);
@@ -402,7 +403,7 @@ export function RailTreePane({
                     className={row.ignored ? "opacity-50" : undefined}
                 />
                 <span className="min-w-0 truncate">
-                    {filtering ? <Highlighted name={row.name} query={query} /> : row.name}
+                    {filtering ? <Highlighted row={row} query={query} /> : row.name}
                 </span>
                 {row.kind === "file" && pinned.includes(row.path) ? (
                     <span aria-label="Pinned" title="Pinned" className="ml-auto flex flex-none text-muted">
@@ -475,7 +476,11 @@ export function RailTreePane({
                     {rows.map(renderRow)}
                     {rows.length === 0 ? (
                         <div data-rail-filter-empty className="px-3 py-2 text-[11.5px] text-muted">
-                            {filtering ? `No file name has “${query.trim()}”` : "No files"}
+                            {filtering
+                                ? isPathQuery(query)
+                                    ? `No file path has “${query.trim()}”`
+                                    : `No file name has “${query.trim()}”`
+                                : "No files"}
                         </div>
                     ) : null}
                 </div>
@@ -592,8 +597,9 @@ export function RailTreePane({
     );
 }
 
-function Highlighted({ name, query }: { name: string; query: string }) {
-    const span = matchSpan(name, query);
+function Highlighted({ row, query }: { row: TreeRow; query: string }) {
+    const name = row.name;
+    const span = rowMatchSpan(row, query);
     if (span == null) {
         return <>{name}</>;
     }
