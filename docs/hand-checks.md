@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **The Agent sidebar's run chip leaves cancelled runs out.** Unit tests and the typecheck only; no dev
+  app ran. From an agent, `wsh runs start` two runs, cancel one → that agent's row in the Agent sidebar shows the live
+  run's chip (its progress such as `1/3`, or no words while it plans), not "2 runs"; cancel the other too → the chip
+  reads "cancelled" and opens the newest of them. Commit: fix(agents) "the run chip leaves cancelled runs out".
 - [ ] (arcterm) **An open chunk names the files that changed since it was written.** Unit tests, the typecheck and
   a scan over the real initiatives' JSON only; no dev app ran. Rebuild, wait two minutes after start (the first scan),
   then open "Repo hygiene: lint, prettier, stale comments, test gaps" in the initiative sheet → rows such as
