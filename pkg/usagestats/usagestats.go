@@ -553,7 +553,11 @@ func walkOpencodeFiles(root string, cutoff time.Time) []scanFile {
 // again), bounded to NumCPU workers, and returns each file's records at its index in files: uncut, and shared with
 // the cache, so not to be modified.
 func parseEach(files []scanFile) [][]Record {
-	parses := parseEachFile(files)
+	return parseEachWith(files, 0)
+}
+
+func parseEachWith(files []scanFile, workers int) [][]Record {
+	parses := parseEachFileWith(files, workers)
 	results := make([][]Record, len(parses))
 	for i, p := range parses {
 		results[i] = p.records
@@ -564,7 +568,14 @@ func parseEach(files []scanFile) [][]Record {
 // parseEachFile is parseEach with each file's whole parse: its records and, for a Claude file, its oversized tool
 // results.
 func parseEachFile(files []scanFile) []fileParse {
-	workers := runtime.NumCPU()
+	return parseEachFileWith(files, 0)
+}
+
+// parseEachFileWith is parseEachFile on at most workers files at once (<= 0: one per core).
+func parseEachFileWith(files []scanFile, workers int) []fileParse {
+	if workers <= 0 {
+		workers = runtime.NumCPU()
+	}
 	if workers < 1 {
 		workers = 1
 	}
@@ -594,8 +605,13 @@ func parseEachFile(files []scanFile) []fileParse {
 // files are whole-file JSON with the message timestamp as the window, and Pi files are whole
 // v3 sessions read via pisession with the entry timestamp as the window.
 func parseFiles(files []scanFile) []Record {
+	return parseFilesWith(files, 0)
+}
+
+// parseFilesWith is parseFiles on at most workers files at once (<= 0: one per core).
+func parseFilesWith(files []scanFile, workers int) []Record {
 	var records []Record
-	for i, recs := range parseEach(files) {
+	for i, recs := range parseEachWith(files, workers) {
 		cutoff := files[i].cutoff
 		for _, r := range recs {
 			if cutoff.IsZero() || !r.TS.Before(cutoff) {
@@ -828,6 +844,11 @@ func sessionMetas(buckets []Bucket, files []scanFile) []SessionMeta {
 // modtime to the window (with a 1-day margin), parses + dedups the records, keeps those inside the
 // window, and returns buckets and the directory of the sessions they name. Missing roots yield nothing.
 func scanRoots(claudeRoot, codexRoot, opencodeRoot, piRoot, agyRoot string, windowDays int) ([]Bucket, []SessionMeta) {
+	return scanRootsWith(claudeRoot, codexRoot, opencodeRoot, piRoot, agyRoot, windowDays, 0)
+}
+
+// scanRootsWith is scanRoots parsing on at most workers files at once (<= 0: one per core).
+func scanRootsWith(claudeRoot, codexRoot, opencodeRoot, piRoot, agyRoot string, windowDays, workers int) ([]Bucket, []SessionMeta) {
 	var cutoff, since time.Time
 	if windowDays > 0 {
 		cutoff = time.Now().AddDate(0, 0, -windowDays-1)
@@ -840,7 +861,7 @@ func scanRoots(claudeRoot, codexRoot, opencodeRoot, piRoot, agyRoot string, wind
 	// a transcript modified inside the window still holds every earlier turn of its session, so the
 	// modtime prune alone let a long-running session pull days from before the window into it
 	var records []Record
-	for _, r := range parseFiles(files) {
+	for _, r := range parseFilesWith(files, workers) {
 		if since.IsZero() || !r.TS.Before(since) {
 			records = append(records, r)
 		}
@@ -859,14 +880,21 @@ func windowStart(now time.Time, windowDays int) time.Time {
 // ScanUsage aggregates usage from the user's Claude, Codex, OpenCode, Pi, and agy transcripts within
 // the last windowDays (0 = all-time), with one SessionMeta per (harness, session) that has a bucket.
 func ScanUsage(windowDays int) ([]Bucket, []SessionMeta, error) {
+	return ScanUsageWith(windowDays, 0)
+}
+
+// ScanUsageWith is ScanUsage parsing on at most workers files at once (<= 0: one per core), for a background scan
+// that should leave the machine room.
+func ScanUsageWith(windowDays, workers int) ([]Bucket, []SessionMeta, error) {
 	home := wavebase.GetHomeDir()
-	buckets, sessions := scanRoots(
+	buckets, sessions := scanRootsWith(
 		filepath.Join(home, ".claude", "projects"),
 		filepath.Join(home, ".codex", "sessions"),
 		filepath.Join(home, ".local", "share", "opencode", "storage", "message"),
 		filepath.Join(home, ".pi", "agent", "sessions"),
 		filepath.Join(home, ".gemini", "antigravity-cli", "brain"),
 		windowDays,
+		workers,
 	)
 	return buckets, sessions, nil
 }
