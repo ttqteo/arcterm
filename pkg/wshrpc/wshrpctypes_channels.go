@@ -123,6 +123,9 @@ type AttentionItem struct {
 	// would be a second source for one fact. Empty when the run is not attributed to an initiative.
 	EffortOID  string `json:"effortoid,omitempty"`
 	ChunkLabel string `json:"chunklabel,omitempty"`
+	// ProposerORef is the session ("agent:<tabid>") that proposed a plan-review item's newest chunk, read off that
+	// chunk's "proposed" note; empty when no session is known (a chunk proposed from outside a terminal).
+	ProposerORef string `json:"proposeroref,omitempty"`
 
 	// QueueId is the queue entry (pkg/runqueue) a blocked-entry item is about; empty for every other item.
 	QueueId string `json:"queueid,omitempty"`

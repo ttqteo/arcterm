@@ -27,6 +27,14 @@ describe("planReviewAgent", () => {
         expect(planReviewAgent(plan(), roster)?.id).toBe("a");
     });
 
+    it("opens the session that proposed the plan, an engine worker included", () => {
+        const roster = [agent({ id: "a", effortId: "e1" }), agent({ id: "w", effortId: "e1", runId: "r1" })];
+        expect(planReviewAgent(plan({ proposeroref: "agent:w" }), roster)?.id).toBe("w");
+        // a proposer that has closed falls back to the session on the initiative
+        expect(planReviewAgent(plan({ proposeroref: "agent:gone" }), roster)?.id).toBe("a");
+        expect(planReviewORef(plan({ proposeroref: "agent:w" }), roster)).toBe("agent:w");
+    });
+
     it("takes the newest when several are open on it", () => {
         const roster = [
             agent({ id: "old", effortId: "e1", idleSince: 100 }),

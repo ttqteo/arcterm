@@ -240,6 +240,7 @@ declare global {
         projectpath?: string;
         effortoid?: string;
         chunklabel?: string;
+        proposeroref?: string;
         queueid?: string;
         why?: string;
         cites?: string[];
