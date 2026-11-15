@@ -1336,8 +1336,16 @@ export default function (kit) {
             await step("restore the roster", () => AC.restoreRoster(h));
             await step("close the fixture tab", () => closeTabs(h, ctx));
             if (ctx.channelId != null) {
-                // a landed run refuses a cancel; the rest are deferred and cancel at once
+                // a finished run (step 16 lands the quick one) refuses a cancel, so it is skipped; the rest are
+                // deferred and cancel at once
+                const done = new Set();
+                await step("read the runs' states", async () => {
+                    for (const r of (await h.rpc("getchannelruns", { channelid: ctx.channelId }))?.runs ?? []) {
+                        if (r.status === "done") done.add(r.id);
+                    }
+                });
                 for (const runId of Object.values(ctx.runs ?? {})) {
+                    if (done.has(runId)) continue;
                     await step(`cancel run ${runId}`, () => h.rpc("cancelrun", { channelid: ctx.channelId, runid: runId }));
                 }
                 await step("delete the runs' channel", () => h.rpc("deletechannel", { channelid: ctx.channelId }));
