@@ -47113,8 +47113,8 @@ const chatFork = {
     },
 };
 
-// --- chat-quote: Reply to a passage (chatquote.ts, chatquotemenu.tsx). A right-click on text selected in Chat's
-// conversation opens a menu of Reply and Copy; Reply puts the passage in the message box as a `> ` quote with a blank
+// --- chat-quote: Reply to a passage (chatquote.ts, chatquotemenu.tsx). Text selected in Chat's conversation shows a
+// small ↩ button at the end of its last line, and a right-click on it opens a menu of Reply and Copy; Reply puts the passage in the message box as a `> ` quote with a blank
 // line under it, keeps what was typed, and stacks a second quote under the first. A right-click on a row with nothing
 // selected keeps the row's own menu (Copy text…), with no Reply.
 
@@ -47190,6 +47190,7 @@ const chatQuote = {
         const prose = (n) => `document.querySelectorAll('[data-agent-chat="${A}"] [data-chat-prose]')[${n}]`;
         const btn = `document.querySelector("[data-context-menu] [data-chat-quote]")`;
         const menuOpen = `!!document.querySelector("[data-context-menu]")`;
+        const small = `document.querySelector("[data-chat-quote-button]")`;
         const boxText = () =>
             AC.agentPage(h, `const I = await mod("app/view/agents/chatinsert.ts"); return I.chatBoxText(${JSON.stringify(A)});`);
         // selects `phrase` inside the element (or its whole text when null) as a drag would; true when it was found
@@ -47236,9 +47237,9 @@ const chatQuote = {
             })()`);
             return (await rightClickAt(at)) && (await polishWaitFor(h, `!!${btn}`, 3000));
         };
-        // a real press and release on the menu's Reply
-        const pressButton = async () => {
-            const at = await h.ev(caCenter(btn));
+        // a real press and release on the menu's Reply (or the small button): its mousedown must keep the selection
+        const pressButton = async (which = btn) => {
+            const at = await h.ev(caCenter(which));
             if (at == null) return false;
             for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
                 await h.cdp("Input.dispatchMouseEvent", { type, x: Math.round(at.x), y: Math.round(at.y), button: "left", clickCount: 1 });
@@ -47255,11 +47256,18 @@ const chatQuote = {
             );
             const before = await boxText();
 
-            // 1. a right-click on a selected passage of Claude's reply opens a menu with Reply and Copy, and no
-            // floating button shows under a selection
+            // 1. a selected passage of Claude's reply shows a small ↩ button at the end of its last line, not over the line
+            // under it; a right-click on the passage opens a menu with Reply and Copy
             const sel1 = await select(prose(0), CQ_PASSAGE);
+            const small1 = await polishWaitFor(h, `!!${small}`, 3000);
+            const place1 = await h.ev(`(() => {
+                const b = ${small}?.getBoundingClientRect();
+                const rs = window.getSelection().rangeCount ? [...window.getSelection().getRangeAt(0).getClientRects()].filter((r) => r.width > 0) : [];
+                const r = rs[rs.length - 1];
+                return b && r ? { w: Math.round(b.width), h: Math.round(b.height), after: b.left >= r.right && b.left - r.right < 12, onLine: b.top >= r.top - 4 && b.bottom <= r.bottom + 4 } : null;
+            })()`);
             await polishNap(300);
-            const noFloat1 = await h.ev(`!document.querySelector("[data-chat-quote]")`);
+            await h.shot("cdp-shots/chat-quote-1-button.png");
             const up1 = await openReply();
             const menu1 = await h.ev(
                 `[...document.querySelectorAll("[data-context-menu] [data-menu-item]")].map((el) => el.getAttribute("data-menu-item"))`
@@ -47267,9 +47275,9 @@ const chatQuote = {
             await polishNap(300);
             await h.shot("cdp-shots/chat-quote-1-menu.png");
             rec(
-                "1. right-clicking a selected passage of Claude's reply opens Reply and Copy (no floating button; the box starts empty)",
-                loaded && before === "" && sel1 && noFloat1 === true && up1 && JSON.stringify(menu1) === JSON.stringify(["Reply", "Copy"]),
-                { loaded, before, sel1, noFloat1, up1, menu1 }
+                "1. a selected passage shows a small ↩ button at its line's end (not over the next line), and a right-click on it opens Reply and Copy (the box starts empty)",
+                loaded && before === "" && sel1 && small1 && place1?.w <= 24 && place1?.h <= 24 && place1?.after === true && place1?.onLine === true && up1 && JSON.stringify(menu1) === JSON.stringify(["Reply", "Copy"]),
+                { loaded, before, sel1, small1, place1, up1, menu1 }
             );
 
             // 2. pressing Reply puts the passage in the box as a quote, a blank line under it; the selection and the menu go
@@ -47285,13 +47293,13 @@ const chatQuote = {
                 { pressed2, gone2, text2, cleared2 }
             );
 
-            // 3. a passage of your own message stacks under the first quote
+            // 3. the small button on a passage of your own message stacks a second quote under the first
             const sel3 = await select(you(1), CQ_QUESTIONS[1]);
-            const up3 = await openReply();
-            const pressed3 = up3 && (await pressButton());
+            const up3 = await polishWaitFor(h, `!!${small}`, 3000);
+            const pressed3 = up3 && (await pressButton(small));
             const text3 = await boxText();
             rec(
-                "3. Reply on a passage of your own message stacks a second quote under the first",
+                "3. the small ↩ button on a passage of your own message stacks a second quote under the first",
                 sel3 && up3 && pressed3 && text3 === `> ${CQ_PASSAGE}\n\n> ${CQ_QUESTIONS[1]}\n\n`,
                 { sel3, up3, pressed3, text3 }
             );
@@ -55141,8 +55149,11 @@ const floatLedgeTabs = {
         }
         const floated =
             (await wait(`!!document.querySelector("[data-float-bar]")`)) &&
-            (await wait(`document.querySelectorAll("[data-float-tab]").length >= 5`, 5000));
-        rec("1. the scenario's terminal floats with five tabs on its ledge", floated, JSON.stringify({ floated }));
+            (await wait(
+                `document.querySelectorAll("[data-float-tab]").length + Number(document.querySelector("[data-float-tabs-more]")?.textContent?.replace(/\\D/g, "") || 0) >= 6`,
+                5000
+            ));
+        rec("1. the scenario's terminal floats with its six tabs on its ledge, shown or under +N", floated, JSON.stringify({ floated }));
         if (!floated) return steps;
 
         for (const [i, width] of FLOAT_LEDGE_WIDTHS.entries()) {
@@ -55162,6 +55173,7 @@ const floatLedgeTabs = {
                     tabsLeft: Math.min(...tabs.map((b) => b.l)),
                     tabsRight: Math.max(...tabs.map((b) => b.r)),
                     tabs: document.querySelectorAll("[data-float-tab]").length,
+                    narrowest: Math.min(...[...document.querySelectorAll("[data-float-tab]")].map((el) => el.getBoundingClientRect().width)),
                     more: document.querySelector("[data-float-tabs-more]")?.textContent ?? null,
                     floorLeft: floor?.l ?? null,
                     usageLeft: usage?.l ?? null,
@@ -55169,8 +55181,9 @@ const floatLedgeTabs = {
             })()`);
             await h.shot(`cdp-shots/float-ledge-tabs-${width}.png`);
             rec(
-                `${i + 2}. at ${width}px the Translate tab keeps its room and every tab ends before the floor and the usage`,
+                `${i + 2}. at ${width}px the Translate tab keeps its room, every tab is at least 80px (its name reads) and ends before the floor and the usage`,
                 probe.fixedHit &&
+                    probe.narrowest >= 79.5 &&
                     probe.tabsLeft >= probe.transRight &&
                     probe.more != null &&
                     probe.floorLeft != null &&
@@ -55192,7 +55205,8 @@ const floatLedgeTabs = {
                 return true;
             })()`);
         const before4 = await ledgeTabs();
-        const pinId = before4[1]?.id;
+        // the narrowest ledge may hold one tab only: then that one is pinned
+        const pinId = before4[1]?.id ?? before4[0]?.id;
         await tabMenu(pinId);
         const pinItem = await wait(`!!document.querySelector('[data-menu-item="Pin tab"]')`, 3000);
         await ttMouse(h, '[data-menu-item="Pin tab"]');
@@ -55233,6 +55247,24 @@ const floatLedgeTabs = {
             after6.every((t) => !t.pinned) && stored6 === "[]",
             JSON.stringify({ after6, stored6 })
         );
+
+        // 7. the ledge's RAM opens the Consumers panel (Sleep, Stop), whole inside the narrow float
+        const ram = await wait(`!!document.querySelector("[data-float-usage] [data-worker-capacity]")`, 5000);
+        if (ram) await ttMouse(h, "[data-float-usage] [data-worker-capacity]");
+        const panelUp = ram && (await wait(`!!document.querySelector('[data-consumers-panel][data-sort="ram"]')`, 3000));
+        await h.ev("new Promise((r) => setTimeout(r, 400))");
+        const fit7 = await h.ev(`(() => {
+            const r = document.querySelector("[data-consumers-panel]")?.parentElement?.getBoundingClientRect();
+            return r ? { l: r.left, r: r.right, t: r.top, b: r.bottom, w: innerWidth, h: innerHeight } : null;
+        })()`);
+        await h.shot("cdp-shots/float-ledge-tabs-ram.png");
+        rec(
+            "7. the RAM on the ledge opens the Consumers panel ranked by RAM, inside the float",
+            panelUp && fit7 != null && fit7.l >= 0 && fit7.r <= fit7.w + 0.5 && fit7.t >= 0 && fit7.b <= fit7.h + 0.5,
+            JSON.stringify({ ram, panelUp, fit7 })
+        );
+        await h.ev(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+        await h.ev(`document.querySelector("[data-consumers-backdrop]")?.click()`);
         return steps;
     },
     async teardown(h, ctx) {
