@@ -161,11 +161,11 @@ export function useHologramCanvas(canvasRef: RefObject<HTMLCanvasElement | null>
     }, []);
 }
 
-// The size is read once, when the scene is built: PetView keys this view by it, so a new size is a new canvas. With a
-// spot (Float: Sprout's home on the float bar) it stands there instead of in the window's bottom-right corner.
+// The size is read once, when the scene is built: PetView keys this view by it, so a new size is a new canvas. Inline
+// (Float), it sits in the box it is drawn into, the ledge's Jarvis slot, instead of in the window's bottom-right corner.
 export function HologramView({
     sizePx,
-    spot,
+    inline = false,
     pose,
     unread,
     peekOpen,
@@ -175,7 +175,7 @@ export function HologramView({
     onFail,
 }: {
     sizePx: number;
-    spot?: { left: number; top: number };
+    inline?: boolean;
     pose: HologramPose;
     unread: boolean;
     peekOpen: boolean;
@@ -212,10 +212,10 @@ export function HologramView({
             // round, so the corner of the terminal outside the form still takes clicks. In the corner the bottom is
             // HOLOGRAM_BOTTOM_PX: the toast stack stands above the form from it (toastStackBottom)
             className={cn(
-                "fixed z-[60] cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                spot == null && "bottom-[40px] right-[18px]"
+                "cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                inline ? "relative block" : "fixed bottom-[40px] right-[18px] z-[60]"
             )}
-            style={{ width: sizePx, height: sizePx, left: spot?.left, top: spot?.top }}
+            style={{ width: sizePx, height: sizePx }}
         >
             <canvas ref={canvasRef} aria-hidden="true" className="block h-full w-full" />
             {/* the unread marker: a kind of thing happened, never how many; on the form's rim at every size */}

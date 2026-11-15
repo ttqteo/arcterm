@@ -6,16 +6,18 @@
 // left, the fixed Translate tab (the Translate panel over the terminal), a divider, then the tabs Float can switch to:
 // the Agent tree's top level, so a run is one tab (its lead) however many sessions it spawned, then the plain terminals
 // (sproutroster.ts floatTabs), their dots pulsing while that agent works or asks. A right-click pins a tab: pinned tabs
-// come first, in the order they were pinned, and are never cut (floattabsstore.ts). A tab is at least 80px, so its name
-// reads; an agent that asks you is never hidden under "+N", and "+N" carries the dot of the most urgent tab it hides. On
+// come first, in the order they were pinned, and are never cut (floattabsstore.ts). The count is set so each tab gets
+// 80px and its name reads; a tab still shrinks below that rather than be cut off when the ledge narrows under it; an agent that asks you is never hidden under "+N", and "+N" carries the dot of the most urgent tab it hides. On
 // its right, since Float has no app bar, the Jobs chip while heavy jobs wait (jobqueuechip.tsx) and the free RAM and
-// plan usage (usagemeters.tsx FloatUsage), which open the Jobs popover and the Consumers panel as they do there. What lies between is the floor Sprout walks. The fixed tab
+// plan usage (usagemeters.tsx FloatUsage), which open the Jobs popover and the Consumers panel as they do there, then
+// Jarvis's hologram in a fixed box at the end (petview.tsx), the ledge's corner as the window's is in Full. What lies between is the floor Sprout walks. The fixed tab
 // and the usage keep their width; the tabs take what is left past the floor's least, so a narrow float shows fewer and
 // puts the rest under "+N" instead of painting them over their neighbours. A press on the strip, away from a tab, drags
 // the window like the float bar.
 
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { ContextMenuModel } from "@/app/store/contextmenu";
+import { globalStore } from "@/app/store/jotaiStore";
 import { useBindingKeys } from "@/app/store/keybindings/store";
 import { STATE_LABEL } from "@/app/view/agents/agentheader";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
@@ -26,11 +28,12 @@ import { StatusDot } from "@/app/view/agents/statusdot";
 import { closeTranslate, toggleTranslate, translateOpenAtom } from "@/app/view/agents/translatestore";
 import { unreadAgentsAtom } from "@/app/view/agents/unreadagentsstore";
 import { FloatUsage } from "@/app/view/agents/usagemeters";
+import { floatJarvisSlotAtom } from "@/app/view/jarvis/petstore";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Languages, Pin, SquareTerminal } from "lucide-react";
-import { useMemo, type MouseEvent } from "react";
+import { useCallback, useMemo, type MouseEvent } from "react";
 import { JobQueueChip } from "./jobqueuechip";
 
 function tabTitle(t: FloatTab): string {
@@ -104,6 +107,8 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
             e
         );
     const hidden = restState(tabs.rest);
+    // the hologram's fixed box (petview.tsx draws it in): empty, and so hidden, while Jarvis is Sprout or hidden
+    const setJarvisSlot = useCallback((el: HTMLDivElement | null) => globalStore.set(floatJarvisSlotAtom, el), []);
     return (
         <div data-tauri-drag-region className="flex h-[52px] shrink-0 select-none border-t border-border bg-surface">
             <div data-tauri-drag-region className="flex flex-none items-center gap-1 pl-2">
@@ -143,7 +148,7 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
                                     onClick={() => show(t.agent.id)}
                                     onContextMenu={(e) => showTabMenu(t, e)}
                                     className={cn(
-                                        "relative flex h-[26px] min-w-[80px] max-w-[140px] cursor-pointer items-center gap-1.5 rounded-[7px] px-2 text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                        "relative flex h-[26px] min-w-[56px] max-w-[140px] cursor-pointer items-center gap-1.5 rounded-[7px] px-2 text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                                         on
                                             ? "bg-surface-hover font-semibold text-primary ring-1 ring-edge-mid"
                                             : "text-secondary hover:bg-surface-hover hover:text-primary"
@@ -194,8 +199,13 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
                 <div data-pet-ledge data-pet-ledge-holds data-tauri-drag-region className="min-w-[64px] flex-1" />
             </div>
             <div className="flex flex-none items-center gap-1">
-                <JobQueueChip />
+                <JobQueueChip compact />
                 <FloatUsage model={model} />
+                <div
+                    ref={setJarvisSlot}
+                    data-float-jarvis-slot
+                    className="relative mr-1.5 flex h-[30px] w-[30px] flex-none items-center justify-center rounded-[8px] bg-surface-hover ring-1 ring-edge-mid empty:hidden"
+                />
             </div>
         </div>
     );

@@ -25,7 +25,8 @@ const LONG_WAIT_CHECK_MS = 15_000;
 // Nothing while the queue is empty, unless a pause is on: then it counts the pause down; or, for RECENT_BYPASS_MS after
 // a command ran without a slot, "N ran unqueued" in the warning tone. It takes the warning tone
 // once a job has waited past LONG_WAIT_MS.
-export function JobQueueChip() {
+// compact (Float's ledge): the icon and how many jobs, the words in the tooltip, so the chip showing barely moves the ledge
+export function JobQueueChip({ compact = false }: { compact?: boolean } = {}) {
     const data = useAtomValue(jobQueueAtom);
     const now = Date.now();
     const waiting = data?.jobs.some((j) => !j.running) ?? false;
@@ -52,7 +53,8 @@ export function JobQueueChip() {
             data-job-queue-chip
             data-job-queue-paused={paused ? "" : undefined}
             aria-haspopup="dialog"
-            title={chipTitle(data, now)}
+            aria-label={compact ? label : undefined}
+            title={compact ? `${label}\n${chipTitle(data, now)}` : chipTitle(data, now)}
             onClick={(e) => toggleJobQueue(e.currentTarget)}
             className={cn(
                 "flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded px-1 py-0.5 text-[11.5px] font-semibold tabular-nums hover:bg-surface-hover",
@@ -60,7 +62,7 @@ export function JobQueueChip() {
             )}
         >
             <Icon data-job-queue-warn={warn ? "" : undefined} size={12} aria-hidden />
-            {label}
+            {compact ? (data.jobs.length > 0 ? data.jobs.length : null) : label}
         </button>
     );
 }

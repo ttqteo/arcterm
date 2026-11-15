@@ -37,7 +37,7 @@ import {
     type AnimationPlaybackControls,
 } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { finalShotsViewerOpenAtom } from "./finalshotsstore";
 import {
     HOLOGRAM_RETRY_MS,
@@ -91,6 +91,7 @@ import {
 import { isStaying, stayEndsInMs } from "./petstay";
 import {
     clearExpiredPetStay,
+    floatJarvisSlotAtom,
     hologramCornerPxAtom,
     hologramLoadersShownAtom,
     petBubbleAtom,
@@ -361,8 +362,8 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     useJarvisHideTimer();
     // where the peek opens while hidden: the hologram's corner
     const [hiddenAnchor, setHiddenAnchor] = useState<HTMLDivElement | null>(null);
-    // the hologram form: the window's corner in Full, Sprout's home on the float bar in Float (FLOAT_HOLOGRAM_PX), and
-    // the fold draws its own (cockpit/sprout-mini.tsx). A GL failure (a lost
+    // the hologram form: the window's corner in Full, a fixed box at the ledge's right end in Float (FLOAT_HOLOGRAM_PX,
+    // floatJarvisSlotAtom), and the fold draws its own (cockpit/sprout-mini.tsx). A GL failure (a lost
     // context: a GPU reset, or Chromium dropping the oldest of too many, each terminal holding one) falls back to Sprout,
     // and the hologram comes back on a fresh canvas (a new key) after HOLOGRAM_RETRY_MS, unless it keeps failing
     // (hologramRetry): then Sprout stays until the form is picked again.
@@ -393,28 +394,26 @@ export function PetView({ model }: { model: AgentsViewModel }) {
         }
     }, []);
     const hologram = form === "hologram" && !hologramFailed && !folded;
-    // in Float the hologram stands where Sprout rests, once the float bar is measured
-    const floatHome = useFloatHome(floating && !folded);
-    const floatHologram = floating && floatHome != null ? floatHologramSpot(floatHome) : null;
+    // in Float the hologram sits in the ledge's Jarvis slot: one small size in one place, never walking the floor that the
+    // Jobs chip and the tabs narrow, nor growing with the window
+    const floatSlot = useAtomValue(floatJarvisSlotAtom);
+    const inSlot = hologram && floating;
     // the startup loader is drawing Jarvis in the middle: no second one in the corner until it is done
     const loaderHologram = useAtomValue(hologramLoadersShownAtom) > 0;
     const cornerPx = HOLOGRAM_SIZE_PX[hologramSize(useAtomValue(petHologramSizeAtom))];
     const hologramPx = floating ? FLOAT_HOLOGRAM_PX : cornerPx;
     // the corner hologram the toast stack stands above: the creature below, while it is the hologram, shows and stands
     // in the corner (not on the float bar)
-    const cornerHologramPx =
-        hologram && !inOffice && !loaderHologram && !hidden && floatHologram == null ? hologramPx : null;
+    const cornerHologramPx = hologram && !inOffice && !loaderHologram && !hidden && !floating ? hologramPx : null;
     useEffect(() => {
         globalStore.set(hologramCornerPxAtom, cornerHologramPx);
     }, [cornerHologramPx]);
     useEffect(() => () => globalStore.set(hologramCornerPxAtom, null), []);
     const asking = useAskingCount(model);
     const shownAnchor = hidden ? hiddenAnchor : inOffice ? officeBoss : anchor;
-    const hologramCorner: PetCorner =
-        floatHologram != null && floatHologram.left + FLOAT_HOLOGRAM_PX / 2 < window.innerWidth / 2
-            ? "bottom-left"
-            : "bottom-right";
-    const shownCorner = hidden ? "bottom-right" : inOffice ? officeCorner : hologram ? hologramCorner : corner;
+    // the hologram is in a right corner in both: the window's in Full, the ledge's in Float
+    const shownCorner =
+        hidden || hologram ? (inOffice ? officeCorner : "bottom-right") : inOffice ? officeCorner : corner;
 
     // Push once per event (pet spec §4 decision 8). Advancing the watermark re-runs this effect, which then
     // finds nothing new — so the loop settles after one push rather than repeating it. While hidden the watermark moves
@@ -502,14 +501,11 @@ export function PetView({ model }: { model: AgentsViewModel }) {
 
     // in the office the boss is the creature, so no footer sprite; this component stays mounted for its voice
     const creature =
-        inOffice ||
-        (hologram && loaderHologram) ||
-        (hologram && floating && floatHologram == null) ? null : hologram ? (
+        inOffice || (hologram && loaderHologram) || inSlot ? null : hologram ? (
             <HologramView
                 // a new size or a retry mounts a fresh canvas: a lost context cannot be had again from the old one
                 key={`hologram:${hologramPx}:${hologramTry}`}
                 sizePx={hologramPx}
-                spot={floatHologram ?? undefined}
                 pose={hologramPose({ asking, working, speaking: bubble != null, peekOpen })}
                 unread={unread}
                 peekOpen={peekOpen}
@@ -541,6 +537,35 @@ export function PetView({ model }: { model: AgentsViewModel }) {
             {/* one presence for hiding and showing: a hide plays the creature's exit (the hologram powers down to a line,
                 Sprout shrinks away), a show its entrance */}
             <AnimatePresence>{hidden ? null : creature}</AnimatePresence>
+            {/* Float's hologram, drawn into the ledge's slot; what waits rides its corner, as the nav badge would */}
+            {inSlot && !hidden && !inOffice && floatSlot != null
+                ? createPortal(
+                      <>
+                          <HologramView
+                              key={`hologram-slot:${hologramTry}`}
+                              sizePx={FLOAT_HOLOGRAM_PX}
+                              inline
+                              pose={hologramPose({ asking, working, speaking: bubble != null, peekOpen })}
+                              unread={unread}
+                              peekOpen={peekOpen}
+                              reduce={reduce}
+                              setAnchor={holdAnchor}
+                              openPeek={openPeek}
+                              onFail={onHologramFail}
+                          />
+                          {waiting > 0 ? (
+                              <span
+                                  data-pet-float-chip
+                                  aria-label={`${waiting} waiting on you`}
+                                  className="pointer-events-none absolute -right-1 -top-1 min-w-[15px] rounded-full bg-warning px-1 text-center text-[9.5px] font-bold leading-[15px] text-on-warning tabular-nums"
+                              >
+                                  {waiting}
+                              </span>
+                          ) : null}
+                      </>,
+                      floatSlot
+                  )
+                : null}
             {hidden ? (
                 <div
                     ref={setHiddenAnchor}
@@ -550,9 +575,9 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                     style={{ width: hologramPx, height: hologramPx }}
                 />
             ) : null}
-            {/* Float has no nav badge: hidden or as the hologram, what waits and what works keep their place on the
-                floor, where Sprout would wear them */}
-            {(hidden || hologram) && floating && !folded && (waiting > 0 || working > 0) ? (
+            {/* Float has no nav badge: hidden, what waits and what works keep their place on the floor, where Sprout would
+                wear them */}
+            {hidden && floating && !folded && (waiting > 0 || working > 0) ? (
                 <FloatMarks waiting={waiting} working={working} />
             ) : null}
             {/* the bubble waits out the boss's entrance */}
@@ -573,8 +598,8 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     );
 }
 
-// The hologram in Float: a size the float bar holds, where the corner's S is 80
-const FLOAT_HOLOGRAM_PX = 64;
+// The hologram in Float: the ledge slot's size (30px box), where the corner's S is 80
+const FLOAT_HOLOGRAM_PX = 24;
 
 // Sprout's box at its home on the floor (PET_PX square, standing on the ledge), measured while `on`; null until then
 function useFloatHome(on: boolean): { left: number; top: number } | null {
@@ -623,14 +648,6 @@ function useFloatHome(on: boolean): { left: number; top: number } | null {
         };
     }, [on]);
     return spot;
-}
-
-// the hologram's box in Float: centred on Sprout's home, standing on the same ledge
-function floatHologramSpot(home: { left: number; top: number }): { left: number; top: number } {
-    return {
-        left: Math.round(home.left + PET_PX / 2 - FLOAT_HOLOGRAM_PX / 2),
-        top: home.top + PET_PX - FLOAT_HOLOGRAM_PX,
-    };
 }
 
 // Float's floor while Jarvis is hidden or shows as the hologram: the count of what waits (a click opens the peek, as a

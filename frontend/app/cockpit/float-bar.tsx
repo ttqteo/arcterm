@@ -6,7 +6,7 @@ import { closeAgentChord, confirmCloseSession } from "@/app/view/agents/agentact
 import { CTX_TEXT, ICON_BTN, ICON_BTN_ON, STATE_COLOR, STATE_LABEL } from "@/app/view/agents/agentheader";
 import { contextLevel, contextTokens } from "@/app/view/agents/agentrailmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { askingLabel } from "@/app/view/agents/agentsviewmodel";
+import { askingLabel, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { exitFloat, floatPinnedAtom, foldToSprout, setFloatPinned } from "@/app/view/agents/floatstore";
 import { StatusDot } from "@/app/view/agents/statusdot";
 import { toolTerminalName } from "@/app/view/agents/toolsmodel";
@@ -26,6 +26,12 @@ import { showFoldMenu, useFoldTitle, WindowControls } from "./app-bar";
 // The arrow cursor and no text selection over all of it, as over a native title bar. 38px on a Mac, because macOS
 // overlays its traffic lights at the centre line of a bar that tall (tauri.macos.conf.json); 40px elsewhere, room for
 // the 32px Sprout and little more.
+// the name's tooltip: the whole name, what it is doing and its model, which the narrow bar leaves out
+function floatTitleTip(agent: AgentVM): string {
+    const state = agent.state === "asking" ? askingLabel(agent) : STATE_LABEL[agent.state];
+    return [agent.name, state, agent.model].filter(Boolean).join(" · ");
+}
+
 export function FloatBar({ model }: { model: AgentsViewModel }) {
     const mac = isMacOS();
     const pinned = useAtomValue(floatPinnedAtom);
@@ -56,22 +62,22 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
                 <span
                     data-float-title
                     data-tauri-drag-region
+                    title={agent != null && agent.kind !== "terminal" ? floatTitleTip(agent) : undefined}
                     className="min-w-0 truncate text-[13px] font-semibold text-primary"
                 >
                     {agent?.kind === "terminal" ? toolTerminalName(agent, tools) : (agent?.name ?? "arcterm")}
                 </span>
+                {/* the name comes first in a narrow float: the dot says the state, so the word shows only when it asks
+                    (what it asks matters); the model and the state's word are in the name's tooltip */}
                 {agent != null && agent.kind !== "terminal" ? (
                     <span data-tauri-drag-region className="flex flex-none items-baseline gap-[7px] text-[11px]">
-                        <span
-                            data-tauri-drag-region
-                            className="font-medium"
-                            style={{ color: STATE_COLOR[agent.state] }}
-                        >
-                            {agent.state === "asking" ? askingLabel(agent) : STATE_LABEL[agent.state]}
-                        </span>
-                        {agent.model ? (
-                            <span data-tauri-drag-region className="text-muted">
-                                {agent.model}
+                        {agent.state === "asking" ? (
+                            <span
+                                data-tauri-drag-region
+                                className="font-medium"
+                                style={{ color: STATE_COLOR[agent.state] }}
+                            >
+                                {askingLabel(agent)}
                             </span>
                         ) : null}
                         {agent.usage?.contextpct != null ? (

@@ -46,9 +46,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
-- In Float, Jarvis's hologram and its marks keep to the floor when the ledge narrows (the Jobs chip showing, a tab
-  coming): they stood over the chip instead. They stay put otherwise, rather than drifting along the ledge each time
-  the free RAM's digits change.
+- In Float, Jarvis's hologram sits small in a fixed box at the ledge's right corner, with what waits on you as a badge:
+  it no longer walks the floor, grows, drifts or stands over the Jobs chip when a heavy job shows.
+- Float's ledge holds its layout while a heavy job runs: the Jobs chip is its icon and count, and the tabs narrow
+  instead of being cut off at the edge.
+- Float's title bar gives the agent's name the room: the dot says the state (the word shows only when it asks), and
+  the model is in the name's tooltip.
 - Jarvis's panel opens beside the hologram in Float again, inside the window, instead of off past its edge and cut off.
 - On a Mac, Chat's jump-to-latest button shows its ↓ once: the ⌘↓ beside it said the same arrow again (it stays in the
   tooltip).

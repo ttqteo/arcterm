@@ -137,6 +137,10 @@ export const petCharacterAtom = atomWithStorage<PetCharacter>(
 // How Jarvis shows (Settings → Jarvis → Form): the hologram (hologramview.tsx), the default, fixed in the full window's
 // bottom-right corner, at Sprout's home on the float bar in Float and in Sprout's box in the fold; or Sprout. Read
 // through petForm, which turns a value that is not one of the two into the hologram.
+// Float's place for the hologram: a fixed box at the ledge's right end (float-ledge.tsx), which PetView draws the
+// hologram into, so it keeps one small size in one spot whatever the ledge holds
+export const floatJarvisSlotAtom = atom<HTMLDivElement | null>(null) as PrimitiveAtom<HTMLDivElement | null>;
+
 export const petFormAtom = atomWithStorage<PetForm>("jarvis.pet.form", DEFAULT_PET_FORM, undefined, {
     getOnInit: true,
 }) as PrimitiveAtom<PetForm>;
