@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Commenting on a table in a Markdown file's Preview (the + beside its rows) opens the comment box under the table
+  again, and the comment's card shows there; the box stayed hidden, so Ctrl+Enter sent the comments you had instead.
 - ↑ in Chat's empty box recalls your last message again while a Queued bubble lingers after Claude already took it,
   instead of doing nothing.
 - A long bash command (`!`) that scrolls in Chat's box keeps its suggestion right after the last character.

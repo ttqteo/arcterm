@@ -27,6 +27,7 @@ import { connect as netConnect, createServer as createNetServer } from "node:net
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { crc32 as zlibCrc32, deflateSync } from "node:zlib";
 import { SURFACE_LABEL } from "./attach.mjs";
 import { narrationFeed } from "./narrationfeed.mjs";
 import {
@@ -37290,11 +37291,31 @@ const MDC_GUIDE = [
     "",
 ].join("\n");
 const MDC_OTHER = "# Other\n\nThe other doc's only paragraph.\n";
-// a 1x1 PNG
-const MDC_PNG = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-    "base64"
-);
+// a 64x32 grey PNG. Not 1x1: MdDoc reads the hovered block 2 px right of the text column (so its gutter + stays
+// reachable), and a 1 px image there is never under that probe, so step 5's hover would only find the paragraph
+const MDC_PNG = (() => {
+    const [w, hgt] = [64, 32];
+    const chunk = (type, data) => {
+        const len = Buffer.alloc(4);
+        len.writeUInt32BE(data.length);
+        const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+        const crc = Buffer.alloc(4);
+        crc.writeUInt32BE(zlibCrc32(body));
+        return Buffer.concat([len, body, crc]);
+    };
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(w, 0);
+    ihdr.writeUInt32BE(hgt, 4);
+    ihdr.set([8, 0, 0, 0, 0], 8); // 8-bit greyscale
+    const rows = Buffer.alloc((w + 1) * hgt, 0x80);
+    for (let y = 0; y < hgt; y++) rows[y * (w + 1)] = 0; // filter byte: none
+    return Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        chunk("IHDR", ihdr),
+        chunk("IDAT", deflateSync(rows)),
+        chunk("IEND", Buffer.alloc(0)),
+    ]);
+})();
 const MDC_EXPECTED = [
     "Comments on 2 files (4):",
     "",
@@ -37523,7 +37544,8 @@ const mdComments = {
         const plus1 = await mdcPlus(h, mdcRow("Quick"), false);
         const plus2 = await mdcPlus(h, mdcRow("Plan"), true);
         const box4 = await h.ev(`${MDC_DOC}?.querySelector("[data-md-box]")?.innerText ?? ""`);
-        const afterTable = await h.ev(`${MDC_DOC}?.querySelector("[data-md-box]")?.closest("[data-md-slot]")?.previousElementSibling?.tagName ?? ""`);
+        // the slot follows the table's wrapper (div.table-block, which holds its Copy button), as CardSlot reads it
+        const afterTable = await h.ev(`(() => { const b = ${MDC_DOC}?.querySelector("[data-md-box]")?.closest("[data-md-slot]")?.previousElementSibling; return b == null ? "" : b.matches("table") || b.querySelector(":scope > .table-box > table") != null ? "TABLE" : b.tagName; })()`);
         const target = await h.ev(`${MDC_DOC}?.querySelector('[data-md-mark="target"]')?.dataset.lines ?? null`);
         await mdcType(h, "Add a column for cost.");
         const draftBlocked = await polishWaitFor(h, `!!${MDC_ASIDE}?.querySelector("[data-md-send]")?.disabled && ${mdcTray}.includes("Add or cancel the open comment first")`, 3000);
