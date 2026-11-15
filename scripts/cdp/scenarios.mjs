@@ -66274,7 +66274,30 @@ const contextMenu = {
             };
         `);
         await h.shot(lookShot("context-menu"));
+        // a submenu opened while the root panel still scales in (PopoverReveal) stands where it does once it settles: 5px
+        // above its row and 4px off its right side. The row is entered in the frame the menu mounts (React reads
+        // mouseover as its mouseenter), then both are read after the reveal
+        const early = await lookEval(h, `
+            const { globalStore } = await mod("app/store/jotaiStore.ts");
+            const { contextMenuAtom, closeContextMenu } = await mod("app/store/contextmenu.ts");
+            closeContextMenu();
+            await nap(100);
+            const items = ${JSON.stringify(LOOK_MENU_ITEMS)}.map((i) => ({ ...i, click: () => {} }));
+            globalStore.set(contextMenuAtom, { items, x: ${LOOK_MENU_AT.x}, y: ${LOOK_MENU_AT.y} });
+            await until(() => ${LOOK_MENU_ROW("Sort by")} != null, 2000);
+            ${LOOK_MENU_ROW("Sort by")}.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body }));
+            await until(() => document.querySelector("[data-context-submenu]") != null, 2000);
+            await nap(600);
+            const row = ${LOOK_MENU_ROW("Sort by")}.getBoundingClientRect();
+            const sub = document.querySelector("[data-context-submenu]")?.getBoundingClientRect();
+            return sub == null ? { opened: false } : { opened: true, dTop: Math.round((sub.top - (row.top - 5)) * 10) / 10, dLeft: Math.round((sub.left - (row.right + 4)) * 10) / 10 };
+        `);
         return [
+            {
+                step: "a submenu opened while the menu scales in sits 5px above its row and 4px off its side once it settles",
+                ok: early.opened && Math.abs(early.dTop) <= 1 && Math.abs(early.dLeft) <= 1,
+                detail: JSON.stringify(early),
+            },
             {
                 step: "a menu with every row kind draws them all, and hovering Sort by opens its submenu",
                 ok: sub.submenu && sub.danger,
