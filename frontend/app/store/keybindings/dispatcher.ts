@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { jobQueueOpenAtom } from "@/app/cockpit/jobqueuestore";
 import { anyDialogOpen, anyModalOpen } from "@/app/modals/modalstack";
 import { contextMenuAtom } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -138,6 +139,9 @@ export function deriveKeyContext(): KeyContext {
         // and the footer's Consumers and Servers popovers, whose Escape listeners run after this capture handler
         globalStore.get(consumersOpenAtom) != null ||
         globalStore.get(machineServersOpenAtom) ||
+        // and the app bar's Jobs popover, the same way: uncounted, Escape on Jarvis, Diff, Usage or Code went home with
+        // it open (its listener never saw the key), and on the Agent surface stopped a working agent's turn
+        globalStore.get(jobQueueOpenAtom) ||
         // the float folded into Sprout: the shell is hidden, and its keys (f, Escape, Shift+F, j/k) ended float or
         // changed the agent behind Sprout's back
         globalStore.get(floatMiniAtom) ||

@@ -31,6 +31,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Escape closes the Jobs popover (the app bar's heavy-jobs chip) on every surface. Before, on Jarvis, Diff, Usage or
+  Code it went back to the Cockpit with the popover still open, and on the Agent surface it could stop a working
+  agent's turn.
+- Escape in a document's Outline list closes the list, instead of leaving the agent or stopping its turn. The list
+  that opens from the File tab's Outline rail is frosted like the other popovers.
+- Escape closes Code's review list or Send review menu even after a click elsewhere on the surface, instead of going
+  back to the Cockpit with it still open.
 - Commenting on a table in a Markdown file's Preview (the + beside its rows) opens the comment box under the table
   again, and the comment's card shows there; the box stayed hidden, so Ctrl+Enter sent the comments you had instead.
 - ↑ in Chat's empty box recalls your last message again while a Queued bubble lingers after Claude already took it,
