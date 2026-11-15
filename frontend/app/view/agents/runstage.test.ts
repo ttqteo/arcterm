@@ -9,7 +9,7 @@ import {
     runStage,
 } from "./runstage";
 
-type R = Pick<RunInfo, "status" | "land" | "dag">;
+type R = Pick<RunInfo, "status" | "land" | "dag" | "leadFailed">;
 const dag = (status: string, final?: Partial<FinalStage>): TaskGroup =>
     ({ status, tasks: [], final: final ? { round: 1, ...final } : undefined }) as unknown as TaskGroup;
 const pips = (r: R, asking = false) => runStage(r, asking).tail.map((p) => p.state);
@@ -227,5 +227,25 @@ describe("runStage", () => {
             paused: false,
         });
         expect(runStage({ status: "executing", dag: dag("running") }).paused).toBe(false);
+    });
+
+    // a lead whose process died fails its phase (jarvis.FailPhase): the run reads blocked, as one waiting on a question
+    // does, and leadFailed is the only thing telling the two apart
+    it("reads a run whose lead died as failed, in the error tone, still needing you", () => {
+        const s = runStage({ status: "blocked", leadFailed: true });
+        expect(s.key).toBe("failed");
+        expect(s.label).toBe("Failed");
+        expect(s.tone).toBe("error");
+        expect(s.needsYou).toBe(true);
+        expect(s.tail).toEqual([{ name: "Land", state: "pending" }]);
+        expect(runStage({ status: "blocked", leadFailed: true, dag: dag("running") }).key).toBe("failed");
+        // without the flag the same blocked run is mid-work and waits on you
+        expect(runStage({ status: "blocked" }).key).toBe("working");
+        expect(runStage({ status: "failed" }).key).toBe("failed");
+    });
+
+    it("leaves a done or cancelled run as it is, whatever its lead phase says", () => {
+        expect(runStage({ status: "cancelled", leadFailed: true }).key).toBe("cancelled");
+        expect(runStage({ status: "done", leadFailed: true, land: { state: "landed" } }).key).toBe("landed");
     });
 });

@@ -11,6 +11,15 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `printf 'Pq#0;2;0;0;0#1;2;100;100;0#2;2;0;100;0#1~~@@vv@@~~@@~~$#2??}}GG}}??}}??-#1!14@\'` → a small
   yellow-and-green "HI" draws, and `waveapp.log` has no new `WebAssembly.instantiate` rejection after a terminal
   mounts (it had one per mount). Commit: fix(tauri) the CSP lets the terminal's sixel decoder compile its WASM
+- [ ] (arcterm) **Jarvis and initiatives polish batch, in the app.** Unit tests and the typecheck only; no dev app
+  ran. Check each: (1) the initiative link in an agent's header has the tooltip "… Ctrl+click to peek at it in
+  Sprout"; (2) the initiative band's Mark done and Add note show their m / n hints as key caps that sit level in the
+  button; (3) a run whose lead process died (kill the lead's claude) reads "Failed · n/m" in red in the Agent tree,
+  "failed" on the Brief and Failed in the run sheet; (4) on a fresh launch, open Sprout before Jarvis: the "N
+  initiatives changed · M idle" line shows once the briefing loads; (5) a plan a run worker proposes
+  (`wsh effort chunk add ... --proposed` from its terminal) opens that worker from Needs you; (6) in the Brief, delete a
+  stage's last chunks, then within 5 s rename the next stage: the stage you clicked is renamed. Commits: branch
+  fix/jarvis-initiatives-polish (c6fa4470b … ffacae754)
 - [ ] (arcterm) **The spring's feel on the Cockpit, Jarvis, Diff and Setup, on a real roster.** The
   `surfaces-spring-*` scenarios time each motion on fixtures (`task verify:ui -- surfaces-spring-cockpit`
   …); no packaged build ran them on your own agents and projects. In the packaged app on a real roster: the Cockpit

@@ -18,7 +18,8 @@ export type RunStageKey =
     | "land-held"
     | "landed"
     | "complete"
-    | "cancelled";
+    | "cancelled"
+    | "failed";
 // paused: the stage a paused run stopped in, which holds still instead of pulsing as active does
 export type PipState = "pending" | "active" | "paused" | "done" | "held" | "failed" | "skipped";
 // working is a task at work (green, like an agent); running is the engine moving the run on (blue)
@@ -81,6 +82,7 @@ const LABEL: Record<RunStageKey, string> = {
     landed: "Landed",
     complete: "Complete",
     cancelled: "Cancelled",
+    failed: "Failed",
 };
 
 // lifecycle order, for "is the run past this stage"; land-held sits with landing
@@ -96,7 +98,7 @@ const ORDER: RunStageKey[] = [
     "complete",
 ];
 
-function stageKey(run: Pick<RunInfo, "status" | "land" | "dag">): RunStageKey {
+function stageKey(run: Pick<RunInfo, "status" | "land" | "dag" | "leadFailed">): RunStageKey {
     const status = run.status ?? "";
     const dagStatus = run.dag?.status ?? "";
     // a done run's cancelled dag is not a cancelled run: the engine closes the dag a run left behind when it ended
@@ -110,6 +112,10 @@ function stageKey(run: Pick<RunInfo, "status" | "land" | "dag">): RunStageKey {
     const land = run.land?.state;
     if (status === "done" && (land != null || run.dag == null || dagStatus === "done" || dagStatus === "cancelled")) {
         return land == null ? "complete" : land === "landed" ? "landed" : land === "held" ? "land-held" : "landing";
+    }
+    // a run whose lead died, or one stamped failed, stopped where it was: no stage after it is under way
+    if (run.leadFailed || status === "failed") {
+        return "failed";
     }
     if (dagStatus === "done") {
         return "wrapping-up";
@@ -128,7 +134,7 @@ function stageKey(run: Pick<RunInfo, "status" | "land" | "dag">): RunStageKey {
 }
 
 export function runStage(
-    run: Pick<RunInfo, "status" | "land" | "dag" | "pausedBy" | "pausedUntil">,
+    run: Pick<RunInfo, "status" | "land" | "dag" | "pausedBy" | "pausedUntil" | "leadFailed">,
     asking = false
 ): RunStageView {
     const key = stageKey(run);
@@ -152,17 +158,19 @@ export function runStage(
     const tone: StageTone =
         key === "cancelled" || paused
             ? "muted"
-            : needsYou
-              ? "asking"
-              : finalState === "failed" && !complete
-                ? "error"
-                : complete
-                  ? outcome === "unverified"
-                      ? "asking"
-                      : "done"
-                  : key === "working"
-                    ? "working"
-                    : "running";
+            : key === "failed"
+              ? "error"
+              : needsYou
+                ? "asking"
+                : finalState === "failed" && !complete
+                  ? "error"
+                  : complete
+                    ? outcome === "unverified"
+                        ? "asking"
+                        : "done"
+                    : key === "working"
+                      ? "working"
+                      : "running";
 
     const landPip: PipState =
         key === "cancelled" || key === "complete"

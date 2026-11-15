@@ -30,6 +30,20 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   blocked the decoder they need.
 - On an agent's initiative band beside a Brainstorm part, the "?" button no longer draws over "On <chunk>": the
   initiative's title gives way first.
+- A run whose lead stopped working (its process died) now reads Failed, in red, in the Agent tree, the Brief and the
+  run sheet, instead of Working.
+- Deleting or editing an initiative chunk whose name is only digits no longer hits another chunk when the plan
+  changed elsewhere in the meantime: the edit is refused instead.
+- A plan an agent proposed now opens that agent from Needs you and the palette, even when it is a worker in a run,
+  instead of the initiative.
+- Sprout's "initiatives changed · idle" line now shows the first time you open Sprout after a launch, without
+  opening Jarvis first.
+- Accept all and continue now tells you when the plan was accepted but the message to start could not reach the
+  agent's terminal, instead of failing silently.
+- Renaming or deleting a stage in the Brief right after deleting a chunk now acts on the stage you clicked, not the
+  one after it.
+- The initiative link in an agent's header now says that Ctrl+click (⌘-click) peeks at the initiative in Sprout,
+  which is what it does.
 - A submenu opened the moment its context menu appears now sits beside its row, instead of a few pixels off until
   you reopen it.
 - A reply holding a review verdict no longer shows twice in Chat for a moment while it lands.

@@ -591,6 +591,7 @@ func planReviewItems(efforts []*waveobj.Effort) []wshrpc.AttentionItem {
 			continue
 		}
 		n, since := 0, int64(0)
+		proposer, proposedTs := "", int64(0)
 		for _, c := range e.Chunks {
 			if c.Status != "proposed" {
 				continue
@@ -598,6 +599,11 @@ func planReviewItems(efforts []*waveobj.Effort) []wshrpc.AttentionItem {
 			n++
 			if since == 0 || (c.UpdatedTs != 0 && c.UpdatedTs < since) {
 				since = c.UpdatedTs
+			}
+			for _, note := range c.Notes {
+				if note.Session != "" && note.Text == "proposed" && note.Ts >= proposedTs {
+					proposer, proposedTs = note.Session, note.Ts
+				}
 			}
 		}
 		if n == 0 {
@@ -611,6 +617,7 @@ func planReviewItems(efforts []*waveobj.Effort) []wshrpc.AttentionItem {
 			Action:       "Review",
 			ORef:         waveobj.MakeORef(waveobj.OType_Effort, e.OID).String(),
 			EffortOID:    e.OID,
+			ProposerORef: proposer,
 			WaitingSince: since,
 			Why:          "An agent proposed these chunks. They count once you accept them.",
 		})

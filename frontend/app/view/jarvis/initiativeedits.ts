@@ -60,9 +60,12 @@ export function buildTrackerEdits(deps: EditsDeps): TrackerEdits {
     const { oref, effort, pendingDeletes, run } = deps;
     // index math runs on the server's list, pending deletes included: the server still has them
     const chunks = effortChunkRows(effort);
-    // The plan as the tracker draws it. The chunks an agent proposed are a group of their own, outside its stage runs,
-    // its cursor and its positions; refs sent to the server still run over `chunks`, which has them all.
-    const planOnly = chunks.filter((c) => c.status !== "proposed");
+    // The plan as the tracker draws it (initiativesheet useSheetRows). The chunks an agent proposed are a group of
+    // their own, outside its stage runs, its cursor and its positions, and a chunk waiting out its delete is not drawn
+    // at all: a stage run's index from the sheet counts without it, so the edits must too, or for the undo window a
+    // stage edit lands on the run after the one clicked. Refs sent to the server still run over `chunks`, which has
+    // them all.
+    const planOnly = chunks.filter((c) => c.status !== "proposed" && !pendingDeletes.has(chunkKey(oref, c.label)));
     const indexOf = (label: string) => chunks.findIndex((c) => c.label === label);
     const ref = (label: string) => chunkRef(chunks, label);
     // A position the plan computes (moveTarget, stageMoveTarget, a run's end), as the server counts it: the proposed

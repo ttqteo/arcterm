@@ -109,9 +109,21 @@ describe("buildTrackerEdits", () => {
         );
         const d = deps({ pendingDeletes });
         const edits = buildTrackerEdits(d);
-        edits.onDeleteStage(1);
+        // the sheet draws no Design run while its chunks wait out their delete, so Build is its run 0
+        edits.onDeleteStage(0);
         expect(d.failed).toEqual(["An initiative keeps at least one chunk."]);
         expect(globalStore.get(pendingDeleteKeysAtom).size).toBe(0);
+    });
+
+    it("counts stage runs as the sheet draws them, without the chunks waiting out a delete", () => {
+        const pendingDeletes = new Set(["Spec", "Board"].map((l) => "chunk:effort:e1:" + l));
+        const edits = buildTrackerEdits(deps({ pendingDeletes }));
+        edits.onRenameStage(0, "Ship");
+        expect(store.setChunkStage).toHaveBeenCalledWith("effort:e1", ["Cards", "Sheet"], "Ship");
+        edits.onDeleteStage(0);
+        expect(globalStore.get(pendingDeleteKeysAtom).has("chunk:effort:e1:Cards")).toBe(true);
+        expect(globalStore.get(pendingDeleteKeysAtom).has("chunk:effort:e1:Sheet")).toBe(true);
+        globalStore.get(briefToastAtom)?.undo?.();
     });
 
     it("waits out the undo window before deleting a chunk", () => {

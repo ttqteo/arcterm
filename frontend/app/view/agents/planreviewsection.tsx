@@ -5,6 +5,7 @@
 // person accepts them. Accept, Rename in place and Drop per row; Accept all and continue, Accept all and Drop all
 // under them. A decided row stays, with Undo, until the rail re-reads (planreviewstore.ts).
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import {
     acceptProposed,
     dropProposed,
@@ -17,7 +18,7 @@ import { chunkRef } from "@/app/view/jarvis/trackeredit";
 import { cn } from "@/util/util";
 import { Check, Pencil, X } from "lucide-react";
 import { useState } from "react";
-import { driveAgent } from "./agentactions";
+import { sendToAgent } from "./agentsubmit";
 import type { AgentVM } from "./agentsviewmodel";
 import { canDrive } from "./consumers";
 import { decisionsFor, planEditChunks, restoreAt, type PlanRow } from "./planreviewmodel";
@@ -83,10 +84,21 @@ export function PlanReviewSection({ agent }: { agent: AgentVM }) {
             )
         );
     const drop = (labels: string[]) => decide(labels, "dropped", () => dropProposed(oref, plan, labels));
+    // the accept has landed by the time the message is typed, so a write that fails says so in a toast: the last
+    // chunk accepted can drop this section, and its error line with it
     const acceptAndContinue = async () => {
         const first = waiting[0];
-        if (await accept(waiting)) {
-            driveAgent(agent.blockId, continueMessage(first));
+        if (!(await accept(waiting)) || !agent.blockId) {
+            return;
+        }
+        try {
+            await sendToAgent(agent.blockId, continueMessage(first));
+        } catch (e) {
+            pushToast({
+                title: `Plan accepted, but ${agent.name} was not told to start`,
+                message: e instanceof Error ? e.message : String(e),
+                level: "error",
+            });
         }
     };
     const undo = (label: string) => {

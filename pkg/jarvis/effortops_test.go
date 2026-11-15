@@ -170,6 +170,30 @@ func TestApplyOpsResolveChunkRefs(t *testing.T) {
 	expectErrCode(t, err, "EC-UNKNOWN-CHUNK")
 }
 
+// An all-digit label goes as "=<label>": it resolves by label alone, and a label that is gone is an unknown chunk,
+// never the chunk now at that position.
+func TestResolveChunkIndexExactLabel(t *testing.T) {
+	e := &waveobj.Effort{Chunks: []waveobj.EffortChunk{{Label: "a"}, {Label: "1"}, {Label: "=b"}, {Label: "b"}}}
+	if idx, err := ResolveChunkIndex(e, "=1"); err != nil || idx != 1 {
+		t.Fatalf("=1: idx=%d err=%v", idx, err)
+	}
+	if idx, err := ResolveChunkIndex(e, "1"); err != nil || idx != 0 {
+		t.Fatalf("bare 1 stays a position: idx=%d err=%v", idx, err)
+	}
+	if idx, err := ResolveChunkIndex(e, "==b"); err != nil || idx != 2 {
+		t.Fatalf("==b: idx=%d err=%v", idx, err)
+	}
+	if idx, err := ResolveChunkIndex(e, "=b"); err != nil || idx != 3 {
+		t.Fatalf("=b: idx=%d err=%v", idx, err)
+	}
+	_, err := ResolveChunkIndex(e, "=2")
+	expectErrCode(t, err, "EC-UNKNOWN-CHUNK")
+	only := &waveobj.Effort{Chunks: []waveobj.EffortChunk{{Label: "=x"}}}
+	if idx, err := ResolveChunkIndex(only, "=x"); err != nil || idx != 0 {
+		t.Fatalf("a label starting with = typed bare: idx=%d err=%v", idx, err)
+	}
+}
+
 func TestApplyOpsSetChunkStatusEmitsEvents(t *testing.T) {
 	e := mkEffort()
 	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkStatus", Chunk: "Phase 3", Status: "blocked", Note: "waiting on substrate"}}, "", effortNow)

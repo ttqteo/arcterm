@@ -247,13 +247,13 @@ describe("switchPlan", () => {
         expect(switchPlan(effort, "t1", "D").attach).toEqual([attach("D")]);
     });
 
-    it("sends a chunk whose label is all digits as its position", () => {
+    it("sends a chunk whose label is all digits by its label, never a position", () => {
         const e = { oid: "o", chunks: [chunk("2", "pending"), chunk("1", "pending")] };
-        expect(switchPlan(e, "t1", "2").attach).toEqual([attach("1"), status("1", "active")]);
+        expect(switchPlan(e, "t1", "2").attach).toEqual([attach("=2"), status("=2", "active")]);
         const own = { oid: "o", chunks: [chunk("5", "active", [me()]), chunk("C", "pending")] };
         const p = switchPlan(own, "t1", "C");
-        expect(p.detach).toEqual([detach("1"), status("1", "pending")]);
-        expect(p.rollback).toEqual([attach("1"), status("1", "active")]);
+        expect(p.detach).toEqual([detach("=5"), status("=5", "pending")]);
+        expect(p.rollback).toEqual([attach("=5"), status("=5", "active")]);
     });
 
     it("leaves the oref out of the line for an initiative with no oid", () => {

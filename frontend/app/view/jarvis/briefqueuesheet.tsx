@@ -8,7 +8,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { runAtom } from "@/app/view/agents/channelsstore";
-import { runProgress } from "@/app/view/agents/runlineage";
+import { leadPhaseFailed, runProgress } from "@/app/view/agents/runlineage";
 import { openOriginSession, useOriginName } from "@/app/view/agents/runoriginstore";
 import type { QueuedRow } from "@/app/view/agents/runqueuemodel";
 import {
@@ -55,7 +55,12 @@ function useAfterStage(model: AgentsViewModel, runId: string | undefined): strin
         return undefined;
     }
     const dag = lineage.runs[run.id]?.dag;
-    const label = runStage({ status: run.status, land: run.land, dag }).label.toLowerCase();
+    const label = runStage({
+        status: run.status,
+        land: run.land,
+        dag,
+        leadFailed: leadPhaseFailed(run),
+    }).label.toLowerCase();
     const { done, total } = runProgress(dag);
     return dag != null && total > 0 ? `${label} ${done}/${total}` : label;
 }

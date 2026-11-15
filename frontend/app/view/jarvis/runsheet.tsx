@@ -30,7 +30,7 @@ import { RunMenu } from "@/app/view/agents/runmenu";
 import { needsEvidenceSeal, verifCounts } from "@/app/view/agents/runcompletion";
 import { useRunEvents } from "@/app/view/agents/runeventstore";
 import { RunGoal } from "@/app/view/agents/rungoalview";
-import { runTitle } from "@/app/view/agents/runlineage";
+import { leadPhaseFailed, runTitle } from "@/app/view/agents/runlineage";
 import {
     cancelSurvivors,
     canResume,
@@ -533,7 +533,7 @@ function SheetBarView({ bar, dag, run }: { bar: SheetBar | null; dag: SheetDagRe
     }
     const group = dag?.group ?? undefined;
     const digest = dag?.digest.digest;
-    const stage = runStage({ status: run.status, land: run.land, dag: group });
+    const stage = runStage({ status: run.status, land: run.land, dag: group, leadFailed: leadPhaseFailed(run) });
     const strip = taskStrip(group, digest, stage.paused);
     if (strip == null) {
         return null;

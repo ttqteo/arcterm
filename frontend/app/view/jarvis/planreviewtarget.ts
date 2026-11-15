@@ -9,14 +9,17 @@ import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { openAgentFor } from "./initiativework";
 
 /** Pure: the live agent a plan-review item is about, or undefined for any other kind, an item that names no
- *  initiative, or an initiative no agent is open on. "The session on this initiative" is openAgentFor's rule: a run's
- *  agents and plain terminals are not it, and among the rest the one that needs you, then the busy one, then the most
- *  recently idle wins, so with several open the newest is the one that opens. */
+ *  initiative, or an initiative no agent is open on. The session that proposed the plan (the item's proposeroref)
+ *  wins while it is open, an engine worker included. Else "the session on this initiative" is openAgentFor's rule: a
+ *  run's agents and plain terminals are not it, and among the rest the one that needs you, then the busy one, then
+ *  the most recently idle wins, so with several open the newest is the one that opens. */
 export function planReviewAgent(item: AttentionItem, roster: ReadonlyArray<AgentVM>): AgentVM | undefined {
     if (item?.kind !== "plan-review" || !item.effortoid) {
         return undefined;
     }
-    return openAgentFor(item.effortoid, [...roster]);
+    const proposer = item.proposeroref?.startsWith("agent:") ? item.proposeroref.slice("agent:".length) : "";
+    const byProposer = proposer ? roster.find((a) => a.id === proposer && a.kind !== "terminal") : undefined;
+    return byProposer ?? openAgentFor(item.effortoid, [...roster]);
 }
 
 /** Pure: the oref a plan-review item opens: `agent:<id>` when its agent is still open, else the item's own (the

@@ -113,6 +113,16 @@ export function loadBriefing(): void {
     void loadBriefingAsync();
 }
 
+// For a reader outside the Brief (Sprout's review line): the briefing loaded once, when no snapshot is in and none is
+// on its way. A load never advances the visit cursor (that waits on the Brief's dwell, ackBriefingVisit), so loading
+// it here leaves the Brief's "since you looked" as it was.
+export function loadBriefingIfNone(): void {
+    const st = globalStore.get(fetchedBriefingStateAtom);
+    if (st.snapshot == null && !st.loading) {
+        loadBriefing();
+    }
+}
+
 // --- visit acknowledgment (dwell-based; the safe consequence of skipping it is repetition) --------
 export type BriefingAckState = "idle" | "waiting" | "saved" | "failed";
 export const briefingAckAtom = atom<BriefingAckState>("idle") as PrimitiveAtom<BriefingAckState>;

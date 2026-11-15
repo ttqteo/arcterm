@@ -547,7 +547,7 @@ export function useInitiativePart({
                 className={cn(BTN, "h-[24px]", narrow && "px-[7px] text-[11px]")}
             >
                 {labels.markDone}
-                {narrow ? null : <kbd className="font-mono text-[10px] font-normal text-ink-mid">m</kbd>}
+                {narrow ? null : <KeyCap chord="m" variant="inline" className="text-[10px] font-normal text-ink-mid" />}
             </button>
         ) : null;
 
@@ -856,7 +856,11 @@ export function useInitiativePart({
                                         className={BTN}
                                     >
                                         Add note
-                                        <kbd className="font-mono text-[10px] font-normal text-ink-mid">n</kbd>
+                                        <KeyCap
+                                            chord="n"
+                                            variant="inline"
+                                            className="text-[10px] font-normal text-ink-mid"
+                                        />
                                     </button>
                                     <button
                                         type="button"

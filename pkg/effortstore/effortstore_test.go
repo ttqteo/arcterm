@@ -325,6 +325,35 @@ func TestDeleteRemovesFile(t *testing.T) {
 	}
 }
 
+func TestDeleteUnlinksChildren(t *testing.T) {
+	useTempRoot(t)
+	ctx := context.Background()
+	parent := mustCreate(t, &waveobj.Effort{Title: "parent"})
+	child := mustCreate(t, &waveobj.Effort{Title: "child", ParentOID: parent.OID})
+	other := mustCreate(t, &waveobj.Effort{Title: "other parent"})
+	kept := mustCreate(t, &waveobj.Effort{Title: "kept", ParentOID: other.OID})
+	before, err := Get(ctx, child.OID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Delete(ctx, "effort:"+parent.OID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Get(ctx, child.OID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ParentOID != "" {
+		t.Fatalf("child still linked to the deleted parent: %q", got.ParentOID)
+	}
+	if got.UpdatedTs != before.UpdatedTs {
+		t.Fatalf("unlinking moved the child's updatedts: %d -> %d", before.UpdatedTs, got.UpdatedTs)
+	}
+	if k, _ := Get(ctx, kept.OID); k == nil || k.ParentOID != other.OID {
+		t.Fatalf("an effort under another parent lost its link: %+v", k)
+	}
+}
+
 func TestConcurrentUpdatesSameOID(t *testing.T) {
 	useTempRoot(t)
 	e := mustCreate(t, &waveobj.Effort{Title: "busy"})
