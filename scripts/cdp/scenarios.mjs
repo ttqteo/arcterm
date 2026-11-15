@@ -15733,7 +15733,11 @@ const agentTreeRail = {
         // the rows the sweeps above only cover when they render: a nested row's guide is a 1px line in its first
         // column. The name leaf is found in any element: a worker's title and a subagent's type are divs (WorkerRow,
         // ParentRow's subagent rows) but a lead's name is a span (ParentRow's name line). Its nearest .relative is
-        // the row div, which holds the run line and the task strip (RunSubline renders inside it)
+        // the row div, which holds the run line and the task strip (RunSubline renders inside it).
+        // A guide is an absolute span 1px wide, but not read as exactly "1px": the app opens at 110% page zoom
+        // (8fb9a9ba9, chrome.ts DefaultZoom), where Chromium snaps the width to 1/64 layout units and reports a
+        // 1px line as 0.994318px. So the width is compared to 1px within a tenth, which still parts it from a 14px
+        // Slot or a 2px line; its absolute position is checked too, so only a guide counts
         const nested = await h.ev(`(() => {
             const tree = ${TREE};
             if (!tree) return null;
@@ -15743,8 +15747,11 @@ const agentTreeRail = {
                 );
                 return name ? name.closest(".relative") : null;
             };
-            const guides = (row) =>
-                row ? [...row.children].filter((c) => c.tagName === "SPAN" && getComputedStyle(c).width === "1px").length : 0;
+            const isGuide = (c) => {
+                const cs = getComputedStyle(c);
+                return c.tagName === "SPAN" && cs.position === "absolute" && Math.abs(parseFloat(cs.width) - 1) < 0.1;
+            };
+            const guides = (row) => (row ? [...row.children].filter(isGuide).length : 0);
             const lead = rowOf(${JSON.stringify(TREE_RAIL_LEAD)});
             const worker = rowOf(${JSON.stringify(RUN_SHEET_POLISH_TASKS[0].label)});
             const sub = rowOf(${JSON.stringify(TREE_RAIL_SUBAGENT_PROMPT)});
@@ -15892,15 +15899,17 @@ const agentTreeRail = {
             preset: localStorage.getItem("cockpit.theme.preset"),
             bg: getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim(),
         }))()`);
-        // atomWithStorage keeps JSON, so a picked Claude is the quoted string
+        // atomWithStorage keeps JSON, so a picked Graphite is the quoted string. With no preset stored the cockpit is
+        // the default one: Graphite since ca4ee1207 (themes.ts DEFAULT_THEME_PRESET), whose --color-background
+        // #111111 is also tailwindsetup.css's first-paint literal. The step used to expect Claude's #1f1e1d
         steps.push(
-            theme.preset == null || theme.preset === '"claude"'
+            theme.preset == null || theme.preset === '"graphite"'
                 ? {
-                      step: "12. with no preset picked the cockpit is Claude",
-                      ok: theme.bg === "#1f1e1d",
+                      step: "12. with no preset picked the cockpit is Graphite",
+                      ok: theme.bg === "#111111",
                       detail: JSON.stringify(theme),
                   }
-                : skipStep("12. with no preset picked the cockpit is Claude", `this profile picked ${theme.preset}`)
+                : skipStep("12. with no preset picked the cockpit is Graphite", `this profile picked ${theme.preset}`)
         );
 
         // a project row is the Active section's folder row; a plain agent row is a top-level row: no tree guides, no
