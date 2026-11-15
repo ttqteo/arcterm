@@ -63,3 +63,11 @@ func TestScanWindowDays(t *testing.T) {
 		}
 	}
 }
+
+func TestScanWorkersIsHalfTheCores(t *testing.T) {
+	for cores, want := range map[int]int{0: 1, 1: 1, 2: 1, 3: 1, 8: 4, 16: 8} {
+		if got := ScanWorkers(cores); got != want {
+			t.Errorf("ScanWorkers(%d) = %d, want %d", cores, got, want)
+		}
+	}
+}

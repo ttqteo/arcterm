@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Building the Activity graph's token history in the background, which on a fresh install reads every transcript on
+  disk, now uses half your cores, so the machine stays responsive while it runs.
 - Find in a document (Ctrl+F in the File tab) floats on the same frosted glass as find in a terminal.
 - The highlighted row in a frosted menu, picker or popover stays visible over a bright terminal: it lifts with a light tint instead of a solid grey, and the dim text in those panels is a shade brighter so it stays readable on it.
 
