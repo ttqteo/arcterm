@@ -6,6 +6,14 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **An open chunk counts the commits since it was written.** Unit tests and the typecheck only; no dev
+  app ran. In an initiative whose project is registered, `wsh effort chunk add <effort> "probe"`, make a commit in that
+  project, then open the chunk in the initiative sheet → under its status reads "Written 1 commit ago (<day>): check it
+  still holds" with Mark checked; Mark checked → the line goes, and the trail gains "checked against <sha>".
+  `wsh effort show <effort>` prints "(written at <sha>, 1 commit ago)" beside it before, "the code has not moved
+  since" after. Work on this chunk → the agent's prompt asks it to check the chunk still holds first. Chunks made
+  before this change show no line. Commit: feat(initiatives) a chunk keeps the commit it was written at
+
 - [ ] (arcterm) **↑ in Chat's empty box falls through to history when the take-back finds nothing.** Only the typecheck
   covers it. While Claude works, send a message from Chat so it shows as Queued, wait until Claude takes it but its
   bubble still stands, then press ↑ in the empty box → after about 2 s the last message sent comes back into the box

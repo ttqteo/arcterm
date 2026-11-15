@@ -120,6 +120,29 @@ func TestFormatEffortShowGroupsConsecutiveStages(t *testing.T) {
 	}
 }
 
+func TestFormatEffortShowPrintsOpenChunksBase(t *testing.T) {
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	e := &waveobj.Effort{Title: "T", Status: "active", Chunks: []waveobj.EffortChunk{
+		{Label: "A", Status: "done", BaseCommit: sha}, // settled: nothing left to go stale
+		{Label: "B", Status: "pending", BaseCommit: sha},
+		{Label: "C", Status: "pending", BaseCommit: sha},
+		{Label: "D", Status: "blocked", BaseCommit: sha},
+		{Label: "E", Status: "pending"}, // written before bases were kept
+	}}
+	behind := map[string]int{"B": 23, "C": 0}
+	drift := func(label string) (int, bool) { n, ok := behind[label]; return n, ok }
+	got := formatEffortShowWith(e, drift)
+	want := "# T (active) — 1/5\n" +
+		"  1. [done] A\n" +
+		"  2. [pending] B (written at 012345678, 23 commits ago)\n" +
+		"  3. [pending] C (written at 012345678, the code has not moved since)\n" +
+		"  4. [blocked] D (written at 012345678)\n" + // drift unknown: the base alone
+		"  5. [pending] E\n"
+	if got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestResolveDue(t *testing.T) {
 	now := time.Date(2026, 10, 10, 23, 30, 0, 0, time.Local)
 	cases := map[string]string{

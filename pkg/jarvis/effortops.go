@@ -147,6 +147,19 @@ func preArchiveStatus(e *waveobj.Effort) string {
 	return "active"
 }
 
+// ShortCommit is a commit's first 9 characters, the width the cockpit prints a hash at.
+func ShortCommit(sha string) string {
+	if len(sha) > 9 {
+		return sha[:9]
+	}
+	return sha
+}
+
+// StampsBase reports whether op writes the chunk's BaseCommit, so the server knows to read the project's HEAD.
+func StampsBase(op string) bool {
+	return op == "addChunk" || op == "renameChunk" || op == "recheckChunk"
+}
+
 // noteSuffix appends the batch note to effort-trail stamps; chunk ops fold it into their own text.
 func noteSuffix(cmdNote string) string {
 	if cmdNote == "" {
@@ -205,11 +218,15 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			if len(e.Chunks) == 1 && e.Chunks[0].Status != "proposed" {
 				return fmt.Errorf("EC-LAST-CHUNK: cannot remove the last chunk")
 			}
-		case "renameChunk", "moveChunk", "setChunkStatus", "setChunkStage", "setChunkDue", "setOwner":
+		case "renameChunk", "moveChunk", "setChunkStatus", "setChunkStage", "setChunkDue", "setOwner", "recheckChunk":
 			if _, err := ResolveChunkIndex(e, op.Chunk); err != nil {
 				return err
 			}
 			switch op.Op {
+			case "recheckChunk":
+				if strings.TrimSpace(op.Base) == "" {
+					return fmt.Errorf("EC-NO-BASE: the initiative's project has no git checkout to check %q against", op.Chunk)
+				}
 			case "setChunkDue":
 				if err := validDue(op.Due); err != nil {
 					return err
@@ -341,7 +358,7 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			if op.Status == "proposed" {
 				status, verb = "proposed", "proposed"
 			}
-			c := waveobj.EffortChunk{Label: op.Label, Status: status, Stage: strings.TrimSpace(op.Stage), Owner: op.Owner, Due: op.Due, UpdatedTs: now}
+			c := waveobj.EffortChunk{Label: op.Label, Status: status, Stage: strings.TrimSpace(op.Stage), Owner: op.Owner, Due: op.Due, BaseCommit: op.Base, UpdatedTs: now}
 			e.Chunks = append(e.Chunks[:idx], append([]waveobj.EffortChunk{c}, e.Chunks[idx:]...)...)
 			effortNote(e, "chunk "+verb+": "+op.Label+noteSuffix(cmdNote), now)
 			effortEvent(e, "chunk-added", op.Label, "", now)
@@ -357,7 +374,15 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			idx, _ := ResolveChunkIndex(e, op.Chunk)
 			old := e.Chunks[idx].Label
 			e.Chunks[idx].Label = op.Label
+			// a rewritten label is written against today's code, so its base moves with it
+			if op.Base != "" {
+				e.Chunks[idx].BaseCommit = op.Base
+			}
 			chunkNote(e, idx, "renamed from "+old, now, by)
+		case "recheckChunk":
+			idx, _ := ResolveChunkIndex(e, op.Chunk)
+			e.Chunks[idx].BaseCommit = op.Base
+			chunkNote(e, idx, "checked against "+ShortCommit(op.Base)+noteSuffix(note), now, by)
 		case "moveChunk":
 			idx, _ := ResolveChunkIndex(e, op.Chunk)
 			c := e.Chunks[idx]

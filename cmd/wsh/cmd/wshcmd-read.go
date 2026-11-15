@@ -341,7 +341,7 @@ func readText(cmd *cobra.Command, h readHit, turns int) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return formatEffortShow(rtn.Effort), nil
+		return formatEffortShowWith(rtn.Effort, rpcChunkDrift(rtn.Effort.OID)), nil
 	}
 	return "", fmt.Errorf("unknown kind %q", h.Kind)
 }

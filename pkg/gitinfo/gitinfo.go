@@ -411,6 +411,30 @@ func HeadCommit(ctx context.Context, cwd string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// CommitsSince counts the commits on HEAD in cwd that base does not have, and returns base's commit time in
+// unix ms. Errors when cwd is not a repo or base is not a commit in it.
+func CommitsSince(ctx context.Context, cwd, base string) (int, int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	ts, err := run(ctx, cwd, "show", "-s", "--format=%ct", base+"^{commit}")
+	if err != nil {
+		return 0, 0, err
+	}
+	secs, err := strconv.ParseInt(strings.TrimSpace(ts), 10, 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("commit time of %s: %w", base, err)
+	}
+	out, err := run(ctx, cwd, "rev-list", "--count", base+"..HEAD")
+	if err != nil {
+		return 0, 0, err
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, 0, fmt.Errorf("counting commits since %s: %w", base, err)
+	}
+	return n, secs * 1000, nil
+}
+
 // ResolveCommit returns the SHA rev names in cwd. Errors when rev names no commit.
 func ResolveCommit(ctx context.Context, cwd, rev string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)

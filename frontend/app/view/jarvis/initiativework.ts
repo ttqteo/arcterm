@@ -32,15 +32,21 @@ export function planIdeaPrompt(title: string, effortOid: string): string {
     return `plan the idea ${title} (effort:${effortOid}): break it into chunks with \`wsh effort chunk add --proposed\`, then stop so I can review the plan before any work starts`;
 }
 
+// A chunk not yet done was written against the code of its day, and the code may have moved under it since
+// (another chunk landed, a refactor): `wsh effort show` prints the commit each open chunk was written at and
+// how many commits ago that was. The agent checks the chunk still holds before following it.
+export const CHECK_PREMISE =
+    "Before acting on it, check it still holds against the current code: `wsh effort show` prints the commit it was written at, so read what changed since (`git log --oneline <commit>..HEAD`). If the code has moved past it, say so and rewrite it (`wsh effort chunk rename`) instead of following it; once it is right for today's code, run `wsh effort chunk recheck`.";
+
 // A chunk that came due (wsh effort chunk due) carries in its notes what to check and what the result decides;
 // the agent does that and closes the loop on the chunk itself, so the reminder leaves Needs you.
 export function dueChunkPrompt(title: string, effortOid: string, chunk: string): string {
-    return `the chunk "${chunk}" of the initiative ${title} (effort:${effortOid}) has come due. Read its notes for what to check and what the result decides, do that, add the result as a chunk note, then mark the chunk done, or move its date with \`wsh effort chunk due\``;
+    return `the chunk "${chunk}" of the initiative ${title} (effort:${effortOid}) has come due. Read its notes for what to check and what the result decides. ${CHECK_PREMISE} Then do it, add the result as a chunk note, then mark the chunk done, or move its date with \`wsh effort chunk due\``;
 }
 
 // Work on one chunk from the chunk panel: the agent does that chunk only and closes the loop on it
 export function chunkPrompt(title: string, effortOid: string, chunk: string): string {
-    return `work on the chunk "${chunk}" of the initiative ${title} (effort:${effortOid}): read its notes, do it, add the result as a chunk note, then mark it done with \`wsh effort chunk status\``;
+    return `work on the chunk "${chunk}" of the initiative ${title} (effort:${effortOid}): read its notes. ${CHECK_PREMISE} Then do it, add the result as a chunk note, then mark it done with \`wsh effort chunk status\``;
 }
 
 const STATE_RANK: Record<AgentVM["state"], number> = { asking: 0, working: 1, idle: 2 };

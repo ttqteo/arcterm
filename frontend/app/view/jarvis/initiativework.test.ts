@@ -1,6 +1,7 @@
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { describe, expect, it } from "vitest";
 import {
+    CHECK_PREMISE,
     chunkPrompt,
     dueChunkPrompt,
     initiativeLinkText,
@@ -177,6 +178,12 @@ describe("chunkPrompt", () => {
         expect(p).toContain("(effort:e1)");
         expect(p).toContain("add the result as a chunk note");
         expect(p).toContain("mark it done");
+    });
+
+    it("has the agent check the chunk still holds before following it", () => {
+        expect(chunkPrompt("D", "e1", "C")).toContain(CHECK_PREMISE);
+        expect(dueChunkPrompt("D", "e1", "C")).toContain(CHECK_PREMISE);
+        expect(CHECK_PREMISE).toContain("wsh effort chunk recheck");
     });
 });
 
