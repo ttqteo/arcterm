@@ -244,12 +244,18 @@ export default function (kit) {
                 const clicked = await click(h, "[data-job-queue-chip]");
                 const v = await look(h, PANEL.jobs, "1-jobs");
                 const rows = await h.ev(`document.querySelectorAll("[data-job-queue-panel] [data-job-row]").length`);
-                // a click away closes it: on the Agent surface the surface's own Escape ("back") takes the key before the panel's
-                // listener, so Escape is left to the jobqueue-chip scenario, which runs on the Cockpit
+                // Escape closes it and nothing else: the dispatcher counts the open popover as a modal, so the Agent
+                // surface's own Escape (back, or stopping the working agent's turn) stands down
+                await key(h, KEYS.escape);
+                const escClosed = await gone(h, "[data-job-queue-panel]");
+                const stayed = await h.ev(`!!${layerOf(A)}?.querySelector("[data-chat-box]")?.checkVisibility()`);
+                // a click away closes it too
+                const reopened = await click(h, "[data-job-queue-chip]");
+                await polishWaitFor(h, `!!document.querySelector("[data-job-queue-panel]")`, SHORT_MS);
                 const away = await click(h, "[data-job-queue-backdrop]");
                 const closed = await gone(h, "[data-job-queue-panel]");
                 await h.ev(`window.__jobQueueInject({ slots: 1, jobs: [] })`);
-                rec(`${name}: the Jobs chip opens the popover over the working agent, which draws the frost class with no backdrop root above it, and a click away closes it`, chip && clicked && rows === 2 && v.up && v.faded && v.ok && away && closed, { rows, away, closed, ...v });
+                rec(`${name}: the Jobs chip opens the popover over the working agent, which draws the frost class with no backdrop root above it; Escape closes it and leaves the agent's Chat on screen, and a click away closes it`, chip && clicked && rows === 2 && v.up && v.faded && v.ok && escClosed && stayed && reopened && away && closed, { rows, escClosed, stayed, reopened, away, closed, ...v });
             });
 
             // 2. Jarvis' pet: the bubble, the peek and the peek's two menus
@@ -417,10 +423,18 @@ export default function (kit) {
                 await click(h, "[data-code-review-count]");
                 const v = await look(h, PANEL.codeList, "7b-code-review-list");
                 const rows = await h.ev(`document.querySelectorAll("[data-code-review-row]").length`);
-                // the count button toggles it (the Code surface's own Escape goes home when focus is not in the bar)
+                // the count button toggles it
                 await click(h, "[data-code-review-count]");
                 const closed = await gone(h, "[data-code-review-list]");
-                rec(`${name}: the review count opens the list of comments, which draws the frost class with no backdrop root above it, and the button closes it`, there && rows === 2 && v.up && v.faded && v.ok && closed, { seeded, there, rows, closed, ...v });
+                // and Escape closes it even with focus moved out of the bar, staying on Code: the list counts itself
+                // in escapeMenusOpenAtom, so the surface's Escape (home) stands down
+                await click(h, "[data-code-review-count]");
+                const again = await polishWaitFor(h, `!!document.querySelector("[data-code-review-list]")`, SHORT_MS);
+                await h.ev(`document.activeElement?.blur?.()`);
+                await key(h, KEYS.escape);
+                const escClosed = await gone(h, "[data-code-review-list]");
+                const onCode = await h.ev(`!!document.querySelector("[data-code-review-count]")?.checkVisibility()`);
+                rec(`${name}: the review count opens the list of comments, which draws the frost class with no backdrop root above it; the button closes it, and so does Escape with focus out of the bar, which stays on Code`, there && rows === 2 && v.up && v.faded && v.ok && closed && again && escClosed && onCode, { seeded, there, rows, closed, again, escClosed, onCode, ...v });
             });
             await run("7c. Code send review", async (name) => {
                 const there = await polishWaitFor(h, `!!document.querySelector("[data-code-review-send]")`, SHORT_MS);
