@@ -96,6 +96,7 @@ import kael1113TimelineScenarios from "./scenarios-kael1113-timeline.mjs";
 import modalFocusHomeScenarios from "./scenarios-modal-focus-home.mjs";
 import parkedLaunchScenarios from "./scenarios-parked-launch.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
+import { frostProbe, frostVerdict } from "./overlays-frost/frostcheck.mjs";
 import overlaysFrostScenarios from "./scenarios-overlays-frost.mjs";
 import paletteBrainstormResumeScenarios from "./scenarios-palette-brainstorm-resume.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
@@ -37241,10 +37242,21 @@ const agentRailTabs = {
 // md-comments (docs/superpowers/specs/2026-10-06-md-comments-design.md): an agent whose transcript names
 // docs/guide.md:9; guide.md has frontmatter (lines 1-3), a table (11-15) and an image (17), links docs/other.md (19),
 // and links #notes (21), a heading below enough filler that reaching it scrolls the Preview.
+// The agent sits on a real terminal block (ctx.agentBlock, made in arrange): a block id the store lacks fails to start
+// and folds the agent to idle ("failed to start", agentcontrollerstore.ts withStartError), which parks its card in the
+// folded IDLE group, off the Cockpit grid whose card the steps click (agent-rail-tabs had the same, 644c71b15).
 const MDC_AGENT = "fx-md-comments";
-const MDC_BLOCK = "fx-blk-md-comments";
 const MDC_PROJECT = "verify-md-comments";
-const MDC_KEYS = [RAIL_VISIBLE_KEY, RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth", "agent.rail.mdMode", "cockpit.view"];
+// agent.projectFilter and cockpit.view are the Cockpit's persisted choices that can leave the card off the grid
+const MDC_KEYS = [
+    RAIL_VISIBLE_KEY,
+    RAIL_SECTIONS_KEY,
+    "agent.rail.tab",
+    "agent.rail.wideWidth",
+    "agent.rail.mdMode",
+    "agent.projectFilter",
+    "cockpit.view",
+];
 const MDC_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
 const MDC_CARD = `document.querySelector('[data-cockpit-surface] [data-agent-id="${MDC_AGENT}"]')`;
 const MDC_DOC = `${MDC_ASIDE}?.querySelector("[data-md-doc]")`;
@@ -37336,7 +37348,7 @@ function mdcRoster(ctx, state, terminal = true) {
                     agent: "claude",
                     model: "opus",
                     activeMs: 60_000,
-                    ...(terminal ? { blockId: MDC_BLOCK } : {}),
+                    ...(terminal ? { blockId: ctx.agentBlock } : {}),
                     transcriptPath: ctx.transcript,
                 },
             ],
@@ -37437,12 +37449,26 @@ const mdComments = {
             await h.rpc("createproject", { name: MDC_PROJECT, path: ctx.repo });
             ctx.project = MDC_PROJECT;
             await waitForProjectInConfig(h, MDC_PROJECT);
+            // the agent's own terminal block, a real one (MDC_AGENT says why). Without cmd:cwd: that key is read before
+            // the transcript's (agentcwdresolve.ts), and the repo must come from the transcript
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            ctx.terminals = [];
+            await openRailTerminal(h, ctx, MDC_PROJECT);
+            ctx.agentBlock = ctx.terminals[0].blockId;
+            await h.rpc("setmeta", { oref: `block:${ctx.agentBlock}`, meta: { "cmd:cwd": null } });
             mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
             mdcRoster(ctx, "working");
             ctx.wroteFixture = true;
             await h.ev(`(() => {
                 localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
                 for (const k of ${JSON.stringify(["agent.rail.tab", "agent.rail.wideWidth", "agent.rail.mdMode"])}) localStorage.removeItem(k);
+                // the Cockpit's grid of every project, as cards: both are read at boot, so an earlier scenario's
+                // project scope or the Office cannot keep the fixture agent's card off it
+                localStorage.setItem("agent.projectFilter", ${JSON.stringify(JSON.stringify("all"))});
+                localStorage.setItem("cockpit.view", ${JSON.stringify(JSON.stringify("cards"))});
             })()`);
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await h.goto("agent");
@@ -37715,6 +37741,9 @@ const mdComments = {
         };
         // the clipboard stub from step 12 is an own property over Navigator's getter; deleting it restores that
         await step("clear the DEV hooks", () => h.ev(`(delete window.__lineReviewSink, delete window.__mdSent, delete window.__mdCopied, delete navigator.clipboard, true)`));
+        for (const t of ctx.terminals ?? []) {
+            await step("close the agent's terminal", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false]));
+        }
         if (ctx.project) {
             await step("remove the project", async () => {
                 await h.rpc("deleteproject", { name: ctx.project });
@@ -37854,6 +37883,10 @@ const docFind = {
         const painted2 = await h.ev(dfPainted);
         await h.shot("cdp-shots/doc-find-matches.png");
         rec("2. 'paragraph' counts 43 and paints 42 matches plus the current one", /^\d+\/43$/.test(count2) && painted2.all === 42 && painted2.current === 1 && /^paragraph$/i.test(painted2.text ?? ""), JSON.stringify({ count2, painted2 }));
+
+        // 2b. the bar floats over the document as the terminal's find bar floats over its xterm, and is frosted like it
+        const frost2b = frostVerdict(await h.ev(frostProbe("[data-doc-find]")));
+        rec("2b. the find bar is frosted (blur(18px) over --color-panel, no backdrop root above it), as the terminal's is", frost2b.ok, frost2b.detail);
 
         // 3. Enter steps on and Shift+Enter back
         const at = Number.parseInt(count2, 10);
