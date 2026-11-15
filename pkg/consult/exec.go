@@ -12,12 +12,16 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"log"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/creack/pty"
@@ -119,8 +123,7 @@ func runPipe(ctx context.Context, spec RuntimeSpec, cwd, prompt string, emit fun
 	// as soon as the direct child is gone; the file's tail still carries the error text.
 	defer func() {
 		if stderr != nil {
-			stderr.Close()
-			os.Remove(stderr.Name())
+			releaseStderrCapture(stderr)
 		}
 	}()
 	stop := make(chan struct{})
@@ -278,6 +281,66 @@ func capStderrFile(f *os.File, stop <-chan struct{}) {
 			}
 		}
 	}
+}
+
+// Windows refuses to remove a file another process still has open, and a descendant of the CLI can hold the
+// inherited stderr handle past the run. Such a capture is kept capped and removed once it is let go, by one
+// goroutine for all of them, which ends when none is left.
+var (
+	stderrReleaseEvery = 5 * time.Second
+	stderrReleaseFor   = 10 * time.Minute
+)
+
+// held stderr captures, by name, with when to stop retrying each
+var heldCaptures = struct {
+	sync.Mutex
+	deadlines map[string]time.Time
+}{deadlines: map[string]time.Time{}}
+
+// releaseStderrCapture closes and removes a run's stderr capture, or leaves it to the retry while something else
+// still holds it open.
+func releaseStderrCapture(f *os.File) {
+	name := f.Name()
+	f.Close()
+	if removeCapture(name) {
+		return
+	}
+	heldCaptures.Lock()
+	defer heldCaptures.Unlock()
+	if len(heldCaptures.deadlines) == 0 {
+		go releaseHeldCaptures()
+	}
+	heldCaptures.deadlines[name] = time.Now().Add(stderrReleaseFor)
+}
+
+func releaseHeldCaptures() {
+	ticker := time.NewTicker(stderrReleaseEvery)
+	defer ticker.Stop()
+	for range ticker.C {
+		heldCaptures.Lock()
+		for name, deadline := range heldCaptures.deadlines {
+			if info, err := os.Stat(name); err == nil && info.Size() > stderrCapBytes {
+				os.Truncate(name, stderrCapBytes)
+			}
+			if removeCapture(name) {
+				delete(heldCaptures.deadlines, name)
+			} else if time.Now().After(deadline) {
+				log.Printf("[consult] stderr capture %s is still held open after %v, leaving it", name, stderrReleaseFor)
+				delete(heldCaptures.deadlines, name)
+			}
+		}
+		done := len(heldCaptures.deadlines) == 0
+		heldCaptures.Unlock()
+		if done {
+			return
+		}
+	}
+}
+
+// removeCapture reports whether the capture is gone
+func removeCapture(name string) bool {
+	err := os.Remove(name)
+	return err == nil || errors.Is(err, fs.ErrNotExist)
 }
 
 // stderrTail returns the last chunk of the stderr file, trimmed — the real error text

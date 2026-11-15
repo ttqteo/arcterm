@@ -3101,3 +3101,65 @@ func TestGetChangesNumstatErrorIsEmptyWhenTheReadIsFine(t *testing.T) {
 		t.Errorf("no commits: NumstatError %q, err %v; want none", nc.NumstatError, err)
 	}
 }
+
+// GetChanges reads branch, HEAD and cwd's prefix in one rev-parse; every shape of checkout must still
+// report what asking one at a time did, the unborn HEAD (where that one call fails) included.
+// Ported from the fork's 8b2088d15.
+func TestGetChangesRepoFacts(t *testing.T) {
+	ctx := context.Background()
+	headOf := func(t *testing.T, dir string) string {
+		out, err := run(ctx, dir, "rev-parse", "HEAD")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(out)
+	}
+	t.Run("root", func(t *testing.T) {
+		dir := repoWithChange(t)
+		ch, err := GetChanges(ctx, dir, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ch.IsRepo || ch.Branch != "main" || ch.Head != headOf(t, dir) {
+			t.Fatalf("got repo %v branch %q head %q", ch.IsRepo, ch.Branch, ch.Head)
+		}
+	})
+	t.Run("subdirectory", func(t *testing.T) {
+		root := subdirRepoWithChange(t)
+		ch, err := GetChanges(ctx, filepath.Join(root, "services", "foo"), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ch.Head != headOf(t, root) || strings.Contains(ch.StatusZ, "services/foo/") {
+			t.Fatalf("head %q, statusz %q: want HEAD and cwd-relative paths", ch.Head, ch.StatusZ)
+		}
+	})
+	t.Run("detached", func(t *testing.T) {
+		dir := repoWithChange(t)
+		git(t, dir, "checkout", "-q", "--detach")
+		ch, err := GetChanges(ctx, dir, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ch.Branch != "HEAD" || ch.Head != headOf(t, dir) {
+			t.Fatalf("branch %q head %q, want HEAD and the sha", ch.Branch, ch.Head)
+		}
+	})
+	t.Run("unborn", func(t *testing.T) {
+		dir := initRepo(t)
+		writeFile(t, dir, "a.txt", "one\n")
+		ch, err := GetChanges(ctx, dir, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ch.IsRepo || ch.Branch != "HEAD" || ch.Head != "" || !strings.Contains(ch.StatusZ, "a.txt") {
+			t.Fatalf("got repo %v branch %q head %q statusz %q", ch.IsRepo, ch.Branch, ch.Head, ch.StatusZ)
+		}
+	})
+	t.Run("not a repo", func(t *testing.T) {
+		ch, err := GetChanges(ctx, t.TempDir(), "")
+		if err != nil || ch.IsRepo {
+			t.Fatalf("got %+v, %v; want IsRepo false", ch, err)
+		}
+	})
+}

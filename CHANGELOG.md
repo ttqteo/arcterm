@@ -169,6 +169,48 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   folder.
 - In Chat, the "Goes with your next message: switched to chunk…" line above the message box has its own frame, so
   the conversation no longer shows through its text while you scroll.
+- arcterm no longer replaces a Claude or pi `settings.json` it could not read at launch (a file an editor or sync tool
+  held for a moment used to lose your model, permissions and hooks). It also keeps a hook of yours that shares a group
+  with one of its own, and reads a settings file saved with a byte-order mark.
+- A `settings.json` that does not parse no longer stops the pi, opencode, agy and Codex setup at launch, and the
+  reason a hook install failed is now in `waveapp.log`.
+- A link whose address holds a raw quote or space is no longer opened: on Windows a quote could break out of the link
+  and run a command.
+- The app log keeps recording when another program has it open at the 10 MB mark, instead of going silent.
+- The vault no longer sticks on a leftover `index.lock` after a slow git call, and a stalled fetch or push no longer
+  holds the vault past its timeout.
+- Notes, events and linked runs you removed from an initiative no longer come back when another machine syncs a change
+  to the same initiative.
+- An initiative or note you save while the vault syncs no longer overwrites what the sync merged in.
+- The initiatives list is no longer empty when the vault folder has a `[` in its name.
+- Adopting skills no longer deletes your own skill when it is named like one arcterm used to ship (`design-local`,
+  `cockpit-runs`, `cockpit-ui`, `effort-tracking`, `ideas`): it stays in the harness.
+- A skill folder whose name differs from a vault skill only in case (`Review` and `review`) is left alone on Windows
+  and macOS instead of being overwritten, and Setup's skills matrix shows it as yours.
+- A steering file whose end marker was lost keeps the text you wrote after it, instead of the next sync cutting it.
+- Claude's goalpost check reads Windows backslash paths, in the files an agent edits and in the commands it types, so
+  weakening a `tsconfig`, a workflow or a lint rule, or deleting a test file, is flagged on Windows as it is elsewhere.
+- A `git commit` or `git tag` whose message only names a refused command (a push, a branch switch, a worktree remove)
+  is no longer refused in a run's worktree.
+- A message you send to a Claude agent from the cockpit that starts with a path (`/tmp/build.log has the failing
+  test`) is sent as a message instead of being lost as an unknown slash command, and a `/word` the session will not
+  run is sent as plain text too.
+- Usage no longer bills a forked pi session's copied history again, and it counts the tokens pi pays outside the
+  conversation (such as its cache refreshes).
+- A council or consult on Windows no longer leaves `wave-consult-stderr-*` files piling up in your temp folder.
+- An opencode session that could not be read once (a lock, a handle limit) no longer stays missing or partial until
+  arcterm restarts.
+- `wsh agents send --wait` fails after 30 s when the message started no turn, instead of waiting out the whole
+  timeout, and a timeout names the agent's state.
+- An agent at a permission prompt reads as asking, not idle, so a message is no longer typed into its dialog.
+- An answer to an agent's question that did not reach the agent shows an error and can be sent again, instead of the
+  card reading Answered while the agent stayed blocked.
+- A prompt sent to an agent whose terminal is gone is refused with an error instead of being lost, and a Claude
+  session that quit back to its shell leaves the `wsh agents` list, so a message is no longer typed into the shell.
+- A run's lead cards and Events rail load again by themselves after a failed read, and keep an event that arrives while
+  the history loads.
+- A worker tab that joins a run appears under the run in the Agent tree from its first frame, instead of jumping there
+  a moment later.
 
 ### Added
 

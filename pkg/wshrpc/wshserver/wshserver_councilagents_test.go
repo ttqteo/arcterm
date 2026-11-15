@@ -36,7 +36,8 @@ func TestLiveAgentLinkSeatStates(t *testing.T) {
 		want  string
 	}{
 		{"idle", agentFacts(agentsTabA, "a", agentsBlockA, "claude", baseds.AgentState_Idle), council.SeatIdle},
-		{"waiting at its prompt reads idle", agentFacts(agentsTabA, "a", agentsBlockA, "claude", baseds.AgentState_Waiting), council.SeatIdle},
+		// a permission prompt or another dialog: a typed turn would land in it, so the seat is not sent into
+		{"waiting in a dialog reads asking", agentFacts(agentsTabA, "a", agentsBlockA, "claude", baseds.AgentState_Waiting), council.SeatAsking},
 		{"working", agentFacts(agentsTabA, "a", agentsBlockA, "pi", baseds.AgentState_Working), council.SeatWorking},
 		{"asking by its status", agentFacts(agentsTabA, "a", agentsBlockA, "claude", baseds.AgentState_Asking), council.SeatAsking},
 		{"asking by an open question", asking, council.SeatAsking},

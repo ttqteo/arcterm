@@ -103,8 +103,10 @@ export function startTranscriptStream(id: string, path: string, agent?: string):
                     }
                 }
             }
-        } catch {
-            // stream ended or errored — keep the last entries, just stop updating
+        } catch (err) {
+            // keep the last entries and do not restart: the errors left (a file that cannot be watched or read)
+            // would fail again on every retry
+            console.error("transcript stream ended", id, path, err);
         } finally {
             // a stale generator (from a stream restarted mid-flight, e.g. on ws reconnect) may
             // resolve after its replacement is already registered; only delete if we're still it

@@ -127,9 +127,9 @@ func parse(id string, content []byte) *waveobj.UserNote {
 	return note
 }
 
+// write expects its caller to hold the vault lock from before it read the file, so a sync's merge cannot land
+// between that read and this write.
 func write(path string, content []byte) error {
-	unlock := wavevault.LockRoot(vaultRoot())
-	defer unlock()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
 	}
@@ -161,6 +161,8 @@ func Add(title, body string) (*waveobj.UserNote, error) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
+	unlock := wavevault.LockRoot(vaultRoot())
+	defer unlock()
 	base := now().Format(dayLayout) + "-" + slugOf(title)
 	for n := 1; n <= maxCollisions; n++ {
 		id := base
@@ -244,6 +246,8 @@ func Update(id, title, body string) error {
 	}
 	mu.Lock()
 	defer mu.Unlock()
+	unlock := wavevault.LockRoot(vaultRoot())
+	defer unlock()
 	path, err := notePath(id)
 	if err != nil {
 		return err

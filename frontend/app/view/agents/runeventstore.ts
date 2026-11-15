@@ -37,18 +37,28 @@ function statusAtomFor(runId: string) {
     return a;
 }
 
+// Pure: a history snapshot (newest-first) over the live events already received. An event broadcast after the
+// server read its snapshot can arrive before the response; replacing the list would lose it for good, since a
+// loaded run is never re-read.
+export function mergeRunEvents(live: RunEvent[], history: RunEvent[]): RunEvent[] {
+    const known = new Set(history.map((e) => e.id));
+    return [...live.filter((e) => !known.has(e.id)), ...history];
+}
+
 async function load(runId: string, channelId: string): Promise<void> {
     if (loadedRuns.has(runId)) {
         return;
     }
     loadedRuns.add(runId);
+    // the atom up front, so the live stream keeps what it delivers while the history is out
+    eventsAtomFor(runId);
     globalStore.set(statusAtomFor(runId), "loading");
     try {
         const rtn = await RpcApi.JarvisRunEventsCommand(TabRpcClient, {
             channelid: channelId,
             runid: runId,
         });
-        globalStore.set(eventsAtomFor(runId), rtn.events ?? []);
+        globalStore.set(eventsAtomFor(runId), (live) => mergeRunEvents(live, rtn.events ?? []));
         globalStore.set(statusAtomFor(runId), "live");
     } catch {
         loadedRuns.delete(runId); // allow retry on transient failure
@@ -113,8 +123,25 @@ export function runEventsAtom(runId: string): Atom<RunEvent[]> {
     return eventsAtomFor(runId);
 }
 
-// ensureRunEvents is useRunEvents without the hook: subscribe to the live stream and load history once.
-export function ensureRunEvents(runId: string, channelId: string): void {
+// the waits before each automatic re-read of a failed history load, for readers that draw no error to retry from
+export const RUN_EVENTS_RETRY_MS = [5_000, 30_000, 120_000];
+const retrying = new Set<string>();
+
+// ensureRunEvents is useRunEvents without the hook: subscribe to the live stream and load history once. Its
+// readers (the Cockpit's lead cards and Events rail) show no load error, so a failed load retries by itself, a
+// few times, rather than leaving lead-down, review findings and step times silently empty until a remount.
+export function ensureRunEvents(runId: string, channelId: string, attempt = 0): void {
     ensureSubscription();
-    fireAndForget(() => load(runId, channelId));
+    fireAndForget(async () => {
+        await load(runId, channelId);
+        const failed = globalStore.get(statusAtomFor(runId)) === "error";
+        if (!failed || attempt >= RUN_EVENTS_RETRY_MS.length || retrying.has(runId)) {
+            return;
+        }
+        retrying.add(runId);
+        setTimeout(() => {
+            retrying.delete(runId);
+            ensureRunEvents(runId, channelId, attempt + 1);
+        }, RUN_EVENTS_RETRY_MS[attempt]);
+    });
 }

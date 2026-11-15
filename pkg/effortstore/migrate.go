@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wavevault"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
@@ -44,10 +45,12 @@ func migrateOne(root string, e *waveobj.Effort) (bool, error) {
 	}
 	unlock := lockPath(path)
 	defer unlock()
+	unlockRoot := wavevault.LockRoot(root)
+	defer unlockRoot()
 	if _, err := os.Stat(path); err == nil {
 		return false, nil
 	}
-	if err := write(root, path, e); err != nil {
+	if err := write(path, e); err != nil {
 		return false, err
 	}
 	return true, nil

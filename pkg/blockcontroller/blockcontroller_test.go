@@ -199,8 +199,8 @@ func TestSendInputKeepsAResizeNoProcessTook(t *testing.T) {
 	}
 
 	size := waveobj.TermSize{Rows: 41, Cols: 142}
-	if err := SendInput("no-such-block", &BlockInputUnion{TermSize: &size}); err == nil {
-		t.Fatal("input for a block with no controller should still report an error")
+	if err := SendInput("no-such-block", &BlockInputUnion{TermSize: &size}); err != nil {
+		t.Fatalf("a resize-only input for a block with no controller should be quiet, got %v", err)
 	}
 	if len(kept) != 1 || kept[0] != size {
 		t.Errorf("kept sizes = %+v, want [%+v]", kept, size)
@@ -211,6 +211,34 @@ func TestSendInputKeepsAResizeNoProcessTook(t *testing.T) {
 	}
 	if len(kept) != 1 {
 		t.Errorf("input with no resize kept a size: %+v", kept)
+	}
+}
+
+func TestSendInputResizeThatCannotBeKeptReportsTheError(t *testing.T) {
+	oldPersist := persistTermSize
+	t.Cleanup(func() { persistTermSize = oldPersist })
+	persistErr := errors.New("store down")
+	persistTermSize = func(blockId string, termSize waveobj.TermSize) error { return persistErr }
+
+	size := waveobj.TermSize{Rows: 41, Cols: 142}
+	if err := SendInput("no-such-block", &BlockInputUnion{TermSize: &size}); err != persistErr {
+		t.Fatalf("err = %v, want the persist error", err)
+	}
+}
+
+func TestSendInputDataWithoutController(t *testing.T) {
+	oldPersist := persistTermSize
+	t.Cleanup(func() { persistTermSize = oldPersist })
+	persistTermSize = func(blockId string, termSize waveobj.TermSize) error { return nil }
+
+	size := waveobj.TermSize{Rows: 41, Cols: 142}
+	err := SendInput("no-such-block", &BlockInputUnion{InputData: []byte("x"), TermSize: &size})
+	if err == nil || !strings.Contains(err.Error(), "no controller found") {
+		t.Fatalf("err = %v, want the no controller found error", err)
+	}
+	err = SendInput("no-such-block", &BlockInputUnion{SigName: "SIGINT"})
+	if err == nil || !strings.Contains(err.Error(), "no controller found") {
+		t.Fatalf("signal err = %v, want the no controller found error", err)
 	}
 }
 

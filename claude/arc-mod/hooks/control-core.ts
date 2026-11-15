@@ -49,11 +49,14 @@ export function controlMsg(line: string): ControlMsg | null {
     }
 }
 
-const SLASH = /^\/(\S+)\s*([\s\S]*)$/;
+// a command name is letters, digits, _, - and a plugin's ":"; a leading word with / or . in it is a path the
+// prompt starts with, which $.command.run would reject and the prompt be lost
+const SLASH = /^\/([\w:-]+)(?:\s+([\s\S]*))?$/;
 
 const COMPACT = "compact";
 
-// runs a prompt as typing it would: a leading slash is a command, anything else a prompt. a side question is
+// runs a prompt as typing it would: a leading slash is a command (a prompt when the session refuses it),
+// anything else a prompt. a side question is
 // answered beside the turn, whether one runs or not, and never joins it. a compaction is
 // the session's own call, which echoes no command into the transcript; a session that refuses it (a
 // headless one) runs the command. a mid-turn text joins the running turn, and is a prompt when no turn
@@ -68,7 +71,9 @@ export function deliver(session: Session, msg: ControlMsg, turn: Turn): Promise<
     const { text } = msg;
     const [, name, args = ""] = SLASH.exec(text) ?? [];
     if (name) {
-        return session.command(name, args);
+        // the engine's rejection does not tell an unknown name from a command that refused its args, so
+        // any refusal is sent as the prompt it may have been rather than lost
+        return session.command(name, args).catch(() => session.submit(text));
     }
     if (!msg.midTurn || !turn.isOpen) {
         return session.submit(text);

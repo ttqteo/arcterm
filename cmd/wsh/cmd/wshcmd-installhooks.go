@@ -9,6 +9,7 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -72,6 +73,8 @@ var managedHooks = []managedHook{
 	{Event: "SessionStart", Matcher: "resume", Args: "agent-hook", Timeout: 10},
 	// a new session is silent until its first prompt too: report it at its prompt, so it does not read working
 	{Event: "SessionStart", Matcher: "startup", Args: "agent-hook", Timeout: 10},
+	// the shell outlives claude, so only this report tells the roster the session is gone
+	{Event: "SessionEnd", Args: "agent-hook", Timeout: 10},
 }
 
 func managedEventOrder() []string {
@@ -406,25 +409,39 @@ func buildManagedGroup(mh managedHook, wshExe string) map[string]any {
 	return group
 }
 
-func groupIsManaged(group any) bool {
+// withoutManagedHooks returns group with arcterm's hooks taken out, and false when nothing else is left in it.
+// A group arcterm shares with a user's or another tool's hook keeps that hook, matcher included, so a rewrite
+// only replaces arcterm's own.
+func withoutManagedHooks(group any) (any, bool) {
 	gm, ok := group.(map[string]any)
 	if !ok {
-		return false
+		return group, true
 	}
 	hs, ok := gm["hooks"].([]any)
 	if !ok {
-		return false
+		return group, true
 	}
+	var kept []any
+	removed := false
 	for _, h := range hs {
 		hm, ok := h.(map[string]any)
-		if !ok {
-			continue
+		if ok {
+			if c, ok := hm["command"].(string); ok && isManagedCommand(c) {
+				removed = true
+				continue
+			}
 		}
-		if c, ok := hm["command"].(string); ok && isManagedCommand(c) {
-			return true
-		}
+		kept = append(kept, h)
 	}
-	return false
+	if !removed {
+		// not arcterm's: left exactly as it was, even an empty group
+		return group, true
+	}
+	if len(kept) == 0 {
+		return nil, false
+	}
+	gm["hooks"] = kept
+	return gm, true
 }
 
 // managedHookAsync is whether arcterm writes the (event, matcher, args) hook as a background one.
@@ -456,8 +473,8 @@ func mergeAgentHooks(existing map[string]any, wshExe string) map[string]any {
 		var kept []any
 		if groups, ok := hooks[event].([]any); ok {
 			for _, g := range groups {
-				if !groupIsManaged(g) {
-					kept = append(kept, g)
+				if rest, ok := withoutManagedHooks(g); ok {
+					kept = append(kept, rest)
 				}
 			}
 		}
@@ -792,11 +809,34 @@ func installAgyHooks(home, wshExe string) error {
 	return err
 }
 
+// readSettingsFile reads a config file the install will read, change and write back. A missing file, or one with
+// nothing in it, is no settings (nil). Any other read error is returned, so the caller never writes over a file it
+// could not see: a settings.json briefly locked at launch (an editor, a sync tool, a scanner) used to read as "no
+// settings" and was replaced by an arcterm-only file, losing the person's model, permissions, env and own hooks.
+// A leading UTF-8 BOM is dropped: Windows PowerShell 5 writes one, and json.Unmarshal refuses it.
+func readSettingsFile(path string) ([]byte, error) {
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	b = bytes.TrimPrefix(b, []byte("\xEF\xBB\xBF"))
+	if len(bytes.TrimSpace(b)) == 0 {
+		return nil, nil
+	}
+	return b, nil
+}
+
 // readJSONObject reads a JSON config file that must hold one object; a missing or empty file is an empty object.
 // Anything else is an error, and the caller leaves the file alone.
 func readJSONObject(path string) (map[string]any, error) {
-	b, err := os.ReadFile(path)
-	if err != nil || len(strings.TrimSpace(string(b))) == 0 {
+	b, err := readSettingsFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if b == nil {
 		return map[string]any{}, nil
 	}
 	var doc any
@@ -1124,7 +1164,11 @@ var legacyArcPackageEntries = []string{"git:github.com/kaeltran16/waveterm"}
 func mergePiSettingsDefaults(home string) (installed []string, skipped []string, err error) {
 	path := filepath.Join(home, ".pi", "agent", "settings.json")
 	settings := map[string]any{}
-	if b, rerr := os.ReadFile(path); rerr == nil && len(strings.TrimSpace(string(b))) > 0 {
+	b, rerr := readSettingsFile(path)
+	if rerr != nil {
+		return nil, nil, rerr
+	}
+	if b != nil {
 		if uerr := json.Unmarshal(b, &settings); uerr != nil {
 			return nil, nil, fmt.Errorf("parsing %s: %w", path, uerr)
 		}
@@ -1248,38 +1292,11 @@ func installAgentHooksRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	existing := map[string]any{}
-	if b, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(b))) > 0 {
-		if err := json.Unmarshal(b, &existing); err != nil {
-			return fmt.Errorf("parsing %s: %w", path, err)
-		}
-	}
-
-	modsSupported := claudeSupportsMods()
-	if configIsHealthy(existing, wsh, modDirs, modsSupported) {
-		fmt.Printf("arcterm agent hooks already installed in %s (skipping)\n", path)
-	} else {
-		merged := mergeAgentHooks(existing, wsh)
-		if modsSupported {
-			merged = unwrapStatusLine(merged)
-		} else {
-			merged = mergeStatusLine(merged, wsh)
-		}
-		merged = mergeClaudePluginDirs(merged, modDirs...)
-		merged = mergeClaudeCleanupPeriod(merged)
-		out, err := json.MarshalIndent(merged, "", "  ")
-		if err != nil {
-			return fmt.Errorf("encoding settings: %w", err)
-		}
-
-		tmp := path + ".tmp"
-		if err := os.WriteFile(tmp, append(out, '\n'), 0o644); err != nil {
-			return fmt.Errorf("writing %s: %w", tmp, err)
-		}
-		if err := os.Rename(tmp, path); err != nil {
-			return fmt.Errorf("replacing %s: %w", path, err)
-		}
-		fmt.Printf("installed arcterm agent hooks into %s\n", path)
+	// a settings.json that cannot be read or parsed fails the install, but only once the other agents'
+	// integrations, which do not depend on it, have landed
+	claudeErr := installClaudeSettings(path, wsh, modDirs)
+	if claudeErr != nil {
+		fmt.Fprintf(os.Stderr, "skipping Claude settings: %v\n", claudeErr)
 	}
 	if err := installOpencodePlugin(home, wsh); err != nil {
 		return err
@@ -1323,5 +1340,48 @@ func installAgentHooksRun(cmd *cobra.Command, args []string) error {
 			fmt.Println("pi keybindings: skipped (user file present)")
 		}
 	}
-	return installCodexHooks(home, wsh)
+	return errors.Join(claudeErr, installCodexHooks(home, wsh))
+}
+
+// installClaudeSettings merges arcterm's hooks, status line, mod folders and cleanup period into Claude's
+// settings.json at path, leaving a healthy one alone.
+func installClaudeSettings(path, wsh string, modDirs []string) error {
+	// probe first: claude --version can take seconds, and settings read before it would be written back
+	// over anything saved meanwhile (a running claude, Settings > Skim)
+	modsSupported := claudeSupportsMods()
+	existing := map[string]any{}
+	b, err := readSettingsFile(path)
+	if err != nil {
+		return err
+	}
+	if b != nil {
+		if err := json.Unmarshal(b, &existing); err != nil {
+			return fmt.Errorf("parsing %s: %w", path, err)
+		}
+	}
+	if configIsHealthy(existing, wsh, modDirs, modsSupported) {
+		fmt.Printf("arcterm agent hooks already installed in %s (skipping)\n", path)
+		return nil
+	}
+	merged := mergeAgentHooks(existing, wsh)
+	if modsSupported {
+		merged = unwrapStatusLine(merged)
+	} else {
+		merged = mergeStatusLine(merged, wsh)
+	}
+	merged = mergeClaudePluginDirs(merged, modDirs...)
+	merged = mergeClaudeCleanupPeriod(merged)
+	out, err := json.MarshalIndent(merged, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding settings: %w", err)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(out, '\n'), 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("replacing %s: %w", path, err)
+	}
+	fmt.Printf("installed arcterm agent hooks into %s\n", path)
+	return nil
 }

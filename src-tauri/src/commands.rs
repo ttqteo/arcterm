@@ -31,8 +31,13 @@ pub fn set_window_init_status(app: AppHandle, status: String) {
 
 // The webview renders model-controlled markdown; the OS opener (ShellExecute "open" on Windows)
 // launches executables and file:// paths, so only schemes the model can legitimately want are
-// allowed. Anything else is rejected and logged rather than handed to the opener.
+// allowed. Anything else is rejected and logged rather than handed to the opener. A well-formed
+// URL percent-encodes quotes, whitespace and control characters, so a raw one is refused too: it
+// can only be an attempt to break out of an argument.
 fn is_allowed_external_url(url: &str) -> bool {
+    if url.chars().any(|c| c == '"' || c.is_whitespace() || c.is_control()) {
+        return false;
+    }
     let Some(scheme) = url.split_once(':').map(|(s, _)| s.to_ascii_lowercase()) else {
         return false;
     };
@@ -48,7 +53,9 @@ pub fn open_external(url: String) {
         ));
         return;
     }
-    if let Err(e) = open::that(&url) {
+    // that_detached with shellexecute-on-windows hands the URL to ShellExecuteExW as one string;
+    // open::that runs `cmd /c start` with it, where the shell parses it
+    if let Err(e) = open::that_detached(&url) {
         log_line(&format!("[open-external] failed to open {}: {}", url, e));
     }
 }
@@ -180,6 +187,22 @@ mod tests {
         assert!(!is_allowed_external_url("\\\\.\\pipe\\x"));
         assert!(!is_allowed_external_url("example.com/page"));
         assert!(!is_allowed_external_url(""));
+    }
+
+    #[test]
+    fn rejects_urls_that_could_break_out_of_an_argument() {
+        // a raw quote closed `cmd /c start "" "<url>"` and ran what followed it
+        assert!(!is_allowed_external_url("https://example.com/\"&calc.exe&\""));
+        assert!(!is_allowed_external_url("https://example.com/a b"));
+        assert!(!is_allowed_external_url("https://example.com/\nx"));
+        assert!(!is_allowed_external_url("https://example.com/\tx"));
+    }
+
+    #[test]
+    fn accepts_encoded_and_query_urls() {
+        assert!(is_allowed_external_url("https://example.com/%22&calc.exe&%22"));
+        assert!(is_allowed_external_url("https://example.com/a%20b?x=1&y=2#frag"));
+        assert!(is_allowed_external_url("mailto:dev@example.com?subject=hi%20there"));
     }
 
     #[test]

@@ -382,6 +382,32 @@ func retireRemovedSkill(skillsRoot, name string, shipped fs.FS) error {
 	return nil
 }
 
+// retiredByASeed reports whether seedShippedSkills deletes a vault skill of this name: one arcterm shipped under it once
+// (renamedShipped, removedShipped) and does not ship now. Adoption leaves such a name where it is, since a copy adopted
+// into the vault would be deleted by the seed that follows and so lost from both places. The comparison folds case,
+// as the vault is looked up by name on a volume that does not tell Design-Local from design-local. It mirrors the
+// conditions in seedShippedSkills; with no shipped skills the seed does nothing, so nothing is retired.
+func retiredByASeed(name string, shipped fs.FS) bool {
+	if shipped == nil {
+		return false
+	}
+	shipsNow := func(old string) bool {
+		st, err := fs.Stat(shipped, old)
+		return err == nil && st.IsDir()
+	}
+	for oldName := range renamedShipped {
+		if skillKey(name) == skillKey(oldName) && !shipsNow(oldName) {
+			return true
+		}
+	}
+	for _, oldName := range removedShipped {
+		if skillKey(name) == skillKey(oldName) && !shipsNow(oldName) {
+			return true
+		}
+	}
+	return false
+}
+
 // seedShippedSkills makes each shipped skill in the vault match what arcterm ships, so the reconcile
 // that follows projects the shipped copy. The .arc delta directory is the user's and survives, a rename included.
 func seedShippedSkills(skillsRoot string, shipped fs.FS) error {
@@ -480,7 +506,7 @@ const (
 // skillStateFor compares the rendered tree against what is on disk. An unmanaged directory is
 // reported and never opened — the user's copy is not arcterm's to read a verdict from.
 func skillStateFor(dir string, observed map[string]ObservedEntry, name string, want map[string][]byte) string {
-	e, present := observed[name]
+	e, present := observed[skillKey(name)]
 	switch {
 	case !present:
 		return stateDiffers // nothing there yet; a sync would write it
@@ -492,6 +518,21 @@ func skillStateFor(dir string, observed map[string]ObservedEntry, name string, w
 		return stateSynced
 	}
 	return stateDiffers
+}
+
+// skillKey is the name a skills directory knows an entry by: case folded, since on Windows (and a default macOS
+// volume) Review and review are one directory, and matching them exactly let a vault skill write over the user's own.
+func skillKey(name string) string {
+	return strings.ToLower(name)
+}
+
+// observedByKey indexes a skills directory's entries by skillKey, the map skillStateFor reads.
+func observedByKey(observed []ObservedEntry) map[string]ObservedEntry {
+	out := make(map[string]ObservedEntry, len(observed))
+	for _, e := range observed {
+		out[skillKey(e.Name)] = e
+	}
+	return out
 }
 
 // pluginRuntime is the harness that loads arcterm's shipped skills from the arc mod (claude/arc-mod, installed to
@@ -567,13 +608,10 @@ func reconcileSkillsDir(p Paths, dir, runtime string, names []string, dryRun boo
 	if err != nil {
 		return actions, err
 	}
-	byName := make(map[string]ObservedEntry, len(observed))
-	for _, e := range observed {
-		byName[e.Name] = e
-	}
+	byName := observedByKey(observed)
 	wanted := make(map[string]bool, len(names))
 	for _, name := range names {
-		wanted[name] = true
+		wanted[skillKey(name)] = true
 		want, err := renderSkill(p.SkillsRoot, name, runtime)
 		if err != nil {
 			return actions, err
@@ -600,7 +638,7 @@ func reconcileSkillsDir(p Paths, dir, runtime string, names []string, dryRun boo
 	// a directory arcterm wrote for a skill the vault no longer has, or one that moved to the arc mod. Plain files,
 	// so an ordinary recursive delete — the junction-era reparse-point hazard is gone with the junctions.
 	for _, e := range observed {
-		if wanted[e.Name] || !e.Managed {
+		if wanted[skillKey(e.Name)] || !e.Managed {
 			continue
 		}
 		actions = append(actions, Action{Kind: ActionSkillRemove, Runtime: runtime, Path: filepath.Join(dir, e.Name)})
@@ -778,10 +816,7 @@ func SkillRows(p Paths) ([]SkillRow, error) {
 				if err != nil {
 					return nil, err
 				}
-				byName = make(map[string]ObservedEntry, len(observed))
-				for _, e := range observed {
-					byName[e.Name] = e
-				}
+				byName = observedByKey(observed)
 				observedIn[target] = byName
 			}
 			want, err := renderSkill(p.SkillsRoot, rows[i].Name, spec.Runtime)

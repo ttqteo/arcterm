@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -173,6 +174,19 @@ func TestGetAllSortedByUpdatedDesc(t *testing.T) {
 	}
 	if len(all) != 2 || all[0].OID != old.OID || all[1].OID != mid.OID {
 		t.Fatalf("want newest-updated first, got %+v", all)
+	}
+}
+
+func TestGetAllWithGlobCharsInVaultPath(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "vault [work]")
+	t.Cleanup(UseRootForTest(root))
+	e := mustCreate(t, &waveobj.Effort{Title: "listed"})
+	all, err := GetAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || all[0].OID != e.OID {
+		t.Fatalf("want the one effort, got %+v", all)
 	}
 }
 
@@ -383,6 +397,57 @@ func TestConcurrentUpdatesSameOID(t *testing.T) {
 	}
 	if len(got.Notes) != n || got.Version != n+1 {
 		t.Fatalf("want %d notes and version %d, got %d notes, version %d", n, n+1, len(got.Notes), got.Version)
+	}
+}
+
+// a sync holds the vault lock while it merges the remote side into the file; an Update that arrives
+// meanwhile must apply its change on top of the merged file, not over it
+func TestUpdateWaitingOnSyncKeepsItsMerge(t *testing.T) {
+	root := useTempRoot(t)
+	e := mustCreate(t, &waveobj.Effort{Title: "synced"})
+	path := effortFile(root, e.OID)
+
+	unlockSync := wavevault.LockRoot(root)
+	done := make(chan error, 1)
+	go func() {
+		done <- Update(context.Background(), e.OID, func(x *waveobj.Effort) error {
+			x.Notes = append(x.Notes, waveobj.EffortNote{Ts: 2, Text: "local"})
+			return nil
+		})
+	}()
+	time.Sleep(100 * time.Millisecond) // let Update reach the vault lock
+	// read the file as a sync does: Update holds the path lock, so Get would wait on it
+	cur, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged, err := wavevault.ParseEffort(cur)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged.Notes = append(merged.Notes, waveobj.EffortNote{Ts: 1, Text: "from the other machine"})
+	b, err := wavevault.MarshalEffort(merged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unlockSync()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Get(context.Background(), e.OID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	texts := []string{}
+	for _, n := range got.Notes {
+		texts = append(texts, n.Text)
+	}
+	if !slices.Contains(texts, "from the other machine") || !slices.Contains(texts, "local") {
+		t.Fatalf("want the merged note and the local note, got %v", texts)
 	}
 }
 

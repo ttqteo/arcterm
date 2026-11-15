@@ -20,7 +20,8 @@ spec with `git show kael/main:docs/superpowers/specs/<file>`, and port the behav
 
 Before porting a commit, check whether ours already does it: our own work since 11-06 overlaps the fork in places
 (for example our `0e9d917d8` already refuses a fence left open over task headings, close to `725085b17`; ours already
-has `MergeGateTs` on the dag wire type; ours already has `wsh agents wait` with an `--until`). A part ours already has
+has `MergeGateTs` on the dag wire type; ours already has `wsh agents wait`, with `--timeout` only: the fork's `--until`
+is not ours, see group 6). A part ours already has
 is skipped and named in the commit's "Differs from plan". Commits are listed oldest first.
 
 ## Owner decisions (2026-11-13)
@@ -243,7 +244,8 @@ fields (`c3a7aa5fa` is in group 1 by scope; take its wire part first).
 `wsh agents explain <tab>` (it reads the live terminal screen through `8897f387c`'s registry), `send --wait` failing
 fast and naming the real state, an ask whose answer never arrived unlocked. Ours already has `wsh agents wait`: take
 only what `ffe84cf3b` adds beyond it. `e5b3e8ca2` (a permission prompt reads as asking) applies to our
-`PermissionRequest` hook too.
+`PermissionRequest` hook too. (2026-11-15: what `ffe84cf3b` adds beyond ours' `wait`, `--until idle|asking`, was
+dropped as a new flag, not a fix; ours' `wait` has `--timeout` only. See "Dropped (2026-11-15)".)
 
 - `8897f387c` feat(term): registry to read a block's live terminal screen
 - `8479d6a85` fix(agents): send --wait fails fast when no turn starts
@@ -612,6 +614,78 @@ Skip every hunk of these.
 2. Groups 4, 5 and 6 (API key, live-run states, `wsh agents`): need group 1's wire fields.
 3. Groups 11 and 12 (surface and store fixes): independent of the rest, can run beside step 2.
 4. Groups 7, 8 and 9 (Chat cards, Overview, brainstorm), then group 10 (motion) last.
+
+Steps 2 to 4 were replaced on 2026-11-15 by a pick of the fork's bug fixes (its plan,
+`docs/superpowers/plans/2026-11-15-kael-sync-hardening-pick.md`, was deleted when it shipped; `git log` has it): what it
+took and what it dropped is under "Dropped (2026-11-15)".
+
+## Dropped (2026-11-15)
+
+The owner's call on 2026-11-15 was to take only what is worth taking: the fork commits that fix real bugs (settings
+that get overwritten, a stuck vault, skills that fail to sync, the Claude mod's checks on Windows paths, the `wsh
+agents` waits, agent rows that do not match the agent's real state), and nothing else. These groups, and parts of
+groups, are skipped, each for the reason given:
+
+- **Group 4 (API key login):** not needed; the owner signs in to Claude with accounts, not an API key.
+- **Group 5 (live-run states), except** `9ea34975e`, `52939d137`, `7295fec74` and `56d1be199` (the bugs): UI polish of
+  the lead card, the Events rail and lead names. Ours redid those surfaces in the Chat look after this spec was written
+  (runs `d2a699db`, `68701920`). `ad2e2cae5` (a backgrounded run listed under Backgrounded) is dropped too: ours'
+  Cockpit surface has no Backgrounded section (`cockpitsurfacemodel.ts` has no `prunedBackgrounded`), so the bug cannot
+  happen.
+- **Group 6, except** `8479d6a85`, `ad650942f`, `e5b3e8ca2` and `8051926e0` (the fixes): `wsh agents explain`
+  (`603a21a35`, with its registry `8897f387c`) is a new command. `ffe84cf3b` adds `--until idle|asking` to `wsh agents
+  wait`, which ours does not have (`cmd/wsh/cmd/wshcmd-agents.go` has only `--timeout`): a new flag, not a fix.
+- **Group 7 (Chat cards), group 8 (project Overview):** new features nobody has asked for.
+- **Group 9 (brainstorm), group 10 (motion):** ours has moved past them. The brainstorm now lives in Chat (the band's
+  brainstorm part, boards that open over Chat), and the surfaces animate on Chat's spring (`6ad961fa6`, `528bc3725`).
+- **Group 11 (surface fixes, 71):** small races in views that ours has since redone. Each one costs a re-check, and the
+  user is unlikely to hit any of them.
+- **From group 12:** `90a09852e` (our code wins, above). `5d93c0f49` is cosmetic, and its scenario file is not in ours.
+  `ea5c40ad1` is not needed, because ours' `.arc/setup` already junctions `node_modules` into each tree.
+- **Already in ours, so not ported:** `3d8ec7369` (`agentobserve.NestedSession`, checked in
+  `cmd/wsh/cmd/wshcmd-agenthook.go`), `59f6c705e` (ours' `8c3f1c3fc`: sync holds the vault lock only for its commit and
+  merge), `aae9224b8` (ours' `lfText` in `pkg/agentsync/skills.go` already reads CRLF and a BOM).
+- **The scenario fixes:** they all belong to dropped groups or to scenario files ours lacks.
+
+What the pick took are commits of ours, one per fork commit or a few small related ones, and each body names the fork
+hash it ports. The parts of them that a task skipped or fitted differently, with the reason from its "Differs from
+plan" paragraph:
+
+- **`e84190ea4`, `e2c1dfeab`, `6fa51ef03`, `a341995a8`:** nothing skipped. The fork's `claudemod.ReadSettings` is ours'
+  `readSettingsFile` (ours has no `pkg/claudemod`), and `readJSONObject` is routed through it too, so agy's and Codex's
+  hooks files are covered, which the fork's were not.
+- **`05da38329`:** the fork's Jira line in `MergeEffort` is not ours (no Jira field).
+- **`2f17ea213`:** ours has no `baseRev` and no `ErrNoteConflict` (a later fork feature), so the fork's
+  `TestUpdateWaitingOnSyncSeesItsMerge`, which asserts `ErrNoteConflict`, is rewritten for what the vault lock guards
+  here: an Update waiting on a sync that removed the note returns not-found.
+- **`d65594736`:** the fork's flat `retiredShipped` list is not copied; `retiredByASeed` mirrors `seedShippedSkills`'
+  conditions (a renamed or removed name is retired only while arcterm does not ship it), and compares case-folded.
+- **`fed97e1e8`, `8d6a6fb79`, `324a652ed`, `1ece91003`, `c0f606fd2`:** the fork's `cmd/wsh/cmd/claude-mod` copy is not
+  ported (ours embeds `claude/arc-mod/` directly), and the fork's comment rewrite above `deliver` is applied as one
+  clause only, since ours' comment also describes the side-question (btw) path.
+- **`828356a12`:** the backend is not ported. The fork watches the nearest existing ancestor of a missing transcript
+  folder and descends onto it, which brings back the directory watch that `watchTranscriptFile` removed on purpose
+  (kqueue opens one descriptor per entry of a watched directory: "too many open files", 2026-11-08). Ours' polling
+  already survives a missing folder, so the fork's `TestStreamTranscriptWaitsForMissingDir` and
+  `TestStreamTranscriptReadsLinesWrittenBeforeWatch` land as guards, `TestStreamTranscriptNoAncestorFails` is not
+  ported (ours keeps polling a path with no existing ancestor until the caller stops the stream), and only the frontend
+  log and the scenario's step 4 are taken.
+- **`d26df2b5c`:** no server log change was needed; `ControllerInputCommand` already logs nothing for a bare resize.
+- **`57dff0eb5`:** the fork's `fused` returns an error as an extra value; ours has five providers sharing `fused`'s
+  signature, so the error travels in an unexported `readErr` field of `sessionEvents`, set only by opencode.
+- **`8479d6a85`, `ad650942f`, `e5b3e8ca2`:** nothing of the terminal registry (`8897f387c`) is needed, since the
+  fail-fast reads the roster's state alone. Ours' status has no `NotificationType`, so `agentOpenPrompt` words the
+  prompt from the waiting status and the ask alone, and the `--until` wording of `wait`'s help is skipped. The timeout
+  keeps ours' "run 'wsh agents read <id>' later" tail.
+- **`9ea34975e`:** `agentsend.ts`, `headercontrols.tsx`, `agentcomposer.tsx`, `snapshotguard_test.go` and
+  `scenarios-brief.mjs` are not ported: ours' composer sends through `submitToAgent`, never `AgentPromptCommand`, and
+  ours has no snapshot guard.
+- **`52939d137`:** pi is left as it is (ours' pi reports plain idle at shutdown, not ended), and `buildAgentRoster`
+  drops an ended tab only while its shell runs: a slept agent keeps its row, since stopping its process fires
+  `SessionEnd` too and dropping it would stop the roster from waking it (the fork has no sleeping agents).
+- **`7295fec74`:** the fork's `scenarios-agent.mjs` changes are not ported (ours has no such file); the scenario
+  `kael1113-pick` step 1 checks it instead, without the fork's step 9c2 (a real shell block behind the tab: it made the
+  Agent surface launch a real agent for a screenshot, so its blocks are made up, as `agent-tree-rail`'s are).
 
 Each plan with frontend tasks puts `task check:ts` in its Check, and names a CDP scenario for every view it changes
 (Final: `node scripts/cdp/final-verify.mjs <scenarios>`). A user-visible change adds its `CHANGELOG.md` line; a change

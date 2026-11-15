@@ -29,7 +29,7 @@ import (
 // Record is one parsed usage event. Token fields mirror the four Claude classes; Codex maps
 // its cumulative totals onto the same shape (CacheCreate stays 0).
 type Record struct {
-	ID              string // "message.id:requestId" dedup key; empty when either is absent
+	ID              string // dedup key (claude "message.id:requestId", opencode message id, pi "pi:id:timestamp"); empty when absent
 	TS              time.Time
 	Harness         string
 	Provider        string

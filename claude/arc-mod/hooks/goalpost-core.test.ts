@@ -457,6 +457,36 @@ describe("shell commands", () => {
         expect(commandRules("sed -i 's/a/b/' src/add.ts")).toEqual([]);
         expect(commandRules("cat src/add.test.ts")).toEqual([]);
     });
+
+    test("Windows paths with backslashes are caught as their slash forms are", async () => {
+        expect(commandRules(String.raw`rm C:\repo\tests\add.test.ts`)).toEqual(["tests.removed"]);
+        expect(commandRules(String.raw`git rm tests\test_api.py`)).toEqual(["tests.removed"]);
+        expect(commandRules(String.raw`echo x > .github\workflows\ci.yml`)).toEqual(["shell-edit"]);
+        expect(commandRules(String.raw`echo x > C:\repo\tsconfig.json`)).toEqual(["shell-edit"]);
+        expect(commandRules(String.raw`sed -i 's/a/b/' C:\repo\.eslintrc.json`)).toEqual(["shell-edit"]);
+        // the finding names the path as typed
+        const path = String.raw`C:\repo\tests\add.test.ts`;
+        expect(inspectCommand(`rm ${path}`, ALL)[0]?.file).toBe(path);
+    });
+});
+
+describe("windows paths", () => {
+    // claude on Windows passes file_path with backslashes; each must be judged as its / form is
+    const TSCONFIG = '{\n  "compilerOptions": {\n    "strict": true\n  }\n}\n';
+    const WORKFLOW = "jobs:\n  test:\n    steps:\n      - run: npm test\n";
+    const ESLINTRC = '{\n  "rules": {\n    "no-unused-vars": "error"\n  }\n}\n';
+    const cases: Array<[string, string, string]> = [
+        ["C:\\repo\\tsconfig.json", TSCONFIG, TSCONFIG.replace('"strict": true', '"strict": false')],
+        ["C:\\repo\\.github\\workflows\\ci.yml", WORKFLOW, WORKFLOW.replace("npm test", "npm test || true")],
+        ["C:\\repo\\.eslintrc.json", ESLINTRC, ESLINTRC.replace('"error"', '"off"')],
+        ["C:\\repo\\src\\__snapshots__\\add", "a", "b"],
+        ["C:\\repo\\tests\\add.ts", SPEC, SPEC.replace("    expect(add(0, 0)).toBe(0)\n", "")],
+    ];
+    test.each(cases)("%s is judged like its / form", (path, before, after) => {
+        const posix = rules(path.replaceAll("\\", "/"), before, after);
+        expect(posix).not.toEqual([]);
+        expect(rules(path, before, after)).toEqual(posix);
+    });
 });
 
 describe("options", () => {

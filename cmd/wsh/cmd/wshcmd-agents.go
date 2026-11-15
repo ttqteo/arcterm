@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
@@ -68,8 +69,8 @@ minute, and gets the message once it has reported in.`,
 var agentsWaitCmd = &cobra.Command{
 	Use:   "wait <tab>",
 	Short: "wait until a live agent stops working",
-	Long: `Wait until a live agent stops working: its turn ends, it asks the user something, it goes to sleep,
-or its tab closes. <tab> is a tab id or a unique prefix of one, as 'wsh agents list' prints it. A target
+	Long: `Wait until a live agent stops working: its turn ends, it has a question or a permission prompt open for
+the user, it goes to sleep, or its tab closes. <tab> is a tab id or a unique prefix of one, as 'wsh agents list' prints it. A target
 that is not working ends the wait at once.
 
 Run it as a background command to carry on when another agent is done: you are told when it ends,
@@ -308,10 +309,15 @@ func agentsSendLines(sent *wshrpc.CommandAgentsSendRtnData) []string {
 
 // agentsWait polls read until the target has answered the send: it is no longer working and its last
 // answer is newer than the send. A target that ends up asking the user is returned as it stands, since
-// only the user can move it on. read, sleep and now are parameters so a test scripts them.
+// only the user can move it on. A send that started a turn fails once the target has stayed idle for the
+// engine's wake-confirm window: the message did not reach the session. read, sleep and now are parameters
+// so a test scripts them.
 func agentsWait(read func() (*wshrpc.CommandAgentsReadRtnData, error), sleep func(time.Duration), now func() time.Time,
 	sent *wshrpc.CommandAgentsSendRtnData, timeout time.Duration) (*wshrpc.CommandAgentsReadRtnData, error) {
-	deadline := now().Add(timeout)
+	start := now()
+	deadline := start.Add(timeout)
+	// a send into a running turn has no start to see, and the target may read idle between its turns
+	started := sent.MidTurn
 	for {
 		r, err := read()
 		if err != nil {
@@ -323,9 +329,19 @@ func agentsWait(read func() (*wshrpc.CommandAgentsReadRtnData, error), sleep fun
 		if r.State != wshrpc.AgentsState_Working && r.AnswerTs > sent.SentTs {
 			return r, nil
 		}
+		started = started || r.State != wshrpc.AgentsState_Idle
+		if !started && now().Sub(start) >= orchestrate.WakeConfirmTimeout {
+			id := agentsShort(sent.TabId)
+			return nil, fmt.Errorf("%s did not start a turn within %s, so the message may not have reached it; look at its terminal, or run 'wsh agents read %s' later",
+				id, orchestrate.WakeConfirmTimeout, id)
+		}
 		if !now().Before(deadline) {
 			id := agentsShort(sent.TabId)
-			return nil, fmt.Errorf("%s is still working after %s; run 'wsh agents read %s' later", id, timeout, id)
+			if r.State == wshrpc.AgentsState_Working {
+				return nil, fmt.Errorf("%s is still working after %s; run 'wsh agents read %s' later", id, timeout, id)
+			}
+			// a send that joined a running turn can time out with the target idle and no answer newer than the send
+			return nil, fmt.Errorf("%s is %s after %s and has not answered since the send; run 'wsh agents read %s' later", id, r.State, timeout, id)
 		}
 		sleep(agentsWaitPoll)
 	}
@@ -334,7 +350,7 @@ func agentsWait(read func() (*wshrpc.CommandAgentsReadRtnData, error), sleep fun
 func agentsWaitLines(r *wshrpc.CommandAgentsReadRtnData) []string {
 	if r.State == wshrpc.AgentsState_Asking {
 		id := agentsShort(r.TabId)
-		return []string{fmt.Sprintf("%s is waiting on the user: it has a question open. Once it is answered, run 'wsh agents read %s'", id, id)}
+		return []string{fmt.Sprintf("%s is waiting on the user: it has a question or a permission prompt open. Once it is answered, run 'wsh agents read %s'", id, id)}
 	}
 	return agentsReadLines(r)
 }
@@ -382,7 +398,7 @@ func agentsWaitFor(list func() ([]wshrpc.AgentInfo, error), sleep func(time.Dura
 		case row == nil:
 			return who + " closed", nil
 		case row.State == wshrpc.AgentsState_Asking:
-			return who + " is waiting on the user: it has a question open", nil
+			return who + " is waiting on the user: it has a question or a permission prompt open", nil
 		case row.State == wshrpc.AgentsState_Sleeping:
 			return who + " is asleep", nil
 		case row.State != wshrpc.AgentsState_Working:

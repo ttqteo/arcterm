@@ -86,6 +86,28 @@ func TestPlanEmission(t *testing.T) {
 	}
 }
 
+// claude had no end-of-session report, so a session that exited to its shell kept reading as live
+func TestPlanEmissionSessionEnd(t *testing.T) {
+	for _, reason := range []string{"prompt_input_exit", "logout", "other", ""} {
+		em := planEmission(ccHookEvent{HookEventName: "SessionEnd", Reason: reason})
+		if em.State != baseds.AgentState_Idle || !em.Ended {
+			t.Errorf("reason %q: emission = %+v, want idle and ended", reason, em)
+		}
+	}
+	// a /clear or /resume ends one session and opens the next in the same claude
+	for _, reason := range []string{"clear", "resume"} {
+		if em := planEmission(ccHookEvent{HookEventName: "SessionEnd", Reason: reason}); em.State != "" || em.Ended {
+			t.Errorf("reason %q: emission = %+v, want nothing", reason, em)
+		}
+	}
+	// only a SessionEnd ends a session: the reports a live session makes never carry the flag
+	for _, name := range []string{"UserPromptSubmit", "Stop", "StopFailure", "Notification", "PostToolUse", "SessionStart"} {
+		if em := planEmission(ccHookEvent{HookEventName: name, Reason: "other", Source: "resume"}); em.Ended {
+			t.Errorf("%s: emission = %+v, want no ended flag", name, em)
+		}
+	}
+}
+
 func TestPlanEmissionStopFailure(t *testing.T) {
 	// a usage limit ends the turn idle and says so, which pauses the run the worker belongs to (pkg/runpause)
 	em := planEmission(ccHookEvent{HookEventName: baseds.AgentHook_StopFailure, Error: "rate_limit"})

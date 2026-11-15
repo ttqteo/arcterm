@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/shirou/gopsutil/v4/mem"
+	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/memusage"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -213,6 +214,17 @@ func TestAgentsSetModelRefusesAnAskingAgentWithNoStream(t *testing.T) {
 	_, err := (&WshServer{}).AgentsSetModelCommand(context.Background(), wshrpc.CommandAgentsSetModelData{Tab: agentsTabB, Model: "sonnet"})
 	if err == nil || !strings.Contains(err.Error(), "question open") || len(*sent) != 0 {
 		t.Fatalf("asking with no stream: err=%v sent=%v, want a refusal and nothing sent", err, *sent)
+	}
+}
+
+// a permission prompt reads as asking, and a typed /model would land in its dialog
+func TestAgentsSetModelRefusesAPermissionPromptWithNoStream(t *testing.T) {
+	waiting := threeAgents()
+	waiting.Tabs[1].Status.State = baseds.AgentState_Waiting // B is a Claude agent in a dialog and has no stream
+	sent := scriptAgents(t, waiting)
+	_, err := (&WshServer{}).AgentsSetModelCommand(context.Background(), wshrpc.CommandAgentsSetModelData{Tab: agentsTabB, Model: "sonnet"})
+	if err == nil || !strings.Contains(err.Error(), "permission prompt open") || len(*sent) != 0 {
+		t.Fatalf("waiting with no stream: err=%v sent=%v, want a refusal naming the prompt and nothing sent", err, *sent)
 	}
 }
 

@@ -111,3 +111,40 @@ describe("denial: a background command's redirected output", () => {
         expect(denial("task dev > /tmp/dev.log 2>&1", CHECKOUT)).toBeNull();
     });
 });
+
+describe("denial: a commit or tag message", () => {
+    const HEREDOC = "git commit -F - <<'EOF'\nfix: git worktree remove can fail\n\ngit push waits for the engine\nEOF";
+    const SUBST_HEREDOC = "git commit -m \"$(cat <<'EOF'\nfix: git switch main is refused\nEOF\n)\"";
+
+    it.each([
+        'git commit -m "fix: git worktree remove can fail with exit 255"',
+        "git commit -am 'git push and git switch belong to the engine'",
+        'git commit -m "taskkill /im wavesrv.x64.exe kills Arc"',
+        "git commit --message='Stop-Process -Name wavesrv is refused'",
+        'git commit --message "git checkout -b x is refused"',
+        'git -C . commit -m"git push" -m "second paragraph: git worktree prune"',
+        "git commit -m git-push-note",
+        'git tag -a v1 -m "git push is the engine job"',
+        HEREDOC,
+        SUBST_HEREDOC,
+        "cat <<'EOF' | git commit -F -\ngit push note\nEOF",
+    ])("lets %s through", (command) => {
+        expect(denial(command, TASK_TREE)).toBeNull();
+    });
+
+    it.each([
+        ['taskkill /im "wavesrv.x64.exe"', CHECKOUT, /image name/],
+        ['powershell -Command "Stop-Process -Name wavesrv.x64 -Force"', CHECKOUT, /image name/],
+        ['bash -c "git push"', TASK_TREE, /pushed/],
+        ['git commit -m "msg" && git push', TASK_TREE, /pushed/],
+        ['git commit -m "$(git push)"', TASK_TREE, /pushed/],
+        ["git commit -m $(git push)", TASK_TREE, /pushed/],
+        ['git commit -m "msg" -- "git switch main"', TASK_TREE, /stay on it/],
+        ['git log -m "git push"; git push', TASK_TREE, /pushed/],
+        ["git commit -F - <<'EOF'\nmsg\nEOF\ngit push", TASK_TREE, /pushed/],
+        ["git commit -m x && bash <<'EOF'\ngit push\nEOF", TASK_TREE, /pushed/],
+        ["bash <<'EOF' | tee log; git commit -F x\ngit push\nEOF", TASK_TREE, /pushed/],
+    ])("still refuses %s", (command, cwd, why) => {
+        expect(denial(command, cwd)).toMatch(why);
+    });
+});

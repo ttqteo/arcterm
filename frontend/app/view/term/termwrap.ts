@@ -920,7 +920,9 @@ export class TermWrap {
                 "->",
                 `${this.terminal.rows}x${this.terminal.cols}`
             );
-            RpcApi.ControllerInputCommand(TabRpcClient, { blockid: this.blockId, termsize: termSize });
+            RpcApi.ControllerInputCommand(TabRpcClient, { blockid: this.blockId, termsize: termSize }).catch((e) =>
+                console.error("terminal resize", this.blockId, e)
+            );
             this.fitDiag.sent = `${termSize.cols}x${termSize.rows}`;
         }
         this.fitDiag.shownFits++;

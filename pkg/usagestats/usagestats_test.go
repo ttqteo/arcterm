@@ -1005,9 +1005,10 @@ func TestScanSessionMeta(t *testing.T) {
 		return fmt.Sprintf(`{"type":"session","version":3,"id":%q,"timestamp":%q,"cwd":%q}`, id, nowStr, cwd) + "\n" +
 			`{"type":"model_change","id":"mc","parentId":null,"timestamp":"` + nowStr + `","provider":"openai-codex","modelId":"gpt-5.5"}` + "\n" +
 			fmt.Sprintf(`{"type":"message","id":"u1","parentId":"mc","timestamp":%q,"message":{"role":"user","content":%q}}`, nowStr, userText) + "\n" +
-			`{"type":"message","id":"a1","parentId":"u1","timestamp":"` + nowStr + `","message":{"role":"assistant","content":"ok","usage":{"input":1,"output":1,"totalTokens":2,"cost":{"total":0}}}}` + "\n" + extra
+			// pi's entry ids are random, so each session's billed entry carries its own
+			fmt.Sprintf(`{"type":"message","id":"%s-a1","parentId":"u1","timestamp":%q,"message":{"role":"assistant","content":"ok","usage":{"input":1,"output":1,"totalTokens":2,"cost":{"total":0}}}}`, id, nowStr) + "\n" + extra
 	}
-	writeScanFile(t, piSession("p1", "/repo/pi", "do the thing", `{"type":"session_info","id":"i1","parentId":"a1","name":"Named session"}`+"\n"),
+	writeScanFile(t, piSession("p1", "/repo/pi", "do the thing", `{"type":"session_info","id":"i1","parentId":"p1-a1","name":"Named session"}`+"\n"),
 		pi, "--repo--", "2026-10-01T02-31-47-396Z_p1.jsonl")
 	writeScanFile(t, piSession("child", "/elsewhere", "subagent prompt", ""),
 		pi, "--repo--", "2026-10-01T02-31-47-396Z_p1", "run9", "run-0", "session.jsonl")

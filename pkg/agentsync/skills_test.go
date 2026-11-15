@@ -491,6 +491,68 @@ func TestApplyRetiresARemovedShippedSkillFromTheVaultAndTheHarness(t *testing.T)
 	}
 }
 
+// on Windows (and a default macOS volume) Review and review are one directory, so a vault skill must not write over a
+// user's own directory whose name differs only in case
+func TestReconcileLeavesAnUnmanagedDirDifferingOnlyInCase(t *testing.T) {
+	p := testPaths(t, "", ".claude")
+	seedSkill(t, p, "Review")
+	own := filepath.Join(p.Home, ".claude", "skills", "review")
+	writeFile(t, filepath.Join(own, skillFile), "---\nname: review\n---\nmine\n")
+	writeFile(t, filepath.Join(own, "notes.md"), "keep\n")
+
+	if _, err := Apply(p, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(own, "notes.md")); got != "keep\n" {
+		t.Errorf("notes.md = %q", got)
+	}
+	if got := readFile(t, filepath.Join(own, skillFile)); got != "---\nname: review\n---\nmine\n" {
+		t.Errorf("the user's SKILL.md = %q, want it untouched", got)
+	}
+}
+
+// the matrix reads the same directory as the reconcile does: the user's review is unmanaged, not "differs"
+func TestSkillRowsReadsAnUnmanagedDirDifferingOnlyInCaseAsUnmanaged(t *testing.T) {
+	p := testPaths(t, "", ".claude")
+	seedSkill(t, p, "Review")
+	writeFile(t, filepath.Join(p.Home, ".claude", "skills", "review", skillFile), "---\nname: review\n---\nmine\n")
+
+	rows, err := SkillRows(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].States["claude"] != stateUnmanaged {
+		t.Errorf("rows = %+v, want Review unmanaged in claude", rows)
+	}
+}
+
+// the stale-copy sweep is keyed the same way: a managed review the vault now calls Review is its copy, not a leftover
+func TestReconcileKeepsAManagedDirTheVaultNowNamesWithAnotherCase(t *testing.T) {
+	p := testPaths(t, "", ".claude")
+	seedSkill(t, p, "review")
+	if _, err := Apply(p, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(p.SkillsRoot, "review"), filepath.Join(p.SkillsRoot, "Review")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Home, ".claude", "skills", "Review")); err != nil {
+		t.Skip("the volume tells Review and review apart, so the harness's review is not the vault's Review")
+	}
+	acts, err := Apply(p, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range acts {
+		if a.Kind == ActionSkillRemove {
+			t.Errorf("actions = %+v, want no removal of the managed copy the vault still has", acts)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(p.Home, ".claude", "skills", "Review", skillFile)); err != nil {
+		t.Errorf("the managed copy is gone after the case change: %v", err)
+	}
+}
+
 // a removed name arcterm ships again is seeded, not retired
 func TestSeedKeepsARemovedNameThatShipsAgain(t *testing.T) {
 	root := t.TempDir()

@@ -718,13 +718,14 @@ func TestRemovedMemoryHooksAreStillRecognized(t *testing.T) {
 	}
 }
 
-// SessionEnd left managedHooks entirely when agent-memory-hook was removed, so a merge that only
-// walked the events arcterm manages now would never revisit the stale group sitting under it.
+// SessionEnd once left managedHooks entirely when agent-memory-hook was removed, so a merge that only
+// walked the events arcterm manages now would never revisit the stale group sitting under it. SubagentStart
+// stands in for any event arcterm does not manage.
 func TestMergePrunesHooksUnderNoLongerManagedEvents(t *testing.T) {
 	skipUnlessWindows(t)
 	existing := map[string]any{
 		"hooks": map[string]any{
-			"SessionEnd": []any{
+			"SubagentStart": []any{
 				map[string]any{
 					"hooks": []any{
 						map[string]any{"type": "command", "command": `"C:\old\wsh.exe" agent-memory-hook`},
@@ -738,8 +739,8 @@ func TestMergePrunesHooksUnderNoLongerManagedEvents(t *testing.T) {
 	}
 	merged := mergeAgentHooks(existing, testWsh)
 	hooks, _ := merged["hooks"].(map[string]any)
-	if _, present := hooks["SessionEnd"]; present {
-		t.Fatalf("stale SessionEnd group survived the merge: %v", hooks["SessionEnd"])
+	if _, present := hooks["SubagentStart"]; present {
+		t.Fatalf("stale SubagentStart group survived the merge: %v", hooks["SubagentStart"])
 	}
 	if n := countManaged(t, merged); n != len(managedHooks) {
 		t.Fatalf("managed entries = %d, want %d", n, len(managedHooks))
@@ -751,12 +752,12 @@ func TestMergeKeepsForeignHooksUnderUnmanagedEvents(t *testing.T) {
 	foreign := map[string]any{
 		"hooks": []any{map[string]any{"type": "command", "command": "node /x/notify.js"}},
 	}
-	existing := map[string]any{"hooks": map[string]any{"SessionEnd": []any{foreign}}}
+	existing := map[string]any{"hooks": map[string]any{"SubagentStart": []any{foreign}}}
 	merged := mergeAgentHooks(existing, testWsh)
 	hooks, _ := merged["hooks"].(map[string]any)
-	groups, _ := hooks["SessionEnd"].([]any)
+	groups, _ := hooks["SubagentStart"].([]any)
 	if len(groups) != 1 {
-		t.Fatalf("SessionEnd groups = %d, want the one foreign hook kept", len(groups))
+		t.Fatalf("SubagentStart groups = %d, want the one foreign hook kept", len(groups))
 	}
 }
 
@@ -809,6 +810,8 @@ func TestCompactionHooksAreManaged(t *testing.T) {
 		{Event: "SessionStart", Matcher: "clear", Args: "agent-hook", Timeout: 10},
 		{Event: "SessionStart", Matcher: "resume", Args: "agent-hook", Timeout: 10},
 		{Event: "SessionStart", Matcher: "startup", Args: "agent-hook", Timeout: 10},
+		// the end of a session is the only report that it exited to its shell
+		{Event: "SessionEnd", Args: "agent-hook", Timeout: 10},
 	} {
 		found := false
 		for _, mh := range managedHooks {
@@ -828,6 +831,42 @@ func TestCompactionHooksAreManaged(t *testing.T) {
 	groups, _ := merged["hooks"].(map[string]any)["SessionStart"].([]any)
 	if len(groups) != 5 {
 		t.Fatalf("SessionStart groups after two merges = %d, want the compact idle, rules, clear, resume and startup hooks", len(groups))
+	}
+}
+
+// claude fires SessionEnd while it tears down, and a headless claude kills an async hook still running then: the
+// report that the session exited to its shell must be synchronous, and one copy of it must survive every re-run
+func TestSessionEndHookIsManagedOnceAndSynchronous(t *testing.T) {
+	var found []managedHook
+	for _, mh := range managedHooks {
+		if mh.Event == "SessionEnd" {
+			found = append(found, mh)
+		}
+	}
+	want := managedHook{Event: "SessionEnd", Args: "agent-hook", Timeout: 10}
+	if len(found) != 1 || found[0] != want {
+		t.Fatalf("SessionEnd hooks = %+v, want exactly %+v", found, want)
+	}
+	if managedHookAsync("SessionEnd", "", "agent-hook") {
+		t.Fatal("managedHookAsync reports the SessionEnd hook as async")
+	}
+	// a path this OS reads as one: on a Mac testWsh's backslashes are no separators, so the second merge would not
+	// know its own hook
+	wsh := testWsh
+	if runtime.GOOS != "windows" {
+		wsh = "/h/.arc/bin/wsh"
+	}
+	merged := mergeAgentHooks(mergeAgentHooks(map[string]any{}, wsh), wsh)
+	groups, _ := merged["hooks"].(map[string]any)["SessionEnd"].([]any)
+	if len(groups) != 1 {
+		t.Fatalf("SessionEnd groups after two merges = %d, want 1", len(groups))
+	}
+	hook := groups[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)
+	if _, async := hook["async"]; async {
+		t.Fatalf("the written SessionEnd hook is async: %v", hook)
+	}
+	if !strings.HasSuffix(hook["command"].(string), " agent-hook") {
+		t.Fatalf("the written SessionEnd command = %v", hook["command"])
 	}
 }
 
@@ -1622,5 +1661,239 @@ func TestConfigIsHealthy_requiresCleanupPeriod(t *testing.T) {
 	delete(full, "cleanupPeriodDays")
 	if configIsHealthy(full, wsh, []string{modDir}, false) {
 		t.Fatal("a config without cleanupPeriodDays must not be healthy, or an upgrade never writes it")
+	}
+}
+
+// stubInstallHome points the install at a throwaway home with no claude, opencode or pi on PATH.
+func stubInstallHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
+	stubClaudeVersion(t, "", os.ErrNotExist)
+	origOpencode, origPi := opencodeLookPath, piLookPath
+	opencodeLookPath = func(string) (string, error) { return "", os.ErrNotExist }
+	piLookPath = func(string) (string, error) { return "", os.ErrNotExist }
+	t.Cleanup(func() { opencodeLookPath, piLookPath = origOpencode, origPi })
+	return home
+}
+
+// a settings.json that exists but cannot be read (a sharing violation at launch; a directory stands in
+// here, which fails the read the same way on every OS) must stop the install, never be taken for "no
+// settings" and replaced by an Arc-only file (kael e84190ea4)
+func TestInstallAgentHooks_unreadableSettingsAreNotReplaced(t *testing.T) {
+	home := stubInstallHome(t)
+	path := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := installAgentHooksRun(nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "reading") {
+		t.Fatalf("install err = %v, want a read error", err)
+	}
+	if _, serr := os.Stat(path + ".tmp"); serr == nil {
+		t.Fatalf("install wrote %s.tmp over unreadable settings", path)
+	}
+}
+
+func TestMergePiSettingsDefaults_unreadableSettingsAreNotReplaced(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".pi", "agent", "settings.json")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := mergePiSettingsDefaults(home)
+	if err == nil || !strings.Contains(err.Error(), "reading") {
+		t.Fatalf("merge err = %v, want a read error", err)
+	}
+	if _, serr := os.Stat(path + ".tmp"); serr == nil {
+		t.Fatalf("merge wrote %s.tmp over unreadable settings", path)
+	}
+}
+
+// agy's and Codex's hooks.json are read through the same helper, so a file that cannot be read is not replaced either
+func TestInstallAgyAndCodexHooks_unreadableHooksAreNotReplaced(t *testing.T) {
+	home := agyTestHome(t, true)
+	if err := os.MkdirAll(agyHooksPath(home), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := installAgyHooks(home, testWsh); err == nil || !strings.Contains(err.Error(), "reading") {
+		t.Fatalf("agy install err = %v, want a read error", err)
+	}
+	codexPath := filepath.Join(home, ".codex", "hooks.json")
+	if err := os.MkdirAll(codexPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := installCodexHooks(home, testWsh); err == nil || !strings.Contains(err.Error(), "reading") {
+		t.Fatalf("codex install err = %v, want a read error", err)
+	}
+	for _, p := range []string{agyHooksPath(home), codexPath} {
+		if fi, err := os.Stat(p); err != nil || !fi.IsDir() {
+			t.Fatalf("%s was replaced (stat err = %v)", p, err)
+		}
+	}
+}
+
+// a missing or blank settings file is no settings, a BOM is dropped (Windows PowerShell 5's Set-Content -Encoding
+// UTF8 starts the file with one), any other read error comes back (kael e84190ea4, e2c1dfeab)
+func TestReadSettingsFile(t *testing.T) {
+	dir := t.TempDir()
+	if b, err := readSettingsFile(filepath.Join(dir, "missing.json")); b != nil || err != nil {
+		t.Fatalf("missing file: got %q, %v", b, err)
+	}
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	if b, err := readSettingsFile(write("blank.json", " \r\n\t")); b != nil || err != nil {
+		t.Fatalf("blank file: got %q, %v", b, err)
+	}
+	if b, err := readSettingsFile(write("bom-blank.json", "\xEF\xBB\xBF\n")); b != nil || err != nil {
+		t.Fatalf("a BOM and nothing else: got %q, %v", b, err)
+	}
+	if b, err := readSettingsFile(write("bom.json", "\xEF\xBB\xBF"+`{"model":"opus"}`)); err != nil || string(b) != `{"model":"opus"}` {
+		t.Fatalf("BOM file: got %q, %v", b, err)
+	}
+	if b, err := readSettingsFile(dir); b != nil || err == nil || !strings.Contains(err.Error(), "reading") {
+		t.Fatalf("unreadable file: got %q, %v, want a read error", b, err)
+	}
+}
+
+// a settings.json with a BOM installs and keeps what it held, instead of failing the install on every launch
+func TestInstallAgentHooks_readsASettingsFileWithABOM(t *testing.T) {
+	home := stubInstallHome(t)
+	path := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("\xEF\xBB\xBF"+`{"model":"opus"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := installAgentHooksRun(nil, nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("the rewritten settings do not parse: %v\n%s", err, b)
+	}
+	if got["model"] != "opus" {
+		t.Fatalf("the user's model was lost: %s", b)
+	}
+	if _, ok := got["hooks"]; !ok {
+		t.Fatalf("the hooks were not installed: %s", b)
+	}
+}
+
+// claude --version can take seconds; a settings.json written meanwhile (a running claude, Settings > Skim)
+// must be what the install merges into, not the copy read before the probe (kael 6fa51ef03)
+func TestInstallAgentHooks_keepsAWriteMadeDuringTheVersionProbe(t *testing.T) {
+	home := stubInstallHome(t)
+	path := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	claudeVersionOutput = func() (string, error) {
+		if err := os.WriteFile(path, []byte(`{"model":"opus"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return "", os.ErrNotExist
+	}
+	if err := installAgentHooksRun(nil, nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["model"] != "opus" {
+		t.Fatalf("the write made during the probe was lost: %s", b)
+	}
+}
+
+// a Claude settings.json the install cannot parse fails the install, but the opencode, pi, agy and Codex
+// integrations beside it still land (kael e2c1dfeab)
+func TestInstallAgentHooks_unparseableClaudeSettingsStillInstallTheOtherAgents(t *testing.T) {
+	home := stubInstallHome(t)
+	piLookPath = func(string) (string, error) { return "pi", nil }
+	opencodeLookPath = func(string) (string, error) { return "opencode", nil }
+	for _, d := range []string{filepath.Join(home, ".gemini", "antigravity-cli"), filepath.Join(home, ".codex")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"model":`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := installAgentHooksRun(nil, nil); err == nil || !strings.Contains(err.Error(), "parsing") {
+		t.Fatalf("install err = %v, want the parse error", err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != `{"model":` {
+		t.Fatalf("unparseable settings were rewritten: %s", b)
+	}
+	for _, p := range []string{
+		filepath.Join(home, ".pi", "agent", "settings.json"),
+		filepath.Join(home, ".config", "opencode", "plugins", "waveterm-status.js"),
+		agyHooksPath(home),
+		filepath.Join(home, ".codex", "hooks.json"),
+	} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s was not installed: %v", p, err)
+		}
+	}
+}
+
+// a user's hook sharing a group with an Arc hook survives the rewrite; only Arc's own hook is replaced
+// (kael a341995a8)
+func TestMergeAgentHooksKeepsForeignHookInAManagedGroup(t *testing.T) {
+	existing := map[string]any{
+		"hooks": map[string]any{
+			"Stop": []any{
+				map[string]any{"matcher": "*", "hooks": []any{
+					map[string]any{"type": "command", "command": `C:\old\wsh.exe agent-hook`},
+					map[string]any{"type": "command", "command": "node C:/tools/my-stop-notify.js"},
+				}},
+			},
+		},
+	}
+	got := mergeAgentHooks(existing, testWsh)
+	found := false
+	for _, g := range got["hooks"].(map[string]any)["Stop"].([]any) {
+		gm := g.(map[string]any)
+		for _, h := range gm["hooks"].([]any) {
+			c := h.(map[string]any)["command"].(string)
+			if c == "node C:/tools/my-stop-notify.js" {
+				found = true
+				if gm["matcher"] != "*" {
+					t.Errorf("the user's group lost its matcher: %v", gm)
+				}
+			}
+			if strings.Contains(c, `C:\old\wsh.exe`) {
+				t.Fatalf("stale Arc hook kept: %q", c)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("user hook in a group with an Arc hook was dropped")
+	}
+	if n := countManaged(t, got); n != len(managedHooks) {
+		t.Fatalf("managed entries = %d, want %d", n, len(managedHooks))
+	}
+	if again := mergeAgentHooks(got, testWsh); countManaged(t, again) != len(managedHooks) {
+		t.Fatal("re-merge duplicated managed entries")
 	}
 }

@@ -10,12 +10,14 @@ package consult
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 const fakePiHelperEnv = "WAVE_FAKE_PI_HELPER"
@@ -273,5 +275,34 @@ func TestStartCmdPassesTheRuntimeEnv(t *testing.T) {
 	want := PromptCacheTTLEnv + "=" + ShortSessionCacheTTL
 	if !slices.Contains(cmd.Env, want) || len(cmd.Env) <= 1 {
 		t.Fatalf("cmd.Env lacks %q on top of the inherited environment: %v", want, cmd.Env)
+	}
+}
+
+// Windows refuses to remove a file another process still has open, as a descendant of the CLI holding the
+// inherited stderr handle does; the capture is removed once that handle closes, not left behind.
+// Ported from the fork's 9e0fc711a.
+func TestReleaseStderrCapture_removesOnceTheHolderLetsGo(t *testing.T) {
+	origEvery := stderrReleaseEvery
+	stderrReleaseEvery = 10 * time.Millisecond
+	t.Cleanup(func() { stderrReleaseEvery = origEvery })
+	f, err := os.CreateTemp(t.TempDir(), "wave-consult-stderr-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder, err := os.Open(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseStderrCapture(f)
+	holder.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(f.Name()); errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s is still there after its last holder closed", f.Name())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

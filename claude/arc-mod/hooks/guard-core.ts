@@ -46,9 +46,96 @@ export function isEngineTree(cwd: string): boolean {
     return ENGINE_TREE.test(cwd);
 }
 
+const COMMIT = new RegExp(GIT + String.raw`(?:commit|tag)\b`, "g");
+const MESSAGE_FLAG = /^(?:-[a-zA-Z]*m|--message=?)$/;
+const SHELL_TOKEN = /"(?:[^"\\]|\\[\s\S])*"|'[^']*'|[;&|\n]|\s+|[^\s"';&|]+|[\s\S]/g;
+const HEREDOC = /<<-?\s*(['"]?)(\w+)\1/;
+const SUBSTITUTION = /\$\([^)]*\)|`[^`]*`/g;
+
+const blank = (s: string) => s.replace(/[^\n]/g, "_");
+
+// a substitution in the text still runs, so it stays visible to the rules; an unbalanced one keeps it all
+function maskText(s: string): string {
+    let out = "";
+    let last = 0;
+    for (const m of s.matchAll(SUBSTITUTION)) {
+        out += blank(s.slice(last, m.index)) + m[0];
+        last = m.index + m[0].length;
+    }
+    const rest = s.slice(last);
+    return /\$\(|`/.test(rest) ? s : out + blank(rest);
+}
+
+function maskValue(token: string): string {
+    return token.startsWith("'") ? blank(token) : maskText(token);
+}
+
+// a heredoc feeds the commit when it opens inside the commit's own command or pipes straight into it
+function feedsCommit(line: string, opener: RegExpExecArray): boolean {
+    const commit = new RegExp(COMMIT.source).exec(line);
+    if (!commit) {
+        return false;
+    }
+    if (commit.index < opener.index) {
+        return !/[;&|]/.test(line.slice(commit.index + commit[0].length, opener.index));
+    }
+    return /^\s*\|\s*$/.test(line.slice(opener.index + opener[0].length, commit.index));
+}
+
+// the bodies of heredocs fed to a git commit or tag, then each -m/--message value of a commit or tag
+function maskMessages(command: string): string {
+    const lines = command.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const opener = HEREDOC.exec(lines[i]);
+        if (!opener || !feedsCommit(lines[i], opener)) {
+            continue;
+        }
+        const end = lines.findIndex((line, j) => j > i && line.replace(/^\t+/, "") === opener[2]);
+        const stop = end < 0 ? lines.length : end;
+        for (let j = i + 1; j < stop; j++) {
+            lines[j] = opener[1] ? blank(lines[j]) : maskText(lines[j]);
+        }
+        i = stop;
+    }
+    let text = lines.join("\n");
+    for (const commit of [...text.matchAll(COMMIT)]) {
+        const start = commit.index + commit[0].length;
+        // masking keeps lengths, so a match blanked by an earlier message no longer reads as itself
+        if (text.slice(commit.index, start) !== commit[0]) {
+            continue;
+        }
+        const tail = text.slice(start);
+        let out = "";
+        let wantValue = false;
+        let rest = "";
+        for (const token of tail.matchAll(SHELL_TOKEN)) {
+            const t = token[0];
+            if (/^[;&|\n]$/.test(t)) {
+                rest = tail.slice(token.index);
+                break;
+            }
+            if (wantValue && !/^\s+$/.test(t)) {
+                out += maskValue(t);
+                wantValue = false;
+                continue;
+            }
+            if (t.startsWith("--message=") && t.length > "--message=".length) {
+                out += "--message=" + maskValue(t.slice("--message=".length));
+                continue;
+            }
+            wantValue ||= MESSAGE_FLAG.test(t);
+            out += t;
+        }
+        text = text.slice(0, start) + out + rest;
+    }
+    return text;
+}
+
 // why the session may not run this command from this directory; null when it may
 export function denial(command: string, cwd: string, background = false): string | null {
-    if (ARC_IMAGE.test(command) && KILL_BY_NAME.test(command)) {
+    // a commit or tag message may name a refused command without running it
+    const text = maskMessages(command);
+    if (ARC_IMAGE.test(text) && KILL_BY_NAME.test(text)) {
         return KILL_REASON;
     }
     // quoted text is masked so a `>` inside a quoted script is not a redirect
@@ -58,6 +145,6 @@ export function denial(command: string, cwd: string, background = false): string
     if (!isEngineTree(cwd)) {
         return null;
     }
-    const broken = LANE_RULES.find(([pattern]) => pattern.test(command));
+    const broken = LANE_RULES.find(([pattern]) => pattern.test(text));
     return broken ? `Refused by arcterm: ${broken[1]}. If your task cannot finish without it, ask.` : null;
 }

@@ -49,9 +49,14 @@ impl RotatingLog {
     fn rotate(&mut self) -> std::io::Result<()> {
         // windows cannot rename a file this process holds open, so drop the handle first
         self.file = None;
-        std::fs::rename(&self.path, &self.rotated_path)?;
+        let renamed = std::fs::rename(&self.path, &self.rotated_path);
         self.file = Some(OpenOptions::new().create(true).append(true).open(&self.path)?);
-        self.size = 0;
+        match renamed {
+            Ok(()) => self.size = 0,
+            // another process holds a log file without delete sharing: keep appending past the cap, and the
+            // next line tries again
+            Err(e) => eprintln!("[tauri] log rotation failed, retrying at the next line: {}", e),
+        }
         Ok(())
     }
 }
@@ -242,6 +247,26 @@ mod tests {
         let text = fs::read_to_string(dir.join(LOG_FILE_NAME)).unwrap();
         assert!(text.contains("a line longer than the cap"));
         assert!(!dir.join(ROTATED_FILE_NAME).exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // another process holding a log file without delete sharing fails the rename; a directory in the
+    // backup's place stands in for it here
+    #[test]
+    fn a_failed_rotation_keeps_writing_and_retries() {
+        let dir = temp_dir("rotate-fails");
+        let mut log = RotatingLog::open(&dir, 40).unwrap();
+        log.write_line("before-the-cap").unwrap();
+        fs::create_dir_all(dir.join(ROTATED_FILE_NAME)).unwrap();
+        log.write_line(&format!("past-the-cap{}", "-".repeat(20))).unwrap();
+        log.write_line("still-logging").unwrap();
+        let text = fs::read_to_string(dir.join(LOG_FILE_NAME)).unwrap();
+        assert!(text.contains("past-the-cap") && text.contains("still-logging"), "{text}");
+
+        fs::remove_dir_all(dir.join(ROTATED_FILE_NAME)).unwrap();
+        log.write_line("rotated-at-last").unwrap();
+        assert!(fs::read_to_string(dir.join(ROTATED_FILE_NAME)).unwrap().contains("still-logging"));
+        assert!(fs::read_to_string(dir.join(LOG_FILE_NAME)).unwrap().contains("rotated-at-last"));
         let _ = fs::remove_dir_all(&dir);
     }
 }

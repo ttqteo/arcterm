@@ -42,10 +42,11 @@ func agentFacts(tabId, name, blockId, harness, state string) agentTabFacts {
 	}
 }
 
-// scriptAgents scripts the roster and returns what the delivery seam was handed.
+// scriptAgents scripts the roster, with each roster block stored and as live as its facts say, and returns what
+// the delivery seam was handed.
 func scriptAgents(t *testing.T, facts *agentRosterFacts) *[]agentsDelivery {
 	t.Helper()
-	oldLoad, oldDeliver, oldMeta, oldTabBlock := loadAgentRosterFacts, deliverAgentMessage, blockTranscriptMeta, tabAgentBlock
+	oldLoad, oldDeliver, oldMeta, oldTabBlock, oldPrompt := loadAgentRosterFacts, deliverAgentMessage, blockTranscriptMeta, tabAgentBlock, readPromptBlock
 	sent := &[]agentsDelivery{}
 	loadAgentRosterFacts = func(context.Context) (*agentRosterFacts, error) { return facts, nil }
 	deliverAgentMessage = func(blockId, text string) { *sent = append(*sent, agentsDelivery{blockId, text}) }
@@ -58,8 +59,16 @@ func scriptAgents(t *testing.T, facts *agentRosterFacts) *[]agentsDelivery {
 		}
 		return ""
 	}
+	readPromptBlock = func(_ context.Context, blockId string) (promptBlock, error) {
+		for _, tf := range facts.Tabs {
+			if tf.BlockId == blockId {
+				return promptBlock{Stored: true, ShellRunning: tf.ShellRunning, HasStream: tf.HasStream}, nil
+			}
+		}
+		return promptBlock{}, nil
+	}
 	t.Cleanup(func() {
-		loadAgentRosterFacts, deliverAgentMessage, blockTranscriptMeta, tabAgentBlock = oldLoad, oldDeliver, oldMeta, oldTabBlock
+		loadAgentRosterFacts, deliverAgentMessage, blockTranscriptMeta, tabAgentBlock, readPromptBlock = oldLoad, oldDeliver, oldMeta, oldTabBlock, oldPrompt
 		for _, b := range []string{agentsBlockA, agentsBlockB, agentsBlockC} {
 			agentmsg.TurnEnded(b)
 		}
@@ -150,7 +159,8 @@ func TestAgentsRosterStates(t *testing.T) {
 		want    string
 	}{
 		{baseds.AgentState_Idle, false, wshrpc.AgentsState_Idle},
-		{baseds.AgentState_Waiting, false, wshrpc.AgentsState_Idle},
+		// a permission prompt or another dialog: a typed message would land in it
+		{baseds.AgentState_Waiting, false, wshrpc.AgentsState_Asking},
 		{baseds.AgentState_Working, false, wshrpc.AgentsState_Working},
 		{baseds.AgentState_Asking, false, wshrpc.AgentsState_Asking},
 		// a Notification mid-question reports waiting, so the open ask alone has to say asking
@@ -164,6 +174,39 @@ func TestAgentsRosterStates(t *testing.T) {
 		if len(rows) != 1 || rows[0].State != c.want {
 			t.Errorf("status %q, open ask %v: rows = %+v, want state %q", c.status, c.openAsk, rows, c.want)
 		}
+	}
+}
+
+// an agent that exited back to its shell reported ended, and still read as live: a send was typed into the shell
+func TestAgentsRosterDropsAnEndedSession(t *testing.T) {
+	facts := threeAgents()
+	facts.Tabs[1].Status.Ended = true
+	facts.Tabs[2].Status.Ended = true
+	sent := scriptAgents(t, facts)
+	rtn, err := (&WshServer{}).AgentsListCommand(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rtn.Agents) != 1 || rtn.Agents[0].TabId != agentsTabA {
+		t.Fatalf("rows = %+v, want only the session still running", rtn.Agents)
+	}
+	_, err = (&WshServer{}).AgentsSendCommand(context.Background(), wshrpc.CommandAgentsSendData{Tab: agentsTabB, Text: "hi", FromORef: blockORef(agentsBlockA)})
+	if err == nil || !strings.Contains(err.Error(), "not a live agent session") {
+		t.Fatalf("send to an ended session: err = %v", err)
+	}
+	if len(*sent) != 0 {
+		t.Errorf("a send to an ended session delivered %+v", *sent)
+	}
+}
+
+// a slept agent's process was stopped, which fires claude's SessionEnd: the sleep marks decide its row, not that
+// report, or the agent could not be woken from the roster
+func TestAgentsRosterKeepsASleepingAgentWhoseSessionEnded(t *testing.T) {
+	tf := sleepingClaude(time.Now())
+	tf.Status.Ended = true
+	row := rowOf(t, tf)
+	if row.State != wshrpc.AgentsState_Sleeping {
+		t.Errorf("state = %q, want %q", row.State, wshrpc.AgentsState_Sleeping)
 	}
 }
 
@@ -202,6 +245,8 @@ func TestAgentsResolve(t *testing.T) {
 func TestAgentsSendRefusals(t *testing.T) {
 	asking := threeAgents()
 	asking.Tabs[1].OpenAsk = true
+	permission := threeAgents()
+	permission.Tabs[1].Status.State = baseds.AgentState_Waiting
 	cases := []struct {
 		name    string
 		facts   *agentRosterFacts
@@ -218,6 +263,7 @@ func TestAgentsSendRefusals(t *testing.T) {
 			arrange: func() { agentmsg.NoteSent(agentsBlockB, agentsBlockA) }, want: "wsh agents read"},
 		{name: "empty text", data: wshrpc.CommandAgentsSendData{Tab: agentsTabB, Text: " \n\t", FromORef: blockORef(agentsBlockA)}, want: "message is empty"},
 		{name: "asking with no stream", facts: asking, data: wshrpc.CommandAgentsSendData{Tab: agentsTabB, Text: "hi", FromORef: blockORef(agentsBlockA)}, want: "question open"},
+		{name: "permission prompt with no stream", facts: permission, data: wshrpc.CommandAgentsSendData{Tab: agentsTabB, Text: "hi", FromORef: blockORef(agentsBlockA)}, want: "permission prompt open"},
 	}
 	seen := map[string]string{}
 	for _, c := range cases {
@@ -245,6 +291,46 @@ func TestAgentsSendRefusals(t *testing.T) {
 	}
 }
 
+// what an asking agent waits on the user for: an open ask is a question, a waiting status with no ask is a question or
+// a permission prompt (the status does not say which)
+func TestAgentOpenPromptNamesWhatTheAgentWaitsOn(t *testing.T) {
+	cases := []struct {
+		name    string
+		state   string
+		openAsk bool
+		want    string
+	}{
+		{"an open ask", baseds.AgentState_Asking, true, "question"},
+		{"an open ask over a Notification", baseds.AgentState_Waiting, true, "question"},
+		{"an asking status", baseds.AgentState_Asking, false, "question"},
+		{"a dialog with no ask", baseds.AgentState_Waiting, false, "question or a permission prompt"},
+	}
+	for _, c := range cases {
+		tf := agentFacts(agentsTabA, "a", agentsBlockA, "claude", c.state)
+		tf.OpenAsk = c.openAsk
+		rows := buildAgentRoster(&agentRosterFacts{Tabs: []agentTabFacts{tf}})
+		if len(rows) != 1 {
+			t.Fatalf("%s: rows = %+v", c.name, rows)
+		}
+		if got := agentOpenPrompt(&rows[0]); got != c.want {
+			t.Errorf("%s: agentOpenPrompt = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// a send into an agent showing a permission prompt goes over the control stream like one into a question, and
+// counts as joining its turn: the target was not at its prompt
+func TestAgentsSendToAPermissionPromptOverAStream(t *testing.T) {
+	facts := threeAgents()
+	facts.Tabs[1].Status.State = baseds.AgentState_Waiting
+	facts.Tabs[1].HasStream = true
+	sent := scriptAgents(t, facts)
+	rtn, err := (&WshServer{}).AgentsSendCommand(context.Background(), wshrpc.CommandAgentsSendData{Tab: agentsTabB, Text: "hi", FromORef: blockORef(agentsBlockA)})
+	if err != nil || !rtn.MidTurn || len(*sent) != 1 {
+		t.Fatalf("rtn = %+v, err = %v, deliveries = %d; want a mid-turn send delivered once", rtn, err, len(*sent))
+	}
+}
+
 func TestAgentPromptDeliversTheTextBare(t *testing.T) {
 	sent := scriptAgents(t, threeAgents())
 	ws := &WshServer{}
@@ -262,6 +348,49 @@ func TestAgentPromptDeliversTheTextBare(t *testing.T) {
 	}
 	if len(*sent) != 1 {
 		t.Errorf("a refused prompt delivered %+v", (*sent)[1:])
+	}
+}
+
+func TestAgentPromptRefusesABlockNoTerminalCanTake(t *testing.T) {
+	const missing = "d0000000-0000-4000-8000-000000000004"
+	facts := threeAgents()
+	facts.Tabs[1].ShellRunning = false // design: stored, no controller, no stream
+	facts.Tabs[2].ShellRunning, facts.Tabs[2].HasStream = false, true
+	sent := scriptAgents(t, facts)
+	ws := &WshServer{}
+	for _, tc := range []struct {
+		blockId, want string
+	}{
+		{missing, "no longer exists"},
+		{agentsBlockB, "no live terminal"},
+	} {
+		err := ws.AgentPromptCommand(context.Background(), wshrpc.CommandAgentPromptData{BlockId: tc.blockId, Text: "go on"})
+		if err == nil || !strings.Contains(err.Error(), tc.blockId) || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "nothing was sent") {
+			t.Errorf("block %s: err = %v, want a %q refusal naming it and saying nothing was sent", tc.blockId, err, tc.want)
+		}
+	}
+	if len(*sent) != 0 {
+		t.Fatalf("a refused prompt delivered %+v", *sent)
+	}
+	for _, blockId := range []string{agentsBlockA, agentsBlockC} { // running controller; stream only
+		if err := ws.AgentPromptCommand(context.Background(), wshrpc.CommandAgentPromptData{BlockId: blockId, Text: "go on"}); err != nil {
+			t.Errorf("block %s: %v", blockId, err)
+		}
+	}
+	want := []agentsDelivery{{agentsBlockA, "go on"}, {agentsBlockC, "go on"}}
+	if len(*sent) != 2 || (*sent)[0] != want[0] || (*sent)[1] != want[1] {
+		t.Errorf("delivered %+v, want %+v", *sent, want)
+	}
+}
+
+func TestLoadPromptBlockReadsTheStore(t *testing.T) {
+	ctx := context.Background()
+	_, stored := insertLeadTab(t, ctx)
+	if pb, err := loadPromptBlock(ctx, stored); err != nil || pb != (promptBlock{Stored: true}) {
+		t.Errorf("stored block with no controller: %+v, %v; want stored and not live", pb, err)
+	}
+	if pb, err := loadPromptBlock(ctx, "d0000000-0000-4000-8000-000000000005"); err != nil || pb.Stored {
+		t.Errorf("missing block: %+v, %v; want not stored", pb, err)
 	}
 }
 

@@ -134,6 +134,7 @@ declare global {
         hook?: string;
         toolkey?: string;
         effort?: string;
+        ended?: boolean;
     };
 
     // wshrpc.AgentSyncAction

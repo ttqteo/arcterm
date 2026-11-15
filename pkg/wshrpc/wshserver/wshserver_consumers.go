@@ -190,7 +190,7 @@ func (ws *WshServer) AgentsSetModelCommand(ctx context.Context, data wshrpc.Comm
 	}
 	// AgentsSendCommand's guard: typed into the terminal, the command would answer the open question
 	if target.State == wshrpc.AgentsState_Asking && !target.hasStream {
-		return nil, fmt.Errorf("agent %q has a question open in its terminal, and a typed /model would answer it; switch it once the question is answered", target.Name)
+		return nil, fmt.Errorf("agent %q has a %s open in its terminal, and a typed /model would answer it; switch it once it is answered", target.Name, agentOpenPrompt(target))
 	}
 	deliverAgentMessage(target.blockId, "/model "+data.Model)
 	return &wshrpc.CommandAgentsSetModelRtnData{

@@ -48,7 +48,7 @@ func MarshalEffort(e *waveobj.Effort) ([]byte, error) {
 // MergeEffort three-way merges two concurrent versions of one effort against their common ancestor
 // (base, nil when the file is new on both sides). Scalars come from the side with the newer
 // UpdatedTs (tie → ours); chunks merge by Label, an edit outliving a concurrent delete; notes, events
-// and workrefs are unioned. It never mutates its inputs.
+// and workrefs merge as sets against the base (mergeByTs). It never mutates its inputs.
 func MergeEffort(base, ours, theirs *waveobj.Effort) *waveobj.Effort {
 	if base == nil {
 		base = &waveobj.Effort{}
@@ -66,8 +66,8 @@ func MergeEffort(base, ours, theirs *waveobj.Effort) *waveobj.Effort {
 		Status:    newer.Status,
 		ParentOID: newer.ParentOID,
 		Chunks:    mergeChunks(base.Chunks, ours.Chunks, theirs.Chunks, newer.Chunks, other.Chunks),
-		Notes:     unionByTs(ours.Notes, theirs.Notes, func(n waveobj.EffortNote) int64 { return n.Ts }),
-		Events:    unionByTs(ours.Events, theirs.Events, func(ev waveobj.EffortEvent) int64 { return ev.Ts }),
+		Notes:     mergeByTs(base.Notes, ours.Notes, theirs.Notes, func(n waveobj.EffortNote) int64 { return n.Ts }),
+		Events:    mergeByTs(base.Events, ours.Events, theirs.Events, func(ev waveobj.EffortEvent) int64 { return ev.Ts }),
 		CreatedTs: minNonZero(ours.CreatedTs, theirs.CreatedTs),
 		UpdatedTs: max(ours.UpdatedTs, theirs.UpdatedTs),
 		PinnedTs:  mergePinnedTs(base.PinnedTs, ours.PinnedTs, theirs.PinnedTs),
@@ -116,8 +116,9 @@ func mergeChunk(baseBy, oursBy, theirsBy map[string]waveobj.EffortChunk, label s
 		if t.UpdatedTs > o.UpdatedTs {
 			win = t
 		}
-		win.Notes = unionByTs(o.Notes, t.Notes, func(n waveobj.EffortNote) int64 { return n.Ts })
-		win.WorkRefs = unionByTs(o.WorkRefs, t.WorkRefs, func(w waveobj.ChunkWorkRef) int64 { return w.Ts })
+		b := baseBy[label] // the zero chunk when new on both sides: its lists merge as a plain union
+		win.Notes = mergeByTs(b.Notes, o.Notes, t.Notes, func(n waveobj.EffortNote) int64 { return n.Ts })
+		win.WorkRefs = mergeByTs(b.WorkRefs, o.WorkRefs, t.WorkRefs, func(w waveobj.ChunkWorkRef) int64 { return w.Ts })
 		return win, true
 	}
 	side := o
@@ -143,16 +144,30 @@ func chunksByLabel(chunks []waveobj.EffortChunk) map[string]waveobj.EffortChunk 
 	return m
 }
 
-// unionByTs returns a new slice of the distinct values of a then b, stably sorted by ts; nil when
-// both are empty, so an omitempty field stays omitted.
-func unionByTs[T comparable](a, b []T, ts func(T) int64) []T {
+// mergeByTs three-way merges two versions of a list against base, by full value: what both sides kept
+// stays, what either side added is kept, and a base value either side dropped (removed it, or edited
+// it into a new value) is dropped. With an empty base it is the union. It returns a new slice of the
+// distinct values of a then b, stably sorted by ts; nil when empty, so an omitempty field stays omitted.
+func mergeByTs[T comparable](base, a, b []T, ts func(T) int64) []T {
+	set := func(vs []T) map[T]bool {
+		m := make(map[T]bool, len(vs))
+		for _, v := range vs {
+			m[v] = true
+		}
+		return m
+	}
+	inBase, inA, inB := set(base), set(a), set(b)
 	var out []T
 	seen := make(map[T]bool, len(a)+len(b))
 	for _, v := range slices.Concat(a, b) {
-		if !seen[v] {
-			seen[v] = true
-			out = append(out, v)
+		if seen[v] {
+			continue
 		}
+		seen[v] = true
+		if inBase[v] && !(inA[v] && inB[v]) {
+			continue
+		}
+		out = append(out, v)
 	}
 	slices.SortStableFunc(out, func(x, y T) int { return cmp.Compare(ts(x), ts(y)) })
 	return out
