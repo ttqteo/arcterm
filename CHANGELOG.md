@@ -70,6 +70,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A suggested reply that asks for a build ("build đi") carries a hammer, as commit's and push's chips carry theirs.
 - Chat's suggested replies stay on one line in a narrow box, such as a float window: a long one is shortened with …,
   and its whole text shows on hover and in the box once `Tab` picks it.
+- In Chat, `Shift`+`Enter` on a suggested reply picked with `Tab` now adds its text after what you typed instead of
+  replacing it; `Enter` twice still replaces your text and sends.
 - Chat's jump to the latest message is now ⌘↓ (Ctrl+↓ on Windows) instead of ⌘End, which a Mac laptop has no key for.
 - In the initiative band, Work on this is now Switch to this chunk, so it no longer reads like Jarvis's Work on (which
   opens a new agent), and it tells the agent at once when the message box is empty. With a draft in the box, the

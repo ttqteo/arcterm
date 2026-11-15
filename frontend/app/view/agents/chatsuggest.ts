@@ -349,6 +349,16 @@ export function chipEditable(chip: ChatChip, canGoOn: boolean): boolean {
     return !(chip.kind === "done" || (chip.kind === "next" && canGoOn));
 }
 
+/** Pure: the box's text once Shift+Enter puts suggestion `t` in to edit: `t` alone over an
+ *  empty box, else after what is typed, one space between them unless the typed text already ends in a space or a
+ *  line. Enter is the one that replaces the typed text (suggestTake); this keeps it. */
+export function withChipText(typed: string, t: string): string {
+    if (typed.trim() === "") {
+        return t;
+    }
+    return /\s$/.test(typed) ? typed + t : typed + " " + t;
+}
+
 /** Pure: the empty box's line while a chip is picked: what Enter does with it, Shift+Enter when the chip's text can be
  *  edited first (chipEditable), then the keys that move on or let go. */
 export function pickedHint(chip: ChatChip, editable = false): HintPart[] {

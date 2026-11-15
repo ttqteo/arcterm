@@ -24,6 +24,7 @@ import {
     suggestTake,
     TERMINAL_AFTER_MS,
     wantsModelSuggest,
+    withChipText,
     writesVietnamese,
     type ChatChip,
 } from "./chatsuggest";
@@ -440,5 +441,18 @@ describe("chipIcon", () => {
         expect(chipIcon({ kind: "push", text: "build and push" })).toBe("push");
         expect(chipIcon({ kind: "done", text: "xong: a" })).toBe("done");
         expect(chipIcon({ kind: "next", text: "go on with: b" })).toBe("next");
+    });
+});
+
+describe("withChipText", () => {
+    it("puts the suggestion alone in an empty box", () => {
+        expect(withChipText("", "Có, đổi đi")).toBe("Có, đổi đi");
+        expect(withChipText("  \n", "ok")).toBe("ok");
+    });
+
+    it("adds it after the typed text, one space between", () => {
+        expect(withChipText("hello", "Có, đổi đi")).toBe("hello Có, đổi đi");
+        expect(withChipText("hello ", "Có, đổi đi")).toBe("hello Có, đổi đi");
+        expect(withChipText("hello\n", "Có, đổi đi")).toBe("hello\nCó, đổi đi");
     });
 });

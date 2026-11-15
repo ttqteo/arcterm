@@ -137,6 +137,8 @@ const KEYS = {
     escape: { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 },
     backspace: { key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 },
     enter: { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 },
+    tab: { key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 },
+    shiftEnter: { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, modifiers: 8 },
 };
 
 export default function (kit) {
@@ -1033,6 +1035,41 @@ export default function (kit) {
                         line.cut.some(Boolean) &&
                         LONG.every((t, i) => (line.titles[i] ?? "").includes(t)),
                     line
+                );
+            });
+
+            // 18c. over typed text, Shift+Enter on the chip Tab picked adds its text after the typed words (one space
+            // between), sends nothing and lets go of the pick; only Enter, taken twice, replaces what was typed
+            await run("18c. Shift+Enter adds a suggestion after the typed text", async (name) => {
+                const FIRST = "Có, mở bundle ca mồi đầu giải thích giúp";
+                await h.ev(`(() => { window.__chatSuggestFake = () => ${JSON.stringify([FIRST, "Không cần, tôi tự chấm luôn"])}; return true; })()`);
+                append(
+                    ctx,
+                    AC.userText("chấm thử ca đầu", ts(ctx, -1000)),
+                    AC.assistantText("Ca đầu cần mở witness.js. Bạn muốn mình mở và giải thích không?", ts(ctx, 0))
+                );
+                await setRoster({ idleSince: Date.now() + 4000 });
+                const chipUp = await polishWaitFor(h, `[...(${layerOf(A)}?.querySelectorAll("[data-chat-suggest-chip]") ?? [])].some((b) => b.title.includes(${JSON.stringify(FIRST)}))`, WAIT_MS);
+                await clearBox(h, A);
+                await typeInBox(h, A, "hello");
+                await key(h, KEYS.tab);
+                const picked = await polishWaitFor(h, `!!${layerOf(A)}?.querySelector("[data-chat-suggest-picked]")`, 3000);
+                const sentBefore = await h.ev(`${layerOf(A)}?.querySelectorAll("[data-chat-you], [data-chat-pending]").length ?? 0`);
+                await key(h, KEYS.shiftEnter);
+                const want = "hello " + FIRST;
+                const filled = await polishWaitFor(h, `((${inputOf(A)})?.innerText ?? "").replace(/\\n$/, "") === ${JSON.stringify(want)}`, 3000);
+                const after = await h.ev(`({
+                    text: ((${inputOf(A)})?.innerText ?? "").replace(/\\n$/, ""),
+                    picked: !!${layerOf(A)}?.querySelector("[data-chat-suggest-picked]"),
+                    sent: ${layerOf(A)}?.querySelectorAll("[data-chat-you], [data-chat-pending]").length ?? 0,
+                })`);
+                await shot(h, "18c-shift-enter-appends");
+                await clearBox(h, A);
+                await h.ev(`(() => { delete window.__chatSuggestFake; return true; })()`);
+                rec(
+                    `${name}: hello in the box, Tab picks the first chip and Shift+Enter makes the box read hello ${FIRST}, nothing is sent and no chip stays picked`,
+                    chipUp && picked && filled && after.text === want && !after.picked && after.sent === sentBefore,
+                    { chipUp, picked, filled, after, sentBefore }
                 );
             });
 

@@ -115,6 +115,7 @@ import {
     runningActions,
     stepPick,
     suggestTake,
+    withChipText,
     type ChatChip,
     type ChipIcon,
     type ChipRowKind,
@@ -948,12 +949,13 @@ function ComposerBox({
         }
     };
     // Shift+Enter on a picked chip whose Enter sends its text (chatsuggest.ts chipEditable) puts that text in the box
-    // instead, caret at its end, to edit before sending. It replaces what was typed, as a deliberate key may; the chip
-    // lets go, so Shift+Enter is a new line again
+    // instead, caret at its end, to edit before sending: after what was typed (withChipText), which only Enter, taken
+    // twice, replaces. The chip lets go, so Shift+Enter is a new line again
     const pickedEditable = picked != null && chipEditable(picked, onGoOn != null);
     const editChip = (c: ChatChip) => {
         recalled.current = { at: null, shown: "" };
-        setTextAt(c.text, c.text.length);
+        const next = withChipText(text, c.text);
+        setTextAt(next, next.length);
         editorRef.current?.focus();
     };
     // Send is a word asleep and while the wake is in flight. The word stays what it last was while it fades out, so a
