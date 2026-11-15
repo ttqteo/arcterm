@@ -100,6 +100,9 @@ type AgentStatusData struct {
 	// Effort is the reasoning effort (low, medium, high, xhigh, max) a Claude hook inside a turn reports; empty when
 	// the event carries none, which leaves the last one known standing (Chat's model chip names it)
 	Effort string `json:"effort,omitempty"`
+	// Ended marks the report of a session's end: the agent exited and its shell keeps running, so the roster stops
+	// listing it. Idle, and set only by a Claude SessionEnd; the next prompt of a relaunched agent reports without it.
+	Ended bool `json:"ended,omitempty"`
 }
 
 // AgentPermissionRequest is one permission prompt Claude Code is showing in an agent's terminal.

@@ -74,6 +74,30 @@ var blockTranscriptMeta = readBlockTranscriptMeta
 // tabAgentBlock is the block a tab's agent runs in, "" for a tab that is gone. A var so tests need no store.
 var tabAgentBlock = readTabAgentBlock
 
+// promptBlock is what decides whether a prompt can reach a block: delivery goes over a mod stream or is typed
+// into a running controller, and nothing else.
+type promptBlock struct {
+	Stored       bool
+	ShellRunning bool
+	HasStream    bool
+}
+
+// readPromptBlock reads a block's promptBlock facts. A var so tests need no store or controller.
+var readPromptBlock = loadPromptBlock
+
+func loadPromptBlock(ctx context.Context, blockId string) (promptBlock, error) {
+	block, err := wstore.DBGet[*waveobj.Block](ctx, blockId)
+	if err != nil {
+		return promptBlock{}, fmt.Errorf("loading block %s: %w", blockId, err)
+	}
+	rs := blockcontroller.GetBlockControllerRuntimeStatus(blockId)
+	return promptBlock{
+		Stored:       block != nil,
+		ShellRunning: rs != nil && rs.ShellProcStatus == blockcontroller.Status_Running,
+		HasStream:    agentctl.Has(blockId),
+	}, nil
+}
+
 // readAgentRosterFacts reads the tabs, runs and channels shared (wstore's *Shared readers): many polls ask for the
 // roster, and only what changed since the last one is decoded. The facts are read-only.
 func readAgentRosterFacts(ctx context.Context) (*agentRosterFacts, error) {
@@ -181,10 +205,10 @@ func metaMillis(meta waveobj.MetaMapType, key string) int64 {
 }
 
 // buildAgentRoster is the live claude, pi and agy agent tabs, ordered by tab id, and the sleeping ones: a slept
-// agent has no process but keeps its tab, its terminal output and its conversation.
-// ponytail: a tab whose agent exited back to its shell keeps its last status and still reads as live; a typed
-// send lands in the shell. Use the control stream or a session-end report as the liveness signal if that
-// happens in practice.
+// agent has no process but keeps its tab, its terminal output and its conversation. A session that reported its
+// end exited back to its shell, where a typed send would land, so a running tab whose latest status is ended is
+// not listed; a sleeping tab is decided by its sleep marks, since stopping its process fires that report too. A
+// killed agent reports no end and still reads live.
 func buildAgentRoster(facts *agentRosterFacts) []agentRow {
 	var rows []agentRow
 	for _, tf := range facts.Tabs {
@@ -194,6 +218,9 @@ func buildAgentRoster(facts *agentRosterFacts) []agentRow {
 			harness = tf.Cmd
 		}
 		if (!tf.ShellRunning && !asleep) || !agentHarnesses[harness] {
+			continue
+		}
+		if tf.ShellRunning && tf.Status.Ended {
 			continue
 		}
 		row := agentRow{
@@ -381,7 +408,26 @@ func (ws *WshServer) AgentPromptCommand(ctx context.Context, data wshrpc.Command
 	if data.BlockId == "" || text == "" {
 		return fmt.Errorf("a block id and a prompt are required")
 	}
+	if err := unreachablePrompt(ctx, data.BlockId); err != nil {
+		return err
+	}
 	deliverAgentMessage(data.BlockId, text)
+	return nil
+}
+
+// unreachablePrompt refuses a block delivery cannot reach, which would otherwise fail later in a goroutine
+// that only logs: the caller would read the prompt as sent.
+func unreachablePrompt(ctx context.Context, blockId string) error {
+	pb, err := readPromptBlock(ctx, blockId)
+	if err != nil {
+		return fmt.Errorf("%w: nothing was sent", err)
+	}
+	if !pb.Stored {
+		return fmt.Errorf("block %s no longer exists: nothing was sent", blockId)
+	}
+	if !pb.ShellRunning && !pb.HasStream {
+		return fmt.Errorf("block %s has no live terminal: nothing was sent", blockId)
+	}
 	return nil
 }
 

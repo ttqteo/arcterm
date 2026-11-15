@@ -718,13 +718,14 @@ func TestRemovedMemoryHooksAreStillRecognized(t *testing.T) {
 	}
 }
 
-// SessionEnd left managedHooks entirely when agent-memory-hook was removed, so a merge that only
-// walked the events arcterm manages now would never revisit the stale group sitting under it.
+// SessionEnd once left managedHooks entirely when agent-memory-hook was removed, so a merge that only
+// walked the events arcterm manages now would never revisit the stale group sitting under it. SubagentStart
+// stands in for any event arcterm does not manage.
 func TestMergePrunesHooksUnderNoLongerManagedEvents(t *testing.T) {
 	skipUnlessWindows(t)
 	existing := map[string]any{
 		"hooks": map[string]any{
-			"SessionEnd": []any{
+			"SubagentStart": []any{
 				map[string]any{
 					"hooks": []any{
 						map[string]any{"type": "command", "command": `"C:\old\wsh.exe" agent-memory-hook`},
@@ -738,8 +739,8 @@ func TestMergePrunesHooksUnderNoLongerManagedEvents(t *testing.T) {
 	}
 	merged := mergeAgentHooks(existing, testWsh)
 	hooks, _ := merged["hooks"].(map[string]any)
-	if _, present := hooks["SessionEnd"]; present {
-		t.Fatalf("stale SessionEnd group survived the merge: %v", hooks["SessionEnd"])
+	if _, present := hooks["SubagentStart"]; present {
+		t.Fatalf("stale SubagentStart group survived the merge: %v", hooks["SubagentStart"])
 	}
 	if n := countManaged(t, merged); n != len(managedHooks) {
 		t.Fatalf("managed entries = %d, want %d", n, len(managedHooks))
@@ -751,12 +752,12 @@ func TestMergeKeepsForeignHooksUnderUnmanagedEvents(t *testing.T) {
 	foreign := map[string]any{
 		"hooks": []any{map[string]any{"type": "command", "command": "node /x/notify.js"}},
 	}
-	existing := map[string]any{"hooks": map[string]any{"SessionEnd": []any{foreign}}}
+	existing := map[string]any{"hooks": map[string]any{"SubagentStart": []any{foreign}}}
 	merged := mergeAgentHooks(existing, testWsh)
 	hooks, _ := merged["hooks"].(map[string]any)
-	groups, _ := hooks["SessionEnd"].([]any)
+	groups, _ := hooks["SubagentStart"].([]any)
 	if len(groups) != 1 {
-		t.Fatalf("SessionEnd groups = %d, want the one foreign hook kept", len(groups))
+		t.Fatalf("SubagentStart groups = %d, want the one foreign hook kept", len(groups))
 	}
 }
 
@@ -809,6 +810,8 @@ func TestCompactionHooksAreManaged(t *testing.T) {
 		{Event: "SessionStart", Matcher: "clear", Args: "agent-hook", Timeout: 10},
 		{Event: "SessionStart", Matcher: "resume", Args: "agent-hook", Timeout: 10},
 		{Event: "SessionStart", Matcher: "startup", Args: "agent-hook", Timeout: 10},
+		// the end of a session is the only report that it exited to its shell
+		{Event: "SessionEnd", Args: "agent-hook", Timeout: 10},
 	} {
 		found := false
 		for _, mh := range managedHooks {
@@ -828,6 +831,42 @@ func TestCompactionHooksAreManaged(t *testing.T) {
 	groups, _ := merged["hooks"].(map[string]any)["SessionStart"].([]any)
 	if len(groups) != 5 {
 		t.Fatalf("SessionStart groups after two merges = %d, want the compact idle, rules, clear, resume and startup hooks", len(groups))
+	}
+}
+
+// claude fires SessionEnd while it tears down, and a headless claude kills an async hook still running then: the
+// report that the session exited to its shell must be synchronous, and one copy of it must survive every re-run
+func TestSessionEndHookIsManagedOnceAndSynchronous(t *testing.T) {
+	var found []managedHook
+	for _, mh := range managedHooks {
+		if mh.Event == "SessionEnd" {
+			found = append(found, mh)
+		}
+	}
+	want := managedHook{Event: "SessionEnd", Args: "agent-hook", Timeout: 10}
+	if len(found) != 1 || found[0] != want {
+		t.Fatalf("SessionEnd hooks = %+v, want exactly %+v", found, want)
+	}
+	if managedHookAsync("SessionEnd", "", "agent-hook") {
+		t.Fatal("managedHookAsync reports the SessionEnd hook as async")
+	}
+	// a path this OS reads as one: on a Mac testWsh's backslashes are no separators, so the second merge would not
+	// know its own hook
+	wsh := testWsh
+	if runtime.GOOS != "windows" {
+		wsh = "/h/.arc/bin/wsh"
+	}
+	merged := mergeAgentHooks(mergeAgentHooks(map[string]any{}, wsh), wsh)
+	groups, _ := merged["hooks"].(map[string]any)["SessionEnd"].([]any)
+	if len(groups) != 1 {
+		t.Fatalf("SessionEnd groups after two merges = %d, want 1", len(groups))
+	}
+	hook := groups[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)
+	if _, async := hook["async"]; async {
+		t.Fatalf("the written SessionEnd hook is async: %v", hook)
+	}
+	if !strings.HasSuffix(hook["command"].(string), " agent-hook") {
+		t.Fatalf("the written SessionEnd command = %v", hook["command"])
 	}
 }
 

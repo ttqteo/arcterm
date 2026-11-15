@@ -73,6 +73,8 @@ var managedHooks = []managedHook{
 	{Event: "SessionStart", Matcher: "resume", Args: "agent-hook", Timeout: 10},
 	// a new session is silent until its first prompt too: report it at its prompt, so it does not read working
 	{Event: "SessionStart", Matcher: "startup", Args: "agent-hook", Timeout: 10},
+	// the shell outlives claude, so only this report tells the roster the session is gone
+	{Event: "SessionEnd", Args: "agent-hook", Timeout: 10},
 }
 
 func managedEventOrder() []string {

@@ -58,6 +58,8 @@ type ccHookEvent struct {
 	NotificationType string          `json:"notification_type"`
 	PermissionMode   string          `json:"permission_mode"`
 	Trigger          string          `json:"trigger"`
+	// Reason is why a SessionEnd fired: clear, resume, logout, prompt_input_exit, other
+	Reason string `json:"reason"`
 	// Error is the kind of API error a StopFailure turn ended on: rate_limit, authentication_failed, server_error …
 	Error string `json:"error"`
 	// Effort is the reasoning effort the turn runs at, after any downgrade for the model; Claude Code sends it on the
@@ -91,6 +93,8 @@ type agentEmission struct {
 	State            string
 	Detail           string
 	AttachModelTitle bool
+	// Ended marks the session's end: claude exited and its shell keeps running
+	Ended bool
 }
 
 func planEmission(ev ccHookEvent) agentEmission {
@@ -163,6 +167,13 @@ func planEmission(ev ccHookEvent) agentEmission {
 		// would show only its launch placeholder, named for the folder. its transcript already holds the title
 		if ev.Source == "resume" {
 			return agentEmission{State: baseds.AgentState_Idle, AttachModelTitle: true}
+		}
+	case "SessionEnd":
+		// the shell outlives claude, and nothing else reports that the session is gone: the roster would keep
+		// listing it, and a send would be typed into the shell. a /clear or /resume opens the next session in the
+		// same claude
+		if ev.Reason != "clear" && ev.Reason != "resume" {
+			return agentEmission{State: baseds.AgentState_Idle, Ended: true}
 		}
 	}
 	return agentEmission{}
@@ -883,6 +894,7 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 		TranscriptPath: transcriptPath,
 		Ts:             startedTs,
 		Hook:           ev.HookEventName,
+		Ended:          em.Ended,
 		ToolKey:        toolKeyFor(ev, agentHookAgent, agentHookShadow),
 		Effort:         effortOf(ev),
 	}
