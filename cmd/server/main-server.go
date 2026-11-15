@@ -641,6 +641,9 @@ func main() {
 	}
 	// the daily token tally behind a project's Activity card: a scan after a short delay, then every 30 minutes
 	projectactivity.StartLoop(context.Background())
+	// open initiative chunks whose named files changed or went away since they were written: a scan two minutes
+	// after start, then every 15 minutes (it also stamps a base on chunks that predate one)
+	wshserver.StartEffortStaleLoop(context.Background())
 	// Settings → Storage: a scan after a short delay, then the daily auto-clean when storage:autoclean is on
 	if !snapshotSkips("wshserver.StartStorage") { // its auto-clean removes worktrees, old sessions and package caches on the real machine
 		wshserver.StartStorage(context.Background())

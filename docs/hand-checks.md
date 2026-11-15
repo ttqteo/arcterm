@@ -6,6 +6,15 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **An open chunk names the files that changed since it was written.** Unit tests, the typecheck and
+  a scan over the real initiatives' JSON only; no dev app ran. Rebuild, wait two minutes after start (the first scan),
+  then open "Repo hygiene: lint, prettier, stale comments, test gaps" in the initiative sheet → rows such as
+  "chatpane.tsx fails prettier --check…" carry a grey "changed since" chip whose tooltip lists "chatpane.tsx changed
+  15 times"; open one → under its status reads "chatpane.tsx changed 15 times since this was written (<day>): check
+  it still holds" with Mark checked; Mark checked → the chip and the line go. "ReleaseHub parser image + GitHub
+  follow-ups" chunk 4 (IMAGE.md) → an amber "file gone" chip, and "rewrite or skip it". `wsh effort stale` lists the
+  same chunks; `wsh effort show <effort>` prints "(written around <sha>, N commits ago; … changed N times)" on old
+  chunks, and after the first scan "written at" (the backfilled base).
 - [ ] (arcterm) **An open chunk counts the commits since it was written.** Unit tests and the typecheck only; no dev
   app ran. In an initiative whose project is registered, `wsh effort chunk add <effort> "probe"`, make a commit in that
   project, then open the chunk in the initiative sheet → under its status reads "Written 1 commit ago (<day>): check it

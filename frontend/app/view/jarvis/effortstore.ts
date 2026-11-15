@@ -125,6 +125,16 @@ export async function loadChunkDrift(oref: string, chunk: string): Promise<Comma
         { timeout: stateRpcTimeoutMs }
     );
 }
+// The open chunks of one initiative whose named files changed or went away since they were written (the stale scan;
+// wavesrv keeps each project's history warm, so this is an in-memory read once HEAD has not moved).
+export async function loadStaleChunks(oref: string): Promise<EffortStaleEntry[]> {
+    const rtn = await RpcApi.EffortStaleCommand(
+        TabRpcClient,
+        { effortoid: effortOid(oref) },
+        { timeout: stateRpcTimeoutMs }
+    );
+    return rtn?.efforts ?? [];
+}
 export async function addChunkOp(oref: string, label: string): Promise<void> {
     await mutateEffort(oref, [{ op: "addChunk", label }]);
 }

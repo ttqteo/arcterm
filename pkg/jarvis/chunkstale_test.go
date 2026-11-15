@@ -1,0 +1,108 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+package jarvis
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/wavetermdev/waveterm/pkg/gitinfo"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
+)
+
+func TestFileMentions(t *testing.T) {
+	got := FileMentions(
+		"Fix councilstore.ts supersedeListReads; see frontend/app/view/council/councilstore.ts",
+		"add a CHANGELOG.md line, then run ./scripts/cdp/verify.mjs and pkg/jarvis/attention.go:120",
+		"e.g. nothing here, v1.2 either",
+	)
+	want := []string{"frontend/app/view/council/councilstore.ts", "scripts/cdp/verify.mjs", "pkg/jarvis/attention.go"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("FileMentions = %v, want %v", got, want)
+	}
+}
+
+func TestChunkWrittenTs(t *testing.T) {
+	e := &waveobj.Effort{CreatedTs: 100, Events: []waveobj.EffortEvent{
+		{Ts: 200, Kind: "chunk-added", Label: "a"},
+		{Ts: 300, Kind: "chunk-status", Label: "a"},
+		{Ts: 250, Kind: "chunk-added", Label: "a"},
+	}}
+	if got := ChunkWrittenTs(e, waveobj.EffortChunk{Label: "a", UpdatedTs: 900}); got != 250 {
+		t.Fatalf("event: got %d, want 250", got)
+	}
+	if got := ChunkWrittenTs(e, waveobj.EffortChunk{Label: "b", UpdatedTs: 900}); got != 900 {
+		t.Fatalf("updatedts: got %d, want 900", got)
+	}
+	if got := ChunkWrittenTs(e, waveobj.EffortChunk{Label: "c"}); got != 100 {
+		t.Fatalf("seeded: got %d, want 100", got)
+	}
+}
+
+// history: newest first. c4 renames old.ts away, c3 touches store.ts, c2 deletes gone.ts, c1 (the base) touches store.ts.
+func staleFixture() *StaleHistory {
+	commits := []gitinfo.LandedCommit{
+		{SHA: "c4aaaaaaaaaa", Ts: 4000, Files: []gitinfo.LandedFile{{Status: 'R', From: "src/old.ts", Path: "src/new.ts"}}},
+		{SHA: "c3aaaaaaaaaa", Ts: 3000, Files: []gitinfo.LandedFile{{Status: 'M', Path: "src/store.ts"}, {Status: 'M', Path: "lib/store.ts"}}},
+		{SHA: "c2aaaaaaaaaa", Ts: 2000, Files: []gitinfo.LandedFile{{Status: 'D', Path: "src/gone.ts"}}},
+		{SHA: "c1aaaaaaaaaa", Ts: 1000, Files: []gitinfo.LandedFile{{Status: 'M', Path: "src/store.ts"}}},
+	}
+	return NewStaleHistory("c4aaaaaaaaaa", 500, commits, []string{"src/store.ts", "lib/store.ts", "src/new.ts", "src/still.ts"})
+}
+
+func TestAssessChunkFromBaseCommit(t *testing.T) {
+	h := staleFixture()
+	c := waveobj.EffortChunk{Label: "store.ts drops a read; gone.ts and old.ts too; still.ts is fine", BaseCommit: "c1aaaaaaaaaa"}
+	res, ok := h.AssessChunk(c, 0)
+	if !ok {
+		t.Fatal("not measured")
+	}
+	if res.Landed != 3 || res.Base != "c1aaaaaaaaaa" || res.Inferred {
+		t.Fatalf("landed %d base %q inferred %v", res.Landed, res.Base, res.Inferred)
+	}
+	if len(res.Files) != 3 {
+		t.Fatalf("files = %+v", res.Files)
+	}
+	// gone files first
+	if f := res.Files[0]; f.Mention != "gone.ts" || !f.Gone || f.Path != "src/gone.ts" {
+		t.Fatalf("files[0] = %+v", f)
+	}
+	if f := res.Files[1]; f.Mention != "old.ts" || !f.Gone || f.RenamedTo != "src/new.ts" {
+		t.Fatalf("files[1] = %+v", f)
+	}
+	// one commit touched two store.ts files: one change, resolved to the first tracked match
+	if f := res.Files[2]; f.Mention != "store.ts" || f.Gone || f.Changes != 1 || f.Path != "src/store.ts" {
+		t.Fatalf("files[2] = %+v", f)
+	}
+}
+
+func TestAssessChunkInferredFromWrittenTs(t *testing.T) {
+	h := staleFixture()
+	c := waveobj.EffortChunk{Label: "src/store.ts", Notes: []waveobj.EffortNote{{Text: "and src/gone.ts"}}}
+	res, ok := h.AssessChunk(c, 2500)
+	if !ok || !res.Inferred || res.Base != "c2aaaaaaaaaa" || res.Landed != 2 {
+		t.Fatalf("res = %+v ok %v", res, ok)
+	}
+	// gone.ts went before the chunk was written: nothing to say about it
+	if len(res.Files) != 1 || res.Files[0].Mention != "src/store.ts" || res.Files[0].Changes != 1 {
+		t.Fatalf("files = %+v", res.Files)
+	}
+	if got := h.InferredBase(c, 2500); got != "c2aaaaaaaaaa" {
+		t.Fatalf("InferredBase = %q", got)
+	}
+}
+
+func TestAssessChunkUnplaceable(t *testing.T) {
+	h := staleFixture()
+	if _, ok := h.AssessChunk(waveobj.EffortChunk{Label: "x.ts", BaseCommit: "ffffffff"}, 0); ok {
+		t.Fatal("a base outside the history must not be measured")
+	}
+	if _, ok := h.AssessChunk(waveobj.EffortChunk{Label: "x.ts"}, 100); ok {
+		t.Fatal("a chunk older than the history must not be measured")
+	}
+	res, ok := h.AssessChunk(waveobj.EffortChunk{Label: "nothing named"}, 3500)
+	if !ok || len(res.Files) != 0 || res.Landed != 1 {
+		t.Fatalf("res = %+v ok %v", res, ok)
+	}
+}

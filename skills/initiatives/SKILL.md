@@ -64,6 +64,8 @@ An effort too foggy to name its phases gets a tracker of decisions first, not bu
 | `wsh effort chunk add <effort> "<label>" [--at N] [--owner X] [--due YYYY-MM-DD\|+Nd] [--proposed]` | add a chunk; `--proposed` leaves it for the person to accept or drop |
 | `wsh effort chunk rename <effort> <chunk> "<label>"` | rename a chunk (its commit moves to today's HEAD) |
 | `wsh effort chunk recheck <effort> <chunk> [--note "..."]` | mark an open chunk still right for today's code: its commit moves to the project's HEAD |
+| `wsh effort stale [effort]` | list open chunks whose named files changed or went away since they were written (all active initiatives without an argument) |
+| `wsh effort chunk backfill-base [effort]` | stamp a commit on old open chunks that have none (wavesrv also does it on its own) |
 | `wsh effort chunk move <effort> <chunk> <at>` | reorder (1-based target position) |
 | `wsh effort chunk remove <effort> <chunk>` | remove a chunk |
 | `wsh effort chunk status <effort> <chunk> <pending\|active\|done\|deferred\|blocked\|skipped> [--note "..."]` | set a chunk's status |
@@ -98,13 +100,17 @@ Chunks are always referenced by exact label, never index.
   suggest, a whole plan for an idea) go in with `--proposed`. The person accepts or drops them on your rail; a
   proposed chunk is not progress and `advance` never starts it. Once you have proposed a plan, stop and say so.
 - **A chunk not yet done goes stale when the code moves under it.** Each chunk keeps the commit its text was written
-  at (set on `chunk add`, `chunk rename` and `chunk recheck`); `wsh effort show` prints it beside every open chunk
-  with how many commits ago that was. So:
+  at (set on `chunk add`, `chunk rename` and `chunk recheck`; a chunk older than that gets the commit HEAD was at
+  when it was added). `wsh effort show` prints it beside every open chunk with how many commits ago that was, and
+  names the files the chunk mentions that changed or went away since ("councilstore.ts changed 4 times", "IMAGE.md
+  deleted"). `wsh effort stale` lists every such chunk across the active initiatives. So:
   - **After you tick a chunk done**, reread the chunks still open in that initiative. One your work has changed
     the premise of gets rewritten (`chunk rename`), or a note saying what changed and what it now needs
     (`chunk note`); one your work made pointless is `skipped` with the reason.
-  - **Before you pick up an open chunk**, check it still holds: `git log --oneline <commit>..HEAD` from the commit
-    `show` prints. If the code has moved past it, say so and rewrite it instead of following it.
+  - **Before you pick up an open chunk**, check it still holds: `git log --oneline <commit>..HEAD -- <file>` for
+    each file `show` names, from the commit it prints. A named file that was deleted or moved almost always means
+    the chunk needs rewriting or skipping. If the code has moved past it, say so and rewrite it instead of
+    following it.
   - **Once it is right for today's code**, `wsh effort chunk recheck <effort> "<chunk>" [--note "what you checked"]`
     moves its commit to the project's HEAD, and the chunk card stops counting.
 - **Skipped shrinks the denominator**: an effort that finishes by skipping still reads 100%.
