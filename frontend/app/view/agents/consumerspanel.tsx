@@ -204,7 +204,7 @@ function Row({
     const waking = useWaking(row.id);
     // a Sleep started anywhere (the row's menu, this button) holds this Sleep until the agent reads asleep
     const falling = useFallingAsleep(row.id, row.sleeping);
-    const run = (kind: "sleep" | "wake", call: () => Promise<void>) => {
+    const run = (kind: "sleep" | "wake", call: () => Promise<unknown>) => {
         setPending(kind);
         fireAndForget(async () => {
             try {

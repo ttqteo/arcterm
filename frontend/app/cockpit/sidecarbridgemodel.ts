@@ -4,12 +4,32 @@
 // The pure half of the Sidecar bridge (sidecarbridge.tsx; spec 2026-11-13-sidecar-design.md, section 2): which acts the
 // page may send, when two snapshots are the same, and when a snapshot goes out. The bridge keeps one FeedState and asks
 // these functions what to do at each change, hello and close, so the throttle and the last-sent memory are tested here
-// and not through a timer.
+// and not through a timer. Part 2 adds what the bridge needs to feed the strain band: how a machine reading becomes the
+// snapshot's figures (rounded, so a poll does not re-emit), which polls the band needs, a heavy row's note, the notes
+// Stop and Sleep leave, and the answer to an older act.
 
-import type { SidecarAct, SidecarHeavy, SidecarSnapshot } from "./sidecartypes";
+import type { SleepOutcome } from "@/app/view/agents/agentsleep";
+import type { OlderPage } from "./sidecarhistory";
+import { strainBy, type MachineReading, type StrainState } from "./sidecarstrainmodel";
+import type {
+    SidecarAct,
+    SidecarHeavy,
+    SidecarMachine,
+    SidecarMessage,
+    SidecarOlder,
+    SidecarSnapshot,
+    SidecarStrain,
+    StrainLevel,
+} from "./sidecartypes";
 
 // At most one snapshot per this long (decision 1): a burst of store changes goes out as one trailing emit.
 export const SNAPSHOT_THROTTLE_MS = 500;
+/** The machine is read at hello and then this often while a page is live (decision 8), ms. */
+export const MACHINE_POLL_MS = 5_000;
+/** The per-agent CPU reading is read this often while a band measured by CPU shows (decision 10), ms. */
+export const CPU_POLL_MS = 2_000;
+/** A heavy-agent reading older than this names no one: the band shows no rows until a fresh one lands, ms. */
+export const HEAVY_STALE_MS = 15_000;
 
 export type ActCheck = { ok: true; act: SidecarAct } | { ok: false; reason: string };
 
@@ -235,4 +255,230 @@ export function afterHello(feed: FeedState): FeedState {
 /** sidecar:closed: the page is gone, so the next one starts from nothing. */
 export function afterClosed(): FeedState {
     return EMPTY_FEED;
+}
+
+const MB = 2 ** 20;
+const GB = 2 ** 30;
+const TENTH_GB = GB / 10;
+
+// to a tenth of a GiB, as whole bytes: the figure the title bar and the band print
+function roundTenthGiB(n: number): number {
+    return Math.round(Math.round(n / TENTH_GB) * TENTH_GB);
+}
+
+// a RAM figure as the band prints it (formatBytes: whole MB under half a GB, a tenth of a GB above), as whole bytes
+function roundRam(n: number): number {
+    return n < GB / 2 ? Math.round(n / MB) * MB : roundTenthGiB(n);
+}
+
+// a CPU share as a whole percent; a share above zero never reads 0%
+function roundCpu(n: number): number {
+    return n > 0 ? Math.max(1, Math.round(n)) : Math.round(n);
+}
+
+/**
+ * The snapshot's machine figures from a machine reading (decision 8): memory free, total and swap used to a tenth of a
+ * GiB, CPU to a whole percent, so a poll whose numbers only jitter gives the same figures and no new snapshot. `swapUsed`
+ * is left out when nothing is in swap, `cpuPct` before the first CPU reading.
+ */
+export function machineOf(s: MachineStatsData, platform: SidecarMachine["platform"]): SidecarMachine {
+    const swap = roundTenthGiB(s.swapused);
+    return {
+        memFree: roundTenthGiB(s.memavailable),
+        memTotal: roundTenthGiB(s.memtotal),
+        ...(swap > 0 ? { swapUsed: swap } : {}),
+        ...(s.cpupct != null ? { cpuPct: Math.round(s.cpupct) } : {}),
+        platform,
+    };
+}
+
+/** The strain model's reading of a machine reading, taken at `at`. */
+export function readingOf(s: MachineStatsData, at: number): MachineReading {
+    return {
+        at,
+        pressure: s.pressure,
+        memFree: s.memavailable,
+        memTotal: s.memtotal,
+        ...(s.cpupct != null ? { cpuPct: s.cpupct } : {}),
+    };
+}
+
+/**
+ * The last poll with a memorypressure event laid over it: the level and the memory move, everything else (the total, the
+ * CPU, the swap) stays the last poll's. Read through `readingOf`, an event between two polls therefore carries the last
+ * CPU, and does not restart the 120 s CPU streak (which a reading with no CPU does). Null before any poll: an event
+ * alone has no total or CPU to carry, and the hello read answers the same level a moment later.
+ */
+export function applyPressure(
+    s: MachineStatsData | null,
+    e: { level?: unknown; memavailable?: unknown } | null | undefined
+): MachineStatsData | null {
+    if (s == null) {
+        return null;
+    }
+    return {
+        ...s,
+        pressure: typeof e?.level === "string" ? e.level : s.pressure,
+        memavailable:
+            typeof e?.memavailable === "number" && Number.isFinite(e.memavailable) ? e.memavailable : s.memavailable,
+    };
+}
+
+/** Which heavy-agent polls the band needs now (decision: neither runs while the band is down). RAM when RAM is up, else CPU. */
+export function heavyPolls(state: StrainState | null): { consumers: boolean; cpu: boolean } {
+    if (state == null) {
+        return { consumers: false, cpu: false };
+    }
+    const by = strainBy(state);
+    return { consumers: by === "ram", cpu: by === "cpu" };
+}
+
+/** Whether a heavy-agent reading that landed at `at` (null: never) can still name agents at `now`. */
+export function readingFresh(at: number | null, now: number): boolean {
+    return at != null && now - at <= HEAVY_STALE_MS;
+}
+
+/**
+ * The heavy rows with their figures rounded as the band prints them (RAM like `formatBytes`, CPU to a whole percent), so
+ * each poll that only jitters leaves the rows, and the snapshot, the same. Pure: the rows given are not touched.
+ */
+export function roundHeavy(rows: SidecarHeavy[]): SidecarHeavy[] {
+    return rows.map((h) => ({
+        ...h,
+        ...(h.ramBytes != null ? { ramBytes: roundRam(h.ramBytes) } : {}),
+        ...(h.cpuPct != null ? { cpuPct: roundCpu(h.cpuPct) } : {}),
+        ...(h.process != null
+            ? {
+                  process: {
+                      ...h.process,
+                      ...(h.process.ramBytes != null ? { ramBytes: roundRam(h.process.ramBytes) } : {}),
+                      ...(h.process.cpuPct != null ? { cpuPct: roundCpu(h.process.cpuPct) } : {}),
+                  },
+              }
+            : {}),
+    }));
+}
+
+/** The jobs the heavy-job queue is running now: the "heavy jobs running" of the band's second line. */
+export function runningJobs(q: JobQueueData | null): number {
+    return q == null ? 0 : q.jobs.filter((j) => j.running).length;
+}
+
+/** The snapshot's strain from the model's state, the counts and the heavy rows. The CPU percent goes out whole. */
+export function strainOf(state: StrainState, working: number, heavyJobs: number, heavy: SidecarHeavy[]): SidecarStrain {
+    return {
+        level: state.level,
+        by: strainBy(state),
+        ...(state.ram != null ? { ram: state.ram } : {}),
+        ...(state.cpu != null ? { cpu: { since: state.cpu.since, pct: Math.round(state.cpu.pct) } } : {}),
+        working,
+        heavyJobs,
+        heavy,
+    };
+}
+
+/**
+ * The notes Stop and Sleep leave on the band's rows, by tile id, and the level they were left at: a note lasts until the
+ * band's level changes or its agent leaves the band (decision 11).
+ */
+export interface HeavyNotes {
+    level: StrainLevel | null;
+    byId: Record<string, string>;
+}
+
+export const EMPTY_NOTES: HeavyNotes = { level: null, byId: {} };
+
+/** The notes after the band was built at `level` with rows for `ids`: all gone when the level moved, else those of agents still in it. */
+export function syncNotes(n: HeavyNotes, level: StrainLevel | null, ids: readonly string[]): HeavyNotes {
+    if (n.level !== level) {
+        return { level, byId: {} };
+    }
+    const keep = Object.entries(n.byId).filter(([id]) => ids.includes(id));
+    return keep.length === Object.keys(n.byId).length ? n : { level, byId: Object.fromEntries(keep) };
+}
+
+/** `n` with `note` on the row of `id`, replacing the last one. */
+export function setNote(n: HeavyNotes, id: string, note: string): HeavyNotes {
+    return { ...n, byId: { ...n.byId, [id]: note } };
+}
+
+/** The rows with their notes; a row with none gets no `note` field. */
+export function attachNotes(rows: SidecarHeavy[], byId: Record<string, string>): SidecarHeavy[] {
+    return rows.map((h) => (byId[h.id] != null ? { ...h, note: byId[h.id] } : h));
+}
+
+/** What a Sleep from the band did, in the words of the row's note. */
+export function sleepNote(outcome: SleepOutcome): string {
+    switch (outcome) {
+        case "slept":
+            return "Put to sleep";
+        case "compacting":
+            return "Compacting first · it sleeps once the summary lands";
+        case "asked":
+            return "Confirm in the main window";
+        case "failed":
+            return "Couldn't put it to sleep · see the main window";
+        case "busy":
+            return "Already going to sleep";
+    }
+}
+
+const NOTE_MAX_CHARS = 160;
+
+/** The row's note after a Stop the server refused: its own text, cut to fit a row. */
+export function stopNote(e: unknown): string {
+    const text = (e instanceof Error ? e.message : String(e)).trim();
+    if (text === "") {
+        return "Couldn't stop it";
+    }
+    return text.length <= NOTE_MAX_CHARS ? text : text.slice(0, NOTE_MAX_CHARS - 1) + "…";
+}
+
+/** What an older act is answered from: the rows the main window holds for the agent, or its transcript file. */
+export interface OlderInput {
+    all: SidecarMessage[]; // the rows the main window holds, oldest first; empty for an agent with no entries in memory
+    shown: SidecarMessage[]; // the rows the last snapshot sent for the tile
+    path?: string; // its transcript file
+    agent?: string; // its harness, which picks the transcript projector
+}
+
+/** The two readers `answerOlder` calls (sidecarhistory.ts's olderFromMemory and readOlderFromFile), passed in so the rule is tested without an RPC. */
+export interface OlderReaders {
+    memory: (all: SidecarMessage[], shownCount: number, before: string | null, count: number) => OlderPage;
+    file: (
+        path: string,
+        agent: string | undefined,
+        before: string | null,
+        shown: SidecarMessage[]
+    ) => Promise<OlderPage>;
+}
+
+/**
+ * The answer to an older act (decision 5). An agent with entries in memory pages from them, one with none and a transcript
+ * path from the file, any other has nothing earlier. Never rejects: a failed file read is logged through `onError` and
+ * answered `rows: [], next: null`, which the page shows as the start of what arcterm holds and stops asking.
+ */
+export async function answerOlder(
+    act: { id: string; before: string | null; count: number },
+    input: OlderInput,
+    readers: OlderReaders,
+    onError: (message: string) => void
+): Promise<SidecarOlder> {
+    const answer = (page: OlderPage): SidecarOlder => ({
+        id: act.id,
+        before: act.before,
+        rows: page.rows,
+        next: page.next,
+    });
+    if (input.all.length > 0) {
+        return answer(readers.memory(input.all, input.shown.length, act.before, act.count));
+    }
+    if (input.path != null && input.path !== "") {
+        try {
+            return answer(await readers.file(input.path, input.agent, act.before, input.shown));
+        } catch (e) {
+            onError(`older ${act.id}: the transcript read failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    }
+    return answer({ rows: [], next: null });
 }
