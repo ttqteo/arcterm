@@ -2900,3 +2900,7 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   `i` from the message box: the band opens and `m`, `n`, `w` and the arrows work without a click. Once on a Mac
   (`task dev:browser`, then `task verify:ui -- chat-initiative-band initiative-popover initiative-link`): the scenarios
   ran only on WebView2 in run 175af141, with fixture agents (`initiativebandview.tsx`, `chatpane.tsx` goOn).
+- [ ] (arcterm) **A reply draws once when you send the next message as it ends.** In a Claude agent's Chat, send a
+  message while the reply's last paragraph is still streaming (once queued, once with Send now), and once right after it
+  ends: the reply stays one copy above your message, with no second copy under it and no flicker (`chatlive.ts`
+  withLiveReply; unit tests only, no scenario streams a live reply).
