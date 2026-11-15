@@ -745,8 +745,17 @@ function ComposerBox({
         ) {
             return false;
         }
-        // ↑ in an empty box takes back the messages queued in Claude Code first, as ↑ in its own box does
-        if (dir === "up" && text === "" && takeBackKey("ArrowUp")) {
+        // ↑ in an empty box takes back the messages queued in Claude Code first, as ↑ in its own box does; when Claude's box
+        // never shows them (it took them already) the key recalls the last message sent, as it would with no queue
+        if (
+            dir === "up" &&
+            text === "" &&
+            takeBackKey("ArrowUp", () => {
+                if (latest.current.text === "") {
+                    stepHistory("up");
+                }
+            })
+        ) {
             return true;
         }
         const r = recalled.current;
@@ -764,18 +773,23 @@ function ComposerBox({
                 return false;
             }
         }
+        return stepHistory(dir);
+    };
+    // one step through the messages sent, from where the last recall left off; false when none was sent
+    const stepHistory = (dir: "up" | "down"): boolean => {
         const history = sentHistory(agent.id);
         if (history.length === 0) {
             return false;
         }
-        const next = recall(history, r.at, dir);
+        const next = recall(history, recalled.current.at, dir);
         recalled.current = { at: next.at, shown: next.text };
-        setTextAt(next.text);
+        latest.current.setText(next.text);
         return true;
     };
     // Esc, or ↑ in an empty box: a message Claude has not taken or answered yet comes back into the box
-    // (chattakeback.ts), put ahead of what the box holds. False when there is none: the key keeps its old job
-    const takeBackKey = (key: "Escape" | "ArrowUp"): boolean => {
+    // (chattakeback.ts), put ahead of what the box holds. False when there is none: the key keeps its old job.
+    // `onNone` runs when Claude Code's box never showed the text, so nothing came back
+    const takeBackKey = (key: "Escape" | "ArrowUp", onNone?: () => void): boolean => {
         const blockid = agent.blockId;
         if (blockid == null || asleep) {
             return false;
@@ -793,7 +807,7 @@ function ComposerBox({
         // so its bubble goes as the text lands in the box (chattakeback.ts withoutTakenBack)
         const held = entries ?? [];
         fireAndForget(async () => {
-            await takeBack(agent.id, blockid, plan, (texts) => {
+            const result = await takeBack(agent.id, blockid, plan, (texts) => {
                 if (plan.kind === "interrupt") {
                     noteTakenBack(agent.id, takenBackOf(plan, held, Date.now()));
                     // a message that had landed still has its sent record: with the record hidden it would read as not
@@ -806,6 +820,9 @@ function ComposerBox({
                 }
                 latest.current.setText(mergeTaken(texts, latest.current.text), texts.join("\n").length);
             });
+            if (result === "none") {
+                onNone?.();
+            }
         });
         return true;
     };

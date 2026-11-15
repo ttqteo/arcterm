@@ -13,15 +13,17 @@ export function VersionTag() {
         return null;
     }
     const built = version.buildTime > 0 ? ` · built ${formatBuildTime(version.buildTime)}` : "";
+    const commit = version.commit ? ` · commit ${version.commit}` : "";
     return (
         <button
             type="button"
             data-app-version
-            title={`What's new · arcterm ${version.app} · backend ${version.server}${built}`}
+            title={`What's new · arcterm ${version.app}${commit} · backend ${version.server}${built}`}
             onClick={openWhatsNew}
             className="shrink-0 cursor-pointer whitespace-nowrap text-[11.5px] tabular-nums text-muted hover:text-primary"
         >
             v{version.app}
+            {version.commit ? <span className="opacity-70"> · {version.commit}</span> : null}
         </button>
     );
 }

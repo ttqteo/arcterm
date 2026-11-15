@@ -7,10 +7,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"runtime"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/usagestats"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
@@ -80,7 +82,7 @@ func scanOnce(ctx context.Context) (windowDays, rows int, err error) {
 		return 0, 0, fmt.Errorf("reading the newest tallied day: %w", err)
 	}
 	windowDays = ScanWindowDays(last, time.Now())
-	buckets, metas, err := usagestats.ScanUsage(windowDays)
+	buckets, metas, err := usagestats.ScanUsageWith(windowDays, ScanWorkers(runtime.NumCPU()))
 	if err != nil {
 		return windowDays, 0, fmt.Errorf("scanning usage: %w", err)
 	}
@@ -91,9 +93,21 @@ func scanOnce(ctx context.Context) (windowDays, rows int, err error) {
 	return windowDays, len(tally), nil
 }
 
+// ScanWorkers is how many transcripts the tally parses at once: half the cores (at least one), so its scan, which
+// on a fresh store reads every transcript on disk (1-2 min on 7.6 GB), leaves the machine room for the person's work.
+func ScanWorkers(cores int) int {
+	return max(1, cores/2)
+}
+
 // StartLoop keeps the daily tally current: a scan after startDelay, then one every scanInterval, until ctx
-// ends. A failed scan is logged and tried again at the next tick.
+// ends. A failed scan is logged and tried again at the next tick. A test app (ARC_DEV_NO_GLOBAL_INSTALL: Final's,
+// dev:browser's, a worktree's) runs none: its store starts empty, so each one would read every transcript on disk
+// while its scenarios run, and its CDP scenarios answer the Activity card with a mock.
 func StartLoop(ctx context.Context) {
+	if wavebase.NoGlobalInstall() {
+		log.Printf("daily usage tally: off in this app (%s is set)\n", wavebase.NoGlobalInstallVarName)
+		return
+	}
 	go func() {
 		defer func() {
 			panichandler.PanicHandler("projectactivity.StartLoop", recover())

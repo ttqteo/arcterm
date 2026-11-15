@@ -142,7 +142,8 @@ function MdCommentBox({ box, ctx }: { box: MdBox; ctx: MdDocCtx }) {
 }
 
 // After a stamped block: the cards MdDoc hosts on that block, and the open box when it hangs there. The block is the
-// slot's parent for a list item (the slot is the item's last child), else the element before it; read after every
+// slot's parent for a list item (the slot is the item's last child), else the element before it, or the stamped block
+// inside it when Markdown wraps the block (a table sits in div.table-block with its Copy button); read after every
 // render, because an image appears only once its src resolves.
 export function CardSlot({ inside }: { inside: boolean }) {
     const ctx = useContext(MdDocContext);
@@ -150,7 +151,15 @@ export function CardSlot({ inside }: { inside: boolean }) {
     const [block, setBlock] = useState<Element | null>(null);
     useLayoutEffect(() => {
         const el = ref.current;
-        const next = el == null ? null : inside ? el.parentElement : el.previousElementSibling;
+        const before = el?.previousElementSibling ?? null;
+        const next =
+            el == null
+                ? null
+                : inside
+                  ? el.parentElement
+                  : before == null || before.hasAttribute("data-src-start")
+                    ? before
+                    : (before.querySelector("[data-src-start]") ?? before);
         setBlock((prev) => (prev === next ? prev : next));
     });
     const comments = ctx != null && block != null ? (ctx.hosts.get(block) ?? []) : [];

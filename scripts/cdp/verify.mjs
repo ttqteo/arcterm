@@ -3,15 +3,25 @@
 // and exits nonzero on any failure. Usage: node scripts/cdp/verify.mjs [name...]
 import { mkdirSync, writeFileSync } from "node:fs";
 import { attach } from "./attach.mjs";
-import { EXIT_UNVERIFIED, contactSheetHtml, exitCode, formatResults, renderWait, shotsManifest, shotsUnder } from "./report.mjs";
+import {
+    EXIT_UNVERIFIED,
+    contactSheetHtml,
+    exitCode,
+    formatResults,
+    renderWait,
+    shotsManifest,
+    shotsUnder,
+    unknownScenarios,
+} from "./report.mjs";
 import { SCENARIOS } from "./scenarios.mjs";
 
 const only = process.argv.slice(2).filter((a) => !a.startsWith("-"));
-const chosen = only.length ? SCENARIOS.filter((s) => only.includes(s.name)) : SCENARIOS;
-if (!chosen.length) {
-    console.error(`no scenarios matched ${JSON.stringify(only)}. available: ${SCENARIOS.map((s) => s.name).join(", ")}`);
+const unknown = unknownScenarios(SCENARIOS, only);
+if (unknown.length) {
+    console.error(`no scenario is named ${unknown.join(", ")}. available: ${SCENARIOS.map((s) => s.name).join(", ")}`);
     process.exit(2);
 }
+const chosen = only.length ? SCENARIOS.filter((s) => only.includes(s.name)) : SCENARIOS;
 
 const cdpPort = Number(process.env.CDP_PORT) || 9222; // worktree dev app can run on another port (see task worktree:prepare)
 const h = await attach(cdpPort);

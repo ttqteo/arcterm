@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react-swc";
 import { realpathSync } from "fs";
 import { resolve } from "path";
 import { defineConfig, searchForWorkspaceRoot } from "vite";
+import { buildCommit } from "./buildcommit";
 
 const fe = resolve(__dirname, ".."); // frontend/
 
@@ -14,6 +15,8 @@ export default defineConfig({
     // publicDir defaults to frontend/tauri/public, which does not exist, and /fontawesome/* 404s to the SPA fallback.
     publicDir: resolve(fe, "../public"),
     plugins: [react(), tailwindcss()],
+    // the commit this bundle is built from, shown beside the version (cockpit/versioninfo.ts)
+    define: { __ARC_COMMIT__: JSON.stringify(buildCommit(process.env)) },
     // each checkout keeps its own optimized-deps cache, in a real directory of its own. A worktree's
     // node_modules is a junction to the main checkout's, and every tree's config hashes differently (the
     // aliases are absolute), so a shared node_modules/.vite is re-optimized under every other running dev
@@ -46,11 +49,13 @@ export default defineConfig({
         // the 500 kB default is a network-delivery budget; these chunks load from the app bundle on disk.
         // monaco alone is 3.8 MB and already lazy, so the limit sits just above it to still catch a jump.
         chunkSizeWarningLimit: 4000,
-        // two entries, so tray.html (the menu bar / tray popover's page) ships beside index.html
+        // three entries, so tray.html (the menu bar / tray popover's page) and sidecar.html (the Sidecar window's page)
+        // ship beside index.html
         rollupOptions: {
             input: {
                 main: resolve(__dirname, "index.html"),
                 tray: resolve(__dirname, "tray.html"),
+                sidecar: resolve(__dirname, "sidecar.html"),
             },
         },
     },

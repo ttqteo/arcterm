@@ -674,6 +674,18 @@ func DocPdfFindCommand(w *wshutil.WshRpc, data wshrpc.CommandDocPdfFindData, opt
 	return resp, err
 }
 
+// command "effortbackfillbase", wshserver.EffortBackfillBaseCommand
+func EffortBackfillBaseCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortBackfillBaseData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEffortBackfillBaseRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEffortBackfillBaseRtnData](w, "effortbackfillbase", data, opts)
+	return resp, err
+}
+
+// command "effortchunkdrift", wshserver.EffortChunkDriftCommand
+func EffortChunkDriftCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortChunkDriftData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEffortChunkDriftRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEffortChunkDriftRtnData](w, "effortchunkdrift", data, opts)
+	return resp, err
+}
+
 // command "effortcreate", wshserver.EffortCreateCommand
 func EffortCreateCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortCreateData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEffortCreateRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEffortCreateRtnData](w, "effortcreate", data, opts)
@@ -707,6 +719,12 @@ func EffortMutateCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortMutateData,
 // command "effortpin", wshserver.EffortPinCommand
 func EffortPinCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortPinData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEffortPinRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEffortPinRtnData](w, "effortpin", data, opts)
+	return resp, err
+}
+
+// command "effortstale", wshserver.EffortStaleCommand
+func EffortStaleCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortStaleData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEffortStaleRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEffortStaleRtnData](w, "effortstale", data, opts)
 	return resp, err
 }
 

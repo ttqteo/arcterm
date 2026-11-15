@@ -13,7 +13,8 @@ import {
     withLiveReply,
     type LiveReply,
 } from "./chatlive";
-import type { ChatItem } from "./chatmodel";
+import type { AgentPart, ChatItem } from "./chatmodel";
+import { splitReviewBlocks } from "./chatverdict";
 
 const reply = (over: Partial<LiveReply> = {}): LiveReply => ({
     turn: "t",
@@ -178,6 +179,45 @@ describe("withLiveReply", () => {
         };
         const items = [you, stored];
         expect(withLiveReply(items, ["Looking at ==the watcher==  now."], 3)).toBe(items);
+    });
+
+    describe("a reply the transcript cut around an arc-review block", () => {
+        const block = ["```arc-review", '{"kind": "plan", "pass": true, "reviewer": "plan review"}', "```"].join("\n");
+        const reply = ["The plan review is back.", "", block, "", "I will start Task 1."].join("\n");
+        const pieces = splitReviewBlocks(reply);
+        const asParts = (keep: typeof pieces): AgentPart[] =>
+            keep.map((p) => (p.kind === "prose" ? { kind: "prose", text: p.text } : { kind: "verdict", key: "verdict:1", verdict: p.verdict }));
+
+        it("is held once its prose pieces and its verdict are stored", () => {
+            expect(pieces.map((p) => p.kind)).toEqual(["prose", "verdict", "prose"]);
+            const items: ChatItem[] = [you, { kind: "agent", key: "agent:1", parts: asParts(pieces) }];
+            expect(withLiveReply(items, [reply], 3)).toBe(items);
+        });
+
+        it("still draws while the transcript holds only part of it", () => {
+            const items: ChatItem[] = [you, { kind: "agent", key: "agent:1", parts: asParts(pieces.slice(0, 2)) }];
+            const out = withLiveReply(items, [reply], 3);
+            expect(out).not.toBe(items);
+            expect(out[1].kind === "agent" && out[1].parts.at(-1)).toMatchObject({ kind: "prose", live: true });
+        });
+    });
+
+    it("counts a text as held by the reply before the message you sent while it lingered", () => {
+        // the reply is done (or about to be) and stored, you send the next message, and it lands in the transcript
+        // before the live file moves on to the next turn: the live copy is that last reply's, not a new one
+        const next: ChatItem = { kind: "you", key: "you:2", text: "and the other one?" };
+        const items = [you, agent, next];
+        expect(withLiveReply(items, ["Looking at ==the watcher== now."], 3)).toBe(items);
+    });
+
+    it("still draws a new reply after your message when the reply before holds other text", () => {
+        const next: ChatItem = { kind: "you", key: "you:2", text: "and the other one?" };
+        expect(withLiveReply([you, agent, next], ["The other one is fine."], 3)).toEqual([
+            you,
+            agent,
+            next,
+            { kind: "agent", key: "agent:3", parts: [{ kind: "prose", text: "The other one is fine.", live: true }] },
+        ]);
     });
 
     it("opens a group of its own after your message, keyed as the transcript's will be", () => {

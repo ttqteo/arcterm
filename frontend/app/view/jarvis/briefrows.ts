@@ -9,6 +9,7 @@
 // Pure: no React.
 
 import { formatAge } from "@/app/view/agents/agentsviewmodel";
+import { leadPhaseFailed } from "@/app/view/agents/runlineage";
 import { runStage, type StageTone } from "@/app/view/agents/runstage";
 import { parseAddress, type OpenTarget } from "./address";
 import {
@@ -458,20 +459,22 @@ export function runRowFace(i: {
     }
     const orch = run.mode === "orchestrator";
     const status = run.status ?? "";
-    const s = runStage({ status: run.status, land: run.land, dag: i.dag }, i.asking);
+    const s = runStage({ status: run.status, land: run.land, dag: i.dag, leadFailed: leadPhaseFailed(run) }, i.asking);
     const paused = s.paused;
     // a paused run says so in the tree's own words, whole (the row has room for them); a question names itself, a run
-    // whose worker died keeps the word blocked (its stage alone would say working), and a cancelled run keeps the
-    // Brief's own word, stopped, which its Stop button earns
+    // whose lead died says failed, one whose worker died keeps the word blocked (its stage alone would say working), and
+    // a cancelled run keeps the Brief's own word, stopped, which its Stop button earns
     const state = paused
         ? s.label
         : i.asking
           ? "asking"
-          : status === "blocked"
-            ? "blocked"
-            : s.key === "cancelled"
-              ? "stopped"
-              : s.label.toLowerCase();
+          : s.key === "failed"
+            ? "failed"
+            : status === "blocked"
+              ? "blocked"
+              : s.key === "cancelled"
+                ? "stopped"
+                : s.label.toLowerCase();
     const stateTone = STAGE_LINE_TONE[s.tone];
     const terminal = status === "done" || status === "cancelled";
     const ref = run.effortref;

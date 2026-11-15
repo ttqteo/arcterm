@@ -15,6 +15,7 @@ mod notify;
 mod pagekeys;
 mod paths;
 mod shellenv;
+mod sidecar;
 mod tray;
 mod trayicon;
 mod webcache;
@@ -433,9 +434,12 @@ fn main() {
             foreground::app_foreground,
             foreground::raise_topmost,
             tray::set_tray_status,
-            tray::tray_popover_size
+            tray::tray_popover_size,
+            sidecar::open_sidecar
         ])
         .on_window_event(|window, event| {
+            // the main window destroyed closes Sidecar; Sidecar destroyed tells the main window
+            sidecar::on_window_event(window, event);
             // the close button only hides the window while the menu bar / tray icon shows, so the agents and the
             // icon's memory reading keep running; Quit (⌘Q, the popover's, the Dock's) still quits
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -562,15 +566,22 @@ fn main() {
             if let Err(e) = tray::setup(app.handle()) {
                 applog::log_line(&format!("[tauri] the tray icon failed: {e}"));
             }
+            // Sidecar opens as last time when it was open at the last quit, once the main window is up and placed
+            sidecar::reopen_at_launch(app.handle());
             Ok(())
         })
         .build(context)
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            // The windows are still there when a quit is requested, and gone by Exit: Sidecar is read once more now
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                sidecar::on_exit_requested(app_handle);
+            }
             // Kill wavesrv when the app exits so it doesn't orphan and hold wave.lock + its exe.
             if let tauri::RunEvent::Exit = event {
                 tray::before_exit(app_handle);
                 winframe::save(app_handle);
+                sidecar::save(app_handle);
                 if let Some(mut child) = app_handle.state::<WavesrvChild>().0.lock().unwrap().take() {
                     // A job holding a kept app no longer kills on close, so let wavesrv shut down on its own (its
                     // stdin closing): its shutdown reaps its blocks' trees, all but the kept app, which a kill skips.

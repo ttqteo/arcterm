@@ -54,9 +54,11 @@ import {
     useState,
     type KeyboardEvent,
     type MouseEvent,
+    type ReactElement,
     type ReactNode,
+    type RefObject,
 } from "react";
-import { briefingStateAtom } from "./briefingstore";
+import { briefingStateAtom, loadBriefingIfNone } from "./briefingstore";
 import { splitIdeas } from "./briefrows";
 import { buildEffortCards } from "./effortmodel";
 import { peekAddress } from "./openref";
@@ -671,7 +673,9 @@ function PetStayPin({ folded }: { folded: boolean }) {
         strategy: "fixed",
         // flip and shift keep it in the viewport, which in the folded float is the whole of the window
         middleware: [offset(6), flip({ padding: 8 }), shift({ padding: 8 })],
-        whileElementsMounted: autoUpdate,
+        // only while open: the shut menu stays mounted (its exit plays), and the pin moves on every frame the peek resizes,
+        // so an always-on autoUpdate re-rendered this pin (flushSync) on each of them
+        whileElementsMounted: open ? autoUpdate : undefined,
     });
     const focusTrigger = () => (refs.domReference.current as HTMLElement | null)?.focus();
     const close = () => {
@@ -833,6 +837,12 @@ export function PetPeek({
     // badge: review is not urgent.
     const briefing = useAtomValue(briefingStateAtom);
     const reviewed = useAtomValue(reviewedAtom);
+    // on a fresh launch nothing has loaded the briefing until Jarvis opens: the peek loads it the first time it opens
+    useEffect(() => {
+        if (open) {
+            loadBriefingIfNone();
+        }
+    }, [open]);
     const review = useMemo(() => {
         const snapshot = briefing.snapshot;
         if (snapshot == null) {
@@ -895,18 +905,6 @@ export function PetPeek({
     const peekAt = (target: PetTarget) => {
         fireAndForget(() => peekAddress(model, target.ref, { anchor: target.anchor }));
     };
-
-    const { refs, floatingStyles, context } = useFloating({
-        open,
-        placement: placement ?? PLACEMENT[corner],
-        strategy: "fixed",
-        middleware: [offset(12), shift({ padding: 8, crossAxis: true })],
-        whileElementsMounted: autoUpdate,
-    });
-
-    useEffect(() => {
-        refs.setPositionReference(anchor);
-    }, [anchor, refs]);
 
     useEffect(() => {
         if (open) {
@@ -1193,324 +1191,365 @@ export function PetPeek({
     return (
         <FloatingPortal>
             {open ? <div data-pet-peek-backdrop className="fixed inset-0 z-[64]" onClick={close} /> : null}
-            <div ref={refs.setFloating} style={floatingStyles} className="z-[65]">
-                <FloatingFocusManager
-                    context={context}
-                    disabled={!open}
-                    initialFocus={panelRef}
-                    returnFocus={returnFocusEnabled ? returnFocusRef : false}
-                    modal
-                >
-                    <MotionConfig reducedMotion="user">
-                        <AnimatePresence>
-                            {open ? (
-                                <motion.div
-                                    layout="size"
-                                    variants={popoverReveal}
-                                    initial="initial"
-                                    animate="animate"
-                                    exit="exit"
-                                    transition={{ layout: shapeTransition("animate", reduce) }}
-                                    data-mini-hit="chat"
-                                    style={{
-                                        transformOrigin: placement != null ? originOf(placement) : ORIGIN[corner],
-                                    }}
-                                    className={cn(
-                                        "flex w-[calc(100vw-16px)] flex-col overflow-hidden rounded-[12px] border",
-                                        // folded: no drop shadow, which smears the app behind the see-through window;
-                                        // a stronger edge parts the panel from it instead, and a solid fill, since a frost
-                                        // has nothing to blur there
-                                        corner === "mini"
-                                            ? "border-edge-strong bg-surface-raised"
-                                            : "frost border-border shadow-popover",
-                                        // folded: Sprout's 80px box and the offset share the window with the panel
-                                        corner === "mini" ? "max-h-[calc(100vh-104px)]" : "max-h-[calc(100vh-16px)]",
-                                        // quiet: 300px, the width its title once had beside Full view and close, plus the stay
-                                        // pin's 28px and the 4px gap before it (332px), so "Nothing waiting on you" reads whole
-                                        // docked and folded (Terminal and the fold chevron take the place of Full view and close)
-                                        item != null ? "max-w-[560px]" : quiet ? "max-w-[332px]" : "max-w-[420px]"
-                                    )}
-                                >
-                                    {/* mark the dialog as the focus-managed element: without it FloatingFocusManager
+            <PeekFloat
+                open={open}
+                anchor={anchor}
+                placement={placement ?? PLACEMENT[corner]}
+                initialFocus={panelRef}
+                returnFocus={returnFocusEnabled ? returnFocusRef : false}
+            >
+                <MotionConfig reducedMotion="user">
+                    <AnimatePresence>
+                        {open ? (
+                            <motion.div
+                                layout="size"
+                                variants={popoverReveal}
+                                initial="initial"
+                                animate="animate"
+                                exit="exit"
+                                transition={{ layout: shapeTransition("animate", reduce) }}
+                                data-mini-hit="chat"
+                                style={{
+                                    transformOrigin: placement != null ? originOf(placement) : ORIGIN[corner],
+                                }}
+                                className={cn(
+                                    "flex w-[calc(100vw-16px)] flex-col overflow-hidden rounded-[12px] border",
+                                    // folded: no drop shadow, which smears the app behind the see-through window;
+                                    // a stronger edge parts the panel from it instead, and a solid fill, since a frost
+                                    // has nothing to blur there
+                                    corner === "mini"
+                                        ? "border-edge-strong bg-surface-raised"
+                                        : "frost border-border shadow-popover",
+                                    // folded: Sprout's 80px box and the offset share the window with the panel
+                                    corner === "mini" ? "max-h-[calc(100vh-104px)]" : "max-h-[calc(100vh-16px)]",
+                                    // quiet: 300px, the width its title once had beside Full view and close, plus the stay
+                                    // pin's 28px and the 4px gap before it (332px), so "Nothing waiting on you" reads whole
+                                    // docked and folded (Terminal and the fold chevron take the place of Full view and close)
+                                    item != null ? "max-w-[560px]" : quiet ? "max-w-[332px]" : "max-w-[420px]"
+                                )}
+                            >
+                                {/* mark the dialog as the focus-managed element: without it FloatingFocusManager
                                         resolves its focus element to the harness picker's always-mounted
                                         data-floating-ui-focusable wrapper inside this tree, and the tab trap
                                         silently empties (tabbable() of an empty 0x0 div is []) */}
-                                    <div
-                                        ref={panelRef}
-                                        data-pet-peek="1"
-                                        data-pet-peek-shape={item != null ? "item" : quiet ? "quiet" : "busy"}
-                                        data-pet-peek-item={item?.target.kind}
-                                        data-pet-peek-status={item?.status}
-                                        data-floating-ui-focusable
-                                        role="dialog"
-                                        aria-modal="true"
-                                        aria-labelledby={titleId}
-                                        tabIndex={-1}
-                                        onKeyDown={onPanelKeyDown}
-                                        className="flex min-h-0 flex-1 flex-col focus:outline-none"
-                                    >
-                                        {item != null ? (
-                                            <PeekItemView
-                                                model={model}
-                                                item={item}
-                                                facts={facts}
-                                                titleId={titleId}
-                                                onCommand={(command) =>
-                                                    runItemCommand(model, item, facts, command, itemChrome)
-                                                }
-                                            />
-                                        ) : (
-                                            <>
-                                                {/* sections draw their own top border, so an absent one leaves no
+                                <div
+                                    ref={panelRef}
+                                    data-pet-peek="1"
+                                    data-pet-peek-shape={item != null ? "item" : quiet ? "quiet" : "busy"}
+                                    data-pet-peek-item={item?.target.kind}
+                                    data-pet-peek-status={item?.status}
+                                    data-floating-ui-focusable
+                                    role="dialog"
+                                    aria-modal="true"
+                                    aria-labelledby={titleId}
+                                    tabIndex={-1}
+                                    onKeyDown={onPanelKeyDown}
+                                    className="flex min-h-0 flex-1 flex-col focus:outline-none"
+                                >
+                                    {item != null ? (
+                                        <PeekItemView
+                                            model={model}
+                                            item={item}
+                                            facts={facts}
+                                            titleId={titleId}
+                                            onCommand={(command) =>
+                                                runItemCommand(model, item, facts, command, itemChrome)
+                                            }
+                                        />
+                                    ) : (
+                                        <>
+                                            {/* sections draw their own top border, so an absent one leaves no
                                             doubled line behind */}
-                                                <div
-                                                    data-pet-peek-header
-                                                    className="flex min-h-11 flex-none items-center gap-1 pl-3.5 pr-2"
+                                            <div
+                                                data-pet-peek-header
+                                                className="flex min-h-11 flex-none items-center gap-1 pl-3.5 pr-2"
+                                            >
+                                                <h2
+                                                    id={titleId}
+                                                    className="min-w-0 flex-1 truncate text-[13px] font-bold text-primary"
                                                 >
-                                                    <h2
-                                                        id={titleId}
-                                                        className="min-w-0 flex-1 truncate text-[13px] font-bold text-primary"
-                                                    >
-                                                        {quiet
-                                                            ? "Nothing waiting on you"
-                                                            : `${rows.length} waiting on you`}
-                                                    </h2>
-                                                    {/* before Full view, and before Terminal folded */}
-                                                    <PetStayPin folded={folded} />
-                                                    {onRestore != null ? (
-                                                        // no titles: over the see-through folded window, the tooltip
-                                                        // chip's popover shadow smears the app behind
-                                                        <>
-                                                            <button
-                                                                type="button"
-                                                                data-mini-restore
-                                                                aria-label="Restore the float window"
-                                                                onClick={() => {
-                                                                    leavePeek();
-                                                                    onRestore();
-                                                                }}
-                                                                className={cn(
-                                                                    "flex h-7 flex-none items-center gap-1 whitespace-nowrap rounded-[7px] px-2 text-[11px] font-medium text-muted hover:bg-surface-hover hover:text-primary",
-                                                                    FOCUS_RING
-                                                                )}
-                                                            >
-                                                                <PictureInPicture2
-                                                                    aria-hidden="true"
-                                                                    size={12}
-                                                                    strokeWidth={2}
-                                                                />
-                                                                Terminal
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                aria-label="Collapse into Sprout"
-                                                                onClick={close}
-                                                                className={cn(
-                                                                    "flex h-7 w-7 flex-none items-center justify-center rounded-[7px] text-muted hover:bg-surface-hover hover:text-primary",
-                                                                    FOCUS_RING
-                                                                )}
-                                                            >
-                                                                {placement?.startsWith("bottom") ? (
-                                                                    <ChevronUp
-                                                                        aria-hidden="true"
-                                                                        size={14}
-                                                                        strokeWidth={2}
-                                                                    />
-                                                                ) : (
-                                                                    <ChevronDown
-                                                                        aria-hidden="true"
-                                                                        size={14}
-                                                                        strokeWidth={2}
-                                                                    />
-                                                                )}
-                                                            </button>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <PetHideButton onHidden={close} />
-                                                            <button
-                                                                type="button"
-                                                                aria-label="Open full Jarvis view"
-                                                                onClick={openJarvis}
-                                                                className={cn(
-                                                                    "flex h-7 flex-none items-center gap-1 whitespace-nowrap rounded-[7px] px-2 text-[11px] font-medium text-muted hover:bg-surface-hover hover:text-primary",
-                                                                    FOCUS_RING
-                                                                )}
-                                                            >
-                                                                Full view
-                                                                <ArrowUpRight
-                                                                    aria-hidden="true"
-                                                                    size={11}
-                                                                    strokeWidth={2}
-                                                                />
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                aria-label="Close Jarvis panel"
-                                                                onClick={close}
-                                                                className={cn(
-                                                                    "flex h-7 w-7 flex-none items-center justify-center rounded-[7px] text-muted hover:bg-surface-hover hover:text-primary",
-                                                                    FOCUS_RING
-                                                                )}
-                                                            >
-                                                                <X aria-hidden="true" size={14} strokeWidth={2} />
-                                                            </button>
-                                                        </>
-                                                    )}
-                                                </div>
-
-                                                {conditions.map((condition) => (
-                                                    <div
-                                                        key={condition.expr.kind}
-                                                        data-pet-condition={condition.expr.kind}
-                                                        className="flex flex-none items-start gap-2 border-t border-border px-3.5 py-[9px]"
-                                                    >
-                                                        <span
+                                                    {quiet ? "Nothing waiting on you" : `${rows.length} waiting on you`}
+                                                </h2>
+                                                {/* before Full view, and before Terminal folded */}
+                                                <PetStayPin folded={folded} />
+                                                {onRestore != null ? (
+                                                    // no titles: over the see-through folded window, the tooltip
+                                                    // chip's popover shadow smears the app behind
+                                                    <>
+                                                        <button
+                                                            type="button"
+                                                            data-mini-restore
+                                                            aria-label="Restore the float window"
+                                                            onClick={() => {
+                                                                leavePeek();
+                                                                onRestore();
+                                                            }}
                                                             className={cn(
-                                                                "mt-[5px] h-1.5 w-1.5 flex-none rounded-full",
-                                                                conditionDot(condition.expr)
+                                                                "flex h-7 flex-none items-center gap-1 whitespace-nowrap rounded-[7px] px-2 text-[11px] font-medium text-muted hover:bg-surface-hover hover:text-primary",
+                                                                FOCUS_RING
                                                             )}
-                                                        />
-                                                        <span className="min-w-0 flex-1 text-[11.5px] leading-[1.4] text-secondary">
-                                                            {conditionLine(condition.expr, now)}
-                                                        </span>
-                                                        {condition.readout ? (
-                                                            <span
-                                                                title="this condition has no remedy, it is a readout"
-                                                                className="mt-px flex-none text-[9.5px] text-muted"
-                                                            >
-                                                                no action
-                                                            </span>
-                                                        ) : null}
-                                                    </div>
-                                                ))}
-
-                                                <div
-                                                    data-pet-peek-body
-                                                    data-pet-queue
-                                                    className={cn(
-                                                        "min-h-0 flex-1 overflow-y-auto overflow-x-hidden",
-                                                        (!quiet || updates[0] != null) && "border-t border-border"
-                                                    )}
-                                                >
-                                                    {quiet ? (
-                                                        updates[0] != null ? (
-                                                            <LatestUpdate
-                                                                model={model}
-                                                                event={updates[0]}
-                                                                now={now}
-                                                                onLeave={leavePeek}
-                                                                onPeek={peekAt}
+                                                        >
+                                                            <PictureInPicture2
+                                                                aria-hidden="true"
+                                                                size={12}
+                                                                strokeWidth={2}
                                                             />
-                                                        ) : null
-                                                    ) : (
-                                                        <AnimatePresence initial={false}>
-                                                            {/* no `layout` on rows: the panel is pinned by its bottom edge, so
+                                                            Terminal
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            aria-label="Collapse into Sprout"
+                                                            onClick={close}
+                                                            className={cn(
+                                                                "flex h-7 w-7 flex-none items-center justify-center rounded-[7px] text-muted hover:bg-surface-hover hover:text-primary",
+                                                                FOCUS_RING
+                                                            )}
+                                                        >
+                                                            {placement?.startsWith("bottom") ? (
+                                                                <ChevronUp
+                                                                    aria-hidden="true"
+                                                                    size={14}
+                                                                    strokeWidth={2}
+                                                                />
+                                                            ) : (
+                                                                <ChevronDown
+                                                                    aria-hidden="true"
+                                                                    size={14}
+                                                                    strokeWidth={2}
+                                                                />
+                                                            )}
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <PetHideButton onHidden={close} />
+                                                        <button
+                                                            type="button"
+                                                            aria-label="Open full Jarvis view"
+                                                            onClick={openJarvis}
+                                                            className={cn(
+                                                                "flex h-7 flex-none items-center gap-1 whitespace-nowrap rounded-[7px] px-2 text-[11px] font-medium text-muted hover:bg-surface-hover hover:text-primary",
+                                                                FOCUS_RING
+                                                            )}
+                                                        >
+                                                            Full view
+                                                            <ArrowUpRight
+                                                                aria-hidden="true"
+                                                                size={11}
+                                                                strokeWidth={2}
+                                                            />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            aria-label="Close Jarvis panel"
+                                                            onClick={close}
+                                                            className={cn(
+                                                                "flex h-7 w-7 flex-none items-center justify-center rounded-[7px] text-muted hover:bg-surface-hover hover:text-primary",
+                                                                FOCUS_RING
+                                                            )}
+                                                        >
+                                                            <X aria-hidden="true" size={14} strokeWidth={2} />
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
+
+                                            {conditions.map((condition) => (
+                                                <div
+                                                    key={condition.expr.kind}
+                                                    data-pet-condition={condition.expr.kind}
+                                                    className="flex flex-none items-start gap-2 border-t border-border px-3.5 py-[9px]"
+                                                >
+                                                    <span
+                                                        className={cn(
+                                                            "mt-[5px] h-1.5 w-1.5 flex-none rounded-full",
+                                                            conditionDot(condition.expr)
+                                                        )}
+                                                    />
+                                                    <span className="min-w-0 flex-1 text-[11.5px] leading-[1.4] text-secondary">
+                                                        {conditionLine(condition.expr, now)}
+                                                    </span>
+                                                    {condition.readout ? (
+                                                        <span
+                                                            title="this condition has no remedy, it is a readout"
+                                                            className="mt-px flex-none text-[9.5px] text-muted"
+                                                        >
+                                                            no action
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                            ))}
+
+                                            <div
+                                                data-pet-peek-body
+                                                data-pet-queue
+                                                className={cn(
+                                                    "min-h-0 flex-1 overflow-y-auto overflow-x-hidden",
+                                                    (!quiet || updates[0] != null) && "border-t border-border"
+                                                )}
+                                            >
+                                                {quiet ? (
+                                                    updates[0] != null ? (
+                                                        <LatestUpdate
+                                                            model={model}
+                                                            event={updates[0]}
+                                                            now={now}
+                                                            onLeave={leavePeek}
+                                                            onPeek={peekAt}
+                                                        />
+                                                    ) : null
+                                                ) : (
+                                                    <AnimatePresence initial={false}>
+                                                        {/* no `layout` on rows: the panel is pinned by its bottom edge, so
                                                         a drawer opening below grows it upward and moves every row on
                                                         screen. layout reads that as a move and drags the rows back
                                                         down. Collapsing height on enter/exit reflows siblings without
                                                         measuring anything. */}
-                                                            {rows.map((row, index) => (
-                                                                <motion.div
-                                                                    key={row.key}
-                                                                    {...rowMotion}
-                                                                    initial={
-                                                                        entering.has(`row:${row.key}`)
-                                                                            ? rowMotion.initial
-                                                                            : false
+                                                        {rows.map((row, index) => (
+                                                            <motion.div
+                                                                key={row.key}
+                                                                {...rowMotion}
+                                                                initial={
+                                                                    entering.has(`row:${row.key}`)
+                                                                        ? rowMotion.initial
+                                                                        : false
+                                                                }
+                                                                className="overflow-hidden"
+                                                            >
+                                                                <QueueRow
+                                                                    model={model}
+                                                                    row={row}
+                                                                    now={now}
+                                                                    focused={
+                                                                        index === Math.min(cursor, rows.length - 1)
                                                                     }
-                                                                    className="overflow-hidden"
-                                                                >
-                                                                    <QueueRow
-                                                                        model={model}
-                                                                        row={row}
-                                                                        now={now}
-                                                                        focused={
-                                                                            index === Math.min(cursor, rows.length - 1)
-                                                                        }
-                                                                        formAgent={
-                                                                            formOpen && row.key === formRow
-                                                                                ? formAgent
-                                                                                : undefined
-                                                                        }
-                                                                        onToggleForm={() => {
-                                                                            setCursor(index);
-                                                                            setFormRow((prior) =>
-                                                                                prior === row.key && formOpen
-                                                                                    ? null
-                                                                                    : row.key
-                                                                            );
-                                                                            panelRef.current?.focus();
-                                                                        }}
-                                                                        onFormSent={() => panelRef.current?.focus()}
-                                                                        onLeave={leavePeek}
-                                                                    />
-                                                                </motion.div>
-                                                            ))}
-                                                        </AnimatePresence>
-                                                    )}
-                                                </div>
-
-                                                {review != null ? (
-                                                    <div
-                                                        data-pet-review-line
-                                                        className="flex flex-none flex-wrap items-center gap-x-2 gap-y-1 border-t border-border px-3.5 py-[9px] text-[11px] text-ink-mid"
-                                                    >
-                                                        <span className="min-w-0 flex-1">{review.line}</span>
-                                                        <button
-                                                            type="button"
-                                                            data-pet-review-link
-                                                            onClick={reviewInJarvis}
-                                                            className={cn(
-                                                                "flex-none cursor-pointer whitespace-nowrap rounded-[6px] border border-border px-2 py-[3px] text-[10.5px] font-medium text-accent-soft hover:border-edge-strong hover:text-primary",
-                                                                FOCUS_RING
-                                                            )}
-                                                        >
-                                                            Review in Jarvis
-                                                        </button>
-                                                    </div>
-                                                ) : null}
-
-                                                {drawerUpdates.length > 0 ? (
-                                                    <UpdatesDrawer
-                                                        label={quiet ? "Earlier" : "Since you looked"}
-                                                        updates={drawerUpdates}
-                                                        open={drawerOpen}
-                                                        onToggle={() => setDrawerOpen((prior) => !prior)}
-                                                        opening={opening}
-                                                    >
-                                                        {drawerUpdates.map((event) => (
-                                                            <UpdateRow
-                                                                key={event.id}
-                                                                model={model}
-                                                                event={event}
-                                                                now={now}
-                                                                onLeave={leavePeek}
-                                                                onPeek={peekAt}
-                                                            />
+                                                                    formAgent={
+                                                                        formOpen && row.key === formRow
+                                                                            ? formAgent
+                                                                            : undefined
+                                                                    }
+                                                                    onToggleForm={() => {
+                                                                        setCursor(index);
+                                                                        setFormRow((prior) =>
+                                                                            prior === row.key && formOpen
+                                                                                ? null
+                                                                                : row.key
+                                                                        );
+                                                                        panelRef.current?.focus();
+                                                                    }}
+                                                                    onFormSent={() => panelRef.current?.focus()}
+                                                                    onLeave={leavePeek}
+                                                                />
+                                                            </motion.div>
                                                         ))}
-                                                    </UpdatesDrawer>
-                                                ) : null}
+                                                    </AnimatePresence>
+                                                )}
+                                            </div>
 
-                                                <PetErrand
-                                                    dest={dest}
-                                                    channels={channels}
-                                                    compact={quiet}
-                                                    showPrompt={folded}
-                                                    askable={!folded}
-                                                    onPick={(oid) => globalStore.set(petPeekDestAtom, oid)}
-                                                />
-                                            </>
-                                        )}
+                                            {review != null ? (
+                                                <div
+                                                    data-pet-review-line
+                                                    className="flex flex-none flex-wrap items-center gap-x-2 gap-y-1 border-t border-border px-3.5 py-[9px] text-[11px] text-ink-mid"
+                                                >
+                                                    <span className="min-w-0 flex-1">{review.line}</span>
+                                                    <button
+                                                        type="button"
+                                                        data-pet-review-link
+                                                        onClick={reviewInJarvis}
+                                                        className={cn(
+                                                            "flex-none cursor-pointer whitespace-nowrap rounded-[6px] border border-border px-2 py-[3px] text-[10.5px] font-medium text-accent-soft hover:border-edge-strong hover:text-primary",
+                                                            FOCUS_RING
+                                                        )}
+                                                    >
+                                                        Review in Jarvis
+                                                    </button>
+                                                </div>
+                                            ) : null}
 
-                                        <KeyHints hints={hints} />
-                                    </div>
-                                </motion.div>
-                            ) : null}
-                        </AnimatePresence>
-                    </MotionConfig>
-                </FloatingFocusManager>
-            </div>
+                                            {drawerUpdates.length > 0 ? (
+                                                <UpdatesDrawer
+                                                    label={quiet ? "Earlier" : "Since you looked"}
+                                                    updates={drawerUpdates}
+                                                    open={drawerOpen}
+                                                    onToggle={() => setDrawerOpen((prior) => !prior)}
+                                                    opening={opening}
+                                                >
+                                                    {drawerUpdates.map((event) => (
+                                                        <UpdateRow
+                                                            key={event.id}
+                                                            model={model}
+                                                            event={event}
+                                                            now={now}
+                                                            onLeave={leavePeek}
+                                                            onPeek={peekAt}
+                                                        />
+                                                    ))}
+                                                </UpdatesDrawer>
+                                            ) : null}
+
+                                            <PetErrand
+                                                dest={dest}
+                                                channels={channels}
+                                                compact={quiet}
+                                                showPrompt={folded}
+                                                askable={!folded}
+                                                onPick={(oid) => globalStore.set(petPeekDestAtom, oid)}
+                                            />
+                                        </>
+                                    )}
+
+                                    <KeyHints hints={hints} />
+                                </div>
+                            </motion.div>
+                        ) : null}
+                    </AnimatePresence>
+                </MotionConfig>
+            </PeekFloat>
         </FloatingPortal>
+    );
+}
+
+// The peek's position, in a component of its own. floating-ui commits each new position with flushSync, and the peek
+// moves on every frame it resizes: it stands above the pet with its bottom edge held, so its top follows its height. Held
+// in PetPeek, that re-rendered the whole peek synchronously on every frame of a resize, ~300 renders in 5 s of its drawer
+// opening and shutting and a 26.8 ms p95 frame (overlays-frost-frames). Here a new position re-renders this wrapper and the
+// focus manager only: the panel is `children`, elements PetPeek made, which React skips when they are unchanged.
+function PeekFloat({
+    open,
+    anchor,
+    placement,
+    initialFocus,
+    returnFocus,
+    children,
+}: {
+    open: boolean;
+    anchor: HTMLElement | null;
+    placement: Placement;
+    initialFocus: RefObject<HTMLElement | null>;
+    returnFocus: RefObject<HTMLElement | null> | false;
+    children: ReactElement;
+}) {
+    const { refs, floatingStyles, context } = useFloating({
+        open,
+        placement,
+        strategy: "fixed",
+        middleware: [offset(12), shift({ padding: 8, crossAxis: true })],
+        whileElementsMounted: autoUpdate,
+    });
+    useEffect(() => {
+        refs.setPositionReference(anchor);
+    }, [anchor, refs]);
+    return (
+        <div ref={refs.setFloating} style={floatingStyles} className="z-[65]">
+            <FloatingFocusManager
+                context={context}
+                disabled={!open}
+                initialFocus={initialFocus}
+                returnFocus={returnFocus}
+                modal
+            >
+                {children}
+            </FloatingFocusManager>
+        </div>
     );
 }

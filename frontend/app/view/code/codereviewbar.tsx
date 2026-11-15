@@ -7,6 +7,7 @@
 
 import { COPY_HOLD_MS, type CopyState } from "@/app/element/copyfeedback";
 import { PopoverReveal } from "@/app/element/popoverreveal";
+import { escapeMenusOpenAtom } from "@/app/hook/useEscapeClose";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
@@ -38,6 +39,8 @@ const SEND_LABEL: Record<CopyState, string> = { idle: "Send review", copied: "Co
 // Cockpit) runs on window capture and stands down while focus is in a data-owns-keys region, so the bar marks itself one
 // while a popover is open and the key then reaches this listener. Focus goes to the trigger on open for the same reason:
 // a click does not focus a button everywhere (WebKit), and focus outside the region would let Escape leave Code instead.
+// It also counts itself in escapeMenusOpenAtom, which surface:back-home yields to whatever holds focus: a click elsewhere
+// on the surface moves focus out of the region, and Escape then left Code with the popover still open.
 function useDismissOnEscape(open: boolean, close: () => void, trigger: RefObject<HTMLElement | null>) {
     const closeRef = useRef(close);
     closeRef.current = close;
@@ -45,6 +48,7 @@ function useDismissOnEscape(open: boolean, close: () => void, trigger: RefObject
         if (!open) {
             return;
         }
+        globalStore.set(escapeMenusOpenAtom, (n) => n + 1);
         trigger.current?.focus({ preventScroll: true });
         const onKeyDown = (e: KeyboardEvent) => {
             if (e.key !== "Escape") {
@@ -55,7 +59,10 @@ function useDismissOnEscape(open: boolean, close: () => void, trigger: RefObject
             trigger.current?.focus({ preventScroll: true });
         };
         window.addEventListener("keydown", onKeyDown);
-        return () => window.removeEventListener("keydown", onKeyDown);
+        return () => {
+            window.removeEventListener("keydown", onKeyDown);
+            globalStore.set(escapeMenusOpenAtom, (n) => n - 1);
+        };
     }, [open, trigger]);
 }
 

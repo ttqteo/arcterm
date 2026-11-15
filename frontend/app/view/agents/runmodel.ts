@@ -33,7 +33,7 @@ function landView(land: RunLand): { label: string; tone: RunStatusTone } | undef
 
 /** Pure: what a run whose plan finished is still doing, in the one stage vocabulary (runstage.ts). The dag finishing
  *  is not the run finishing: its lead wraps up and completes it, and only then does a run on its own branch land. */
-export function finishedRunLabel(run: Pick<RunInfo, "dag" | "status" | "land">): string {
+export function finishedRunLabel(run: Pick<RunInfo, "dag" | "status" | "land" | "leadFailed">): string {
     const s = runStage(run);
     return s.key === "wrapping-up" ? "Wrapping up · lead" : s.label;
 }
@@ -43,7 +43,16 @@ export function finishedRunLabel(run: Pick<RunInfo, "dag" | "status" | "land">):
 export function dagProgressLabel(
     run: Pick<
         RunInfo,
-        "runId" | "title" | "projectPath" | "dag" | "status" | "land" | "leadStarted" | "pausedBy" | "pausedUntil"
+        | "runId"
+        | "title"
+        | "projectPath"
+        | "dag"
+        | "status"
+        | "land"
+        | "leadStarted"
+        | "pausedBy"
+        | "pausedUntil"
+        | "leadFailed"
     >,
     leadless: boolean,
     // the runs of the run's project, which a land in line is placed among
@@ -65,9 +74,9 @@ export function dagProgressLabel(
             return same(`Landing · #${place} in line`);
         }
     }
-    if (s.key === "cancelled") {
-        // a cancelled run says how far it got
-        return same(`Cancelled · ${done}/${total}`);
+    if (s.key === "cancelled" || s.key === "failed") {
+        // a cancelled or failed run says how far it got
+        return same(`${s.label} · ${done}/${total}`);
     }
     if (s.key === "land-held") {
         return same(s.needsYou ? "Land held · needs you" : "Land held");

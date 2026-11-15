@@ -91,6 +91,7 @@ import {
 import { isStaying, stayEndsInMs } from "./petstay";
 import {
     clearExpiredPetStay,
+    hologramCornerPxAtom,
     hologramLoadersShownAtom,
     petBubbleAtom,
     petCharacterAtom,
@@ -388,6 +389,14 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     const loaderHologram = useAtomValue(hologramLoadersShownAtom) > 0;
     const cornerPx = HOLOGRAM_SIZE_PX[hologramSize(useAtomValue(petHologramSizeAtom))];
     const hologramPx = floating ? FLOAT_HOLOGRAM_PX : cornerPx;
+    // the corner hologram the toast stack stands above: the creature below, while it is the hologram, shows and stands
+    // in the corner (not on the float bar)
+    const cornerHologramPx =
+        hologram && !inOffice && !loaderHologram && !hidden && floatHologram == null ? hologramPx : null;
+    useEffect(() => {
+        globalStore.set(hologramCornerPxAtom, cornerHologramPx);
+    }, [cornerHologramPx]);
+    useEffect(() => () => globalStore.set(hologramCornerPxAtom, null), []);
     const asking = useAskingCount(model);
     const shownAnchor = hidden ? hiddenAnchor : inOffice ? officeBoss : anchor;
     const hologramCorner: PetCorner =

@@ -12,6 +12,7 @@
 import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
 import type { AgentPart, ChatItem } from "./chatmodel";
 import type { PendingMessage } from "./chatpending";
+import { REVIEW_LANG, splitReviewBlocks } from "./chatverdict";
 import { VISUAL_LANG } from "./chatvisual";
 
 /** A done reply stays this long for the transcript's copy of it to land (the append read waits up to 3 s). */
@@ -170,19 +171,47 @@ export function liveTexts(reply: LiveReply | null, narrates: boolean): string[] 
 
 /** Pure: `items` with the live texts that the transcript does not hold yet drawn at the end, as prose parts of the last
  *  agent group, or of a group of their own after your message. A text counts as held when a prose part of the
- *  conversation's last agent group reads the same. `nextIndex` (the number of entries) keys a new group as the
- *  transcript's will be keyed once its first entry lands, so the row stays the same element. */
+ *  conversation's last agent group reads the same, or, for a reply the transcript cut around an ```arc-review block,
+ *  when every piece of prose around its verdicts does and the group holds a verdict. The last agent group is looked
+ *  for past the messages after it: a message you send as a reply ends lands in the transcript while the live file
+ *  still holds that reply (it lingers LIVE_LINGER_MS, or until the next turn writes), and its copy would otherwise draw
+ *  again under your message. A new reply that reads the same as the one before it then waits for the transcript's copy.
+ *  `nextIndex` (the number of entries) keys a new group as the transcript's will be keyed once its first entry lands,
+ *  so the row stays the same element. */
 export function withLiveReply(items: ChatItem[], texts: readonly string[], nextIndex: number): ChatItem[] {
     if (texts.length === 0) {
         return items;
     }
     const last = items[items.length - 1];
     const group = last?.kind === "agent" ? last : null;
-    const held = new Set(
-        (group?.parts ?? []).flatMap((p) => (p.kind === "prose" && p.live !== true ? [sameText(p.text)] : []))
-    );
+    let before: AgentPart[] = [];
+    for (let i = items.length - 1; i >= 0; i--) {
+        const item = items[i];
+        if (item.kind === "agent") {
+            before = item.parts;
+            break;
+        }
+    }
+    const stored = before.filter((p) => !(p.kind === "prose" && p.live === true));
+    const held = new Set(stored.flatMap((p) => (p.kind === "prose" ? [sameText(p.text)] : [])));
+    const hasVerdict = stored.some((p) => p.kind === "verdict");
+    // the transcript cuts a reply around an ```arc-review block (chatmodel.ts chatItems): its prose before and after are
+    // parts of their own beside the verdict card, so the reply is held when those pieces are, not as one text
+    const isHeld = (t: string): boolean => {
+        if (held.has(sameText(t))) {
+            return true;
+        }
+        if (!hasVerdict || !t.includes(REVIEW_LANG)) {
+            return false;
+        }
+        const pieces = splitReviewBlocks(t);
+        return (
+            pieces.some((p) => p.kind === "verdict") &&
+            pieces.every((p) => p.kind !== "prose" || held.has(sameText(p.text)))
+        );
+    };
     const parts: AgentPart[] = texts
-        .filter((t) => !held.has(sameText(t)))
+        .filter((t) => !isHeld(t))
         .map((text) => ({ kind: "prose", text: tidyLiveText(text), live: true }));
     if (parts.length === 0) {
         return items;

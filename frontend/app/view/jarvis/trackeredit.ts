@@ -69,13 +69,11 @@ export function canRemove(chunks: EditChunk[], labels: string[]): boolean {
     return chunks.some((c) => !gone.has(c.label));
 }
 
-// ResolveChunkIndex reads an all-digit ref as a 1-based index, so such a label is sent as its position
-export function chunkRef(chunks: EditChunk[], label: string): string {
-    if (!/^\d+$/.test(label)) {
-        return label;
-    }
-    const idx = chunks.findIndex((c) => c.label === label);
-    return idx < 0 ? label : String(idx + 1);
+// ResolveChunkIndex reads an all-digit ref as a 1-based index, so such a label goes as "=<label>", which the server
+// reads as a label only: a position worked out here can name another chunk by the time the edit commits (one removed
+// out of band in between). A label that starts with "=" takes the prefix too, so the server strips only that.
+export function chunkRef(_chunks: EditChunk[], label: string): string {
+    return /^\d+$/.test(label) || label.startsWith("=") ? "=" + label : label;
 }
 
 export function stepChunk(

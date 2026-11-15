@@ -3,6 +3,7 @@
 
 import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
 import { peekClickLabel } from "@/app/cockpit/ctrlheld";
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
 import { escapeMenusOpenAtom } from "@/app/hook/useEscapeClose";
 import { anyModalOpen } from "@/app/modals/modalstack";
@@ -182,6 +183,7 @@ import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { focusedTerminalBlockId, redrawTerminal } from "@/app/view/term/termwrap";
 import { isMacOS } from "@/util/platformutil";
 import { fireAndForget } from "@/util/util";
+import { invoke } from "@tauri-apps/api/core";
 import type { MutableRefObject } from "react";
 import { ownsKeys } from "./dispatcher";
 import { listNavAtom } from "./listnav";
@@ -405,6 +407,14 @@ function backOrHome(model: AgentsViewModel): void {
     }
 }
 
+// Sidecar is a window of the Tauri host (sidecar.rs open_sidecar): built the first time, brought forward after. A refusal
+// from the host is shown as a toast, never swallowed.
+function openSidecar(): void {
+    invoke("open_sidecar").catch((err: unknown) => {
+        pushToast({ title: "Sidecar did not open", message: String(err), level: "error" });
+    });
+}
+
 export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
     // `[`/`]` cycle the rail order (SURFACE_ORDER). A surface outside the cycle (settings) enters at an end.
     const cycleSurface = (delta: number) => {
@@ -565,6 +575,16 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             label: "New council",
             when: (ctx) => !ctx.modalOpen,
             run: () => openNewCouncil(model),
+        },
+        {
+            // Sidecar, the second window: every agent at a glance on another screen (sidecar.rs). No chord: it is opened by
+            // name, from the palette's Open Sidecar row, or What's new's Try it; the matcher skips it.
+            id: "open-sidecar",
+            keys: "",
+            group: "Global",
+            label: "Open Sidecar",
+            when: (ctx) => !ctx.modalOpen,
+            run: () => openSidecar(),
         },
         {
             // The rail's Translate panel (translatestore.ts): opens it with the caret in the box, closes it again. A chord,

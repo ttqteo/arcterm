@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./tailwind.css";
 import { bootWaveCore } from "@/app/boot/boot-core";
 import { CockpitRoot } from "@/app/cockpit/cockpit-root";
-import { deriveVersionInfo, versionInfoAtom } from "@/app/cockpit/versioninfo";
+import { BUILD_COMMIT, deriveVersionInfo, versionInfoAtom } from "@/app/cockpit/versioninfo";
 import { globalStore } from "@/app/store/jotaiStore";
 import { installVaultSyncTriggers } from "@/app/store/vaultsync";
 import { hlog, installTauriApi, type InitData } from "./api";
@@ -49,7 +49,7 @@ async function boot() {
         loadFonts(); // register the bundled fonts (fonts swap in on load)
         hlog("init: ws=" + init.wsEndpoint + " web=" + init.webEndpoint + " version=" + init.version);
 
-        const version = deriveVersionInfo(init.appVersion, init.version, init.buildTime, init.platform);
+        const version = deriveVersionInfo(init.appVersion, init.version, init.buildTime, init.platform, BUILD_COMMIT);
         globalStore.set(versionInfoAtom, version);
         if (version.mismatch) {
             // not fatal: an old wavesrv boots fine and only fails once the frontend calls a command

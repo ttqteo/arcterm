@@ -40,6 +40,43 @@ func TestApplyOpsRename(t *testing.T) {
 	}
 }
 
+func TestApplyOpsChunkBaseCommit(t *testing.T) {
+	const a, b = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	e := mkEffort()
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "Phase 4", Base: a}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.Chunks[3].BaseCommit; got != a {
+		t.Fatalf("addChunk base = %q, want %q", got, a)
+	}
+	// a rename with no base (no checkout to read) keeps the old one rather than clearing it
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "renameChunk", Chunk: "Phase 4", Label: "Phase four"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.Chunks[3].BaseCommit; got != a {
+		t.Fatalf("rename without base = %q, want %q kept", got, a)
+	}
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "renameChunk", Chunk: "Phase four", Label: "Phase 4", Base: b}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.Chunks[3].BaseCommit; got != b {
+		t.Fatalf("rename base = %q, want %q", got, b)
+	}
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "recheckChunk", Chunk: "Phase 3", Base: b, Note: "still right"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	c := e.Chunks[2]
+	if c.BaseCommit != b {
+		t.Fatalf("recheck base = %q, want %q", c.BaseCommit, b)
+	}
+	if last := c.Notes[len(c.Notes)-1].Text; last != "checked against bbbbbbbbb · still right" {
+		t.Fatalf("recheck note = %q", last)
+	}
+	// nothing to check against: refused, so the card does not claim a check that measured nothing
+	expectErrCode(t, ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "recheckChunk", Chunk: "Phase 3"}}, "", effortNow), "EC-NO-BASE")
+	expectErrCode(t, ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "recheckChunk", Chunk: "nope", Base: b}}, "", effortNow), "EC-")
+}
+
 func TestApplyOpsAddChunkInsertAt(t *testing.T) {
 	e := mkEffort()
 	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "Phase 0", At: intPtr(1)}}, "", effortNow)
@@ -168,6 +205,30 @@ func TestApplyOpsResolveChunkRefs(t *testing.T) {
 	// ambiguous: "Phase" matches nothing exactly; "Phase 1" is exact — try a substring that is not a label
 	_, err = ResolveChunkIndex(e, "nope")
 	expectErrCode(t, err, "EC-UNKNOWN-CHUNK")
+}
+
+// An all-digit label goes as "=<label>": it resolves by label alone, and a label that is gone is an unknown chunk,
+// never the chunk now at that position.
+func TestResolveChunkIndexExactLabel(t *testing.T) {
+	e := &waveobj.Effort{Chunks: []waveobj.EffortChunk{{Label: "a"}, {Label: "1"}, {Label: "=b"}, {Label: "b"}}}
+	if idx, err := ResolveChunkIndex(e, "=1"); err != nil || idx != 1 {
+		t.Fatalf("=1: idx=%d err=%v", idx, err)
+	}
+	if idx, err := ResolveChunkIndex(e, "1"); err != nil || idx != 0 {
+		t.Fatalf("bare 1 stays a position: idx=%d err=%v", idx, err)
+	}
+	if idx, err := ResolveChunkIndex(e, "==b"); err != nil || idx != 2 {
+		t.Fatalf("==b: idx=%d err=%v", idx, err)
+	}
+	if idx, err := ResolveChunkIndex(e, "=b"); err != nil || idx != 3 {
+		t.Fatalf("=b: idx=%d err=%v", idx, err)
+	}
+	_, err := ResolveChunkIndex(e, "=2")
+	expectErrCode(t, err, "EC-UNKNOWN-CHUNK")
+	only := &waveobj.Effort{Chunks: []waveobj.EffortChunk{{Label: "=x"}}}
+	if idx, err := ResolveChunkIndex(only, "=x"); err != nil || idx != 0 {
+		t.Fatalf("a label starting with = typed bare: idx=%d err=%v", idx, err)
+	}
 }
 
 func TestApplyOpsSetChunkStatusEmitsEvents(t *testing.T) {

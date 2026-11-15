@@ -13,9 +13,11 @@ import (
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
+	"github.com/wavetermdev/waveterm/pkg/gitinfo"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/jarvisstate"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -40,6 +42,10 @@ func (ws *WshServer) EffortCreateCommand(ctx context.Context, data wshrpc.Comman
 		ParentOID: data.ParentOID,
 	}
 	seen := map[string]bool{}
+	head := ""
+	if len(data.Chunks) > 0 {
+		head = effortHead(ctx, data.Project)
+	}
 	for _, seed := range data.Chunks {
 		label := strings.TrimSpace(seed.Label)
 		if label == "" {
@@ -52,7 +58,7 @@ func (ws *WshServer) EffortCreateCommand(ctx context.Context, data wshrpc.Comman
 			return nil, fmt.Errorf("EC-DUPLICATE-LABEL: chunk %q already exists", label)
 		}
 		seen[label] = true
-		e.Chunks = append(e.Chunks, waveobj.EffortChunk{Label: label, Status: "pending", Owner: seed.Owner})
+		e.Chunks = append(e.Chunks, waveobj.EffortChunk{Label: label, Status: "pending", Owner: seed.Owner, BaseCommit: head})
 	}
 	if err := effortstore.Create(ctx, e); err != nil {
 		return nil, err
@@ -81,7 +87,8 @@ func (ws *WshServer) EffortMutateCommand(ctx context.Context, data wshrpc.Comman
 	for i := range data.Ops {
 		data.Ops[i].ParentOID = effortstore.BareOID(data.Ops[i].ParentOID)
 	}
-	if _, err := effortstore.Get(ctx, data.EffortOID); err != nil {
+	cur, err := effortstore.Get(ctx, data.EffortOID)
+	if err != nil {
 		return nil, err
 	}
 	// link op: parent must exist and not be self — pre-validated outside the txn so the error is
@@ -113,9 +120,20 @@ func (ws *WshServer) EffortMutateCommand(ctx context.Context, data wshrpc.Comman
 			}
 		}
 	}
+	// the ops that write a chunk's text carry the project's HEAD, read once, outside the store transaction
+	head, headRead := "", false
+	for i := range data.Ops {
+		if !jarvis.StampsBase(data.Ops[i].Op) {
+			continue
+		}
+		if !headRead {
+			head, headRead = effortHead(ctx, cur.Project), true
+		}
+		data.Ops[i].Base = head
+	}
 	author := noteAuthorFor(ctx, data)
 	var updated *waveobj.Effort
-	err := effortstore.Update(ctx, data.EffortOID, func(e *waveobj.Effort) error {
+	err = effortstore.Update(ctx, data.EffortOID, func(e *waveobj.Effort) error {
 		if err := jarvis.ApplyEffortOpsAs(e, data.Ops, data.Note, time.Now().UnixMilli(), author); err != nil {
 			return err
 		}
@@ -188,6 +206,77 @@ func linkSessionToEffort(ctx context.Context, sourceBlock string, effortOID stri
 	if changed {
 		wcore.SendWaveObjUpdate(tab)
 	}
+}
+
+// effortProjectPath is the folder of the initiative's registered project, "" when it has none: the same lookup the
+// Brief's Work on uses (initiativework.ts projectPathFor).
+func effortProjectPath(project string) string {
+	if project == "" {
+		return ""
+	}
+	return strings.TrimSpace(wconfig.GetWatcher().GetFullConfig().Projects[project].Path)
+}
+
+// effortHead is the HEAD of the initiative's project checkout, "" when there is none to read. Best effort: a chunk
+// written without a base only loses its staleness count.
+func effortHead(ctx context.Context, project string) string {
+	dir := effortProjectPath(project)
+	if dir == "" {
+		return ""
+	}
+	head, err := gitinfo.HeadCommit(ctx, dir)
+	if err != nil {
+		return ""
+	}
+	return head
+}
+
+func (ws *WshServer) EffortChunkDriftCommand(ctx context.Context, data wshrpc.CommandEffortChunkDriftData) (*wshrpc.CommandEffortChunkDriftRtnData, error) {
+	e, err := effortstore.Get(ctx, effortstore.BareOID(data.EffortOID))
+	if err != nil {
+		return nil, err
+	}
+	idx, err := jarvis.ResolveChunkIndex(e, data.Chunk)
+	if err != nil {
+		return nil, err
+	}
+	c := e.Chunks[idx]
+	base := c.BaseCommit
+	dir := effortProjectPath(e.Project)
+	if dir == "" {
+		return &wshrpc.CommandEffortChunkDriftRtnData{Base: base}, nil
+	}
+	// a chunk older than BaseCommit is measured from the commit HEAD was at when it was last updated
+	written := jarvis.ChunkWrittenTs(e, c)
+	var hist *jarvis.StaleHistory
+	if written > 0 {
+		hist, _ = staleHistoryFor(ctx, dir, written-staleMarginMs)
+	}
+	inferred := false
+	if base == "" {
+		if hist != nil {
+			base = hist.InferredBase(c, written)
+		}
+		if base == "" && written > 0 {
+			base, _ = gitinfo.CommitBefore(ctx, dir, written/1000)
+		}
+		if base == "" {
+			return &wshrpc.CommandEffortChunkDriftRtnData{}, nil
+		}
+		inferred = true
+	}
+	n, ts, err := gitinfo.CommitsSince(ctx, dir, base)
+	if err != nil {
+		// a base gone from the checkout (history rewritten, another clone) measures nothing
+		return &wshrpc.CommandEffortChunkDriftRtnData{Base: base, Inferred: inferred}, nil
+	}
+	rtn := &wshrpc.CommandEffortChunkDriftRtnData{Known: true, Base: base, Behind: n, BaseTs: ts, Inferred: inferred}
+	if hist != nil {
+		if res, ok := hist.AssessChunk(c, written); ok {
+			rtn.Files = res.Files
+		}
+	}
+	return rtn, nil
 }
 
 func (ws *WshServer) EffortDeleteCommand(ctx context.Context, data wshrpc.CommandEffortDeleteData) error {

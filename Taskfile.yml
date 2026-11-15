@@ -52,14 +52,14 @@ tasks:
         cmd: node scripts/sync-tauri-version.mjs --check
 
     tauri:build:
-        desc: "Production build of a commit, not the working tree (scripts/release-build.mjs): checks it out into .worktrees/release-build so edits other agents make meanwhile stay out, builds there, and copies the installer to releases/ named with the commit. BUMP=none|patch|minor|major (default none) bumps first — pass one for a release. FROM=<commit> (default HEAD), or FROM=tree to build the checkout with its uncommitted edits."
+        desc: "Production build of a commit, not the working tree (scripts/release-build.mjs): checks it out into .worktrees/release-build so edits other agents make meanwhile stay out, builds there, and copies the installer to releases/ named with the commit. BUMP=none|patch|minor|major|auto (default none) bumps first — pass one for a release; auto reads CHANGELOG.md's Unreleased lines (Added -> minor, else patch), a hand-picked bump smaller than they call for stops unless FORCE=1, and a bumped build is tagged v<version> on its commit. FROM=<commit> (default HEAD), or FROM=tree to build the checkout with its uncommitted edits."
         aliases:
             - build:app
         # the script runs the post-bump half as its own `task` process: Task resolves the global VERSION var once
         # per invocation, so bumping and building in one run would stamp the Go binaries and the wsh-<version>
         # filenames with the pre-bump version. That makes it a CLI invocation, which is why the callee cannot be
         # marked internal.
-        cmd: node scripts/release-build.mjs --bump {{.BUMP | default "none"}} --from {{.FROM | default "HEAD"}}
+        cmd: node scripts/release-build.mjs --bump {{.BUMP | default "none"}} --from {{.FROM | default "HEAD"}}{{if .FORCE}} --force{{end}}
 
     tauri:build:post-bump:
         desc: The build half of tauri:build, run in the directory it builds. Call tauri:build instead — on its own this builds the working tree at whatever version package.json holds, and copies nothing to releases/.

@@ -929,10 +929,15 @@ type EffortChunk struct {
 	// Due is a local date, "YYYY-MM-DD": from that day on, while the chunk is still open, it waits in
 	// Needs you (a re-measure, a decision to revisit). A day, not a time, because that is what such a
 	// decision names. Nothing fires at the date; the attention list sees it on its next read.
-	Due       string         `json:"due,omitempty"`
-	WorkRefs  []ChunkWorkRef `json:"workrefs,omitempty"` // runs/agent sessions currently working this chunk (populated by Task 9+)
-	Notes     []EffortNote   `json:"notes,omitempty"`    // append-only trail
-	UpdatedTs int64          `json:"updatedts"`
+	Due string `json:"due,omitempty"`
+	// BaseCommit is the project's HEAD when the chunk's text was last written against the code: when it was
+	// added, renamed, or marked checked. A chunk not yet done can go stale while the code moves under it; the
+	// commits since this one are what the chunk card and `wsh effort show` count. "" when the initiative had no
+	// project with a git checkout at the time, or the chunk predates the field.
+	BaseCommit string         `json:"basecommit,omitempty"`
+	WorkRefs   []ChunkWorkRef `json:"workrefs,omitempty"` // runs/agent sessions currently working this chunk (populated by Task 9+)
+	Notes      []EffortNote   `json:"notes,omitempty"`    // append-only trail
+	UpdatedTs  int64          `json:"updatedts"`
 }
 
 // ChunkWorkRef links live work to a chunk. Advisory, never causal: nothing auto-ticks on detach.

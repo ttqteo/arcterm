@@ -9,12 +9,24 @@ import {
     renderWait,
     shotsManifest,
     shotsUnder,
+    unknownScenarios,
 } from "./report.mjs";
 
 const pass = { name: "s1", steps: [{ step: "a", ok: true, detail: "d" }] };
 const fail = { name: "s2", steps: [{ step: "b", ok: false, detail: "boom" }] };
 const errored = { name: "s3", steps: [], error: "attach failed" };
 const skipped = { name: "s4", steps: [{ step: "c", skip: true, detail: "no scan report in this profile" }] };
+
+describe("unknownScenarios", () => {
+    const all = [{ name: "chat-redesign" }, { name: "agent-chat" }];
+    it("names every asked-for name no scenario has, beside ones that exist", () => {
+        expect(unknownScenarios(all, ["agent-chat", "chat-verdict-handoff", "typo"])).toEqual(["chat-verdict-handoff", "typo"]);
+    });
+    it("is empty when every name exists, or when none is asked for", () => {
+        expect(unknownScenarios(all, ["chat-redesign"])).toEqual([]);
+        expect(unknownScenarios(all, [])).toEqual([]);
+    });
+});
 
 describe("exitCode", () => {
     it("is 0 when every step of every scenario passes", () => {

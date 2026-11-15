@@ -114,6 +114,76 @@ func commitAt(t *testing.T, dir, file, content string, unixSec int64) string {
 	return sha
 }
 
+func TestCommitsSince(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	c1 := commitAt(t, dir, "a.txt", "1\n", 1000)
+	_ = commitAt(t, dir, "a.txt", "1\n2\n", 2000)
+	c3 := commitAt(t, dir, "a.txt", "1\n2\n3\n", 3000)
+
+	n, ts, err := CommitsSince(context.Background(), dir, c1)
+	if err != nil || n != 2 || ts != 1000*1000 {
+		t.Fatalf("since c1 = %d, %d, %v; want 2, 1000000, nil", n, ts, err)
+	}
+	if n, _, err := CommitsSince(context.Background(), dir, c3); err != nil || n != 0 {
+		t.Fatalf("since HEAD = %d, %v; want 0, nil", n, err)
+	}
+	if _, _, err := CommitsSince(context.Background(), dir, strings.Repeat("e", 40)); err == nil {
+		t.Fatal("a commit not in the repo should error")
+	}
+}
+
+func TestFirstParentLog(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	c1 := commitAt(t, dir, "a.txt", "1\n", 1000)
+	// a branch commit made early, merged late: it lands at the merge
+	git(t, dir, "checkout", "-q", "-b", "side")
+	_ = commitAt(t, dir, "b.txt", "b\n", 1500)
+	git(t, dir, "checkout", "-q", "main")
+	_ = commitAt(t, dir, "a.txt", "1\n2\n", 2000)
+	date := time.Unix(3000, 0).UTC().Format(time.RFC3339)
+	cmd := exec.Command("git", "-C", dir, "merge", "--no-ff", "-q", "-m", "merge side", "side")
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_AUTHOR_DATE="+date,
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t", "GIT_COMMITTER_DATE="+date)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("merge: %v\n%s", err, out)
+	}
+	merge, _ := HeadCommit(context.Background(), dir)
+	git(t, dir, "mv", "a.txt", "c.txt")
+	c4 := commitAt(t, dir, "c.txt", "1\n2\n", 4000)
+
+	got, err := FirstParentLog(context.Background(), dir, 0, c1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || got[0].SHA != c4 || got[1].SHA != merge {
+		t.Fatalf("log = %+v", got)
+	}
+	if f := got[0].Files; len(f) != 1 || f[0].Status != 'R' || f[0].From != "a.txt" || f[0].Path != "c.txt" {
+		t.Fatalf("rename row = %+v", f)
+	}
+	if f := got[1].Files; len(f) != 1 || f[0].Path != "b.txt" || got[1].Ts != 3000*1000 {
+		t.Fatalf("merge row = %+v ts %d", f, got[1].Ts)
+	}
+	if after, err := FirstParentLog(context.Background(), dir, 2500*1000, ""); err != nil || len(after) != 2 {
+		t.Fatalf("after 2500s = %d commits, %v; want 2", len(after), err)
+	}
+
+	sub := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = commitAt(t, dir, "sub/d.txt", "d\n", 5000)
+	tracked, err := TrackedFiles(context.Background(), sub)
+	if err != nil || !reflect.DeepEqual(tracked, []string{"b.txt", "c.txt", "sub/d.txt"}) {
+		t.Fatalf("tracked from a subfolder = %v, %v", tracked, err)
+	}
+	if !IsAncestor(context.Background(), dir, c1, c4) || IsAncestor(context.Background(), dir, c4, c1) {
+		t.Fatal("IsAncestor")
+	}
+}
+
 func TestCommitBefore(t *testing.T) {
 	dir := t.TempDir()
 	git(t, dir, "init", "-b", "main")

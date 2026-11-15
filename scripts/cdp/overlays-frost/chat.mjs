@@ -306,16 +306,19 @@ export default function (kit) {
                 R.openFileInPanel(agentsModel(), ${q(A)}, { abs: ${q(md)}, root: ${q(ctx.dir)} });
                 return true;`
             );
-            const button = await until(h, `!!document.querySelector("[data-outline-button]")`, WAIT_MS);
-            await h.ev(`document.querySelector("[data-outline-button]")?.click()`);
-            const up = await until(h, `!!document.querySelector("[data-outline-list]")`);
+            // the File tab's Outline is the rail of dashes on the document's right edge (615a57bd4): a click opens its
+            // list with focus in it
+            const rail = await until(h, `!!document.querySelector("[data-outline-rail]")`, WAIT_MS);
+            await h.ev(`document.querySelector("[data-outline-rail]")?.click()`);
+            const up = await until(h, `!!document.querySelector("[data-outline-list]") && document.activeElement?.matches?.("[data-outline-item]") === true`);
             const v = await probePanel(h, parentOf("[data-outline-list]"));
             const items = await h.ev(`document.querySelectorAll("[data-outline-item]").length`);
             await shot(h, "7-outline");
-            // the button toggles it (Escape is the file tab's own key here, which this step leaves alone)
-            await click(h, "[data-outline-button]");
-            const closed = await until(h, `!document.querySelector("[data-outline-list]")`);
-            rec(`${name}: the Outline popover is a frosted panel listing the headings, and the button closes it`, button && up && v.ok && items >= 4 && closed, { button, v: v.detail, items, closed });
+            // Escape from the list closes it and nothing else: the file stays open on the Agent surface
+            await press(h, KEYS.escape);
+            const escClosed = await until(h, `!document.querySelector("[data-outline-list]")`);
+            const fileStays = await h.ev(`!!document.querySelector("[data-outline-rail]")?.checkVisibility()`);
+            rec(`${name}: a click on the File tab's Outline rail opens a frosted list of the headings with focus in it, and Escape from the list closes it and leaves the file open`, rail && up && v.ok && items >= 4 && escClosed && fileStays, { rail, v: v.detail, items, escClosed, fileStays });
         });
     }
 

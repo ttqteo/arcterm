@@ -6,6 +6,85 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Sidecar's first open is maximized on the other screen.** Unit tests of the screen choice only; no
+  second screen was at hand. With two screens and the arcterm window on one, Ctrl+P → "Open Sidecar" → the Sidecar
+  window comes up maximized on the other screen (the larger one, with three), takes the title `arcterm Sidecar`
+  (`arcterm Sidecar (dev)` in a dev build), and un-maximizing leaves a 1280×800 window centred there (smaller on a
+  small screen, never past 90% of it). On a screen of a different scale from the main window's the size is still right.
+  With one screen it opens centred, not maximized. Commit: feat(sidecar) the Sidecar window from the Tauri host
+- [ ] (arcterm) **Sidecar closes when the main window is destroyed, and stays when it is only hidden.** Tray icon off
+  (Settings → `app:tray`): open Sidecar, close the main window → Sidecar closes with it and arcterm quits. Tray icon
+  on: close the main window → it hides to the icon and Sidecar stays open; Quit from the icon closes both. Commit: same.
+- [ ] (arcterm) **Sidecar reopens as last time.** Unit tests of the state and the restore decision only: no scenario can
+  relaunch the app. With two screens, open Sidecar, drag or resize it, press F11 (or its full-screen button), then quit
+  arcterm (tray icon → Quit, and once by closing the main window with the tray icon off) → the next launch reopens
+  Sidecar on the same screen, at the same frame, full screen, without taking the focus from the main window. Close
+  Sidecar with its own close button, quit, launch → it stays shut. Quit with Sidecar maximized, unplug that screen,
+  launch → Sidecar comes up maximized on the main window's screen. Commit: feat(sidecar) Sidecar reopens as last time
+- [ ] (arcterm) **Sidecar will not drag below 340×440.** The `sidecar-wall` scenario cannot check it: on Windows the
+  host's `min_inner_size` clamps a person dragging an edge, not a programmatic `set_size` (a live run set 200×200 and read
+  200×207 back), so step 2 only checks the page's own window calls. Open Sidecar, drag its bottom-right corner toward the
+  top-left → it stops at 340×440 and the wall still draws whole tiles (no tile under 300 px wide). Commit: test(sidecar)
+  the sidecar-wall CDP scenario
+- [ ] (arcterm) **Part 1 of Sidecar has no release-build RAM measurement.** The dev prototype read about 80 MB for the
+  slim page against the spec's 100 MB budget. Before part 2 merges, measure a `task tauri:build` with 12 agents
+  running: Sidecar's renderer and GPU process in Task Manager (WebView2 processes with the Sidecar window open, minus
+  with it closed), at open and after 15 minutes, and log the figure in open-issues.md's "RAM watch".
+
+- [ ] (arcterm) **The version names the commit it was built from.** Unit tests, the typecheck, and the dev Vite
+  server's `/@vite/env` (it served `__ARC_COMMIT__` from `ARC_BUILD_COMMIT`, and from git without it) only; no app ran.
+  `task tauri:build`, install → the footer's bottom right reads `v<version> · <short commit>` (the commit in the
+  installer's name in `releases/`, with no `-dirty`), its tooltip adds "commit <sha>", and Settings → About shows
+  the same under Commit. `task dev` with an uncommitted edit → `· <sha>-dirty`. Commit: feat(cockpit) "the version
+  names the commit the build was made from".
+
+- [ ] (arcterm) **An agent's run counts leave cancelled runs out.** Unit tests and the typecheck only; no dev app ran.
+  From an agent, `wsh runs start` two runs, cancel one → that agent's row in the Agent sidebar shows the live run's
+  chip (its progress such as `1/3`, or no words while it plans), not "2 runs", and its header reads "↳ <the live
+  run's goal>", which opens it with no menu; cancel the other too → the chip reads "cancelled" and the header
+  "↳ <newest goal> · cancelled", both opening the newest of them. Commits: fix(agents) "the run chip leaves cancelled
+  runs out", fix(agents) "the header's started runs leave cancelled runs out".
+- [ ] (arcterm) **An open chunk names the files that changed since it was written.** Unit tests, the typecheck and
+  a scan over the real initiatives' JSON only; no dev app ran. Rebuild, wait two minutes after start (the first scan),
+  then open "Repo hygiene: lint, prettier, stale comments, test gaps" in the initiative sheet → rows such as
+  "chatpane.tsx fails prettier --check…" carry a grey "changed since" chip whose tooltip lists "chatpane.tsx changed
+  15 times"; open one → under its status reads "chatpane.tsx changed 15 times since this was written (<day>): check
+  it still holds" with Mark checked; Mark checked → the chip and the line go. "ReleaseHub parser image + GitHub
+  follow-ups" chunk 4 (IMAGE.md) → an amber "file gone" chip, and "rewrite or skip it". `wsh effort stale` lists the
+  same chunks; `wsh effort show <effort>` prints "(written around <sha>, N commits ago; … changed N times)" on old
+  chunks, and after the first scan "written at" (the backfilled base).
+- [ ] (arcterm) **An open chunk counts the commits since it was written.** Unit tests and the typecheck only; no dev
+  app ran. In an initiative whose project is registered, `wsh effort chunk add <effort> "probe"`, make a commit in that
+  project, then open the chunk in the initiative sheet → under its status reads "Written 1 commit ago (<day>): check it
+  still holds" with Mark checked; Mark checked → the line goes, and the trail gains "checked against <sha>".
+  `wsh effort show <effort>` prints "(written at <sha>, 1 commit ago)" beside it before, "the code has not moved
+  since" after. Work on this chunk → the agent's prompt asks it to check the chunk still holds first. Chunks made
+  before this change show no line. Commit: feat(initiatives) a chunk keeps the commit it was written at
+
+- [ ] (arcterm) **↑ in Chat's empty box falls through to history when the take-back finds nothing.** Only the typecheck
+  covers it. While Claude works, send a message from Chat so it shows as Queued, wait until Claude takes it but its
+  bubble still stands, then press ↑ in the empty box → after about 2 s the last message sent comes back into the box
+  (it did nothing before). With a message still truly queued, ↑ still takes it back instead. Commit: fix(chat) ↑ falls
+  through to history when the take-back finds nothing, and the bash ghost layer wraps at the editor's width
+- [ ] (arcterm) **A long bash command's ghost stays after its last character.** In Chat type `!` and a command long
+  enough to wrap past the box's max height so it scrolls, with a suggestion showing → the faint suggestion sits right
+  after the last character, on the same wrapped lines as the text (the layer is now padded by the scrollbar's width).
+  Same commit.
+
+- [ ] (arcterm) **Sixel images draw in a terminal of the installed app.** The dev app applies no CSP, so only a
+  packaged build shows it. In a terminal run
+  `printf 'Pq#0;2;0;0;0#1;2;100;100;0#2;2;0;100;0#1~~@@vv@@~~@@~~$#2??}}GG}}??}}??-#1!14@\'` → a small
+  yellow-and-green "HI" draws, and `waveapp.log` has no new `WebAssembly.instantiate` rejection after a terminal
+  mounts (it had one per mount). Commit: fix(tauri) the CSP lets the terminal's sixel decoder compile its WASM
+- [ ] (arcterm) **Jarvis and initiatives polish batch, in the app.** Unit tests and the typecheck only; no dev app
+  ran. Check each: (1) the initiative link in an agent's header has the tooltip "… Ctrl+click to peek at it in
+  Sprout"; (2) the initiative band's Mark done and Add note show their m / n hints as key caps that sit level in the
+  button; (3) a run whose lead process died (kill the lead's claude) reads "Failed · n/m" in red in the Agent tree,
+  "failed" on the Brief and Failed in the run sheet; (4) on a fresh launch, open Sprout before Jarvis: the "N
+  initiatives changed · M idle" line shows once the briefing loads; (5) a plan a run worker proposes
+  (`wsh effort chunk add ... --proposed` from its terminal) opens that worker from Needs you; (6) in the Brief, delete a
+  stage's last chunks, then within 5 s rename the next stage: the stage you clicked is renamed. Commits: branch
+  fix/jarvis-initiatives-polish (c6fa4470b … ffacae754)
 - [ ] (arcterm) **The spring's feel on the Cockpit, Jarvis, Diff and Setup, on a real roster.** The
   `surfaces-spring-*` scenarios time each motion on fixtures (`task verify:ui -- surfaces-spring-cockpit`
   …); no packaged build ran them on your own agents and projects. In the packaged app on a real roster: the Cockpit
@@ -2846,3 +2925,7 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   `i` from the message box: the band opens and `m`, `n`, `w` and the arrows work without a click. Once on a Mac
   (`task dev:browser`, then `task verify:ui -- chat-initiative-band initiative-popover initiative-link`): the scenarios
   ran only on WebView2 in run 175af141, with fixture agents (`initiativebandview.tsx`, `chatpane.tsx` goOn).
+- [ ] (arcterm) **A reply draws once when you send the next message as it ends.** In a Claude agent's Chat, send a
+  message while the reply's last paragraph is still streaming (once queued, once with Send now), and once right after it
+  ends: the reply stays one copy above your message, with no second copy under it and no flicker (`chatlive.ts`
+  withLiveReply; unit tests only, no scenario streams a live reply).

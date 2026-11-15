@@ -1,0 +1,80 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { bumpTooSmall, describeCounts, suggestBump, unreleasedSection } from "./release-bump.mjs";
+
+const HEADER = "# Changelog\n\nAdd one line under `### Added` in the top section.\n\n";
+
+describe("unreleasedSection", () => {
+    it("returns the top section's body when it is Unreleased", () => {
+        const md = `${HEADER}## Unreleased\n\n### Fixed\n\n- a fix\n\n## 1.1.3 — 2026-11-14\n\n### Added\n\n- old\n`;
+        expect(unreleasedSection(md)).toBe("\n### Fixed\n\n- a fix\n");
+    });
+
+    it("is null when the top section is already dated", () => {
+        expect(unreleasedSection(`${HEADER}## 1.1.3 — 2026-11-14\n\n### Added\n\n- x\n`)).toBeNull();
+    });
+
+    it("reads CRLF files", () => {
+        expect(unreleasedSection("## Unreleased\r\n\r\n- a\r\n")).toBe("\n- a\n");
+    });
+});
+
+describe("suggestBump", () => {
+    it("is minor when the release adds something", () => {
+        const md = `${HEADER}## Unreleased\n\n### Added\n\n- new thing\n\n### Fixed\n\n- a fix\n\n## 1.1.3 — 2026-11-14\n`;
+        expect(suggestBump(md)).toEqual({
+            bump: "minor",
+            counts: { added: 1, changed: 0, fixed: 1, other: 0, big: 0 },
+        });
+    });
+
+    it("is minor for a big line even outside Added", () => {
+        expect(suggestBump(`## Unreleased\n\n### Changed\n\n- reworked <!-- big -->\n`).bump).toBe("minor");
+    });
+
+    it("is patch for changes and fixes only, counting wrapped lines once", () => {
+        const md = `## Unreleased\n\n### Changed\n\n- one\n  wrapped onto two\n\n### Fixed\n\n- two\n- three\n\n## 1.0.0 — 2026-11-04\n\n### Added\n\n- old\n`;
+        expect(suggestBump(md)).toEqual({ bump: "patch", counts: { added: 0, changed: 1, fixed: 2, other: 0, big: 0 } });
+    });
+
+    it("ignores the Added heading of an older release", () => {
+        expect(suggestBump(`## Unreleased\n\n### Fixed\n\n- f\n\n## 1.1.3 — 2026-11-14\n\n### Added\n\n- old\n`).bump).toBe(
+            "patch"
+        );
+    });
+
+    it("is none with nothing unreleased", () => {
+        expect(suggestBump(`${HEADER}## Unreleased\n\n## 1.1.3 — 2026-11-14\n\n- x\n`).bump).toBe("none");
+        expect(suggestBump(`${HEADER}## 1.1.3 — 2026-11-14\n\n### Added\n\n- x\n`).bump).toBe("none");
+    });
+
+    it("reads the repo's own CHANGELOG.md", () => {
+        const md = readFileSync(fileURLToPath(new URL("../CHANGELOG.md", import.meta.url)), "utf8");
+        expect(["none", "patch", "minor"]).toContain(suggestBump(md).bump);
+    });
+});
+
+describe("bumpTooSmall", () => {
+    it("refuses a patch for a release that adds something", () => {
+        expect(bumpTooSmall("patch", "minor")).toMatch(/call for minor/);
+    });
+
+    it("lets an equal or bigger bump through", () => {
+        expect(bumpTooSmall("minor", "minor")).toBeNull();
+        expect(bumpTooSmall("minor", "patch")).toBeNull();
+        expect(bumpTooSmall("major", "minor")).toBeNull();
+        expect(bumpTooSmall("patch", "none")).toBeNull();
+    });
+
+    it("never stops a build with no bump", () => {
+        expect(bumpTooSmall("none", "minor")).toBeNull();
+    });
+});
+
+describe("describeCounts", () => {
+    it("lists the non-zero counts", () => {
+        expect(describeCounts({ added: 2, changed: 0, fixed: 1, other: 0, big: 1 })).toBe("2 Added, 1 Fixed, 1 big");
+        expect(describeCounts({ added: 0, changed: 0, fixed: 0, other: 0, big: 0 })).toBe("no lines");
+    });
+});

@@ -65,7 +65,8 @@ import { NO_LINEAGE } from "@/app/view/agents/runlineage";
 import { closeSwitcher, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { activeReviewAtom, reviewMarksAtom } from "@/app/view/agents/reviewmarks";
 import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
-import { START_DEFS } from "@/app/cockpit/palette-commands";
+import { dismissToast, toastsAtom } from "@/app/cockpit/notificationstore";
+import { buildCommandItems, START_DEFS } from "@/app/cockpit/palette-commands";
 import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
@@ -126,6 +127,7 @@ import {
 } from "./bindings";
 import { councilChatNavAtom, type CouncilChatNav } from "@/app/view/agents/councilchatnav";
 import { setPlatform } from "@/util/platformutil";
+import { invoke } from "@tauri-apps/api/core";
 import { listNavAtom } from "./listnav";
 import { matchBinding } from "./matcher";
 import type { KeyContext } from "./types";
@@ -197,6 +199,12 @@ vi.mock("@/app/cockpit/cockpit-actions", async (orig) => ({
 
 // Setup reads the registered projects and the focused agent; the binding is only asked to open it
 vi.mock("@/app/view/agents/newcouncil", () => ({ openNewCouncil: vi.fn() }));
+
+// Open Sidecar asks the Tauri host for a window; the tests only ask which command went out, and what a refusal shows
+vi.mock("@tauri-apps/api/core", async (orig) => ({
+    ...(await orig<typeof import("@tauri-apps/api/core")>()),
+    invoke: vi.fn(async () => undefined),
+}));
 
 vi.mock("@/app/view/agents/agentactions", async (orig) => ({
     ...(await orig<typeof import("@/app/view/agents/agentactions")>()),
@@ -1215,7 +1223,8 @@ describe("diff-surface history bindings", () => {
                     for (const leader of [null, "g"] as const) {
                         const c = { surface: "files", editable, modalOpen, leader } as KeyContext;
                         const seen = new Map<string, string>();
-                        for (const b of all.filter((x) => (x.when ? x.when(c) : true))) {
+                        // a chordless binding (new-council, open-sidecar) is reached by name: no key to clash on
+                        for (const b of all.filter((x) => x.keys !== "" && (x.when ? x.when(c) : true))) {
                             const prev = seen.get(b.keys);
                             if (prev != null) {
                                 out.push(
@@ -1420,6 +1429,54 @@ describe("new council", () => {
 
     it("is the one binding the palette's Start row stands in for", () => {
         expect(START_DEFS.find((d) => d.id === "council")?.binding).toBe("new-council");
+    });
+});
+
+describe("open sidecar", () => {
+    const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
+    const find = () => buildGlobalBindings(model).find((x) => x.id === "open-sidecar")!;
+    const clearToasts = () => globalStore.get(toastsAtom).forEach((t) => dismissToast(t.id));
+
+    beforeEach(() => {
+        vi.mocked(invoke).mockClear();
+        clearToasts();
+    });
+    afterEach(clearToasts);
+
+    // Sidecar is opened by name: the palette's row, or What's new's Try it, never a keystroke
+    it("has no chord, so no keypress runs it, and is a Global binding unless a modal is open", () => {
+        const b = find();
+        expect(b.keys).toBe("");
+        expect(b.group).toBe("Global");
+        expect(b.label).toBe("Open Sidecar");
+        expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
+        expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
+    });
+
+    it("is a row of the palette's commands, which a modal's being open takes away", () => {
+        const items = buildCommandItems(buildGlobalBindings(model), ctx());
+        expect(items.find((i) => i.key === "open-sidecar")).toMatchObject({ title: "Open Sidecar", group: "Global" });
+        const modal = buildCommandItems(buildGlobalBindings(model), { ...ctx(), modalOpen: true });
+        expect(modal.some((i) => i.key === "open-sidecar")).toBe(false);
+    });
+
+    it("asks the host to open the window, and shows nothing when it does", async () => {
+        find().run(ctx());
+        expect(invoke).toHaveBeenCalledTimes(1);
+        expect(invoke).toHaveBeenCalledWith("open_sidecar");
+        await Promise.resolve();
+        expect(globalStore.get(toastsAtom)).toEqual([]);
+    });
+
+    it("shows what the host refused with as a toast, never swallowed", async () => {
+        vi.mocked(invoke).mockRejectedValueOnce("opening Sidecar failed: no window");
+        find().run(ctx());
+        await vi.waitFor(() => expect(globalStore.get(toastsAtom)).toHaveLength(1));
+        expect(globalStore.get(toastsAtom)[0]).toMatchObject({
+            title: "Sidecar did not open",
+            message: "opening Sidecar failed: no window",
+            level: "error",
+        });
     });
 });
 
@@ -4006,7 +4063,8 @@ describe("Kael sync: Code keys", () => {
                 for (const leader of [null, "g"] as const) {
                     const c = { surface: "code", editable, modalOpen, leader } as KeyContext;
                     const seen = new Map<string, string>();
-                    for (const b of all.filter((x) => (x.when ? x.when(c) : true))) {
+                    // a chordless binding (new-council, open-sidecar) is reached by name: no key to clash on
+                    for (const b of all.filter((x) => x.keys !== "" && (x.when ? x.when(c) : true))) {
                         expect(seen.get(b.keys), `${b.keys}: ${seen.get(b.keys)} and ${b.id}`).toBeUndefined();
                         seen.set(b.keys, b.id);
                     }
@@ -4094,7 +4152,8 @@ describe("Kael sync: Diff keys", () => {
                 for (const leader of [null, "g"] as const) {
                     const c = { surface: "files", editable, modalOpen, leader } as KeyContext;
                     const seen = new Map<string, string>();
-                    for (const b of all.filter((x) => (x.when ? x.when(c) : true))) {
+                    // a chordless binding (new-council, open-sidecar) is reached by name: no key to clash on
+                    for (const b of all.filter((x) => x.keys !== "" && (x.when ? x.when(c) : true))) {
                         expect(seen.get(b.keys), `${b.keys}: ${seen.get(b.keys)} and ${b.id}`).toBeUndefined();
                         seen.set(b.keys, b.id);
                     }

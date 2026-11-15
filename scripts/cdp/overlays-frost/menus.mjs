@@ -9,7 +9,8 @@
 //   2. hovering that row opens the submenu: both levels are frosted, and the submenu is the root panel's sibling in the menu's
 //      floating element, not a descendant of it, placed beside its row as before
 //   3. the keys: ↓ ↑ move in the submenu, ← closes it, → opens it again, Escape closes the menu
-//   4. Chat's slash panel (PickerList, look "frosted")
+//   4. Chat's slash panel (PickerList, look "frosted"); its highlighted row is the translucent --color-panel-hover lift
+//      and its muted text --color-panel-muted
 //   5. the launcher's `@` list (PickerList, plain look, the list alone)
 //   6. Chat's bash-mode Tab list (PickerList, plain look, the boxed list with groups and a footer), its shell completions
 //      answered by a mock of the wshrpc call
@@ -324,11 +325,36 @@ export default function (kit) {
                 const faded = up && (await polishWaitFor(h, FADED_IN("[data-chat-suggest-panel]"), SHORT_MS));
                 const v = await verdict("[data-chat-suggest-panel]");
                 const rows = await h.ev(`document.querySelectorAll("[data-chat-suggest-panel] [data-chat-slash-item]").length`);
+                // the highlighted row lifts by the theme's translucent white, and muted text in the panel takes the
+                // theme's panel muted (frost class, tailwindsetup.css; initiative chunk 27)
+                const lift = await h.ev(`(() => {
+                    const resolve = (v, prop) => {
+                        const s = document.createElement("span");
+                        s.style[prop] = "var(" + v + ")";
+                        document.body.appendChild(s);
+                        const c = getComputedStyle(s)[prop];
+                        s.remove();
+                        return c;
+                    };
+                    const panel = document.querySelector("[data-chat-suggest-panel]");
+                    const row = panel?.querySelector('[aria-selected="true"]');
+                    const muted = panel?.querySelector(".text-muted");
+                    return {
+                        row: row ? getComputedStyle(row).backgroundColor : null,
+                        want: resolve("--color-panel-hover", "backgroundColor"),
+                        muted: muted ? getComputedStyle(muted).color : null,
+                        wantMuted: resolve("--color-panel-muted", "color"),
+                        outside: resolve("--color-muted", "color"),
+                    };
+                })()`);
+                const lifted = lift.row != null && lift.row === lift.want && /^rgba\(255, 255, 255, 0\.\d+\)$/.test(lift.row);
+                const mutedOk = lift.muted != null && lift.muted === lift.wantMuted;
                 await shot(h, "4-slash-panel");
                 await key(h, KEYS.escape);
                 const closed = await polishWaitFor(h, `!document.querySelector("[data-chat-suggest-panel]")`, SHORT_MS);
                 await clearBox(h, A);
                 rec(`${name}: / opens Chat's suggestion panel, which draws the frost class with no backdrop root above it, and Escape closes it`, up && faded && rows > 0 && v.ok && closed, { rows, closed, ...v });
+                rec(`${name}: its highlighted row is a translucent white lift (--color-panel-hover), and muted text in it is --color-panel-muted`, lifted && mutedOk, lift);
             });
 
             // 5. the launcher's `@` list, the plain PickerList look (the list alone)

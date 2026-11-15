@@ -240,6 +240,7 @@ declare global {
         projectpath?: string;
         effortoid?: string;
         chunklabel?: string;
+        proposeroref?: string;
         queueid?: string;
         why?: string;
         cites?: string[];
@@ -1253,6 +1254,33 @@ declare global {
         runoref: string;
     };
 
+    // wshrpc.CommandEffortBackfillBaseData
+    type CommandEffortBackfillBaseData = {
+        effortoid?: string;
+    };
+
+    // wshrpc.CommandEffortBackfillBaseRtnData
+    type CommandEffortBackfillBaseRtnData = {
+        chunks: number;
+        efforts: number;
+    };
+
+    // wshrpc.CommandEffortChunkDriftData
+    type CommandEffortChunkDriftData = {
+        effortoid: string;
+        chunk: string;
+    };
+
+    // wshrpc.CommandEffortChunkDriftRtnData
+    type CommandEffortChunkDriftRtnData = {
+        known: boolean;
+        base?: string;
+        behind: number;
+        basets?: number;
+        inferred?: boolean;
+        files?: EffortStaleFile[];
+    };
+
     // wshrpc.CommandEffortChunkSeed
     type CommandEffortChunkSeed = {
         label: string;
@@ -1326,6 +1354,17 @@ declare global {
         pinned: boolean;
         capreached?: boolean;
         oldest?: EffortPinRef;
+    };
+
+    // wshrpc.CommandEffortStaleData
+    type CommandEffortStaleData = {
+        effortoid?: string;
+    };
+
+    // wshrpc.CommandEffortStaleRtnData
+    type CommandEffortStaleRtnData = {
+        efforts: EffortStaleEntry[];
+        scannedts: number;
     };
 
     // wshrpc.CommandEnsureNoFolderRtnData
@@ -3351,6 +3390,7 @@ declare global {
         stage?: string;
         owner?: string;
         due?: string;
+        basecommit?: string;
         workrefs?: ChunkWorkRef[];
         notes?: EffortNote[];
         updatedts: number;
@@ -3361,6 +3401,16 @@ declare global {
         since?: number;
         needs?: string;
         latest?: EffortLastNote;
+    };
+
+    // wshrpc.EffortChunkStale
+    type EffortChunkStale = {
+        chunk: string;
+        index: number;
+        base?: string;
+        inferred?: boolean;
+        landed: number;
+        files: EffortStaleFile[];
     };
 
     // wshrpc.EffortChunkSummary
@@ -3418,12 +3468,30 @@ declare global {
         notets?: number;
         kind?: string;
         oref?: string;
+        base?: string;
     };
 
     // wshrpc.EffortPinRef
     type EffortPinRef = {
         oid: string;
         title: string;
+    };
+
+    // wshrpc.EffortStaleEntry
+    type EffortStaleEntry = {
+        effortoid: string;
+        title: string;
+        project?: string;
+        chunks: EffortChunkStale[];
+    };
+
+    // wshrpc.EffortStaleFile
+    type EffortStaleFile = {
+        mention: string;
+        path: string;
+        changes: number;
+        gone?: boolean;
+        renamedto?: string;
     };
 
     // wshrpc.EffortSummary

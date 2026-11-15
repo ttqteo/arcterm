@@ -43,12 +43,13 @@ import { SheetShell } from "./briefrunsheet";
 import { sheetPosition } from "./briefsheetmodel";
 import { REGION_LABEL } from "./briefstyle";
 import { chunkKey, effortKey, noteKey, pendingDeleteKeysAtom } from "./briefundo";
+import { staleByLabel } from "./chunkdrift";
 import { ChunkView, ChunkViewHead } from "./chunkview";
 import { EffortCreateForm } from "./effortcreateform";
 import { EffortDetailView } from "./effortdetailview";
 import { effortFeed, feedNoteCounts } from "./effortfeed";
 import { buildEffortCards, chunkTone, type ChunkTone, type EffortCardModel } from "./effortmodel";
-import { effortChunkRows, loadEffortDetail, togglePin, type ChunkRowModel } from "./effortstore";
+import { effortChunkRows, loadEffortDetail, loadStaleChunks, togglePin, type ChunkRowModel } from "./effortstore";
 import { useInitiativeEdits, type InitiativeEditsState } from "./initiativeedits";
 import {
     backToPlan,
@@ -369,6 +370,23 @@ function showSheetMenu(ev: React.MouseEvent, edits: TrackerEdits): void {
     ContextMenuModel.getInstance().showContextMenu(items, ev);
 }
 
+// the stale scan's flagged chunks of this initiative, read again whenever it changes (a rename or Mark checked
+// included); a failed read flags nothing
+function useStaleChunks(oref: string, updatedts: number | undefined): Map<string, EffortChunkStale> {
+    const [stale, setStale] = useState<Map<string, EffortChunkStale>>(() => new Map());
+    useEffect(() => {
+        let live = true;
+        loadStaleChunks(oref).then(
+            (entries) => live && setStale(staleByLabel(entries)),
+            () => live && setStale(new Map())
+        );
+        return () => {
+            live = false;
+        };
+    }, [oref, updatedts]);
+    return stale;
+}
+
 /**
  * The plan, edited in place: the rows initiativeRows lays out, drawn as the sheet's variant. An initiative with no plan
  * yet (an idea) offers the ways to give it one instead.
@@ -393,6 +411,7 @@ export function InitiativeChunkList({
 }) {
     const rows = useSheetRows(oref, state.effort);
     const [overrides, setOverrides] = useAtom(sheetStageOverridesAtom);
+    const stale = useStaleChunks(oref, state.effort?.updatedts);
     const { edits, effort } = state;
     if (effort == null || edits == null) {
         return null;
@@ -426,6 +445,7 @@ export function InitiativeChunkList({
             rows={rows}
             cursor={cursor != null ? chunkRowId(oref, cursor) : undefined}
             edits={edits}
+            stale={stale}
             onSelectChunk={(id) => {
                 const label = labelOf(id);
                 if (label != null) {

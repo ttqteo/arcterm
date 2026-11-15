@@ -20,6 +20,12 @@ type EffortCommands interface {
 	// EffortPinCommand pins or unpins an effort to the Brief's cards. A pin is a view preference: it writes
 	// no event or note and keeps UpdatedTs.
 	EffortPinCommand(ctx context.Context, data CommandEffortPinData) (*CommandEffortPinRtnData, error)
+	// EffortChunkDriftCommand counts the commits on the initiative's project since the chunk was written.
+	EffortChunkDriftCommand(ctx context.Context, data CommandEffortChunkDriftData) (*CommandEffortChunkDriftRtnData, error)
+	// EffortStaleCommand lists the open chunks whose named files changed or went away since they were written.
+	EffortStaleCommand(ctx context.Context, data CommandEffortStaleData) (*CommandEffortStaleRtnData, error)
+	// EffortBackfillBaseCommand stamps a BaseCommit on the open chunks written before chunks kept one.
+	EffortBackfillBaseCommand(ctx context.Context, data CommandEffortBackfillBaseData) (*CommandEffortBackfillBaseRtnData, error)
 }
 
 // CommandEffortPinData pins (Pin true) or unpins an effort. Past the cap (jarvis.MaxPinnedEfforts), a pin
@@ -103,7 +109,7 @@ type CommandEffortDeleteData struct {
 // EffortOp is one typed mutation. Op selects the behavior; the remaining fields are the op's
 // arguments (validation picks which are required per op).
 type EffortOp struct {
-	Op        string `json:"op"`                  // rename | setProject | setTicket | setStatus | unarchive | link | addChunk | removeChunk | renameChunk | moveChunk | setChunkStatus | setChunkStage | setChunkDue | appendNote | editNote | removeNote | setOwner | advance | reopen
+	Op        string `json:"op"`                  // rename | setProject | setTicket | setStatus | unarchive | link | addChunk | removeChunk | renameChunk | recheckChunk | moveChunk | setChunkStatus | setChunkStage | setChunkDue | appendNote | editNote | removeNote | setOwner | advance | reopen
 	Title     string `json:"title,omitempty"`     // rename
 	Project   string `json:"project,omitempty"`   // setProject ("" clears)
 	Ticket    string `json:"ticket,omitempty"`    // setTicket ("" clears)
@@ -119,6 +125,78 @@ type EffortOp struct {
 	NoteTs    int64  `json:"notets,omitempty"`    // editNote/removeNote: the note's ts, a stale guard beside At
 	Kind      string `json:"kind,omitempty"`      // attachWork: "run" | "agent"
 	ORef      string `json:"oref,omitempty"`      // attachWork/detachWork: "run:<oid>" | "agent:<tabid>"
+	// Base is the project's HEAD that addChunk, renameChunk and recheckChunk stamp on the chunk (BaseCommit).
+	// The server fills it from the initiative's project; a caller's value is overwritten.
+	Base string `json:"base,omitempty"`
+}
+
+// CommandEffortChunkDriftData asks how far the code has moved since a chunk was written.
+type CommandEffortChunkDriftData struct {
+	EffortOID string `json:"effortoid"`
+	Chunk     string `json:"chunk"` // exact label or 1-based index string
+}
+
+// CommandEffortChunkDriftRtnData answers it. Known is false when there is nothing to measure: the chunk has no
+// base, the initiative no project with a git checkout, or the base is not in that checkout's history.
+type CommandEffortChunkDriftRtnData struct {
+	Known  bool   `json:"known"`
+	Base   string `json:"base,omitempty"`
+	Behind int    `json:"behind"`           // commits on HEAD since Base
+	BaseTs int64  `json:"basets,omitempty"` // unix ms of Base's commit
+	// Inferred: the chunk has no BaseCommit (it predates the field), so Base is the commit HEAD was at when the
+	// chunk was last updated.
+	Inferred bool `json:"inferred,omitempty"`
+	// Files are the files the chunk's text names that changed, or went away, since Base.
+	Files []EffortStaleFile `json:"files,omitempty"`
+}
+
+// EffortStaleFile is one file a chunk's label or notes name, measured against the commits landed on the project's
+// HEAD since the chunk was written.
+type EffortStaleFile struct {
+	Mention   string `json:"mention"`             // as the chunk wrote it: "councilstore.ts", "pkg/x/y.go"
+	Path      string `json:"path"`                // the repo path it resolved to (the first, when a bare name matches several)
+	Changes   int    `json:"changes"`             // landed commits that touched it since the chunk was written
+	Gone      bool   `json:"gone,omitempty"`      // no file by that name is tracked at HEAD any more
+	RenamedTo string `json:"renamedto,omitempty"` // when Gone came from a rename, where it went
+}
+
+// EffortChunkStale is one open chunk the stale scan flags: a file it names changed or went away.
+type EffortChunkStale struct {
+	Chunk    string            `json:"chunk"` // label
+	Index    int               `json:"index"` // 1-based
+	Base     string            `json:"base,omitempty"`
+	Inferred bool              `json:"inferred,omitempty"`
+	Landed   int               `json:"landed"` // commits landed on HEAD's first-parent line since Base
+	Files    []EffortStaleFile `json:"files"`
+}
+
+// EffortStaleEntry is one initiative's flagged chunks.
+type EffortStaleEntry struct {
+	EffortOID string             `json:"effortoid"`
+	Title     string             `json:"title"`
+	Project   string             `json:"project,omitempty"`
+	Chunks    []EffortChunkStale `json:"chunks"`
+}
+
+// CommandEffortStaleData asks for the stale scan of one initiative, or every active one when EffortOID is "".
+type CommandEffortStaleData struct {
+	EffortOID string `json:"effortoid,omitempty"`
+}
+
+type CommandEffortStaleRtnData struct {
+	Efforts   []EffortStaleEntry `json:"efforts"`
+	ScannedTs int64              `json:"scannedts"`
+}
+
+// CommandEffortBackfillBaseData stamps a BaseCommit on the open chunks that have none (they predate the field):
+// the commit HEAD was at when each was last updated. One initiative, or every one when EffortOID is "".
+type CommandEffortBackfillBaseData struct {
+	EffortOID string `json:"effortoid,omitempty"`
+}
+
+type CommandEffortBackfillBaseRtnData struct {
+	Chunks  int `json:"chunks"`  // chunks stamped
+	Efforts int `json:"efforts"` // initiatives touched
 }
 
 // EffortSummary is the ledger-friendly projection of an effort (no note trails).

@@ -44,12 +44,12 @@ describe("followUpOps", () => {
         ]);
     });
 
-    it("sends an all-digit label as its position, which is how the server reads it", () => {
+    it("sends an all-digit label as an exact label, never a position", () => {
         const lines = parseChunkLines("Phase: 3\n1\n2").map((l, i) => ({ ...l, checked: i >= 1 }));
         expect(followUpOps(lines)).toEqual([
-            { op: "setChunkStage", chunk: "1", stage: "Phase" },
-            { op: "setChunkStatus", chunk: "2", status: "done" },
-            { op: "setChunkStatus", chunk: "3", status: "done" },
+            { op: "setChunkStage", chunk: "=3", stage: "Phase" },
+            { op: "setChunkStatus", chunk: "=1", status: "done" },
+            { op: "setChunkStatus", chunk: "=2", status: "done" },
         ]);
     });
 

@@ -27,6 +27,7 @@ import { connect as netConnect, createServer as createNetServer } from "node:net
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { crc32 as zlibCrc32, deflateSync } from "node:zlib";
 import { SURFACE_LABEL } from "./attach.mjs";
 import { narrationFeed } from "./narrationfeed.mjs";
 import {
@@ -96,10 +97,12 @@ import kael1113TimelineScenarios from "./scenarios-kael1113-timeline.mjs";
 import modalFocusHomeScenarios from "./scenarios-modal-focus-home.mjs";
 import parkedLaunchScenarios from "./scenarios-parked-launch.mjs";
 import monitorTasksScenarios from "./scenarios-monitor-tasks.mjs";
+import { frostProbe, frostVerdict } from "./overlays-frost/frostcheck.mjs";
 import overlaysFrostScenarios from "./scenarios-overlays-frost.mjs";
 import paletteBrainstormResumeScenarios from "./scenarios-palette-brainstorm-resume.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
 import setupInstructionsScenarios from "./scenarios-setup-instructions.mjs";
+import sidecarScenarios from "./scenarios-sidecar.mjs";
 import surfacesSpringScenarios from "./scenarios-surfaces-spring.mjs";
 import terminalStatusLineScenarios from "./scenarios-terminal-status-line.mjs";
 import usageLensScenarios from "./scenarios-usage-lens.mjs";
@@ -24869,14 +24872,17 @@ async function polishWaitFor(h, expr, ms) {
 }
 
 // createproject only writes projects.json; the server's config watcher picks it up a moment later, and a reload
-// before then boots a frontend whose project list lacks it until the next config event
+// before then boots a frontend whose project list lacks it until the next config event. Under memory pressure the
+// watcher's reload has taken past 10 s (chat-brainstorm-review step 0), so the wait is 30 s of wall clock
+const PROJECT_CONFIG_WAIT_MS = 30000;
 async function waitForProjectInConfig(h, name) {
-    for (let waited = 0; waited < 10000; waited += 250) {
+    const start = Date.now();
+    while (Date.now() - start < PROJECT_CONFIG_WAIT_MS) {
         const cfg = await h.rpc("getfullconfig", null);
         if (cfg?.projects?.[name] != null) return;
         await polishNap(250);
     }
-    throw new Error(`project ${name} never reached the config`);
+    throw new Error(`project ${name} never reached the config in ${PROJECT_CONFIG_WAIT_MS / 1000}s`);
 }
 
 async function polishReload(h) {
@@ -37054,6 +37060,50 @@ const agentRailTabs = {
                 tabs4.includes("Transcript") && tabs4.includes("File a.txt") && tabs4.includes("File big.txt") && tabs4.includes("File blob.bin") && tabs4.includes("File c.txt*"),
             JSON.stringify({ big, blob, cOpen, tabs4, back, gone })
         );
+
+        // 4b. Overview's 300px with the four files open: the file tabs fold into one icon tab with the count, and the
+        // strip's row (four icons, the folded tab, the counts, the panel's own buttons) fits without cutting a tab
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-tab="overview"]')?.click()`);
+        await railTabsNap(700);
+        const fit4b = await h.ev(`(() => {
+            const aside = ${RAIL_TABS_ASIDE};
+            const list = aside?.querySelector('[role="tablist"][aria-label="Agent panel"]');
+            if (!list) return null;
+            const r = (el) => { const b = el.getBoundingClientRect(); return { l: Math.round(b.left), r: Math.round(b.right) }; };
+            const row = list.parentElement;
+            const counts = row.querySelector('[role="group"][aria-label="Agent counts"]');
+            const tabs = [...list.querySelectorAll('[role="tab"]')];
+            const box = r(row);
+            // every child of the row, left to right, each starting where the one before it ends or later
+            const kids = [...row.children].map((k) => ({ ...r(k), w: Math.round(k.getBoundingClientRect().width) }));
+            return {
+                width: ${railTabsWidth},
+                row: box,
+                rowOverflow: row.scrollWidth - row.clientWidth,
+                labels: tabs.map((t) => t.getAttribute("aria-label")),
+                folded: tabs.find((t) => t.dataset.railTab === "file")?.textContent.trim() ?? null,
+                tabsCut: tabs.filter((t) => { const b = r(t); return b.l < box.l - 0.5 || b.r > box.r + 0.5 || t.getBoundingClientRect().width < 20; }).map((t) => t.getAttribute("aria-label")),
+                listOverflow: list.scrollWidth - list.clientWidth,
+                counts: counts ? { n: counts.querySelectorAll("button").length, ...r(counts), overflow: counts.scrollWidth - counts.clientWidth, widths: [...counts.querySelectorAll("button")].map((b) => Math.round(b.getBoundingClientRect().width)) } : null,
+                kids,
+                // room left at the row's end: how many more counts would fit, next to the widths above
+                free: box.r - Math.max(...kids.map((k) => k.r)),
+                overlaps: kids.slice(1).filter((k, i) => k.l < kids[i].r - 0.5).length,
+            };
+        })()`);
+        await h.shot("cdp-shots/agent-rail-tabs-overview-folded.png");
+        rec(
+            "4b. on Overview's 300px with four files open, the strip shows Overview, Files, Changes, Transcript and one folded file tab reading 4, and the row of tabs, counts and buttons fits: no tab cut, nothing overlapping, nothing scrolled out",
+            fit4b != null && Math.abs(fit4b.width - 300) <= 2 &&
+                JSON.stringify(fit4b.labels.slice(0, 4)) === JSON.stringify(["Overview", "Files", "Changes", "Transcript"]) &&
+                fit4b.labels.length === 5 && fit4b.folded === "4" &&
+                fit4b.tabsCut.length === 0 && fit4b.listOverflow <= 0 && fit4b.rowOverflow <= 0 && fit4b.overlaps === 0 &&
+                (fit4b.counts == null || fit4b.counts.overflow <= 0),
+            JSON.stringify(fit4b)
+        );
+        // back on File, where each file's tab has its close button
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-tab="file"]')?.click()`);
+        await railTabsNap(700);
         // a.txt alone again, for the steps that follow
         for (const name of ["big.txt", "blob.bin", "c.txt"]) {
             await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-file-close="${name}"]')?.click()`);
@@ -37238,10 +37288,21 @@ const agentRailTabs = {
 // md-comments (docs/superpowers/specs/2026-10-06-md-comments-design.md): an agent whose transcript names
 // docs/guide.md:9; guide.md has frontmatter (lines 1-3), a table (11-15) and an image (17), links docs/other.md (19),
 // and links #notes (21), a heading below enough filler that reaching it scrolls the Preview.
+// The agent sits on a real terminal block (ctx.agentBlock, made in arrange): a block id the store lacks fails to start
+// and folds the agent to idle ("failed to start", agentcontrollerstore.ts withStartError), which parks its card in the
+// folded IDLE group, off the Cockpit grid whose card the steps click (agent-rail-tabs had the same, 644c71b15).
 const MDC_AGENT = "fx-md-comments";
-const MDC_BLOCK = "fx-blk-md-comments";
 const MDC_PROJECT = "verify-md-comments";
-const MDC_KEYS = [RAIL_VISIBLE_KEY, RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth", "agent.rail.mdMode", "cockpit.view"];
+// agent.projectFilter and cockpit.view are the Cockpit's persisted choices that can leave the card off the grid
+const MDC_KEYS = [
+    RAIL_VISIBLE_KEY,
+    RAIL_SECTIONS_KEY,
+    "agent.rail.tab",
+    "agent.rail.wideWidth",
+    "agent.rail.mdMode",
+    "agent.projectFilter",
+    "cockpit.view",
+];
 const MDC_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
 const MDC_CARD = `document.querySelector('[data-cockpit-surface] [data-agent-id="${MDC_AGENT}"]')`;
 const MDC_DOC = `${MDC_ASIDE}?.querySelector("[data-md-doc]")`;
@@ -37275,11 +37336,31 @@ const MDC_GUIDE = [
     "",
 ].join("\n");
 const MDC_OTHER = "# Other\n\nThe other doc's only paragraph.\n";
-// a 1x1 PNG
-const MDC_PNG = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-    "base64"
-);
+// a 64x32 grey PNG. Not 1x1: MdDoc reads the hovered block 2 px right of the text column (so its gutter + stays
+// reachable), and a 1 px image there is never under that probe, so step 5's hover would only find the paragraph
+const MDC_PNG = (() => {
+    const [w, hgt] = [64, 32];
+    const chunk = (type, data) => {
+        const len = Buffer.alloc(4);
+        len.writeUInt32BE(data.length);
+        const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+        const crc = Buffer.alloc(4);
+        crc.writeUInt32BE(zlibCrc32(body));
+        return Buffer.concat([len, body, crc]);
+    };
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(w, 0);
+    ihdr.writeUInt32BE(hgt, 4);
+    ihdr.set([8, 0, 0, 0, 0], 8); // 8-bit greyscale
+    const rows = Buffer.alloc((w + 1) * hgt, 0x80);
+    for (let y = 0; y < hgt; y++) rows[y * (w + 1)] = 0; // filter byte: none
+    return Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        chunk("IHDR", ihdr),
+        chunk("IDAT", deflateSync(rows)),
+        chunk("IEND", Buffer.alloc(0)),
+    ]);
+})();
 const MDC_EXPECTED = [
     "Comments on 2 files (4):",
     "",
@@ -37333,7 +37414,7 @@ function mdcRoster(ctx, state, terminal = true) {
                     agent: "claude",
                     model: "opus",
                     activeMs: 60_000,
-                    ...(terminal ? { blockId: MDC_BLOCK } : {}),
+                    ...(terminal ? { blockId: ctx.agentBlock } : {}),
                     transcriptPath: ctx.transcript,
                 },
             ],
@@ -37434,12 +37515,26 @@ const mdComments = {
             await h.rpc("createproject", { name: MDC_PROJECT, path: ctx.repo });
             ctx.project = MDC_PROJECT;
             await waitForProjectInConfig(h, MDC_PROJECT);
+            // the agent's own terminal block, a real one (MDC_AGENT says why). Without cmd:cwd: that key is read before
+            // the transcript's (agentcwdresolve.ts), and the repo must come from the transcript
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            ctx.terminals = [];
+            await openRailTerminal(h, ctx, MDC_PROJECT);
+            ctx.agentBlock = ctx.terminals[0].blockId;
+            await h.rpc("setmeta", { oref: `block:${ctx.agentBlock}`, meta: { "cmd:cwd": null } });
             mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
             mdcRoster(ctx, "working");
             ctx.wroteFixture = true;
             await h.ev(`(() => {
                 localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
                 for (const k of ${JSON.stringify(["agent.rail.tab", "agent.rail.wideWidth", "agent.rail.mdMode"])}) localStorage.removeItem(k);
+                // the Cockpit's grid of every project, as cards: both are read at boot, so an earlier scenario's
+                // project scope or the Office cannot keep the fixture agent's card off it
+                localStorage.setItem("agent.projectFilter", ${JSON.stringify(JSON.stringify("all"))});
+                localStorage.setItem("cockpit.view", ${JSON.stringify(JSON.stringify("cards"))});
             })()`);
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await h.goto("agent");
@@ -37494,7 +37589,8 @@ const mdComments = {
         const plus1 = await mdcPlus(h, mdcRow("Quick"), false);
         const plus2 = await mdcPlus(h, mdcRow("Plan"), true);
         const box4 = await h.ev(`${MDC_DOC}?.querySelector("[data-md-box]")?.innerText ?? ""`);
-        const afterTable = await h.ev(`${MDC_DOC}?.querySelector("[data-md-box]")?.closest("[data-md-slot]")?.previousElementSibling?.tagName ?? ""`);
+        // the slot follows the table's wrapper (div.table-block, which holds its Copy button), as CardSlot reads it
+        const afterTable = await h.ev(`(() => { const b = ${MDC_DOC}?.querySelector("[data-md-box]")?.closest("[data-md-slot]")?.previousElementSibling; return b == null ? "" : b.matches("table") || b.querySelector(":scope > .table-box > table") != null ? "TABLE" : b.tagName; })()`);
         const target = await h.ev(`${MDC_DOC}?.querySelector('[data-md-mark="target"]')?.dataset.lines ?? null`);
         await mdcType(h, "Add a column for cost.");
         const draftBlocked = await polishWaitFor(h, `!!${MDC_ASIDE}?.querySelector("[data-md-send]")?.disabled && ${mdcTray}.includes("Add or cancel the open comment first")`, 3000);
@@ -37712,6 +37808,9 @@ const mdComments = {
         };
         // the clipboard stub from step 12 is an own property over Navigator's getter; deleting it restores that
         await step("clear the DEV hooks", () => h.ev(`(delete window.__lineReviewSink, delete window.__mdSent, delete window.__mdCopied, delete navigator.clipboard, true)`));
+        for (const t of ctx.terminals ?? []) {
+            await step("close the agent's terminal", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false]));
+        }
         if (ctx.project) {
             await step("remove the project", async () => {
                 await h.rpc("deleteproject", { name: ctx.project });
@@ -37851,6 +37950,10 @@ const docFind = {
         const painted2 = await h.ev(dfPainted);
         await h.shot("cdp-shots/doc-find-matches.png");
         rec("2. 'paragraph' counts 43 and paints 42 matches plus the current one", /^\d+\/43$/.test(count2) && painted2.all === 42 && painted2.current === 1 && /^paragraph$/i.test(painted2.text ?? ""), JSON.stringify({ count2, painted2 }));
+
+        // 2b. the bar floats over the document as the terminal's find bar floats over its xterm, and is frosted like it
+        const frost2b = frostVerdict(await h.ev(frostProbe("[data-doc-find]")));
+        rec("2b. the find bar is frosted (blur(18px) over --color-panel, no backdrop root above it), as the terminal's is", frost2b.ok, frost2b.detail);
 
         // 3. Enter steps on and Shift+Enter back
         const at = Number.parseInt(count2, 10);
@@ -43417,7 +43520,8 @@ const agentChat = {
             })()`);
             rec(
                 "9. two queued Bash requests show the command, Allow, Deny, More options in Terminal and 1 more waiting; Allow sends the answer with the head's id and allow: true, the buttons locked while it is in flight, then the next request is the card",
-                cardUp && card9.summary === "$ npm test -- --run" && card9.allow === "Allow" && card9.deny === "Deny" &&
+                // Allow carries its key (a kbd reading Enter) since the card took ↑ ↓ Enter (step 11b)
+                cardUp && card9.summary === "$ npm test -- --run" && (card9.allow ?? "").startsWith("Allow") && card9.deny === "Deny" &&
                     card9.terminal === "More options in Terminal" && card9.more === "1 more waiting" &&
                     asked && locked && answers9.length === 1 && JSON.stringify(answers9[0].data) === JSON.stringify({ oref: orefA, id: "perm-1", allow: true }) &&
                     second.summary === "$ git status --short" && second.more === null && second.enabled,
@@ -44331,6 +44435,10 @@ const agentChat = {
                     closed29 && stayed29 && closedAfter29 && toast29 && JSON.stringify(typed29) === JSON.stringify(["\x1b[Z"]),
                 { screen29, chip29, menu29, closed29, stayed29, closedAfter29, toast29, typed29 }
             );
+            // the captured screen holds Claude Code's box, empty: a send now waits for its text to show there and, the
+            // fixture never echoing it, gives up with no Enter (agentsubmit.ts waitForEcho). Clear it, so the later sends
+            // read no box and press Enter at once, as they do before step 24
+            await acWriteScreen(h, blockA, []);
 
             // 30. the context is a ring with its percent: the fixture's 42 reads 42% (title Context 42%), with no words
             await AC.setRoster(h, acRoster(ctx, { usage: { contextpct: 42 } }));
@@ -66197,80 +66305,108 @@ const LOOK_TOASTS = [
     { title: "release scribe: opened the Diff surface", message: "", level: "info" },
 ];
 
-const notificationToasts = {
-    name: "notification-toasts",
-    surface: "cockpit",
-    async arrange() {
-        return {};
-    },
-    async assert(h) {
-        await lookOpen(h, "cockpit");
-        const shown = await lookEval(h, `
-            const { pushToast } = await mod("app/cockpit/notificationstore.ts");
-            for (const t of ${JSON.stringify(LOOK_TOASTS)}) pushToast(t);
-            const toasts = () => [...document.querySelectorAll("[data-notification-toast]")];
-            await until(() => toasts().length === ${LOOK_TOASTS.length}, 2000);
-            await nap(500); // the entrance, inside the 6s the toasts live
-            // the stack is the polite live region; a toast's panel is its button's parent, and a plain toast draws its
-            // level as the panel's border tone (error/40, warning/40, border): read each against a probe of that class
-            const stack = document.querySelector("[data-pet-avoid][role=status]");
-            const toneOf = (cls) => {
-                const probe = document.createElement("div");
-                probe.className = "border " + cls;
-                document.body.append(probe);
-                const c = getComputedStyle(probe).borderTopColor;
-                probe.remove();
-                return c;
-            };
-            const tones = { error: toneOf("border-error/40"), warn: toneOf("border-warning/40"), info: toneOf("border-border") };
-            const drawn = ${JSON.stringify(LOOK_TOASTS.map((t) => ({ title: t.title, level: t.level })))}.map((want) => {
-                const panel = toasts().find((t) => flat(t).startsWith(want.title))?.parentElement;
-                const border = panel ? getComputedStyle(panel).borderTopColor : null;
-                return { level: want.level, border, ok: border != null && border === tones[want.level] };
-            });
-            // the stack sits above the pet (z-62 over its z-60/61, notificationtoasts.tsx), so a toast is never covered by
-            // the avatar, whichever form shows. Hit-test it: at the centre of each toast panel and at points along its
-            // edges and corners (the hologram is a circle, so a corner can sit past its rim and a centre clear of it), the
-            // topmost element is inside that panel. The floating pet, not the Office's boss sprite (data-office-boss, also
-            // named "Jarvis condition"); a new toast is a [data-pet-avoid] box Sprout steps off the stretch under, so
-            // Sprout gets 2s to leave before the count. The hologram never moves: it stays under the toasts and covered.
-            const pets = () => [...document.querySelectorAll('[aria-label="Jarvis condition"]:not([data-office-boss])')].filter((p) => getComputedStyle(p).visibility !== "hidden");
-            const INSET = 10;
-            const coveredNow = () => {
-                const out = [];
-                for (const t of toasts()) {
-                    const panel = t.parentElement;
-                    const r = panel.getBoundingClientRect();
-                    const xs = [r.left + INSET, r.left + r.width * 0.25, r.left + r.width / 2, r.left + r.width * 0.75, r.right - INSET];
-                    const ys = [r.top + INSET, r.top + r.height / 2, r.bottom - INSET];
-                    for (const y of ys) {
-                        for (const x of xs) {
-                            const hit = document.elementFromPoint(x, y);
-                            if (hit == null || !panel.contains(hit)) {
-                                out.push({ toast: flat(t).slice(0, 24), x: Math.round(x), y: Math.round(y), hit: hit == null ? null : hit.tagName.toLowerCase() + (hit.getAttribute("aria-label") ? "[" + hit.getAttribute("aria-label") + "]" : "") });
-                            }
+const toastsShown = (h) =>
+    lookEval(h, `
+        const { pushToast } = await mod("app/cockpit/notificationstore.ts");
+        for (const t of ${JSON.stringify(LOOK_TOASTS)}) pushToast(t);
+        const toasts = () => [...document.querySelectorAll("[data-notification-toast]")];
+        await until(() => toasts().length === ${LOOK_TOASTS.length}, 2000);
+        await nap(500); // the entrance, inside the 6s the toasts live
+        // the stack is the polite live region; a toast's panel is its button's parent, and a plain toast draws its
+        // level as the panel's border tone (error/40, warning/40, border): read each against a probe of that class
+        const stack = document.querySelector("[data-pet-avoid][role=status]");
+        const toneOf = (cls) => {
+            const probe = document.createElement("div");
+            probe.className = "border " + cls;
+            document.body.append(probe);
+            const c = getComputedStyle(probe).borderTopColor;
+            probe.remove();
+            return c;
+        };
+        const tones = { error: toneOf("border-error/40"), warn: toneOf("border-warning/40"), info: toneOf("border-border") };
+        const drawn = ${JSON.stringify(LOOK_TOASTS.map((t) => ({ title: t.title, level: t.level })))}.map((want) => {
+            const panel = toasts().find((t) => flat(t).startsWith(want.title))?.parentElement;
+            const border = panel ? getComputedStyle(panel).borderTopColor : null;
+            return { level: want.level, border, ok: border != null && border === tones[want.level] };
+        });
+        // the stack sits above the pet (z-62 over its z-60/61, notificationtoasts.tsx), so a toast is never covered by
+        // the avatar, whichever form shows. Hit-test it: at the centre of each toast panel and at points along its
+        // edges and corners (the hologram is a circle, so a corner can sit past its rim and a centre clear of it), the
+        // topmost element is inside that panel. The floating pet, not the Office's boss sprite (data-office-boss, also
+        // named "Jarvis condition"); a new toast is a [data-pet-avoid] box Sprout steps off the stretch under, so
+        // Sprout gets 2s to leave before the count. The hologram never moves: the stack stands above it instead.
+        const pets = () => [...document.querySelectorAll('[aria-label="Jarvis condition"]:not([data-office-boss])')].filter((p) => getComputedStyle(p).visibility !== "hidden");
+        const INSET = 10;
+        const coveredNow = () => {
+            const out = [];
+            for (const t of toasts()) {
+                const panel = t.parentElement;
+                const r = panel.getBoundingClientRect();
+                const xs = [r.left + INSET, r.left + r.width * 0.25, r.left + r.width / 2, r.left + r.width * 0.75, r.right - INSET];
+                const ys = [r.top + INSET, r.top + r.height / 2, r.bottom - INSET];
+                for (const y of ys) {
+                    for (const x of xs) {
+                        const hit = document.elementFromPoint(x, y);
+                        if (hit == null || !panel.contains(hit)) {
+                            out.push({ toast: flat(t).slice(0, 24), x: Math.round(x), y: Math.round(y), hit: hit == null ? null : hit.tagName.toLowerCase() + (hit.getAttribute("aria-label") ? "[" + hit.getAttribute("aria-label") + "]" : "") });
                         }
                     }
                 }
-                return out;
-            };
-            await until(() => coveredNow().length === 0, 2000);
-            const covered = coveredNow();
-            return {
-                text: toasts().map(flat),
-                drawn,
-                distinctTones: new Set(Object.values(tones)).size === 3,
-                live: stack?.getAttribute("aria-live") ?? null,
-                covered: covered.length,
-                coveredAt: covered.slice(0, 4),
-                pets: pets().map((p) => (p.hasAttribute("data-pet-hologram") ? "hologram" : "pet")),
-            };
-        `);
+            }
+            return out;
+        };
+        await until(() => coveredNow().length === 0, 2000);
+        const covered = coveredNow();
+        // the hologram never steps aside, so the stack stands above it (toastStackBottom): the px between the stack's
+        // bottom edge and the hologram's top, once the stack has slid there; null with no hologram
+        const holoGap = () => {
+            const holo = document.querySelector("[data-pet-hologram]");
+            return holo == null || stack == null ? null : Math.round(holo.getBoundingClientRect().top - stack.getBoundingClientRect().bottom);
+        };
+        await until(() => (holoGap() ?? 0) >= 0, 2000);
+        await nap(400); // the spring settles
+        return {
+            holoGap: holoGap(),
+            cornerGap: stack == null ? null : Math.round(innerHeight - stack.getBoundingClientRect().bottom),
+            text: toasts().map(flat),
+            drawn,
+            distinctTones: new Set(Object.values(tones)).size === 3,
+            live: stack?.getAttribute("aria-live") ?? null,
+            covered: covered.length,
+            coveredAt: covered.slice(0, 4),
+            pets: pets().map((p) => (p.hasAttribute("data-pet-hologram") ? "hologram" : "pet")),
+        };
+    `);
+
+// a toast's own click dismisses it
+const toastsDismissed = (h) =>
+    lookEval(h, `
+        for (const t of [...document.querySelectorAll("[data-notification-toast]")]) t.click();
+        return until(() => document.querySelector("[data-notification-toast]") == null, 2000);
+    `);
+
+// the toasts are checked in each of Jarvis's forms: the hologram (the default) stays put and the stack stands above it, and Sprout
+// steps off the stretch under a new toast within 2 s. The form is read once at boot, so each pass reloads into it
+const notificationToasts = {
+    name: "notification-toasts",
+    surface: "cockpit",
+    async arrange(h) {
+        return { prevForm: await h.ev(`localStorage.getItem(${JSON.stringify(PET_FORM_KEY)})`) };
+    },
+    async assert(h) {
+        const intoForm = async (form) => {
+            await h.ev(`localStorage.setItem(${JSON.stringify(PET_FORM_KEY)}, ${JSON.stringify(JSON.stringify(form))})`);
+            if (!(await ahReload(h))) throw new Error(`the page did not come back after the reload into ${form}`);
+            await lookOpen(h, "cockpit");
+        };
+        await intoForm("hologram");
+        const shown = await toastsShown(h);
         await h.shot(lookShot("notification-toasts"));
-        const dismissed = await lookEval(h, `
-            for (const t of [...document.querySelectorAll("[data-notification-toast]")]) t.click();
-            return until(() => document.querySelector("[data-notification-toast]") == null, 2000);
-        `);
+        const dismissed = await toastsDismissed(h);
+        await intoForm("sprout");
+        const sprout = await toastsShown(h);
+        await h.shot(lookShot("notification-toasts-sprout"));
+        await toastsDismissed(h);
         return [
             {
                 step: "error, warn and info toasts stack in the corner, each with its title",
@@ -66283,14 +66419,32 @@ const notificationToasts = {
                 detail: JSON.stringify({ live: shown.live, distinctTones: shown.distinctTones, drawn: shown.drawn }),
             },
             {
-                step: "no toast is covered by the Jarvis avatar",
-                ok: shown.covered === 0,
+                step: "no toast is covered by the Jarvis avatar in its hologram form",
+                ok: shown.covered === 0 && shown.pets.includes("hologram"),
                 detail: `covered=${shown.covered} pets=${JSON.stringify(shown.pets)} at=${JSON.stringify(shown.coveredAt)}`,
             },
+            {
+                step: "the stack stands just above the hologram, so no toast covers it",
+                ok: shown.holoGap != null && shown.holoGap >= 0 && shown.holoGap <= 16,
+                detail: `gap=${shown.holoGap}px cornerGap=${shown.cornerGap}px`,
+            },
             { step: "a click dismisses a toast", ok: dismissed === true, detail: `dismissed=${dismissed}` },
+            {
+                step: "no toast is covered by Sprout: it steps off the stretch under the stack within 2 s",
+                ok: sprout.covered === 0 && sprout.pets.includes("pet"),
+                detail: `covered=${sprout.covered} pets=${JSON.stringify(sprout.pets)} at=${JSON.stringify(sprout.coveredAt)}`,
+            },
+            {
+                step: "with Sprout the stack is back in the corner",
+                ok: sprout.holoGap == null && sprout.cornerGap === 16,
+                detail: `cornerGap=${sprout.cornerGap}px holoGap=${sprout.holoGap}`,
+            },
         ];
     },
-    async teardown() {},
+    async teardown(h, ctx) {
+        await h.ev(`(() => { ${restoreStorageKey(PET_FORM_KEY, ctx?.prevForm ?? null)}; return true; })()`);
+        await ahReload(h);
+    },
 };
 
 // every row kind the menu draws: header, accelerator, sublabel, checkbox, radio (in the submenu), separator,
@@ -66356,7 +66510,30 @@ const contextMenu = {
             };
         `);
         await h.shot(lookShot("context-menu"));
+        // a submenu opened while the root panel still scales in (PopoverReveal) stands where it does once it settles: 5px
+        // above its row and 4px off its right side. The row is entered in the frame the menu mounts (React reads
+        // mouseover as its mouseenter), then both are read after the reveal
+        const early = await lookEval(h, `
+            const { globalStore } = await mod("app/store/jotaiStore.ts");
+            const { contextMenuAtom, closeContextMenu } = await mod("app/store/contextmenu.ts");
+            closeContextMenu();
+            await nap(100);
+            const items = ${JSON.stringify(LOOK_MENU_ITEMS)}.map((i) => ({ ...i, click: () => {} }));
+            globalStore.set(contextMenuAtom, { items, x: ${LOOK_MENU_AT.x}, y: ${LOOK_MENU_AT.y} });
+            await until(() => ${LOOK_MENU_ROW("Sort by")} != null, 2000);
+            ${LOOK_MENU_ROW("Sort by")}.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body }));
+            await until(() => document.querySelector("[data-context-submenu]") != null, 2000);
+            await nap(600);
+            const row = ${LOOK_MENU_ROW("Sort by")}.getBoundingClientRect();
+            const sub = document.querySelector("[data-context-submenu]")?.getBoundingClientRect();
+            return sub == null ? { opened: false } : { opened: true, dTop: Math.round((sub.top - (row.top - 5)) * 10) / 10, dLeft: Math.round((sub.left - (row.right + 4)) * 10) / 10 };
+        `);
         return [
+            {
+                step: "a submenu opened while the menu scales in sits 5px above its row and 4px off its side once it settles",
+                ok: early.opened && Math.abs(early.dTop) <= 1 && Math.abs(early.dLeft) <= 1,
+                detail: JSON.stringify(early),
+            },
             {
                 step: "a menu with every row kind draws them all, and hovering Sort by opens its submenu",
                 ok: sub.submenu && sub.danger,
@@ -69996,6 +70173,7 @@ export const SCENARIOS = [
     ...agentSubagentsScenarios(RT_KIT),
     ...modalFocusHomeScenarios(RT_KIT),
     ...parkedLaunchScenarios(),
+    ...sidecarScenarios(),
     ...terminalStatusLineScenarios(RT_KIT),
     ...jarvisCardsScenarios(JARVIS_KIT),
     ...jarvisActivityScenarios(JARVIS_KIT),

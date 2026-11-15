@@ -500,24 +500,6 @@ func selectMessages(ctx context.Context, query string, args ...any) ([]*waveobj.
 	})
 }
 
-// GetChannelProjectPaths returns channelOID -> projectpath for every channel via a scalar json_extract
-// query — no blob deserialize, so reading it never loads a channel's history.
-func GetChannelProjectPaths(ctx context.Context) (map[string]string, error) {
-	return WithReadTxRtn(ctx, func(tx *TxWrap) (map[string]string, error) {
-		type row struct {
-			OId         string `db:"oid"`
-			ProjectPath string `db:"projectpath"`
-		}
-		var rows []row
-		tx.Select(&rows, `SELECT oid, COALESCE(json_extract(data, '$.projectpath'), '') AS projectpath FROM db_channel`)
-		m := make(map[string]string, len(rows))
-		for _, r := range rows {
-			m[r.OId] = r.ProjectPath
-		}
-		return m, nil
-	})
-}
-
 // MetaKey_ReadTs stores the per-channel last-read timestamp (ms) used to derive unread counts.
 const MetaKey_ReadTs = "read:ts"
 
