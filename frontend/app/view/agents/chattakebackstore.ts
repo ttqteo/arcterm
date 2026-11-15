@@ -61,22 +61,27 @@ async function waitForBox(blockId: string, texts: string[], until: number): Prom
     return null;
 }
 
-/** Takes `plan` back from the agent's terminal into the chat box through `put`; true when it did. */
+/** How a take-back ended: `done` put the text back; `busy` found another take-back of this agent's still running; `none`
+ *  never saw the text in Claude Code's box (Claude took it, or answered first), so nothing came back; `stuck` saw it but
+ *  the box would not clear, and left it where it was. */
+export type TakeBackResult = "done" | "busy" | "none" | "stuck";
+
+/** Takes `plan` back from the agent's terminal into the chat box through `put`. */
 export async function takeBack(
     agentId: string,
     blockId: string,
     plan: TakeBack,
     put: (texts: string[]) => void
-): Promise<boolean> {
+): Promise<TakeBackResult> {
     if (running.has(agentId)) {
-        return false;
+        return "busy";
     }
     running.add(agentId);
     try {
         await keys(blockId, plan.kind === "queued" ? KEY_UP : KEY_ESC);
         const lines = await waitForBox(blockId, plan.texts, Date.now() + WAIT_MS[plan.kind]);
         if (lines == null) {
-            return false;
+            return "none";
         }
         const rows = inputBoxRows(lines)?.length ?? 1;
         for (let i = 0; i <= rows; i++) {
@@ -90,11 +95,11 @@ export async function takeBack(
             if (plan.kind === "queued") {
                 await keys(blockId, KEY_ENTER);
             }
-            return false;
+            return "stuck";
         }
         dropPendingIds(agentId, plan.ids);
         put(plan.texts);
-        return true;
+        return "done";
     } finally {
         running.delete(agentId);
     }

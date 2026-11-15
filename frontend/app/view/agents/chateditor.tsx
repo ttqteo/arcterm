@@ -656,14 +656,23 @@ const Bridge = forwardRef<EditorLike, BridgeProps>(function Bridge({ props, said
 /** Keeps the ghost layer scrolled where the editor is: the editor scrolls once its text passes its max height, and the layer
  *  (which mirrors the text, `overflow-hidden`) would otherwise stay at the top, with the ghost off the last line. Set when
  *  it mounts (a ghost that shows while the editor is already scrolled) and again when the text or the ghost changes, and on
- *  the editor's `scroll`. Setting `scrollTop` from code moves an `overflow-hidden` box. */
+ *  the editor's `scroll`. Setting `scrollTop` from code moves an `overflow-hidden` box. Past its max height the editor
+ *  also gives its scrollbar a strip of its width, which the layer (no scrollbar) does not: the layer is padded on the right
+ *  by that strip, so its text wraps at the editor's width and the ghost stays after the last character. */
 function GhostScroll({ layer, text, ghost }: { layer: RefObject<HTMLDivElement | null>; text: string; ghost: string }) {
     const [editor] = useLexicalComposerContext();
     const sync = useRef(() => {});
     sync.current = () => {
         const root = editor.getRootElement();
         const el = layer.current;
-        if (root != null && el != null && el.scrollTop !== root.scrollTop) {
+        if (root == null || el == null) {
+            return;
+        }
+        const bar = `${Math.max(0, root.offsetWidth - root.clientWidth)}px`;
+        if (el.style.paddingRight !== bar) {
+            el.style.paddingRight = bar;
+        }
+        if (el.scrollTop !== root.scrollTop) {
             el.scrollTop = root.scrollTop;
         }
     };

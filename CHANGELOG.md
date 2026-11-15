@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- ↑ in Chat's empty box recalls your last message again while a Queued bubble lingers after Claude already took it,
+  instead of doing nothing.
+- A long bash command (`!`) that scrolls in Chat's box keeps its suggestion right after the last character.
 - Sixel images (from `img2sixel`, `chafa` and the like) now draw in terminals: the app's security policy
   blocked the decoder they need.
 - On an agent's initiative band beside a Brainstorm part, the "?" button no longer draws over "On <chunk>": the
