@@ -37059,6 +37059,50 @@ const agentRailTabs = {
                 tabs4.includes("Transcript") && tabs4.includes("File a.txt") && tabs4.includes("File big.txt") && tabs4.includes("File blob.bin") && tabs4.includes("File c.txt*"),
             JSON.stringify({ big, blob, cOpen, tabs4, back, gone })
         );
+
+        // 4b. Overview's 300px with the four files open: the file tabs fold into one icon tab with the count, and the
+        // strip's row (four icons, the folded tab, the counts, the panel's own buttons) fits without cutting a tab
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-tab="overview"]')?.click()`);
+        await railTabsNap(700);
+        const fit4b = await h.ev(`(() => {
+            const aside = ${RAIL_TABS_ASIDE};
+            const list = aside?.querySelector('[role="tablist"][aria-label="Agent panel"]');
+            if (!list) return null;
+            const r = (el) => { const b = el.getBoundingClientRect(); return { l: Math.round(b.left), r: Math.round(b.right) }; };
+            const row = list.parentElement;
+            const counts = row.querySelector('[role="group"][aria-label="Agent counts"]');
+            const tabs = [...list.querySelectorAll('[role="tab"]')];
+            const box = r(row);
+            // every child of the row, left to right, each starting where the one before it ends or later
+            const kids = [...row.children].map((k) => ({ ...r(k), w: Math.round(k.getBoundingClientRect().width) }));
+            return {
+                width: ${railTabsWidth},
+                row: box,
+                rowOverflow: row.scrollWidth - row.clientWidth,
+                labels: tabs.map((t) => t.getAttribute("aria-label")),
+                folded: tabs.find((t) => t.dataset.railTab === "file")?.textContent.trim() ?? null,
+                tabsCut: tabs.filter((t) => { const b = r(t); return b.l < box.l - 0.5 || b.r > box.r + 0.5 || t.getBoundingClientRect().width < 20; }).map((t) => t.getAttribute("aria-label")),
+                listOverflow: list.scrollWidth - list.clientWidth,
+                counts: counts ? { n: counts.querySelectorAll("button").length, ...r(counts), overflow: counts.scrollWidth - counts.clientWidth, widths: [...counts.querySelectorAll("button")].map((b) => Math.round(b.getBoundingClientRect().width)) } : null,
+                kids,
+                // room left at the row's end: how many more counts would fit, next to the widths above
+                free: box.r - Math.max(...kids.map((k) => k.r)),
+                overlaps: kids.slice(1).filter((k, i) => k.l < kids[i].r - 0.5).length,
+            };
+        })()`);
+        await h.shot("cdp-shots/agent-rail-tabs-overview-folded.png");
+        rec(
+            "4b. on Overview's 300px with four files open, the strip shows Overview, Files, Changes, Transcript and one folded file tab reading 4, and the row of tabs, counts and buttons fits: no tab cut, nothing overlapping, nothing scrolled out",
+            fit4b != null && Math.abs(fit4b.width - 300) <= 2 &&
+                JSON.stringify(fit4b.labels.slice(0, 4)) === JSON.stringify(["Overview", "Files", "Changes", "Transcript"]) &&
+                fit4b.labels.length === 5 && fit4b.folded === "4" &&
+                fit4b.tabsCut.length === 0 && fit4b.listOverflow <= 0 && fit4b.rowOverflow <= 0 && fit4b.overlaps === 0 &&
+                (fit4b.counts == null || fit4b.counts.overflow <= 0),
+            JSON.stringify(fit4b)
+        );
+        // back on File, where each file's tab has its close button
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-tab="file"]')?.click()`);
+        await railTabsNap(700);
         // a.txt alone again, for the steps that follow
         for (const name of ["big.txt", "blob.bin", "c.txt"]) {
             await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-file-close="${name}"]')?.click()`);
