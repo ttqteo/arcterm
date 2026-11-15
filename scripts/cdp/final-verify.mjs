@@ -26,7 +26,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { EXIT_UNVERIFIED } from "./report.mjs";
+import { EXIT_UNVERIFIED, unknownScenarios } from "./report.mjs";
 export { EXIT_UNVERIFIED };
 
 const DEFAULT_PORT = 9230;
@@ -346,6 +346,13 @@ async function main() {
     const out = process.env.ARC_FINAL_OUT;
     if (!out) unverified("ARC_FINAL_OUT is not set");
     const scenarios = process.argv.slice(2);
+    // checked before the dev app boots (minutes): a name no scenario has is the plan's or the build's mistake, so the
+    // Final fails and the run fixes it, rather than passing with that screen unchecked
+    const unknown = unknownScenarios((await import("./scenarios.mjs")).SCENARIOS, scenarios);
+    if (unknown.length) {
+        console.log(`no scenario is named ${unknown.join(", ")}: add it to scripts/cdp/scenarios.mjs or drop it from the Final line`);
+        process.exit(1);
+    }
     const bootMs = Number(process.env.ARC_FINAL_BOOT_MS) || DEFAULT_BOOT_MS;
     const lockWaitMs = Number(process.env.ARC_FINAL_LOCK_WAIT_MS) || DEFAULT_LOCK_WAIT_MS;
     mkdirSync(FINAL_BASE, { recursive: true });

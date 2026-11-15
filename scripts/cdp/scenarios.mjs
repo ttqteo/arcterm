@@ -24869,14 +24869,17 @@ async function polishWaitFor(h, expr, ms) {
 }
 
 // createproject only writes projects.json; the server's config watcher picks it up a moment later, and a reload
-// before then boots a frontend whose project list lacks it until the next config event
+// before then boots a frontend whose project list lacks it until the next config event. Under memory pressure the
+// watcher's reload has taken past 10 s (chat-brainstorm-review step 0), so the wait is 30 s of wall clock
+const PROJECT_CONFIG_WAIT_MS = 30000;
 async function waitForProjectInConfig(h, name) {
-    for (let waited = 0; waited < 10000; waited += 250) {
+    const start = Date.now();
+    while (Date.now() - start < PROJECT_CONFIG_WAIT_MS) {
         const cfg = await h.rpc("getfullconfig", null);
         if (cfg?.projects?.[name] != null) return;
         await polishNap(250);
     }
-    throw new Error(`project ${name} never reached the config`);
+    throw new Error(`project ${name} never reached the config in ${PROJECT_CONFIG_WAIT_MS / 1000}s`);
 }
 
 async function polishReload(h) {
@@ -66086,80 +66089,98 @@ const LOOK_TOASTS = [
     { title: "release scribe: opened the Diff surface", message: "", level: "info" },
 ];
 
-const notificationToasts = {
-    name: "notification-toasts",
-    surface: "cockpit",
-    async arrange() {
-        return {};
-    },
-    async assert(h) {
-        await lookOpen(h, "cockpit");
-        const shown = await lookEval(h, `
-            const { pushToast } = await mod("app/cockpit/notificationstore.ts");
-            for (const t of ${JSON.stringify(LOOK_TOASTS)}) pushToast(t);
-            const toasts = () => [...document.querySelectorAll("[data-notification-toast]")];
-            await until(() => toasts().length === ${LOOK_TOASTS.length}, 2000);
-            await nap(500); // the entrance, inside the 6s the toasts live
-            // the stack is the polite live region; a toast's panel is its button's parent, and a plain toast draws its
-            // level as the panel's border tone (error/40, warning/40, border): read each against a probe of that class
-            const stack = document.querySelector("[data-pet-avoid][role=status]");
-            const toneOf = (cls) => {
-                const probe = document.createElement("div");
-                probe.className = "border " + cls;
-                document.body.append(probe);
-                const c = getComputedStyle(probe).borderTopColor;
-                probe.remove();
-                return c;
-            };
-            const tones = { error: toneOf("border-error/40"), warn: toneOf("border-warning/40"), info: toneOf("border-border") };
-            const drawn = ${JSON.stringify(LOOK_TOASTS.map((t) => ({ title: t.title, level: t.level })))}.map((want) => {
-                const panel = toasts().find((t) => flat(t).startsWith(want.title))?.parentElement;
-                const border = panel ? getComputedStyle(panel).borderTopColor : null;
-                return { level: want.level, border, ok: border != null && border === tones[want.level] };
-            });
-            // the stack sits above the pet (z-62 over its z-60/61, notificationtoasts.tsx), so a toast is never covered by
-            // the avatar, whichever form shows. Hit-test it: at the centre of each toast panel and at points along its
-            // edges and corners (the hologram is a circle, so a corner can sit past its rim and a centre clear of it), the
-            // topmost element is inside that panel. The floating pet, not the Office's boss sprite (data-office-boss, also
-            // named "Jarvis condition"); a new toast is a [data-pet-avoid] box Sprout steps off the stretch under, so
-            // Sprout gets 2s to leave before the count. The hologram never moves: it stays under the toasts and covered.
-            const pets = () => [...document.querySelectorAll('[aria-label="Jarvis condition"]:not([data-office-boss])')].filter((p) => getComputedStyle(p).visibility !== "hidden");
-            const INSET = 10;
-            const coveredNow = () => {
-                const out = [];
-                for (const t of toasts()) {
-                    const panel = t.parentElement;
-                    const r = panel.getBoundingClientRect();
-                    const xs = [r.left + INSET, r.left + r.width * 0.25, r.left + r.width / 2, r.left + r.width * 0.75, r.right - INSET];
-                    const ys = [r.top + INSET, r.top + r.height / 2, r.bottom - INSET];
-                    for (const y of ys) {
-                        for (const x of xs) {
-                            const hit = document.elementFromPoint(x, y);
-                            if (hit == null || !panel.contains(hit)) {
-                                out.push({ toast: flat(t).slice(0, 24), x: Math.round(x), y: Math.round(y), hit: hit == null ? null : hit.tagName.toLowerCase() + (hit.getAttribute("aria-label") ? "[" + hit.getAttribute("aria-label") + "]" : "") });
-                            }
+const toastsShown = (h) =>
+    lookEval(h, `
+        const { pushToast } = await mod("app/cockpit/notificationstore.ts");
+        for (const t of ${JSON.stringify(LOOK_TOASTS)}) pushToast(t);
+        const toasts = () => [...document.querySelectorAll("[data-notification-toast]")];
+        await until(() => toasts().length === ${LOOK_TOASTS.length}, 2000);
+        await nap(500); // the entrance, inside the 6s the toasts live
+        // the stack is the polite live region; a toast's panel is its button's parent, and a plain toast draws its
+        // level as the panel's border tone (error/40, warning/40, border): read each against a probe of that class
+        const stack = document.querySelector("[data-pet-avoid][role=status]");
+        const toneOf = (cls) => {
+            const probe = document.createElement("div");
+            probe.className = "border " + cls;
+            document.body.append(probe);
+            const c = getComputedStyle(probe).borderTopColor;
+            probe.remove();
+            return c;
+        };
+        const tones = { error: toneOf("border-error/40"), warn: toneOf("border-warning/40"), info: toneOf("border-border") };
+        const drawn = ${JSON.stringify(LOOK_TOASTS.map((t) => ({ title: t.title, level: t.level })))}.map((want) => {
+            const panel = toasts().find((t) => flat(t).startsWith(want.title))?.parentElement;
+            const border = panel ? getComputedStyle(panel).borderTopColor : null;
+            return { level: want.level, border, ok: border != null && border === tones[want.level] };
+        });
+        // the stack sits above the pet (z-62 over its z-60/61, notificationtoasts.tsx), so a toast is never covered by
+        // the avatar, whichever form shows. Hit-test it: at the centre of each toast panel and at points along its
+        // edges and corners (the hologram is a circle, so a corner can sit past its rim and a centre clear of it), the
+        // topmost element is inside that panel. The floating pet, not the Office's boss sprite (data-office-boss, also
+        // named "Jarvis condition"); a new toast is a [data-pet-avoid] box Sprout steps off the stretch under, so
+        // Sprout gets 2s to leave before the count. The hologram never moves: it stays under the toasts and covered.
+        const pets = () => [...document.querySelectorAll('[aria-label="Jarvis condition"]:not([data-office-boss])')].filter((p) => getComputedStyle(p).visibility !== "hidden");
+        const INSET = 10;
+        const coveredNow = () => {
+            const out = [];
+            for (const t of toasts()) {
+                const panel = t.parentElement;
+                const r = panel.getBoundingClientRect();
+                const xs = [r.left + INSET, r.left + r.width * 0.25, r.left + r.width / 2, r.left + r.width * 0.75, r.right - INSET];
+                const ys = [r.top + INSET, r.top + r.height / 2, r.bottom - INSET];
+                for (const y of ys) {
+                    for (const x of xs) {
+                        const hit = document.elementFromPoint(x, y);
+                        if (hit == null || !panel.contains(hit)) {
+                            out.push({ toast: flat(t).slice(0, 24), x: Math.round(x), y: Math.round(y), hit: hit == null ? null : hit.tagName.toLowerCase() + (hit.getAttribute("aria-label") ? "[" + hit.getAttribute("aria-label") + "]" : "") });
                         }
                     }
                 }
-                return out;
-            };
-            await until(() => coveredNow().length === 0, 2000);
-            const covered = coveredNow();
-            return {
-                text: toasts().map(flat),
-                drawn,
-                distinctTones: new Set(Object.values(tones)).size === 3,
-                live: stack?.getAttribute("aria-live") ?? null,
-                covered: covered.length,
-                coveredAt: covered.slice(0, 4),
-                pets: pets().map((p) => (p.hasAttribute("data-pet-hologram") ? "hologram" : "pet")),
-            };
-        `);
+            }
+            return out;
+        };
+        await until(() => coveredNow().length === 0, 2000);
+        const covered = coveredNow();
+        return {
+            text: toasts().map(flat),
+            drawn,
+            distinctTones: new Set(Object.values(tones)).size === 3,
+            live: stack?.getAttribute("aria-live") ?? null,
+            covered: covered.length,
+            coveredAt: covered.slice(0, 4),
+            pets: pets().map((p) => (p.hasAttribute("data-pet-hologram") ? "hologram" : "pet")),
+        };
+    `);
+
+// a toast's own click dismisses it
+const toastsDismissed = (h) =>
+    lookEval(h, `
+        for (const t of [...document.querySelectorAll("[data-notification-toast]")]) t.click();
+        return until(() => document.querySelector("[data-notification-toast]") == null, 2000);
+    `);
+
+// the toasts are checked in each of Jarvis's forms: the hologram (the default) stays put under the stack, and Sprout
+// steps off the stretch under a new toast within 2 s. The form is read once at boot, so each pass reloads into it
+const notificationToasts = {
+    name: "notification-toasts",
+    surface: "cockpit",
+    async arrange(h) {
+        return { prevForm: await h.ev(`localStorage.getItem(${JSON.stringify(PET_FORM_KEY)})`) };
+    },
+    async assert(h) {
+        const intoForm = async (form) => {
+            await h.ev(`localStorage.setItem(${JSON.stringify(PET_FORM_KEY)}, ${JSON.stringify(JSON.stringify(form))})`);
+            if (!(await ahReload(h))) throw new Error(`the page did not come back after the reload into ${form}`);
+            await lookOpen(h, "cockpit");
+        };
+        await intoForm("hologram");
+        const shown = await toastsShown(h);
         await h.shot(lookShot("notification-toasts"));
-        const dismissed = await lookEval(h, `
-            for (const t of [...document.querySelectorAll("[data-notification-toast]")]) t.click();
-            return until(() => document.querySelector("[data-notification-toast]") == null, 2000);
-        `);
+        const dismissed = await toastsDismissed(h);
+        await intoForm("sprout");
+        const sprout = await toastsShown(h);
+        await h.shot(lookShot("notification-toasts-sprout"));
+        await toastsDismissed(h);
         return [
             {
                 step: "error, warn and info toasts stack in the corner, each with its title",
@@ -66172,14 +66193,22 @@ const notificationToasts = {
                 detail: JSON.stringify({ live: shown.live, distinctTones: shown.distinctTones, drawn: shown.drawn }),
             },
             {
-                step: "no toast is covered by the Jarvis avatar",
-                ok: shown.covered === 0,
+                step: "no toast is covered by the Jarvis avatar in its hologram form",
+                ok: shown.covered === 0 && shown.pets.includes("hologram"),
                 detail: `covered=${shown.covered} pets=${JSON.stringify(shown.pets)} at=${JSON.stringify(shown.coveredAt)}`,
             },
             { step: "a click dismisses a toast", ok: dismissed === true, detail: `dismissed=${dismissed}` },
+            {
+                step: "no toast is covered by Sprout: it steps off the stretch under the stack within 2 s",
+                ok: sprout.covered === 0 && sprout.pets.includes("pet"),
+                detail: `covered=${sprout.covered} pets=${JSON.stringify(sprout.pets)} at=${JSON.stringify(sprout.coveredAt)}`,
+            },
         ];
     },
-    async teardown() {},
+    async teardown(h, ctx) {
+        await h.ev(`(() => { ${restoreStorageKey(PET_FORM_KEY, ctx?.prevForm ?? null)}; return true; })()`);
+        await ahReload(h);
+    },
 };
 
 // every row kind the menu draws: header, accelerator, sublabel, checkbox, radio (in the submenu), separator,
@@ -66245,7 +66274,30 @@ const contextMenu = {
             };
         `);
         await h.shot(lookShot("context-menu"));
+        // a submenu opened while the root panel still scales in (PopoverReveal) stands where it does once it settles: 5px
+        // above its row and 4px off its right side. The row is entered in the frame the menu mounts (React reads
+        // mouseover as its mouseenter), then both are read after the reveal
+        const early = await lookEval(h, `
+            const { globalStore } = await mod("app/store/jotaiStore.ts");
+            const { contextMenuAtom, closeContextMenu } = await mod("app/store/contextmenu.ts");
+            closeContextMenu();
+            await nap(100);
+            const items = ${JSON.stringify(LOOK_MENU_ITEMS)}.map((i) => ({ ...i, click: () => {} }));
+            globalStore.set(contextMenuAtom, { items, x: ${LOOK_MENU_AT.x}, y: ${LOOK_MENU_AT.y} });
+            await until(() => ${LOOK_MENU_ROW("Sort by")} != null, 2000);
+            ${LOOK_MENU_ROW("Sort by")}.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body }));
+            await until(() => document.querySelector("[data-context-submenu]") != null, 2000);
+            await nap(600);
+            const row = ${LOOK_MENU_ROW("Sort by")}.getBoundingClientRect();
+            const sub = document.querySelector("[data-context-submenu]")?.getBoundingClientRect();
+            return sub == null ? { opened: false } : { opened: true, dTop: Math.round((sub.top - (row.top - 5)) * 10) / 10, dLeft: Math.round((sub.left - (row.right + 4)) * 10) / 10 };
+        `);
         return [
+            {
+                step: "a submenu opened while the menu scales in sits 5px above its row and 4px off its side once it settles",
+                ok: early.opened && Math.abs(early.dTop) <= 1 && Math.abs(early.dLeft) <= 1,
+                detail: JSON.stringify(early),
+            },
             {
                 step: "a menu with every row kind draws them all, and hovering Sort by opens its submenu",
                 ok: sub.submenu && sub.danger,

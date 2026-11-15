@@ -61,6 +61,19 @@ function Leading({ item, highlighted, danger }: { item: ContextMenuItem; highlig
     return <span className={cn(LEAD, "[&_svg]:h-[15px] [&_svg]:w-[15px]", color)}>{content}</span>;
 }
 
+// where `el` sits inside `ancestor`'s padding box, summed up its offsetParent chain; null when the chain never reaches it
+function offsetWithin(el: HTMLElement, ancestor: HTMLElement): { top: number; left: number } | null {
+    let top = 0;
+    let left = 0;
+    let at: HTMLElement | null = el;
+    while (at != null && at !== ancestor) {
+        top += at.offsetTop + (at === el ? 0 : at.clientTop);
+        left += at.offsetLeft + (at === el ? 0 : at.clientLeft);
+        at = at.offsetParent as HTMLElement | null;
+    }
+    return at === ancestor ? { top, left } : null;
+}
+
 // One menu level. `basePath` is the path prefix that reaches this level's parent
 // (empty at root). `active` is the whole highlight path. A row is highlighted when
 // active[level] === its index; its submenu is open when the active path goes deeper.
@@ -148,6 +161,14 @@ function MenuRow({
         const row = ref.current;
         if (!submenuOpen || row == null || host == null) {
             setAt(null);
+            return;
+        }
+        // from the layout offsets, which no transform moves: opened while the root panel's PopoverReveal still scales it in,
+        // a client rect is the scaled box, and the submenu stood a few px off until it was reopened
+        const off = offsetWithin(row, host);
+        if (off != null) {
+            const edge = flipLeft ? host.offsetWidth - off.left + 4 : off.left + row.offsetWidth + 4;
+            setAt({ top: off.top - 5, edge });
             return;
         }
         const r = row.getBoundingClientRect();

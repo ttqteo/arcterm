@@ -27,6 +27,14 @@ export function renderWait({ now, start, startedAt, rendered, error }) {
     return now - startedAt >= RENDER_WAIT_MS ? "not-rendered" : "wait";
 }
 
+// the names asked for that no scenario has: a typo, or a scenario a later run was meant to write. Run with the rest
+// left out silently, a Final passed while the screen it was named for went unchecked (run 911b6d3a's
+// chat-verdict-handoff), so the runners fail on any of these instead.
+export function unknownScenarios(scenarios, names) {
+    const known = new Set(scenarios.map((s) => s.name));
+    return names.filter((n) => !known.has(n));
+}
+
 export function exitCode(scenarioResults) {
     const allPass = scenarioResults.every((s) => !s.error && s.steps.every((st) => st.ok || st.skip));
     return allPass ? 0 : 1;

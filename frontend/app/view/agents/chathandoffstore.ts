@@ -78,6 +78,10 @@ export function useAgentCwd(agent: AgentVM | undefined): string | undefined {
     return cwd;
 }
 
+// a failed read of the run slots leaves the handoff card without its slot count; said once per app, not on every
+// runqueue:changed of a backend that keeps refusing it
+let slotsWarned = false;
+
 /** Runs active and the cap (`runs:maxactive`, 0 for none), read on mount and again on every `runqueue:changed`; null until
  *  read and when the read fails. */
 export function useRunSlots(): { active: number; max: number } | null {
@@ -94,7 +98,11 @@ export function useRunSlots(): { active: number; max: number } | null {
                         setSlots({ active: data.active, max: data.maxactive });
                     }
                 })
-                .catch(() => {
+                .catch((e) => {
+                    if (!slotsWarned) {
+                        slotsWarned = true;
+                        console.warn("[chat] run slots not read:", e instanceof Error ? e.message : String(e));
+                    }
                     if (live && mine === seq) {
                         setSlots(null);
                     }
