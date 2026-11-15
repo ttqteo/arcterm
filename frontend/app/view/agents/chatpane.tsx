@@ -74,6 +74,7 @@ import {
     type PendingKind,
     type PendingMessage,
 } from "./chatpending";
+import { useLostBash } from "./chatlostbashstore";
 import { usePending } from "./chatpendingstore";
 import { risesFromBox } from "./chatsentrise";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
@@ -506,6 +507,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
         [view?.entries, taken]
     );
     const entries = shown.entries;
+    // the `!` commands arcterm's restart cut short, which the transcript never got (chatlostbash.ts)
+    const lostBash = useLostBash(path, entries);
     useEffect(() => {
         if (shown.next != null) {
             noteTakenBack(agent.id, shown.next);
@@ -836,6 +839,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                 <ChatConversation
                                     key={`${view!.path}:${view!.epoch}`}
                                     entries={entries}
+                                    lostBash={lostBash}
                                     liveReply={liveStreams && !awaitsOwn ? liveReplyAtom(streamId) : undefined}
                                     liveNarrates={narrates}
                                     placeId={placeId}

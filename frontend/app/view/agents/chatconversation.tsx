@@ -80,6 +80,7 @@ import { openMessageCard, useMessageCards } from "./chatinitiativestore";
 import { sameChatItem } from "./chatitemeq";
 import { ChatQuoteMenu } from "./chatquotemenu";
 import { liveTexts, withLiveReply, type LiveReply } from "./chatlive";
+import { withLostBash, type LostBash } from "./chatlostbash";
 import {
     CHAT_RENDER_STEP,
     agentWentOn,
@@ -433,7 +434,7 @@ function YouBubble({
                 command={item.command.slice(2)}
                 bash
                 shell={item.shell}
-                note={item.asleep}
+                note={item.asleep ?? item.lost}
                 onContextMenu={onContextMenu}
             />
         );
@@ -671,6 +672,7 @@ function Arriving({
 
 const NO_KEYS: ReadonlySet<string> = new Set();
 const NO_LIVE_REPLY: Atom<LiveReply | null> = atom<LiveReply | null>(null);
+const NO_LOST: readonly LostBash[] = [];
 const NO_ANSWERS: ReadonlyMap<string, PairedAnswer> = new Map();
 const NO_ENDED: ReadonlyMap<string, { runId: string; ended: RunEnded }> = new Map();
 // the run queue is read only by a conversation that has a queued start in it (placeRunCards tells an entry still waiting
@@ -912,6 +914,7 @@ function Marker({ item }: { item: ChatMarker }) {
 
 export function ChatConversation({
     entries,
+    lostBash,
     liveReply,
     liveNarrates,
     placeId,
@@ -925,6 +928,9 @@ export function ChatConversation({
     className,
 }: {
     entries: AgentEntry[];
+    // the `!` commands arcterm's restart cut short, drawn as their rows where they were sent (chatlostbash.ts); left out
+    // where there are none to draw (an ended session, a subagent's interior)
+    lostBash?: readonly LostBash[];
     // the reply Claude is writing (chatlive.ts, chatlivestore.ts): drawn at the end until the transcript holds its blocks,
     // its thinking blocks too when `liveNarrates`. Read here, not by the caller, so its ticks redraw only the conversation
     liveReply?: Atom<LiveReply | null>;
@@ -953,7 +959,7 @@ export function ChatConversation({
     className?: string;
 }) {
     const toolsLive = working ?? !!active;
-    const stored = useMemo(() => chatItems(entries), [entries]);
+    const stored = useMemo(() => withLostBash(chatItems(entries), lostBash ?? NO_LOST), [entries, lostBash]);
     const reply = useAtomValue(liveReply ?? NO_LIVE_REPLY);
     const items = useMemo(
         () => withLiveReply(stored, liveTexts(reply, !!liveNarrates), entries.length),

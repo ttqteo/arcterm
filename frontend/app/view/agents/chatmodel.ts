@@ -91,7 +91,8 @@ export type ChatItem =
     // reads "! cmd"; `shell` is what it printed once that lands. `terminal`: a panel only Claude Code's own screen drew
     // (/config, /usage…), which left nothing here to show. `btw`: a /btw's side answer
     // `asleep`: a `!` command that ran while the agent slept and rode the message after it (chatsleepbash.ts), the
-    // status line it ended with
+    // status line it ended with. `lost`: a `!` command arcterm's restart cut short, which the transcript never got
+    // (chatlostbash.ts), the note saying so
     | {
           kind: "you";
           key: string;
@@ -100,6 +101,7 @@ export type ChatItem =
           terminal?: true;
           btw?: BtwAnswer;
           asleep?: string;
+          lost?: string;
       }
     // a prompt arcterm typed: `header` names it, `lines` are its fields as "label value" and its body (at most SENT_LINES);
     // `tabId` the tab of the agent that sent it with `wsh agents send`, which the card opens
