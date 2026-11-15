@@ -114,6 +114,9 @@ const short = git(["rev-parse", "--short", commit]);
 const subject = git(["log", "-1", "--format=%s", commit]);
 const dirty = git(["status", "--porcelain"]).split("\n").filter(Boolean);
 const stamp = fromTree && dirty.length > 0 ? `${short}-dirty` : short;
+// the app shows the same stamp beside its version (frontend/tauri/buildcommit.ts): git in the snapshot would read
+// dirty once the bump writes its package.json, so it is passed down to vite instead of asked for there
+process.env.ARC_BUILD_COMMIT = stamp;
 
 // the lines the build carries: the commit's CHANGELOG.md, or the checkout's own for --from tree
 const changelog = fromTree ? readFileSync(join(ROOT, "CHANGELOG.md"), "utf8") : git(["show", `${commit}:CHANGELOG.md`]);

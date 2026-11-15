@@ -101,6 +101,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- The version at the bottom right names the commit the build was made from (`v1.1.3 · e999f3db4`, `-dirty` when it
+  held uncommitted edits), and Settings → About has it as a Commit row, so two builds of one version can be told apart.
 - In Chat, Shift+Enter on a suggested reply picked with Tab puts its text in the box so you can edit it before sending.
 - In Chat, a message that moved the agent to another initiative chunk shows a "Chunk N · name" divider above it, so
   you can tell where each chunk's work begins.

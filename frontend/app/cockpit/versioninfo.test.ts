@@ -44,6 +44,11 @@ describe("deriveVersionInfo", () => {
         expect(deriveVersionInfo("0.14.5", "0.14.5", Infinity, "win32").buildTime).toBe(0);
     });
 
+    it("carries the build commit, empty when it is unknown", () => {
+        expect(deriveVersionInfo("1.1.3", "1.1.3", 0, "win32", " e999f3db4 ").commit).toBe("e999f3db4");
+        expect(deriveVersionInfo("1.1.3", "1.1.3", 0, "win32").commit).toBe("");
+    });
+
     it("normalizes a missing platform and a non-finite build time", () => {
         const info = deriveVersionInfo("0.14.5", "0.14.5", Number.NaN, "");
         expect(info.platform).toBe(UNKNOWN_VERSION);
