@@ -45,7 +45,8 @@ const MACHINE_POLL_MS = 1000;
 // how often a shut popover's bridge asks wavesrv something cheap, so "Last heard" is current when wavesrv dies
 const HEARTBEAT_MS = 15_000;
 
-async function showMain(model: AgentsViewModel): Promise<void> {
+// raises the main window (and brings it back from Sprout); the Sidecar bridge raises it the same way after an open
+export async function showMain(model: AgentsViewModel): Promise<void> {
     if (globalStore.get(floatMiniAtom)) {
         await restoreFromSprout(model);
     }
