@@ -24869,14 +24869,17 @@ async function polishWaitFor(h, expr, ms) {
 }
 
 // createproject only writes projects.json; the server's config watcher picks it up a moment later, and a reload
-// before then boots a frontend whose project list lacks it until the next config event
+// before then boots a frontend whose project list lacks it until the next config event. Under memory pressure the
+// watcher's reload has taken past 10 s (chat-brainstorm-review step 0), so the wait is 30 s of wall clock
+const PROJECT_CONFIG_WAIT_MS = 30000;
 async function waitForProjectInConfig(h, name) {
-    for (let waited = 0; waited < 10000; waited += 250) {
+    const start = Date.now();
+    while (Date.now() - start < PROJECT_CONFIG_WAIT_MS) {
         const cfg = await h.rpc("getfullconfig", null);
         if (cfg?.projects?.[name] != null) return;
         await polishNap(250);
     }
-    throw new Error(`project ${name} never reached the config`);
+    throw new Error(`project ${name} never reached the config in ${PROJECT_CONFIG_WAIT_MS / 1000}s`);
 }
 
 async function polishReload(h) {
