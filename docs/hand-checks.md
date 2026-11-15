@@ -6,12 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
-- [ ] (arcterm) **Sidecar's first open is maximized on the other screen.** Unit tests of the screen choice only; no
-  second screen was at hand. With two screens and the arcterm window on one, Ctrl+P → "Open Sidecar" → the Sidecar
-  window comes up maximized on the other screen (the larger one, with three), takes the title `arcterm Sidecar`
-  (`arcterm Sidecar (dev)` in a dev build), and un-maximizing leaves a 1280×800 window centred there (smaller on a
-  small screen, never past 90% of it). On a screen of a different scale from the main window's the size is still right.
-  With one screen it opens centred, not maximized. Commit: feat(sidecar) the Sidecar window from the Tauri host
+- [ ] (arcterm) **Sidecar's first open on one screen, or on a screen of another scale.** Two screens of one scale
+  held on 1.1.3 `38f41b95b` (2026-11-15): Open Sidecar came up maximized on the other screen as `arcterm Sidecar`, and
+  un-maximizing left 1280×800 centred there. Still unseen: with one screen it opens centred (1280×800, never past 90% of
+  the screen), not maximized; and on a screen of a different scale from the main window's the size is still right.
+  Commit: feat(sidecar) the Sidecar window from the Tauri host
 - [ ] (arcterm) **Sidecar closes when the main window is destroyed, and stays when it is only hidden.** Tray icon off
   (Settings → `app:tray`): open Sidecar, close the main window → Sidecar closes with it and arcterm quits. Tray icon
   on: close the main window → it hides to the icon and Sidecar stays open; Quit from the icon closes both. Commit: same.
@@ -26,17 +25,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   200×207 back), so step 2 only checks the page's own window calls. Open Sidecar, drag its bottom-right corner toward the
   top-left → it stops at 340×440 and the wall still draws whole tiles (no tile under 300 px wide). Commit: test(sidecar)
   the sidecar-wall CDP scenario
-- [ ] (arcterm) **Part 1 of Sidecar has no release-build RAM measurement.** The dev prototype read about 80 MB for the
-  slim page against the spec's 100 MB budget. Before part 2 merges, measure a `task tauri:build` with 12 agents
-  running: Sidecar's renderer and GPU process in Task Manager (WebView2 processes with the Sidecar window open, minus
-  with it closed), at open and after 15 minutes, and log the figure in open-issues.md's "RAM watch".
 
-- [ ] (arcterm) **The version names the commit it was built from.** Unit tests, the typecheck, and the dev Vite
-  server's `/@vite/env` (it served `__ARC_COMMIT__` from `ARC_BUILD_COMMIT`, and from git without it) only; no app ran.
-  `task tauri:build`, install → the footer's bottom right reads `v<version> · <short commit>` (the commit in the
-  installer's name in `releases/`, with no `-dirty`), its tooltip adds "commit <sha>", and Settings → About shows
-  the same under Commit. `task dev` with an uncommitted edit → `· <sha>-dirty`. Commit: feat(cockpit) "the version
-  names the commit the build was made from".
+- [ ] (arcterm) **The version's tooltip, About and a dirty dev build name the commit.** The footer of installed 1.1.3
+  read `v1.1.3 · 38f41b95b`, the installer's commit, on 2026-11-15. Still unseen: its tooltip adds "commit <sha>",
+  Settings → About shows the same under Commit, and `task dev` with an uncommitted edit reads `· <sha>-dirty`.
+  Commit: feat(cockpit) "the version names the commit the build was made from".
 
 - [ ] (arcterm) **An agent's run counts leave cancelled runs out.** Unit tests and the typecheck only; no dev app ran.
   From an agent, `wsh runs start` two runs, cancel one → that agent's row in the Agent sidebar shows the live run's
@@ -2929,3 +2922,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   message while the reply's last paragraph is still streaming (once queued, once with Send now), and once right after it
   ends: the reply stays one copy above your message, with no second copy under it and no flicker (`chatlive.ts`
   withLiveReply; unit tests only, no scenario streams a live reply).
+- [ ] (arcterm) **A `! command` that restarts arcterm stays in Chat.** In a Claude agent's Chat, send `! task install`
+  (or any `!` command, then quit arcterm while it runs): after arcterm reopens, the agent's Chat shows the `!` row right
+  after the reply it was sent after, before your next message, with "Sent before arcterm restarted · its output was not
+  kept". A `!` that finished normally shows once, with its output, never a second time (`chatlostbash.ts`; unit tests
+  and the typecheck only, no scenario restarts the app).
