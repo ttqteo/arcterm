@@ -202,7 +202,8 @@ export function DocFindBar({
         <div
             data-doc-find
             role="search"
-            className="absolute right-3 top-2 z-20 flex items-center gap-0.5 rounded-[7px] border border-edge-mid bg-surface-raised py-[3px] pl-2.5 pr-[3px] shadow-popover-sm"
+            // frosted like the terminal's find bar (element/search.tsx): both float over the text they search
+            className="frost absolute right-3 top-2 z-20 flex items-center gap-0.5 rounded-[7px] border border-edge-mid py-[3px] pl-2.5 pr-[3px] shadow-popover-sm"
         >
             <input
                 ref={inputRef}

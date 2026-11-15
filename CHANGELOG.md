@@ -24,6 +24,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Changed
+
+- Find in a document (Ctrl+F in the File tab) floats on the same frosted glass as find in a terminal.
+
 ### Fixed
 
 - ↑ in Chat's empty box recalls your last message again while a Queued bubble lingers after Claude already took it,
