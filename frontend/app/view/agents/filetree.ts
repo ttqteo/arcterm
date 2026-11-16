@@ -111,6 +111,21 @@ export function listOrder(files: GitChange[], tree: boolean): string[] {
         .map((r) => r.id);
 }
 
+// The collapsed set with every folder holding `path` opened, so a file n / p steps to is a row on screen. A folder's
+// id is its path, folded chains included ("a/b"), so it holds the file when the file's path starts with it. The same
+// set comes back when nothing above the file was collapsed, so writing it changes nothing.
+export function expandToShow(collapsed: Set<string>, path: string): Set<string> {
+    const above = [...collapsed].filter((id) => path.startsWith(`${id}/`));
+    if (above.length === 0) {
+        return collapsed;
+    }
+    const next = new Set(collapsed);
+    for (const id of above) {
+        next.delete(id);
+    }
+    return next;
+}
+
 // null past either end (no wrap); a `from` that is null or not listed starts at the first file
 export function stepInList(order: string[], from: string | null, dir: 1 | -1): string | null {
     const at = from == null ? -1 : order.indexOf(from);

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { buildFileTree, listOrder, stepInList } from "./filetree";
+import { buildFileTree, expandToShow, listOrder, stepInList } from "./filetree";
 import type { GitChange } from "./gitstatus";
 
 const f = (path: string, adds = 1, dels = 0): GitChange => ({ path, status: "M", adds, dels });
@@ -128,5 +128,28 @@ describe("stepInList", () => {
     it("has nowhere to go in an empty list", () => {
         expect(stepInList([], null, 1)).toBeNull();
         expect(stepInList([], "a", -1)).toBeNull();
+    });
+});
+
+describe("expandToShow", () => {
+    it("opens every collapsed folder above the file, folded chains included", () => {
+        const collapsed = new Set(["src", "src/app/view", "docs"]);
+        expect([...expandToShow(collapsed, "src/app/view/x.ts")].sort()).toEqual(["docs"]);
+    });
+
+    it("leaves a folder that only shares a name prefix", () => {
+        const collapsed = new Set(["src/app"]);
+        expect(expandToShow(collapsed, "src/apple/x.ts")).toBe(collapsed);
+    });
+
+    it("returns the same set when nothing above the file is collapsed", () => {
+        const collapsed = new Set(["docs"]);
+        expect(expandToShow(collapsed, "README.md")).toBe(collapsed);
+    });
+
+    it("the file's row is in the tree once its folders are open", () => {
+        const files = [f("src/a.ts"), f("src/b.ts")];
+        const collapsed = expandToShow(new Set(["src"]), "src/b.ts");
+        expect(buildFileTree(files, collapsed).some((r) => r.kind === "file" && r.id === "src/b.ts")).toBe(true);
     });
 });
