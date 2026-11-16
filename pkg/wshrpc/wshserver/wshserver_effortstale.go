@@ -173,7 +173,8 @@ func scanStale(ctx context.Context, oid string) ([]wshrpc.EffortStaleEntry, erro
 }
 
 // backfillBases stamps the commit HEAD was at when each open chunk with no BaseCommit was written (ChunkWrittenTs). The stamp
-// goes through the keep-UpdatedTs update, with no note: it records when the chunk was written, it is not new work.
+// goes through the keep-UpdatedTs update, with no note: it records when the chunk was written, it is not new work. A
+// base an earlier backfill dated by UpdatedTs (jarvis.BaseFromBackfill) is re-derived the same way and corrected.
 func backfillBases(ctx context.Context, oid string) (int, int, error) {
 	groups, err := staleGroups(ctx, oid)
 	if err != nil {
@@ -184,10 +185,18 @@ func backfillBases(ctx context.Context, oid string) (int, int, error) {
 		var h *jarvis.StaleHistory
 		for _, e := range g.efforts {
 			bases := map[string]string{}
+			was := map[string]string{} // the base each re-derived chunk held, so a recheck meanwhile is never undone
 			for _, c := range e.Chunks {
 				written := jarvis.ChunkWrittenTs(e, c)
-				if !jarvis.ChunkIsOpen(c) || c.BaseCommit != "" || written <= 0 {
+				if !jarvis.ChunkIsOpen(c) || written <= 0 {
 					continue
+				}
+				if c.BaseCommit != "" {
+					if !jarvis.BaseFromBackfill(e, c) {
+						continue
+					}
+					was[c.Label] = c.BaseCommit
+					c.BaseCommit = ""
 				}
 				if h == nil {
 					if h, err = staleHistoryFor(ctx, g.dir, g.fromMs); err != nil {
@@ -199,7 +208,7 @@ func backfillBases(ctx context.Context, oid string) (int, int, error) {
 				if base == "" {
 					base, _ = gitinfo.CommitBefore(ctx, g.dir, written/1000)
 				}
-				if base != "" {
+				if base != "" && base != was[c.Label] {
 					bases[c.Label] = base
 				}
 			}
@@ -209,7 +218,7 @@ func backfillBases(ctx context.Context, oid string) (int, int, error) {
 			n := 0
 			err := effortstore.UpdateKeepTs(ctx, e.OID, func(st *waveobj.Effort) error {
 				for i := range st.Chunks {
-					if base, ok := bases[st.Chunks[i].Label]; ok && st.Chunks[i].BaseCommit == "" {
+					if base, ok := bases[st.Chunks[i].Label]; ok && st.Chunks[i].BaseCommit == was[st.Chunks[i].Label] {
 						st.Chunks[i].BaseCommit = base
 						n++
 					}
