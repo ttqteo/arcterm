@@ -16,6 +16,9 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A Work on session keeps its initiative.** Go tests only, no dev app ran. In Jarvis, Work on an
+  initiative whose notes point at another one, and ask the agent to `wsh effort show` that other initiative: the Agent
+  header and initiative band keep the one you picked (63184f53b).
 - [ ] (arcterm) **The Jarvis hologram no longer drops to the pixel pet.** Unit tests and typecheck only, no dev app
   ran. Use arcterm a working day with many agents and terminals opened, closed and switched between: `waveapp.log`
   has no `[hologram] failed` line, the hologram never turns into Sprout/Minion for 5 s, and terminals still draw sharp
