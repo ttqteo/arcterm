@@ -397,7 +397,7 @@ export default function (kit) {
             await AC.focusAgent(h, A);
             await polishWaitFor(h, `(${layerOf(A)}?.querySelectorAll("[data-chat-item]").length ?? 0) >= 6`, WAIT_MS);
 
-            // 1. unlinked: no band, a link chip with its key, `i` opens the picker
+            // 1. unlinked: no band, "+ initiative" after the project (no keycap), `i` opens the picker
             await run("1. unlinked header", async (name) => {
                 await setA({ effortId: undefined });
                 await polishWaitFor(h, `!!document.querySelector("[data-agent-header] [data-initiative-link]")`, WAIT_MS);
@@ -406,7 +406,7 @@ export default function (kit) {
                     return {
                         band: !!${bandOf(A)},
                         chip: chip?.textContent.replace(/\\s+/g, " ").trim() ?? null,
-                        keycap: [...(chip?.querySelectorAll("span") ?? [])].some((s) => /^i$/i.test(s.textContent.trim())),
+                        keycap: !!chip?.querySelector("kbd") || [...(chip?.querySelectorAll("span") ?? [])].some((s) => /^i$/i.test(s.textContent.trim())),
                         menuRow: !!document.querySelector("[data-agent-header] [data-initiative-link-menu]"),
                         oldChip: !!document.querySelector("[data-agent-header] [data-initiative-link-open]"),
                     };
@@ -419,13 +419,13 @@ export default function (kit) {
                 await press(h, "Escape");
                 const closed = await polishWaitFor(h, `!document.querySelector("[data-initiative-picker]")`, SHORT_MS);
                 rec(
-                    `${name}: no [data-initiative-band]; the Chat header shows [data-initiative-link] ("+ Link to initiative") with its i keycap and no [data-initiative-link-menu] or ◇ chip; i opens the picker`,
-                    got.band === false && /Link to initiative/.test(got.chip ?? "") && got.keycap && !got.menuRow && !got.oldChip && picker && closed,
+                    `${name}: no [data-initiative-band]; the Chat header shows [data-initiative-link] ("+ initiative", no keycap) and no [data-initiative-link-menu] or ◇ link; i opens the picker`,
+                    got.band === false && got.chip === "initiative" && !got.keycap && !got.menuRow && !got.oldChip && picker && closed,
                     { ...got, picker, closed }
                 );
             });
 
-            // 2. linked and collapsed: the band's line, no ◇ chip in the header
+            // 2. linked and collapsed: the band's line; the Chat header's ◇ link opens and closes the band, never the popover
             await run("2. band collapsed", async (name) => {
                 const oid = await makeMain();
                 const up = await link(oid, TITLE);
@@ -433,8 +433,15 @@ export default function (kit) {
                 const got = await readBand(h, A);
                 const header = await h.ev(`({ link: !!document.querySelector("[data-agent-header] [data-initiative-link-open]"), chip: !!document.querySelector("[data-agent-header] [data-initiative-link]") })`);
                 await shot(h, "2-collapsed");
+                // the ◇ link toggles the band, as `i` does in Chat, and opens no popover
+                const LINK_OPEN = `document.querySelector("[data-agent-header] [data-initiative-link-open]")`;
+                await click(h, LINK_OPEN);
+                const opened = await polishWaitFor(h, `${bandOf(A)}?.hasAttribute("data-band-open") === true`, SHORT_MS);
+                const popover = await h.ev(`!!document.querySelector("[data-initiative-popover]")`);
+                await click(h, LINK_OPEN);
+                const shut = await polishWaitFor(h, `${bandOf(A)}?.hasAttribute("data-band-open") === false`, SHORT_MS);
                 rec(
-                    `${name}: collapsed [data-initiative-band] reads the title, [data-band-segments], 1/7 in [data-band-progress], "On 2 ${C.draw}" in [data-band-on] and a Mark done with its m key; the Chat header has no [data-initiative-link-open] and no link chip`,
+                    `${name}: collapsed [data-initiative-band] reads the title, [data-band-segments], 1/7 in [data-band-progress], "On 2 ${C.draw}" in [data-band-on] and a Mark done with its m key; the Chat header has its ◇ [data-initiative-link-open] and no link chip, and a click on it opens the band (no [data-initiative-popover]) and a second closes it`,
                     up &&
                         got?.open === false &&
                         got.title === TITLE &&
@@ -443,9 +450,12 @@ export default function (kit) {
                         /^On\s*2\s*Draw the band$/.test(got.on) &&
                         /Mark done/.test(got.markDone ?? "") &&
                         got.markDoneKey &&
-                        !header.link &&
-                        !header.chip,
-                    { up, got, header }
+                        header.link &&
+                        !header.chip &&
+                        opened &&
+                        !popover &&
+                        shut,
+                    { up, got, header, opened, popover, shut }
                 );
             });
 

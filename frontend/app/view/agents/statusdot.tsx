@@ -43,7 +43,8 @@ export function StatusDot({
 
 // The dev servers an agent's background tasks left listening (bgactivity.ts launchedServers). They do not make it
 // working, so its dot stays idle; this green server glyph says one still runs, and `ports` adds their ports beside it.
-export function ServerMark({ servers, ports }: { servers: DevServerRow[]; ports?: boolean }) {
+// `ports` writes the ports beside the glyph; `count` writes only how many (a narrow header), the ports in the title
+export function ServerMark({ servers, ports, count }: { servers: DevServerRow[]; ports?: boolean; count?: boolean }) {
     if (servers.length === 0) {
         return null;
     }
@@ -58,7 +59,11 @@ export function ServerMark({ servers, ports }: { servers: DevServerRow[]; ports?
             className="flex flex-none items-center gap-[3px] text-[10.5px] tabular-nums text-success"
         >
             <Server size={11} strokeWidth={2.2} aria-hidden />
-            {ports ? portsLabel(servers.flatMap((s) => s.ports)) : null}
+            {ports
+                ? portsLabel(servers.flatMap((s) => s.ports))
+                : count
+                  ? servers.flatMap((s) => s.ports).length || servers.length
+                  : null}
         </span>
     );
 }

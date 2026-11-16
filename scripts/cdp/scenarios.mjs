@@ -55,6 +55,7 @@ import {
 } from "./cockpitofficescenarios.mjs";
 import * as agentPageFixtures from "./agent-page-fixtures.mjs";
 import { makeCouncilScenarios } from "./councilscenarios.mjs";
+import agentHeaderScenarios from "./scenarios-agent-header.mjs";
 import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
 import sidebarColumnsScenarios from "./scenarios-sidebar-columns.mjs";
 import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
@@ -63464,8 +63465,8 @@ const LINK_C1 = "First link chunk";
 const LINK_C2 = "Second link chunk";
 const tabEffort = async (h, tabId) =>
     (await waveService(h, "object", "GetObject", [`tab:${tabId}`]))?.meta?.["session:effort"] ?? null;
-// these agents report as Claude, so their cell opens in Chat: its lean header has no ◇ chip (the band under it replaces that),
-// and an agent with no initiative keeps the "+ Link to initiative" chip, with an i keycap
+// these agents report as Claude, so their cell opens in Chat; an agent with no initiative shows "/ + initiative" after its
+// project, with no keycap (its title says i), and no ◇ link
 const LINK_BTN = `document.querySelector("[data-agent-header] [data-initiative-link]")`;
 const LINK_PICKER = `document.querySelector("[data-initiative-picker]")`;
 
@@ -63499,13 +63500,13 @@ const initiativeLink = {
             const offered = await polishWaitFor(h, `!!${LINK_BTN}`, INIT_WAIT_MS);
             const chip = await h.ev(`(() => {
                 const el = ${LINK_BTN};
-                return el ? { text: el.textContent.replace(/\\s+/g, " ").trim(), keycap: [...el.querySelectorAll("span")].some((s) => /^i$/i.test(s.textContent.trim())) } : null;
+                return el ? { text: el.textContent.replace(/\\s+/g, " ").trim(), keycap: !!el.querySelector("kbd") || [...el.querySelectorAll("span")].some((s) => /^i$/i.test(s.textContent.trim())), title: el.title } : null;
             })()`);
             const noMenuRow = await h.ev(`!document.querySelector("[data-agent-header] [data-initiative-link-menu]")`);
             const noLink = await h.ev(`!document.querySelector("[data-agent-header] [data-initiative-link-open]") && !document.querySelector("[data-initiative-band]")`);
             rec(
-                '1. in Chat the header of an agent with no initiative shows the "+ Link to initiative" chip with its i keycap, no "…" menu row for it, no ◇ chip and no band',
-                offered === true && /Link to initiative/.test(chip?.text ?? "") && chip.keycap === true && noMenuRow === true && noLink === true,
+                '1. in Chat the header of an agent with no initiative shows "+ initiative" after its project (no keycap, its title naming i), no "…" menu row for it, no ◇ link and no band',
+                offered === true && chip?.text === "initiative" && chip.keycap === false && /\(i\)/.test(chip.title ?? "") && noMenuRow === true && noLink === true,
                 { offered, chip, noMenuRow, noLink }
             );
 
@@ -70177,6 +70178,7 @@ export const SCENARIOS = [
     ...brainstormBoardPickScenarios(BS_KIT),
     ...paletteBrainstormResumeScenarios(BS_KIT),
     ...briefActScenarios(JARVIS_KIT),
+    ...agentHeaderScenarios(RT_KIT),
     ...agentStartFailedScenarios(RT_KIT),
     ...agentStreamsScenarios(RT_KIT),
     ...chatBgTasksScenarios(RT_KIT),
