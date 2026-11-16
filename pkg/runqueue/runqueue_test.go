@@ -365,6 +365,112 @@ func TestRetargetNeedsBothIds(t *testing.T) {
 	}
 }
 
+func TestWaitAlsoOnAppendsTheNewRunsAndSetsTheReason(t *testing.T) {
+	useTempStore(t)
+	other := addPlan(t, "other", "")
+	e := addPlan(t, "alpha", "run-1")
+	addPlan(t, "omega", "run-2")
+
+	if err := WaitAlsoOn(e.Id, []string{"run-3", "run-4"}, "Waiting for Third too: both edit land.go"); err != nil {
+		t.Fatalf("WaitAlsoOn: %v", err)
+	}
+	list, _ := List()
+	got := list[1]
+	if !sameIds(got.After, "run-1", "run-3", "run-4") {
+		t.Errorf("after = %v, want the old id first and the new ones appended", got.After)
+	}
+	if got.Reason != "Waiting for Third too: both edit land.go" {
+		t.Errorf("reason = %q, want the re-check's", got.Reason)
+	}
+	if got.State != wshrpc.RunQueueState_Waiting || got.BlockedOn != "" {
+		t.Errorf("state = %q blockedon = %q, want it still waiting and not blocked", got.State, got.BlockedOn)
+	}
+	if !sameIds(ids(t), other.Id, e.Id, list[2].Id) {
+		t.Errorf("WaitAlsoOn changed the order: %v", ids(t))
+	}
+	if !sameIds(list[0].After) || !sameIds(list[2].After, "run-2") || list[0].Reason != "" || list[2].Reason != "" {
+		t.Errorf("WaitAlsoOn touched another entry: %+v, %+v", list[0], list[2])
+	}
+}
+
+func TestWaitAlsoOnSkipsIdsAlreadyThere(t *testing.T) {
+	useTempStore(t)
+	e := addPlan(t, "alpha", "run-1", "q-ab12")
+
+	if err := WaitAlsoOn(e.Id, []string{"run-1", "run-2", "run-2", "q-ab12"}, "why"); err != nil {
+		t.Fatalf("WaitAlsoOn: %v", err)
+	}
+	list, _ := List()
+	if !sameIds(list[0].After, "run-1", "q-ab12", "run-2") {
+		t.Errorf("after = %v, want each id once, in the order first seen", list[0].After)
+	}
+}
+
+func TestWaitAlsoOnWithNothingNewWritesNothing(t *testing.T) {
+	path := useTempStore(t)
+	e := addPlan(t, "alpha", "run-1")
+	if err := os.Chtimes(path, time.Unix(1, 0), time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	for name, add := range map[string][]string{"none given": nil, "all already there": {"run-1"}, "only blanks": {""}} {
+		if err := WaitAlsoOn(e.Id, add, "a reason that must not land"); err != nil {
+			t.Fatalf("%s: WaitAlsoOn: %v", name, err)
+		}
+	}
+	after, _ := os.Stat(path)
+	if !after.ModTime().Equal(time.Unix(1, 0)) {
+		t.Error("a WaitAlsoOn that added nothing rewrote the file")
+	}
+	list, _ := List()
+	if list[0].Reason != "" {
+		t.Errorf("reason = %q, want none: nothing was added to wait for", list[0].Reason)
+	}
+}
+
+func TestWaitAlsoOnLeavesABlockedEntryBlocked(t *testing.T) {
+	useTempStore(t)
+	e := addPlan(t, "alpha", "run-1")
+	if err := SetBlocked(e.Id, "Run One was cancelled", "run-1"); err != nil {
+		t.Fatal(err)
+	}
+	// the entry was blocked between the re-check's read and its write: the block is the newer truth
+	if err := WaitAlsoOn(e.Id, []string{"run-2"}, "Waiting for Two too"); err != nil {
+		t.Fatalf("WaitAlsoOn: %v", err)
+	}
+	list, _ := List()
+	got := list[0]
+	if got.State != wshrpc.RunQueueState_Blocked || got.Reason != "Run One was cancelled" || got.BlockedOn != "run-1" || !sameIds(got.After, "run-1") {
+		t.Errorf("entry = %+v, want the block kept whole", got)
+	}
+}
+
+func TestWaitAlsoOnUnknownEntry(t *testing.T) {
+	useTempStore(t)
+	addPlan(t, "alpha", "")
+	err := WaitAlsoOn("q-none", []string{"run-1"}, "why")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound so a caller racing the queue can tell", err)
+	}
+}
+
+func TestWaitAlsoOnLaterBlockIsClearedLikeAnyOther(t *testing.T) {
+	useTempStore(t)
+	e := addPlan(t, "alpha", "")
+	if err := WaitAlsoOn(e.Id, []string{"run-1"}, "Waiting for One too"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetBlocked(e.Id, "One was held", "run-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetWaiting(e.Id); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := List()
+	if list[0].Reason != "" || !sameIds(list[0].After, "run-1") {
+		t.Errorf("entry = %+v, want the wait cleared of its reason and kept on run-1", list[0])
+	}
+}
+
 // writeQueueFile puts raw JSON where the store reads it, the way an older wavesrv left it.
 func writeQueueFile(t *testing.T, path, raw string) {
 	t.Helper()

@@ -68,9 +68,8 @@ export async function startLauncherRun(input: LauncherRunInput): Promise<{ chann
     return { channelId, run };
 }
 
-/** What RunQueueAddCommand is sent. The wire holds one run to wait for today (`after` is a string), so a list sends its
- *  first id; the queue's After becomes a list in a later task, and this is the one place that then sends the whole list.
- *  An empty list sends none. */
+/** What RunQueueAddCommand is sent. The queue's After is a list on the wire, so every run to wait for goes in it. An
+ *  empty list sends none. */
 export function queueAddPayload(
     data: CommandCreateRunData,
     after: string[],
@@ -78,7 +77,7 @@ export function queueAddPayload(
 ): CommandRunQueueAddData {
     return {
         data,
-        ...(after.length > 0 ? { after: after[0] } : {}),
+        ...(after.length > 0 ? { after } : {}),
         ...(brainstorm != null ? { brainstorm } : {}),
     };
 }

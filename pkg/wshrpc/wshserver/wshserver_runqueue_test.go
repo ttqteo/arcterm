@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/runqueue"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -58,6 +59,8 @@ func useQueueWorld(t *testing.T) *queueWorld {
 	oldLoad, oldCreate, oldMax, oldPublish := runQueueLoadRuns, runQueueCreateRun, runQueueMaxActive, runQueuePublish
 	// an evaluation also tells origin sessions: none here, whatever other tests left in the shared db
 	swap(t, &originNoticeRuns, func(context.Context) ([]*waveobj.Run, error) { return nil, nil })
+	// the re-check reads the store and git; the tests of the queue's own rules want none of it (useStartWorld puts it back)
+	swap(t, &runQueueRecheck, func(context.Context, wshrpc.RunQueueEntry) ([]string, string, error) { return nil, "", nil })
 	runQueueLoadRuns = func(ctx context.Context, afterIds []string) (map[string]*waveobj.Run, error) {
 		w.mu.Lock()
 		defer w.mu.Unlock()
@@ -1320,4 +1323,404 @@ func TestCreateRunSpecPath(t *testing.T) {
 			t.Fatalf("spec path = %q, want none", rtn.Run.SpecPath)
 		}
 	})
+}
+
+// ---- the re-check when an entry's turn comes (spec 2026-11-16-run-start-choice-design.md) ----
+
+// recheckEntry queues an orchestrator start by goal alone in the world's project, so the re-check has the goal's files
+// to compare and no plan file to read.
+func recheckEntry(t *testing.T, w *startWorld, goal string, edit func(*wshrpc.RunQueueEntry)) wshrpc.RunQueueEntry {
+	t.Helper()
+	e := wshrpc.RunQueueEntry{
+		Title: goal, ProjectPath: w.proj,
+		Data: wshrpc.CommandCreateRunData{ChannelId: "ch-queue", WorkspaceId: "ws", Goal: goal, Mode: jarvis.RunMode_Orchestrator, OriginTabId: "tab-1"},
+	}
+	if edit != nil {
+		edit(&e)
+	}
+	added, err := runqueue.Add(e)
+	if err != nil {
+		t.Fatalf("Add(%s): %v", goal, err)
+	}
+	return added
+}
+
+func TestRunQueueRecheckHoldsAnEntryForALaterRunThatSharesAFileAndStartsTheOneBehindIt(t *testing.T) {
+	w := useStartWorld(t)
+	alpha := recheckEntry(t, w, "Rework land.go", nil)
+	recheckEntry(t, w, "Polish the Brief", nil) // names no file
+	later := w.addRun(101, "Fix the merge in land.go", func(r *waveobj.Run) { r.CreatedTs = alpha.QueuedTs + 1000 })
+
+	evaluateRunQueue(context.Background())
+
+	if got := w.q.createdGoals(); !sameStrings(got, "Polish the Brief") {
+		t.Fatalf("created %v, want only the entry behind the held one, in the same evaluation", got)
+	}
+	entries := queueEntries(t)
+	if len(entries) != 1 {
+		t.Fatalf("queue = %v, want the held entry alone", entryTitles(entries))
+	}
+	held := entries[0]
+	if held.Id != alpha.Id || held.State != wshrpc.RunQueueState_Waiting || !sameStrings(held.After, later.ID) {
+		t.Errorf("held entry = %+v, want it waiting After the later run", held)
+	}
+	if want := "Waiting for Fix the merge in land.go too: both edit land.go"; held.Reason != want {
+		t.Errorf("reason = %q, want %q", held.Reason, want)
+	}
+	if pub := w.q.lastPublished(); len(pub) != 1 || pub[0].Id != alpha.Id || !sameStrings(pub[0].After, later.ID) {
+		t.Errorf("last published queue = %+v, want the held entry with its new After", pub)
+	}
+}
+
+func TestRunQueueRecheckKeepsEvaluatingWhileItHoldsEntriesSoEveryReadyEntryBehindThemStarts(t *testing.T) {
+	w := useStartWorld(t)
+	first := recheckEntry(t, w, "Rework land.go", nil)
+	recheckEntry(t, w, "Also rework land.go", nil)
+	recheckEntry(t, w, "Polish the Brief", nil)
+	later := w.addRun(101, "Fix the merge in land.go", func(r *waveobj.Run) { r.CreatedTs = first.QueuedTs + 1000 })
+
+	evaluateRunQueue(context.Background())
+
+	if got := w.q.createdGoals(); !sameStrings(got, "Polish the Brief") {
+		t.Fatalf("created %v, want the third entry to start after the first two were held, in the one evaluation", got)
+	}
+	entries := queueEntries(t)
+	if got := entryTitles(entries); !sameStrings(got, "Rework land.go", "Also rework land.go") {
+		t.Fatalf("queue = %v, want both held entries kept in order", got)
+	}
+	for _, e := range entries {
+		if !sameStrings(e.After, later.ID) || e.Reason == "" {
+			t.Errorf("%s = %+v, want it After the later run with a reason", e.Title, e)
+		}
+	}
+}
+
+func TestRunQueueRecheckIgnoresARunOlderThanTheEntry(t *testing.T) {
+	w := useStartWorld(t)
+	alpha := recheckEntry(t, w, "Rework land.go", nil)
+	// the person saw this run when they queued, and passed over it
+	w.addRun(101, "Fix the merge in land.go", func(r *waveobj.Run) { r.CreatedTs = alpha.QueuedTs - 1000 })
+
+	evaluateRunQueue(context.Background())
+
+	if got := w.q.createdGoals(); !sameStrings(got, "Rework land.go") {
+		t.Fatalf("created %v, want the entry started: an older run is never added back", got)
+	}
+}
+
+func TestRunQueueRecheckIgnoresAHeldRunAndAnotherProjectsRun(t *testing.T) {
+	w := useStartWorld(t)
+	alpha := recheckEntry(t, w, "Rework land.go", nil)
+	w.addRun(101, "Fix the merge in land.go", func(r *waveobj.Run) {
+		r.CreatedTs = alpha.QueuedTs + 1000
+		r.Status = jarvis.RunStatus_Done
+		r.Land = &waveobj.RunLand{State: orchestrate.LandState_Held, Reason: "conflict"}
+	})
+	w.addRun(102, "Fix the merge in land.go", func(r *waveobj.Run) { r.CreatedTs = alpha.QueuedTs + 1000; r.ProjectPath = w.proj + "-other" })
+
+	evaluateRunQueue(context.Background())
+
+	if got := w.q.createdGoals(); !sameStrings(got, "Rework land.go") {
+		t.Fatalf("created %v, want the entry started: a held run would block it at once, and another project's cannot conflict", got)
+	}
+}
+
+func TestRunQueueRecheckStartNowStartsTheEntryAnyway(t *testing.T) {
+	w := useStartWorld(t)
+	alpha := recheckEntry(t, w, "Rework land.go", nil)
+	w.addRun(101, "Fix the merge in land.go", func(r *waveobj.Run) { r.CreatedTs = alpha.QueuedTs + 1000 })
+
+	if err := (&WshServer{}).RunQueueStartNowCommand(context.Background(), wshrpc.CommandRunQueueIdData{Id: alpha.Id}); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.q.createdGoals(); !sameStrings(got, "Rework land.go") {
+		t.Fatalf("created %v, want Start now to skip the re-check", got)
+	}
+	if len(queueEntries(t)) != 0 {
+		t.Errorf("queue = %v, want the started entry gone", entryTitles(queueEntries(t)))
+	}
+}
+
+func TestRunQueueRecheckStartsAHeldEntryOnceTheRunItWaitsForHasLanded(t *testing.T) {
+	w := useStartWorld(t)
+	alpha := recheckEntry(t, w, "Rework land.go", nil)
+	later := w.addRun(101, "Fix the merge in land.go", func(r *waveobj.Run) { r.CreatedTs = alpha.QueuedTs + 1000 })
+
+	evaluateRunQueue(context.Background())
+	if got := w.q.createdGoals(); len(got) != 0 {
+		t.Fatalf("created %v, want the entry held first", got)
+	}
+	later.Status = jarvis.RunStatus_Done
+	later.Land = &waveobj.RunLand{State: orchestrate.LandState_Landed}
+	w.q.setRun(later)
+
+	evaluateRunQueue(context.Background())
+	if got := w.q.createdGoals(); !sameStrings(got, "Rework land.go") {
+		t.Fatalf("created %v, want the entry started once the run landed", got)
+	}
+	if len(queueEntries(t)) != 0 {
+		t.Errorf("queue = %v, want it empty", entryTitles(queueEntries(t)))
+	}
+}
+
+func TestRunQueueRecheckRunsOnlyForTheEntryWhoseTurnItIs(t *testing.T) {
+	w := useStartWorld(t)
+	var mu sync.Mutex
+	var checked []string
+	real := recheckQueuedEntry
+	swap(t, &runQueueRecheck, func(ctx context.Context, e wshrpc.RunQueueEntry) ([]string, string, error) {
+		mu.Lock()
+		checked = append(checked, e.Title)
+		mu.Unlock()
+		return real(ctx, e)
+	})
+	running := w.addRun(101, "A run still going", nil)
+	recheckEntry(t, w, "Waits for the run", func(e *wshrpc.RunQueueEntry) { e.After = []string{running.ID} })
+	recheckEntry(t, w, "Ready now", nil)
+
+	evaluateRunQueue(context.Background())
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !sameStrings(checked, "Ready now") {
+		t.Errorf("re-checked %v, want only the entry whose turn it was: one still waiting on its After has no turn", checked)
+	}
+}
+
+func TestRunQueueRecheckReadsTheEntrysSpecAtItsTurn(t *testing.T) {
+	w := useStartWorld(t)
+	spec := w.writeFile(t, "docs/specs/s.md", "Nothing about any file yet.")
+	alpha := recheckEntry(t, w, "Build the spec", func(e *wshrpc.RunQueueEntry) { e.Data.SpecPath = spec })
+	w.addRun(101, "Fix the merge in land.go", func(r *waveobj.Run) { r.CreatedTs = alpha.QueuedTs + 1000 })
+	// the spec is edited after the entry was queued: what gets built is the spec as it is then
+	w.writeFile(t, "docs/specs/s.md", "Now it reworks land.go.")
+
+	evaluateRunQueue(context.Background())
+
+	if got := w.q.createdGoals(); len(got) != 0 {
+		t.Fatalf("created %v, want the entry held by a file its spec names now", got)
+	}
+}
+
+func TestRunQueueRecheckThatFailsLetsTheEntryStart(t *testing.T) {
+	w := useStartWorld(t)
+	recheckEntry(t, w, "Rework land.go", nil)
+	swap(t, &runQueueRecheck, func(context.Context, wshrpc.RunQueueEntry) ([]string, string, error) {
+		return nil, "", errors.New("the store is busy")
+	})
+
+	evaluateRunQueue(context.Background())
+
+	if got := w.q.createdGoals(); !sameStrings(got, "Rework land.go") {
+		t.Fatalf("created %v, want the check to be advice and never a gate", got)
+	}
+}
+
+func TestRunQueueRecheckWithUnreadableSpecLetsTheEntryStart(t *testing.T) {
+	w := useStartWorld(t)
+	recheckEntry(t, w, "Build the spec", func(e *wshrpc.RunQueueEntry) { e.Data.SpecPath = w.proj + "/gone.md" })
+
+	evaluateRunQueue(context.Background())
+
+	if got := w.q.createdGoals(); !sameStrings(got, "Build the spec") {
+		t.Fatalf("created %v, want the entry started: a spec that cannot be read only costs the check", got)
+	}
+}
+
+func TestRunQueueRecheckAddingNothingNewLetsTheEntryStart(t *testing.T) {
+	w := useQueueWorld(t)
+	e := queueEntry(t, "Alpha", "")
+	// the entry already waits on run-x, which landed: a re-check naming it again has nothing to add
+	if err := runqueue.WaitAlsoOn(e.Id, []string{"run-x"}, "waits"); err != nil {
+		t.Fatal(err)
+	}
+	w.setRun(&waveobj.Run{ID: "run-x", Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: orchestrate.LandState_Landed}})
+	swap(t, &runQueueRecheck, func(context.Context, wshrpc.RunQueueEntry) ([]string, string, error) {
+		return []string{"run-x"}, "Waiting for X too", nil
+	})
+
+	evaluateRunQueue(context.Background())
+
+	if got := w.createdGoals(); !sameStrings(got, "Alpha") {
+		t.Fatalf("created %v, want the entry started: a run it already waited on is nothing to hold it for", got)
+	}
+}
+
+func TestRunQueueRecheckPassesAreBoundedByTheQueue(t *testing.T) {
+	w := useQueueWorld(t)
+	queueEntry(t, "Alpha", "")
+	var mu sync.Mutex
+	calls := 0
+	// a re-check that always finds a new, already landed run to add: the entry is ready again after every pass, so only
+	// the bound ends the evaluation
+	swap(t, &runQueueRecheck, func(context.Context, wshrpc.RunQueueEntry) ([]string, string, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		id := fmt.Sprintf("%slanded-%d", w.prefix, calls)
+		w.setRun(&waveobj.Run{ID: id, Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: orchestrate.LandState_Landed}})
+		return []string{id}, "Waiting for another too", nil
+	})
+
+	evaluateRunQueue(context.Background())
+
+	mu.Lock()
+	defer mu.Unlock()
+	if calls < 1 || calls > 3 {
+		t.Errorf("the re-check ran %d times for a one-entry queue, want the passes bounded by its length", calls)
+	}
+	if got := w.createdGoals(); len(got) != 0 {
+		t.Errorf("created %v, want nothing started from a pass whose answer was never settled", got)
+	}
+}
+
+// ---- telling a queued brainstorm its run ----
+
+// brainstormWorld scripts the agents the notice reaches and records the sleep it arms.
+type brainstormWorld struct {
+	sent  *[]agentsDelivery
+	mu    sync.Mutex
+	armed []wshrpc.CommandAgentsSleepAfterRunData
+	// the deliveries made when each arm happened: arming comes first, so the agent's sleep is set before its notice
+	sentAtArm []int
+	armErr    error
+}
+
+func useBrainstormWorld(t *testing.T) (*queueWorld, *brainstormWorld) {
+	t.Helper()
+	w := useQueueWorld(t)
+	b := &brainstormWorld{sent: scriptAgents(t, threeAgents())}
+	swap(t, &runQueueGo, func(f func()) { f() })
+	swap(t, &armBrainstormSleep, func(_ context.Context, d wshrpc.CommandAgentsSleepAfterRunData) error {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		b.armed = append(b.armed, d)
+		b.sentAtArm = append(b.sentAtArm, len(*b.sent))
+		return b.armErr
+	})
+	return w, b
+}
+
+func brainstormEntry(t *testing.T, title, tab string) wshrpc.RunQueueEntry {
+	t.Helper()
+	e, err := runqueue.Add(wshrpc.RunQueueEntry{
+		Title: title, ProjectPath: "/proj",
+		Data:       wshrpc.CommandCreateRunData{ChannelId: "ch-queue", WorkspaceId: "ws", Goal: title, Mode: jarvis.RunMode_Orchestrator},
+		Brainstorm: &wshrpc.RunQueueBrainstorm{Tab: tab, Path: "C:/p/.superpowers/brainstorm/topic/brainstorm.json"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+func TestRunQueueBrainstormStartedEntryTellsItsAgentItsRun(t *testing.T) {
+	w, b := useBrainstormWorld(t)
+	brainstormEntry(t, "Build the coupons", agentsTabB)
+
+	evaluateRunQueue(context.Background())
+
+	runId := w.runId(1)
+	if got := w.createdGoals(); !sameStrings(got, "Build the coupons") {
+		t.Fatalf("created %v", got)
+	}
+	if len(*b.sent) != 1 || (*b.sent)[0].blockId != agentsBlockB || (*b.sent)[0].text != "brainstorm: run "+runId {
+		t.Fatalf("deliveries = %+v, want `brainstorm: run %s` to the brainstorm agent's block", *b.sent, runId)
+	}
+	if len(b.armed) != 1 || b.armed[0].Tab != agentsTabB || b.armed[0].RunId != runId || b.armed[0].Path != "C:/p/.superpowers/brainstorm/topic/brainstorm.json" {
+		t.Errorf("armed = %+v, want the agent's sleep armed for the new run with the brainstorm.json", b.armed)
+	}
+	if len(b.sentAtArm) != 1 || b.sentAtArm[0] != 0 {
+		t.Errorf("deliveries at the arm = %v, want the sleep armed before the notice goes out", b.sentAtArm)
+	}
+	assertNoSendBackLock(t)
+}
+
+func TestRunQueueBrainstormEntryWithNoBrainstormTellsNobody(t *testing.T) {
+	w, b := useBrainstormWorld(t)
+	queueEntry(t, "Alpha", "")
+
+	evaluateRunQueue(context.Background())
+
+	if got := w.createdGoals(); !sameStrings(got, "Alpha") {
+		t.Fatalf("created %v", got)
+	}
+	if len(*b.sent) != 0 || len(b.armed) != 0 {
+		t.Errorf("deliveries = %+v, armed = %+v, want nothing for an entry that is no brainstorm's", *b.sent, b.armed)
+	}
+}
+
+func TestRunQueueBrainstormStartNowTellsItsAgentToo(t *testing.T) {
+	w, b := useBrainstormWorld(t)
+	e := brainstormEntry(t, "Build the coupons", agentsTabB)
+
+	if err := (&WshServer{}).RunQueueStartNowCommand(context.Background(), wshrpc.CommandRunQueueIdData{Id: e.Id}); err != nil {
+		t.Fatal(err)
+	}
+	if len(*b.sent) != 1 || (*b.sent)[0].text != "brainstorm: run "+w.runId(1) {
+		t.Fatalf("deliveries = %+v, want the notice for the run Start now made", *b.sent)
+	}
+}
+
+func TestRunQueueBrainstormFailedStartTellsNobody(t *testing.T) {
+	w, b := useBrainstormWorld(t)
+	w.createErr = errors.New("no route")
+	brainstormEntry(t, "Build the coupons", agentsTabB)
+
+	evaluateRunQueue(context.Background())
+
+	if len(*b.sent) != 0 || len(b.armed) != 0 {
+		t.Errorf("deliveries = %+v, armed = %+v, want no run, no notice", *b.sent, b.armed)
+	}
+}
+
+func TestRunQueueBrainstormANoticeThatCannotBeDeliveredIsRecordedOnTheRunNotRetried(t *testing.T) {
+	w, b := useBrainstormWorld(t)
+	brainstormEntry(t, "Build the coupons", "no-such-tab")
+
+	evaluateRunQueue(context.Background())
+
+	runId := w.runId(1)
+	if got := w.createdGoals(); !sameStrings(got, "Build the coupons") || len(queueEntries(t)) != 0 {
+		t.Fatalf("created %v, queue %v: a notice that fails must leave the start as it was", got, entryTitles(queueEntries(t)))
+	}
+	if len(*b.sent) != 0 {
+		t.Errorf("deliveries = %+v, want none to a tab that is gone", *b.sent)
+	}
+	events, err := wstore.QueryRunEventsByKind(context.Background(), "ch-queue", runId, []string{runEventKindBrainstormNoticeFailed}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("run events = %+v, want one %q on the new run", events, runEventKindBrainstormNoticeFailed)
+	}
+	// not retried: another evaluation sends nothing more
+	evaluateRunQueue(context.Background())
+	if len(*b.sent) != 0 {
+		t.Errorf("deliveries = %+v after another evaluation, want the failure left alone", *b.sent)
+	}
+}
+
+func TestRunQueueBrainstormAnArmThatFailsStillDeliversTheNotice(t *testing.T) {
+	w, b := useBrainstormWorld(t)
+	b.armErr = errors.New("sleep is off")
+	brainstormEntry(t, "Build the coupons", agentsTabB)
+
+	evaluateRunQueue(context.Background())
+
+	if len(*b.sent) != 1 || (*b.sent)[0].text != "brainstorm: run "+w.runId(1) {
+		t.Errorf("deliveries = %+v, want the notice sent whether or not the sleep could be armed", *b.sent)
+	}
+}
+
+func TestRunQueueBrainstormANoticeThatPanicsDoesNotEscape(t *testing.T) {
+	w, _ := useBrainstormWorld(t)
+	swap(t, &armBrainstormSleep, func(context.Context, wshrpc.CommandAgentsSleepAfterRunData) error { panic("boom") })
+	brainstormEntry(t, "Build the coupons", agentsTabB)
+
+	evaluateRunQueue(context.Background()) // a panic here would fail the test
+
+	if got := w.createdGoals(); !sameStrings(got, "Build the coupons") {
+		t.Fatalf("created %v, want the run started whatever the notice did", got)
+	}
 }

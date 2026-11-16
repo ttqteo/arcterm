@@ -153,7 +153,7 @@ describe("queueLauncherRun", () => {
             mode: "quick",
             specPath: "C:/p/spec.md",
         });
-        expect(queueAdd).toHaveBeenCalledWith(expect.anything(), { data: createData, after: "r-1" });
+        expect(queueAdd).toHaveBeenCalledWith(expect.anything(), { data: createData, after: ["r-1"] });
         expect(createRun).not.toHaveBeenCalled();
         expect(noteRecentProject).toHaveBeenCalledWith("arcterm");
         expect(endRunConfigDraft).toHaveBeenCalledWith(profile);
@@ -187,8 +187,8 @@ describe("queueLauncherRun", () => {
 });
 
 describe("queueAddPayload", () => {
-    it("sends the first run to wait for while the wire holds one id", () => {
-        expect(queueAddPayload(createData, ["r-1", "r-2"], undefined)).toEqual({ data: createData, after: "r-1" });
+    it("sends every run to wait for, in order", () => {
+        expect(queueAddPayload(createData, ["r-1", "r-2"], undefined)).toEqual({ data: createData, after: ["r-1", "r-2"] });
     });
 
     it("sends no after for a queue that waits for no run", () => {

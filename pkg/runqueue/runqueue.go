@@ -258,6 +258,38 @@ func Retarget(fromId, toId string) error {
 	return save(entries)
 }
 
+// WaitAlsoOn has a waiting entry wait for more runs: it appends the ids it does not already hold, in the order given,
+// and sets Reason to why (the re-check's "Waiting for X too: both edit land.go"), in one write. The entry stays as it
+// is otherwise; one that was blocked meanwhile keeps its block whole, since a block is the newer truth. Nothing is
+// written when no id is new, and the reason is not set then either: there is nothing more to wait for.
+func WaitAlsoOn(id string, add []string, reason string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	entries, err := load()
+	if err != nil {
+		return err
+	}
+	i := indexOf(entries, id)
+	if i < 0 {
+		return notFound(id)
+	}
+	if entries[i].State == wshrpc.RunQueueState_Blocked {
+		return nil
+	}
+	after := slices.Clone(entries[i].After)
+	for _, a := range add {
+		if a != "" && !slices.Contains(after, a) {
+			after = append(after, a)
+		}
+	}
+	if len(after) == len(entries[i].After) {
+		return nil
+	}
+	entries[i].After = after
+	entries[i].Reason = reason
+	return save(entries)
+}
+
 // Resolve finds an entry by its exact id or by a prefix of it that no other entry shares.
 func Resolve(prefix string) (wshrpc.RunQueueEntry, error) {
 	if prefix == "" {
