@@ -35,6 +35,18 @@ export function backgroundTasksNoun(tasks: Pick<BackgroundTask, "monitor">[]): "
     return monitors === tasks.length ? "monitors" : "tasks";
 }
 
+// a `wsh` command that only blocks until a council or another agent finishes, then prints its answer: `council wait`,
+// `agents wait`, `agents send … --wait`. Its path may be quoted (`'C:/…/wsh.exe' council wait`)
+const WSH_WAIT =
+    /(?:^|[\s'"/\\;&|(])wsh(?:\.exe)?['"]?\s+(?:(?:council|agents)\s+wait\b|agents\s+send\b[^\n;&|]*\s--wait\b)/;
+
+/** Pure: a background shell that only waits on a council or another agent, which the cockpit already shows on its
+ *  own (the council card, the agent's row), so the tree and the chat box's background line leave it out. It still
+ *  counts as the agent's background work everywhere else (its glyph, Close, the details rail). */
+export function isWaitShell(t: Pick<BackgroundTask, "monitor" | "command">): boolean {
+    return !t.monitor && t.command != null && WSH_WAIT.test(t.command);
+}
+
 /** Pure: "3 tasks", "2 monitors", "1 shell task" — a list named by the kinds in it. */
 export function backgroundTasksLabel(tasks: Pick<BackgroundTask, "monitor">[]): string {
     const n = tasks.length;
