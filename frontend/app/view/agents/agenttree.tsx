@@ -79,7 +79,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { confirmCloseProject, confirmCloseRun, confirmCloseSession } from "./agentactions";
+import { confirmClosePicked, confirmCloseProject, confirmCloseRun, confirmCloseSession } from "./agentactions";
 import { DONE_TITLE, doneSuggestion, ORIGIN_DONE_TITLE, startedRunLanded } from "./donesuggest";
 import { LandedClose } from "./landedclose";
 import { fallAsleepLabel, fallingAsleepOf } from "./fallasleepstore";
@@ -528,13 +528,14 @@ function sleepMenuItems(agent: AgentVM): ContextMenuItem[] {
 // An agent's row menu, which ParentRow and the agent's cell in a split row (SplitCell) share. A lead's row is also its
 // run's: with `lead` the run's items follow the agent's, and Cancel run sits beside Close agent. The lead's terminal is
 // the row itself. `later` is whether its transcript is marked to read later. `selection` is what the row's menu offers for
-// the agents picked with it (Discuss together, from two).
+// the agents picked with it (Discuss together, from two), and `closePicked` its Close N agents, under Close agent.
 function agentRowMenuItems(
     model: AgentsViewModel,
     agent: AgentVM,
     lead: RunInfo | undefined,
     later: boolean,
-    selection: ContextMenuItem[] = []
+    selection: ContextMenuItem[] = [],
+    closePicked: ContextMenuItem[] = []
 ): ContextMenuItem[] {
     const runMenu = lead != null ? runMenuItems(model, lead.runId, ["run:lead-terminal"]) : null;
     return [
@@ -561,6 +562,7 @@ function agentRowMenuItems(
             enabled: !isWaking(agent.id),
             click: () => confirmCloseSession(agent, model, "tree menu"),
         },
+        ...closePicked,
     ];
 }
 
@@ -1257,6 +1259,7 @@ interface RowPicks {
     any: boolean;
     pick: (e: React.MouseEvent) => void;
     menu: () => ContextMenuItem[];
+    closeMenu: () => ContextMenuItem[];
 }
 
 function ParentRow({
@@ -1377,7 +1380,7 @@ function ParentRow({
     };
     const onContextMenu = (e: React.MouseEvent) => {
         ContextMenuModel.getInstance().showContextMenu(
-            agentRowMenuItems(model, agent, lead?.run, laterAt != null, picks?.menu()),
+            agentRowMenuItems(model, agent, lead?.run, laterAt != null, picks?.menu(), picks?.closeMenu()),
             e
         );
     };
@@ -4103,6 +4106,22 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                       },
                       { type: "separator" },
                   ];
+        },
+        // two or more picked, this row among them: Close N agents beside Close agent
+        closeMenu: () => {
+            const picked = pickedRowIds(globalStore.get(rowSelectionAtom), shownFocus(), selectable);
+            if (picked.length < 2 || !picked.includes(id)) {
+                return [];
+            }
+            const vms = picked.flatMap((p) => agents.filter((a) => a.id === p));
+            return [
+                {
+                    label: `Close ${vms.length} agents`,
+                    icon: <X size={15} />,
+                    danger: true,
+                    click: () => confirmClosePicked(vms),
+                },
+            ];
         },
     });
     // the agents seated in a council that runs or waits on you: their rows read `in council`

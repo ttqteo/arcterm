@@ -29,6 +29,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- With several agents picked in the Agent tree (Ctrl/Cmd+click or Shift+click), a picked agent's right-click menu
+  offers Close N agents, which closes them all after one confirm.
+
 ### Changed
 
 - Selected text in Chat has slightly rounded corners, so the highlight looks softer.

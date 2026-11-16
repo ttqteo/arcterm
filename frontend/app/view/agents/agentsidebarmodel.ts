@@ -502,6 +502,17 @@ export function projectCloseMessage(project: string, close: ProjectClose): strin
     return `Close "${project}" and its ${parts.join(" and ")}?${working}${kept}`;
 }
 
+/** Pure: the confirm of Close N agents, the row menu's item for the agents picked in the tree: `Close the 3 picked
+ *  agents? 1 is working and will stop. Their conversations stay in Conversations.` Empty below two (Close agent does one). */
+export function closePickedMessage(agents: readonly Pick<AgentVM, "state">[]): string {
+    if (agents.length < 2) {
+        return "";
+    }
+    const working = agents.filter((a) => a.state === "working").length;
+    const stop = working === 0 ? "" : ` ${working} ${working === 1 ? "is" : "are"} working and will stop.`;
+    return `Close the ${agents.length} picked agents?${stop} Their conversations stay in Conversations.`;
+}
+
 // the states a council can be resumed from: it ran and ended. A council that never ran (not-run) has nothing to resume.
 const COUNCIL_RESUMABLE: ReadonlySet<string> = new Set(["done", "stopped", "failed"]);
 

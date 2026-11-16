@@ -9,6 +9,7 @@ import {
     agentsElsewhere,
     ALL_PROJECTS,
     canResumeCouncil,
+    closePickedMessage,
     collidingTitles,
     CONVERSATION_PAGE,
     conversationCount,
@@ -2496,5 +2497,17 @@ describe("projectClose: what Close project closes", () => {
             'Close "arc" and its 1 terminal?'
         );
         expect(projectCloseMessage("arc", { agents: [], terminals: [], working: 0 })).toBe("");
+    });
+});
+
+describe("closePickedMessage", () => {
+    it("words the confirm of Close N agents, and offers nothing below two", () => {
+        expect(closePickedMessage([{ state: "working" }, { state: "idle" }, { state: "working" }])).toBe(
+            "Close the 3 picked agents? 2 are working and will stop. Their conversations stay in Conversations."
+        );
+        expect(closePickedMessage([{ state: "idle" }, { state: "asking" }])).toBe(
+            "Close the 2 picked agents? Their conversations stay in Conversations."
+        );
+        expect(closePickedMessage([{ state: "idle" }])).toBe("");
     });
 });

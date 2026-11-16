@@ -6,7 +6,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
 import { fireAndForget } from "@/util/util";
 import type { AgentsViewModel } from "./agents";
-import { projectCloseMessage, type ProjectClose } from "./agentsidebarmodel";
+import { closePickedMessage, projectCloseMessage, type ProjectClose } from "./agentsidebarmodel";
 import { sendToAgent } from "./agentsubmit";
 import type { AgentVM } from "./agentsviewmodel";
 import type { ConfirmHow } from "./closelog";
@@ -154,6 +154,23 @@ export function confirmCloseProject(project: string, close: ProjectClose): void 
         confirmLabel: "Close project",
         destructive: true,
         onConfirm: () => closeSessions([...close.agents, ...close.terminals], `close project ${project}`),
+    });
+}
+
+// Close the agents picked in the tree (Ctrl/Cmd+click, Shift+click) from a picked row's menu, after one confirm. One a
+// wake is relaunching stays open (confirmCloseSession's rule). They go on the reopen stack, as Close project's do.
+export function confirmClosePicked(vms: AgentVM[]): void {
+    const closing = vms.filter((vm) => !isWaking(vm.id));
+    const message = closePickedMessage(closing);
+    if (message === "") {
+        return;
+    }
+    modalsModel.pushModal("ConfirmModal", {
+        title: "Close agents",
+        message,
+        confirmLabel: `Close ${closing.length} agents`,
+        destructive: true,
+        onConfirm: () => closeSessions(closing, "close picked (tree menu)"),
     });
 }
 
