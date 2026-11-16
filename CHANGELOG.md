@@ -41,6 +41,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - On Diff, n and p open the folder of the file they step to, so its row no longer stays hidden in a collapsed folder.
 - On the Cockpit, Enter sends a one-question ask you answered by typing only, as it already did for a picked option.
+- arcterm no longer fails to start the first time on a busy machine, and its store's write-ahead log stays
+  trimmed after a request times out instead of growing to the size of the largest write.
 - The Chat you are reading no longer jumps to the top when an agent you just launched finishes starting up.
 - A message you send while a Claude agent works no longer leaves it reading idle for the rest of that turn: Chat keeps
   its Working line and the roster its working state.

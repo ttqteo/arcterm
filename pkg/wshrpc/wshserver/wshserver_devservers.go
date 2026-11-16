@@ -42,12 +42,19 @@ func readMachineHolders(ctx context.Context) (map[int32]devservers.ServerOwner, 
 	return holders, nil
 }
 
+// logHoldersErr logs a failed roster read, unless the call itself ended: the caller gave up on the answer
+// (a poll timing out on a busy store), and logging it once per poll filled waveapp.log with hundreds of lines
+func logHoldersErr(ctx context.Context, err error) {
+	if err == nil || ctx.Err() != nil {
+		return
+	}
+	log.Printf("devservers: reading arcterm's blocks: %v", err)
+}
+
 func (ws *WshServer) ListDevServersCommand(ctx context.Context, data wshrpc.CommandListDevServersData) (*wshrpc.CommandListDevServersRtnData, error) {
 	holders, err := machineHolders(ctx)
-	if err != nil {
-		// without the roster the rail still lists every server, none of them named by its terminal
-		log.Printf("devservers: reading arcterm's blocks: %v", err)
-	}
+	// without the roster the rail still lists every server, none of them named by its terminal
+	logHoldersErr(ctx, err)
 	servers, err := devservers.List(ctx, data.Cwd, data.BlockId, holders)
 	if err != nil {
 		return nil, err
@@ -60,10 +67,8 @@ func (ws *WshServer) ListDevServersCommand(ctx context.Context, data wshrpc.Comm
 
 func (ws *WshServer) ListAllDevServersCommand(ctx context.Context) (*wshrpc.CommandListDevServersRtnData, error) {
 	holders, err := machineHolders(ctx)
-	if err != nil {
-		// without the roster every server still lists, owned by an app or detached
-		log.Printf("devservers: reading arcterm's blocks: %v", err)
-	}
+	// without the roster every server still lists, owned by an app or detached
+	logHoldersErr(ctx, err)
 	servers, err := devservers.ListAll(ctx, holders)
 	if err != nil {
 		return nil, err

@@ -7,10 +7,32 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 )
 
 // one large transaction must not leave the log file at its size for good
 func TestWriteAheadLogIsCutBackAfterALargeTransaction(t *testing.T) {
+	checkWalCutBack(t)
+}
+
+// A write transaction whose context ends mid-way makes database/sql discard the pool's one connection; the
+// connection that replaces it limits the log too.
+func TestWriteAheadLogStaysLimitedAfterTheConnectionIsReplaced(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	err := WithTx(ctx, func(tx *TxWrap) error {
+		tx.GetString("SELECT 1")
+		cancel()
+		time.Sleep(100 * time.Millisecond) // database/sql rolls back, and drops the connection, from its own goroutine
+		return nil
+	})
+	if err == nil {
+		t.Fatal("want the cancelled transaction to fail")
+	}
+	checkWalCutBack(t)
+}
+
+func checkWalCutBack(t *testing.T) {
+	t.Helper()
 	ctx := context.Background()
 	exec := func(query string, args ...any) {
 		t.Helper()

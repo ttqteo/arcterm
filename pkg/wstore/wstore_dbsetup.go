@@ -5,12 +5,16 @@ package wstore
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/mattn/go-sqlite3"
 	"github.com/sawka/txwrap"
 	"github.com/wavetermdev/waveterm/pkg/util/migrateutil"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
@@ -67,19 +71,42 @@ func GetDBName() string {
 	return filepath.Join(waveHome, wavebase.WaveDBDir, WStoreDBName)
 }
 
+// writeDriverName is the sqlite driver of the write pool: go-sqlite3 with a hook that limits the write-ahead log
+// on every connection it opens.
+const writeDriverName = "sqlite3_wstore_write"
+
+// sqlite reuses a restarted log but never shrinks it, so without a limit the file stays as large as the biggest
+// transaction ever written: 171 MB on a store whose live log was 4 MB. The limit is per connection, and the pool's
+// one connection does not last the process: database/sql discards it when a transaction's context ends mid-way
+// (a timed-out RPC), and the connection it opens next would have no limit.
+func init() {
+	sql.Register(writeDriverName, &sqlite3.SQLiteDriver{
+		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+			// through the interface: wsh links this package with cgo off, where go-sqlite3's stub conn has no Exec
+			ex, ok := any(conn).(driver.Execer)
+			if !ok {
+				return fmt.Errorf("limiting the write-ahead log: the sqlite connection cannot exec")
+			}
+			if _, err := ex.Exec(fmt.Sprintf("PRAGMA journal_size_limit = %d", WalSizeLimitBytes), nil); err != nil {
+				return fmt.Errorf("limiting the write-ahead log: %w", err)
+			}
+			return nil
+		},
+	})
+}
+
 func MakeDB(ctx context.Context) (*sqlx.DB, error) {
 	dbName := GetDBName()
-	rtn, err := sqlx.Open("sqlite3", fmt.Sprintf("file:%s?mode=rwc&_journal_mode=WAL&_busy_timeout=5000", dbName))
+	db, err := sql.Open(writeDriverName, fmt.Sprintf("file:%s?mode=rwc&_journal_mode=WAL&_busy_timeout=5000", dbName))
 	if err != nil {
 		return nil, err
 	}
+	// "sqlite3" names the bind style (?) for sqlx, which does not know the registered name
+	rtn := sqlx.NewDb(db, "sqlite3")
 	rtn.DB.SetMaxOpenConns(1)
-	// sqlite reuses a restarted log but never shrinks it, so without a limit the file stays as large as the
-	// biggest transaction ever written: 171 MB on a store whose live log was 4 MB. The limit is per
-	// connection, and this pool keeps its one connection for the life of the process.
-	if _, err := rtn.ExecContext(ctx, fmt.Sprintf("PRAGMA journal_size_limit = %d", WalSizeLimitBytes)); err != nil {
+	if err := rtn.PingContext(ctx); err != nil {
 		rtn.Close()
-		return nil, fmt.Errorf("limiting the write-ahead log: %w", err)
+		return nil, err
 	}
 	return rtn, nil
 }
@@ -94,6 +121,17 @@ func MakeReadDB(ctx context.Context) (*sqlx.DB, error) {
 	return rtn, nil
 }
 
+// explainTxDone names the real cause of a transaction that ended under its caller. database/sql rolls a
+// transaction back the moment its context ends, so a context that runs out after the last statement turns the
+// commit into sql.ErrTxDone ("transaction has already been committed or rolled back"), which reads like a
+// use-after-commit bug. The error returned keeps both: errors.Is matches the context's error and sql.ErrTxDone.
+func explainTxDone(ctx context.Context, err error) error {
+	if err == nil || !errors.Is(err, sql.ErrTxDone) || ctx.Err() == nil || errors.Is(err, ctx.Err()) {
+		return err
+	}
+	return fmt.Errorf("%w: the store rolled the transaction back when its context ended (%w)", ctx.Err(), err)
+}
+
 func WithTx(ctx context.Context, fn func(tx *TxWrap) error) (rtnErr error) {
 	waveobj.ContextUpdatesBeginTx(ctx)
 	defer func() {
@@ -103,7 +141,7 @@ func WithTx(ctx context.Context, fn func(tx *TxWrap) error) (rtnErr error) {
 			waveobj.ContextUpdatesCommitTx(ctx)
 		}
 	}()
-	return txwrap.WithTx(ctx, globalDB, fn)
+	return explainTxDone(ctx, txwrap.WithTx(ctx, globalDB, fn))
 }
 
 func WithTxRtn[RT any](ctx context.Context, fn func(tx *TxWrap) (RT, error)) (rtnVal RT, rtnErr error) {
@@ -115,7 +153,8 @@ func WithTxRtn[RT any](ctx context.Context, fn func(tx *TxWrap) (RT, error)) (rt
 			waveobj.ContextUpdatesCommitTx(ctx)
 		}
 	}()
-	return txwrap.WithTxRtn(ctx, globalDB, fn)
+	rtnVal, rtnErr = txwrap.WithTxRtn(ctx, globalDB, fn)
+	return rtnVal, explainTxDone(ctx, rtnErr)
 }
 
 // --- Read pool ---------------------------------------------------------------------------------
@@ -145,7 +184,7 @@ func WithReadTx(ctx context.Context, fn func(tx *TxWrap) error) (rtnErr error) {
 			waveobj.ContextUpdatesCommitTx(ctx)
 		}
 	}()
-	return txwrap.WithTx(ctx, readDB, fn)
+	return explainTxDone(ctx, txwrap.WithTx(ctx, readDB, fn))
 }
 
 func WithReadTxRtn[RT any](ctx context.Context, fn func(tx *TxWrap) (RT, error)) (rtnVal RT, rtnErr error) {
@@ -157,5 +196,6 @@ func WithReadTxRtn[RT any](ctx context.Context, fn func(tx *TxWrap) (RT, error))
 			waveobj.ContextUpdatesCommitTx(ctx)
 		}
 	}()
-	return txwrap.WithTxRtn(ctx, readDB, fn)
+	rtnVal, rtnErr = txwrap.WithTxRtn(ctx, readDB, fn)
+	return rtnVal, explainTxDone(ctx, rtnErr)
 }
