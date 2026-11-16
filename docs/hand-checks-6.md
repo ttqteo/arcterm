@@ -265,10 +265,9 @@ are in that file. Tick a line here when it holds, then remove it; a part left em
   with a long question and a `plan queued #1` run link, an agent in a council with a review waiting, and a worker
   holding a card each end their line with the three columns whole and level with the rows around them, the words cut
   with `…` and whole in their tooltip. Not run in the app.
-- [ ] (arcterm) A run's `queued #N` tag cuts itself short rather than push the row's columns off (`QueueTagButton`,
-  `jobqueuechip.tsx`): with a run waiting in the job queue at 248px, its second line reads `› N`, a shortened `queued…`
-  and RAM · tokens · age whole, its age not cut at the edge; hovering the tag names the jobs in full. Typechecked, not run
-  in the app. The Agent sidebar also stays 280px with Age off and only RAM + Tokens on (`agentTreeWidth`).
+- [ ] (arcterm) A run waiting in the job queue keeps its line (`runQueuedTag`, `jobqueue.ts`): its second line reads
+  `› N  Working · 3/6  ≡#1  RAM tokens age`, the progress words still there and the columns whole; with two jobs `≡×2`;
+  hovering the tag says `queued #1 · Verify · …` in full. `task verify:ui -- jobqueue-run-tag` was updated, not run. The Agent sidebar also stays 280px with Age off and only RAM + Tokens on (`agentTreeWidth`).
 - [ ] (arcterm) The Agent sidebar is back to 248px once a number column is off (RAM or Tokens) (`agentTreeWidth`, `rowfields.ts`):
   `task verify:ui -- sidebar-columns` step 9 passes and `cdp-shots/sidebar-columns-2-narrow.png` shows a 248px sidebar
   with RAM · age lined up and nothing cut off. In the real app, turn Tokens off in Settings → Appearance → Agent sidebar:
