@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Redraw skips a sleeping agent; Settings finds Claude account by "login"; the palette says New dialog.**
+  Unit tests and typecheck only; no dev app was run. Put an agent to sleep, focus it, Ctrl+Shift+R → nothing happens and
+  nothing is logged. Settings → search `login` or `subscription` → Agents with the Claude account card. Palette → type a
+  goal → the Quick row's echo reads `Opens the New dialog with “…” as a Quick run`; New run… reads `Opens the New dialog
+  on a run`. `bindings.ts` `redrawFocused`, `settingsmodel.ts` `cardMatches`.
 - [ ] (arcterm) **Jarvis's peek has no pin while Jarvis is the hologram.** Typechecked only. Settings → Jarvis & Office →
   Form: Hologram, open the peek → its header reads `Nothing waiting on you`, hide, Full view, × with no pin. Switch to
   Character (Sprout) → the pin is back; fold into Sprout → the folded peek keeps it. `petpeek.tsx` `hologramShown`.
