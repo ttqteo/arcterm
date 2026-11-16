@@ -1774,7 +1774,8 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
                 live={live}
                 leadless
                 trailing={
-                    // its columns hold their places with no lead session to read tokens or an age from
+                    // its RAM sits in the RAM column, tokens and age blank (no lead session to read them from); a landed run
+                    // has no RAM either, so no columns
                     <RowCols
                         cells={rowCols(fields, { ram })}
                         ram={{
@@ -2234,8 +2235,8 @@ const AGE_COL = `${COL_WIDTH.age} ${COL} text-ink-faint`;
 
 // The cells that end an agent's, a lead's, a run's or a worker's second line, one per field that is on (rowCols), in a
 // group of its own so every row spaces them alike. An empty cell keeps its width, so a row with no RAM read yet still
-// lines its tokens and age up with the rows around it. `ram` tags and titles the RAM cell while it has a figure.
-// Nothing pushes them past the line's end: whatever on the line holds words (progress, model, the ask note, the origin
+// lines its tokens and age up with the rows around it; a row with no figure at all has no cells (rowCols). `ram` tags
+// and titles the RAM cell while it has a figure. Nothing pushes them past the line's end: whatever on the line holds words (progress, model, the ask note, the origin
 // and queued chips, a held ask, "in council") shrinks and cuts them first; only short fixed chips (fold, review, Resume,
 // Done, the marks) keep their width.
 function RowCols({ cells, ram }: { cells: RowCell[]; ram?: { attrs: Record<string, string>; title: string } }) {

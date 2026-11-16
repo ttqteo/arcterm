@@ -38,7 +38,8 @@ export function sameRamReading(a: RamReading | null, b: RamReading | null): bool
 }
 
 /** The cells a row ends its second line with, in the order RAM · tokens · age: one per field that is on, whatever the
- *  row has for it. */
+ *  row has for it. A row with no figure at all (a landed run: no RAM, no tokens, no age) gets none, so its words take
+ *  the line instead of stopping short of three blank columns. */
 export function rowCols(
     fields: Pick<RowFields, RowColKey>,
     v: { ram?: RamReading | null; tokens?: number; age?: string }
@@ -53,5 +54,5 @@ export function rowCols(
     if (fields.age) {
         cells.push({ key: "age", text: v.age ?? "", warn: false });
     }
-    return cells;
+    return cells.some((c) => c.text !== "") ? cells : [];
 }

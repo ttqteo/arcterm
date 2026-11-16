@@ -42,16 +42,21 @@ describe("rowCols", () => {
     });
 
     it("keeps an empty cell for a figure the row does not have, so the columns stay put", () => {
-        expect(rowCols(DEFAULT_ROW_FIELDS, {})).toEqual([
-            { key: "ram", text: "", warn: false },
-            { key: "tokens", text: "", warn: false },
-            { key: "age", text: "", warn: false },
+        expect(rowCols(DEFAULT_ROW_FIELDS, { ram: ramReading(820 * MB) }).map((c) => c.text)).toEqual([
+            "820 MB",
+            "",
+            "",
         ]);
         expect(rowCols(DEFAULT_ROW_FIELDS, { ram: null, tokens: 0, age: "16m" }).map((c) => c.text)).toEqual([
             "",
             "",
             "16m",
         ]);
+    });
+
+    it("gives a row with no figure at all no cells, so its words take the line", () => {
+        expect(rowCols(DEFAULT_ROW_FIELDS, {})).toEqual([]);
+        expect(rowCols(DEFAULT_ROW_FIELDS, { ram: null, tokens: 0, age: "" })).toEqual([]);
     });
 
     it("carries the RAM warning, and only on the RAM cell", () => {
