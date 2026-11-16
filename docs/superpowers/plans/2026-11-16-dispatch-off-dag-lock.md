@@ -203,7 +203,7 @@ Where: `mutation.go:249-284` (`ApplyActionBy`, `applyAction`) and `closeWorkerTa
 
 ### Task 3: Prepare the tree outside the lock, spawn in the next pass
 
-**Depends on:** Task 1, Task 2
+**Depends on:** Task 1 (`TaskState_Preparing` and its slot and lane rows), Task 2 (both edit `pkg/orchestrate/mutation.go`)
 **Chunk:** A dag merge --continue waited 2m37s on the dag lock behind ticks held up by slow git worktree calls (fork 6231b6970, its run 65ce3ef3); the request now survives it, the lock hold itself is unexplained
 
 **Files:** `pkg/orchestrate/treeprep.go`, `pkg/orchestrate/treeprep_test.go`, `pkg/orchestrate/engine.go`, `pkg/orchestrate/mutation.go`, `pkg/orchestrate/mutation_test.go`, `pkg/orchestrate/pause.go`, `pkg/orchestrate/pause_test.go`, `scripts/cdp/scenarios.mjs`, `docs/open-issues.md`, `CHANGELOG.md`
