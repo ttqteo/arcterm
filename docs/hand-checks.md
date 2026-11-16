@@ -1059,6 +1059,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Agents keep colors after `! task install` typed in a Claude Code session (that shell has `NO_COLOR=1`
   and `TERM=dumb` but no `CLAUDECODE`): the reopened arcterm's agents draw in color, and `waveapp.log` has a
   `[tauri] opened from an agent's shell; dropped NO_COLOR TERM …` line (the 2026-11-16 launch had none).
+- [ ] (arcterm) No panic when an installer closes arcterm: after `! task install`, `waveapp.log` shows
+  `[tauri] Windows ended the session …; exiting` after `wavesrv stderr closed`, and no
+  `panic in thread 'main' … cannot move state from Destroyed` (every install from 2026-11-13 to 11-16 had one).
+  Quit from the tray still logs no such line (`EXIT_REQUESTED`, `src-tauri/src/main.rs`).
 - [ ] (arcterm) Agent header Float button: an agent's header shows a picture-in-picture button left of Fullscreen; click
   it → the agent floats and the button reads pressed (accent); click again → it leaves float. The … menu no longer lists
   Float window.
