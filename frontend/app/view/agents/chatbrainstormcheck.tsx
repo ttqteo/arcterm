@@ -244,12 +244,13 @@ function ReviewActions({
         <div className="flex flex-col gap-[8px]">
             <div className="flex flex-wrap items-center justify-end gap-x-[12px] gap-y-[8px]">
                 {blocker != null ? (
-                    // amber is the user's turn only: the card at work or an exited agent keeps the reason plain
+                    // amber is the user's turn only: the card at work, an exited agent and a run the queue holds keep
+                    // the reason plain
                     <span
                         data-chat-bscard-approve-reason
                         className={cn(
                             "min-w-0 flex-1 basis-[200px] text-[12px] leading-[1.45]",
-                            waiting ? "text-warning" : "text-secondary"
+                            waiting && !card.queued ? "text-warning" : "text-secondary"
                         )}
                     >
                         {blocker}

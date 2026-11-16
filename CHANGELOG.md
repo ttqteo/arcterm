@@ -31,6 +31,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Starting a run now asks when: the run launcher (+ Run, and Approve on a brainstorm) has a When row with Run now,
+  After run… and Queue, and Jarvis picks one for you with a one-line reason. If the new run edits the same files as a
+  run that is still going it suggests waiting for that run, so the two don't end in a held merge; with room under the
+  active-run cap it suggests Run now, and without room, Queue. After run… lists the live runs to tick, and a queued
+  brainstorm shows Queued, or Queued after <run>, where Approve was. <!-- big -->
+- `wsh runs start --after` and the queue can wait on several runs: an entry starts once every one of them has landed,
+  and the Agent tree, Chat and the Brief name them all. A queued entry also checks again when its turn comes and
+  waits for a newer run that edits the same files, saying why in its sheet.
 - When an agent drew option boards in its Canvas and asks you to pick one, Chat ends with a card: one row per board
   (A, B, C… with the board's title) that sends your pick in one click, a button to open each board, and Compare in
   Canvas.

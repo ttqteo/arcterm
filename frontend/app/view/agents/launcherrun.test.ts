@@ -160,6 +160,11 @@ describe("queueLauncherRun", () => {
         expect(out).toEqual({ channelId: "ch-1", entry });
     });
 
+    it("sends every run ticked in After to the queue, in order: the entry waits for all of them", async () => {
+        await queueLauncherRun({ ...input, after: ["r-1", "r-2"] });
+        expect(queueAdd).toHaveBeenCalledWith(expect.anything(), { data: createData, after: ["r-1", "r-2"] });
+    });
+
     it("carries the brainstorm that is waiting for the run", async () => {
         await queueLauncherRun({ ...input, brainstorm });
         expect(queueAdd).toHaveBeenCalledWith(expect.anything(), { data: createData, brainstorm });

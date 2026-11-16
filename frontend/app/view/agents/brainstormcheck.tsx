@@ -16,6 +16,7 @@ import {
     hasMockups,
     lineBox,
     partTitle,
+    queuedForBrainstorm,
     RAIL_MIN_W_CHECK,
     runLine,
     runTitle,
@@ -51,6 +52,7 @@ import {
     WORKING_TITLE,
     WorkingMain,
 } from "./brainstormui";
+import { useBrainstormQueue } from "./runqueuestore";
 import { SWAP_BTN, SWAP_PRIMARY_BTN } from "./swapbar";
 
 type QueueState = AskModel["queue"][number]["state"];
@@ -364,7 +366,14 @@ function ApproveBar({
 }) {
     const act = useAction();
     const working = f.working != null;
-    const blocker = approveBlocker(f, s.starting);
+    // a queued run (After run… or Queue in the launcher) stands where Approve was: Queued, Queued after <titles>, or why
+    // the entry is blocked; an entry that is removed turns Approve back on
+    const queue = useBrainstormQueue(s.path);
+    const queued =
+        queue != null
+            ? queuedForBrainstorm(queue.entries, queue.started, queue.path, s.starting, queue.afterRuns)
+            : null;
+    const blocker = approveBlocker(f, s.starting, queued);
     const shape = suggestedShape(f);
     // @container: the title column (240 at least), the blocker's reason and the two buttons need ~700px in one line, so
     // a narrower bar (the builder rail takes 460px of the pane) stacks them: the run, the reason, the buttons at the end
@@ -380,7 +389,7 @@ function ApproveBar({
                         {runLine(projectOf(agent), shape)} ·{" "}
                         <button
                             type="button"
-                            disabled={s.starting != null}
+                            disabled={s.starting != null || queued != null}
                             onClick={() => openRunLauncher(model, agent, s)}
                             className={cn(LINK, "disabled:cursor-default disabled:opacity-50")}
                         >
@@ -392,7 +401,10 @@ function ApproveBar({
                 {blocker != null ? (
                     <span
                         data-brainstorm-approve-reason
-                        className="min-w-0 text-right text-[12px] leading-[1.45] text-warning @max-[700px]:text-left"
+                        className={cn(
+                            "min-w-0 text-right text-[12px] leading-[1.45] @max-[700px]:text-left",
+                            queued != null ? "text-secondary" : "text-warning"
+                        )}
                     >
                         {blocker}
                     </span>

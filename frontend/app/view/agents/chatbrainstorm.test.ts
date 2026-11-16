@@ -1143,6 +1143,80 @@ describe("brainstormCard: the builder check", () => {
         expect(c.approveBlocker).toBe("The run is starting");
     });
 
+    describe("with the run queued", () => {
+        const PATH = "/p/.superpowers/brainstorm/lag/brainstorm.json";
+        const entry = (over: Partial<RunQueueEntry> = {}): RunQueueEntry => ({
+            id: "q-1",
+            title: "Lag alerts",
+            projectpath: "/p",
+            queuedts: 0,
+            state: "waiting",
+            data: { channelid: "ch", workspaceid: "ws", goal: "g", runtime: "claude" },
+            brainstorm: { tab: "a1", path: PATH },
+            ...over,
+        });
+        const queued = (entries: RunQueueEntry[], started: Record<string, string> = {}) => ({
+            entries,
+            started,
+            path: PATH,
+        });
+        const mark = { runId: null, entryId: "q-1" };
+        const check = () => settled({ check: BUILDER_DONE });
+        const card = (input: Partial<CardInput>) => pick(brainstormCard(inp({ file: check(), ...input })), "check");
+
+        it("reads Queued where Approve was, and keeps the line plain: it is not the user's turn", () => {
+            const c = card({ starting: mark, queue: queued([entry()]) });
+            expect(c.approveBlocker).toBe("Queued");
+            expect(c.queued).toBe(true);
+        });
+
+        it("reads Queued after the runs the entry waits on", () => {
+            const c = card({
+                starting: mark,
+                queue: {
+                    ...queued([entry({ after: ["r-1"] })]),
+                    afterRuns: { titles: { "r-1": "Brief" }, landed: new Set() },
+                },
+            });
+            expect(c.approveBlocker).toBe("Queued after Brief");
+        });
+
+        it("shows the block reason of a blocked entry", () => {
+            const c = card({
+                starting: mark,
+                queue: queued([entry({ state: "blocked", reason: "run Brief was cancelled" })]),
+            });
+            expect(c.approveBlocker).toBe("Queued, but blocked: run Brief was cancelled");
+            expect(c.queued).toBe(true);
+        });
+
+        it("keeps Approve off between the entry starting and the file recording its run", () => {
+            const c = card({ starting: mark, queue: queued([], { "q-1": "r-9" }) });
+            expect(c.approveBlocker).toBe("The run is starting");
+        });
+
+        it("turns Approve back on once the entry is gone without a start", () => {
+            const gone = card({ starting: mark, queue: queued([]) });
+            expect(gone.approveBlocker).toBeNull();
+            expect(gone.queued).toBeUndefined();
+            // an entry of another brainstorm is no reason
+            const other = card({
+                starting: mark,
+                queue: queued([entry({ brainstorm: { tab: "a2", path: "/other/brainstorm.json" } })]),
+            });
+            expect(other.approveBlocker).toBeNull();
+        });
+
+        it("holds the same without a start mark: an entry queued from elsewhere for this brainstorm", () => {
+            expect(card({ queue: queued([entry()]) }).approveBlocker).toBe("Queued");
+        });
+
+        it("leaves Approve as it was with no queue given", () => {
+            expect(card({ starting: mark }).approveBlocker).toBeNull();
+            expect(card({}).queued).toBeUndefined();
+        });
+    });
+
     it("is static for an agent that exited, in every stage", () => {
         for (const [f, check] of [
             [settled(), READING],
@@ -1377,6 +1451,7 @@ describe("sendRecord", () => {
         { kind: "restore", part: "icons" },
         { kind: "keep-all" },
         { kind: "builder-decide" },
+        { kind: "queued", entryId: "q-3f2a" },
     ] as BrainstormAction[])("keeps a $kind line as an action, to be hidden", (action) => {
         const line = brainstormLine(action)!;
         expect(send(action, review(), [], 4)).toEqual({

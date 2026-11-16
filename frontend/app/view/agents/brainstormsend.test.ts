@@ -176,6 +176,7 @@ describe("sendBrainstorm", () => {
         { kind: "approved" },
         { kind: "keep-talking" },
         { kind: "run", runId: "r1" },
+        { kind: "queued", entryId: "q-1" },
     ];
 
     it.each(actions)("sends the $kind line to the agent's block as a prompt", async (action) => {
@@ -657,5 +658,65 @@ describe("openRunLauncher", () => {
         attachBrainstorm(AGENT.id, { topic: "other", cwd: "/p" }, 0);
         handback.handedOff!();
         expect(getBrainstorm(AGENT.id)!.starting).toBeNull();
+    });
+
+    describe("a start the launcher queued", () => {
+        it("prefills the spec as data and who waits for the run, so wavesrv can tell the agent when it starts", () => {
+            openRunLauncher(fakeModel(), AGENT, STATE, fakeIO());
+            expect(globalStore.get(launcherPrefillAtom)).toMatchObject({
+                specPath: "/p/docs/specs/lag.md",
+                brainstorm: { tab: "a1", path: STATE.path },
+            });
+        });
+
+        it("tells the agent the entry's id, and sets the mark to the entry", async () => {
+            updateBrainstorm(AGENT.id, (s) => ({ ...s, file: FILE }));
+            const io = fakeIO();
+            openRunLauncher(fakeModel(), AGENT, getBrainstorm(AGENT.id)!, io);
+            globalStore.get(launcherPrefillAtom)!.handback!.queued!("q-3f2a");
+            await flush();
+            expect(io.sent).toEqual([["blk-1", "brainstorm: queued q-3f2a"]]);
+            expect(getBrainstorm(AGENT.id)!.starting).toEqual({ runId: null, entryId: "q-3f2a" });
+        });
+
+        it("arms no sleep and records no run: the agent records nothing, and wavesrv sends the run line", async () => {
+            updateBrainstorm(AGENT.id, (s) => ({ ...s, file: FILE }));
+            const io = fakeIO();
+            openRunLauncher(fakeModel(), AGENT, getBrainstorm(AGENT.id)!, io);
+            globalStore.get(launcherPrefillAtom)!.handback!.queued!("q-3f2a");
+            await flush();
+            expect(io.armed).toEqual([]);
+            expect(shownBrainstormFile(getBrainstorm(AGENT.id))?.run).toBeNull();
+        });
+
+        it("keeps the line as a hidden action, so no bubble for it draws in Chat", async () => {
+            updateBrainstorm(AGENT.id, (s) => ({ ...s, file: FILE }));
+            openRunLauncher(fakeModel(), AGENT, getBrainstorm(AGENT.id)!, fakeIO());
+            globalStore.get(launcherPrefillAtom)!.handback!.queued!("q-3f2a");
+            await flush();
+            expect(brainstormAnswers(AGENT.id)).toEqual([
+                expect.objectContaining({ text: "brainstorm: queued q-3f2a", kind: "action" }),
+            ]);
+        });
+
+        it("sets the mark even when the line cannot be sent: the entry is queued whatever the agent hears", async () => {
+            updateBrainstorm(AGENT.id, (s) => ({ ...s, file: FILE }));
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+            openRunLauncher(fakeModel(), AGENT, getBrainstorm(AGENT.id)!, fakeIO(true));
+            globalStore.get(launcherPrefillAtom)!.handback!.queued!("q-3f2a");
+            await flush();
+            expect(getBrainstorm(AGENT.id)!.starting).toEqual({ runId: null, entryId: "q-3f2a" });
+            expect(warn).toHaveBeenCalled();
+            warn.mockRestore();
+        });
+
+        it("leaves a brainstorm attached in the approved one's place alone", () => {
+            updateBrainstorm(AGENT.id, (s) => ({ ...s, file: FILE }));
+            openRunLauncher(fakeModel(), AGENT, getBrainstorm(AGENT.id)!, fakeIO());
+            const handback = globalStore.get(launcherPrefillAtom)!.handback!;
+            attachBrainstorm(AGENT.id, { topic: "other", cwd: "/p" }, 0);
+            handback.queued!("q-3f2a");
+            expect(getBrainstorm(AGENT.id)!.starting).toBeNull();
+        });
     });
 });

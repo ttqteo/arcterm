@@ -105,6 +105,7 @@ import { PromptImages, useNow } from "./narrationtimeline";
 import { AgentPathLinks } from "./pathlinkcontext";
 import { PermissionCard } from "./permissioncard";
 import { useTranscriptWindow } from "./railtranscript";
+import { useBrainstormQueue } from "./runqueuestore";
 import { runtimeLogo } from "./runtimelogo";
 import { runtimeMeta } from "./runtimemeta";
 import { shipGitAtom } from "./shipstore";
@@ -554,6 +555,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const procExit = useAtomValue(getProcExitAtom(agent.blockId ?? ""));
     const exited = procExited(procExit, agent.sleeping);
     const brainstormTopic = brainstormState?.topic ?? "";
+    // the run queue, for the card to find the entry Approve queued (queuedForBrainstorm): it reads Queued where Approve was
+    const brainstormQueue = useBrainstormQueue(brainstormState?.path ?? null);
     const nextCard = useMemo(() => {
         const s = brainstormState;
         // the builder check as the Brainstorm tab reads it (brainstormpane.tsx): the card and the tab say one thing
@@ -571,6 +574,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
             seen: s != null ? (seenMarks[s.path] ?? null) : null,
             starting: s?.starting ?? null,
             modifiedMs: s?.modifiedMs ?? null,
+            queue: brainstormQueue,
         });
     }, [
         brainstormState,
@@ -578,6 +582,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
         exited,
         brainstormTopic,
         seenMarks,
+        brainstormQueue,
         agent.builderCheck,
         agent.state,
         agent.idleSince,

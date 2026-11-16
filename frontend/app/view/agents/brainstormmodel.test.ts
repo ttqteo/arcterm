@@ -79,6 +79,8 @@ import {
     progressView,
     questionBoards,
     questionTrack,
+    queuedForBrainstorm,
+    queuedLine,
     railBoardHeads,
     railColumns,
     railGroups,
@@ -733,6 +735,7 @@ describe("brainstormLine", () => {
         expect(brainstormLine({ kind: "approved" })).toBe("brainstorm: approved");
         expect(brainstormLine({ kind: "keep-talking" })).toBe("brainstorm: keep talking");
         expect(brainstormLine({ kind: "run", runId: "r-1" })).toBe("brainstorm: run r-1");
+        expect(brainstormLine({ kind: "queued", entryId: "q-3f2a" })).toBe("brainstorm: queued q-3f2a");
     });
 
     it("joins a multi-line, tab-filled text into one line", () => {
@@ -1629,6 +1632,139 @@ describe("approveBlocker", () => {
         expect(approveBlocker(settled, { runId: null })).toBe(RUN_STARTING);
         expect(approveBlocker(withStartingRun(settled, { runId: "r1" }), { runId: "r1" })).toBeNull();
     });
+
+    describe("a run the queue holds", () => {
+        const settled = file({ parts: yoursAll, check: answered });
+
+        it("stands where Approve was while the entry waits: Queued, or Queued after the runs it waits on", () => {
+            expect(approveBlocker(settled, { runId: null, entryId: "q-1" }, { state: "waiting" })).toBe("Queued");
+            expect(
+                approveBlocker(
+                    settled,
+                    { runId: null, entryId: "q-1" },
+                    { state: "waiting", after: "Lag alerts, Brief" }
+                )
+            ).toBe("Queued after Lag alerts, Brief");
+        });
+
+        it("says why a blocked entry cannot start", () => {
+            expect(approveBlocker(settled, null, { state: "blocked", reason: "run Lag alerts was cancelled" })).toBe(
+                "Queued, but blocked: run Lag alerts was cancelled"
+            );
+            expect(approveBlocker(settled, null, { state: "blocked", reason: "" })).toBe("Queued, but blocked");
+        });
+
+        it("reads a started entry as the run starting, until the agent records it", () => {
+            expect(approveBlocker(settled, { runId: null, entryId: "q-1" }, { state: "started", runId: "r-9" })).toBe(
+                RUN_STARTING
+            );
+            expect(approveBlocker({ ...settled, run: "r-9" }, null, { state: "started", runId: "r-9" })).toBeNull();
+        });
+
+        it("comes before the agent still writing, which a line about the queue makes it for a moment", () => {
+            expect(approveBlocker({ ...settled, working: "Taking in your change." }, null, { state: "waiting" })).toBe(
+                "Queued"
+            );
+        });
+
+        it("is on again once the entry is gone: a queued mark alone keeps nothing off, a launcher start's still does", () => {
+            expect(approveBlocker(settled, { runId: null, entryId: "q-1" }, null)).toBeNull();
+            expect(approveBlocker(settled, { runId: null }, null)).toBe(RUN_STARTING);
+        });
+    });
+});
+
+describe("queuedForBrainstorm", () => {
+    const PATH = "/p/.superpowers/brainstorm/lag/brainstorm.json";
+    const entry = (over: Partial<RunQueueEntry> = {}): RunQueueEntry => ({
+        id: "q-1",
+        title: "Lag alerts",
+        projectpath: "/p",
+        queuedts: 0,
+        state: "waiting",
+        data: { channelid: "ch", workspaceid: "ws", goal: "g", runtime: "claude" },
+        brainstorm: { tab: "a1", path: PATH },
+        ...over,
+    });
+
+    it("holds nothing for a brainstorm with no entry", () => {
+        expect(queuedForBrainstorm([], {}, PATH, null)).toBeNull();
+        expect(
+            queuedForBrainstorm([entry({ brainstorm: { tab: "a2", path: "/other/brainstorm.json" } })], {}, PATH, null)
+        ).toBeNull();
+        // an entry of no brainstorm is nobody's
+        expect(queuedForBrainstorm([entry({ brainstorm: undefined })], {}, PATH, null)).toBeNull();
+    });
+
+    it("finds the entry by the path of the brainstorm it was queued with: waiting for room only", () => {
+        const other = entry({ id: "q-0", brainstorm: { tab: "a2", path: "/other/brainstorm.json" } });
+        expect(queuedForBrainstorm([other, entry()], {}, PATH, null)).toEqual({ state: "waiting" });
+    });
+
+    it("finds the entry whichever slash its path was spelled with", () => {
+        const spelled = entry({ brainstorm: { tab: "a1", path: PATH.replace(/\//g, "\\") } });
+        expect(queuedForBrainstorm([spelled], {}, PATH, null)).toEqual({ state: "waiting" });
+    });
+
+    it("names the runs it waits on that have not landed, by title", () => {
+        const after = entry({ after: ["r-1", "r-2"] });
+        const titles = { "r-1": "Lag alerts v1", "r-2": "Brief" };
+        expect(queuedForBrainstorm([after], {}, PATH, null, { titles, landed: new Set() })).toEqual({
+            state: "waiting",
+            after: "Lag alerts v1, Brief",
+        });
+        // one landed: only the other is waited for; all landed: room is all that is left
+        expect(queuedForBrainstorm([after], {}, PATH, null, { titles, landed: new Set(["r-1"]) })).toEqual({
+            state: "waiting",
+            after: "Brief",
+        });
+        expect(queuedForBrainstorm([after], {}, PATH, null, { titles, landed: new Set(["r-1", "r-2"]) })).toEqual({
+            state: "waiting",
+        });
+    });
+
+    it("reads a queued entry's own title as its After's, and the short id of a run it knows nothing about", () => {
+        const first = entry({ id: "q-0", title: "Earlier build", brainstorm: undefined });
+        const after = entry({ after: ["q-0", "run-1234567890"] });
+        expect(queuedForBrainstorm([first, after], {}, PATH, null)).toEqual({
+            state: "waiting",
+            after: "Earlier build, run-1234",
+        });
+    });
+
+    it("carries a blocked entry's reason", () => {
+        const blocked = entry({ state: "blocked", reason: "run Brief was cancelled" });
+        expect(queuedForBrainstorm([blocked], {}, PATH, null)).toEqual({
+            state: "blocked",
+            reason: "run Brief was cancelled",
+        });
+        expect(queuedForBrainstorm([entry({ state: "blocked" })], {}, PATH, null)).toEqual({
+            state: "blocked",
+            reason: "",
+        });
+    });
+
+    it("is a start once the entry has left the list with a run made of it, the mark naming the entry", () => {
+        const mark = { runId: null, entryId: "q-1" };
+        expect(queuedForBrainstorm([], { "q-1": "r-9" }, PATH, mark)).toEqual({ state: "started", runId: "r-9" });
+        // another entry's run is not this one's, and with no mark there is nothing to follow
+        expect(queuedForBrainstorm([], { "q-2": "r-9" }, PATH, mark)).toBeNull();
+        expect(queuedForBrainstorm([], { "q-1": "r-9" }, PATH, null)).toBeNull();
+        expect(queuedForBrainstorm([], { "q-1": "r-9" }, PATH, { runId: null })).toBeNull();
+    });
+
+    it("is nothing once the entry is gone with no run made of it", () => {
+        expect(queuedForBrainstorm([], {}, PATH, { runId: null, entryId: "q-1" })).toBeNull();
+    });
+});
+
+describe("queuedLine", () => {
+    it("words each state", () => {
+        expect(queuedLine({ state: "waiting" })).toBe("Queued");
+        expect(queuedLine({ state: "waiting", after: "A" })).toBe("Queued after A");
+        expect(queuedLine({ state: "blocked", reason: "r" })).toBe("Queued, but blocked: r");
+        expect(queuedLine({ state: "started", runId: "r-1" })).toBe(RUN_STARTING);
+    });
 });
 
 describe("withStartingRun", () => {
@@ -1949,6 +2085,16 @@ describe("runPrefill", () => {
 
     it("names no spec in the goal when the brainstorm wrote none", () => {
         expect(runPrefill(file({ title: "T" }), base).goal).toBe("Build T.");
+    });
+
+    it("carries the absolute spec as data, for the launcher to compare its files with the live runs'", () => {
+        expect(runPrefill(file({ title: "T", spec: "docs/specs/lag.md" }), base).specPath).toBe(
+            "C:\\proj\\docs\\specs\\lag.md"
+        );
+        expect(runPrefill(file({ title: "T", spec: "D:\\elsewhere\\s.md" }), base).specPath).toBe(
+            "D:\\elsewhere\\s.md"
+        );
+        expect(runPrefill(file({ title: "T" }), base)).not.toHaveProperty("specPath");
     });
 
     it("uses the first listed board, in part order, as the prototype", () => {
