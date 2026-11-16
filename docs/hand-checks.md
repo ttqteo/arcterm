@@ -21,6 +21,10 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   build, run a plan of three or more tasks in this repo (its `.arc/setup` makes each tree): the task cards read
   "preparing its tree" for a moment before running, and `waveapp.log`'s `dag <id> lock:` lines no longer name
   `dispatch` as the slowest phase with holds of 10 s and more (`66bea964a`).
+- [ ] (arcterm) **A lead's tell reaches the worker, not its `claude -p`.** Mod tests and `claude plugin validate`
+  only. On the installed build, in a run whose worker runs `claude -p "sleep 60 with Bash, then say done"`, send
+  `wsh jarvis dag tell <task> "<note>"` while it waits: the worker's own session takes the note (mid-turn), and after
+  the nested run exits a second tell still reaches it over the stream, not typed into the composer (`bf4c55362`).
 - [ ] (arcterm) **Diff n / p open a collapsed folder.** Unit tests and typecheck only, no dev app ran. On Diff in tree
   mode with changes in two folders, collapse the second, then press n until the next file is in it: the folder opens
   and the file's row is selected on screen (3bc4f85dc).
