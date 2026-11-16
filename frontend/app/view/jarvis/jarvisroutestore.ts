@@ -87,7 +87,6 @@ export function setRouteModel(model: AgentsViewModel): void {
 }
 
 // No folder's path and channel, asked of wavesrv once a session. A failure is not kept, so the next Ask reads it again.
-// Exported for the destination picker, which leaves that channel out of its project rows (it is No folder's, not a project's).
 let noFolderCache: { path: string; channelid: string } | null = null;
 
 export async function noFolderInfo(): Promise<{ path: string; channelid: string }> {
