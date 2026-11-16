@@ -37,6 +37,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run no longer freezes its other workers, merges and your actions for up to a minute while it checks out a task's
+  tree and runs its Setup.
 - An agent started with Work on stays on the initiative you picked: reading or writing another initiative along the
   way no longer moves its header and initiative band to that one.
 - The Jarvis hologram no longer turns into the pixel pet for a few seconds after a long day of opening and closing

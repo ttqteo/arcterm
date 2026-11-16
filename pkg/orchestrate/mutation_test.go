@@ -1493,7 +1493,8 @@ func TestScheduleTimesItsPhasesUnderTheLock(t *testing.T) {
 	if err := withDagMutation(dag.OID, func() error {
 		var stalled []stalledTask
 		var recovered []askRecovery
-		err := scheduleLocked(ctx, dag.OID, &stalled, &recovered)
+		var jobs []treePrepJob
+		err := scheduleLocked(ctx, dag.OID, map[string]bool{}, &jobs, &stalled, &recovered)
 		phases = peekLockPhases(dag.OID)
 		return err
 	}); err != nil {

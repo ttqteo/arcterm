@@ -21603,6 +21603,172 @@ const leadCardMergeGate = {
     },
 };
 
+// The preparing task state (docs/superpowers/plans/2026-11-16-dispatch-off-dag-lock.md): a claimed task makes its lane
+// tree and runs the plan's Setup outside the dag lock, and the cockpit reads it as the engine at work. The task is held
+// preparing by a slow Setup the seed gives the stored dag. dagsubmit's own tick has already dispatched t-1 and made its
+// lane tree, which carries the marker of a Setup that passed: with it the next claim would skip Setup and be preparing
+// for milliseconds, so the marker is removed before the seed, and the tick after it runs the slow Setup for real.
+const DAG_PREPARING_LEAD = "dag-preparing lead";
+const DAG_PREPARING_SETUP = "sleep 120";
+const DAG_PREPARING_TASKS = [
+    { id: "t-1", label: "preparing lane", description: "do nothing, stop immediately", deps: [], gate: false, state: "" },
+];
+// the engine ticks a dag at most every 30 seconds
+const DAG_PREPARING_WAIT_MS = 90_000;
+const dagPreparingTask = async (h, ctx) =>
+    (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.tasks?.find((t) => t.id === "t-1");
+// the class the lead card sets on its Workflow mark, whose tone leadMark chooses
+const DAG_PREPARING_MARK_CLASS = `(() => {
+    const svg = ${COCKPIT_LEAD_CARD}?.firstElementChild?.querySelector("svg");
+    return svg == null ? null : (svg.getAttribute("class") ?? "");
+})()`;
+
+const dagPreparing = {
+    name: "dag-preparing",
+    surface: "cockpit",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-dag-preparing-"));
+        const ctx = { cwd };
+        try {
+            fstGitInit(cwd);
+            // atPrompt: the lead stands by between wakes, so the mark's tone is the engine's to give (leadStandingBy)
+            await arrangeFixtureRun(h, ctx, "dag-preparing", DAG_PREPARING_LEAD, { atPrompt: true }, { landing: "checkout" });
+            await h.rpc("dagsubmit", {
+                channelid: ctx.channelId,
+                runid: ctx.runId,
+                title: "verify dag-preparing",
+                parallelism: 1,
+                tasks: DAG_PREPARING_TASKS,
+            });
+            ctx.dagId = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.oid;
+            // dagsubmit's tick dispatched a real worker for t-1. It is stopped before the seed unlinks it, so no agent
+            // works in the lane's tree beside the Setup the next claim runs there
+            const first = await dagPreparingTask(h, ctx);
+            if (first?.runid) await h.rpc("cancelrun", { channelid: ctx.channelId, runid: first.runid });
+            // the lane trees' Setup marker, which the first dispatch wrote even with no Setup line
+            const landing = ctx.landPath ? resolve(ctx.landPath) : null;
+            for (const tree of linkedWorktrees(ctx.cwd).filter((t) => t !== landing)) {
+                const gitDir = execFileSync("git", ["-C", tree, "rev-parse", "--absolute-git-dir"], { encoding: "utf8" }).trim();
+                rmSync(join(gitDir, "arc-setup-done"), { force: true });
+            }
+            // running, with no failures: the watchdog ticks a parked dag (blocked, which stopping the first worker leaves
+            // it) only while a task is busy, so one left parked is never ticked and never claims the pending task. Only
+            // the Setup is fingerprinted: a tick that claims the task first must not have its prepare reset
+            await seedDag(
+                h,
+                ctx,
+                (dag) => ({
+                    ...dag,
+                    status: "running",
+                    failures: 0,
+                    setup: DAG_PREPARING_SETUP,
+                    tasks: dag.tasks.map((t) => ({ ...t, state: "pending", runid: "", attempts: 0, lastfailurekind: "" })),
+                }),
+                (dag) => JSON.stringify(dag?.setup)
+            );
+            const start = Date.now();
+            while (Date.now() - start < DAG_PREPARING_WAIT_MS) {
+                ctx.taskState = (await dagPreparingTask(h, ctx))?.state;
+                if (ctx.taskState === "preparing") break;
+                await new Promise((r) => setTimeout(r, 1000));
+            }
+            ctx.preparingMs = Date.now() - start;
+            // the fixture roster is read once at boot
+            await h.ev("location.reload()");
+            await h.ev(`(async () => {
+                for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
+                    await new Promise((r) => setTimeout(r, 500));
+                }
+            })()`);
+            await h.goto("cockpit");
+            ctx.markClass = await h.ev(`(async () => {
+                for (let i = 0; i < 120; i++) {
+                    const cls = ${DAG_PREPARING_MARK_CLASS};
+                    if (cls != null && cls.includes("text-working")) return cls;
+                    await new Promise((r) => setTimeout(r, 500));
+                }
+                return ${DAG_PREPARING_MARK_CLASS};
+            })()`);
+            // let the card's enter motion settle
+            await new Promise((r) => setTimeout(r, 800));
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        // a Setup that ran in milliseconds would pass the state read by luck: the task must have held preparing through
+        // the whole slow Setup, which only a prepare that runs while the engine ticks on can do
+        const now = (await dagPreparingTask(h, ctx))?.state;
+        rec(
+            "1. the task is preparing",
+            ctx.arrangeError == null && ctx.taskState === "preparing" && now === "preparing",
+            ctx.arrangeError ?? `t-1 ${ctx.taskState} after ${ctx.preparingMs}ms, ${now} now`
+        );
+        await h.shot("cdp-shots/dag-preparing-cockpit.png");
+
+        const markClass = await h.ev(DAG_PREPARING_MARK_CLASS);
+        rec(
+            "2. the lead card reads working while its lead stands by",
+            (markClass ?? "").includes("text-working") && !(markClass ?? "").includes("text-muted"),
+            `mark=${JSON.stringify(markClass)}`
+        );
+
+        // the run sheet's DAG: the node of a task whose tree is being made
+        await h.goto("jarvis");
+        const node = await h.ev(`(async () => {
+            for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+                await new Promise((r) => setTimeout(r, 250));
+            }
+            if (typeof window.__openAddress !== "function") return { error: "no __openAddress hook" };
+            await window.__openAddress(${JSON.stringify(`run:${ctx.runId}`)});
+            let btn = null;
+            for (let i = 0; i < 40 && !btn; i++) {
+                btn = [...(document.querySelector("[data-run-sheet]")?.querySelectorAll("button") ?? [])].find(
+                    (b) => b.textContent.trim() === "Open DAG"
+                );
+                if (!btn) await new Promise((r) => setTimeout(r, 250));
+            }
+            if (!btn) return { error: "no Open DAG button on the run sheet" };
+            btn.click();
+            for (let i = 0; i < 40 && !document.querySelector('[data-dag-modal-kind] [data-dag-node="t-1"]'); i++) {
+                await new Promise((r) => setTimeout(r, 250));
+            }
+            const el = document.querySelector('[data-dag-modal-kind] [data-dag-node="t-1"]');
+            if (!el) return { error: "no t-1 node on the DAG" };
+            const flat = (e) => (e?.textContent ?? "").replace(/\\s+/g, " ").trim();
+            return {
+                word: flat(el.querySelector("[data-dag-node-word]")),
+                fact: flat(el.querySelector("[data-dag-node-fact]")).replace(/^·\\s*/, ""),
+            };
+        })()`);
+        await h.shot("cdp-shots/dag-preparing-dag.png");
+        rec(
+            "3. the dag canvas shows the task live, preparing its tree",
+            node?.error == null && /preparing$/.test(node?.word ?? "") && node?.fact === "preparing its tree",
+            JSON.stringify(node)
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "dag-preparing", {
+            what: "cancel the channel's other runs",
+            fn: async () => {
+                // the run's cancel cuts the Setup (stopDagSetup); t-1's first child run, which the seed unlinked from its
+                // task, is cancelled on its own, or its worker keeps the lane's tree and the temp dir cannot be removed
+                if (!ctx.channelId) return;
+                for (const run of await channelRuns(h, ctx.channelId)) {
+                    if (run.id !== ctx.runId && run.status !== "done" && run.status !== "cancelled") {
+                        await h.rpc("cancelrun", { channelid: ctx.channelId, runid: run.id });
+                    }
+                }
+            },
+        });
+    },
+};
+
 // The Jarvis run sheet on the brief type scale (docs/superpowers/specs/2026-09-29-run-sheet-polish-design.md):
 // nothing under 10.5px in the sheet body or its header, the shared task strip under the verb, and the compact
 // lifecycle timeline. The run is a real orchestrator run held by deferstart, then given a chained three-task plan,
@@ -71202,6 +71368,7 @@ export const SCENARIOS = [
     lineReview,
     cockpitPolish,
     leadCardMergeGate,
+    dagPreparing,
     runSheetPolish,
     runTimingScenario,
     runCost,

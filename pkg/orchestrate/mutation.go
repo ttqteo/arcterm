@@ -31,9 +31,10 @@ var dagMutationLocks = keyedmutex.New()
 // WithDagMutation serializes every read-modify-write of one DAG. The engine's scheduling write is a
 // whole-object replace of a snapshot loaded under this lock, so any writer that skips it has its
 // changes silently reverted by an overlapping tick. Exported because the merge handlers live in
-// wshserver (which imports this package) and are dag writers too. Not reentrant. Work on a tree or a process
-// (a Setup aside) runs outside it, and only its result is recorded under it: a hold of tens of seconds makes
-// every exit it causes wait.
+// wshserver (which imports this package) and are dag writers too. Not reentrant. Work on a tree or a process runs
+// outside it, and only its result is recorded under it: a hold of tens of seconds makes every exit it causes wait. A
+// task's tree and Setup are made outside it (prepareTaskTree); two Setups still run under it, the final stage's
+// (finalTree) and the one that makes again a prepared tree a removal took between two passes (dispatchTasks).
 func WithDagMutation(dagID string, fn func() error) error {
 	if dagID == "" {
 		return fmt.Errorf("dag id is required")
@@ -167,7 +168,7 @@ func dagLockCaller() string {
 }
 
 // TryWithDagMutation runs fn only if the dag's lock is free, reporting whether it ran. For a write with
-// nothing to gain by waiting: the plan's Setup command holds this lock for up to SetupTimeout, and a
+// nothing to gain by waiting: the final stage's Setup command holds this lock for up to SetupTimeout, and a
 // cosmetic write that queues behind it delays whatever its own caller does next.
 func TryWithDagMutation(dagID string, fn func() error) (bool, error) {
 	if dagID == "" {
@@ -784,11 +785,13 @@ func settleEndedRun(ctx context.Context, dagID string) (bool, error) {
 
 // cancelDag is Cancel, or settleEndedRun with runEnded, and reports whether it cancelled the dag.
 func cancelDag(ctx context.Context, dagID string, runEnded bool) (bool, error) {
-	// the lock can be held for minutes (Setup) and the wait spends the caller's rpc budget; a cancel must still
-	// land after its caller stops waiting, or the run keeps going
+	// the lock can be held for minutes (the final stage's Setup) and the wait spends the caller's rpc budget; a cancel
+	// must still land after its caller stops waiting, or the run keeps going
 	ctx = context.WithoutCancel(ctx)
-	// a Setup holds that lock while it waits for a heavy-job slot, with no bound on the wait (its timeout starts once
-	// the slot is granted): cut it off, as a pause does. The cut task stays pending, and the dag is cancelled under it.
+	// a Setup waits for a heavy-job slot with no bound on the wait (its timeout starts once the slot is granted), and
+	// the final stage's holds this lock while it waits: cut every Setup off, as a pause does. A task's own Setup runs
+	// outside the lock, and the cancel finds its task preparing: the prepare ends with nothing to spawn and removes the
+	// tree it made if this cancel's removal ran before the tree existed.
 	endStopping := stopDagSetup(dagID)
 	defer endStopping()
 	var c *cancelledDag
