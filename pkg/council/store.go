@@ -111,13 +111,28 @@ func busyOnWindows(err error) bool {
 	return isWindows && errors.As(err, &errno) && (errno == errAccessDenied || errno == errSharingViolation)
 }
 
-// readBytes is os.ReadFile, retrying for a moment when Windows refuses to open a file a Save is replacing: the
-// rename is brief, and the reader would otherwise see an error for a council that is fine.
+// replacingOnWindows reports whether err is a council file that a Save is replacing at that moment: Windows refuses
+// to open it, or, for an instant under load, finds no file by its name while the Save's temp file is still there.
+func replacingOnWindows(path string, err error) bool {
+	if busyOnWindows(err) {
+		return true
+	}
+	if !isWindows || !errors.Is(err, fs.ErrNotExist) {
+		return false
+	}
+	_, terr := os.Lstat(path + fileutil.TempFileSuffix)
+	return terr == nil
+}
+
+// readBytes reads a council file with delete sharing, so a Save lands while it is open (readers that reopened a
+// council back to back starved the Save past its retry under load), retrying for a moment while a Save is replacing
+// it: the rename is brief, and the reader would otherwise see an error for a council that is fine. A council with no
+// Save in flight that is missing says so at once.
 func readBytes(path string) ([]byte, error) {
 	deadline := time.Now().Add(readRetryFor)
 	for delay := time.Millisecond; ; delay = min(delay*2, readRetryMaxDelay) {
-		b, err := os.ReadFile(path)
-		if err == nil || !busyOnWindows(err) || time.Now().After(deadline) {
+		b, err := fileutil.ReadFileShared(path)
+		if err == nil || !replacingOnWindows(path, err) || time.Now().After(deadline) {
 			return b, err
 		}
 		time.Sleep(delay)
