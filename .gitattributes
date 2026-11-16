@@ -13,3 +13,4 @@ frontend/types/gotypes.d.ts         merge=union
 CHANGELOG.md                        merge=union
 docs/open-issues.md                 merge=union
 docs/hand-checks.md                 merge=union
+docs/hand-checks-*.md               merge=union
