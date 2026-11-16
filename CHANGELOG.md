@@ -53,6 +53,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   you handed over puts its gist under its title.
 - With a brainstorm board open, `[` `]` and the arrow keys step through the boards its rail lists (the asked part's),
   instead of every board of the canvas and its All view.
+  a run's ✓ row sits where its landed (or held) message came, or, for a quick run that never lands, where it finished,
+  and a council's Done card where its report reached the agent, just above the agent's summary. Only runs and councils
+  still going stay at the end.
 
 ## 1.2.0 — 2026-11-16
 

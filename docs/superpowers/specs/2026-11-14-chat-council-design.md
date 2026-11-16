@@ -86,7 +86,8 @@ minutes before sat under the newest answer as if it were news. Once the council 
 it ended: after the item its report reached the agent in (the call that printed it, or the background wait's
 notification), just above the agent's summary; with no report read, after its `wsh council start` call. A council
 still going, or running again after it ended, stays at the end. The runs no call names do the same: their ✓ row stays
-at their `[arc] Run … landed|held` message.
+at their `[arc] Run … landed|held` message, and a run with none (a quick run never lands) after the last item that ran
+a tool before its completed or cancelled time, tool calls being the only records the conversation keeps a time for.
 
 ### 3. When the council ends (revised 2026-11-16; board `D-summary-panel.dc.html`)
 
