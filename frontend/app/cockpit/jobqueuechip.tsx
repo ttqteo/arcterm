@@ -92,6 +92,8 @@ function useWaitClock() {
     }, []);
 }
 
+// it shrinks and cuts its label before a row's RAM · tokens · age columns are pushed past the row's edge; the tooltip
+// keeps the whole of it
 function QueueTagButton({
     tag,
     attrs,
@@ -111,12 +113,12 @@ function QueueTagButton({
                 toggleJobQueue(e.currentTarget);
             }}
             className={cn(
-                "flex flex-none cursor-pointer items-center gap-[3px] whitespace-nowrap rounded-[5px] px-[3px] py-[1px] text-[10.5px] font-semibold tabular-nums hover:bg-surface-hover",
+                "flex min-w-0 cursor-pointer items-center gap-[3px] whitespace-nowrap rounded-[5px] px-[3px] py-[1px] text-[10.5px] font-semibold tabular-nums hover:bg-surface-hover",
                 tag.warn ? "text-warning" : "text-muted"
             )}
         >
-            <Icon size={10} aria-hidden />
-            {tag.label}
+            <Icon size={10} aria-hidden className="flex-none" />
+            <span className="truncate">{tag.label}</span>
         </button>
     );
 }
