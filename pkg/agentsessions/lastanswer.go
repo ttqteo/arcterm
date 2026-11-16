@@ -17,7 +17,7 @@ import (
 func LastAnswer(path, runtime string) (text string, ts int64) {
 	switch runtime {
 	case "claude":
-		return claudeLastAnswer(readLines(path))
+		return claudeLastAnswer(transcriptLines(path))
 	case "pi":
 		file, err := pisession.Read(path)
 		if err != nil {
@@ -25,7 +25,7 @@ func LastAnswer(path, runtime string) (text string, ts int64) {
 		}
 		return piLastAnswer(file)
 	case "agy":
-		return agyLastAnswer(parseAgySteps(readLines(path)))
+		return agyLastAnswer(parseAgySteps(transcriptLines(path)))
 	}
 	return "", 0
 }
@@ -99,7 +99,7 @@ func (f Failure) Refused() bool {
 func LastError(path, runtime string) Failure {
 	switch runtime {
 	case "claude":
-		return claudeLastError(readLines(path))
+		return claudeLastError(transcriptLines(path))
 	case "pi":
 		file, err := pisession.Read(path)
 		if err != nil {

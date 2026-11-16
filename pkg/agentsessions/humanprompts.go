@@ -56,7 +56,7 @@ func sentByPerson(isSidechain bool, origin *claudeOrigin) bool {
 func HumanPrompts(path, runtime string) []HumanPrompt {
 	switch runtime {
 	case "claude":
-		return claudeHumanPrompts(readLines(path))
+		return claudeHumanPrompts(transcriptLines(path))
 	case "pi":
 		file, err := pisession.Read(path)
 		if err != nil {
@@ -64,7 +64,7 @@ func HumanPrompts(path, runtime string) []HumanPrompt {
 		}
 		return piHumanPrompts(file)
 	case "agy":
-		return agyHumanPrompts(parseAgySteps(readLines(path)))
+		return agyHumanPrompts(parseAgySteps(transcriptLines(path)))
 	}
 	return nil
 }

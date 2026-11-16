@@ -42,6 +42,10 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) **A brainstorm waiting on you does not take the keyboard.** Unit tests and typecheck only, no dev app
   ran. Pick, with `j`/`k`, an idle agent whose brainstorm asks a question: `j`/`k` keep moving the tree. An agent at
   a permission prompt still takes the keyboard when picked. (80d72e75a)
+- [ ] (arcterm) **A pi that quits leaves the agents list.** Unit tests only, no live pi ran. After installing the
+  build (its launch writes the new pi status extension), run pi in an agent tab and quit it back to the shell:
+  `wsh agents list` no longer lists that tab, and `wsh agents send` to it is refused instead of typed into the shell.
+  Start pi again in the tab: once it starts, the tab is listed again. `dd3f02acc`
 - [ ] (arcterm) **A paragraph picked above a code block leaves its line number alone.** Unit tests and typecheck only,
   no dev app ran. In Chat, triple-click a paragraph that sits right above a code block: only the paragraph is
   highlighted, not the block's `1`, and a copy holds only the paragraph's text.

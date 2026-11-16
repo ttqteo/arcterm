@@ -139,7 +139,9 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 	statusArgs := []string{"status", "--porcelain=v1", "-z", "-uall", "--", "."}
 	// --no-optional-locks: this read runs in the background, and refreshing the index would take
 	// index.lock out from under an agent committing in the same checkout. It is left out of statusArgs so
-	// the error above still names the command as it always did.
+	// the error above still names the command as it always did. The flag does not stop porcelain `git diff`
+	// from rewriting a stale index (git 2.45), so the working-tree diffs below are plumbing `diff-index`, which
+	// never writes it; -M because plumbing ignores diff.renames, which porcelain diff turns on by default.
 	statusZ, err := run(ctx, cwd, append([]string{"--no-optional-locks"}, statusArgs...)...)
 	if err != nil {
 		return nil, errors.New(describeGitError(statusArgs, err))
@@ -152,7 +154,7 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 		// HEAD the error is a real failed read, but one unreadable file fails it for every file, so it is
 		// carried beside the list (NumstatError) rather than replacing it: the files stay listed and the
 		// counts are reported as unavailable, not as zero.
-		numstatArgs := []string{"diff", "--numstat", "--relative", "HEAD"}
+		numstatArgs := []string{"diff-index", "--numstat", "-M", "--relative", "HEAD"}
 		numstat, nerr := run(ctx, cwd, numstatArgs...)
 		numstatError := ""
 		if nerr != nil && head != "" {
@@ -166,12 +168,12 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 	}
 	// ref mode: tracked changes come from the base diff (committed + uncommitted); untracked files
 	// are not in the base, so their ?? rows are carried over from status verbatim.
-	nameStatus, _ := run(ctx, cwd, "diff", "--name-status", "-z", "--relative", ref)
+	nameStatus, _ := run(ctx, cwd, "diff-index", "--name-status", "-z", "-M", "--relative", ref)
 	trackedZ := nameStatusToStatusZ(nameStatus)
 	untrackedZ := untrackedEntriesZ(statusZ)
 	// as in live mode, a failed count is carried beside the list, so an agent's or a run's scope shows its counts as
 	// unavailable rather than as +0 −0 (the ref is a commit, so unlike live mode an unborn HEAD is no excuse)
-	refNumstatArgs := []string{"diff", "--numstat", "--relative", ref}
+	refNumstatArgs := []string{"diff-index", "--numstat", "-M", "--relative", ref}
 	numstat, nerr := run(ctx, cwd, refNumstatArgs...)
 	refNumstatError := ""
 	if nerr != nil {
@@ -906,7 +908,8 @@ func worktreeStatus(ctx context.Context, wt *Worktree, mainBranch string) error 
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 	statusArgs := []string{"status", "--porcelain", "-z"}
-	statusZ, err := run(ctx, wt.Path, statusArgs...)
+	// --no-optional-locks: every checkout of the repo is read, each perhaps an agent's mid-commit (see GetChanges)
+	statusZ, err := run(ctx, wt.Path, append([]string{"--no-optional-locks"}, statusArgs...)...)
 	if err != nil {
 		return failureErr(statusArgs, err)
 	}

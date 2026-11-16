@@ -199,6 +199,20 @@ describe("registerWavetermStatus", () => {
         }
     });
 
+    // the roster drops a running tab whose latest status is ended, so an exited pi takes no typed send
+    it("marks only session_shutdown as ended", async () => {
+        for (const [ev, ended] of [
+            ["session_shutdown", true],
+            ["agent_settled", false],
+            ["session_start", false],
+        ] as const) {
+            const pi = fakePi();
+            registerWavetermStatus(pi, "wsh");
+            await pi.handlers.get(ev)![0]({}, sessionCtx());
+            expect(pi.exec.mock.calls[0][1].includes("--ended"), ev).toBe(ended);
+        }
+    });
+
     it("message_end reports current state then usage", async () => {
         const pi = fakePi();
         registerWavetermStatus(pi, "wsh");

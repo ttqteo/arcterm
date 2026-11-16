@@ -714,11 +714,16 @@ func assembleEvents(raw []SessionEvent, firstTs, lastTs int64, startedText, fini
 }
 
 // readLines reads non-blank lines from a transcript file. A package var so tests can assert
-// scanProvider's read-count invariant (only the newest candidates' content is read).
-var readLines = func(path string) []string {
+// scanProvider's read-count invariant (only the newest candidates' content is read). A file that is gone has no
+// lines and no error; any other read error comes back, so a scan never caches a lock or a handle limit as an
+// empty transcript.
+var readLines = func(path string) ([]string, error) {
 	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var lines []string
 	for _, ln := range strings.Split(string(data), "\n") {
@@ -726,6 +731,12 @@ var readLines = func(path string) []string {
 			lines = append(lines, ln)
 		}
 	}
+	return lines, nil
+}
+
+// transcriptLines is readLines for a one-off read that caches nothing, where a read error reads as no lines.
+func transcriptLines(path string) []string {
+	lines, _ := readLines(path)
 	return lines
 }
 
@@ -1142,6 +1153,12 @@ func piProvider(root string) provider {
 		},
 		fused: func(path, _ string, _ []string) (*SessionInfo, sessionEvents) {
 			file, err := pisession.Read(path)
+			// a read that failed (a lock, a handle limit) is not the file's answer, unlike one that parsed badly:
+			// it must not be cached as no session
+			var pathErr *fs.PathError
+			if errors.As(err, &pathErr) && !errors.Is(err, fs.ErrNotExist) {
+				return nil, sessionEvents{readErr: err}
+			}
 			if err != nil {
 				log.Printf("agentsessions: skipping malformed pi session %q: %v", path, err)
 				return nil, sessionEvents{}
@@ -1308,8 +1325,11 @@ func scanSessionCached(c candidate) (*SessionInfo, sessionEvents) {
 	if ok && e.mtime.Equal(c.mtime) && e.size == c.size {
 		return e.info, e.se
 	}
-	lines := readLines(c.path)
+	lines, err := readLines(c.path)
 	s, se := c.p.fused(c.path, c.stem, lines)
+	if err != nil && se.readErr == nil {
+		s, se = nil, sessionEvents{readErr: err}
+	}
 	if se.readErr != nil {
 		// a partial read is not the file's answer: leave it uncached so the next scan reads it again
 		return s, se
@@ -1432,7 +1452,10 @@ func ExtractSession(path, runtime string) (*SessionInfo, error) {
 	default:
 		return nil, fmt.Errorf("agentsessions: unknown runtime %q", runtime)
 	}
-	lines := readLines(path)
+	lines, err := readLines(path)
+	if err != nil {
+		return nil, fmt.Errorf("agentsessions: reading %s: %w", path, err)
+	}
 	// strip .jsonl then .json so a claude/codex path (foo.jsonl) keeps its stem and an opencode
 	// session-info path (ses_x.json) is trimmed too.
 	stem := strings.TrimSuffix(strings.TrimSuffix(filepath.Base(path), ".jsonl"), ".json")

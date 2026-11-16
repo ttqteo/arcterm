@@ -229,6 +229,51 @@ func TestGetChanges(t *testing.T) {
 	}
 }
 
+// The Diff surface's poll must never write the index: an agent committing in the same checkout would find
+// index.lock taken. Porcelain `git diff` rewrites a stale index even under --no-optional-locks (kael t-6), so a
+// file whose stat changed but whose content did not must leave the index file as it was, in live and ref mode,
+// while the counts stay what porcelain diff (renames included) reports.
+func TestGetChangesLeavesAStaleIndexAlone(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "same.txt", "same\n")
+	writeFile(t, dir, "edit.txt", "a\n")
+	writeFile(t, dir, "old.txt", "moved\nlines\nhere\n")
+	commitAll(t, dir)
+	base := gitRun(t, dir, "rev-parse", "HEAD")
+	writeFile(t, dir, "edit.txt", "a\nb\n")
+	gitRun(t, dir, "mv", "old.txt", "new.txt")
+	indexPath := filepath.Join(dir, ".git", "index")
+	for i, ref := range []string{"", base} {
+		// a stat change git must re-check, new each round since the porcelain diff below refreshes the index
+		later := time.Now().Add(time.Duration(i+1) * time.Hour)
+		if err := os.Chtimes(filepath.Join(dir, "same.txt"), later, later); err != nil {
+			t.Fatal(err)
+		}
+		before, err := os.ReadFile(indexPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ch, err := GetChanges(context.Background(), dir, ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+		after, err := os.ReadFile(indexPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(before, after) {
+			t.Fatalf("ref %q: GetChanges rewrote the index", ref)
+		}
+		against := ref
+		if against == "" {
+			against = "HEAD"
+		}
+		if want := gitRun(t, dir, "-c", "core.quotePath=false", "diff", "--numstat", "--relative", against) + "\n"; ch.Numstat != want {
+			t.Fatalf("ref %q: numstat = %q, want porcelain diff's %q", ref, ch.Numstat, want)
+		}
+	}
+}
+
 // A non-ASCII name must come out of numstat spelled the way `status -z` spells it, or the frontend
 // joins no row to it and the file reads as uncounted.
 func TestGetChangesNumstatKeepsNonASCIIPath(t *testing.T) {
@@ -3053,7 +3098,7 @@ func TestGetChangesLiveModeNumstatFailureKeepsList(t *testing.T) {
 	if !strings.Contains(ch.StatusZ, "a.txt") {
 		t.Fatalf("modified file missing from statusz %q", ch.StatusZ)
 	}
-	if !strings.Contains(ch.NumstatError, "diff --numstat") {
+	if !strings.Contains(ch.NumstatError, "diff-index --numstat") {
 		t.Fatalf("NumstatError %q does not name the failing command", ch.NumstatError)
 	}
 	if !strings.Contains(ch.Numstat, "1\t0\tb.txt") {
@@ -3077,7 +3122,7 @@ func TestGetChangesRefModeNumstatFailureKeepsList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetChanges(ref): %v, want the list with the numstat error beside it", err)
 	}
-	if !strings.Contains(ch.NumstatError, "diff --numstat") {
+	if !strings.Contains(ch.NumstatError, "diff-index --numstat") {
 		t.Fatalf("NumstatError %q does not name the failing command", ch.NumstatError)
 	}
 	healthy, err := GetChanges(context.Background(), repoWithChange(t), "HEAD")

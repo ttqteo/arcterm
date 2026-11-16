@@ -156,18 +156,20 @@ func unmanagedCopies(p Paths) ([]skillCopy, error) {
 // runtime whose copy seeds it instead; that name is never unresolved, since the choice settles it.
 // A copy of a vault skill is planned with Vault set and never seeds. A name in skip contributes
 // nothing, whatever keep says for it.
+//
+// Names match by skillKey, as the skills directories do: a harness's review is a copy of the vault's Review, not
+// a second seed that Adopt would find already canonical and never move. Every move carries the shared tree's
+// spelling (the vault's, else the seeding copy's), and keep and skip take any spelling.
 func PlanAdopt(p Paths, keep map[string]string, skip ...string) (AdoptPlan, error) {
 	plan := AdoptPlan{}
 	canonical, err := canonicalSkills(p.SkillsRoot)
 	if err != nil {
 		return plan, err
 	}
-	// where the shared tree for a name lives, or will live once this plan is applied
-	sharedDir := map[string]string{}
-	vault := map[string]bool{}
+	// per skillKey, where the shared tree lives, or will live once this plan is applied
+	trees := map[string]*sharedTree{}
 	for _, name := range canonical {
-		sharedDir[name] = filepath.Join(p.SkillsRoot, name)
-		vault[name] = true
+		trees[skillKey(name)] = &sharedTree{name: name, dir: filepath.Join(p.SkillsRoot, name), vault: true}
 	}
 	all, err := unmanagedCopies(p)
 	if err != nil {
@@ -175,49 +177,52 @@ func PlanAdopt(p Paths, keep map[string]string, skip ...string) (AdoptPlan, erro
 	}
 	skipped := map[string]bool{}
 	for _, name := range skip {
-		skipped[name] = true
+		skipped[skillKey(name)] = true
 	}
 	var copies []skillCopy
 	for _, c := range all {
-		if !skipped[c.name] {
+		if !skipped[skillKey(c.name)] {
 			copies = append(copies, c)
 		}
 	}
 	keeps := map[string]string{}
 	for name, choice := range keep {
-		if !skipped[name] {
-			keeps[name] = choice
+		if !skipped[skillKey(name)] {
+			keeps[skillKey(name)] = choice
 		}
 	}
-	if err := claimKept(keeps, copies, sharedDir, vault); err != nil {
+	if err := claimKept(keep, keeps, copies, trees); err != nil {
 		return plan, err
 	}
 	unresolved := map[string]bool{}
 	for _, c := range copies {
+		key := skillKey(c.name)
 		move := SkillMove{Runtime: c.runtime, Name: c.name, From: c.from}
-		if vault[c.name] {
+		tree := trees[key]
+		if tree != nil && tree.vault {
+			move.Name = tree.name
 			move.Vault = true
-			move.Keys, move.Files, move.BodyDiff, err = deltaAgainst(sharedDir[c.name], c.from)
+			move.Keys, move.Files, move.BodyDiff, err = deltaAgainst(tree.dir, c.from)
 			if err != nil {
 				return plan, err
 			}
 			plan.Moves = append(plan.Moves, move)
 			continue
 		}
-		kept, isKept := keeps[c.name]
-		_, claimed := sharedDir[c.name]
-		if (isKept && kept == c.runtime) || (!isKept && !claimed) {
+		kept, isKept := keeps[key]
+		if (isKept && kept == c.runtime) || (!isKept && tree == nil) {
 			move.Seed = true
-			sharedDir[c.name] = c.from
+			trees[key] = &sharedTree{name: c.name, dir: c.from}
 			plan.Moves = append(plan.Moves, move)
 			continue
 		}
-		move.Keys, move.Files, move.BodyDiff, err = deltaAgainst(sharedDir[c.name], c.from)
+		move.Name = tree.name
+		move.Keys, move.Files, move.BodyDiff, err = deltaAgainst(tree.dir, c.from)
 		if err != nil {
 			return plan, err
 		}
 		if move.BodyDiff && !isKept {
-			unresolved[c.name] = true
+			unresolved[tree.name] = true
 		}
 		plan.Moves = append(plan.Moves, move)
 	}
@@ -228,22 +233,36 @@ func PlanAdopt(p Paths, keep map[string]string, skip ...string) (AdoptPlan, erro
 	return plan, nil
 }
 
+// sharedTree is the tree every copy of one skill is compared against: a vault skill's, or the copy that seeds it.
+type sharedTree struct {
+	name  string
+	dir   string
+	vault bool
+}
+
 // claimKept points each kept name's shared tree at the kept copy, so every other copy is compared
 // against it. A keep that names no copy is refused outright, and so is a keep that does not fit the
-// name: a vault skill takes only KeepVault, any other name only a runtime.
-func claimKept(keep map[string]string, copies []skillCopy, sharedDir map[string]string, vault map[string]bool) error {
-	for name, runtime := range keep {
-		if vault[name] != (runtime == KeepVault) {
-			if vault[name] {
+// name: a vault skill takes only KeepVault, any other name only a runtime. keep is the caller's map, for
+// the names the errors quote; keeps is it by skillKey, less the skipped names.
+func claimKept(keep, keeps map[string]string, copies []skillCopy, trees map[string]*sharedTree) error {
+	for name := range keep {
+		key := skillKey(name)
+		runtime, ok := keeps[key]
+		if !ok {
+			continue
+		}
+		vault := trees[key] != nil && trees[key].vault
+		if vault != (runtime == KeepVault) {
+			if vault {
 				return fmt.Errorf("cannot keep %s's copy of %q: the skill is already managed by arcterm", runtime, name)
 			}
 			return fmt.Errorf("cannot keep the vault copy of %q: the vault has no such skill", name)
 		}
 		found := false
 		for _, c := range copies {
-			if c.name == name && (runtime == KeepVault || c.runtime == runtime) {
+			if skillKey(c.name) == key && (runtime == KeepVault || c.runtime == runtime) {
 				if runtime != KeepVault {
-					sharedDir[name] = c.from
+					trees[key] = &sharedTree{name: c.name, dir: c.from}
 				}
 				found = true
 				break
@@ -278,6 +297,11 @@ func Adopt(p Paths, apply bool, keep map[string]string, skip ...string) (AdoptPl
 	for _, n := range plan.Unresolved {
 		blocked[n] = true
 	}
+	// a move carries its shared tree's spelling, keep may name it in any
+	kept := map[string]string{}
+	for name, choice := range keep {
+		kept[skillKey(name)] = choice
+	}
 	if err := os.MkdirAll(p.SkillsRoot, 0o755); err != nil {
 		return plan, err
 	}
@@ -301,14 +325,14 @@ func Adopt(p Paths, apply bool, keep map[string]string, skip ...string) (AdoptPl
 			continue
 		}
 		if m.Vault {
-			if keep[m.Name] == KeepVault {
+			if kept[skillKey(m.Name)] == KeepVault {
 				if err := setAside(p, m); err != nil {
 					return plan, err
 				}
 			}
 			continue
 		}
-		if _, kept := keep[m.Name]; kept {
+		if _, isKept := kept[skillKey(m.Name)]; isKept {
 			if err := setAside(p, m); err != nil {
 				return plan, err
 			}

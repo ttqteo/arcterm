@@ -56,6 +56,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   a run's ✓ row sits where its landed (or held) message came, or, for a quick run that never lands, where it finished,
   and a council's Done card where its report reached the agent, just above the agent's summary. Only runs and councils
   still going stay at the end.
+- A pi that quits back to its shell leaves `wsh agents list`, so a message sent to it is no longer typed into the
+  shell.
+- The Diff surface's refresh no longer briefly locks the git index, which could make an agent's commit in the same
+  checkout fail with "index.lock exists".
+- A conversation whose transcript could not be read for a moment (a lock, an antivirus scan) no longer stays missing
+  from Conversation History until arcterm restarts.
+- If arcterm cannot write its Claude Code mod at launch, the hooks for pi, opencode, agy and Codex are still installed.
+- Bringing your own skills into arcterm treats `review` and `Review` as the same skill, as Windows and macOS do.
 
 ## 1.2.0 — 2026-11-16
 
