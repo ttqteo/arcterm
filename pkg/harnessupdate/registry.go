@@ -17,10 +17,9 @@ import (
 
 const (
 	fetchTimeout = 10 * time.Second
-	// the package document lists every published version: Claude Code's runs to megabytes even abbreviated
-	maxDocBytes = 32 << 20
-	// npm's abbreviated package document: dist-tags and versions, without the readmes
-	abbreviatedDoc = "application/vnd.npm.install-v1+json"
+	// a package's dist-tags are a few dozen bytes; a package that keeps a tag per snapshot build (opencode-ai) still
+	// runs to a few KB
+	maxDocBytes = 1 << 20
 )
 
 // registryBase is a seam for tests.
@@ -28,15 +27,15 @@ var registryBase = "https://registry.npmjs.org"
 
 var httpClient = &http.Client{Timeout: fetchTimeout}
 
-// LatestVersion is the version the package's dist-tag for channel points at, read from the package document
-// (`https://registry.npmjs.org/<package>`).
+// LatestVersion is the version the package's dist-tag for channel points at, read from its dist-tags
+// (`https://registry.npmjs.org/-/package/<package>/dist-tags`, {"latest":"2.1.325",…}): the tags alone, where the
+// package document, even abbreviated, lists every published version (Claude Code's ran to 536 KB in 2026-11).
 func LatestVersion(ctx context.Context, pkg, channel string) (string, error) {
-	u := registryBase + "/" + url.PathEscape(pkg)
+	u := registryBase + "/-/package/" + url.PathEscape(pkg) + "/dist-tags"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Accept", abbreviatedDoc)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("registry: %w", err)
@@ -45,13 +44,11 @@ func LatestVersion(ctx context.Context, pkg, channel string) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("registry: %s for %s", resp.Status, pkg)
 	}
-	var doc struct {
-		DistTags map[string]string `json:"dist-tags"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxDocBytes)).Decode(&doc); err != nil {
+	var tags map[string]string
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxDocBytes)).Decode(&tags); err != nil {
 		return "", fmt.Errorf("registry: %w", err)
 	}
-	v := doc.DistTags[channel]
+	v := tags[channel]
 	if v == "" {
 		return "", fmt.Errorf("registry: no %q tag for %s", channel, pkg)
 	}

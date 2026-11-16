@@ -16,6 +16,20 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The brainstorm card holds its place from step to step.** CDP `chat-redesign` 14c checked the held
+  state and that the end row is the same element; the motion itself was never watched. In a live brainstorm in Chat,
+  click an option → the card stays, its rows dimmed, `Sent · <answer>` in its footer, no collapse; when the next
+  question lands the card changes in place and eases once to its new height. Same for Confirm the design → Builder
+  check. Agent surface, Chat. 541b374df.
+- [ ] (arcterm) **A crowded agent header keeps its project and initiative readable.** Unit test and typecheck only
+  (`headermodel.test.ts` `initiativeTitle`). Pick an agent linked to an initiative that offers Ship and ✓ Close ·
+  N tok, in a pane ~1150px wide → the initiative reads `◇ <title>` with one ◇ (not `◇ ◇ C…`), the project is whole or
+  cut past a few letters, and the long name is what truncates first. Then a 2x2 split (560px cell) → still `/ +`,
+  the run's number, `opus`, nothing overlapping. Agent surface header. 2f3a86ffa.
+- [ ] (arcterm) **A terminal launch does not wait on Task images.** Unit test only (`launcherimages.test.ts`
+  `imagesHoldLaunch`). Ctrl+N → Claude Code → paste a large image into Task, and before its thumbnail stops spinning
+  pick Terminal → Open terminal is enabled and opens one; back on Claude Code, Launch agent waits for the image as
+  before. `launchermodal.tsx` `imagesWriting`.
 - [ ] (arcterm) **The rail's session card has no Tools row.** The dev app was down when it was made, so
   `task verify:ui -- agent-subagents-background` never ran on it (its step 4 now checks there is no row). Open an
   agent that has run tools → the right rail's session card shows project, model, branch and the state line, with no

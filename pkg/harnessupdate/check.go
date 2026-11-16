@@ -18,17 +18,14 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 )
 
-const (
+// seams for tests
+var (
 	checkInterval = 6 * time.Hour
 	// off the launch path: the first check waits for the app to settle
 	firstCheckDelay = 30 * time.Second
-)
-
-// seams for tests
-var (
-	probeAll      = harness.ProbeAll
-	latestVersion = LatestVersion
-	statePath     = func() string { return filepath.Join(wavebase.GetWaveDataDir(), "harness-updates.json") }
+	probeAll        = harness.ProbeAll
+	latestVersion   = LatestVersion
+	statePath       = func() string { return filepath.Join(wavebase.GetWaveDataDir(), "harness-updates.json") }
 )
 
 var (
@@ -112,20 +109,25 @@ func shortVersion(s string) string {
 func StartLoop(ctx context.Context, enabled func() bool, notify func(title, message, level string)) {
 	go func() {
 		defer func() { panichandler.PanicHandler("harnessupdate:loop", recover()) }()
-		timer := time.NewTimer(firstCheckDelay)
-		defer timer.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-timer.C:
-			}
-			if enabled() {
-				cctx, cancel := context.WithTimeout(ctx, time.Minute)
-				Check(cctx, notify)
-				cancel()
-			}
-			timer.Reset(checkInterval)
-		}
+		runLoop(ctx, enabled, notify)
 	}()
+}
+
+// runLoop is StartLoop's body, returning once ctx is done.
+func runLoop(ctx context.Context, enabled func() bool, notify func(title, message, level string)) {
+	timer := time.NewTimer(firstCheckDelay)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		if enabled() {
+			cctx, cancel := context.WithTimeout(ctx, time.Minute)
+			Check(cctx, notify)
+			cancel()
+		}
+		timer.Reset(checkInterval)
+	}
 }

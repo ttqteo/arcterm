@@ -303,7 +303,11 @@ export function pairAnswers(
  *  amber dot, and still opens in Brainstorm). */
 export interface QuestionCard {
     kind: "question";
-    state: "waiting" | "weighing" | "static";
+    /** `working`: the question is answered (or the agent is writing with it still open) and the agent is on the next
+     *  step; the card stays in its place, options off, until the next card takes it */
+    state: "waiting" | "weighing" | "working" | "static";
+    /** the line sent as its answer while it is `working`, as sent (attachments and all); null when none was sent here */
+    sent: string | null;
     n: number;
     /** the part's title as the file defines it (its id when the file defines none); empty when the question names none */
     part: string;
@@ -431,14 +435,20 @@ function answeredBy(
     topic: string,
     q: BrainstormQuestion,
     modifiedMs: number | null
-): boolean {
-    return records.some(
-        (r) =>
+): SentAnswer | null {
+    let newest: SentAnswer | null = null;
+    for (const r of records) {
+        if (
             r.topic === topic &&
             recordKind(r) === "answer" &&
             r.n === q.n &&
-            (modifiedMs == null || modifiedMs <= r.sentAt)
-    );
+            (modifiedMs == null || modifiedMs <= r.sentAt) &&
+            (newest == null || r.sentAt >= newest.sentAt)
+        ) {
+            newest = r;
+        }
+    }
+    return newest;
 }
 
 /** The card for the question `q` of `file`, whatever else the file is doing: the caller decides whether it shows. */
@@ -452,6 +462,7 @@ export function questionCard(file: BrainstormFile, q: BrainstormQuestion, exited
     return {
         kind: "question",
         state: exited ? "static" : judging ? "weighing" : "waiting",
+        sent: null,
         n: q.n,
         part,
         question: q.text,
@@ -616,11 +627,13 @@ function checkCard(input: CardInput, f: BrainstormFile): CheckCard | null {
 }
 
 /** The card the conversation ends with, or null. One card shows at a time, in this order: the run the brainstorm
- *  started; the talk question, unless an `answer` record of `topic` already answered it and the file has not been written
- *  since (`modifiedMs`), or the agent is writing with it still in the file; the builder check (pending, failed, its line just sent, or the file holding a check); Confirm the
- *  design (the agent is done, no check yet, and a decision to confirm or the check to start). Anything else, and a
- *  brainstorm still being talked through with nothing to confirm, has none. An agent that exited turns every card
- *  static. Pass the file as Arc shows it (`shownBrainstormFile`). */
+ *  started; the talk question while it waits on the user; the builder check (pending, failed, its line just sent, or
+ *  the file holding a check); Confirm the design (the agent is done, no check yet, and a decision to confirm or the
+ *  check to start); and last the talk question again as `working` once it is answered (an `answer` record of `topic`, and
+ *  the file not written since: `modifiedMs`) or the agent is writing with it still in the file, so the card holds its
+ *  place until the next one takes it rather than leaving and coming back. A brainstorm with no question and nothing to
+ *  confirm has none. An agent that exited turns every card static. Pass the file as Arc shows it
+ *  (`shownBrainstormFile`). */
 export function brainstormCard(input: CardInput): ChatCard | null {
     if (input.file == null) {
         return null;
@@ -630,14 +643,34 @@ export function brainstormCard(input: CardInput): ChatCard | null {
         return { kind: "run", state: input.exited ? "static" : "waiting", runId: f.run };
     }
     const q = f.question;
-    if (
-        q != null &&
-        !answeredBy(input.records, input.topic, q, input.modifiedMs) &&
-        !(f.working != null && !judgeWait(f, false))
-    ) {
+    const answer = q != null ? answeredBy(input.records, input.topic, q, input.modifiedMs) : null;
+    const writing = f.working != null && !judgeWait(f, false);
+    if (q != null && answer == null && !writing) {
         return questionCard(f, q, input.exited);
     }
-    return checkCard(input, f) ?? confirmCard(input, f);
+    const next = checkCard(input, f) ?? confirmCard(input, f);
+    if (next != null || q == null) {
+        return next;
+    }
+    const card = questionCard(f, q, input.exited);
+    return { ...card, state: input.exited ? "static" : "working", sent: answer?.text ?? null };
+}
+
+/** What the conversation shows at its end, given the card the brainstorm makes now (`next`) and the one it showed last
+ *  (`shown`): `next` whenever there is one. With none, a question card shown last stays, as `working`, while the agent
+ *  is at work (`agentWorking`): the agent wiping the question as it writes the next one must not take the card away
+ *  for the moment between the two. An idle or exited agent with no card has none; so does a brainstorm that is gone
+ *  (`fileGone`). */
+export function holdCard(
+    shown: ChatCard | null,
+    next: ChatCard | null,
+    agentWorking: boolean,
+    fileGone: boolean
+): ChatCard | null {
+    if (next != null || fileGone || !agentWorking || shown?.kind !== "question") {
+        return next;
+    }
+    return shown.state === "working" ? shown : { ...shown, state: "working" };
 }
 
 // the newest record of the design or builder step of `topic`: what the last `check` led to

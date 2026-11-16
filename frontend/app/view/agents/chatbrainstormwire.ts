@@ -7,7 +7,13 @@
 // card and the ✓ rows, chatpane.tsx records the box's answers; this holds the rules they share.
 
 import type { AgentEntry } from "./agentsviewmodel";
-import { questionPlaceholder, type ChatCard, type PairedAnswer, type SentAnswer } from "./chatbrainstorm";
+import {
+    questionPlaceholder,
+    type ChatCard,
+    type PairedAnswer,
+    type QuestionCard,
+    type SentAnswer,
+} from "./chatbrainstorm";
 import { splitAttachments } from "./chatfiles";
 import type { ChatItem } from "./chatmodel";
 import { userTextCount } from "./chatpending";
@@ -39,7 +45,7 @@ export function boxAnswerRecord(
     entries: AgentEntry[],
     now: number
 ): SentAnswer | null {
-    if (question == null || question.kind !== "question" || question.state === "static") {
+    if (!questionOpen(question)) {
         return null;
     }
     const body = text.trim();
@@ -61,9 +67,13 @@ export function boxAnswerRecord(
 /** The box's placeholder while a question card waits, or null (no card, a card of another kind, or an agent that
  *  exited: the box says what it always says). */
 export function boxPlaceholderOverride(question: ChatCard | null): string | null {
-    return question == null || question.kind !== "question" || question.state === "static"
-        ? null
-        : questionPlaceholder(question);
+    return questionOpen(question) ? questionPlaceholder(question) : null;
+}
+
+// a question card that still takes an answer: it waits, or the judge weighs it. One already answered (`working`, the
+// card holding its place while the agent writes the next) and one of an agent that exited take none
+function questionOpen(card: ChatCard | null): card is QuestionCard {
+    return card != null && card.kind === "question" && (card.state === "waiting" || card.state === "weighing");
 }
 
 /** Whether the message a record paired with draws nothing at all, not even an empty row in the column: an action line

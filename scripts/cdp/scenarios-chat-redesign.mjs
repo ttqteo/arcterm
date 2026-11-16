@@ -6,6 +6,7 @@
 // [data-chat-action-chip] (diff or terminal, each once it has something to show: steps 2, 6b, 20),
 // [data-chat-suggest-chip] (step 18, the suggested replies; window.__chatSuggestFake answers their model call),
 // [data-chat-suggest-panel], [data-chat-step][data-chat-step-running], [data-chat-step-chip], [data-chat-step-more],
+// [data-chat-step-fold] and [data-chat-step-calls] (step 7b, a run of edits of one file as one line),
 // [data-chat-bscard][data-chat-bscard-state], [data-chat-bscard-option], [data-chat-bscard-send],
 // [data-chat-bscard-open], [data-chat-bscard-kind], [data-chat-bscard-answered], [data-chat-jump], and the existing
 // data-chat-* attributes agent-chat reads. ([data-chat-bscard-pointer] is read only to assert it is gone: the builder check
@@ -467,6 +468,11 @@ export default function (kit) {
                         AC.toolUse(`toolu_cr_edit${i}`, "Edit", { file_path: file(f), old_string: "export const retries = 0;", new_string: "export const retries = 3;\nexport const backoff = true;" }, u(-12 + i)),
                         AC.toolResult(`toolu_cr_edit${i}`, "The file has been updated successfully.", u(-11 + i)),
                     ]),
+                    // two more edits of the last file in a row: with the one before, one "Edit config.ts ×3" line (step 7b)
+                    ...[0, 1].flatMap((i) => [
+                        AC.toolUse(`toolu_cr_again${i}`, "Edit", { file_path: file(FILES[3]), old_string: `export const backoff = ${i === 0};`, new_string: `export const backoff = ${i !== 0};` }, u(-7 + i)),
+                        AC.toolResult(`toolu_cr_again${i}`, "The file has been updated successfully.", u(-6 + i)),
+                    ]),
                     // the last call has no result yet: it is in flight
                     AC.toolUse("toolu_cr_inflight", "Read", { file_path: file(FILES[1]) }, u(-3))
                 );
@@ -549,6 +555,37 @@ export default function (kit) {
                     `${name}: a step shows [data-chat-step-chip]s and a [data-chat-step-more] +N; clicking a finished step opens its output under it`,
                     many != null && markBefore === false && spot != null && opened && under?.below === true && under.inside === true,
                     { many, markBefore, spot, opened, under, steps: got.slice(0, 8) }
+                );
+            });
+
+            // 7b. three edits of one file in a row are one line, "Edit config.ts ×3", that opens to the three calls
+            await run("7b. step fold", async (name) => {
+                const FOLD = `${layerOf(A)}?.querySelector("[data-chat-tools] [data-chat-step-fold]")`;
+                const before = await h.ev(`(() => {
+                    const fold = ${FOLD};
+                    fold?.scrollIntoView({ block: "center" });
+                    return { text: ${FLAT}(fold), count: fold?.getAttribute("data-chat-step-fold") ?? null, chips: fold?.querySelectorAll("[data-chat-step-chip]").length ?? 0, calls: !!fold?.parentElement?.querySelector("[data-chat-step-calls]") };
+                })()`);
+                await polishNap(300);
+                const p = await h.ev(`(() => { const r = ${FOLD}?.getBoundingClientRect(); return r ? { x: r.left + 24, y: r.top + r.height / 2 } : null; })()`);
+                let calls = null;
+                if (p != null) {
+                    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: p.x, y: p.y });
+                    await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: p.x, y: p.y, button: "left", clickCount: 1 });
+                    await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: p.x, y: p.y, button: "left", clickCount: 1 });
+                    await polishWaitFor(h, `!!${FOLD}?.parentElement?.querySelector("[data-chat-step-calls]")`, SHORT_MS);
+                    await polishNap(500);
+                    calls = await h.ev(`(() => {
+                        const list = ${FOLD}?.parentElement?.querySelector("[data-chat-step-calls]");
+                        const lines = [...(list?.querySelectorAll("[data-chat-step]") ?? [])];
+                        return { lines: lines.length, chips: lines.reduce((n, l) => n + l.querySelectorAll("[data-chat-step-chip]").length, 0), expanded: ${FOLD}?.getAttribute("aria-expanded") };
+                    })()`);
+                }
+                await shot(h, "7b-step-fold");
+                rec(
+                    `${name}: one [data-chat-step-fold]="3" line reads Edit config.ts ×3 with one chip, closed; a click opens [data-chat-step-calls] with its three calls, chipless`,
+                    before.count === "3" && /Edit\s*config\.ts\s*×3/.test(before.text) && before.chips === 1 && !before.calls && calls?.lines === 3 && calls.chips === 0 && calls.expanded === "true",
+                    { before, calls }
                 );
             });
 
@@ -733,9 +770,10 @@ export default function (kit) {
                 );
             });
 
-            // 14c. a question typed back while the card waits is no answer: the card goes (the reply is the agent's to take),
-            // and comes back once the agent rewrites the file still asking it; the typed message's ✓ row says "You replied"
-            // and a clicked option's says "You picked"
+            // 14c. a question typed back while the card waits is no answer: the card holds its place as working, naming
+            // the line sent (the reply is the agent's to take), and waits again once the agent rewrites the file still
+            // asking it, the same end row throughout (the card never leaves and comes back); the typed message's ✓ row
+            // says "You replied" and a clicked option's says "You picked"
             await run("14c. brainstorm card typed reply", async (name) => {
                 const TYPED = "should the cap stay at 30 seconds?";
                 const questionCard = `${layerOf(A)}?.querySelector('[data-chat-bscard-kind="question"]')`;
@@ -752,6 +790,9 @@ export default function (kit) {
                 await writeBrainstorm(h, ctx, FILES_BRAINSTORM.open);
                 const waiting = await polishWaitFor(h, `${questionCard}?.getAttribute("data-chat-bscard-state") === "waiting"`, WAIT_MS);
                 await polishNap(600);
+                // the end row the card lives in, kept to tell whether it is the same element when the card waits again
+                const SLOT = `${layerOf(A)}?.querySelector("[data-chat-brainstorm-row]")`;
+                await h.ev(`(() => { window.__bsSlot = ${SLOT}; return true; })()`);
                 // 1. a question typed back in the box, sent
                 await clearBox(h, A);
                 await typeInBox(h, A, TYPED);
@@ -760,15 +801,19 @@ export default function (kit) {
                 const sentOk = await polishWaitFor(h, `((${inputOf(A)})?.innerText ?? "x").trim() === ""`, SHORT_MS);
                 // the message lands in the transcript the way the harness writes it
                 append(ctx, AC.userText(TYPED, ts(ctx)));
-                const hidden = await polishWaitFor(h, `${questionCard} == null`, WAIT_MS);
+                const held = await polishWaitFor(
+                    h,
+                    `${questionCard}?.getAttribute("data-chat-bscard-state") === "working" && (${questionCard}?.querySelector("[data-chat-bscard-sent]")?.textContent ?? "").includes(${JSON.stringify(TYPED)})`,
+                    WAIT_MS
+                );
                 const replied = await polishWaitFor(
                     h,
                     `[...(${layerOf(A)}?.querySelectorAll("[data-chat-bscard-answered]") ?? [])].some((r) => (r.textContent ?? "").includes(${JSON.stringify(TYPED)}))`,
                     WAIT_MS
                 );
                 await polishNap(500);
-                const whileHidden = await rows();
-                await shot(h, "14c-typed-reply-hidden");
+                const whileHeld = await rows();
+                await shot(h, "14c-typed-reply-held");
                 // 2. the agent rewrites the file, still asking question 1, later than the record
                 await polishNap(400);
                 await writeBrainstorm(
@@ -779,6 +824,7 @@ export default function (kit) {
                 // 3. the question card is drawn again
                 const back = await polishWaitFor(h, `${questionCard}?.getAttribute("data-chat-bscard-state") === "waiting"`, WAIT_MS);
                 await polishNap(600);
+                const sameSlot = await h.ev(`(() => { const el = ${SLOT}; return el != null && el === window.__bsSlot; })()`);
                 const whenBack = await rows();
                 await shot(h, "14c-typed-reply-back");
                 // 4. the typed message's row reads "You replied"; step 14's answer, a record with no flag, still "You picked"
@@ -804,10 +850,10 @@ export default function (kit) {
                 await shot(h, "14c-picked");
                 const pickedRow = whenPicked.find((r) => r.text.includes(OPTION));
                 rec(
-                    `${name}: a question typed in the box hides the card and its [data-chat-bscard-answered] row reads "You replied"; once the file is rewritten still asking question 1 [data-chat-bscard-kind="question"] is drawn again; a clicked option's row reads "You picked"`,
-                    waiting && sentOk && hidden && replied && back && typedRow?.label === "You replied" && clicked && picked &&
+                    `${name}: a question typed in the box holds the card as working with [data-chat-bscard-sent] naming it, and its [data-chat-bscard-answered] row reads "You replied"; once the file is rewritten still asking question 1 the card waits again in the same [data-chat-brainstorm-row] element; a clicked option's row reads "You picked"`,
+                    waiting && sentOk && held && replied && back && sameSlot === true && typedRow?.label === "You replied" && clicked && picked &&
                         pickedRow?.label === "You picked",
-                    { waiting, sentOk, hidden, replied, whileHidden, back, whenBack, oldRow, clicked, picked, whenPicked }
+                    { waiting, sentOk, held, replied, whileHeld, back, sameSlot, whenBack, oldRow, clicked, picked, whenPicked }
                 );
             });
 

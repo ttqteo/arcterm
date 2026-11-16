@@ -97,7 +97,7 @@ import {
     type StartRowId,
 } from "./launcher";
 import { AgentFields, useProjectBranches } from "./launcheragentfields";
-import { composeTaskWithImages, imagesPending } from "./launcherimages";
+import { composeTaskWithImages, imagesHoldLaunch } from "./launcherimages";
 import {
     createPeekLoader,
     PEEK_COUNT,
@@ -516,8 +516,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 ? newAgentRamWarning(cap, "run", "worker")
                 : null
             : newAgentRamWarning(cap, runtime);
-    // an image still being written has no path to send yet; one that failed does not hold the launch
-    const imagesWriting = isAgent && imagesPending(images);
+    // an image still being written has no path to send yet; one that failed does not hold the launch, nor does any for
+    // a terminal, which sends no task
+    const imagesWriting = isAgent && imagesHoldLaunch(runtime, images);
     const primaryDisabled = where == null || blocker != null || busy || imagesWriting;
     // the list the third column holds, which → from Project steps into
     const thirdList: "resume" | "tools" | null =
