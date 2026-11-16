@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A council an agent ran ends as a card at the end of Chat, its summary in a council panel.** The CDP
+  scenario `chat-council` covers fixture transcripts only (commit "feat(chat): an ended council stays a card at the end,
+  its summary in a council panel", 2026-11-16). Ask a Claude agent for a council (/arc:council) and let it wait in the
+  background → once it ends, Chat ends with a `Council · review` card (✓ Done · N directions, the answer, Open report)
+  after any run cards, and the agent's first reply after the council's notification sits in a tinted panel headed
+  `Council · review · N directions` with Open report; the `wsh council start` call stays a plain tool line.
 - [ ] (arcterm) **A council's discussion has no ↩ Back pill.** Unit tests and typecheck only, no dev app ran
   (commit "feat(council): drop the Back jump pill from the discussion", 2026-11-16). Open a council with a long discussion, scroll to the middle, click ↑ Top then ↓ Latest →
   only ↑ and ↓ ever show in the bottom-right corner, each still glides to its end, and j/k still move after a click.

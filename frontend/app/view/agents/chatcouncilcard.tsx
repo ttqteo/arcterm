@@ -5,32 +5,27 @@
 // (docs/superpowers/specs/2026-11-14-chat-council-design.md, sections 1, 3 and 6; the pure half is chatcouncil.ts).
 // `ChatCouncilCard` is the live card for a council that is queued, running or waiting on the person after round 1: the
 // feature, the question, a chip per seat, the step, the elapsed time and the start line's estimate, with Stop (and Continue
-// at the pause) acting from the card. `ChatCouncilRow` is the one ✓ row it folds into once the council has ended (and the row
-// stays, updating in place, if the council runs again). Both read the council from `councilAtom`, which
+// at the pause) acting from the card. `ChatCouncilEnded` is the card it becomes once the council has ended (it stays,
+// updating in place, if the council runs again), and `ChatCouncilSummary` the panel around the agent's summary of it. All
+// read the council from `councilAtom`, which
 // `useChatCouncils` (chatcouncilstore.ts) loads and `council:changed` keeps current; the room itself stays where it is.
 
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ArrowUpRight, Clock, Users } from "lucide-react";
+import { ArrowUpRight, Check, Clock, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import { ERROR_LINE } from "./brainstormui";
-import {
-    CardShell,
-    DoneRow,
-    FOCUS_RING,
-    PRIMARY_BTN,
-    SMALL_BTN,
-    StateDot,
-    type CardState,
-} from "./chatbrainstormparts";
+import { CardShell, FOCUS_RING, PRIMARY_BTN, SMALL_BTN, StateDot, type CardState } from "./chatbrainstormparts";
 import {
     COUNCIL_WORD,
     councilCardView,
+    councilEndedCardView,
     councilRowView,
+    hasCouncilReport,
     type CouncilAnchor,
-    type CouncilRowView,
+    type CouncilEndedCardView,
     type SeatState,
 } from "./chatcouncil";
 import { useActions } from "./councilactions";
@@ -45,9 +40,6 @@ const SEAT_DOT: Record<SeatState, string> = {
     waiting: "bg-muted",
 };
 const SEAT_WORD: Record<SeatState, string> = { done: "sent", working: "writing", waiting: "waiting" };
-
-// the row's link, in the accent: the board's Open report / Open council
-const ROW_LINK = `cursor-pointer rounded-[4px] border-0 bg-transparent p-0 text-[12.5px] font-semibold text-accent hover:text-accenthover ${FOCUS_RING}`;
 
 const openCouncil = (model: AgentsViewModel, councilId: string, view?: "summary") =>
     fireAndForget(() => openTarget(model, { kind: "council", councilId, ...(view != null ? { view } : {}) }));
@@ -227,29 +219,61 @@ export function ChatCouncilCard({
     );
 }
 
-// the glyph in the row's mark box: the ✓ is DoneRow's own, a council running again is the working dot
-function rowMark(mark: CouncilRowView["mark"]): ReactNode {
+// the glyph before the ended card's tag: a done council's ✓ in the success ink, a council running again the working dot,
+// and the row's own marks (■ stopped, ! failed, – not run) otherwise
+function tagMark(mark: CouncilEndedCardView["mark"]): ReactNode {
     switch (mark) {
         case "✓":
-            return undefined;
+            return <Check size={12} strokeWidth={2.6} className="flex-none text-success" aria-hidden />;
         case "working":
             return <StateDot state="working" />;
         case "!":
-            return <span className="font-bold text-error">!</span>;
+            return (
+                <span aria-hidden="true" className="font-bold text-error">
+                    !
+                </span>
+            );
         case "■":
-            return <span className="text-[10px]">■</span>;
+            return (
+                <span aria-hidden="true" className="text-[10px]">
+                    ■
+                </span>
+            );
         default:
-            return mark;
+            return <span aria-hidden="true">{mark}</span>;
     }
 }
 
-/** The one-line row of a council that has ended once, drawn at the `wsh council start` call that began it: ✓ with the
- *  mode, the count of directions or ideas and the elapsed time (done, Open report), ■ stopped, ! failed, – not run (each with
- *  its reason, Open council), or a working row while the council runs again (its header chip, Open council). The head
- *  is the strong part, "Council" semibold and the rest in the primary ink; the feature or the reason after it is muted
- *  and cut short (`dimText`). It updates in place with the council. A council the store does not know draws nothing,
- *  unless a not-run line named it: that row needs only the line's own words. */
-export function ChatCouncilRow({
+// Open report on a council with a report, else Open council: the ended card's link and the summary panel's, in the run
+// card's Open run look
+function OpenCouncilButton({
+    model,
+    councilId,
+    report,
+}: {
+    model: AgentsViewModel;
+    councilId: string;
+    report: boolean;
+}): ReactNode {
+    return (
+        <button
+            type="button"
+            {...(report ? { "data-chat-council-report": "" } : { "data-chat-council-open": "" })}
+            onClick={() => openCouncil(model, councilId, report ? "summary" : undefined)}
+            className={cn(SMALL_BTN, FOCUS_RING, "font-semibold text-primary")}
+        >
+            {report ? "Open report" : "Open council"}
+            <ArrowUpRight size={12} strokeWidth={2} aria-hidden />
+        </button>
+    );
+}
+
+/** The card of a council that has ended once, at the end of the conversation after its runs, in the brainstorm's run
+ *  card's shape: `Council · review`, where it stands (✓ Done · 5 directions · 11 min, ■ Stopped in round 2, ! Failed,
+ *  – Not run, or Running again while a follow-up runs), Open report (or Open council), the feature, and what it came to
+ *  (a done council's answer, else the reason). It updates in place with the council. A council the store does not know
+ *  draws nothing, unless a not-run line named it: that card needs only the line's own words. */
+export function ChatCouncilEnded({
     councilId,
     anchor,
     model,
@@ -259,40 +283,91 @@ export function ChatCouncilRow({
     model: AgentsViewModel;
 }): ReactNode {
     const c = useAtomValue(councilAtom(councilId));
-    // no row words a running clock (a council running again reads its step), so the read of the clock is frozen
+    // no ended card words a running clock (a council running again reads its step), so the read of the clock is frozen
     const now = useNow(false);
     if (c == null && anchor.kind !== "notrun") {
         return null;
     }
-    const view = councilRowView(c, anchor, now);
-    const report = view.action === "report";
+    const view = councilEndedCardView(c, anchor, now);
     return (
-        <DoneRow
+        <CardShell
             kind="council"
-            dimText
-            head={
-                view.head.startsWith(COUNCIL_WORD) ? (
-                    <>
-                        <span className="font-semibold">{COUNCIL_WORD}</span>
-                        {view.head.slice(COUNCIL_WORD.length)}
-                    </>
-                ) : (
-                    view.head
-                )
+            state="static"
+            head={view.head}
+            icon={<Users size={14} strokeWidth={2} className="flex-none" aria-hidden />}
+            tag={
+                <>
+                    {tagMark(view.mark)}
+                    <span data-chat-council-tag className="min-w-0 truncate">
+                        {view.tag}
+                    </span>
+                </>
             }
-            text={view.text}
-            mark={rowMark(view.mark)}
-            action={
-                <button
-                    type="button"
-                    {...(report ? { "data-chat-council-report": "" } : { "data-chat-council-open": "" })}
-                    onClick={() => openCouncil(model, councilId, report ? "summary" : undefined)}
-                    className={ROW_LINK}
-                >
-                    {report ? "Open report" : "Open council"}
-                </button>
-            }
+            action={<OpenCouncilButton model={model} councilId={councilId} report={view.action === "report"} />}
+            label={`${view.head}: ${view.title}`}
             extra={{ "data-chat-council-row": councilId, "data-chat-council-end": view.end }}
-        />
+        >
+            <div className="flex min-w-0 flex-col gap-[4px]">
+                <span
+                    data-chat-council-title
+                    title={view.title}
+                    className="truncate text-[15px] font-semibold leading-[1.45] text-primary"
+                >
+                    {view.title}
+                </span>
+                {view.line != null ? (
+                    <span
+                        data-chat-council-line
+                        title={view.line}
+                        className="flex min-w-0 items-center gap-[8px] text-[12.5px] leading-[1.5] text-secondary"
+                    >
+                        {view.end === "done" ? (
+                            <span aria-hidden="true" className="h-[7px] w-[7px] flex-none rounded-full bg-success" />
+                        ) : null}
+                        <span className="min-w-0 truncate">{view.line}</span>
+                    </span>
+                ) : null}
+            </div>
+        </CardShell>
+    );
+}
+
+/** The agent's summary of a council (chatcouncil.ts `councilSummaries` finds the prose), drawn inside a panel of its own
+ *  in the accent tint: a header naming the council (`Council · review · 5 directions · 11 min`) with Open report, then the
+ *  prose as it was written. Until the council has a report to sum up (`hasCouncilReport`), or while it is not loaded, the
+ *  prose draws plain. */
+export function ChatCouncilSummary({
+    councilId,
+    model,
+    children,
+}: {
+    councilId: string;
+    model: AgentsViewModel;
+    children: ReactNode;
+}): ReactNode {
+    const c = useAtomValue(councilAtom(councilId));
+    const now = useNow(false);
+    if (!hasCouncilReport(c)) {
+        return children;
+    }
+    const row = councilRowView(c, { kind: "started", councilId }, now);
+    return (
+        <section
+            data-chat-council-summary={councilId}
+            aria-label={`${row.head}: summary`}
+            className="flex min-w-0 flex-col overflow-hidden rounded-[12px] border border-accent/40"
+        >
+            <div className="flex min-w-0 items-center gap-[8px] border-b border-accent/30 bg-accentbg px-[16px] py-[8px] text-[12px] text-secondary">
+                <Users size={14} strokeWidth={2} className="flex-none text-accent" aria-hidden />
+                <span data-chat-council-summary-head className="min-w-0 truncate">
+                    <span className="font-semibold text-primary">{COUNCIL_WORD}</span>
+                    {row.head.slice(COUNCIL_WORD.length)}
+                </span>
+                <span className="ml-auto flex flex-none items-center">
+                    <OpenCouncilButton model={model} councilId={councilId} report={row.action === "report"} />
+                </span>
+            </div>
+            <div className="min-w-0 bg-accent/[0.04] px-[16px] py-[12px]">{children}</div>
+        </section>
     );
 }

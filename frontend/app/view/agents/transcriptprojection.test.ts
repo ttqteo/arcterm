@@ -342,7 +342,7 @@ describe("compactSummaryText", () => {
 describe("projectTranscript task-notification, stdout, and interrupts", () => {
     const L = (o: unknown) => JSON.stringify(o);
 
-    it("projects a task-notification user string into a notification entry (summary/status/result)", () => {
+    it("projects a task-notification user string into a notification entry (summary/status/result/tool-use id)", () => {
         const content = [
             "<task-notification>",
             "<task-id>abc123</task-id>",
@@ -354,8 +354,30 @@ describe("projectTranscript task-notification, stdout, and interrupts", () => {
             "</task-notification>",
         ].join("\n");
         expect(projectTranscript([L({ type: "user", message: { content } })])).toEqual([
-            { kind: "notification", summary: 'Agent "Map layout" finished', status: "completed", result: "Here is the report." },
+            {
+                kind: "notification",
+                summary: 'Agent "Map layout" finished',
+                status: "completed",
+                result: "Here is the report.",
+                toolUseId: "toolu_1",
+            },
         ]);
+    });
+
+    it("keeps the tool-use id of a Bash call run in the background on its bash detail, and of no other", () => {
+        const use = (id: string, input: object) =>
+            L({ type: "assistant", message: { content: [{ type: "tool_use", id, name: "Bash", input }] } });
+        const result = (id: string) =>
+            L({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: "out" }] } });
+        const entries = projectTranscript([
+            use("toolu_bg", { command: "wsh council wait c1 --timeout 0", run_in_background: true }),
+            result("toolu_bg"),
+            use("toolu_fg", { command: "wsh council wait c1" }),
+            result("toolu_fg"),
+        ]);
+        const details = entries.flatMap((e) => (e.kind === "action" && e.detail?.kind === "bash" ? [e.detail] : []));
+        expect(details.map((d) => d.bgToolUseId)).toEqual(["toolu_bg", undefined]);
+        expect(entries.some((e) => "_bgId" in e)).toBe(false);
     });
 
     it("omits result when the task-notification has none", () => {
