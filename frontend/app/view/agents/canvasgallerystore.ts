@@ -350,6 +350,15 @@ export async function moveSelectionToTrash(): Promise<void> {
         );
         const cleaned = result.cleaned ?? [];
         const skipped = result.skipped ?? [];
+        // off the list at once: a re-read that fails keeps the list it had, which still holds them
+        const moved = new Set(cleaned);
+        const shownList = globalStore.get(canvasListAtom);
+        if (moved.size > 0 && shownList != null) {
+            globalStore.set(
+                canvasListAtom,
+                shownList.filter((c) => !moved.has(c.dir))
+            );
+        }
         await loadCanvases();
         pushToast({
             title: "Canvas gallery",

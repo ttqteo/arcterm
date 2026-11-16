@@ -142,6 +142,7 @@ export interface AgentVM {
     stateSince?: number; // working/asking: when that state began (UnixMilli); fixed, where the two ages above grow with now
     previousInfo?: AgentEntry[]; // asking: messages + actions leading to the question
     ask?: AgentAsk; // present iff state === "asking"
+    askFromFile?: boolean; // asking only because its brainstorm file waits on the user (withBrainstorm): no picker in its terminal
     transcriptPath?: string; // source for on-demand previous-info (not rendered directly)
     blockId?: string; // terminal block OID — target for ControllerInputCommand
     idleSince?: number; // idle: when it went idle (UnixMilli) — drives the keep-as-panel grace window
@@ -871,9 +872,10 @@ export function moveCursor(ids: string[], current: string | undefined, delta: nu
 }
 
 /** Pure: is the agent asking a question its terminal answers (Claude Code's picker, driven by ↑/↓, Enter and digits)?
- *  A held card (an `AskCommand` with Hold) is answered on the card above the terminal instead. */
-export function asksInTerminal(agent: Pick<AgentVM, "state" | "ask"> | undefined): boolean {
-    return agent?.state === "asking" && !agent.ask?.hold;
+ *  A held card (an `AskCommand` with Hold) is answered on the card above the terminal instead, and a question only
+ *  its brainstorm file asks leaves the terminal at a prompt. */
+export function asksInTerminal(agent: Pick<AgentVM, "state" | "ask" | "askFromFile"> | undefined): boolean {
+    return agent?.state === "asking" && !agent.ask?.hold && !agent.askFromFile;
 }
 
 /** Pure: one AgentAnswerItem per question. A non-empty trimmed text wins over the selection and

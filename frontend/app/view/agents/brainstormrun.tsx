@@ -16,7 +16,15 @@ import { useAtomValue } from "jotai";
 import { closeSessions } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
-import { decisionParts, partGist, type BrainstormFile, type BrainstormPart, type PartState } from "./brainstormmodel";
+import {
+    decisionParts,
+    partGist,
+    RAIL_MIN_W_CHECK,
+    type BrainstormFile,
+    type BrainstormPart,
+    type PartState,
+} from "./brainstormmodel";
+import { RailRow, STACKED } from "./brainstormrail";
 import {
     closesRun,
     closeTarget,
@@ -96,44 +104,53 @@ export function RunStep({
         <>
             <Toolbar topic={s.topic} f={f} progress={false} merged={view.merged} />
             <StaleBanner s={s} />
-            <div className="flex min-h-0 flex-1">
-                <div
-                    data-brainstorm-run={view.state}
-                    className="flex min-w-0 flex-1 flex-col gap-[18px] overflow-y-auto bg-background px-[22px] pb-[30px] pt-[22px] *:flex-none"
-                >
-                    <div className="flex items-start gap-[14px] border-b border-border px-[14px] pb-[12px]">
-                        <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
-                            <h1 className="m-0 text-[18px] font-bold text-primary">{f.title}</h1>
-                            {f.spec ? (
-                                <span title={f.spec} className="truncate text-[10.5px] text-muted">
-                                    {f.spec}
-                                </span>
+            {/* the run's rail is as wide as the check's, so it goes under the summary at the check's cutoff (RailRow) */}
+            <RailRow
+                minWidth={RAIL_MIN_W_CHECK}
+                question={
+                    <div
+                        data-brainstorm-run={view.state}
+                        className="@container flex min-h-0 min-w-0 flex-1 flex-col gap-[18px] overflow-y-auto bg-background px-[22px] pb-[30px] pt-[22px] *:flex-none"
+                    >
+                        <div className="flex items-start gap-[14px] border-b border-border px-[14px] pb-[12px]">
+                            <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
+                                <h1 className="m-0 text-[18px] font-bold text-primary">{f.title}</h1>
+                                {f.spec ? (
+                                    <span title={f.spec} className="truncate text-[10.5px] text-muted">
+                                        {f.spec}
+                                    </span>
+                                ) : null}
+                            </div>
+                            {view.state !== "missing" ? (
+                                <button
+                                    type="button"
+                                    data-brainstorm-open-run
+                                    onClick={() => void openTarget(model, { kind: "run", runId })}
+                                    className={cn("flex-none", view.merged ? SWAP_BTN : SWAP_PRIMARY_BTN)}
+                                >
+                                    Open run {shortRunId(runId)}
+                                </button>
                             ) : null}
                         </div>
-                        {view.state !== "missing" ? (
-                            <button
-                                type="button"
-                                data-brainstorm-open-run
-                                onClick={() => void openTarget(model, { kind: "run", runId })}
-                                className={cn("flex-none", view.merged ? SWAP_BTN : SWAP_PRIMARY_BTN)}
-                            >
-                                Open run {shortRunId(runId)}
-                            </button>
-                        ) : null}
+                        <StateCard model={model} agent={agent} s={s} f={f} runId={runId} view={view} rc={rc} />
+                        <HandedOver f={f} caption={!view.merged} />
                     </div>
-                    <StateCard model={model} agent={agent} s={s} f={f} runId={runId} view={view} rc={rc} />
-                    <HandedOver f={f} caption={!view.merged} />
-                </div>
-                {run != null ? (
-                    <aside
-                        data-brainstorm-run-rail
-                        aria-label="The run"
-                        className="w-[460px] flex-none overflow-y-auto border-l border-border bg-surface px-[24px] py-[22px]"
-                    >
-                        <RunSection model={model} run={run} asks={asks} />
-                    </aside>
-                ) : null}
-            </div>
+                }
+                rail={
+                    run != null ? (
+                        <aside
+                            data-brainstorm-run-rail
+                            aria-label="The run"
+                            className={cn(
+                                "w-[460px] flex-none overflow-y-auto border-l border-border bg-surface px-[24px] py-[22px]",
+                                STACKED.check.aside
+                            )}
+                        >
+                            <RunSection model={model} run={run} asks={asks} />
+                        </aside>
+                    ) : null
+                }
+            />
         </>
     );
 }
@@ -322,13 +339,14 @@ function HandedRow({ f, p }: { f: BrainstormFile; p: BrainstormPart }) {
     return (
         <div
             data-brainstorm-handed-row={p.id}
-            className="grid grid-cols-[7px_minmax(120px,230px)_minmax(0,1fr)] items-start gap-x-[12px] border-t border-edge-faint px-[14px] py-[8px]"
+            // a narrow column puts the gist under the title: beside it, the title's 120px squeezed the gist to a word a line
+            className="grid grid-cols-[7px_minmax(120px,230px)_minmax(0,1fr)] items-start gap-x-[12px] gap-y-[2px] border-t border-edge-faint px-[14px] py-[8px] @max-[520px]:grid-cols-[7px_minmax(0,1fr)]"
         >
             <span className={cn(PART_DOT[p.state], "mt-[6px]")} />
             <span className="text-[13.5px] font-semibold leading-[1.45] text-primary">{p.title}</span>
             {/* the from line sits under the gist, as on the brainstorm's part row: a column of its own sized to
                 max-content took the row's width and squeezed the gist to one word a line */}
-            <span className="flex min-w-0 flex-col gap-[2px]">
+            <span className="flex min-w-0 flex-col gap-[2px] @max-[520px]:col-start-2">
                 <span className="text-[13.5px] leading-[1.45] text-secondary">{partGist(f, p)}</span>
                 {p.from ? (
                     <span title={p.from} className="truncate text-[10.5px] text-muted">

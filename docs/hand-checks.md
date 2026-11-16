@@ -24,6 +24,16 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) **Chat's selection has softly rounded corners.** CSS only, no dev app ran. In Chat, select a word and
   then a few wrapped lines: each highlighted line has 3px rounded ends, and the lines still meet without a gap that
   reads as broken.
+- [ ] (arcterm) **`[` `]` on an open brainstorm board stay in the asked part.** Unit tests and typecheck only, no dev
+  app ran. In a brainstorm whose open question's part has two or more boards (and another part has boards too), open
+  one from the rail's Boards tab: `]`, `[`, `←` and `→` cycle only that part's boards, never the All view or another
+  part's board, and the dialog's title follows. (a411573de)
+- [ ] (arcterm) **A narrow brainstorm run step stacks.** Unit tests and typecheck only, no dev app ran. Narrow the Agent
+  pane under ~820px on a brainstorm handed to a run: the run's rail sits under the summary at full width, not 460px
+  beside it; under ~520px each "What you handed over" row puts its gist under its title. (66933b70e)
+- [ ] (arcterm) **A brainstorm waiting on you does not take the keyboard.** Unit tests and typecheck only, no dev app
+  ran. Pick, with `j`/`k`, an idle agent whose brainstorm asks a question: `j`/`k` keep moving the tree. An agent at
+  a permission prompt still takes the keyboard when picked. (80d72e75a)
 - [ ] (arcterm) **A paragraph picked above a code block leaves its line number alone.** Unit tests and typecheck only,
   no dev app ran. In Chat, triple-click a paragraph that sits right above a code block: only the paragraph is
   highlighted, not the block's `1`, and a copy holds only the paragraph's text.

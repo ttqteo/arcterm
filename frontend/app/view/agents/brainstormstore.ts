@@ -31,7 +31,8 @@ import {
     type SentLine,
     type StartingRunMark,
 } from "./brainstormmodel";
-import type { CanvasBoard } from "./canvasmodel";
+import { stepTab, type CanvasBoard } from "./canvasmodel";
+import { selectCanvasTab } from "./canvasstore";
 
 export type BrainstormState = {
     topic: string;
@@ -254,6 +255,22 @@ export function setBrainstormMode(agentId: string, mode: "terminal" | "brainstor
 
 export function openBrainstormBoard(agentId: string, board: string | null): void {
     updateBrainstorm(agentId, (s) => ({ ...s, board }));
+}
+
+// The boards the rail lists while one of them is open large (BrainstormRail sets it, [] otherwise): the question's part's
+// when it has some, else every part's. The canvas holds every part's boards and an All tab, so stepping its tabs left
+// the part on screen; the rail's list is what [ ] and ← → step.
+export const railBoardsAtom = atomFamily((_agentId: string) => atom<string[]>([]) as PrimitiveAtom<string[]>);
+
+export function stepBrainstormBoard(agentId: string, delta: number): void {
+    const open = getBrainstorm(agentId)?.board;
+    const next = stepTab(globalStore.get(railBoardsAtom(agentId)), open ?? null, delta);
+    if (open == null || next == null || next === open) {
+        return;
+    }
+    // the open board is drawn from the canvas's board, and the rail keeps it open while it is one it lists
+    selectCanvasTab(agentId, next);
+    openBrainstormBoard(agentId, next);
 }
 
 export function openBrainstormDesign(agentId: string, open: boolean): void {

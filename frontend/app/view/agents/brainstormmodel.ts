@@ -551,6 +551,7 @@ export function withBrainstorm(agent: AgentVM, f: BrainstormFile | null, now: nu
     return {
         ...agent,
         state: "asking",
+        askFromFile: true,
         activeMs: undefined,
         blockedMs: agent.idleSince != null ? Math.max(0, now - agent.idleSince) : agent.blockedMs,
     };
