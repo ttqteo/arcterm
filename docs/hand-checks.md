@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The Chat being read keeps its place when a launch finishes starting.** The CDP scenario
+  `chat-scroll-keep` (step 2b) checked it over a fixture roster, not a real launch. + New a Claude agent in another
+  project, switch to an agent whose Chat you have scrolled halfway up before the new one's Claude answers, and wait for
+  its title and first message: the Chat stays where you were reading.
 - [ ] (arcterm) **A Work on session keeps its initiative.** Go tests only, no dev app ran. In Jarvis, Work on an
   initiative whose notes point at another one, and ask the agent to `wsh effort show` that other initiative: the Agent
   header and initiative band keep the one you picked (63184f53b).

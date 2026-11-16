@@ -47151,6 +47151,18 @@ const chatScrollKeep = {
                 { rowUp, placed, ...after2 }
             );
 
+            // 2b. the second now sorts before the main one, as a launch does when it turns from a terminal into an agent
+            // (reported 2026-11-16: the Chat being read jumped to the top as the new agent's Claude came up). The cells
+            // were drawn in the roster's order, so React moved the main agent's cell, which resets its scroll to 0
+            await AC.setRoster(h, cskRoster(ctx, ["second", "main"]));
+            await new Promise((r) => setTimeout(r, CSK_SETTLE_MS));
+            const after2b = await h.ev(cskRead(A));
+            rec(
+                "2b. the new agent moves ahead of the one being read in the roster; the chat keeps its node and its scroll (within 2 px)",
+                after2b.found && after2b.marked && Math.abs(after2b.top - placed) <= 2,
+                { placed, top: after2b.top, marked: after2b.marked, writes: after2b.writes?.length, hides: after2b.hides }
+            );
+
             // 3. a third arrives as a launch still booting (a pending launch), the way + New shows one before its roster row
             ctx.tabs.third = await acMakeTab(h, ctx, { label: CSK_NAMES.third, pending: true });
             await new Promise((r) => setTimeout(r, CSK_SETTLE_MS));
