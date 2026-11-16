@@ -1756,6 +1756,8 @@ describe("asksInTerminal", () => {
     it("is not a held command, answered on its card, nor an agent that is not asking", () => {
         expect(asksInTerminal({ state: "asking", ask: { questions: [], hold: true } as any })).toBe(false);
         expect(asksInTerminal({ state: "working", ask: undefined })).toBe(false);
+        // an idle agent the brainstorm overlay reads as asking: its question is in the file, its terminal at a prompt
+        expect(asksInTerminal({ state: "asking", ask: undefined, askFromFile: true })).toBe(false);
         expect(asksInTerminal(undefined)).toBe(false);
     });
 });

@@ -406,6 +406,10 @@ describe("withBrainstorm", () => {
         expect(a.blockedMs).toBe(5000);
     });
 
+    it("marks the ask as the file's, since the terminal holds no picker", () => {
+        expect(withBrainstorm(agent({ idleSince: 1000 }), f, 6000).askFromFile).toBe(true);
+    });
+
     it("returns the same object when it is not asking", () => {
         const a = agent({ idleSince: 1000 });
         expect(withBrainstorm(a, null, 6000)).toBe(a);
