@@ -169,7 +169,7 @@ git commit -m "feat(orchestrate): a preparing task state that holds its slot and
 
 ### Task 2: Prepare the tree outside the lock, spawn in the next pass
 
-**Depends on:** Task 1, Task 3
+**Depends on:** Task 1
 **Chunk:** A dag merge --continue waited 2m37s on the dag lock behind ticks held up by slow git worktree calls (fork 6231b6970, its run 65ce3ef3); the request now survives it, the lock hold itself is unexplained
 
 **Files:** `pkg/orchestrate/treeprep.go`, `pkg/orchestrate/treeprep_test.go`, `pkg/orchestrate/engine.go`, `pkg/orchestrate/mutation.go`, `pkg/orchestrate/mutation_test.go`, `pkg/orchestrate/pause.go`, `pkg/orchestrate/pause_test.go`, `scripts/cdp/scenarios.mjs`, `docs/open-issues.md`, `CHANGELOG.md`
@@ -352,6 +352,9 @@ git commit -m "perf(orchestrate): make a task's tree and Setup outside the dag l
 **Chunk:** Engine: when a stopped worker's tab fails to close, ApplyAction returns before Schedule, so turned-away ticks wait for the watchdog
 
 **Files:** `pkg/orchestrate/mutation.go`, `pkg/orchestrate/actionlock_test.go`
+
+Runs beside Task 2: both touch `mutation.go`, but Task 2 only rewrites comments at :172 and :783, and this task's
+hunks are :249-340, so the merges do not overlap.
 
 Where: `mutation.go:249-284` (`ApplyActionBy`, `applyAction`) and `closeWorkerTab` :330; the test goes in
 `actionlock_test.go` beside `TestTaskActionsStopTheWorkerOutsideTheDagLock` (:47), whose setup it reuses.
