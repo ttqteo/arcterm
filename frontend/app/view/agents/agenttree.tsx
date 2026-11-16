@@ -81,6 +81,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { confirmCloseProject, confirmCloseRun, confirmCloseSession } from "./agentactions";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
+import { LandedClose } from "./landedclose";
 import { fallAsleepLabel, fallingAsleepOf } from "./fallasleepstore";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
 import { shortTabId } from "./agentrowmodel";
@@ -1503,6 +1504,8 @@ function ParentRow({
                     <Check size={12} strokeWidth={2.4} aria-hidden />
                 </button>
             ) : null}
+            {/* a lead's run that landed and still holds sessions: the same ✓, closing the whole run */}
+            {lead != null ? <LandedClose model={model} run={lead.run} variant="chip" /> : null}
             <ServerMark servers={servers} />
             {cols}
         </>
@@ -1758,6 +1761,8 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
                     className={cn("flex-none", LEAD_MARK_CLASS[mark.tone], mark.pulse && PULSE)}
                 />
                 <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">{run.title}</span>
+                {/* landed, with sessions still open under it: the ✓ a committed agent's row offers, closing them all */}
+                <LandedClose model={model} run={run} variant="chip" />
             </div>
             <RunSubline
                 model={model}
