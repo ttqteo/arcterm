@@ -73,12 +73,11 @@ worktree add` plus Setup). This settles the 2026-11-26 re-measure of the dag loc
 **Depends on:** none
 **Chunk:** A dag merge --continue waited 2m37s on the dag lock behind ticks held up by slow git worktree calls (fork 6231b6970, its run 65ce3ef3); the request now survives it, the lock hold itself is unexplained
 
-**Files:**
-- Modify: `pkg/orchestrate/dag.go` (constants at :18-29, `taskStateClass` at :35, `taskStates` at :51, `slotsInUse` at :91)
-- Modify: `pkg/orchestrate/scheduler.go` (`skippable` at :225)
-- Test: `pkg/orchestrate/scheduler_test.go`, `pkg/orchestrate/dag_test.go` (`TestEveryTaskStateIsClassified` at :491)
-- Modify: `frontend/app/view/agents/runlineage.ts:651`, test `frontend/app/view/agents/runlineage.test.ts`
-- Modify: `docs/guide/orchestrator.md:680` (the `dag skip` row, Vietnamese)
+**Files:** `pkg/orchestrate/dag.go`, `pkg/orchestrate/scheduler.go`, `pkg/orchestrate/scheduler_test.go`, `pkg/orchestrate/dag_test.go`, `frontend/app/view/agents/runlineage.ts`, `frontend/app/view/agents/runlineage.test.ts`, `docs/guide/orchestrator.md`
+
+Where: `dag.go` constants :18-29, `taskStateClass` :35, `taskStates` :51, `slotsInUse` :91; `scheduler.go` `skippable`
+:225; `dag_test.go` `TestEveryTaskStateIsClassified` :491; `runlineage.ts:651`; `docs/guide/orchestrator.md:680` (the
+`dag skip` row, Vietnamese).
 
 - [ ] **Step 1: Write the failing tests** in `scheduler_test.go`, with `groupWith` (`scheduler_test.go:10`):
 
@@ -149,11 +148,11 @@ git commit -m "feat(orchestrate): a preparing task state that holds its slot and
 **Depends on:** Task 1 (`TaskState_Preparing`)
 **Chunk:** A dag merge --continue waited 2m37s on the dag lock behind ticks held up by slow git worktree calls (fork 6231b6970, its run 65ce3ef3); the request now survives it, the lock hold itself is unexplained
 
-**Files:**
-- Create: `pkg/orchestrate/treeprep.go`, `pkg/orchestrate/treeprep_test.go`
-- Modify: `pkg/orchestrate/engine.go` (`scheduleTickTimeout` :133, `runTick` :457, `scheduleLocked` :479, the dispatch block :787-953)
-- Modify (comments only): `pkg/orchestrate/mutation.go` (`WithDagMutation`, `TryWithDagMutation` :172, `cancelDag` :783), `pkg/orchestrate/pause.go:40` (`dagSetups`' comment: Setup no longer runs under the dag lock, except the fallback below)
-- Modify: `docs/open-issues.md` (the two dag-lock rows, see Step 7)
+**Files:** `pkg/orchestrate/treeprep.go`, `pkg/orchestrate/treeprep_test.go`, `pkg/orchestrate/engine.go`, `pkg/orchestrate/mutation.go`, `pkg/orchestrate/pause.go`, `docs/open-issues.md`, `CHANGELOG.md`
+
+Where: `treeprep.go` and its test are new; `engine.go` `scheduleTickTimeout` :133, `runTick` :457, `scheduleLocked`
+:479, the dispatch block :787-953; comments only in `mutation.go` (`WithDagMutation`, `TryWithDagMutation` :172,
+`cancelDag` :783) and `pause.go:40` (`dagSetups`); `docs/open-issues.md` and `CHANGELOG.md` in Step 7.
 
 - [ ] **Step 1: Write the failing tests** in `treeprep_test.go`, with `newMergeFixture` (`mergetask_test.go:34`),
   `f.setPlanCommands(t, "", setupCmd)` (`setup_test.go:91`), `stubPlanCommand` (`setup_test.go:59`), `stubSpawn`
@@ -299,9 +298,10 @@ git commit -m "perf(orchestrate): make a task's tree and Setup outside the dag l
 **Depends on:** none
 **Chunk:** Engine: when a stopped worker's tab fails to close, ApplyAction returns before Schedule, so turned-away ticks wait for the watchdog
 
-**Files:**
-- Modify: `pkg/orchestrate/mutation.go:249-284` (`ApplyActionBy`, `applyAction`)
-- Test: `pkg/orchestrate/mutation_test.go` (or the file that holds `TestTaskActionsStop*`; grep it)
+**Files:** `pkg/orchestrate/mutation.go`, `pkg/orchestrate/mutation_test.go`
+
+Where: `mutation.go:249-284` (`ApplyActionBy`, `applyAction`); the test goes beside `TestTaskActionsStop*` (grep it; if
+that is another file, use that file).
 
 - [ ] **Step 1: Write the failing test** `TestAnActionWhoseTabWillNotCloseStillTicks`: a dag whose t-0 is running with a
   worker; stub the tab close (`closeWorkerTab` reaches a var; grep `closeWorkerTab` in `mutation.go:328` for the seam,
@@ -329,11 +329,11 @@ git commit -m "perf(orchestrate): make a task's tree and Setup outside the dag l
 **Depends on:** none
 **Chunk:** dag retry/approve/amend answer EC-TIME while a merge verifies; outcome unknown, amend notes may be lost (run dc8d9cc7)
 
-**Files:**
-- Modify: `pkg/wshrpc/wshserver/wshserver_dag.go:637-725` (`DagActionCommand`: the `amend` and `sendback` cases and the
-  default `ApplyActionBy` call)
-- Modify: `pkg/orchestrate/mergetask.go:80` (`landForCaller`: generalize, or add a sibling `actForCaller` beside it)
-- Modify: `cmd/wsh/cmd/wshcmd-jarvisdag.go` (`dagActionWithin` :740, `dagNoteCmd` :1311), test `cmd/wsh/cmd/wshcmd-jarvisdag_test.go`
+**Files:** `pkg/wshrpc/wshserver/wshserver_dag.go`, `pkg/orchestrate/mergetask.go`, `pkg/orchestrate/mergetask_test.go`, `cmd/wsh/cmd/wshcmd-jarvisdag.go`, `cmd/wsh/cmd/wshcmd-jarvisdag_test.go`
+
+Where: `wshserver_dag.go:637-725` (`DagActionCommand`: the `amend` and `sendback` cases and the default `ApplyActionBy`
+call); `mergetask.go:80` (`landForCaller`: generalize it, or add a sibling `actForCaller` beside it);
+`wshcmd-jarvisdag.go` `dagActionWithin` :740 and `dagNoteCmd` :1311.
 
 Today a lead action waits on the dag lock on the RPC's context, with a 10 s client budget (`dagRpcTimeoutMs`, :646): a
 long tick turns it into a bare EC-TIME, and its first read under the lock can then fail on the expired context, so the
@@ -364,9 +364,9 @@ the fork's `6231b6970`).
 **Depends on:** none
 **Chunk:** Engine runTick holds a dag lock 10-19 s when a task's progress check runs git status in a non-git cwd (dag-lifecycle temp project): find why
 
-**Files:**
-- Modify: `pkg/orchestrate/progress.go:290-306` (`checkProgress`)
-- Test: `pkg/orchestrate/progress_test.go`
+**Files:** `pkg/orchestrate/progress.go`, `pkg/orchestrate/progress_test.go`
+
+Where: `progress.go:290-306` (`checkProgress`).
 
 A task in a non-git project has no lane tree (dispatch leaves the child run's `Branch` empty, `engine.go:811`), so
 `worktreeFingerprint`'s `git status` there can only fail, once a minute per task, under the dag lock. The 10-19 s holds
