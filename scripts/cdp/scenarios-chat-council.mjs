@@ -1,7 +1,8 @@
 // The council the agent started and the Doc review it asks, as cards in Chat
 // (docs/superpowers/specs/2026-11-14-chat-council-design.md, plan 2026-11-14-chat-council.md Task 5).
 // Chat draws a council the agent started with `wsh council start` as a card at the end of the conversation while it runs,
-// waits on you after round 1, or is queued, and as a one-line row at the start call once it ended; a Doc review ask is a
+// waits on you after round 1, or is queued, and as its ended card there once it ended, with the agent's summary of its
+// report in a council panel where it was written; a Doc review ask is a
 // card in the dock while it waits and one row in place once answered. It is written against the plan's DOM contract, not
 // against the components:
 //   council card   [data-chat-bscard-kind="council"][data-chat-council="<id>"][data-chat-council-state="running|awaiting|queued"]
@@ -11,9 +12,12 @@
 //                  [data-chat-council-seat="<expert>"][data-seat-state="done|working|waiting"], [data-chat-council-round],
 //                  [data-chat-council-elapsed], [data-chat-council-estimate], [data-chat-council-queued],
 //                  [data-chat-council-error]
-//   council row    [data-chat-bscard-done="council"][data-chat-council-row="<id>"][data-chat-council-end="done|stopped|failed|not-run|running"]
-//                  in the [data-chat-item] that holds the call, with [data-chat-council-report] (Open report) or
-//                  [data-chat-council-open], and its mark in [data-chat-bscard-mark]
+//   ended card     [data-chat-bscard-kind="council"][data-chat-council-row="<id>"][data-chat-council-end="done|stopped|failed|not-run|running"]
+//                  in a [data-chat-council-tail] wrapper at the end of the conversation, with [data-chat-council-tag] (Done ·
+//                  4 directions · 11 min), [data-chat-council-title], [data-chat-council-line] (the answer or the reason) and
+//                  [data-chat-council-report] (Open report) or [data-chat-council-open]
+//   summary panel  [data-chat-council-summary="<id>"] around the agent's first prose after the report reached it, in its
+//                  [data-chat-item], with [data-chat-council-summary-head] and [data-chat-council-report]
 //   Doc review     [data-chat-bscard-kind="docreview"][data-chat-bscard-state="waiting|static"] with [data-chat-drcard-path],
 //   card           -pages, -intro, -item, -review, -approve and -note; in the dock's [data-chat-ask] while the agent waits
 //   Doc review row [data-chat-bscard-done="docreview"][data-chat-drcard-outcome="approved|changes"]
@@ -68,6 +72,11 @@ const FAILED_ERROR = "The synthesis failed: the coordinator's reply was not vali
 const REFUSAL_FIRST = "this council would use about 1.8M tokens, over the 1M the Token burn gate lets an agent start";
 const REFUSAL = `Not run: ${REFUSAL_FIRST}. Start it from the app if you want it.`;
 const STOP_ERROR = "the council is not running any more";
+// a done council's one-line answer (summary.answer), which its ended card shows as its line
+const ANSWER = "Pin the apps people open daily first; leave reordering for later.";
+// the agent's summary of the done council's report, which Chat draws in the council's panel, and the line after it
+const SUMMARY = "Council done. It keeps the rail order and asks to pin daily apps first.";
+const AFTER_SUMMARY = "Next I start on the first direction.";
 
 // the Doc review's options, as the skill asks them: Approve first, then Request changes
 const DR_OPTIONS = [
@@ -317,7 +326,11 @@ export default function (kit) {
 
             // --- waits and readings ---
             const cardSel = (id) => `[data-chat-bscard-kind="council"][data-chat-council="${id}"]`;
-            const rowSel = (id, end) => `[data-chat-bscard-done="council"][data-chat-council-row="${id}"]${end != null ? `[data-chat-council-end="${end}"]` : ""}`;
+            const rowSel = (id, end) => `[data-chat-bscard-kind="council"][data-chat-council-row="${id}"]${end != null ? `[data-chat-council-end="${end}"]` : ""}`;
+            const summarySel = (id) => `[data-chat-council-summary="${id}"]`;
+            // a tail wrapper of the step at hand: step 5's not-run line keeps its card from its anchor alone after its
+            // council file is gone (the transcript keeps the call), so the steps after it leave that one out
+            const TAIL = `[data-chat-council-tail]:not(:has([data-chat-council-row="${ID.notrun}"]))`;
             const waitSel = (sel, ms = WAIT_MS) => polishWaitFor(h, `!!${layerOf(A)}?.querySelector(${JSON.stringify(sel)})`, ms);
             const noSel = (sel, ms = WAIT_MS) => polishWaitFor(h, `!${layerOf(A)}?.querySelector(${JSON.stringify(sel)})`, ms);
             const waitText = (text, ms = WAIT_MS) => polishWaitFor(h, `(${layerOf(A)}?.textContent ?? "").includes(${JSON.stringify(text)})`, ms);
@@ -340,7 +353,7 @@ export default function (kit) {
                     return true;`
                 );
                 await AC.focusAgent(h, A);
-                await noSel("[data-chat-council-tail]", SHORT_MS);
+                await noSel(TAIL, SHORT_MS);
             };
 
             // the council card as it is drawn now
@@ -354,7 +367,7 @@ export default function (kit) {
                     const tail = card?.closest("[data-chat-council-tail]") ?? null;
                     return {
                         found: !!card,
-                        tails: layer?.querySelectorAll("[data-chat-council-tail]").length ?? 0,
+                        tails: layer?.querySelectorAll(${JSON.stringify(TAIL)}).length ?? 0,
                         cards: layer?.querySelectorAll('[data-chat-bscard-kind="council"]').length ?? 0,
                         inTail: !!tail,
                         afterConversation: tail && last ? !!(last.compareDocumentPosition(tail) & Node.DOCUMENT_POSITION_FOLLOWING) : null,
@@ -379,60 +392,40 @@ export default function (kit) {
                         open: btn(card, "[data-chat-council-open]"),
                     };
                 })()`);
-            // the row of a council that ended, with the item it is drawn in. `style` is what the eye reads of it, from
-            // getComputedStyle: the head's ink and weight, the weight of its first span (the Council word), the text's ink and
-            // weight, and the ink of the row's muted reference, the ✓ or else the mark's own box (a mark with a colour of its
-            // own, the ! in text-error, brings it on an inner span, so the box is the one that is text-muted)
+            // the ended card of a council, where it sits: in a [data-chat-council-tail] wrapper after the last item, never
+            // inside an item. `tag` is the header's state words, `mark` the glyph before them (the ✓ is an svg)
             const readRow = (id) =>
                 h.ev(`(() => {
                     ${HELP}
                     const layer = ${layerOf(A)};
                     const row = layer?.querySelector(${JSON.stringify(rowSel(id))});
-                    const item = row?.closest("[data-chat-item]") ?? null;
-                    const headEl = row?.querySelector("[data-chat-bscard-head]") ?? null;
-                    const wordEl = headEl?.querySelector("span") ?? null;
-                    const textEl = row?.querySelector("[data-chat-bscard-text]") ?? null;
-                    const refEl = row?.querySelector("[data-chat-bscard-mark]") ?? row?.querySelector("svg") ?? null;
-                    const color = (el) => (el ? getComputedStyle(el).color : null);
-                    const weight = (el) => (el ? Number(getComputedStyle(el).fontWeight) : NaN);
+                    const items = layer?.querySelectorAll("[data-chat-item]") ?? [];
+                    const last = items[items.length - 1] ?? null;
+                    const tail = row?.closest("[data-chat-council-tail]") ?? null;
+                    const tagEl = row?.querySelector("[data-chat-bscard-tag]") ?? null;
                     return {
                         found: !!row,
                         end: row?.getAttribute("data-chat-council-end") ?? null,
+                        state: row?.getAttribute("data-chat-bscard-state") ?? null,
                         text: flat(row),
-                        style: {
-                            headColor: color(headEl),
-                            headWeight: weight(headEl),
-                            word: flat(wordEl),
-                            wordWeight: weight(wordEl),
-                            textColor: color(textEl),
-                            textWeight: weight(textEl),
-                            refColor: color(refEl),
-                        },
-                        mark: pick(row, "[data-chat-bscard-mark]") ? flat(pick(row, "[data-chat-bscard-mark]")) : null,
+                        head: flat(pick(row, "[data-chat-bscard-head]")),
+                        tag: flat(pick(row, "[data-chat-council-tag]")),
+                        mark: tagEl?.querySelector("svg") ? "✓" : flat(tagEl?.querySelector('[aria-hidden="true"]') ?? null),
+                        title: flat(pick(row, "[data-chat-council-title]")),
+                        line: flat(pick(row, "[data-chat-council-line]")),
                         report: btn(row, "[data-chat-council-report]"),
                         open: btn(row, "[data-chat-council-open]"),
-                        item: flat(item),
-                        inAgentColumn: !!row?.closest("[data-chat-agent]"),
-                        tails: layer?.querySelectorAll("[data-chat-council-tail]").length ?? 0,
-                        cards: layer?.querySelectorAll('[data-chat-bscard-kind="council"]').length ?? 0,
+                        inTail: !!tail,
+                        inItem: !!row?.closest("[data-chat-item]"),
+                        afterConversation: tail && last ? !!(last.compareDocumentPosition(tail) & Node.DOCUMENT_POSITION_FOLLOWING) : null,
+                        tails: layer?.querySelectorAll(${JSON.stringify(TAIL)}).length ?? 0,
+                        liveCards: layer?.querySelectorAll('[data-chat-bscard-kind="council"][data-chat-council]').length ?? 0,
                     };
                 })()`);
+            // an ended card sits at the end of the conversation, after the last item, and is no live card
+            const atEnd = (r) => r.found && r.inTail && !r.inItem && r.afterConversation === true && r.liveCards === 0;
 
             const seatMap = (card) => card.seats.map((s) => `${s.id}:${s.state}`).join(",");
-            // how an ended row is drawn (spec section 3, the board's states 4 and 5): the feature or the reason in the same
-            // muted ink as the row's ✓ or mark and in a light weight, the head in another ink, and the first word of the head,
-            // Council, semibold. A weight the page could not read (no such element) is NaN, which JSON may turn into null:
-            // `Number.isFinite` keeps it from passing as "below 500"
-            const rowLook = (r) => {
-                const s = r.style;
-                return {
-                    textMuted: s.textColor != null && s.textColor === s.refColor,
-                    headPrimary: s.headColor != null && s.refColor != null && s.headColor !== s.refColor,
-                    wordSemibold: s.word === "Council" && Number.isFinite(s.wordWeight) && s.wordWeight >= 600,
-                    textLight: Number.isFinite(s.textWeight) && s.textWeight < 500,
-                };
-            };
-            const looksRight = (r) => Object.values(rowLook(r)).every(Boolean);
 
             // 1. the running council: the call, then the card at the end with the seats, the step, the clock, the estimate, Stop
             await run("1. running council", async (name) => {
@@ -651,21 +644,65 @@ export default function (kit) {
                 );
             });
 
-            // 4. done: no card at the end, the ✓ row at the call with the mode, the count, the time and Open report
+            // 4. done: the ended card at the end with the mode, Done, the count, the time, the answer and Open report, and the
+            // agent's summary, written after its background wait's notification, in the council's panel
             await run("4. done council", async (name) => {
                 await begin();
-                await putCouncil("done", ID.done);
+                await putCouncil("done", ID.done, (c) => {
+                    c.summary.answer = ANSWER;
+                });
                 const marker = "Starting the rail apps council for step 4.";
                 turn("ask a council which rail changes come first", marker);
                 append(ctx, ...startCall("toolu_cc_done", startedOut(ID.done)));
-                say("The council is done. Here is what it found.");
+                // the skill's background wait, its ack, other work, then its <task-notification> and the summary
+                append(
+                    ctx,
+                    AC.toolUse(
+                        "toolu_cc_wait",
+                        "Bash",
+                        { command: `wsh council wait ${ID.done} --timeout 0`, description: "Wait for council to finish (background)", run_in_background: true },
+                        stamp(ctx)
+                    ),
+                    AC.toolResult("toolu_cc_wait", "Command running in background with ID: bw4", stamp(ctx))
+                );
+                say("While it runs, I read the rail code.");
+                append(
+                    ctx,
+                    AC.taskNotification({
+                        taskId: "bw4",
+                        toolUseId: "toolu_cc_wait",
+                        summary: 'Background command "Wait for council to finish (background)" completed (exit code 0)',
+                        ...stamp(ctx),
+                    })
+                );
+                say(SUMMARY);
+                say(AFTER_SUMMARY);
                 await setAgent({ ends: true });
                 const up = await waitSel(rowSel(ID.done, "done"));
-                const noTail = await noSel("[data-chat-council-tail]", SHORT_MS);
+                const upPanel = await waitSel(summarySel(ID.done));
                 await polishNap(500);
                 await scrollEnd();
                 const row = await readRow(ID.done);
-                await shot("4-done-row");
+                const panel = await h.ev(`(() => {
+                    ${HELP}
+                    const layer = ${layerOf(A)};
+                    const el = layer?.querySelector(${JSON.stringify(summarySel(ID.done))});
+                    const tail = layer?.querySelector(${JSON.stringify(rowSel(ID.done))})?.closest("[data-chat-council-tail]") ?? null;
+                    return {
+                        found: !!el,
+                        head: flat(pick(el, "[data-chat-council-summary-head]")),
+                        text: flat(el),
+                        report: btn(el, "[data-chat-council-report]"),
+                        inItem: !!el?.closest("[data-chat-item]"),
+                        beforeTail: el && tail ? !!(el.compareDocumentPosition(tail) & Node.DOCUMENT_POSITION_FOLLOWING) : null,
+                        panels: layer?.querySelectorAll("[data-chat-council-summary]").length ?? 0,
+                    };
+                })()`);
+                await shot("4-done-card");
+                // the panel itself, scrolled into view
+                await h.ev(`(() => { ${layerOf(A)}?.querySelector(${JSON.stringify(summarySel(ID.done))})?.scrollIntoView({ block: "center" }); return true; })()`);
+                await polishNap(400);
+                await shot("4-summary-panel");
                 // Open report opens the council's report view
                 const clicked = await click(`${rowSel(ID.done)} [data-chat-council-report]`);
                 const shown = await polishWaitFor(h, `!!document.querySelector("[data-council-summary]")`, WAIT_MS);
@@ -680,30 +717,37 @@ export default function (kit) {
                 await AC.agentPage(h, `const C = await mod("app/view/agents/agentcenter.ts"); C.showTerminal(); return true;`);
                 await AC.focusAgent(h, A);
                 rec(
-                    `${name}: no card at the end; the row at the start call's item reads "Council · review · 4 directions · 11 min", "${FEATURE}" and Open report, with the ✓ and no mark glyph, the head in the primary ink with "Council" semibold (600 or more) and the feature in the ✓'s muted ink, below weight 500; clicking Open report shows the report view of the council`,
+                    `${name}: the ended card is the one council card, in [data-chat-council-tail] after the last item: "Council · review", ✓ "Done · 4 directions · 11 min", "${FEATURE}", the answer "${ANSWER}" and Open report; the agent's summary "${SUMMARY}" (the first prose after its background wait's notification) is in one council panel inside its item, above the card, headed "Council · review · 4 directions · 11 min" with Open report, and "${AFTER_SUMMARY}" is outside it; clicking the card's Open report shows the report view of the council`,
                     up &&
-                        noTail &&
-                        row.found &&
-                        looksRight(row) &&
+                        upPanel &&
+                        atEnd(row) &&
+                        row.tails === 1 &&
                         row.end === "done" &&
-                        row.tails === 0 &&
-                        row.cards === 0 &&
-                        row.inAgentColumn &&
-                        row.item.includes(marker) &&
-                        row.text.includes("Council · review · 4 directions · 11 min") &&
-                        row.text.includes(FEATURE) &&
-                        row.mark === null &&
+                        row.head === "Council · review" &&
+                        row.mark === "✓" &&
+                        row.tag === "Done · 4 directions · 11 min" &&
+                        row.title === FEATURE &&
+                        row.line === ANSWER &&
                         row.report?.text === "Open report" &&
                         row.open == null &&
+                        panel.found &&
+                        panel.panels === 1 &&
+                        panel.inItem &&
+                        panel.beforeTail === true &&
+                        panel.head === "Council · review · 4 directions · 11 min" &&
+                        panel.text.includes(SUMMARY) &&
+                        !panel.text.includes(AFTER_SUMMARY) &&
+                        panel.report?.text === "Open report" &&
                         clicked === "clicked" &&
                         shown &&
                         view.sel === ID.done &&
                         view.view === "summary",
-                    { up, noTail, row, look: rowLook(row), clicked, shown, view }
+                    { up, upPanel, row, panel, clicked, shown, view }
                 );
             });
 
-            // 5. stopped, failed and not run: three calls, three councils, each row with its mark, what happened and the reason
+            // 5. stopped, failed and not run: three calls, three councils, each ended card with its mark, what happened and the
+            // reason, at the end in the order of their calls
             await run("5. stopped, failed and not run", async (name) => {
                 await begin();
                 await putCouncil("round2", ID.stopped, (c) => {
@@ -728,38 +772,36 @@ export default function (kit) {
                 const up = await waitSel(rowSel(ID.stopped, "stopped"));
                 const upFailed = await waitSel(rowSel(ID.failed, "failed"));
                 const upNotRun = await waitSel(rowSel(ID.notrun, "not-run"));
-                const noTail = await noSel("[data-chat-council-tail]", SHORT_MS);
                 await polishNap(500);
                 await scrollEnd();
                 const stopped = await readRow(ID.stopped);
                 const failed = await readRow(ID.failed);
                 const notRun = await readRow(ID.notrun);
-                await shot("5-ended-rows");
-                // each row sits in the item that holds its own call
-                const inItem = [stopped, failed, notRun].every((r, i) => r.item.includes(markers[i]));
+                // the three cards in the order of their calls
+                const order = await h.ev(`(() => [...(${layerOf(A)}?.querySelectorAll("[data-chat-council-row]") ?? [])].map((e) => e.getAttribute("data-chat-council-row")))()`);
+                await shot("5-ended-cards");
                 rec(
-                    `${name}: three rows at their calls, no card at the end: ■ "Council · stopped in round 2" with "${STOPPED_ERROR}", ! "Council · failed in round 3" with the council's error, – "Council · not run" with the refusal's first sentence, each with Open council and no Open report; each draws its head in the primary ink with "Council" semibold (600 or more) and its reason in the mark's muted ink, below weight 500`,
+                    `${name}: three ended cards at the end, in the order of their calls and in no item: ■ "Stopped in round 2" with "${STOPPED_ERROR}", ! "Failed in round 3" with the council's error, – "Not run" with the refusal's first sentence, each with Open council and no Open report`,
                     up &&
                         upFailed &&
                         upNotRun &&
-                        noTail &&
-                        inItem &&
-                        [stopped, failed, notRun].every(looksRight) &&
+                        [stopped, failed, notRun].every(atEnd) &&
+                        JSON.stringify(order) === JSON.stringify([ID.stopped, ID.failed, ID.notrun]) &&
                         stopped.mark === "■" &&
-                        stopped.text.includes("Council · stopped in round 2") &&
-                        stopped.text.includes(STOPPED_ERROR) &&
+                        stopped.tag === "Stopped in round 2" &&
+                        stopped.line === STOPPED_ERROR &&
                         failed.mark === "!" &&
-                        failed.text.includes("Council · failed in round 3") &&
-                        failed.text.includes(FAILED_ERROR) &&
+                        failed.tag === "Failed in round 3" &&
+                        failed.line === FAILED_ERROR &&
                         notRun.mark === "–" &&
-                        notRun.text.includes("Council · not run") &&
-                        notRun.text.includes(REFUSAL_FIRST) &&
-                        [stopped, failed, notRun].every((r) => r.open?.text === "Open council" && r.report == null && r.tails === 0 && r.cards === 0),
-                    { up, upFailed, upNotRun, noTail, inItem, stopped, failed, notRun, looks: [stopped, failed, notRun].map(rowLook) }
+                        notRun.tag === "Not run" &&
+                        notRun.line.includes(REFUSAL_FIRST) &&
+                        [stopped, failed, notRun].every((r) => r.open?.text === "Open council" && r.report == null),
+                    { up, upFailed, upNotRun, order, stopped, failed, notRun }
                 );
             });
 
-            // 6. running again after done: the row stays at its call and reads running again; no card comes back at the end
+            // 6. running again after done: the ended card stays at the end and reads running again; no live card comes back
             await run("6. running again", async (name) => {
                 await begin();
                 // done first, as a brainstorm: its row counts ideas
@@ -787,20 +829,19 @@ export default function (kit) {
                 const row = await readRow(ID.again);
                 await shot("6-running-again");
                 rec(
-                    `${name}: the done brainstorm reads "Council · brainstorm · 4 ideas · 11 min"; once it runs again (a summary kept) the same row reads "Council · running again", keeps Open council and its place at the call, and no card comes back at the end`,
+                    `${name}: the done brainstorm's ended card reads "Council · brainstorm" and "Done · 4 ideas · 11 min"; once it runs again (a summary kept) the same card reads "Running again", keeps Open council and its place at the end, and no live card comes back`,
                     done &&
-                        first.found &&
-                        first.text.includes("Council · brainstorm · 4 ideas · 11 min") &&
+                        atEnd(first) &&
+                        first.head === "Council · brainstorm" &&
+                        first.tag === "Done · 4 ideas · 11 min" &&
                         first.report != null &&
                         again &&
-                        row.found &&
+                        atEnd(row) &&
+                        row.tails === 1 &&
                         row.end === "running" &&
-                        row.text.includes("Council · running again") &&
+                        row.tag === "Running again" &&
                         row.open?.text === "Open council" &&
-                        row.report == null &&
-                        row.item.includes(marker) &&
-                        row.tails === 0 &&
-                        row.cards === 0,
+                        row.report == null,
                     { done, first, again, row }
                 );
             });

@@ -81,6 +81,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A council an agent ran stays a card at the end of Chat once it ends (Done, its directions, its answer and Open report),
+  instead of a one-line row back where the agent started it, and the agent's summary of its report sits in a council
+  panel you can't miss.
 - Every tooltip shows the moment you hover, long ones included (they used to wait over half a second).
 - A council's discussion no longer shows the ↩ Back button after Top or Latest; only ↑ Top and ↓ Latest stay.
 - An agent waiting in the background on a council or another agent no longer shows that wait as a terminal row in the

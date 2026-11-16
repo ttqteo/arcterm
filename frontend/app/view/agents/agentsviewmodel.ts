@@ -30,7 +30,8 @@ export type ActionDetail =
     | { kind: "grep"; matches: GrepMatch[]; more?: string }
     | { kind: "read"; snippet: string; truncated?: boolean }
     // exit null: the call never ran (refused before it started), so it has no exit code
-    | { kind: "bash"; command?: string; output: string; exit: number | null }
+    // `bgToolUseId`: a call run with run_in_background, its tool-use id, which the <task-notification> of its end names
+    | { kind: "bash"; command?: string; output: string; exit: number | null; bgToolUseId?: string }
     | { kind: "skill"; name: string; args?: string }
     | { kind: "edit"; files: EditFile[] }
     | { kind: "ask"; questions: AskQuestionDetail[] };
@@ -82,8 +83,9 @@ export type AgentEntry =
     // lands (a slash command that printed nothing has none); `btw` a /btw's side answer
     | { kind: "command"; name: string; args?: string; isSkill?: boolean; shell?: ShellResult; btw?: BtwAnswer }
     | { kind: "compaction"; trigger?: string; preTokens?: number; postTokens?: number; summary?: string }
-    // a background Task/subagent finished (Claude's <task-notification>): summary + optional full result
-    | { kind: "notification"; summary: string; status?: string; result?: string }
+    // a background Task/subagent finished (Claude's <task-notification>): summary + optional full result, and the
+    // tool-use id of the call it names when it carries one
+    | { kind: "notification"; summary: string; status?: string; result?: string; toolUseId?: string }
     // the human interrupted the agent mid-turn ([Request interrupted by user])
     | { kind: "interrupted" }
     | {
@@ -307,7 +309,7 @@ export type TimelineItem =
           index: number;
       }
     | { kind: "compaction"; trigger?: string; preTokens?: number; postTokens?: number; summary?: string; index: number }
-    | { kind: "notification"; summary: string; status?: string; result?: string; index: number }
+    | { kind: "notification"; summary: string; status?: string; result?: string; toolUseId?: string; index: number }
     | { kind: "interrupted"; index: number }
     | { kind: "action"; action: AgentActionEntry; index: number }
     | { kind: "group"; startIndex: number; actions: AgentActionEntry[] }
@@ -391,7 +393,14 @@ export function groupTimeline(entries: AgentEntry[], threshold = CollapseRunThre
                 index: i,
             });
         } else if (e.kind === "notification") {
-            items.push({ kind: "notification", summary: e.summary, status: e.status, result: e.result, index: i });
+            items.push({
+                kind: "notification",
+                summary: e.summary,
+                status: e.status,
+                result: e.result,
+                ...(e.toolUseId != null ? { toolUseId: e.toolUseId } : {}),
+                index: i,
+            });
         } else if (e.kind === "interrupted") {
             items.push({ kind: "interrupted", index: i });
         }

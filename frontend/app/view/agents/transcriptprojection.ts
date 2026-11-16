@@ -213,7 +213,14 @@ function parseTaskNotification(content: string): Extract<AgentEntry, { kind: "no
         return m ? m[1].trim() : undefined;
     };
     const result = grab("result");
-    return { kind: "notification", summary: grab("summary") ?? "", status: grab("status"), ...(result ? { result } : {}) };
+    const toolUseId = grab("tool-use-id");
+    return {
+        kind: "notification",
+        summary: grab("summary") ?? "",
+        status: grab("status"),
+        ...(result ? { result } : {}),
+        ...(toolUseId ? { toolUseId } : {}),
+    };
 }
 
 // Claude Code wraps a compaction summary in text meant for the model: a preamble, a <system-reminder> block that runs
@@ -458,6 +465,9 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     (action as any)._tool = block.name;
                     if (block.name === "Bash" && typeof block.input?.command === "string") {
                         (action as any)._command = block.input.command;
+                        if (block.input.run_in_background === true && typeof block.id === "string") {
+                            (action as any)._bgId = block.id;
+                        }
                     }
                     entries.push(action);
                     if (typeof block.id === "string") {
@@ -568,6 +578,7 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                         command: (action as any)._command,
                         output: body,
                         exit: blocked ? null : block.is_error === true ? 1 : 0,
+                        ...((action as any)._bgId != null ? { bgToolUseId: (action as any)._bgId } : {}),
                     };
                 } else if (action.detail?.kind === "ask" && typeof rec.toolUseResult?.answers === "object") {
                     // the answers ride on the record, keyed by question text; a rejected call carries a string there
@@ -631,6 +642,7 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
             delete (e as any)._useTs;
             delete (e as any)._tool;
             delete (e as any)._command;
+            delete (e as any)._bgId;
         }
     }
     return entries;

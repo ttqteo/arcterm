@@ -7,6 +7,7 @@
 // councilmodel.ts's (the Discussion's own), never a second reading of a council; the cards draw in chatcouncilcard.tsx,
 // the councils are read in chatcouncilstore.ts and the conversation (chatconversation.tsx) places them.
 
+import type { ChatItem } from "./chatmodel";
 import {
     askedParts,
     authorName,
@@ -96,34 +97,87 @@ export function councilEndedOnce(c: Council | null, anchor: CouncilAnchor, seenE
     return anchor.kind === "notrun" || seenEnded || (c != null && (canRemoveCouncil(c) || c.summary != null));
 }
 
-/** Where each council of the conversation draws. `atCall` maps a `councilstart` part's key to the id of the council whose
- *  row draws there (one that ended once); `trailing` is the live councils' ids, oldest call first, for the end of the
- *  conversation. `anchors` are the conversation's `councilstart` parts, `order` growing with the conversation;
- *  `endedOnce` holds the ids `councilEndedOnce` says so of. A council is drawn once: the first call (by `order`) that
- *  names it keeps it. A council the store does not know (null, or missing) draws nothing, except one a not-run line
- *  names: its row is the anchor's own words and needs no council. */
+/** The councils of the conversation, in the order they draw at its end (after its runs), oldest call first: each with
+ *  the anchor of the first call (by `order`) that named it, and `ended` when `endedOnce` holds it, which draws it as its
+ *  ended row instead of the live card. The `wsh council start` call itself stays a tool line in the work, so an ended
+ *  council sits beside the agent's summary of it rather than up at a call made many turns before (2026-11-16).
+ *  `anchors` are the conversation's `councilstart` parts, `order` growing with the conversation. A council is drawn
+ *  once. A council the store does not know (null, or missing) draws nothing, except one a not-run line names: its row is
+ *  the anchor's own words and needs no council, and it is ended. */
 export function placeCouncilCards(i: {
     anchors: readonly { key: string; anchor: CouncilAnchor; order: number }[];
     councils: ReadonlyMap<string, Council | null>;
     endedOnce: ReadonlySet<string>;
-}): { atCall: Map<string, string>; trailing: string[] } {
-    const atCall = new Map<string, string>();
-    const trailing: string[] = [];
+}): { id: string; anchor: CouncilAnchor; ended: boolean }[] {
+    const out: { id: string; anchor: CouncilAnchor; ended: boolean }[] = [];
     const drawn = new Set<string>();
-    for (const { key, anchor } of [...i.anchors].sort((a, b) => a.order - b.order)) {
+    for (const { anchor } of [...i.anchors].sort((a, b) => a.order - b.order)) {
         const id = anchor.councilId;
         const notRun = anchor.kind === "notrun";
         if (drawn.has(id) || (!notRun && i.councils.get(id) == null)) {
             continue;
         }
         drawn.add(id);
-        if (notRun || i.endedOnce.has(id)) {
-            atCall.set(key, id);
-        } else {
-            trailing.push(id);
-        }
+        out.push({ id, anchor, ended: notRun || i.endedOnce.has(id) });
     }
-    return { atCall, trailing };
+    return out;
+}
+
+// ---- the agent's summary of a council ----
+
+// `wsh council wait <id>` or `wsh council show <id>` as a command, read as COUNCIL_START_COMMAND reads a start
+const COUNCIL_REPORT_COMMAND =
+    /(?:^|[\s;&|(])["']?(?:[^\s"';&|()]*[\\/])?wsh(?:\.exe)?["']?\s+council\s+(?:wait|show)\s+["']?([A-Za-z0-9_-]{1,64})/;
+// the first line of a council's report (pkg/council/markdown.go Markdown), which `wait` prints for a done or stopped one
+const REPORT_HEAD = /^# Council: /m;
+
+/** The prose parts that sum a council up, keyed `<item key>#<part index>` (the conversation's own key for a part), each
+ *  with the council's id. A report reaches the agent two ways (skills/council/SKILL.md): a `wsh council wait|show <id>`
+ *  call that printed it, or a `wsh council wait <id>` run in the background whose <task-notification> came back (joined by
+ *  the call's tool-use id). The first prose the agent writes after either is its summary of that council. A wait that
+ *  printed no report (the council waits on you) marks nothing. */
+export function councilSummaries(items: readonly ChatItem[]): Map<string, string> {
+    const out = new Map<string, string>();
+    const background = new Map<string, string>();
+    let pending: string | null = null;
+    for (const item of items) {
+        if (item.kind === "marker") {
+            const m = item.item;
+            if (m.kind === "notification" && m.toolUseId != null && background.has(m.toolUseId)) {
+                pending = background.get(m.toolUseId)!;
+            }
+            continue;
+        }
+        if (item.kind !== "agent") {
+            continue;
+        }
+        item.parts.forEach((part, p) => {
+            if (part.kind === "work") {
+                for (const a of part.work.actions) {
+                    const d = a.detail;
+                    const id = d?.kind === "bash" ? COUNCIL_REPORT_COMMAND.exec(d.command ?? "")?.[1] : undefined;
+                    if (d?.kind !== "bash" || id == null) {
+                        continue;
+                    }
+                    if (d.bgToolUseId != null) {
+                        background.set(d.bgToolUseId, id);
+                    } else if (REPORT_HEAD.test(d.output)) {
+                        pending = id;
+                    }
+                }
+            } else if (part.kind === "prose" && pending != null && part.text.trim() !== "") {
+                out.set(`${item.key}#${p}`, pending);
+                pending = null;
+            }
+        });
+    }
+    return out;
+}
+
+/** Whether a council's summary panel draws: once the council has a report to sum up (a summary, or the rounds a stopped
+ *  or failed council kept). A council waiting on you or still running with no summary has none. */
+export function hasCouncilReport(c: Council | null): boolean {
+    return c != null && (c.summary != null || c.state === "stopped" || c.state === "failed");
 }
 
 // ---- what a card and a row say ----
@@ -304,4 +358,44 @@ export function councilRowView(c: Council | null, anchor: CouncilAnchor, nowMs: 
                 action: "open",
             };
     }
+}
+
+/** What the card of a council that ended once draws at the end of the conversation (the brainstorm's run card's shape):
+ *  `head` the council's word and mode, `tag` where it stands (`Done · 5 directions · 11 min`, `Stopped in round 2`,
+ *  `Failed in round 1`, `Not run`, `Running again`), `title` its feature, and `line` what it came to: a done council's
+ *  one-line answer, else the reason or the step a council running again is at. `end`, `mark` and `action` are the row's
+ *  (`councilRowView`), whose words the tag reuses. */
+export interface CouncilEndedCardView {
+    end: CouncilRowView["end"];
+    mark: CouncilRowView["mark"];
+    head: string;
+    tag: string;
+    title: string;
+    line?: string;
+    action: CouncilRowView["action"];
+}
+
+export function councilEndedCardView(c: Council | null, anchor: CouncilAnchor, nowMs: number): CouncilEndedCardView {
+    const row = councilRowView(c, anchor, nowMs);
+    // the row's head after its first word: "review · 5 directions · 11 min", "stopped in round 2", "not run"
+    const rest = row.head.slice(`${COUNCIL_WORD} · `.length);
+    const tag =
+        row.end === "done"
+            ? ["Done", ...rest.split(" · ").slice(1)].join(" · ")
+            : rest.charAt(0).toUpperCase() + rest.slice(1);
+    return {
+        end: row.end,
+        mark: row.mark,
+        head: c != null ? `${COUNCIL_WORD} · ${modeOf(c)}` : COUNCIL_WORD,
+        tag,
+        title: c?.feature.trim() || UNTITLED_COUNCIL,
+        ...(row.end === "done"
+            ? c?.summary?.answer?.trim()
+                ? { line: oneLine(c.summary.answer) }
+                : {}
+            : row.text != null
+              ? { line: row.text }
+              : {}),
+        action: row.action,
+    };
 }

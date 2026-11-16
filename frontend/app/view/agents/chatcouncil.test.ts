@@ -2,16 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+import type { AgentActionEntry } from "./agentsviewmodel";
 import {
     COUNCIL_WORD,
     councilCardView,
+    councilEndedCardView,
     councilEndedOnce,
     councilRowView,
     councilStartAnchor,
+    councilSummaries,
+    hasCouncilReport,
     placeCouncilCards,
     seatStates,
     type CouncilAnchor,
 } from "./chatcouncil";
+import type { AgentPart, ChatItem } from "./chatmodel";
 import { UNTITLED_COUNCIL } from "./councilmodel";
 
 const ID = "9f3a1c04d27b58e6";
@@ -264,14 +269,13 @@ describe("placeCouncilCards", () => {
     const idAnchor = (n: number): CouncilAnchor => ({ kind: "started", councilId: idOf(n) });
     const none = new Set<string>();
 
-    it("puts a live council at the end of the conversation", () => {
+    it("puts a live council at the end of the conversation as its live card", () => {
         const placed = placeCouncilCards({
             anchors: [at("councilstart:3", 3, started)],
             councils: new Map([[ID, council()]]),
             endedOnce: none,
         });
-        expect(placed.trailing).toEqual([ID]);
-        expect(placed.atCall.size).toBe(0);
+        expect(placed).toEqual([{ id: ID, anchor: started, ended: false }]);
     });
 
     it("puts a queued and a waiting council at the end too", () => {
@@ -283,43 +287,38 @@ describe("placeCouncilCards", () => {
             ]),
             endedOnce: none,
         });
-        expect(placed.trailing).toEqual([ID, idOf(2)]);
+        expect(placed.map((p) => [p.id, p.ended])).toEqual([
+            [ID, false],
+            [idOf(2), false],
+        ]);
     });
 
-    it("puts a council that ended once at its call, and not at the end", () => {
+    it("keeps a council that ended once at the end, as its ended card", () => {
         const placed = placeCouncilCards({
             anchors: [at("councilstart:3", 3, started)],
             councils: new Map([[ID, council({ state: "done" })]]),
             endedOnce: new Set([ID]),
         });
-        expect(placed.atCall).toEqual(new Map([["councilstart:3", ID]]));
-        expect(placed.trailing).toEqual([]);
+        expect(placed).toEqual([{ id: ID, anchor: started, ended: true }]);
     });
 
-    it("keeps a council that runs again after done at its call", () => {
+    it("keeps a council that runs again after done as its ended card", () => {
         const placed = placeCouncilCards({
             anchors: [at("councilstart:3", 3, started)],
             councils: new Map([[ID, council({ state: "running", round: 4, summary: summaryOf(4) })]]),
             endedOnce: new Set([ID]),
         });
-        expect(placed.atCall.get("councilstart:3")).toBe(ID);
-        expect(placed.trailing).toEqual([]);
+        expect(placed).toEqual([{ id: ID, anchor: started, ended: true }]);
     });
 
-    it("draws a council once: the first call that names it keeps it", () => {
+    it("draws a council once, with the anchor of the first call that names it", () => {
+        const later: CouncilAnchor = { kind: "started", councilId: ID };
         const placed = placeCouncilCards({
-            anchors: [at("councilstart:9", 9, started), at("councilstart:3", 3, started)],
+            anchors: [at("councilstart:9", 9, later), at("councilstart:3", 3, started)],
             councils: new Map([[ID, council({ state: "done" })]]),
             endedOnce: new Set([ID]),
         });
-        expect(placed.atCall).toEqual(new Map([["councilstart:3", ID]]));
-        const live = placeCouncilCards({
-            anchors: [at("councilstart:9", 9, started), at("councilstart:3", 3, started)],
-            councils: new Map([[ID, council()]]),
-            endedOnce: none,
-        });
-        expect(live.trailing).toEqual([ID]);
-        expect(live.atCall.size).toBe(0);
+        expect(placed).toEqual([{ id: ID, anchor: started, ended: true }]);
     });
 
     it("draws nothing for a council the store does not know", () => {
@@ -328,27 +327,26 @@ describe("placeCouncilCards", () => {
             councils: new Map<string, Council | null>([[ID, null]]),
             endedOnce: none,
         });
-        expect(placed.atCall.size).toBe(0);
-        expect(placed.trailing).toEqual([]);
+        expect(placed).toEqual([]);
     });
 
-    it("still draws the row of a not-run line whose council the store does not know", () => {
+    it("still draws the ended card of a not-run line whose council the store does not know", () => {
         const placed = placeCouncilCards({
             anchors: [at("councilstart:3", 3, notRun)],
             councils: new Map<string, Council | null>([[ID, null]]),
             endedOnce: none,
         });
-        expect(placed.atCall).toEqual(new Map([["councilstart:3", ID]]));
+        expect(placed).toEqual([{ id: ID, anchor: notRun, ended: true }]);
         // and one the map has no entry for at all
         const unlisted = placeCouncilCards({
             anchors: [at("councilstart:3", 3, notRun)],
             councils: new Map(),
             endedOnce: none,
         });
-        expect(unlisted.atCall.get("councilstart:3")).toBe(ID);
+        expect(unlisted).toEqual([{ id: ID, anchor: notRun, ended: true }]);
     });
 
-    it("orders the end of the conversation by call, oldest first", () => {
+    it("orders the councils by call, oldest first, ended or not", () => {
         const placed = placeCouncilCards({
             anchors: [
                 at("councilstart:9", 9, idAnchor(3)),
@@ -356,26 +354,117 @@ describe("placeCouncilCards", () => {
                 at("councilstart:5", 5, idAnchor(2)),
             ],
             councils: new Map([
-                [idOf(1), council({ id: idOf(1) })],
+                [idOf(1), council({ id: idOf(1), state: "failed" })],
                 [idOf(2), council({ id: idOf(2) })],
                 [idOf(3), council({ id: idOf(3) })],
             ]),
-            endedOnce: none,
-        });
-        expect(placed.trailing).toEqual([idOf(1), idOf(2), idOf(3)]);
-    });
-
-    it("splits the conversation's councils between their calls and the end", () => {
-        const placed = placeCouncilCards({
-            anchors: [at("councilstart:2", 2, idAnchor(1)), at("councilstart:5", 5, idAnchor(2))],
-            councils: new Map([
-                [idOf(1), council({ id: idOf(1), state: "failed" })],
-                [idOf(2), council({ id: idOf(2) })],
-            ]),
             endedOnce: new Set([idOf(1)]),
         });
-        expect(placed.atCall).toEqual(new Map([["councilstart:2", idOf(1)]]));
-        expect(placed.trailing).toEqual([idOf(2)]);
+        expect(placed.map((p) => [p.id, p.ended])).toEqual([
+            [idOf(1), true],
+            [idOf(2), false],
+            [idOf(3), false],
+        ]);
+    });
+});
+
+describe("councilSummaries", () => {
+    const REPORT = `# Council: Spec: council and Doc review in Chat\n\n**Keep the card.**\n`;
+    const bash = (command: string, output: string, bgToolUseId?: string): AgentActionEntry => ({
+        kind: "action",
+        verb: "bash",
+        target: "Wait for the council",
+        detail: { kind: "bash", command, output, exit: 0, ...(bgToolUseId != null ? { bgToolUseId } : {}) },
+    });
+    const work = (...actions: AgentActionEntry[]): AgentPart => ({
+        kind: "work",
+        work: { kind: "work", startIndex: 0, actions, durationMs: 0, failed: 0, files: [], adds: 0, dels: 0 },
+    });
+    const prose = (text: string): AgentPart => ({ kind: "prose", text });
+    const agentItem = (key: string, ...parts: AgentPart[]): ChatItem => ({ kind: "agent", key, parts });
+    const note = (key: string, toolUseId?: string): ChatItem => ({
+        kind: "marker",
+        key,
+        item: {
+            kind: "notification",
+            summary: "Background command completed",
+            status: "completed",
+            index: 0,
+            ...(toolUseId != null ? { toolUseId } : {}),
+        },
+    });
+
+    it("marks the first prose after a wait that printed the report", () => {
+        const items = [
+            agentItem(
+                "agent:1",
+                prose("Starting it."),
+                work(bash(`wsh council wait ${ID}`, REPORT)),
+                prose("The council says…"),
+                prose("Next")
+            ),
+        ];
+        expect(councilSummaries(items)).toEqual(new Map([["agent:1#2", ID]]));
+    });
+
+    it("reads `wsh council show <id>` and a wsh reached through a path the same way", () => {
+        const items = [
+            agentItem("agent:1", work(bash(`cd /d/x && ~/.arc/bin/wsh council show ${ID}`, REPORT)), prose("Summary")),
+        ];
+        expect(councilSummaries(items)).toEqual(new Map([["agent:1#1", ID]]));
+    });
+
+    it("marks the first prose after the notification of a background wait, in a later item", () => {
+        const items = [
+            agentItem(
+                "agent:1",
+                work(
+                    bash(`wsh council wait ${ID} --timeout 0`, "Command running in background with ID: b1", "toolu_w")
+                ),
+                prose("While it runs, I look at the oracle.")
+            ),
+            note("marker:5", "toolu_w"),
+            agentItem("agent:6", work(bash("cat report.md", "x")), prose("Council done. It keeps the re-grade.")),
+        ];
+        expect(councilSummaries(items)).toEqual(new Map([["agent:6#1", ID]]));
+    });
+
+    it("marks nothing for a notification of another task, or a wait that printed no report", () => {
+        const items = [
+            agentItem("agent:1", work(bash(`wsh council wait ${ID} --timeout 0`, "running", "toolu_w"))),
+            note("marker:2", "toolu_other"),
+            note("marker:3"),
+            agentItem("agent:4", prose("Something else.")),
+            agentItem(
+                "agent:5",
+                work(bash(`wsh council wait ${ID}`, `council ${ID} is waiting on you: it paused after round 1.`)),
+                prose("It waits on you.")
+            ),
+        ];
+        expect(councilSummaries(items).size).toBe(0);
+    });
+
+    it("skips an empty prose and ignores a start call", () => {
+        const items = [
+            agentItem(
+                "agent:1",
+                work(bash(`wsh council start --feature x`, STARTED), bash(`wsh council wait ${ID}`, REPORT)),
+                prose("  "),
+                prose("Summary")
+            ),
+        ];
+        expect(councilSummaries(items)).toEqual(new Map([["agent:1#2", ID]]));
+    });
+});
+
+describe("hasCouncilReport", () => {
+    it("is true once a council has a summary, or kept rounds after a stop or a failure", () => {
+        expect(hasCouncilReport(council({ state: "done", summary: summaryOf(2) }))).toBe(true);
+        expect(hasCouncilReport(council({ state: "running", round: 4, summary: summaryOf(2) }))).toBe(true);
+        expect(hasCouncilReport(council({ state: "stopped", round: 2 }))).toBe(true);
+        expect(hasCouncilReport(council({ state: "failed", round: 1 }))).toBe(true);
+        expect(hasCouncilReport(council({ state: "awaiting-you", round: 1 }))).toBe(false);
+        expect(hasCouncilReport(null)).toBe(false);
     });
 });
 
@@ -636,5 +725,79 @@ describe("councilRowView", () => {
         expect(councilCardView(council({ state: "running", round: 1, rounds: 3 }), started, null, now).head).toBe(
             `${COUNCIL_WORD} · review`
         );
+    });
+});
+
+describe("councilEndedCardView", () => {
+    const now = STARTED_AT + 99 * MIN;
+    const ended = { runstarted: undefined };
+
+    it("reads a done council: the mode in the head, Done with the count and time in the tag, the answer as its line", () => {
+        const c = council({
+            state: "done",
+            round: 4,
+            ranms: 6 * MIN + 40_000,
+            ...ended,
+            summary: { ...summaryOf(4), answer: "Keep the card;\n  drop the row." },
+        });
+        expect(councilEndedCardView(c, started, now)).toEqual({
+            end: "done",
+            mark: "✓",
+            head: "Council · review",
+            tag: "Done · 4 directions · 6 min 40 s",
+            title: "Spec: council and Doc review in Chat",
+            line: "Keep the card; drop the row.",
+            action: "report",
+        });
+    });
+
+    it("leaves the line out of a done council with no answer", () => {
+        const c = council({ state: "done", ranms: 4 * MIN, ...ended, summary: summaryOf(2) });
+        expect(councilEndedCardView(c, started, now).line).toBeUndefined();
+    });
+
+    it("reads a stopped, a failed and a not-run council with the reason as the line and Open council", () => {
+        const stopped = councilEndedCardView(
+            council({ state: "stopped", round: 2, error: "Stopped by you", ...ended }),
+            started,
+            now
+        );
+        expect(stopped).toMatchObject({
+            end: "stopped",
+            mark: "■",
+            tag: "Stopped in round 2",
+            line: "Stopped by you",
+            action: "open",
+        });
+        const failed = councilEndedCardView(
+            council({ state: "failed", round: 1, error: "No expert answered" }),
+            started,
+            now
+        );
+        expect(failed).toMatchObject({
+            end: "failed",
+            mark: "!",
+            tag: "Failed in round 1",
+            line: "No expert answered",
+        });
+        const unknown = councilEndedCardView(null, notRun, now);
+        expect(unknown).toMatchObject({
+            end: "not-run",
+            mark: "–",
+            head: "Council",
+            tag: "Not run",
+            title: UNTITLED_COUNCIL,
+        });
+        expect(unknown.line).toContain("the person chose not to start a council now");
+    });
+
+    it("reads a council running again with its step as the line", () => {
+        const again = councilEndedCardView(
+            council({ state: "running", round: 1, rounds: 3, summary: summaryOf(2) }),
+            started,
+            now
+        );
+        expect(again).toMatchObject({ end: "running", mark: "working", tag: "Running again", action: "open" });
+        expect(again.line).toBeTruthy();
     });
 });
