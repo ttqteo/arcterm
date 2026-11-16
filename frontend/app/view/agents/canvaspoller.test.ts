@@ -99,7 +99,10 @@ describe("pollCanvasOnce", () => {
         expect(await pollCanvasOnce(state(), io, NOW)).toEqual({
             base: BASE,
             status: "ready",
-            boards: BOARDS_TWO,
+            boards: [
+                { ...BOARDS_TWO[0], modifiedMs: 1000 },
+                { ...BOARDS_TWO[1], modifiedMs: 3000 },
+            ],
             lastModifiedMs: 3000,
             lastViewedMs: NOW,
         });
@@ -120,7 +123,7 @@ describe("pollCanvasOnce", () => {
         expect(await pollCanvasOnce(state({ base: BASE }), io, NOW)).toEqual({
             base: BASE,
             status: "ready",
-            boards: [{ name: "Main.dc.html", x: 0, y: 0, w: 1440, h: 900 }],
+            boards: [{ name: "Main.dc.html", x: 0, y: 0, w: 1440, h: 900, modifiedMs: 1000 }],
             lastModifiedMs: 1000,
             lastViewedMs: NOW,
         });

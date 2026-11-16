@@ -92,7 +92,16 @@ export function StateTag({ state }: { state: CardState }) {
     );
 }
 
-export type CardKind = "question" | "confirm" | "check" | "run" | "verdict" | "handoff" | "council" | "docreview";
+export type CardKind =
+    | "question"
+    | "confirm"
+    | "check"
+    | "run"
+    | "verdict"
+    | "handoff"
+    | "council"
+    | "docreview"
+    | "canvaspick";
 
 // true inside a CardSlot once it has drawn its first card (CardShell's enter is then the slot's height spring)
 const SlotSettled = createContext(false);
@@ -538,9 +547,10 @@ export function TickBox({
     );
 }
 
-/** The lettered option rows of a question (the talk question's and the builder's): one button per option that sends its
- *  label through `onSend`, the `pick` row marked with `pickLabel`. `tick` puts a box before a row, for a question that
- *  takes more than one option. */
+/** The lettered option rows of a question (the talk question's, the builder's and the canvas quick pick's): one button
+ *  per option that sends its label and index through `onSend`, the `pick` row marked with `pickLabel`. `tick` puts a box
+ *  before a row, for a question that takes more than one option; `trail` a control after it (the quick pick's open
+ *  board). `letters` are the rows' own letters when they are not A, B, C… in order. */
 export function OptionRows({
     options,
     pick,
@@ -548,13 +558,17 @@ export function OptionRows({
     disabled,
     onSend,
     tick,
+    trail,
+    letters,
 }: {
     options: readonly AnswerOption[];
     pick: number | null;
     pickLabel: string;
     disabled: boolean;
-    onSend: (text: string) => void;
+    onSend: (text: string, i: number) => void;
     tick?: (i: number) => ReactNode;
+    trail?: (i: number) => ReactNode;
+    letters?: readonly string[];
 }) {
     return (
         <div role="group" aria-label="Answers" className="flex flex-col gap-[6px]">
@@ -568,10 +582,10 @@ export function OptionRows({
                             data-chat-bscard-option={i}
                             data-pick={picked ? "" : undefined}
                             disabled={disabled}
-                            onClick={() => onSend(o.label)}
+                            onClick={() => onSend(o.label, i)}
                             className="flex min-w-0 flex-1 cursor-pointer items-center gap-[12px] border-0 bg-transparent px-[12px] py-[9px] text-left outline-none disabled:cursor-default"
                         >
-                            <span className={LETTER}>{optionLetter(i)}</span>
+                            <span className={LETTER}>{letters?.[i] ?? optionLetter(i)}</span>
                             <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
                                 <span className="text-[13.5px] font-semibold leading-[1.4] text-primary">
                                     {o.label}
@@ -586,6 +600,7 @@ export function OptionRows({
                                 </span>
                             ) : null}
                         </button>
+                        {trail?.(i)}
                     </div>
                 );
             })}

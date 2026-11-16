@@ -53,7 +53,12 @@ async function readServer(s: CanvasState, io: CanvasIO, base: string): Promise<S
         return null;
     }
     const lastModifiedMs = heads.reduce((m, h) => newest(m, h.lastModified), res.lastModified);
-    return { boards, lastModifiedMs };
+    // each board keeps its own time too: the quick pick card takes the newer of two boards with one letter
+    const dated = boards.map((b, i) => {
+        const ms = heads[i].lastModified;
+        return ms == null ? b : { ...b, modifiedMs: ms };
+    });
+    return { boards: dated, lastModifiedMs };
 }
 
 export async function pollCanvasOnce(s: CanvasState, io: CanvasIO, now: number): Promise<Partial<CanvasState>> {
