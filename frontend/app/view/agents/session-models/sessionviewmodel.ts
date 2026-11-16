@@ -103,7 +103,7 @@ export interface SessionInput {
     title?: string; // agent ai-title (task summary): auto label between customLabel and agent
     projectLabel?: string; // launch-time project name: a non-sticky default below title, above the agent name
     runORef?: string; // jarvis:runoref, stamped on a run's lead and worker tabs at spawn
-    effortORef?: string; // session:effort, the initiative the session was launched from or last touched
+    effortORef?: string; // session:effort, the initiative the session was launched from or picked, else the first it touched
     brainstormFile?: string; // session:brainstorm, the attached brainstorm.json's absolute path
     builderCheck?: BuilderCheckRecord; // brainstorm:check*, Arc's record of the brainstorm's builder check
     brainstormJudge?: BuilderCheckRecord; // brainstorm:judge*, Arc's record of the brainstorm's judge

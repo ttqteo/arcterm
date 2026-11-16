@@ -174,10 +174,12 @@ func (ws *WshServer) EffortGetCommand(ctx context.Context, data wshrpc.CommandEf
 	return &wshrpc.CommandEffortGetRtnData{Effort: e}, nil
 }
 
-// linkSessionToEffort records on an agent session's tab the initiative it is working on: the one it last
-// read or wrote through `wsh effort`. The Brief reads the link to send you to an open session instead of
-// starting a second one. A run's worker is left alone — its run owns it. Best effort: a failed link must not
-// fail the read or write that caused it.
+// linkSessionToEffort records on an agent session's tab the initiative it is working on: the first one it
+// read or wrote through `wsh effort`, unless the tab already names one. A tab keeps the initiative it was
+// launched for (Work on) or picked in the header: an agent on one initiative often reads another it depends
+// on, and that read used to take the session over. The Brief reads the link to send you to an open session
+// instead of starting a second one. A run's worker is left alone — its run owns it. Best effort: a failed
+// link must not fail the read or write that caused it.
 func linkSessionToEffort(ctx context.Context, sourceBlock string, effortOID string) {
 	if sourceBlock == "" {
 		return
@@ -195,6 +197,10 @@ func linkSessionToEffort(ctx context.Context, sourceBlock string, effortOID stri
 		return
 	}
 	if _, _, ok := ownerRunForBlock(ctx, sourceBlock); ok {
+		return
+	}
+	cur, err := wstore.DBMustGet[*waveobj.Tab](ctx, tab.OID)
+	if err != nil || cur.Meta.GetString(waveobj.MetaKey_SessionEffort, "") != "" {
 		return
 	}
 	meta := waveobj.MetaMapType{waveobj.MetaKey_SessionEffort: "effort:" + effortOID}
