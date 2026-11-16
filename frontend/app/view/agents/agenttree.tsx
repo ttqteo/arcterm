@@ -289,7 +289,7 @@ import {
 import { useChristmasDecor } from "./christmasstore";
 import { canSleep } from "./consumers";
 import { LandLine } from "./landprogressview";
-import { dagProgressLabel, finishedRunLabel, runComplete, runStatusView } from "./runmodel";
+import { dagProgressLabel, finishedRunLabel, runComplete, runStatusView, splitProgressText } from "./runmodel";
 import { openRunDag } from "./runrailsections";
 import { runStage, type StageTone } from "./runstage";
 import { FINAL_FILL, PIP_FILL, SEG_FILL, taskStrip, taskStripLabel } from "./runstrip";
@@ -1050,6 +1050,7 @@ function RunSubline({
         leadless ?? false,
         run.land?.state === "queued" ? Object.values(lineageRuns) : undefined
     );
+    const progressParts = splitProgressText(progress.text);
     return (
         <>
             {/* @container: a narrow line keeps the chip's count and drops its word, so the progress is not cut */}
@@ -1073,12 +1074,14 @@ function RunSubline({
                 ) : runStage(run).key === "landing" && run.land?.state === "pending" ? (
                     <LandLine model={model} run={run} className={PROGRESS_TEXT[runStage(run).tone]} />
                 ) : (
+                    // the stage word gives way first: a queue tag or a long note may cut "Working", never "2/6"
                     <span
                         data-run-paused={paused ? "" : undefined}
-                        className={cn("truncate", PROGRESS_TEXT[runStage(run).tone])}
+                        className={cn("flex min-w-0 whitespace-nowrap", PROGRESS_TEXT[runStage(run).tone])}
                         title={progress.title}
                     >
-                        {progress.text}
+                        <span className="min-w-0 truncate">{progressParts.head}</span>
+                        {progressParts.tail ? <span className="flex-none">{progressParts.tail}</span> : null}
                     </span>
                 )}
                 {note}
