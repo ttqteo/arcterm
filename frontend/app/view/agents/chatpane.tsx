@@ -34,17 +34,20 @@ import { canStop } from "./agentcomposer";
 import { getProcExitAtom } from "./agentcontrollerstore";
 import { agentDiffScope, openDiff } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
-import { submitToAgent } from "./agentsubmit";
+import { sendToAgent, submitToAgent } from "./agentsubmit";
 import { askSentKey, type AgentEntry, type AgentVM } from "./agentsviewmodel";
 import { answerAgentAsk } from "./askanswer";
 import { builderCheckView, procExited, type BuilderCheckView } from "./brainstormmodel";
 import { brainstormAtom, brainstormSeenAtom, shownBrainstormFile } from "./brainstormstore";
+import { canvasStateAtom } from "./canvasstore";
 import { AskRow } from "./channelsprimitives";
 import { ChatBand } from "./chatband";
 import { boxPlaceholder, type BoxState } from "./chatboxstate";
 import { brainstormCard } from "./chatbrainstorm";
 import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstormstore";
 import { boxAnswerRecord, boxPlaceholderOverride } from "./chatbrainstormwire";
+import { canvasPick } from "./chatcanvaspick";
+import { ChatCanvasPickCard } from "./chatcanvaspickcard";
 import { ChatComposer } from "./chatcomposer";
 import { BtwCard, ChatConversation, youBubbleBox } from "./chatconversation";
 import { isDocReviewAsk } from "./chatdocreview";
@@ -710,6 +713,23 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const recent = useMemo(() => recentPrompts(entries), [entries]);
     const question = useMemo(() => reply != null && endsWithQuestion(reply), [reply]);
     const questionWaits = boxPlaceholderOverride(card) != null;
+    // The quick pick card (chatcanvaspick.ts): the option boards of the canvas this app opened for the agent in focus,
+    // when its last reply asks you to choose between them. While it shows, the model's guessed chips ("A đi") give way
+    // to it, and no call is made for them. `pickSent` is the reply a row was sent for, which hides the card at once.
+    const canvas = useAtomValue(canvasStateAtom(agent.id));
+    const [pickSent, setPickSent] = useState<string | null>(null);
+    const pick = useMemo(
+        () =>
+            canvasPick({
+                reply,
+                idle: agent.state === "idle" && !asleep && !exited && agent.blockId != null,
+                focused: focusId === agent.id,
+                brainstorm: brainstormState != null,
+                boards: canvas != null && canvas.status !== "removed" ? canvas.boards : null,
+                sent: pickSent,
+            }),
+        [reply, agent.state, asleep, exited, agent.blockId, focusId, agent.id, brainstormState, canvas, pickSent]
+    );
     const turnKey = useMemo(() => (reply != null ? suggestKey(agent.id, reply) : null), [agent.id, reply]);
     const modelSuggest = useModelSuggest(turnKey);
     // asleep the turn is over too (one read of the transcript holds its reply), so its chips show and a pick wakes it
@@ -717,7 +737,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
         reply,
         idle: agent.state === "idle" || asleep,
         asking,
-        questionWaits,
+        questionWaits: questionWaits || pick != null,
         pending: showsPending,
     };
     const askModel = wantsModelSuggest({ ...turnOpen, seen: focusId === agent.id && surface === "agent" });
@@ -901,6 +921,20 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                         ))}
                         {/* the `!` commands run while the agent slept, until a message carries them */}
                         <SleepRunRows agent={agent} entries={entries} />
+                        <AnimatePresence initial={false}>
+                            {pick != null && reply != null ? (
+                                <ChatCanvasPickCard
+                                    key={`pick:${reply.length}`}
+                                    agent={agent}
+                                    pick={pick}
+                                    send={(line) => sendToAgent(agent.blockId!, `${line}\r`)}
+                                    onSent={() => {
+                                        setPickSent(reply);
+                                        jumpToBottom();
+                                    }}
+                                />
+                            ) : null}
+                        </AnimatePresence>
                         {error != null && view != null ? (
                             <div data-chat-error role="alert" className="text-[12px] leading-[1.5] text-error">
                                 Could not read the transcript: {error}

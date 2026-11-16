@@ -16,8 +16,17 @@ const BOARD_EXT = ".dc.html";
 export const ALL_TAB = "all";
 const MAIN_BOARD = "Main.dc.html";
 
-// x/y/w/h are the board's frame on the canvas, in CSS px, as canvas.json lays it out
-export type CanvasBoard = { name: string; x: number; y: number; w: number; h: number; title?: string };
+// x/y/w/h are the board's frame on the canvas, in CSS px, as canvas.json lays it out; modifiedMs is the board file's
+// Last-Modified as the poller last read it (absent until it has, or when the server sent none)
+export type CanvasBoard = {
+    name: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    title?: string;
+    modifiedMs?: number;
+};
 
 const MAIN_FALLBACK: CanvasBoard = { name: MAIN_BOARD, x: 0, y: 0, w: DEFAULT_BOARD_W, h: DEFAULT_BOARD_H };
 

@@ -31,6 +31,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- When an agent drew option boards in its Canvas and asks you to pick one, Chat ends with a card: one row per board
+  (A, B, C… with the board's title) that sends your pick in one click, a button to open each board, and Compare in
+  Canvas.
 - Ask Jarvis now starts at No folder: ask a question and it answers in the popover, or give it a job and Jarvis hands
   it to the right project's agent, opens a new one there, or asks you which project when it is unsure. The agent that
   got the job says which project Jarvis chose, with a Wrong project? button to move the job on.
