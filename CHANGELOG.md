@@ -56,6 +56,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Changed
 
 - The Reply button over text you select in Chat now sits above the selection instead of over the words after it.
+- The agent's session card in the right rail no longer shows a Tools row counting each kind of tool call.
 - The command palette's New run and New agent rows, and its Quick and Orchestrate rows, now say they open the New
   dialog, not the New run or New agent window it replaced.
 - Jarvis's peek no longer shows the pin button while Jarvis is the hologram, which never walks off; Sprout and the

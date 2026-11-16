@@ -1,14 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure: what the Agent details rail says in its context row, its state line and action, its tool chips, its files
-// summary and the worktree line under its branch. No React.
+// Pure: what the Agent details rail says in its context row, its state line and action, its files summary and the
+// worktree line under its branch. No React.
 
 import { usageLevel, type AgentVM } from "./agentsviewmodel";
 import type { ShownState } from "./bgactivity";
-
-// a tool used this few times reads dimmer, so the verbs doing the work stand out
-const TOOL_DIM_AT = 3;
 
 function tokensLabel(n: number): string {
     if (n >= 1_000_000) {
@@ -110,10 +107,6 @@ export function railStatusLine(o: { state: ShownState; age: string; ended: boole
     }
     const base = `${o.state} ${o.age}`;
     return o.cache === "—" ? base : `${base} · cache ${o.cache}`;
-}
-
-export function toolChips(byVerb: { verb: string; count: number }[]): { verb: string; count: number; dim: boolean }[] {
-    return [...byVerb].sort((a, b) => b.count - a.count).map((t) => ({ ...t, dim: t.count <= TOOL_DIM_AT }));
 }
 
 export function filesSummary(files: { adds: number; dels: number }[]): string {

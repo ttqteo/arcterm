@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The rail's session card has no Tools row.** The dev app was down when it was made, so
+  `task verify:ui -- agent-subagents-background` never ran on it (its step 4 now checks there is no row). Open an
+  agent that has run tools → the right rail's session card shows project, model, branch and the state line, with no
+  `ran ×N` chips. `agentdetailsrail.tsx`.
 - [ ] (arcterm) Ask Jarvis at No folder with a real consult (claude): a question is answered in the popover; a job
   naming a project reaches its open agent as your own prompt (no "Not typed by the user" header), a sleeping one wakes;
   a job for a project with no agent opens one with the launcher's harness.

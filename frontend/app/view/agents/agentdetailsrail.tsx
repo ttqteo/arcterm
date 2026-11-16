@@ -38,7 +38,6 @@ import {
     railAction,
     railStatusLine,
     shortIds,
-    toolChips,
     worktreeName,
 } from "./agentrailmodel";
 import { RailResizeGrip, RailStats, RailTabStrip, useWideWidth } from "./agentrailpanel";
@@ -55,7 +54,7 @@ import {
 import { openFileInPanel, railPanelsAtom, railTabDefaultAtom, selectRailTab } from "./agentrailstore";
 import { activeFile, fileTabLabel, panelFor, RAIL_OVERVIEW_PX, shownTab, type ResizableTab } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
-import { displayAgeMs, formatAgeShort, recentActions, summarizeActions, type AgentVM } from "./agentsviewmodel";
+import { displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
 import { backgroundActivity, shownState } from "./bgactivity";
 import { agentCacheStatusAtom, formatCacheCountdown, loadCacheStatusForAgent } from "./cachestatusstore";
@@ -72,7 +71,6 @@ import { FileTab } from "./filetab";
 import { finalRowFocusId, isFinalStageId } from "./finalstage";
 import { FinalStageRail } from "./finalstagerail";
 import { capFiles, statusColor } from "./gitstatus";
-import { entriesAtomFor, liveEntriesByIdAtom } from "./livetranscriptatoms";
 import { machineServersReadingAtom } from "./machineserversstore";
 import { prettyModel } from "./modellabel";
 import { PlanReviewSection } from "./planreviewsection";
@@ -657,20 +655,16 @@ function FilesChangedList({
 }
 
 export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
-    const liveEntries = useAtomValue(entriesAtomFor(agent.id));
     const subs = useAtomValue(subagentsByIdAtom)[agent.id] ?? [];
     const bgTasks = useAtomValue(backgroundTasksByIdAtom)[agent.id] ?? [];
     const machineServers = useAtomValue(machineServersReadingAtom).servers;
     const focusSub = useAtomValue(focusSubagentAtom);
     const sub = focusSub?.parentId === agent.id ? focusSub : null;
     const subVM = sub ? subs.find((s) => s.id === sub.agentId) : undefined;
-    const subEntries = useAtomValue(liveEntriesByIdAtom)[sub ? `sub:${sub.agentId}` : ""] ?? [];
-    const entries = sub ? subEntries : liveEntries.length > 0 ? liveEntries : (agent.previousInfo ?? []);
     const lineage = useAtomValue(model.lineageAtom);
     const agents = useAtomValue(model.agentsAtom);
     const usage = agent.usage;
     const ctxPct = usage?.contextpct;
-    const tools = toolChips(summarizeActions(recentActions(entries, 0)).byVerb);
     const railState = useAtomValue(railStateAtom);
     const changesRange = useAtomValue(railChangesRangeAtom);
     // an agent's uploads are keyed by its terminal block (uploadsstore.ts); one with no terminal has none
@@ -1222,22 +1216,6 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                             }
                         />
                     )}
-                    {tools.length > 0 ? (
-                        <div className="flex min-w-0 items-baseline gap-[10px]">
-                            <span className="w-[52px] shrink-0 text-[12px] text-muted">Tools</span>
-                            <div className="flex min-w-0 flex-1 flex-wrap gap-[5px]">
-                                {tools.map((t) => (
-                                    <span
-                                        key={t.verb}
-                                        className="flex items-baseline gap-[4px] rounded-sm border border-edge-mid bg-surface-raised px-[6px] py-[1px] text-[10.5px] font-medium tabular-nums"
-                                    >
-                                        <span className={t.dim ? "text-muted" : "text-secondary"}>{t.verb}</span>
-                                        <span className="text-muted">×{t.count}</span>
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    ) : null}
                 </div>
             </SessionSection>
         ),

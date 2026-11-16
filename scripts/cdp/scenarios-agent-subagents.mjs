@@ -239,7 +239,7 @@ export default function (kit) {
                         JSON.stringify({ plan: rail3, explore: exploreRail3 })
                     );
 
-                    // 4. a child's interior and the rail's Tools leave out its SubagentHandback call
+                    // 4. a child's interior leaves out its SubagentHandback call, and the rail has no Tools row (removed)
                     await agentPage(
                         h,
                         `const S = await mod("app/view/agents/subagentsstore.ts");
@@ -253,18 +253,17 @@ export default function (kit) {
                     );
                     await polishWaitFor(
                         h,
-                        `${flatOf(INTERIOR)}.includes(${JSON.stringify(EXPLORE.read)}) && ${flatOf(RAIL)}.includes("Tools")`,
+                        `${flatOf(INTERIOR)}.includes(${JSON.stringify(EXPLORE.read)})`,
                         LOAD_WAIT_MS
                     );
                     const interior = await h.ev(flatOf(INTERIOR));
                     const rail4 = await h.ev(flatOf(RAIL));
                     await h.shot("cdp-shots/agent-subagents-background-4-interior.png");
                     rec(
-                        "4. the Explore subagent's interior and the rail's Tools list its Read and leave out the SubagentHandback call",
+                        "4. the Explore subagent's interior lists its Read and leaves out the SubagentHandback call; the rail has no Tools row",
                         interior.includes(EXPLORE.read) &&
                             !interior.toLowerCase().includes(HANDBACK) &&
-                            rail4.includes("Tools") &&
-                            /read\s*×1/.test(rail4) &&
+                            !rail4.includes("Tools") &&
                             !rail4.toLowerCase().includes(HANDBACK),
                         JSON.stringify({ interior: interior.slice(0, 200), rail: rail4.slice(0, 400) })
                     );

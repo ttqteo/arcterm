@@ -14,7 +14,6 @@ import {
     railAction,
     railStatusLine,
     shortIds,
-    toolChips,
     worktreeName,
 } from "./agentrailmodel";
 
@@ -137,20 +136,6 @@ describe("railStatusLine", () => {
 
     it("an ended session says when it ended, with no cache", () => {
         expect(railStatusLine({ state: "idle", age: "3h", ended: true, cache: "12m left" })).toBe("ended 3h ago");
-    });
-});
-
-describe("toolChips", () => {
-    it("sorts by use and dims the rarely used", () => {
-        expect(
-            toolChips([
-                { verb: "Edit", count: 2 },
-                { verb: "Bash", count: 11 },
-            ])
-        ).toEqual([
-            { verb: "Bash", count: 11, dim: false },
-            { verb: "Edit", count: 2, dim: true },
-        ]);
     });
 });
 
