@@ -934,7 +934,7 @@ const briefSurface = {
 };
 
 // --- brief-dume-line: DUM-E's line in the Brief header ---------------------------------------------------------------
-// docs/superpowers/plans/2026-11-16-dume.md. With dume:enabled on, the header carries a DUM-E line after the fleet line,
+// docs/guide/dume.md. With dume:enabled on, the header carries a DUM-E line after the fleet line,
 // on the same row, and it truncates rather than wraps; with the setting off the line is gone (the setting is the
 // switch). The loop's first tick comes minutes after wavesrv starts, so the line reads `DUM-E · not checked yet`:
 // only the `DUM-E · ` prefix is asserted. Arrange turns the setting on; teardown puts the person's own value back
@@ -52663,7 +52663,7 @@ const settingsRuns = {
 };
 
 // --- settings-dume-toggle: the DUM-E card on Settings > Runs & limits ---------------------------------------------------
-// docs/superpowers/plans/2026-11-16-dume.md. Unset reads off; the toggle writes dume:enabled. Arrange unsets the key and
+// docs/guide/dume.md. Unset reads off; the toggle writes dume:enabled. Arrange unsets the key and
 // teardown puts the person's own value back (null when it was unset), so a person who has DUM-E on keeps it on.
 const DUME_KEY = "dume:enabled";
 const DUME_SWITCH = `document.querySelector('[data-setting-card="dume"] [data-setting-row="dume.enabled"] [role="switch"]')`;
