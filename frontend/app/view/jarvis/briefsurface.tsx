@@ -22,6 +22,7 @@
 import { MOTION, springReveal } from "@/app/element/motiontokens";
 import { usePartMotion } from "@/app/element/springbatch";
 import { contextMenuAtom, ContextMenuModel } from "@/app/store/contextmenu";
+import { getSettingsKeyAtom } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { buildJarvisBindings } from "@/app/store/keybindings/bindings";
 import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindings/listnav";
@@ -101,6 +102,8 @@ import {
     type FaceInput,
     type ListItem,
 } from "./briefcards";
+import { dumeLine } from "./briefdume";
+import { dumeStatusAtom, ensureDumeFeed } from "./briefdumestore";
 import { briefFleet } from "./brieffleet";
 import { filterLaterRows, LATER_CAP, laterDoneKey, laterRows, type LaterRow } from "./briefforlater";
 import { BRIEFING_FIXTURES } from "./briefingfixtures";
@@ -1422,6 +1425,12 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
 
     const fleet = briefFleet(agents);
 
+    // DUM-E's line: the status is wavesrv's, the setting is the switch (read live, so a toggle shows at once)
+    useEffect(() => ensureDumeFeed(), []);
+    const dumeStatus = useAtomValue(dumeStatusAtom);
+    const dumeOn = (useAtomValue(getSettingsKeyAtom("dume:enabled")) as boolean | undefined) ?? false;
+    const dume = dumeLine(dumeStatus, dumeOn);
+
     // The profile modal is open on a project the palette can name, so it lives in jarvisstore. The detail
     // sheet draws the surface's active subject, so what is open lives in the subject store instead.
     const [profileTarget, setProfileTarget] = useAtom(briefProfileAtom);
@@ -1818,6 +1827,15 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 >
                     {fleet.line}
                 </span>
+                {dume != null ? (
+                    <span
+                        data-jarvis-brief-band="dume"
+                        title={dume}
+                        className="min-w-0 max-w-[320px] truncate whitespace-nowrap text-[10.5px] tabular-nums text-ink-mid"
+                    >
+                        {dume}
+                    </span>
+                ) : null}
                 <span className="flex-1" />
                 <label
                     className={cn(

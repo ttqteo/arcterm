@@ -933,6 +933,86 @@ const briefSurface = {
     },
 };
 
+// --- brief-dume-line: DUM-E's line in the Brief header ---------------------------------------------------------------
+// docs/superpowers/plans/2026-11-16-dume.md. With dume:enabled on, the header carries a DUM-E line after the fleet line,
+// on the same row, and it truncates rather than wraps; with the setting off the line is gone (the setting is the
+// switch). The loop's first tick comes minutes after wavesrv starts, so the line reads `DUM-E · not checked yet`:
+// only the `DUM-E · ` prefix is asserted. Arrange turns the setting on; teardown puts the person's own value back
+// (null when it was unset).
+const BDL_KEY = "dume:enabled";
+const BDL_LINE = `document.querySelector('[data-jarvis-brief-band="dume"]')`;
+
+const briefDumeLine = {
+    name: "brief-dume-line",
+    surface: "jarvis",
+    async arrange(h) {
+        const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+        const prev = { [BDL_KEY]: settings[BDL_KEY] ?? null };
+        await srSet(h, { [BDL_KEY]: true });
+        return { prev };
+    },
+    async assert(h) {
+        const steps = [];
+        await briefViewport(h, 1600, 1000);
+        await h.goto("jarvis");
+        await polishWaitFor(h, `!!document.querySelector('[data-jarvis-brief-band="fleet"]')`, 15000);
+
+        // 1. the line is there, after the fleet line on the same row, one line high
+        const shown = await polishWaitFor(h, `${BDL_LINE} != null`, 8000);
+        await polishNap(300);
+        await h.shot("cdp-shots/brief-dume-line.png");
+        const line = await h.ev(`(() => {
+            const d = ${BDL_LINE};
+            const f = document.querySelector('[data-jarvis-brief-band="fleet"]');
+            if (!d || !f) return { dume: !!d, fleet: !!f };
+            const dr = d.getBoundingClientRect();
+            const fr = f.getBoundingClientRect();
+            const cs = getComputedStyle(d);
+            return {
+                text: d.textContent,
+                title: d.getAttribute('title'),
+                sameRow: Math.abs((dr.top + dr.bottom) / 2 - (fr.top + fr.bottom) / 2) < 4,
+                after: dr.left >= fr.right - 0.5,
+                height: Math.round(dr.height),
+                width: Math.round(dr.width),
+                nowrap: cs.whiteSpace === 'nowrap',
+                ellipsis: cs.textOverflow === 'ellipsis',
+            };
+        })()`);
+        steps.push({
+            step: "1. with dume:enabled on, the Brief header has a DUM-E line after the fleet line on one row, truncating rather than wrapping",
+            ok:
+                shown &&
+                typeof line.text === "string" &&
+                line.text.startsWith("DUM-E · ") &&
+                line.title === line.text &&
+                line.sameRow === true &&
+                line.after === true &&
+                line.height > 0 &&
+                line.height < 24 &&
+                line.width <= 320 &&
+                line.nowrap === true &&
+                line.ellipsis === true,
+            detail: JSON.stringify({ shown, ...line }),
+        });
+
+        // 2. the setting is the switch: unset, the line is gone
+        await srSet(h, { [BDL_KEY]: null });
+        const gone = await polishWaitFor(h, `${BDL_LINE} == null`, 5000);
+        steps.push({
+            step: "2. with dume:enabled unset, the line is gone from the header",
+            ok: gone,
+            detail: JSON.stringify({ gone }),
+        });
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.cdp("Emulation.clearDeviceMetricsOverride").catch(() => {});
+        await srSet(h, ctx.prev).catch(() => {});
+        await h.goto("cockpit");
+    },
+};
+
 // --- the redesigned Brief (docs/superpowers/specs/2026-10-12-jarvis-brief-redesign-design.md) ----------------------
 // brief-layout, brief-chunk-panel and brief-run-sheet-order show every view that spec changed. Their shared helpers:
 const briefNap = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -70729,6 +70809,7 @@ export const SCENARIOS = [
     petBubbleDismiss,
     elementPrimitives,
     briefSurface,
+    briefDumeLine,
     briefLayout,
     briefChunkPanel,
     briefRunSheetOrder,
