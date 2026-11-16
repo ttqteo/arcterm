@@ -16,6 +16,9 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A council's discussion has no ↩ Back pill.** Unit tests and typecheck only, no dev app ran
+  (commit "feat(council): drop the Back jump pill from the discussion", 2026-11-16). Open a council with a long discussion, scroll to the middle, click ↑ Top then ↓ Latest →
+  only ↑ and ↓ ever show in the bottom-right corner, each still glides to its end, and j/k still move after a click.
 - [ ] (arcterm) **The pinned bar skips a picture-only message.** Unit tests and typecheck only, no dev app ran. In a
   build with f67013e11, in a Claude agent's Chat send a message, then one that is only a pasted picture, then scroll
   up past both → the pinned bar shows the text message, never "(picture)"; its ↑ and its n/m count step over the

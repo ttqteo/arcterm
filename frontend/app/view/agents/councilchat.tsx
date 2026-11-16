@@ -177,13 +177,8 @@ import {
     glideMs,
     jumpPills,
     ownPosts,
-    readingRow,
-    returnTop,
     revealTop,
-    stillLanded,
     type JumpPills,
-    type Landing,
-    type ReadingPlace,
     type RevealBlock,
     type RowBox,
 } from "./councilscroll";
@@ -3527,48 +3522,27 @@ function scrollerOf(row: Element): HTMLElement | null {
     return null;
 }
 
-// the place a jump saved: the row the reader was on (kept by node, so rows that grew above it do not move the way back)
-type SavedPlace = ReadingPlace & { row: Element | null };
-
-/** The channel's jumps (councilscroll.ts): Top and Latest, and after either, Back to the message the reader was on.
- *  `reset` drops the saved place (another council, another seat filter); `onKeptScroll` is useKeptScroll's, called at
- *  once on a jump so a line that lands before the scroll event does not pull the reader back to the end. Returns the
- *  pills to show, the scroller's onScroll, and the three jumps. */
+/** The channel's jumps (councilscroll.ts): Top and Latest. `reset` re-reads the pills (another council, another seat
+ *  filter); `onKeptScroll` is useKeptScroll's, called at once on a jump so a line that lands before the scroll event
+ *  does not pull the reader back to the end. Returns the pills to show, the scroller's onScroll, and the two jumps. */
 function useChannelJumps(
     boxRef: RefObject<HTMLDivElement | null>,
-    rowsRef: RefObject<HTMLDivElement | null>,
     reset: string,
     count: number,
     onKeptScroll: () => void
 ) {
-    const saved = useRef<SavedPlace | null>(null);
-    const landing = useRef<Landing | null>(null);
     // the glide in flight: its frame, and the scrollTop it last set (a scroll the reader makes moves off it, and stops it)
     const flight = useRef<{ frame: number; at: number } | null>(null);
     const [pills, setPills] = useState<JumpPills>(NO_PILLS);
-    const backTop = useCallback((el: HTMLElement): number | null => {
-        const p = saved.current;
-        if (p == null) {
-            return null;
-        }
-        return returnTop(p, p.row?.isConnected ? contentBox(p.row, el).top : null, el);
-    }, []);
     const sync = useCallback(() => {
         const el = boxRef.current;
         // a hidden scroller has no height: its pills wait until it shows
         if (el == null || el.clientHeight === 0) {
             return;
         }
-        const next = jumpPills(el, backTop(el));
-        // the reader came back to the saved place by hand: nothing left to go back to (a glide leaving it is not that)
-        if (saved.current != null && !next.back && flight.current == null) {
-            saved.current = null;
-            landing.current = null;
-        }
-        setPills((prev) =>
-            prev.top === next.top && prev.latest === next.latest && prev.back === next.back ? prev : next
-        );
-    }, [boxRef, backTop]);
+        const next = jumpPills(el);
+        setPills((prev) => (prev.top === next.top && prev.latest === next.latest ? prev : next));
+    }, [boxRef]);
     const land = useCallback(() => {
         if (flight.current != null) {
             cancelAnimationFrame(flight.current.frame);
@@ -3616,55 +3590,27 @@ function useChannelJumps(
     useEffect(() => land, [land]);
     useEffect(() => {
         land();
-        saved.current = null;
-        landing.current = null;
         sync();
     }, [reset, sync, land]);
     // a new line can take the reader off the end without a scroll
     useEffect(sync, [count, sync]);
     const jump = useCallback(
-        (to: Landing) => {
+        (to: "top" | "latest") => {
             const el = boxRef.current;
             if (el == null) {
                 return;
             }
-            // mid-glide the place the first jump saved still stands (Top then Latest at once goes back to it)
-            if (saved.current == null || (flight.current == null && !stillLanded(landing.current, el))) {
-                const rows = Array.from(rowsRef.current?.children ?? []);
-                const i = readingRow(
-                    rows.map((row) => contentBox(row, el)),
-                    el.scrollTop
-                );
-                saved.current = {
-                    row: i < 0 ? null : rows[i],
-                    offset: i < 0 ? 0 : contentBox(rows[i], el).top - el.scrollTop,
-                    top: el.scrollTop,
-                };
-            }
-            landing.current = to;
             // the pill clicked may go away: the channel keeps focus, and with it j and k
             el.focus({ preventScroll: true });
             glide(el, () => (to === "top" ? 0 : Math.max(0, el.scrollHeight - el.clientHeight)));
         },
-        [boxRef, rowsRef, glide]
+        [boxRef, glide]
     );
-    const back = useCallback(() => {
-        const el = boxRef.current;
-        const p = saved.current;
-        if (el == null || p == null || backTop(el) == null) {
-            return;
-        }
-        saved.current = null;
-        landing.current = null;
-        el.focus({ preventScroll: true });
-        // the row is read again each frame, so lines landing above it meanwhile do not throw the glide off
-        glide(el, () => returnTop(p, p.row?.isConnected ? contentBox(p.row, el).top : null, el));
-    }, [boxRef, backTop, glide]);
     const onScroll = useCallback(() => {
         onKeptScroll();
         sync();
     }, [onKeptScroll, sync]);
-    return { pills, onScroll, toTop: () => jump("top"), toLatest: () => jump("latest"), back };
+    return { pills, onScroll, toTop: () => jump("top"), toLatest: () => jump("latest") };
 }
 
 function JumpPill({
@@ -3696,8 +3642,8 @@ function JumpPill({
     );
 }
 
-// the channel, scrolled to its newest line while the reader is at the bottom of it, and back where they left it; Top,
-// Back and Latest float in its bottom right corner
+// the channel, scrolled to its newest line while the reader is at the bottom of it, and back where they left it; Top
+// and Latest float in its bottom right corner
 function Channel({
     children,
     councilId,
@@ -3713,9 +3659,8 @@ function Channel({
     sent: number; // the person's own posts in it (councilscroll.ownPosts)
     boxRef: RefObject<HTMLDivElement | null>;
 }) {
-    const rowsRef = useRef<HTMLDivElement>(null);
     const onKeptScroll = useKeptScroll(boxRef, `channel:${councilId}`, { follow: true, count, sent });
-    const jumps = useChannelJumps(boxRef, rowsRef, `${councilId}:${view}`, count, onKeptScroll);
+    const jumps = useChannelJumps(boxRef, `${councilId}:${view}`, count, onKeptScroll);
     return (
         <div className="relative flex min-h-0 flex-1 flex-col">
             <div
@@ -3728,21 +3673,11 @@ function Channel({
                 // the gutter is kept with or without a scrollbar, so the column lines up with the composer's below it
                 className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5 outline-none [scrollbar-gutter:stable] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-edge-strong"
             >
-                <div ref={rowsRef} className="mx-auto flex w-full max-w-[860px] flex-col gap-[16px]">
-                    {children}
-                </div>
+                <div className="mx-auto flex w-full max-w-[860px] flex-col gap-[16px]">{children}</div>
             </div>
             <div className="pointer-events-none absolute bottom-3 right-4 z-20 flex items-center gap-[6px]">
                 <JumpPill show={jumps.pills.top} jump="top" label="Jump to the top" onClick={jumps.toTop}>
                     ↑
-                </JumpPill>
-                <JumpPill
-                    show={jumps.pills.back}
-                    jump="back"
-                    label="Back to the message you were reading"
-                    onClick={jumps.back}
-                >
-                    ↩
                 </JumpPill>
                 <JumpPill show={jumps.pills.latest} jump="latest" label="Jump to the latest" onClick={jumps.toLatest}>
                     ↓
