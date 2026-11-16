@@ -66,6 +66,12 @@ describe("landProgress", () => {
             "Command: node scripts/verify.mjs ./pkg/orchestrate",
             `Inspect: wsh runs show ${RUN}`,
         ]);
+        expect(p?.fields.map((f) => [f.label, !!f.code])).toEqual([
+            ["Step", false],
+            ["Command", true],
+            ["Inspect", true],
+        ]);
+        expect(p?.tip).toBe("Landing into main · Verify running 4m 10s\nClick for the details and Copy for an agent");
     });
 
     it("says it waits for RAM, its place and the queue's reason while its job is queued", () => {
@@ -80,6 +86,12 @@ describe("landProgress", () => {
         expect(p?.lines).toContain("Why: needs 3.2 GB, 1.1 GB free");
         expect(p?.lines).toContain("Step: Check, queued for 1m 30s in the heavy-job queue, #1 in line");
         expect(p?.lines).toContain("Job: j1 (Run now in Jobs starts it past the queue)");
+        expect(p?.fields.find((f) => f.label === "Job")).toEqual({
+            label: "Job",
+            value: "j1",
+            code: true,
+            note: "Run now in Jobs starts it past the queue",
+        });
     });
 
     it("says a slot wait apart from a RAM wait", () => {

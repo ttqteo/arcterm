@@ -58,6 +58,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A run's Landing line in the Agent sidebar shows a short tip on hover, and a click opens a tidier card: the step's
+  state with a status dot, the run and the branch it lands into, then labelled rows with the commands as code.
 - In Chat, the ↩ Reply button on selected text now sits diagonally off the selection's top-right corner, clear of
   its words.
 - In the Agent sidebar, a run's second line now starts under its title, lined up with an agent's, instead of under
