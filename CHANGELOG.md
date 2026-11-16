@@ -65,6 +65,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   checkout fail with "index.lock exists".
 - A conversation whose transcript could not be read for a moment (a lock, an antivirus scan) no longer stays missing
   from Conversation History until arcterm restarts.
+- A run that a session started no longer draws its ↰ over the run's count (`0/5`) in a tight sidebar row: the
+  stage word gives way and the count stays whole beside the ↰.
 - If arcterm cannot write its Claude Code mod at launch, the hooks for pi, opencode, agy and Codex are still installed.
 - Bringing your own skills into arcterm treats `review` and `Review` as the same skill, as Windows and macOS do.
 
