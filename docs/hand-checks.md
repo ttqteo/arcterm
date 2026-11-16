@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The run chip's × hides finished runs.** Unit tests and typecheck only, no dev app ran. On an agent
+  whose started runs have all landed (`2 runs` on its tree row and beside its name in the header), hover the chip → a
+  small × shows after it; click it → the chip is gone from both places, and stays gone after a reload. With one run
+  still going, the × hides only the finished one and the chip reads that run's progress. A lead's own `run 1c…` link
+  shows no ×.
 - [ ] (arcterm) **An interrupt keeps Chat's conversation in place.** No dev app ran. In a build with 1b304b177 (it
   reinstalls the arc mod on launch), on Windows, send a Claude agent in Chat a long task and press Esc while it works →
   the conversation stays where it was: no skeleton, no blank, no redraw from the top. Before, it emptied and loaded

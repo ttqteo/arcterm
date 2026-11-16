@@ -124,8 +124,15 @@ import { dockedTerminalAtom } from "./railstore";
 import { renamingRowAtom } from "./rowrenameatom";
 import { cancellingRunIdsAtom, resumePausedRun, resumingRunIdsAtom } from "./runactions";
 import { runEventsAtom } from "./runeventstore";
-import { originLinks, type OriginLink } from "./runorigin";
-import { openOriginLink, openOriginSession, useOriginName, useOriginRuns } from "./runoriginstore";
+import { hideableOriginRuns, originLinks, type OriginLink } from "./runorigin";
+import {
+    hiddenRunIdsAtom,
+    hideStartedRuns,
+    openOriginLink,
+    openOriginSession,
+    useOriginName,
+    useOriginRuns,
+} from "./runoriginstore";
 import {
     isBlockedEntry,
     queuedMeta,
@@ -909,22 +916,51 @@ function OriginFrom({ model, run }: { model: AgentsViewModel; run: Pick<RunInfo,
 // (`3/5`, `queued #2`, `merged`, `2 runs`), the run named in full in its tooltip, since the run's own row says it. A
 // click goes to the run (or its queued row). Its own ink: a sleeping row's dimming leaves it be, as the person may
 // still be talking to that session.
-function OriginChip({ model, link }: { model: AgentsViewModel; link: OriginLink }) {
+// The run chip, and on hover an × that hides its finished runs from it (onHide; absent when none is finished)
+function OriginChip({
+    model,
+    link,
+    onHide,
+    hideCount,
+}: {
+    model: AgentsViewModel;
+    link: OriginLink;
+    onHide?: () => void;
+    hideCount: number;
+}) {
+    const hideLabel = hideCount === 1 ? "Hide the finished run" : `Hide the ${hideCount} finished runs`;
     return (
-        <button
-            type="button"
-            data-origin-link
-            title={link.title}
-            aria-label={link.title}
-            onClick={(e) => {
-                e.stopPropagation();
-                openOriginLink(model, link.target);
-            }}
-            className="flex min-w-0 cursor-pointer items-center gap-[3px] text-muted hover:text-primary"
-        >
-            <Workflow size={11} strokeWidth={1.8} aria-hidden className="flex-none" />
-            {link.label ? <span className="truncate">{link.label}</span> : null}
-        </button>
+        <span className="group/origin flex min-w-0 items-center gap-[3px]">
+            <button
+                type="button"
+                data-origin-link
+                title={link.title}
+                aria-label={link.title}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    openOriginLink(model, link.target);
+                }}
+                className="flex min-w-0 cursor-pointer items-center gap-[3px] text-muted hover:text-primary"
+            >
+                <Workflow size={11} strokeWidth={1.8} aria-hidden className="flex-none" />
+                {link.label ? <span className="truncate">{link.label}</span> : null}
+            </button>
+            {onHide != null ? (
+                <button
+                    type="button"
+                    data-origin-hide
+                    title={hideLabel}
+                    aria-label={hideLabel}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onHide();
+                    }}
+                    className="flex flex-none cursor-pointer items-center rounded-[3px] text-muted opacity-0 hover:text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover/origin:opacity-100"
+                >
+                    <X size={11} strokeWidth={2} aria-hidden />
+                </button>
+            ) : null}
+        </span>
     );
 }
 
@@ -1287,8 +1323,18 @@ function ParentRow({
     const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns, background.length, queue);
     // where the runs and queued plans it started stand: one chip at the head of its meta line
     const originRuns = useOriginRuns(agent, lineageRuns);
-    const originLink = originLinks(agent.id, originRuns, queue);
-    const originChip = originLink != null ? <OriginChip model={model} link={originLink} /> : null;
+    const hiddenRuns = useAtomValue(hiddenRunIdsAtom);
+    const originLink = originLinks(agent.id, originRuns, queue, hiddenRuns);
+    const hideable = hideableOriginRuns(agent.id, originRuns, hiddenRuns);
+    const originChip =
+        originLink != null ? (
+            <OriginChip
+                model={model}
+                link={originLink}
+                onHide={hideable.length > 0 ? () => hideStartedRuns(hideable) : undefined}
+                hideCount={hideable.length}
+            />
+        ) : null;
     // a sleeping row steps back to the faintest ink, so it reads apart from an idle one at a glance; being chosen or
     // holding unread turns brings its name back
     const dim = agent.sleeping != null && !selected;

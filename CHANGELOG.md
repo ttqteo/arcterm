@@ -31,6 +31,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- An agent's run chip (`2 runs` on its tree row and in its header) has an × on hover that hides the runs it started
+  that are over (landed, done, failed or cancelled), so a finished session stops carrying them; a run still going, or
+  one whose land is held, stays. Jarvis and the runs list keep them.
 - When an agent drew option boards in its Canvas and asks you to pick one, Chat ends with a card: one row per board
   (A, B, C… with the board's title) that sends your pick in one click, a button to open each board, and Compare in
   Canvas.
