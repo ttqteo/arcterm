@@ -564,7 +564,48 @@ function christmasOffice(now) {
     ];
 }
 
+// the agent-header scenario's roster (scripts/cdp/scenarios-agent-header.mjs, docs/superpowers/specs/2026-11-16-agent-header-
+// redesign-design.md): one agent per case of the header's board. `links` holds what the scenario made for it: the lead's
+// real run, the worker's run (seeded in the page with a dag that names its task) and the Chat agent's initiative. Without
+// them (`npm run cockpit:fixtures -- agent-header`) the lead and the worker read as plain sessions. The worker sits before
+// the lead, so the run's lineage is built from the worker's dag, which names its task.
+export const AGENT_HEADER_IDS = {
+    plain: "fx-hdr-plain",
+    chat: "fx-hdr-chat",
+    worker: "fx-hdr-worker",
+    lead: "fx-hdr-lead",
+    failed: "fx-hdr-failed",
+};
+export function agentHeader(now, links = {}) {
+    const said = (text) => [{ kind: "message", text }];
+    const blk = (id) => `fx-blk-${id.slice(3)}`;
+    const ctx = (contextpct) => ({ contextpct, contextmax: 200000 });
+    const { plain, chat, worker, lead, failed } = AGENT_HEADER_IDS;
+    return [
+        { id: plain, name: "Pull history and sync", project: "mit-thesis", task: "Pull history and sync", state: "idle", agent: "claude", model: "opus 4.5", usage: ctx(42), idleSince: now - 60_000, blockId: blk(plain), previousInfo: said("Synced the pull history.") },
+        { id: chat, name: "Fix table 4.2 and chapter 5 figures", project: "mit-thesis", task: "Fix table 4.2", state: "working", agent: "claude", model: "sonnet 4.5", usage: ctx(59), activeMs: 240_000, activity: "editing chapter5.tex", blockId: blk(chat), previousInfo: said("Fixing table 4.2."), ...(links.effortId ? { effortId: links.effortId } : {}) },
+        { id: worker, name: "servicesmodel worker", project: "arcterm", task: "Write servicesmodel.ts", state: "working", agent: "claude", model: "sonnet 4.5", usage: ctx(64), activeMs: 120_000, activity: "running the build", blockId: blk(worker), previousInfo: said("Writing servicesmodel.ts."), ...(links.workerRunId ? { runId: links.workerRunId } : {}) },
+        {
+            id: lead,
+            name: "Schedule runs",
+            project: "arcterm",
+            task: "Schedule runs",
+            state: "asking",
+            agent: "claude",
+            model: "opus 4.5",
+            usage: ctx(61),
+            blockedMs: 90_000,
+            blockId: blk(lead),
+            previousInfo: said("Two ways to keep the schedule."),
+            ask: { askId: "fx-hdr-lead-ask", oref: `block:${blk(lead)}`, questions: [{ header: "Store", question: "Where should the schedule live?", options: [{ label: "The run store (Recommended)" }, { label: "A config file" }] }] },
+            ...(links.leadRunId ? { runId: links.leadRunId } : {}),
+        },
+        { id: failed, name: "Check secrets before push", project: "arcterm", task: "Check secrets before push", state: "idle", agent: "claude", startError: "claude: command not found", idleSince: now - 30_000, blockId: blk(failed), previousInfo: [] },
+    ];
+}
+
 export const SCENARIOS = {
+    "agent-header": agentHeader,
     "christmas-office": christmasOffice,
     office,
     "office-controls": officeControls,

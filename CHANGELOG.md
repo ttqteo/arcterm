@@ -50,6 +50,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The agent header reads at a glance: after the name and state come three groups, each with its own icon: the
+  project and its initiative (`/ + initiative` when there is none), one run link (a lead's run, the runs a session
+  started, or a worker's lead; a click opens a menu of this run, where it was started from and the runs it started),
+  and the model with its context. Chat shows the runtime, state, model and context too, and its ◇ initiative opens the
+  band. In a narrow pane the words shorten and Split, Float and Fullscreen move into the More menu.
 - Building the Activity graph's token history in the background, which on a fresh install reads every transcript on
   disk, now uses half your cores, so the machine stays responsive while it runs.
 - The Files tab's filter finds a file by its path once you type a `/` (`results/study/audit_prefill.json`), and a
