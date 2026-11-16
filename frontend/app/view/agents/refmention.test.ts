@@ -40,6 +40,30 @@ describe("agentRefs", () => {
         ]);
         expect(refs[0].detail).toBe("arcterm · claude · idle");
     });
+
+    it("puts the agents of the chat's own project first, each group in roster order", () => {
+        const refs = agentRefs(
+            [
+                agent("aaaa1111-1", "other one", { project: "arcterm" }),
+                agent("self0000-1", "this chat", { project: "mit-thesis" }),
+                agent("bbbb2222-1", "other two", { project: "SIEM" }),
+                agent("cccc3333-1", "same one", { project: "mit-thesis" }),
+                agent("dddd4444-1", "same two", { project: "mit-thesis" }),
+            ],
+            "self0000-1"
+        );
+        expect(refs.map((r) => r.id)).toEqual(["cccc3333-1", "dddd4444-1", "aaaa1111-1", "bbbb2222-1"]);
+        // the cap keeps a same-project agent that sits last in the roster
+        const many = agentRefs(
+            [
+                ...Array.from({ length: 8 }, (_, i) => agent(`a${i}000000`, `task ${i}`, { project: "arcterm" })),
+                agent("self0000-1", "this chat", { project: "mit-thesis" }),
+                agent("b9b1b3ba-1", "Tiềm năng", { project: "mit-thesis" }),
+            ],
+            "self0000-1"
+        );
+        expect(refMatches("agent", many)[0].id).toBe("b9b1b3ba-1");
+    });
 });
 
 describe("runRefs", () => {
@@ -85,6 +109,15 @@ describe("refMatches", () => {
         expect(refMatches("round 3", items).map((r) => r.kind)).toEqual(["run"]);
         // "chat" is a kind word: it lists the agents, not every label that holds it
         expect(refMatches("chat", items).map((r) => r.kind)).toEqual(["agent", "agent"]);
+    });
+
+    it("matches a query written as kind:<id> by the id after the colon", () => {
+        expect(refMatches("agent:5065", items).map((r) => r.id)).toEqual(["5065bd8c-1"]);
+        expect(refMatches("tab:8e33269b", items).map((r) => r.id)).toEqual(["8e33269b-1"]);
+        expect(refMatches("council:0c28170c", items).map((r) => r.id)).toEqual(["0c28170c368b5ab0"]);
+        expect(refMatches("agent:", items).map((r) => r.id)).toEqual(["5065bd8c-1", "8e33269b-1"]);
+        // the id is checked against its kind only
+        expect(refMatches("run:5065", items)).toEqual([]);
     });
 
     it("shows at most REF_MAX_ROWS", () => {
