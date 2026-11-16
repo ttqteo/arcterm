@@ -23,6 +23,12 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) **A tight run line keeps its count.** Unit tests and typecheck only, no dev app ran. In the Agent
   sidebar at 248px, a working run whose tasks wait in the job queue (`≡#3`) with its RAM shown: its second line reads
   `Work… · 2/6` (or `Working · 2/6` when it fits), never `Working · …`; hover the words for the full line.
+- [ ] (arcterm) **A wait on a council or an agent shows no terminal row.** Unit tests and typecheck only, no dev app
+  ran. Have a Claude agent seat itself on a council (`wsh council start --agent self`, which runs
+  `wsh council wait <id> --timeout 0` in the background) → no "Wait for council to finish" row under the agent in the
+  tree and no background line above Chat's box; the council card and its own tree row still show, and the report
+  still comes back when the council ends. The same holds for `wsh agents wait <tab>` run in the background. A build or
+  dev server run in the background still shows as before.
 - [ ] (arcterm) **The run chip's × hides finished runs.** Unit tests and typecheck only, no dev app ran. On an agent
   whose started runs have all landed (`2 runs` on its tree row and beside its name in the header), hover the chip → a
   small × shows after it; click it → the chip is gone from both places, and stays gone after a reload. With one run

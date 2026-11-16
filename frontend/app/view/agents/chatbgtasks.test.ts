@@ -58,6 +58,21 @@ describe("chatBgItems", () => {
         expect(out).toEqual([]);
     });
 
+    it("leaves out a shell that only waits on a council or another agent", () => {
+        const out = items(
+            [
+                task({
+                    toolUseId: "w",
+                    label: "Wait for council to finish",
+                    command: "wsh council wait c1 --timeout 0",
+                }),
+                task({ toolUseId: "b", label: "npm test", command: "npm test" }),
+            ],
+            []
+        );
+        expect(out.map((i) => i.name)).toEqual(["npm test"]);
+    });
+
     it("leaves out a foreground subagent the turn waits on", () => {
         expect(items([], [sub({ async: undefined })])).toEqual([]);
     });

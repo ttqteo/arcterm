@@ -1496,6 +1496,19 @@ describe("backgroundTaskRows", () => {
         expect(backgroundTaskRows([], true, NOW)).toEqual([]);
     });
 
+    it("gives no row to a shell that only waits on a council or another agent", () => {
+        const rows = backgroundTaskRows(
+            [
+                shell("council", { command: "wsh council wait c1 --timeout 0" }),
+                shell("agent", { command: "wsh agents wait 4f2e" }),
+                shell("build", { command: "task check:ts" }),
+            ],
+            true,
+            NOW
+        );
+        expect(rows.map((r) => r.key)).toEqual(["build"]);
+    });
+
     it("lists only the running tasks: an ended or stopped one leaves the tree", () => {
         const rows = backgroundTaskRows(
             [

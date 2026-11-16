@@ -16,6 +16,7 @@ import { finalRowFocusId, finalStageView, type FinalStageView } from "./finalsta
 import {
     backgroundTaskKind,
     backgroundTaskSubline,
+    isWaitShell,
     monitorExpiresAt,
     monitorTimeLeft,
     type BackgroundTaskKind,
@@ -758,7 +759,7 @@ export function tasksShown(n: number, open: boolean | undefined): boolean {
  *  it started them. A task that ended or was stopped leaves the tree, and an agent that is not live (asleep, or with
  *  no terminal block) lists none: its transcript still reads them as running but their process is gone with its own.
  *  A row is a click target when the peek can name it (a task id) and has something to show (a Monitor's Events, or a
- *  shell's output file).
+ *  shell's output file). A shell that only waits on a council or another agent (isWaitShell) gets no row.
  *
  *  A shell task that left a server listening (one of `servers`, the Servers poll's listening processes, was launched
  *  by it) is named by that server and its port: what runs, not the words the agent started it with, which once it
@@ -772,7 +773,9 @@ export function backgroundTaskRows(
     if (!live) {
         return [];
     }
-    return runningBackgroundTasks(tasks).map((task) => {
+    // a wait on a council or another agent gets no row: that council or agent has its own
+    const shown = runningBackgroundTasks(tasks).filter((task) => !isWaitShell(task));
+    return shown.map((task) => {
         const server =
             task.monitor === true
                 ? undefined

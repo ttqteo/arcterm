@@ -10,6 +10,7 @@ import {
     backgroundTaskSubline,
     clampPeekSize,
     clockTime,
+    isWaitShell,
     monitorEventsFooter,
     monitorEventsSummary,
     monitorExpiresAt,
@@ -25,6 +26,26 @@ import {
     peekedTask,
 } from "./monitortasks";
 import type { BackgroundTask } from "./transcriptprojection";
+
+describe("isWaitShell", () => {
+    const shell = (command: string) => ({ command });
+    it("matches the waits on a council or an agent", () => {
+        expect(isWaitShell(shell("wsh council wait c1a2b3 --timeout 0"))).toBe(true);
+        expect(isWaitShell(shell("'C:/Users/me/.arc/bin/wsh.exe' council wait c1a2b3"))).toBe(true);
+        expect(isWaitShell(shell("wsh agents wait 4f2e 2>&1 | tail -1; echo ---; wsh agents read 4f2e"))).toBe(true);
+        expect(isWaitShell(shell('wsh agents send 4f2e "review this" --wait'))).toBe(true);
+        expect(isWaitShell(shell("cd /d/repo && ~/.arc/bin/wsh agents wait 4f2e"))).toBe(true);
+    });
+    it("leaves other background shells, and Monitors, alone", () => {
+        expect(isWaitShell(shell("task check:ts"))).toBe(false);
+        expect(isWaitShell(shell('wsh agents send 4f2e "go"'))).toBe(false);
+        expect(isWaitShell(shell("wsh council start --feature x"))).toBe(false);
+        expect(isWaitShell(shell("npm run dev -- --wait"))).toBe(false);
+        expect(isWaitShell(shell("newsh council wait x"))).toBe(false);
+        expect(isWaitShell({})).toBe(false);
+        expect(isWaitShell({ monitor: true, command: "wsh council wait x" })).toBe(false);
+    });
+});
 
 describe("clampPeekSize", () => {
     it("keeps a size that fits", () => {
