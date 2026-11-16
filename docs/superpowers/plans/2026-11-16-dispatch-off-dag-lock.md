@@ -84,7 +84,7 @@ Where: `dag.go` constants :18-29, `taskStateClass` :35, `taskStates` :51, `slots
 and `factOf`; `docs/guide/orchestrator.md:680` (the `dag skip` row, Vietnamese).
 
 **Acceptance (visible state):** no running-app step lives in this task, because a task only sits in `preparing` once
-Task 2 moves Setup off the lock. Task 2's `dag-preparing` scenario shows this task's UI: the lead card reads working and
+Task 3 moves Setup off the lock. Task 3's `dag-preparing` scenario shows this task's UI: the lead card reads working and
 the dag canvas node reads live, not "next to start".
 
 - [ ] **Step 1: Write the failing tests** in `scheduler_test.go`, with `groupWith` (`scheduler_test.go:10`):
@@ -147,7 +147,7 @@ Expected: Go compile error `undefined: TaskState_Preparing`; the vitest `prepari
   - Preparing row: active false (no process, so no exit event), inFlight true, slot true, review/landing/settled/
     terminal false, cancelTo `TaskState_Cancelled`.
   - `scheduler.go`: `skippable` accepts `TaskState_Preparing`; its comment says the prepare is dropped by the next
-    locked pass (Task 2).
+    locked pass (Task 3).
   - `runlineage.ts`: `TASK_IN_FLIGHT` gains `"preparing"` (a prepare takes 15-60 s and the lead is idle through it).
   - `digest.go` `buildCounts`: `TaskState_Preparing` counts in `Running` with `Running` and `Reviewing`.
   - `workertasksort.ts` `workerBucket`: `"preparing"` returns `"running"` (today it falls through to `"done"`).
@@ -167,9 +167,43 @@ git add pkg/orchestrate/dag.go pkg/orchestrate/scheduler.go pkg/orchestrate/sche
 git commit -m "feat(orchestrate): a preparing task state that holds its slot and lane" -m "Ports the fork's f80ac1ac2 (part of cead8a6fb). Dispatch is moving its tree and Setup out of the dag lock; the task needs a stored state for that span so the cap, its lane, cancel, skip and the cockpit's busy read all see it."
 ```
 
-### Task 2: Prepare the tree outside the lock, spawn in the next pass
+### Task 2: A task action ticks the dag even when the stopped worker's tab will not close
 
-**Depends on:** Task 1
+**Depends on:** none
+**Chunk:** Engine: when a stopped worker's tab fails to close, ApplyAction returns before Schedule, so turned-away ticks wait for the watchdog
+
+**Files:** `pkg/orchestrate/mutation.go`, `pkg/orchestrate/actionlock_test.go`
+
+Where: `mutation.go:249-284` (`ApplyActionBy`, `applyAction`) and `closeWorkerTab` :330; the test goes in
+`actionlock_test.go` beside `TestTaskActionsStopTheWorkerOutsideTheDagLock` (:47), whose setup it reuses.
+
+- [ ] **Step 1: Write the failing test** `TestAnActionWhoseTabWillNotCloseStillTicks`. `closeWorkerTab` calls
+  `closeLeadTab` (`leadclose.go:92`), a plain func: add a seam in `mutation.go`,
+  `var closeStoppedWorkerTab = closeLeadTab`, have `closeWorkerTab` call it, and leave `leadclose.go` untouched. The
+  test stubs the seam to return an error. Dag: t-0 `running` with a worker, t-1 `pending` and independent of t-0,
+  `Parallelism = 1`, so t-0 holds the one slot. Call `ApplyAction(…, "t-0", "stop", …)` once: `stop` is the action
+  that sets `closeTab`, and it records t-0 `failed`, which frees the slot. Expect the action's error to name the tab,
+  and t-1 `running` after that one call (the same call's `Schedule` spawned it; one `Schedule` still returns with a
+  ready task running once Task 3 lands, so the assertion holds either side of it).
+- [ ] **Step 2: Run it to see it fail:** `go test ./pkg/orchestrate -run '^TestAnActionWhoseTabWillNotCloseStillTicks$'`.
+- [ ] **Step 3: Implement.** `applyAction` returns `(recorded bool, err error)`: `recorded` is true once the second
+  `withDagMutation` committed. `ApplyActionBy`:
+
+```go
+	recorded, err := applyAction(ctx, dagID, taskID, action, by, target)
+	if !recorded {
+		return err
+	}
+	// the action is recorded even when its stopped worker's tab would not close: tick for the ticks it turned away
+	return errors.Join(err, Schedule(ctx, dagID))
+```
+
+- [ ] **Step 4: Run it and `-run '^(TestTaskActions|TestAutoRetryStops|TestSkipRewinds|TestSkipDrops)'` to see them pass.**
+- [ ] **Step 5: Commit** `fix(orchestrate): a recorded task action ticks the dag even when the worker's tab will not close`.
+
+### Task 3: Prepare the tree outside the lock, spawn in the next pass
+
+**Depends on:** Task 1, Task 2
 **Chunk:** A dag merge --continue waited 2m37s on the dag lock behind ticks held up by slow git worktree calls (fork 6231b6970, its run 65ce3ef3); the request now survives it, the lock hold itself is unexplained
 
 **Files:** `pkg/orchestrate/treeprep.go`, `pkg/orchestrate/treeprep_test.go`, `pkg/orchestrate/engine.go`, `pkg/orchestrate/mutation.go`, `pkg/orchestrate/mutation_test.go`, `pkg/orchestrate/pause.go`, `pkg/orchestrate/pause_test.go`, `scripts/cdp/scenarios.mjs`, `docs/open-issues.md`, `CHANGELOG.md`
@@ -345,43 +379,6 @@ git commit -m "perf(orchestrate): make a task's tree and Setup outside the dag l
   (the `liveness` phase, longest 3.5 s). Add a `CHANGELOG.md` line under `Fixed`: "A run no longer freezes its other
   workers, merges and your actions for up to a minute while it checks out a task's tree and runs its Setup." Commit
   both with `docs(orchestrate): …`.
-
-### Task 3: A task action ticks the dag even when the stopped worker's tab will not close
-
-**Depends on:** none
-**Chunk:** Engine: when a stopped worker's tab fails to close, ApplyAction returns before Schedule, so turned-away ticks wait for the watchdog
-
-**Files:** `pkg/orchestrate/mutation.go`, `pkg/orchestrate/actionlock_test.go`
-
-Runs beside Task 2: both touch `mutation.go`, but Task 2 only rewrites comments at :172 and :783, and this task's
-hunks are :249-340, so the merges do not overlap.
-
-Where: `mutation.go:249-284` (`ApplyActionBy`, `applyAction`) and `closeWorkerTab` :330; the test goes in
-`actionlock_test.go` beside `TestTaskActionsStopTheWorkerOutsideTheDagLock` (:47), whose setup it reuses.
-
-- [ ] **Step 1: Write the failing test** `TestAnActionWhoseTabWillNotCloseStillTicks`. `closeWorkerTab` calls
-  `closeLeadTab` (`leadclose.go:92`), a plain func: add a seam in `mutation.go`,
-  `var closeStoppedWorkerTab = closeLeadTab`, have `closeWorkerTab` call it, and leave `leadclose.go` untouched. The
-  test stubs the seam to return an error. Dag: t-0 `running` with a worker, t-1 `pending` and independent of t-0,
-  `Parallelism = 1`, so t-0 holds the one slot. Call `ApplyAction(…, "t-0", "stop", …)` once: `stop` is the action
-  that sets `closeTab`, and it records t-0 `failed`, which frees the slot. Expect the action's error to name the tab,
-  and t-1 `running` after that one call (the same call's `Schedule` spawned it; one `Schedule` still returns with a
-  ready task running once Task 2 lands, so the assertion holds either side of it).
-- [ ] **Step 2: Run it to see it fail:** `go test ./pkg/orchestrate -run '^TestAnActionWhoseTabWillNotCloseStillTicks$'`.
-- [ ] **Step 3: Implement.** `applyAction` returns `(recorded bool, err error)`: `recorded` is true once the second
-  `withDagMutation` committed. `ApplyActionBy`:
-
-```go
-	recorded, err := applyAction(ctx, dagID, taskID, action, by, target)
-	if !recorded {
-		return err
-	}
-	// the action is recorded even when its stopped worker's tab would not close: tick for the ticks it turned away
-	return errors.Join(err, Schedule(ctx, dagID))
-```
-
-- [ ] **Step 4: Run it and `-run '^(TestTaskActions|TestAutoRetryStops|TestSkipRewinds|TestSkipDrops)'` to see them pass.**
-- [ ] **Step 5: Commit** `fix(orchestrate): a recorded task action ticks the dag even when the worker's tab will not close`.
 
 ### Task 4: A lead's task action survives its caller's timeout and says so
 
