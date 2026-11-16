@@ -80,7 +80,7 @@ type MetaTSType struct {
 	SessionAgent           string           `json:"session:agent,omitempty"`           // tab
 	SessionLabel           string           `json:"session:label,omitempty"`           // tab (user-set custom name; overrides the agent-derived row label)
 	SessionProject         string           `json:"session:project,omitempty"`         // tab (launch-time project name; roster group + boot label below the ai-title)
-	SessionEffort          string           `json:"session:effort,omitempty"`          // tab ("effort:<oid>": the initiative the session was launched from, or last read or wrote through `wsh effort`)
+	SessionEffort          string           `json:"session:effort,omitempty"`          // tab ("effort:<oid>": the initiative the session was launched from or picked in the header, else the first it read or wrote through `wsh effort`)
 	SessionBrainstorm      string           `json:"session:brainstorm,omitempty"`      // tab (absolute path of the brainstorm.json the session's agent writes)
 	SessionCollapsedGroups []string         `json:"session:collapsedgroups,omitempty"` // workspace
 	SessionLater           map[string]int64 `json:"session:later,omitempty"`           // workspace (session id, its transcript's file stem -> when it was marked for later)

@@ -37,6 +37,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An agent started with Work on stays on the initiative you picked: reading or writing another initiative along the
+  way no longer moves its header and initiative band to that one.
 - The Jarvis hologram no longer turns into the pixel pet for a few seconds after a long day of opening and closing
   terminals: closed and hidden terminals now give their graphics slot back at once instead of holding it.
 - Typing or pasting `@agent:<id>` (or `@run:`, `@council:`) in the chat box now finds that agent, run or council in

@@ -91,8 +91,8 @@ func TestEffortReadFromTheCockpitLinksNothing(t *testing.T) {
 	}
 }
 
-// a session that moves on to another initiative is working on that one now
-func TestEffortLinkFollowsTheMostRecentInitiative(t *testing.T) {
+// a session keeps the first initiative it is linked to: reading another one it depends on does not take it over
+func TestEffortLinkKeepsTheFirstInitiative(t *testing.T) {
 	ws := &WshServer{}
 	first := newLinkEffort(t, ws, "first")
 	second := newLinkEffort(t, ws, "second")
@@ -102,8 +102,37 @@ func TestEffortLinkFollowsTheMostRecentInitiative(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := tabEffort(t, tabID); got != "effort:"+second {
-		t.Fatalf("session:effort = %q, want effort:%s", got, second)
+	if got := tabEffort(t, tabID); got != "effort:"+first {
+		t.Fatalf("session:effort = %q, want effort:%s", got, first)
+	}
+}
+
+// a session launched by Work on (session:effort set on its tab) stays on that initiative when the agent reads
+// or writes another one
+func TestEffortLinkKeepsTheLaunchInitiative(t *testing.T) {
+	ctx := context.Background()
+	ws := &WshServer{}
+	launched := newLinkEffort(t, ws, "launched")
+	other := newLinkEffort(t, ws, "other")
+	tabID, src := sessionTerminal(t)
+	tab, err := wstore.DBMustGet[*waveobj.Tab](ctx, tabID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wstore.UpdateObjectMeta(ctx, waveobj.ORef{OType: waveobj.OType_Tab, OID: tab.OID}, waveobj.MetaMapType{waveobj.MetaKey_SessionEffort: "effort:" + launched}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ws.EffortGetCommand(ctx, wshrpc.CommandEffortGetData{EffortOID: other, SourceBlock: src}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ws.EffortMutateCommand(ctx, wshrpc.CommandEffortMutateData{
+		EffortOID: other, SourceBlock: src,
+		Ops: []wshrpc.EffortOp{{Op: "appendNote", Chunk: "C0", Note: "touched from elsewhere"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := tabEffort(t, tabID); got != "effort:"+launched {
+		t.Fatalf("session:effort = %q, want effort:%s", got, launched)
 	}
 }
 
