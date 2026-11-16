@@ -90,6 +90,12 @@ export class RpcApiType {
         return client.wshRpcCall("agentprompt", data, opts);
     }
 
+    // command "agentsassign" [call]
+    AgentsAssignCommand(client: WshClient, data: CommandAgentsAssignData, opts?: RpcOpts): Promise<CommandAgentsSendRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentsassign", data, opts);
+        return client.wshRpcCall("agentsassign", data, opts);
+    }
+
     // command "agentslist" [call]
     AgentsListCommand(client: WshClient, opts?: RpcOpts): Promise<CommandAgentsListRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentslist", null, opts);
