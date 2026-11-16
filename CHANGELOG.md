@@ -92,6 +92,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A menu with a long row, such as an agent's Started runs list, no longer spreads across the window: the row is cut
+  to one line with an ellipsis and the run's status stays in view; hover a run to read its whole goal.
 - Chat's permission card now answers an agent's claude.ai Artifact prompts (publish, delete), with a line saying what
   it does to which artifact, instead of raw JSON and only Answer in Terminal.
 - Chat no longer suggests a reply that is only an HTML tag, such as `</br>`.

@@ -401,6 +401,8 @@ function RunLinkItem({
                     items.push({
                         label: row.label,
                         sublabel: row.meta,
+                        // the menu cuts a long goal to one line; the whole of it on hover
+                        title: row.label,
                         enabled: target != null,
                         attrs: { "data-run-menu-row": section.head },
                         click:

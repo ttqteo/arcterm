@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A long menu row is cut, not stretched.** No dev app ran. On an agent that started runs with long
+  goals, click `N runs ▾` in its header → the menu is at most ~520px wide, each Started runs row is one line ending in
+  `…` with its status (`done`, `running`) still at the right, and hovering a row shows the whole goal. Other menus
+  (the header's ⋯, a tree row's right-click) look as before.
 - [ ] (arcterm) **The ↩ Reply button sits off the selection's top-right corner.** No dev app ran; CDP `chat-quote`
   step 1 was updated to the new place without a run (`task verify:ui -- chat-quote`). In Chat, select a few lines of a
   reply → the small ↩ sits just up and right of the widest line's end, touching the corner diagonally; a selection

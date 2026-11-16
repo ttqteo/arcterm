@@ -26,7 +26,10 @@ import { PopoverReveal } from "./popoverreveal";
 // the nearest backdrop root, and an element with a backdrop-filter is one: a submenu drawn inside its parent's panel would
 // blur only that panel. So every submenu is drawn beside the root panel instead, in the floating element that holds them all
 // (MenuHost), and each level frosts what is behind it.
-const PANEL = "min-w-[200px] rounded-[8px] border border-edge-strong frost p-1 shadow-popover-md";
+// The width is capped: a row's label is one line, cut with an ellipsis, so a long one (a run's goal) no longer stretches
+// the panel across the window and pushes its sublabel off the edge.
+const PANEL =
+    "min-w-[200px] max-w-[min(520px,calc(100vw-16px))] rounded-[8px] border border-edge-strong frost p-1 shadow-popover-md";
 
 // the menu's floating element (data-context-menu): where a submenu is drawn, as the root panel's sibling
 const MenuHost = createContext<HTMLElement | null>(null);
@@ -207,13 +210,13 @@ function MenuRow({
             onClick={() => (hasSub ? undefined : runClick(item))}
         >
             {hasLead ? <Leading item={item} highlighted={highlighted} danger={danger} /> : null}
-            <span className="flex-1 whitespace-nowrap">{item.label}</span>
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
             {hasSub ? (
                 <ChevronRight size={13} className="ml-auto text-muted" />
             ) : item.accel ? (
                 <KeyCap chord={item.accel} variant="inline" className="ml-auto" />
             ) : item.sublabel ? (
-                <span className="ml-auto font-mono text-[11.5px] text-muted">{item.sublabel}</span>
+                <span className="ml-auto shrink-0 font-mono text-[11.5px] text-muted">{item.sublabel}</span>
             ) : null}
             {submenuOpen && at != null && host != null
                 ? createPortal(
