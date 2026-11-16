@@ -8,6 +8,7 @@ import {
     councilCardView,
     councilEndedCardView,
     councilEndedOnce,
+    councilReports,
     councilRowView,
     councilStartAnchor,
     councilSummaries,
@@ -311,6 +312,46 @@ describe("placeCouncilCards", () => {
         expect(placed).toEqual([{ id: ID, anchor: started, ended: true }]);
     });
 
+    it("keeps a council that is over where its report reached the agent, else at its call", () => {
+        const call = { key: "councilstart:3", item: "agent:2", anchor: started, order: 3 };
+        const done = new Map([[ID, council({ state: "done" })]]);
+        expect(
+            placeCouncilCards({
+                anchors: [call],
+                councils: done,
+                endedOnce: new Set([ID]),
+                reportAt: new Map([[ID, "marker:9"]]),
+            })
+        ).toEqual([{ id: ID, anchor: started, ended: true, at: "marker:9" }]);
+        expect(placeCouncilCards({ anchors: [call], councils: done, endedOnce: new Set([ID]) })).toEqual([
+            { id: ID, anchor: started, ended: true, at: "agent:2" },
+        ]);
+        // a not-run council ended at its call
+        expect(
+            placeCouncilCards({
+                anchors: [{ ...call, anchor: notRun }],
+                councils: new Map<string, Council | null>([[ID, null]]),
+                endedOnce: none,
+            })
+        ).toEqual([{ id: ID, anchor: notRun, ended: true, at: "agent:2" }]);
+    });
+
+    it("keeps a council still going at the end, a live one or one running again after done", () => {
+        const call = { key: "councilstart:3", item: "agent:2", anchor: started, order: 3 };
+        const reportAt = new Map([[ID, "marker:9"]]);
+        expect(
+            placeCouncilCards({ anchors: [call], councils: new Map([[ID, council()]]), endedOnce: none, reportAt })
+        ).toEqual([{ id: ID, anchor: started, ended: false }]);
+        expect(
+            placeCouncilCards({
+                anchors: [call],
+                councils: new Map([[ID, council({ state: "running", round: 4, summary: summaryOf(4) })]]),
+                endedOnce: new Set([ID]),
+                reportAt,
+            })
+        ).toEqual([{ id: ID, anchor: started, ended: true }]);
+    });
+
     it("draws a council once, with the anchor of the first call that names it", () => {
         const later: CouncilAnchor = { kind: "started", councilId: ID };
         const placed = placeCouncilCards({
@@ -412,6 +453,26 @@ describe("councilSummaries", () => {
             agentItem("agent:1", work(bash(`cd /d/x && ~/.arc/bin/wsh council show ${ID}`, REPORT)), prose("Summary")),
         ];
         expect(councilSummaries(items)).toEqual(new Map([["agent:1#1", ID]]));
+    });
+
+    it("names the item each report first reached the agent in: the printing call's, or the notification's", () => {
+        const OTHER = "1b2c3d4e5f607182";
+        const items = [
+            agentItem(
+                "agent:1",
+                work(bash(`wsh council wait ${ID} --timeout 0`, "Command running in background with ID: b1", "toolu_w"))
+            ),
+            agentItem("agent:3", work(bash(`wsh council wait ${OTHER}`, REPORT)), prose("Other sums up.")),
+            note("marker:5", "toolu_w"),
+            agentItem("agent:6", prose("Council done.")),
+            agentItem("agent:8", work(bash(`wsh council show ${ID}`, REPORT)), prose("Again.")),
+        ];
+        expect(councilReports(items).reachedAt).toEqual(
+            new Map([
+                [OTHER, "agent:3"],
+                [ID, "marker:5"],
+            ])
+        );
     });
 
     it("marks the first prose after the notification of a background wait, in a later item", () => {

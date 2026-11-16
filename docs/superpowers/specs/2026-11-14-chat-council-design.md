@@ -81,6 +81,13 @@ Revised 2026-11-16 (board `chat-council/D-summary-panel.dc.html`): the ended row
 an agent starts a council, waits in the background and works on, so its summary came many turns after the call and the
 row sat screens above it. After a compaction nothing near the summary said a council had run.
 
+Revised again 2026-11-16: an ended card that stayed at the end followed every later reply down, so a council done 20
+minutes before sat under the newest answer as if it were news. Once the council is over, its ended card stays where
+it ended: after the item its report reached the agent in (the call that printed it, or the background wait's
+notification), just above the agent's summary; with no report read, after its `wsh council start` call. A council
+still going, or running again after it ended, stays at the end. The runs no call names do the same: their ✓ row stays
+at their `[arc] Run … landed|held` message.
+
 ### 3. When the council ends (revised 2026-11-16; board `D-summary-panel.dc.html`)
 
 - **Done**: the ended card, in the brainstorm run card's shape: `Council · <mode>` with `✓ Done · N directions|ideas ·

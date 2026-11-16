@@ -1,8 +1,9 @@
 // The council the agent started and the Doc review it asks, as cards in Chat
 // (docs/superpowers/specs/2026-11-14-chat-council-design.md, plan 2026-11-14-chat-council.md Task 5).
 // Chat draws a council the agent started with `wsh council start` as a card at the end of the conversation while it runs,
-// waits on you after round 1, or is queued, and as its ended card there once it ended, with the agent's summary of its
-// report in a council panel where it was written; a Doc review ask is a
+// waits on you after round 1, or is queued, and as its ended card where it ended once it is over (after the item its
+// report reached the agent in, else after its call), with the agent's summary of its report in a council panel where it
+// was written; a Doc review ask is a
 // card in the dock while it waits and one row in place once answered. It is written against the plan's DOM contract, not
 // against the components:
 //   council card   [data-chat-bscard-kind="council"][data-chat-council="<id>"][data-chat-council-state="running|awaiting|queued"]
@@ -13,7 +14,8 @@
 //                  [data-chat-council-elapsed], [data-chat-council-estimate], [data-chat-council-queued],
 //                  [data-chat-council-error]
 //   ended card     [data-chat-bscard-kind="council"][data-chat-council-row="<id>"][data-chat-council-end="done|stopped|failed|not-run|running"]
-//                  in a [data-chat-council-tail] wrapper at the end of the conversation, with [data-chat-council-tag] (Done ·
+//                  in a [data-chat-council-in-place] wrapper after the item it ended at (in a [data-chat-council-tail]
+//                  wrapper at the end while it runs again), with [data-chat-council-tag] (Done ·
 //                  4 directions · 11 min), [data-chat-council-title], [data-chat-council-line] (the answer or the reason) and
 //                  [data-chat-council-report] (Open report) or [data-chat-council-open]
 //   summary panel  [data-chat-council-summary="<id>"] around the agent's first prose after the report reached it, in its
@@ -392,8 +394,8 @@ export default function (kit) {
                         open: btn(card, "[data-chat-council-open]"),
                     };
                 })()`);
-            // the ended card of a council, where it sits: in a [data-chat-council-tail] wrapper after the last item, never
-            // inside an item. `tag` is the header's state words, `mark` the glyph before them (the ✓ is an svg)
+            // the ended card of a council, where it sits: in a [data-chat-council-in-place] wrapper between items once it
+            // is over, in a [data-chat-council-tail] wrapper after the last item while it runs again; never inside an item. `tag` is the header's state words, `mark` the glyph before them (the ✓ is an svg)
             const readRow = (id) =>
                 h.ev(`(() => {
                     ${HELP}
@@ -416,6 +418,7 @@ export default function (kit) {
                         report: btn(row, "[data-chat-council-report]"),
                         open: btn(row, "[data-chat-council-open]"),
                         inTail: !!tail,
+                        inPlace: !!row?.closest("[data-chat-council-in-place]"),
                         inItem: !!row?.closest("[data-chat-item]"),
                         afterConversation: tail && last ? !!(last.compareDocumentPosition(tail) & Node.DOCUMENT_POSITION_FOLLOWING) : null,
                         tails: layer?.querySelectorAll(${JSON.stringify(TAIL)}).length ?? 0,
@@ -424,6 +427,8 @@ export default function (kit) {
                 })()`);
             // an ended card sits at the end of the conversation, after the last item, and is no live card
             const atEnd = (r) => r.found && r.inTail && !r.inItem && r.afterConversation === true && r.liveCards === 0;
+            // an ended card that is over stays where it ended: between items, not at the end, and is no live card
+            const inPlace = (r) => r.found && r.inPlace && !r.inTail && !r.inItem && r.liveCards === 0;
 
             const seatMap = (card) => card.seats.map((s) => `${s.id}:${s.state}`).join(",");
 
@@ -644,8 +649,9 @@ export default function (kit) {
                 );
             });
 
-            // 4. done: the ended card at the end with the mode, Done, the count, the time, the answer and Open report, and the
-            // agent's summary, written after its background wait's notification, in the council's panel
+            // 4. done: the ended card with the mode, Done, the count, the time, the answer and Open report, where its report
+            // reached the agent (after the background wait's notification, before the summary), and the agent's summary in
+            // the council's panel
             await run("4. done council", async (name) => {
                 await begin();
                 await putCouncil("done", ID.done, (c) => {
@@ -687,14 +693,14 @@ export default function (kit) {
                     ${HELP}
                     const layer = ${layerOf(A)};
                     const el = layer?.querySelector(${JSON.stringify(summarySel(ID.done))});
-                    const tail = layer?.querySelector(${JSON.stringify(rowSel(ID.done))})?.closest("[data-chat-council-tail]") ?? null;
+                    const card = layer?.querySelector(${JSON.stringify(rowSel(ID.done))})?.closest("[data-chat-council-in-place]") ?? null;
                     return {
                         found: !!el,
                         head: flat(pick(el, "[data-chat-council-summary-head]")),
                         text: flat(el),
                         report: btn(el, "[data-chat-council-report]"),
                         inItem: !!el?.closest("[data-chat-item]"),
-                        beforeTail: el && tail ? !!(el.compareDocumentPosition(tail) & Node.DOCUMENT_POSITION_FOLLOWING) : null,
+                        afterCard: el && card ? !!(card.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) : null,
                         panels: layer?.querySelectorAll("[data-chat-council-summary]").length ?? 0,
                     };
                 })()`);
@@ -717,11 +723,11 @@ export default function (kit) {
                 await AC.agentPage(h, `const C = await mod("app/view/agents/agentcenter.ts"); C.showTerminal(); return true;`);
                 await AC.focusAgent(h, A);
                 rec(
-                    `${name}: the ended card is the one council card, in [data-chat-council-tail] after the last item: "Council · review", ✓ "Done · 4 directions · 11 min", "${FEATURE}", the answer "${ANSWER}" and Open report; the agent's summary "${SUMMARY}" (the first prose after its background wait's notification) is in one council panel inside its item, above the card, headed "Council · review · 4 directions · 11 min" with Open report, and "${AFTER_SUMMARY}" is outside it; clicking the card's Open report shows the report view of the council`,
+                    `${name}: the ended card is the one council card, in [data-chat-council-in-place] where the report reached the agent, not at the end: "Council · review", ✓ "Done · 4 directions · 11 min", "${FEATURE}", the answer "${ANSWER}" and Open report; the agent's summary "${SUMMARY}" (the first prose after its background wait's notification) is in one council panel inside its item, below the card, headed "Council · review · 4 directions · 11 min" with Open report, and "${AFTER_SUMMARY}" is outside it; clicking the card's Open report shows the report view of the council`,
                     up &&
                         upPanel &&
-                        atEnd(row) &&
-                        row.tails === 1 &&
+                        inPlace(row) &&
+                        row.tails === 0 &&
                         row.end === "done" &&
                         row.head === "Council · review" &&
                         row.mark === "✓" &&
@@ -733,7 +739,7 @@ export default function (kit) {
                         panel.found &&
                         panel.panels === 1 &&
                         panel.inItem &&
-                        panel.beforeTail === true &&
+                        panel.afterCard === true &&
                         panel.head === "Council · review · 4 directions · 11 min" &&
                         panel.text.includes(SUMMARY) &&
                         !panel.text.includes(AFTER_SUMMARY) &&
@@ -747,7 +753,7 @@ export default function (kit) {
             });
 
             // 5. stopped, failed and not run: three calls, three councils, each ended card with its mark, what happened and the
-            // reason, at the end in the order of their calls
+            // reason, where each ended (its call, none read a report), in the order of their calls
             await run("5. stopped, failed and not run", async (name) => {
                 await begin();
                 await putCouncil("round2", ID.stopped, (c) => {
@@ -781,11 +787,11 @@ export default function (kit) {
                 const order = await h.ev(`(() => [...(${layerOf(A)}?.querySelectorAll("[data-chat-council-row]") ?? [])].map((e) => e.getAttribute("data-chat-council-row")))()`);
                 await shot("5-ended-cards");
                 rec(
-                    `${name}: three ended cards at the end, in the order of their calls and in no item: ■ "Stopped in round 2" with "${STOPPED_ERROR}", ! "Failed in round 3" with the council's error, – "Not run" with the refusal's first sentence, each with Open council and no Open report`,
+                    `${name}: three ended cards where they ended (not at the end), in the order of their calls and in no item: ■ "Stopped in round 2" with "${STOPPED_ERROR}", ! "Failed in round 3" with the council's error, – "Not run" with the refusal's first sentence, each with Open council and no Open report`,
                     up &&
                         upFailed &&
                         upNotRun &&
-                        [stopped, failed, notRun].every(atEnd) &&
+                        [stopped, failed, notRun].every(inPlace) &&
                         JSON.stringify(order) === JSON.stringify([ID.stopped, ID.failed, ID.notrun]) &&
                         stopped.mark === "■" &&
                         stopped.tag === "Stopped in round 2" &&
@@ -801,7 +807,8 @@ export default function (kit) {
                 );
             });
 
-            // 6. running again after done: the ended card stays at the end and reads running again; no live card comes back
+            // 6. running again after done: the ended card that stayed where it ended goes to the end and reads running again; no
+            // live card comes back
             await run("6. running again", async (name) => {
                 await begin();
                 // done first, as a brainstorm: its row counts ideas
@@ -829,9 +836,9 @@ export default function (kit) {
                 const row = await readRow(ID.again);
                 await shot("6-running-again");
                 rec(
-                    `${name}: the done brainstorm's ended card reads "Council · brainstorm" and "Done · 4 ideas · 11 min"; once it runs again (a summary kept) the same card reads "Running again", keeps Open council and its place at the end, and no live card comes back`,
+                    `${name}: the done brainstorm's ended card reads "Council · brainstorm" and "Done · 4 ideas · 11 min"; sits where it ended; once it runs again (a summary kept) the same card reads "Running again", keeps Open council and goes to the end, and no live card comes back`,
                     done &&
-                        atEnd(first) &&
+                        inPlace(first) &&
                         first.head === "Council · brainstorm" &&
                         first.tag === "Done · 4 ideas · 11 min" &&
                         first.report != null &&

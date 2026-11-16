@@ -7,6 +7,7 @@ import {
     pairRunEnded,
     parseRunEnded,
     placeRunCards,
+    placeTrailingRuns,
     queuedLabel,
     queuedView,
     runCardFolded,
@@ -588,5 +589,34 @@ describe("runCardFolded", () => {
         expect(runCardFolded({ done: false })).toBe(false);
         expect(runCardFolded({ done: false }, null)).toBe(false);
         expect(runCardFolded({ done: false }, undefined)).toBe(false);
+    });
+});
+
+describe("placeTrailingRuns", () => {
+    const ended = (pairs: [string, string][]) => new Map(pairs.map(([key, runId]) => [key, { runId }]));
+
+    it("keeps a run whose run-ended message came at that message, and one still going at the end", () => {
+        const placed = placeTrailingRuns(["run-a", "run-b", "run-c"], ended([["you:12", "run-a"]]));
+        expect(placed.at).toEqual(new Map([["you:12", ["run-a"]]]));
+        expect(placed.end).toEqual(["run-b", "run-c"]);
+    });
+
+    it("takes the last message of a run that ended more than once, and leaves out runs that are not trailing", () => {
+        const placed = placeTrailingRuns(
+            ["run-a", "run-b"],
+            ended([
+                ["you:4", "run-a"],
+                ["you:7", "run-x"],
+                ["you:9", "run-a"],
+                ["you:11", "run-b"],
+            ])
+        );
+        expect(placed.at).toEqual(
+            new Map([
+                ["you:9", ["run-a"]],
+                ["you:11", ["run-b"]],
+            ])
+        );
+        expect(placed.end).toEqual([]);
     });
 });
