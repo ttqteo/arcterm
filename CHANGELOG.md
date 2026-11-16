@@ -66,6 +66,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - An agent waiting in the background on a council or another agent no longer shows that wait as a terminal row in the
   Agent sidebar or above Chat's message box: the council card or the other agent's own row already shows it.
+- A run that landed offers ✓ Close run, like the ✓ Close of an agent that committed: on its ✓ row in the Chat that
+  started it, and as a ✓ on its row in the Agent sidebar. It closes the sessions the run still holds, after a confirm.
 - A run's Landing line in the Agent sidebar shows a short tip on hover, and a click opens a tidier card: the step's
   state with a status dot, the run and the branch it lands into, then labelled rows with the commands as code.
 - In Chat, the ↩ Reply button on selected text now sits diagonally off the selection's top-right corner, clear of

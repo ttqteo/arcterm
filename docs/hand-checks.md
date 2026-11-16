@@ -29,6 +29,12 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   tree and no background line above Chat's box; the council card and its own tree row still show, and the report
   still comes back when the council ends. The same holds for `wsh agents wait <tab>` run in the background. A build or
   dev server run in the background still shows as before.
+- [ ] (arcterm) **A landed run offers ✓ Close run.** No dev app ran. In the Chat of an agent that started a run, once
+  the run lands its card folds to `✓ Run a9e0fd4f landed · merged into main …` → a green `✓ Close run · N open` sits at
+  that row's right end; the rest of the row still opens the `[arc] Run …` message. Click it → the Close run confirm
+  names the run and N sessions; confirm → the run's lead, workers and reviewers close, and the button goes. In the
+  Agent sidebar the run's row (`DUM-E Implementation Plan`, `Landed`) shows the same small green ✓ until then. A run
+  still landing, or held, shows neither.
 - [ ] (arcterm) **The run chip's × hides finished runs.** Unit tests and typecheck only, no dev app ran. On an agent
   whose started runs have all landed (`2 runs` on its tree row and beside its name in the header), hover the chip → a
   small × shows after it; click it → the chip is gone from both places, and stays gone after a reload. With one run

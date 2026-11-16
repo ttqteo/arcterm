@@ -615,8 +615,8 @@ export function OptionRows({
  *  `data-chat-bscard-done="<design|builder|run|verdict|handoff|council|docreview>"`; a question's answer is
  *  ChatBrainstormAnswered's. `extra` adds `data-*` attributes to that row element, beside the one above.
  *  `mark` is the glyph drawn in place of the ✓ (the council row's ■, !, –, ↺), in the ✓'s 14px box and muted unless it
- *  brings a colour of its own. `action` is a button at the row's right end (Open report), drawn only on a row without a
- *  `detail`: a row with a detail is itself a button, and a button never nests in a button.
+ *  brings a colour of its own. `action` is a button at the row's right end (Open report, a landed run's ✓ Close run); on a
+ *  row with a `detail` it sits beside the row's toggle button in one shared frame, since a button never nests in a button.
  *  With a `detail` the row is a button with a caret (`aria-expanded`) that opens the detail text under it, pre-wrapped
  *  and muted, closed by default and local to the row, since a fold is a glance; a run row's button is
  *  `data-chat-run-ended` and its text `data-chat-run-ended-text` (the `[arc] Run` message, as written). */
@@ -715,23 +715,44 @@ export function DoneRow({
             </div>
         );
     }
+    const toggle = (
+        <button
+            type="button"
+            {...marks}
+            {...(kind === "run" ? { "data-chat-run-ended": "" } : null)}
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+            className={cn(
+                DONE_ROW,
+                "w-full cursor-pointer text-left",
+                // with an action the row's frame is the wrapper's, so the button is only its clickable part
+                action != null
+                    ? "min-w-0 flex-1 rounded-r-none border-0 bg-transparent"
+                    : "hover:border-edge-strong hover:bg-surface-hover",
+                HOVER_EASE,
+                FOCUS_RING
+            )}
+        >
+            {inner}
+        </button>
+    );
     return (
         <div className="flex min-w-0 flex-col">
-            <button
-                type="button"
-                {...marks}
-                {...(kind === "run" ? { "data-chat-run-ended": "" } : null)}
-                aria-expanded={open}
-                onClick={() => setOpen(!open)}
-                className={cn(
-                    DONE_ROW,
-                    "w-full cursor-pointer text-left hover:border-edge-strong hover:bg-surface-hover",
-                    HOVER_EASE,
-                    FOCUS_RING
-                )}
-            >
-                {inner}
-            </button>
+            {action != null ? (
+                // the action sits beside the toggle inside one frame, since a button never nests in a button
+                <div
+                    className={cn(
+                        "flex min-w-0 items-center rounded-[10px] border border-edge-mid bg-surface pr-[10px]",
+                        "has-[>button:hover]:border-edge-strong has-[>button:hover]:bg-surface-hover",
+                        HOVER_EASE
+                    )}
+                >
+                    {toggle}
+                    <span className="flex flex-none items-center">{action}</span>
+                </div>
+            ) : (
+                toggle
+            )}
             {/* the detail opens and folds on the spring; the gap above it is its own top padding, so it folds with it */}
             <AnimatePresence initial={false}>
                 {open ? (
