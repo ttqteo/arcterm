@@ -733,6 +733,22 @@ func sendLeadAction(data wshrpc.CommandDagActionData, timeoutMs int64) error {
 	return dagActionRpc(data, timeoutMs)
 }
 
+// detachedDagActions are the actions wavesrv runs on a context of its own (orchestrate.ActForCaller): one it received
+// finishes after its caller timed out. tell, cancel, retry-cleanup and forward stay on the call's context.
+var detachedDagActions = map[string]bool{
+	"approve": true, "retry": true, "skip": true, "stop": true, "escalate": true, "amend": true, "sendback": true,
+}
+
+// dagLateError is the error of a lead's task action whose reply never came, when the action is one wavesrv still
+// finishes. It waits on the dag lock, which a tick can hold past the call's budget, and wakes the lead if it then
+// fails; a bare timeout read as "did not happen" and the lead re-ran it. Any other error stays as it came.
+func dagLateError(action, taskID string, timeoutMs int64, err error) error {
+	if err == nil || !detachedDagActions[action] || !submitOutcomeUnknown(err) {
+		return err
+	}
+	return fmt.Errorf("dag %s %s got no reply within %s (%v); wavesrv finishes a request it received once the engine frees the dag, and wakes you if it fails: check with `wsh jarvis dag status %s` rather than re-running it", action, taskID, compactDur(timeoutMs), err, taskID)
+}
+
 func dagAction(action string) *cobra.Command {
 	return dagActionWithin(action, dagRpcTimeoutMs)
 }
@@ -751,7 +767,7 @@ func dagActionWithin(action string, timeoutMs int64) *cobra.Command {
 			if err := sendLeadAction(wshrpc.CommandDagActionData{
 				ChannelId: channelId, RunId: runId, TaskId: args[0], Action: action,
 			}, timeoutMs); err != nil {
-				return err
+				return dagLateError(action, args[0], timeoutMs, err)
 			}
 			fmt.Println(dagDoneLine(action, args[0]))
 			return nil
@@ -814,7 +830,7 @@ var dagEscalateCmd = &cobra.Command{
 			return err
 		}
 		if err := sendLeadAction(data, dagRpcTimeoutMs); err != nil {
-			return err
+			return dagLateError(data.Action, data.TaskId, dagRpcTimeoutMs, err)
 		}
 		fmt.Println(dagDoneLine(data.Action, data.TaskId))
 		return nil
@@ -1320,7 +1336,7 @@ func dagNoteCmd(use, action, short string, args cobra.PositionalArgs) *cobra.Com
 				return err
 			}
 			if err := sendLeadAction(data, dagRpcTimeoutMs); err != nil {
-				return err
+				return dagLateError(action, data.TaskId, dagRpcTimeoutMs, err)
 			}
 			fmt.Println(dagDoneLine(action, data.TaskId))
 			return nil

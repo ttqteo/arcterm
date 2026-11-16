@@ -79,11 +79,19 @@ func MergeTask(ctx context.Context, channelID, ownerRunID, taskID string) error 
 // task as it was, every retry refused as busy meanwhile, and nobody told. Bounded like a tick, so a hung git cannot
 // hold the claim forever. A failure after the caller stopped waiting has no reader but the lead, so it wakes it.
 func landForCaller(ctx context.Context, channelID, ownerRunID, taskID, command string, land func(context.Context) error) error {
-	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), scheduleTickTimeout)
+	return ActForCaller(ctx, channelID, ownerRunID, taskID, command, ActionByLead, land)
+}
+
+// ActForCaller runs act, a task action that takes the dag lock, on a context of its own for the reason landForCaller
+// gives: the caller's deadline can pass while the lock is held, and the action must not fail on it afterwards. A
+// failure once the caller stopped waiting reaches only the lead, by wake; a human's cockpit action has no lead to
+// read one, so by == ActionByHuman posts none.
+func ActForCaller(ctx context.Context, channelID, ownerRunID, taskID, command, by string, act func(context.Context) error) error {
+	actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), scheduleTickTimeout)
 	defer cancel()
-	err := land(lctx)
-	if err != nil && ctx.Err() != nil {
-		PostWake(lctx, channelID, ownerRunID, landFailedWake(command, taskID, err))
+	err := act(actx)
+	if err != nil && ctx.Err() != nil && by == ActionByLead {
+		PostWake(actx, channelID, ownerRunID, landFailedWake(command, taskID, err))
 	}
 	return err
 }
