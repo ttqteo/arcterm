@@ -356,7 +356,7 @@ const APPROVALS: { autonomous: boolean; label: string }[] = [
     { autonomous: true, label: "Autonomous" },
 ];
 
-// Approvals, shared with the New run window (NewRun.dc.html): who answers the run's questions.
+// Approvals, the New dialog's run pick (NewRun.dc.html): who answers the run's questions.
 export function ApprovalsSection() {
     const autonomous = useAtomValue(autonomousAtom);
     return (

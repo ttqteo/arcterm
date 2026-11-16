@@ -1710,6 +1710,20 @@ describe("leader reachability and the fullscreen chord", () => {
         vi.mocked(focusedTerminalBlockId).mockReturnValueOnce("bp");
         b.run(inTerm);
         expect(vi.mocked(redrawTerminal).mock.calls).toEqual([["bt"], ["bp"]]);
+        // a sleeping agent's PTY is dead: nothing to redraw
+        const asleep = {
+            ...stubModel("a1"),
+            agentsAtom: atom([{ id: "a1", blockId: "ba", sleeping: { since: 1, freedBytes: 0 } }]),
+            terminalsAtom: atom([]),
+        };
+        vi.mocked(redrawTerminal).mockClear();
+        buildAgentBindings(asleep)
+            .find((x) => x.id === "agent:redraw")!
+            .run(inTerm);
+        buildAgentBindings(asleep)
+            .find((x) => x.id === "agent:redraw-shift")!
+            .run(inTerm);
+        expect(vi.mocked(redrawTerminal)).not.toHaveBeenCalled();
         setPlatform("win32");
         try {
             expect(b.when!(inTerm)).toBe(false); // Ctrl+R in the terminal stays the shell's reverse search
