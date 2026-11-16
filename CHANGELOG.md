@@ -36,6 +36,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   fails to reload its list afterwards.
 - Choosing an agent whose brainstorm waits on your answer no longer moves the keyboard into its terminal, so `j`/`k`
   keep moving through the tree.
+- In a narrow pane, a brainstorm handed to a run shows the run under the summary instead of squeezing it, and each part
+  you handed over puts its gist under its title.
 
 ## 1.2.0 — 2026-11-16
 

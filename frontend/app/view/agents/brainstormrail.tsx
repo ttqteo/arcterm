@@ -116,8 +116,8 @@ function writeStoredWidth(width: number): void {
 
 // The pane's container query stacks the rail under the question below QUESTION_MIN_W + the rail's smallest width: 640px
 // in the design, 820px in the check (railStacks). Tailwind needs the classes spelled out, so the two cutoffs live here
-// and in RailRow, and nowhere else.
-const STACKED = {
+// and in RailRow, and nowhere else: the run step's rail (brainstormrun.tsx) takes the check's.
+export const STACKED = {
     design: {
         aside: "@max-[640px]:w-full @max-[640px]:min-w-0 @max-[640px]:max-w-none @max-[640px]:border-l-0 @max-[640px]:border-t",
         handle: "@max-[640px]:hidden",
