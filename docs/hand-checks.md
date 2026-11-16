@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A message sent mid-turn keeps the agent working.** Unit tests only; the installed mod needs an
+  arcterm launch to pick it up. While a Claude agent runs a tool, type a message in Chat so it queues and interrupts the
+  tool: Chat keeps "Working · …" under the reply and `wsh agents list` reads `working` through the rest of that turn,
+  and wavesrv's log has no "dropped PreToolUse's working … reported after its turn ended" lines for it.
 - [ ] (arcterm) **A Work on session keeps its initiative.** Go tests only, no dev app ran. In Jarvis, Work on an
   initiative whose notes point at another one, and ask the agent to `wsh effort show` that other initiative: the Agent
   header and initiative band keep the one you picked (63184f53b).
