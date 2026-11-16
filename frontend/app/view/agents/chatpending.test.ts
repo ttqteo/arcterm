@@ -63,10 +63,27 @@ describe("landedIds", () => {
         const held = [user("đã báo council đi rồi")];
         const again = pendingMessage("c", "báo council đi", held, 0, true);
         expect(landedIds([again], held)).toEqual([]);
-        // a short text is too easily part of another message: only its own record lands it
-        const ok = pendingMessage("d", "ok", [], 0, true);
-        expect(landedIds([ok], [user("okay, go on")])).toEqual([]);
         expect(pendingStill([queued], [...before, user("làm đibáo council đi")], 1)).toEqual([]);
+    });
+
+    // a short text is too easily part of another message: it lands only at the end of a prompt, behind a whole message
+    // the box sent before, which is what was left in Claude Code's box
+    it("names a short message only behind a message the box sent", () => {
+        const history = ["làm đi", "ok"];
+        const ok = pendingMessage("d", "ok", [user("làm đi")], 0, true, false, history);
+        expect(landedIds([ok], [user("làm đi"), user("làm điok")], history)).toEqual(["d"]);
+        expect(landedIds([ok], [user("làm đi"), user("làm đi\nok")], history)).toEqual(["d"]);
+        expect(pendingStill([ok], [user("làm đi"), user("làm điok")], 1, null, history)).toEqual([]);
+        // inside or at the end of a message that is not one sent before: still waiting
+        for (const other of ["okay, go on", "look", "please say ok"]) {
+            expect(landedIds([ok], [user("làm đi"), user(other)], history)).toEqual([]);
+        }
+        // with no history at all only its own record lands it
+        expect(landedIds([ok], [user("làm đi"), user("làm điok")])).toEqual([]);
+        // a prompt that already held it behind a sent message at the send is not this one
+        const old = [user("làm điok")];
+        const again = pendingMessage("e", "ok", old, 0, true, false, history);
+        expect(landedIds([again], old, history)).toEqual([]);
     });
 });
 

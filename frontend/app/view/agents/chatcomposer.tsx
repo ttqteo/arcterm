@@ -799,7 +799,7 @@ function ComposerBox({
         }
         const plan = takeBackPlan(
             key,
-            pendingStill(getPending(agent.id), entries ?? [], Date.now()),
+            pendingStill(getPending(agent.id), entries ?? [], Date.now(), null, sentHistory(agent.id)),
             entries,
             agent.state
         );

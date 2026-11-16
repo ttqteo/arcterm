@@ -79,7 +79,7 @@ import {
     type PendingMessage,
 } from "./chatpending";
 import { useLostBash } from "./chatlostbashstore";
-import { dropPendingIds, usePending } from "./chatpendingstore";
+import { dropPendingIds, sentHistory, usePending } from "./chatpendingstore";
 import { risesFromBox } from "./chatsentrise";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import { SleepRunRows } from "./chatsleepbashrows";
@@ -662,14 +662,14 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const sent = usePending(agent.id);
     // a message the transcript took is forgotten, so its bubble never comes back when a rewind later drops its record
     useEffect(() => {
-        const landed = landedIds(sent, entries);
+        const landed = landedIds(sent, entries, sentHistory(agent.id));
         if (landed.length > 0) {
             dropPendingIds(agent.id, landed);
         }
     }, [sent, entries, agent.id]);
     const [now, setNow] = useState(() => Date.now());
     const idleSince = useIdleSince(agent.state === "idle");
-    const pending = pendingStill(sent, entries, now, idleSince);
+    const pending = pendingStill(sent, entries, now, idleSince, sentHistory(agent.id));
     const showsPending = pending.length > 0;
     // the live reply, which ChatConversation reads itself so its ticks redraw only the conversation: held back while the
     // message that started its turn has not landed (its bubble is drawn under the conversation, and the reply belongs

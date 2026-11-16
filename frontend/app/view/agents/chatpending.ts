@@ -39,14 +39,15 @@ export interface PendingMessage {
 }
 
 /** The pending message for `text` sent at `now`: how many of `entries` (the transcript as drawn then) already hold its
- *  text, and whether the agent was `busy`, which makes it Queued. */
+ *  text, and whether the agent was `busy`, which makes it Queued. `sent` is the box's history then (sentHistory). */
 export function pendingMessage(
     id: string,
     text: string,
     entries: AgentEntry[],
     now: number,
     busy: boolean,
-    waking = false
+    waking = false,
+    sent: readonly string[] = []
 ): PendingMessage {
     const kind = pendingKind(text);
     return {
@@ -54,7 +55,7 @@ export function pendingMessage(
         text,
         sentAt: now,
         seen: userTextCount(entries, text),
-        seenWithin: userTextWithinCount(entries, text),
+        seenWithin: userTextWithinCount(entries, text, sent),
         queued: busy,
         ...(kind != null ? { kind } : {}),
         ...(waking ? { waking: true } : {}),
@@ -149,24 +150,36 @@ export function userTextCount(entries: AgentEntry[], text: string): number {
     return n;
 }
 
-/** A text this short is too easily part of another message to say it landed inside one ("ok" in "okay, go on"). */
+/** A text this short is too easily part of another message to say it landed inside one by itself ("ok" in "okay, go
+ *  on", in "look"): it counts only at the end of a prompt whose front is a message sent before (heldWith). */
 const WITHIN_MIN_CHARS = 6;
 
-/** How many of the entries are your messages holding this text inside a longer one (every run of whitespace one space):
- *  text left in Claude Code's own box goes in front of the next message as one prompt, so the message lands inside it and
- *  never as itself. 0 for a text under WITHIN_MIN_CHARS. */
-export function userTextWithinCount(entries: AgentEntry[], text: string): number {
-    const want = flat(text);
-    if (Array.from(want).length < WITHIN_MIN_CHARS) {
-        return 0;
+/** Whether the prompt `got` is the message `want` sent with other text in front, both flat: text left in Claude Code's
+ *  own box goes in front of the next message as one prompt, so the message lands inside it and never as itself. A text of
+ *  WITHIN_MIN_CHARS or more is found anywhere in it; a shorter one only at its end, behind a whole message from `sent`
+ *  (the box's history, flat): what was left in the box was a message sent from it ("làm đi" + "ok" = "làm điok"). */
+function heldWith(got: string, want: string, sent: readonly string[]): boolean {
+    if (got === want || want === "") {
+        return false;
     }
+    if (Array.from(want).length >= WITHIN_MIN_CHARS) {
+        return got.includes(want);
+    }
+    if (!got.endsWith(want)) {
+        return false;
+    }
+    const front = got.slice(0, got.length - want.length).trim();
+    return front !== "" && sent.includes(front);
+}
+
+/** How many of the entries are your messages that hold this text with other text in front (heldWith; every run of
+ *  whitespace one space). `sent` is the box's history (chatpendingstore.ts sentHistory). */
+export function userTextWithinCount(entries: AgentEntry[], text: string, sent: readonly string[] = []): number {
+    const want = flat(text);
+    const sentFlat = sent.map(flat);
     let n = 0;
     for (const e of entries) {
-        if (e.kind !== "user") {
-            continue;
-        }
-        const got = flat(unwrapWholePaste(stripResultLines(e.text)));
-        if (got !== want && got.includes(want)) {
+        if (e.kind === "user" && heldWith(flat(unwrapWholePaste(stripResultLines(e.text))), want, sentFlat)) {
             n++;
         }
     }
@@ -174,10 +187,10 @@ export function userTextWithinCount(entries: AgentEntry[], text: string): number
 }
 
 /** Whether the transcript holds the message: its own record, or a longer prompt it went in with (seenWithin). */
-function landed(p: PendingMessage, entries: AgentEntry[]): boolean {
+function landed(p: PendingMessage, entries: AgentEntry[], sent: readonly string[]): boolean {
     return (
         userTextCount(entries, p.text) > p.seen ||
-        (p.kind == null && p.seenWithin != null && userTextWithinCount(entries, p.text) > p.seenWithin)
+        (p.kind == null && p.seenWithin != null && userTextWithinCount(entries, p.text, sent) > p.seenWithin)
     );
 }
 
@@ -210,12 +223,13 @@ export const PENDING_IDLE_MS = 5_000;
  *  older than PENDING_QUEUED_MAX_MS (a side question or a panel: PENDING_MAX_MS), and the agent has not sat idle on it
  *  for PENDING_IDLE_MS. `idleSince` is when the agent last went idle, null while it works. A side question or a panel
  *  waits on the agent while it sits idle (the answer comes from a fork, the panel's row once it closes), so only
- *  PENDING_MAX_MS ends those. */
+ *  PENDING_MAX_MS ends those. `sent` is the box's history (sentHistory), for a short message that landed behind one. */
 export function pendingStill(
     pending: PendingMessage[],
     entries: AgentEntry[],
     now: number,
-    idleSince: number | null = null
+    idleSince: number | null = null,
+    sent: readonly string[] = []
 ): PendingMessage[] {
     return pending.filter(
         (p) =>
@@ -224,15 +238,15 @@ export function pendingStill(
                 p.waking === true ||
                 idleSince == null ||
                 now - Math.max(idleSince, p.sentAt) < PENDING_IDLE_MS) &&
-            !landed(p, entries)
+            !landed(p, entries, sent)
     );
 }
 
 /** Pure: the pending messages the transcript holds now (more often than when they were sent), which the store forgets
  *  (chatpane.tsx). A landed message is done with: kept, its bubble came back when its record later left the conversation
  *  (an Esc rewind made it a dead branch, and "làm đi" stood under the conversation again until the 30-minute limit). */
-export function landedIds(pending: PendingMessage[], entries: AgentEntry[]): string[] {
-    return pending.filter((p) => landed(p, entries)).map((p) => p.id);
+export function landedIds(pending: PendingMessage[], entries: AgentEntry[], sent: readonly string[] = []): string[] {
+    return pending.filter((p) => landed(p, entries, sent)).map((p) => p.id);
 }
 
 /** Whether a send gets a pending bubble. A message does, and so does a command with a pending kind (a /btw, a bare
