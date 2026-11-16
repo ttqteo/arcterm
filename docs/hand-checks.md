@@ -37,10 +37,6 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   ran. Use arcterm a working day with many agents and terminals opened, closed and switched between: `waveapp.log`
   has no `[hologram] failed` line, the hologram never turns into Sprout/Minion for 5 s, and terminals still draw sharp
   (WebGL) after switching back to one hidden for over 30 s.
-- [ ] (arcterm) **The `@` list puts the chat's own project's agents first.** Unit tests and typecheck only, no dev app
-  ran. With live agents in several projects, type `@agent` in a chat's box: the agents of that chat's project lead the
-  list. Then type `@agent:` and the first characters of an agent's id: that agent is the one row, and picking it writes
-  `agent:<id> `.
 - [ ] (arcterm) **A finished run or council stays where it finished in Chat.** The CDP scenario `chat-council` checked
   the council cards on fixtures; the run ✓ row has no scenario (unit tests only). In a real agent that ran a run and a
   council, keep talking after both end: the Done council card stays just above the agent's summary of it and the run's
