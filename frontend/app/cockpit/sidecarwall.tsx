@@ -306,7 +306,8 @@ export function SidecarWall({ snap, receivedAt, clock, send }: SidecarWallProps)
             >
                 {count === 0 ? (
                     <div data-sidecar-empty className="text-[13px] text-muted">
-                        No agents running
+                        {/* the wall holds what the Cockpit's grid shows: idle agents past their 5 minutes are folded away */}
+                        {snap.counts.idle > 0 ? `Nothing live · ${snap.counts.idle} idle` : "No agents running"}
                     </div>
                 ) : (
                     tiles.map((tile) => (

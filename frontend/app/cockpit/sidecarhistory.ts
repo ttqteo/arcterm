@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // What a Sidecar tile reads beyond the rows of its snapshot (spec 2026-11-13-sidecar-design.md, section 3; plan
-// decisions 5 and 7): the pages above a tile's rows when it is scrolled up (`older`), and the one-time tail read that
-// gives an agent the main window does not stream its last two rows. Pure functions plus two thin RPC readers; the bridge
-// (sidecarbridge.tsx) decides which to call, in what order, and what to answer when one fails.
+// decision 5): the pages above a tile's rows when it is scrolled up (`older`). Pure functions plus a thin RPC reader; the
+// bridge (sidecarbridge.tsx) decides which to call and what to answer when one fails. (Decision 7's one-time tail read,
+// for an agent the main window does not stream, went when the wall came to hold only streamed agents, 2026-11-16.)
 //
 // A cursor is an opaque string the bridge mints and reads back: `m:<row index>` into the rows the main window holds for
 // an agent (oldest first, indexed from the start so new rows at the bottom do not move it), `f:<line index>` into the
@@ -20,10 +20,6 @@ import type { SidecarMessage } from "./sidecartypes";
 
 /** A page read from a transcript file is this many lines (decision 5): a file-backed agent costs one read per page. */
 export const OLDER_FILE_LINES = 400;
-/** The one-time tail read takes the last this many lines of the file (decision 7)... */
-export const TAIL_LINES = 200;
-/** ...and keeps the last this many rows of them. */
-export const TAIL_ROWS = 2;
 
 /** One page of scrollback: rows oldest first, and the cursor of the page above it (null: nothing is earlier). */
 export interface OlderPage {
@@ -128,36 +124,4 @@ export async function readOlderFromFile(
         rows: before == null ? withoutShown(rows, shown) : rows,
         next: answer.start > 0 ? `f:${answer.start}` : null,
     };
-}
-
-/**
- * The one-time tail read of an agent's transcript: the last TAIL_ROWS rows among its last TAIL_LINES lines, [] when the
- * file holds none. Rejects when the read fails (the caller logs it once and does not retry).
- */
-export async function readTail(path: string, agent: string | undefined): Promise<SidecarMessage[]> {
-    const answer = await RpcApi.GetAgentTranscriptCommand(TabRpcClient, { path, maxlines: TAIL_LINES });
-    return messageRows(projectorFor(agent, path).project(answer.lines ?? []), TAIL_ROWS);
-}
-
-/** The key a tail read is remembered by: an agent and the transcript it was read from. */
-export function tailKey(id: string, path: string): string {
-    // NUL cannot be in an id or a path, so no two pairs share a key
-    return `${id}\u0000${path}`;
-}
-
-/**
- * The tiles that need a tail read now: no rows (not even kept ones), not streamed by the main window, a transcript path,
- * and not tried before (`tried` holds tailKey()s). In the order given.
- */
-export function tailsToRead(
-    tiles: { id: string; rows: number; streamed: boolean; path?: string }[],
-    tried: ReadonlySet<string>
-): { id: string; path: string }[] {
-    const out: { id: string; path: string }[] = [];
-    for (const t of tiles) {
-        if (t.rows === 0 && !t.streamed && t.path != null && t.path !== "" && !tried.has(tailKey(t.id, t.path))) {
-            out.push({ id: t.id, path: t.path });
-        }
-    }
-    return out;
 }

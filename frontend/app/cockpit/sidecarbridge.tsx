@@ -8,16 +8,19 @@
 //
 // It does no work while no page is live. A page is live from its `hello` until the host's `sidecar:closed`; it
 // re-sends `hello` every 2 s until its first snapshot arrives, so either launch order works. The stores it watches are
-// agentsAtom, liveEntriesByIdAtom and sentIdsAtom, never the 1 s nowAtom tick (it reads `now` once per build): a
-// subscription to the tick would re-emit forever. It never makes the main window stream more agents.
+// agentsAtom, liveEntriesByIdAtom and sentIdsAtom, and the Cockpit's filters and ~15 s structural clock, since the wall
+// shows only what the Cockpit's grid shows (sidecarsnapshot.ts wallAgentIds); never the 1 s nowAtom tick (it reads
+// `now` once per build): a subscription to the tick would re-emit forever. It never makes the main window stream more
+// agents.
 //
 // Part 2 adds, still only while a page is live (every timer and subscription stops on sidecar:closed, a hold and unmount):
 //   - the machine: one GetMachineStatsCommand at hello, then every 5 s, and the memorypressure events between; each
 //     reading goes through the strain model's `trackStrain`, and the snapshot carries the rounded figures and the strain;
 //   - the heavy agents, only while a strain band exists: by RAM the Consumers reading (loadConsumers every 5 s), by CPU
 //     the per-agent CPU reading every 2 s; neither runs while the band is down;
-//   - Stop and Sleep from a band row, the older act (scrollback) answered on sidecar:older, and the one-time tail read
-//     that gives an agent the main window does not stream its last two rows.
+//   - Stop and Sleep from a band row, and the older act (scrollback) answered on sidecar:older.
+// The wall holds only agents the main window streams (asking, working, idle within the grace window), so a tile's rows
+// come from that stream, or from `kept` once it stops.
 
 import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -29,7 +32,9 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { sleepWithConfirm } from "@/app/view/agents/agentsleep";
 import { answerAgentAsk } from "@/app/view/agents/askanswer";
 import { CONSUMERS_POLL_MS, consumersReadingAtom, loadConsumers } from "@/app/view/agents/consumersstore";
-import { liveEntriesByIdAtom } from "@/app/view/agents/livetranscriptatoms";
+import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
+import { hiddenAgentIds } from "@/app/view/agents/cockpitsurfacemodel";
+import { idsWithEntriesAtom, liveEntriesByIdAtom } from "@/app/view/agents/livetranscriptatoms";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { isMacOS, isWindows } from "@/util/platformutil";
 import { fireAndForget } from "@/util/util";
@@ -64,8 +69,15 @@ import {
     type FeedState,
     type HeavyNotes,
 } from "./sidecarbridgemodel";
-import { olderFromMemory, readOlderFromFile, readTail, tailKey, tailsToRead } from "./sidecarhistory";
-import { keptMessages, messageRows, sidecarSnapshot } from "./sidecarsnapshot";
+import { olderFromMemory, readOlderFromFile } from "./sidecarhistory";
+import {
+    keptMessages,
+    messageRows,
+    scopeTiles,
+    sidecarSnapshot,
+    wallAgentIds,
+    type CockpitScope,
+} from "./sidecarsnapshot";
 import {
     EMPTY_TRACK,
     heavyAgents,
@@ -127,12 +139,6 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
         // the rows each tile last showed (decision 3): an agent whose stream stops keeps them
         let kept: Record<string, SidecarMessage[]> = {};
         let timer: ReturnType<typeof setTimeout> | null = null;
-
-        // The tail reads (decision 7): once per (agent id, transcript path), one at a time. The rows join the snapshot's
-        // `kept` argument, so they never vanish; a path is marked tried before its read, so a failure is never retried.
-        let tails: Record<string, SidecarMessage[]> = {};
-        const tailsTried = new Set<string>();
-        let tailBusy = false;
 
         // The machine and the strain band (decisions 8 to 11).
         let stats: MachineStatsData | null = null; // the last poll, with memorypressure events laid over it
@@ -224,12 +230,23 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             return heavyAgents(by, tiles, consumers, cpu, (id) => blocks.get(id), {});
         };
 
+        // the Cockpit's own filters, read where its surface keeps them (cockpitsurface.tsx)
+        const cockpitScope = (agents: AgentVM[]): CockpitScope => ({
+            now: globalStore.get(model.structuralNowAtom),
+            dismissed: globalStore.get(model.dismissedAtom),
+            backgrounded: globalStore.get(model.backgroundedIdsAtom),
+            projectFilter: globalStore.get(model.projectFilterAtom),
+            liveOnly: globalStore.get(model.liveOnlyAtom),
+            hidden: hiddenAgentIds(agents, globalStore.get(idsWithEntriesAtom), globalStore.get(model.lineageAtom)),
+        });
+
         const assemble = (): SidecarSnapshot => {
+            const agents = globalStore.get(model.agentsAtom);
             const base = sidecarSnapshot(
-                globalStore.get(model.agentsAtom),
+                agents,
                 globalStore.get(liveEntriesByIdAtom),
                 globalStore.get(model.sentIdsAtom),
-                { ...tails, ...kept },
+                kept,
                 globalStore.get(model.nowAtom)
             );
             // the snapshot already falls back to `kept` for a tile with no rows of its own, so what it holds is the
@@ -254,8 +271,10 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             } else {
                 notes = syncNotes(notes, null, []);
             }
+            // the wall shows what the Cockpit's grid shows; the band above ranked the whole roster, idle agents included,
+            // since an idle agent holding memory is the one to put to sleep
             return {
-                ...base,
+                ...scopeTiles(base, wallAgentIds(agents, cockpitScope(agents))),
                 ...(stats != null ? { machine: machineOf(stats, platformName()) } : {}),
                 ...(strain != null ? { strain } : {}),
             };
@@ -283,50 +302,10 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             }
         };
 
-        // The next tile that needs its transcript tail, if none is being read: no rows even from `kept`, not streamed by
-        // the main window, a transcript path, not tried before. The rows rebuild the snapshot, which asks for the next.
-        const pumpTails = (snap: SidecarSnapshot) => {
-            if (tailBusy) {
-                return;
-            }
-            const agents = new Map(globalStore.get(model.agentsAtom).map((a) => [a.id, a]));
-            const entries = globalStore.get(liveEntriesByIdAtom);
-            const next = tailsToRead(
-                snap.tiles.map((t) => ({
-                    id: t.id,
-                    rows: t.messages.length,
-                    streamed: (entries[t.id]?.length ?? 0) > 0,
-                    path: agents.get(t.id)?.transcriptPath,
-                })),
-                tailsTried
-            )[0];
-            if (next == null) {
-                return;
-            }
-            tailsTried.add(tailKey(next.id, next.path));
-            tailBusy = true;
-            fireAndForget(async () => {
-                try {
-                    const rows = await readTail(next.path, agents.get(next.id)?.agent);
-                    if (rows.length > 0) {
-                        tails = { ...tails, [next.id]: rows };
-                    }
-                } catch (e) {
-                    log(`tail read of ${next.id} failed: ${e instanceof Error ? e.message : String(e)}`);
-                } finally {
-                    tailBusy = false;
-                }
-                if (mounted && isLive()) {
-                    onChange();
-                }
-            });
-        };
-
-        // a build and what each one starts: the polls the band needs and the next tail read
+        // a build and the polls it starts: the ones the band needs
         const build = (): SidecarSnapshot => {
             const snap = assemble();
             syncPolls();
-            pumpTails(snap);
             return snap;
         };
 
@@ -589,6 +568,13 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
             globalStore.sub(model.agentsAtom, onChange),
             globalStore.sub(liveEntriesByIdAtom, onChange),
             globalStore.sub(model.sentIdsAtom, onChange),
+            // the Cockpit's filters, and its ~15 s clock that ends a just-finished agent's grace window; a rebuild that
+            // changes no tile sends nothing (planChange)
+            globalStore.sub(model.dismissedAtom, onChange),
+            globalStore.sub(model.backgroundedIdsAtom, onChange),
+            globalStore.sub(model.projectFilterAtom, onChange),
+            globalStore.sub(model.liveOnlyAtom, onChange),
+            globalStore.sub(model.structuralNowAtom, onChange),
             // the heavy readings and the running jobs only matter to a band that exists
             globalStore.sub(consumersReadingAtom, () => {
                 if (polls.consumers) {

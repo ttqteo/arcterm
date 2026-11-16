@@ -8,6 +8,8 @@
 import { entriesToShow } from "@/app/view/agents/agentrowmodel";
 import {
     askSentKey,
+    filterAgents,
+    isRecentlyIdle,
     sortAgents,
     terminalAskNote,
     type AgentAsk,
@@ -15,6 +17,7 @@ import {
     type AgentVM,
 } from "@/app/view/agents/agentsviewmodel";
 import { providerLabel } from "@/app/view/agents/cockpitrailmodel";
+import { dismissKey } from "@/app/view/agents/cockpitsurfacemodel";
 import type { SidecarAsk, SidecarMessage, SidecarSnapshot, SidecarTile, SidecarTileState } from "./sidecartypes";
 
 /** A tile keeps this many rows at most: the tallest tile of the wall shows fewer, and the event payload stays small. */
@@ -211,6 +214,43 @@ export function sidecarSnapshot(
         },
         tiles,
     };
+}
+
+/** What the Cockpit's grid is showing, read from the main window's stores for the wall's filter. */
+export type CockpitScope = {
+    now: number;
+    /** agents whose just-finished row was dismissed, by idle episode (cockpitsurfacemodel dismissKey) */
+    dismissed: ReadonlySet<string>;
+    /** agents sent to the Background lane */
+    backgrounded: ReadonlySet<string>;
+    projectFilter: string;
+    liveOnly: boolean;
+    /** agents with nothing to show yet (cockpitsurfacemodel hiddenAgentIds) */
+    hidden: ReadonlySet<string>;
+};
+
+/**
+ * The agents the wall shows: the ones the Cockpit's grid shows, so the second screen is the Cockpit at a glance and not
+ * the whole roster. That is the asking and working agents and those that went idle within the grace window (5 min) and
+ * were not dismissed, minus the Background lane, under the Cockpit's project filter and Live only, minus the agents
+ * with nothing to show yet. The idle list the Cockpit folds away stays off the wall; the title bar still counts it.
+ */
+export function wallAgentIds(agents: AgentVM[], scope: CockpitScope): Set<string> {
+    const shown = agents.filter((a) => {
+        if (a.kind === "terminal" || scope.backgrounded.has(a.id) || scope.hidden.has(a.id)) {
+            return false;
+        }
+        if (a.state === "idle" && (!isRecentlyIdle(a, scope.now) || scope.dismissed.has(dismissKey(a)))) {
+            return false;
+        }
+        return true;
+    });
+    return new Set(filterAgents(shown, scope.projectFilter, scope.liveOnly).map((a) => a.id));
+}
+
+/** The snapshot with only the tiles `ids` names, in its order; the counts stay the whole roster's. */
+export function scopeTiles(snap: SidecarSnapshot, ids: ReadonlySet<string>): SidecarSnapshot {
+    return { ...snap, tiles: snap.tiles.filter((t) => ids.has(t.id)) };
 }
 
 /** The rows each tile of a snapshot shows, by agent id, for the bridge to keep; tiles with none are left out. */

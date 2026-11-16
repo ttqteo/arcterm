@@ -8,7 +8,7 @@ Jarvis-style HUD was weighed and dropped (Out of scope).
 ## Goal
 
 Use two or more screens fully: the main arcterm window holds the agents' terminals on one screen, and **Sidecar**, a
-second window, shows every agent at once on another. What matters is seeing many agents at a glance. Sidecar is a
+second window, shows the Cockpit's agents at once on another. What matters is seeing many agents at a glance. Sidecar is a
 companion of the main window, not a second app: one view (a wall of agent tiles), no Office, no other surface, no
 terminal.
 
@@ -101,20 +101,24 @@ the cockpit, the wsh client or WOS, and keeps no store.
 
 ### 3. The wall
 
-- One tile per agent; plain terminals and tools are left out. Order: waiting on you, working, ready for review (idle
-  with uncommitted or committed changes), idle, asleep. Idle and asleep tiles are dimmed.
+- One tile per agent the Cockpit's grid shows (changed 2026-11-16, the person: the whole roster was too much, "the real
+  cockpit is less detail"; `wallAgentIds` in `sidecarsnapshot.ts`): asking, working, and idle within the 5-minute grace
+  and not dismissed, minus the Background lane and agents with nothing to show yet, under the Cockpit's project filter
+  and Live only. Agents the Cockpit folds into its Idle list (idle past 5 min, asleep) get no tile; the title bar still
+  counts them as idle, and with nothing live the wall says `Nothing live · N idle`. The strain band still ranks the
+  whole roster, since an idle agent holding memory is the one to put to sleep. Plain terminals and tools are left out.
+  Order: waiting on you, working, ready for review (idle with uncommitted or committed changes), idle, asleep. Idle and
+  asleep tiles are dimmed.
 - A tile: status dot, name, age in its state, project · runtime and model; then its recent messages, newest at the
   bottom; then, for an ask, the amber WAITING ON YOU band, the question and its options as buttons 1–9 (an ask with
   several questions or a multi-select is answered in the main window: Enter); otherwise a context bar (`ctx 61%`).
 - A message is what the agent said plus the tool it ran: outcome (✓ / ✕), verb and target (`RAN go test ./pkg/x`),
   the target in mono. For an agent the main window streams (asking, working, idle under 5 min, or focused:
   `streamableTranscriptAgents`), the data is `liveEntriesByIdAtom` (`livetranscriptatoms.ts`). **Agent's call
-  (builder question 1):** Sidecar never makes the main window stream more agents. An agent that is not streamed (idle
-  past 5 min, asleep) gets a one-time read of the tail of its transcript, enough for its last 2 messages, taken when
-  its stream stops (`dropLiveId` clears its live entries) or when Sidecar first sees it, and kept in the bridge as
-  those few messages only; a tile never shows its messages vanish. Part 1 (before the tail read lands) keeps, in the
-  bridge, the last rows each tile showed, so an agent whose stream stops keeps them; an agent never streamed since
-  launch shows "No recent messages" until part 2.
+  (builder question 1):** Sidecar never makes the main window stream more agents. Every agent the wall shows is one the
+  main window streams, so the one-time tail read part 2 added for an unstreamed agent (idle past 5 min, asleep) was
+  removed with the filter (2026-11-16). The bridge keeps the last rows each tile showed, so an agent whose stream stops
+  keeps them; a tile never shows its messages vanish.
 - Keys: arrows move the selection, Enter opens the selected agent in the main window, 1–9 answers its ask, F11 full
   screen. Double-click opens. A footer lists them.
 - **Tiles fit the agent count** (board `D-fit-by-count.dc.html`): the wall always fills one screen without a page
@@ -188,7 +192,8 @@ bottom drops.)
   changes), and the scrollback paging.
 - Go: the macOS per-agent CPU sampler on a fake process table, like `pkg/memusage/heaviest_test.go`; on Windows the
   band reads resmon, whose grouping is already tested (`pkg/resmon/group_test.go`).
-- Vitest for the transcript-tail read of an agent that is not streamed (last 2 messages, kept after its stream stops).
+- Vitest for the wall's filter (`wallAgentIds`: the grace window, a dismissal, the Background lane, the project filter
+  and Live only).
 - A CDP scenario (`scripts/cdp/scenarios.mjs`) that opens Sidecar through the host and screenshots its page with a
   fixture roster (4, 12 and 20 agents), with the band at amber and red, and in the small form after the S button
   (and back). Vitest for the width → wall-or-small-form switch; **Rust tests (`sidecar.rs`) for the S button's frame
@@ -196,8 +201,9 @@ bottom drops.)
   small frame on one and two screens and at another scale, and the relaunch decision of a small, pinned file), since the
   host owns it. Sidecar's page is a separate CDP target on the same port (the prototype's `cdpeval` found it by its
   `sidecar.html` url). It needs the Tauri host: mark it `host: true`. The scenario drives the band through the bridge's
-  DEV seams (`__sidecarMachine`, `__sidecarHeavy`, `__sidecarRefresh`, `__sidecarFeed`) and gives one asleep agent a
-  checked-in transcript file, so the real tail read runs; it presses the real S button and the pin on the real window.
+  DEV seams (`__sidecarMachine`, `__sidecarHeavy`, `__sidecarRefresh`, `__sidecarFeed`), checks that two parked agents
+  (idle 40 min, asleep) get no tile while the band can still name one, and presses the real S button and the pin on the
+  real window.
 - Measure the release build's RAM after the part-2 run lands, as section 5 says (the person's, by hand: it is a
   `docs/hand-checks.md` line), not before merging.
 
