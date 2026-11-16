@@ -53,6 +53,18 @@ func Answerable(toolName string) bool {
 	return answerable[toolName]
 }
 
+// screenPicked is the tools whose prompt is a select list in an order of its own: the Artifact tool asks "Permanently
+// delete …?" (and its other consents) as "❯ No / Yes", the cursor on No, so `1` would answer No. The chat reads the
+// list off the terminal and the server moves the cursor to its Yes and presses Enter.
+var screenPicked = map[string]bool{
+	"Artifact": true,
+}
+
+// ScreenPick reports whether the chat answers toolName's prompt by picking its Yes off the screen.
+func ScreenPick(toolName string) bool {
+	return screenPicked[toolName]
+}
+
 // ToolKey identifies one tool call by its name and input, for matching a PostToolUse report to the permission
 // request that granted it (the PermissionRequest payload has no tool_use_id). The input is unmarshalled and
 // re-marshalled, which sorts every object's keys, so key order and whitespace do not change the key; an input that
@@ -81,10 +93,15 @@ func ToolKey(toolName string, toolInput json.RawMessage) string {
 // Summary is the one line the chat card shows for a request: Bash its command, the file tools their path,
 // WebFetch its URL, WebSearch its query, a subagent what it is for with its type and model (never its prompt, which
 // runs to pages); anything else (or a missing field) the tool name and its input as compact JSON, cut at summaryMax
-// runes.
+// runes. An artifact call is its action and the file or link it acts on.
 func Summary(toolName string, toolInput json.RawMessage) string {
 	if toolName == "Agent" || toolName == "Task" {
 		if s := subagentSummary(toolInput); s != "" {
+			return s
+		}
+	}
+	if toolName == "Artifact" {
+		if s := artifactSummary(toolInput); s != "" {
 			return s
 		}
 	}
@@ -140,6 +157,30 @@ func subagentSummary(toolInput json.RawMessage) string {
 	return in.Description + " (" + what + ")"
 }
 
+// artifactSummary is "delete https://claude.ai/artifact/…" or "publish /s/a.html → https://…": the call's action
+// (publish when unset, as the tool takes it), then the file it sends and the artifact it acts on; "" with neither.
+func artifactSummary(toolInput json.RawMessage) string {
+	var in struct {
+		Action   string `json:"action"`
+		URL      string `json:"url"`
+		FilePath string `json:"file_path"`
+	}
+	if json.Unmarshal(toolInput, &in) != nil || (in.URL == "" && in.FilePath == "") {
+		return ""
+	}
+	action := in.Action
+	if action == "" {
+		action = "publish"
+	}
+	switch {
+	case in.FilePath != "" && in.URL != "":
+		return action + " " + in.FilePath + " → " + in.URL
+	case in.FilePath != "":
+		return action + " " + in.FilePath
+	}
+	return action + " " + in.URL
+}
+
 // compactJSON is raw without insignificant whitespace; a missing input or a null one is "".
 func compactJSON(raw json.RawMessage) string {
 	raw = bytes.TrimSpace(raw)
@@ -188,6 +229,7 @@ func (r *Registry) Raise(oref, toolName string, toolInput json.RawMessage, ts in
 		ToolName:   toolName,
 		Summary:    Summary(toolName, toolInput),
 		Answerable: Answerable(toolName),
+		ScreenPick: ScreenPick(toolName),
 		Ts:         ts,
 	}
 	r.lock.Lock()

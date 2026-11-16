@@ -19,6 +19,28 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) DUM-E: with dume:enabled on, a dum-e chunk pending and under an hour to the 5h reset with 30%+ left, a
   sonnet quick run starts in a wave/dume-… worktree within 5 min; when it ends the chunk reads "ready to land" with a
   git merge line, and the Brief header line follows along.
+- [ ] (arcterm) **A run's second line lines up with an agent's.** No dev app ran. In the Agent sidebar, a run row
+  (`› 7  Working · 7/7`, or a run with no plan yet reading `working`) → its second line starts under the title, at the
+  same column as an agent's `planning · run 1c…`, not under the icon; its progress bar below is unchanged.
+- [ ] (arcterm) **Chat's permission card answers an Artifact prompt.** Unit tests and typecheck only; the screen
+  reader (`tuiSelectYes`) was tested on a list written from a screenshot, not a capture. Have an agent delete a
+  throwaway artifact → the card reads `Wants to use an artifact`, `delete https://claude.ai/artifact/…`, with Allow and
+  Deny; Allow deletes it (the terminal's cursor moves from No to Yes, then Enter), Deny cancels. Also check the
+  publish consent, if it asks. Agent surface, Chat. dc372ecbd.
+- [ ] (arcterm) **The brainstorm card holds its place from step to step.** CDP `chat-redesign` 14c checked the held
+  state and that the end row is the same element; the motion itself was never watched. In a live brainstorm in Chat,
+  click an option → the card stays, its rows dimmed, `Sent · <answer>` in its footer, no collapse; when the next
+  question lands the card changes in place and eases once to its new height. Same for Confirm the design → Builder
+  check. Agent surface, Chat. 541b374df.
+- [ ] (arcterm) **A crowded agent header keeps its project and initiative readable.** Unit test and typecheck only
+  (`headermodel.test.ts` `initiativeTitle`). Pick an agent linked to an initiative that offers Ship and ✓ Close ·
+  N tok, in a pane ~1150px wide → the initiative reads `◇ <title>` with one ◇ (not `◇ ◇ C…`), the project is whole or
+  cut past a few letters, and the long name is what truncates first. Then a 2x2 split (560px cell) → still `/ +`,
+  the run's number, `opus`, nothing overlapping. Agent surface header. 2f3a86ffa.
+- [ ] (arcterm) **A terminal launch does not wait on Task images.** Unit test only (`launcherimages.test.ts`
+  `imagesHoldLaunch`). Ctrl+N → Claude Code → paste a large image into Task, and before its thumbnail stops spinning
+  pick Terminal → Open terminal is enabled and opens one; back on Claude Code, Launch agent waits for the image as
+  before. `launchermodal.tsx` `imagesWriting`.
 - [ ] (arcterm) **The rail's session card has no Tools row.** The dev app was down when it was made, so
   `task verify:ui -- agent-subagents-background` never ran on it (its step 4 now checks there is no row). Open an
   agent that has run tools → the right rail's session card shows project, model, branch and the state line, with no
@@ -119,12 +141,15 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) **An open chunk names the files that changed since it was written.** Unit tests, the typecheck and
   a scan over the real initiatives' JSON only; no dev app ran. Rebuild, wait two minutes after start (the first scan),
   then open "Repo hygiene: lint, prettier, stale comments, test gaps" in the initiative sheet → rows such as
-  "chatpane.tsx fails prettier --check…" carry a grey "changed since" chip whose tooltip lists "chatpane.tsx changed
-  15 times"; open one → under its status reads "chatpane.tsx changed 15 times since this was written (<day>): check
-  it still holds" with Mark checked; Mark checked → the chip and the line go. "ReleaseHub parser image + GitHub
-  follow-ups" chunk 4 (IMAGE.md) → an amber "file gone" chip, and "rewrite or skip it". `wsh effort stale` lists the
-  same chunks; `wsh effort show <effort>` prints "(written around <sha>, N commits ago; … changed N times)" on old
-  chunks, and after the first scan "written at" (the backfilled base).
+  "councildiscussion.tsx fails prettier --check…" carry a grey "changed since" chip whose tooltip lists
+  "councildiscussion.tsx changed N times"; open one → under its status reads "… changed N times since this was
+  written (<day>): check it still holds" with Mark checked; Mark checked → the chip and the line go. "ReleaseHub
+  parser image + GitHub follow-ups" chunk 4 (IMAGE.md) → an amber "file gone" chip, and "rewrite or skip it": the
+  installed 1.1.3 lost it on 2026-11-16 (its backfill dated the chunk by a note added the day before, so it read
+  "written at d694b95a2, the code has not moved since"); after the fix the first scan re-derives that base from the
+  initiative's creation and the chip comes back. `wsh effort stale` lists the same chunks; `wsh effort show <effort>`
+  prints "(written around <sha>, N commits ago; … changed N times)" on old chunks, and after the first scan
+  "written at" (the backfilled base).
 - [ ] (arcterm) **An open chunk counts the commits since it was written.** Unit tests and the typecheck only; no dev
   app ran. In an initiative whose project is registered, `wsh effort chunk add <effort> "probe"`, make a commit in that
   project, then open the chunk in the initiative sheet → under its status reads "Written 1 commit ago (<day>): check it

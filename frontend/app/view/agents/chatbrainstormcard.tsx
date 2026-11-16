@@ -44,6 +44,7 @@ import {
     TickBox,
     openBrainstorm,
 } from "./chatbrainstormparts";
+import { answeredText } from "./chatbrainstormwire";
 
 // Send under the rows of a question that takes several, joining the ticked labels with " + " as the Brainstorm pane does.
 // It is always there, off until a row is ticked (then it names them: "Send A + C"), so ticking the first row shoves
@@ -82,8 +83,10 @@ function SendTicked({
 function QuestionBox({ agent, q, onPick }: { agent: AgentVM; q: QuestionCard; onPick?: (text: string) => void }) {
     const act = useAction();
     const [picked, setPicked] = useState<number[]>([]);
-    // an exited agent has nothing to send to: the card stays as the record of what it asked
-    const off = act.busy || q.state === "static";
+    // an exited agent has nothing to send to: the card stays as the record of what it asked. An answered one (`working`)
+    // holds its place, its rows off (ROW dims a disabled row), until the agent's next card takes it
+    const answered = q.state === "working";
+    const off = act.busy || q.state === "static" || answered;
     const send = async (text: string) => {
         if (off) {
             return;
@@ -175,7 +178,17 @@ function QuestionBox({ agent, q, onPick }: { agent: AgentVM; q: QuestionCard; on
                                 </button>
                             ) : null}
                             {q.reasons ? <span>Pros and cons are there too</span> : null}
-                            {q.state !== "static" ? (
+                            {answered ? (
+                                <span
+                                    data-chat-bscard-sent
+                                    className="ml-auto min-w-0 truncate text-right"
+                                    title={q.sent != null ? answeredText(q.sent) : undefined}
+                                >
+                                    {q.sent != null
+                                        ? `Sent · ${answeredText(q.sent)}`
+                                        : "The agent is writing the next step"}
+                                </span>
+                            ) : q.state !== "static" ? (
                                 <span className="ml-auto text-right">Type below to answer in your own words</span>
                             ) : null}
                         </>
@@ -207,7 +220,8 @@ export function ChatBrainstormCard({
 }) {
     switch (card.kind) {
         case "question":
-            return <QuestionBox agent={agent} q={card} onPick={onPick} />;
+            // keyed by its number: the next question starts with nothing ticked and its folds closed
+            return <QuestionBox key={card.n} agent={agent} q={card} onPick={onPick} />;
         case "confirm": {
             const file = shownBrainstormFile(state);
             return file == null ? null : (

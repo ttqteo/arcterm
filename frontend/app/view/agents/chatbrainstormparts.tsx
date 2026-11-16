@@ -6,12 +6,12 @@
 // the ✓ row. Each card's own body is in its file (chatbrainstormcard.tsx, chatbrainstormconfirm.tsx,
 // chatbrainstormcheck.tsx, chatbrainstormrun.tsx); the strings come from chatbrainstorm.ts.
 
-import { springReveal, turnTransition } from "@/app/element/motiontokens";
+import { MOTION, springReveal, turnTransition } from "@/app/element/motiontokens";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { ArrowUpRight, Check, ChevronRight } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
-import { useState, type ReactNode } from "react";
+import { animate, AnimatePresence, motion, useReducedMotion, type AnimationPlaybackControls } from "motion/react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
 import { optionLetter, type AnswerOption } from "./brainstormmodel";
@@ -92,7 +92,85 @@ export function StateTag({ state }: { state: CardState }) {
     );
 }
 
-export type CardKind = "question" | "confirm" | "check" | "run" | "verdict" | "handoff" | "council" | "docreview";
+export type CardKind =
+    | "question"
+    | "confirm"
+    | "check"
+    | "run"
+    | "verdict"
+    | "handoff"
+    | "council"
+    | "docreview"
+    | "canvaspick";
+
+// true inside a CardSlot once it has drawn its first card (CardShell's enter is then the slot's height spring)
+const SlotSettled = createContext(false);
+
+/** The one place the brainstorm's card lives at the end of the conversation. It stays mounted from the first card to the
+ *  last, so a question answered, the next question, Confirm the design and the builder check take turns in it rather
+ *  than one card leaving and another coming in: the first card enters on CardShell's springReveal, every later one draws
+ *  at once in its place while the slot springs from the old card's height to the new one's (`swap` changes whenever the
+ *  card does). The height is the last one the slot's ResizeObserver saw, which at the commit that swaps the card is
+ *  still the old card's. A swap mid-spring starts from where the slot is. Skipped under reduced motion. */
+export function CardSlot({ swap, children }: { swap: string; children: ReactNode }) {
+    const reduce = useReducedMotion();
+    const outer = useRef<HTMLDivElement>(null);
+    const inner = useRef<HTMLDivElement>(null);
+    const seen = useRef<number | null>(null);
+    const lastSwap = useRef(swap);
+    const run = useRef<AnimationPlaybackControls | null>(null);
+    const [settled, setSettled] = useState(false);
+    useEffect(() => setSettled(true), []);
+    useEffect(() => {
+        const el = inner.current;
+        if (el == null) {
+            return;
+        }
+        const ro = new ResizeObserver(() => {
+            seen.current = el.getBoundingClientRect().height;
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+    useEffect(() => () => run.current?.stop(), []);
+    useLayoutEffect(() => {
+        const box = outer.current;
+        const content = inner.current;
+        if (lastSwap.current === swap || box == null || content == null) {
+            return;
+        }
+        lastSwap.current = swap;
+        const start = run.current != null ? box.getBoundingClientRect().height : seen.current;
+        run.current?.stop();
+        run.current = null;
+        box.style.removeProperty("height");
+        box.style.removeProperty("overflow");
+        const end = content.getBoundingClientRect().height;
+        if (reduce || start == null || start === end) {
+            return;
+        }
+        box.style.overflow = "hidden";
+        box.style.height = `${start}px`;
+        const playing = animate(box, { height: [start, end] }, MOTION.spring);
+        run.current = playing;
+        // a spring stopped for a newer one must not clear the newer one's styles
+        const rest = () => {
+            if (run.current === playing) {
+                run.current = null;
+                box.style.removeProperty("height");
+                box.style.removeProperty("overflow");
+            }
+        };
+        void playing.finished.then(rest, rest);
+    }, [swap, reduce]);
+    return (
+        <div ref={outer} data-chat-bscard-slot={swap}>
+            <div ref={inner}>
+                <SlotSettled.Provider value={settled}>{children}</SlotSettled.Provider>
+            </div>
+        </div>
+    );
+}
 
 /** The section every card is: its motion wrapper (enters and leaves on springReveal), the kind and state attributes the
  *  scenarios read, and the header row (icon, head, the state tag, then the header's right end). `label` is the section's
@@ -132,10 +210,12 @@ export function CardShell({
     tag?: ReactNode;
     children: ReactNode;
 }) {
+    // in a CardSlot that is already on screen, a card taking another's place draws at once: the slot springs its height
+    const inSettledSlot = useContext(SlotSettled);
     return (
         <motion.div
             variants={springReveal}
-            initial="initial"
+            initial={inSettledSlot ? false : "initial"}
             animate="animate"
             exit="exit"
             className="overflow-hidden rounded-[12px]"
@@ -467,9 +547,10 @@ export function TickBox({
     );
 }
 
-/** The lettered option rows of a question (the talk question's and the builder's): one button per option that sends its
- *  label through `onSend`, the `pick` row marked with `pickLabel`. `tick` puts a box before a row, for a question that
- *  takes more than one option. */
+/** The lettered option rows of a question (the talk question's, the builder's and the canvas quick pick's): one button
+ *  per option that sends its label and index through `onSend`, the `pick` row marked with `pickLabel`. `tick` puts a box
+ *  before a row, for a question that takes more than one option; `trail` a control after it (the quick pick's open
+ *  board). `letters` are the rows' own letters when they are not A, B, C… in order. */
 export function OptionRows({
     options,
     pick,
@@ -477,13 +558,17 @@ export function OptionRows({
     disabled,
     onSend,
     tick,
+    trail,
+    letters,
 }: {
     options: readonly AnswerOption[];
     pick: number | null;
     pickLabel: string;
     disabled: boolean;
-    onSend: (text: string) => void;
+    onSend: (text: string, i: number) => void;
     tick?: (i: number) => ReactNode;
+    trail?: (i: number) => ReactNode;
+    letters?: readonly string[];
 }) {
     return (
         <div role="group" aria-label="Answers" className="flex flex-col gap-[6px]">
@@ -497,10 +582,10 @@ export function OptionRows({
                             data-chat-bscard-option={i}
                             data-pick={picked ? "" : undefined}
                             disabled={disabled}
-                            onClick={() => onSend(o.label)}
+                            onClick={() => onSend(o.label, i)}
                             className="flex min-w-0 flex-1 cursor-pointer items-center gap-[12px] border-0 bg-transparent px-[12px] py-[9px] text-left outline-none disabled:cursor-default"
                         >
-                            <span className={LETTER}>{optionLetter(i)}</span>
+                            <span className={LETTER}>{letters?.[i] ?? optionLetter(i)}</span>
                             <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
                                 <span className="text-[13.5px] font-semibold leading-[1.4] text-primary">
                                     {o.label}
@@ -515,6 +600,7 @@ export function OptionRows({
                                 </span>
                             ) : null}
                         </button>
+                        {trail?.(i)}
                     </div>
                 );
             })}

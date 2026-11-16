@@ -31,6 +31,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- When an agent drew option boards in its Canvas and asks you to pick one, Chat ends with a card: one row per board
+  (A, B, C… with the board's title) that sends your pick in one click, a button to open each board, and Compare in
+  Canvas.
 - Ask Jarvis now starts at No folder: ask a question and it answers in the popover, or give it a job and Jarvis hands
   it to the right project's agent, opens a new one there, or asks you which project when it is unsure. The agent that
   got the job says which project Jarvis chose, with a Wrong project? button to move the job on.
@@ -58,6 +61,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- In the Agent sidebar, a run's second line now starts under its title, lined up with an agent's, instead of under
+  its icon.
+- In Chat, an agent's calls that read or edit the same file several times in a row now show as one line, "Edit
+  rail.tsx ×4 +1 −24", that opens to each call; every edit line also shows the lines it added and removed.
 - The Reply button over text you select in Chat now sits above the selection instead of over the words after it.
 - The agent's session card in the right rail no longer shows a Tools row counting each kind of tool call.
 - The command palette's New run and New agent rows, and its Quick and Orchestrate rows, now say they open the New
@@ -86,6 +93,18 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Chat's permission card now answers an agent's claude.ai Artifact prompts (publish, delete), with a line saying what
+  it does to which artifact, instead of raw JSON and only Answer in Terminal.
+- Chat no longer suggests a reply that is only an HTML tag, such as `</br>`.
+- The agent you leave on screen no longer falls asleep while you work in another window: Sleep idle agents now spares
+  it whether or not arcterm has the focus.
+- Esc closes the Brief sheet again when you last clicked the cockpit behind it; Esc in a picker's open menu still
+  closes only the menu.
+- Switching the New dialog to Terminal no longer greys out Open terminal while an image pasted into the Task box is
+  still saving: a terminal does not send the task, so it no longer waits on its images.
+- The brainstorm card in Chat no longer vanishes and pops back at every step: once you answer, the question stays in
+  place with your answer under it until the agent's next question, Confirm or builder check takes its spot, and the card
+  eases to its new height instead of collapsing and reopening.
 - The harness menu in Ask Jarvis no longer runs off the bottom of a short window: it fits the space beside its button
   and scrolls, so every harness can be picked.
 - Ctrl+R and Ctrl+Shift+R no longer try to redraw a sleeping agent's terminal, whose process has ended.

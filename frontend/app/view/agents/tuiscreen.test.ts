@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tuiEffort, tuiMode, tuiPermissionOptions } from "./tuiscreen";
+import { tuiEffort, tuiMode, tuiPermissionOptions, tuiSelectYes } from "./tuiscreen";
 import fixtures from "./tuiscreen.fixtures.json";
 
 // every screen here was captured off Claude Code 2.1.319 (tuiscreen.fixtures.json), not written by hand
@@ -101,5 +101,46 @@ describe("tuiPermissionOptions", () => {
     it("does not read a numbered list in Claude's reply as a dialog", () => {
         const lines = ["⏺ Steps:", "  1. Install it", "  2. Run it", "", ...fixtures.idle];
         expect(tuiPermissionOptions(lines)).toEqual([]);
+    });
+});
+
+describe("tuiSelectYes", () => {
+    // the Artifact tool's delete consent, laid out as Claude Code 2.1.325 drew it (written from a screenshot, not a capture)
+    const artifactDelete = [
+        " Artifact(delete · https://claude.ai/artifact/AEM9Fe36i45qw9ra56kSCn)",
+        "   ⎿  Waiting…",
+        "─────────────────────────────────────────────",
+        ' Permanently delete "Oracle Audit Worksheet"?',
+        "",
+        " ❯ No",
+        "   Yes",
+        "",
+        " Esc to cancel · Tab to amend",
+        "",
+    ];
+    it("moves one row down from No to Yes on the Artifact delete list", () => {
+        expect(tuiSelectYes(artifactDelete)).toEqual({ moves: 1, label: "Yes" });
+    });
+    it("counts from wherever the cursor sits", () => {
+        const lines = [" Allow Claude to change it?", "", "   No", " ❯ Yes", "", " Esc to cancel"];
+        expect(tuiSelectYes(lines)).toEqual({ moves: 0, label: "Yes" });
+        const up = [" Allow?", "   Yes", "   Maybe", " ❯ No", "", " Esc to cancel"];
+        expect(tuiSelectYes(up)).toEqual({ moves: -2, label: "Yes" });
+    });
+    it("reads a numbered dialog by its numbers", () => {
+        expect(tuiSelectYes(fixtures.bashDialog)).toEqual({ moves: 0, label: "Yes" });
+        const lines = [" Do you want to proceed?", "   1. No", " ❯ 2. Maybe", "   3. Yes, once", "", " Esc to cancel"];
+        expect(tuiSelectYes(lines)).toEqual({ moves: 1, label: "Yes, once" });
+    });
+    it("is null with no list, no Yes, or only the input prompt on screen", () => {
+        expect(tuiSelectYes([])).toBeNull();
+        expect(tuiSelectYes(fixtures.idle)).toBeNull();
+        expect(tuiSelectYes([" Pick one", "", " ❯ No", "   Cancel", ""])).toBeNull();
+        expect(tuiSelectYes(["❯ yes please", ""])).toBeNull();
+    });
+    it("does not take a line of the question for an option", () => {
+        // the question sits at the cursor's own indent but past a blank row
+        const lines = ["   Yes or no?", "", " ❯ No", "   Yes", ""];
+        expect(tuiSelectYes(lines)).toEqual({ moves: 1, label: "Yes" });
     });
 });

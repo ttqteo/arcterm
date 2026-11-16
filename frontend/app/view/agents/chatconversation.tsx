@@ -62,7 +62,7 @@ import {
     ChatBrainstormCard,
     ChatBrainstormStepDone,
 } from "./chatbrainstormcard";
-import { FOCUS_RING } from "./chatbrainstormparts";
+import { CardSlot, FOCUS_RING } from "./chatbrainstormparts";
 import { ChatBrainstormRunDone, ChatBrainstormRunRow, useDoneRuns } from "./chatbrainstormrun";
 import { brainstormAnswersAtom } from "./chatbrainstormstore";
 import { answerMessages, answeredText, pairedHidden } from "./chatbrainstormwire";
@@ -1774,10 +1774,11 @@ export function ChatConversation({
                 : null}
             {/* The card the brainstorm ends with (the question it waits on, Confirm the design, the builder check, the
                 run), after the last row: a row kind of its own, not an item (it is no data-chat-item, so the place kept
-                and restored never counts it). The card opens its height on the spring and leaves on it (the card's own
-                variants); this wrapper does the same with the column's gap, which a closed row would otherwise hold
-                open, so nothing above it shoves. It is keyed by the card's kind (and a question's number), so a swap
-                from one card to the next animates. The first render draws it at once. The run card draws its own
+                and restored never counts it). The first card opens its height on the spring and the last leaves on it
+                (the card's own variants); this wrapper does the same with the column's gap, which a closed row would
+                otherwise hold open, so nothing above it shoves. The wrapper has one key for the whole brainstorm and
+                holds a CardSlot: the next card takes the old one's place and the slot springs between their heights,
+                never one card leaving and another coming in. The first render draws it at once. The run card draws its own
                 wrapper (ChatBrainstormRunRow), which a run that is over leaves out altogether: no empty row holding
                 the column's gap. The runs of the conversation that no call names (placeRunCards) come before it, each
                 one a card of its own, or its ✓ row once it is over. After them come the councils the agent started that
@@ -1817,13 +1818,15 @@ export function ChatConversation({
                             ended={endedByRun.get(brainstorm.card.runId)}
                         />
                     ) : (
-                        <motion.div key={cardKey(brainstorm.card)} data-chat-brainstorm-row {...endRow}>
-                            <ChatBrainstormCard
-                                agent={brainstorm.agent}
-                                card={brainstorm.card}
-                                model={brainstorm.model}
-                                state={brainstorm.state}
-                            />
+                        <motion.div key="brainstorm" data-chat-brainstorm-row {...endRow}>
+                            <CardSlot swap={cardKey(brainstorm.card)}>
+                                <ChatBrainstormCard
+                                    agent={brainstorm.agent}
+                                    card={brainstorm.card}
+                                    model={brainstorm.model}
+                                    state={brainstorm.state}
+                                />
+                            </CardSlot>
                         </motion.div>
                     )
                 ) : null}

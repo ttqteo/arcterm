@@ -23,6 +23,7 @@ import {
     builderQuestionHead,
     compareLine,
     designDoneLine,
+    holdCard,
     MAX_ANSWERS_PER_AGENT,
     pairAnswers,
     parseSentStore,
@@ -570,6 +571,13 @@ function pick<K extends ChatCard["kind"]>(c: ChatCard | null, kind: K): Extract<
     return c as Extract<ChatCard, { kind: K }>;
 }
 
+// an answered question: the card holds its place as `working` until the next card takes it
+function holding(c: ChatCard | null) {
+    const q = pick(c, "question");
+    expect(q.state).toBe("working");
+    return q;
+}
+
 const SCOPE: BrainstormPart = { id: "scope", title: "Scope", state: "yours", gist: "Chat only", body: "" };
 const MOTION: BrainstormPart = { id: "motion", title: "Motion", state: "guess", gist: "Fade + scale", body: "" };
 const TONE: BrainstormPart = { id: "tone", title: "Tone", state: "guess", gist: "Quiet", body: "" };
@@ -682,8 +690,10 @@ describe("brainstormCard: the question", () => {
         expect(weighingLine(1)).toBe("The judge is weighing 1 approach.");
     });
 
-    it("is null while the agent writes with a question still in the file", () => {
-        expect(brainstormCard(inp({ file: file({ working: "Taking in your change." }) }))).toBeNull();
+    it("holds the question as working while the agent writes with it still in the file", () => {
+        const c = holding(brainstormCard(inp({ file: file({ working: "Taking in your change." }) })));
+        expect(c).toMatchObject({ n: 2, sent: null });
+        expect(c.options).toHaveLength(3);
     });
 
     it("is open text when the question offers no options", () => {
@@ -726,8 +736,8 @@ describe("brainstormCard: the question", () => {
         expect(c.question).toBe("Which motion?");
     });
 
-    it("is gone once a record of this topic answered the question, but not for another topic's", () => {
-        expect(brainstormCard(inp({ records: [rec({ n: 2 })] }))).toBeNull();
+    it("holds its place as working, with the line sent, once a record of this topic answered it, but not for another topic's", () => {
+        expect(holding(brainstormCard(inp({ records: [rec({ n: 2 })] })))).toMatchObject({ n: 2, sent: "A" });
         expect(pick(brainstormCard(inp({ records: [rec({ n: 2, topic: "other" })] })), "question").state).toBe(
             "waiting"
         );
@@ -736,14 +746,14 @@ describe("brainstormCard: the question", () => {
 
     it("counts a record from before kinds existed as an answer", () => {
         const old: SentAnswer = { topic: TOPIC, n: 2, part: "Motion", text: "Fade", sentAt: 1, seen: 0 };
-        expect(brainstormCard(inp({ records: [old] }))).toBeNull();
+        expect(holding(brainstormCard(inp({ records: [old] }))).sent).toBe("Fade");
     });
 
-    it("stays hidden while the file is no newer than the record that answered it", () => {
+    it("stays answered while the file is no newer than the record that answered it", () => {
         const answered = rec({ n: 2, sentAt: 1000 });
-        expect(brainstormCard(inp({ records: [answered], modifiedMs: 900 }))).toBeNull();
+        holding(brainstormCard(inp({ records: [answered], modifiedMs: 900 })));
         // written the very moment the line went: nothing says the agent has written since
-        expect(brainstormCard(inp({ records: [answered], modifiedMs: 1000 }))).toBeNull();
+        holding(brainstormCard(inp({ records: [answered], modifiedMs: 1000 })));
     });
 
     it("shows again when the file was written after the record and still asks the same question", () => {
@@ -755,19 +765,21 @@ describe("brainstormCard: the question", () => {
         expect(pick(brainstormCard(inp({ records: [clicked], modifiedMs: 5000 })), "question").state).toBe("waiting");
     });
 
-    it("keeps today's hiding when the file has no time to compare", () => {
-        expect(brainstormCard(inp({ records: [rec({ n: 2, sentAt: 1000 })], modifiedMs: null }))).toBeNull();
+    it("keeps it answered when the file has no time to compare", () => {
+        holding(brainstormCard(inp({ records: [rec({ n: 2, sentAt: 1000 })], modifiedMs: null })));
     });
 
-    it("is hidden by a record newer than the file even when an older record is passed", () => {
-        // the file was written after the first answer but before the second one went: the second hides it
+    it("is answered by a record newer than the file even when an older record is passed, and shows that one's line", () => {
+        // the file was written after the first answer but before the second one went: the second answers it
         const records = [rec({ n: 2, sentAt: 1000 }), rec({ n: 2, sentAt: 3000, text: "B" })];
-        expect(brainstormCard(inp({ records, modifiedMs: 2000 }))).toBeNull();
+        expect(holding(brainstormCard(inp({ records, modifiedMs: 2000 }))).sent).toBe("B");
     });
 
-    it("still hides a question that is being written up, however new the file", () => {
+    it("still holds a question that is being written up as working, however new the file", () => {
         const writing = file({ working: "Taking in your change." });
-        expect(brainstormCard(inp({ file: writing, records: [rec({ n: 2 })], modifiedMs: 9000 }))).toBeNull();
+        expect(
+            holding(brainstormCard(inp({ file: writing, records: [rec({ n: 2 })], modifiedMs: 9000 }))).sent
+        ).toBeNull();
     });
 
     it("is not hidden by a builder answer with the same number", () => {
@@ -777,8 +789,8 @@ describe("brainstormCard: the question", () => {
         // nor by a step or an action line, which store n 0 anyway
         const action = rec({ n: 0, part: "", kind: "action", text: "brainstorm: guess" });
         expect(pick(brainstormCard(inp({ file: q1, records: [action] })), "question").n).toBe(1);
-        // an answer record does hide it
-        expect(brainstormCard(inp({ file: q1, records: [rec({ n: 1, kind: "answer" })] }))).toBeNull();
+        // an answer record does answer it
+        holding(brainstormCard(inp({ file: q1, records: [rec({ n: 1, kind: "answer" })] })));
     });
 
     it("stays the question card in the check phase: the talk question comes first", () => {
@@ -798,6 +810,31 @@ describe("brainstormCard: the question", () => {
     it("is null with no brainstorm attached", () => {
         expect(brainstormCard(inp({ file: null }))).toBeNull();
         expect(brainstormCard(inp({ file: null, exited: true, sent: "check", check: READING }))).toBeNull();
+    });
+});
+
+describe("holdCard", () => {
+    const asked = () => pick(brainstormCard(inp()), "question");
+    const confirm = () => brainstormCard(inp({ file: review() }));
+
+    it("shows the brainstorm's card whenever it makes one", () => {
+        const next = confirm();
+        expect(holdCard(asked(), next, true, false)).toBe(next);
+        expect(holdCard(null, asked(), false, false)?.kind).toBe("question");
+    });
+
+    it("keeps the question shown last, as working, while the agent works and the brainstorm makes none", () => {
+        const held = holdCard(asked(), null, true, false);
+        expect(pick(held, "question")).toMatchObject({ n: 2, state: "working" });
+        // held again on the next render: the same card, so nothing redraws
+        expect(holdCard(held, null, true, false)).toBe(held);
+    });
+
+    it("lets the card go once the agent is idle, the brainstorm is gone, or what was shown is not a question", () => {
+        expect(holdCard(asked(), null, false, false)).toBeNull();
+        expect(holdCard(asked(), null, true, true)).toBeNull();
+        expect(holdCard(confirm(), null, true, false)).toBeNull();
+        expect(holdCard(null, null, true, false)).toBeNull();
     });
 });
 

@@ -5,7 +5,9 @@
 // Allow and Deny. The queue is wavesrv's (permissionstore.ts); the card draws its head, with "N more waiting" under it.
 // Allow types `1` into the terminal and Deny types Esc, through one command that refuses a request that is no longer the
 // head, so a late click types nothing. A request the card may not allow (plan approval, an MCP tool...) offers only
-// "Answer in Terminal", because its first option can grant more than the person chose. The line of an answer that did not
+// "Answer in Terminal", because its first option can grant more than the person chose. A ScreenPick request (the
+// Artifact tool's " ❯ No / Yes" list, where `1` is No) gets Allow and Deny once its Yes shows on the terminal: Allow
+// moves the cursor to that Yes and presses Enter (permissionstore.ts reads the list at the click). The line of an answer that did not
 // go through belongs to the agent, not to a request (the refused request has left the queue by then), so the card draws
 // it even on an empty queue, as a shell holding that line alone.
 // The keyboard answers it too: with the chat box empty, ↑ and ↓ move a highlight over Allow, the second choice and Deny,
@@ -20,7 +22,9 @@ import type { AgentVM } from "./agentsviewmodel";
 import {
     cardHead,
     cardShown,
+    choiceAnswer,
     moreWaiting,
+    PERMISSION_SCREEN_ROWS,
     permissionChoices,
     permissionSummaryLine,
     permissionTitle,
@@ -34,6 +38,7 @@ import {
     permissionCardKey,
     pickedCardChoice,
     publishCardKeys,
+    screenYes,
     usePermission,
     usePermissionCardChoice,
     usePermissionRequestState,
@@ -63,8 +68,7 @@ function useNow(active: boolean): number {
     return now;
 }
 
-// how many rows off the bottom of the terminal hold the dialog, and how often the card re-reads them while it shows
-const SCREEN_ROWS = 30;
+// how often the card re-reads the dialog off the terminal while it shows
 const SECOND_POLL_MS = 1000;
 // the first read waits this long, so the TUI has drawn the dialog of a request that just became the head
 const SECOND_FIRST_READ_MS = 250;
@@ -80,7 +84,7 @@ function useSecondChoice(blockId: string | undefined, headId: string | undefined
             return;
         }
         const read = () => {
-            const lines = readTermLines(blockId, SCREEN_ROWS);
+            const lines = readTermLines(blockId, PERMISSION_SCREEN_ROWS);
             setLabel(lines == null ? null : secondChoice(tuiPermissionOptions(lines)));
         };
         const first = setTimeout(read, SECOND_FIRST_READ_MS);
@@ -90,6 +94,26 @@ function useSecondChoice(blockId: string | undefined, headId: string | undefined
             clearInterval(timer);
         };
     }, [blockId, headId]);
+    return label;
+}
+
+// The label of the Yes of ScreenPick request `headId`'s list (the Artifact tool's " ❯ No / Yes"), read off the
+// terminal while it is the head; null until the list shows, and while it does not, the card offers only the terminal.
+function useScreenYes(oref: string | undefined, headId: string | undefined): string | null {
+    const [label, setLabel] = useState<string | null>(null);
+    useEffect(() => {
+        setLabel(null);
+        if (headId == null || oref == null) {
+            return;
+        }
+        const read = () => setLabel(screenYes(oref)?.label ?? null);
+        const first = setTimeout(read, SECOND_FIRST_READ_MS);
+        const timer = setInterval(read, SECOND_POLL_MS);
+        return () => {
+            clearTimeout(first);
+            clearInterval(timer);
+        };
+    }, [oref, headId]);
     return label;
 }
 
@@ -112,14 +136,18 @@ export function PermissionCard({
     const shown = oref != null && (head != null || error != null) && cardShown(agent);
     const now = useNow(shown && head != null);
     const second = useSecondChoice(agent.blockId, shown && head?.answerable ? head.id : undefined);
+    const screen = head?.screenpick === true;
+    const yes = useScreenYes(oref, shown && screen ? head.id : undefined);
+    // a ScreenPick head can be answered once its Yes shows on the terminal
+    const canAnswer = head != null && (head.answerable || (screen && yes != null));
     // the head the keys answer: one the card can answer, while it shows
-    const keyHead = oref != null && shown && head?.answerable ? head.id : undefined;
+    const keyHead = oref != null && shown && canAnswer ? head.id : undefined;
     const hasSecond = second != null;
     useEffect(() => {
         if (oref != null && keyHead != null) {
-            publishCardKeys(oref, keyHead, permissionChoices(hasSecond));
+            publishCardKeys(oref, keyHead, permissionChoices(hasSecond), screen);
         }
-    }, [oref, keyHead, hasSecond]);
+    }, [oref, keyHead, hasSecond, screen]);
     // apart from the publish, so the second button showing up does not drop the highlight on its way to the new choices
     useEffect(() => {
         if (oref == null || keyHead == null) {
@@ -149,8 +177,8 @@ export function PermissionCard({
             </div>
         );
     }
-    const answer = (allow: boolean, choice?: 2) =>
-        fireAndForget(() => answerPermission(oref, head.id, { allow, choice }));
+    const answer = (choice: PermissionChoice) =>
+        fireAndForget(() => answerPermission(oref, head.id, choiceAnswer(choice, screen)));
     const ring = (choice: PermissionChoice) => (picked === choice ? PICKED : undefined);
     // the key that sends the highlighted choice, on that button alone
     const enterKey = (choice: PermissionChoice, onAccent = false) =>
@@ -201,16 +229,16 @@ export function PermissionCard({
                 {permissionSummaryLine(head)}
             </div>
             <div ref={rowRef} onKeyDown={onRowKey} className="mt-3 flex flex-wrap items-center gap-2">
-                {head.answerable ? (
+                {canAnswer ? (
                     <>
                         <button
                             type="button"
                             data-permission-allow
                             data-perm-choice="allow"
                             disabled={busy}
-                            title="Allow this once"
+                            title={screen ? `Pick "${yes}" in the dialog` : "Allow this once"}
                             className={cn(PRIMARY_BTN, ring("allow"))}
-                            onClick={() => answer(true)}
+                            onClick={() => answer("allow")}
                         >
                             Allow
                             {enterKey("allow", true)}
@@ -223,7 +251,7 @@ export function PermissionCard({
                                 disabled={busy}
                                 title={second}
                                 className={cn(SECONDARY_BTN, "min-w-0 max-w-[320px]", ring("second"))}
-                                onClick={() => answer(true, 2)}
+                                onClick={() => answer("second")}
                             >
                                 <span className="min-w-0 truncate">{second}</span>
                                 {enterKey("second")}
@@ -236,7 +264,7 @@ export function PermissionCard({
                             disabled={busy}
                             title="Deny this request; the agent's turn ends"
                             className={cn(SECONDARY_BTN, ring("deny"))}
-                            onClick={() => answer(false)}
+                            onClick={() => answer("deny")}
                         >
                             Deny
                             {enterKey("deny")}

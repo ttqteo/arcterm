@@ -15939,6 +15939,8 @@ const restoreStorageKey = (key, prev) =>
 const TREE_RAIL_GLYPHS = ["↳", "◆", "▸", "▾", "›_", "↗", "‹"];
 const MIN_FONT_PX = 10.5;
 const TREE_RAIL_LEAD_ID = "fx-lead";
+// the wave asker (treeRailRoster): the session agent-tree-rail's run says it was started from
+const TREE_RAIL_ORIGIN_ID = "fx-ask-wave";
 
 function treeRailRoster(runId, now, leadName = TREE_RAIL_LEAD, leadExtra = {}) {
     return [
@@ -16189,8 +16191,17 @@ async function focusFixtureLead(h, ctx, leadName) {
     await new Promise((r) => setTimeout(r, 1200));
 }
 
-async function arrangeTreeRail(h, ctx) {
-    await arrangeFixtureRun(h, ctx, "tree-rail", TREE_RAIL_LEAD, { transcriptPath: writeLeadTranscript(ctx.cwd) });
+// origin: the run was started from the wave asker's session, as `wsh runs start` from it would: its ↰ origin button sits
+// on the lead's run line beside the progress, which agent-tree-rail step 7 measures with it
+async function arrangeTreeRail(h, ctx, { origin = false } = {}) {
+    await arrangeFixtureRun(
+        h,
+        ctx,
+        "tree-rail",
+        TREE_RAIL_LEAD,
+        { transcriptPath: writeLeadTranscript(ctx.cwd) },
+        origin ? { origintabid: TREE_RAIL_ORIGIN_ID } : undefined
+    );
     await h.rpc("dagsubmit", {
         channelid: ctx.channelId,
         runid: ctx.runId,
@@ -16216,7 +16227,7 @@ const agentTreeRail = {
         };
         // a throw past this point still returns ctx, so teardown removes whatever was already made
         try {
-            await arrangeTreeRail(h, ctx);
+            await arrangeTreeRail(h, ctx, { origin: true });
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -16435,6 +16446,8 @@ const agentTreeRail = {
                     titled: progress ? progress.title.length > 0 : null,
                     ram: ram ? (getComputedStyle(ram).display !== "none" ? ram.textContent.trim() : false) : null,
                     tokens: tokens ? tokens.textContent.trim() : null,
+                    // the ↰ of the session the run was started from, on the same line
+                    origin: !!line.querySelector("[data-origin-from]"),
                     overflow: line.scrollWidth > line.clientWidth,
                 };
             };
@@ -16453,10 +16466,12 @@ const agentTreeRail = {
         const runAt = runLine?.at ?? [];
         rec(
             // the spec (2026-11-13-sidebar-declutter-design, "Bố cục dòng"): the words left of the columns shrink and cut
-            // with …, never the columns. At the tree's own 280px the three columns leave "Working · 0/3" about 40px, so
-            // it is cut there, but it shows, its tooltip has it whole, and it reads whole once the line has room
-            "7. the lead's run line carries its workers chip, its progress and the task strip; its tokens, age and the run's RAM stay on the line at every width; the progress shows at the tree's own width (whole in its tooltip) and reads whole from 300px; nothing spills out of the line",
+            // with …, never the columns. At the tree's own 280px the three columns and the run's ↰ origin leave
+            // "Working · 0/3" little room, so it is cut there, but it shows, its tooltip has it whole, and it reads whole
+            // once the line has room
+            "7. the lead's run line carries its workers chip, its progress, its ↰ origin and the task strip; its tokens, age and the run's RAM stay on the line at every width; the progress shows at the tree's own width (whole in its tooltip) and reads whole from 300px; nothing spills out of the line",
             nested != null &&
+                runAt.every((s) => s.origin === true) &&
                 /^\d+ of 3 tasks done/.test(nested.strip ?? "") &&
                 /workers?$/.test(nested.workersChip ?? "") &&
                 nested.progress != null &&
@@ -49174,6 +49189,232 @@ const chatInitiative = {
     },
 };
 
+// --- chat-canvas-pick: the quick pick card in Chat (docs/superpowers/specs/2026-11-16-canvas-quick-pick-design.md,
+// chatcanvaspick.ts). An idle Claude fixture agent's last reply lists options A and B and ends with a question; its canvas
+// (opened with the agent's own `wsh ui reveal canvas:<topic>`, here the same uireveal call) holds Main, A-…, B-… and a
+// C-… board the reply never names. Chat ends with a card holding the question and the two named boards' rows, and the
+// model's guessed chips give way to it; a click on B sends `B — <title>` to the agent's terminal and the card leaves. What
+// the page types into the block is recorded by a small mock (window.__arcCanvasPickMock), never sent. The transcript and
+// the design folder are in a temp dir.
+const CCP_MOCK_KEY = "__arcCanvasPickMock";
+const CCP_NAME = "canvas pick";
+const CCP_TOPIC = "verify-canvas-pick";
+const CCP_WAIT_MS = 15000;
+const CCP_TITLE_A = "Gộp các lần liên tiếp cùng file";
+const CCP_TITLE_B = "One row per edit";
+const CCP_QUESTION = "Which one do you want, A or B?";
+const CCP_REPLY = [
+    "I drew the two ways to show the edits in the Canvas:",
+    "",
+    `**A** — ${CCP_TITLE_A}`,
+    `- B: ${CCP_TITLE_B.toLowerCase()}`,
+    "",
+    CCP_QUESTION,
+].join("\n");
+
+function ccpWriteFixtures(dir) {
+    const project = join(dir, ".superpowers", "design", CCP_TOPIC, "project");
+    mkdirSync(project, { recursive: true });
+    const boards = {
+        "Main.dc.html": { x: 0, y: 0, w: 1200, h: 700, title: "Edits panel" },
+        "A-merge-runs.dc.html": { x: 1280, y: 0, w: 1200, h: 700, title: `Option A: ${CCP_TITLE_A}` },
+        "B-one-row-each.dc.html": { x: 2560, y: 0, w: 1200, h: 700, title: `Option B: ${CCP_TITLE_B}` },
+        "C-timeline.dc.html": { x: 3840, y: 0, w: 1200, h: 700, title: "Option C: Timeline" },
+    };
+    writeFileSync(join(project, "canvas.json"), JSON.stringify({ boards, order: Object.keys(boards) }));
+    for (const [name, b] of Object.entries(boards)) {
+        writeFileSync(join(project, name), `<!doctype html><meta charset="utf-8"><title>${b.title}</title><p>${b.title}</p>`);
+    }
+    const base = Date.now() - 600_000;
+    const o = (sec) => ({ cwd: dir, ts: new Date(base + sec * 1000).toISOString() });
+    return AC.writeTranscript(dir, "canvas-pick-main", [
+        AC.userText("draw me the options for the edits panel", { ...o(0), uuid: "u1" }),
+        AC.assistantText(CCP_REPLY, { ...o(2), uuid: "a1" }),
+    ]);
+}
+
+function ccpRoster(ctx) {
+    const now = Date.now();
+    return [
+        {
+            project: "arcterm",
+            state: "idle",
+            idleSince: now - 60_000,
+            task: "Edits panel",
+            agent: "claude",
+            model: "opus",
+            id: ctx.tabs.main.tabId,
+            name: CCP_NAME,
+            blockId: ctx.tabs.main.blockId,
+            transcriptPath: ctx.transcript,
+            cwd: ctx.dir,
+        },
+    ];
+}
+
+// records what the page types into the fixture block (controllerinput), and passes every other call on
+async function installCcpMock(h, ctx) {
+    const resolved = await ahResolveModules(h);
+    if (resolved.error) return `unresolved: ${resolved.error}`;
+    return h.ev(`(async () => {
+        const api = (await import(${JSON.stringify(resolved.urls.api)})).RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${CCP_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const block = ${JSON.stringify(ctx.tabs.main.blockId)};
+        const m = { api, prev, inputs: [] };
+        api.setMockRpcClient({
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "controllerinput" && data?.blockid === block) {
+                    m.inputs.push(atob(data.inputdata64 ?? ""));
+                    return Promise.resolve(null);
+                }
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        });
+        window.${CCP_MOCK_KEY} = m;
+        return "installed";
+    })()`);
+}
+
+const removeCcpMock = (h) =>
+    h.ev(`(() => {
+        const m = window.${CCP_MOCK_KEY};
+        if (!m) return "absent";
+        m.api.setMockRpcClient(m.prev);
+        delete window.${CCP_MOCK_KEY};
+        return "restored";
+    })()`);
+
+const chatCanvasPick = {
+    name: "chat-canvas-pick",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-canvas-pick-")),
+            tabs: {},
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        // a throw past this point still returns ctx, so teardown undoes whatever was already made
+        let at = "writing the fixtures";
+        try {
+            ctx.transcript = ccpWriteFixtures(ctx.dir);
+            at = "resetting the grid";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tab";
+            ctx.tabs.main = await acMakeTab(h, ctx, { label: CCP_NAME });
+            at = "installing the mock";
+            const mock = await installCcpMock(h, ctx);
+            if (mock !== "installed") throw new Error(`mock: ${mock}`);
+            at = "setting the roster";
+            await AC.setRoster(h, ccpRoster(ctx));
+            at = "opening the canvas from the agent";
+            await h.rpc(
+                "uireveal",
+                { address: `canvas:${CCP_TOPIC}`, callerblockid: ctx.tabs.main.blockId, callercwd: ctx.dir },
+                UI_ROUTE
+            );
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent, its transcript, its canvas and the mock", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const card = `document.querySelector('[data-agent-chat="${A}"] [data-chat-canvaspick]')`;
+        try {
+            await AC.focusAgent(h, A);
+            const shown = await polishWaitFor(h, `!!${card}`, CCP_WAIT_MS);
+            // a settled frame for the shot: the card's spring is over
+            await polishNap(600);
+            const seen = await h.ev(`(() => {
+                const c = ${card};
+                if (!c) return null;
+                const chat = document.querySelector('[data-agent-chat="${A}"]');
+                return {
+                    head: c.querySelector("[data-chat-bscard-head]")?.textContent.trim(),
+                    question: c.querySelector("[data-chat-canvaspick-question]")?.textContent.trim(),
+                    rows: [...c.querySelectorAll("[data-chat-bscard-option]")].map((b) => b.textContent.replace(/\\s+/g, " ").trim()),
+                    opens: [...c.querySelectorAll("[data-chat-canvaspick-open]")].map((b) => b.getAttribute("data-chat-canvaspick-open")),
+                    compare: c.querySelector("[data-chat-canvaspick-compare]")?.textContent.trim(),
+                    chips: chat?.querySelectorAll("[data-chat-suggest-chip]").length ?? 0,
+                };
+            })()`);
+            await h.shot("cdp-shots/chat-canvas-pick-card.png");
+            rec(
+                "1. Chat ends with the quick pick card: the agent's question, rows A and B with the boards' titles (not the unnamed C), an open button per row, and Compare 2 boards in Canvas",
+                shown &&
+                    seen?.question === CCP_QUESTION &&
+                    JSON.stringify(seen?.rows) === JSON.stringify([`A${CCP_TITLE_A}`, `B${CCP_TITLE_B}`]) &&
+                    JSON.stringify(seen?.opens) === JSON.stringify(["A-merge-runs.dc.html", "B-one-row-each.dc.html"]) &&
+                    seen?.compare === "Compare 2 boards in Canvas",
+                { shown, seen }
+            );
+            rec("2. while the card shows, no guessed reply chips sit under the box", seen?.chips === 0, seen);
+
+            const clicked = await h.ev(
+                `(() => { const b = ${card}?.querySelectorAll("[data-chat-bscard-option]")[1]; b?.click(); return !!b; })()`
+            );
+            const sent = await polishWaitFor(h, `(window.${CCP_MOCK_KEY}?.inputs ?? []).some((i) => i.includes("\\r"))`, CCP_WAIT_MS);
+            const gone = await polishWaitFor(h, `!${card}`, CCP_WAIT_MS);
+            const typed = await h.ev(`(window.${CCP_MOCK_KEY}?.inputs ?? [])`);
+            // the mock reads the bytes with atob, a Latin-1 string: read them back as UTF-8, without a paste's brackets
+            const text = Buffer.from((typed ?? []).join(""), "latin1")
+                .toString("utf8")
+                .replace(/^\x1b\[200~/, "")
+                .replace(/\x1b\[201~/, "");
+            await polishNap(500);
+            await h.shot("cdp-shots/chat-canvas-pick-sent.png");
+            rec(
+                "3. a click on row B sends `B — One row per edit` to the agent's terminal with Enter, and the card leaves",
+                clicked && sent && gone && text === `B — ${CCP_TITLE_B}\r`,
+                { clicked, sent, gone, text }
+            );
+        } catch (e) {
+            rec("the scenario threw", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-canvas-pick teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("remove the mock", () => removeCcpMock(h));
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tab", () => acCloseTabs(h, ctx));
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid ?? null)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes ?? null)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        await step("remove the fixtures", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- sidebar-agent-ram: an agent row in the sidebar shows the RAM its processes hold (agentram.ts), read from the Resource
 // Manager's snapshot, which the step pins (window.__resmonFixture) so the figures are known: 412 MB for the first agent,
 // 1.3 GB for the second, none for the third (no group). Settings → Appearance → Agent sidebar → RAM off hides them.
@@ -70957,6 +71198,7 @@ export const SCENARIOS = [
     chatQuote,
     chatMath,
     chatInitiative,
+    chatCanvasPick,
     ...chatRedesignScenarios(CR_KIT),
     ...chatInitiativeBandScenarios(CR_KIT),
     ...chatBrainstormBandScenarios(CR_KIT),

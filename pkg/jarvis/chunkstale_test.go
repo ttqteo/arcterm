@@ -32,11 +32,49 @@ func TestChunkWrittenTs(t *testing.T) {
 	if got := ChunkWrittenTs(e, waveobj.EffortChunk{Label: "a", UpdatedTs: 900}); got != 250 {
 		t.Fatalf("event: got %d, want 250", got)
 	}
-	if got := ChunkWrittenTs(e, waveobj.EffortChunk{Label: "b", UpdatedTs: 900}); got != 900 {
-		t.Fatalf("updatedts: got %d, want 900", got)
+	// a note or status change moves UpdatedTs, never the written time: a chunk with no event dates from the initiative
+	if got := ChunkWrittenTs(e, waveobj.EffortChunk{Label: "b", UpdatedTs: 900, Notes: []waveobj.EffortNote{{Ts: 900, Text: "Needs rewriting: x.go was deleted"}}}); got != 100 {
+		t.Fatalf("noted: got %d, want 100", got)
 	}
 	if got := ChunkWrittenTs(e, waveobj.EffortChunk{Label: "c"}); got != 100 {
 		t.Fatalf("seeded: got %d, want 100", got)
+	}
+	// a rename rewrites the text and a recheck confirms it: the later of them and the add event wins
+	renamed := waveobj.EffortChunk{Label: "a", Notes: []waveobj.EffortNote{{Ts: 400, Text: "renamed from old a"}, {Ts: 500, Text: "a note"}}}
+	if got := ChunkWrittenTs(e, renamed); got != 400 {
+		t.Fatalf("renamed: got %d, want 400", got)
+	}
+	checked := waveobj.EffortChunk{Label: "d", Notes: []waveobj.EffortNote{{Ts: 600, Text: "checked against 012345678"}}}
+	if got := ChunkWrittenTs(e, checked); got != 600 {
+		t.Fatalf("checked: got %d, want 600", got)
+	}
+}
+
+func TestBaseFromBackfill(t *testing.T) {
+	before, after := ChunkBasesSinceMs-1000, ChunkBasesSinceMs+1000
+	old := &waveobj.Effort{CreatedTs: before - 1000, Events: []waveobj.EffortEvent{
+		{Ts: before, Kind: "chunk-added", Label: "added before"},
+		{Ts: after, Kind: "chunk-added", Label: "added after"},
+	}}
+	cases := []struct {
+		name string
+		e    *waveobj.Effort
+		c    waveobj.EffortChunk
+		want bool
+	}{
+		{"no base", old, waveobj.EffortChunk{Label: "x"}, false},
+		{"seeded, initiative older than bases", old, waveobj.EffortChunk{Label: "x", BaseCommit: "abc"}, true},
+		{"added before bases", old, waveobj.EffortChunk{Label: "added before", BaseCommit: "abc"}, true},
+		{"added since bases", old, waveobj.EffortChunk{Label: "added after", BaseCommit: "abc"}, false},
+		{"rechecked", old, waveobj.EffortChunk{Label: "x", BaseCommit: "abc", Notes: []waveobj.EffortNote{{Ts: after, Text: "checked against abc"}}}, false},
+		{"renamed since bases", old, waveobj.EffortChunk{Label: "x", BaseCommit: "abc", Notes: []waveobj.EffortNote{{Ts: after, Text: "renamed from y"}}}, false},
+		{"renamed before bases", old, waveobj.EffortChunk{Label: "x", BaseCommit: "abc", Notes: []waveobj.EffortNote{{Ts: before, Text: "renamed from y"}}}, true},
+		{"initiative created since bases", &waveobj.Effort{CreatedTs: after}, waveobj.EffortChunk{Label: "x", BaseCommit: "abc"}, false},
+	}
+	for _, tc := range cases {
+		if got := BaseFromBackfill(tc.e, tc.c); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 

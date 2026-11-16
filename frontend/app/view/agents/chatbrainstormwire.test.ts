@@ -17,6 +17,7 @@ function card(over: Partial<QuestionCard> = {}): QuestionCard {
     return {
         kind: "question",
         state: "waiting",
+        sent: null,
         n: 2,
         part: "Motion",
         question: "How should it move?",
@@ -136,12 +137,14 @@ describe("boxAnswerRecord", () => {
         });
     });
 
-    it("records nothing when no question waits: none attached, a card of another kind, or an agent that exited", () => {
+    it("records nothing when no question waits: none attached, a card of another kind, one answered, or an agent that exited", () => {
         expect(boxAnswerRecord(null, "t", "Fade", [], now)).toBeNull();
         for (const other of OTHER_CARDS) {
             expect(boxAnswerRecord(other, "t", "Fade", [], now)).toBeNull();
         }
         expect(boxAnswerRecord(card({ state: "static" }), "t", "Fade", [], now)).toBeNull();
+        // the question answered, held in its place while the agent writes the next: words now are the user's own
+        expect(boxAnswerRecord(card({ state: "working", sent: "Fade" }), "t", "and faster", [], now)).toBeNull();
     });
 
     it("records no slash command and no bash-mode command, nor an empty message", () => {
@@ -161,12 +164,13 @@ describe("boxPlaceholderOverride", () => {
         );
     });
 
-    it("is null with no card, a card of another kind (the box keeps its own words), or an agent that exited", () => {
+    it("is null with no card, a card of another kind (the box keeps its own words), one answered, or an agent that exited", () => {
         expect(boxPlaceholderOverride(null)).toBeNull();
         for (const other of OTHER_CARDS) {
             expect(boxPlaceholderOverride(other)).toBeNull();
         }
         expect(boxPlaceholderOverride(card({ state: "static" }))).toBeNull();
+        expect(boxPlaceholderOverride(card({ state: "working", sent: "Fade" }))).toBeNull();
     });
 });
 

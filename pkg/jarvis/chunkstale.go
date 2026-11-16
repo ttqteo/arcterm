@@ -88,10 +88,21 @@ func ChunkIsOpen(c waveobj.EffortChunk) bool {
 	return c.Status != "done" && c.Status != "skipped"
 }
 
-// ChunkWrittenTs is when a chunk with no BaseCommit was written (unix ms, 0 when unknown): its latest chunk-added
-// event, else its UpdatedTs, else the initiative's creation (a chunk seeded at create has neither). UpdatedTs alone
-// moves with every status change and note, and a bulk edit can move every chunk's at once, so the event is the better
-// witness.
+// ChunkBasesSinceMs is when chunks began to keep a BaseCommit (commit 781a25a06): add, rename and recheck stamp the
+// project's HEAD from then on, and the chunks of an initiative created since are stamped at create.
+const ChunkBasesSinceMs = int64(1794739320000)
+
+// Trail notes that mark a chunk's text as written against the code at their time.
+const (
+	renamedNotePrefix = "renamed from "
+	checkedNotePrefix = "checked against "
+)
+
+// ChunkWrittenTs is when a chunk's text was last written against the code (unix ms): the latest of its chunk-added
+// event under its current label and its rename and recheck notes, else the initiative's creation (a chunk seeded at
+// create has none of them). Never UpdatedTs: a note, a status change or a bulk edit moves it, and a chunk dated by
+// it hides every change that landed before. The initiative's creation can only date a chunk too early, which flags
+// it more often, never less.
 func ChunkWrittenTs(e *waveobj.Effort, c waveobj.EffortChunk) int64 {
 	var ts int64
 	for _, ev := range e.Events {
@@ -99,13 +110,36 @@ func ChunkWrittenTs(e *waveobj.Effort, c waveobj.EffortChunk) int64 {
 			ts = ev.Ts
 		}
 	}
+	for _, n := range c.Notes {
+		if (strings.HasPrefix(n.Text, renamedNotePrefix) || strings.HasPrefix(n.Text, checkedNotePrefix)) && n.Ts > ts {
+			ts = n.Ts
+		}
+	}
 	if ts > 0 {
 		return ts
 	}
-	if c.UpdatedTs > 0 {
-		return c.UpdatedTs
-	}
 	return e.CreatedTs
+}
+
+// BaseFromBackfill reports whether a chunk's BaseCommit can only have come from the backfill, which may have dated
+// it by UpdatedTs before ChunkWrittenTs stopped reading it: nothing since ChunkBasesSinceMs stamped it (no add or
+// rename since, no recheck ever, and its initiative was created before). Such a base is re-derived from
+// ChunkWrittenTs.
+func BaseFromBackfill(e *waveobj.Effort, c waveobj.EffortChunk) bool {
+	if c.BaseCommit == "" || e.CreatedTs >= ChunkBasesSinceMs {
+		return false
+	}
+	for _, ev := range e.Events {
+		if ev.Kind == "chunk-added" && ev.Label == c.Label && ev.Ts >= ChunkBasesSinceMs {
+			return false
+		}
+	}
+	for _, n := range c.Notes {
+		if strings.HasPrefix(n.Text, checkedNotePrefix) || (strings.HasPrefix(n.Text, renamedNotePrefix) && n.Ts >= ChunkBasesSinceMs) {
+			return false
+		}
+	}
+	return true
 }
 
 // landedSince is the commits that landed after the chunk was written (writtenTs, ChunkWrittenTs), and the base it was
@@ -133,7 +167,7 @@ func (h *StaleHistory) landedSince(c waveobj.EffortChunk, writtenTs int64) (sinc
 	return h.Commits[:n], base, true, true
 }
 
-// InferredBase is the commit HEAD was at when a chunk with no BaseCommit was last updated, "" when the history does
+// InferredBase is the commit HEAD was at when a chunk with no BaseCommit was written (ChunkWrittenTs), "" when the history does
 // not reach back that far.
 func (h *StaleHistory) InferredBase(c waveobj.EffortChunk, writtenTs int64) string {
 	if c.BaseCommit != "" {

@@ -8,7 +8,6 @@
 // wakeAgent, sleepWithConfirm and useViewingSync are the thin calls into the server.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
-import { atoms } from "@/app/store/global";
 import { modalsModel } from "@/app/store/modalmodel";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -127,16 +126,16 @@ export function sleepingAge(vm: Pick<AgentVM, "sleeping">, now: number): string 
 }
 
 /** Pure: the agents whose terminal is on screen, as a sorted list: the focused agent, and every cell of the grid when it
- *  is one of them (viewingIds, which the unread badge counts as seen). The server never sleeps these. Sorted, so two
- *  pushes of the same view compare equal. */
+ *  is one of them (viewingIds). The server never sleeps these, whether or not arcterm's window has the focus: the agent
+ *  left on screen while you read elsewhere is still awake when you come back (the unread badge, unlike this, counts an
+ *  agent as seen only while the window has the focus). Sorted, so two pushes of the same view compare equal. */
 export function viewingTabIds(
-    windowFocused: boolean,
     onAgentSurface: boolean,
     center: CenterMode,
     focusId: string | undefined,
     grid: GridState
 ): string[] {
-    return [...viewingIds(windowFocused, onAgentSurface, center, focusId, grid)].sort();
+    return [...viewingIds(true, onAgentSurface, center, focusId, grid)].sort();
 }
 
 /** Pure: when an agent fell asleep, the time alone when it is today ("16:52"), with its day otherwise ("Nov 3 16:52"),
@@ -266,8 +265,7 @@ export function useViewingSync(model: AgentsViewModel): void {
     const surface = useAtomValue(model.surfaceAtom);
     const center = useAtomValue(centerModeAtom);
     const grid = useAtomValue(agentGridAtom);
-    const focused = useAtomValue(atoms.documentHasFocus);
-    const ids = viewingTabIds(focused, surface === "agent", center, focusId, grid);
+    const ids = viewingTabIds(surface === "agent", center, focusId, grid);
     const latest = useRef(ids);
     latest.current = ids;
     const push = () => fireAndForget(() => RpcApi.AgentsSetViewingCommand(TabRpcClient, { tabids: latest.current }));

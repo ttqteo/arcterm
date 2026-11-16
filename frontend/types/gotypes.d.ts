@@ -111,6 +111,7 @@ declare global {
         toolname: string;
         summary: string;
         answerable: boolean;
+        screenpick?: boolean;
         ts: number;
     };
 
@@ -498,6 +499,8 @@ declare global {
         id: string;
         allow: boolean;
         choice?: number;
+        screen?: boolean;
+        moves?: number;
     };
 
     // wshrpc.CommandAgentPermissionRaiseData

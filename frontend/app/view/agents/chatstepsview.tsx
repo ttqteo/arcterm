@@ -3,7 +3,8 @@
 //
 // A stretch of the agent's tool calls in Chat (the A-floating board): the "Worked for 38s · 5 tools" line, and under it, while
 // the stretch is the one running now or was opened by a click, one compact step line per call: an icon, a verb and a chip for
-// each thing it touched (chatsteps.ts). A click on a line opens that call's output or diff below it. The lines open and fold on
+// each thing it touched (chatsteps.ts), and a run of calls with the same verb on the same file as one line that opens to
+// them. A click on a line opens that call's output or diff below it. The lines open and fold on
 // the spring (springReveal), so a stretch that ends folds into its one line instead of vanishing. The detail body is
 // narrationtimeline.tsx's (ToolDetailBody), shared with the live feed; the rows around it are Chat's own.
 // Named chatstepsview, not chatsteps: chatsteps.ts holds the pure model, and `./chatsteps` resolves to the .ts first.
@@ -33,7 +34,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useState, type KeyboardEvent } from "react";
 import { burstRenderMode, detailExceedsInline, type AgentActionEntry } from "./agentsviewmodel";
-import { stepElapsed, stepOf, type StepChip, type StepIcon } from "./chatsteps";
+import { editCounts, foldOf, stepElapsed, stepOf, stepRows, type StepChip, type StepIcon } from "./chatsteps";
 import { inFlight, stretchMs, toolCountLabel, workedFor, workingFor, type WorkItem } from "./compacttimeline";
 import { ToolDetailBody, useNow } from "./narrationtimeline";
 import { PathLink } from "./pathlinkcontext";
@@ -98,7 +99,8 @@ const CHIP_FRAME = "border border-edge-mid bg-surface";
 // path) cannot be told from a file in some other folder, so it is not a link
 const hasFolder = (path: string) => /[\\/]/.test(path);
 
-function Chip({ chip }: { chip: StepChip }) {
+// `count`: the calls a folded line stands for, "×4" inside the file's chip
+function Chip({ chip, count }: { chip: StepChip; count?: number }) {
     if (chip.kind === "command") {
         return (
             <span
@@ -132,6 +134,24 @@ function Chip({ chip }: { chip: StepChip }) {
             ) : (
                 <span className="min-w-0 truncate">{name}</span>
             )}
+            {count != null && count > 1 ? (
+                <span data-chat-step-count className="shrink-0 font-medium tabular-nums text-primary">
+                    ×{count}
+                </span>
+            ) : null}
+        </span>
+    );
+}
+
+// the lines an edit added and removed, as the diff chips under the stretch say them
+function EditCount({ edits }: { edits: { adds: number; dels: number } | null | undefined }) {
+    if (edits == null) {
+        return null;
+    }
+    return (
+        <span data-chat-step-diff className="inline-flex shrink-0 gap-1 text-[12px] tabular-nums">
+            <span className="text-success">+{edits.adds}</span>
+            <span className="text-error">−{edits.dels}</span>
         </span>
     );
 }
@@ -198,12 +218,15 @@ function StepLine({
     now,
     open,
     onToggle,
+    bare,
 }: {
     action: AgentActionEntry;
     live: boolean;
     now: number;
     open: boolean;
     onToggle: () => void;
+    // a call under a folded line, which already names its file: no chips
+    bare?: boolean;
 }) {
     const step = stepOf(action, live);
     const neutral = !step.running && !live && action.outcome == null;
@@ -251,10 +274,8 @@ function StepLine({
                     {step.running ? <StepSpinner /> : <Icon size={14} strokeWidth={1.8} aria-hidden />}
                 </span>
                 <span className={cn("shrink-0", failed ? "text-error" : "text-secondary")}>{step.verb}</span>
-                {step.chips.map((chip, i) => (
-                    <Chip key={i} chip={chip} />
-                ))}
-                {step.more > 0 ? (
+                {bare ? null : step.chips.map((chip, i) => <Chip key={i} chip={chip} />)}
+                {!bare && step.more > 0 ? (
                     <span data-chat-step-more className="shrink-0 text-[12px] tabular-nums text-muted">
                         +{step.more}
                     </span>
@@ -263,7 +284,9 @@ function StepLine({
                     <span className={cn("shrink-0 text-[12px] tabular-nums", failed ? "text-error" : "text-muted")}>
                         {action.summary}
                     </span>
-                ) : null}
+                ) : (
+                    <EditCount edits={editCounts(action)} />
+                )}
                 <div className="min-w-[6px] flex-1" />
                 {step.running && action.startedAt != null ? (
                     <span className="shrink-0 text-[12px] tabular-nums text-muted">
@@ -291,22 +314,138 @@ function StepLine({
     );
 }
 
+// a run of calls with the same verb on the same file as one line, "Edit rail.tsx ×4 +1 −24" (chatsteps.ts stepRows); a click
+// opens its calls under it on the spring, each still opening its own output. Running while its last call is.
+function FoldLine({
+    actions,
+    start,
+    live,
+    now,
+    open,
+    onToggle,
+    opened,
+    onToggleCall,
+}: {
+    actions: AgentActionEntry[];
+    start: number; // the entry index of the run's first call
+    live: boolean;
+    now: number;
+    open: boolean;
+    onToggle: () => void;
+    opened: Set<number>;
+    onToggleCall: (index: number) => void;
+}) {
+    const fold = foldOf(actions, live);
+    const step = fold.step;
+    const Icon = ICONS[step.icon];
+    const neutral = !step.running && !live && actions.every((a) => a.outcome == null);
+    const toggle = () => {
+        // a drag that selected the line's text ends in a click too: it copies, it does not open the line
+        const sel = window.getSelection();
+        if (sel == null || sel.isCollapsed) {
+            onToggle();
+        }
+    };
+    const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+        if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault();
+            onToggle();
+        }
+    };
+    return (
+        <div>
+            <div
+                data-chat-step
+                data-chat-step-fold={fold.count}
+                data-chat-step-running={step.running ? "" : undefined}
+                data-tool-running={step.running ? "" : undefined}
+                data-tool-settled={neutral ? "" : undefined}
+                role="button"
+                tabIndex={0}
+                aria-expanded={open}
+                onClick={toggle}
+                onKeyDown={onKeyDown}
+                className="flex min-w-0 cursor-pointer items-center gap-2 rounded-[6px] px-1.5 py-[3px] text-[13px] hover:bg-surface-hover"
+            >
+                <span className="flex h-[14px] w-[14px] shrink-0 items-center justify-center text-muted">
+                    {step.running ? <StepSpinner /> : <Icon size={14} strokeWidth={1.8} aria-hidden />}
+                </span>
+                <span className="shrink-0 text-secondary">{step.verb}</span>
+                {step.chips.map((chip, i) => (
+                    <Chip key={i} chip={chip} count={fold.count} />
+                ))}
+                {fold.summary ? (
+                    <span className="shrink-0 text-[12px] tabular-nums text-muted">{fold.summary}</span>
+                ) : (
+                    <EditCount edits={fold.edits} />
+                )}
+                <div className="min-w-[6px] flex-1" />
+                {step.running && fold.runningSince != null ? (
+                    <span className="shrink-0 text-[12px] tabular-nums text-muted">
+                        {stepElapsed(now - fold.runningSince)}
+                    </span>
+                ) : !step.running && fold.durationMs > 0 ? (
+                    <span className="shrink-0 text-[10.5px] tabular-nums text-muted">
+                        {formatDuration(fold.durationMs)}
+                    </span>
+                ) : null}
+                <span className="flex shrink-0 text-muted">
+                    {open ? (
+                        <ChevronDown size={12} strokeWidth={2.2} aria-hidden />
+                    ) : (
+                        <ChevronRight size={12} strokeWidth={2.2} aria-hidden />
+                    )}
+                </span>
+            </div>
+            <AnimatePresence initial={false}>
+                {open ? (
+                    <motion.div
+                        key="calls"
+                        data-chat-step-calls
+                        variants={springReveal}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        // 22px = the line's 14px icon + its 8px gap: the calls' icons sit under the fold's verb
+                        className="overflow-hidden pl-[22px]"
+                    >
+                        {actions.map((action, k) => (
+                            <StepLine
+                                key={start + k}
+                                action={action}
+                                live={live}
+                                now={now}
+                                open={opened.has(start + k)}
+                                onToggle={() => onToggleCall(start + k)}
+                                bare
+                            />
+                        ))}
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
+        </div>
+    );
+}
+
+function toggled(prev: Set<number>, index: number): Set<number> {
+    const next = new Set(prev);
+    if (!next.delete(index)) {
+        next.add(index);
+    }
+    return next;
+}
+
 // the lines of an open stretch. Its own component, so the lines opened are forgotten when the stretch folds, and the lines
-// the agent adds while it works open on the spring as they land (the ones there when it opens are drawn at once)
+// the agent adds while it works open on the spring as they land (the ones there when it opens are drawn at once). A run of
+// calls on one file is one FoldLine, keyed by its first call, so a call joining the run grows its count in place.
 function StepList({ work, live, now }: { work: WorkItem; live: boolean; now: number }) {
     const [opened, setOpened] = useState<Set<number>>(new Set());
-    const toggle = (index: number) =>
-        setOpened((prev) => {
-            const next = new Set(prev);
-            if (!next.delete(index)) {
-                next.add(index);
-            }
-            return next;
-        });
+    const [folds, setFolds] = useState<Set<number>>(new Set());
+    const toggle = (index: number) => setOpened((prev) => toggled(prev, index));
     return (
         <AnimatePresence initial={false}>
-            {work.actions.map((action, k) => {
-                const index = work.startIndex + k;
+            {stepRows(work.actions).map((row) => {
+                const index = work.startIndex + row.start;
                 return (
                     <motion.div
                         key={index}
@@ -315,13 +454,26 @@ function StepList({ work, live, now }: { work: WorkItem; live: boolean; now: num
                         animate="animate"
                         className="overflow-hidden"
                     >
-                        <StepLine
-                            action={action}
-                            live={live}
-                            now={now}
-                            open={opened.has(index)}
-                            onToggle={() => toggle(index)}
-                        />
+                        {row.actions.length === 1 ? (
+                            <StepLine
+                                action={row.actions[0]}
+                                live={live}
+                                now={now}
+                                open={opened.has(index)}
+                                onToggle={() => toggle(index)}
+                            />
+                        ) : (
+                            <FoldLine
+                                actions={row.actions}
+                                start={index}
+                                live={live}
+                                now={now}
+                                open={folds.has(index)}
+                                onToggle={() => setFolds((prev) => toggled(prev, index))}
+                                opened={opened}
+                                onToggleCall={toggle}
+                            />
+                        )}
                     </motion.div>
                 );
             })}
