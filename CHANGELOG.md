@@ -63,6 +63,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   instead of every board of the canvas and its All view.
 - A pi that quits back to its shell leaves `wsh agents list`, so a message sent to it is no longer typed into the
   shell.
+- A message to an agent that was killed rather than quit (its terminal back at the shell prompt) is refused with a
+  reason, instead of being typed into the shell.
 - The Diff surface's refresh no longer briefly locks the git index, which could make an agent's commit in the same
   checkout fail with "index.lock exists".
 - A conversation whose transcript could not be read for a moment (a lock, an antivirus scan) no longer stays missing

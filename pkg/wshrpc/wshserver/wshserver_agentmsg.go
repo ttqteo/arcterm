@@ -5,12 +5,14 @@ package wshserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/shirou/gopsutil/v4/process"
 	"github.com/wavetermdev/waveterm/pkg/agentask"
 	"github.com/wavetermdev/waveterm/pkg/agentctl"
 	"github.com/wavetermdev/waveterm/pkg/agentmsg"
@@ -75,11 +77,14 @@ var blockTranscriptMeta = readBlockTranscriptMeta
 var tabAgentBlock = readTabAgentBlock
 
 // promptBlock is what decides whether a prompt can reach a block: delivery goes over a mod stream or is typed
-// into a running controller, and nothing else.
+// into a running controller, and nothing else. AgentGone is a running controller whose shell has nothing under it:
+// the agent that ran there exited without a word (killed; a killed agent fires no end hook and still reads live in
+// the roster), and a typed prompt would land at the shell prompt.
 type promptBlock struct {
 	Stored       bool
 	ShellRunning bool
 	HasStream    bool
+	AgentGone    bool
 }
 
 // readPromptBlock reads a block's promptBlock facts. A var so tests need no store or controller.
@@ -91,11 +96,34 @@ func loadPromptBlock(ctx context.Context, blockId string) (promptBlock, error) {
 		return promptBlock{}, fmt.Errorf("loading block %s: %w", blockId, err)
 	}
 	rs := blockcontroller.GetBlockControllerRuntimeStatus(blockId)
-	return promptBlock{
+	pb := promptBlock{
 		Stored:       block != nil,
 		ShellRunning: rs != nil && rs.ShellProcStatus == blockcontroller.Status_Running,
 		HasStream:    agentctl.Has(blockId),
-	}, nil
+	}
+	// a stream carries the prompt to a live session whatever the shell holds, so only a typed delivery is checked
+	pb.AgentGone = pb.ShellRunning && !pb.HasStream && shellHoldsNothing(blockId)
+	return pb, nil
+}
+
+// shellHoldsNothing reports whether a block's process is a shell with no child: the agent it ran is gone. It says
+// false whenever it cannot tell (no local pid, a process that is not a shell, the agent itself as the root, a list
+// it could not read), so a send is refused only on a reading. Checked on Windows 11 (11-16): PowerShell lists a
+// native child, and Git Bash lists one under a forked bash.exe; an MSYS program (`sleep`) run by Git Bash shows no
+// child at all, so a block whose agent were one would read as empty, but every harness is a native executable
+// (claude.exe, pi's node.exe, agy.exe). A var so tests need no process.
+var shellHoldsNothing = func(blockId string) bool {
+	pid := blockcontroller.GetBlockControllerPid(blockId)
+	if pid <= 0 || !isShellProcess(int32(pid)) {
+		return false
+	}
+	p, err := process.NewProcess(int32(pid))
+	if err != nil {
+		return false
+	}
+	kids, err := p.Children()
+	// darwin's Children answers nil, nil when it cannot list the processes: only an empty list it read is none
+	return err == nil && kids != nil && len(kids) == 0
 }
 
 // readAgentRosterFacts reads the tabs, runs and channels shared (wstore's *Shared readers): many polls ask for the
@@ -418,6 +446,10 @@ func deliverToAgent(ctx context.Context, rows []agentRow, target *agentRow, mess
 		}
 		return nil
 	}
+	// a killed agent reports no end, so the roster still lists it: its shell is read before the message is typed
+	if !target.hasStream && shellHoldsNothing(target.blockId) {
+		return fmt.Errorf("agent %q: %s", target.Name, agentGoneText(target.blockId))
+	}
 	if noteSent != nil {
 		noteSent()
 	}
@@ -461,7 +493,14 @@ func unreachablePrompt(ctx context.Context, blockId string) error {
 	if !pb.ShellRunning && !pb.HasStream {
 		return fmt.Errorf("block %s has no live terminal: nothing was sent", blockId)
 	}
+	if pb.AgentGone {
+		return errors.New(agentGoneText(blockId))
+	}
 	return nil
+}
+
+func agentGoneText(blockId string) string {
+	return fmt.Sprintf("block %s is back at its shell prompt, its agent gone (killed, or not started yet): nothing was sent", blockId)
 }
 
 func (ws *WshServer) AgentsReadCommand(ctx context.Context, data wshrpc.CommandAgentsReadData) (*wshrpc.CommandAgentsReadRtnData, error) {

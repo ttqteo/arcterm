@@ -23,6 +23,12 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   Claude agent ask one AskUserQuestion, then type a reply in the chat box (not the card) and press Send: it goes at
   once, the card closes, and the agent goes on with your words as the answer, with no "Queued · sends once you answer"
   line. An ask of two questions still shows that line and holds the message.
+- [ ] (arcterm) **A send to a killed agent is refused.** Unit tests only; the shell reading (`shellHoldsNothing`) never
+  ran against a real terminal. Start claude in an agent tab, then kill its process (Task Manager, or `taskkill /PID`,
+  not `/exit`) so the tab is back at its shell prompt: `wsh agents send <tab> hi` from another agent answers "back at
+  its shell prompt … nothing was sent", and nothing is typed into that shell. A send to a live agent still goes
+  through. Try it in a Git Bash tab and a PowerShell tab (Git Bash hides MSYS children from Windows, native ones it
+  shows), and on a Mac (the process list reads differently there).
 - [ ] (arcterm) **The Jarvis hologram no longer drops to the pixel pet.** Unit tests and typecheck only, no dev app
   ran. Use arcterm a working day with many agents and terminals opened, closed and switched between: `waveapp.log`
   has no `[hologram] failed` line, the hologram never turns into Sprout/Minion for 5 s, and terminals still draw sharp
