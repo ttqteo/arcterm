@@ -16,6 +16,9 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A paragraph picked above a code block leaves its line number alone.** Unit tests and typecheck only,
+  no dev app ran. In Chat, triple-click a paragraph that sits right above a code block: only the paragraph is
+  highlighted, not the block's `1`, and a copy holds only the paragraph's text.
 - [ ] (arcterm) **A landed run keeps no blank columns.** Unit tests and typecheck only, no dev app ran. In the Agent
   sidebar, a landed run (no RAM, tokens or age) reads `✓ Landed` whole on its second line, not `✓ La…` before three
   blank columns; a running run beside it still lines its RAM up with the other rows.

@@ -5,6 +5,8 @@
 // newline. Pulling the selection's end back to its last character keeps the copy to the text picked. (How the pick is
 // painted is selectionpaint.ts's job: it draws only the selected text, never the break.)
 
+import { unselectable } from "./selectionpaint";
+
 // where the trailing whitespace of `text` begins: its length when it ends on a character, 0 when it is all whitespace
 export function inkEnd(text: string): number {
     return text.search(/\s*$/);
@@ -24,8 +26,10 @@ function lastInk(range: Range): { node: Text; offset: number } | null {
         texts.push(top as Text);
     } else {
         const walker = document.createTreeWalker(top, NodeFilter.SHOW_TEXT);
+        const none = new Map<Element, boolean>();
         for (let n = walker.nextNode(); n != null; n = walker.nextNode()) {
-            if (range.intersectsNode(n)) {
+            // a code block's line number right after the paragraph is not where the pick ends
+            if (range.intersectsNode(n) && n.parentElement != null && !unselectable(n.parentElement, none)) {
                 texts.push(n as Text);
             }
         }

@@ -92,6 +92,18 @@ function lineHeightOf(el: Element, cache: Map<Element, number>): number {
     return lh;
 }
 
+// whether text in `el` can't be selected (a code block's line numbers, a copy button's label): a selection's range
+// still passes over it, but the browser leaves it out of the pick, so it is neither painted nor taken as its end
+export function unselectable(el: Element, cache?: Map<Element, boolean>): boolean {
+    let none = cache?.get(el);
+    if (none == null) {
+        const style = getComputedStyle(el);
+        none = (style.userSelect || style.webkitUserSelect) === "none";
+        cache?.set(el, none);
+    }
+    return none;
+}
+
 // the box a scrolled region (a wide table, a code block) shows of its content, or null when nothing between the
 // element and the message's root scrolls
 function clipOf(el: Element, root: HTMLElement, cache: Map<Element, DOMRect | null>): DOMRect | null {
@@ -115,11 +127,12 @@ function rectsIn(p: Painted, range: Range): LineRect[] {
     const origin = p.root.getBoundingClientRect();
     const heights = new Map<Element, number>();
     const clips = new Map<Element, DOMRect | null>();
+    const none = new Map<Element, boolean>();
     const out: LineRect[] = [];
     const walker = document.createTreeWalker(p.root, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode() as Text | null; n != null; n = walker.nextNode() as Text | null) {
         const parent = n.parentElement;
-        if (parent == null || n.data.trim() === "" || !range.intersectsNode(n)) {
+        if (parent == null || n.data.trim() === "" || !range.intersectsNode(n) || unselectable(parent, none)) {
             continue;
         }
         const sub = document.createRange();
