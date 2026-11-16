@@ -29,6 +29,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Fixed
+
+- A landed run in the Agent sidebar with no RAM, tokens or age keeps no blank columns, so its `Landed` is not cut.
+
+## 1.2.0 — 2026-11-16
+
 ### Added
 
 - Starting a run now asks when: the run launcher (+ Run, and Approve on a brainstorm) has a When row with Run now,
@@ -223,7 +229,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   what an agent asks you, a worker's held ask or `in council` shortens instead, its tooltip still saying it in full.
   A run, agent or worker waiting in the job queue shows a short `#1` (or `×2` for a run) instead of `queued #1`, whole
   beside its progress and columns; hover it for the words. When the row is tight, a run line cuts its `Working`, never
-  its `2/6`, and a landed run with no RAM, tokens or age keeps no blank columns, so its `Landed` is not cut.
+  its `2/6`.
 - Agents keep their colors in an arcterm reopened by `! task install` typed in a Claude Code session: that shell
   sets `NO_COLOR` without the markers arcterm looked for, so every agent drew in plain white again.
 - A Chat message that ends with a file you mentioned is sent: Claude Code's file suggestions took its Enter, so the
