@@ -60,7 +60,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   lists every prompt you sent in the conversation, and picking one scrolls back to it (arrows and Enter work too).
 - DUM-E: turn it on in Settings → Runs & limits, give an initiative chunk the owner `dum-e`, and in the last hour of a
   5-hour window with quota to spare, sonnet works it on its own branch for you to merge. The Brief header and
-  `wsh dume status` say what it did and why.
+  `wsh dume status` say what it did and why. <!-- big -->
 
 ### Changed
 
