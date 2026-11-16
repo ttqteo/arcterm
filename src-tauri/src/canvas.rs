@@ -1,6 +1,7 @@
 // Native side of the Agent surface's canvas mode: a whole-window capture (the canvas iframe is
 // cross-origin, so the page cannot read its pixels), for canvas Send and the gallery's previews.
 // wavesrv serves the boards themselves.
+#[cfg(any(windows, target_os = "macos"))]
 use crate::applog::log_line;
 
 #[cfg(any(windows, target_os = "macos"))]

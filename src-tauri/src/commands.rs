@@ -34,11 +34,8 @@ pub fn set_window_init_status(app: AppHandle, status: String) {
 // allowed. Anything else is rejected and logged rather than handed to the opener. A well-formed
 // URL percent-encodes quotes, whitespace and control characters, so a raw one is refused too: it
 // can only be an attempt to break out of an argument.
-fn is_allowed_external_url(url: &str) -> bool {
-    external_url_rejection(url).is_none()
-}
-
-/// Why a URL is refused, for the log: someone reading it for a break-out attempt needs the real cause.
+//
+// Why a URL is refused, for the log: someone reading it for a break-out attempt needs the real cause.
 fn external_url_rejection(url: &str) -> Option<&'static str> {
     if url.chars().any(|c| c == '"' || c.is_whitespace() || c.is_control()) {
         return Some("a raw quote, whitespace or control character");
@@ -153,6 +150,11 @@ pub fn open_path(path: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // the yes/no the tests read; the opener itself logs external_url_rejection's reason
+    fn is_allowed_external_url(url: &str) -> bool {
+        external_url_rejection(url).is_none()
+    }
 
     #[test]
     fn opens_only_absolute_documents_and_media() {

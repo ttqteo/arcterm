@@ -33,7 +33,6 @@ import { HeldAskDialog } from "./heldaskdialog";
 import { setupRosterSeededLatch } from "./liveagents";
 import { NavRail } from "./navrail";
 import { NotifySync } from "./notifysync";
-import { useUnreadTracking } from "./unreadagentsstore";
 import { SettingsSurface } from "./settingssurface";
 import { SetupSurface } from "./setupsurface";
 import { useSleeperTitles } from "./sleepertitles";
@@ -41,6 +40,7 @@ import { StorageNudge } from "./storagenudge";
 import { useSubagentTracking } from "./subagenttracking";
 import { ToolPicker } from "./toolpicker";
 import { TranslateRailPanel } from "./translatepanel";
+import { useUnreadTracking } from "./unreadagentsstore";
 import { UsageSurface } from "./usagesurface";
 import { useCardStreams } from "./usecardstreams";
 
