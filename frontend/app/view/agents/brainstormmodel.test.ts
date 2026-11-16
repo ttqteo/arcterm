@@ -3004,32 +3004,35 @@ describe("the rail's tabs", () => {
     const checkView = { question: false, check: true };
     const BOTH = ["boards", "second"];
 
-    it("opens on Boards when the open question's part has boards", () => {
-        expect(railTabs(withQ("layout"), BASE, open)).toEqual({ tabs: BOTH, first: "boards" });
+    it("opens on Boards, listing only its part, when the open question's part has boards", () => {
+        expect(railTabs(withQ("layout"), BASE, open)).toEqual({ tabs: BOTH, first: "boards", part: "layout" });
     });
 
     it("opens on Boards in the builder check too, when its question's part has boards", () => {
         expect(railTabs(withQ("layout"), BASE, { question: true, check: true })).toEqual({
             tabs: BOTH,
             first: "boards",
+            part: "layout",
         });
     });
 
-    it("has only the second tab when the question's part has no boards", () => {
-        expect(railTabs(withQ("copy"), BASE, open)).toEqual({ tabs: ["second"], first: "second" });
-        expect(railTabs(withQ("copy"), BASE, { question: true, check: true })).toEqual({
-            tabs: ["second"],
-            first: "second",
-        });
+    it("keeps Boards, listing every part, but opens on the second tab when the question's part has no boards", () => {
+        expect(railTabs(withQ("copy"), BASE, open)).toEqual({ tabs: BOTH, first: "second" });
+        expect(railTabs(withQ("copy"), BASE, { question: true, check: true })).toEqual({ tabs: BOTH, first: "second" });
     });
 
-    it("has only the second tab for a question on an unknown part, or with no part", () => {
-        expect(railTabs(withQ("ghost"), BASE, open)).toEqual({ tabs: ["second"], first: "second" });
-        expect(railTabs(withQ(""), BASE, open)).toEqual({ tabs: ["second"], first: "second" });
+    it("keeps Boards for every part for a question on an unknown part, or with no part", () => {
+        expect(railTabs(withQ("ghost"), BASE, open)).toEqual({ tabs: BOTH, first: "second" });
+        expect(railTabs(withQ(""), BASE, open)).toEqual({ tabs: BOTH, first: "second" });
     });
 
-    it("has only the second tab for a question the caller says is open when the file has none", () => {
-        expect(railTabs(file({ canvas: "topic", parts }), BASE, open)).toEqual({ tabs: ["second"], first: "second" });
+    it("keeps Boards for every part for a question the caller says is open when the file has none", () => {
+        expect(railTabs(file({ canvas: "topic", parts }), BASE, open)).toEqual({ tabs: BOTH, first: "second" });
+    });
+
+    it("has only the second tab for an open question when no part has a board", () => {
+        const none = file({ canvas: "topic", parts: [part("copy", "asked")], question: ask("copy") });
+        expect(railTabs(none, BASE, open)).toEqual({ tabs: ["second"], first: "second" });
     });
 
     it("has only the second tab until the canvas is named and served", () => {
@@ -3038,6 +3041,7 @@ describe("the rail's tabs", () => {
             first: "second",
         });
         expect(railTabs(withQ("layout"), null, open)).toEqual({ tabs: ["second"], first: "second" });
+        expect(railTabs(withQ("copy"), null, open)).toEqual({ tabs: ["second"], first: "second" });
     });
 
     it("with no question open, has Boards when any part has a board, and opens on it in the design", () => {
@@ -3088,9 +3092,13 @@ describe("the rail's tabs", () => {
     it("with a question open, a part with only spikes opens the rail on Boards, in the check too", () => {
         const spiked = [part("motion", "asked", { spikes: ["spike/motion.html"] }), part("copy", "open")];
         const at = (p: string) => file({ canvas: "topic", parts: spiked, question: ask(p) });
-        expect(railTabs(at("motion"), BASE, open)).toEqual({ tabs: BOTH, first: "boards" });
-        expect(railTabs(at("motion"), BASE, { question: true, check: true })).toEqual({ tabs: BOTH, first: "boards" });
-        // another part's spike does not give a question about a part with nothing a Boards tab
-        expect(railTabs(at("copy"), BASE, open)).toEqual({ tabs: ["second"], first: "second" });
+        expect(railTabs(at("motion"), BASE, open)).toEqual({ tabs: BOTH, first: "boards", part: "motion" });
+        expect(railTabs(at("motion"), BASE, { question: true, check: true })).toEqual({
+            tabs: BOTH,
+            first: "boards",
+            part: "motion",
+        });
+        // a question about a part with nothing keeps Boards for the other part's spike, but does not open on it
+        expect(railTabs(at("copy"), BASE, open)).toEqual({ tabs: BOTH, first: "second" });
     });
 });

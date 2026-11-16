@@ -4,7 +4,8 @@
 // The brainstorm's right rail: Boards beside Decided so far (or the builder check's own rail), one width the user drags.
 // The pure rules (widths, columns, tabs, board heads) are in brainstormmodel.ts; this file draws them.
 //
-// Boards tab: every board of the open question's part (or of every part, with no question open) as a scaled live tile
+// Boards tab: every board of the open question's part (or of every part, with no question open or when that part has
+// none) as a scaled live tile
 // headed by its option, tied to that option by optionHoverAtom. Clicking a tile opens that one board large, from the
 // agent's canvas state, in a dialog over the brainstorm pane (the question and the rail keep their widths under it); the
 // canvas's own marking works there, and a board tied to an option offers that option's pick under it.
@@ -130,10 +131,10 @@ const STACKED = {
 export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, question, focus }: BrainstormRailProps) {
     const check = minWidth === RAIL_MIN_W_CHECK;
     const stack = check ? STACKED.check : STACKED.design;
-    const { tabs, first } = railTabs(f, s.base, { question, check });
+    const { tabs, first, part } = railTabs(f, s.base, { question, check });
     const hasBoards = tabs.includes("boards");
-    // with a question open only its part's boards show; with none, every part's, each under its part's title
-    const groups = hasBoards ? railGroups(f, s.base, question ? f.question?.part : undefined) : [];
+    // a question whose part has boards shows only that part's; otherwise every part's, each under its part's title
+    const groups = hasBoards ? railGroups(f, s.base, part) : [];
     const shownNames = groups.flatMap((g) => g.boards);
 
     // each question (or the lack of one) opens on its own first tab, but the tab the user picks stays until then

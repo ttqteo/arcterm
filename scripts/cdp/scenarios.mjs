@@ -32620,12 +32620,12 @@ const brainstormMode = {
             { ...bsBrief(s2b), question: s2b.question, rail: s2b.rail, history: q4row }
         );
 
-        // the asked part's mockups are the rail's Boards tab: question 4's part (When it pages) lists none and its rail has no
-        // tab strip, question 5's two open on Boards, headed by their file names since the question offers no answer to tie
-        // them to, and the question column holds no thumbnails
+        // the asked part's mockups are the rail's Boards tab: question 4's part (When it pages) lists none, so its rail keeps
+        // Boards for the other parts' boards but opens on Decided so far; question 5's two open on Boards, headed by their
+        // file names since the question offers no answer to tie them to, and the question column holds no thumbnails
         rec(
-            "2l2. a question whose part lists boards opens the rail on them: question 5 for What on-call sees shows Boards · 2 (shown) beside Decided so far · 4, both boards live and headed by their file names, tied to no option; question 4, whose part lists none, had no tab strip; the question column holds no thumbnails",
-            s2.railTabs.length === 0 &&
+            "2l2. a question whose part lists boards opens the rail on them: question 5 for What on-call sees shows Boards · 2 (shown) beside Decided so far · 4, both boards live and headed by their file names, tied to no option; question 4, whose part lists none, kept Boards but opened on Decided so far; the question column holds no thumbnails",
+            JSON.stringify(s2.railTabs) === JSON.stringify(["boards", "second*"]) &&
                 rail5.ok &&
                 rail5.tabs.length === 2 &&
                 rail5.tabs[0].tab === "boards" &&
