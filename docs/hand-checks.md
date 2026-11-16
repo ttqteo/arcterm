@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The pinned bar skips a picture-only message.** Unit tests and typecheck only, no dev app ran. In a
+  build with f67013e11, in a Claude agent's Chat send a message, then one that is only a pasted picture, then scroll
+  up past both → the pinned bar shows the text message, never "(picture)"; its ↑ and its n/m count step over the
+  picture-only one.
 - [ ] (arcterm) **The run chip's × hides finished runs.** Unit tests and typecheck only, no dev app ran. On an agent
   whose started runs have all landed (`2 runs` on its tree row and beside its name in the header), hover the chip → a
   small × shows after it; click it → the chip is gone from both places, and stays gone after a reload. With one run
