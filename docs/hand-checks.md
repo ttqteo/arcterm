@@ -16,6 +16,9 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A landed run keeps no blank columns.** Unit tests and typecheck only, no dev app ran. In the Agent
+  sidebar, a landed run (no RAM, tokens or age) reads `✓ Landed` whole on its second line, not `✓ La…` before three
+  blank columns; a running run beside it still lines its RAM up with the other rows.
 - [ ] (arcterm) **Approve on a brainstorm that queues.** CDP `run-start-choice-brainstorm` checked the Brainstorm tab's
   approve bar against queue entries made over RPC; the launcher's own Queue from Approve, the `brainstorm: queued`
   line, wavesrv's `brainstorm: run <id>` and Chat's card were not tried. Fill the run cap (`runs:maxactive`), approve a
