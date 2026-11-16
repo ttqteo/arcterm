@@ -246,7 +246,7 @@ func (ws *WshServer) EffortChunkDriftCommand(ctx context.Context, data wshrpc.Co
 	if dir == "" {
 		return &wshrpc.CommandEffortChunkDriftRtnData{Base: base}, nil
 	}
-	// a chunk older than BaseCommit is measured from the commit HEAD was at when it was last updated
+	// a chunk older than BaseCommit is measured from the commit HEAD was at when it was written (ChunkWrittenTs)
 	written := jarvis.ChunkWrittenTs(e, c)
 	var hist *jarvis.StaleHistory
 	if written > 0 {

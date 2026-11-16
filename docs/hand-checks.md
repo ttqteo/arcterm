@@ -120,12 +120,15 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) **An open chunk names the files that changed since it was written.** Unit tests, the typecheck and
   a scan over the real initiatives' JSON only; no dev app ran. Rebuild, wait two minutes after start (the first scan),
   then open "Repo hygiene: lint, prettier, stale comments, test gaps" in the initiative sheet → rows such as
-  "chatpane.tsx fails prettier --check…" carry a grey "changed since" chip whose tooltip lists "chatpane.tsx changed
-  15 times"; open one → under its status reads "chatpane.tsx changed 15 times since this was written (<day>): check
-  it still holds" with Mark checked; Mark checked → the chip and the line go. "ReleaseHub parser image + GitHub
-  follow-ups" chunk 4 (IMAGE.md) → an amber "file gone" chip, and "rewrite or skip it". `wsh effort stale` lists the
-  same chunks; `wsh effort show <effort>` prints "(written around <sha>, N commits ago; … changed N times)" on old
-  chunks, and after the first scan "written at" (the backfilled base).
+  "councildiscussion.tsx fails prettier --check…" carry a grey "changed since" chip whose tooltip lists
+  "councildiscussion.tsx changed N times"; open one → under its status reads "… changed N times since this was
+  written (<day>): check it still holds" with Mark checked; Mark checked → the chip and the line go. "ReleaseHub
+  parser image + GitHub follow-ups" chunk 4 (IMAGE.md) → an amber "file gone" chip, and "rewrite or skip it": the
+  installed 1.1.3 lost it on 2026-11-16 (its backfill dated the chunk by a note added the day before, so it read
+  "written at d694b95a2, the code has not moved since"); after the fix the first scan re-derives that base from the
+  initiative's creation and the chip comes back. `wsh effort stale` lists the same chunks; `wsh effort show <effort>`
+  prints "(written around <sha>, N commits ago; … changed N times)" on old chunks, and after the first scan
+  "written at" (the backfilled base).
 - [ ] (arcterm) **An open chunk counts the commits since it was written.** Unit tests and the typecheck only; no dev
   app ran. In an initiative whose project is registered, `wsh effort chunk add <effort> "probe"`, make a commit in that
   project, then open the chunk in the initiative sheet → under its status reads "Written 1 commit ago (<day>): check it
