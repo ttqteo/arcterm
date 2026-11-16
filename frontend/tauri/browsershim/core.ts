@@ -19,6 +19,7 @@ const NO_OPS = [
     "redirect_minimize",
     "set_folded_chrome",
     "raise_topmost", // a page has no window to lift above another app; floatstore.ts only logs the answer
+    "cloak_window", // a page has no window to hide while Float changes its frame
     "tray_popover_size", // the browser app has no tray
     "set_tray_status",
 ];
