@@ -19,6 +19,7 @@
 // mirrors it and scrolls as the editor does (GhostScroll). A bash command's leading `!` (`bash`) is in `value` but not in the editor: it is drawn as an accent marker
 // beside it, a gap before the command, as Claude Code's own box does (chateditormodel.ts `bangSkip`); every text and offset
 // the editor takes or gives is mapped across it, and Backspace at the command's start takes the `!` away, leaving bash mode.
+// A ``` fenced block is drawn as a code box while it is typed (chateditorfences.tsx), its text unchanged.
 
 import { isMacOS } from "@/util/platformutil";
 import { cn } from "@/util/util";
@@ -56,6 +57,7 @@ import {
     type PointType,
 } from "lexical";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { FENCED_TEXT_CLASS, FencedCode } from "./chateditorfences";
 import { bangSkip, fromShown, segmentLength, segmentsOf, shownText, type Segment } from "./chateditormodel";
 import {
     adjacentPill,
@@ -755,6 +757,8 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
     const [initialConfig] = useState(() => ({
         namespace: "arc-chat-editor",
         nodes: [FileMentionNode],
+        // a fenced line's text (chateditorfences.tsx)
+        theme: { text: { code: FENCED_TEXT_CLASS } },
         editable: !p.readOnly,
         onError: (error: Error) => console.error("chat editor:", error),
         // the draft the box mounts with (a restored one, with its pills; a bash command has none)
@@ -774,6 +778,8 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
                     </span>
                 ) : null}
                 <div className="relative min-w-0 flex-1">
+                    {/* the boxes behind fenced code, under the editor's text */}
+                    <FencedCode />
                     <PlainTextPlugin
                         contentEditable={
                             <ContentEditable

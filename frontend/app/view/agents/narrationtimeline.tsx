@@ -35,6 +35,7 @@ import {
     type AgentEntry,
     type EditFile,
 } from "./agentsviewmodel";
+import { splitFenceInfo } from "./chatfences";
 import { userNeedsClamp } from "./compacttimeline";
 import { splitAttachedImages } from "./launcherimages";
 import { MarkdownMessage } from "./markdownmessage";
@@ -475,7 +476,8 @@ export function ToolLine({
 // +adds −dels"; expands inline when the combined diff fits the edit budget, else opens the modal.
 // a prompt you sent, as markdown (an engine's task prompt is headings and fenced code), its line breaks kept as typed;
 // a long one shows its first six lines fading out, with Show more. `mentions` draws an `@path` in it as a file pill (Chat's
-// bubble and its pending copy pass it; the other transcripts draw the text as typed)
+// bubble and its pending copy pass it; the other transcripts draw the text as typed). Code typed on a fence's own line
+// (```curl https://…) stays in the block instead of being read as its language (chatfences.ts splitFenceInfo)
 export function PromptText({ text, mentions }: { text: string; mentions?: boolean }) {
     const clamp = userNeedsClamp(text);
     const [open, setOpen] = useState(false);
@@ -490,7 +492,7 @@ export function PromptText({ text, mentions }: { text: string; mentions?: boolea
                 )}
             >
                 <MarkdownMessage
-                    text={text}
+                    text={splitFenceInfo(text)}
                     mentions={mentions}
                     className="[overflow-wrap:anywhere] [&_p]:whitespace-pre-wrap"
                 />
