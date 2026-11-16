@@ -103,6 +103,9 @@ const (
 	ConfigKey_RunsMaxActive                  = "runs:maxactive"
 	ConfigKey_RunsWakeOrigin                 = "runs:wakeorigin"
 
+	ConfigKey_DumeClear                      = "dume:*"
+	ConfigKey_DumeEnabled                    = "dume:enabled"
+
 	ConfigKey_PowerClear                     = "power:*"
 	ConfigKey_PowerKeepAwake                 = "power:keepawake"
 )

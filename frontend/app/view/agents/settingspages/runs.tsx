@@ -34,6 +34,9 @@ export function RunsPage() {
                 <KeepAwakeRow />
                 <HeavyJobsRow />
             </SettingCard>
+            <SettingCard id="dume" label="DUM-E">
+                <DumeRow />
+            </SettingCard>
             <SettingCard id="tokenburn" label="Token burn" footer={<CardFooter>0 turns a check off.</CardFooter>}>
                 <TokenGateRows />
             </SettingCard>
@@ -100,6 +103,19 @@ function KeepAwakeRow() {
     return (
         <SettingRow id="runs.keepawake">
             <Toggle on={on} onToggle={() => writeConfig({ "power:keepawake": !on })} label="Keep the Mac awake" />
+        </SettingRow>
+    );
+}
+
+function DumeRow() {
+    const on = (useAtomValue(getSettingsKeyAtom("dume:enabled")) as boolean | undefined) ?? false;
+    return (
+        <SettingRow id="dume.enabled">
+            <Toggle
+                on={on}
+                onToggle={() => writeConfig({ "dume:enabled": !on })}
+                label="Spend the leftover 5h window on chores"
+            />
         </SettingRow>
     );
 }

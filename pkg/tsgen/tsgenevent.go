@@ -50,6 +50,7 @@ var WaveEventDataTypes = map[string]reflect.Type{
 	wps.Event_RunQueueChanged:  reflect.TypeOf(wshrpc.RunQueueChangedData{}),
 	wps.Event_MemHygieneUpdate: nil,
 	wps.Event_ServicesChanged:  reflect.TypeOf(wshrpc.ServicesData{}),
+	wps.Event_DumeChanged:      reflect.TypeOf(wshrpc.DumeStatusData{}),
 	wps.Event_XmasTreeChanged:  reflect.TypeOf(wshrpc.XmasTreeData{}),
 }
 

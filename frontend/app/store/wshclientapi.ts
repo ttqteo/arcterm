@@ -690,6 +690,12 @@ export class RpcApiType {
         return client.wshRpcCall("docpdffind", data, opts);
     }
 
+    // command "dumestatus" [call]
+    DumeStatusCommand(client: WshClient, opts?: RpcOpts): Promise<DumeStatusData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "dumestatus", null, opts);
+        return client.wshRpcCall("dumestatus", null, opts);
+    }
+
     // command "effortbackfillbase" [call]
     EffortBackfillBaseCommand(client: WshClient, data: CommandEffortBackfillBaseData, opts?: RpcOpts): Promise<CommandEffortBackfillBaseRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "effortbackfillbase", data, opts);
