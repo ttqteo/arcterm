@@ -28,6 +28,7 @@ export interface Release {
 }
 
 const RELEASE_RE = /^## (\d+\.\d+\.\d+)\s+—\s+(\d{4}-\d{2}-\d{2})\s*$/;
+const UNRELEASED_RE = /^## Unreleased\s*$/;
 const SECTION_RE = /^### (Added|Changed|Fixed)\s*$/;
 const TRY_RE = /\s*<!--\s*try:\s*([\w:.-]+)\s*-->\s*/;
 const BIG_RE = /\s*<!--\s*big\s*-->\s*/;
@@ -38,7 +39,9 @@ const SECTION_ORDER: SectionKind[] = ["Added", "Changed", "Fixed"];
 export const MAX_HIGHLIGHTS = 5;
 
 // The dated releases, newest first as the file keeps them. Unreleased is left out: it is not in anyone's build yet.
-export function parseChangelog(md: string): Release[] {
+// `unreleased` keeps it, first, as version "Unreleased" with no date: the tests hold its lines to the same rules (try
+// ids, big count, pictures) before the bump dates them, not after.
+export function parseChangelog(md: string, opts: { unreleased?: boolean } = {}): Release[] {
     const releases: Release[] = [];
     let release: Release | null = null;
     let section: Section | null = null;
@@ -53,7 +56,11 @@ export function parseChangelog(md: string): Release[] {
         if (line.startsWith("## ")) {
             flush();
             const m = RELEASE_RE.exec(line);
-            release = m ? { version: m[1], date: m[2], sections: [] } : null;
+            release = m
+                ? { version: m[1], date: m[2], sections: [] }
+                : opts.unreleased && UNRELEASED_RE.test(line)
+                  ? { version: "Unreleased", date: "", sections: [] }
+                  : null;
             if (release != null) {
                 releases.push(release);
             }

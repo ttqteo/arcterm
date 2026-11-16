@@ -78,6 +78,17 @@ describe("parseChangelog", () => {
         ]);
     });
 
+    it("keeps Unreleased first, undated, when asked, for the tests that check its lines before the bump", () => {
+        const all = parseChangelog(MD, { unreleased: true });
+        expect(all.map((r) => [r.version, r.date])).toEqual([
+            ["Unreleased", ""],
+            ["0.2.0", "2026-10-13"],
+            ["0.1.0", "2026-10-01"],
+            ["0.0.1", "2026-09-01"],
+        ]);
+        expect(all[0].sections[0].entries).toEqual([{ text: "**Not built yet**: hidden." }]);
+    });
+
     it("reads a release's bare list, with no kind heading, as changes", () => {
         expect(releases[2].sections).toEqual([
             { kind: "Changed", entries: [{ text: "A bare note with no kind heading." }] },
@@ -116,7 +127,7 @@ describe("parseChangelog", () => {
     });
 
     // the cards are the few lines worth opening the app for; past five they are a wall again
-    it.each(parseChangelog(changelog).map((r) => [r.version, r] as const))(
+    it.each(parseChangelog(changelog, { unreleased: true }).map((r) => [r.version, r] as const))(
         "%s marks at most MAX_HIGHLIGHTS lines big",
         (_v, r) => {
             expect(splitHighlights(r).highlights.length).toBeLessThanOrEqual(MAX_HIGHLIGHTS);
@@ -211,7 +222,7 @@ describe("shots", () => {
     });
 
     // a picture shows only on a card, ships inside the app, and every release adds a few: keep each one there and small
-    const shots = parseChangelog(changelog).flatMap((r) =>
+    const shots = parseChangelog(changelog, { unreleased: true }).flatMap((r) =>
         r.sections.flatMap((s) => s.entries.filter((e) => e.shot != null))
     );
     it.each(shots.length > 0 ? shots.map((e) => [e.shot!, e] as const) : [["(none)", null] as const])(
@@ -310,7 +321,8 @@ describe("formatReleaseDate", () => {
 // sheet opens over. Renaming a binding breaks its button; this says which line to fix.
 describe("CHANGELOG.md try ids", () => {
     const bindings = buildGlobalBindings({ surfaceAtom: atom<SurfaceKey>("cockpit") } as any);
-    const ids = [...new Set(tryIds(parseChangelog(changelog)))];
+    // Unreleased included: a new line's id is checked in its own commit, not first at the bump
+    const ids = [...new Set(tryIds(parseChangelog(changelog, { unreleased: true })))];
 
     it.each(ids.length > 0 ? ids : ["(none)"])("%s is a global binding that runs from the Cockpit", (id) => {
         if (id === "(none)") {
