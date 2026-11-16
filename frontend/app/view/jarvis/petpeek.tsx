@@ -25,7 +25,7 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askSentKey, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { AnswerBar } from "@/app/view/agents/answerbar";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
-import { activeChannelAtom, channelMessagesAtom } from "@/app/view/agents/channelsstore";
+import { channelMessagesAtom } from "@/app/view/agents/channelsstore";
 import { InlineMarkdown } from "@/app/view/agents/inlinemarkdown";
 import { MarkdownMessage } from "@/app/view/agents/markdownmessage";
 import { projectListAtom, rowsWithChannel } from "@/app/view/agents/projectsstore";
@@ -61,6 +61,7 @@ import {
 import { briefingStateAtom, loadBriefingIfNone } from "./briefingstore";
 import { splitIdeas } from "./briefrows";
 import { buildEffortCards } from "./effortmodel";
+import { setRouteModel } from "./jarvisroutestore";
 import { peekAddress } from "./openref";
 import { formKey, questionAfterPick, type FormKey } from "./peekanswer";
 import { PeekItemView, runItemCommand, type ItemChrome } from "./peekitem";
@@ -867,7 +868,6 @@ export function PetPeek({
     // one channel per project in the shared list: the reply goes to a project, never a leftover channel
     const projectRows = useAtomValue(projectListAtom);
     const channels = useMemo(() => rowsWithChannel(projectRows).map((r) => r.channel), [projectRows]);
-    const activeChannel = useAtomValue(activeChannelAtom);
     const picked = useAtomValue(petPeekDestAtom);
     const now = useAtomValue(model.nowAtom);
     const titleId = useId();
@@ -905,6 +905,12 @@ export function PetPeek({
     const peekAt = (target: PetTarget) => {
         fireAndForget(() => peekAddress(model, target.ref, { anchor: target.anchor }));
     };
+
+    // the pet lives in window chrome with no model of its own: the route store (an Ask at No folder, the "Wrong project?"
+    // band, the DEV hook the CDP scenario drives) takes the cockpit's from here
+    useEffect(() => {
+        setRouteModel(model);
+    }, [model]);
 
     useEffect(() => {
         if (open) {
@@ -993,7 +999,7 @@ export function PetPeek({
     useLayoutEffect(() => {
         entranceRef.current = computeEntrances(entranceRef.current, entranceKey, entranceIds).state;
     }, [entranceIdsKey, entranceKey]);
-    const dest = resolveDestination({ picked, active: activeChannel?.oid ?? null, channels });
+    const dest = resolveDestination({ picked, channels });
 
     const openJarvis = () => {
         leavePeek();
@@ -1488,12 +1494,13 @@ export function PetPeek({
                                             ) : null}
 
                                             <PetErrand
+                                                model={model}
                                                 dest={dest}
                                                 channels={channels}
                                                 compact={quiet}
                                                 showPrompt={folded}
                                                 askable={!folded}
-                                                onPick={(oid) => globalStore.set(petPeekDestAtom, oid)}
+                                                onPick={(value) => globalStore.set(petPeekDestAtom, value)}
                                             />
                                         </>
                                     )}

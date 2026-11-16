@@ -9,14 +9,18 @@
 //
 // The destination is the composer's own control now, not a reading of the Jarvis surface — see
 // petPeekDestAtom. It states where the reply lands exactly once: the old footer said it three times ("No
-// channel selected", "Select a channel to ask Jarvis", "No destination") inside a 90px band.
+// channel selected", "Select a channel to ask Jarvis", "No destination") inside a 90px band. It always renders,
+// because No folder (Jarvis picks the project, jarvisroutestore.ts) always exists and comes first; a project is
+// asked straight, as it always was.
 
 import { useSettle } from "@/app/element/motionhooks";
 import { springReveal, viewFade } from "@/app/element/motiontokens";
 import { usePartMotion } from "@/app/element/springbatch";
 import { globalStore } from "@/app/store/jotaiStore";
+import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { HarnessPicker } from "@/app/view/agents/harnesspicker";
 import { harnessPreferenceAtom, harnessesAtom } from "@/app/view/agents/harnessstore";
+import { NO_FOLDER_LABEL } from "@/app/view/agents/launcher";
 import { MarkdownMessage } from "@/app/view/agents/markdownmessage";
 import { channelProjectLabel } from "@/app/view/agents/projectlabel";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
@@ -25,9 +29,11 @@ import { useAtomValue } from "jotai";
 import { ChevronDown, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
+import { RouteCard } from "./jarvisroutecard";
+import { sendRoutedErrand } from "./jarvisroutestore";
 import { sendErrand } from "./petactrun";
-import { petErrandState } from "./peterrandmodel";
-import { petErrandAtom, type PetErrand as PetErrandState } from "./petstore";
+import { errandReplyShown, petErrandState, type PetDest } from "./peterrandmodel";
+import { NO_FOLDER_DEST, petErrandAtom, petRouteCardAtom, type PetErrand as PetErrandState } from "./petstore";
 
 const REPLY_STATUS: Record<PetErrandState["status"], { dot: string; word: string }> = {
     streaming: { dot: "bg-working pulse-dot", word: "thinking" },
@@ -92,6 +98,7 @@ function ErrandReply({ errand }: { errand: PetErrandState }) {
 }
 
 export function PetErrand({
+    model,
     dest,
     channels,
     onPick,
@@ -99,9 +106,13 @@ export function PetErrand({
     showPrompt = false,
     askable = true,
 }: {
-    dest: Channel | null;
+    // the cockpit model: an Ask at No folder hands a job to the cockpit's agents, and a card pick does the same
+    model: AgentsViewModel;
+    dest: PetDest;
+    // the project channels: the options under No folder
     channels: Channel[] | null;
-    onPick: (oid: string) => void;
+    // NO_FOLDER_DEST, or a project channel's oid
+    onPick: (value: string) => void;
     compact?: boolean;
     // folded float: the chat shows what you asked above the reply
     showPrompt?: boolean;
@@ -109,6 +120,7 @@ export function PetErrand({
     askable?: boolean;
 }) {
     const errand = useAtomValue(petErrandAtom);
+    const card = useAtomValue(petRouteCardAtom);
     const pref = useAtomValue(harnessPreferenceAtom);
     const harnesses = useAtomValue(harnessesAtom);
     const projects = useAtomValue(projectsAtom);
@@ -116,7 +128,6 @@ export function PetErrand({
 
     const busy = errand?.status === "streaming";
     const state = petErrandState({
-        channel: dest != null,
         draft,
         busy,
         runtime: pref.route?.runtime ?? "",
@@ -124,27 +135,31 @@ export function PetErrand({
         harnesses,
     });
     const options = channels ?? [];
-    const placeholder =
-        dest == null ? "No project to send to yet" : busy ? "Jarvis is thinking" : "Ask Jarvis anything";
-    // only a reason that BLOCKS a ready draft earns a line. An empty draft and a missing destination are
-    // both already visible — the field is empty, the picker says where — and the harness chip already
-    // reads "saving", so they render nothing.
+    const placeholder = busy ? "Jarvis is thinking" : "Ask Jarvis anything";
+    // only a reason that BLOCKS a ready draft earns a line. An empty draft is already visible — the field is
+    // empty — and the harness chip already reads "saving", so they render nothing.
     const blocker =
-        state.reason != null &&
-        !["empty draft", "no channel active", "busy", "saving harness preference…"].includes(state.reason)
+        state.reason != null && !["empty draft", "busy", "saving harness preference…"].includes(state.reason)
             ? state.reason
             : null;
 
     const send = () => {
         const prompt = draft.trim();
-        if (!prompt || state.submitDisabled || dest == null) {
+        if (!prompt || state.submitDisabled) {
             return;
         }
         setDraft("");
-        fireAndForget(() => sendErrand(dest.oid, state.runtime, prompt));
+        if (dest.kind === "no-folder") {
+            fireAndForget(() => sendRoutedErrand(model, state.runtime, prompt));
+            return;
+        }
+        // a straight ask to a project is a new question: a card left from the last job would answer the old one
+        globalStore.set(petRouteCardAtom, null);
+        fireAndForget(() => sendErrand(dest.channel.oid, state.runtime, prompt));
     };
 
-    if (!askable && errand == null) {
+    // a card with no errand behind it (a "Wrong project?" pick that needs a choice) still shows, folded or not
+    if (!askable && errand == null && card == null) {
         return null;
     }
 
@@ -155,9 +170,13 @@ export function PetErrand({
                     {errand.prompt}
                 </div>
             ) : null}
-            {/* initial={false}: opening the peek on a standing reply shows it, only a new ask reveals one */}
+            {/* initial={false}: opening the peek on a standing reply shows it, only a new ask reveals one. The card
+                is above the reply: it is the question Jarvis is asking back about the job the reply began. */}
             <AnimatePresence initial={false}>
-                {errand != null ? <ErrandReply key="reply" errand={errand} /> : null}
+                {card != null ? <RouteCard key="route-card" model={model} card={card} /> : null}
+                {errandReplyShown(errand, card != null) && errand != null ? (
+                    <ErrandReply key="reply" errand={errand} />
+                ) : null}
             </AnimatePresence>
 
             {askable ? (
@@ -193,40 +212,39 @@ export function PetErrand({
 
                     <div className="-ml-1 flex min-w-0 items-center gap-0.5 text-[10.5px] text-muted">
                         <HarnessPicker operation="consult" placement="top-start" bare />
-                        {options.length > 0 ? (
-                            <>
-                                <span aria-hidden>·</span>
-                                <label className="relative flex min-w-0 items-center text-muted hover:text-primary">
-                                    <select
-                                        data-pet-errand-dest
-                                        aria-label="Where the reply lands"
-                                        // still titled: the longest per-task names outrun the line
-                                        title={
-                                            dest != null
-                                                ? `Reply lands in ${channelProjectLabel(dest, projects)}`
-                                                : undefined
-                                        }
-                                        value={dest?.oid ?? ""}
-                                        onChange={(event) => onPick(event.target.value)}
-                                        className={cn(
-                                            "min-w-0 cursor-pointer appearance-none truncate rounded-[5px] bg-transparent py-0.5 pl-1 pr-4 font-medium text-inherit focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                                            compact ? "max-w-[142px]" : "max-w-[240px]"
-                                        )}
-                                    >
-                                        {options.map((channel) => (
-                                            <option key={channel.oid} value={channel.oid}>
-                                                {channelProjectLabel(channel, projects)}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown
-                                        size={11}
-                                        aria-hidden
-                                        className="pointer-events-none absolute right-1 flex-none"
-                                    />
-                                </label>
-                            </>
-                        ) : null}
+                        <span aria-hidden>·</span>
+                        <label className="relative flex min-w-0 items-center text-muted hover:text-primary">
+                            <select
+                                data-pet-errand-dest
+                                aria-label="Where the reply lands"
+                                // still titled: the longest per-task names outrun the line
+                                title={
+                                    dest.kind === "no-folder"
+                                        ? "Jarvis picks the project"
+                                        : `Reply lands in ${channelProjectLabel(dest.channel, projects)}`
+                                }
+                                value={dest.kind === "no-folder" ? NO_FOLDER_DEST : dest.channel.oid}
+                                onChange={(event) => onPick(event.target.value)}
+                                className={cn(
+                                    "min-w-0 cursor-pointer appearance-none truncate rounded-[5px] bg-transparent py-0.5 pl-1 pr-4 font-medium text-inherit focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                    compact ? "max-w-[142px]" : "max-w-[240px]"
+                                )}
+                            >
+                                <option value={NO_FOLDER_DEST} title="Jarvis picks the project">
+                                    {NO_FOLDER_LABEL}
+                                </option>
+                                {options.map((channel) => (
+                                    <option key={channel.oid} value={channel.oid}>
+                                        {channelProjectLabel(channel, projects)}
+                                    </option>
+                                ))}
+                            </select>
+                            <ChevronDown
+                                size={11}
+                                aria-hidden
+                                className="pointer-events-none absolute right-1 flex-none"
+                            />
+                        </label>
                         {blocker != null ? (
                             <span className="ml-1 flex min-w-0 flex-1 items-center gap-[5px] text-warning-soft">
                                 <span className="h-[5px] w-[5px] flex-none rounded-full bg-warning" />
