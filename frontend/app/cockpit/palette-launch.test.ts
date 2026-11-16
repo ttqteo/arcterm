@@ -21,15 +21,15 @@ describe("buildLaunchItems", () => {
             "launch:consult:pi",
         ]);
     });
-    // the New run window picks the project, so no project is not a dead end; an ask posts into a
+    // the New dialog picks the project, so no project is not a dead end; an ask posts into a
     // project's channel, so it is
     it("offers the run rows but no ask rows with no project", () => {
         const items = buildLaunchItems("fix auth", undefined, mkDeps());
         expect(items.map((i) => i.key)).toEqual(["launch:quick", "launch:orchestrate"]);
-        expect(items[1].echo).toBe("Opens the New run window with “fix auth” as an orchestrator run");
+        expect(items[1].echo).toBe("Opens the New dialog with “fix auth” as an orchestrator run");
     });
 
-    it("opens the New run window instead of starting a run, so the project is settled there", () => {
+    it("opens the New dialog instead of starting a run, so the project is settled there", () => {
         const deps = mkDeps();
         const items = buildLaunchItems("  fix auth  ", "ch", deps);
         items.find((i) => i.key === "launch:quick")!.run();
@@ -63,7 +63,7 @@ describe("buildLaunchItems", () => {
     it("says what each row does, with the verb Enter shows", () => {
         const items = buildLaunchItems("g", "ch", mkDeps());
         expect(items.map((i) => i.verb)).toEqual(["Open", "Open", "Ask", "Ask"]);
-        expect(items[1].echo).toBe("Opens the New run window with “g” as an orchestrator run, #ch preselected");
+        expect(items[1].echo).toBe("Opens the New dialog with “g” as an orchestrator run, #ch preselected");
         expect(items[3].echo).toBe("Asks pi about “g”, nothing is spawned");
     });
 });

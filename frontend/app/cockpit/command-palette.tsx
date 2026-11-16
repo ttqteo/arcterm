@@ -956,7 +956,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     const targetChannel = projectLaunch ? pickedChannel : homeChannel;
     const launchGoal = projectLaunch ? projectLaunch.goal : nav.scope === "all" ? nav.query : "";
     const targetLabel = targetChannel ? channelProjectLabel(targetChannel, projects) : "";
-    // no project to guess is not a dead end: the New run window asks for one
+    // no project to guess is not a dead end: the New dialog's run pick asks for one
     const launchLabel = targetLabel ? `#${targetLabel}` : "a project";
     // a "#name goal" naming no project shows that instead of offering to start somewhere else
     const unmatchedProject = projectLaunch != null && pickedChannel == null;

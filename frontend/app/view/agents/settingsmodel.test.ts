@@ -475,6 +475,13 @@ describe("filterSections", () => {
         expect(found[0].cards.map((c) => c.id)).toEqual(["claudeaccount"]);
     });
 
+    it("finds the row-less Claude account card by its keywords", () => {
+        for (const q of ["subscription", "login", "Switch account"]) {
+            const found = filterSections(sections(), q);
+            expect(found.flatMap((s) => s.cards.map((c) => c.id))).toContain("claudeaccount");
+        }
+    });
+
     it("returns nothing when no row or card matches", () => {
         expect(filterSections(sections(), "zzzz")).toEqual([]);
     });

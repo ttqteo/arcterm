@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The New run window's plan table (Main.dc.html): which model each task of a previewed plan will run on,
+// The New dialog's plan table for a run (Main.dc.html): which model each task of a previewed plan will run on,
 // before anything is created. A Model line only counts on Reviewer picks (spec §3), so on any other workers
 // setting it is still shown, struck through, rather than hidden: the plan says it and the run will not.
 

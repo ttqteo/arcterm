@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The pure half of starting a run from the New run window. A project is the only thing the user names: the
+// The pure half of starting a run from the New dialog's run pick. A project is the only thing the user names: the
 // channel a run needs is storage (CreateRunCommand requires a channelid, and copies the worker cwd and the
 // resolved profile off it), so it is resolved by path or minted on the spot rather than created by hand.
 // That is why this is a decision and not a create call — a create call cannot be unit-tested, and getting
@@ -107,17 +107,6 @@ export function launchGoal(
         : appendAttachments(goal.trim(), attachments);
 }
 
-// Which project + Run opens on. The modal is rebuilt on every open (NewRunControl unmounts it on close),
-// so the remembered name is checked against the registry as it stands now: a project unregistered since
-// must not preselect a row that is no longer there. One project is not a choice, so it preselects either
-// way — which is also the answer before anything has been remembered.
-export function initialPick(names: string[], remembered: string | null): string | null {
-    if (remembered != null && names.includes(remembered)) {
-        return remembered;
-    }
-    return names.length === 1 ? names[0] : null;
-}
-
 // What filled the window hears of the run its launch starts, so it can follow it: handedOff when the dialog closes on
 // its Start (CreateRun can take a minute to return), then started with the run's id, or stopped when the start fails or
 // is cancelled before the run exists. A failed start's Try again hands it off again.
@@ -137,8 +126,8 @@ export type NewRunPrefill = {
 
 // What the window opens on when something filled it (a canvas's Build this…, the palette's Quick and Orchestrate):
 // a goal start in the prefill's shape, except that a prototype only rides an orchestrator run, so one that
-// came with a prototype is corrected to orchestrator. The project is picked only if it is registered, as
-// initialPick does.
+// came with a prototype is corrected to orchestrator. The project is picked only if it is registered: one
+// unregistered since must not preselect a row that is no longer there.
 export function prefillToLaunch(
     prefill: NewRunPrefill,
     projectNames: string[]

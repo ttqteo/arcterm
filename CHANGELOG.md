@@ -52,6 +52,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The command palette's New run and New agent rows, and its Quick and Orchestrate rows, now say they open the New
+  dialog, not the New run or New agent window it replaced.
 - Jarvis's peek no longer shows the pin button while Jarvis is the hologram, which never walks off; Sprout and the
   folded peek keep it.
 - An initiative's Parent initiative is picked from a searchable list of your initiatives (those in the same project
@@ -76,6 +78,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Ctrl+R and Ctrl+Shift+R no longer try to redraw a sleeping agent's terminal, whose process has ended.
+- Settings search finds the Claude account card by "subscription", "login" or "switch account", not only by its name.
 - Switching between Full and Float takes about half as long and no longer stutters as it fades: at the default zoom
   the window waited half a second for nothing on every switch, and Jarvis's hologram was rebuilt in the middle of the
   fade. Opening the window back out of Sprout skips that half-second wait too. On Windows the window's empty outline no
