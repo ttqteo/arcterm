@@ -162,6 +162,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A council summary's long direction tag (two seats with long names) wraps inside its card instead of running past
+  the edge.
+- Suggested replies under a council's or a Chat's box sit side by side when they fit, instead of one to a line.
 - The project list under the Jarvis peek's Ask box opens in the app's dark colors instead of white with grey names.
 - Lists and boxes the browser draws itself, such as a field's suggestions and unchecked checkboxes, are dark now
   instead of white.

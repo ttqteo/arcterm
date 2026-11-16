@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A long council tag wraps in its card; suggestion chips share a line.** Not tried in the app: no dev
+  app ran, typecheck only. Open a done council whose direction tag names two long seats (`Reviewer 3 (evaluation) and
+  Phản biện have doubts`) → the tag wraps to two lines inside the card, its icon on the first. In that council's box
+  with three long asks, and in a Claude agent's Chat with long suggestions in the full-width column → two chips share
+  the first line (each up to 340px, cut with …), not one per line.
 - [ ] (arcterm) **A message that lands joined to another clears its Queued bubble.** Unit tests and typecheck only, no
   dev app ran. In a build with 9504b430c, in a Claude agent's Chat: send `làm đi`, then in the agent's Terminal type
   `xyz` in Claude Code's box without Enter, back in Chat send `báo council đi` while it works (it lands as one prompt

@@ -1612,7 +1612,7 @@ function SuggestChips({
                         const goes = c.kind === "next" && c.chunk != null && canGoOn;
                         const mark = chipIcon(c);
                         return (
-                            <motion.div key={c.text} {...part} className="min-w-0 shrink">
+                            <motion.div key={c.text} {...part} className="min-w-0 max-w-[340px] shrink">
                                 <Chip
                                     icon={mark != null ? SUGGEST_ICONS[mark] : undefined}
                                     label={c.text}

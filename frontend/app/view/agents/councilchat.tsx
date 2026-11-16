@@ -2897,7 +2897,9 @@ function ComposerAsks({
             <div className="flex flex-wrap items-center gap-1.5 pt-px">
                 <AnimatePresence initial={false}>
                     {asks.map((a, i) => (
-                        <motion.div key={a} {...part} className="min-w-0">
+                        // the wrapper takes the chip's 340px cap itself: a cap as a percentage of the wrapper counts
+                        // for nothing when the row measures it, so each long ask would claim a whole line
+                        <motion.div key={a} {...part} className="min-w-0 max-w-[340px]">
                             <Chip
                                 label={a}
                                 picked={a === picked}
