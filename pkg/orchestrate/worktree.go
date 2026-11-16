@@ -275,6 +275,16 @@ func RemoveWorktreeKeepBranch(ctx context.Context, projectPath, wt string) error
 	return removeWorktreeDir(ctx, projectPath, wt)
 }
 
+// RemoveTreeKeepBranch removes the tree of key (found as laneTree finds it) and keeps its wave/<key> branch: DUM-E's
+// chunk waits on that branch for the person to land it. No tree is not an error.
+func RemoveTreeKeepBranch(ctx context.Context, projectPath, key string) error {
+	wt := laneTree(ctx, projectPath, key)
+	if _, err := os.Stat(wt); err != nil {
+		return nil
+	}
+	return RemoveWorktreeKeepBranch(ctx, projectPath, wt)
+}
+
 // RunOfWorktree is runOfWorktree for callers outside the engine: the run that owns a path in one of the engine's
 // worktrees, ok false for a name the engine never makes.
 func RunOfWorktree(path string) (runID string, ok bool) {
