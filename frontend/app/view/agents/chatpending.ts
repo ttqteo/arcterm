@@ -192,6 +192,13 @@ export function pendingStill(
     );
 }
 
+/** Pure: the pending messages the transcript holds now (more often than when they were sent), which the store forgets
+ *  (chatpane.tsx). A landed message is done with: kept, its bubble came back when its record later left the conversation
+ *  (an Esc rewind made it a dead branch, and "làm đi" stood under the conversation again until the 30-minute limit). */
+export function landedIds(pending: PendingMessage[], entries: AgentEntry[]): string[] {
+    return pending.filter((p) => userTextCount(entries, p.text) > p.seen).map((p) => p.id);
+}
+
 /** Whether a send gets a pending bubble. A message does, and so does a command with a pending kind (a /btw, a bare
  *  panel command, a `! cmd`), which the chat would otherwise show nothing of for a while. Any other `/command` does
  *  not, nor a bare `!`: each lands as its command row at once, and some (a /clear) never land in this transcript. */
