@@ -490,7 +490,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   unread count on the name line, and `asking` at the left of the asking row's second line with its columns kept. In the
   real app the same with live agents: an agent with no RAM read yet keeps an empty gap where its RAM goes. Written and
   typechecked, never run in the app (`agenttree.tsx` `RowCols`, `rowcols.ts`).
-- [ ] (arcterm) The Agent sidebar is back to 248px once a number column is off (`agentTreeWidth`, `rowfields.ts`):
+- [ ] (arcterm) A run's `queued #N` tag cuts itself short rather than push the row's columns off (`QueueTagButton`,
+  `jobqueuechip.tsx`): with a run waiting in the job queue at 248px, its second line reads `› N`, a shortened `queued…`
+  and RAM · tokens · age whole, its age not cut at the edge; hovering the tag names the jobs in full. Typechecked, not run
+  in the app. The Agent sidebar also stays 280px with Age off and only RAM + Tokens on (`agentTreeWidth`).
+- [ ] (arcterm) The Agent sidebar is back to 248px once a number column is off (RAM or Tokens) (`agentTreeWidth`, `rowfields.ts`):
   `task verify:ui -- sidebar-columns` step 9 passes and `cdp-shots/sidebar-columns-2-narrow.png` shows a 248px sidebar
   with RAM · age lined up and nothing cut off. In the real app, turn Tokens off in Settings → Appearance → Agent sidebar:
   the sidebar narrows at once, turn it back on and it widens to 280px; a dragged File / Transcript panel still leaves the

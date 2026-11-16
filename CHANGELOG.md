@@ -50,6 +50,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The Agent sidebar stays at its wider size with only RAM and tokens on: turning age off no longer narrows it.
 - The agent header reads at a glance: after the name and state come three groups, each with its own icon: the
   project and its initiative (`/ + initiative` when there is none), one run link (a lead's run, the runs a session
   started, or a worker's lead; a click opens a menu of this run, where it was started from and the runs it started),
@@ -66,6 +67,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the rail still opens on Decided so far, where before the Boards tab was gone until a question with boards came.
 
 ### Fixed
+
+- A run waiting in the job queue no longer pushes its RAM · tokens · age off the end of its row in the Agent sidebar:
+  the `queued` tag shortens instead, and its tooltip still says it in full.
 
 - Agents keep their colors in an arcterm reopened by `! task install` typed in a Claude Code session: that shell
   sets `NO_COLOR` without the markers arcterm looked for, so every agent drew in plain white again.
