@@ -134,7 +134,8 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   picture-only one.
 - [ ] (arcterm) **A tight run line keeps its count.** Unit tests and typecheck only, no dev app ran. In the Agent
   sidebar at 248px, a working run whose tasks wait in the job queue (`≡#3`) with its RAM shown: its second line reads
-  `Work… · 2/6` (or `Working · 2/6` when it fits), never `Working · …`; hover the words for the full line.
+  `Work… · 2/6` (or `Working · 2/6` when it fits), never `Working · …`; hover the words for the full line. A run a session started
+  (its ↰ after the words) keeps `· 0/5` whole beside the ↰, never under it.
 - [ ] (arcterm) **A wait on a council or an agent shows no terminal row.** Unit tests and typecheck only, no dev app
   ran. Have a Claude agent seat itself on a council (`wsh council start --agent self`, which runs
   `wsh council wait <id> --timeout 0` in the background) → no "Wait for council to finish" row under the agent in the
