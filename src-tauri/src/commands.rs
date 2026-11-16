@@ -35,22 +35,29 @@ pub fn set_window_init_status(app: AppHandle, status: String) {
 // URL percent-encodes quotes, whitespace and control characters, so a raw one is refused too: it
 // can only be an attempt to break out of an argument.
 fn is_allowed_external_url(url: &str) -> bool {
+    external_url_rejection(url).is_none()
+}
+
+/// Why a URL is refused, for the log: someone reading it for a break-out attempt needs the real cause.
+fn external_url_rejection(url: &str) -> Option<&'static str> {
     if url.chars().any(|c| c == '"' || c.is_whitespace() || c.is_control()) {
-        return false;
+        return Some("a raw quote, whitespace or control character");
     }
     let Some(scheme) = url.split_once(':').map(|(s, _)| s.to_ascii_lowercase()) else {
-        return false;
+        return Some("no scheme");
     };
-    matches!(scheme.as_str(), "http" | "https" | "mailto")
+    if matches!(scheme.as_str(), "http" | "https" | "mailto") {
+        None
+    } else {
+        Some("a non-allowlisted scheme")
+    }
 }
 
 #[tauri::command]
 pub fn open_external(url: String) {
-    if !is_allowed_external_url(&url) {
-        log_line(&format!(
-            "[open-external] rejected URL with non-allowlisted scheme: {}",
-            url
-        ));
+    if let Some(reason) = external_url_rejection(&url) {
+        // {:?} escapes the control characters a refused URL may carry, so one log line stays one line
+        log_line(&format!("[open-external] rejected URL with {}: {:?}", reason, url));
         return;
     }
     // that_detached with shellexecute-on-windows hands the URL to ShellExecuteExW as one string;
@@ -196,6 +203,21 @@ mod tests {
         assert!(!is_allowed_external_url("https://example.com/a b"));
         assert!(!is_allowed_external_url("https://example.com/\nx"));
         assert!(!is_allowed_external_url("https://example.com/\tx"));
+    }
+
+    #[test]
+    fn names_the_real_reason_for_a_refusal() {
+        // a raw quote in an https URL is refused for the quote, not for its scheme
+        assert_eq!(
+            external_url_rejection("https://example.com/\"&calc.exe&\""),
+            Some("a raw quote, whitespace or control character")
+        );
+        assert_eq!(
+            external_url_rejection("javascript:alert(1)"),
+            Some("a non-allowlisted scheme")
+        );
+        assert_eq!(external_url_rejection("example.com/page"), Some("no scheme"));
+        assert_eq!(external_url_rejection("https://example.com"), None);
     }
 
     #[test]
