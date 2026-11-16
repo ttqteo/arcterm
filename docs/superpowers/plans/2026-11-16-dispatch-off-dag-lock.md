@@ -5,9 +5,11 @@
 **Effort:** effort:39803de1-7419-4f4d-8a18-a0c32e3a8199
 **Verify:** `node scripts/verify.mjs ./pkg/orchestrate ./pkg/wshrpc/wshserver ./cmd/wsh/cmd`
 **Check:** `task check:ts`
+**Final:** `node scripts/cdp/final-verify.mjs dag-preparing`
 
-**Goal:** A tick makes a task's lane tree and runs its Setup outside the dag lock, so the lock is held for the spawn
-alone; the lead's task actions survive a client timeout and say so; and two small lock and progress fixes.
+**Goal:** A tick makes a task's lane tree and runs its Setup outside the dag lock, so dispatch no longer holds the lock
+through `git worktree add` and Setup (the final stage's own Setup still runs under it, `final.go:924`); the lead's task
+actions survive a client timeout and say so; and two small lock and progress fixes.
 
 **Architecture:** Dispatch becomes two locked passes with the slow work between them, as the kaeltran16 fork did in
 `cead8a6fb` ("Dispatch off the dag lock", 2026-11-13, merged from `f80ac1ac2`; its plan is
@@ -45,8 +47,9 @@ worktree add` plus Setup). This settles the 2026-11-26 re-measure of the dag loc
   `errSlotWaitOver`), the pause and cancel cut-off (`dagSetupCtx` / `setupCut` / `stopDagSetup`, `pause.go:52-90`), the
   jobqueue source label (`taskStepLabel("Setup", …)`), `withRunCmdOwner(…, PlanCmd_Setup, "")`, and the
   `treeSetUp` / `markTreeSetUp` marker. They move with the code, unchanged.
-- No new dependency, no SQL migration (task state is a string on `TaskNode`). The only frontend change is
-  `TASK_IN_FLIGHT` gaining `"preparing"`; every other view shows the new state by its raw word.
+- No new dependency, no SQL migration (task state is a string on `TaskNode`). The frontend learns `"preparing"` where
+  a view sorts or words task states by hand (Task 1): `TASK_IN_FLIGHT`, the worker sort, the dag canvas; the rest show
+  the raw word.
 - Comments say why, lower case, only where needed. No `Co-Authored-By` trailer. Each commit body names the fork hash
   it ports, where it ports one.
 
@@ -73,11 +76,16 @@ worktree add` plus Setup). This settles the 2026-11-26 re-measure of the dag loc
 **Depends on:** none
 **Chunk:** A dag merge --continue waited 2m37s on the dag lock behind ticks held up by slow git worktree calls (fork 6231b6970, its run 65ce3ef3); the request now survives it, the lock hold itself is unexplained
 
-**Files:** `pkg/orchestrate/dag.go`, `pkg/orchestrate/scheduler.go`, `pkg/orchestrate/scheduler_test.go`, `pkg/orchestrate/dag_test.go`, `frontend/app/view/agents/runlineage.ts`, `frontend/app/view/agents/runlineage.test.ts`, `docs/guide/orchestrator.md`
+**Files:** `pkg/orchestrate/dag.go`, `pkg/orchestrate/scheduler.go`, `pkg/orchestrate/scheduler_test.go`, `pkg/orchestrate/dag_test.go`, `pkg/orchestrate/digest.go`, `pkg/orchestrate/digest_test.go`, `frontend/app/view/agents/runlineage.ts`, `frontend/app/view/agents/runlineage.test.ts`, `frontend/app/view/orchestrate/workertasksort.ts`, `frontend/app/view/orchestrate/workertasksort.test.ts`, `frontend/app/view/orchestrate/dagcanvas.ts`, `frontend/app/view/orchestrate/dagcanvas.test.ts`, `docs/guide/orchestrator.md`
 
 Where: `dag.go` constants :18-29, `taskStateClass` :35, `taskStates` :51, `slotsInUse` :91; `scheduler.go` `skippable`
-:225; `dag_test.go` `TestEveryTaskStateIsClassified` :491; `runlineage.ts:651`; `docs/guide/orchestrator.md:680` (the
-`dag skip` row, Vietnamese).
+:225; `dag_test.go` `TestEveryTaskStateIsClassified` :491 and `TestTaskStatesClassifyAsTheSwitchesDid` :515;
+`digest.go` `buildCounts` :226; `runlineage.ts:651`; `workertasksort.ts` `workerBucket` :20; `dagcanvas.ts` `KIND` :16
+and `factOf`; `docs/guide/orchestrator.md:680` (the `dag skip` row, Vietnamese).
+
+**Acceptance (visible state):** no running-app step lives in this task, because a task only sits in `preparing` once
+Task 2 moves Setup off the lock. Task 2's `dag-preparing` scenario shows this task's UI: the lead card reads working and
+the dag canvas node reads live, not "next to start".
 
 - [ ] **Step 1: Write the failing tests** in `scheduler_test.go`, with `groupWith` (`scheduler_test.go:10`):
 
@@ -108,16 +116,28 @@ func TestSkipTaskFromPreparing(t *testing.T) {
 ```
 
 Add `TestNextToSpawnPreparingHoldsItsLane` beside `TestNextToSpawnReviewingHoldsItsLane`, mirroring it: the same
-two-task lane, `g.Tasks[1].State = TaskState_Preparing`, t-0 `pending`; `NextToSpawn` returns nothing. If
-`TestEveryTaskStateIsClassified` lists the states by hand, add `TaskState_Preparing` there. In `runlineage.test.ts`'s
-`describe("runEngineBusy")`, add `"preparing"` to the states the existing loop asserts busy.
+two-task lane, `g.Tasks[1].State = TaskState_Preparing`, t-0 `pending`; `NextToSpawn` returns nothing.
+
+`TestTaskStatesClassifyAsTheSwitchesDid` (`dag_test.go:515`) writes each set out by hand, and Preparing breaks it:
+add `TaskState_Preparing` to its `inFlight` set, add a `slot` check (`in(s, TaskState_Running, TaskState_Stalled,
+TaskState_Preparing)`, against `c.slot`), and add `TaskState_Preparing` to the `TaskState_Cancelled` case of its
+CancelGroup switch. Its comment says no state moves between sets; add that `preparing` is new, not moved.
+
+In `digest_test.go`, beside `TestCountsOverlapSemantics`, add `TestCountsAPreparingTaskAsRunning`: a group with one
+`preparing` task counts `Running == 1`.
+
+Frontend, each beside its file's existing cases:
+- `runlineage.test.ts` `describe("runEngineBusy")`: add `"preparing"` to the states the existing loop asserts busy.
+- `workertasksort.test.ts` "puts running tasks in the running bucket": `preparing` sorts into `running`.
+- `dagcanvas.test.ts`: `kindOf({ state: "preparing" })` is `"live"`, and in `describe("factOf")` a `preparing` task's
+  fact is `"preparing its tree"` (not `"next to start"`).
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `go test ./pkg/orchestrate -run '^(TestNextToSpawnPreparing|TestCancelGroupCancelsAPreparingTask|TestSkipTaskFromPreparing|TestEveryTaskStateIsClassified)'`
+Run: `go test ./pkg/orchestrate -run '^(TestNextToSpawnPreparing|TestCancelGroupCancelsAPreparingTask|TestSkipTaskFromPreparing|TestEveryTaskStateIsClassified|TestTaskStatesClassifyAsTheSwitchesDid|TestCountsAPreparingTaskAsRunning)$'`
 (Bash on Windows: prefix `CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu"`) and
-`npx vitest run frontend/app/view/agents/runlineage.test.ts`.
-Expected: Go compile error `undefined: TaskState_Preparing`; the vitest `preparing` case fails.
+`npx vitest run frontend/app/view/agents/runlineage.test.ts frontend/app/view/orchestrate/workertasksort.test.ts frontend/app/view/orchestrate/dagcanvas.test.ts`.
+Expected: Go compile error `undefined: TaskState_Preparing`; the vitest `preparing` cases fail.
 
 - [ ] **Step 3: Implement**
   - `dag.go`: `TaskState_Preparing = "preparing" // claimed for dispatch; its lane tree and Setup are being made outside the dag lock`.
@@ -129,30 +149,37 @@ Expected: Go compile error `undefined: TaskState_Preparing`; the vitest `prepari
   - `scheduler.go`: `skippable` accepts `TaskState_Preparing`; its comment says the prepare is dropped by the next
     locked pass (Task 2).
   - `runlineage.ts`: `TASK_IN_FLIGHT` gains `"preparing"` (a prepare takes 15-60 s and the lead is idle through it).
+  - `digest.go` `buildCounts`: `TaskState_Preparing` counts in `Running` with `Running` and `Reviewing`.
+  - `workertasksort.ts` `workerBucket`: `"preparing"` returns `"running"` (today it falls through to `"done"`).
+  - `dagcanvas.ts`: `KIND` maps `"preparing"` to `"live"`; `factOf` gains a `"preparing"` case returning
+    `"preparing its tree"` (today it falls to `waitingFact`, "next to start").
   - `docs/guide/orchestrator.md:680`: the list of states `skip` accepts gains `preparing`.
 
 - [ ] **Step 4: Run the tests to see them pass**
 
-Run: `go test ./pkg/orchestrate -run '^(TestNextToSpawn|TestCancelGroup|TestSkipTask|TestEveryTaskStateIsClassified)'` and `npx vitest run frontend/app/view/agents/runlineage.test.ts`
+Run: `go test ./pkg/orchestrate -run '^(TestNextToSpawn|TestCancelGroup|TestSkipTask|TestEveryTaskStateIsClassified|TestTaskStatesClassifyAsTheSwitchesDid|TestCounts)'` and `npx vitest run frontend/app/view/agents/runlineage.test.ts frontend/app/view/orchestrate/workertasksort.test.ts frontend/app/view/orchestrate/dagcanvas.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add pkg/orchestrate/dag.go pkg/orchestrate/scheduler.go pkg/orchestrate/scheduler_test.go pkg/orchestrate/dag_test.go docs/guide/orchestrator.md frontend/app/view/agents/runlineage.ts frontend/app/view/agents/runlineage.test.ts
+git add pkg/orchestrate/dag.go pkg/orchestrate/scheduler.go pkg/orchestrate/scheduler_test.go pkg/orchestrate/dag_test.go pkg/orchestrate/digest.go pkg/orchestrate/digest_test.go docs/guide/orchestrator.md frontend/app/view/agents/runlineage.ts frontend/app/view/agents/runlineage.test.ts frontend/app/view/orchestrate/workertasksort.ts frontend/app/view/orchestrate/workertasksort.test.ts frontend/app/view/orchestrate/dagcanvas.ts frontend/app/view/orchestrate/dagcanvas.test.ts
 git commit -m "feat(orchestrate): a preparing task state that holds its slot and lane" -m "Ports the fork's f80ac1ac2 (part of cead8a6fb). Dispatch is moving its tree and Setup out of the dag lock; the task needs a stored state for that span so the cap, its lane, cancel, skip and the cockpit's busy read all see it."
 ```
 
 ### Task 2: Prepare the tree outside the lock, spawn in the next pass
 
-**Depends on:** Task 1 (`TaskState_Preparing`)
+**Depends on:** Task 1, Task 3
 **Chunk:** A dag merge --continue waited 2m37s on the dag lock behind ticks held up by slow git worktree calls (fork 6231b6970, its run 65ce3ef3); the request now survives it, the lock hold itself is unexplained
 
-**Files:** `pkg/orchestrate/treeprep.go`, `pkg/orchestrate/treeprep_test.go`, `pkg/orchestrate/engine.go`, `pkg/orchestrate/mutation.go`, `pkg/orchestrate/pause.go`, `docs/open-issues.md`, `CHANGELOG.md`
+**Files:** `pkg/orchestrate/treeprep.go`, `pkg/orchestrate/treeprep_test.go`, `pkg/orchestrate/engine.go`, `pkg/orchestrate/mutation.go`, `pkg/orchestrate/mutation_test.go`, `pkg/orchestrate/pause.go`, `pkg/orchestrate/pause_test.go`, `scripts/cdp/scenarios.mjs`, `docs/open-issues.md`, `CHANGELOG.md`
 
 Where: `treeprep.go` and its test are new; `engine.go` `scheduleTickTimeout` :133, `runTick` :457, `scheduleLocked`
-:479, the dispatch block :787-953; comments only in `mutation.go` (`WithDagMutation`, `TryWithDagMutation` :172,
-`cancelDag` :783) and `pause.go:40` (`dagSetups`); `docs/open-issues.md` and `CHANGELOG.md` in Step 7.
+:479 (its `PausedTs` return :499), the dispatch block :787-953; `mutation_test.go:1496`
+(`TestScheduleTimesItsPhasesUnderTheLock` calls `scheduleLocked` and must compile with its new parameters); comments
+only in `mutation.go` (`WithDagMutation`, `TryWithDagMutation` :172, `cancelDag` :783), `pause.go:40` (`dagSetups`)
+and `pause_test.go` (the comments over `TestPauseDagCancelsARunningSetupAtOnce` :458 and
+`TestCancelCutsOffARunningSetupAtOnce`); `scenarios.mjs` in Step 7; `docs/open-issues.md` and `CHANGELOG.md` in Step 8.
 
 - [ ] **Step 1: Write the failing tests** in `treeprep_test.go`, with `newMergeFixture` (`mergetask_test.go:34`),
   `f.setPlanCommands(t, "", setupCmd)` (`setup_test.go:91`), `stubPlanCommand` (`setup_test.go:59`), `stubSpawn`
@@ -173,9 +200,10 @@ Where: `treeprep.go` and its test are new; `engine.go` `scheduleTickTimeout` :13
     `treePrepCount(f.dagID) == 0`, and `worktreeDir(f.project, TaskWorktreeKey(f.ownerID, "t-0"))` does not exist.
   - `TestSkipDuringSetupSpawnsNothing`: the stub calls `ApplyAction(f.ctx, f.dagID, "t-0", "skip", waveobj.RoutePin{})`.
     After: no spawn, task `skipped`, `treePrepCount(f.dagID) == 0`.
-  - `TestPauseDuringSetupSendsTheTaskBackUntried`: the stub returns an error wrapping its ctx's cause after cancelling
-    through `stopDagSetup(f.dagID)` (call the returned func before returning). After: no spawn, task `pending`,
-    `Attempts == 0`, no task-failed event.
+  - `TestPauseDuringSetupSendsTheTaskBackUntried`: shaped like `TestPauseDagCancelsARunningSetupAtOnce`
+    (`pause_test.go:459`), with a real `PauseDag` from a goroutine while the Setup stub blocks on its ctx. After the
+    `Schedule` call returns (the dag now paused): no spawn, task `pending` (not `preparing`), `Attempts == 0`,
+    `treePrepCount(f.dagID) == 0`, no task-failed event.
   - `TestASetupSlotWaitOverSendsTheTaskBackUntried`: the stub returns `errSlotWaitOver`. After: task `pending`,
     `Attempts == 0`, no spawn, and Setup ran once in that `Schedule` (not looped).
   - `TestAPreparingTaskLostToARestartIsPreparedAgain`: before `Schedule`, store `Tasks[0].State = TaskState_Preparing`
@@ -239,8 +267,13 @@ lock, unchanged except:
 
 - [ ] **Step 4: Rework `engine.go`**
   - `runTick` owns `held := map[string]bool{}` (the tasks this `Schedule` call sent back to pending: dispatch failures
-    and requeues) and passes it to every pass. `scheduleLocked` gains `held map[string]bool` and `jobs *[]treePrepJob`.
-    On a cancelled dag it calls `dropTreePreps(dagID, nil)` before returning.
+    and requeues) and passes it to every pass. `scheduleLocked` gains `held map[string]bool` and `jobs *[]treePrepJob`;
+    update its one test caller (`mutation_test.go:1496`). On a cancelled dag it calls `dropTreePreps(dagID, nil)`
+    before returning.
+  - On a paused dag (`g.PausedTs != 0`, `engine.go:499`), before that early return, settle the `preparing` tasks whose
+    entry is `requeue` or missing (back to `pending` untried, committed with `wstore.UpdateDag` as the settle pass
+    does) and leave the rest. Without it, the pause in `TestPauseDagCancelsARunningSetupAtOnce` leaves the task
+    `preparing` instead of the `pending` that test wants; done and failed outcomes wait for the resume's first tick.
   - Before `NextToSpawn` (after `clock.enter("dispatch")`), a new `settlePreparing(ctx, g, held, &afterCommit) (ready []string, preps map[string]*treePrep)`
     runs over each `preparing` task:
     - no entry: back to `TaskState_Pending`, with a log line;
@@ -270,23 +303,43 @@ lock, unchanged except:
   - Comments that say Setup runs under the dag lock now lie: the "no progress sink" comment (drop it unless a reason
     remains), `WithDagMutation`'s "(a Setup aside)", `TryWithDagMutation`'s "Setup command holds this lock for up to
     SetupTimeout", `cancelDag`'s "held for minutes (Setup)" and "a Setup holds that lock while it waits for a heavy-job
-    slot", and `dagSetups`' comment in `pause.go`. Each keeps the fallback in mind: a vanished prepared tree is the one
-    case Setup still runs under the lock.
+    slot", `dagSetups`' comment in `pause.go`, and the two `pause_test.go` test comments. Two Setups still run under the
+    lock, and each comment keeps them true: the final stage's Setup (`final.go:924`, `advanceFinal`, unchanged by this
+    plan) and the fallback for a vanished prepared tree. Leave `final.go`'s comment as it is.
 
 - [ ] **Step 5: Run the new tests and the dispatch tests they border**
 
-Run: `go test ./pkg/orchestrate -run '^(TestDispatch|TestSetup|TestNoSetupLineRunsNothing|TestATaskIsPreparing|TestAPreparingTask|TestASetupThatLeaves|TestASetupSlotWait|TestADispatchFailedAfterItsPrepare|TestCancelDuringSetup|TestSkipDuringSetup|TestPauseDuringSetup|TestSpawnedEventCarries|TestKickHeldRunsTicksDag|TestTaskActionsStop|TestPause)'`
+Run: `go test ./pkg/orchestrate -run '^(TestDispatch|TestSetup|TestNoSetupLineRunsNothing|TestATaskIsPreparing|TestAPreparingTask|TestASetupThatLeaves|TestASetupSlotWait|TestADispatchFailedAfterItsPrepare|TestCancelDuringSetup|TestCancelCutsOffARunningSetupAtOnce|TestSkipDuringSetup|TestPauseDuringSetup|TestSpawnedEventCarries|TestKickHeldRunsTicksDag|TestTaskActionsStop|TestPause|TestScheduleTimesItsPhasesUnderTheLock)'`
 Expected: PASS, the existing Setup, pause and dispatch-retry tests unchanged. Then the whole package once:
 `git diff --name-only main > /tmp/changed.txt && ARC_VERIFY_CHANGED=/tmp/changed.txt node scripts/verify.mjs ./pkg/orchestrate`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add pkg/orchestrate/treeprep.go pkg/orchestrate/treeprep_test.go pkg/orchestrate/engine.go pkg/orchestrate/mutation.go pkg/orchestrate/pause.go
+git add pkg/orchestrate/treeprep.go pkg/orchestrate/treeprep_test.go pkg/orchestrate/engine.go pkg/orchestrate/mutation.go pkg/orchestrate/mutation_test.go pkg/orchestrate/pause.go pkg/orchestrate/pause_test.go
 git commit -m "perf(orchestrate): make a task's tree and Setup outside the dag lock" -m "Ports the fork's cead8a6fb, fitted to ours' count-based worker admission (no claim crosses the passes) and ours' Setup slot wait and pause cut. From 11-14 to 11-16, 845 of 928 s of slow dag-lock holds were dispatch, up to 65 s each; worker exits, merges and actions queued behind them. The claim pass now marks the task preparing and runTick prepares its tree after the lock; the next pass spawns into the warm tree."
 ```
 
-- [ ] **Step 7: Docs.** In `docs/open-issues.md`, the row "Re-measure the dag lock's slow phases on 2026-11-26" and the
+- [ ] **Step 7: The `dag-preparing` scenario** (the plan's Final runs it). Add it to `scripts/cdp/scenarios.mjs` and
+  `SCENARIOS`, following `docs/reference/cdp-run-fixtures.md` and shaped like `lead-card-merge-gate` (:21467): a temp
+  project made a git repo with `fstGitInit`, a deferred orchestrator run (`arrangeFixtureRun`), `dagsubmit` with one
+  no-op task, then `seedDag` to put the stored dag's `setup` to a slow command (`sleep 120`) and the task back to
+  `pending` with no `runid`. The engine's next tick then really claims the task and holds it `preparing` through that
+  Setup, which a seeded `preparing` would not do: the settle pass sends a `preparing` task with no registry entry back
+  to `pending`. Wait (bounded) until `dagstatus` reads the task `preparing`, reload, and assert:
+  - step "1. the task is preparing": `dagstatus` reads `preparing`;
+  - step "2. the lead card reads working": the run's lead card mark (`leadMark`, `leadcardmodel.ts:352`) has the
+    working tone while its lead stands by (read the class the card sets for that tone). `arrangeFixtureRun` writes a
+    fixture lead: give it a state that `leadStandingBy` reads as standing by (`leadExtra`), so the mark takes the
+    `runEngineBusy` branch, the one `"preparing"` changes;
+  - step "3. the dag canvas shows the task live": on the run sheet, the task's node reads `preparing` with the fact
+    `preparing its tree`, not `next to start`.
+
+  Shoot each state. Teardown is `teardownFixtureRun`, whose cancel cuts the Setup (`stopDagSetup`). Run it against the
+  dev app (`task verify:ui -- dag-preparing`, or Final's `ARC_FINAL_OUT=<dir> node scripts/cdp/final-verify.mjs
+  dag-preparing`); if neither can run here, say so in the report. Commit it with `test(cdp): …`.
+
+- [ ] **Step 8: Docs.** In `docs/open-issues.md`, the row "Re-measure the dag lock's slow phases on 2026-11-26" and the
   row "Kael sync 11-13: a tick holds the dag lock through slow worktree creation": replace both with one row saying the
   re-measure was read early (the evidence above), dispatch moved off the lock in this commit, and what to watch next
   (the `liveness` phase, longest 3.5 s). Add a `CHANGELOG.md` line under `Fixed`: "A run no longer freezes its other
@@ -295,19 +348,22 @@ git commit -m "perf(orchestrate): make a task's tree and Setup outside the dag l
 
 ### Task 3: A task action ticks the dag even when the stopped worker's tab will not close
 
-**Depends on:** Task 2 (both edit `pkg/orchestrate/mutation.go`)
+**Depends on:** none
 **Chunk:** Engine: when a stopped worker's tab fails to close, ApplyAction returns before Schedule, so turned-away ticks wait for the watchdog
 
-**Files:** `pkg/orchestrate/mutation.go`, `pkg/orchestrate/mutation_test.go`
+**Files:** `pkg/orchestrate/mutation.go`, `pkg/orchestrate/actionlock_test.go`
 
-Where: `mutation.go:249-284` (`ApplyActionBy`, `applyAction`); the test goes beside `TestTaskActionsStop*` (grep it; if
-that is another file, use that file).
+Where: `mutation.go:249-284` (`ApplyActionBy`, `applyAction`) and `closeWorkerTab` :330; the test goes in
+`actionlock_test.go` beside `TestTaskActionsStopTheWorkerOutsideTheDagLock` (:47), whose setup it reuses.
 
-- [ ] **Step 1: Write the failing test** `TestAnActionWhoseTabWillNotCloseStillTicks`: a dag whose t-0 is running with a
-  worker; stub the tab close (`closeWorkerTab` reaches a var; grep `closeWorkerTab` in `mutation.go:328` for the seam,
-  and add a var seam if there is none) to return an error; count `Schedule` passes (stub `runTick` is not needed:
-  assert the effect, a ready t-1 that the action unblocks is spawned by the same `ApplyAction` call). Expect the
-  action's error to name the tab, and t-1 to be `running` (or `preparing` after Task 2 merges: assert "not pending").
+- [ ] **Step 1: Write the failing test** `TestAnActionWhoseTabWillNotCloseStillTicks`. `closeWorkerTab` calls
+  `closeLeadTab` (`leadclose.go:92`), a plain func: add a seam in `mutation.go`,
+  `var closeStoppedWorkerTab = closeLeadTab`, have `closeWorkerTab` call it, and leave `leadclose.go` untouched. The
+  test stubs the seam to return an error. Dag: t-0 `running` with a worker, t-1 `pending` and independent of t-0,
+  `Parallelism = 1`, so t-0 holds the one slot. Call `ApplyAction(…, "t-0", "stop", …)` once: `stop` is the action
+  that sets `closeTab`, and it records t-0 `failed`, which frees the slot. Expect the action's error to name the tab,
+  and t-1 `running` after that one call (the same call's `Schedule` spawned it; one `Schedule` still returns with a
+  ready task running once Task 2 lands, so the assertion holds either side of it).
 - [ ] **Step 2: Run it to see it fail:** `go test ./pkg/orchestrate -run '^TestAnActionWhoseTabWillNotCloseStillTicks$'`.
 - [ ] **Step 3: Implement.** `applyAction` returns `(recorded bool, err error)`: `recorded` is true once the second
   `withDagMutation` committed. `ApplyActionBy`:
@@ -321,7 +377,7 @@ that is another file, use that file).
 	return errors.Join(err, Schedule(ctx, dagID))
 ```
 
-- [ ] **Step 4: Run it and `-run '^TestTaskActions'` to see them pass.**
+- [ ] **Step 4: Run it and `-run '^(TestTaskActions|TestAutoRetryStops|TestSkipRewinds|TestSkipDrops)'` to see them pass.**
 - [ ] **Step 5: Commit** `fix(orchestrate): a recorded task action ticks the dag even when the worker's tab will not close`.
 
 ### Task 4: A lead's task action survives its caller's timeout and says so
@@ -332,8 +388,12 @@ that is another file, use that file).
 **Files:** `pkg/wshrpc/wshserver/wshserver_dag.go`, `pkg/orchestrate/mergetask.go`, `pkg/orchestrate/mergetask_test.go`, `cmd/wsh/cmd/wshcmd-jarvisdag.go`, `cmd/wsh/cmd/wshcmd-jarvisdag_test.go`
 
 Where: `wshserver_dag.go:637-725` (`DagActionCommand`: the `amend` and `sendback` cases and the default `ApplyActionBy`
-call); `mergetask.go:80` (`landForCaller`: generalize it, or add a sibling `actForCaller` beside it);
-`wshcmd-jarvisdag.go` `dagActionWithin` :740 and `dagNoteCmd` :1311.
+call); `mergetask.go:80` (`landForCaller`; the new exported `ActForCaller` goes beside it);
+`wshcmd-jarvisdag.go` `dagActionWithin` :740, `dagNoteCmd` :1311 and `dagEscalateCmd`'s send (:816).
+
+Which actions detach: those that reach `ApplyActionBy` (approve, retry, skip, stop, escalate) plus `amend` and
+`sendback`. `tell` (it types into a live terminal, and a late tell is worse than none), `cancel`, `retry-cleanup` and
+`forward` stay on the RPC's context, so their timeout reads as today.
 
 Today a lead action waits on the dag lock on the RPC's context, with a 10 s client budget (`dagRpcTimeoutMs`, :646): a
 long tick turns it into a bare EC-TIME, and its first read under the lock can then fail on the expired context, so the
@@ -341,22 +401,32 @@ lead cannot tell whether a retry happened or an amend note was kept. The merge a
 the fork's `6231b6970`).
 
 - [ ] **Step 1: Write the failing tests.**
-  - Go, `pkg/orchestrate`: `TestAnActionWhoseCallerLeftStillLands`: hold the dag lock from the test
-    (`withDagMutation` in a goroutine that waits on a channel), call `AmendTaskForCaller` (or the name you pick) with a
-    context cancelled before the lock frees, free the lock, and assert the note is on the task.
+  - Go, `pkg/orchestrate` (in `mergetask_test.go`): `TestAnActionWhoseCallerLeftStillLands`: hold the dag lock from
+    the test (`withDagMutation` in a goroutine that waits on a channel), call
+    `ActForCaller(ctx, channelID, runID, "t-0", "dag amend", ActionByLead, func(c context.Context) error { return AmendTask(c, dagID, "t-0", "note") })`
+    with a `ctx` cancelled before the lock frees, free the lock, and assert the note is on the task. A second case,
+    `TestAnActionThatFailsAfterItsCallerLeftWakesOnlyTheLead`: the act returns an error after `ctx` is cancelled; with
+    `ActionByLead` one wake is posted, with `ActionByHuman` none (stub or read `PostWake` as `landForCaller`'s tests
+    do). No wshserver wiring test.
   - wsh: `TestDagActionTimeoutSaysItStillLands`: stand in for wavesrv through `dagActionRpc` (:725) returning a timeout
-    error (`wshutil` timeout, as `submitOutcomeUnknown` reads), and assert the error says the request still finishes
-    once the engine frees the dag, wakes the lead if it fails, and to check `wsh jarvis dag status <task>` rather than
-    re-running it.
+    error (`wshutil` timeout, as `submitOutcomeUnknown` reads). For `retry` and `amend` the error says the request
+    still finishes once the engine frees the dag, wakes the lead if it fails, and to check
+    `wsh jarvis dag status <task>` rather than re-running it; for `tell` and `retry-cleanup` it does not.
 - [ ] **Step 2: Run them to see them fail.**
-- [ ] **Step 3: Implement.** Server: run `ApplyActionBy`, `AmendTask` and `SendBack` on a context of their own,
-  `context.WithTimeout(context.WithoutCancel(ctx), scheduleTickTimeout)`, through one helper beside `landForCaller` that
-  posts a wake (`PostWake` with a line like `landFailedWake`'s) when the action fails after `ctx.Err() != nil`. Not
-  `tell`: it types into a live terminal, and a late tell is worse than none. wsh: in `dagActionWithin` and
-  `dagNoteCmd`, when `submitOutcomeUnknown(err)`, return
-  `fmt.Errorf("dag %s %s got no reply within %s (%v); wavesrv finishes a request it received once the engine frees the dag, and wakes you if it fails: check with `+"`wsh jarvis dag status %s`"+` rather than re-running it", action, taskID, compactDur(timeoutMs), err, taskID)`.
-- [ ] **Step 4: Run the tests** (`go test ./pkg/orchestrate -run '^TestAnActionWhoseCallerLeftStillLands$'`,
-  `go test ./cmd/wsh/cmd -run '^TestDagActionTimeout'`) **to see them pass.**
+- [ ] **Step 3: Implement.**
+  - Server: `orchestrate.ActForCaller(ctx context.Context, channelID, ownerRunID, taskID, command, by string, act func(context.Context) error) error`,
+    beside `landForCaller`: runs `act` on `context.WithTimeout(context.WithoutCancel(ctx), scheduleTickTimeout)`, and
+    when `act` fails after `ctx.Err() != nil` and `by == ActionByLead`, posts a wake (`PostWake` with a line like
+    `landFailedWake`'s). A human's cockpit action has no lead to read the wake, so it posts none. `landForCaller` may
+    call it with `ActionByLead`, so one helper serves both. In `DagActionCommand`, route the default `ApplyActionBy`
+    call, `amend` and `sendback` through it, with `by` from `orchestrate.ActionByFromWire(data.By)` and `command`
+    `"dag " + data.Action`. `tell`, `cancel`, `retry-cleanup` and `forward` are unchanged.
+  - wsh: one helper, `dagLateError(action, taskID string, timeoutMs int64, err error) error`, which, when the action
+    is one that detaches (the list above) and `submitOutcomeUnknown(err)`, returns
+    `fmt.Errorf("dag %s %s got no reply within %s (%v); wavesrv finishes a request it received once the engine frees the dag, and wakes you if it fails: check with `+"`wsh jarvis dag status %s`"+` rather than re-running it", action, taskID, compactDur(timeoutMs), err, taskID)`,
+    and `err` unchanged otherwise. Call it in `dagActionWithin`, `dagNoteCmd` and `dagEscalateCmd`'s send.
+- [ ] **Step 4: Run the tests** (`go test ./pkg/orchestrate -run '^(TestAnActionWhoseCallerLeftStillLands|TestAnActionThatFailsAfterItsCallerLeftWakesOnlyTheLead)$'`,
+  `go test ./cmd/wsh/cmd -run '^TestDagActionTimeout'`) **to see them pass**, then `go build ./pkg/wshrpc/wshserver`.
 - [ ] **Step 5: Commit** `fix(orchestrate): a lead's task action lands after its caller times out, and wsh says so`.
 
 ### Task 5: The progress check runs no git in a project without a tree
@@ -364,9 +434,10 @@ the fork's `6231b6970`).
 **Depends on:** none
 **Chunk:** Engine runTick holds a dag lock 10-19 s when a task's progress check runs git status in a non-git cwd (dag-lifecycle temp project): find why
 
-**Files:** `pkg/orchestrate/progress.go`, `pkg/orchestrate/progress_test.go`
+**Files:** `pkg/orchestrate/progress.go`, `pkg/orchestrate/progress_test.go`, `pkg/orchestrate/liveness_test.go`
 
-Where: `progress.go:290-306` (`checkProgress`).
+Where: `progress.go:290-306` (`checkProgress`); `liveness_test.go:238` (`seedChildWrittenAt`, which every
+`TestSuspect*` in `suspect_test.go` builds on through `seedSuspectChild`).
 
 A task in a non-git project has no lane tree (dispatch leaves the child run's `Branch` empty, `engine.go:811`), so
 `worktreeFingerprint`'s `git status` there can only fail, once a minute per task, under the dag lock. The 10-19 s holds
@@ -378,6 +449,11 @@ rather than explaining it.
   `checkProgress` past `progressCheckEvery`; want zero calls and no flag.
 - [ ] **Step 2: Run it to see it fail:** `go test ./pkg/orchestrate -run '^TestProgressCheckSkipsATaskWithNoTree$'`.
 - [ ] **Step 3: Implement:** in `checkProgress`, return early when `run.Branch == ""`, with the comment "no lane tree
-  (a project that is not a git repo): nothing to fingerprint, and git status there only fails".
-- [ ] **Step 4: Run it and `-run '^TestProgress|^TestCheckProgress'` to see them pass.**
+  (a project that is not a git repo): nothing to fingerprint, and git status there only fails". `seedChildWrittenAt`
+  makes its child run with no `Branch`, so this return would turn every `TestSuspect*` check off: set
+  `child.Branch = "wave/" + name` there, as dispatch sets a git project's child run (`engine.go:905`).
+- [ ] **Step 4: Run it and the tests that build on `seedChildWrittenAt` to see them pass:**
+  `go test ./pkg/orchestrate -run '^(TestSuspect|TestProgressCheckSkipsATaskWithNoTree)'`, then the tests of
+  `liveness_test.go` (list their names with `grep -ho '^func Test[A-Za-z0-9_]*' pkg/orchestrate/liveness_test.go`
+  and pass them as one `-run '^(…)$'`).
 - [ ] **Step 5: Commit** `fix(orchestrate): no progress git status for a task with no lane tree`.
