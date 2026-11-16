@@ -37,8 +37,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
-- The Jarvis hologram no longer turns into the pixel pet for a few seconds after a long day of opening and closing
-  terminals: closed and hidden terminals now give their graphics slot back at once instead of holding it.
+- The Jarvis hologram no longer turns into the pixel pet for a few seconds when you close or switch agents after a
+  while of using many terminals: terminals give their graphics slot back at once, and the hologram is no longer the
+  first one dropped when they run short.
 - Typing or pasting `@agent:<id>` (or `@run:`, `@council:`) in the chat box now finds that agent, run or council in
   the `@` list.
 - Picking a whole paragraph in Chat no longer highlights the line number of a code block right below it.
