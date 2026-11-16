@@ -16,6 +16,9 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **New project leaves out the council bench's folders.** No dev app ran. In a build with 28dcb26a5,
+  open + → New project → no row's path is under the app's data dir (`…\dev.arc.app\data\council-bench-projects\…`:
+  spec-live-agents, bugs-orchestrate, goalpost-guard…); typing still finds folders on disk.
 - [ ] (arcterm) **A long menu row is cut, not stretched.** No dev app ran. On an agent that started runs with long
   goals, click `N runs ▾` in its header → the menu is at most ~520px wide, each Started runs row is one line ending in
   `…` with its status (`done`, `running`) still at the right, and hovering a row shows the whole goal. Other menus
