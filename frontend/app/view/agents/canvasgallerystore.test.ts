@@ -209,6 +209,35 @@ describe("moveSelectionToTrash", () => {
         expect(gallery().view).toBe("grid");
     });
 
+    it("takes the moved canvases off screen even when the re-read fails", async () => {
+        startCleanup(NOW);
+        clean.mockResolvedValue({
+            reclaimed: 0,
+            trashed: 2048,
+            cleaned: [dirOf("old-a"), dirOf("old-b")],
+            skipped: [],
+        });
+        list.mockRejectedValue(new Error("wavesrv busy"));
+        await moveSelectionToTrash();
+        expect(globalStore.get(canvasListAtom)).toEqual([NEW]);
+        expect(gallery().view).toBe("grid");
+    });
+
+    it("keeps a skipped canvas listed when the re-read fails", async () => {
+        startCleanup(NOW);
+        clean.mockResolvedValue({
+            reclaimed: 0,
+            trashed: 1024,
+            cleaned: [dirOf("old-a")],
+            skipped: [{ id: dirOf("old-b"), reason: "not a folder (a link is never moved)" }],
+        });
+        list.mockRejectedValue(new Error("wavesrv busy"));
+        await moveSelectionToTrash();
+        expect(globalStore.get(canvasListAtom)).toEqual([OLD_B, NEW]);
+        expect(gallery().view).toBe("cleanup");
+        expect(cleanup().selected).toEqual(new Set([dirOf("old-b")]));
+    });
+
     it("keeps the cursor on a card when the list shrinks under it", async () => {
         startCleanup(NOW);
         globalStore.set(canvasGalleryAtom, { ...gallery(), cursor: 2 });

@@ -32,6 +32,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Fixed
 
 - Picking a whole paragraph in Chat no longer highlights the line number of a code block right below it.
+- Canvases you move to the trash from the Canvas gallery's Clean up leave the gallery at once, even when the gallery
+  fails to reload its list afterwards.
 
 ## 1.2.0 — 2026-11-16
 
