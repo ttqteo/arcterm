@@ -17,12 +17,15 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
 - [ ] (arcterm) **A Claude Code menu no hook reports shows in Chat as a card.** Not tried in the app: unit tests on a
-  screen transcribed from a screenshot only (commit "fix(chat): a terminal menu no hook reports shows as a card",
-  2026-11-16). When Claude Code stops on the safeguards' "Session paused" menu (or any other numbered menu while the
-  agent reads asking or waiting with no permission card), Chat shows a yellow card titled `Session paused` with its
-  text, `1. Switch to Opus 4.8` / `2. Edit prompt and retry with Opus 5.5` as buttons and Answer in Terminal; a button
-  picks that choice in the terminal and the card goes. A plain permission prompt still shows only the permission card,
-  never this one beside it.
+  screen transcribed from a screenshot only (commits "fix(chat): a terminal menu no hook reports shows as a card" and
+  "fix(chat): Edit prompt comes back to the box; a screen Chat cannot read shows as its foot", 2026-11-16). When Claude
+  Code stops on the safeguards' "Session paused" menu, Chat shows a yellow card titled `Session paused` with its text
+  (paragraphs read naturally, not cut at the terminal's width), `1. Switch to Opus 4.8` / `2. Edit prompt and retry with
+  Opus 5.5` and Answer in Terminal, and within ~10 s the agent reads asking in the tree and Needs you. Switch picks it
+  and the card goes; Edit prompt empties Claude Code's box and puts the prompt in Chat's box, focused, and the prompt's
+  bubble leaves the conversation. A plain permission prompt still shows only the permission card. With an MCP form or
+  another unnumbered screen up while the agent reads waiting, Chat shows "Waiting on you in the terminal" with the foot
+  of the screen in mono; it never shows while Claude Code's prompt and mode line are up.
 - [ ] (arcterm) **A council an agent ran ends as a card at the end of Chat, its summary in a council panel.** The CDP
   scenario `chat-council` covers fixture transcripts only (commit "feat(chat): an ended council stays a card at the end,
   its summary in a council panel", 2026-11-16). Ask a Claude agent for a council (/arc:council) and let it wait in the

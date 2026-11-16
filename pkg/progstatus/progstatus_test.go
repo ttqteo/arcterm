@@ -161,3 +161,29 @@ func TestFallback(t *testing.T) {
 		}
 	}
 }
+
+func TestFallbackBlockedRightAfterAHook(t *testing.T) {
+	const at = int64(1_000_000)
+	blocked := Report{State: "blocked"}
+	hooks := func(state string, ts int64) baseds.AgentStatusData {
+		return baseds.AgentStatusData{State: state, Ts: ts}
+	}
+	// the safeguards' pause: StopFailure read the turn idle a moment before Claude Code raised its menu
+	for _, hook := range []string{baseds.AgentState_Idle, baseds.AgentState_Working} {
+		if got := Fallback(blocked, at, hooks(hook, at-300), at+QuietMs); got != baseds.AgentState_Asking {
+			t.Errorf("blocked just after a %s hook: got %q, want asking", hook, got)
+		}
+	}
+	for name, tc := range map[string]struct {
+		latest baseds.AgentStatusData
+		now    int64
+	}{
+		"a waiting hook already says so": {hooks(baseds.AgentState_Waiting, at-300), at + QuietMs},
+		"a hook reported after it":       {hooks(baseds.AgentState_Working, at+200), at + QuietMs},
+		"too soon to tell":               {hooks(baseds.AgentState_Idle, at-300), at + QuietMs - 1},
+	} {
+		if got := Fallback(blocked, at, tc.latest, tc.now); got != "" {
+			t.Errorf("%s: got %q, want nothing", name, got)
+		}
+	}
+}

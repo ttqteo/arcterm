@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tuiDialog, tuiEffort, tuiMode, tuiPermissionOptions, tuiSelectYes } from "./tuiscreen";
+import { tuiDialog, tuiEffort, tuiMode, tuiPermissionOptions, tuiScreenTail, tuiSelectYes } from "./tuiscreen";
 import fixtures from "./tuiscreen.fixtures.json";
 
 // every screen here was captured off Claude Code 2.1.319 (tuiscreen.fixtures.json), not written by hand
@@ -206,5 +206,27 @@ describe("tuiDialog", () => {
     });
     it("is null for options with no rule over them", () => {
         expect(tuiDialog(pausedDialog.filter((row) => row !== RULE))).toBeNull();
+    });
+    it("reads the title readTermLines joins onto the full-width rule", () => {
+        // xterm marks the row after a full-width rule as its wrap, and the screen reader joins the two
+        const joined = pausedDialog.flatMap((row, i) =>
+            row === RULE ? [RULE + pausedDialog[i + 1]] : pausedDialog[i - 1] === RULE ? [] : [row]
+        );
+        expect(joined).toContain(RULE + " Session paused");
+        expect(tuiDialog(joined)).toEqual(tuiDialog(pausedDialog));
+    });
+});
+
+describe("tuiScreenTail", () => {
+    it("gives the rows under the last rule, the one it swallowed too", () => {
+        const form = ["older reply", RULE + " Enter your API key", "", "   > ____", " Enter to submit · Esc to cancel"];
+        expect(tuiScreenTail(form)).toEqual([" Enter your API key", "   > ____", " Enter to submit · Esc to cancel"]);
+    });
+    it("gives the last rows with no rule on screen", () => {
+        expect(tuiScreenTail(["a", "", "b", "Press Enter to continue…", ""])).toEqual([
+            "a",
+            "b",
+            "Press Enter to continue…",
+        ]);
     });
 });

@@ -5,7 +5,8 @@
 // holds the text, Ctrl+U to clear it there, and the text into the chat box. Nothing comes back when the box never shows
 // the text (Claude took the message, or answered first); a box that would not clear gets its text queued again with
 // Enter, so a take-back that fails leaves things as they were. An Esc take-back is kept per agent (TakenBack), so the
-// conversation hides the record Claude Code wrote before the Esc (withoutTakenBack).
+// conversation hides the record Claude Code wrote before the Esc (withoutTakenBack). takeBackAfterKey does the same after
+// a dialog's pick that puts the last prompt back in the box (the safeguards' "Edit prompt and retry").
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -73,13 +74,46 @@ export async function takeBack(
     plan: TakeBack,
     put: (texts: string[]) => void
 ): Promise<TakeBackResult> {
+    return run(agentId, blockId, plan.kind === "queued" ? KEY_UP : KEY_ESC, plan.texts, {
+        waitMs: WAIT_MS[plan.kind],
+        requeue: plan.kind === "queued",
+        put: (texts) => {
+            dropPendingIds(agentId, plan.ids);
+            put(texts);
+        },
+    });
+}
+
+// a dialog's pick first draws the prompt back in, after the dialog closes
+const AFTER_KEY_WAIT_MS = 5_000;
+
+/** Types `key` into a dialog whose pick puts the last prompt back in Claude Code's box (the safeguards' "Edit prompt and
+ *  retry"), then takes that prompt on into the chat box as an Esc take-back would, through `put`. `texts` is the prompt
+ *  as the transcript holds it, for knowing the box holds it. */
+export function takeBackAfterKey(
+    agentId: string,
+    blockId: string,
+    key: string,
+    texts: string[],
+    put: (texts: string[]) => void
+): Promise<TakeBackResult> {
+    return run(agentId, blockId, key, texts, { waitMs: AFTER_KEY_WAIT_MS, requeue: false, put });
+}
+
+async function run(
+    agentId: string,
+    blockId: string,
+    key: string,
+    texts: string[],
+    opts: { waitMs: number; requeue: boolean; put: (texts: string[]) => void }
+): Promise<TakeBackResult> {
     if (running.has(agentId)) {
         return "busy";
     }
     running.add(agentId);
     try {
-        await keys(blockId, plan.kind === "queued" ? KEY_UP : KEY_ESC);
-        const lines = await waitForBox(blockId, plan.texts, Date.now() + WAIT_MS[plan.kind]);
+        await keys(blockId, key);
+        const lines = await waitForBox(blockId, texts, Date.now() + opts.waitMs);
         if (lines == null) {
             return "none";
         }
@@ -90,15 +124,14 @@ export async function takeBack(
         }
         await sleep(POLL_MS);
         const after = readTermLines(blockId, SCREEN_ROWS);
-        if (after == null || boxHolds(after, plan.texts)) {
+        if (after == null || boxHolds(after, texts)) {
             // the box would not clear: a queued message goes back in the queue, where it was
-            if (plan.kind === "queued") {
+            if (opts.requeue) {
                 await keys(blockId, KEY_ENTER);
             }
             return "stuck";
         }
-        dropPendingIds(agentId, plan.ids);
-        put(plan.texts);
+        opts.put(texts);
         return "done";
     } finally {
         running.delete(agentId);

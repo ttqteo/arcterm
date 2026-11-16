@@ -109,9 +109,22 @@ export interface TuiDialog {
     cursor: number;
 }
 
-// the solid rule Claude Code draws across the screen over a dialog (a dashed ╌ rule inside one frames a command)
-const dialogRule = /^\s*─{8,}\s*$/;
+// the solid rule Claude Code draws across the screen over a dialog (a dashed ╌ rule inside one frames a command). The
+// rule is the screen's full width, so xterm marks the row after it as a wrap and readTermLines joins the two
+// ("────…──── Session paused"): what follows the rule is that next row.
+const dialogRule = /^(\s*─{8,})(.*)$/;
 const dashedRule = /^\s*╌{8,}\s*$/;
+
+// the last solid rule at or above row `from`: its row, its width, and the row it swallowed ("" for none)
+function ruleAbove(lines: string[], from: number): { at: number; width: number; rest: string } | null {
+    for (let i = from; i >= 0; i--) {
+        const m = dialogRule.exec(lines[i]);
+        if (m) {
+            return { at: i, width: m[1].length, rest: m[2] };
+        }
+    }
+    return null;
+}
 
 /** The dialog at the bottom of Claude Code's screen, whatever it asks: the rows from the solid rule over it down to its
  *  numbered options. null with no options on screen, or no rule over them (a numbered list in a reply has neither the
@@ -122,18 +135,12 @@ export function tuiDialog(lines: string[]): TuiDialog | null {
     if (run == null) {
         return null;
     }
-    let rule = -1;
-    for (let i = run.start - 1; i >= 0; i--) {
-        if (dialogRule.test(lines[i])) {
-            rule = i;
-            break;
-        }
-    }
-    if (rule < 0) {
+    const rule = ruleAbove(lines, run.start - 1);
+    if (rule == null) {
         return null;
     }
-    const width = lines[rule].trimEnd().length;
-    const rows = lines.slice(rule + 1, run.start).filter((row) => !dashedRule.test(row));
+    const width = rule.width;
+    const rows = [rule.rest, ...lines.slice(rule.at + 1, run.start)].filter((row) => !dashedRule.test(row));
     const first = rows.findIndex((row) => row.trim() !== "");
     if (first < 0) {
         return null;
@@ -158,6 +165,21 @@ export function tuiDialog(lines: string[]): TuiDialog | null {
 
 // how far short of the screen's edge a wrapped row can end: the longest word that did not fit
 const WRAP_SLACK = 16;
+
+// the most rows tuiScreenTail gives
+const TAIL_ROWS = 14;
+
+/** The foot of Claude Code's screen as the person would read it there: the non-blank rows under its last solid rule (the
+ *  rule's own row counts for what it swallowed), or with no rule the last rows on screen; at most TAIL_ROWS, the
+ *  bottom ones. For a screen this module has no reader for (a form, a "Press Enter to continue"). */
+export function tuiScreenTail(lines: string[]): string[] {
+    const rule = ruleAbove(lines, lines.length - 1);
+    const rows = rule == null ? lines : [rule.rest, ...lines.slice(rule.at + 1)];
+    return rows
+        .filter((row) => row.trim() !== "" && !dashedRule.test(row))
+        .map((row) => row.trimEnd())
+        .slice(-TAIL_ROWS);
+}
 
 // a select list's cursor row: " ❯ No" or " ❯ 2. Yes"; the label starts at the column after the mark
 const cursorRow = /^(\s*❯\s+)(\S.*?)\s*$/;

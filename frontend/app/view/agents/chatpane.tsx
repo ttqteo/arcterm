@@ -976,6 +976,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                         />
                         <ScreenDialogCard
                             agent={agent}
+                            entries={entries}
                             askShown={asking}
                             onOpenTerminal={() => setChatMode(agent.id, "terminal")}
                         />
