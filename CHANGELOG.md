@@ -52,6 +52,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Jarvis's peek no longer shows the pin button while Jarvis is the hologram, which never walks off; Sprout and the
+  folded peek keep it.
 - Settings → Jarvis & Office → Form now picks Hologram or Character (it said Sprout, which is also one of the
   characters), and shows only the picked form's settings: Hologram size for the hologram, Character and Vietnam's
   colours for a character. The fold button says Fold into Jarvis while Jarvis is the hologram.
