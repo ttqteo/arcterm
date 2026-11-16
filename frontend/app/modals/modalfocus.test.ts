@@ -299,15 +299,20 @@ describe("takeModalFocus", () => {
 
 describe("shellOwnsEscape", () => {
     // elements are nodeType 1; document is 9, and window has no nodeType
-    const inside = { nodeType: 1 } as Node;
-    const portaled = { nodeType: 1 } as Node;
+    // closest() answers for the selector it is asked: a popover's element sits under a match, chrome's under none
+    const inside = { nodeType: 1, closest: () => null } as unknown as Node;
+    const portaled = { nodeType: 1, closest: (sel: string) => (sel.includes("data-floating-ui-portal") ? {} : null) };
+    const chrome = { nodeType: 1, closest: () => null } as unknown as Node;
     const body = { nodeType: 1 } as Node;
     const panel = { contains: (n: Node | null) => n === inside };
     it("owns an Escape from inside the panel", () => {
         expect(shellOwnsEscape(panel, inside, body)).toBe(true);
     });
     it("leaves an Escape from a popover portaled out of the panel to that popover", () => {
-        expect(shellOwnsEscape(panel, portaled, body)).toBe(false);
+        expect(shellOwnsEscape(panel, portaled as unknown as Node, body)).toBe(false);
+    });
+    it("owns an Escape from the cockpit's chrome behind a sheet, outside the panel and every popover", () => {
+        expect(shellOwnsEscape(panel, chrome, body)).toBe(true);
     });
     it("owns an Escape with nothing focused", () => {
         expect(shellOwnsEscape(panel, body, body)).toBe(true);
@@ -318,6 +323,6 @@ describe("shellOwnsEscape", () => {
         expect(shellOwnsEscape(panel, {} as EventTarget, body)).toBe(true);
     });
     it("owns every Escape before the panel exists", () => {
-        expect(shellOwnsEscape(null, portaled, body)).toBe(true);
+        expect(shellOwnsEscape(null, portaled as unknown as Node, body)).toBe(true);
     });
 });

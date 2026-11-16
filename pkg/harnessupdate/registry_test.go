@@ -15,11 +15,9 @@ import (
 func serveTags(t *testing.T, status int, body string) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.EscapedPath() != "/@anthropic-ai%2Fclaude-code" {
+		// the tags alone, not the package document (a scoped name keeps its / escaped, which npm takes)
+		if r.URL.EscapedPath() != "/-/package/@anthropic-ai%2Fclaude-code/dist-tags" {
 			t.Errorf("path = %q", r.URL.EscapedPath())
-		}
-		if r.Header.Get("Accept") != abbreviatedDoc {
-			t.Errorf("Accept = %q, want the abbreviated package document", r.Header.Get("Accept"))
 		}
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))
@@ -31,7 +29,7 @@ func serveTags(t *testing.T, status int, body string) {
 }
 
 func TestLatestVersion_readsTheChannelTag(t *testing.T) {
-	serveTags(t, 200, `{"name":"@anthropic-ai/claude-code","dist-tags":{"latest":"2.1.300","stable":"2.1.280","next":"2.2.0-beta.1"},"versions":{"2.1.300":{}}}`)
+	serveTags(t, 200, `{"latest":"2.1.300","stable":"2.1.280","next":"2.2.0-beta.1"}`)
 	for channel, want := range map[string]string{"latest": "2.1.300", "stable": "2.1.280"} {
 		got, err := LatestVersion(context.Background(), "@anthropic-ai/claude-code", channel)
 		if err != nil || got != want {
@@ -41,7 +39,7 @@ func TestLatestVersion_readsTheChannelTag(t *testing.T) {
 }
 
 func TestLatestVersion_failsOnAMissingTagOrABadStatus(t *testing.T) {
-	serveTags(t, 200, `{"dist-tags":{"latest":"2.1.300"}}`)
+	serveTags(t, 200, `{"latest":"2.1.300"}`)
 	if _, err := LatestVersion(context.Background(), "@anthropic-ai/claude-code", "stable"); err == nil {
 		t.Error("a missing channel tag returned no error")
 	}

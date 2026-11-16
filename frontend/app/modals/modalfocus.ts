@@ -125,10 +125,13 @@ export function takeModalFocus(panel: HTMLElement | null, previous: HTMLElement 
     };
 }
 
+// a popover that closes itself on Escape: floating-ui's portal (the pickers' menus) or a menu or list portaled on its own
+const POPOVER = '[data-floating-ui-portal], [role="menu"], [role="listbox"]';
+
 // Whether an Escape is the shell's to act on. A popover portaled out of the panel (a route picker's menu, with focus
-// in its search box) closes itself on Escape, and the dialog under it must stay. With nothing focused (<body>), or an
-// Escape dispatched on document or window (no element at all, as the CDP scenarios close dialogs), the Escape is the
-// shell's: no popover can own it.
+// in its search box) closes itself on Escape, and the dialog under it must stay. Any other Escape is the shell's: from
+// the panel, with nothing focused (<body>), dispatched on document or window (no element at all, as the CDP scenarios
+// close dialogs), or from the cockpit's chrome behind a sheet (the Brief's), which a click there left focused.
 export function shellOwnsEscape(
     panel: { contains(node: Node | null): boolean } | null,
     target: EventTarget | null,
@@ -137,5 +140,8 @@ export function shellOwnsEscape(
     if (panel == null || target == null || target === body || (target as Partial<Node>).nodeType !== 1) {
         return true;
     }
-    return panel.contains(target as Node);
+    if (panel.contains(target as Node)) {
+        return true;
+    }
+    return (target as Partial<Element>).closest?.(POPOVER) == null;
 }

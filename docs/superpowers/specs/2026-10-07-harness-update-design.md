@@ -20,8 +20,9 @@ join by filling it in and naming their update command. arcterm's own self-update
 
 - `harness.Spec` gains `NpmPackage` (claude: `@anthropic-ai/claude-code`). Claude Code publishes the same version
   numbers to npm as to its native channel.
-- The latest version is `dist-tags.<channel>` from `https://registry.npmjs.org/<package>`, the channel being
-  `autoUpdatesChannel` from `~/.claude/settings.json` (`latest` when unset, or `stable`).
+- The latest version is the `<channel>` tag from `https://registry.npmjs.org/-/package/<package>/dist-tags`, the
+  channel being `autoUpdatesChannel` from `~/.claude/settings.json` (`latest` when unset, or `stable`). The tags alone:
+  the package document, even abbreviated, lists every version (536 KB for Claude Code on 2026-11-16, the tags 56 bytes).
 - HTTP follows `pkg/claudequota`: a 10 s client, an endpoint seam for tests, failures logged and kept out of the UI.
 
 ### Check loop
