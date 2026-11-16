@@ -58,8 +58,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
-- In the Agent sidebar, a brainstorming agent's status line ("Planning · run 1c2d3e4f", "Working") now reads in the
-  same case and grey as a run's own line.
 - In Chat, an agent's calls that read or edit the same file several times in a row now show as one line, "Edit
   rail.tsx ×4 +1 −24", that opens to each call; every edit line also shows the lines it added and removed.
 - The Reply button over text you select in Chat now sits above the selection instead of over the words after it.

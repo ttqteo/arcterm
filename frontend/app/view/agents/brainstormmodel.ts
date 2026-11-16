@@ -563,14 +563,8 @@ export function treeLineAsks(f: BrainstormFile, asking: boolean): boolean {
     return asking && f.run == null;
 }
 
-// runText is what Arc knows of the brainstorm's run. Sentence case, as a run's own row reads ("Working · 7/7"), so a
-// brainstorming agent's "Planning · run 1c2d3e4f" sits beside it in the same words
+// runText is what Arc knows of the brainstorm's run
 export function treeLine(f: BrainstormFile, asking: boolean, runText?: string): TreeLine {
-    const line = treeWords(f, asking, runText);
-    return { ...line, text: line.text.charAt(0).toUpperCase() + line.text.slice(1) };
-}
-
-function treeWords(f: BrainstormFile, asking: boolean, runText?: string): TreeLine {
     if (f.run != null) {
         return { text: runText ?? `run ${f.run.slice(0, RUN_ID_CHARS)}`, runId: f.run };
     }

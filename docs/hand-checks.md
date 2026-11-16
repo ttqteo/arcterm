@@ -16,10 +16,6 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
-- [ ] (arcterm) **A brainstorming agent's line matches a run's.** Unit tests and typecheck only; no dev app ran, and
-  the brainstorm scenarios' tree-line checks were updated to the new words without a run. In the Agent sidebar, an
-  agent brainstorming next to a run row → its line reads `Planning · run 1c2d…` / `Working`, sentence case and the same
-  grey as the run's `Working · 7/7`; the run link still underlines on hover.
 - [ ] (arcterm) **Chat's permission card answers an Artifact prompt.** Unit tests and typecheck only; the screen
   reader (`tuiSelectYes`) was tested on a list written from a screenshot, not a capture. Have an agent delete a
   throwaway artifact → the card reads `Wants to use an artifact`, `delete https://claude.ai/artifact/…`, with Allow and
