@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wavetermdev/waveterm/pkg/util/fileutil"
 )
 
 // The project's instruction file (CLAUDE.md, else AGENTS.md) carries what its councils settled, in one block between
@@ -206,7 +208,9 @@ func SyncProjectDoc(project string) (string, bool, error) {
 	if err := os.Chmod(tmp.Name(), mode); err != nil {
 		return path, false, err
 	}
-	if err := os.Rename(tmp.Name(), real); err != nil {
+	// a reader holding the file (an agent launching in the project, an editor) would otherwise lose the rewrite until
+	// the memory moves again
+	if err := fileutil.RenameReplacing(tmp.Name(), real); err != nil {
 		return path, false, err
 	}
 	return path, true, nil
