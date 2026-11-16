@@ -38,6 +38,9 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   (540–710 ms per switch, was 1.1–1.3 s). On a Mac: `Shift+F` in and out a few times → no flicker of the shadow or the
   traffic lights mid-fade, the float lands in its place with its shadow, and the hologram powers on in the ledge slot
   just after the fade. Fold into Sprout and open it back out → the content grows straight away, no half-second pause.
+  On Windows, installed: `Shift+F` in and out → no empty outline jumping before the fade in (the window is cloaked
+  while it changes frame, checked over Win32 with the production bundle in a debug host), the taskbar button stays,
+  and typing goes to the terminal straight after the switch (the cloak must not take the focus).
   Windows release: the switch feels well under a second. Commit: fix(float) Full ↔ Float switches in half the time
 - [ ] (arcterm) **Sidecar's first open on one screen, or on a screen of another scale.** Two screens of one scale
   held on 1.1.3 `38f41b95b` (2026-11-15): Open Sidecar came up maximized on the other screen as `arcterm Sidecar`, and

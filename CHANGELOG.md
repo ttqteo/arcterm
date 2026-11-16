@@ -78,7 +78,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Switching between Full and Float takes about half as long and no longer stutters as it fades: at the default zoom
   the window waited half a second for nothing on every switch, and Jarvis's hologram was rebuilt in the middle of the
-  fade. Opening the window back out of Sprout skips that half-second wait too.
+  fade. Opening the window back out of Sprout skips that half-second wait too. On Windows the window's empty outline no
+  longer jumps two or three times before the new layout fades in: the window stays out of sight while it changes size.
 - A row in the Agent sidebar no longer pushes its RAM · tokens · age off its end: a run link such as `plan queued #1`,
   what an agent asks you, a worker's held ask or `in council` shortens instead, its tooltip still saying it in full.
   A run, agent or worker waiting in the job queue shows a short `#1` (or `×2` for a run) instead of `queued #1`, whole

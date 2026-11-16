@@ -16,7 +16,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { closePeek } from "@/app/view/jarvis/peekstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { clearTeleports, hidePet, playTeleport } from "@/app/view/jarvis/teleportstore";
-import { isMacOS } from "@/util/platformutil";
+import { isMacOS, isWindows } from "@/util/platformutil";
 import { fireAndForget } from "@/util/util";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -292,6 +292,7 @@ async function floatTheWindow(model: AgentsViewModel, fade = false): Promise<voi
             await beginFade(win);
             await fadeContent("out");
             hideContent();
+            await cloak(true);
         }
         if (maximized) {
             await leaveMaximized(win);
@@ -300,6 +301,7 @@ async function floatTheWindow(model: AgentsViewModel, fade = false): Promise<voi
         await win.setSize(new PhysicalSize(rect.width, rect.height));
         await win.setPosition(new PhysicalPosition(rect.x, rect.y));
         await win.setAlwaysOnTop(true);
+        await cloak(false);
         globalStore.set(model.surfaceAtom, "agent");
         globalStore.set(terminalFullscreenAtom, true);
         globalStore.set(floatPinnedAtom, true);
@@ -367,6 +369,7 @@ async function unfloatTheWindow(restoreFullscreen: boolean, fade = false): Promi
             await beginFade(win);
             await fadeContent("out");
             hideContent();
+            await cloak(true);
         }
         const leaveFloat = () => {
             globalStore.set(floatPinnedAtom, false);
@@ -382,6 +385,7 @@ async function unfloatTheWindow(restoreFullscreen: boolean, fade = false): Promi
             leaveFloat();
         }
         await giveFrameBack(win, restore, fading);
+        await cloak(false);
         if (fading) {
             leaveFloat();
         }
@@ -606,7 +610,22 @@ async function beginFade(win: Window): Promise<void> {
     }
 }
 
+// Windows: the window is off the screen while it changes frame, between the fade out and the fade in (winframe.rs
+// cloak_window). The fade keeps the shadow on there, and with the page see-through it drew the empty frame at each step:
+// un-maximized, shrunk in the corner, then moved (or grown at the float's spot, moved, then maximized). Uncloaked once
+// the frame is set, before the page is waited on, so a page that draws nothing while cloaked cannot hold the fade in.
+let cloaked = false;
+async function cloak(on: boolean): Promise<void> {
+    if (!isWindows() || cloaked === on) {
+        return;
+    }
+    cloaked = on;
+    await invoke("cloak_window", { cloaked: on }).catch(() => {});
+}
+
 async function endFade(win: Window): Promise<void> {
+    // a switch that failed between the two still shows the window
+    await cloak(false);
     clearContentMotion();
     delete document.documentElement.dataset.floatMini;
     if (isMacOS()) {

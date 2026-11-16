@@ -450,6 +450,7 @@ fn main() {
             macwindow::set_folded_chrome,
             macwindow::redirect_minimize,
             winframe::hold_window_frame,
+            winframe::cloak_window,
             foreground::app_foreground,
             foreground::raise_topmost,
             tray::set_tray_status,
