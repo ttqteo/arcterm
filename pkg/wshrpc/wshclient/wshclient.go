@@ -1572,6 +1572,12 @@ func RunQueueStartNowCommand(w *wshutil.WshRpc, data wshrpc.CommandRunQueueIdDat
 	return err
 }
 
+// command "runstartsuggest", wshserver.RunStartSuggestCommand
+func RunStartSuggestCommand(w *wshutil.WshRpc, data wshrpc.CommandRunStartSuggestData, opts *wshrpc.RpcOpts) (*wshrpc.RunStartSuggestion, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.RunStartSuggestion](w, "runstartsuggest", data, opts)
+	return resp, err
+}
+
 // command "runtranscriptpath", wshserver.RunTranscriptPathCommand
 func RunTranscriptPathCommand(w *wshutil.WshRpc, data wshrpc.CommandRunTranscriptPathData, opts *wshrpc.RpcOpts) (string, error) {
 	resp, err := sendRpcRequestCallHelper[string](w, "runtranscriptpath", data, opts)

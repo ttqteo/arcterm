@@ -1102,6 +1102,7 @@ declare global {
         planpath?: string;
         prototype?: string;
         origintabid?: string;
+        specpath?: string;
         afterrunid?: string;
         autonomous?: boolean;
         worktree?: string;
@@ -2361,6 +2362,7 @@ declare global {
     type CommandRunQueueAddData = {
         data: CommandCreateRunData;
         after?: string;
+        brainstorm?: RunQueueBrainstorm;
     };
 
     // wshrpc.CommandRunQueueIdData
@@ -2373,6 +2375,15 @@ declare global {
         entries: RunQueueEntry[];
         maxactive: number;
         active: number;
+    };
+
+    // wshrpc.CommandRunStartSuggestData
+    type CommandRunStartSuggestData = {
+        channelid?: string;
+        projectpath: string;
+        goal: string;
+        planpath?: string;
+        specpath?: string;
     };
 
     // wshrpc.CommandRunTranscriptPathData
@@ -4479,6 +4490,7 @@ declare global {
         parentleadoref?: string;
         origintabid?: string;
         origintranscript?: string;
+        specpath?: string;
         afterrunid?: string;
         originnotify?: boolean;
         originnotifiedts?: number;
@@ -4593,6 +4605,12 @@ declare global {
         donets?: number;
     };
 
+    // wshrpc.RunQueueBrainstorm
+    type RunQueueBrainstorm = {
+        tab: string;
+        path: string;
+    };
+
     // wshrpc.RunQueueChangedData
     type RunQueueChangedData = {
         entries: RunQueueEntry[];
@@ -4610,6 +4628,7 @@ declare global {
         state: string;
         reason?: string;
         blockedon?: string;
+        brainstorm?: RunQueueBrainstorm;
     };
 
     // wshrpc.RunQueueStarted
@@ -4624,6 +4643,26 @@ declare global {
         model?: string;
         mode?: string;
         goal?: string;
+    };
+
+    // wshrpc.RunStartLiveRun
+    type RunStartLiveRun = {
+        runid: string;
+        title: string;
+        files?: string[];
+        held?: boolean;
+        heldreason?: string;
+    };
+
+    // wshrpc.RunStartSuggestion
+    type RunStartSuggestion = {
+        choice: string;
+        after?: string[];
+        reason: string;
+        quotanote?: string;
+        live: RunStartLiveRun[];
+        active: number;
+        maxactive: number;
     };
 
     // waveobj.RunVerification

@@ -1070,4 +1070,81 @@ func TestRunQueueAdd(t *testing.T) {
 			t.Fatalf("entry = %+v", e)
 		}
 	})
+
+	t.Run("keeps the brainstorm an Approve queued it for, in the entry and in the file", func(t *testing.T) {
+		w := useQueueWorld(t)
+		ch := newChannel(t)
+		bs := &wshrpc.RunQueueBrainstorm{Tab: "tab-bs", Path: filepath.ToSlash(filepath.Join(ch.ProjectPath, ".superpowers", "brainstorm", "coupons", "brainstorm.json"))}
+		data := wshrpc.CommandCreateRunData{ChannelId: ch.OID, WorkspaceId: "ws", Mode: jarvis.RunMode_Quick, Goal: "build the coupons spec", SpecPath: "C:/p/spec.md"}
+		e, err := (&WshServer{}).RunQueueAddCommand(ctx, wshrpc.CommandRunQueueAddData{Data: data, Brainstorm: bs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e.Brainstorm == nil || *e.Brainstorm != *bs {
+			t.Fatalf("the returned entry's brainstorm = %+v, want %+v", e.Brainstorm, bs)
+		}
+		if e.Data.SpecPath != "C:/p/spec.md" {
+			t.Fatalf("the data the entry keeps carries the spec path a start would: %+v", e.Data)
+		}
+		stored := entryByTitle(t, queueEntries(t), "build the coupons spec")
+		if stored.Brainstorm == nil || *stored.Brainstorm != *bs {
+			t.Fatalf("the stored entry's brainstorm = %+v, want %+v", stored.Brainstorm, bs)
+		}
+		if last := w.lastPublished(); len(last) != 1 || last[0].Brainstorm == nil || last[0].Brainstorm.Path != bs.Path {
+			t.Fatalf("the published list carries the brainstorm: %+v", last)
+		}
+	})
+
+	t.Run("an entry queued with no brainstorm has none", func(t *testing.T) {
+		useQueueWorld(t)
+		ch := newChannel(t)
+		e, err := add(ch, wshrpc.CommandCreateRunData{Mode: jarvis.RunMode_Quick, Goal: "plain start"}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e.Brainstorm != nil {
+			t.Fatalf("brainstorm = %+v, want none", e.Brainstorm)
+		}
+	})
+}
+
+// a run created with a SpecPath keeps it, so the next launcher's overlap check can read the spec the run was started
+// from (spec 2026-11-16-run-start-choice-design.md, "Wire")
+func TestCreateRunSpecPath(t *testing.T) {
+	ctx := context.Background()
+	const spec = "C:/p/docs/superpowers/specs/2026-11-16-coupons-design.md"
+	// the goal differs per call: the vault keeps one dossier per goal, and a second run with the same goal logs a failed capture
+	create := func(t *testing.T, goal, specPath string) (string, *wshrpc.CommandCreateRunRtnData) {
+		t.Helper()
+		stubRunServer(t, "pi", nil)
+		ch, err := wstore.CreateChannel(ctx, "createrun-specpath", t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		rtn, err := (&WshServer{}).CreateRunCommand(ctx, wshrpc.CommandCreateRunData{
+			ChannelId: ch.OID, WorkspaceId: "ws", Goal: goal, Runtime: "pi", Mode: jarvis.RunMode_Quick, DeferStart: true, SpecPath: specPath,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ch.OID, rtn
+	}
+
+	t.Run("the run keeps the spec path it was started with, returned and stored", func(t *testing.T) {
+		channelId, rtn := create(t, "build the coupons spec", spec)
+		if rtn.Run.SpecPath != spec {
+			t.Fatalf("returned spec path = %q, want %q", rtn.Run.SpecPath, spec)
+		}
+		runs, err := wstore.GetChannelRuns(ctx, channelId)
+		if err != nil || len(runs) != 1 || runs[0].SpecPath != spec {
+			t.Fatalf("stored runs = %+v, %v; want one run with the spec path", runs, err)
+		}
+	})
+
+	t.Run("a start with no spec leaves the run's empty", func(t *testing.T) {
+		_, rtn := create(t, "start with no spec", "")
+		if rtn.Run.SpecPath != "" {
+			t.Fatalf("spec path = %q, want none", rtn.Run.SpecPath)
+		}
+	})
 }

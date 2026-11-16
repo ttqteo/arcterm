@@ -25,6 +25,15 @@ type RunQueueEntry struct {
 	State       string               `json:"state"` // RunQueueState_*
 	Reason      string               `json:"reason,omitempty"`
 	BlockedOn   string               `json:"blockedon,omitempty"` // the run whose outcome blocked it; set only for that kind of block
+	// Brainstorm is the brainstorm whose Approve queued this start, so wavesrv can tell its agent the run's id when
+	// the entry starts, and the brainstorm's card can find its own entry. Nil for every other entry.
+	Brainstorm *RunQueueBrainstorm `json:"brainstorm,omitempty"`
+}
+
+// RunQueueBrainstorm names the brainstorm a queued start came from: the agent's tab and its brainstorm.json.
+type RunQueueBrainstorm struct {
+	Tab  string `json:"tab"`  // the brainstorm agent's tab id: whom wavesrv tells when the entry starts
+	Path string `json:"path"` // the absolute path of its brainstorm.json: how the card finds its entry
 }
 
 // RunQueueCommands are how `wsh runs` and the cockpit hand a start to the queue and act on what waits in it.
@@ -39,6 +48,8 @@ type RunQueueCommands interface {
 type CommandRunQueueAddData struct {
 	Data  CommandCreateRunData `json:"data"`
 	After string               `json:"after,omitempty"` // a run id or a queue entry id, or a unique prefix of either
+	// Brainstorm is set when a brainstorm's Approve queues the start; the entry keeps it (RunQueueEntry.Brainstorm).
+	Brainstorm *RunQueueBrainstorm `json:"brainstorm,omitempty"`
 }
 
 type CommandRunQueueIdData struct {

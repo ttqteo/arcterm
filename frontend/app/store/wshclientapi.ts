@@ -1578,6 +1578,12 @@ export class RpcApiType {
         return client.wshRpcCall("runqueuestartnow", data, opts);
     }
 
+    // command "runstartsuggest" [call]
+    RunStartSuggestCommand(client: WshClient, data: CommandRunStartSuggestData, opts?: RpcOpts): Promise<RunStartSuggestion> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runstartsuggest", data, opts);
+        return client.wshRpcCall("runstartsuggest", data, opts);
+    }
+
     // command "runtranscriptpath" [call]
     RunTranscriptPathCommand(client: WshClient, data: CommandRunTranscriptPathData, opts?: RpcOpts): Promise<string> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runtranscriptpath", data, opts);

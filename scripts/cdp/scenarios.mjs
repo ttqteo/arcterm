@@ -68,6 +68,8 @@ import brainstormFindingsScenarios from "./scenarios-brainstorm-findings.mjs";
 import brainstormJudgeScenarios from "./scenarios-brainstorm-judge.mjs";
 import brainstormReviewScenarios from "./scenarios-brainstorm-review.mjs";
 import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
+import runStartChoiceScenarios from "./scenarios-run-start-choice.mjs";
+import runQueueRecheckScenarios from "./scenarios-run-queue-recheck.mjs";
 import briefActScenarios from "./scenarios-brief-act.mjs";
 import chatBrainstormBandScenarios from "./scenarios-chat-brainstorm-band.mjs";
 import chatBrainstormReviewScenarios from "./scenarios-chat-brainstorm-review.mjs";
@@ -61892,6 +61894,47 @@ const bqSheetFacts = (h) =>
         };
     })()`);
 
+// Opens the queue sheet on the queued plan titled `title`: closes any sheet, clicks Activity's Queued line (which opens the
+// sheet on the first plan the tab keeps) and steps Next until the header names `title`. The Brief must be on screen (a
+// scenario goes there first; see brief-run-queue's step 1). Resolves to whether the sheet is up on that plan.
+async function bqOpenQueued(h, title) {
+    const sheetUp = `document.querySelector('[data-jarvis-brief-sheet="queued"] [data-queue-sheet-act]') != null`;
+    const onPlan = `${BQ_SHEET_TITLE} === ${JSON.stringify(title)} && ${sheetUp}`;
+    const closed = await bqCloseSheet(h);
+    const clicked = closed && (await bqClickExpr(h, BQ_QUEUED_LINE));
+    if (!clicked || !(await polishWaitFor(h, sheetUp, 8000))) return false;
+    for (let i = 0; i < 40 && !(await h.ev(onPlan)); i++) {
+        const step = await h.ev(BQ_SHEET_STEP);
+        if (step == null || step.n >= step.total) break;
+        const before = await h.ev(BQ_SHEET_TITLE);
+        await bqClickExpr(h, BQ_NEXT_PLAN);
+        if (!(await polishWaitFor(h, `${BQ_SHEET_TITLE} !== ${JSON.stringify(before)}`, 4000))) break;
+    }
+    return polishWaitFor(h, onPlan, 4000);
+}
+
+// what the run-start-choice modules (scenarios-run-start-choice.mjs, scenarios-run-queue-recheck.mjs;
+// docs/superpowers/specs/2026-11-16-run-start-choice-design.md) take of this file. Defined here, after the run-queue and
+// Brief helpers above, because it names their constants; later tasks add scenarios only in the modules
+const RUN_START_KIT = {
+    ...BS_KIT,
+    ...KAEL_KITS,
+    run: RUN_KIT,
+    openLauncherStart,
+    OPEN_NEW_RUN,
+    NEW_BUTTON,
+    arrangeFixtureRun,
+    arrangeSheetDagRun,
+    // the Brief's queue sheet and the queue itself, as brief-run-queue reads them
+    bqOpenQueued,
+    bqCloseSheet,
+    bqSheetFacts,
+    bqClickExpr,
+    bqPoll,
+    bqWaitList,
+    rqList,
+};
+
 const briefRunQueueScenario = {
     name: "brief-run-queue",
     surface: "jarvis",
@@ -71008,6 +71051,8 @@ export const SCENARIOS = [
     ...brainstormJudgeScenarios(BS_KIT),
     ...brainstormReviewScenarios(BS_KIT),
     ...brainstormRunScenarios(BS_KIT),
+    ...runStartChoiceScenarios(RUN_START_KIT),
+    ...runQueueRecheckScenarios(RUN_START_KIT),
     canvasTabsScenario,
     canvasManyBoards,
     canvasGallery,

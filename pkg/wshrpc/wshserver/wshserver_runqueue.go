@@ -352,7 +352,7 @@ func (ws *WshServer) RunQueueAddCommand(ctx context.Context, data wshrpc.Command
 	if err != nil {
 		return nil, err
 	}
-	entry, err := runqueue.Add(wshrpc.RunQueueEntry{Data: d, Title: title, ProjectPath: ch.ProjectPath, After: after})
+	entry, err := runqueue.Add(wshrpc.RunQueueEntry{Data: d, Title: title, ProjectPath: ch.ProjectPath, After: after, Brainstorm: data.Brainstorm})
 	if err != nil {
 		return nil, fmt.Errorf("queueing: %w", err)
 	}

@@ -263,6 +263,10 @@ type Run struct {
 	// OriginTranscript is that session's transcript path when the run started, so the run still lists beside
 	// the session once both have ended and the tab is gone.
 	OriginTranscript string `json:"origintranscript,omitempty"`
+	// SpecPath is the absolute path of the spec this run was started to build (CommandCreateRunData.SpecPath): a run
+	// from a brainstorm's Approve has no plan for a while, and its spec is what names its files for another launcher's
+	// overlap check. Empty for a run started with no spec.
+	SpecPath string `json:"specpath,omitempty"`
 	// AfterRunId is the run this one was queued After (`wsh runs start --after`), so its sheet can say what it
 	// waited on once the queue entry is gone. Empty for a run that did not come from the queue with a run After.
 	AfterRunId string `json:"afterrunid,omitempty"`
