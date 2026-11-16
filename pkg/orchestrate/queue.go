@@ -242,8 +242,8 @@ func verifyFailedWake(taskID, reason, failure string) string {
 	return fmt.Sprintf("%s. %s", withFact(fmt.Sprintf("wake: Verify failed after merging task %s (%s)", taskID, reason), failure), taskStatusCmd(taskID))
 }
 
-// landFailedWake tells the lead a merge or --continue it ran failed after its call had timed out, so the error the
-// call returned reached nobody.
+// landFailedWake tells the lead a merge, --continue or task action it ran failed after its call had timed out, so the
+// error the call returned reached nobody.
 func landFailedWake(command, taskID string, err error) string {
 	return fmt.Sprintf("%s. %s", withFact(fmt.Sprintf("wake: your `wsh jarvis %s %s` failed after the call timed out", command, taskID), err.Error()), taskStatusCmd(taskID))
 }

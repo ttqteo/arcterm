@@ -30,8 +30,8 @@ const wakeTickInterval = 5 * time.Second
 var tickWait = watchdogInterval
 
 // tickOverdue is how long a dag's tick may run before it is reported stuck. scheduleTickTimeout ends every wait
-// in a tick that a context can end, and a Setup holds the dag lock a tick queues on for up to SetupTimeout, so a
-// tick older than both is in a wait nothing ends.
+// in a tick that a context can end, and the final stage's Setup (a task's own runs off the lock) holds the dag lock a
+// tick queues on for up to SetupTimeout, so a tick older than both is in a wait nothing ends.
 var tickOverdue = scheduleTickTimeout + SetupTimeout
 
 // verifyOverdue is how long a Verify may hold its project claim before it is reported stuck: its command is

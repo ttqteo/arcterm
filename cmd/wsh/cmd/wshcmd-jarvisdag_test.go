@@ -116,6 +116,60 @@ func TestDagActionPayloadsByLead(t *testing.T) {
 	}
 }
 
+// wavesrv runs a lead's retry, skip, stop, approve, escalate, amend and sendback on a context of its own, so one whose
+// reply timed out behind a long tick still finishes: the error must say so, or the lead re-runs it. tell, cancel,
+// retry-cleanup and forward stay on the call's context, so their timeout reads as the bare one.
+func TestDagActionTimeoutSaysItStillLands(t *testing.T) {
+	prev := dagActionRpc
+	dagActionRpc = func(wshrpc.CommandDagActionData, int64) error { return errors.New(rpcTimeoutText) }
+	defer func() { dagActionRpc = prev }()
+
+	flags := map[string]string{"channel": "ch", "runid": "run", "model": "sonnet", "runtime": "claude"}
+	cases := []struct {
+		name string
+		run  func(*cobra.Command) error
+		late bool
+	}{
+		{"retry", func(c *cobra.Command) error { return dagAction("retry").RunE(c, []string{"t-1"}) }, true},
+		{"stop", func(c *cobra.Command) error { return dagActionWithin("stop", 60_000).RunE(c, []string{"t-1"}) }, true},
+		{"escalate", func(c *cobra.Command) error { return dagEscalateCmd.RunE(c, []string{"t-1"}) }, true},
+		{"amend", func(c *cobra.Command) error { return dagAmendCmd.RunE(c, []string{"t-1", "a note"}) }, true},
+		{"sendback", func(c *cobra.Command) error { return dagSendbackCmd.RunE(c, []string{"t-1", "a hint"}) }, true},
+		{"tell", func(c *cobra.Command) error { return dagTellCmd.RunE(c, []string{"t-1", "hello"}) }, false},
+		{"retry-cleanup", func(c *cobra.Command) error { return dagActionWithin("retry-cleanup", 60_000).RunE(c, []string{"t-1"}) }, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.run(newDagEscalateTestCmd(t, flags))
+			if err == nil {
+				t.Fatal("a timed out action is an error")
+			}
+			if !tc.late {
+				if err.Error() != rpcTimeoutText {
+					t.Fatalf("%s stays on the call's context, so its timeout reads bare, got %q", tc.name, err)
+				}
+				return
+			}
+			for _, want := range []string{"dag " + tc.name + " t-1 got no reply within", rpcTimeoutText, "once the engine frees the dag", "wakes you if it fails", "`wsh jarvis dag status t-1`", "rather than re-running it"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("want %q in:\n%s", want, err)
+				}
+			}
+		})
+	}
+
+	// the budget named is the command's own
+	err := dagLateError("stop", "t-1", 60_000, errors.New(rpcTimeoutText))
+	if !strings.Contains(err.Error(), "within 1m ") {
+		t.Fatalf("a stop's budget is a minute, got %q", err)
+	}
+	// an error that is not a timeout is the server's own answer and stays as it came
+	refused := errors.New("task t-1 is merged: it cannot be retried")
+	if got := dagLateError("retry", "t-1", dagRpcTimeoutMs, refused); got != refused {
+		t.Fatalf("a refusal must come back unchanged, got %q", got)
+	}
+}
+
 func TestDagEscalateDataRequiresModel(t *testing.T) {
 	cmd := newDagEscalateTestCmd(t, map[string]string{"channel": "ch", "runid": "run", "runtime": "claude"})
 	if _, err := dagEscalateData(cmd, []string{"t-1"}); err == nil || !strings.Contains(err.Error(), "--model is required") {

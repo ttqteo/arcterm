@@ -291,6 +291,10 @@ func checkProgress(ctx context.Context, t *waveobj.TaskNode, run *waveobj.Run, n
 	if run == nil || run.ProjectPath == "" || now-t.ProgressCheckTs < progressCheckEvery.Milliseconds() {
 		return "", nil, false
 	}
+	if run.Branch == "" {
+		// no lane tree (a project that is not a git repo): nothing to fingerprint, and git status there only fails
+		return "", nil, false
+	}
 	if blockId, _ := workerBlockFn(ctx, run); blockId != "" {
 		if _, asking := agentask.GlobalRegistry.Get(waveobj.MakeORef(waveobj.OType_Block, blockId).String()); asking {
 			// the wait is not stagnation: without this, a worker answered after a long ask is flagged at once

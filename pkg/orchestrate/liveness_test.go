@@ -248,6 +248,8 @@ func seedChildWrittenAt(t *testing.T, name string, lastWrite time.Time) (context
 	child.Runtime = "pi"
 	child.DagORef = g.OID
 	child.SessionId = liveSession
+	// a git project's child run carries its lane branch; without one the progress check has no tree to probe
+	child.Branch = "wave/" + name
 	if err := wstore.AppendRun(ctx, channelID, child); err != nil {
 		t.Fatal(err)
 	}

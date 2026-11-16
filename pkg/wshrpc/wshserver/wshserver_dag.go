@@ -645,6 +645,11 @@ func (ws *WshServer) DagActionCommand(ctx context.Context, data wshrpc.CommandDa
 	if run.DagORef == "" {
 		return fmt.Errorf("run has no dag")
 	}
+	// a lead's task action waits on the dag lock, which a tick can hold past the caller's deadline: it runs on a
+	// context of its own and wakes the lead if it fails once the caller has gone
+	detached := func(act func(context.Context) error) error {
+		return orchestrate.ActForCaller(ctx, data.ChannelId, data.RunId, data.TaskId, "dag "+data.Action, orchestrate.ActionByFromWire(data.By), act)
+	}
 	switch data.Action {
 	case "cancel":
 		return orchestrate.Cancel(ctx, run.DagORef)
@@ -715,15 +720,21 @@ func (ws *WshServer) DagActionCommand(ctx context.Context, data wshrpc.CommandDa
 		scheduleDag(run.DagORef)
 		return nil
 	case "amend":
-		return orchestrate.AmendTask(ctx, run.DagORef, data.TaskId, data.Notes)
+		return detached(func(c context.Context) error {
+			return orchestrate.AmendTask(c, run.DagORef, data.TaskId, data.Notes)
+		})
 	case "tell":
 		return orchestrate.TellTask(ctx, run.DagORef, data.TaskId, data.Notes)
 	case "sendback":
-		return orchestrate.SendBack(ctx, run.DagORef, data.TaskId, data.Notes)
+		return detached(func(c context.Context) error {
+			return orchestrate.SendBack(c, run.DagORef, data.TaskId, data.Notes)
+		})
 	}
 	target := waveobj.RoutePin{Runtime: data.Runtime, Model: data.Model}
 	// the cockpit and `wsh runs` send no By: only the lead's CLI names itself
-	return orchestrate.ApplyActionBy(ctx, run.DagORef, data.TaskId, data.Action, orchestrate.ActionByFromWire(data.By), target)
+	return detached(func(c context.Context) error {
+		return orchestrate.ApplyActionBy(c, run.DagORef, data.TaskId, data.Action, orchestrate.ActionByFromWire(data.By), target)
+	})
 }
 
 // leadORef is the lead's tab oref, or ""; steerRunLead treats empty as a no-op.

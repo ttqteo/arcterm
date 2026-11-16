@@ -661,3 +661,73 @@ func TestMergeQueueBusyCheckoutNamesNoDag(t *testing.T) {
 		}
 	}
 }
+
+// a lead's amend waits on the dag lock behind a long tick, past its client's deadline: it must still land, which an
+// act on the caller's own context did not (its first read under the lock failed on the expired context)
+func TestAnActionWhoseCallerLeftStillLands(t *testing.T) {
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	held, release := make(chan struct{}), make(chan struct{})
+	go func() {
+		_ = withDagMutation(f.dagID, func() error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	caller, cancel := context.WithCancel(f.ctx)
+	done := make(chan error, 1)
+	go func() {
+		done <- ActForCaller(caller, f.channel, f.ownerID, "t-0", "dag amend", ActionByLead, func(c context.Context) error {
+			return AmendTask(c, f.dagID, "t-0", "note")
+		})
+	}()
+	cancel()
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("the amend must land after its caller left: %v", err)
+	}
+	if notes := f.dag(t).Tasks[0].LeadNotes; len(notes) != 1 || notes[0] != "note" {
+		t.Fatalf("lead notes = %q, want the one note", notes)
+	}
+}
+
+// the wake is for the lead that cannot read the error its call returned; a human's action has no lead to read it, and
+// a caller still waiting reads the error itself
+func TestAnActionThatFailsAfterItsCallerLeftWakesOnlyTheLead(t *testing.T) {
+	boom := errors.New("task t-0 is running")
+	for _, tc := range []struct {
+		name       string
+		by         string
+		callerGone bool
+		wakes      int
+	}{
+		{"the lead, gone", ActionByLead, true, 1},
+		{"the human, gone", ActionByHuman, true, 0},
+		{"the lead, still waiting", ActionByLead, false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+			lead := newFakeLead(t)
+			caller, cancel := context.WithCancel(f.ctx)
+			defer cancel()
+			if tc.callerGone {
+				cancel()
+			}
+			err := ActForCaller(caller, f.channel, f.ownerID, "t-0", "dag amend", tc.by, func(context.Context) error { return boom })
+			if !errors.Is(err, boom) {
+				t.Fatalf("the act's error must come back, got %v", err)
+			}
+			if len(lead.sends) != tc.wakes {
+				t.Fatalf("wakes = %q, want %d", lead.sends, tc.wakes)
+			}
+			if tc.wakes == 1 {
+				for _, want := range []string{"wsh jarvis dag amend t-0", "task t-0 is running", "wsh jarvis dag status t-0"} {
+					if !strings.Contains(lead.sends[0], want) {
+						t.Fatalf("the wake must say %q, got %q", want, lead.sends[0])
+					}
+				}
+			}
+		})
+	}
+}

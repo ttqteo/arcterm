@@ -444,8 +444,8 @@ describe("runEngineBusy", () => {
     });
     const tasks = (...states: string[]) => states.map((state, i) => ({ id: `t-${i}`, state }) as TaskNode);
 
-    it("is busy while a worker, reviewer or merge Verify is at work", () => {
-        for (const state of ["running", "reviewing", "verifying"]) {
+    it("is busy while a worker, reviewer or merge Verify is at work, or a task's tree is being prepared", () => {
+        for (const state of ["running", "reviewing", "verifying", "preparing"]) {
             expect(runEngineBusy(runOf({ tasks: tasks("done", state) }))).toBe(true);
         }
     });

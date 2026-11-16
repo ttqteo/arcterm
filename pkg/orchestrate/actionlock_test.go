@@ -5,7 +5,9 @@ package orchestrate
 
 import (
 	"context"
+	"errors"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -93,6 +95,32 @@ func TestTaskActionsStopTheWorkerOutsideTheDagLock(t *testing.T) {
 			t.Fatalf("escalated task = %+v", got)
 		}
 	})
+}
+
+// a stop frees the one slot; the action is recorded even when the stopped worker's tab will not close, so the tick
+// that follows it still hands the slot to the next task
+func TestAnActionWhoseTabWillNotCloseStillTicks(t *testing.T) {
+	ctx, dag, _, child := seedRunningDag(t)
+	if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
+		g.Tasks = append(g.Tasks, waveobj.TaskNode{ID: "t-1", Label: "b", State: TaskState_Pending})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	allowEscalationSchedule(t)
+	stubStop(t, errors.New("workspace gone"))
+
+	err := ApplyAction(ctx, dag.OID, "t-0", "stop", waveobj.RoutePin{})
+	if err == nil || !strings.Contains(err.Error(), "workspace gone") || !strings.Contains(err.Error(), `"t-0"`) {
+		t.Fatalf("stop with a tab that will not close = %v, want an error naming the task and the reason", err)
+	}
+	got := mustLoadDag(t, ctx, dag.OID)
+	if first := got.Tasks[0]; first.State != TaskState_Failed || first.LastFailureKind != FailureKindStopped || first.RunID != "" {
+		t.Fatalf("stopped task = state %q kind %q run %q (was %q), want it failed as stopped", first.State, first.LastFailureKind, first.RunID, child.ID)
+	}
+	if next := got.Tasks[1]; next.State != TaskState_Running || next.RunID == "" {
+		t.Fatalf("the slot the stop freed goes to t-1 in the same call, got state %q run %q", next.State, next.RunID)
+	}
 }
 
 func TestAutoRetryStopsTheStalledWorkerOutsideTheDagLock(t *testing.T) {

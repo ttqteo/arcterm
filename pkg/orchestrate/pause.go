@@ -37,9 +37,11 @@ const DagStatus_Paused = "paused"
 var errSetupPaused = errors.New("the dag was paused or cancelled")
 
 // dagSetups holds the cancel of every plan Setup (and base Check) running for a dag, as finalRuns holds the final
-// commands': Setup runs under the dag lock for up to SetupTimeout, which a pause would otherwise wait out. pausing
-// counts the pauses in flight, so a Setup that starts after the cancel (a base Check does not need the lock) is born
-// cancelled. In memory only: a restart kills the commands, and the next tick starts them again.
+// commands': a task's Setup runs outside the dag lock, but the final stage's, and the one that makes a vanished
+// prepared tree again, run under it for up to SetupTimeout, which a pause would otherwise wait out, and any Setup can
+// wait on the heavy-job queue. pausing counts the pauses in flight, so a Setup that starts after the cancel (a base
+// Check does not need the lock) is born cancelled. In memory only: a restart kills the commands, and the next tick
+// starts them again.
 var dagSetups = struct {
 	sync.Mutex
 	next    int
@@ -124,7 +126,8 @@ func runUnderPause(ctx context.Context, run *waveobj.Run) bool {
 // logged, not returned, since the pause itself holds.
 //
 // It refuses a cancelled or done dag, and does nothing for one already paused. It waits for the dag lock, so a
-// merge under way lands first; a running Setup, which holds that lock for minutes, is cancelled first.
+// merge under way lands first; a running Setup is cancelled first: a task's own is cut off and its task goes back to
+// pending, and the final stage's, which holds that lock for minutes, lets go of it.
 func PauseDag(ctx context.Context, dagID, topRunID string) ([]waveobj.PausedSession, error) {
 	// a pause that has marked the dag must stop what it marked, whether or not its caller still waits
 	ctx = context.WithoutCancel(ctx)

@@ -647,8 +647,9 @@ export function leadStandingBy(agent: Pick<AgentVM, "atPrompt">, run: RunInfo): 
     return agent.atPrompt === true && run.dag != null && status !== "done" && status !== "cancelled";
 }
 
-// states in which the engine has a session or command at work: tasks.state, planreview.state, final.state
-const TASK_IN_FLIGHT = new Set(["running", "reviewing", "verifying"]);
+// states in which the engine has a session or command at work: tasks.state, planreview.state, final.state.
+// A preparing task is making its lane tree and running Setup (15-60 s): the lead is idle through it.
+const TASK_IN_FLIGHT = new Set(["running", "reviewing", "verifying", "preparing"]);
 const PLAN_REVIEW_IN_FLIGHT = "reviewing";
 const FINAL_IN_FLIGHT = new Set(["checking", "final", "verifying"]);
 

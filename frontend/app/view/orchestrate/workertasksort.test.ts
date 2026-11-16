@@ -32,6 +32,7 @@ describe("workerBucket", () => {
 
     it("puts running tasks in the running bucket", () => {
         expect(workerBucket(td("none"), node("running"))).toBe("running");
+        expect(workerBucket(td("none"), node("preparing"))).toBe("running");
     });
 
     it("puts dependency/parallelism waits and pending/ready in the waiting bucket", () => {

@@ -28,13 +28,15 @@ const (
 	TaskState_VerifyFailed = "verify-failed" // merged, and Verify failed or timed out; fixed in the project tree, then `dag merge --continue`
 	TaskState_Reviewing    = "reviewing"     // the worker finished with a commit; a reviewer is judging it against the task and spec
 	TaskState_ReviewFailed = "review-failed" // review failed twice, or the reviewer could not do its job; the lead judges it
+	TaskState_Preparing    = "preparing"     // claimed for dispatch; its lane tree and Setup are being made outside the dag lock
 )
 
 // taskStateClass is one state's row in taskStates. Every reader that asks "which states are X" asks the table, so
 // a new state is classified once, in every set, rather than left out of whichever switch was missed.
 type taskStateClass struct {
-	active   bool   // a live worker process: holds a parallelism slot, and its exit is the task's event (taskActive)
-	inFlight bool   // holds its lane and a share of the live-worker cap: a live worker, or a reviewer (taskInFlight)
+	active   bool   // a live worker process, and its exit is the task's event (taskActive)
+	slot     bool   // holds one of the run's parallelism slots: a live worker, or the one being prepared (slotsInUse)
+	inFlight bool   // holds its lane and a share of the live-worker cap: a live worker, a reviewer, or a prepare (taskInFlight)
 	review   bool   // the review loop owns it; the worker's done run would derive done and erase it (reviewState)
 	landing  bool   // the merge path wrote it after the child finished; deriving would erase it (landingState)
 	settled  bool   // done or skipped: a lane mate counts it finished, and the lane's squash may take it
@@ -48,21 +50,25 @@ type taskStateClass struct {
 // A task in a landing state (blocked-merge, verifying, verify-failed) has cancelTo "": CancelGroup leaves it as it
 // was, and the dag's cancel stops its Verify through cancelLocked. A dag cancelled there does not read as terminal
 // (the fork's F-R6 cancels them), a call the owner makes in docs/open-issues.md.
+//
+// A preparing task has no process yet, so it is not active (no exit event), but it holds the slot and the lane its
+// worker will take, and a share of the live-worker cap: the next locked pass spawns the worker, or hands the task back.
 var taskStates = map[string]taskStateClass{
-	//                      active inFlight review landing settled terminal cancelTo
-	TaskState_Pending:      {false, false, false, false, false, false, TaskState_Skipped},
-	TaskState_Ready:        {false, false, false, false, false, false, TaskState_Skipped},
-	TaskState_Running:      {true, true, false, false, false, false, TaskState_Cancelled},
-	TaskState_Stalled:      {true, true, false, false, false, false, TaskState_Cancelled},
-	TaskState_Reviewing:    {false, true, true, false, false, false, TaskState_Cancelled},
-	TaskState_ReviewFailed: {false, false, true, false, false, false, TaskState_Cancelled},
-	TaskState_Done:         {false, false, false, false, true, true, ""},
-	TaskState_BlockedMerge: {false, false, false, true, false, false, ""},
-	TaskState_Verifying:    {false, false, false, true, false, false, ""},
-	TaskState_VerifyFailed: {false, false, false, true, false, false, ""},
-	TaskState_Failed:       {false, false, false, false, false, true, ""},
-	TaskState_Cancelled:    {false, false, false, false, false, true, ""},
-	TaskState_Skipped:      {false, false, false, false, true, true, ""},
+	//                      active slot   inFlight review landing settled terminal cancelTo
+	TaskState_Pending:      {false, false, false, false, false, false, false, TaskState_Skipped},
+	TaskState_Ready:        {false, false, false, false, false, false, false, TaskState_Skipped},
+	TaskState_Preparing:    {false, true, true, false, false, false, false, TaskState_Cancelled},
+	TaskState_Running:      {true, true, true, false, false, false, false, TaskState_Cancelled},
+	TaskState_Stalled:      {true, true, true, false, false, false, false, TaskState_Cancelled},
+	TaskState_Reviewing:    {false, false, true, true, false, false, false, TaskState_Cancelled},
+	TaskState_ReviewFailed: {false, false, false, true, false, false, false, TaskState_Cancelled},
+	TaskState_Done:         {false, false, false, false, false, true, true, ""},
+	TaskState_BlockedMerge: {false, false, false, false, true, false, false, ""},
+	TaskState_Verifying:    {false, false, false, false, true, false, false, ""},
+	TaskState_VerifyFailed: {false, false, false, false, true, false, false, ""},
+	TaskState_Failed:       {false, false, false, false, false, false, true, ""},
+	TaskState_Cancelled:    {false, false, false, false, false, false, true, ""},
+	TaskState_Skipped:      {false, false, false, false, false, true, true, ""},
 }
 
 // landingState reports a state the merge path wrote after the child finished. Deriving from the done child
@@ -79,19 +85,21 @@ func taskActive(state string) bool {
 	return taskStates[state].active
 }
 
-// taskInFlight reports a task that still holds its lane and a share of the live-worker cap: a live worker, or a
-// finished worker's commit under review, whose reviewer is a process too. Its parallelism slot is slotsInUse's, which
-// a reviewing task does not hold: the review is short and works on no tree another lane writes. taskActive is about
-// the worker process alone, which a reviewing task no longer has.
+// taskInFlight reports a task that still holds its lane and a share of the live-worker cap: a live worker, a
+// finished worker's commit under review, whose reviewer is a process too, or a task whose tree is being prepared for
+// its worker. Its parallelism slot is slotsInUse's, which a reviewing task does not hold: the review is short and works
+// on no tree another lane writes. taskActive is about the worker process alone, which a reviewing or preparing task
+// does not have.
 func taskInFlight(state string) bool {
 	return taskStates[state].inFlight
 }
 
-// slotsInUse counts the tasks holding one of the run's parallelism slots: those with a live worker.
+// slotsInUse counts the tasks holding one of the run's parallelism slots: those with a live worker, and the ones whose
+// tree is being prepared for one, so a tick does not claim more tasks than the run has room for while a prepare runs.
 func slotsInUse(g *waveobj.TaskGroup) int {
 	n := 0
 	for i := range g.Tasks {
-		if taskActive(g.Tasks[i].State) {
+		if taskStates[g.Tasks[i].State].slot {
 			n++
 		}
 	}

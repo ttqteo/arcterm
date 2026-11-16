@@ -455,7 +455,8 @@ func TestPauseDagWaitsForAMergeUnderWayThenPauses(t *testing.T) {
 	}
 }
 
-// Setup holds the dag lock for up to SetupTimeout: the pause cuts it off at once, and the task is not failed for it
+// a task's Setup runs outside the dag lock for up to SetupTimeout, holding the task's slot and lane: the pause cuts it
+// off at once, and the task goes back to pending, not failed
 func TestPauseDagCancelsARunningSetupAtOnce(t *testing.T) {
 	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
 	f.setPlanCommands(t, "", setupCmd)
@@ -512,8 +513,8 @@ func TestPauseDagCancelsARunningSetupAtOnce(t *testing.T) {
 	}
 }
 
-// a Setup waiting for a heavy-job slot holds the dag lock with no bound on the wait: a cancel cuts it off at once, as
-// a pause does, instead of waiting behind it
+// a Setup waiting for a heavy-job slot holds the task's slot and lane with no bound on the wait: a cancel cuts it off
+// at once, as a pause does, instead of leaving the task preparing
 func TestCancelCutsOffARunningSetupAtOnce(t *testing.T) {
 	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
 	f.setPlanCommands(t, "", setupCmd)
@@ -563,8 +564,8 @@ func TestCancelCutsOffARunningSetupAtOnce(t *testing.T) {
 	}
 }
 
-// a lane's Setup that waited SetupSlotWait for a heavy-job slot gives the dag lock back: the task is neither failed nor
-// tried, its tree stays, and the next tick runs Setup there and starts the worker
+// a lane's Setup that waited SetupSlotWait for a heavy-job slot gives the task's slot back: the task is neither failed
+// nor tried, its tree stays, and the next tick runs Setup there and starts the worker
 func TestSetupThatWaitedTooLongForASlotStaysPendingAndRunsNextTick(t *testing.T) {
 	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, {ID: "t-1", Label: "second"}})
 	f.setPlanCommands(t, "", setupCmd)

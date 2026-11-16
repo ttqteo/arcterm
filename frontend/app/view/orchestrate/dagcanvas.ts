@@ -16,6 +16,7 @@ export type NodeKind = "attention" | "live" | "ready" | "done" | "inert" | "wait
 const KIND = new Map<string, NodeKind>([
     ["pending", "waiting"],
     ["ready", "ready"],
+    ["preparing", "live"],
     ["running", "live"],
     ["verifying", "live"],
     ["reviewing", "live"],
@@ -111,6 +112,9 @@ export function factOf(t: TaskNode, ctx: FactCtx): string {
     const dagStatus = ctx.dagStatus ?? "";
     const ended = runFinished({ status: dagStatus });
     switch (t.state) {
+        case "preparing":
+            // the engine is making the task's tree and running Setup; no worker has started
+            return "preparing its tree";
         case "running": {
             const elapsed = t.firstactivity ? formatElapsed(Math.max(0, ctx.nowMs - t.firstactivity)) : "starting";
             const tool = ctx.digest?.latesttool || t.latesttool;

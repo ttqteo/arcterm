@@ -478,6 +478,16 @@ func TestCountsOverlapSemantics(t *testing.T) {
 	}
 }
 
+// a preparing task is a worker about to start: the digest counts it with the running ones
+func TestCountsAPreparingTaskAsRunning(t *testing.T) {
+	g := digestGroup(t, true, plainTasks())
+	setTaskStates(g, map[string]string{"t-0": TaskState_Done, "t-1": TaskState_Preparing})
+	c := BuildDigest(digestSnapshot(g, nil, nil, nil, digestNow)).Counts
+	if c.Running != 1 {
+		t.Fatalf("a preparing task must count as running, got %+v", c)
+	}
+}
+
 func TestCountsMergeReadyUnmerged(t *testing.T) {
 	g := digestGroup(t, true, plainTasks())
 	setTaskStates(g, map[string]string{"t-0": TaskState_Done})

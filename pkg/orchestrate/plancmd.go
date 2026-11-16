@@ -26,12 +26,14 @@ import (
 )
 
 const (
-	// SetupTimeout bounds a plan's Setup command. It runs under the dag mutation lock, so Setup is for
-	// preparing a worktree (junctions, a config file), not for an install.
+	// SetupTimeout bounds a plan's Setup command. A task's Setup runs outside the dag lock, but the final stage's, and
+	// the one that makes again a prepared tree a removal took, run under it, and a lane's Setup holds its slot and its
+	// lane while it runs, so Setup is for preparing a worktree (junctions, a config file), not for an install.
 	SetupTimeout = 2 * time.Minute
-	// SetupSlotWait bounds how long a lane's Setup waits for a heavy-job slot before it starts. The wait holds the dag
-	// lock, so every other lane's merge and dispatch waits with it: past this the task stays pending and a later tick
-	// queues it again (errSlotWaitOver). Time queued still never counts against SetupTimeout.
+	// SetupSlotWait bounds how long a lane's Setup waits for a heavy-job slot before it starts. The wait holds the
+	// task's slot and lane, and, for the Setup that runs under the dag lock, every other lane's merge and dispatch
+	// with it: past this the task goes back to pending and a later tick queues it again (errSlotWaitOver). Time queued
+	// still never counts against SetupTimeout.
 	SetupSlotWait = 2 * time.Minute
 	// VerifyTimeout bounds a plan's Verify command at a merge point.
 	VerifyTimeout = 20 * time.Minute
