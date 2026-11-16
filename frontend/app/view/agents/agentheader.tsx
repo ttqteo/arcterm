@@ -72,7 +72,7 @@ import { ASLEEP_VIEW_TITLE } from "./chatswitch";
 import { canDrive } from "./consumers";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
-import { DONE_TITLE, doneSuggestion } from "./donesuggest";
+import { DONE_TITLE, doneSuggestion, ORIGIN_DONE_TITLE, startedRunLanded } from "./donesuggest";
 import { fallAsleepLabel, useFallingAsleep } from "./fallasleepstore";
 import { isFinalStageId } from "./finalstage";
 import { floatModeAtom, toggleFloat } from "./floatstore";
@@ -648,10 +648,11 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const heldTitle = waking ? "Waking…" : falling != null ? fallAsleepLabel(falling) : undefined;
     // its last turn committed, you have read it and no run it started is still going: the header offers Close with the
     // session's token total, the figure its sidebar row shows (donesuggest.ts)
+    const lineageRuns = useAtomValue(model.lineageAtom).runs;
     const done = doneSuggestion(
         agent,
         useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0,
-        useAtomValue(model.lineageAtom).runs,
+        lineageRuns,
         runningBackgroundTasks(useAtomValue(backgroundTasksByIdAtom)[agent.id]).length,
         useAtomValue(runQueueAtom)
     );
@@ -1076,7 +1077,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 data-agent-header-done
                                 onClick={closeTerminal}
                                 disabled={held}
-                                title={`${DONE_TITLE} (${formatChordString("Alt:w")})`}
+                                title={`${!agent.committed && startedRunLanded(agent.id, lineageRuns) ? ORIGIN_DONE_TITLE : DONE_TITLE} (${formatChordString("Alt:w")})`}
                                 className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-success/45 px-[9px] py-[5px] text-[12px] font-semibold text-success hover:border-success disabled:cursor-default disabled:opacity-40 disabled:hover:border-success/45"
                             >
                                 <Check size={14} strokeWidth={2.2} aria-hidden />

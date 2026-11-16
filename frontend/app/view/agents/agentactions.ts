@@ -12,6 +12,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import type { ConfirmHow } from "./closelog";
 import { closeTabLogged, logClose } from "./closetab";
 import { dismissKey, toggleInSet } from "./cockpitsurfacemodel";
+import { startedRunTabIds } from "./donesuggest";
 import { noteClosed } from "./recentlyclosed";
 import { leadRunTabIds } from "./runlineage";
 import { isWaking } from "./wakingstore";
@@ -39,7 +40,8 @@ function closeTabs(workspaceId: string, tabIds: string[], why: string): void {
 // closing another — and so a plain terminal, which has no agent to stop, gets its own wording. A closed agent with a
 // conversation goes on the reopen stack (recentlyclosed.ts, Mod+Shift+T); a closed run puts back only its lead.
 // Given the model, a lead whose run still holds other tabs is offered its whole run: closing the lead
-// alone leaves those tabs under a lead-less run row, which read as a close that did nothing.
+// alone leaves those tabs under a lead-less run row, which read as a close that did nothing. A session that started
+// runs which landed is offered the sessions those runs still hold, the same way: its ✓ is where they are closed from.
 // `from` names the route that asked (a key, a button, a menu): it goes into the `[close]` lines (closelog.ts), with how
 // the dialog was accepted, so a close nobody remembers can be traced.
 export function confirmCloseSession(
@@ -76,6 +78,30 @@ export function confirmCloseSession(
                 confirmed(undefined, "(lead only)");
                 noteClosed([vm]);
                 closeTabs(ws.oid, [vm.id], `close lead from ${from || "?"}`);
+            },
+        });
+        return;
+    }
+    const startedTabIds = model
+        ? startedRunTabIds(globalStore.get(model.lineageAtom), globalStore.get(model.agentsAtom), vm.id)
+        : [];
+    if (startedTabIds.length > 0) {
+        const n = startedTabIds.length;
+        modalsModel.pushModal("ConfirmModal", {
+            title: "Close agent and run",
+            message: `"${vm.name}" started a run that landed and still holds ${n === 1 ? "1 open session" : `${n} open sessions`}. Close them with it, or only this agent? This can't be undone.`,
+            confirmLabel: "Close all",
+            altLabel: "Close agent only",
+            destructive: true,
+            onConfirm: (how: ConfirmHow) => {
+                confirmed(how, "(with run)");
+                noteClosed([vm]);
+                closeTabs(ws.oid, [vm.id, ...startedTabIds], `close with run from ${from || "?"}`);
+            },
+            onAlt: () => {
+                confirmed(undefined, "(agent only)");
+                noteClosed([vm]);
+                closeTabs(ws.oid, [vm.id], `close from ${from || "?"}`);
             },
         });
         return;
