@@ -19,6 +19,10 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) **A Work on session keeps its initiative.** Go tests only, no dev app ran. In Jarvis, Work on an
   initiative whose notes point at another one, and ask the agent to `wsh effort show` that other initiative: the Agent
   header and initiative band keep the one you picked (63184f53b).
+- [ ] (arcterm) **The chat box answers a single question.** Unit tests and typecheck only, no dev app ran. Have a
+  Claude agent ask one AskUserQuestion, then type a reply in the chat box (not the card) and press Send: it goes at
+  once, the card closes, and the agent goes on with your words as the answer, with no "Queued · sends once you answer"
+  line. An ask of two questions still shows that line and holds the message.
 - [ ] (arcterm) **The Jarvis hologram no longer drops to the pixel pet.** Unit tests and typecheck only, no dev app
   ran. Use arcterm a working day with many agents and terminals opened, closed and switched between: `waveapp.log`
   has no `[hologram] failed` line, the hologram never turns into Sprout/Minion for 5 s, and terminals still draw sharp

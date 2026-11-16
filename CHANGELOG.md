@@ -34,6 +34,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Selected text in Chat has slightly rounded corners, so the highlight looks softer.
 - The chat box's `@` list shows the agents of the chat's own project first, so one there is no longer pushed out by
   agents of other projects.
+- While an agent asks you a single question, a message sent from the chat box goes to it at once as your answer,
+  instead of waiting until you answer on the question's card. A card with several questions still holds the message.
 
 ### Fixed
 

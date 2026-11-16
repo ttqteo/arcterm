@@ -529,9 +529,9 @@ function ComposerBox({
     // once the prompt is answered.
     const permissionOref = agent.blockId != null ? `block:${agent.blockId}` : undefined;
     const permission = usePermission(permissionOref);
-    // The plan handoff is the exception: its card points at the box, so what is typed is sent as the ask's typed answer
-    // (the answer path the card's rows use, which locks the ask) instead of waiting behind it. Files riding the message
-    // can't go in an ask's answer, so with any attached it waits as before.
+    // A question of one is the exception (boxAnswersAsk): what is typed is sent as the ask's typed answer (the answer
+    // path the card's own field uses, which locks the ask) instead of waiting behind it. Files riding the message can't
+    // go in an ask's answer, so with any attached it waits as before.
     const answersAsk = !asleep && boxAnswersAsk(agent.ask) && att.attachments.length === 0;
     const hold = asleep ? null : sendHold(permission.length > 0, agent.ask != null && !agent.ask.hold && !answersAsk);
     const held = useHeldSend(agent.id);

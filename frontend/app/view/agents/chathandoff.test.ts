@@ -16,13 +16,14 @@ import {
 } from "./chathandoff";
 
 describe("boxAnswersAsk", () => {
-    it("lets the box answer a live handoff in words", () => {
+    it("lets the box answer a live ask of one question in words, the handoff's included", () => {
         expect(boxAnswersAsk({ questions: [{ header: "Handoff" }] })).toBe(true);
         expect(boxAnswersAsk({ hold: false, questions: [{ header: "Handoff" }] })).toBe(true);
+        expect(boxAnswersAsk({ questions: [{ header: "Approach" }] })).toBe(true);
     });
-    it("leaves every other ask to wait behind its question", () => {
+    it("leaves an ask of several questions, or none, to wait behind it", () => {
         expect(boxAnswersAsk(undefined)).toBe(false);
-        expect(boxAnswersAsk({ questions: [{ header: "Approach" }] })).toBe(false);
+        expect(boxAnswersAsk({ questions: [] })).toBe(false);
         expect(boxAnswersAsk({ questions: [{ header: "Handoff" }, { header: "Other" }] })).toBe(false);
     });
     it("never answers a held ask, which is answered on its card", () => {
