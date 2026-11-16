@@ -38,7 +38,7 @@ func recordReads(t *testing.T) func() []string {
 	orig := readLines
 	var mu sync.Mutex
 	var reads []string
-	readLines = func(path string) []string {
+	readLines = func(path string) ([]string, error) {
 		mu.Lock()
 		reads = append(reads, filepath.Base(path))
 		mu.Unlock()
@@ -305,7 +305,7 @@ func TestScanRoot_parsesCandidatesConcurrently(t *testing.T) {
 	together := make(chan struct{})
 	// in flight can reach two more than once (two, back to one, two again), and a channel closes once
 	var meet sync.Once
-	readLines = func(path string) []string {
+	readLines = func(path string) ([]string, error) {
 		mu.Lock()
 		inFlight++
 		peak = max(peak, inFlight)
@@ -495,6 +495,47 @@ func scanCached(c candidate) bool {
 	defer scanCacheMu.Unlock()
 	e, ok := scanCache[c.path]
 	return ok && e.mtime.Equal(c.mtime) && e.size == c.size
+}
+
+// A transcript that could not be read (a lock, a handle limit) was cached as "no session" until the file changed or
+// wavesrv restarted (kael t-6): the read error now leaves it uncached, for claude, codex and agy (readLines) and pi.
+func TestTranscriptWhoseReadFailedIsNotCached(t *testing.T) {
+	dir := t.TempDir()
+	path := writeJSONL(t, dir, "sess-locked.jsonl",
+		`{"type":"user","cwd":"/home/me/web","message":{"role":"user","content":"Fix it"}}`)
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := candidate{path: path, stem: "sess-locked", mtime: info.ModTime(), size: info.Size(), p: claudeProvider(dir)}
+	orig := readLines
+	readLines = func(p string) ([]string, error) {
+		return nil, &fs.PathError{Op: "open", Path: p, Err: fs.ErrPermission}
+	}
+	t.Cleanup(func() { readLines = orig })
+	if s, _ := scanSessionCached(c); s != nil {
+		t.Fatalf("a transcript that could not be read was listed: %+v", s)
+	}
+	if scanCached(c) {
+		t.Fatal("a transcript that could not be read was cached")
+	}
+	readLines = orig
+	if s, _ := scanSessionCached(c); s == nil || !scanCached(c) {
+		t.Fatalf("want the session, cached, once the read succeeds: %+v", s)
+	}
+
+	// pi reads its file itself: a read that failed is a readErr, a file that parses badly is no session
+	unreadable := filepath.Join(t.TempDir(), "a-dir.jsonl")
+	if err := os.Mkdir(unreadable, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, se := piProvider("").fused(unreadable, "", nil); se.readErr == nil {
+		t.Fatal("pi: a session file that could not be read gave no readErr")
+	}
+	malformed := writeJSONL(t, t.TempDir(), "bad.jsonl", `{"type":"not-a-session"}`)
+	if s, se := piProvider("").fused(malformed, "", nil); s != nil || se.readErr != nil {
+		t.Fatalf("pi: a malformed session = %+v, readErr %v; want no session and no readErr", s, se.readErr)
+	}
 }
 
 // A transient failure reading an opencode session's message or part files (a lock, a handle limit) left an empty
