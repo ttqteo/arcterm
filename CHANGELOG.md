@@ -27,17 +27,6 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
-
-### Changed
-
-- A landed run's ✓ in the Agent sidebar now sits on the agent that started it, and closes that agent and the run's
-  sessions together (or the agent alone), after a confirm; a run no agent started keeps the ✓ on its own row.
-
-### Fixed
-
-- A landed run in the Agent sidebar with no RAM, tokens or age keeps no blank columns, so its `Landed` is not cut.
-
 ## 1.2.0 — 2026-11-16
 
 ### Added
@@ -112,7 +101,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An agent waiting in the background on a council or another agent no longer shows that wait as a terminal row in the
   Agent sidebar or above Chat's message box: the council card or the other agent's own row already shows it.
 - A run that landed offers ✓ Close run, like the ✓ Close of an agent that committed: on its ✓ row in the Chat that
-  started it, and as a ✓ on its row in the Agent sidebar. It closes the sessions the run still holds, after a confirm.
+  started it, and in the Agent sidebar as a ✓ on the agent that started it, which closes that agent and the run's
+  sessions together (or the agent alone); a run no agent started keeps the ✓ on its own row. All after a confirm.
 - A run's Landing line in the Agent sidebar shows a short tip on hover, and a click opens a tidier card: the step's
   state with a status dot, the run and the branch it lands into, then labelled rows with the commands as code.
 - In Chat, the ↩ Reply button on selected text now sits diagonally off the selection's top-right corner, clear of
@@ -234,7 +224,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   what an agent asks you, a worker's held ask or `in council` shortens instead, its tooltip still saying it in full.
   A run, agent or worker waiting in the job queue shows a short `#1` (or `×2` for a run) instead of `queued #1`, whole
   beside its progress and columns; hover it for the words. When the row is tight, a run line cuts its `Working`, never
-  its `2/6`.
+  its `2/6`, and a landed run with no RAM, tokens or age keeps no blank columns, so its `Landed` is not cut.
 - Agents keep their colors in an arcterm reopened by `! task install` typed in a Claude Code session: that shell
   sets `NO_COLOR` without the markers arcterm looked for, so every agent drew in plain white again.
 - A Chat message that ends with a file you mentioned is sent: Claude Code's file suggestions took its Enter, so the
