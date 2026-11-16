@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A finished run or council stays where it finished in Chat.** The CDP scenario `chat-council` checked
+  the council cards on fixtures; the run ✓ row has no scenario (unit tests only). In a real agent that ran a run and a
+  council, keep talking after both end: the Done council card stays just above the agent's summary of it and the run's
+  ✓ row where its `[arc] Run … landed` message came, both scrolling away with the conversation; only a run or council
+  still going sits at the bottom.
 - [ ] (arcterm) **A paragraph picked above a code block leaves its line number alone.** Unit tests and typecheck only,
   no dev app ran. In Chat, triple-click a paragraph that sits right above a code block: only the paragraph is
   highlighted, not the block's `1`, and a copy holds only the paragraph's text.

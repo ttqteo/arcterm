@@ -22,13 +22,13 @@
 // Three moments of the agent's reply draw as cards of their own, where they happened (docs/superpowers/specs/2026-11-12-chat-
 // verdict-handoff-design.md): a reviewer's verdict (chatverdictcard.tsx: ticks and Fix / Skip while it waits on you), the plan
 // handoff (chathandoffcard.tsx: a ✓ row once answered, the card itself lives in the dock while the agent asks), and every run
-// the conversation started (chatruncard.tsx: at the `wsh runs start` call that started it, the rest at the end). Each folds in
-// place into its ✓ row. Their modes and places are the pure models' (chatverdict.ts, chatruncards.ts); this file reads the
+// the conversation started (chatruncard.tsx: at the `wsh runs start` call that started it, the rest at the end while they go
+// on and at their run-ended message once over). Each folds in place into its ✓ row. Their modes and places are the pure models' (chatverdict.ts, chatruncards.ts); this file reads the
 // stores they need and keeps an item's element only while everything its cards draw from is the same (DrawnItem.cards).
 // Two more moments draw the same way (docs/superpowers/specs/2026-11-14-chat-council-design.md): a council the agent started
 // with `wsh council start` (chatcouncilcard.tsx: a card at the end of the conversation, after the runs, live while it is
-// queued, running or waits on you and its ended card once it ended; chatcouncil.ts places it; the agent's summary of its
-// report draws in a council panel, chatcouncil.ts councilSummaries) and a Doc review ask (chatdocreviewcard.tsx:
+// queued, running or waits on you, and its ended card where it ended once it is over; chatcouncil.ts places it; the
+// agent's summary of its report draws in a council panel, chatcouncil.ts councilReports) and a Doc review ask (chatdocreviewcard.tsx:
 // the card is the dock's while the agent asks, and the ✓ row it folds into stands in place once answered).
 
 import { CopyButton } from "@/app/element/copybutton";
@@ -67,7 +67,7 @@ import { CardSlot, FOCUS_RING } from "./chatbrainstormparts";
 import { ChatBrainstormRunDone, ChatBrainstormRunRow, useDoneRuns } from "./chatbrainstormrun";
 import { brainstormAnswersAtom } from "./chatbrainstormstore";
 import { answerMessages, answeredText, pairedHidden } from "./chatbrainstormwire";
-import { councilEndedOnce, councilSummaries, placeCouncilCards } from "./chatcouncil";
+import { councilEndedOnce, councilReports, placeCouncilCards } from "./chatcouncil";
 import { ChatCouncilCard, ChatCouncilEnded, ChatCouncilSummary } from "./chatcouncilcard";
 import { useChatCouncils, useCouncilsEndedOnce } from "./chatcouncilstore";
 import { ChatDocReviewCard, ChatDocReviewDone } from "./chatdocreviewcard";
@@ -93,7 +93,7 @@ import {
 } from "./chatmodel";
 import { btwQuestion } from "./chatpending";
 import { ChatRunCard } from "./chatruncard";
-import { pairRunEnded, placeRunCards, type RunCardSlot, type RunEnded } from "./chatruncards";
+import { pairRunEnded, placeRunCards, placeTrailingRuns, type RunCardSlot, type RunEnded } from "./chatruncards";
 import { withMarks } from "./chatskim";
 import { useSkimFold } from "./chatskimstore";
 import { placeStepLists, stepsPartKey, type AgentNow } from "./chatsteplist";
@@ -1028,10 +1028,11 @@ export function ChatConversation({
         slot.runId != null || ("entryId" in slot && queue.some((e) => e.id === slot.entryId));
     // The councils this conversation started, found as the runs are: by the `wsh council start` call whose output names
     // them (chatcouncil.ts), so a council the person started from this agent has no card here. Each is read through
-    // `useChatCouncils` (loaded once, current on `council:changed`). Every one is a card at the end of the conversation,
-    // after its runs: the live card until it ends, then its ended card for good (chatcouncil.ts councilEndedOnce), whatever
-    // it does next. Its `wsh council start` call stays the tool line in the work, and the agent's summary of its report
-    // (councilSummaries) draws in a council panel where it was written. The cards and the panel open the council's room
+    // `useChatCouncils` (loaded once, current on `council:changed`). One still going is a card at the end of the
+    // conversation, after its runs; once it ended, its ended card (chatcouncil.ts councilEndedOnce) stays where it ended:
+    // after the item its report reached the agent in, else after its call (placeCouncilCards `at`). Its
+    // `wsh council start` call stays the tool line in the work, and the agent's summary of its report (councilReports)
+    // draws in a council panel where it was written. The cards and the panel open the council's room
     // through the cockpit (`model`), so a conversation drawn without one (an ended session's transcript, a subagent's
     // interior) has none.
     const councilAnchors = useMemo(
@@ -1042,18 +1043,30 @@ export function ChatConversation({
                       item.kind === "agent"
                           ? item.parts.flatMap((part) =>
                                 part.kind === "councilstart"
-                                    ? [{ key: part.key, anchor: part.anchor, order: keyIndex(part.key) }]
+                                    ? [
+                                          {
+                                              key: part.key,
+                                              item: item.key,
+                                              anchor: part.anchor,
+                                              order: keyIndex(part.key),
+                                          },
+                                      ]
                                     : []
                             )
                           : []
                   ),
         [stored, model]
     );
-    // the prose that sums a council's report up, by part key (`<item key>#<part index>`), live reply included
-    const summaryOf = useMemo(
-        () => (model == null ? new Map<string, string>() : councilSummaries(items)),
+    // the prose that sums a council's report up, by part key (`<item key>#<part index>`), live reply included, and the
+    // item where each council's report reached the agent, where its ended card stays
+    const reports = useMemo(
+        () =>
+            model == null
+                ? { summaries: new Map<string, string>(), reachedAt: new Map<string, string>() }
+                : councilReports(items),
         [items, model]
     );
+    const summaryOf = reports.summaries;
     const councilIds = useMemo(
         () => [...new Set([...councilAnchors.map((a) => a.anchor.councilId), ...summaryOf.values()])],
         [councilAnchors, summaryOf]
@@ -1068,8 +1081,8 @@ export function ChatConversation({
                 endedOnce.add(id);
             }
         }
-        return placeCouncilCards({ anchors: councilAnchors, councils, endedOnce });
-    }, [councilAnchors, councils, seenEnded]);
+        return placeCouncilCards({ anchors: councilAnchors, councils, endedOnce, reportAt: reports.reachedAt });
+    }, [councilAnchors, councils, seenEnded, reports]);
     // The `[arc] Run … landed|held` messages of the runs that draw a card here (the brainstorm's included, and a call's run
     // the store has not listed yet): each draws nothing, its run's card folding into a ✓ row that carries it instead.
     // `runLines` are the runs of the `brainstorm: run` lines (below), whose ✓ row the message makes as well.
@@ -1106,6 +1119,8 @@ export function ChatConversation({
         }
         return byRun;
     }, [endedMessages]);
+    // a run no call names stays at the end while it goes on, and its ✓ row stays where its run-ended message came
+    const trailingRuns = useMemo(() => placeTrailingRuns(placed.trailing, endedMessages), [placed, endedMessages]);
     // how many of the last items are drawn. Entries arriving at the end are drawn on top of it, so the first drawn item
     // stays put while the agent works; entries the caller put in front (onLoadEarlier) are drawn a step of once asked for
     const [win, setWin] = useState({ shown: CHAT_RENDER_STEP, len: items.length, head: entries[0], asked: false });
@@ -1662,9 +1677,35 @@ export function ChatConversation({
     const drawnItems = useRef(new Map<string, DrawnItem>());
     const drawnNow = new Map<string, DrawnItem>();
     const drawnKeys = new Set<string>();
+    // The ended cards that stay where they ended, after the item they follow: a run no call names after its run-ended
+    // message (which draws nothing itself), a council after the item its report reached the agent in, or its call
+    // (placeTrailingRuns, placeCouncilCards `at`). One whose item is not among the items draws at the end; one whose item
+    // is above the drawn window draws with it, once Show earlier draws it.
+    const itemKeys = new Set(items.map((it) => it.key));
+    const tailRuns = [
+        ...[...trailingRuns.at].flatMap(([key, ids]) => (itemKeys.has(key) ? [] : ids)),
+        ...trailingRuns.end,
+    ];
+    const tailCouncils = placedCouncils.filter((c) => c.at == null || !itemKeys.has(c.at));
+    const endedAfter = (key: string): ReactNode[] => [
+        ...(trailingRuns.at.get(key) ?? []).map((runId) => (
+            <div key={`run:${runId}`} data-chat-run-in-place className="flex flex-col">
+                <ChatRunCard slot={{ runId }} model={model} live={!exited} ended={endedByRun.get(runId)} />
+            </div>
+        )),
+        ...(model != null
+            ? placedCouncils
+                  .filter((c) => c.at === key)
+                  .map(({ id, anchor }) => (
+                      <div key={`council:${id}`} data-chat-council-in-place className="flex flex-col">
+                          <ChatCouncilEnded councilId={id} anchor={anchor} model={model} />
+                      </div>
+                  ))
+            : []),
+    ];
     const rows = visible.flatMap((item, i) => {
         if (hiddenLine(item)) {
-            return [];
+            return endedAfter(item.key);
         }
         const paired = pairedOf(item);
         const last = i === visible.length - 1;
@@ -1718,9 +1759,13 @@ export function ChatConversation({
                 {drawn.element}
             </Arriving>
         );
-        return cardAnchors.has(item.key) && agent != null
-            ? [row, <InitiativeMessageCards key={`${item.key}:initiative`} agentId={agent.id} anchor={item.key} />]
-            : [row];
+        return [
+            row,
+            ...(cardAnchors.has(item.key) && agent != null
+                ? [<InitiativeMessageCards key={`${item.key}:initiative`} agentId={agent.id} anchor={item.key} />]
+                : []),
+            ...endedAfter(item.key),
+        ];
     });
     drawnItems.current = drawnNow;
     // the anchors of cards whose item is not drawn (another transcript epoch, or a window that dropped it): at the end
@@ -1775,12 +1820,13 @@ export function ChatConversation({
                 holds a CardSlot: the next card takes the old one's place and the slot springs between their heights,
                 never one card leaving and another coming in. The first render draws it at once. The run card draws its own
                 wrapper (ChatBrainstormRunRow), which a run that is over leaves out altogether: no empty row holding
-                the column's gap. The runs of the conversation that no call names (placeRunCards) come before it, each
-                one a card of its own, or its ✓ row once it is over. After them come the councils the agent started
-                (placeCouncilCards), oldest call first, each in a wrapper of its own: the live card, which becomes the
-                ended card in place once its council ends. */}
+                the column's gap. The runs of the conversation that no call names (placeRunCards) come before it while
+                they go on, each one a card of its own; once its run-ended message came, its ✓ row stays at the message
+                instead (endedAfter). After them come the councils the agent started that are still going
+                (placeCouncilCards), oldest call first, each in a wrapper of its own: the live card, or the ended card of
+                one running again; a council that is over stays where it ended (endedAfter). */}
             <AnimatePresence initial={false}>
-                {placed.trailing.map((runId) => (
+                {tailRuns.map((runId) => (
                     <ChatRunCard
                         key={`run:${runId}`}
                         slot={{ runId }}
@@ -1791,7 +1837,7 @@ export function ChatConversation({
                     />
                 ))}
                 {model != null
-                    ? placedCouncils.map(({ id, anchor, ended }) => (
+                    ? tailCouncils.map(({ id, anchor, ended }) => (
                           <motion.div key={`council:${id}`} data-chat-council-tail {...endRow}>
                               {ended ? (
                                   <ChatCouncilEnded councilId={id} anchor={anchor} model={model} />

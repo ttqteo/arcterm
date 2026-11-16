@@ -224,6 +224,32 @@ export function pairRunEnded(
     return paired;
 }
 
+/** Where the runs no call names (`placeRunCards`' `trailing`) draw: a run whose run-ended message came draws its ✓ row
+ *  where that message is in the conversation (the message itself draws nothing), the last one when it ended more than
+ *  once, so it stays where it ended as the conversation goes on; one still going, or over with no message, stays at
+ *  the end. `ended` is `pairRunEnded`'s map, in the conversation's order. `at` lists, by message key, the runs drawn
+ *  there, oldest first; `end` keeps `trailing`'s order. */
+export function placeTrailingRuns(
+    trailing: readonly string[],
+    ended: ReadonlyMap<string, { runId: string }>
+): { at: Map<string, string[]>; end: string[] } {
+    const lastMessage = new Map<string, string>();
+    for (const [key, { runId }] of ended) {
+        lastMessage.set(runId, key);
+    }
+    const at = new Map<string, string[]>();
+    const end: string[] = [];
+    for (const runId of trailing) {
+        const key = lastMessage.get(runId);
+        if (key == null) {
+            end.push(runId);
+        } else {
+            at.set(key, [...(at.get(key) ?? []), runId]);
+        }
+    }
+    return { at, end };
+}
+
 /** The run card's ✓ row text once it ended: "Run 3fa21b0c landed · merged into main" or "Run 3fa21b0c held: <reason>". */
 export function runEndedLine(runId: string, ended: RunEnded): string {
     const id = `Run ${shortRunId(runId)}`;
