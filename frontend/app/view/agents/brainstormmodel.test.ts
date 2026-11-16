@@ -387,8 +387,8 @@ describe("counts and gates", () => {
 
     it("reads a design waiting on confirms in the tree and the attention item", () => {
         const g = file({ parts: [part("a", "guess"), part("b", "guess", { was: "x" })] });
-        expect(treeLine(g, true)).toEqual({ text: "confirm 2 decisions" });
-        expect(treeLine(g, false)).toEqual({ text: "in progress" });
+        expect(treeLine(g, true)).toEqual({ text: "Confirm 2 decisions" });
+        expect(treeLine(g, false)).toEqual({ text: "In progress" });
         const item = brainstormAttention({ agentId: "t1", agentName: "loom", topic: "lag" }, g);
         expect(item.key).toBe("brainstorm:t1:review");
         expect(item.text).toContain("still the agent’s guess");
@@ -595,7 +595,7 @@ describe("shownFile", () => {
         expect(s.question).toBeNull();
         expect(isAsking(s)).toBe(false);
         expect(partView(s, s.parts[0])).toBe("writing");
-        expect(treeLine(s, false).text).toBe("writing up your answer");
+        expect(treeLine(s, false).text).toBe("Writing up your answer");
     });
 
     it("reads another pending line as working, the question kept", () => {
@@ -679,31 +679,31 @@ describe("treeLine", () => {
     const f = file({ run: "abcdef0123456789" });
 
     it("names the run by its first 8 chars while Arc knows nothing of it", () => {
-        expect(treeLine(f, false)).toEqual({ text: "run abcdef01", runId: "abcdef0123456789" });
+        expect(treeLine(f, false)).toEqual({ text: "Run abcdef01", runId: "abcdef0123456789" });
     });
 
     it("says what Arc knows of the run, even while asking", () => {
         expect(treeLine(f, true, "merged · run abcdef01")).toEqual({
-            text: "merged · run abcdef01",
+            text: "Merged · run abcdef01",
             runId: "abcdef0123456789",
         });
     });
 
     it("names asking, the builder check, working and the default", () => {
         const q = { n: 4, text: "?", part: "a" };
-        expect(treeLine(file({ question: q }), true)).toEqual({ text: "asking question 4" });
-        expect(treeLine(file({ check: { yours: [], calls: [], answered: [] } }), false).text).toBe("builder check");
-        expect(treeLine(file({ working: "Writing" }), false).text).toBe("writing up your answer");
-        expect(treeLine(file(), false)).toEqual({ text: "in progress" });
+        expect(treeLine(file({ question: q }), true)).toEqual({ text: "Asking question 4" });
+        expect(treeLine(file({ check: { yours: [], calls: [], answered: [] } }), false).text).toBe("Builder check");
+        expect(treeLine(file({ working: "Writing" }), false).text).toBe("Writing up your answer");
+        expect(treeLine(file(), false)).toEqual({ text: "In progress" });
     });
 
     it("names the judge's wait, not an answer being written up", () => {
-        expect(treeLine(waitFile(), false).text).toBe("judge weighing question 4");
+        expect(treeLine(waitFile(), false).text).toBe("Judge weighing question 4");
     });
 
     it("reads a kept question with work underway as working, nothing answered", () => {
         const s = shownFile(file({ question: { n: 3, text: "?", part: "a" } }), { at: 1, modifiedMs: 1, kind: "line" });
-        expect(treeLine(s, false).text).toBe("working");
+        expect(treeLine(s, false).text).toBe("Working");
     });
 });
 
