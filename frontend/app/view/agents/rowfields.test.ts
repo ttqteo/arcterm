@@ -5,14 +5,14 @@ import { describe, expect, it } from "vitest";
 import { AGENT_TREE_NARROW_PX, AGENT_TREE_WIDE_PX, agentTreeWidth, DEFAULT_ROW_FIELDS, rowFieldsOf, type RowFields } from "./rowfields";
 
 describe("agentTreeWidth", () => {
-    it("widens the tree while RAM and tokens are both on, whether or not age is", () => {
+    it("widens the tree only while all three number columns are on", () => {
         expect(agentTreeWidth(DEFAULT_ROW_FIELDS)).toBe(AGENT_TREE_WIDE_PX);
         const namesOff: RowFields = { ...DEFAULT_ROW_FIELDS, model: false, branch: false };
         expect(agentTreeWidth(namesOff)).toBe(AGENT_TREE_WIDE_PX);
-        expect(agentTreeWidth({ ...DEFAULT_ROW_FIELDS, age: false })).toBe(AGENT_TREE_WIDE_PX);
     });
 
-    it("keeps the tree narrow once RAM or tokens is off", () => {
+    it("keeps the tree narrow with any two columns, RAM and tokens included", () => {
+        expect(agentTreeWidth({ ...DEFAULT_ROW_FIELDS, age: false })).toBe(AGENT_TREE_NARROW_PX);
         expect(agentTreeWidth({ ...DEFAULT_ROW_FIELDS, ram: false })).toBe(AGENT_TREE_NARROW_PX);
         expect(agentTreeWidth({ ...DEFAULT_ROW_FIELDS, tokens: false })).toBe(AGENT_TREE_NARROW_PX);
         expect(agentTreeWidth({ ...DEFAULT_ROW_FIELDS, ram: false, tokens: false, age: false })).toBe(AGENT_TREE_NARROW_PX);

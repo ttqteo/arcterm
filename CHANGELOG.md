@@ -55,7 +55,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Settings → Jarvis & Office → Form now picks Hologram or Character (it said Sprout, which is also one of the
   characters), and shows only the picked form's settings: Hologram size for the hologram, Character and Vietnam's
   colours for a character. The fold button says Fold into Jarvis while Jarvis is the hologram.
-- The Agent sidebar stays at its wider size with only RAM and tokens on: turning age off no longer narrows it.
 - The agent header reads at a glance: after the name and state come three groups, each with its own icon: the
   project and its initiative (`/ + initiative` when there is none), one run link (a lead's run, the runs a session
   started, or a worker's lead; a click opens a menu of this run, where it was started from and the runs it started),

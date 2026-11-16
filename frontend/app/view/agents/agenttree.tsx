@@ -3894,7 +3894,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const collapsedList = useAtomValue(collapsedProjectsAtom);
     const center = useAtomValue(centerModeAtom);
     const overviewProject = useAtomValue(overviewProjectAtom);
-    // 280px while RAM and tokens are both on; either off and the tree is back to 248px (rowfields.ts)
+    // 280px only while RAM · tokens · age are all on; any of them off and the tree is back to 248px (rowfields.ts)
     const wide = agentTreeWidth(useAtomValue(rowFieldsAtom)) === AGENT_TREE_WIDE_PX;
     // One tree per project: each project's live agents, a divider, then its terminals and tools (projectTree), a collapsed
     // project folding to its folder row. The ended conversations are the section under it (ConversationsSection).

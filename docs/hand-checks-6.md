@@ -267,7 +267,7 @@ are in that file. Tick a line here when it holds, then remove it; a part left em
   with `…` and whole in their tooltip. Not run in the app.
 - [ ] (arcterm) A run waiting in the job queue keeps its line (`runQueuedTag`, `jobqueue.ts`): its second line reads
   `› N  Working · 3/6  ≡#1  RAM tokens age`, the progress words still there and the columns whole; with two jobs `≡×2`;
-  hovering the tag says `queued #1 · Verify · …` in full. `task verify:ui -- jobqueue-run-tag` was updated, not run. The Agent sidebar also stays 280px with Age off and only RAM + Tokens on (`agentTreeWidth`).
+  hovering the tag says `queued #1 · Verify · …` in full. `task verify:ui -- jobqueue-run-tag` was updated, not run.
 - [ ] (arcterm) The Agent sidebar is back to 248px once a number column is off (RAM or Tokens) (`agentTreeWidth`, `rowfields.ts`):
   `task verify:ui -- sidebar-columns` step 9 passes and `cdp-shots/sidebar-columns-2-narrow.png` shows a 248px sidebar
   with RAM · age lined up and nothing cut off. In the real app, turn Tokens off in Settings → Appearance → Agent sidebar:
