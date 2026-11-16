@@ -106,6 +106,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The project list under the Jarvis peek's Ask box opens in the app's dark colors instead of white with grey names.
 - Chat's Stop button on a turn Claude has not answered yet puts your message back in Chat's box, as Esc does. It
   used to stay hidden in the terminal's box and get stuck onto your next message.
 - A message that reached the conversation no longer comes back as a stuck bubble under it after an interrupt.

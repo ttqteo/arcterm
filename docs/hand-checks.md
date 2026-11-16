@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The Jarvis peek's project list opens dark.** Not tried in the app: CDP cannot capture a native
+  `<select>` popup (commit "fix(jarvis): the peek's project list opens on the theme's surface", 2026-11-16). Open the
+  Jarvis peek and click "No folder" under the Ask box → the list is the dark surface with primary text, like Setup's
+  selects, not white with grey names; switch theme and it follows (`peterrand.tsx`, `[&_option]` classes).
 - [ ] (arcterm) **A council's discussion has no ↩ Back pill.** Unit tests and typecheck only, no dev app ran
   (commit "feat(council): drop the Back jump pill from the discussion", 2026-11-16). Open a council with a long discussion, scroll to the middle, click ↑ Top then ↓ Latest →
   only ↑ and ↓ ever show in the bottom-right corner, each still glides to its end, and j/k still move after a click.
