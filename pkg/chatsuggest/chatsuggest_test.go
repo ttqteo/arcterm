@@ -48,6 +48,22 @@ func TestParseSkipsNoneLongAndRepeated(t *testing.T) {
 	}
 }
 
+func TestParseDropsMarkupThatSaysNothing(t *testing.T) {
+	// "Bạn có muốn tôi xoá AEM9… không?" came back as "có" and "</br>", and the tag showed as a chip
+	got := Parse("có\n</br>\n<br/>\n---\n…", true)
+	if !reflect.DeepEqual(got, []string{"có"}) {
+		t.Fatalf("Parse = %q, want only có", got)
+	}
+	// a tag stuck to a real reply comes off it
+	if got := Parse("không<br>\n<b>xoá đi</b>", true); !reflect.DeepEqual(got, []string{"không", "xoá đi"}) {
+		t.Fatalf("Parse = %q, want the replies without their tags", got)
+	}
+	// a comparison is not a tag
+	if got := Parse("a < b", true); !reflect.DeepEqual(got, []string{"a < b"}) {
+		t.Fatalf("Parse = %q", got)
+	}
+}
+
 func TestParseKeepsOneOfRepliesThatSayTheSame(t *testing.T) {
 	// "build luôn rồi push không?" answered three ways that all say build
 	got := Parse("build di\nok build đi\nchưa push, build thôi\nBuild đi!", true)
