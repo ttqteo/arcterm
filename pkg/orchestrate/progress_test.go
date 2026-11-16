@@ -5,11 +5,15 @@ package orchestrate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 )
 
 // initRepoWithIgnore is a repo with a.txt and a .gitignore holding out/, both committed.
@@ -68,6 +72,36 @@ func TestFingerprintSeesCommitsEditsAndNewFiles(t *testing.T) {
 func TestFingerprintErrorsOutsideARepo(t *testing.T) {
 	if _, err := worktreeFingerprint(context.Background(), filepath.Join(t.TempDir(), "gone")); err == nil {
 		t.Fatal("an unreadable tree is an error, not a fingerprint")
+	}
+}
+
+// A task in a project that is not a git repo has no lane tree (its child run's Branch stays empty), so the probe's git
+// status there can only fail: the check must not run it, once a minute per task, under the dag lock.
+func TestProgressCheckSkipsATaskWithNoTree(t *testing.T) {
+	calls := 0
+	prevFP, prevBlock := progressFingerprint, workerBlockFn
+	progressFingerprint = func(context.Context, string) (string, error) {
+		calls++
+		return "", errors.New("not a git repository")
+	}
+	workerBlockFn = func(context.Context, *waveobj.Run) (string, bool) { return "", false }
+	t.Cleanup(func() { progressFingerprint, workerBlockFn = prevFP, prevBlock })
+
+	now := time.Now().UnixMilli()
+	task := &waveobj.TaskNode{ID: "t-0", State: TaskState_Running}
+	run := &waveobj.Run{ID: "r-1", ProjectPath: t.TempDir()}
+	if reason, _, flagged := checkProgress(context.Background(), task, run, now); flagged || reason != "" {
+		t.Fatalf("a task with no tree is never flagged, got %q", reason)
+	}
+	if calls != 0 || task.ProgressCheckTs != 0 {
+		t.Fatalf("no lane tree means no probe, got %d calls and check ts %d", calls, task.ProgressCheckTs)
+	}
+
+	// the same run with a lane tree is probed, so the zero above is the guard's doing and not the stub's
+	run.Branch = "wave/t-0"
+	checkProgress(context.Background(), task, run, now)
+	if calls != 1 {
+		t.Fatalf("a task with a lane tree is probed once, got %d calls", calls)
 	}
 }
 
