@@ -16,6 +16,9 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A run's second line lines up with an agent's.** No dev app ran. In the Agent sidebar, a run row
+  (`› 7  Working · 7/7`, or a run with no plan yet reading `working`) → its second line starts under the title, at the
+  same column as an agent's `planning · run 1c…`, not under the icon; its progress bar below is unchanged.
 - [ ] (arcterm) **Chat's permission card answers an Artifact prompt.** Unit tests and typecheck only; the screen
   reader (`tuiSelectYes`) was tested on a list written from a screenshot, not a capture. Have an agent delete a
   throwaway artifact → the card reads `Wants to use an artifact`, `delete https://claude.ai/artifact/…`, with Allow and

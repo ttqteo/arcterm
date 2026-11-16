@@ -949,7 +949,8 @@ function RunResumeButton({ run }: { run: RunInfo }) {
     );
 }
 
-// RunSubline is a run row's second line: a chip folding its workers away, and how far the plan is.
+// RunSubline is a run row's second line: a chip folding its workers away, and how far the plan is. It starts under
+// the title, as an agent's second line does (UNDER_GLYPH).
 // a lead's second line: its workers chip and progress, then `note` (what the lead asks you), then `from <session>` when
 // a session started the run, then `trailing` (the lead's own badges and its columns) at its right end
 function RunSubline({
@@ -982,7 +983,7 @@ function RunSubline({
         // a finished bounded run's lead row reading planning for good, the same misreading of an absent
         // dag the engine had in ShouldCloseOrchestratorLead.
         return (
-            <div className="mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums">
+            <div className={cn("mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums", UNDER_GLYPH)}>
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
                 ) : run.land?.state === "pending" ? (
@@ -1016,7 +1017,12 @@ function RunSubline({
     return (
         <>
             {/* @container: a narrow line keeps the chip's count and drops its word, so the progress is not cut */}
-            <div className="@container mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums">
+            <div
+                className={cn(
+                    "@container mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums",
+                    UNDER_GLYPH
+                )}
+            >
                 <FoldChip
                     label={String(workers ? live : total)}
                     word={workers ? (live === 1 ? "worker" : "workers") : "tasks"}
