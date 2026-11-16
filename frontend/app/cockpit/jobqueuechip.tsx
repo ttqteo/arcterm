@@ -76,7 +76,8 @@ export function QueuedJobTag({ job }: { job: JobQueueJob }) {
 }
 
 // A run's tag while any of its jobs waits: its engine steps and its agents' commands, so a folded run still says it
-// waits on the queue. One job reads as an agent's tag does; several read "N queued", each named in the tooltip.
+// waits on the queue. Short beside the run's progress: the glyph and "#1" for one job, "×2" for several, the words and
+// each job in the tooltip (runQueuedTag).
 export function RunQueuedTag({ runId, jobs }: { runId: string; jobs: readonly JobQueueJob[] }) {
     useWaitClock();
     const tag = runQueuedTag(jobs, Date.now());
@@ -118,7 +119,7 @@ function QueueTagButton({
             )}
         >
             <Icon size={10} aria-hidden className="flex-none" />
-            <span className="truncate">{tag.label}</span>
+            {tag.label ? <span className="truncate">{tag.label}</span> : null}
         </button>
     );
 }

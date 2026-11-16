@@ -54613,9 +54613,9 @@ const jobqueueRunTag = {
             // the sidebar-declutter spec: a status tag such as QueuedJobTag stays whole beside the columns, and the words
             // left of it shrink. So t-1's row carries the tag, whole, and its words (whole in their tooltip) say verify
             // queued; at the tree's width they are mostly cut. `clipped` is reported, not judged
-            "1. the run's line says queued #1 naming Verify · noop; t-1's row carries a whole queued #1 tag naming it, and its words say verify queued (whole in their tooltip)",
-            one.run?.text === "queued #1" &&
-                one.run.title.startsWith("Verify · noop: scripts/verify.mjs waits its turn") &&
+            "1. the run's line carries a short #1 tag whose tooltip says queued #1 and names Verify · noop; t-1's row carries a whole queued #1 tag naming it, and its words say verify queued (whole in their tooltip)",
+            one.run?.text === "#1" &&
+                one.run.title.startsWith("queued #1 · Verify · noop: scripts/verify.mjs waits its turn") &&
                 one.worker?.tag === "queued #1" &&
                 one.worker.tagWhole === true &&
                 one.worker.tagTitle.startsWith("Verify · noop: scripts/verify.mjs waits its turn") &&
@@ -54640,8 +54640,8 @@ const jobqueueRunTag = {
         })()`);
         await h.shot("cdp-shots/jobqueue-run-tag-folded.png");
         rec(
-            "2. folded, the run's line keeps its queued #1",
-            folded.clicked && folded.folded && folded.tag === "queued #1",
+            "2. folded, the run's line keeps its #1",
+            folded.clicked && folded.folded && folded.tag === "#1",
             JSON.stringify(folded)
         );
         await h.ev(
@@ -54659,13 +54659,16 @@ const jobqueueRunTag = {
         );
         await polishWaitFor(
             h,
-            `${JQR_TREE}?.querySelector(${JSON.stringify(RUN_TAG)})?.textContent.trim() === "2 queued"`,
+            `${JQR_TREE}?.querySelector(${JSON.stringify(RUN_TAG)})?.textContent.trim() === "×2"`,
             3000
         );
         const two = await read();
         rec(
-            "3. with its Verify and its Final waiting, the run's line says 2 queued and names both",
-            two.run?.text === "2 queued" && two.run.title.includes("Verify · noop") && two.run.title.includes("Final"),
+            "3. with its Verify and its Final waiting, the run's line says ×2, its tooltip 2 queued naming both",
+            two.run?.text === "×2" &&
+                two.run.title.startsWith("2 queued: ") &&
+                two.run.title.includes("Verify · noop") &&
+                two.run.title.includes("Final"),
             JSON.stringify(two)
         );
 
