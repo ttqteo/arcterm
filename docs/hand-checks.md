@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A terminal launch does not wait on Task images.** Unit test only (`launcherimages.test.ts`
+  `imagesHoldLaunch`). Ctrl+N → Claude Code → paste a large image into Task, and before its thumbnail stops spinning
+  pick Terminal → Open terminal is enabled and opens one; back on Claude Code, Launch agent waits for the image as
+  before. `launchermodal.tsx` `imagesWriting`.
 - [ ] (arcterm) **The rail's session card has no Tools row.** The dev app was down when it was made, so
   `task verify:ui -- agent-subagents-background` never ran on it (its step 4 now checks there is no row). Open an
   agent that has run tools → the right rail's session card shows project, model, branch and the state line, with no

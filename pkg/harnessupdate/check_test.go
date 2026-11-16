@@ -6,7 +6,9 @@ package harnessupdate
 import (
 	"context"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/harness"
 )
@@ -59,5 +61,62 @@ func TestCheck_saysNothingWhenCurrentOrNotInstalled(t *testing.T) {
 		if len(*got) != 0 {
 			t.Errorf("installed %q: notices %+v", installed, *got)
 		}
+	}
+}
+
+// StartLoop runs a check on each tick only while enabled says so (harness:updatecheck off skips it): a tick with the
+// setting off probes nothing, and the next tick with it on checks.
+func TestStartLoop_skipsTheCheckWhileDisabled(t *testing.T) {
+	stubCheck(t, "2.1.292 (Claude Code)", "2.1.300")
+	origFirst, origInterval, origProbe := firstCheckDelay, checkInterval, probeAll
+	t.Cleanup(func() { firstCheckDelay, checkInterval = origFirst, origInterval })
+	firstCheckDelay, checkInterval = time.Millisecond, 20*time.Millisecond
+
+	probes := make(chan struct{}, 16)
+	probeAll = func(ctx context.Context) []harness.ProbeResult {
+		probes <- struct{}{}
+		return origProbe(ctx)
+	}
+	var on atomic.Bool
+	ticks := make(chan struct{}, 16)
+	enabled := func() bool {
+		ticks <- struct{}{}
+		return on.Load()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	notices := make(chan string, 16)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runLoop(ctx, enabled, func(title, _, _ string) { notices <- title })
+	}()
+	// stop the loop before the state dir is removed: a check still writing into it fails the cleanup
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	// three ticks with the setting off: no probe
+	for i := 0; i < 3; i++ {
+		select {
+		case <-ticks:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("tick %d never came", i+1)
+		}
+	}
+	select {
+	case <-probes:
+		t.Fatal("the loop checked while harness:updatecheck was off")
+	default:
+	}
+
+	on.Store(true)
+	select {
+	case title := <-notices:
+		if title != "Claude Code 2.1.300 is out" {
+			t.Errorf("notice = %q", title)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the loop never checked once the setting was on")
 	}
 }

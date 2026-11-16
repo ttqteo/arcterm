@@ -15859,6 +15859,8 @@ const restoreStorageKey = (key, prev) =>
 const TREE_RAIL_GLYPHS = ["↳", "◆", "▸", "▾", "›_", "↗", "‹"];
 const MIN_FONT_PX = 10.5;
 const TREE_RAIL_LEAD_ID = "fx-lead";
+// the wave asker (treeRailRoster): the session agent-tree-rail's run says it was started from
+const TREE_RAIL_ORIGIN_ID = "fx-ask-wave";
 
 function treeRailRoster(runId, now, leadName = TREE_RAIL_LEAD, leadExtra = {}) {
     return [
@@ -16109,8 +16111,17 @@ async function focusFixtureLead(h, ctx, leadName) {
     await new Promise((r) => setTimeout(r, 1200));
 }
 
-async function arrangeTreeRail(h, ctx) {
-    await arrangeFixtureRun(h, ctx, "tree-rail", TREE_RAIL_LEAD, { transcriptPath: writeLeadTranscript(ctx.cwd) });
+// origin: the run was started from the wave asker's session, as `wsh runs start` from it would: its ↰ origin button sits
+// on the lead's run line beside the progress, which agent-tree-rail step 7 measures with it
+async function arrangeTreeRail(h, ctx, { origin = false } = {}) {
+    await arrangeFixtureRun(
+        h,
+        ctx,
+        "tree-rail",
+        TREE_RAIL_LEAD,
+        { transcriptPath: writeLeadTranscript(ctx.cwd) },
+        origin ? { origintabid: TREE_RAIL_ORIGIN_ID } : undefined
+    );
     await h.rpc("dagsubmit", {
         channelid: ctx.channelId,
         runid: ctx.runId,
@@ -16136,7 +16147,7 @@ const agentTreeRail = {
         };
         // a throw past this point still returns ctx, so teardown removes whatever was already made
         try {
-            await arrangeTreeRail(h, ctx);
+            await arrangeTreeRail(h, ctx, { origin: true });
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -16355,6 +16366,8 @@ const agentTreeRail = {
                     titled: progress ? progress.title.length > 0 : null,
                     ram: ram ? (getComputedStyle(ram).display !== "none" ? ram.textContent.trim() : false) : null,
                     tokens: tokens ? tokens.textContent.trim() : null,
+                    // the ↰ of the session the run was started from, on the same line
+                    origin: !!line.querySelector("[data-origin-from]"),
                     overflow: line.scrollWidth > line.clientWidth,
                 };
             };
@@ -16373,10 +16386,12 @@ const agentTreeRail = {
         const runAt = runLine?.at ?? [];
         rec(
             // the spec (2026-11-13-sidebar-declutter-design, "Bố cục dòng"): the words left of the columns shrink and cut
-            // with …, never the columns. At the tree's own 280px the three columns leave "Working · 0/3" about 40px, so
-            // it is cut there, but it shows, its tooltip has it whole, and it reads whole once the line has room
-            "7. the lead's run line carries its workers chip, its progress and the task strip; its tokens, age and the run's RAM stay on the line at every width; the progress shows at the tree's own width (whole in its tooltip) and reads whole from 300px; nothing spills out of the line",
+            // with …, never the columns. At the tree's own 280px the three columns and the run's ↰ origin leave
+            // "Working · 0/3" little room, so it is cut there, but it shows, its tooltip has it whole, and it reads whole
+            // once the line has room
+            "7. the lead's run line carries its workers chip, its progress, its ↰ origin and the task strip; its tokens, age and the run's RAM stay on the line at every width; the progress shows at the tree's own width (whole in its tooltip) and reads whole from 300px; nothing spills out of the line",
             nested != null &&
+                runAt.every((s) => s.origin === true) &&
                 /^\d+ of 3 tasks done/.test(nested.strip ?? "") &&
                 /workers?$/.test(nested.workersChip ?? "") &&
                 nested.progress != null &&
