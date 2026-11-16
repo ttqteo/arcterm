@@ -1,10 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Reads three things off the rows of Claude Code's own screen (the xterm that stays mounted under the chat view):
-// the permission mode its footer names, the effort its effort line names, and the numbered options of a permission
-// dialog. Pure: the rows come in as
-// strings, the caller (the chat's footer and permission card) reads them with readTermLines.
+// Reads four things off the rows of Claude Code's own screen (the xterm that stays mounted under the chat view):
+// the permission mode its footer names, the effort its effort line names, the numbered options of a permission
+// dialog, and any other dialog whole (its title, text and options). Pure: the rows come in as
+// strings, the caller (the chat's footer, permission card and screen dialog card) reads them with readTermLines.
 //
 // Every marker below is a string captured from Claude Code 2.1.319 (tuiscreen.fixtures.json), never written from
 // memory. A later Claude Code that words the footer differently makes tuiMode return null, and the chat keeps the
@@ -81,17 +81,104 @@ const cursorMark = /❯/;
 // a label that wraps onto the next row joined to its option. [] when no dialog shows: the options are a run of rows
 // numbered 1, 2, 3… that has the cursor mark on one of them, which a numbered list in Claude's reply never has.
 export function tuiPermissionOptions(lines: string[]): TuiOption[] {
+    return dialogRun(lines)?.options ?? [];
+}
+
+// the bottom-most run of numbered options with the cursor on one of them, and the row it starts at
+function dialogRun(lines: string[]): { start: number; options: TuiOption[]; cursor: number } | null {
     for (let start = lines.length - 1; start >= 0; start--) {
         const first = optionRow.exec(lines[start]);
         if (!first || first[2] !== "1") {
             continue;
         }
-        const options = readRun(lines, start);
-        if (options.options.length >= 2 && options.cursor) {
-            return options.options;
+        const run = readRun(lines, start);
+        if (run.options.length >= 2 && run.cursor > 0) {
+            return { start, options: run.options, cursor: run.cursor };
         }
     }
-    return [];
+    return null;
+}
+
+export interface TuiDialog {
+    /** the dialog's first row ("Session paused", "Bash command") */
+    title: string;
+    /** the rows between the title and the options, as paragraphs: a row wrapped at the screen's edge joined to the next */
+    body: string[];
+    options: TuiOption[];
+    /** the option the cursor is on */
+    cursor: number;
+}
+
+// the solid rule Claude Code draws across the screen over a dialog (a dashed ╌ rule inside one frames a command). The
+// rule is the screen's full width, so xterm marks the row after it as a wrap and readTermLines joins the two
+// ("────…──── Session paused"): what follows the rule is that next row.
+const dialogRule = /^(\s*─{8,})(.*)$/;
+const dashedRule = /^\s*╌{8,}\s*$/;
+
+// the last solid rule at or above row `from`: its row, its width, and the row it swallowed ("" for none)
+function ruleAbove(lines: string[], from: number): { at: number; width: number; rest: string } | null {
+    for (let i = from; i >= 0; i--) {
+        const m = dialogRule.exec(lines[i]);
+        if (m) {
+            return { at: i, width: m[1].length, rest: m[2] };
+        }
+    }
+    return null;
+}
+
+/** The dialog at the bottom of Claude Code's screen, whatever it asks: the rows from the solid rule over it down to its
+ *  numbered options. null with no options on screen, or no rule over them (a numbered list in a reply has neither the
+ *  cursor nor the rule). A row as long as the rule, give or take a word, was wrapped there, so it runs on into the next
+ *  row's paragraph; a blank row ends a paragraph. */
+export function tuiDialog(lines: string[]): TuiDialog | null {
+    const run = dialogRun(lines);
+    if (run == null) {
+        return null;
+    }
+    const rule = ruleAbove(lines, run.start - 1);
+    if (rule == null) {
+        return null;
+    }
+    const width = rule.width;
+    const rows = [rule.rest, ...lines.slice(rule.at + 1, run.start)].filter((row) => !dashedRule.test(row));
+    const first = rows.findIndex((row) => row.trim() !== "");
+    if (first < 0) {
+        return null;
+    }
+    const body: string[] = [];
+    let open = false;
+    for (const row of rows.slice(first + 1)) {
+        const text = row.trim();
+        if (text === "") {
+            open = false;
+            continue;
+        }
+        if (open) {
+            body[body.length - 1] += " " + text;
+        } else {
+            body.push(text);
+        }
+        open = row.trimEnd().length >= width - WRAP_SLACK;
+    }
+    return { title: rows[first].trim(), body, options: run.options, cursor: run.cursor };
+}
+
+// how far short of the screen's edge a wrapped row can end: the longest word that did not fit
+const WRAP_SLACK = 16;
+
+// the most rows tuiScreenTail gives
+const TAIL_ROWS = 14;
+
+/** The foot of Claude Code's screen as the person would read it there: the non-blank rows under its last solid rule (the
+ *  rule's own row counts for what it swallowed), or with no rule the last rows on screen; at most TAIL_ROWS, the
+ *  bottom ones. For a screen this module has no reader for (a form, a "Press Enter to continue"). */
+export function tuiScreenTail(lines: string[]): string[] {
+    const rule = ruleAbove(lines, lines.length - 1);
+    const rows = rule == null ? lines : [rule.rest, ...lines.slice(rule.at + 1)];
+    return rows
+        .filter((row) => row.trim() !== "" && !dashedRule.test(row))
+        .map((row) => row.trimEnd())
+        .slice(-TAIL_ROWS);
 }
 
 // a select list's cursor row: " ❯ No" or " ❯ 2. Yes"; the label starts at the column after the mark
@@ -140,9 +227,10 @@ export function tuiSelectYes(lines: string[]): { moves: number; label: string } 
     return yes < 0 ? null : { moves: first + yes - at, label: labels[yes] };
 }
 
-function readRun(lines: string[], start: number): { options: TuiOption[]; cursor: boolean } {
+// the run of options from row `start`, and the number of the one the cursor is on (0 for none)
+function readRun(lines: string[], start: number): { options: TuiOption[]; cursor: number } {
     const options: TuiOption[] = [];
-    let cursor = false;
+    let cursor = 0;
     let labelCol = 0;
     for (let i = start; i < lines.length; i++) {
         const row = lines[i];
@@ -152,7 +240,7 @@ function readRun(lines: string[], start: number): { options: TuiOption[]; cursor
                 break;
             }
             if (cursorMark.test(m[1])) {
-                cursor = true;
+                cursor = options.length + 1;
             }
             options.push({ n: options.length + 1, label: m[3] });
             // a wrapped label continues at or past the column this one's text starts at

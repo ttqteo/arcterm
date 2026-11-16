@@ -168,6 +168,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council summary's long direction tag (two seats with long names) wraps inside its card instead of running past
   the edge.
 - Suggested replies under a council's or a Chat's box sit side by side when they fit, instead of one to a line.
+- A menu Claude Code shows in its terminal that Chat knew nothing about (the safeguards' "Session paused" choice of
+  model, for one) now shows in Chat as a card with its text and a button per choice, instead of an empty chat that
+  only read "asking". "Edit prompt and retry" brings your prompt back into Chat's box to edit, and anything else an
+  agent waits on in its terminal (a form, a "Press Enter") shows as the foot of its screen with Answer in Terminal.
+- An agent Claude Code's safeguards pause now reads asking, so it shows under Needs you, instead of idle.
 - The project list under the Jarvis peek's Ask box opens in the app's dark colors instead of white with grey names.
 - Lists and boxes the browser draws itself, such as a field's suggestions and unchecked checkboxes, are dark now
   instead of white.

@@ -108,6 +108,7 @@ import { PermissionCard } from "./permissioncard";
 import { useTranscriptWindow } from "./railtranscript";
 import { runtimeLogo } from "./runtimelogo";
 import { runtimeMeta } from "./runtimemeta";
+import { ScreenDialogCard } from "./screendialogcard";
 import { shipGitAtom } from "./shipstore";
 import { useStickToBottom } from "./sticktobottom";
 import { turnStats, type TurnStats } from "./transcriptprojection";
@@ -970,6 +971,12 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                         ) : null}
                         <PermissionCard
                             agent={agent}
+                            askShown={asking}
+                            onOpenTerminal={() => setChatMode(agent.id, "terminal")}
+                        />
+                        <ScreenDialogCard
+                            agent={agent}
+                            entries={entries}
                             askShown={asking}
                             onOpenTerminal={() => setChatMode(agent.id, "terminal")}
                         />

@@ -198,13 +198,25 @@ func AgentState(r Report) string {
 // something else than the hooks last did, and only when the hooks said nothing for QuietMs on either side of the
 // change: a hook that reports the change itself, even one that deliberately reads it otherwise (an agent kept
 // working while its background work runs), always wins.
+//
+// Blocked is the one exception to the quiet before the change: no hook reports a dialog Claude Code raises on its own
+// (the safeguards' "Session paused" menu comes right after the StopFailure that reads the turn idle), so a block
+// reported after an idle or working hook is taken once QuietMs passes with no hook after it. A waiting hook already
+// says the person is needed (a permission prompt reports blocked too), and keeps its own state.
 func Fallback(r Report, reportMs int64, latest baseds.AgentStatusData, nowMs int64) string {
 	state := AgentState(r)
 	switch {
 	case r.ID != "", state == "", latest.State == "", latest.State == state:
 		return ""
-	case reportMs-latest.Ts < QuietMs, nowMs-reportMs < QuietMs:
+	case latest.Ts > reportMs, nowMs-reportMs < QuietMs:
+		return ""
+	case reportMs-latest.Ts < QuietMs && !blockedOverHook(state, latest.State):
 		return ""
 	}
 	return state
+}
+
+// blockedOverHook is whether a blocked report outranks a hook that reported just before it.
+func blockedOverHook(state, hookState string) bool {
+	return state == baseds.AgentState_Asking && hookState != baseds.AgentState_Waiting
 }
