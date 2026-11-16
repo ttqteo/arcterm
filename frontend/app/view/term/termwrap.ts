@@ -58,6 +58,7 @@ import {
     trimTerminalSelection,
 } from "./termutil";
 import { readPlatformVersion, windowsPtyFor } from "./termwinpty";
+import { releaseWebGlCanvases } from "./webglrelease";
 
 const dlog = debug("wave:termwrap");
 
@@ -162,6 +163,8 @@ function detectWebGLSupport(): boolean {
     try {
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("webgl2");
+        // a probe: hand the context back rather than hold one of Chromium's ~16 until a garbage collection
+        ctx?.getExtension("WEBGL_lose_context")?.loseContext();
         return !!ctx;
     } catch (e) {
         return false;
@@ -215,6 +218,7 @@ export class TermWrap {
     onSearchResultsDidChange?: (result: { resultIndex: number; resultCount: number }) => void;
     toDispose: TermTypes.IDisposable[] = [];
     webglAddon: WebglAddon | null = null;
+    private webglCanvases: HTMLCanvasElement[] = [];
     webglEnabledAtom: jotai.PrimitiveAtom<boolean>;
     // the renderer asked for (settings, the toggle, a lost context); a hidden pane may park WebGL without changing it
     wantWebGl = false;
@@ -600,14 +604,16 @@ export class TermWrap {
                 return;
             }
         }
-        if (this.webglAddon != null) {
-            this.webglAddon.dispose();
-            this.webglAddon = null;
-            globalStore.set(this.webglEnabledAtom, false);
-        }
+        this.disposeWebGl();
         if (renderer === "webgl") {
+            const before = new Set(this.terminal.element?.querySelectorAll("canvas") ?? []);
             const addon = new WebglAddon();
             this.terminal.loadAddon(addon);
+            // the canvases the addon added (its WebGL one and its link layer's 2D one), so disposeWebGl releases
+            // exactly them and never calls getContext on a canvas with no context yet, which would make one
+            this.webglCanvases = [...(this.terminal.element?.querySelectorAll("canvas") ?? [])].filter(
+                (c) => !before.has(c)
+            );
             this.webglAddon = addon;
             globalStore.set(this.webglEnabledAtom, true);
             if (!loggedWebGL) {
@@ -615,6 +621,21 @@ export class TermWrap {
                 loggedWebGL = true;
             }
         }
+    }
+
+    // The addon's dispose() only takes its canvas out of the DOM, so its context stayed live, one of Chromium's ~16,
+    // until a garbage collection: every park, renderer switch and closed pane left one, and past the cap Chromium
+    // dropped the Jarvis hologram's. Lost after the dispose, the event it fires reaches no listener (webglrelease.ts).
+    private disposeWebGl() {
+        if (this.webglAddon == null) {
+            return;
+        }
+        const canvases = this.webglCanvases;
+        this.webglCanvases = [];
+        this.webglAddon.dispose();
+        this.webglAddon = null;
+        globalStore.set(this.webglEnabledAtom, false);
+        releaseWebGlCanvases(canvases);
     }
 
     getTermRenderer(): "webgl" | "dom" {
@@ -720,6 +741,7 @@ export class TermWrap {
             clearTimeout(this.webglParkTimer);
             this.webglParkTimer = null;
         }
+        this.disposeWebGl();
         this.terminal.dispose();
         this.toDispose.forEach((d) => {
             try {
