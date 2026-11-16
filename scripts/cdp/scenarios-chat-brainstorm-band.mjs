@@ -125,7 +125,7 @@ const scrollerOf = (id) =>
 const FLAT = `((el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim())`;
 const TAB_DOT = `!!document.querySelector("[data-agent-header] [data-brainstorm-tab-new]")`;
 
-const VK = { Enter: 13, Escape: 27 };
+const VK = { Enter: 13, Escape: 27, ArrowLeft: 37, ArrowRight: 39 };
 
 export default function (kit) {
     const { waveService, polishWaitFor, polishNap, ahReload, waitForProjectInConfig, UI_ROUTE, GRID_KEY, GRID_EMPTY, bsSeeHints } = kit;
@@ -567,7 +567,27 @@ export default function (kit) {
                 const bodyKept = await h.ev(`!!${bandOf(A)}?.querySelector("[data-bsband-body]")`);
                 await click(h, `${bandOf(A)}?.querySelector("[data-bsband-board]")`);
                 await polishWaitFor(h, `!!${PREVIEW}`, SHORT_MS);
-                const toTab = await click(h, `${PREVIEW}?.querySelector("[data-bsband-preview-open]")`);
+                // ← / → step through the boards in the part's order and stop at the ends
+                const rowNames = await h.ev(`[...(${bandOf(A)}?.querySelectorAll("[data-bsband-board]") ?? [])].map((b) => b.getAttribute("data-bsband-board"))`);
+                const shownName = () => h.ev(`${PREVIEW}?.getAttribute("data-bsband-preview") ?? null`);
+                await press(h, "ArrowLeft");
+                const atFirst = await shownName();
+                await press(h, "ArrowRight");
+                const atSecond = await shownName();
+                await shot(h, "4-arrow-next-board");
+                await press(h, "ArrowRight");
+                await press(h, "ArrowRight");
+                const atLast = await shownName();
+                await press(h, "ArrowLeft");
+                const backOne = await shownName();
+                const arrows =
+                    Array.isArray(rowNames) &&
+                    rowNames.length === 3 &&
+                    atFirst === rowNames[0] &&
+                    atSecond === rowNames[1] &&
+                    atLast === rowNames[2] &&
+                    backOne === rowNames[1];
+                const toTab =await click(h, `${PREVIEW}?.querySelector("[data-bsband-preview-open]")`);
                 const shown = await until(async () => (await modeOf(h, A)) === "brainstorm");
                 await polishNap(500);
                 await shot(h, "4-brainstorm-tab");
@@ -575,7 +595,7 @@ export default function (kit) {
                 await chatShown(A);
                 const gone = await polishWaitFor(h, `!${PREVIEW}`, SHORT_MS);
                 rec(
-                    `${name}: a click on the new board's row opens [data-bsband-preview] for that board over the Chat pane (the agent stays in Chat, its iframe loads the board, the focus stays in the band); [data-bsband-new] and [data-brainstorm-tab-new] are gone, no row has data-new, and all three names are stored as seen; Esc closes it and leaves the part open; its Open in Brainstorm opens the Brainstorm tab, and back in Chat it is closed`,
+                    `${name}: a click on the new board's row opens [data-bsband-preview] for that board over the Chat pane (the agent stays in Chat, its iframe loads the board, the focus stays in the band); [data-bsband-new] and [data-brainstorm-tab-new] are gone, no row has data-new, and all three names are stored as seen; Esc closes it and leaves the part open; reopened on the first board, ← stays there, → steps to the second and stops at the last, ← steps back; its Open in Brainstorm opens the Brainstorm tab, and back in Chat it is closed`,
                     opened &&
                         dotBefore === true &&
                         clicked &&
@@ -594,10 +614,11 @@ export default function (kit) {
                         BOARDS.every((n) => names.includes(n)) &&
                         closed &&
                         bodyKept === true &&
+                        arrows &&
                         toTab &&
                         shown &&
                         gone,
-                    { opened, dotBefore, clicked, dialog, newName, view, mode, newText: got?.newText, tabDot: got?.tabDot, rows: got?.boardRows, names, closed, bodyKept, toTab, shown, gone }
+                    { opened, dotBefore, clicked, dialog, newName, view, mode, newText: got?.newText, tabDot: got?.tabDot, rows: got?.boardRows, names, closed, bodyKept, rowNames, atFirst, atSecond, atLast, backOne, toTab, shown, gone }
                 );
             });
 

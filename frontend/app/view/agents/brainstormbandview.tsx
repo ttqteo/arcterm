@@ -256,8 +256,8 @@ export function BrainstormBody({
 
 /** One board of the brainstorm, large, in the board dialog over the Chat pane: a head (the board's name and the part it
  *  illustrates, Open in Brainstorm, Close) over the board at the dialog's width. Its page loads when the dialog opens and
- *  goes when it closes. A click on the board, Esc or the scrim closes it; it has no marking (the Brainstorm tab's open
- *  board has). The board's size is canvas.json's, which the poller reads with the file. */
+ *  goes when it closes. A click on the board, Esc or the scrim closes it, and ← / → step to the previous / next board
+ *  (chatband.tsx owns the keys); it has no marking (the Brainstorm tab's open board has). The board's size is canvas.json's, which the poller reads with the file. */
 export function BoardPreview({
     agent,
     name,

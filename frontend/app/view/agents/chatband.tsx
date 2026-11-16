@@ -16,7 +16,8 @@
 //
 // A board of the brainstorm part opens in the board dialog over the Chat pane (BoardPreview). The dialog is a child of this
 // root, positioned against the pane (nothing between them is positioned), so focus in it is focus in the band: while it is
-// open Esc closes it, `b` opens the Brainstorm tab, and no other key of the band acts behind it.
+// open Esc closes it, ← / → open the previous / next board, `b` opens the Brainstorm tab, and no other key of the band
+// acts behind it.
 
 import { springReveal } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
@@ -158,6 +159,16 @@ function ChatBandRoot({ model, agent }: { model: AgentsViewModel; agent: AgentVM
             } else if (e.key === "b") {
                 handled();
                 boardToBrainstorm();
+            } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                // the previous or next board, in the part's order; it stops at the first and the last (the Brainstorm
+                // tab's cursor does not wrap either)
+                handled();
+                const boards = bs?.boards ?? [];
+                const at = boards.findIndex((b) => b.name === preview);
+                const next = boards[at + (e.key === "ArrowLeft" ? -1 : 1)];
+                if (at >= 0 && next != null && startBoardPreview(agent.id, next.name)) {
+                    setPreview(next.name);
+                }
             }
             // Tab still moves between the dialog's buttons; no other key of the band acts behind the dialog
             return;
