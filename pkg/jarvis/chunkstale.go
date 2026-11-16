@@ -54,7 +54,7 @@ func FileMentions(texts ...string) []string {
 	for _, t := range texts {
 		for _, m := range fileMention.FindAllString(t, -1) {
 			m = strings.TrimLeft(m, "./")
-			if m == "" || seen[m] || hubFiles[path.Base(m)] {
+			if m == "" || seen[m] || HubFile(m) {
 				continue
 			}
 			seen[m] = true
@@ -78,9 +78,15 @@ func FileMentions(texts ...string) []string {
 	return kept
 }
 
-// mentionMatches reports whether repo path p is the file mention m names: the same path, or a path ending in it.
-func mentionMatches(p, m string) bool {
+// MentionMatches reports whether repo path p is the file mention m names: the same path, or a path ending in it.
+func MentionMatches(p, m string) bool {
 	return p == m || strings.HasSuffix(p, "/"+m)
+}
+
+// HubFile reports whether p names a hub file (a file that changes in nearly every commit), by its base name: the files
+// FileMentions leaves out, so a path read from a git diff can be held to the same rule.
+func HubFile(p string) bool {
+	return hubFiles[path.Base(p)]
 }
 
 // ChunkIsOpen is a chunk the scan measures: not settled as done or skipped.
@@ -205,7 +211,7 @@ func (h *StaleHistory) AssessChunk(c waveobj.EffortChunk, writtenTs int64) (wshr
 func (h *StaleHistory) assessFile(m string, since []gitinfo.LandedCommit) (wshrpc.EffortStaleFile, bool) {
 	f := wshrpc.EffortStaleFile{Mention: m}
 	for _, p := range h.byName[path.Base(m)] {
-		if mentionMatches(p, m) {
+		if MentionMatches(p, m) {
 			f.Path = p
 			break
 		}
@@ -214,7 +220,7 @@ func (h *StaleHistory) assessFile(m string, since []gitinfo.LandedCommit) (wshrp
 	for _, lc := range since {
 		touched := false
 		for _, lf := range lc.Files {
-			now, was := mentionMatches(lf.Path, m), lf.From != "" && mentionMatches(lf.From, m)
+			now, was := MentionMatches(lf.Path, m), lf.From != "" && MentionMatches(lf.From, m)
 			if !now && !was {
 				continue
 			}
