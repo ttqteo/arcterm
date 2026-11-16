@@ -320,6 +320,44 @@ func TestPlanAdoptMarksVaultCopy(t *testing.T) {
 	}
 }
 
+// a copy whose name differs from a vault skill's only in case is a copy of it, as the skills directory sees it,
+// never a seed that Adopt would find already canonical and leave where it is (kael t-4)
+func TestPlanAdoptMatchesAVaultSkillWhateverItsCase(t *testing.T) {
+	p := testPaths(t, "", ".claude")
+	writeFile(t, filepath.Join(p.SkillsRoot, "Review", skillFile), "---\nname: Review\n---\nvault body\n")
+	writeFile(t, filepath.Join(p.Home, ".claude", "skills", "review", skillFile), "---\nname: Review\n---\nvault body\n")
+
+	plan, err := PlanAdopt(p, map[string]string{"REVIEW": KeepVault})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Moves) != 1 {
+		t.Fatalf("plan = %+v, want the one copy", plan)
+	}
+	if m := plan.Moves[0]; !m.Vault || m.Seed || m.Name != "Review" {
+		t.Fatalf("move = %+v, want a vault copy named as the vault names it", m)
+	}
+}
+
+// two harnesses' copies of one skill spelled in different cases share one tree: the second is a delta of the first
+func TestPlanAdoptFoldsCaseAcrossHarnesses(t *testing.T) {
+	p := testPaths(t, "", ".codex", ".config/opencode")
+	writeFile(t, filepath.Join(p.Home, ".codex", "skills", "Orch", skillFile), "---\nname: orch\ntool: codex\n---\nsame body\n")
+	writeFile(t, filepath.Join(p.Home, ".config", "opencode", "skills", "orch", skillFile),
+		"---\nname: orch\ntool: opencode\n---\nsame body\n")
+
+	plan, err := PlanAdopt(p, nil, "ORCH-not-this")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Moves) != 2 || !plan.Moves[0].Seed || plan.Moves[1].Seed || plan.Moves[1].Name != "Orch" {
+		t.Fatalf("plan = %+v, want the codex seed and an opencode delta against it", plan)
+	}
+	if skipped, _ := PlanAdopt(p, nil, "ORCH"); len(skipped.Moves) != 0 {
+		t.Fatalf("skip ORCH planned %+v, want both spellings skipped", skipped.Moves)
+	}
+}
+
 func TestAdoptLeavesVaultCopyByDefault(t *testing.T) {
 	p, copyDir := strayCopy(t)
 	if _, err := Adopt(p, true, nil); err != nil {
