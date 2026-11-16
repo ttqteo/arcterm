@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **An interrupt keeps Chat's conversation in place.** No dev app ran. In a build with 1b304b177 (it
+  reinstalls the arc mod on launch), on Windows, send a Claude agent in Chat a long task and press Esc while it works →
+  the conversation stays where it was: no skeleton, no blank, no redraw from the top. Before, it emptied and loaded
+  again whole on every interrupt.
 - [ ] (arcterm) **New project leaves out the council bench's folders.** No dev app ran. In a build with 28dcb26a5,
   open + → New project → no row's path is under the app's data dir (`…\dev.arc.app\data\council-bench-projects\…`:
   spec-live-agents, bugs-orchestrate, goalpost-guard…); typing still finds folders on disk.
