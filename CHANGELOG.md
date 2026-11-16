@@ -92,6 +92,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- New project no longer lists the folders arcterm makes for its own agents (the council bench's practice projects)
+  among the folders Claude Code has worked in.
 - A menu with a long row, such as an agent's Started runs list, no longer spreads across the window: the row is cut
   to one line with an ellipsis and the run's status stays in view; hover a run to read its whole goal.
 - Chat's permission card now answers an agent's claude.ai Artifact prompts (publish, delete), with a line saying what

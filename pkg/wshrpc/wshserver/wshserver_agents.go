@@ -395,8 +395,10 @@ func (ws *WshServer) ReviewTokenEstimatesCommand(ctx context.Context, data wshrp
 	}, nil
 }
 
+// The app's data dir holds folders arcterm made for its own agents (the council bench's case projects, each with dozens
+// of sessions), never a project the person would register, so the picker leaves it out with the engine's worktrees.
 func (ws *WshServer) ScanClaudeProjectsCommand(ctx context.Context) (*wshrpc.CommandScanClaudeProjectsRtnData, error) {
-	found := agentsessions.PickerProjects(agentsessions.ScanClaudeProjects(), wavebase.GetHomeDir(), []string{orchestrate.WorktreeRoot()})
+	found := agentsessions.PickerProjects(agentsessions.ScanClaudeProjects(), wavebase.GetHomeDir(), []string{orchestrate.WorktreeRoot(), wavebase.GetWaveDataDir()})
 	projects := make([]wshrpc.ClaudeProjectData, 0, len(found))
 	for _, p := range found {
 		projects = append(projects, wshrpc.ClaudeProjectData{Path: p.Path, Name: p.Name, LastActiveTs: p.LastActiveTs, Sessions: p.Sessions})
@@ -412,7 +414,7 @@ func (ws *WshServer) FindProjectFoldersCommand(ctx context.Context, data wshrpc.
 		near = append(near, wavebase.ExpandHomeDirSafe(n))
 	}
 	roots := projectscan.SearchRoots(near, wavebase.GetHomeDir())
-	found := projectscan.Find(roots, []string{orchestrate.WorktreeRoot(), os.TempDir()})
+	found := projectscan.Find(roots, []string{orchestrate.WorktreeRoot(), wavebase.GetWaveDataDir(), os.TempDir()})
 	folders := make([]wshrpc.ProjectFolderData, 0, len(found))
 	for _, f := range found {
 		folders = append(folders, wshrpc.ProjectFolderData{Path: f.Path, Name: f.Name, Kind: f.Kind, ModTs: f.ModTs})
