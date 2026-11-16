@@ -36,8 +36,15 @@ const RETAINED_FIELDS = [
     "effort",
 ] as const;
 
+// a path as the file it names: on Windows (a drive letter or a backslash) separators and case do not tell files apart
+function fileKey(p: string): string {
+    return /^[A-Za-z]:[\\/]/.test(p) || p.includes("\\") ? p.replace(/\//g, "\\").toLowerCase() : p;
+}
+
 /** Pure: fold a state-delta event onto the previous status, keeping last-known values for fields the
- *  event omits. null prev (first event) passes through unchanged. */
+ *  event omits. null prev (first event) passes through unchanged. A transcript path that names the file the last one
+ *  did keeps the last one's spelling: Chat keys the conversation on that string, and a second spelling of the same
+ *  file read there as a new transcript, which emptied the conversation and loaded it again whole. */
 export function mergeAgentStatusData(prev: AgentStatusData | null, next: AgentStatusData): AgentStatusData {
     if (!prev) {
         return next;
@@ -47,6 +54,14 @@ export function mergeAgentStatusData(prev: AgentStatusData | null, next: AgentSt
         if (!merged[field]) {
             merged[field] = prev[field];
         }
+    }
+    if (
+        merged.transcriptpath &&
+        prev.transcriptpath &&
+        merged.transcriptpath !== prev.transcriptpath &&
+        fileKey(merged.transcriptpath) === fileKey(prev.transcriptpath)
+    ) {
+        merged.transcriptpath = prev.transcriptpath;
     }
     return merged;
 }

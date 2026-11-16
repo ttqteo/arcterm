@@ -24,6 +24,30 @@ describe("normalizeAgentUsage", () => {
 });
 
 describe("mergeAgentStatusData", () => {
+    // Chat keys the conversation on the path: a second spelling of the same file read as a new transcript, and the
+    // conversation emptied and loaded again whole on every interrupt (the arc mod's idle spelled it with slashes)
+    it("keeps the transcript path's spelling when an event names the same file another way", () => {
+        const prev = status({ transcriptpath: "C:\\Users\\u\\.claude\\projects\\D--w\\s1.jsonl" });
+        for (const other of [
+            "C:\\Users\\u/.claude/projects/D--w/s1.jsonl",
+            "c:\\users\\u\\.claude\\projects\\d--w\\S1.jsonl",
+        ]) {
+            const merged = mergeAgentStatusData(prev, status({ state: "idle", ts: 2, transcriptpath: other }));
+            expect(merged.transcriptpath).toBe(prev.transcriptpath);
+            expect(merged.state).toBe("idle");
+        }
+    });
+
+    it("takes a transcript path that names another file", () => {
+        const prev = status({ transcriptpath: "C:\\Users\\u\\.claude\\projects\\D--w\\s1.jsonl" });
+        const next = status({ ts: 2, transcriptpath: "C:\\Users\\u\\.claude\\projects\\D--w\\s2.jsonl" });
+        expect(mergeAgentStatusData(prev, next).transcriptpath).toBe(next.transcriptpath);
+        // a POSIX path is case-sensitive: another case is another file
+        const posix = status({ transcriptpath: "/home/u/.claude/projects/-w/s1.jsonl" });
+        const upper = status({ ts: 2, transcriptpath: "/home/u/.claude/projects/-W/s1.jsonl" });
+        expect(mergeAgentStatusData(posix, upper).transcriptpath).toBe(upper.transcriptpath);
+    });
+
     it("passes the first event through unchanged", () => {
         const ev = status({ title: "fix the bug", agent: "claude", model: "sonnet" });
         expect(mergeAgentStatusData(null, ev)).toEqual(ev);

@@ -97,6 +97,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Interrupting a Claude agent in Chat no longer empties the conversation and loads it again from the top: on Windows
+  the interrupt named the agent's transcript with other slashes, and Chat took it for a new conversation.
 - New project no longer lists the folders arcterm makes for its own agents (the council bench's practice projects)
   among the folders Claude Code has worked in.
 - A menu with a long row, such as an agent's Started runs list, no longer spreads across the window: the row is cut

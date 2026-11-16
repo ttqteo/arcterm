@@ -16,8 +16,19 @@ describe("memoryDir", () => {
 
 describe("transcriptFile", () => {
     it("is the session's jsonl in the project folder", () => {
+        expect(transcriptFile("/Users/u/.claude/", "/Users/u/my.repo", "abc-123")).toBe(
+            "/Users/u/.claude/projects/-Users-u-my-repo/abc-123.jsonl"
+        );
+    });
+
+    // the path is the one Claude Code's hooks report, to the byte: the cockpit keys the conversation on it, and a second
+    // spelling of the same file read as another transcript, so an interrupt reloaded the whole chat
+    it("is spelled as Claude Code's hooks spell it on Windows, every separator a backslash", () => {
         expect(transcriptFile("C:\\Users\\u\\.claude", "D:\\work\\arcterm", "abc-123")).toBe(
-            "C:\\Users\\u\\.claude/projects/D--work-arcterm/abc-123.jsonl"
+            "C:\\Users\\u\\.claude\\projects\\D--work-arcterm\\abc-123.jsonl"
+        );
+        expect(transcriptFile("C:/Users/u/.claude/", "D:\\work\\arcterm", "abc-123")).toBe(
+            "C:\\Users\\u\\.claude\\projects\\D--work-arcterm\\abc-123.jsonl"
         );
     });
 });
