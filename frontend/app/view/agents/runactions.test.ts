@@ -32,8 +32,10 @@ vi.mock("@/app/store/modalmodel", () => ({
 }));
 
 import {
+    buildCreateRunData,
     cancelRun,
     cancellingRunIdsAtom,
+    createRunPayload,
     confirmCancelRun,
     pauseRun,
     pausingRunIdsAtom,
@@ -84,6 +86,44 @@ describe("profile cache", () => {
         cacheJarvisProfile("channel-1", response);
         expect(globalStore.get(resolvedProfileAtom)["channel-1"]).toBe(response.resolved);
         expect(globalStore.get(channelOverrideAtom)["channel-1"]).toBe(response.override);
+    });
+});
+
+describe("createRunPayload spec path", () => {
+    const lead: RoutePin = { runtime: "claude", model: "opus" };
+
+    it.each(["quick", "orchestrator"])("carries the spec path on a %s run", (mode) => {
+        expect(createRunPayload("ws-1", "ch-1", "goal", lead, { mode, specPath: "C:/p/spec.md" }).specpath).toBe(
+            "C:/p/spec.md"
+        );
+    });
+
+    it("omits it when there is none", () => {
+        expect(createRunPayload("ws-1", "ch-1", "goal", lead, { mode: "quick" })).not.toHaveProperty("specpath");
+        expect(createRunPayload("ws-1", "ch-1", "goal", lead, { mode: "quick", specPath: "" })).not.toHaveProperty(
+            "specpath"
+        );
+    });
+});
+
+describe("buildCreateRunData", () => {
+    const route: RoutePin = { runtime: "claude", model: "opus" };
+    const opts = { mode: "orchestrator", planPath: "C:/p/plan.md", specPath: "C:/p/spec.md", autonomous: false };
+
+    it("is the data createRun sends, so a queued start carries what a start would", async () => {
+        createRunCommand.mockResolvedValueOnce({ run: { id: "run-1" } });
+        await createRun("channel-1", "ship it", route, opts);
+        expect(createRunCommand.mock.calls[0][1]).toEqual(buildCreateRunData("channel-1", "ship it", route, opts));
+        expect(buildCreateRunData("channel-1", "ship it", route, opts)).toMatchObject({
+            channelid: "channel-1",
+            workspaceid: "workspace-1",
+            planpath: "C:/p/plan.md",
+            specpath: "C:/p/spec.md",
+        });
+    });
+
+    it("refuses a route with no runtime, as createRun does", () => {
+        expect(() => buildCreateRunData("channel-1", "ship it", { runtime: "" } as RoutePin)).toThrow("Choose a route");
     });
 });
 

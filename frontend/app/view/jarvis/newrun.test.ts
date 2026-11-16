@@ -240,4 +240,20 @@ describe("prefillToLaunch", () => {
     it("an unregistered project is not picked", () => {
         expect(prefillToLaunch({ projectName: "gone", goal: "g", shape: "orchestrator" }, ["p"]).picked).toBeNull();
     });
+
+    it("carries the spec and the brainstorm a Approve opens it with", () => {
+        const brainstorm = { tab: "tab-1", path: "C:/p/.superpowers/brainstorm/x/brainstorm.json" };
+        expect(
+            prefillToLaunch(
+                { projectName: "p", goal: "g", shape: "orchestrator", specPath: "C:/p/spec.md", brainstorm },
+                ["p"]
+            )
+        ).toMatchObject({ specPath: "C:/p/spec.md", brainstorm });
+    });
+
+    it("carries neither for a prefill that has none", () => {
+        const out = prefillToLaunch({ projectName: "p", goal: "g", shape: "quick" }, ["p"]);
+        expect(out.specPath).toBeUndefined();
+        expect(out.brainstorm).toBeUndefined();
+    });
 });

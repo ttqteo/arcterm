@@ -110,9 +110,13 @@ export function launchGoal(
 // What filled the window hears of the run its launch starts, so it can follow it: handedOff when the dialog closes on
 // its Start (CreateRun can take a minute to return), then started with the run's id, or stopped when the start fails or
 // is cancelled before the run exists. A failed start's Try again hands it off again.
+//
+// `queued` is the other way a start can go: the person chose After or Queue in the When row, so the start is a queue
+// entry (its id), and the run follows when its turn comes.
 export type RunHandback = {
     handedOff?: () => void;
     started: (runId: string) => void;
+    queued?: (entryId: string) => void;
     stopped?: () => void;
 };
 
@@ -121,6 +125,11 @@ export type NewRunPrefill = {
     goal: string;
     shape: RunShape;
     prototype?: string;
+    // the spec the goal builds (absolute), so the When row can compare its files with the live runs'
+    specPath?: string;
+    // a brainstorm waiting for the run: its tab and brainstorm.json, kept on the queue entry so wavesrv can tell it the
+    // run's id when the entry starts
+    brainstorm?: RunQueueBrainstorm;
     handback?: RunHandback;
 };
 
@@ -131,7 +140,15 @@ export type NewRunPrefill = {
 export function prefillToLaunch(
     prefill: NewRunPrefill,
     projectNames: string[]
-): { picked: string | null; shape: RunShape; start: "goal"; goal: string; prototype: string } {
+): {
+    picked: string | null;
+    shape: RunShape;
+    start: "goal";
+    goal: string;
+    prototype: string;
+    specPath?: string;
+    brainstorm?: RunQueueBrainstorm;
+} {
     const { projectName, goal } = prefill;
     const prototype = prefill.prototype ?? "";
     return {
@@ -140,6 +157,8 @@ export function prefillToLaunch(
         start: "goal",
         goal,
         prototype,
+        specPath: prefill.specPath,
+        brainstorm: prefill.brainstorm,
     };
 }
 

@@ -10,10 +10,12 @@ import {
     addTaskImages,
     applyLauncherPrefill,
     beginLauncherLaunch,
+    checkRunStart,
     clearLauncherDraft,
     closeLauncher,
     endLauncherDraft,
     endLauncherLaunch,
+    launcherBrainstormAtom,
     launcherBranchAtom,
     launcherBranchListAtom,
     launcherBusyAtom,
@@ -32,18 +34,25 @@ import {
     launcherResumeAtom,
     launcherRuntimeAtom,
     launcherSessionsAtom,
+    launcherSpecPathAtom,
     launcherTaskAtom,
+    launcherWhenAtom,
     launcherWorktreeAtom,
     loadLauncherSessions,
     loadMoreLauncherSessions,
+    markRunStartChecking,
     openLauncher,
+    peekLauncherHandback,
     pickLauncherProject,
     pickLauncherRuntime,
+    pickWhen,
     removeTaskImage,
     reopenLauncher,
     RESUME_PICK_KEEP_MS,
     takeLauncherHandback,
+    tickWhen,
 } from "./launcherstore";
+import { WHEN_START } from "./launcherwhen";
 import {
     autonomousAtom,
     configTouchedAtom,
@@ -59,8 +68,11 @@ import {
     startAtom,
 } from "./runconfigstore";
 
-vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: { GetRecentSessionsCommand: vi.fn() } }));
+vi.mock("@/app/store/wshclientapi", () => ({
+    RpcApi: { GetRecentSessionsCommand: vi.fn(), RunStartSuggestCommand: vi.fn() },
+}));
 const recent = vi.mocked(RpcApi.GetRecentSessionsCommand);
+const suggest = vi.mocked(RpcApi.RunStartSuggestCommand);
 
 const mocks = vi.hoisted(() => ({ blob: vi.fn(), file: vi.fn() }));
 vi.mock("@/app/view/term/termutil", () => ({
@@ -89,6 +101,7 @@ beforeEach(() => {
     globalStore.set(launcherHandbackAtom, null);
     globalStore.set(launcherOwnProjectAtom, null);
     globalStore.set(launcherBusyAtom, false);
+    suggest.mockReset();
     endLauncherDraft();
     forgetConfiguredChannel();
     globalStore.set(shapePickedAtom, false);
@@ -296,6 +309,27 @@ describe("closing, clearing and launching", () => {
         expect(globalStore.get(launcherCommandAtom)).toEqual({});
         expect(globalStore.get(launcherTaskAtom)).toBe("");
     });
+    it("a close keeps the spec path, the brainstorm and the When pick with the draft; Clear drops the first two", () => {
+        const m = model();
+        const brainstorm = { tab: "tab-1", path: "C:/p/brainstorm.json" };
+        globalStore.set(launcherSpecPathAtom, "C:/p/spec.md");
+        globalStore.set(launcherBrainstormAtom, brainstorm);
+        pickWhen("queue");
+        closeLauncher(m);
+        expect(globalStore.get(launcherSpecPathAtom)).toBe("C:/p/spec.md");
+        expect(globalStore.get(launcherBrainstormAtom)).toBe(brainstorm);
+        expect(globalStore.get(launcherWhenAtom).choice).toBe("queue");
+        clearLauncherDraft();
+        expect(globalStore.get(launcherSpecPathAtom)).toBe("");
+        expect(globalStore.get(launcherBrainstormAtom)).toBeNull();
+        // Clear empties text and leaves picks, as it does the shape and the project
+        expect(globalStore.get(launcherWhenAtom).choice).toBe("queue");
+    });
+    it("a launch ends the When pick too, so the next launch starts on Jarvis's suggestion", () => {
+        pickWhen("queue");
+        endLauncherDraft();
+        expect(globalStore.get(launcherWhenAtom)).toEqual(WHEN_START);
+    });
     it("one launch at a time: a second begin fails until the first ends", () => {
         expect(beginLauncherLaunch()).toBe(true);
         expect(beginLauncherLaunch()).toBe(false);
@@ -387,8 +421,29 @@ describe("applyLauncherPrefill", () => {
         expect(globalStore.get(startAtom)).toBe("goal");
     });
 
+    it("fills the spec path and the brainstorm, and a later prefill without them clears them", () => {
+        const brainstorm = { tab: "tab-1", path: "C:/p/brainstorm.json" };
+        globalStore.set(launcherPrefillAtom, { ...prefill, specPath: "C:/p/spec.md", brainstorm });
+        applyLauncherPrefill(["arcterm"]);
+        expect(globalStore.get(launcherSpecPathAtom)).toBe("C:/p/spec.md");
+        expect(globalStore.get(launcherBrainstormAtom)).toEqual(brainstorm);
+        globalStore.set(launcherPrefillAtom, prefill);
+        applyLauncherPrefill(["arcterm"]);
+        expect(globalStore.get(launcherSpecPathAtom)).toBe("");
+        expect(globalStore.get(launcherBrainstormAtom)).toBeNull();
+    });
+
     describe("the handback of the run it starts", () => {
         const handback = () => ({ handedOff: vi.fn(), started: vi.fn(), stopped: vi.fn() });
+        it("can be read without taking it, so a queue that fails leaves it for the next try", () => {
+            const h = handback();
+            globalStore.set(launcherPrefillAtom, { ...prefill, handback: h });
+            applyLauncherPrefill(["arcterm"]);
+            expect(peekLauncherHandback()).toBe(h);
+            expect(peekLauncherHandback()).toBe(h);
+            expect(takeLauncherHandback()).toBe(h);
+            expect(peekLauncherHandback()).toBeNull();
+        });
         it("keeps the prefill's handback after the prefill itself is consumed, until it is taken", () => {
             const h = handback();
             globalStore.set(launcherPrefillAtom, { ...prefill, handback: h });
@@ -609,5 +664,127 @@ describe("the Resume list's pages", () => {
         await loadLauncherSessions("terminal", "/p/a");
         await loadLauncherSessions("claude", "");
         expect(recent).not.toHaveBeenCalled();
+    });
+});
+
+describe("the When row's suggestion", () => {
+    const ask: CommandRunStartSuggestData = { projectpath: "/p/a", goal: "land the resolver" };
+    const answer = (over: Partial<RunStartSuggestion> = {}): RunStartSuggestion => ({
+        choice: "after",
+        after: ["r-1"],
+        reason: "Edits land.go like run Land",
+        live: [{ runid: "r-1", title: "Land", files: ["land.go"] }],
+        active: 1,
+        maxactive: 3,
+        ...over,
+    });
+    const deferred = () => {
+        let resolve!: (v: RunStartSuggestion) => void;
+        let reject!: (e: unknown) => void;
+        const promise = new Promise<RunStartSuggestion>((res, rej) => {
+            resolve = res;
+            reject = rej;
+        });
+        return { promise, resolve, reject };
+    };
+    const when = () => globalStore.get(launcherWhenAtom);
+
+    it("reads Checking… while the call is out, then takes the suggestion", async () => {
+        const d = deferred();
+        suggest.mockReturnValueOnce(d.promise);
+        const done = checkRunStart(ask);
+        expect(when().checking).toBe(true);
+        expect(suggest.mock.calls[0][1]).toEqual(ask);
+        d.resolve(answer());
+        await done;
+        expect(when()).toMatchObject({ checking: false, choice: "after", ticked: ["r-1"], error: null });
+    });
+
+    it("says what failed and leaves Run now", async () => {
+        suggest.mockRejectedValueOnce(new Error("run start suggestions are not built yet"));
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        try {
+            await checkRunStart(ask);
+            expect(when()).toMatchObject({
+                checking: false,
+                choice: "now",
+                error: "run start suggestions are not built yet",
+            });
+            // handled at the boundary and logged, not swallowed
+            expect(warn).toHaveBeenCalled();
+        } finally {
+            warn.mockRestore();
+        }
+    });
+
+    it("keeps a choice the person made while it was checking", async () => {
+        const d = deferred();
+        suggest.mockReturnValueOnce(d.promise);
+        const done = checkRunStart(ask);
+        pickWhen("queue");
+        d.resolve(answer());
+        await done;
+        expect(when().choice).toBe("queue");
+        expect(when().suggestion?.reason).toBe("Edits land.go like run Land");
+    });
+
+    it("takes only the newest answer: a slow one for an older goal lands after and is dropped", async () => {
+        const slow = deferred();
+        const fast = deferred();
+        suggest.mockReturnValueOnce(slow.promise).mockReturnValueOnce(fast.promise);
+        const first = checkRunStart(ask);
+        const second = checkRunStart({ ...ask, goal: "something else" });
+        fast.resolve(answer({ choice: "queue", after: [], reason: "3 runs are already active" }));
+        await second;
+        slow.resolve(answer({ reason: "old" }));
+        await first;
+        expect(when().suggestion?.reason).toBe("3 runs are already active");
+        expect(when().choice).toBe("queue");
+    });
+
+    it("a failure of an older call does not overwrite the newest answer", async () => {
+        const slow = deferred();
+        suggest.mockReturnValueOnce(slow.promise).mockResolvedValueOnce(answer({ reason: "fresh" }));
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        try {
+            const first = checkRunStart(ask);
+            await checkRunStart(ask);
+            slow.reject(new Error("late failure"));
+            await first;
+            expect(when().error).toBeNull();
+            expect(when().suggestion?.reason).toBe("fresh");
+        } finally {
+            warn.mockRestore();
+        }
+    });
+
+    it("an input that changed drops the answer still on its way", async () => {
+        const d = deferred();
+        suggest.mockReturnValueOnce(d.promise);
+        const done = checkRunStart(ask);
+        // the row marks the next check at once, then asks after its pause
+        markRunStartChecking();
+        d.resolve(answer({ reason: "for the old goal" }));
+        await done;
+        expect(when()).toMatchObject({ checking: true, suggestion: null });
+    });
+
+    it("ticks and unticks through the store", async () => {
+        suggest.mockResolvedValueOnce(
+            answer({
+                choice: "now",
+                after: [],
+                live: [
+                    { runid: "r-1", title: "Land" },
+                    { runid: "r-2", title: "Chat" },
+                ],
+            })
+        );
+        await checkRunStart(ask);
+        pickWhen("after");
+        tickWhen("r-2");
+        expect(when().ticked).toEqual(["r-2"]);
+        tickWhen("r-2");
+        expect(when().ticked).toEqual([]);
     });
 });
