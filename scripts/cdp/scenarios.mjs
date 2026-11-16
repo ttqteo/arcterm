@@ -54134,8 +54134,9 @@ const jobqueueAgentTag = {
         let tag = await readTag();
         await h.shot("cdp-shots/jobqueue-agent-tag.png");
         rec(
-            "1. the agent's row says queued #1, its tooltip the command and the RAM it waits on",
-            tag?.text === "queued #1" &&
+            "1. the agent's row says #1, its tooltip queued #1, the command and the RAM it waits on",
+            tag?.text === "#1" &&
+                tag.title.startsWith("queued #1 · ") &&
                 tag.title.includes("task check:ts") &&
                 tag.title.includes("needs 3.0 GB, 1.2 GB free") &&
                 !tag.amber,
@@ -54168,7 +54169,7 @@ const jobqueueAgentTag = {
         await h.shot("cdp-shots/jobqueue-agent-tag-long-wait.png");
         rec(
             "3. a job waiting 6 minutes turns the tag amber with a TriangleAlert",
-            tag?.text === "queued #1" && tag.amber && tag.triangle,
+            tag?.text === "#1" && tag.amber && tag.triangle,
             JSON.stringify(tag)
         );
 
@@ -54613,12 +54614,12 @@ const jobqueueRunTag = {
             // the sidebar-declutter spec: a status tag such as QueuedJobTag stays whole beside the columns, and the words
             // left of it shrink. So t-1's row carries the tag, whole, and its words (whole in their tooltip) say verify
             // queued; at the tree's width they are mostly cut. `clipped` is reported, not judged
-            "1. the run's line carries a short #1 tag whose tooltip says queued #1 and names Verify · noop; t-1's row carries a whole queued #1 tag naming it, and its words say verify queued (whole in their tooltip)",
+            "1. the run's line carries a short #1 tag whose tooltip says queued #1 and names Verify · noop; t-1's row carries a whole #1 tag naming it, and its words say verify queued (whole in their tooltip)",
             one.run?.text === "#1" &&
                 one.run.title.startsWith("queued #1 · Verify · noop: scripts/verify.mjs waits its turn") &&
-                one.worker?.tag === "queued #1" &&
+                one.worker?.tag === "#1" &&
                 one.worker.tagWhole === true &&
-                one.worker.tagTitle.startsWith("Verify · noop: scripts/verify.mjs waits its turn") &&
+                one.worker.tagTitle.startsWith("queued #1 · Verify · noop: scripts/verify.mjs waits its turn") &&
                 /^t-1 · verify queued/.test(one.worker.sub ?? "") &&
                 one.worker.subTitle === one.worker.sub,
             JSON.stringify(one)

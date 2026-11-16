@@ -26,6 +26,7 @@ import {
     RECENT_BYPASS_MS,
     runQueuedJobs,
     runQueuedTag,
+    shortQueuedTag,
     sizeLabel,
     sourceLabel,
     stepQueuedState,
@@ -219,6 +220,12 @@ describe("jobqueue", () => {
         );
         expect(two?.warn).toBe(true);
         expect(runQueuedTag([job({ label: "Final", name: "final-verify" })], 0)?.label).toBe("");
+    });
+    it("tags an agent's tree row short with its place, its words opening the tooltip", () => {
+        const tag = shortQueuedTag(job({ position: 2, name: "task check:ts", queuedts: 0 }), 1_000);
+        expect(tag.label).toBe("#2");
+        expect(tag.title).toBe("queued #2 · task check:ts waits its turn in the heavy-job queue: 1 job ahead of it");
+        expect(shortQueuedTag(job({ name: "go test" }), 0).label).toBe("");
     });
     it("tags the head of the queue with why it waits", () => {
         const tag = queuedTag(job({ position: 1, reason: "needs 3.0 GB, 1.2 GB free", queuedts: 0 }), 20_000);
