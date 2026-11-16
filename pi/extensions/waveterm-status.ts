@@ -44,7 +44,7 @@ export function registerWavetermStatus(pi: any, wshPath: string): void {
     // exec a failing wsh process on every lifecycle event, so stay inert instead
     if (!process.env.WAVETERM_BLOCKID) return;
     let state: "working" | "idle" = "idle";
-    const report = async (ctx: any, next: "working" | "idle", detail = "") => {
+    const report = async (ctx: any, next: "working" | "idle", detail = "", ended = false) => {
         state = next;
         const args = [
             "agentstatus",
@@ -66,6 +66,7 @@ export function registerWavetermStatus(pi: any, wshPath: string): void {
             ctx.model?.id ?? "",
         ];
         if (detail) args.push("--detail", detail.slice(0, 160));
+        if (ended) args.push("--ended");
         try {
             await pi.exec(wshPath, args);
         } catch {
@@ -102,7 +103,9 @@ export function registerWavetermStatus(pi: any, wshPath: string): void {
         await reportUsage(ctx);
     });
     pi.on("agent_settled", (_event: any, ctx: any) => report(ctx, "idle"));
-    pi.on("session_shutdown", (_event: any, ctx: any) => report(ctx, "idle"));
+    // ended: a pi that exited back to its shell leaves `wsh agents list`, so a send is never typed into the shell.
+    // A session switch fires this too, and the new session's session_start lists the tab again at once.
+    pi.on("session_shutdown", (_event: any, ctx: any) => report(ctx, "idle", "", true));
     // a compaction holds the session like a turn: it confirms a typed handoff /compact and keeps wakes out
     // while it runs. afterwards the session is back in whatever state the compaction interrupted.
     let beforeCompact: "working" | "idle" = "idle";

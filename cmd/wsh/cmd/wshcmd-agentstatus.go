@@ -36,6 +36,7 @@ var (
 	agentStatusCwd        string
 	agentStatusSessionID  string
 	agentStatusProvider   string
+	agentStatusEnded      bool
 
 	agentUsageFlag       bool
 	agentUsageContext    float64
@@ -58,6 +59,7 @@ func init() {
 	agentStatusCmd.Flags().StringVar(&agentStatusCwd, "cwd", "", "current working directory of the agent session")
 	agentStatusCmd.Flags().StringVar(&agentStatusSessionID, "session-id", "", "agent session id")
 	agentStatusCmd.Flags().StringVar(&agentStatusProvider, "provider", "", "model provider (e.g. openai-codex)")
+	agentStatusCmd.Flags().BoolVar(&agentStatusEnded, "ended", false, "the session exited back to its shell: the roster stops listing the tab until its next report")
 	agentStatusCmd.Flags().BoolVar(&agentUsageFlag, "usage", false, "report a usage-only delta from the statusLine JSON (no --state)")
 	agentStatusCmd.Flags().Float64Var(&agentUsageContext, "context-pct", 0, "context window used percentage")
 	agentStatusCmd.Flags().IntVar(&agentUsageContextMax, "context-max", 0, "context window size in tokens (200000 | 1000000)")
@@ -145,6 +147,7 @@ func agentStatusRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	eventData := buildAgentStatusData(oref, agentStatusState, agentStatusDetail, agentStatusAgent,
 		agentStatusCwd, agentStatusTranscript, agentStatusSessionID, agentStatusTitle, agentStatusProvider,
 		agentStatusModel, time.Now().UnixMilli())
+	eventData.Ended = agentStatusEnded
 
 	eventData = enrichCodexStatus(eventData, os.Getenv("CODEX_THREAD_ID"))
 	err = publishAgentStatusData(oref, eventData, 1)
