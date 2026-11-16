@@ -31,6 +31,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Chat's message box draws a ``` fenced block as a code box while you type it, in the code font, so a pasted command
+  reads as code before you send it. Code typed on the fence's own line (```` ```curl https://… ````) now stays in the
+  block in your sent message instead of disappearing as its language name.
 - An agent's run chip (`2 runs` on its tree row and in its header) has an × on hover that hides the runs it started
   that are over (landed, done, failed or cancelled), so a finished session stops carrying them; a run still going, or
   one whose land is held, stays. Jarvis and the runs list keep them.
