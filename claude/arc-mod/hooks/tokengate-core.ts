@@ -171,8 +171,10 @@ const plainWait: SpawnWait = async (until) => {
 type OpenGroup = { group: Group; phase: "gathering" | "deciding" | "card"; verdict: Promise<SpawnVerdict> };
 
 // the gate for one session: the person's say on later spawns, the open group, whose members share one card, and
-// the chain of spawns that came within BURST_MS of each other. sleep and clock are injected so vitest can drive them
-export function createSpawnGate(sleep: (ms: number) => Promise<void>, clock: () => number = Date.now) {
+// the chain of spawns that came within BURST_MS of each other. sleep and clock are injected so vitest can drive them.
+// a mod has no setTimeout, so register.ts passes null here and each check brings its hook's $.clock.sleep
+export type SpawnSleep = (ms: number) => Promise<void>;
+export function createSpawnGate(gateSleep: SpawnSleep | null, clock: () => number = Date.now) {
     let decision: Decision = null;
     let open: OpenGroup | null = null;
     // the agents the chain started (refused ones left out), and when its last spawn came
@@ -185,7 +187,8 @@ export function createSpawnGate(sleep: (ms: number) => Promise<void>, clock: () 
         tool: SpawnTool,
         input: Record<string, unknown>,
         ask: SpawnAsk,
-        wait: SpawnWait
+        wait: SpawnWait,
+        sleep: SpawnSleep
     ): Promise<string | null> {
         if (decision === "allow-turn" || decision === "allow-session") {
             return null;
@@ -204,7 +207,7 @@ export function createSpawnGate(sleep: (ms: number) => Promise<void>, clock: () 
             // its own, its chain counting the group if it ran
             const busy = open;
             await wait(busy.verdict);
-            return decide(tool, input, ask, wait);
+            return decide(tool, input, ask, wait, sleep);
         }
         if (open) {
             // gathering, or the card is already up: this spawn shares the group's verdict, and waits for it through
@@ -246,13 +249,23 @@ export function createSpawnGate(sleep: (ms: number) => Promise<void>, clock: () 
         // why the spawn may not run; null lets it. a call already asked about gets the same answer, kept before any
         // await so a hook that arrives while the gate gathers finds it too
         // a seen call's hook is the inner of the two (claude nests them), so its answer is in by then
-        check(tool: SpawnTool, input: Record<string, unknown>, ask: SpawnAsk, wait: SpawnWait = plainWait): Promise<string | null> {
+        check(
+            tool: SpawnTool,
+            input: Record<string, unknown>,
+            ask: SpawnAsk,
+            wait: SpawnWait = plainWait,
+            sleep?: SpawnSleep
+        ): Promise<string | null> {
             const id = filled(input.tool_use_id) ? input.tool_use_id : null;
             const seen = id ? calls.get(id) : undefined;
             if (seen) {
                 return seen;
             }
-            const answer = decide(tool, input, ask, wait);
+            const nap = sleep ?? gateSleep;
+            if (!nap) {
+                return Promise.reject(new Error("spawn gate: no sleep, pass the hook's $.clock.sleep"));
+            }
+            const answer = decide(tool, input, ask, wait, nap);
             if (id) {
                 calls.set(id, answer);
             }

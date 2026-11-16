@@ -20,7 +20,7 @@ export type MemoryFile = { name: string; text: string; mtimeMs: number };
 export type Memory = { file: string; name?: string; body: string; touchedMs: number };
 
 export function parseMemory(f: MemoryFile): Memory {
-    const name = f.text.match(/^name:\s*(.+)$/m)?.[1].trim().replace(/^["']|["']$/g, "");
+    const name = f.text.match(/^name:\s*(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g, "");
     const modified = f.text.match(/^\s*modified:\s*["']?(\d{4}-\d{2}-\d{2})/m)?.[1];
     const body = f.text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "");
     const touchedMs = modified ? Date.parse(modified) : f.mtimeMs;
@@ -29,13 +29,13 @@ export function parseMemory(f: MemoryFile): Memory {
 
 // relative repo paths with an extension, backticked: `frontend/app/foo.ts`. placeholders and globs are skipped
 export function referencedPaths(body: string): string[] {
-    const paths = [...body.matchAll(/`([^`\s]+)`/g)].map((m) => m[1]);
+    const paths = [...body.matchAll(/`([^`\s]+)`/g)].map((m) => m[1]!);
     return paths.filter((p) => /^[\w.-]+(\/[\w.-]+)+\.[a-z]{1,5}$/i.test(p));
 }
 
 // `task dev`, `! task install`; a glob like `task build:*` is skipped
 export function referencedTasks(body: string): string[] {
-    return [...body.matchAll(/`!?\s*task ([\w:-]+)(?![\w:*-])/g)].map((m) => m[1]);
+    return [...body.matchAll(/`!?\s*task ([\w:-]+)(?![\w:*-])/g)].map((m) => m[1]!);
 }
 
 // the Taskfile's task names and their aliases (`aliases: [a, b]` or a `- a` list under `aliases:`)
@@ -45,11 +45,11 @@ export function taskNames(taskfile: string): Set<string> {
     for (const line of taskfile.split(/\r?\n/)) {
         const def = line.match(/^ {4}([\w:-]+):\s*$/);
         if (def) {
-            names.add(def[1]);
+            names.add(def[1]!);
         }
         const inline = line.match(/^\s+aliases:\s*\[(.*)\]/);
         if (inline) {
-            inline[1].split(",").forEach((a) => names.add(a.trim()));
+            inline[1]!.split(",").forEach((a) => names.add(a.trim()));
         }
         if (/^\s+aliases:\s*$/.test(line)) {
             isInAliases = true;
@@ -75,7 +75,7 @@ export type LintInput = {
 export function lintMemory(input: LintInput): string[] {
     const problems: string[] = [];
     const files = new Set(input.memories.map((m) => m.file));
-    const indexed = new Set([...input.index.matchAll(/\]\(([^)]+\.md)\)/g)].map((m) => m[1]));
+    const indexed = new Set([...input.index.matchAll(/\]\(([^)]+\.md)\)/g)].map((m) => m[1]!));
     for (const f of indexed) {
         if (!files.has(f)) {
             problems.push(`MEMORY.md points at missing ${f}`);

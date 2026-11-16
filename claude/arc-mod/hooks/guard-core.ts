@@ -86,14 +86,16 @@ function feedsCommit(line: string, opener: RegExpExecArray): boolean {
 function maskMessages(command: string): string {
     const lines = command.split("\n");
     for (let i = 0; i < lines.length; i++) {
-        const opener = HEREDOC.exec(lines[i]);
-        if (!opener || !feedsCommit(lines[i], opener)) {
+        const line = lines[i] ?? "";
+        const opener = HEREDOC.exec(line);
+        if (!opener || !feedsCommit(line, opener)) {
             continue;
         }
         const end = lines.findIndex((line, j) => j > i && line.replace(/^\t+/, "") === opener[2]);
         const stop = end < 0 ? lines.length : end;
         for (let j = i + 1; j < stop; j++) {
-            lines[j] = opener[1] ? blank(lines[j]) : maskText(lines[j]);
+            const body = lines[j] ?? "";
+            lines[j] = opener[1] ? blank(body) : maskText(body);
         }
         i = stop;
     }

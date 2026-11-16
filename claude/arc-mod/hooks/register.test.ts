@@ -23,6 +23,8 @@ function arcEngine(spawned: string[][]) {
         session: { cwd: async () => "/repo", append: async () => ({}) },
         fs: { exists: async () => false, list: async () => [], read: async () => "" },
         ui: { log: () => undefined, toast: () => undefined },
+        // the Token burn gate gathers parallel spawns on the hook's clock: a mod has no setTimeout
+        clock: { sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)) },
         process: {
             spawn: ({ argv }: { argv: string[] }) => {
                 spawned.push(argv);

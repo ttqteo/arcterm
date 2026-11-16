@@ -82,7 +82,7 @@ export function parseWake(text: string): Wake | null {
             wake.questions += Number(QUESTIONS.exec(event.headline)?.[1] ?? 0);
             wake.events.push(event);
         } else if (wake.events.length > 0 && line.trim() !== "") {
-            wake.events[wake.events.length - 1].more.push(line);
+            wake.events.at(-1)!.more.push(line);
         }
     }
     return wake.events.length > 0 ? wake : null;
