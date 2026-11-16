@@ -48,6 +48,7 @@ type syncLoop struct {
 	notify   func(title, message, level string)
 	interval time.Duration
 	debounce time.Duration
+	after    func(time.Duration) <-chan time.Time // time.After; a test fires the debounce itself
 	poke     <-chan struct{}
 	trigger  chan struct{}
 
@@ -68,6 +69,7 @@ func newSyncLoop(fn func(context.Context) (SyncResult, error), notify func(title
 		notify:        notify,
 		interval:      syncInterval,
 		debounce:      pokeDebounce,
+		after:         time.After,
 		poke:          pokeCh,
 		trigger:       make(chan struct{}, 1),
 		seenConflicts: map[string]bool{},
@@ -152,7 +154,7 @@ func (l *syncLoop) schedule(ctx context.Context) {
 		case <-ticker.C:
 			l.kick()
 		case <-l.poke:
-			debounced = time.After(l.debounce)
+			debounced = l.after(l.debounce)
 		case <-debounced:
 			debounced = nil
 			l.kick()
