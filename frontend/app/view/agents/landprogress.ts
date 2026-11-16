@@ -14,6 +14,16 @@ const LAND_LABEL_SUFFIX = " · land";
 
 export type LandWait = "ram" | "slot" | "e2e" | "other";
 
+/** One labelled row of the peek: "Command" · `node scripts/verify.mjs`. */
+export interface LandField {
+    label: string;
+    value: string;
+    /** drawn as code: a command, an id */
+    code?: boolean;
+    /** said after the value, quieter: "Run now in Jobs starts it past the queue" */
+    note?: string;
+}
+
 export interface LandProgress {
     /** the run's tree line: "Landing · Verify running 4m 10s" */
     text: string;
@@ -23,8 +33,33 @@ export interface LandProgress {
     job?: JobQueueJob;
     /** set while the job waits its turn: what it waits on */
     wait?: LandWait;
-    /** the peek's and the tooltip's lines, also what "Copy for an agent" copies */
+    /** the branch the land merges into, "its base" when the run names none */
+    base: string;
+    /** the peek's rows, in the order of `lines` after its header */
+    fields: LandField[];
+    /** the tree line's hover title: the line in full (the tree cuts it), and that a press opens the peek */
+    tip: string;
+    /** what "Copy for an agent" copies: the header, then each field as "Label: value (note)" */
     lines: string[];
+}
+
+function fieldLine(f: LandField): string {
+    return `${f.label}: ${f.value}${f.note ? ` (${f.note})` : ""}`;
+}
+
+function build(
+    run: { runId: string },
+    base: string,
+    p: Pick<LandProgress, "text" | "step" | "job" | "wait">,
+    fields: LandField[]
+): LandProgress {
+    return {
+        ...p,
+        base,
+        fields,
+        tip: `${p.text.replace("Landing · ", `Landing into ${base} · `)}\nClick for the details and Copy for an agent`,
+        lines: [`Run ${run.runId} · land pending into ${base}`, ...fields.map(fieldLine)],
+    };
 }
 
 /** The land's job in the queue: the run's job whose label ends " · land", a running one before a queued one. */
@@ -67,45 +102,37 @@ export function landProgress(
     }
     const base = run.base || "its base";
     const job = landJob(jobs, run.runId);
-    const header = `Run ${run.runId} · land pending into ${base}`;
-    const inspect = `Inspect: wsh runs show ${run.runId}`;
+    const inspect: LandField = { label: "Inspect", value: `wsh runs show ${run.runId}`, code: true };
     if (job == null) {
-        return {
-            text: "Landing · getting the merge ready",
-            step: "",
-            lines: [
-                header,
-                `Step: none in the heavy-job queue: merging ${base} into the run's branch, or between Check and Verify`,
-                inspect,
-            ],
-        };
+        return build(run, base, { text: "Landing · getting the merge ready", step: "" }, [
+            {
+                label: "Step",
+                value: `none in the heavy-job queue: merging ${base} into the run's branch, or between Check and Verify`,
+            },
+            inspect,
+        ]);
     }
     const step = (job.label ?? "").slice(0, -LAND_LABEL_SUFFIX.length) || "Check";
-    const command = `Command: ${job.name}`;
+    const command: LandField = { label: "Command", value: job.name, code: true };
     if (job.running) {
         const ran = formatElapsed(now - (job.startedts ?? now));
-        return {
-            text: `Landing · ${step} running ${ran}`,
-            step,
-            job,
-            lines: [header, `Step: ${step}, running for ${ran} on the run merged with ${base}`, command, inspect],
-        };
+        return build(run, base, { text: `Landing · ${step} running ${ran}`, step, job }, [
+            { label: "Step", value: `${step}, running for ${ran} on the run merged with ${base}` },
+            command,
+            inspect,
+        ]);
     }
     const wait = landWait(job.reason);
     const place = job.position ? ` · #${job.position}` : "";
     const waited = formatElapsed(now - job.queuedts);
-    return {
-        text: `Landing · ${step} ${WAIT_WORDS[wait]}${place}`,
-        step,
-        job,
-        wait,
-        lines: [
-            header,
-            `Step: ${step}, queued for ${waited} in the heavy-job queue${job.position ? `, #${job.position} in line` : ""}`,
-            `Why: ${job.reason || "waiting its turn"}`,
-            command,
-            `Job: ${job.id} (Run now in Jobs starts it past the queue)`,
-            inspect,
-        ],
-    };
+    return build(run, base, { text: `Landing · ${step} ${WAIT_WORDS[wait]}${place}`, step, job, wait }, [
+        {
+            label: "Step",
+            value: `${step}, queued for ${waited} in the heavy-job queue${job.position ? `, #${job.position} in line` : ""}`,
+        },
+        { label: "Why", value: job.reason || "waiting its turn" },
+        command,
+        { label: "Job", value: job.id, code: true, note: "Run now in Jobs starts it past the queue" },
+        inspect,
+    ]);
 }

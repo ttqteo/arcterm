@@ -19,6 +19,12 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) **New project leaves out the council bench's folders.** No dev app ran. In a build with 28dcb26a5,
   open + → New project → no row's path is under the app's data dir (`…\dev.arc.app\data\council-bench-projects\…`:
   spec-live-agents, bugs-orchestrate, goalpost-guard…); typing still finds folders on disk.
+- [ ] (arcterm) **A pending land's peek reads as a card.** No dev app ran. In the Agent sidebar, hover a run's
+  `Landing · Verify r…` line → the tip is two lines (`Landing into main · Verify running 18s`, then that a click opens
+  the details), not the run id and commands. Click the line → the peek shows a green pulsing dot and the line in full,
+  `Run a9e0fd4f → main` under it, then rows labelled STEP / COMMAND / INSPECT (WHY and JOB while queued) with the
+  commands and job id in code chips; the dot is yellow on a RAM wait. Copy for an agent still copies the old lines
+  (`Run … · land pending into main`, `Step: …`, `Command: …`).
 - [ ] (arcterm) **A long menu row is cut, not stretched.** No dev app ran. On an agent that started runs with long
   goals, click `N runs ▾` in its header → the menu is at most ~520px wide, each Started runs row is one line ending in
   `…` with its status (`done`, `running`) still at the right, and hovering a row shows the whole goal. Other menus
