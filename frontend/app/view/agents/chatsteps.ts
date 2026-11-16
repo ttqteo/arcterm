@@ -3,7 +3,8 @@
 //
 // The step line of one tool call in Chat (chatstepsview.tsx): an icon, a verb ("Read", "Edit", "Ran", "Search"…) and a chip
 // for each thing the call touched, `+N` past the third. One step per call, as WorkItem.actions holds them (compacttimeline.ts),
-// built only from the transcript entry: no merging of calls, no Thought lines (the projection skips thinking blocks). Pure.
+// built only from the transcript entry, with no Thought lines (the projection skips thinking blocks). stepRows folds a run of
+// calls with the same verb on the same one file into one line ("Edit a.ts ×4"), which opens to its calls. Pure.
 
 import type { AgentActionEntry } from "./agentsviewmodel";
 import { inFlight } from "./compacttimeline";
@@ -138,6 +139,85 @@ function chipsOf(a: AgentActionEntry): StepChip[] {
 export function stepElapsed(ms: number): string {
     const s = Math.max(0, Math.floor(ms / 1000));
     return s < 60 ? `${s}s` : s % 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s / 60}m`;
+}
+
+/** Pure: the lines an edit call added and removed, over its files; null for a call with no edit detail (yet). */
+export function editCounts(action: AgentActionEntry): { adds: number; dels: number } | null {
+    const d = action.detail;
+    if (d?.kind !== "edit" || d.files.length === 0) {
+        return null;
+    }
+    return d.files.reduce((n, f) => ({ adds: n.adds + f.adds, dels: n.dels + f.dels }), { adds: 0, dels: 0 });
+}
+
+// the file tools a run of calls folds for: the same verb on the same file again and again is the agent working one file
+const FOLDS = new Set(["read", "edited", "wrote"]);
+
+/** Pure: what a call folds by, or null when it stands alone: a call that failed or was blocked keeps its own line, so its
+ *  red or its refusal is never hidden inside a fold. */
+function foldKey(a: AgentActionEntry): string | null {
+    if (!FOLDS.has(a.verb) || a.outcome === "fail" || a.outcome === "blocked") {
+        return null;
+    }
+    const chips = chipsOf(a);
+    if (chips.length !== 1 || chips[0].kind !== "file") {
+        return null;
+    }
+    return `${a.verb}\n${chips[0].path.replace(/\\/g, "/")}`;
+}
+
+/** One line of a stretch: one call, or a run of calls folded. `start` is the first call's position in the stretch, so the
+ *  line keeps its key as the run grows (actions are append-only). */
+export interface StepRow {
+    start: number;
+    actions: AgentActionEntry[];
+}
+
+/** Pure: a stretch's calls as lines, a run of the same verb on the same one file folded into one, in order. */
+export function stepRows(actions: AgentActionEntry[]): StepRow[] {
+    const rows: StepRow[] = [];
+    let lastKey: string | null = null;
+    actions.forEach((a, k) => {
+        const key = foldKey(a);
+        if (key != null && key === lastKey) {
+            rows[rows.length - 1].actions.push(a);
+        } else {
+            rows.push({ start: k, actions: [a] });
+        }
+        lastKey = key;
+    });
+    return rows;
+}
+
+export interface StepFold {
+    step: Step; // the run's verb and file, running while any call in it is
+    count: number;
+    durationMs: number; // the calls that finished, added up
+    runningSince?: number; // the startedAt of the call in flight, when it carried one
+    summary?: string; // a read's "25 lines", when every call in the run says the same
+    edits?: { adds: number; dels: number }; // an edit run's lines, over the calls whose diff landed
+}
+
+/** Pure: a folded run as its one line. */
+export function foldOf(actions: AgentActionEntry[], live: boolean): StepFold {
+    const running = actions.find((a) => inFlight(a, live));
+    const summaries = new Set(actions.map((a) => a.summary ?? ""));
+    const [summary] = summaries;
+    let edits: StepFold["edits"];
+    for (const a of actions) {
+        const c = editCounts(a);
+        if (c != null) {
+            edits = { adds: (edits?.adds ?? 0) + c.adds, dels: (edits?.dels ?? 0) + c.dels };
+        }
+    }
+    return {
+        step: { ...stepOf(actions[0], live), running: running != null },
+        count: actions.length,
+        durationMs: actions.reduce((n, a) => n + (a.durationMs ?? 0), 0),
+        runningSince: running?.startedAt,
+        summary: summaries.size === 1 && summary !== "" ? summary : undefined,
+        edits,
+    };
 }
 
 /** Pure: one tool call as a step line. `live`: the session is working, so a call with no result is running. */
