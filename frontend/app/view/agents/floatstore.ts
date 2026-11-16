@@ -103,6 +103,9 @@ export const floatModeAtom = atom(false) as PrimitiveAtom<boolean>;
 // always on top; on at every entry: a float is for watching an agent while you work in another app, so it starts above
 // them, and its pin turns that off
 export const floatPinnedAtom = atom(false) as PrimitiveAtom<boolean>;
+// true while the Full ↔ Float crossfade runs (beginFade to endFade). The hologram waits it out (petview.tsx): Float draws
+// it at another size, and building its GL scene there compiles its shaders, a ~70 ms long task that stalled the fade-in.
+export const floatSwitchingAtom = atom(false) as PrimitiveAtom<boolean>;
 
 // where the last float was, for the next one
 const RECT_KEY = "arc.float.rect";
@@ -166,6 +169,16 @@ export function currentSize(): SizeState {
     return sizeState(globalStore.get(floatModeAtom), globalStore.get(floatMiniAtom), globalStore.get(foldOriginAtom));
 }
 
+// the app's page zoom (chrome.ts), 1 where it cannot be read (the unit tests)
+function zoomFactor(): number {
+    try {
+        const z = getApi().getZoomFactor();
+        return Number.isFinite(z) && z > 0 ? z : 1;
+    } catch {
+        return 1;
+    }
+}
+
 async function frameOf(win: Window): Promise<WinRect> {
     const [pos, size] = await Promise.all([win.outerPosition(), win.outerSize()]);
     return { x: pos.x, y: pos.y, width: size.width, height: size.height };
@@ -201,10 +214,11 @@ async function leaveNativeFullscreen(win: Window): Promise<void> {
 // fading: the Full ↔ Float crossfade is under way and gives the window its buttons back at its end (endFade)
 async function giveFrameBack(win: Window, restore: FloatRestore | null, fading = false): Promise<void> {
     await win.setAlwaysOnTop(false);
-    // a reload mid-fold left the window see-through, frameless and deaf to the cursor
-    await win.setIgnoreCursorEvents(false).catch(() => {});
-    await win.setShadow(true).catch(() => {});
     if (!fading) {
+        // a reload mid-fold left the window see-through, frameless and deaf to the cursor. Not in the crossfade, which
+        // only leaves a float: these two cost 150-200 ms of window calls before the resize there (endFade owns the shadow)
+        await win.setIgnoreCursorEvents(false).catch(() => {});
+        await win.setShadow(true).catch(() => {});
         await setFoldedChrome(false).catch(() => {});
     }
     writeJson(session, MINI_RESTORE_KEY, null);
@@ -254,15 +268,20 @@ async function floatTheWindow(model: AgentsViewModel, fade = false): Promise<voi
     let fading = false;
     try {
         await leaveNativeFullscreen(win);
-        const maximized = await win.isMaximized();
+        // at once, not one after another: each is a round trip to the host before the fade can start
+        const [maximized, frame, current, monitors] = await Promise.all([
+            win.isMaximized(),
+            shadowedFrameOf(win),
+            currentMonitor(),
+            availableMonitors(),
+        ]);
         const restore: FloatRestore = {
-            rect: await shadowedFrameOf(win),
+            rect: frame,
             maximized,
             terminalFullscreen: globalStore.get(terminalFullscreenAtom),
         };
         writeJson(session, RESTORE_KEY, restore);
         const last = parseRect(readJson(local, RECT_KEY));
-        const [current, monitors] = await Promise.all([currentMonitor(), availableMonitors()]);
         if (current == null) {
             throw new Error("no monitor for the window");
         }
@@ -273,7 +292,6 @@ async function floatTheWindow(model: AgentsViewModel, fade = false): Promise<voi
             await beginFade(win);
             await fadeContent("out");
             hideContent();
-            await shadowBeforeFrame(win);
         }
         if (maximized) {
             await leaveMaximized(win);
@@ -350,12 +368,23 @@ async function unfloatTheWindow(restoreFullscreen: boolean, fade = false): Promi
             await fadeContent("out");
             hideContent();
         }
-        globalStore.set(floatPinnedAtom, false);
-        globalStore.set(floatModeAtom, false);
-        if (restoreFullscreen && restore != null) {
-            globalStore.set(terminalFullscreenAtom, restore.terminalFullscreen);
+        const leaveFloat = () => {
+            globalStore.set(floatPinnedAtom, false);
+            globalStore.set(floatModeAtom, false);
+            if (restoreFullscreen && restore != null) {
+                globalStore.set(terminalFullscreenAtom, restore.terminalFullscreen);
+            }
+        };
+        // Fading, the content is hidden while the window grows, so the Full layout waits for the Full frame: drawn
+        // first at the float's size, it was laid out and its terminals refit twice, and that render held up the window
+        // calls behind it. Entering does the same: the float layout comes after the float frame.
+        if (!fading) {
+            leaveFloat();
         }
         await giveFrameBack(win, restore, fading);
+        if (fading) {
+            leaveFloat();
+        }
         writeJson(session, RESTORE_KEY, null);
         if (fading) {
             await pageTakesWindow(win);
@@ -563,27 +592,28 @@ function fadeOn(): boolean {
     return !reducedMotion() && !pageHidden();
 }
 
-// The page goes see-through and the window drops its shadow and its buttons, so nothing is drawn while the window
-// changes size between the fade out and the fade in.
+// The page goes see-through and the window drops its buttons, so nothing is drawn while the window changes size between
+// the fade out and the fade in. On macOS it drops its shadow too, which it draws from the content. Windows keeps it: a
+// frame set with it off grows by its border once it is back (shadowedFrameOf), and turning it off and on changes the
+// frame by the invisible resize borders, so it cost two page resizes and ~400 ms of window calls before the frame could
+// be set, all for a shadow that had to be back on by then.
 async function beginFade(win: Window): Promise<void> {
+    globalStore.set(floatSwitchingAtom, true);
     document.documentElement.dataset.floatMini = "";
-    await setFoldedChrome(true).catch(() => {});
-    await win.setShadow(false).catch(() => {});
-}
-
-// The shadow back before a frame is set on Windows: a frame set with it off grows by its border once it is back
-// (shadowedFrameOf). macOS sizes the same with or without it, and draws it from the content, so it waits for endFade.
-async function shadowBeforeFrame(win: Window): Promise<void> {
-    if (!isMacOS()) {
-        await win.setShadow(true).catch(() => {});
+    if (isMacOS()) {
+        await setFoldedChrome(true).catch(() => {});
+        await win.setShadow(false).catch(() => {});
     }
 }
 
 async function endFade(win: Window): Promise<void> {
     clearContentMotion();
     delete document.documentElement.dataset.floatMini;
-    await win.setShadow(true).catch(() => {});
-    await setFoldedChrome(false).catch(() => {});
+    if (isMacOS()) {
+        await win.setShadow(true).catch(() => {});
+        await setFoldedChrome(false).catch(() => {});
+    }
+    globalStore.set(floatSwitchingAtom, false);
 }
 
 // The content fades out in place before the window changes size, or in after it, with a hint of scale
@@ -796,7 +826,11 @@ async function growCenter(win: Window, from: WinRect): Promise<Pt> {
 // many it took, -1 when it never came.
 async function pageTakesWindow(win: Window): Promise<{ frames: number; want: Viewport }> {
     const [size, scale] = await Promise.all([win.innerSize(), win.scaleFactor()]);
-    const want = { width: size.width / scale, height: size.height / scale };
+    // CSS px are the screen's points over the app's zoom too: the app starts one step up (chrome.ts DefaultZoom), and
+    // without it the page never read the window's size, so every Full ↔ Float switch and restore waited all 30 frames
+    // (~500 ms) here
+    const px = scale * zoomFactor();
+    const want = { width: size.width / px, height: size.height / px };
     for (let i = 0; i < 30; i++) {
         if (Math.abs(window.innerWidth - want.width) <= 2 && Math.abs(window.innerHeight - want.height) <= 2) {
             return { frames: i, want };

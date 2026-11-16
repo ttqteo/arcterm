@@ -1534,7 +1534,8 @@ function PeekFloat({
         placement,
         strategy: "fixed",
         middleware: [offset(12), shift({ padding: 8, crossAxis: true })],
-        whileElementsMounted: autoUpdate,
+        // only while open: closed, it re-placed an unseen peek on every step of a window resize (PetBubble's reason)
+        whileElementsMounted: open ? autoUpdate : undefined,
     });
     useEffect(() => {
         refs.setPositionReference(anchor);

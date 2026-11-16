@@ -122,7 +122,9 @@ export function PetBubble({
         // absolutely-positioned bubble in a corner is exactly what that clip would cut in half
         strategy: "fixed",
         middleware: [offset(10), shift({ padding: 8 })],
-        whileElementsMounted: autoUpdate,
+        // only while a bubble shows: kept mounted with none, autoUpdate re-placed it, each time with a synchronous
+        // render, on every step of a window resize (the Full ↔ Float switch)
+        whileElementsMounted: event != null ? autoUpdate : undefined,
     });
     useEffect(() => {
         refs.setPositionReference(anchor);

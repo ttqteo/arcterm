@@ -1,6 +1,7 @@
 import { isMacOS } from "@/util/platformutil";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { debounce } from "throttle-debounce";
 
 // mirror Electron emain-util.ts zoom bounds.
 const MinZoom = 0.5;
@@ -113,7 +114,8 @@ export function installChromeListeners() {
     const win = getCurrentWindow();
     const syncFullscreen = () => win.isFullscreen().then(setFullscreenState).catch(noop);
     syncFullscreen();
-    win.onResized(syncFullscreen).catch(noop);
+    // once a resize settles (app-bar.tsx useWindowMaximized's reason)
+    win.onResized(debounce(150, syncFullscreen)).catch(noop);
     window.addEventListener("keydown", (ev) => {
         if (ev.key === "F11") {
             ev.preventDefault();

@@ -21,7 +21,7 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { channelMessagesAtom } from "@/app/view/agents/channelsstore";
 import { useChristmasDecor } from "@/app/view/agents/christmasstore";
-import { floatMiniAtom, floatModeAtom } from "@/app/view/agents/floatstore";
+import { floatMiniAtom, floatModeAtom, floatSwitchingAtom } from "@/app/view/agents/floatstore";
 import { workingCount } from "@/app/view/agents/sproutroster";
 import { usePlanDonuts } from "@/app/view/agents/usagemeters";
 import { useWorkerCapacity } from "@/app/view/agents/workercapacitystore";
@@ -398,6 +398,10 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     // Jobs chip and the tabs narrow, nor growing with the window
     const floatSlot = useAtomValue(floatJarvisSlotAtom);
     const inSlot = hologram && floating;
+    // between Full and Float neither hologram is drawn: the new size's scene is built once the crossfade is over, its
+    // shader compile clear of the fade (floatstore.ts floatSwitchingAtom), and it powers on in its new place
+    const switching = useAtomValue(floatSwitchingAtom);
+    const hologramWaits = hologram && switching;
     // the startup loader is drawing Jarvis in the middle: no second one in the corner until it is done
     const loaderHologram = useAtomValue(hologramLoadersShownAtom) > 0;
     const cornerPx = HOLOGRAM_SIZE_PX[hologramSize(useAtomValue(petHologramSizeAtom))];
@@ -501,7 +505,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
 
     // in the office the boss is the creature, so no footer sprite; this component stays mounted for its voice
     const creature =
-        inOffice || (hologram && loaderHologram) || inSlot ? null : hologram ? (
+        inOffice || (hologram && loaderHologram) || inSlot || hologramWaits ? null : hologram ? (
             <HologramView
                 // a new size or a retry mounts a fresh canvas: a lost context cannot be had again from the old one
                 key={`hologram:${hologramPx}:${hologramTry}`}
@@ -538,7 +542,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                 Sprout shrinks away), a show its entrance */}
             <AnimatePresence>{hidden ? null : creature}</AnimatePresence>
             {/* Float's hologram, drawn into the ledge's slot; what waits rides its corner, as the nav badge would */}
-            {inSlot && !hidden && !inOffice && floatSlot != null
+            {inSlot && !hidden && !inOffice && !hologramWaits && floatSlot != null
                 ? createPortal(
                       <>
                           <HologramView

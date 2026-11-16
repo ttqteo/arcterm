@@ -6,6 +6,11 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Full ↔ Float switch on a Mac and in a release build.** Measured only in the Windows dev app over CDP
+  (540–710 ms per switch, was 1.1–1.3 s). On a Mac: `Shift+F` in and out a few times → no flicker of the shadow or the
+  traffic lights mid-fade, the float lands in its place with its shadow, and the hologram powers on in the ledge slot
+  just after the fade. Fold into Sprout and open it back out → the content grows straight away, no half-second pause.
+  Windows release: the switch feels well under a second. Commit: fix(float) Full ↔ Float switches in half the time
 - [ ] (arcterm) **Sidecar's first open on one screen, or on a screen of another scale.** Two screens of one scale
   held on 1.1.3 `38f41b95b` (2026-11-15): Open Sidecar came up maximized on the other screen as `arcterm Sidecar`, and
   un-maximizing left 1280×800 centred there. Still unseen: with one screen it opens centred (1280×800, never past 90% of

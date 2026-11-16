@@ -31,6 +31,7 @@ import clsx from "clsx";
 import { useAtomValue } from "jotai";
 import { TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
+import { debounce } from "throttle-debounce";
 import { JobQueueChip } from "./jobqueuechip";
 import { versionInfoAtom } from "./versioninfo";
 
@@ -289,9 +290,13 @@ function useWindowMaximized(): boolean {
         let live = true;
         const sync = () => win.isMaximized().then((m) => live && setMaximized(m));
         sync();
-        const unlisten = win.onResized(sync);
+        // once a resize settles, not on each of its steps: a Full ↔ Float switch resizes the window several times, and a
+        // window call per step queued behind the switch's own (floatstore.ts)
+        const settled = debounce(150, sync);
+        const unlisten = win.onResized(settled);
         return () => {
             live = false;
+            settled.cancel();
             unlisten.then((f) => f());
         };
     }, []);

@@ -69,6 +69,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Switching between Full and Float takes about half as long and no longer stutters as it fades: at the default zoom
+  the window waited half a second for nothing on every switch, and Jarvis's hologram was rebuilt in the middle of the
+  fade. Opening the window back out of Sprout skips that half-second wait too.
 - Agents keep their colors in an arcterm reopened by `! task install` typed in a Claude Code session: that shell
   sets `NO_COLOR` without the markers arcterm looked for, so every agent drew in plain white again.
 - A Chat message that ends with a file you mentioned is sent: Claude Code's file suggestions took its Enter, so the
