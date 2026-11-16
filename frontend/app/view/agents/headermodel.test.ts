@@ -6,6 +6,7 @@ import {
     foldsIntoMore,
     headerLayout,
     headerWidth,
+    initiativeTitle,
     initiativeTitleShown,
     modelShown,
     runLink,
@@ -28,6 +29,17 @@ describe("headerWidth", () => {
 
     it("reads a header not laid out yet as wide", () => {
         expect(headerWidth(0)).toBe("wide");
+    });
+});
+
+describe("initiativeTitle", () => {
+    it("is the title alone, with no ◇ of its own (the header draws the icon)", () => {
+        expect(initiativeTitle("some ai title", { title: "Curve trading" })).toBe("Curve trading");
+    });
+
+    it("says initiative when the title is the agent's name or not loaded", () => {
+        expect(initiativeTitle("Curve trading", { title: "Curve trading" })).toBe("initiative");
+        expect(initiativeTitle("x", undefined)).toBe("initiative");
     });
 });
 

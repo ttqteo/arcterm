@@ -26,6 +26,12 @@ export function headerWidth(px: number): HeaderWidth {
     return "wide";
 }
 
+// The linked initiative's words after its ◇ icon: its title, or "initiative" when it has none of its own (the title is
+// the agent's name). initiativeLinkText carries its own ◇ for the places that draw no icon.
+export function initiativeTitle(agentName: string, effort: { title: string } | undefined): string {
+    return effort == null || effort.title === agentName ? "initiative" : effort.title;
+}
+
 // The share of the header the name keeps before it truncates, and the gap between the clusters.
 export function headerLayout(width: HeaderWidth): { nameMax: string | undefined; clusterGap: number } {
     if (width === "tiny") {

@@ -21,7 +21,6 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { attachAgent, createIdea, effortDetailAtom, loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { InitiativePicker } from "@/app/view/jarvis/initiativepicker";
-import { initiativeLinkText } from "@/app/view/jarvis/initiativework";
 import { openOrPeek, openTarget } from "@/app/view/jarvis/openref";
 import { chunkRef } from "@/app/view/jarvis/trackeredit";
 import { redrawTerminal } from "@/app/view/term/termwrap";
@@ -82,6 +81,7 @@ import {
     foldsIntoMore,
     headerLayout,
     headerWidth,
+    initiativeTitle,
     initiativeTitleShown,
     modelShown,
     runLink,
@@ -207,7 +207,8 @@ function InitiativeLink({
         // the title is decoration: a failed load leaves the plain link, which still opens the initiative
         loadEffortDetail(oref).catch(() => {});
     }, [oref]);
-    const text = initiativeLinkText(agent.name, effort);
+    // the words only: the Diamond icon below is the ◇, so initiativeLinkText's own would draw it twice
+    const text = initiativeTitle(agent.name, effort);
     const where = inChat ? "the band under this header" : "details here";
     return (
         <>
@@ -238,7 +239,10 @@ function InitiativeLink({
                 )}
             >
                 <Diamond size={11} strokeWidth={2} aria-hidden className="flex-none" />
-                {initiativeTitleShown(width) ? <span className="min-w-0 truncate">{text}</span> : null}
+                {initiativeTitleShown(width) ? (
+                    // a floor, so a crowded header cuts it to a word or two, never to "C…"
+                    <span className="min-w-[56px] max-w-[240px] truncate">{text}</span>
+                ) : null}
             </button>
             {inChat ? null : <InitiativePopover model={model} agent={agent} anchor={anchor} />}
         </>
@@ -763,7 +767,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 and what it left running. It keeps its share of a narrow header before it truncates */}
             <div
                 data-header-name
-                className="flex min-w-0 shrink items-baseline gap-[8px]"
+                // the name gives way before the clusters (shrink 3 to their 1), down to a floor it keeps
+                className="flex min-w-[120px] shrink-[3] items-baseline gap-[8px]"
                 style={nameMax ? { maxWidth: nameMax } : undefined}
             >
                 <span className="min-w-0 shrink truncate text-[14px] font-semibold text-foreground">
@@ -821,7 +826,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             >
                 <span data-header-location className="inline-flex min-w-0 items-center gap-[5px]">
                     <Folder size={12} strokeWidth={2} aria-hidden className="flex-none text-ink-faint" />
-                    <span title={project || undefined} className="min-w-0 truncate">
+                    <span title={project || undefined} className="min-w-[40px] truncate">
                         {project || "—"}
                     </span>
                     {agent.effortId != null ? (
@@ -851,7 +856,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             </div>
             {agent.effortId != null ? <PlanReviewChip agent={agent} /> : null}
             <div className="flex-1" />
-            <div className="flex items-center gap-[7px]">
+            <div className="flex flex-none items-center gap-[7px]">
                 {showDialogButton ? (
                     <button
                         type="button"
