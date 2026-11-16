@@ -16,6 +16,14 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Parent initiative is a searchable dropdown.** Unit test and typecheck only; no dev app was run. Brief →
+  an initiative with a parent → Edit details → Parent initiative reads the parent's title, not an id. Click it → a
+  frosted list under the box with a search field focused, "No parent" first, the same project's initiatives next, the
+  current parent in accent; the initiative itself and its sub-initiatives are not listed. Type → it filters; ↑↓ and
+  Enter pick; Escape closes only the list, not the dialog. Pick another, Save → the sheet shows the new parent. New
+  initiative → the field reads None and the list works the same. Commit: fix(jarvis) pick an initiative's parent from
+  a list
+
 - [ ] (arcterm) **Settings → Jarvis & Office → Form shows only the picked form's rows.** Unit test and typecheck only;
   no dev app was running. Shows as reads Hologram | Character, Hologram first. On Hologram the card holds Shows as and
   Hologram size, and no Character or Vietnam's colours; switch to Character → Hologram size goes, Character and

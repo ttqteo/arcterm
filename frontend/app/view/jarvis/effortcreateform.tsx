@@ -8,12 +8,13 @@ import { ModalShell } from "@/app/modals/modalshell";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { projectListAtom } from "@/app/view/agents/projectsstore";
-import { cn } from "@/util/util";
 import { formatChordString } from "@/util/keysym";
+import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Fragment, useEffect, useState } from "react";
 import { loadBriefingAsync, stateRpcTimeoutMs } from "./briefingstore";
 import { briefUndo } from "./briefundo";
+import { EffortParentPicker } from "./effortparentpicker";
 import { setEffortDetails, type EffortDetails } from "./effortstore";
 import { ProjectChips } from "./projectchips";
 import { chunkRef } from "./trackeredit";
@@ -142,12 +143,7 @@ export function EffortCreateForm({
     };
 
     return (
-        <ModalShell
-            open
-            onClose={onClose}
-            onSubmit={() => void submit()}
-            className="flex w-[min(580px,93vw)] flex-col"
-        >
+        <ModalShell open onClose={onClose} onSubmit={() => void submit()} className="flex w-[min(580px,93vw)] flex-col">
             <div className="flex shrink-0 items-center gap-[11px] border-b border-border px-[18px] py-[15px]">
                 <div className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-accentbg text-[10.5px] font-bold text-accent-soft">
                     ✦
@@ -195,11 +191,12 @@ export function EffortCreateForm({
                     </div>
                     <div className="flex flex-col gap-1">
                         <span className={fieldLabel}>Parent initiative</span>
-                        <input
+                        <EffortParentPicker
                             value={parent}
-                            onChange={(e) => setParent(e.target.value)}
-                            placeholder="optional · effort id"
-                            className={cn(inputCls, "font-mono")}
+                            onChange={setParent}
+                            self={edit?.oref ?? null}
+                            project={project}
+                            className={inputCls}
                         />
                     </div>
                 </div>
