@@ -17,7 +17,8 @@ type ProjectCommands interface {
 }
 
 type CommandEnsureNoFolderRtnData struct {
-	Path string `json:"path"`
+	Path      string `json:"path"`
+	ChannelId string `json:"channelid"` // the oid of the channel named "No folder" at Path, for Jarvis's Ask to consult in
 }
 
 type CommandCreateProjectData struct {

@@ -19,12 +19,21 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
+// noFolderChannelName is the name of the channel at the No folder, the one Jarvis's Ask consults in.
+const noFolderChannelName = "No folder"
+
+// EnsureNoFolderCommand creates the No folder and its channel, and returns both: the launcher reads the path, the
+// pet's Ask the channel id.
 func (ws *WshServer) EnsureNoFolderCommand(ctx context.Context) (wshrpc.CommandEnsureNoFolderRtnData, error) {
 	path, err := jarvis.EnsureNoFolder()
 	if err != nil {
 		return wshrpc.CommandEnsureNoFolderRtnData{}, err
 	}
-	return wshrpc.CommandEnsureNoFolderRtnData{Path: path}, nil
+	ch, err := wstore.EnsureChannelAtPath(ctx, noFolderChannelName, path)
+	if err != nil {
+		return wshrpc.CommandEnsureNoFolderRtnData{}, fmt.Errorf("the No folder channel: %w", err)
+	}
+	return wshrpc.CommandEnsureNoFolderRtnData{Path: path, ChannelId: ch.OID}, nil
 }
 
 func (ws *WshServer) CreateProjectCommand(ctx context.Context, data wshrpc.CommandCreateProjectData) error {

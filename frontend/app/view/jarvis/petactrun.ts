@@ -162,6 +162,38 @@ function gesturePeeks(
     return isPeekGesture(gesture) && isPeekableAddress(act.target.ref, { anchor: act.target.anchor });
 }
 
+// The post-and-stream half of an errand, for any caller that places the outcome itself (sendErrand here, the routed
+// Ask in jarvisroutestore.ts). `shownPrompt` is what the channel keeps as the person's message; `consultPrompt` is what
+// the runtime is asked, which is the same for a plain errand and a longer routing prompt for the routed one. `onText`
+// gets the whole reply so far on every chunk; the reply is returned, and a failure is thrown, not placed.
+export async function streamConsult(
+    channelId: string,
+    runtime: string,
+    shownPrompt: string,
+    consultPrompt: string,
+    onText: (acc: string) => void
+): Promise<string> {
+    const consultId = crypto.randomUUID();
+    await RpcApi.PostChannelMessageCommand(TabRpcClient, {
+        channelid: channelId,
+        kind: "consult",
+        author: "you",
+        text: shownPrompt,
+        reforef: `consult:${consultId}`,
+    });
+    const gen = RpcApi.ConsultCommand(
+        TabRpcClient,
+        { channelid: channelId, runtime, prompt: consultPrompt, consultid: consultId },
+        { timeout: ERRAND_TIMEOUT_MS }
+    );
+    let acc = "";
+    for await (const chunk of gen) {
+        acc += chunk?.text ?? "";
+        onText(acc);
+    }
+    return acc;
+}
+
 // The errand reuses the Channels surface's consult path exactly (channelactions.ts): post the question as a
 // channel message, then stream the runtime's reply. Two consequences that make it the right seam — the
 // question and its answer persist as channel messages, so closing the panel loses nothing; and it is not
@@ -171,26 +203,13 @@ function gesturePeeks(
 // It needs a channel because CommandConsultData does, and a creature in window chrome has none of its own —
 // the same per-channel hole the pet design named. The caller supplies the active channel.
 export async function sendErrand(channelId: string, runtime: string, prompt: string): Promise<void> {
-    const consultId = crypto.randomUUID();
     globalStore.set(petErrandAtom, { prompt, runtime, text: "", status: "streaming" });
     let acc = "";
     try {
-        await RpcApi.PostChannelMessageCommand(TabRpcClient, {
-            channelid: channelId,
-            kind: "consult",
-            author: "you",
-            text: prompt,
-            reforef: `consult:${consultId}`,
+        await streamConsult(channelId, runtime, prompt, prompt, (text) => {
+            acc = text;
+            globalStore.set(petErrandAtom, { prompt, runtime, text, status: "streaming" });
         });
-        const gen = RpcApi.ConsultCommand(
-            TabRpcClient,
-            { channelid: channelId, runtime, prompt, consultid: consultId },
-            { timeout: ERRAND_TIMEOUT_MS }
-        );
-        for await (const chunk of gen) {
-            acc += chunk?.text ?? "";
-            globalStore.set(petErrandAtom, { prompt, runtime, text: acc, status: "streaming" });
-        }
         globalStore.set(petErrandAtom, { prompt, runtime, text: acc, status: "done" });
     } catch (e) {
         // the backend still posts a consult-reply carrying the error, so the channel keeps the full record

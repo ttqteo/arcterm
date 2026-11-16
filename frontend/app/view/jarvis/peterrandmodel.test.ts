@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { petErrandState, resolveDestination } from "./peterrandmodel";
+import { errandReplyShown, petErrandState, resolveDestination } from "./peterrandmodel";
+import { NO_FOLDER_DEST } from "./petstore";
 
 const harnesses: HarnessInfo[] = [
     { runtime: "claude", label: "Claude Code", installed: true, consultcapable: true, runworkercapable: true, leadcapable: true },
@@ -8,28 +9,22 @@ const harnesses: HarnessInfo[] = [
 ];
 
 describe("petErrandState", () => {
-    it("locks both controls when there is no channel", () => {
-        expect(
-            petErrandState({
-                channel: false,
-                draft: "ask",
-                busy: false,
-                runtime: "opencode",
-                saving: false,
-                harnesses,
-            })
-        ).toEqual({
-            inputDisabled: true,
-            submitDisabled: true,
-            reason: "no channel active",
+    // a destination always exists (No folder), so the field is never disabled for want of a channel
+    it("never disables the field for want of a channel: an idle composer with a draft is open", () => {
+        const state = petErrandState({
+            draft: "ask",
+            busy: false,
             runtime: "opencode",
+            saving: false,
+            harnesses,
         });
+        expect(state.inputDisabled).toBe(false);
+        expect(state.reason).not.toBe("no channel active");
     });
 
     it("locks both controls while a reply is streaming", () => {
         expect(
             petErrandState({
-                channel: true,
                 draft: "ask",
                 busy: true,
                 runtime: "opencode",
@@ -47,7 +42,6 @@ describe("petErrandState", () => {
     it("keeps an empty draft editable while blocking only submission", () => {
         expect(
             petErrandState({
-                channel: true,
                 draft: "  ",
                 busy: false,
                 runtime: "opencode",
@@ -65,7 +59,6 @@ describe("petErrandState", () => {
     it("keeps the draft editable while the harness choice is unresolved", () => {
         expect(
             petErrandState({
-                channel: true,
                 draft: "ask",
                 busy: false,
                 runtime: "",
@@ -82,7 +75,6 @@ describe("petErrandState", () => {
         const notInstalled = harnesses.map((h) => (h.runtime === "opencode" ? { ...h, installed: false } : h));
         expect(
             petErrandState({
-                channel: true,
                 draft: "ask",
                 busy: false,
                 runtime: "opencode",
@@ -100,7 +92,6 @@ describe("petErrandState", () => {
     it("keeps the draft editable while the harness preference is saving", () => {
         expect(
             petErrandState({
-                channel: true,
                 draft: "ask",
                 busy: false,
                 runtime: "opencode",
@@ -118,7 +109,6 @@ describe("petErrandState", () => {
     it("enables both controls for a non-empty draft and valid harness", () => {
         expect(
             petErrandState({
-                channel: true,
                 draft: "ask",
                 busy: false,
                 runtime: "opencode",
@@ -134,45 +124,67 @@ describe("petErrandState", () => {
     });
 });
 
-// The composer used to read the Jarvis surface's activeChannelAtom, which nothing sets at boot: primeChannels
-// fetches the channel list without selecting, and the surface's first neutral entry lands on Briefing. So on a
-// fresh launch the field was dead on every surface until the user visited Jarvis and clicked a channel. A
-// creature reachable from everywhere cannot depend on a surface the user may never open.
+// The composer must work from every surface and from a fresh launch, with no project registered yet, so it cannot
+// wait on a channel the person may never pick: the destination is always something. No folder is the default; a
+// project channel is only ever the person's own pick in the panel (spec D8). Neither the Jarvis surface's
+// selection nor the newest channel decides it any more — the reply used to land in whichever channel happened to
+// be newest, which was reliably a months-old per-task one.
 describe("resolveDestination", () => {
-    // deliberately NOT in createdts order: the fallback must not depend on how the backend happened to
-    // sort the list. A cockpit accumulates per-task channels, so an arbitrary first pick lands the reply
-    // in a months-old test channel.
     const channels = [
         { oid: "c1", name: "wave-core", createdts: 300 },
         { oid: "c2", name: "jarvis", createdts: 100 },
         { oid: "c3", name: "stale-e2e-50701", createdts: 200 },
     ] as Channel[];
+    const noFolder = { kind: "no-folder" };
 
-    it("is never empty while a channel exists, even with nothing selected anywhere", () => {
-        expect(resolveDestination({ picked: null, active: null, channels })?.name).toBe("wave-core");
+    it("starts at No folder with nothing picked, even while channels exist", () => {
+        expect(resolveDestination({ picked: null, channels })).toEqual(noFolder);
     });
 
-    it("falls back to the most recently created channel, not to list order", () => {
-        const oldestFirst = [...channels].sort((a, b) => a.createdts - b.createdts);
-        expect(resolveDestination({ picked: null, active: null, channels: oldestFirst })?.name).toBe("wave-core");
-        expect(oldestFirst[0].name).toBe("jarvis");
+    it("reads the NO_FOLDER_DEST sentinel as No folder", () => {
+        expect(resolveDestination({ picked: NO_FOLDER_DEST, channels })).toEqual(noFolder);
     });
 
-    it("follows the surface's selection when the panel has no opinion of its own", () => {
-        expect(resolveDestination({ picked: null, active: "c2", channels })?.name).toBe("jarvis");
+    it("is a live pick's channel, whichever channel is newest", () => {
+        const dest = resolveDestination({ picked: "c2", channels });
+        expect(dest).toEqual({ kind: "channel", channel: channels[1] });
+        expect(resolveDestination({ picked: "c1", channels })).toEqual({ kind: "channel", channel: channels[0] });
     });
 
-    it("lets the panel's own pick beat the surface, so changing it here sticks", () => {
-        expect(resolveDestination({ picked: "c1", active: "c2", channels })?.name).toBe("wave-core");
+    it("falls back to No folder, not to another channel, when a remembered pick no longer exists", () => {
+        expect(resolveDestination({ picked: "gone", channels })).toEqual(noFolder);
     });
 
-    it("falls back rather than going dead when a remembered pick no longer exists", () => {
-        expect(resolveDestination({ picked: "gone", active: "c2", channels })?.name).toBe("jarvis");
-        expect(resolveDestination({ picked: "gone", active: "also-gone", channels })?.name).toBe("wave-core");
+    it("is No folder when there is no channel list yet or an empty one, so Ask works before any project exists", () => {
+        expect(resolveDestination({ picked: null, channels: null })).toEqual(noFolder);
+        expect(resolveDestination({ picked: null, channels: [] })).toEqual(noFolder);
+        expect(resolveDestination({ picked: "c1", channels: [] })).toEqual(noFolder);
+        expect(resolveDestination({ picked: "c1", channels: null })).toEqual(noFolder);
+    });
+});
+
+// A routing reply whose model sent the verdict block and no prose has nothing visible left once the block is
+// stripped. Under a chooser card that would be an empty "replied" box, so the card stands alone.
+describe("errandReplyShown", () => {
+    const errand = (status: "streaming" | "done" | "error", text: string) => ({ status, text });
+
+    it("shows nothing without an errand", () => {
+        expect(errandReplyShown(null, false)).toBe(false);
+        expect(errandReplyShown(null, true)).toBe(false);
     });
 
-    it("is null only when there is genuinely nowhere to send", () => {
-        expect(resolveDestination({ picked: "c1", active: "c1", channels: [] })).toBeNull();
-        expect(resolveDestination({ picked: null, active: null, channels: null })).toBeNull();
+    it("shows a reply that has text, with or without a card", () => {
+        expect(errandReplyShown(errand("done", "Two agents are open in wave-core."), true)).toBe(true);
+        expect(errandReplyShown(errand("done", "It is the retry loop."), false)).toBe(true);
+    });
+
+    it("hides a finished, blank reply only while a card is up", () => {
+        expect(errandReplyShown(errand("done", "  \n"), true)).toBe(false);
+        expect(errandReplyShown(errand("done", ""), false)).toBe(true);
+    });
+
+    it("always shows one in flight or failed, blank or not: those carry the status", () => {
+        expect(errandReplyShown(errand("streaming", ""), true)).toBe(true);
+        expect(errandReplyShown(errand("error", ""), true)).toBe(true);
     });
 });

@@ -263,6 +263,11 @@ func validatePreferredRoutePatch(patch waveobj.MetaMapType) error {
 	if runtimePresent != modelPresent {
 		return fmt.Errorf("preferred route runtime and model must be patched together")
 	}
+	// both null removes both keys (setBaseConfigValueLocked deletes a nil value), the one way back to no
+	// preference; a lone null, beside a string, falls through to the string check and is refused
+	if runtimeValue == nil && modelValue == nil {
+		return nil
+	}
 	runtime, runtimeIsString := runtimeValue.(string)
 	model, modelIsString := modelValue.(string)
 	if !runtimeIsString || !modelIsString {

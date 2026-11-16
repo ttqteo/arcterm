@@ -37,6 +37,7 @@ type AgentCommands interface {
 	AgentControlCommand(ctx context.Context, data CommandAgentControlData) chan RespOrErrorUnion[AgentControlMsg]                         // stream the cockpit's prompts for a block's agent session to its harness mod
 	AgentsListCommand(ctx context.Context) (*CommandAgentsListRtnData, error)                                                             // the live claude and pi agent tabs
 	AgentsSendCommand(ctx context.Context, data CommandAgentsSendData) (*CommandAgentsSendRtnData, error)                                 // hand a prompt from one agent to another's live session
+	AgentsAssignCommand(ctx context.Context, data CommandAgentsAssignData) (*CommandAgentsSendRtnData, error)                             // the person's own job to an agent: no envelope, a sleeping agent is woken
 	AgentsReadCommand(ctx context.Context, data CommandAgentsReadData) (*CommandAgentsReadRtnData, error)                                 // a live agent's state and last answer
 	AgentPromptCommand(ctx context.Context, data CommandAgentPromptData) error                                                            // the cockpit's own prompt to a block's agent session: its mod runs it, or it is typed
 	AgentBtwCommand(ctx context.Context, data CommandAgentBtwData) error                                                                  // a side question to a block's Claude session, answered by its mod as a notice; an error when no mod holds a stream
@@ -85,6 +86,11 @@ type CommandAgentsSendData struct {
 	Tab      string `json:"tab"` // a tab id or a unique prefix of one
 	Text     string `json:"text"`
 	FromORef string `json:"fromoref"` // the sender's block oref
+}
+
+type CommandAgentsAssignData struct {
+	Tab  string `json:"tab"` // a tab id or a unique prefix of one
+	Text string `json:"text"`
 }
 
 // CommandBrainstormCheckData starts the builder check: File is the absolute path of the brainstorm.json, BlockId the

@@ -363,6 +363,39 @@ func (ws *WshServer) AgentsSendCommand(ctx context.Context, data wshrpc.CommandA
 	}, nil
 }
 
+// AgentsAssignCommand hands the person's own job to an agent: the typed text as is, with no envelope and no send-back
+// lock, since the sender is the person and not another agent. A sleeping agent is woken with it. An engine session and
+// an agent with a question open are refused: the first belongs to its run, the second would take the job as an answer.
+func (ws *WshServer) AgentsAssignCommand(ctx context.Context, data wshrpc.CommandAgentsAssignData) (*wshrpc.CommandAgentsSendRtnData, error) {
+	text := strings.TrimSpace(data.Text)
+	if text == "" {
+		return nil, fmt.Errorf("the job is empty")
+	}
+	facts, err := loadAgentRosterFacts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows := buildAgentRoster(facts)
+	target, err := resolveAgentTab(rows, data.Tab)
+	if err != nil {
+		return nil, err
+	}
+	if target.RunId != "" {
+		return nil, fmt.Errorf("agent %q works for run %s; Jarvis never hands work to an engine session", target.Name, target.RunId)
+	}
+	if target.State == wshrpc.AgentsState_Asking {
+		return nil, fmt.Errorf("agent %q has a %s open, and the job would answer it; hand the job over once it is answered", target.Name, agentOpenPrompt(target))
+	}
+	if err := deliverToAgent(ctx, rows, target, text, nil); err != nil {
+		return nil, err
+	}
+	return &wshrpc.CommandAgentsSendRtnData{
+		TabId:   target.TabId,
+		SentTs:  time.Now().UnixMilli(),
+		MidTurn: target.State != wshrpc.AgentsState_Idle && target.State != wshrpc.AgentsState_Sleeping,
+	}, nil
+}
+
 // deliverToAgent puts message into target's session, the one path wsh agents send and a council seat's turn take: a
 // sleeping agent is woken and given it once it reports in, an awake one is handed it at once. A typed message would
 // answer a question open in the agent's terminal, so one with no control stream to carry it is refused. rows is the

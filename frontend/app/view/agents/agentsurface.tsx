@@ -30,6 +30,7 @@ import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { CodePeekContext } from "@/app/view/code/codepeekhost";
+import { dismissRouteBand } from "@/app/view/jarvis/jarvisroutestore";
 import { getLastCommandAtom, setLastCommand } from "@/app/view/term/lastcommand";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -80,6 +81,8 @@ import { GridCellBar } from "./gridcellbar";
 import { mentionTarget } from "./griddrop";
 import { GridDropOverlay } from "./griddropoverlay";
 import { HeldAskBar } from "./heldaskbar";
+import { JarvisRouteBand } from "./jarvisrouteband";
+import { typedIntoAgent } from "./jarvisroutebandmodel";
 import {
     agentGridAtom,
     currentGrid,
@@ -725,6 +728,10 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                 )}
                                 <DivergenceBanner decision={decision} onRejoin={rejoin} />
                                 <HeldAskBar agent={subject!} />
+                                {/* keyed: its list's open state and a failed read belong to one agent. The key carries a
+                                    prefix because SleepingCard below is keyed by the agent's id, and two siblings with
+                                    one key leave an orphaned band behind when the agent changes */}
+                                <JarvisRouteBand key={`route-band:${subject!.id}`} model={model} agent={subject!} />
                                 {/* keyed: the card's pending wake and its failure belong to one agent. A Claude agent
                                     asleep draws Chat, whose box says it sleeps: the card is left for a failed wake */}
                                 <SleepingCard key={agent.id} agent={agent} failureOnly={chatCapable(agent)} />
@@ -795,6 +802,13 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                             }
                                             onMouseDownCapture={isDock ? undefined : (e) => focusCell(a.id, e)}
                                             onFocus={isDock ? undefined : (e) => focusCell(a.id, e, true)}
+                                            // typing into an agent ends the "Wrong project?" band it carries (a no-op for
+                                            // an agent without one, and for a terminal); the event goes on to the pane
+                                            onKeyDownCapture={(e) => {
+                                                if (typedIntoAgent(e)) {
+                                                    dismissRouteBand(a.id);
+                                                }
+                                            }}
                                             className={cn(
                                                 "relative isolate min-h-0 min-w-0",
                                                 (cell != null && !dockMax) || isDock ? "flex flex-col" : "hidden",

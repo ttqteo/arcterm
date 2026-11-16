@@ -16,6 +16,14 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) Ask Jarvis at No folder with a real consult (claude): a question is answered in the popover; a job
+  naming a project reaches its open agent as your own prompt (no "Not typed by the user" header), a sleeping one wakes;
+  a job for a project with no agent opens one with the launcher's harness.
+- [ ] (arcterm) **`jarvis-peek` puts a saved harness preference back.** Only the no-preference case ran in the Final.
+  With a harness picked in the launcher, `task verify:ui -- jarvis-peek` → afterwards the launcher still shows that
+  harness and model. On a Mac, the launcher's harness menu with many harnesses scrolls inside its panel and is not
+  clipped. `scenarios.mjs` `jarvis-peek` teardown, `harnesspicker.tsx`.
+
 - [ ] (arcterm) **Redraw skips a sleeping agent; Settings finds Claude account by "login"; the palette says New dialog.**
   Unit tests and typecheck only; no dev app was run. Put an agent to sleep, focus it, Ctrl+Shift+R → nothing happens and
   nothing is logged. Settings → search `login` or `subscription` → Agents with the Claude account card. Palette → type a

@@ -31,6 +31,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Ask Jarvis now starts at No folder: ask a question and it answers in the popover, or give it a job and Jarvis hands
+  it to the right project's agent, opens a new one there, or asks you which project when it is unsure. The agent that
+  got the job says which project Jarvis chose, with a Wrong project? button to move the job on.
 - A Float tab whose agent replied while you were elsewhere carries a small dot until you look at it.
 - Sidecar, a second window for another screen that shows every agent at a glance: Ctrl+P → Open Sidecar. It opens
   maximized on your other screen (centred when you have one), F11 or its full-screen button toggles full screen, and
@@ -79,6 +82,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The harness menu in Ask Jarvis no longer runs off the bottom of a short window: it fits the space beside its button
+  and scrolls, so every harness can be picked.
 - Ctrl+R and Ctrl+Shift+R no longer try to redraw a sleeping agent's terminal, whose process has ended.
 - Settings search finds the Claude account card by "subscription", "login" or "switch account", not only by its name.
 - Switching between Full and Float takes about half as long and no longer stutters as it fades: at the default zoom

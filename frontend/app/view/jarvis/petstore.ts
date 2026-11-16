@@ -14,6 +14,7 @@ import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { DEFAULT_HOLOGRAM_SIZE, DEFAULT_PET_FORM, type HologramSize, type PetForm } from "./hologrammodel";
+import type { RouteChoice } from "./jarvisroute";
 import type { PetActState } from "./petacts";
 import { DEFAULT_PET_CHARACTER } from "./petcharacter";
 import type { PetCorner } from "./petledge";
@@ -300,16 +301,27 @@ export interface PetErrand {
 // backend posts, which is where a reply worth keeping belongs.
 export const petErrandAtom = atom<PetErrand | null>(null) as PrimitiveAtom<PetErrand | null>;
 
-// The channel the peek's composer sends to, as an oid, or null for "no opinion — follow the surface".
+// The composer's destination when it is No folder: Jarvis picks the project (jarvisroute.ts, jarvisroutestore.ts).
+export const NO_FOLDER_DEST = "no-folder";
+
+// Where the peek's composer sends to: NO_FOLDER_DEST, or a project channel's oid. null, the state at every launch, is
+// No folder too, so Ask works before any project is registered.
 //
 // The panel owns this rather than reading the Jarvis surface's activeChannelAtom, which nothing sets at
 // boot: primeChannels fetches the channel list without selecting, so the composer was dead on every
 // surface until the user visited Jarvis and clicked a channel. A creature reachable from everywhere cannot
-// depend on a surface the user may never open. resolveDestination turns this into an actual channel.
+// depend on a surface the user may never open. resolveDestination turns this into an actual destination: an oid
+// that names no channel any more is read as No folder, which always answers.
 //
-// Session-scoped: persisting an oid would let a deleted channel outlive its own existence, and the ladder
-// below it already lands somewhere sensible on every launch.
+// Session-scoped: persisting an oid would let a deleted channel outlive its own existence, and No folder is where
+// every launch starts.
 export const petPeekDestAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+
+// The chooser card an Ask at No folder shows when Jarvis is not sure where a job goes (D5): why it is unsure, the
+// job to hand over, and a row per choice. Session-scoped like the errand; the card goes when a row is picked, on its ×,
+// or when a job is handed over.
+export type PetRouteCard = { why: string; task: string; choices: RouteChoice[] };
+export const petRouteCardAtom = atom<PetRouteCard | null>(null) as PrimitiveAtom<PetRouteCard | null>;
 
 // cdp drives inputs that are either too expensive to arrange through production (a volunteer judge) or
 // must be deterministic (the empty peek). This is compiled out of production builds.
@@ -323,6 +335,7 @@ if (import.meta.env.DEV) {
             globalStore.set(petUnreadAtom, false);
             globalStore.set(petActStateAtom, {});
             globalStore.set(petErrandAtom, null);
+            globalStore.set(petRouteCardAtom, null);
         },
         // the peek's PRIMARY state is a populated queue, and attention is server-computed from live runs,
         // gates and pending asks — arranging three real waiting items to photograph the panel would mean

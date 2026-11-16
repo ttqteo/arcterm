@@ -599,6 +599,12 @@ declare global {
         conflict: boolean;
     };
 
+    // wshrpc.CommandAgentsAssignData
+    type CommandAgentsAssignData = {
+        tab: string;
+        text: string;
+    };
+
     // wshrpc.CommandAgentsListRtnData
     type CommandAgentsListRtnData = {
         agents: AgentInfo[];
@@ -1392,6 +1398,7 @@ declare global {
     // wshrpc.CommandEnsureNoFolderRtnData
     type CommandEnsureNoFolderRtnData = {
         path: string;
+        channelid: string;
     };
 
     // wshrpc.CommandEventReadHistoryData
