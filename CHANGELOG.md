@@ -100,6 +100,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Chat's pinned bar no longer shows "(picture)" for a message of only pictures or files: it keeps your last message
+  that says something.
 - Interrupting a Claude agent in Chat no longer empties the conversation and loads it again from the top: on Windows
   the interrupt named the agent's transcript with other slashes, and Chat took it for a new conversation.
 - New project no longer lists the folders arcterm makes for its own agents (the council bench's practice projects)

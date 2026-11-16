@@ -99,7 +99,6 @@ import { placeStepLists, stepsPartKey, type AgentNow } from "./chatsteplist";
 import { ChatStepsHost, StepsPart } from "./chatsteplistview";
 import { ChatSteps } from "./chatstepsview";
 import { TaggedPromptText } from "./chattagblock";
-import { foldCommandParts, splitTagged, tagHeading, type TagPart } from "./chattagblocks";
 import { VERDICT_TOPIC, verdictMode, type VerdictMode } from "./chatverdict";
 import { ChatVerdictCard } from "./chatverdictcard";
 import { CouncilText } from "./councilchat";
@@ -111,6 +110,7 @@ import {
     ToolDetailBody,
 } from "./narrationtimeline";
 import { usePathOpener } from "./pathlinkcontext";
+import { pinnedLabel } from "./pinnedlabel";
 import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
 import { useConversationRuns } from "./runoriginstore";
 import { runQueueAtom, runQueueStartedAtom, useRunQueueFeed } from "./runqueuestore";
@@ -472,8 +472,9 @@ function YouBubble({
         );
     }
     // the files and images you sent ride the message as trailing blocks of paths (chatfiles.ts); images show as pictures in
-    // the bubble and files as cards under it, not as the blocks that name them. The wrapper is the prompt (the pinned bar
-    // and the scenarios find it), so a message that is only files still has one, with no empty bubble in it
+    // the bubble and files as cards under it, not as the blocks that name them. The wrapper is the prompt the pinned bar and
+    // the scenarios find, when the message says something (pinnedLabel): one of only pictures or files is no pin, so the
+    // bar keeps the message before it rather than a "(picture)"
     const said = splitAttachments(item.text);
     const text = said.text.trim();
     const hasPictures = (item.images?.length ?? 0) > 0 || said.images.length > 0;
@@ -484,7 +485,7 @@ function YouBubble({
     return (
         <div
             data-chat-you
-            data-user-prompt
+            data-user-prompt={text !== "" ? "" : undefined}
             onContextMenu={onContextMenu(item.text, fork, initiative)}
             className="flex max-w-[75%] flex-col items-end gap-2 self-end"
         >
@@ -506,26 +507,6 @@ function YouBubble({
             {hasFiles ? <ChatFileCards paths={said.files} /> : null}
         </div>
     );
-}
-
-// what the pinned bar says of your message: its text, else the first tagged block it carried named as its card is ("Pasted ·
-// 12 lines"), else what it carried (`pasted` is the images pasted into the box). The blocks themselves are not read out:
-// a pasted log would fill the bar
-function pinnedLabel(text: string, pasted: number): string {
-    const said = splitAttachments(text);
-    if (said.text.trim() !== "") {
-        const parts = foldCommandParts(splitTagged(said.text.trim()));
-        const block = parts.find((p): p is TagPart => p.kind === "tag");
-        if (block == null) {
-            return said.text;
-        }
-        const prose = parts
-            .flatMap((p) => (p.kind === "text" ? [p.text] : []))
-            .join("\n")
-            .trim();
-        return prose !== "" ? prose : tagHeading(block);
-    }
-    return said.files.length > 0 && said.images.length === 0 && pasted === 0 ? "(file)" : "(picture)";
 }
 
 // a prompt arcterm typed: an outlined card on the right naming its sender, its lines in mono, folded past three. A message
@@ -1197,14 +1178,16 @@ export function ChatConversation({
     const rootRef = useRef<HTMLDivElement>(null);
     // your message pins to the top once it scrolls off it; `prompts` is the text of each data-user-prompt bubble, in
     // document order (only YouBubble's prompt branch carries it, not the command bubble, nor the ✓ row a message that
-    // answered a brainstorm question draws in its place, nor a run-ended message, which draws nothing), which the bar shows
-    // for the pinned index
+    // answered a brainstorm question draws in its place, nor a run-ended message, which draws nothing, nor a message of only
+    // pictures or files, which carries it only when it says something: pinnedLabel), which the bar shows for the pinned index
     const pinned = usePinnedPrompt(rootRef);
-    const prompts = visible.flatMap((item) =>
-        item.kind === "you" && !("command" in item) && !answers.has(item.key) && !endedMessages.has(item.key)
-            ? [pinnedLabel(item.text, item.images?.length ?? 0)]
-            : []
-    );
+    const prompts = visible.flatMap((item) => {
+        if (item.kind !== "you" || "command" in item || answers.has(item.key) || endedMessages.has(item.key)) {
+            return [];
+        }
+        const label = pinnedLabel(item.text);
+        return label != null ? [label] : [];
+    });
     // the scroll before "Show earlier" drew items in front, and the item that was first then
     const heightBeforeGrow = useRef<{ top: number; height: number; first: string | undefined } | null>(null);
     const placedFor = useRef<string | undefined>(undefined); // the placeId whose kept place was looked up
