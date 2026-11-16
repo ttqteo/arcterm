@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Reply to text selected in Chat's conversation (chatquote.ts): the passage goes into the agent's chat box as a quote,
-// the caret under it. Two ways in: a small ↩ button at the end of the selection's last line (icon only, so it never
-// covers the line under it), and a right-click on the selection, which opens a menu of Reply and Copy. It takes any text
+// the caret under it. Two ways in: a small ↩ button just above the selection's first line, at its right end (below
+// the last line when the pane has no room above), so it never covers the words it would quote or the ones after
+// them, and a right-click on the selection, which opens a menu of Reply and Copy. It takes any text
 // in the conversation, Claude's reply, your message or a tool's output alike, and only while the agent has a chat box to
 // take it. A right-click off the selection, or with nothing selected, leaves the row's own menu (Copy text, Fork from
 // here…) as it was. The button is drawn fixed in a portal, so no row's layout or transform moves it, and follows the
@@ -101,14 +102,16 @@ function reply(target: QuoteTarget, p: Picked) {
 export function QuoteMenu({ rootRef, target }: { rootRef: RefObject<HTMLElement>; target: QuoteTarget }) {
     const [at, setAt] = useState<{ top: number; left: number } | null>(null);
 
-    // the button: at the end of the selection's last line, centred on it
+    // the button: just above the selection's first line, its right edge on that line's end; below the last line when
+    // the pane has no room above
     useEffect(() => {
         const update = () => {
             const root = rootRef.current;
             const p = root != null ? picked(root, target) : null;
             const rects = p != null ? Array.from(p.range.getClientRects()).filter((r) => r.width > 0) : [];
+            const first = rects[0];
             const last = rects[rects.length - 1];
-            if (root == null || p == null || last == null) {
+            if (root == null || p == null || first == null || last == null) {
                 setAt(null);
                 return;
             }
@@ -124,13 +127,19 @@ export function QuoteMenu({ rootRef, target }: { rootRef: RefObject<HTMLElement>
                 left: 0,
                 right: window.innerWidth,
             };
-            if (last.bottom < view.top || last.top > view.bottom - 28) {
+            if (last.bottom < view.top || first.top > view.bottom - 28) {
+                setAt(null);
+                return;
+            }
+            const above = first.top - BTN - 4;
+            const [top, line] = above >= view.top + 4 ? [above, first] : [last.bottom + 4, last];
+            if (top + BTN > view.bottom - 4) {
                 setAt(null);
                 return;
             }
             setAt({
-                top: last.top + (last.height - BTN) / 2,
-                left: Math.min(Math.max(last.right + 4, view.left + 8), view.right - BTN - 8),
+                top,
+                left: Math.min(Math.max(line.right - BTN, view.left + 8), view.right - BTN - 8),
             });
         };
         document.addEventListener("selectionchange", update);
