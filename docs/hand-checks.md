@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The brainstorm card holds its place from step to step.** CDP `chat-redesign` 14c checked the held
+  state and that the end row is the same element; the motion itself was never watched. In a live brainstorm in Chat,
+  click an option → the card stays, its rows dimmed, `Sent · <answer>` in its footer, no collapse; when the next
+  question lands the card changes in place and eases once to its new height. Same for Confirm the design → Builder
+  check. Agent surface, Chat. 541b374df.
 - [ ] (arcterm) **A crowded agent header keeps its project and initiative readable.** Unit test and typecheck only
   (`headermodel.test.ts` `initiativeTitle`). Pick an agent linked to an initiative that offers Ship and ✓ Close ·
   N tok, in a pane ~1150px wide → the initiative reads `◇ <title>` with one ◇ (not `◇ ◇ C…`), the project is whole or
