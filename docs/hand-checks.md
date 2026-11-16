@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A run's Setup no longer holds the dag lock.** Go tests and the `dag-preparing` CDP scenario only (a
+  seeded dag in a worktree dev app); the run's Final ended unverified on one flaky wshserver test. On the installed
+  build, run a plan of three or more tasks in this repo (its `.arc/setup` makes each tree): the task cards read
+  "preparing its tree" for a moment before running, and `waveapp.log`'s `dag <id> lock:` lines no longer name
+  `dispatch` as the slowest phase with holds of 10 s and more (`66bea964a`).
 - [ ] (arcterm) **Diff n / p open a collapsed folder.** Unit tests and typecheck only, no dev app ran. On Diff in tree
   mode with changes in two folders, collapse the second, then press n until the next file is in it: the folder opens
   and the file's row is selected on screen (3bc4f85dc).
