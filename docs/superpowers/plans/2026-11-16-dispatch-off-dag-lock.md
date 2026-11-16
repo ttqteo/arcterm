@@ -295,7 +295,7 @@ git commit -m "perf(orchestrate): make a task's tree and Setup outside the dag l
 
 ### Task 3: A task action ticks the dag even when the stopped worker's tab will not close
 
-**Depends on:** none
+**Depends on:** Task 2 (both edit `pkg/orchestrate/mutation.go`)
 **Chunk:** Engine: when a stopped worker's tab fails to close, ApplyAction returns before Schedule, so turned-away ticks wait for the watchdog
 
 **Files:** `pkg/orchestrate/mutation.go`, `pkg/orchestrate/mutation_test.go`
