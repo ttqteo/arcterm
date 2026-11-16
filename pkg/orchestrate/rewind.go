@@ -56,6 +56,12 @@ func attemptBase(ctx context.Context, g *waveobj.TaskGroup, taskID, wt, head str
 // checks the tree out again, and runs Setup in it. A directory a process holds after git has let go of the tree is
 // left behind as the task's cleanup debt. The caller must not hold the dag lock: dumping and removing the tree take
 // tens of seconds on Windows.
+//
+// A skipped task can be preparing: its lane's tree is being checked out and set up, with no lock, by a prepare that
+// started before the skip. Removing the tree under it, or moving the branch the tree is on, would break the prepare
+// half-way, so the rewind waits for the prepare to return first, for as long as a prepare can run. No tick spawns into
+// the tree meanwhile: the skip holds the dag's action lock, which a tick only tries (scheduleLocked). A wait that
+// runs out fails the skip before anything is rewound, and it can be repeated.
 func dropSkippedAttempt(ctx context.Context, g *waveobj.TaskGroup, taskID string) error {
 	base, err := taskStartBase(ctx, g, taskID)
 	if err != nil || base == "" {
@@ -69,6 +75,18 @@ func dropSkippedAttempt(ctx context.Context, g *waveobj.TaskGroup, taskID string
 	branch := "wave/" + key
 	head, err := WorktreeHeadCommit(ctx, project, key)
 	if err != nil {
+		return fmt.Errorf("reading task %s's lane: %w", taskID, err)
+	}
+	if head == base {
+		return nil
+	}
+	// after the returns above, which a skip made from inside its own prepare's Setup (no earlier attempt) takes: waiting
+	// there would be waiting on itself
+	if err := waitTreePrep(ctx, g.OID, taskID, treePrepBound); err != nil {
+		return fmt.Errorf("task %s's lane was not rewound: %w", taskID, err)
+	}
+	// the prepare may have checked the lane out again, so the head read before it is not the lane's
+	if head, err = WorktreeHeadCommit(ctx, project, key); err != nil {
 		return fmt.Errorf("reading task %s's lane: %w", taskID, err)
 	}
 	if head == base {

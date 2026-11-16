@@ -7,7 +7,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -268,6 +270,190 @@ func TestSkipDuringSetupSpawnsNothing(t *testing.T) {
 	}
 	if n := treePrepCount(f.dagID); n != 0 {
 		t.Fatalf("the registry holds %d prepares of a skipped task", n)
+	}
+}
+
+// blockingSetup is a Setup stub that, once armed, waits for release and ignores its context, as a Setup slow to die does.
+// Armed after the first dispatch, so the lane's earlier task and the final stage's Setup pass straight through.
+type blockingSetup struct {
+	armed       atomic.Bool
+	entered     chan struct{}
+	release     chan struct{}
+	enteredOnce sync.Once
+	releaseOnce sync.Once
+}
+
+func newBlockingSetup(t *testing.T) *blockingSetup {
+	t.Helper()
+	b := &blockingSetup{entered: make(chan struct{}), release: make(chan struct{})}
+	t.Cleanup(b.let)
+	stubPlanCommand(t, setupOnly(func(context.Context, string) error {
+		if !b.armed.Load() {
+			return nil
+		}
+		b.enteredOnce.Do(func() { close(b.entered) })
+		<-b.release
+		return nil
+	}))
+	return b
+}
+
+func (b *blockingSetup) let() { b.releaseOnce.Do(func() { close(b.release) }) }
+
+func (b *blockingSetup) waitEntered(t *testing.T) {
+	t.Helper()
+	select {
+	case <-b.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Setup never started")
+	}
+}
+
+// the skip decides under the dag lock, rewinds with none and records under it again, while a prepare runs with none: a
+// rewind that did not wait would remove the tree the prepare is checking out and setting up
+func TestASkipOfARetriedTaskWaitsForItsPrepare(t *testing.T) {
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f.setPlanCommands(t, "", setupCmd)
+	var spawned []string
+	stubSpawn(t, &spawned)
+	stubStopWorkers(t)
+	setup := newBlockingSetup(t)
+	if err := Schedule(f.ctx, f.dagID); err != nil {
+		t.Fatal(err)
+	}
+	key := TaskWorktreeKey(f.ownerID, "t-0")
+	wt := worktreeDir(f.project, key)
+	laneHead := func() string { return gitCmd(t, f.project, "rev-parse", "wave/"+key) }
+	start := f.taskRun(t, "t-0").BaseCommit
+	partial := commitInTree(t, wt, "partial.txt")
+	// uncommitted work makes the retry's prepare check the tree out again, and set it up again
+	writeFile(t, filepath.Join(wt, "wip.txt"), "wip\n")
+	f.setTaskState(t, "t-0", TaskState_Failed)
+
+	setup.armed.Store(true)
+	retried := make(chan error, 1)
+	go func() { retried <- ApplyAction(f.ctx, f.dagID, "t-0", "retry", waveobj.RoutePin{}) }()
+	setup.waitEntered(t)
+	if task := taskStateOf(t, f, "t-0"); task.State != TaskState_Preparing {
+		t.Fatalf("while the retry's Setup runs the task reads %q, want %q", task.State, TaskState_Preparing)
+	}
+
+	rewound, hold := make(chan struct{}), make(chan struct{})
+	var rewoundOnce, holdOnce sync.Once
+	t.Cleanup(func() { holdOnce.Do(func() { close(hold) }) })
+	old := afterActionPrep
+	afterActionPrep = func() {
+		rewoundOnce.Do(func() { close(rewound) })
+		<-hold
+	}
+	restoreAfterStages(t, func() { afterActionPrep = old })
+	skipped := make(chan error, 1)
+	go func() { skipped <- ApplyAction(f.ctx, f.dagID, "t-0", "skip", waveobj.RoutePin{}) }()
+	select {
+	case <-rewound:
+		t.Fatal("the skip rewound the lane while its prepare was still running Setup")
+	case err := <-skipped:
+		t.Fatalf("the skip returned while its prepare was still running Setup: %v", err)
+	case <-time.After(time.Second):
+	}
+	if got := laneHead(); got != partial {
+		t.Fatalf("the lane moved while Setup ran: at %s, want %s", got, partial)
+	}
+
+	setup.let()
+	select {
+	case <-rewound:
+	case err := <-skipped:
+		t.Fatalf("the skip ended before its rewind was held: %v", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("the skip never finished its rewind once Setup was over")
+	}
+	if got := laneHead(); got != start {
+		t.Fatalf("the lane is back at the task's first start %s, got %s", start, got)
+	}
+	// the skip holds the task's action lock until it records, so a pass now only finds it taken: the task, still
+	// preparing, has a finished prepare that a pass would spawn into the tree the rewind removed
+	if err := Schedule(f.ctx, f.dagID); err != nil {
+		t.Fatal(err)
+	}
+	if len(spawned) != 1 {
+		t.Fatalf("a worker spawned while the skip was between its rewind and its record: %d spawns", len(spawned))
+	}
+	holdOnce.Do(func() { close(hold) })
+	for name, done := range map[string]chan error{"skip": skipped, "retry": retried} {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("the %s: %v", name, err)
+			}
+		case <-time.After(30 * time.Second):
+			t.Fatalf("the %s never returned", name)
+		}
+	}
+
+	if task := taskStateOf(t, f, "t-0"); task.State != TaskState_Skipped {
+		t.Fatalf("want skipped, got %s", task.State)
+	}
+	if len(spawned) != 1 {
+		t.Fatalf("a worker spawned for a skipped task: %d spawns, want the first attempt's only", len(spawned))
+	}
+	patch := readFile(t, filepath.Join(f.project, ".waveterm", "recovery", key+"-skipped.patch"))
+	if !strings.Contains(patch, "partial.txt") {
+		t.Fatalf("the skipped attempt's commit is saved to a recovery patch, got %q", patch)
+	}
+	if n := treePrepCount(f.dagID); n != 0 {
+		t.Fatalf("the registry holds %d prepares of a skipped task", n)
+	}
+}
+
+// the cancel's pass is the one that drops a cancelled dag's prepares, and none may come: a dag that is cancelled has no
+// tick to run it
+func TestCancelDropsTheDagsPrepares(t *testing.T) {
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f.setPlanCommands(t, "", setupCmd)
+	var spawned []string
+	stubSpawn(t, &spawned)
+	stubStopRunWorkers(t)
+	setup := newBlockingSetup(t)
+	setup.armed.Store(true)
+	ticked := make(chan error, 1)
+	go func() { ticked <- Schedule(f.ctx, f.dagID) }()
+	setup.waitEntered(t)
+	if n := treePrepCount(f.dagID); n != 1 {
+		t.Fatalf("while Setup runs the registry holds %d prepares, want 1", n)
+	}
+
+	cancelled := make(chan error, 1)
+	go func() { cancelled <- Cancel(f.ctx, f.dagID) }()
+	select {
+	case err := <-cancelled:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the cancel waited for Setup: the dag lock is held")
+	}
+	if n := treePrepCount(f.dagID); n != 0 {
+		t.Fatalf("the cancel left %d prepares of its dag in the registry", n)
+	}
+
+	setup.let()
+	select {
+	case err := <-ticked:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the tick never returned once Setup was over")
+	}
+	if len(spawned) != 0 {
+		t.Fatalf("a worker spawned for a cancelled dag: %d", len(spawned))
+	}
+	if n := treePrepCount(f.dagID); n != 0 {
+		t.Fatalf("the registry holds %d prepares of a cancelled dag", n)
+	}
+	if _, err := os.Stat(worktreeDir(f.project, TaskWorktreeKey(f.ownerID, "t-0"))); !os.IsNotExist(err) {
+		t.Fatalf("the prepared tree of a cancelled dag stays; stat err = %v", err)
 	}
 }
 

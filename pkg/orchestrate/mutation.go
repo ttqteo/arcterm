@@ -256,6 +256,10 @@ func ApplyActionBy(ctx context.Context, dagID, taskID, action, by string, target
 	return errors.Join(err, Schedule(ctx, dagID))
 }
 
+// afterActionPrep runs once an action's slow half is done, before the action is recorded. A test holds an action
+// there, with its taskActions lock taken, to see what a tick does meanwhile.
+var afterActionPrep = func() {}
+
 // applyAction reports whether the action was recorded on the task, which is what lets a tick follow it: an action
 // refused or cut short before that changed nothing a tick should act on.
 func applyAction(ctx context.Context, dagID, taskID, action, by string, target waveobj.RoutePin) (recorded bool, err error) {
@@ -275,6 +279,7 @@ func applyAction(ctx context.Context, dagID, taskID, action, by string, target w
 		if err := prep.run(ctx); err != nil {
 			return false, err
 		}
+		afterActionPrep()
 	}
 	if err := withDagMutation(dagID, func() error {
 		if err := prep.checkUnmoved(ctx, dagID, taskID); err != nil {
@@ -790,8 +795,8 @@ func cancelDag(ctx context.Context, dagID string, runEnded bool) (bool, error) {
 	ctx = context.WithoutCancel(ctx)
 	// a Setup waits for a heavy-job slot with no bound on the wait (its timeout starts once the slot is granted), and
 	// the final stage's holds this lock while it waits: cut every Setup off, as a pause does. A task's own Setup runs
-	// outside the lock, and the cancel finds its task preparing: the prepare ends with nothing to spawn and removes the
-	// tree it made if this cancel's removal ran before the tree existed.
+	// outside the lock, and the cancel finds its task preparing: the cancel drops its entry (cancelLocked), and the prepare
+	// ends with nothing to spawn and removes the tree it made if this cancel's removal ran before the tree existed.
 	endStopping := stopDagSetup(dagID)
 	defer endStopping()
 	var c *cancelledDag
@@ -895,6 +900,9 @@ func cancelLocked(ctx context.Context, dagID string, runEnded bool) (*cancelledD
 	if gCopy == nil {
 		return nil, nil
 	}
+	// no tick comes to drop them: a cancelled dag's pass returns before it settles any. A prepare still running finds its
+	// entry gone and removes its own tree (prepareTaskTree)
+	dropTreePreps(dagID, nil)
 
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Dag, dagID))
 	source := "cancel"

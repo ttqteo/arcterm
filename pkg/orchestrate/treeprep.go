@@ -23,6 +23,10 @@ import (
 // past the spawn budget that bounded them under the lock; this only stops a hung git.
 const worktreePrepTimeout = 5 * time.Minute
 
+// treePrepBound is the longest a prepare runs: the checkout, Setup's wait for a heavy-job slot (which Setup's own
+// timeout does not count) and Setup. A step that waits for a prepare gives up after it.
+const treePrepBound = worktreePrepTimeout + SetupSlotWait + SetupTimeout
+
 // treePrep is one task's tree preparation, from the pass that claims the task to the pass that spawns or fails it
 type treePrep struct {
 	done       bool
@@ -52,10 +56,15 @@ func newTreePrepJob(g *waveobj.TaskGroup, owner *waveobj.Run, taskID, spawnBase 
 // treePreps holds the prepares between the pass that claims a task and the pass that spawns or fails it. It lives in
 // memory only: a restart loses it, and settlePreparing sends a preparing task with no entry back to pending. It holds
 // no worker admission: a committed preparing task counts toward the live-worker cap through busyTaskIDs.
+//
+// inFlight is kept apart from the entries: the pass after a skip, or the cancel itself, drops an entry while its prepare
+// still runs, and the prepare is still using the lane's tree. It holds a channel per running prepare, closed when
+// prepareTaskTree returns.
 var treePreps = struct {
 	sync.Mutex
-	byKey map[string]*treePrep
-}{byKey: make(map[string]*treePrep)}
+	byKey    map[string]*treePrep
+	inFlight map[string]chan struct{}
+}{byKey: make(map[string]*treePrep), inFlight: make(map[string]chan struct{})}
 
 func treePrepKey(dagID, taskID string) string {
 	return dagID + "/" + taskID
@@ -78,8 +87,51 @@ func treePrepFor(dagID, taskID string) (treePrep, bool) {
 	return *p, true
 }
 
-// finishTreePrep records a prepare's outcome; false, and nothing recorded, when a skip or cancel dropped the entry
-// while it ran.
+// beginTreePrep marks the task's prepare as running and returns the func that marks it over, for a defer. It is called
+// when the prepare starts, not when its entry is registered: a pass's jobs run after autoRetryStalled, which takes the
+// action lock a skip holds while it waits, so a mark made at the registration could be waited on behind that lock. A
+// skip that lands between the registration and the prepare's start is therefore not held for the prepare.
+func beginTreePrep(dagID, taskID string) func() {
+	key := treePrepKey(dagID, taskID)
+	done := make(chan struct{})
+	treePreps.Lock()
+	treePreps.inFlight[key] = done
+	treePreps.Unlock()
+	return func() {
+		treePreps.Lock()
+		// a later prepare of the task may have taken the mark over
+		if treePreps.inFlight[key] == done {
+			delete(treePreps.inFlight, key)
+		}
+		treePreps.Unlock()
+		close(done)
+	}
+}
+
+// waitTreePrep waits, up to limit, for the task's prepare that is running to return, and returns at once when none is.
+// It is for a step that must not touch the lane's tree while a prepare checks it out or runs Setup in it. A prepare
+// takes neither the dag lock nor the action lock (taskActions), so a step that holds the action lock can wait for it.
+func waitTreePrep(ctx context.Context, dagID, taskID string, limit time.Duration) error {
+	treePreps.Lock()
+	done := treePreps.inFlight[treePrepKey(dagID, taskID)]
+	treePreps.Unlock()
+	if done == nil {
+		return nil
+	}
+	timer := time.NewTimer(limit)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return fmt.Errorf("task %s's tree is still being made after %s", taskID, limit)
+	}
+}
+
+// finishTreePrep records a prepare's outcome; false, and nothing recorded, when the pass after a skip, or the cancel,
+// dropped the entry while it ran.
 func finishTreePrep(dagID, taskID string, outcome treePrep) bool {
 	treePreps.Lock()
 	defer treePreps.Unlock()
@@ -147,10 +199,13 @@ func prepareTrees(ctx context.Context, jobs []treePrepJob) {
 // and the registry only: what belongs on the dag (a failure, leftover trees, a requeue) is written by the next locked
 // pass, from the entry.
 func prepareTaskTree(ctx context.Context, job treePrepJob) {
+	// ends with the tree's removal below, so a step waiting on it (a skip's rewind) never meets a half-made tree
+	defer beginTreePrep(job.dagID, job.taskID)()
 	wtCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), worktreePrepTimeout)
 	defer cancel()
 	out, tree := prepareTree(ctx, wtCtx, job)
-	// a skip or a cancel's pass dropped the entry while this ran: nothing waits for the outcome
+	// the pass after a skip dropped the entry while this ran, or the cancel did when it committed: nothing waits for the
+	// outcome
 	finishTreePrep(job.dagID, job.taskID, out)
 	if tree == "" {
 		return
