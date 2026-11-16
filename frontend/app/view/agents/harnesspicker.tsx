@@ -17,6 +17,7 @@ import {
     FloatingPortal,
     offset,
     shift,
+    size,
     useClick,
     useDismiss,
     useFloating,
@@ -33,6 +34,9 @@ import {
     useEmptyCatalogRetry,
 } from "./harnessstore";
 import { RuntimeMark } from "./runtimemark";
+
+// the least the menu is squeezed to when the window is shorter still: a header and a row or two, scrolled
+const MENU_MIN_HEIGHT = 96;
 
 export type HarnessOperation = "consult" | "run-worker";
 
@@ -134,8 +138,23 @@ export function HarnessPicker({
         placement,
         strategy: "fixed",
         // portaled, so no host's overflow-hidden clips it (the avatar popup's panel did at 440x420); flip
-        // opens it below when there is no room above, and shift keeps it off the viewport edges
-        middleware: [offset(6), flip({ padding: 8 }), shift({ padding: 8 })],
+        // opens it below when there is no room above, and shift keeps it off the viewport edges. When neither
+        // side has room for the whole menu (five rows are ~211px, a 420px-tall window leaves less), size caps
+        // the panel to the space on the side flip chose and the panel scrolls, so no option is cut off.
+        middleware: [
+            offset(6),
+            flip({ padding: 8 }),
+            size({
+                padding: 8,
+                apply({ availableHeight, elements }) {
+                    elements.floating.style.setProperty(
+                        "--harness-menu-max-h",
+                        `${Math.max(MENU_MIN_HEIGHT, Math.floor(availableHeight))}px`
+                    );
+                },
+            }),
+            shift({ padding: 8 }),
+        ],
         whileElementsMounted: autoUpdate,
     });
     const { getReferenceProps, getFloatingProps } = useInteractions([useClick(context), useDismiss(context)]);
@@ -186,7 +205,7 @@ export function HarnessPicker({
                     <PopoverReveal
                         open={open}
                         origin="bottom left"
-                        className="w-[300px] rounded-[11px] border border-border frost p-[5px] shadow-popover-md"
+                        className="max-h-[var(--harness-menu-max-h)] w-[300px] overflow-y-auto rounded-[11px] border border-border frost p-[5px] shadow-popover-md"
                     >
                         <div>
                             <div className={cn(REGION_LABEL, "px-[9px] pb-1.5 pt-1 text-muted")}>Harness</div>

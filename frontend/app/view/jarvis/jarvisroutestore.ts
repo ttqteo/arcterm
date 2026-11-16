@@ -370,6 +370,10 @@ export async function rerouteAgent(model: AgentsViewModel, tabId: string, projec
     if (band == null) {
         return fail("This agent no longer has a routing note, so Jarvis cannot move its job");
     }
+    // the DEV hook's dry run (see the hook below) covers this path too, so a scenario that picks a row of the band's
+    // list moves the job on a fixture roster without a live session. `dryRun` is only ever set by that hook, which
+    // production builds do not have.
+    const hook = dryRun;
     let action: RouteAction;
     try {
         action = decideForProject(project, band.task, PICKED_REASON, await routeWorld(model, tabId));
@@ -385,13 +389,17 @@ export async function rerouteAgent(model: AgentsViewModel, tabId: string, projec
             if (ws?.oid == null) {
                 throw new Error("no active workspace");
             }
-            await closeTabLogged(ws.oid, tabId, "jarvis: wrong project");
+            if (!hook) {
+                await closeTabLogged(ws.oid, tabId, "jarvis: wrong project");
+            }
         } catch (e) {
             return fail(e);
         }
         dismissRouteBand(tabId);
     }
-    const outcome = await applyRouteAction(model, action);
+    const outcome = await applyRouteAction(model, action, hook);
+    // a card made on hook terms keeps them when a row is picked from it, as pickRouteChoice reads
+    hookCard = hook && globalStore.get(petRouteCardAtom) != null;
     if ("message" in outcome) {
         if (band.fresh) {
             globalStore.set(petErrandAtom, {
@@ -416,10 +424,11 @@ export async function rerouteAgent(model: AgentsViewModel, tabId: string, projec
 // photograph a card, and a fixture agent has no session to take a job. This is compiled out of production builds.
 //   finish(request, reply)  runs a canned reply as the stream's end: its visible text into the errand, then the rule.
 //   setDryRun(on)           skips AgentsAssignCommand; the escort, the peek, the band and the card still happen. Off by
-//                           default: a hand-off to a fixture agent then reaches the real command and its refusal.
+//                           default: a hand-off to a fixture agent then reaches the real command and its refusal. With
+//                           it on, a "Wrong project?" pick (rerouteAgent) takes the same terms, and closes no tab.
 //   lastAction()            the action the rule last chose, or null.
-// The hook never calls the real launchAgent or closeTabLogged, whatever the dry run says: it records a launch, sets no
-// band for it (no tab exists), and a card it made keeps these terms.
+// finish never calls the real launchAgent or closeTabLogged, whatever the dry run says: it records a launch, sets no
+// band for it (no tab exists), and a card it made keeps these terms. A reroute with the dry run off is the real thing.
 if (import.meta.env.DEV) {
     (globalThis as Record<string, unknown>).__waveJarvisRoute = {
         finish: async (request: string, replyText: string): Promise<void> => {

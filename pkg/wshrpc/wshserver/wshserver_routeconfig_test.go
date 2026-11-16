@@ -95,6 +95,66 @@ func TestSetConfigPreferredRouteRejectsNonStringValues(t *testing.T) {
 	}
 }
 
+// a null pair is how a caller returns to "no preference": both keys are deleted, not left behind as empty strings
+func TestSetConfigPreferredRouteNullPairClearsPreference(t *testing.T) {
+	withConfigHome(t, t.TempDir())
+	ws := &WshServer{}
+	ctx := context.Background()
+	if err := ws.SetConfigCommand(ctx, wshrpc.MetaSettingsType{MetaMapType: waveobj.MetaMapType{
+		wconfig.ConfigKey_HarnessPreferredRuntime: "pi",
+		wconfig.ConfigKey_HarnessPreferredModel:   "opencode/deepseek-v4-flash",
+	}}); err != nil {
+		t.Fatalf("seed valid route: %v", err)
+	}
+	clearPair := wshrpc.MetaSettingsType{MetaMapType: waveobj.MetaMapType{
+		wconfig.ConfigKey_HarnessPreferredRuntime: nil,
+		wconfig.ConfigKey_HarnessPreferredModel:   nil,
+	}}
+	if err := ws.SetConfigCommand(ctx, clearPair); err != nil {
+		t.Fatalf("null pair rejected: %v", err)
+	}
+	if gotRuntime, gotModel := readPreferredRoute(t); gotRuntime != "" || gotModel != "" {
+		t.Fatalf("null pair left a route saved: got %q/%q", gotRuntime, gotModel)
+	}
+	// with nothing saved it is a no-op, not an error: a teardown that restores "none" may run on a store that is already there
+	if err := ws.SetConfigCommand(ctx, clearPair); err != nil {
+		t.Fatalf("null pair with nothing saved rejected: %v", err)
+	}
+}
+
+// one null beside a string is still refused, so a half patch cannot strand the other key
+func TestSetConfigPreferredRouteLoneNullRefused(t *testing.T) {
+	withConfigHome(t, t.TempDir())
+	ws := &WshServer{}
+	ctx := context.Background()
+	if err := ws.SetConfigCommand(ctx, wshrpc.MetaSettingsType{MetaMapType: waveobj.MetaMapType{
+		wconfig.ConfigKey_HarnessPreferredRuntime: "pi",
+		wconfig.ConfigKey_HarnessPreferredModel:   "opencode/deepseek-v4-flash",
+	}}); err != nil {
+		t.Fatalf("seed valid route: %v", err)
+	}
+	for name, patch := range map[string]waveobj.MetaMapType{
+		"null runtime, string model": {
+			wconfig.ConfigKey_HarnessPreferredRuntime: nil,
+			wconfig.ConfigKey_HarnessPreferredModel:   "",
+		},
+		"string runtime, null model": {
+			wconfig.ConfigKey_HarnessPreferredRuntime: "pi",
+			wconfig.ConfigKey_HarnessPreferredModel:   nil,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := ws.SetConfigCommand(ctx, wshrpc.MetaSettingsType{MetaMapType: patch}); err == nil {
+				t.Fatal("expected a lone null to be refused")
+			}
+			gotRuntime, gotModel := readPreferredRoute(t)
+			if gotRuntime != "pi" || gotModel != "opencode/deepseek-v4-flash" {
+				t.Fatalf("refused patch changed route: got %q/%q", gotRuntime, gotModel)
+			}
+		})
+	}
+}
+
 func TestSetConfigPreferredRouteModelPin(t *testing.T) {
 	withConfigHome(t, t.TempDir())
 	ws := &WshServer{}

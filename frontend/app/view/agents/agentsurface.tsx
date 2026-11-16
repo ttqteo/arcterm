@@ -728,8 +728,10 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                 )}
                                 <DivergenceBanner decision={decision} onRejoin={rejoin} />
                                 <HeldAskBar agent={subject!} />
-                                {/* keyed: its list's open state and a failed read belong to one agent */}
-                                <JarvisRouteBand key={subject!.id} model={model} agent={subject!} />
+                                {/* keyed: its list's open state and a failed read belong to one agent. The key carries a
+                                    prefix because SleepingCard below is keyed by the agent's id, and two siblings with
+                                    one key leave an orphaned band behind when the agent changes */}
+                                <JarvisRouteBand key={`route-band:${subject!.id}`} model={model} agent={subject!} />
                                 {/* keyed: the card's pending wake and its failure belong to one agent. A Claude agent
                                     asleep draws Chat, whose box says it sleeps: the card is left for a failed wake */}
                                 <SleepingCard key={agent.id} agent={agent} failureOnly={chatCapable(agent)} />

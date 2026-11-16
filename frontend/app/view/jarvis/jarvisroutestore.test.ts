@@ -690,6 +690,20 @@ describe("the DEV hook", () => {
         expect(hook().lastAction()).toMatchObject({ kind: "launch", project: NO_FOLDER_PROJECT });
     });
 
+    it("takes a Wrong project? pick on the dry run's terms: no real hand-off and no tab closed, the band still moves", async () => {
+        globalStore.set(agentsAtom, [vm({ id: "t1" }), vm({ id: "t9", project: "atlas" })]);
+        globalStore.set(jarvisRouteBandAtom, { t1: { project: "loom", reason: "r", task: "chart it", fresh: true } });
+        hook().setDryRun(true);
+        const out = await rerouteAgent(model, "t1", "atlas");
+        expect(out).toEqual({ ok: true });
+        expect(assign).not.toHaveBeenCalled();
+        expect(closeTabLogged).not.toHaveBeenCalled();
+        expect(launchAgent).not.toHaveBeenCalled();
+        const bands = globalStore.get(jarvisRouteBandAtom);
+        expect(bands["t1"]).toBeUndefined();
+        expect(bands["t9"]).toMatchObject({ reason: "you picked it", fresh: false });
+    });
+
     it("lands a refused hand-off on the errand when dry run is off", async () => {
         globalStore.set(agentsAtom, [vm({ id: "t1" })]);
         globalStore.set(petPeekOpenAtom, true);

@@ -6,6 +6,9 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Ask Jarvis at No folder with a real consult (claude): a question is answered in the popover; a job
+  naming a project reaches its open agent as your own prompt (no "Not typed by the user" header), a sleeping one wakes;
+  a job for a project with no agent opens one with the launcher's harness.
 - [ ] (arcterm) **Sidecar's first open on one screen, or on a screen of another scale.** Two screens of one scale
   held on 1.1.3 `38f41b95b` (2026-11-15): Open Sidecar came up maximized on the other screen as `arcterm Sidecar`, and
   un-maximizing left 1280×800 centred there. Still unseen: with one screen it opens centred (1280×800, never past 90% of

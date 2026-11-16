@@ -10111,7 +10111,9 @@ const jarvisPeek = {
                 structure?.queue === true &&
                 structure?.composer === true &&
                 structure?.close === true &&
-                structure?.panelFocused === true,
+                structure?.panelFocused === true &&
+                // No folder is the destination the Ask box starts on, so the select reads it with no project registered
+                structure?.destLabel === "No folder",
             JSON.stringify({ creatureFocused, structure })
         );
 
@@ -10119,12 +10121,15 @@ const jarvisPeek = {
             label: document.activeElement?.getAttribute('aria-label') ?? null,
             inside: document.querySelector('[data-pet-peek]')?.contains(document.activeElement) ?? false,
         }))()`;
-        // the header's first control is the pet's stay pin, right after the title; Full view is the second
+        // the header's first control is the pet's stay pin, right after the title, then Hide Jarvis for a while; Full view is the third
         await press("Tab", "Tab", 9);
         const firstTab = await h.ev(focusRead);
         await press("Tab", "Tab", 9);
         const secondTab = await h.ev(focusRead);
-        // reverse: back onto the pin, then once more off the dialog's first control, which wraps inside it
+        await press("Tab", "Tab", 9);
+        const thirdTab = await h.ev(focusRead);
+        // reverse: back over Hide onto the pin, then once more off the dialog's first control, which wraps inside it
+        await press("Tab", "Tab", 9, 8);
         await press("Tab", "Tab", 9, 8);
         const backTab = await h.ev(focusRead);
         await press("Tab", "Tab", 9, 8);
@@ -10132,14 +10137,16 @@ const jarvisPeek = {
             `document.querySelector('[data-pet-peek]')?.contains(document.activeElement) ?? false`
         );
         rec(
-            "2. Tab starts at the pin (Pet stays put) then Full view, and reverse traversal stays inside the dialog",
+            "2. Tab starts at the pin (Pet stays put), then Hide Jarvis for a while, then Full view, and reverse traversal stays inside the dialog",
             firstTab.inside === true &&
                 firstTab.label === "Pet stays put" &&
                 secondTab.inside === true &&
-                secondTab.label === "Open full Jarvis view" &&
+                secondTab.label === "Hide Jarvis for a while" &&
+                thirdTab.inside === true &&
+                thirdTab.label === "Open full Jarvis view" &&
                 backTab.label === "Pet stays put" &&
                 wrappedInside === true,
-            JSON.stringify({ firstTab, secondTab, backTab, wrappedInside })
+            JSON.stringify({ firstTab, secondTab, thirdTab, backTab, wrappedInside })
         );
         // Each string below is one the old three-card panel rendered to report missing telemetry or repeat
         // a disabled composer state. The adaptive card states queue absence once in its title; these older
@@ -10201,26 +10208,51 @@ const jarvisPeek = {
             return true;
         })()`);
         await settle(350);
+        // the catalog is a cold enumeration of the installed CLIs (harnessstore.ts, up to 30 s), so in a fresh profile the
+        // menu has no options until it lands; the options are waited for, not slept on
+        await polishWaitFor(h, `document.querySelectorAll('[data-testid^="harness-option-"]').length > 0`, 30000);
+        // At 440x420 the five-option menu (~211px) fits neither above nor below the chip, so the picker caps it to the
+        // space on the side it opened (floating-ui size) and the panel scrolls. "Unclipped" is therefore: the panel
+        // itself sits inside the viewport, and every option can be brought fully into view inside it and hit-tested
+        // there, by scrolling when the panel scrolls. An option past the panel's edge, or one outside the viewport
+        // after its scrollIntoView, fails.
         const pickerVisibility = await h.ev(`(() => {
             const options = [...document.querySelectorAll('[data-testid^="harness-option-"]')];
             const viewport = { width: window.innerWidth, height: window.innerHeight };
-            const visible = options.length > 0 && options.every((option) => {
+            const first = options[0];
+            let panel = first?.parentElement ?? null;
+            while (panel && !/(auto|scroll)/.test(getComputedStyle(panel).overflowY)) panel = panel.parentElement;
+            const inViewport = (rect) =>
+                rect.left >= 0 && rect.right <= viewport.width && rect.top >= 0 && rect.bottom <= viewport.height;
+            const panelRect = panel?.getBoundingClientRect() ?? null;
+            const scrolls = panel != null && panel.scrollHeight > panel.clientHeight;
+            const reachable = options.length > 0 && panel != null && options.every((option) => {
+                option.scrollIntoView({ block: "nearest" });
                 const rect = option.getBoundingClientRect();
                 const x = Math.round(rect.left + rect.width / 2);
                 const y = Math.round(rect.top + rect.height / 2);
                 const hit = document.elementFromPoint(x, y);
-                return rect.left >= 0 && rect.right <= viewport.width && rect.top >= 0 && rect.bottom <= viewport.height &&
+                const box = panel.getBoundingClientRect();
+                return inViewport(rect) && rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1 &&
                     (hit === option || option.contains(hit));
             });
+            if (panel) panel.scrollTop = 0;
             return {
                 count: options.length,
-                visible,
-                rects: options.map((option) => {
-                    const rect = option.getBoundingClientRect();
-                    return { left: Math.round(rect.left), right: Math.round(rect.right), top: Math.round(rect.top), bottom: Math.round(rect.bottom) };
-                }),
+                // the panel is the menu's scroll container, drawn wholly inside the page
+                panelInViewport: panelRect != null && inViewport(panelRect),
+                scrolls,
+                scrollHeight: panel?.scrollHeight ?? null,
+                clientHeight: panel?.clientHeight ?? null,
+                visible: reachable && panelRect != null && inViewport(panelRect) && panel.scrollHeight >= panel.clientHeight,
+                panelRect: panelRect == null ? null : {
+                    left: Math.round(panelRect.left), right: Math.round(panelRect.right),
+                    top: Math.round(panelRect.top), bottom: Math.round(panelRect.bottom),
+                },
+                viewport,
             };
         })()`);
+        await h.shot("cdp-shots/jarvis-peek-picker.png");
         await h.ev(`document.querySelector('[data-pet-peek] [data-testid="harness-picker"]')?.click()`);
         await settle(350);
         rec(
@@ -10258,10 +10290,13 @@ const jarvisPeek = {
             }
         };
         const PICKER = '[data-pet-peek] [data-testid="harness-picker"]';
-        ctx.prevHarness = await h.ev(`document.querySelector(${JSON.stringify(PICKER)})?.dataset.harnessRuntime ?? null`);
+        // the saved preference is a pair (runtime and model travel together: the server refuses one alone), read from the
+        // config rather than the chip, which shows the runtime only. Taken before the pick so teardown can put it back.
+        ctx.prevRoute = await readHarnessRoute(h);
         const chip = await centerOf(PICKER);
         if (chip != null) await clickAt(chip);
         await settle(400);
+        await polishWaitFor(h, `document.querySelectorAll('[data-testid^="harness-option-"]').length > 0`, 30000);
         // the current selection when it can be picked, so the pick leaves the preference as it was
         const option = await h.ev(`(() => {
             const options = [...document.querySelectorAll('[data-testid^="harness-option-"]')].filter((o) => !o.disabled);
@@ -10407,15 +10442,514 @@ const jarvisPeek = {
             globalThis.__wavePetStore?.setAttention([]);
             return true;
         })()`);
-        if (ctx.harnessPicked != null && ctx.prevHarness != null && ctx.harnessPicked !== ctx.prevHarness) {
+        // a refused restore fails the run (verify.mjs turns a teardown throw into a failed step), but only after the
+        // project and its channel are gone, so one failure does not leak a second fixture
+        let restoreError = null;
+        if (ctx.harnessPicked != null && ctx.prevRoute != null) {
             try {
-                await h.rpc("setconfig", { "harness:preferredruntime": ctx.prevHarness });
+                await restoreHarnessRoute(h, ctx.prevRoute);
             } catch (e) {
-                console.error(`jarvis-peek teardown: restore the harness preference failed: ${e?.message ?? e}`);
+                restoreError = `restore the harness preference failed: ${e?.message ?? e}`;
             }
         }
         await teardownJarvisPeekDest(h, ctx);
         await h.goto("cockpit");
+        if (restoreError != null) throw new Error(restoreError);
+    },
+};
+
+// The saved harness preference, runtime and model both ("" when there is none). SetConfigCommand takes the two keys
+// together or not at all (validatePreferredRoutePatch), so they are read, compared and restored as one pair.
+async function readHarnessRoute(h) {
+    const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+    return {
+        runtime: settings["harness:preferredruntime"] ?? "",
+        model: settings["harness:preferredmodel"] ?? "",
+    };
+}
+
+// puts the saved pair back and reads it again, so a refusal or a write that did not land throws rather than leaves a pick.
+// "No preference" is a null pair: the server deletes both keys for it (an empty-string pair would be refused, and would
+// leave two keys behind if it were not).
+async function restoreHarnessRoute(h, prev) {
+    const same = (a, b) => a.runtime === b.runtime && a.model === b.model;
+    if (same(await readHarnessRoute(h), prev)) return;
+    const none = prev.runtime === "";
+    await h.rpc(
+        "setconfig",
+        none
+            ? { "harness:preferredruntime": null, "harness:preferredmodel": null }
+            : { "harness:preferredruntime": prev.runtime, "harness:preferredmodel": prev.model }
+    );
+    const now = await readHarnessRoute(h);
+    if (!same(now, prev)) {
+        throw new Error(`expected ${JSON.stringify(prev)} saved, found ${JSON.stringify(now)}`);
+    }
+    // the cockpit seeds its preference once at boot (cockpitshell.tsx), so the page still shows the pick until told
+    await agentPageFixtures.agentPage(
+        h,
+        `const S = await mod("app/view/agents/harnessstore.ts"); S.initHarnessPreference(${JSON.stringify(prev.runtime)}, ${JSON.stringify(prev.model)}); return true;`
+    );
+}
+
+// --- jarvis route: the pet's Ask at No folder, and the "Wrong project?" band ---------------------
+// docs/superpowers/specs/2026-11-16-jarvis-no-folder-ask-design.md. A routing consult spends tokens and its words are not
+// fixed, so these steps drive the path after the stream with a canned reply: __waveJarvisRoute.finish (the DEV hook of
+// jarvisroutestore.ts) runs the reply as a consult's end, and the steps read what the person would see: the Ask box's
+// reply and chooser card, then the Agent surface and the band on the agent that received the job. Dry run (setDryRun)
+// skips only the hand-off RPC; step 6 turns it off to photograph the real refusal of a fixture agent with no session.
+// The roster is a fixture one (the agents have no live session), two idle agents in the first project and one in the
+// second, shaped as jarvis-pet's: agent claude, a blockId, a project, no runId, so each counts as an open agent.
+const JARVIS_ROUTE_A = "verify-jarvis-route";
+const JARVIS_ROUTE_B = "verify-jarvis-route-b";
+const JARVIS_ROUTE_AGENTS = [
+    { id: "fx-jarvis-route-a1", name: "route agent one", project: JARVIS_ROUTE_A },
+    { id: "fx-jarvis-route-a2", name: "route agent two", project: JARVIS_ROUTE_A },
+    { id: "fx-jarvis-route-b1", name: "route agent three", project: JARVIS_ROUTE_B },
+];
+const JARVIS_ROUTE_ASK = "tidy the verify loop";
+const JARVIS_ROUTE_PROSE = "I will hand that to the loop project.";
+const JARVIS_ROUTE_PEEK = "[data-pet-peek]";
+const JARVIS_ROUTE_CARD = `${JARVIS_ROUTE_PEEK} [data-pet-route-card]`;
+const JARVIS_ROUTE_BAND = "[data-jarvis-route-band]";
+
+// prose, then the arc-route block a routing consult ends with (a string verdict is written as it is, to be broken)
+function jarvisRouteReply(prose, verdict) {
+    const body = typeof verdict === "string" ? verdict : JSON.stringify(verdict);
+    return `${prose}\n\n\`\`\`arc-route\n${body}\n\`\`\`\n`;
+}
+
+function jarvisRouteVerdict(project, over = {}) {
+    return {
+        project,
+        agent: "",
+        ambiguous: false,
+        task: JARVIS_ROUTE_ASK,
+        reason: `it names ${project}`,
+        considered: [],
+        ...over,
+    };
+}
+
+// the pet's hub is open: from the creature by keyboard, as arrangeJarvisPeekDest opens it. The creature's key toggles,
+// so a peek already open is left as it is.
+async function jarvisRouteOpenPeek(h) {
+    if (await h.ev(`document.querySelector('${JARVIS_ROUTE_PEEK}') != null`)) return true;
+    await h.ev(`document.querySelector('[aria-label="Jarvis condition"]')?.focus()`);
+    for (const type of ["keyDown", "keyUp"]) {
+        await h.cdp("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    }
+    return polishWaitFor(
+        h,
+        `(() => { const i = document.querySelector('${JARVIS_ROUTE_PEEK} [data-pet-errand-input]'); return i != null && !i.disabled; })()`,
+        10000
+    );
+}
+
+// a canned reply as the stream's end: resolves "ok", or the hook's error text
+const jarvisRouteFinish = (h, reply) =>
+    h.ev(
+        `globalThis.__waveJarvisRoute.finish(${JSON.stringify(JARVIS_ROUTE_ASK)}, ${JSON.stringify(reply)}).then(() => "ok", (e) => String(e?.message ?? e))`
+    );
+
+// the chooser card as drawn: Jarvis's line and every row (its kind and label), and whether it sits inside the popover
+const JARVIS_ROUTE_READ_CARD = `(() => {
+    const card = document.querySelector('${JARVIS_ROUTE_CARD}');
+    if (!card) return null;
+    const peek = document.querySelector('${JARVIS_ROUTE_PEEK}')?.getBoundingClientRect();
+    const box = card.getBoundingClientRect();
+    return {
+        why: card.querySelector('p')?.textContent?.trim() ?? null,
+        rows: [...card.querySelectorAll('[data-route-choice]')].map((r) => ({
+            kind: r.getAttribute('data-route-choice-kind'),
+            label: r.textContent.trim(),
+        })),
+        inside: peek != null && box.top >= peek.top - 1 && box.bottom <= peek.bottom + 1,
+    };
+})()`;
+
+// the band the surface draws (only the selected agent's), its tab id and its sentence
+const JARVIS_ROUTE_READ_BAND = `(() => {
+    const band = document.querySelector('${JARVIS_ROUTE_BAND}');
+    if (!band) return null;
+    return {
+        tab: band.getAttribute('data-jarvis-route-band'),
+        line: band.querySelector('[data-route-band-line]')?.textContent?.trim() ?? null,
+    };
+})()`;
+
+// the app's own state, through its modules (agent-page-fixtures.mjs)
+const jarvisRouteFocusId = (h) =>
+    agentPageFixtures.agentPage(h, `return globalStore.get(agentsModel().focusIdAtom);`);
+const jarvisRouteBandTabs = (h) =>
+    agentPageFixtures.agentPage(
+        h,
+        `const S = await mod("app/view/jarvis/jarvisroutestore.ts"); return Object.keys(globalStore.get(S.jarvisRouteBandAtom));`
+    );
+
+const jarvisRoute = {
+    name: "jarvis-route",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            // a fixture the developer had active goes back in teardown rather than away
+            prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
+            projects: [],
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            for (const name of [JARVIS_ROUTE_A, JARVIS_ROUTE_B]) {
+                const dir = mkdtempSync(join(tmpdir(), `${name}-`));
+                ctx.projects.push({ destProject: null, destDir: dir });
+                await h.rpc("createproject", { name, path: dir });
+                ctx.projects.at(-1).destProject = name;
+                await waitForProjectInConfig(h, name);
+            }
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    JARVIS_ROUTE_AGENTS.map((a) => ({
+                        ...a,
+                        task: `idle in ${a.project}`,
+                        state: "idle",
+                        agent: "claude",
+                        model: "opus",
+                        idleSince: Date.now() - 60_000,
+                        blockId: `fx-blk-${a.id}`,
+                    })),
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            // the fixture roster is read once at boot, and the channel snapshot is boot-primed, so one reload brings both
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        const until = (expr, ms = 8000) => polishWaitFor(h, expr, ms);
+        // the reply, the card and the band's list all reveal on a spring: a read or a shot waits for it to land
+        const settle = () => polishNap(700);
+        const shot = (n) => h.shot(`cdp-shots/jarvis-route-${n}.png`);
+        const text = () => h.ev(`document.querySelector('${JARVIS_ROUTE_PEEK}')?.innerText ?? ''`);
+        const click = (selector) =>
+            h.ev(`(() => {
+                const el = document.querySelector(${JSON.stringify(selector)});
+                if (!el) return false;
+                el.click();
+                return true;
+            })()`);
+        const roster = () =>
+            agentPageFixtures.agentPage(
+                h,
+                `return globalStore.get(agentsModel().agentsAtom).map((a) => ({ id: a.id, name: a.name, project: a.project }));`
+            );
+        const idOfName = (list, name) => list.find((a) => a.name === name)?.id ?? null;
+        // a reply naming the first project, which has two open agents: the card of step 3
+        const askFirstProject = () =>
+            jarvisRouteFinish(h, jarvisRouteReply(JARVIS_ROUTE_PROSE, jarvisRouteVerdict(JARVIS_ROUTE_A)));
+        // the first agent row of the card picked, and the agent it stands for
+        const pickFirstAgentRow = async (list) => {
+            const label = await h.ev(`(() => {
+                const row = document.querySelector('${JARVIS_ROUTE_CARD} [data-route-choice][data-route-choice-kind="agent"]');
+                if (!row) return null;
+                const label = row.textContent.trim();
+                row.click();
+                return label;
+            })()`);
+            return { label, id: label == null ? null : idOfName(list, label) };
+        };
+
+        // the creature starts the run on another surface, so a pick that lands on Agent is seen to move there
+        await h.goto("cockpit");
+        const inRoster = ctx.arrangeError == null && (await agentPageFixtures
+            .agentPage(
+                h,
+                `return await until(() => globalStore.get(agentsModel().agentsAtom).filter((a) => a.id.startsWith("fx-jarvis-route-")).length === ${JARVIS_ROUTE_AGENTS.length}, 15000);`
+            )
+            .catch(() => false));
+        const opened = inRoster && (await jarvisRouteOpenPeek(h));
+        const hook = opened && (await until(`typeof globalThis.__waveJarvisRoute?.finish === "function"`, 5000));
+        rec(
+            "0. arranged: two projects, a fixture roster of three open agents, and the pet's hub open with the route hook",
+            ctx.arrangeError == null && inRoster === true && opened === true && hook === true,
+            ctx.arrangeError ?? { inRoster, opened, hook }
+        );
+        if (hook !== true) return steps;
+        const agents = await roster();
+
+        // 1. the destination
+        const dest = await h.ev(`(() => {
+            const select = document.querySelector('${JARVIS_ROUTE_PEEK} [data-pet-errand-dest]');
+            const input = document.querySelector('${JARVIS_ROUTE_PEEK} [data-pet-errand-input]');
+            if (!select) return null;
+            return {
+                options: [...select.options].map((o) => ({ value: o.value, text: o.textContent.trim() })),
+                selectedIndex: select.selectedIndex,
+                inputDisabled: input?.disabled ?? null,
+                placeholder: input?.getAttribute('placeholder') ?? null,
+            };
+        })()`);
+        await shot(1);
+        rec(
+            "1. dest select shows No folder first and selected",
+            dest != null &&
+                dest.options[0]?.text === "No folder" &&
+                dest.options[0]?.value === "no-folder" &&
+                dest.selectedIndex === 0 &&
+                dest.inputDisabled === false,
+            dest
+        );
+
+        // 2. a reply with no block is an answer: its prose, no card, and the popover stays
+        await h.ev(`globalThis.__waveJarvisRoute.setDryRun(true)`);
+        const answered = await jarvisRouteFinish(h, JARVIS_ROUTE_PROSE);
+        await until(`document.querySelector('${JARVIS_ROUTE_PEEK}')?.innerText.includes(${JSON.stringify(JARVIS_ROUTE_PROSE)}) ?? false`);
+        await settle();
+        const answerText = await text();
+        const answerCard = await h.ev(JARVIS_ROUTE_READ_CARD);
+        await shot(2);
+        rec(
+            "2. a reply with no block shows the prose and no card",
+            answered === "ok" &&
+                answerText.includes(JARVIS_ROUTE_PROSE) &&
+                answerText.includes("replied") &&
+                answerCard == null &&
+                (await h.ev(`document.querySelector('${JARVIS_ROUTE_PEEK}') != null`)) === true,
+            { answered, answerText, answerCard }
+        );
+
+        // 3. a clear project with two open agents is not guessed: the agents, and a row for a new one
+        const ambiguous = await askFirstProject();
+        await until(`document.querySelector('${JARVIS_ROUTE_CARD}') != null`);
+        await settle();
+        const card3 = await h.ev(JARVIS_ROUTE_READ_CARD);
+        const text3 = await text();
+        await shot(3);
+        const agentRows = (card3?.rows ?? []).filter((r) => r.kind === "agent");
+        const launchRows = (card3?.rows ?? []).filter((r) => r.kind === "launch");
+        rec(
+            "3. ambiguous card lists the open agents and the launch rows",
+            ambiguous === "ok" &&
+                card3 != null &&
+                agentRows.length === 2 &&
+                agentRows.every((r) => agents.some((a) => a.name === r.label && a.project === JARVIS_ROUTE_A)) &&
+                launchRows.length === 1 &&
+                launchRows[0].label === `Open a new agent in ${JARVIS_ROUTE_A}` &&
+                card3.inside === true &&
+                text3.includes(JARVIS_ROUTE_PROSE) &&
+                !text3.includes("arc-route"),
+            { ambiguous, card3, hasBlockInText: text3.includes("arc-route") }
+        );
+
+        // 4. the card's × closes it
+        const dismissed = await click(`${JARVIS_ROUTE_CARD} [data-pet-route-card-dismiss]`);
+        const cardGone = await until(`document.querySelector('${JARVIS_ROUTE_CARD}') == null`);
+        await shot(4);
+        rec("4. card × closes the card", dismissed === true && cardGone === true, { dismissed, cardGone });
+
+        // 5. a block that does not read is not a guess either: every project, and No folder
+        const broken = await jarvisRouteFinish(h, jarvisRouteReply(JARVIS_ROUTE_PROSE, "{ not json"));
+        await until(`document.querySelector('${JARVIS_ROUTE_CARD}') != null`);
+        await settle();
+        const card5 = await h.ev(JARVIS_ROUTE_READ_CARD);
+        const cfg = await h.rpc("getfullconfig", null);
+        const registered = Object.entries(cfg?.projects ?? {})
+            .filter(([, p]) => p?.path)
+            .map(([name]) => name);
+        await shot(5);
+        const projectLabels = (card5?.rows ?? []).filter((r) => r.kind === "project").map((r) => r.label);
+        rec(
+            "5. malformed card lists every project and No folder",
+            broken === "ok" &&
+                card5 != null &&
+                [JARVIS_ROUTE_A, JARVIS_ROUTE_B].every((p) => projectLabels.includes(p)) &&
+                registered.length === projectLabels.length &&
+                registered.every((p) => projectLabels.includes(p)) &&
+                card5.rows.at(-1)?.kind === "launch" &&
+                card5.rows.at(-1)?.label === "Open a new agent in No folder",
+            { broken, card5, registered }
+        );
+
+        // 6. a clear verdict for a project with one agent is sent for real: the fixture agent has no session, so the
+        // refusal is the errand's, in words, and the popover stays for the person to read it
+        await h.ev(`globalThis.__waveJarvisRoute.setDryRun(false)`);
+        const refused = await jarvisRouteFinish(
+            h,
+            jarvisRouteReply(JARVIS_ROUTE_PROSE, jarvisRouteVerdict(JARVIS_ROUTE_B))
+        );
+        const last6 = await h.ev(`globalThis.__waveJarvisRoute.lastAction()`);
+        await until(`document.querySelector('${JARVIS_ROUTE_PEEK}')?.innerText.includes('failed') ?? false`);
+        // step 5's card leaves with its exit animation: read and photograph the popover once it has gone
+        const cardGone6 = await until(`document.querySelector('${JARVIS_ROUTE_CARD}') == null`);
+        await settle();
+        const text6 = await text();
+        const open6 = await h.ev(`document.querySelector('${JARVIS_ROUTE_PEEK}') != null`);
+        await shot(6);
+        await h.ev(`globalThis.__waveJarvisRoute.setDryRun(true)`);
+        rec(
+            "6. a failed send shows the error and keeps the peek open",
+            refused === "ok" &&
+                last6?.kind === "send" &&
+                last6?.agentId === "fx-jarvis-route-b1" &&
+                open6 === true &&
+                text6.includes("failed") &&
+                text6.includes("not a live agent session") &&
+                cardGone6 === true,
+            { refused, last6, open6, cardGone6, text6 }
+        );
+
+        // 7. the person picks an agent: the job is theirs to hand, so the popover leaves for the agent, with its band
+        await askFirstProject();
+        await until(`document.querySelector('${JARVIS_ROUTE_CARD}') != null`);
+        const picked7 = await pickFirstAgentRow(agents);
+        const band7 = await until(`document.querySelector('${JARVIS_ROUTE_BAND}') != null`);
+        await polishNap(600);
+        const bandRead7 = await h.ev(JARVIS_ROUTE_READ_BAND);
+        const focus7 = await jarvisRouteFocusId(h);
+        const surface7 = await h.activeSurfaceLabel();
+        const peekGone7 = await h.ev(`document.querySelector('${JARVIS_ROUTE_PEEK}') == null`);
+        await shot(7);
+        rec(
+            "7. picking an agent row lands on the Agent surface with the band",
+            picked7.id != null &&
+                band7 === true &&
+                peekGone7 === true &&
+                surface7 === SURFACE_LABEL.agent &&
+                focus7 === picked7.id &&
+                bandRead7?.tab === picked7.id &&
+                (bandRead7?.line ?? "").startsWith(`Jarvis chose ${JARVIS_ROUTE_A}`),
+            { picked7, band7, peekGone7, surface7, focus7, bandRead7 }
+        );
+
+        // 8. "Wrong project?" opens the projects in place, over the agent it sits on
+        const wrongOpened = await click("[data-route-band-wrong]");
+        const listed = await until(`document.querySelector('[data-route-band-list] [data-route-choice]') != null`);
+        await settle();
+        const rows8 = await h.ev(`(() => ({
+            expanded: document.querySelector('[data-route-band-wrong]')?.getAttribute('aria-expanded') ?? null,
+            rows: [...document.querySelectorAll('[data-route-band-list] [data-route-choice]')].map((r) => ({
+                kind: r.getAttribute('data-route-choice-kind'),
+                label: r.textContent.trim(),
+            })),
+        }))()`);
+        await shot(8);
+        const labels8 = rows8.rows.map((r) => r.label);
+        rec(
+            "8. Wrong project? lists the projects",
+            wrongOpened === true &&
+                listed === true &&
+                rows8.expanded === "true" &&
+                [JARVIS_ROUTE_A, JARVIS_ROUTE_B].every((p) => labels8.includes(p)) &&
+                rows8.rows.at(-1)?.label === "Open a new agent in No folder",
+            rows8
+        );
+
+        // 9. picking the other project hands the job on: the band moves to that project's agent and says the person chose
+        const b1 = "fx-jarvis-route-b1";
+        const pickedB = await h.ev(`(() => {
+            const row = [...document.querySelectorAll('[data-route-band-list] [data-route-choice]')]
+                .find((r) => r.textContent.trim() === ${JSON.stringify(JARVIS_ROUTE_B)});
+            if (!row) return false;
+            row.click();
+            return true;
+        })()`);
+        const moved = await until(
+            `document.querySelector('${JARVIS_ROUTE_BAND}')?.getAttribute('data-jarvis-route-band') === ${JSON.stringify(b1)}`
+        );
+        await polishNap(400);
+        const bandRead9 = await h.ev(JARVIS_ROUTE_READ_BAND);
+        const focus9 = await jarvisRouteFocusId(h);
+        const bandTabs9 = await jarvisRouteBandTabs(h);
+        await shot(9);
+        rec(
+            "9. picking a project in Wrong project? reroutes and the band reads you picked it",
+            pickedB === true &&
+                moved === true &&
+                focus9 === b1 &&
+                bandRead9?.tab === b1 &&
+                (bandRead9?.line ?? "").includes(`Jarvis chose ${JARVIS_ROUTE_B}`) &&
+                (bandRead9?.line ?? "").includes("because you picked it") &&
+                !bandTabs9.includes(picked7.id) &&
+                bandTabs9.includes(b1),
+            { pickedB, moved, focus9, bandRead9, bandTabs9, firstAgent: picked7.id }
+        );
+
+        // 10. typing in the agent's cell ends the band: a key at an element inside the cell, which the pane then receives
+        const typed = await h.ev(`(() => {
+            const cell = document.querySelector('[data-agent-terminal="${b1}"]');
+            if (!cell) return false;
+            const target = cell.firstElementChild ?? cell;
+            target.dispatchEvent(new KeyboardEvent("keydown", { key: "a", code: "KeyA", bubbles: true, cancelable: true }));
+            return true;
+        })()`);
+        const bandGone10 = await until(`document.querySelector('${JARVIS_ROUTE_BAND}') == null`);
+        await shot(10);
+        rec(
+            "10. typing in the agent's cell removes the band",
+            typed === true && bandGone10 === true && !(await jarvisRouteBandTabs(h)).includes(b1),
+            { typed, bandGone10 }
+        );
+
+        // 11. × removes it too: steps 3 and 7 again for a band, from the hub opened on the Agent surface
+        const reopened = await jarvisRouteOpenPeek(h);
+        await askFirstProject();
+        await until(`document.querySelector('${JARVIS_ROUTE_CARD}') != null`);
+        const picked11 = await pickFirstAgentRow(agents);
+        const band11 = await until(`document.querySelector('${JARVIS_ROUTE_BAND}') != null`);
+        const dismissed11 = band11 && (await click("[data-route-band-dismiss]"));
+        const gone11 = await until(`document.querySelector('${JARVIS_ROUTE_BAND}') == null`);
+        await shot(11);
+        rec(
+            "11. × removes the band",
+            reopened === true &&
+                picked11.id != null &&
+                band11 === true &&
+                dismissed11 === true &&
+                gone11 === true &&
+                !(await jarvisRouteBandTabs(h)).includes(picked11.id),
+            { reopened, picked11, band11, dismissed11, gone11 }
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`jarvis-route teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("dry run off", () => h.ev(`globalThis.__waveJarvisRoute?.setDryRun(false)`));
+        await step("close the hub and clear its state", () =>
+            h.ev(`(() => {
+                document.querySelector('button[aria-label="Close Jarvis panel"]')?.click();
+                globalThis.__wavePetStore?.resetPeek();
+                return true;
+            })()`)
+        );
+        // each project and the channel createproject made for it, and the temp dir
+        for (const project of ctx?.projects ?? []) {
+            await teardownJarvisPeekDest(h, project);
+        }
+        if (ctx?.wroteFixture) {
+            await step("put the fixture roster back", () =>
+                ctx.prevFixture != null
+                    ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture)
+                    : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+        }
+        await step("reload onto the live roster", async () => {
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        });
+        await step("go home", () => h.goto("cockpit"));
     },
 };
 
@@ -70072,6 +70606,7 @@ export const SCENARIOS = [
     briefProfile,
     jarvisTour,
     jarvisPeek,
+    jarvisRoute,
     jarvisVolunteer,
     usageCharts,
     usageInsights,
