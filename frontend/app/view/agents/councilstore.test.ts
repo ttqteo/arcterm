@@ -380,6 +380,41 @@ describe("council:changed", () => {
         quiet.mockRestore();
     });
 
+    it("reads a list again on the next event while the fallback read of a failed Get is on its way", async () => {
+        const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+        const m = await fresh();
+        const all = [council("t1", "/p/t", { updated: 1, round: 1 }), council("t2", "/p/t", { updated: 0 })];
+        serves(m, all);
+        await m.loadCouncils("/p/t");
+
+        // t1 is saved, its Get fails, and the fallback list read is slow
+        all[0] = council("t1", "/p/t", { updated: 2, round: 2 });
+        m.get.mockRejectedValueOnce(new Error("gone"));
+        let late: (l: Council[]) => void = () => {};
+        m.list.mockImplementationOnce(() => new Promise<Council[]>((resolve) => (late = resolve)));
+        emit({ id: "t1", project: "/p/t" });
+        await settle();
+
+        // another council's event comes before the fallback answers: that event's splice alone would leave t1 stale
+        all[1] = council("t2", "/p/t", { updated: 3 });
+        m.get.mockResolvedValueOnce(all[1]);
+        emit({ id: "t2", project: "/p/t" });
+        await settle();
+        late([all[0], council("t2", "/p/t", { updated: 0 })]);
+        await settle();
+        const listed = m.globalStore.get(m.councilListAtom("/p/t"));
+        expect(listed?.map((c) => c.id)).toEqual(["t2", "t1"]);
+        expect(listed?.[1].round).toBe(2);
+
+        // once a read has landed the list is fresh again: the next event splices, listing nothing
+        m.list.mockClear();
+        m.get.mockResolvedValueOnce(council("t2", "/p/t", { updated: 4 }));
+        emit({ id: "t2", project: "/p/t" });
+        await settle();
+        expect(m.list).not.toHaveBeenCalled();
+        quiet.mockRestore();
+    });
+
     it("forgets a deleted council without loading anything, and closes it when it is open", async () => {
         const m = await fresh();
         serves(m, [council("k1", "/p/k", { state: "done" }), council("k2", "/p/k", { updated: 0 })]);

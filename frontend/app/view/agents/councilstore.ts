@@ -50,6 +50,8 @@ const knownProjects = new Map<string, string>(); // project key -> the path as f
 // a reload that overtakes an earlier one must not be overwritten by the earlier one's late answer
 const councilSeq = new Map<string, number>();
 const listSeq = new Map<string, number>();
+// project keys whose list missed a change (its council's Get failed) and has had no read land since
+const staleLists = new Set<string>();
 
 let subscribed = false;
 function subscribeCouncilChanged() {
@@ -78,11 +80,12 @@ function subscribeCouncilChanged() {
 // (the caller puts the council right in the list itself); one with nothing yet (its first read is on its way, or failed)
 // is read again, which drops the earlier answer too. Answers the projects whose list holds something. A null list is never
 // bumped without that new read: a list the late answer was dropped from would stay null, and useCouncils only reads
-// again when its project changes.
+// again when its project changes. A stale list (a failed Get's fallback read has not landed) is read again too: the
+// caller puts only its own council right, so dropping the fallback's answer would leave the missed change out.
 function supersedeListReads(): string[] {
     const read: string[] = [];
     for (const [key, project] of knownProjects) {
-        if (globalStore.get(councilListAtom(project)) == null) {
+        if (globalStore.get(councilListAtom(project)) == null || staleLists.has(key)) {
             void loadCouncils(project);
         } else {
             listSeq.set(key, (listSeq.get(key) ?? 0) + 1);
@@ -115,6 +118,7 @@ async function reloadChanged(data: CouncilChangedData): Promise<void> {
                     own.has(councilProjectKey(project)) ||
                     globalStore.get(councilListAtom(project))?.some((c) => c.id === id)
                 ) {
+                    staleLists.add(councilProjectKey(project));
                     void loadCouncils(project);
                 }
             }
@@ -171,6 +175,7 @@ export async function loadCouncils(project: string): Promise<void> {
     try {
         const councils = (await RpcApi.CouncilListCommand(TabRpcClient, { project })) ?? [];
         if (listSeq.get(key) === seq) {
+            staleLists.delete(key);
             globalStore.set(councilListAtom(project), councils);
             for (const c of councils) {
                 if (knownCouncils.has(c.id)) {
