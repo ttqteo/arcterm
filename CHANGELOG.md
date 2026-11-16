@@ -40,6 +40,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Fixed
 
 - The Chat you are reading no longer jumps to the top when an agent you just launched finishes starting up.
+- A message you send while a Claude agent works no longer leaves it reading idle for the rest of that turn: Chat keeps
+  its Working line and the roster its working state.
 - An agent started with Work on stays on the initiative you picked: reading or writing another initiative along the
   way no longer moves its header and initiative band to that one.
 - The Jarvis hologram no longer turns into the pixel pet for a few seconds after a long day of opening and closing

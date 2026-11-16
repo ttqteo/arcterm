@@ -25,7 +25,7 @@ import { lintContext, lintMemory, parseMemory, referencedPaths, shouldReport, ta
 import type { Ran } from "./mention-core";
 import { leadingMention, mentionRefusal, sendArgs, sendOutcome } from "./mention-core";
 import { refsContext } from "./refs-core";
-import { idleArgs } from "./status-core";
+import { idleArgs, TurnStatus } from "./status-core";
 import { createSpawnGate, endsTurnSay, RUN_VERDICT, tokengateArgs, tokengateLine } from "./tokengate-core";
 import type { Group, SpawnVerdict } from "./tokengate-core";
 import { isCommit, isLiveCheck, uiCheckReminder, uiFiles } from "./uicheck-core";
@@ -64,6 +64,22 @@ const racing = new Set<string>();
 // set when a question goes up in claude's dialog this turn. a question dismissed there runs no PostToolUse and
 // no Stop hook, so the turn's end reports idle, or the cockpit reads asking until the next prompt
 let isAskInDialog = false;
+
+// the mod's own idle and working reports, in order (status-core.ts TurnStatus)
+const turnStatus = new TurnStatus();
+
+// one `wsh agentstatus` report; a failure is logged and never holds the turn
+async function reportStatus($: EngineInterface, args: string[]): Promise<void> {
+    try {
+        const ran = await $.process.run([WSH, ...args]);
+        if (ran.exitCode !== 0) {
+            $.ui.log(`arc: wsh ${args.slice(0, 3).join(" ")} exited ${ran.exitCode}: ${ran.stderr.trim()}`, { to: "debug" });
+        }
+    } catch (err) {
+        // an idle missed here is still corrected by the idle notification, later
+        $.ui.log(`arc: wsh ${args.slice(0, 3).join(" ")} failed: ${String(err)}`, { to: "debug" });
+    }
+}
 
 // the last turn's cache miss, shown above the prompt until the next turn starts; null when none is
 const cacheMiss = atom({ plugin: "arc", key: "cacheMiss" } as const, null);
@@ -777,6 +793,10 @@ export const register: Register = (on) => {
     // the session as it grows. the main loop only, and only inside arcterm; a failed write stops the writes, never the
     // stream
     on("turn.step", async function* ($, e, next) {
+        if (active) {
+            // a turn that started as the last one's idle went out reads working again (status-core.ts TurnStatus)
+            void turnStatus.stepped(e.agentId, transcriptPath, (args) => reportStatus($, args));
+        }
         const file = active && e.agentId === undefined ? await liveFileOf($) : null;
         if (file === null) {
             return yield* next(e);
@@ -879,18 +899,9 @@ export const register: Register = (on) => {
                 $.ui.log(`arc: submitting an unread mid-turn text failed: ${String(err)}`, { to: "debug" })
             );
         }
-        const args = active ? idleArgs(e, transcriptPath, wasAskInDialog) : null;
-        if (args) {
-            try {
-                const ran = await $.process.run([WSH, ...args]);
-                if (ran.exitCode !== 0) {
-                    $.ui.log(`arc: wsh agentstatus --state idle exited ${ran.exitCode}: ${ran.stderr.trim()}`, { to: "debug" });
-                }
-            } catch (err) {
-                // the idle notification still corrects the cockpit, later
-                $.ui.log(`arc: wsh agentstatus --state idle failed: ${String(err)}`, { to: "debug" });
-            }
-        }
+        await turnStatus.ended(active ? idleArgs(e, transcriptPath, wasAskInDialog) : null, (args) =>
+            reportStatus($, args)
+        );
         // in every session, Arc's or not: the band shows the person the miss either way
         if (!e.agentId) {
             // not awaited: reading a long transcript must not hold the turn's end
