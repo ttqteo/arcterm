@@ -25,10 +25,14 @@ import (
 // the wcore package coordinates actions across the storage layer
 // orchestrating the wave object store, the wave pubsub system, and the wave rpc system
 
+const initialDataTimeout = 30 * time.Second
+
 // Ensures that the initial data is present in the store, creates an initial window if needed
 func EnsureInitialData() (bool, error) {
-	// does not need to run in a transaction since it is called on startup
-	ctx, cancelFn := context.WithTimeout(context.Background(), 2*time.Second)
+	// does not need to run in a transaction since it is called on startup. The bound covers a first launch's
+	// client, starter workspace and window together on a loaded machine: at 2 s it could run out mid-transaction
+	// (an engine run's Final, on a fresh store), the commit failed with sql.ErrTxDone and wavesrv did not start
+	ctx, cancelFn := context.WithTimeout(context.Background(), initialDataTimeout)
 	defer cancelFn()
 	client, err := wstore.DBGetSingleton[*waveobj.Client](ctx)
 	firstLaunch := false
