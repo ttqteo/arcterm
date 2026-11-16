@@ -693,7 +693,9 @@ export const register: Register = (on) => {
         const started = await next(e);
         // inside arcterm or not: a memory goes stale wherever claude runs
         await lintMemoryDir($, e.cwd).catch((err) => $.ui.log(`arc: memory lint failed: ${String(err)}`, { to: "debug" }));
-        if (active) {
+        // only the block's own session: a `claude -p` it runs inherits WAVETERM_BLOCKID, and its stream would
+        // replace the session's, so a lead's tell went to the nested run (run 0ea46b22)
+        if (active && isInteractive) {
             void listenToCockpit($);
         }
         publishCommandsAtStart($);

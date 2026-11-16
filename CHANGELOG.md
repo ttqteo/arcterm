@@ -41,6 +41,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A run no longer freezes its other workers, merges and your actions for up to a minute while it checks out a task's
   tree and runs its Setup.
+- A message a run's lead sends a working task now reaches its worker, not a `claude -p` the worker started.
 - On Diff, n and p open the folder of the file they step to, so its row no longer stays hidden in a collapsed folder.
 - On the Cockpit, Enter sends a one-question ask you answered by typing only, as it already did for a picked option.
 - arcterm no longer fails to start the first time on a busy machine, and its store's write-ahead log stays
