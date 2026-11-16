@@ -106,16 +106,27 @@ const INHERITED_AGENT_VARS: &[&str] = &[
 ];
 
 // What an agent's tool shell sets for output it captures, not for a terminal: Claude Code's PowerShell tool
-// runs with NO_COLOR=1. Dropped only when one of the vars above shows the launch came from such a shell, so a
+// runs with NO_COLOR=1, and its shells with TERM=dumb. Dropped only when the launch came from such a shell, so a
 // NO_COLOR the person set themselves stays. On 2026-11-09 an arcterm reinstalled from an agent's PowerShell
 // (`/R` reopens it as the installer's child) drew every claude TUI in it without color.
 const AGENT_SHELL_DISPLAY_VARS: &[&str] = &["NO_COLOR"];
 
-// The names to remove, given which ones are set.
-fn names_to_scrub(is_set: impl Fn(&str) -> bool) -> Vec<&'static str> {
-    let mut names: Vec<&'static str> = INHERITED_AGENT_VARS.iter().copied().filter(|n| is_set(n)).collect();
-    if !names.is_empty() {
-        names.extend(AGENT_SHELL_DISPLAY_VARS.iter().copied().filter(|n| is_set(n)));
+// A launch came from a captured tool shell when it carries an agent marker or TERM=dumb. The markers alone missed
+// one: on 2026-11-16 `! task install` typed into a claude session reopened arcterm with NO_COLOR=1 and TERM=dumb but
+// no CLAUDECODE, and every agent drew without color again. An app opened from the Start menu, Explorer or Finder has
+// no TERM at all, so TERM=dumb there says a non-terminal caller handed it its environment.
+fn from_tool_shell(markers: &[&'static str], get: &impl Fn(&str) -> Option<String>) -> bool {
+    !markers.is_empty() || get("TERM").as_deref() == Some("dumb")
+}
+
+// The names to remove, given each one's value.
+fn names_to_scrub(get: impl Fn(&str) -> Option<String>) -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = INHERITED_AGENT_VARS.iter().copied().filter(|n| get(n).is_some()).collect();
+    if from_tool_shell(&names, &get) {
+        names.extend(AGENT_SHELL_DISPLAY_VARS.iter().copied().filter(|n| get(n).is_some()));
+        if get("TERM").as_deref() == Some("dumb") {
+            names.push("TERM");
+        }
     }
     names
 }
@@ -123,7 +134,7 @@ fn names_to_scrub(is_set: impl Fn(&str) -> bool) -> Vec<&'static str> {
 // Removes those from our own environment so wavesrv and everything it spawns start clean, and returns the
 // names it removed. Call it at the top of main, before any thread starts.
 pub fn scrub_inherited_agent_env() -> Vec<&'static str> {
-    let names = names_to_scrub(|name| std::env::var_os(name).is_some());
+    let names = names_to_scrub(|name| std::env::var(name).ok());
     for name in &names {
         std::env::remove_var(name);
     }
@@ -199,9 +210,17 @@ mod tests {
 
     #[test]
     fn drops_no_color_only_when_an_agent_shell_set_the_launch() {
-        let from_agent = names_to_scrub(|n| n == "CLAUDECODE" || n == "NO_COLOR");
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |n: &str| pairs.iter().find(|(k, _)| *k == n).map(|(_, v)| v.to_string())
+        };
+        let from_agent = names_to_scrub(env(&[("CLAUDECODE", "1"), ("NO_COLOR", "1")]));
         assert_eq!(from_agent, vec!["CLAUDECODE", "NO_COLOR"]);
+        // `! task install` from a claude session: no marker, but the tool shell's TERM=dumb
+        let bang = names_to_scrub(env(&[("NO_COLOR", "1"), ("TERM", "dumb"), ("COLORTERM", "truecolor")]));
+        assert_eq!(bang, vec!["NO_COLOR", "TERM"]);
         // the person's own NO_COLOR, arcterm opened from the Start menu
-        assert!(names_to_scrub(|n| n == "NO_COLOR").is_empty());
+        assert!(names_to_scrub(env(&[("NO_COLOR", "1")])).is_empty());
+        // opened from a real terminal that has its own TERM
+        assert!(names_to_scrub(env(&[("NO_COLOR", "1"), ("TERM", "xterm-256color")])).is_empty());
     }
 }

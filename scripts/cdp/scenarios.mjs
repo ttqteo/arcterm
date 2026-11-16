@@ -55,6 +55,7 @@ import {
 } from "./cockpitofficescenarios.mjs";
 import * as agentPageFixtures from "./agent-page-fixtures.mjs";
 import { makeCouncilScenarios } from "./councilscenarios.mjs";
+import agentHeaderScenarios from "./scenarios-agent-header.mjs";
 import agentStartFailedScenarios from "./scenarios-agent-start-failed.mjs";
 import sidebarColumnsScenarios from "./scenarios-sidebar-columns.mjs";
 import agentStreamsScenarios from "./scenarios-agent-streams.mjs";
@@ -33153,12 +33154,12 @@ const brainstormMode = {
             { ...bsBrief(s2b), question: s2b.question, rail: s2b.rail, history: q4row }
         );
 
-        // the asked part's mockups are the rail's Boards tab: question 4's part (When it pages) lists none and its rail has no
-        // tab strip, question 5's two open on Boards, headed by their file names since the question offers no answer to tie
-        // them to, and the question column holds no thumbnails
+        // the asked part's mockups are the rail's Boards tab: question 4's part (When it pages) lists none, so its rail keeps
+        // Boards for the other parts' boards but opens on Decided so far; question 5's two open on Boards, headed by their
+        // file names since the question offers no answer to tie them to, and the question column holds no thumbnails
         rec(
-            "2l2. a question whose part lists boards opens the rail on them: question 5 for What on-call sees shows Boards · 2 (shown) beside Decided so far · 4, both boards live and headed by their file names, tied to no option; question 4, whose part lists none, had no tab strip; the question column holds no thumbnails",
-            s2.railTabs.length === 0 &&
+            "2l2. a question whose part lists boards opens the rail on them: question 5 for What on-call sees shows Boards · 2 (shown) beside Decided so far · 4, both boards live and headed by their file names, tied to no option; question 4, whose part lists none, kept Boards but opened on Decided so far; the question column holds no thumbnails",
+            JSON.stringify(s2.railTabs) === JSON.stringify(["boards", "second*"]) &&
                 rail5.ok &&
                 rail5.tabs.length === 2 &&
                 rail5.tabs[0].tab === "boards" &&
@@ -44845,6 +44846,80 @@ const agentChat = {
                 { pin27, back27 }
             );
 
+            // 27b. the pinned bar lists your prompts: with the first prompt pinned its counter reads 1/N, a click on it opens
+            // the list of all N under the bar with the first marked as the one you are reading and focused, ArrowDown moves
+            // focus to the next, Escape closes it, a right-click on the bar opens it again, and picking the last prompt scrolls
+            // it into view and closes the list
+            const pmMenu = `document.querySelector('[role="menu"][aria-label="Your prompts"]')`;
+            const pin27b = await h.ev(`(async () => {
+                const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+                const sc = ${acScroller(A)};
+                const conv = ${acLayer(A)}?.querySelector("[data-chat-conversation]");
+                const first = conv?.querySelector("[data-user-prompt]");
+                if (!sc || !conv || !first) return { ok: false, why: "no scroller, conversation or prompt" };
+                sc.scrollTop = Math.round(first.getBoundingClientRect().bottom - sc.getBoundingClientRect().top + sc.scrollTop) + 6;
+                for (let i = 0; i < 60 && !conv.querySelector("[data-prompt-counter]"); i++) await wait(50);
+                const counter = conv.querySelector("[data-prompt-counter]");
+                return {
+                    ok: !!counter,
+                    prompts: conv.querySelectorAll("[data-user-prompt]").length,
+                    counter: counter?.textContent.trim() ?? null,
+                };
+            })()`);
+            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-conversation] [data-prompt-counter]")?.click()`);
+            const open27b = await polishWaitFor(h, `!!${pmMenu} && document.activeElement?.dataset?.promptItem === "0"`, 3000);
+            const menu27b = await h.ev(`(() => {
+                const m = ${pmMenu};
+                const rows = [...(m?.querySelectorAll("[data-prompt-item]") ?? [])];
+                const bar = ${acLayer(A)}?.querySelector("[data-pinned-prompt] [data-prompt-counter]")?.parentElement?.getBoundingClientRect();
+                const r = m?.getBoundingClientRect();
+                return {
+                    rows: rows.length,
+                    current: rows.findIndex((b) => b.getAttribute("aria-current") === "true"),
+                    reading: rows[0]?.textContent.includes("reading") ?? false,
+                    under: !!bar && !!r && r.top >= bar.bottom && Math.abs(r.right - bar.right) <= 1,
+                    expanded: ${acLayer(A)}?.querySelector("[data-prompt-counter]")?.getAttribute("aria-expanded") ?? null,
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-27b-prompt-menu.png");
+            await acKey(h, acKeys.down);
+            const moved27b = await h.ev(`document.activeElement?.dataset?.promptItem ?? null`);
+            await acKey(h, acKeys.escape);
+            const closed27b = await polishWaitFor(h, `!${pmMenu}`, 3000);
+            const stayed27b = await h.ev(acOnScreen(A));
+            const card27b = await h.ev(`(() => {
+                const r = ${acLayer(A)}?.querySelector("[data-pinned-prompt] [data-prompt-counter]")?.parentElement?.getBoundingClientRect();
+                return r ? { x: r.left + 40, y: r.top + r.height / 2 } : null;
+            })()`);
+            if (card27b != null) {
+                for (const type of ["mousePressed", "mouseReleased"]) {
+                    await h.cdp("Input.dispatchMouseEvent", { type, x: card27b.x, y: card27b.y, button: "right", clickCount: 1 });
+                }
+            }
+            const reopened27b = await polishWaitFor(h, `!!${pmMenu}`, 3000);
+            await h.ev(`[...(${pmMenu}?.querySelectorAll("[data-prompt-item]") ?? [])].pop()?.click()`);
+            const picked27b = await h.ev(`(async () => {
+                const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+                const sc = ${acScroller(A)};
+                const last = [...(${acLayer(A)}?.querySelectorAll("[data-chat-conversation] [data-user-prompt]") ?? [])].pop();
+                if (!sc || !last) return { ok: false };
+                const inView = () => {
+                    const r = last.getBoundingClientRect();
+                    const s = sc.getBoundingClientRect();
+                    return r.top >= s.top - 1 && r.bottom <= s.bottom + 1;
+                };
+                for (let i = 0; i < 80 && (!inView() || ${pmMenu}); i++) await wait(50);
+                return { ok: true, inView: inView(), menuGone: !${pmMenu} };
+            })()`);
+            rec(
+                "27b. the pinned bar's counter reads 1/N with the first prompt pinned; it opens the list of all N prompts under the bar, the first marked reading and focused; ArrowDown moves focus, Escape closes it and the chat stays; a right-click on the bar reopens it; picking the last prompt scrolls it into view and closes the list",
+                pin27b?.ok === true && pin27b.prompts >= 2 && pin27b.counter === `1/${pin27b.prompts}` &&
+                    open27b && menu27b.rows === pin27b.prompts && menu27b.current === 0 && menu27b.reading && menu27b.under && menu27b.expanded === "true" &&
+                    moved27b === "1" && closed27b && stayed27b && card27b != null && reopened27b &&
+                    picked27b?.ok === true && picked27b.inView && picked27b.menuGone,
+                { pin27b, open27b, menu27b, moved27b, closed27b, stayed27b, reopened27b, picked27b }
+            );
+
             // 28. the model chip opens a plain menu of the four families (names only) with the current one checked; Escape closes
             // it; picking Sonnet types its full model id into the block and closes the menu
             await showAgent(A);
@@ -54593,8 +54668,9 @@ const jobqueueAgentTag = {
         let tag = await readTag();
         await h.shot("cdp-shots/jobqueue-agent-tag.png");
         rec(
-            "1. the agent's row says queued #1, its tooltip the command and the RAM it waits on",
-            tag?.text === "queued #1" &&
+            "1. the agent's row says #1, its tooltip queued #1, the command and the RAM it waits on",
+            tag?.text === "#1" &&
+                tag.title.startsWith("queued #1 · ") &&
                 tag.title.includes("task check:ts") &&
                 tag.title.includes("needs 3.0 GB, 1.2 GB free") &&
                 !tag.amber,
@@ -54627,7 +54703,7 @@ const jobqueueAgentTag = {
         await h.shot("cdp-shots/jobqueue-agent-tag-long-wait.png");
         rec(
             "3. a job waiting 6 minutes turns the tag amber with a TriangleAlert",
-            tag?.text === "queued #1" && tag.amber && tag.triangle,
+            tag?.text === "#1" && tag.amber && tag.triangle,
             JSON.stringify(tag)
         );
 
@@ -55072,12 +55148,12 @@ const jobqueueRunTag = {
             // the sidebar-declutter spec: a status tag such as QueuedJobTag stays whole beside the columns, and the words
             // left of it shrink. So t-1's row carries the tag, whole, and its words (whole in their tooltip) say verify
             // queued; at the tree's width they are mostly cut. `clipped` is reported, not judged
-            "1. the run's line says queued #1 naming Verify · noop; t-1's row carries a whole queued #1 tag naming it, and its words say verify queued (whole in their tooltip)",
-            one.run?.text === "queued #1" &&
-                one.run.title.startsWith("Verify · noop: scripts/verify.mjs waits its turn") &&
-                one.worker?.tag === "queued #1" &&
+            "1. the run's line carries a short #1 tag whose tooltip says queued #1 and names Verify · noop; t-1's row carries a whole #1 tag naming it, and its words say verify queued (whole in their tooltip)",
+            one.run?.text === "#1" &&
+                one.run.title.startsWith("queued #1 · Verify · noop: scripts/verify.mjs waits its turn") &&
+                one.worker?.tag === "#1" &&
                 one.worker.tagWhole === true &&
-                one.worker.tagTitle.startsWith("Verify · noop: scripts/verify.mjs waits its turn") &&
+                one.worker.tagTitle.startsWith("queued #1 · Verify · noop: scripts/verify.mjs waits its turn") &&
                 /^t-1 · verify queued/.test(one.worker.sub ?? "") &&
                 one.worker.subTitle === one.worker.sub,
             JSON.stringify(one)
@@ -55099,8 +55175,8 @@ const jobqueueRunTag = {
         })()`);
         await h.shot("cdp-shots/jobqueue-run-tag-folded.png");
         rec(
-            "2. folded, the run's line keeps its queued #1",
-            folded.clicked && folded.folded && folded.tag === "queued #1",
+            "2. folded, the run's line keeps its #1",
+            folded.clicked && folded.folded && folded.tag === "#1",
             JSON.stringify(folded)
         );
         await h.ev(
@@ -55118,13 +55194,16 @@ const jobqueueRunTag = {
         );
         await polishWaitFor(
             h,
-            `${JQR_TREE}?.querySelector(${JSON.stringify(RUN_TAG)})?.textContent.trim() === "2 queued"`,
+            `${JQR_TREE}?.querySelector(${JSON.stringify(RUN_TAG)})?.textContent.trim() === "×2"`,
             3000
         );
         const two = await read();
         rec(
-            "3. with its Verify and its Final waiting, the run's line says 2 queued and names both",
-            two.run?.text === "2 queued" && two.run.title.includes("Verify · noop") && two.run.title.includes("Final"),
+            "3. with its Verify and its Final waiting, the run's line says ×2, its tooltip 2 queued naming both",
+            two.run?.text === "×2" &&
+                two.run.title.startsWith("2 queued: ") &&
+                two.run.title.includes("Verify · noop") &&
+                two.run.title.includes("Final"),
             JSON.stringify(two)
         );
 
@@ -63998,8 +64077,8 @@ const LINK_C1 = "First link chunk";
 const LINK_C2 = "Second link chunk";
 const tabEffort = async (h, tabId) =>
     (await waveService(h, "object", "GetObject", [`tab:${tabId}`]))?.meta?.["session:effort"] ?? null;
-// these agents report as Claude, so their cell opens in Chat: its lean header has no ◇ chip (the band under it replaces that),
-// and an agent with no initiative keeps the "+ Link to initiative" chip, with an i keycap
+// these agents report as Claude, so their cell opens in Chat; an agent with no initiative shows "/ + initiative" after its
+// project, with no keycap (its title says i), and no ◇ link
 const LINK_BTN = `document.querySelector("[data-agent-header] [data-initiative-link]")`;
 const LINK_PICKER = `document.querySelector("[data-initiative-picker]")`;
 
@@ -64033,13 +64112,13 @@ const initiativeLink = {
             const offered = await polishWaitFor(h, `!!${LINK_BTN}`, INIT_WAIT_MS);
             const chip = await h.ev(`(() => {
                 const el = ${LINK_BTN};
-                return el ? { text: el.textContent.replace(/\\s+/g, " ").trim(), keycap: [...el.querySelectorAll("span")].some((s) => /^i$/i.test(s.textContent.trim())) } : null;
+                return el ? { text: el.textContent.replace(/\\s+/g, " ").trim(), keycap: !!el.querySelector("kbd") || [...el.querySelectorAll("span")].some((s) => /^i$/i.test(s.textContent.trim())), title: el.title } : null;
             })()`);
             const noMenuRow = await h.ev(`!document.querySelector("[data-agent-header] [data-initiative-link-menu]")`);
             const noLink = await h.ev(`!document.querySelector("[data-agent-header] [data-initiative-link-open]") && !document.querySelector("[data-initiative-band]")`);
             rec(
-                '1. in Chat the header of an agent with no initiative shows the "+ Link to initiative" chip with its i keycap, no "…" menu row for it, no ◇ chip and no band',
-                offered === true && /Link to initiative/.test(chip?.text ?? "") && chip.keycap === true && noMenuRow === true && noLink === true,
+                '1. in Chat the header of an agent with no initiative shows "+ initiative" after its project (no keycap, its title naming i), no "…" menu row for it, no ◇ link and no band',
+                offered === true && chip?.text === "initiative" && chip.keycap === false && /\(i\)/.test(chip.title ?? "") && noMenuRow === true && noLink === true,
                 { offered, chip, noMenuRow, noLink }
             );
 
@@ -70712,6 +70791,7 @@ export const SCENARIOS = [
     ...brainstormBoardPickScenarios(BS_KIT),
     ...paletteBrainstormResumeScenarios(BS_KIT),
     ...briefActScenarios(JARVIS_KIT),
+    ...agentHeaderScenarios(RT_KIT),
     ...agentStartFailedScenarios(RT_KIT),
     ...agentStreamsScenarios(RT_KIT),
     ...chatBgTasksScenarios(RT_KIT),

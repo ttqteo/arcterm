@@ -15,8 +15,9 @@ export type PetForm = "sprout" | "hologram";
 
 export const DEFAULT_PET_FORM: PetForm = "hologram";
 
+// "sprout" is the stored value from before the characters; the form is any of them, so it reads Character
 export const PET_FORM_NAME: Record<PetForm, string> = {
-    sprout: "Sprout",
+    sprout: "Character",
     hologram: "Hologram",
 };
 

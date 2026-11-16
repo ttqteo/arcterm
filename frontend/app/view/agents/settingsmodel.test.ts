@@ -289,7 +289,7 @@ describe("settings pages", () => {
             "runs/runs", "runs/whilework", "runs/tokenburn",
             "terminal/text", "terminal/cursor", "terminal/behavior",
             "headless/runtime", "headless/openrouter",
-            "jarvis/jarvis", "jarvis/form", "jarvis/behaviour", "jarvis/folding", "jarvis/office",
+            "jarvis/form", "jarvis/behaviour", "jarvis/folding", "jarvis/office",
             "storage/vault", "storage/runworktrees", "storage/sessions", "storage/housekeeping", "storage/buildoutput",
             "storage/packagecaches", "storage/canvases", "storage/autoclean",
             "about/versions", "about/agents",
@@ -327,8 +327,9 @@ describe("settings pages", () => {
         ]);
         expect(cards["headless/runtime"]).toEqual(["headless.runtime"]);
         expect(cards["headless/openrouter"]).toEqual(["headless.apikey", "headless.cheap"]);
-        expect(cards["jarvis/jarvis"]).toEqual(["appearance.petcharacter", "appearance.petoutfit"]);
-        expect(cards["jarvis/form"]).toEqual(["appearance.petform", "appearance.petholosize"]);
+        expect(cards["jarvis/form"]).toEqual([
+            "appearance.petform", "appearance.petholosize", "appearance.petcharacter", "appearance.petoutfit",
+        ]);
         expect(cards["jarvis/behaviour"]).toEqual(["appearance.petstay", "appearance.petquotes"]);
         expect(cards["jarvis/folding"]).toEqual(["window.minimize", "window.sproutcorner", "window.autosprout"]);
         expect(cards["jarvis/office"]).toEqual([
@@ -472,6 +473,13 @@ describe("filterSections", () => {
         const found = filterSections(sections(), "claude account");
         expect(found.map((s) => s.id)).toEqual(["agents"]);
         expect(found[0].cards.map((c) => c.id)).toEqual(["claudeaccount"]);
+    });
+
+    it("finds the row-less Claude account card by its keywords", () => {
+        for (const q of ["subscription", "login", "Switch account"]) {
+            const found = filterSections(sections(), q);
+            expect(found.flatMap((s) => s.cards.map((c) => c.id))).toContain("claudeaccount");
+        }
     });
 
     it("returns nothing when no row or card matches", () => {

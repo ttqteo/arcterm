@@ -32,11 +32,13 @@ export type SettingRowDef = {
 };
 
 // A labelled group of rows on a page. A card may hold no rows: the Claude account card renders a list
-// that lives behind its own RPCs, so the index has nothing to count or search in it but its label.
+// that lives behind its own RPCs, so the index has nothing to search in it but its label and `keywords`.
 export type SettingCardDef = {
     id: string;
     label: string;
     rows: SettingRowDef[];
+    // more words a search finds the card by, for a card whose rows do not say them (the Claude account card)
+    keywords?: string[];
 };
 
 export type SettingSectionDef = {
@@ -301,8 +303,14 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
             blurb: "The Claude subscription new agents run on, when an idle agent sleeps, and the flags every launch starts with.",
             cards: [
                 // The account list lives behind its own RPCs, not in settings, so the card has no rows for the
-                // index to count or search; ClaudeAccountSection renders it whole.
-                { id: "claudeaccount", label: "Claude account", rows: [] },
+                // index to count or search; ClaudeAccountSection renders it whole, and a search finds it by its
+                // label and keywords.
+                {
+                    id: "claudeaccount",
+                    label: "Claude account",
+                    rows: [],
+                    keywords: ["subscription", "login", "sign in", "switch account", "setup-token", "oauth"],
+                },
                 {
                     id: "sleep",
                     label: "Sleep idle agents",
@@ -612,9 +620,24 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
             blurb: "Who Jarvis is, how it shows and behaves, when the window folds into it, and how the Office looks and sounds.",
             cards: [
                 {
-                    id: "jarvis",
-                    label: "Jarvis",
+                    // one card: the form first, then only the rows of the form picked (settingspages/jarvis.tsx)
+                    id: "form",
+                    label: "Form",
                     rows: [
+                        {
+                            id: "appearance.petform",
+                            title: "Shows as",
+                            desc: "The hologram, the default, sits bottom-right, blue when calm, amber when something waits on you (WebGL, about 20–40 MB more); in Float it stands on the float bar, and folded the window becomes it. A character is a pixel creature that walks the footer.",
+                            key: "jarvis.pet.form",
+                            scope: "local",
+                        },
+                        {
+                            id: "appearance.petholosize",
+                            title: "Hologram size",
+                            desc: "L is 132 px.",
+                            key: "jarvis.pet.hologramsize",
+                            scope: "local",
+                        },
                         {
                             id: "appearance.petcharacter",
                             title: "Character",
@@ -627,26 +650,6 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             title: "Vietnam's colours",
                             desc: "On 30/4, 1/5 and 2/9 it wears the flag shirt even when this is off.",
                             key: "jarvis.pet.outfit",
-                            scope: "local",
-                        },
-                    ],
-                },
-                {
-                    id: "form",
-                    label: "Form",
-                    rows: [
-                        {
-                            id: "appearance.petform",
-                            title: "Shows as",
-                            desc: "The hologram, the default, sits bottom-right, blue when calm, amber when something waits on you (WebGL, about 20–40 MB more). In Float it stands on the float bar, folded it takes Sprout's place. Sprout walks the footer.",
-                            key: "jarvis.pet.form",
-                            scope: "local",
-                        },
-                        {
-                            id: "appearance.petholosize",
-                            title: "Hologram size",
-                            desc: "L is 132 px. Sprout keeps its size.",
-                            key: "jarvis.pet.hologramsize",
                             scope: "local",
                         },
                     ],
@@ -954,8 +957,8 @@ export function vaultSyncFailureNote(err: string, reloaded: VaultStatusRtnData |
     return null;
 }
 
-// Cards keep the rows the query matches; a card whose label matches keeps all of its rows, which is how
-// the Claude account card (no rows) is found. Empty cards drop, then empty pages. An empty query returns
+// Cards keep the rows the query matches; a card whose label or keywords match keeps all of its rows, which
+// is how the Claude account card (no rows) is found. Empty cards drop, then empty pages. An empty query returns
 // the sections unchanged (identity) so callers can skip the filtered path.
 export function filterSections(sections: SettingSectionDef[], query: string): SettingSectionDef[] {
     const q = query.trim().toLowerCase();
@@ -966,12 +969,15 @@ export function filterSections(sections: SettingSectionDef[], query: string): Se
         .map((s) => ({
             ...s,
             cards: s.cards
-                .map((c) =>
-                    c.label.toLowerCase().includes(q) ? c : { ...c, rows: c.rows.filter((r) => rowMatches(r, q)) }
-                )
-                .filter((c) => c.rows.length > 0 || c.label.toLowerCase().includes(q)),
+                .map((c) => (cardMatches(c, q) ? c : { ...c, rows: c.rows.filter((r) => rowMatches(r, q)) }))
+                .filter((c) => c.rows.length > 0 || cardMatches(c, q)),
         }))
         .filter((s) => s.cards.length > 0);
+}
+
+// whether a card's own words (its label and keywords) hold the lowercased query
+function cardMatches(card: SettingCardDef, q: string): boolean {
+    return `${card.label} ${(card.keywords ?? []).join(" ")}`.toLowerCase().includes(q);
 }
 
 // Which section the detail pane shows. A search that filters the selected section away moves the

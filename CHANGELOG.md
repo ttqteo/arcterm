@@ -50,9 +50,25 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   question with its options as 1–9 keys (arrows move between cards, Enter opens the agent). The S button on its title
   bar shrinks it to 340×440 and pins it on top of your other windows; pressed again it goes back to where it was, and
   it reopens small and pinned after a restart. <!-- try: open-sidecar -->
+- Jump to any earlier prompt from the bar pinned at the top of Chat: its counter (10/12) or a right-click on the bar
+  lists every prompt you sent in the conversation, and picking one scrolls back to it (arrows and Enter work too).
 
 ### Changed
 
+- The command palette's New run and New agent rows, and its Quick and Orchestrate rows, now say they open the New
+  dialog, not the New run or New agent window it replaced.
+- Jarvis's peek no longer shows the pin button while Jarvis is the hologram, which never walks off; Sprout and the
+  folded peek keep it.
+- An initiative's Parent initiative is picked from a searchable list of your initiatives (those in the same project
+  first) and shows the parent's name, instead of a box asking for its id.
+- Settings → Jarvis & Office → Form now picks Hologram or Character (it said Sprout, which is also one of the
+  characters), and shows only the picked form's settings: Hologram size for the hologram, Character and Vietnam's
+  colours for a character. The fold button says Fold into Jarvis while Jarvis is the hologram.
+- The agent header reads at a glance: after the name and state come three groups, each with its own icon: the
+  project and its initiative (`/ + initiative` when there is none), one run link (a lead's run, the runs a session
+  started, or a worker's lead; a click opens a menu of this run, where it was started from and the runs it started),
+  and the model with its context. Chat shows the runtime, state, model and context too, and its ◇ initiative opens the
+  band. In a narrow pane the words shorten and Split, Float and Fullscreen move into the More menu.
 - Building the Activity graph's token history in the background, which on a fresh install reads every transcript on
   disk, now uses half your cores, so the machine stays responsive while it runs.
 - The Files tab's filter finds a file by its path once you type a `/` (`results/study/audit_prefill.json`), and a
@@ -60,11 +76,26 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Find in a document (Ctrl+F in the File tab) floats on the same frosted glass as find in a terminal.
 - The highlighted row in a frosted menu, picker or popover stays visible over a bright terminal: it lifts with a light tint instead of a solid grey, and the dim text in those panels is a shade brighter so it stays readable on it.
 - A brainstorm board opened over Chat now steps to the previous or next board with ← and →.
+- A brainstorm question about a part with no board of its own keeps the rail's Boards tab, listing every part's boards;
+  the rail still opens on Decided so far, where before the Boards tab was gone until a question with boards came.
 
 ### Fixed
 
 - The harness menu in Ask Jarvis no longer runs off the bottom of a short window: it fits the space beside its button
   and scrolls, so every harness can be picked.
+- Ctrl+R and Ctrl+Shift+R no longer try to redraw a sleeping agent's terminal, whose process has ended.
+- Settings search finds the Claude account card by "subscription", "login" or "switch account", not only by its name.
+- Switching between Full and Float takes about half as long and no longer stutters as it fades: at the default zoom
+  the window waited half a second for nothing on every switch, and Jarvis's hologram was rebuilt in the middle of the
+  fade. Opening the window back out of Sprout skips that half-second wait too. On Windows the window's empty outline no
+  longer jumps two or three times before the new layout fades in: the window stays out of sight while it changes size.
+- A row in the Agent sidebar no longer pushes its RAM · tokens · age off its end: a run link such as `plan queued #1`,
+  what an agent asks you, a worker's held ask or `in council` shortens instead, its tooltip still saying it in full.
+  A run, agent or worker waiting in the job queue shows a short `#1` (or `×2` for a run) instead of `queued #1`, whole
+  beside its progress and columns; hover it for the words.
+
+- Agents keep their colors in an arcterm reopened by `! task install` typed in a Claude Code session: that shell
+  sets `NO_COLOR` without the markers arcterm looked for, so every agent drew in plain white again.
 - A Chat message that ends with a file you mentioned is sent: Claude Code's file suggestions took its Enter, so the
   message sat unsent in Claude Code's box until your next one joined it.
 - Text typed right against a file chip in Chat's box gets a space before it, so it no longer joins the file's path and

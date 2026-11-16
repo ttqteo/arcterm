@@ -26,6 +26,7 @@ import {
     RECENT_BYPASS_MS,
     runQueuedJobs,
     runQueuedTag,
+    shortQueuedTag,
     sizeLabel,
     sourceLabel,
     stepQueuedState,
@@ -200,11 +201,11 @@ describe("jobqueue", () => {
         expect(runQueuedJobs(null, "R", new Set(["w1"]))).toEqual([]);
         expect(runQueuedJobs(d, undefined, new Set(["w1"]))).toEqual([]);
     });
-    it("tags a run with its one waiting job, or how many wait, and warns once any waited long", () => {
+    it("tags a run short with its one waiting job's place, or how many wait, and warns once any waited long", () => {
         expect(runQueuedTag([], 0)).toBeNull();
         const one = runQueuedTag([job({ position: 1, label: "Verify · Four", name: "scripts/verify.mjs" })], 1_000);
-        expect(one?.label).toBe("queued #1");
-        expect(one?.title).toBe("Verify · Four: scripts/verify.mjs waits its turn in the heavy-job queue");
+        expect(one?.label).toBe("#1");
+        expect(one?.title).toBe("queued #1 · Verify · Four: scripts/verify.mjs waits its turn in the heavy-job queue");
         expect(one?.warn).toBe(false);
         const two = runQueuedTag(
             [
@@ -213,11 +214,18 @@ describe("jobqueue", () => {
             ],
             LONG_WAIT_MS + 1
         );
-        expect(two?.label).toBe("2 queued");
+        expect(two?.label).toBe("×2");
         expect(two?.title).toBe(
-            "2 of this run's jobs wait their turn in the heavy-job queue: Verify · Four (scripts/verify.mjs), task check:ts"
+            "2 queued: 2 of this run's jobs wait their turn in the heavy-job queue: Verify · Four (scripts/verify.mjs), task check:ts"
         );
         expect(two?.warn).toBe(true);
+        expect(runQueuedTag([job({ label: "Final", name: "final-verify" })], 0)?.label).toBe("");
+    });
+    it("tags an agent's tree row short with its place, its words opening the tooltip", () => {
+        const tag = shortQueuedTag(job({ position: 2, name: "task check:ts", queuedts: 0 }), 1_000);
+        expect(tag.label).toBe("#2");
+        expect(tag.title).toBe("queued #2 · task check:ts waits its turn in the heavy-job queue: 1 job ahead of it");
+        expect(shortQueuedTag(job({ name: "go test" }), 0).label).toBe("");
     });
     it("tags the head of the queue with why it waits", () => {
         const tag = queuedTag(job({ position: 1, reason: "needs 3.0 GB, 1.2 GB free", queuedts: 0 }), 20_000);

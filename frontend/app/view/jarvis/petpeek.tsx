@@ -61,6 +61,7 @@ import {
 import { briefingStateAtom, loadBriefingIfNone } from "./briefingstore";
 import { splitIdeas } from "./briefrows";
 import { buildEffortCards } from "./effortmodel";
+import { petForm } from "./hologrammodel";
 import { setRouteModel } from "./jarvisroutestore";
 import { peekAddress } from "./openref";
 import { formKey, questionAfterPick, type FormKey } from "./peekanswer";
@@ -89,7 +90,15 @@ import {
     type PeekRow,
 } from "./petpeekmodel";
 import { PET_STAY_CHOICES, shownStayChoice, stayUntilLabel, type PetStayChoice } from "./petstay";
-import { petActStateAtom, petPeekDestAtom, petPeekOpenAtom, petSaidAtom, petStayAtom, setPetStay } from "./petstore";
+import {
+    petActStateAtom,
+    petFormAtom,
+    petPeekDestAtom,
+    petPeekOpenAtom,
+    petSaidAtom,
+    petStayAtom,
+    setPetStay,
+} from "./petstore";
 import { eventLabel, type PetEvent } from "./petvoice";
 import { ageLabel } from "./recallderive";
 import { reviewCards, reviewQueue, reviewSummary, reviewSummaryLine } from "./reviewmodel";
@@ -884,6 +893,7 @@ export function PetPeek({
 
     // folded into Sprout the chat is for looking, not asking: no field, only a reply already under way
     const folded = onRestore != null;
+    const hologramShown = petForm(useAtomValue(petFormAtom)) === "hologram" && !folded;
     const close = useCallback(() => {
         returnFocusRef.current = anchor;
         setReturnFocusEnabled(true);
@@ -1276,8 +1286,10 @@ export function PetPeek({
                                                 >
                                                     {quiet ? "Nothing waiting on you" : `${rows.length} waiting on you`}
                                                 </h2>
-                                                {/* before Full view, and before Terminal folded */}
-                                                <PetStayPin folded={folded} />
+                                                {/* before Full view, and before Terminal folded; only for Sprout: the
+                                                hologram never walks, so there is no stay to pin (folded always draws
+                                                Sprout) */}
+                                                {hologramShown ? null : <PetStayPin folded={folded} />}
                                                 {onRestore != null ? (
                                                     // no titles: over the see-through folded window, the tooltip
                                                     // chip's popover shadow smears the app behind
@@ -1541,7 +1553,8 @@ function PeekFloat({
         placement,
         strategy: "fixed",
         middleware: [offset(12), shift({ padding: 8, crossAxis: true })],
-        whileElementsMounted: autoUpdate,
+        // only while open: closed, it re-placed an unseen peek on every step of a window resize (PetBubble's reason)
+        whileElementsMounted: open ? autoUpdate : undefined,
     });
     useEffect(() => {
         refs.setPositionReference(anchor);

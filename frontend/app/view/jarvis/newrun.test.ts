@@ -4,14 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { Attachment } from "../agents/composerattachments";
 import type { RunConfig } from "./newrun";
-import {
-    initialPick,
-    launchGoal,
-    launchOptsFromConfig,
-    prefillToLaunch,
-    rankProjects,
-    resolveChannelTarget,
-} from "./newrun";
+import { launchGoal, launchOptsFromConfig, prefillToLaunch, rankProjects, resolveChannelTarget } from "./newrun";
 
 const ch = (oid: string, projectpath: string): Channel => ({ oid, projectpath }) as Channel;
 
@@ -195,28 +188,6 @@ describe("rankProjects", () => {
 
     it("has nothing to rank in an empty registry", () => {
         expect(rankProjects([], "wave")).toEqual([]);
-    });
-});
-
-describe("initialPick", () => {
-    const names = ["arc", "waveterm", "scratch"];
-
-    it("reopens on the project you last started work in", () => {
-        expect(initialPick(names, "waveterm")).toBe("waveterm");
-    });
-
-    it("falls back when the remembered project is no longer registered", () => {
-        expect(initialPick(names, "unregistered")).toBeNull();
-        expect(initialPick(["only"], "unregistered")).toBe("only");
-    });
-
-    it("preselects the only project there is, remembered or not", () => {
-        expect(initialPick(["only"], null)).toBe("only");
-    });
-
-    it("picks nothing when there is a choice and nothing is remembered", () => {
-        expect(initialPick(names, null)).toBeNull();
-        expect(initialPick([], null)).toBeNull();
     });
 });
 

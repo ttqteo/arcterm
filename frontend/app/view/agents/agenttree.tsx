@@ -920,10 +920,10 @@ function OriginChip({ model, link }: { model: AgentsViewModel; link: OriginLink 
                 e.stopPropagation();
                 openOriginLink(model, link.target);
             }}
-            className="flex flex-none cursor-pointer items-center gap-[3px] text-muted hover:text-primary"
+            className="flex min-w-0 cursor-pointer items-center gap-[3px] text-muted hover:text-primary"
         >
             <Workflow size={11} strokeWidth={1.8} aria-hidden className="flex-none" />
-            {link.label ? <span>{link.label}</span> : null}
+            {link.label ? <span className="truncate">{link.label}</span> : null}
         </button>
     );
 }
@@ -1398,7 +1398,7 @@ function ParentRow({
             <span
                 data-agent-ask-note
                 title={askingLabel(agent)}
-                className="min-w-0 max-w-[55%] flex-none truncate font-semibold text-warning"
+                className="min-w-0 max-w-[55%] truncate font-semibold text-warning"
             >
                 {askingLabel(agent)}
             </span>
@@ -1413,7 +1413,7 @@ function ParentRow({
                 <span
                     data-agent-in-council
                     title="Seated in a council that is running or waiting on you"
-                    className="flex-none whitespace-nowrap text-[10.5px] font-semibold text-ink-mid"
+                    className="min-w-0 truncate whitespace-nowrap text-[10.5px] font-semibold text-ink-mid"
                 >
                     in council
                 </span>
@@ -1434,7 +1434,7 @@ function ParentRow({
                     <ArrowUpRight size={10} strokeWidth={2.2} aria-hidden />
                 </button>
             ) : asking || startError != null ? null : queued ? (
-                <QueuedJobTag job={queued} />
+                <QueuedJobTag job={queued} short />
             ) : done ? (
                 // the chip's click is its own: it must not select the row it closes
                 <button
@@ -1910,11 +1910,14 @@ function WorkerRow({
                             lead
                         </span>
                     ) : asksYou ? (
-                        <span className="flex-none whitespace-nowrap text-[10.5px] font-semibold text-warning">
+                        <span
+                            title={agent?.ask?.hold ? askingLabel(agent) : undefined}
+                            className="min-w-0 truncate whitespace-nowrap text-[10.5px] font-semibold text-warning"
+                        >
                             {agent?.ask?.hold ? askingLabel(agent) : "asking"}
                         </span>
                     ) : queued ? (
-                        <QueuedJobTag job={queued} />
+                        <QueuedJobTag job={queued} short />
                     ) : null}
                     <RowCols
                         cells={rowCols(fields, { ram, tokens, age: workerAge(line) })}
@@ -2172,6 +2175,9 @@ const AGE_COL = `${COL_WIDTH.age} ${COL} text-ink-faint`;
 // The cells that end an agent's, a lead's, a run's or a worker's second line, one per field that is on (rowCols), in a
 // group of its own so every row spaces them alike. An empty cell keeps its width, so a row with no RAM read yet still
 // lines its tokens and age up with the rows around it. `ram` tags and titles the RAM cell while it has a figure.
+// Nothing pushes them past the line's end: whatever on the line holds words (progress, model, the ask note, the origin
+// and queued chips, a held ask, "in council") shrinks and cuts them first; only short fixed chips (fold, review, Resume,
+// Done, the marks) keep their width.
 function RowCols({ cells, ram }: { cells: RowCell[]; ram?: { attrs: Record<string, string>; title: string } }) {
     if (cells.length === 0) {
         return null;

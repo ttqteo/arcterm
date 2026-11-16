@@ -24,7 +24,8 @@ export function rowFieldsOf(raw: unknown): RowFields {
 }
 
 // The Agent tree's width: 248px, widened to 280px only while all three number columns (RAM · tokens · age, rowcols.ts)
-// are on, the one layout that leaves line 2 too little room for its words at 248px. Turning a column off gives the room back.
+// are on, the one layout that leaves line 2 too little room for its words at 248px. Any two fit at 248px, so turning a
+// column off gives the room back.
 export const AGENT_TREE_NARROW_PX = 248;
 export const AGENT_TREE_WIDE_PX = 280;
 

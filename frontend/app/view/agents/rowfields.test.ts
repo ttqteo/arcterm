@@ -11,11 +11,11 @@ describe("agentTreeWidth", () => {
         expect(agentTreeWidth(namesOff)).toBe(AGENT_TREE_WIDE_PX);
     });
 
-    it("keeps the tree narrow once any number column is off", () => {
+    it("keeps the tree narrow with any two columns, RAM and tokens included", () => {
+        expect(agentTreeWidth({ ...DEFAULT_ROW_FIELDS, age: false })).toBe(AGENT_TREE_NARROW_PX);
         expect(agentTreeWidth({ ...DEFAULT_ROW_FIELDS, ram: false })).toBe(AGENT_TREE_NARROW_PX);
         expect(agentTreeWidth({ ...DEFAULT_ROW_FIELDS, tokens: false })).toBe(AGENT_TREE_NARROW_PX);
-        expect(agentTreeWidth({ ...DEFAULT_ROW_FIELDS, age: false })).toBe(AGENT_TREE_NARROW_PX);
-        expect(agentTreeWidth({ ram: false, tokens: false, age: false })).toBe(AGENT_TREE_NARROW_PX);
+        expect(agentTreeWidth({ ...DEFAULT_ROW_FIELDS, ram: false, tokens: false, age: false })).toBe(AGENT_TREE_NARROW_PX);
     });
 });
 

@@ -280,8 +280,9 @@ export function runQueuedJobs(
     return ordered(d.jobs.filter((j) => !j.running && (j.runid === runId || (!!j.blockid && blockIds.has(j.blockid)))));
 }
 
-/** What a run's row says while any of its jobs waits: one job reads as its own tag does, several as "N queued", each
- * named in the tooltip. It warns once any has waited past LONG_WAIT_MS. Null with nothing waiting. */
+/** What a run's row says while any of its jobs waits, short so its line keeps its progress words: one job its place,
+ * "#1" (the bare glyph when it has none), several their count, "×2". The tooltip opens with the words ("queued #1 · ",
+ * "2 queued: ") and names each job. It warns once any has waited past LONG_WAIT_MS. Null with nothing waiting. */
 export function runQueuedTag(
     jobs: readonly JobQueueJob[],
     now: number
@@ -290,14 +291,22 @@ export function runQueuedTag(
         return null;
     }
     if (jobs.length === 1) {
-        return queuedTag(jobs[0], now);
+        return shortQueuedTag(jobs[0], now);
     }
     const names = jobs.map((j) => (j.label ? `${j.label} (${j.name})` : j.name));
     return {
-        label: `${jobs.length} queued`,
-        title: `${jobs.length} of this run's jobs wait their turn in the heavy-job queue: ${names.join(", ")}`,
+        label: `×${jobs.length}`,
+        title: `${jobs.length} queued: ${jobs.length} of this run's jobs wait their turn in the heavy-job queue: ${names.join(", ")}`,
         warn: jobs.some((j) => now - j.queuedts > LONG_WAIT_MS),
     };
+}
+
+/** The Agent tree's tag for one waiting job, short so it stays whole beside a row's columns: its place, "#1" (the bare
+ * glyph when it has none), the words ("queued #1 · ") opening its tooltip. The header has room for queuedTag's words. */
+export function shortQueuedTag(job: JobQueueJob, now: number): { label: string; title: string; warn: boolean } {
+    const tag = queuedTag(job, now);
+    const pos = job.position ?? 0;
+    return { ...tag, label: pos > 0 ? `#${pos}` : "", title: `${tag.label} · ${tag.title}` };
 }
 
 /** What an agent's row and header say while its heavy command waits its turn: the head of the queue says why it waits

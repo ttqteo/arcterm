@@ -32,6 +32,43 @@ export function pinnedPromptPush(nextTop: number | null, bandHeight: number): nu
     return Math.max(-bandHeight, Math.min(0, nextTop - bandHeight));
 }
 
+/** The fewest prompts a transcript has before the bar offers the list of them: with one, the list is the bar. */
+export const PROMPT_MENU_MIN = 2;
+
+/** The widest the list of prompts opens; under a narrower bar it takes the bar's width. */
+export const PROMPT_MENU_MAX_W = 440;
+
+/** Pure: the list's width under a bar this wide. */
+export function promptMenuWidth(barWidth: number): number {
+    return Math.max(0, Math.min(PROMPT_MENU_MAX_W, Math.round(barWidth)));
+}
+
+/** Pure: the bar's counter, the pinned prompt's place among count ("10/12"). */
+export function promptCounter(index: number, count: number): string {
+    return `${index + 1}/${count}`;
+}
+
+/** Pure: the row a key moves to in the list of count prompts from row at, or null for a key the list leaves alone.
+ *  ArrowUp / ArrowDown stop at the ends rather than wrap: the list is in conversation order, and wrapping from the
+ *  first prompt to the last reads as a jump to the other end of the conversation. */
+export function stepPromptMenu(at: number, key: string, count: number): number | null {
+    if (count <= 0) {
+        return null;
+    }
+    const last = count - 1;
+    switch (key) {
+        case "ArrowDown":
+            return Math.min(last, Math.max(0, at + 1));
+        case "ArrowUp":
+            return Math.max(0, Math.min(last, at - 1));
+        case "Home":
+            return 0;
+        case "End":
+            return last;
+    }
+    return null;
+}
+
 // fired (bubbling) on a transcript's root as its pinned prompt starts the scroll back, so a feed that sticks to its tail
 // (sticktobottom.tsx) lets go first: a smooth scroll starts at the bottom, and a re-pin on the next streamed entry would
 // snap it back down, over and over while the agent writes

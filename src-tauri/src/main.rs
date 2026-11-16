@@ -450,6 +450,7 @@ fn main() {
             macwindow::set_folded_chrome,
             macwindow::redirect_minimize,
             winframe::hold_window_frame,
+            winframe::cloak_window,
             foreground::app_foreground,
             foreground::raise_topmost,
             tray::set_tray_status,
@@ -595,6 +596,7 @@ fn main() {
         .run(|app_handle, event| {
             // The windows are still there when a quit is requested, and gone by Exit: Sidecar is read once more now
             if let tauri::RunEvent::ExitRequested { .. } = event {
+                EXIT_REQUESTED.store(true, std::sync::atomic::Ordering::Relaxed);
                 sidecar::on_exit_requested(app_handle);
             }
             // Kill wavesrv when the app exits so it doesn't orphan and hold wave.lock + its exe.
@@ -614,6 +616,16 @@ fn main() {
                         }
                     }
                     let _ = child.kill();
+                }
+                // An Exit with no ExitRequested before it is tao's WM_ENDSESSION: the installer's Restart Manager (or a
+                // sign-out) ending us. tao 0.35 marks its loop destroyed and returns, but the process lives on and the
+                // next window message panics "cannot move state from Destroyed" (every `task install` from 2026-11-13).
+                // tao 0.37 exits the process there; until the bump reaches it, exit here once the cleanup is done.
+                #[cfg(windows)]
+                if !EXIT_REQUESTED.load(std::sync::atomic::Ordering::Relaxed) {
+                    applog::log_line("[tauri] Windows ended the session (an installer or a sign-out); exiting");
+                    app_handle.cleanup_before_exit();
+                    std::process::exit(0);
                 }
             }
             // A click on the Dock icon: the frontend brings a window folded into Sprout back (floatstore.ts), since
@@ -635,6 +647,10 @@ fn main() {
 }
 
 const MAIN_WINDOW_LABEL: &str = "main";
+
+// Set by RunEvent::ExitRequested, which every quit arcterm asks for (app.exit, the last window closed, a restart)
+// raises before RunEvent::Exit; read there to tell those from Windows ending the session.
+static EXIT_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 // a window shown without activation still opens at the top of the z-order and covers the editor,
 // so the dev window is slotted directly behind whatever is in front before it is shown.

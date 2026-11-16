@@ -22,7 +22,7 @@ export interface LaunchItem {
 }
 
 export interface LaunchDeps {
-    // the New run window, prefilled: its project picker is where the project is settled, so a run never
+    // the New dialog on a run, prefilled: its Project column is where the project is settled, so a run never
     // starts in a project the palette guessed
     open: (goal: string, shape: RunShape) => void;
     consult: (runtime: string, goal: string) => void; // one-shot answer, no worker
@@ -51,7 +51,7 @@ export function buildLaunchItems(query: string, projectName: string | undefined,
             title: "Quick",
             desc: "one worker, no plan",
             verb: "Open",
-            echo: `Opens the New run window with “${goal}” as a Quick run${where}`,
+            echo: `Opens the New dialog with “${goal}” as a Quick run${where}`,
             run: () => deps.open(goal, "quick"),
             alt: orchestrate,
         },
@@ -61,7 +61,7 @@ export function buildLaunchItems(query: string, projectName: string | undefined,
             title: "Orchestrate",
             desc: "a lead plans tasks, workers run them",
             verb: "Open",
-            echo: `Opens the New run window with “${goal}” as an orchestrator run${where}`,
+            echo: `Opens the New dialog with “${goal}” as an orchestrator run${where}`,
             run: orchestrate.run,
             chord: "Mod:Enter",
         },

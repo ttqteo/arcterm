@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Settings > Jarvis & Office: Jarvis's character, outfit and quotes, how the window folds into Sprout, and the
-// Cockpit office's animation, work hours and sound.
+// Settings > Jarvis & Office: Jarvis's form (the hologram or a character, with only the picked form's rows), its quotes,
+// how the window folds, and the Cockpit office's animation, work hours and sound.
 
 import { getSettingsKeyAtom } from "@/app/store/global";
 import {
@@ -53,15 +53,20 @@ import { themePresetAtom } from "../themestore";
 import { autoSproutOn, minimizeChoice } from "../windowsize";
 
 export function JarvisPage() {
+    const hologram = petForm(useAtomValue(petFormAtom)) === "hologram";
+    // a search shows every row it matched, the other form's too: hiding them would leave the card empty
+    const searching = useContext(RowCtx).visible != null;
     return (
         <>
-            <SettingCard id="jarvis" label="Jarvis">
-                <PetCharacterRow />
-                <PetOutfitRow />
-            </SettingCard>
             <SettingCard id="form" label="Form">
                 <PetFormRow />
-                <HologramSizeRow />
+                {hologram || searching ? <HologramSizeRow /> : null}
+                {!hologram || searching ? (
+                    <>
+                        <PetCharacterRow />
+                        <PetOutfitRow />
+                    </>
+                ) : null}
             </SettingCard>
             <SettingCard id="behaviour" label="Behaviour">
                 <PetStayRow />
@@ -79,7 +84,7 @@ export function JarvisPage() {
     );
 }
 
-const PET_FORM_OPTIONS: { id: PetForm; label: string }[] = (["sprout", "hologram"] as const).map((id) => ({
+const PET_FORM_OPTIONS: { id: PetForm; label: string }[] = (["hologram", "sprout"] as const).map((id) => ({
     id,
     label: PET_FORM_NAME[id],
 }));

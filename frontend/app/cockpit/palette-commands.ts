@@ -123,10 +123,10 @@ export const START_DEFS: StartDef[] = [
         id: "run",
         title: "New run…",
         meta: "goal or plan file, workers, models",
-        echo: "Opens the New run window",
+        echo: "Opens the New dialog on a run",
         binding: "jarvis:new-run",
     },
-    { id: "agent", title: "New agent…", echo: "Opens the New agent window", binding: "new-agent" },
+    { id: "agent", title: "New agent…", echo: "Opens the New dialog on an agent", binding: "new-agent" },
     {
         id: "initiative",
         title: "New initiative…",

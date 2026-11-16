@@ -789,22 +789,27 @@ export function railGroups(f: BrainstormFile, base: string | null, partId?: stri
 // the check
 export type RailTab = "boards" | "second";
 
-// The tabs the rail draws and the one it opens on. With a question open, Boards exists only when the question's part has
-// a board or a spike (a spike is a link in the part's group, so a part with only spikes still has something to list),
-// and opens first, in the check too; a question with neither leaves the second tab alone. With no question open (the
-// design, the judge's wait, the agent writing, the review), Boards exists when any part has a board or a spike, and
-// opens first in the design, but in the check the check's tab does. The tab's count is the boards, not the spikes
+// The tabs the rail draws, the one it opens on, and the part whose boards Boards lists (undefined: every part's, each
+// under its part's title). Boards exists whenever any part has a board or a spike (a spike is a link in the part's group,
+// so a part with only spikes still has something to list). With a question open whose part has one, Boards lists only
+// that part and opens first, in the check too; a question on a part with neither keeps Boards, listing every part, but
+// opens on the second tab, so the design's boards stay one click away. With no question open (the design, the judge's
+// wait, the agent writing, the review), Boards lists every part and opens first in the design, but in the check the
+// check's tab does. The tab's count is the boards, not the spikes
 export function railTabs(
     f: BrainstormFile,
     base: string | null,
     at: { question: boolean; check: boolean }
-): { tabs: RailTab[]; first: RailTab } {
-    const asked = f.question?.part ? f.parts.find((p) => p.id === f.question?.part) : undefined;
-    const listed = at.question ? hasMockups(f, asked, base) : f.parts.some((p) => hasMockups(f, p, base));
-    if (!listed) {
+): { tabs: RailTab[]; first: RailTab; part?: string } {
+    if (!f.parts.some((p) => hasMockups(f, p, base))) {
         return { tabs: ["second"], first: "second" };
     }
-    return { tabs: ["boards", "second"], first: !at.question && at.check ? "second" : "boards" };
+    const askedId = at.question ? f.question?.part : undefined;
+    const asked = askedId ? f.parts.find((p) => p.id === askedId) : undefined;
+    if (at.question && hasMockups(f, asked, base)) {
+        return { tabs: ["boards", "second"], first: "boards", part: asked.id };
+    }
+    return { tabs: ["boards", "second"], first: at.question || at.check ? "second" : "boards" };
 }
 
 export type HistoryRow = {

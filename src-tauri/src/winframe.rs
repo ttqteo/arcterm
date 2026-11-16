@@ -85,6 +85,39 @@ pub fn hold_window_frame(held: bool) {
     HELD.store(held, Ordering::SeqCst);
 }
 
+// Windows only: hide the window from the screen, shadow and border included, without moving, resizing, deactivating it
+// or taking its taskbar button (DWMWA_CLOAK). The Full ↔ Float switch cloaks it while it changes frame: its page is
+// see-through by then, but the shadow showed the empty frame jump through each step (unmaximize, size, position,
+// maximize) before the content faded in. Turning the shadow off instead changes the frame by the resize borders and
+// cost ~400 ms (floatstore.ts beginFade). A no-op elsewhere.
+#[tauri::command]
+pub fn cloak_window(window: WebviewWindow, cloaked: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+        let on: i32 = cloaked.into();
+        // SAFETY: the pointer is to a live i32 whose size is passed; a stale handle only fails
+        let hr = unsafe {
+            DwmSetWindowAttribute(
+                hwnd.0 as _,
+                DWMWA_CLOAK as _,
+                &on as *const i32 as *const _,
+                std::mem::size_of::<i32>() as u32,
+            )
+        };
+        if hr < 0 {
+            return Err(format!("cloaking the window failed: {hr:#x}"));
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (window, cloaked);
+        Ok(())
+    }
+}
+
 // The window as it is now; None while its position or size cannot be read. Sidecar keeps its own frame from the same
 // reading (sidecar.rs).
 pub fn seen<R: Runtime>(window: &WebviewWindow<R>) -> Option<Seen> {

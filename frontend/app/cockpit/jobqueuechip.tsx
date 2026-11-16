@@ -14,6 +14,7 @@ import {
     queuedTag,
     recentBypass,
     runQueuedTag,
+    shortQueuedTag,
 } from "./jobqueue";
 import { jobQueueAtom, toggleJobQueue } from "./jobqueuestore";
 
@@ -70,13 +71,16 @@ export function JobQueueChip({ compact = false }: { compact?: boolean } = {}) {
 // An agent's tag while its heavy command waits its turn: its place in the queue, why in the tooltip. A click opens the
 // Jobs popover from the tag, where Run now and Skip are, and never reaches the row it sits on. It keeps its own clock,
 // as the chip does, so it turns to its warning past LONG_WAIT_MS without its row or header ticking every second.
-export function QueuedJobTag({ job }: { job: JobQueueJob }) {
+// `short` in the Agent tree: "#1", the words in the tooltip (shortQueuedTag), so it stays whole beside a row's columns.
+export function QueuedJobTag({ job, short }: { job: JobQueueJob; short?: boolean }) {
     useWaitClock();
-    return <QueueTagButton tag={queuedTag(job, Date.now())} attrs={{ "data-agent-queued": job.id }} />;
+    const tag = short ? shortQueuedTag(job, Date.now()) : queuedTag(job, Date.now());
+    return <QueueTagButton tag={tag} attrs={{ "data-agent-queued": job.id }} />;
 }
 
 // A run's tag while any of its jobs waits: its engine steps and its agents' commands, so a folded run still says it
-// waits on the queue. One job reads as an agent's tag does; several read "N queued", each named in the tooltip.
+// waits on the queue. Short beside the run's progress: the glyph and "#1" for one job, "×2" for several, the words and
+// each job in the tooltip (runQueuedTag).
 export function RunQueuedTag({ runId, jobs }: { runId: string; jobs: readonly JobQueueJob[] }) {
     useWaitClock();
     const tag = runQueuedTag(jobs, Date.now());
@@ -92,6 +96,7 @@ function useWaitClock() {
     }, []);
 }
 
+// whole, never cut: in the Agent tree its label is short ("#1", "×2") and the words left of it shrink instead
 function QueueTagButton({
     tag,
     attrs,
@@ -115,8 +120,8 @@ function QueueTagButton({
                 tag.warn ? "text-warning" : "text-muted"
             )}
         >
-            <Icon size={10} aria-hidden />
-            {tag.label}
+            <Icon size={10} aria-hidden className="flex-none" />
+            {tag.label ? <span>{tag.label}</span> : null}
         </button>
     );
 }

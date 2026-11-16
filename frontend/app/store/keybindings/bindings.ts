@@ -61,6 +61,7 @@ import { focusedCanvas, focusedCanvasMode, setMarking, stepCanvasBoard } from "@
 import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
 import { sendPendingComments } from "@/app/view/agents/commentsend";
 import { sideJumpTarget, type CompareRow } from "@/app/view/agents/comparerows";
+import { canDrive } from "@/app/view/agents/consumers";
 import {
     compareOnAtom,
     compareRefsAtom,
@@ -1439,7 +1440,10 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         const id = focusId();
         const items = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
         const blockId = focusedTerminalBlockId() ?? items.find((a) => a.id === id)?.blockId;
-        if (blockId != null) {
+        // a sleeping agent's process has ended, so its PTY is dead and there is nothing to redraw (the header leaves
+        // Redraw out of its menu for the same reason)
+        const owner = blockId == null ? undefined : items.find((a) => a.blockId === blockId);
+        if (blockId != null && (owner == null || canDrive(owner))) {
             redrawTerminal(blockId);
         }
     };

@@ -20,15 +20,15 @@ import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { attachAgent, createIdea, effortDetailAtom, loadEffortDetail } from "@/app/view/jarvis/effortstore";
-import { initiativeLinkText } from "@/app/view/jarvis/initiativework";
 import { InitiativePicker } from "@/app/view/jarvis/initiativepicker";
+import { initiativeLinkText } from "@/app/view/jarvis/initiativework";
 import { openOrPeek, openTarget } from "@/app/view/jarvis/openref";
 import { chunkRef } from "@/app/view/jarvis/trackeredit";
 import { redrawTerminal } from "@/app/view/term/termwrap";
 import { formatChordString } from "@/util/keysym";
 import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
-import { useAtomValue } from "jotai";
+import { atom, useAtomValue } from "jotai";
 import {
     ArrowUpFromLine,
     Check,
@@ -36,7 +36,10 @@ import {
     ChevronLeft,
     CircleStop,
     Columns2,
+    CornerLeftUp,
+    Diamond,
     Ellipsis,
+    Folder,
     GitCommitHorizontal,
     GitFork,
     Maximize2,
@@ -50,7 +53,7 @@ import {
     X,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { closeAgentChord, confirmCloseSession, interruptAgent } from "./agentactions";
 import { contextLevel, contextTokens } from "./agentrailmodel";
 import type { AgentsViewModel } from "./agents";
@@ -62,9 +65,9 @@ import { waitsOnUser } from "./brainstormmodel";
 import { brainstormAtom, brainstormBandAtom, shownBrainstormFile } from "./brainstormstore";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
-import { cellView, cellViewOptions, chatCapable, type CellView } from "./chatmode";
 import { canForkInChat } from "./chatfork";
 import { forkFromChat } from "./chatforkaction";
+import { cellView, cellViewOptions, chatCapable, type CellView } from "./chatmode";
 import { selectCellView, useChatMode } from "./chatmodestore";
 import { ASLEEP_VIEW_TITLE } from "./chatswitch";
 import { canDrive } from "./consumers";
@@ -72,19 +75,32 @@ import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
 import { fallAsleepLabel, useFallingAsleep } from "./fallasleepstore";
+import { isFinalStageId } from "./finalstage";
 import { floatModeAtom, toggleFloat } from "./floatstore";
 import { agentGridAtom, currentGrid, eligibleIds, gridProjects, openInSplit, removeFromGrid } from "./gridstore";
+import {
+    foldsIntoMore,
+    headerLayout,
+    headerWidth,
+    initiativeTitleShown,
+    modelShown,
+    runLink,
+    runMenuSections,
+    unlinkedText,
+    type HeaderWidth,
+} from "./headermodel";
+import { toggleBandPart } from "./initiativebandstore";
 import { initiativeLinkPickerAtom, InitiativePopover, initiativePopoverAtom } from "./initiativepopover";
-import { liveTokensAtom } from "./livetokensstore";
+import { openLauncher } from "./launcherstore";
 import { rosterSeededAtom } from "./liveagents";
+import { liveTokensAtom } from "./livetokensstore";
 import { machineServersReadingAtom } from "./machineserversstore";
-import { isFinalStageId } from "./finalstage";
 import { planEditChunks } from "./planreviewmodel";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
 import { openRailSection } from "./railsection";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
-import { startedRunsShown, startedRunsText } from "./runorigin";
+import { startedRunsShown } from "./runorigin";
 import { openRunOrigin, useRunOrigin, useRunsStartedBy } from "./runoriginstore";
 import { runQueueAtom } from "./runqueuestore";
 import { RuntimeMark } from "./runtimemark";
@@ -97,7 +113,6 @@ import { backgroundTasksByIdAtom } from "./subagentsstore";
 import { openToolPicker } from "./toolsstore";
 import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadAgentsAtom } from "./unreadagentsstore";
-import { openLauncher } from "./launcherstore";
 import { useWaking } from "./wakingstore";
 
 export const STATE_COLOR: Record<ShownState, string> = {
@@ -162,9 +177,28 @@ function useRunLineage(model: AgentsViewModel, agent: AgentVM) {
     };
 }
 
-// The initiative this session works on. A click opens its popover in place (initiativepopover.tsx); the peek click keeps
-// the way to it on the Brief.
-function InitiativeLink({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
+// the `/` between the project and its initiative
+const PATH_SLASH = (
+    <span aria-hidden className="flex-none text-ink-faint">
+        /
+    </span>
+);
+
+// The initiative this session works on, after its project: ◇ and its title. In Terminal a click opens its popover in
+// place (initiativepopover.tsx); in Chat it opens or closes the band under the header, as `i` does there, so one panel
+// answers both and the popover and the band are never open together. The peek click keeps the way to it on the Brief.
+// Very narrow, the ◇ stands alone and the title is its tooltip.
+function InitiativeLink({
+    model,
+    agent,
+    inChat,
+    width,
+}: {
+    model: AgentsViewModel;
+    agent: AgentVM;
+    inChat: boolean;
+    width: HeaderWidth;
+}) {
     const oref = "effort:" + agent.effortId;
     const effort = useAtomValue(effortDetailAtom).get(oref);
     const open = useAtomValue(initiativePopoverAtom) === agent.id;
@@ -173,43 +207,49 @@ function InitiativeLink({ model, agent }: { model: AgentsViewModel; agent: Agent
         // the title is decoration: a failed load leaves the plain link, which still opens the initiative
         loadEffortDetail(oref).catch(() => {});
     }, [oref]);
+    const text = initiativeLinkText(agent.name, effort);
+    const where = inChat ? "the band under this header" : "details here";
     return (
         <>
-            {" · "}
+            {PATH_SLASH}
             <button
                 ref={setAnchor}
                 type="button"
                 data-peek
                 data-initiative-link-open
-                aria-haspopup="dialog"
-                aria-expanded={open}
+                aria-haspopup={inChat ? undefined : "dialog"}
+                aria-expanded={inChat ? undefined : open}
+                aria-label={text}
                 onClick={(e) => {
                     if (isPeekGesture(e)) {
                         fireAndForget(() => openOrPeek(model, { kind: "effort", effortId: agent.effortId! }, e));
                         return;
                     }
+                    if (inChat) {
+                        toggleBandPart(agent.id, "initiative");
+                        return;
+                    }
                     globalStore.set(initiativePopoverAtom, open ? null : agent.id);
                 }}
-                title={`${effort?.title ?? "This initiative"}: details here (i), ${peekClickLabel()} to peek at it in Sprout`}
+                title={`${effort?.title ?? "This initiative"}: ${where} (i), ${peekClickLabel()} to peek at it in Sprout`}
                 className={cn(
-                    "cursor-pointer rounded-[5px] px-[5px] py-[1px] text-accent-soft hover:underline",
+                    "inline-flex min-w-0 cursor-pointer items-center gap-[4px] rounded-[5px] text-accent-soft hover:underline",
                     open && "bg-surface-selected"
                 )}
             >
-                {initiativeLinkText(agent.name, effort)}
-                <ChevronDown size={11} aria-hidden className="ml-[3px] inline-block align-[-1px]" />
+                <Diamond size={11} strokeWidth={2} aria-hidden className="flex-none" />
+                {initiativeTitleShown(width) ? <span className="min-w-0 truncate">{text}</span> : null}
             </button>
-            <InitiativePopover model={model} agent={agent} anchor={anchor} />
+            {inChat ? null : <InitiativePopover model={model} agent={agent} anchor={anchor} />}
         </>
     );
 }
 
-// An agent with no initiative: "+ Link to initiative" opens the picker. A pick writes the tab's session:effort, and
-// attaches the agent to the initiative's active chunk (else its first pending one) so the chunk reads as its work; a new
-// initiative made from the session is an idea with no chunk, so nothing is attached. `keyHint` (the Chat view's lean
-// header) puts the `i` keycap on the chip: the chip and the key open the one picker, and once the agent is linked the
-// same key opens its band.
-function LinkToInitiative({ agent, project, keyHint }: { agent: AgentVM; project: string; keyHint?: boolean }) {
+// An agent with no initiative: `/ + initiative` after its project opens the picker (as `i` does; no keycap, its title
+// says so). A pick writes the tab's session:effort, and attaches the agent to the initiative's active chunk (else its
+// first pending one) so the chunk reads as its work; a new initiative made from the session is an idea with no chunk, so
+// nothing is attached.
+function LinkToInitiative({ agent, project, width }: { agent: AgentVM; project: string; width: HeaderWidth }) {
     const open = useAtomValue(initiativeLinkPickerAtom) === agent.id;
     const setOpen = (v: boolean) => globalStore.set(initiativeLinkPickerAtom, v ? agent.id : null);
     const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
@@ -249,26 +289,26 @@ function LinkToInitiative({ agent, project, keyHint }: { agent: AgentVM; project
             }
         });
     };
+    const word = unlinkedText(width);
     return (
         <>
-            {" · "}
+            {PATH_SLASH}
             <button
                 ref={setAnchor}
                 type="button"
                 data-initiative-link={agent.id}
                 aria-haspopup="dialog"
                 aria-expanded={open}
+                aria-label="Link to an initiative"
                 onClick={() => setOpen(!open)}
                 title="Link this agent to an initiative (i)"
                 className={cn(
-                    "inline-flex h-[20px] cursor-pointer items-center gap-[6px] rounded-[5px] border border-dashed border-edge-strong px-[7px] align-middle text-[11px] text-ink-mid hover:text-primary",
-                    open && "bg-surface-selected"
+                    "inline-flex flex-none cursor-pointer items-center gap-[3px] rounded-[5px] text-ink-faint hover:text-primary",
+                    open && "bg-surface-selected text-primary"
                 )}
             >
-                + Link to initiative
-                {keyHint ? (
-                    <KeyCap chord="i" variant="inline" className="cursor-pointer px-[4px] py-0 leading-[14px]" />
-                ) : null}
+                <Plus size={11} strokeWidth={2} aria-hidden />
+                {word || null}
             </button>
             <InitiativePicker
                 open={open}
@@ -307,71 +347,87 @@ function PlanReviewChip({ agent }: { agent: AgentVM }) {
     );
 }
 
-// The session that started this agent's run with `wsh runs start`, linking back to it. The tree no longer lists the
-// run under that session, so this is where the two meet.
-function RunOriginLink({ model, runId }: { model: AgentsViewModel; runId: string }) {
-    const run = useAtomValue(WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", runId)));
-    const origin = useRunOrigin(model, run);
-    if (origin == null) {
-        return null;
-    }
-    return (
-        <>
-            {" · "}
-            {origin.kind === "gone" ? (
-                <span data-run-origin="gone" title="Started from a session that has since closed">
-                    ↰ a closed session
-                </span>
-            ) : (
-                <button
-                    type="button"
-                    data-run-origin={origin.kind}
-                    onClick={() => openRunOrigin(model, origin)}
-                    title={`Started from ${origin.name}: go to that session`}
-                    className="cursor-pointer text-accent-soft hover:underline"
-                >
-                    ↰ {origin.name}
-                </button>
-            )}
-        </>
-    );
-}
+// no run to read: a session that is no run's own
+const NO_RUN = atom<Run | undefined>(undefined);
 
-// The other way round: the runs this session started with `wsh runs start`. One opens its run sheet; several offer a
-// menu of them, the ones still going first. A cancelled run is neither counted nor listed (startedRunsShown).
-function StartedRunsLink({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
-    const runs = startedRunsShown(useRunsStartedBy(agent));
-    if (runs.length === 0) {
+// The one run link (headermodel.runLink): a worker's or stage session's way back to its lead, a lead's (or a Quick run's
+// agent's) own run, or the runs a session started with `wsh runs start`. A click focuses the lead, opens the one run, or
+// opens the run menu in sections: this run, the session it was started from, the runs this session started. A cancelled
+// run is neither counted nor listed (startedRunsShown).
+function RunLinkItem({
+    model,
+    agent,
+    lineage,
+    width,
+}: {
+    model: AgentsViewModel;
+    agent: AgentVM;
+    lineage: ReturnType<typeof useRunLineage>;
+    width: HeaderWidth;
+}) {
+    const started = startedRunsShown(useRunsStartedBy(agent));
+    // a worker's or stage session's way back is its lead
+    const back = lineage?.kind === "worker" || lineage?.kind === "stage" ? lineage : null;
+    // a lead's run, or a Quick run's agent's: a worker's or stage session's run is its task's, not its own
+    const ownRunId = back != null ? null : lineage?.kind === "lead" ? lineage.runId : agent.runId || null;
+    const ownRun = useAtomValue(ownRunId ? WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", ownRunId)) : NO_RUN);
+    const origin = useRunOrigin(model, ownRun);
+    const link = runLink({
+        lineage: back != null ? { kind: back.kind, leadName: back.lead?.name, runTitle: back.run?.title } : null,
+        ownRunId,
+        started,
+    });
+    if (link == null) {
         return null;
     }
-    const open = (runId: string) => fireAndForget(() => openTarget(model, { kind: "run", runId }));
+    const openRun = (runId: string) => fireAndForget(() => openTarget(model, { kind: "run", runId }));
     const onClick = (e: React.MouseEvent) => {
-        if (runs.length === 1) {
-            open(runs[0].oid);
-            return;
-        }
-        ContextMenuModel.getInstance().showContextMenu(
-            runs.map((r) => ({ label: `${startedRunsText([r])} · ${r.status}`, click: () => open(r.oid) })),
-            e
-        );
-    };
-    return (
-        <>
-            {" · "}
-            <button
-                type="button"
-                data-started-runs={runs.length}
-                onClick={onClick}
-                title={
-                    runs.length === 1
-                        ? `A run this session started (${runs[0].status}): open it`
-                        : "Runs this session started: pick one to open"
+        const click = link.click;
+        if (click.kind === "lead" && back?.lead != null) {
+            globalStore.set(model.focusIdAtom, back.lead.id);
+        } else if (click.kind === "open") {
+            openRun(click.runId);
+        } else if (click.kind === "menu") {
+            const own = ownRunId ? { oid: ownRunId, goal: ownRun?.goal, status: ownRun?.status ?? "…" } : null;
+            const items: ContextMenuItem[] = [];
+            for (const section of runMenuSections(own, origin, started)) {
+                items.push({ label: section.head, type: "header" });
+                for (const row of section.rows) {
+                    const target = row.target;
+                    items.push({
+                        label: row.label,
+                        sublabel: row.meta,
+                        enabled: target != null,
+                        attrs: { "data-run-menu-row": section.head },
+                        click:
+                            target == null
+                                ? undefined
+                                : target.kind === "run"
+                                  ? () => openRun(target.runId)
+                                  : () => openRunOrigin(model, target.origin),
+                    });
                 }
-                className="cursor-pointer text-accent-soft hover:underline"
-            >
-                ↳ {startedRunsText(runs)}
-            </button>
-        </>
+            }
+            ContextMenuModel.getInstance().showContextMenu(items, e);
+        }
+    };
+    const Icon = link.icon === "up" ? CornerLeftUp : Workflow;
+    const text = width === "wide" ? link.text : link.short;
+    const clickable = link.click.kind !== "none";
+    return (
+        <button
+            type="button"
+            data-run-link={link.click.kind}
+            aria-haspopup={link.click.kind === "menu" ? "menu" : undefined}
+            onClick={clickable ? onClick : undefined}
+            disabled={!clickable}
+            title={link.title}
+            className="inline-flex flex-none cursor-pointer items-center gap-[5px] text-accent-soft hover:underline disabled:cursor-default disabled:text-muted disabled:no-underline"
+        >
+            <Icon size={12} strokeWidth={2} aria-hidden className="flex-none" />
+            <span className={cn(link.mono && "font-mono text-[10.5px]")}>{text}</span>
+            {link.click.kind === "menu" ? <ChevronDown size={11} strokeWidth={2} aria-hidden /> : null}
+        </button>
     );
 }
 
@@ -447,10 +503,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const chatShown = chatCapable(agent);
     const chatAsleep = chatShown && agent.sleeping != null;
     const shownView: CellView = chatShown ? cellView(view, chatAsleep ? "chat" : chatMode) : view;
-    // Chat shows the model and the context in its box and the agent's work as it goes, so its header keeps the name and
-    // where it works: no runtime mark, state word, model, context or Alt+C (the box holds the focus, not the TUI), and
-    // no ◇ initiative chip, which the band under the header replaces (`i` opens it); an agent with no initiative keeps
-    // its Link to initiative chip. The dot keeps the state, its word in its title.
+    // Chat's header shows what Terminal's does (the runtime mark, state word, model and context) except the Alt+C keycap
+    // (the box holds the focus, not the TUI); its ◇ initiative link opens the band under the header, as `i` does there,
+    // instead of the popover.
     const lean = chatShown && shownView === "chat";
     const viewControl = chatShown || hasCanvas || docReview != null || brainstorm != null;
     const viewOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null);
@@ -469,10 +524,29 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const splitShown = cellCount > 1;
     const canSplit = blockId != null && !ended;
 
+    // The header's width level (headermodel.headerWidth), read from its own width: a 2x2 split's cell is narrow. Every
+    // cluster stays; their words shorten, and Split, Float and Fullscreen fold into More.
+    const rootRef = useRef<HTMLDivElement>(null);
+    const [width, setWidth] = useState<HeaderWidth>("wide");
+    useLayoutEffect(() => {
+        const el = rootRef.current;
+        if (el == null) {
+            return;
+        }
+        const read = () => setWidth(headerWidth(el.getBoundingClientRect().width));
+        read();
+        const ro = new ResizeObserver(read);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+    const { nameMax, clusterGap } = headerLayout(width);
+    const folded = foldsIntoMore(width);
+
     // The visible way to a second cell: every other live agent and terminal of this agent's project (a split holds one
     // project's), and what to do with none (dragging a sidebar row onto the terminal works too, but nothing on screen
-    // says so). Built when opened, from the grid as it is then.
-    const openSplitMenu = (e: React.MouseEvent) => {
+    // says so). Built when opened, from the grid as it is then: the Split button's menu, or More's Split submenu when
+    // the header is narrow.
+    const splitMenuItems = (): ContextMenuItem[] => {
         const grid = currentGrid(model);
         const roster = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
         const projects = gridProjects(roster);
@@ -521,8 +595,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
         }
         items.push({ type: "separator" });
         items.push({ label: "Or drag an agent from the sidebar onto the terminal", enabled: false });
-        ContextMenuModel.getInstance().showContextMenu(items, e);
+        return items;
     };
+    const openSplitMenu = (e: React.MouseEvent) => ContextMenuModel.getInstance().showContextMenu(splitMenuItems(), e);
 
     // Esc cancels the current Claude turn — same PTY-write path as the composer (ControllerInputCommand).
     const interrupt = () => interruptAgent(blockId);
@@ -599,6 +674,16 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 click: () => forkFromChat(model, agent),
             });
         }
+        if (canSplit && folded) {
+            // a narrow header has no Split button: its menu is here instead
+            items.push({
+                label: "Split",
+                sublabel: splitShown ? `${cellCount} shown` : "show another agent beside this one",
+                icon: <Columns2 size={15} />,
+                attrs: { "data-more-split": "" },
+                submenu: splitMenuItems(),
+            });
+        }
         if (canSplit) {
             // the header is the focused agent's, which is whose folder the picker opens a tool in
             items.push({
@@ -627,6 +712,16 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 accel: "f",
                 click: () => globalStore.set(terminalFullscreenAtom, !fullscreen),
             });
+            if (folded) {
+                // a narrow header has no Float button either
+                items.push({
+                    label: floating ? "Leave float" : "Float window",
+                    icon: <PictureInPicture2 size={15} />,
+                    accel: "Shift:f",
+                    attrs: { "data-more-float": "" },
+                    click: () => fireAndForget(() => toggleFloat(model)),
+                });
+            }
         }
         // a brainstorm on screen has no details rail (agentsurface.tsx), so nothing to show or hide
         if (view !== "brainstorm") {
@@ -651,21 +746,26 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
 
     return (
         <div
+            ref={rootRef}
             data-agent-header
+            data-header-width={width}
             onContextMenu={openHeaderMenu}
-            className="flex shrink-0 select-none items-center gap-[10px] border-b border-border bg-background px-[18px] py-[8px]"
+            className="flex shrink-0 select-none items-center gap-[10px] whitespace-nowrap border-b border-border bg-background px-[18px] py-[8px]"
         >
             {stage ? null : ended || failed ? (
                 <span className="h-[8px] w-[8px] shrink-0 rounded-full" style={{ background: stateColor }} />
             ) : (
-                // in Chat the state word is left out, so the dot carries it as its title
-                <span title={lean ? stateText : undefined} className="flex shrink-0">
+                <span className="flex shrink-0">
                     <StatusDot state={shown} pulse={shown !== "idle"} className="!h-[8px] !w-[8px]" />
                 </span>
             )}
-            {/* one row: the name first (it is the header's first line of text), then what it is and where it works,
-                the project and its lineage truncating first when the pane is narrow */}
-            <div className="flex min-w-0 items-baseline gap-[8px] whitespace-nowrap">
+            {/* one row: the name first (it is the header's first line of text), then what it is: its runtime, its state
+                and what it left running. It keeps its share of a narrow header before it truncates */}
+            <div
+                data-header-name
+                className="flex min-w-0 shrink items-baseline gap-[8px]"
+                style={nameMax ? { maxWidth: nameMax } : undefined}
+            >
                 <span className="min-w-0 shrink truncate text-[14px] font-semibold text-foreground">
                     {lineage?.kind === "lead" ? (
                         <Workflow
@@ -678,14 +778,12 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 </span>
                 {stage ? null : (
                     <>
-                        {lean ? null : (
-                            <span title={rt.label} className={cn("flex-none self-center", rt.text)}>
-                                <RuntimeMark runtime={agent.agent} className="text-[12px] leading-none" />
-                            </span>
-                        )}
+                        <span title={rt.label} className={cn("flex-none self-center", rt.text)}>
+                            <RuntimeMark runtime={agent.agent} className="text-[12px] leading-none" />
+                        </span>
                         {queued ? (
                             <QueuedJobTag job={queued} />
-                        ) : lean && !ended && !failed ? null : (
+                        ) : (
                             <span
                                 data-agent-state-pill
                                 className={cn(
@@ -709,66 +807,49 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                             </span>
                         ) : null}
                         <span className="flex-none self-center">
-                            <ServerMark servers={servers} ports />
+                            <ServerMark servers={servers} ports={width === "wide"} count={width !== "wide"} />
                         </span>
                     </>
                 )}
-                {agent.model && !lean ? <span className="flex-none text-[11px] text-muted">{agent.model}</span> : null}
-                {agent.usage?.contextpct != null && !lean ? (
-                    <span
-                        title={`context: ${Math.round(agent.usage.contextpct)}% of the window`}
-                        className={cn(
-                            "flex-none text-[11px] font-semibold tabular-nums",
-                            CTX_TEXT[contextLevel(agent.usage.contextpct, agent.usage.contextmax)]
-                        )}
-                    >
-                        {contextTokens(agent.usage.contextpct, agent.usage.contextmax) ??
-                            `${Math.round(agent.usage.contextpct)}%`}
-                    </span>
-                ) : null}
-                <span className="min-w-0 shrink-[2] truncate text-[11px] text-muted">
-                    <span aria-hidden className="text-ink-faint">
-                        ·{" "}
-                    </span>
-                    {project || "—"}
-                    {agent.effortId != null ? (
-                        lean ? null : (
-                            <InitiativeLink model={model} agent={agent} />
-                        )
-                    ) : canLink ? (
-                        <LinkToInitiative agent={agent} project={project} keyHint={lean} />
-                    ) : null}
-                    {lineage?.kind === "lead" ? (
-                        <>
-                            {" "}
-                            · orchestrator run <span className="font-mono">{lineage.runId.slice(0, 8)}</span>
-                        </>
-                    ) : null}
-                    {lineage?.kind === "worker" || lineage?.kind === "stage" ? (
-                        <>
-                            {" · "}
-                            {lineage.lead ? (
-                                <button
-                                    type="button"
-                                    onClick={() => globalStore.set(model.focusIdAtom, lineage.lead!.id)}
-                                    title="Go to the lead"
-                                    className="cursor-pointer text-accent-soft hover:underline"
-                                >
-                                    ↑ {lineage.lead.name}
-                                </button>
-                            ) : (
-                                <span>↑ {lineage.run?.title ?? "no lead"}</span>
-                            )}
-                        </>
-                    ) : null}
-                    {/* a worker's way back is its lead; a lead or a Quick run's agent links the session it came from */}
-                    {agent.runId && lineage?.kind !== "worker" && lineage?.kind !== "stage" ? (
-                        <RunOriginLink model={model} runId={agent.runId} />
-                    ) : null}
-                    <StartedRunsLink model={model} agent={agent} />
-                </span>
-                {agent.effortId != null ? <PlanReviewChip agent={agent} /> : null}
             </div>
+            {/* three clusters, each led by its icon: where it works (project / initiative), its run, and its model and
+                context. None is ever hidden: a narrow header shortens their words, and the project gives way first */}
+            <div
+                data-header-clusters
+                className="ml-[2px] flex min-w-0 shrink items-center text-[11px] text-muted"
+                style={{ gap: clusterGap }}
+            >
+                <span data-header-location className="inline-flex min-w-0 items-center gap-[5px]">
+                    <Folder size={12} strokeWidth={2} aria-hidden className="flex-none text-ink-faint" />
+                    <span title={project || undefined} className="min-w-0 truncate">
+                        {project || "—"}
+                    </span>
+                    {agent.effortId != null ? (
+                        <InitiativeLink model={model} agent={agent} inChat={lean} width={width} />
+                    ) : canLink ? (
+                        <LinkToInitiative agent={agent} project={project} width={width} />
+                    ) : null}
+                </span>
+                {stage ? null : <RunLinkItem model={model} agent={agent} lineage={lineage} width={width} />}
+                {stage || (!agent.model && agent.usage?.contextpct == null) ? null : (
+                    <span data-header-model className="inline-flex flex-none items-baseline gap-[6px]">
+                        {agent.model ? <span title={agent.model}>{modelShown(agent.model, width)}</span> : null}
+                        {agent.usage?.contextpct != null ? (
+                            <span
+                                title={`context: ${Math.round(agent.usage.contextpct)}% of the window`}
+                                className={cn(
+                                    "font-semibold tabular-nums",
+                                    CTX_TEXT[contextLevel(agent.usage.contextpct, agent.usage.contextmax)]
+                                )}
+                            >
+                                {contextTokens(agent.usage.contextpct, agent.usage.contextmax) ??
+                                    `${Math.round(agent.usage.contextpct)}%`}
+                            </span>
+                        ) : null}
+                    </span>
+                )}
+            </div>
+            {agent.effortId != null ? <PlanReviewChip agent={agent} /> : null}
             <div className="flex-1" />
             <div className="flex items-center gap-[7px]">
                 {showDialogButton ? (
@@ -922,7 +1003,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         <Ellipsis size={15} strokeWidth={1.8} aria-hidden />
                     </button>
                 ) : null}
-                {canSplit ? (
+                {canSplit && !folded ? (
                     <button
                         type="button"
                         data-agent-split
@@ -973,44 +1054,49 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 ) : null}
                             </button>
                         ) : null}
-                        <button
-                            type="button"
-                            data-agent-header-float
-                            onClick={() => fireAndForget(() => toggleFloat(model))}
-                            aria-pressed={floating}
-                            title={`${floating ? "Leave float" : "Float window"} (${formatChordString("Shift:f")})`}
-                            className={cn(ICON_BTN, floating && ICON_BTN_ON)}
-                        >
-                            <PictureInPicture2 size={15} strokeWidth={1.8} aria-hidden />
-                        </button>
-                        <motion.button
-                            type="button"
-                            onClick={() => globalStore.set(terminalFullscreenAtom, !fullscreen)}
-                            title={
-                                fullscreen
-                                    ? `Exit fullscreen (${formatChordString("f")} or ${formatChordString("Escape")})`
-                                    : `Fullscreen terminal (${formatChordString("f")})`
-                            }
-                            aria-pressed={fullscreen}
-                            whileHover={{ scale: 1.06 }}
-                            whileTap={{ scale: 0.85 }}
-                            className={cn(ICON_BTN, fullscreen && ICON_BTN_ON, "active:scale-none")}
-                        >
-                            {/* re-keyed so each toggle replays the rotate-in, reinforcing the state flip */}
-                            <motion.span
-                                key={fullscreen ? "min" : "max"}
-                                initial={{ rotate: -90, opacity: 0 }}
-                                animate={{ rotate: 0, opacity: 1 }}
-                                transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
-                                className="block"
-                            >
-                                {fullscreen ? (
-                                    <Minimize2 size={15} strokeWidth={1.8} />
-                                ) : (
-                                    <Maximize2 size={15} strokeWidth={1.8} />
-                                )}
-                            </motion.span>
-                        </motion.button>
+                        {/* a narrow header folds Float and Fullscreen into More */}
+                        {folded ? null : (
+                            <>
+                                <button
+                                    type="button"
+                                    data-agent-header-float
+                                    onClick={() => fireAndForget(() => toggleFloat(model))}
+                                    aria-pressed={floating}
+                                    title={`${floating ? "Leave float" : "Float window"} (${formatChordString("Shift:f")})`}
+                                    className={cn(ICON_BTN, floating && ICON_BTN_ON)}
+                                >
+                                    <PictureInPicture2 size={15} strokeWidth={1.8} aria-hidden />
+                                </button>
+                                <motion.button
+                                    type="button"
+                                    onClick={() => globalStore.set(terminalFullscreenAtom, !fullscreen)}
+                                    title={
+                                        fullscreen
+                                            ? `Exit fullscreen (${formatChordString("f")} or ${formatChordString("Escape")})`
+                                            : `Fullscreen terminal (${formatChordString("f")})`
+                                    }
+                                    aria-pressed={fullscreen}
+                                    whileHover={{ scale: 1.06 }}
+                                    whileTap={{ scale: 0.85 }}
+                                    className={cn(ICON_BTN, fullscreen && ICON_BTN_ON, "active:scale-none")}
+                                >
+                                    {/* re-keyed so each toggle replays the rotate-in, reinforcing the state flip */}
+                                    <motion.span
+                                        key={fullscreen ? "min" : "max"}
+                                        initial={{ rotate: -90, opacity: 0 }}
+                                        animate={{ rotate: 0, opacity: 1 }}
+                                        transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
+                                        className="block"
+                                    >
+                                        {fullscreen ? (
+                                            <Minimize2 size={15} strokeWidth={1.8} />
+                                        ) : (
+                                            <Maximize2 size={15} strokeWidth={1.8} />
+                                        )}
+                                    </motion.span>
+                                </motion.button>
+                            </>
+                        )}
                         <button
                             type="button"
                             onClick={closeTerminal}

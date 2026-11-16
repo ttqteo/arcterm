@@ -170,8 +170,7 @@ export default function (kit) {
                 }
 
                 await focusAgent(h, ctx.bootingId);
-                // an agent opens in Chat, whose header is lean by design (d41f145c5): no runtime mark and no state word,
-                // the dot keeping the state as its title. The full header this step reads is Terminal's
+                // an agent opens in Chat; this step reads Terminal's header, which carries the Alt+C keycap too
                 await setMode(h, ctx.bootingId, "terminal");
                 await polishWaitFor(h, `(${HEADER}?.textContent ?? "").includes("start-booting-")`, ROSTER_WAIT_MS);
                 await polishWaitFor(h, `!!${HEADER}?.querySelector("[data-agent-state-pill]")`, ROSTER_WAIT_MS);
