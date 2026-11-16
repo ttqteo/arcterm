@@ -502,6 +502,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   unread count on the name line, and `asking` at the left of the asking row's second line with its columns kept. In the
   real app the same with live agents: an agent with no RAM read yet keeps an empty gap where its RAM goes. Written and
   typechecked, never run in the app (`agenttree.tsx` `RowCols`, `rowcols.ts`).
+- [ ] (arcterm) No second line in the Agent tree pushes RAM · tokens · age past its end (`agenttree.tsx`: `OriginChip`,
+  the ask note, `in council`, a worker's held ask now shrink): at 280px with all three columns on, a lead asking you
+  with a long question and a `plan queued #1` run link, an agent in a council with a review waiting, and a worker
+  holding a card each end their line with the three columns whole and level with the rows around them, the words cut
+  with `…` and whole in their tooltip. Not run in the app.
 - [ ] (arcterm) A run's `queued #N` tag cuts itself short rather than push the row's columns off (`QueueTagButton`,
   `jobqueuechip.tsx`): with a run waiting in the job queue at 248px, its second line reads `› N`, a shortened `queued…`
   and RAM · tokens · age whole, its age not cut at the edge; hovering the tag names the jobs in full. Typechecked, not run
