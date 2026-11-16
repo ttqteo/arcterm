@@ -21603,7 +21603,7 @@ const leadCardMergeGate = {
     },
 };
 
-// The preparing task state (docs/superpowers/plans/2026-11-16-dispatch-off-dag-lock.md): a claimed task makes its lane
+// The preparing task state (pkg/orchestrate/treeprep.go): a claimed task makes its lane
 // tree and runs the plan's Setup outside the dag lock, and the cockpit reads it as the engine at work. The task is held
 // preparing by a slow Setup the seed gives the stored dag. dagsubmit's own tick has already dispatched t-1 and made its
 // lane tree, which carries the marker of a Setup that passed: with it the next claim would skip Setup and be preparing
