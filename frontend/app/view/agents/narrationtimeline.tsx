@@ -906,7 +906,9 @@ export function NarrationTimeline({
 
     return (
         <div ref={rootRef} className={cn("leading-relaxed", className)}>
-            {pinBg ? <PinnedPromptBar rootRef={rootRef} index={pinned} text={prompts[pinned]} bg={pinBg} /> : null}
+            {pinBg ? (
+                <PinnedPromptBar rootRef={rootRef} index={pinned} text={prompts[pinned]} prompts={prompts} bg={pinBg} />
+            ) : null}
             <AnimatePresence initial={false}>
             {visibleItems.map((item, idx) => {
                 if (item.kind === "message") {

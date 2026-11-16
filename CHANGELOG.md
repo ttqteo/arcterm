@@ -47,6 +47,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   question with its options as 1–9 keys (arrows move between cards, Enter opens the agent). The S button on its title
   bar shrinks it to 340×440 and pins it on top of your other windows; pressed again it goes back to where it was, and
   it reopens small and pinned after a restart. <!-- try: open-sidecar -->
+- Jump to any earlier prompt from the bar pinned at the top of Chat: its counter (10/12) or a right-click on the bar
+  lists every prompt you sent in the conversation, and picking one scrolls back to it (arrows and Enter work too).
 
 ### Changed
 

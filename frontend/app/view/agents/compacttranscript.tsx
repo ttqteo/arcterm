@@ -594,7 +594,13 @@ export function CompactTranscript({
             data-compact-transcript
             className={cn("relative mx-auto w-full max-w-[760px] pb-2 leading-relaxed", className)}
         >
-            <PinnedPromptBar rootRef={rootRef} index={pinned} text={seen.prompts[pinned]} bg={pinBg} />
+            <PinnedPromptBar
+                rootRef={rootRef}
+                index={pinned}
+                text={seen.prompts[pinned]}
+                prompts={seen.prompts}
+                bg={pinBg}
+            />
             {/* the top of the list, for checkTop to measure; out of the flow so it adds no height */}
             <div ref={topRef} aria-hidden className="pointer-events-none absolute left-0 top-0 h-px w-full" />
             {/* one wrapper per item, keyed by its first entry's key: the scroll to an item and the marker for a compaction find it */}
