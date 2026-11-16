@@ -28,10 +28,6 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   harness and model. On a Mac, the launcher's harness menu with many harnesses scrolls inside its panel and is not
   clipped. `scenarios.mjs` `jarvis-peek` teardown, `harnesspicker.tsx`.
 
-- [ ] (arcterm) **Redraw skips a sleeping agent.** Unit test only: the Settings `login` search and the palette's New
-  dialog wording were tried over CDP in `task dev:browser` (2026-11-16), but no agent was put to sleep there. Put an
-  agent to sleep, focus it, Ctrl+Shift+R → its last screen does not flicker and nothing is logged. `bindings.ts`
-  `redrawFocused`.
 - [ ] (arcterm) **Jarvis's peek has no pin while Jarvis is the hologram.** Typechecked only. Settings → Jarvis & Office →
   Form: Hologram, open the peek → its header reads `Nothing waiting on you`, hide, Full view, × with no pin. Switch to
   Character (Sprout) → the pin is back; fold into Sprout → the folded peek keeps it. `petpeek.tsx` `hologramShown`.
