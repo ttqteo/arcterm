@@ -44,7 +44,8 @@ func (n *noticeLog) byLevel(level string) []notice {
 }
 
 // startTestLoop runs a loop with its own poke channel, so no test sees another's (or Commit's) pokes.
-func startTestLoop(t *testing.T, fn func(context.Context) (SyncResult, error)) (*syncLoop, chan struct{}, *noticeLog) {
+// Options set fields on the loop before it starts.
+func startTestLoop(t *testing.T, fn func(context.Context) (SyncResult, error), opts ...func(*syncLoop)) (*syncLoop, chan struct{}, *noticeLog) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -54,19 +55,50 @@ func startTestLoop(t *testing.T, fn func(context.Context) (SyncResult, error)) (
 	l.interval = time.Hour
 	l.debounce = testDebounce
 	l.poke = poke
+	for _, o := range opts {
+		o(l)
+	}
 	l.start(ctx)
 	return l, poke, notices
 }
 
+// The test fires each debounce timer itself: real sleeps between pokes stretched past the debounce on a loaded
+// machine and split the burst.
 func TestLoopDebouncesPokeBurst(t *testing.T) {
 	var runs atomic.Int32
+	timers := make(chan chan time.Time, 16)
 	_, poke, _ := startTestLoop(t, func(context.Context) (SyncResult, error) {
 		runs.Add(1)
 		return SyncResult{}, nil
+	}, func(l *syncLoop) {
+		l.after = func(time.Duration) <-chan time.Time {
+			c := make(chan time.Time, 1)
+			timers <- c
+			return c
+		}
 	})
-	for range 10 {
+	var armed []chan time.Time
+	for i := range 10 {
 		poke <- struct{}{}
-		time.Sleep(testDebounce / 10)
+		select {
+		case c := <-timers: // the loop took this poke and armed a fresh debounce
+			armed = append(armed, c)
+		case <-time.After(10 * time.Second):
+			t.Fatalf("poke %d armed no debounce", i+1)
+		}
+	}
+	// the timers each later poke replaced end nothing, however late they fire
+	for _, c := range armed[:9] {
+		c <- time.Time{}
+	}
+	time.Sleep(testSettle)
+	if got := runs.Load(); got != 0 {
+		t.Fatalf("runs = %d after the replaced debounces fired, want 0 until the last one ends", got)
+	}
+	armed[9] <- time.Time{}
+	deadline := time.Now().Add(10 * time.Second)
+	for runs.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
 	}
 	time.Sleep(testSettle)
 	if got := runs.Load(); got != 1 {
