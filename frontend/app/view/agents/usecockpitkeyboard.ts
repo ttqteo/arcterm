@@ -58,7 +58,6 @@ export type CockpitKeyDeps = {
     cursorId: string | undefined;
     setCursorId: (v: (string | undefined) | ((p: string | undefined) => string | undefined)) => void;
     answerTab: Record<string, number>;
-    answerSel: Record<string, Record<number, Set<number>>>;
     navCols: string[][];
     rowTargets: Record<string, RowTarget>;
     askTargets: string[];
@@ -84,7 +83,6 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
         cursorId,
         setCursorId,
         answerTab,
-        answerSel,
         navCols,
         rowTargets,
         askTargets,
@@ -132,6 +130,11 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
             selectQuestion(asker.id, action.qi);
         }
         return true;
+    };
+    // a single-question ask sends on Enter once it has an answer: a picked option or text typed into its box
+    const answered = (asker: AgentVM): boolean => {
+        const { sel, txt } = answersOf(asker.id);
+        return canSubmitAsk(asker.ask?.questions ?? [], sel, txt);
     };
 
     return (e: KeyboardEvent) => {
@@ -288,7 +291,7 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
                 }
             } else if (key === "Enter") {
                 if (!(asker?.state === "asking" && enterAsk(asker))) {
-                    if (asker && canSubmitAsk(asker.ask?.questions ?? [], answerSel[asker.id] ?? {})) {
+                    if (asker && answered(asker)) {
                         submitAnswer(asker.id);
                     } else if (row.openId) {
                         openFocus(row.openId, false);
@@ -335,7 +338,7 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
             if (cur.state === "asking" && enterAsk(cur)) {
                 return;
             }
-            if (cur.state === "asking" && canSubmitAsk(cur.ask?.questions ?? [], answerSel[cur.id] ?? {})) {
+            if (cur.state === "asking" && answered(cur)) {
                 submitAnswer(cur.id);
             } else {
                 openFocus(cur.id, false);

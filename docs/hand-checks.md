@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Diff n / p open a collapsed folder.** Unit tests and typecheck only, no dev app ran. On Diff in tree
+  mode with changes in two folders, collapse the second, then press n until the next file is in it: the folder opens
+  and the file's row is selected on screen (3bc4f85dc).
+- [ ] (arcterm) **The Cockpit's Enter sends a typed answer.** Typecheck only, no dev app ran. With an agent asking one
+  question on the Cockpit, type an answer in its box without picking an option, move focus back to the card and press
+  Enter: the answer is sent, not the agent opened (3bc4f85dc).
 - [ ] (arcterm) **The Chat being read keeps its place when a launch finishes starting.** The CDP scenario
   `chat-scroll-keep` (step 2b) checked it over a fixture roster, not a real launch. + New a Claude agent in another
   project, switch to an agent whose Chat you have scrolled halfway up before the new one's Claude answers, and wait for
