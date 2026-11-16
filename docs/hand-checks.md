@@ -33,6 +33,16 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   background → once it ends, Chat ends with a `Council · review` card (✓ Done · N directions, the answer, Open report)
   after any run cards, and the agent's first reply after the council's notification sits in a tinted panel headed
   `Council · review · N directions` with Open report; the `wsh council start` call stays a plain tool line.
+- [ ] (arcterm) **Sidecar's wall holds only the Cockpit's agents.** Unit tests and typecheck only; the rewritten
+  `sidecar-wall` scenario (steps 4-6, 14-15 and the new 24) was not run, since it needs the Tauri host (branch
+  `feat/sidecar-button`). Run `task verify:ui -- sidecar-wall` on a dev app. By hand: with agents idle for hours, Sidecar
+  shows only the asking, working and just-finished ones, the title bar still counts the idle ones, an agent that
+  finishes leaves the wall about 5 minutes later, and switching the Cockpit's project filter or Live only changes the
+  wall too.
+- [ ] (arcterm) **Sidecar opens from the Cockpit and from the Jarvis button.** Typecheck and the keybindings tests only,
+  no dev app ran (branch `feat/sidecar-button`). On the Cockpit, the header's Sidecar button (after Live only, in Cards
+  and in Office's bar) opens Sidecar, or brings it forward when it is open; a right-click on the Jarvis button at the
+  app bar's right end shows Open Sidecar first, above the fold items, and it does the same.
 - [ ] (arcterm) **The browser-drawn controls draw dark.** Not tried in the app: no dev app ran, and CDP cannot capture
   a native popup (commit "fix(ui): the browser-drawn controls draw dark", 2026-11-16, `color-scheme: dark` on `:root`).
   In Setup → Tools add a tool and click into its folder field → the project suggestions open dark, not white. An

@@ -3,7 +3,7 @@
 
 import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
 import { peekClickLabel } from "@/app/cockpit/ctrlheld";
-import { pushToast } from "@/app/cockpit/notificationstore";
+import { openSidecar } from "@/app/cockpit/sidecaropen";
 import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
 import { escapeMenusOpenAtom } from "@/app/hook/useEscapeClose";
 import { anyModalOpen } from "@/app/modals/modalstack";
@@ -184,7 +184,6 @@ import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { focusedTerminalBlockId, redrawTerminal } from "@/app/view/term/termwrap";
 import { isMacOS } from "@/util/platformutil";
 import { fireAndForget } from "@/util/util";
-import { invoke } from "@tauri-apps/api/core";
 import type { MutableRefObject } from "react";
 import { ownsKeys } from "./dispatcher";
 import { listNavAtom } from "./listnav";
@@ -406,14 +405,6 @@ function backOrHome(model: AgentsViewModel): void {
     if (!backToOrigin()) {
         globalStore.set(model.surfaceAtom, "cockpit");
     }
-}
-
-// Sidecar is a window of the Tauri host (sidecar.rs open_sidecar): built the first time, brought forward after. A refusal
-// from the host is shown as a toast, never swallowed.
-function openSidecar(): void {
-    invoke("open_sidecar").catch((err: unknown) => {
-        pushToast({ title: "Sidecar did not open", message: String(err), level: "error" });
-    });
 }
 
 export function buildGlobalBindings(model: AgentsViewModel): Binding[] {

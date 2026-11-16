@@ -9,25 +9,15 @@ vi.mock("@/app/store/wshclientapi", () => ({
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
-import {
-    OLDER_FILE_LINES,
-    olderFromMemory,
-    readOlderFromFile,
-    readTail,
-    TAIL_LINES,
-    TAIL_ROWS,
-    tailKey,
-    tailsToRead,
-} from "./sidecarhistory";
+import { OLDER_FILE_LINES, olderFromMemory, readOlderFromFile } from "./sidecarhistory";
 import type { SidecarMessage } from "./sidecartypes";
 
 // rows r0 … r(n-1), oldest first
 const rows = (n: number): SidecarMessage[] => Array.from({ length: n }, (_, i) => ({ say: `r${i}` }));
 const says = (rs: SidecarMessage[]) => rs.map((r) => r.say);
 
-// a Claude-format transcript: each pair is a human prompt and the assistant's one-sentence answer
+// Claude-format transcript lines: the assistant's one-sentence answers and its tool calls
 const L = (o: unknown) => JSON.stringify(o);
-const prompt = (text: string) => L({ type: "user", message: { content: [{ type: "text", text }] } });
 const reply = (text: string) => L({ type: "assistant", message: { content: [{ type: "text", text }] } });
 const toolUse = (id: string, name: string, input: unknown) =>
     L({ type: "assistant", message: { content: [{ type: "tool_use", id, name, input }] } });
@@ -203,102 +193,5 @@ describe("readOlderFromFile", () => {
     it("rejects when the read fails, so the bridge decides what the page sees", async () => {
         getTranscript.mockRejectedValue(new Error("no transcript file yet at x"));
         await expect(readOlderFromFile(CLAUDE_PATH, "claude", null, [])).rejects.toThrow("no transcript file yet");
-    });
-});
-
-describe("readTail", () => {
-    beforeEach(() => {
-        getTranscript.mockReset();
-    });
-
-    // user text, assistant text, a tool_use and its result, another assistant text
-    const FIXTURE = [
-        prompt("fix the race"),
-        reply("I found the stale id."),
-        toolUse("t1", "Edit", { file_path: "/home/u/proj/sessionmodel.go" }),
-        toolResult("t1"),
-        reply("Now the test."),
-        toolUse("t2", "Bash", { command: "go test ./pkg/x", description: "go test ./pkg/x" }),
-        toolResult("t2"),
-    ];
-
-    it("reads the last TAIL_LINES lines and returns the last TAIL_ROWS rows", async () => {
-        getTranscript.mockResolvedValue({ lines: FIXTURE, start: 0, total: 7, end: 800 });
-        const out = await readTail(CLAUDE_PATH, "claude");
-        expect(getTranscript.mock.calls[0][1]).toEqual({ path: CLAUDE_PATH, maxlines: TAIL_LINES });
-        expect(TAIL_ROWS).toBe(2);
-        expect(out).toEqual([
-            { say: "I found the stale id.", tool: { verb: "edited", target: "sessionmodel.go", outcome: "ok" } },
-            { say: "Now the test.", tool: { verb: "ran", target: "go test ./pkg/x", outcome: "ok" } },
-        ]);
-    });
-
-    it("returns every row there is when the file holds fewer than two", async () => {
-        getTranscript.mockResolvedValue({ lines: [prompt("hi"), reply("hello")], start: 0, total: 2, end: 90 });
-        expect(await readTail(CLAUDE_PATH, "claude")).toEqual([{ say: "hello" }]);
-    });
-
-    it("returns [] for an empty file and for one with no rows in it", async () => {
-        getTranscript.mockResolvedValueOnce({ lines: [], start: 0, total: 0, end: 0 });
-        expect(await readTail(CLAUDE_PATH, "claude")).toEqual([]);
-        getTranscript.mockResolvedValueOnce({ lines: [prompt("only a prompt")], start: 0, total: 1, end: 40 });
-        expect(await readTail(CLAUDE_PATH, "claude")).toEqual([]);
-        // an answer with no lines at all (the field absent) is an empty file too
-        getTranscript.mockResolvedValueOnce({ start: 0, total: 0, end: 0 });
-        expect(await readTail(CLAUDE_PATH, "claude")).toEqual([]);
-    });
-
-    it("rejects on an RPC error", async () => {
-        getTranscript.mockRejectedValue(new Error("boom"));
-        await expect(readTail(CLAUDE_PATH, "claude")).rejects.toThrow("boom");
-    });
-});
-
-describe("tailsToRead", () => {
-    const tile = (id: string, over: Partial<{ rows: number; streamed: boolean; path: string }> = {}) => ({
-        id,
-        rows: 0,
-        streamed: false,
-        path: `/t/${id}.jsonl`,
-        ...over,
-    });
-
-    it("picks a tile with no rows, not streamed, with a transcript path, not tried before", () => {
-        expect(tailsToRead([tile("a")], new Set())).toEqual([{ id: "a", path: "/t/a.jsonl" }]);
-    });
-
-    it("skips streamed, has-rows, no-path and tried tiles", () => {
-        const tried = new Set([tailKey("d", "/t/d.jsonl")]);
-        const picked = tailsToRead(
-            [
-                tile("a"),
-                tile("streamed", { streamed: true }),
-                tile("rows", { rows: 1 }),
-                tile("nopath", { path: undefined }),
-                tile("emptypath", { path: "" }),
-                tile("d"),
-                tile("e"),
-            ],
-            tried
-        );
-        expect(picked).toEqual([
-            { id: "a", path: "/t/a.jsonl" },
-            { id: "e", path: "/t/e.jsonl" },
-        ]);
-    });
-
-    it("tries a new transcript path of the same agent again, and keeps the order", () => {
-        const tried = new Set([tailKey("a", "/t/old.jsonl")]);
-        expect(tailsToRead([tile("b"), tile("a", { path: "/t/new.jsonl" })], tried)).toEqual([
-            { id: "b", path: "/t/b.jsonl" },
-            { id: "a", path: "/t/new.jsonl" },
-        ]);
-    });
-
-    it("keys by id and path together, so no two pairs share a key", () => {
-        expect(tailKey("a", "/x")).not.toBe(tailKey("a", "/y"));
-        expect(tailKey("a", "/x")).not.toBe(tailKey("b", "/x"));
-        expect(tailKey("a", "b/c")).not.toBe(tailKey("a/b", "c"));
-        expect(tailKey("ab", "c")).not.toBe(tailKey("a", "bc"));
     });
 });

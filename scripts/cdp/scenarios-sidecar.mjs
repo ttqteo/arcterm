@@ -2,7 +2,10 @@
 // prototype board D-fit-by-count.dc.html). It drives the real Tauri host (a host: true scenario): Ctrl+P → Open Sidecar
 // opens the second window, whose page this attaches to by url (attach.mjs attachByUrl) next to the main page, and the
 // roster is a generated fixture (public/cockpit-fixtures/active.json, loaded with window.__reloadDevMockRoster) of n
-// agents in mixed states: the bridge in the main window turns it into the snapshot the page draws.
+// agents in mixed states: the bridge in the main window turns it into the snapshot the page draws. The wall holds what
+// the Cockpit's grid holds (sidecarsnapshot.ts wallAgentIds): asking, working, idle under 5 minutes. So each roster's n
+// agents are of those kinds, and a roster of 1 or more also carries the two PARKED agents (idle 40 min, asleep), which
+// must draw no tile and count as idle in the title bar.
 //
 // The test seams are the bridge's DEV ones (frontend/app/cockpit/sidecarbridge.tsx): window.__sidecarActs on the main
 // page holds every act the page sent, and window.__sidecarHold = true stops the bridge so the page stays on its waiting
@@ -11,8 +14,9 @@
 // launch) and reloads the main page onto the live roster. Step 2 does not assert the 340x440 minimum: see its comment.
 //
 // Part 2 (docs/superpowers/plans/2026-11-16-sidecar-part-2.md, task 9) adds steps 14-30 after step 13, on a roster of its
-// own (`part2`: part 1's four agents, a scroll agent with 14 message rows, and a second asleep agent whose transcript is
-// the checked-in fixtures/sidecar-tail.jsonl, so the bridge's real tail read runs). The strain band is driven through the
+// own (`part2`: part 1's four agents, a working scroll agent with 14 message rows, and the two parked agents; the band's
+// third heaviest is the parked idle one, so a band row can name an agent the wall leaves out). Step 24 was the tail read,
+// gone with the filter (2026-11-16); it now checks that the parked agents draw no tile. The strain band is driven through the
 // bridge's DEV seams on the main page, none of which waits on a poll: window.__sidecarMachine (the machine reading, and
 // the memorypressure event while it is set), window.__sidecarHeavy (the consumers and per-agent CPU readings; with it set
 // a Stop or Sleep act is logged and not run, and the row's note says so), window.__sidecarRefresh() (read the seams and
@@ -22,7 +26,6 @@
 // New step k of the plan is step 13+k here.
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { attachByUrl, waitFor } from "./attach.mjs";
 
 const NAME = "sidecar-wall";
@@ -49,11 +52,11 @@ const SIZE_SLACK = 2; // px: the window's size read back through the screen's sc
 const SCROLL_ID = "fx-sc-scroll"; // the agent with 14 message rows
 const SCROLL_ROWS = 14;
 const SNAPSHOT_ROWS = 8; // MAX_TILE_MESSAGES: what a snapshot carries of them; one older page returns the other 6
-const SLEEP2_ID = "fx-sc-sleep2"; // asleep, no entries, a transcript file: the bridge's tail read gives it two rows
-const TAIL_FILE = fileURLToPath(new URL("./fixtures/sidecar-tail.jsonl", import.meta.url));
-// the last two messages of the fixture file, and one from the front that a two-row tail must not show
-const TAIL_SAYS = ["Tail fixture: the next to last message, a test run that failed once.", "Tail fixture: the last message, every test passes now."];
-const TAIL_FRONT_SAY = "Reading the retry loop in the price feed client first.";
+// the two agents the wall leaves out, as the Cockpit folds them into its Idle list: one idle 40 min, one asleep
+const PARKED_ID = "fx-sc-parked";
+const ASLEEP_ID = "fx-sc-asleep";
+const PARKED_IDS = [PARKED_ID, ASLEEP_ID];
+const QUIET_ID = "fx-sc-quiet"; // working, nothing said yet: its tile says it has no messages
 const NOT_RUN = "Not run (fixture)"; // the note a Stop or Sleep act leaves on its row while __sidecarHeavy is set
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -155,35 +158,52 @@ function agentOf(kind, i, now, id = `fx-sc-${i}`) {
             const activeMs = id === "fx-sc-work1" ? 90 * MIN : (3 + (i % 9)) * MIN;
             return { ...base, state: "working", activeMs, stateSince: now - activeMs, previousInfo: narration(i, pairs) };
         }
+        case "quiet":
+            // working with an activity line and nothing said yet: the Cockpit shows its card, and its tile has no rows to
+            // show, so it says so (step 6)
+            return { ...base, state: "working", activeMs: MIN, stateSince: now - MIN, activity: "Thinking" };
         case "review":
-            return { ...base, state: "idle", idleSince: now - (5 + (i % 20)) * MIN, edited: true, previousInfo: narration(i, pairs) };
+            // just finished, inside the Cockpit's 5 minute grace (IDLE_GRACE_MS): 20 to 50 s ago, so a roster built at
+            // its load stays on the wall for minutes
+            return { ...base, state: "idle", idleSince: now - (20 + (i % 4) * 10) * 1000, edited: true, previousInfo: narration(i, pairs) };
         case "idle":
+            // past the grace: parked in the Cockpit's Idle list, off the wall
             return { ...base, state: "idle", idleSince: now - (40 + (i % 50)) * MIN, previousInfo: narration(i, pairs) };
         case "sleep":
-            // asleep with no entries at all: its tile has no rows to show, so it says so (step 6)
+            // asleep, long idle: parked too
             return { ...base, state: "idle", idleSince: now - 120 * MIN, sleeping: { since: now - (30 + (i % 40)) * MIN, freedBytes: 250 * MB } };
         default:
             throw new Error(`unknown agent kind ${kind}`);
     }
 }
 
-// the four tiles of the 2x2 wall: an agent asking with three options, one asking two questions, one working, one asleep
+// the four tiles of the 2x2 wall: an agent asking with three options, one asking two questions, one working, one working
+// that has said nothing yet
 function core(now) {
     return [
         agentOf("ask", 0, now, ASK_ID),
         agentOf("ask2", 1, now, TWO_Q_ID),
         agentOf("work", 2, now, "fx-sc-work1"),
-        agentOf("sleep", 3, now, "fx-sc-sleep1"),
+        agentOf("quiet", 3, now, QUIET_ID),
     ];
 }
-const FILL = ["work", "review", "idle", "ask", "work", "idle", "sleep", "review"];
+// every kind the wall draws; the parked kinds (idle, sleep) are added apart, by parked()
+const FILL = ["work", "review", "ask", "work", "review", "work", "ask", "review"];
 
-// a plain terminal beside n agents: the wall must draw no tile for it
+// the two agents the Cockpit folds into its Idle list, so the wall draws no tile for them
+function parked(now) {
+    return [agentOf("idle", 90, now, PARKED_ID), agentOf("sleep", 91, now, ASLEEP_ID)];
+}
+
+const terminalOf = () => ({ id: TERMINAL_ID, name: "zsh", task: "", state: "idle", kind: "terminal", project: "arcterm", blockId: "fx-sc-blk-term", running: false });
+
+// a plain terminal and the two parked agents beside n agents the wall draws: none of the three gets a tile. n = 0 is an
+// empty roster, the terminal alone
 function roster(n, now) {
-    const terminal = { id: TERMINAL_ID, name: "zsh", task: "", state: "idle", kind: "terminal", project: "arcterm", blockId: "fx-sc-blk-term", running: false };
-    const agents = n === 0 ? [] : core(now).slice(0, Math.min(n, 4));
+    if (n === 0) return [terminalOf()];
+    const agents = core(now).slice(0, Math.min(n, 4));
     for (let i = 4; i < n; i++) agents.push(agentOf(FILL[(i - 4) % FILL.length], i, now));
-    return [terminal, ...agents];
+    return [terminalOf(), ...agents, ...parked(now)];
 }
 
 // ---- part 2's roster and readings -------------------------------------------------------------------------------------
@@ -200,28 +220,30 @@ function scrollNarration() {
     return out;
 }
 
-// Part 1's four agents, a scroll agent and a second asleep agent. The two asks get an ask id of their own: step 12 of part 1
-// answered the first, and the main window keeps an answered ask's id in its sent set for as long as it runs, so with the
-// old id the card would read Sent and a digit would send nothing.
+// Part 1's four agents, a scroll agent and the two parked ones. The scroll agent works, so part 2's minutes of band steps
+// cannot age it off the wall. The two asks get an ask id of their own: step 12 of part 1 answered the first, and the
+// main window keeps an answered ask's id in its sent set for as long as it runs, so with the old id the card would read
+// Sent and a digit would send nothing.
 function part2Roster(now) {
     const fresh = (a) => ({ ...a, ask: { ...a.ask, askId: `${a.ask.askId}-p2` } });
-    const [ask, ask2, work, sleep1] = core(now);
-    const scroll = { ...agentOf("idle", 4, now, SCROLL_ID), previousInfo: scrollNarration() };
-    const sleep2 = { ...agentOf("sleep", 5, now, SLEEP2_ID), agent: "claude", model: "sonnet 5.5", transcriptPath: TAIL_FILE };
-    const terminal = { id: TERMINAL_ID, name: "zsh", task: "", state: "idle", kind: "terminal", project: "arcterm", blockId: "fx-sc-blk-term", running: false };
-    return [terminal, fresh(ask), fresh(ask2), work, sleep1, scroll, sleep2];
+    const [ask, ask2, work, quiet] = core(now);
+    const scroll = { ...agentOf("work", 4, now, SCROLL_ID), previousInfo: scrollNarration() };
+    return [terminalOf(), fresh(ask), fresh(ask2), work, quiet, scroll, ...parked(now)];
 }
+// the tiles part 2's wall draws: every agent of its roster but the terminal and the two parked
+const PART2_TILES = 5;
 // the same agents with nothing asking, for the small form's empty line
 const withoutAsks = (agents) => agents.filter((a) => a.state !== "asking");
 
 const blockOf = (id) => id.replace("fx-sc-", "fx-sc-blk-");
 // the three agents the band names. By RAM the heaviest first is the working agent; by CPU it is the asking one, so a step
-// can tell which measure drew the rows
+// can tell which measure drew the rows. The third is the parked idle agent: the band ranks the whole roster, since an idle
+// agent holding memory is the one to put to sleep, though the wall draws no tile for it
 const HEAVY = [
     { id: "fx-sc-work1", ram: 3.2 * GIB, procRam: 2.6 * GIB, ramPid: 4101, ramCommand: "node vite dev", cpu: 55, procCpu: 48, cpuPid: 5101, cpuCommand: "esbuild --watch" },
     { id: ASK_ID, ram: 1.9 * GIB, procRam: 1.4 * GIB, ramPid: 4102, ramCommand: "go test ./...", cpu: 80, procCpu: 74, cpuPid: 5102, cpuCommand: "go test ./feed/..." },
     // under half a GB, so the band prints it in whole MB (formatBytes)
-    { id: SCROLL_ID, ram: 420 * MB, procRam: 300 * MB, ramPid: 4103, ramCommand: "cargo build", cpu: 20, procCpu: 17, cpuPid: 5103, cpuCommand: "cargo check" },
+    { id: PARKED_ID, ram: 420 * MB, procRam: 300 * MB, ramPid: 4103, ramCommand: "cargo build", cpu: 20, procCpu: 17, cpuPid: 5103, cpuCommand: "cargo check" },
 ];
 const HEAVY_BY_RAM = HEAVY.map((h) => h.id);
 const HEAVY_BY_CPU = [...HEAVY].sort((a, b) => b.cpu - a.cpu).map((h) => h.id);
@@ -359,6 +381,7 @@ const READ = `(() => {
             msgs: Number(wall.dataset.msgs),
             scroll: wall.dataset.scroll,
             empty: !!wall.querySelector("[data-sidecar-empty]"),
+            emptyText: wall.querySelector("[data-sidecar-empty]")?.textContent?.trim() ?? null,
             scrollH: wall.scrollHeight,
             clientH: wall.clientHeight,
         },
@@ -520,7 +543,7 @@ async function part2Steps(h, ctx, side, rec, shot) {
     if ((await sidecarForm(side, null))?.pinned) await sidecarForm(side, { pinned: false });
 
     await loadRoster(h, agents);
-    const drew = await settleOn(side, 6, 15_000);
+    const drew = await settleOn(side, PART2_TILES, 15_000);
     const tiles = (await read(side)).tiles.map((t) => t.id);
 
     // 14. a strained machine whose heaviest agents are not read yet: the amber band says it is finding them
@@ -530,8 +553,8 @@ async function part2Steps(h, ctx, side, rec, shot) {
     let got = await readBand(side);
     await shot(side, "p2-1-band-finding");
     rec(
-        "14. with the memory pressure high and no heaviest agent read yet, the amber band says `Finding the heaviest agents…` over the 6 tiles",
-        drew && tiles.length === 6 && finding && got.band?.level === "amber" && got.band.finding === "Finding the heaviest agents…" && got.band.rows.length === 0,
+        `14. with the memory pressure high and no heaviest agent read yet, the amber band says \`Finding the heaviest agents…\` over the ${PART2_TILES} tiles`,
+        drew && tiles.length === PART2_TILES && finding && got.band?.level === "amber" && got.band.finding === "Finding the heaviest agents…" && got.band.rows.length === 0,
         { drew, tiles, band: got.band }
     );
 
@@ -542,9 +565,11 @@ async function part2Steps(h, ctx, side, rec, shot) {
     got = await readBand(side);
     await shot(side, "p2-2-band-amber");
     const ids15 = got.band?.rows.map((r) => r.id) ?? [];
+    const parkedTile15 = await side.ev(has(tileSel(PARKED_ID)));
     rec(
-        "15. the readings fill the band: 3 rows by RAM (3.2 GB, 1.9 GB, 420 MB), each with its heaviest process, Stop and Sleep agent, and the title bar's RAM figure is amber",
+        "15. the readings fill the band: 3 rows by RAM (3.2 GB, 1.9 GB, 420 MB), each with its heaviest process, Stop and Sleep agent, the third the idle agent the wall has no tile for, and the title bar's RAM figure is amber",
         rowsShown &&
+            parkedTile15 === false &&
             got.band?.level === "amber" &&
             got.band.finding == null &&
             JSON.stringify(ids15) === JSON.stringify(HEAVY_BY_RAM) &&
@@ -555,7 +580,7 @@ async function part2Steps(h, ctx, side, rec, shot) {
             got.ramTone === "amber" &&
             got.cpuTone === "normal" &&
             /2\.1 GB/.test(got.machine ?? ""),
-        { ids: ids15, want: HEAVY_BY_RAM, rows: got.band?.rows, ramTone: got.ramTone, cpuTone: got.cpuTone, machine: got.machine }
+        { ids: ids15, want: HEAVY_BY_RAM, parkedTile: parkedTile15, rows: got.band?.rows, ramTone: got.ramTone, cpuTone: got.cpuTone, machine: got.machine }
     );
 
     // 16. the CPU over 90% for 2 minutes (27 readings 5 s apart, fed in one go) with the memory fine: the band says so, the
@@ -755,22 +780,21 @@ async function part2Steps(h, ctx, side, rec, shot) {
         }
     );
 
-    // 24. an agent the main window does not stream, asleep with no entries but a transcript file, shows the file's last 2 rows
-    const tail = `${tileSel(SLEEP2_ID)} [data-sidecar-msg]`;
-    const tailShown = await waitFor(side.ev, `${countOf(tail)} === 2`, 15_000);
-    const tailRows = await textsOf(side, tail);
-    const tailNoMsgs = await side.ev(has(`${tileSel(SLEEP2_ID)} [data-sidecar-nomsgs]`));
-    await shot(side, "p2-12-tail-rows");
+    // 24. the wall is the Cockpit's grid: the agent idle 40 minutes and the asleep one have no tile, and the title bar
+    // still counts them as idle
+    got = await read(side);
+    await shot(side, "p2-12-parked");
+    const want24 = expectedCounts(agents);
+    const tileIds24 = got.tiles.map((t) => t.id);
     rec(
-        "24. the asleep agent with only a transcript file shows that file's last 2 messages (the bridge's tail read) and none from its front",
-        tailShown &&
-            tailRows.length === 2 &&
-            tailRows[0].includes(TAIL_SAYS[0]) &&
-            tailRows[1].includes(TAIL_SAYS[1]) &&
-            tailRows[1].includes("go test ./feed/...") &&
-            !tailRows.some((t) => t.includes(TAIL_FRONT_SAY)) &&
-            tailNoMsgs === false,
-        { tailShown, rows: tailRows, nomsgs: tailNoMsgs, file: TAIL_FILE }
+        `24. the agents the Cockpit folds into its Idle list (idle 40 min, asleep) have no tile; the wall holds the other ${PART2_TILES} and the title bar still counts the parked two as idle`,
+        tileIds24.length === PART2_TILES &&
+            !tileIds24.some((id) => PARKED_IDS.includes(id)) &&
+            got.counts.asking === want24.asking &&
+            got.counts.working === want24.working &&
+            got.counts.idle === want24.idle &&
+            want24.idle === PARKED_IDS.length,
+        { tiles: tileIds24, counts: got.counts, want: want24 }
     );
 
     // 25. narrower than 1100 px (900 wide, by the device override) the page is the small form: the asks, oldest first
@@ -1056,14 +1080,14 @@ export default function () {
                         { waiting: waiting.waiting, titlebar: waiting.titlebar, wall: waiting.wall, counts: waiting.counts, wallShown }
                     );
 
-                    // 4. the title bar's counts match the roster, and the terminal has no tile
+                    // 4. the title bar's counts match the roster, and the terminal and the two parked agents have no tile
                     await settleOn(side, 4);
                     let got = await read(side);
                     const want = expectedCounts(ctx.core);
                     rec(
-                        "4. the title bar's counts match the roster (2 need you, 1 working, 1 idle) and the plain terminal has no tile",
+                        "4. the title bar's counts match the roster (2 need you, 2 working, 2 idle) and the plain terminal and the two parked idle agents have no tile",
                         got.tiles.length === 4 &&
-                            !got.tiles.some((t) => t.id === TERMINAL_ID) &&
+                            !got.tiles.some((t) => t.id === TERMINAL_ID || PARKED_IDS.includes(t.id)) &&
                             got.counts.asking === want.asking &&
                             got.counts.working === want.working &&
                             got.counts.idle === want.idle &&
@@ -1071,36 +1095,53 @@ export default function () {
                         { counts: got.counts, want, tiles: got.tiles.map((t) => `${t.id}:${t.state}`), footer: got.footer }
                     );
 
-                    // 5. no agents: the wall says so
+                    // 5. no agents: the wall says so; only parked agents: it says nothing is live and how many are idle
                     await loadRoster(h, roster(0, ctx.now));
                     await settleOn(side, 0);
                     got = await read(side);
                     await shot(side, "2-empty");
+                    const none = got;
+                    await loadRoster(h, [terminalOf(), ...parked(ctx.now)]);
+                    await waitFor(side.ev, `document.querySelector('[data-sidecar-count="idle"]')?.textContent?.trim()?.startsWith("${PARKED_IDS.length}") === true`, 10_000);
+                    await settleOn(side, 0);
+                    const parkedOnly = await read(side);
+                    await shot(side, "2b-parked-only");
                     rec(
-                        "5. with no agents the wall shows its empty state, no tile, and the counts read 0",
-                        got.wall?.empty === true && got.tiles.length === 0 && got.counts.asking === 0 && got.counts.working === 0 && got.counts.idle === 0,
-                        { wall: got.wall, tiles: got.tiles.length, counts: got.counts }
+                        `5. with no agents the wall shows \`No agents running\`, no tile, and the counts read 0; with only the two parked agents it shows \`Nothing live · ${PARKED_IDS.length} idle\` and no tile`,
+                        none.wall?.empty === true &&
+                            none.wall.emptyText === "No agents running" &&
+                            none.tiles.length === 0 &&
+                            none.counts.asking === 0 &&
+                            none.counts.working === 0 &&
+                            none.counts.idle === 0 &&
+                            parkedOnly.wall?.empty === true &&
+                            parkedOnly.wall.emptyText === `Nothing live · ${PARKED_IDS.length} idle` &&
+                            parkedOnly.tiles.length === 0 &&
+                            parkedOnly.counts.idle === PARKED_IDS.length,
+                        { none: { wall: none.wall, tiles: none.tiles.length, counts: none.counts }, parkedOnly: { wall: parkedOnly.wall, tiles: parkedOnly.tiles.length, counts: parkedOnly.counts } }
                     );
 
-                    // 6. 4 agents: 2x2 and at least 5 message rows a tile, the page not scrolled, the asleep tile saying it has none
+                    // 6. 4 agents: 2x2 and at least 5 message rows a tile, the page not scrolled, the tile of the agent that has
+                    // said nothing yet saying it has no messages
                     await loadRoster(h, ctx.core);
                     await settleOn(side, 4);
                     got = await read(side);
-                    const asleep = got.tiles.find((t) => t.id === "fx-sc-sleep1");
+                    const quiet = got.tiles.find((t) => t.id === QUIET_ID);
                     await shot(side, "3-four");
                     rec(
-                        "6. 4 agents fit 2x2 with at least 5 message rows a tile and no page scroll; the asleep tile says it has no messages",
+                        "6. 4 agents fit 2x2 with at least 5 message rows a tile and no page scroll; the working agent that has said nothing yet says it has no messages",
                         got.wall?.cols === 2 &&
                             got.wall.rows === 2 &&
                             got.wall.msgs >= 5 &&
                             got.wall.scroll === "false" &&
                             !got.page.overflows &&
-                            asleep?.nomsgs === true,
-                        { wall: got.wall, overflows: got.page.overflows, asleep }
+                            quiet?.nomsgs === true,
+                        { wall: got.wall, overflows: got.page.overflows, quiet }
                     );
 
-                    // 7. 12 agents: 4x3, two rows a tile
-                    await loadRoster(h, roster(12, ctx.now));
+                    // 7. 12 agents: 4x3, two rows a tile. From here a roster holds just-finished agents, so it is built at
+                    // its load (Date.now()), not at arrange: the 5 minute grace counts from then
+                    await loadRoster(h, roster(12, Date.now()));
                     await settleOn(side, 12);
                     got = await read(side);
                     await shot(side, "4-twelve");
@@ -1111,7 +1152,7 @@ export default function () {
                     );
 
                     // 8. 20 agents: 5x4, one row a tile, the page not scrolled
-                    await loadRoster(h, roster(20, ctx.now));
+                    await loadRoster(h, roster(20, Date.now()));
                     await settleOn(side, 20);
                     got = await read(side);
                     await shot(side, "5-twenty");
@@ -1123,7 +1164,7 @@ export default function () {
 
                     // 9. 40 agents: no shape fits at the smallest readable tile, so the tiles keep that size and the wall scrolls
                     // inside itself, the page not at all
-                    await loadRoster(h, roster(40, ctx.now));
+                    await loadRoster(h, roster(40, Date.now()));
                     await settleOn(side, 40);
                     got = await read(side);
                     await shot(side, "6-forty");

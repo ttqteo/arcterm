@@ -4,6 +4,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, useSetAtom, type PrimitiveAtom } from "jotai";
+import { MonitorUp } from "lucide-react";
 import { shapeTransition, useSpringBatch } from "@/app/element/springbatch";
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -119,6 +120,7 @@ import {
 } from "./officedialog";
 import type { OfficeMenuId } from "./officecontrols";
 import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
+import { openSidecar } from "@/app/cockpit/sidecaropen";
 import { NeedsYouStrip } from "./needsyoustrip";
 import { ProjectSwitcher } from "./projectswitcher";
 import { StartupLoader } from "./startuploader";
@@ -1033,6 +1035,17 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
             >
                 <span className="h-1.5 w-1.5 rounded-full bg-success" />
                 Live only
+            </button>
+            {/* Sidecar, the second window: these same agents on another screen (sidecaropen.ts) */}
+            <button
+                type="button"
+                data-cockpit-sidecar
+                title="Open Sidecar: every agent at a glance, on another screen"
+                onClick={openSidecar}
+                className="flex cursor-pointer items-center gap-[7px] rounded border border-edge-mid bg-surface-raised px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground hover:border-edge-strong"
+            >
+                <MonitorUp size={13} strokeWidth={1.8} aria-hidden />
+                Sidecar
             </button>
         </>
     );
