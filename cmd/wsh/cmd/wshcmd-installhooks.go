@@ -1284,20 +1284,27 @@ func installAgentHooksRun(cmd *cobra.Command, args []string) error {
 	}
 	wsh := resolveHookWsh(exe, home)
 	modDirs := claudeModDirs(home)
-	// the files land before settings name their folders, so no claude launch loads a missing mod
-	if err := installClaudeMod(home, wsh); err != nil {
-		return err
+	// A failed Claude step fails the install, but only once the other agents' integrations, which do not depend on
+	// it, have landed. The mod files land before settings name their folders, so a mod that could not be written
+	// skips the settings too: no claude launch loads a half-written mod.
+	var claudeErrs []error
+	modErr := installClaudeMod(home, wsh)
+	if modErr != nil {
+		fmt.Fprintf(os.Stderr, "skipping Claude mod and settings: %v\n", modErr)
+		claudeErrs = append(claudeErrs, modErr)
 	}
 	if err := installClaudeAskSettings(home); err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "skipping Claude ask settings: %v\n", err)
+		claudeErrs = append(claudeErrs, err)
 	}
-
-	// a settings.json that cannot be read or parsed fails the install, but only once the other agents'
-	// integrations, which do not depend on it, have landed
-	claudeErr := installClaudeSettings(path, wsh, modDirs)
-	if claudeErr != nil {
-		fmt.Fprintf(os.Stderr, "skipping Claude settings: %v\n", claudeErr)
+	if modErr == nil {
+		// a settings.json that cannot be read or parsed is left as it is
+		if err := installClaudeSettings(path, wsh, modDirs); err != nil {
+			fmt.Fprintf(os.Stderr, "skipping Claude settings: %v\n", err)
+			claudeErrs = append(claudeErrs, err)
+		}
 	}
+	claudeErr := errors.Join(claudeErrs...)
 	if err := installOpencodePlugin(home, wsh); err != nil {
 		return err
 	}

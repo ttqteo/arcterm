@@ -1696,6 +1696,47 @@ func TestInstallAgentHooks_unreadableSettingsAreNotReplaced(t *testing.T) {
 	}
 }
 
+// a Claude mod or ask-settings file that cannot be written fails the install only after the other agents' hooks
+// land; a failed mod also leaves settings.json alone, so it never names a half-written mod folder
+func TestInstallAgentHooks_claudeFileFailureStillInstallsTheOthers(t *testing.T) {
+	// a plain file where a folder is expected, or a folder where a file is expected, fails the write on every OS
+	cases := []struct {
+		name         string
+		block        func(home string) error
+		wantSettings bool
+	}{
+		{"mod", func(home string) error {
+			dir := claudeModDirs(home)[0]
+			if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(dir, []byte("x"), 0o644)
+		}, false},
+		{"ask settings", func(home string) error { return os.MkdirAll(claudeAskSettingsPath(home), 0o755) }, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			home := stubInstallHome(t)
+			if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := tc.block(home); err != nil {
+				t.Fatal(err)
+			}
+			if err := installAgentHooksRun(nil, nil); err == nil {
+				t.Fatal("install succeeded with an unwritable Claude file")
+			}
+			if _, err := os.Stat(filepath.Join(home, ".codex", "hooks.json")); err != nil {
+				t.Fatalf("Codex hooks were skipped: %v", err)
+			}
+			_, err := os.Stat(filepath.Join(home, ".claude", "settings.json"))
+			if gotSettings := err == nil; gotSettings != tc.wantSettings {
+				t.Fatalf("settings.json written = %v, want %v", gotSettings, tc.wantSettings)
+			}
+		})
+	}
+}
+
 func TestMergePiSettingsDefaults_unreadableSettingsAreNotReplaced(t *testing.T) {
 	home := t.TempDir()
 	path := filepath.Join(home, ".pi", "agent", "settings.json")
