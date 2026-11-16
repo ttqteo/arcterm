@@ -22,6 +22,15 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   background → once it ends, Chat ends with a `Council · review` card (✓ Done · N directions, the answer, Open report)
   after any run cards, and the agent's first reply after the council's notification sits in a tinted panel headed
   `Council · review · N directions` with Open report; the `wsh council start` call stays a plain tool line.
+- [ ] (arcterm) **The browser-drawn controls draw dark.** Not tried in the app: no dev app ran, and CDP cannot capture
+  a native popup (commit "fix(ui): the browser-drawn controls draw dark", 2026-11-16, `color-scheme: dark` on `:root`).
+  In Setup → Tools add a tool and click into its folder field → the project suggestions open dark, not white. An
+  unchecked checkbox (New dialog, Tools) and radio (Setup skill sync) are dark boxes now, not white, and still read
+  as controls; the Telegram card's time fields still open a dark picker.
+- [ ] (arcterm) **The Jarvis peek's project list opens dark.** Not tried in the app: CDP cannot capture a native
+  `<select>` popup (commit "fix(jarvis): the peek's project list opens on the theme's surface", 2026-11-16). Open the
+  Jarvis peek and click "No folder" under the Ask box → the list is the dark surface with primary text, like Setup's
+  selects, not white with grey names; switch theme and it follows (`peterrand.tsx`, `[&_option]` classes).
 - [ ] (arcterm) **A council's discussion has no ↩ Back pill.** Unit tests and typecheck only, no dev app ran
   (commit "feat(council): drop the Back jump pill from the discussion", 2026-11-16). Open a council with a long discussion, scroll to the middle, click ↑ Top then ↓ Latest →
   only ↑ and ↓ ever show in the bottom-right corner, each still glides to its end, and j/k still move after a click.

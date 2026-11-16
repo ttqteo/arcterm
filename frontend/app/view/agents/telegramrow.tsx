@@ -36,9 +36,9 @@ const STATUS_POLL_MS = 2000;
 
 const ACTION_BUTTON =
     "h-7 flex-none cursor-pointer rounded-sm border border-edge-mid bg-surface-raised px-3 text-[12px] font-semibold text-muted transition-colors hover:border-edge-strong hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-edge-mid disabled:hover:bg-surface-raised";
-// a text-sized field on the card; [color-scheme:dark] keeps the native time and number controls legible on it
+// a text-sized field on the card (its native time and number controls draw dark through :root's color-scheme)
 const FIELD =
-    "h-7 flex-none rounded-sm border border-edge-mid bg-surface px-2 text-[12.5px] tabular-nums text-primary outline-none placeholder:text-ink-faint focus:border-accent-700 [color-scheme:dark]";
+    "h-7 flex-none rounded-sm border border-edge-mid bg-surface px-2 text-[12.5px] tabular-nums text-primary outline-none placeholder:text-ink-faint focus:border-accent-700";
 
 type TelegramMode = "manual" | "schedule" | "always";
 

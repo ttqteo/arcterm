@@ -23,6 +23,9 @@ export interface PendingMessage {
     text: string;
     sentAt: number;
     seen: number;
+    /** How many of the agent's user entries held its text inside a longer prompt when it was sent (userTextWithinCount),
+     *  so one landing inside the next prompt is told from an earlier prompt that held it. */
+    seenWithin?: number;
     kind?: PendingKind;
     /** Sent while the agent worked: Claude Code holds it for the turn's next gap, so it reads Queued and Send now can
      *  push it. Decided at the send, not from the agent's state as it draws: a message sent to an idle agent starts the
@@ -51,6 +54,7 @@ export function pendingMessage(
         text,
         sentAt: now,
         seen: userTextCount(entries, text),
+        seenWithin: userTextWithinCount(entries, text),
         queued: busy,
         ...(kind != null ? { kind } : {}),
         ...(waking ? { waking: true } : {}),
@@ -145,6 +149,38 @@ export function userTextCount(entries: AgentEntry[], text: string): number {
     return n;
 }
 
+/** A text this short is too easily part of another message to say it landed inside one ("ok" in "okay, go on"). */
+const WITHIN_MIN_CHARS = 6;
+
+/** How many of the entries are your messages holding this text inside a longer one (every run of whitespace one space):
+ *  text left in Claude Code's own box goes in front of the next message as one prompt, so the message lands inside it and
+ *  never as itself. 0 for a text under WITHIN_MIN_CHARS. */
+export function userTextWithinCount(entries: AgentEntry[], text: string): number {
+    const want = flat(text);
+    if (Array.from(want).length < WITHIN_MIN_CHARS) {
+        return 0;
+    }
+    let n = 0;
+    for (const e of entries) {
+        if (e.kind !== "user") {
+            continue;
+        }
+        const got = flat(unwrapWholePaste(stripResultLines(e.text)));
+        if (got !== want && got.includes(want)) {
+            n++;
+        }
+    }
+    return n;
+}
+
+/** Whether the transcript holds the message: its own record, or a longer prompt it went in with (seenWithin). */
+function landed(p: PendingMessage, entries: AgentEntry[]): boolean {
+    return (
+        userTextCount(entries, p.text) > p.seen ||
+        (p.kind == null && p.seenWithin != null && userTextWithinCount(entries, p.text) > p.seenWithin)
+    );
+}
+
 const BTW = /^\/btw\s+(\S[\s\S]*)$/;
 
 /** Pure: the question of a `/btw <question>` sent from the box, or null for anything else (a bare /btw included). */
@@ -188,7 +224,7 @@ export function pendingStill(
                 p.waking === true ||
                 idleSince == null ||
                 now - Math.max(idleSince, p.sentAt) < PENDING_IDLE_MS) &&
-            userTextCount(entries, p.text) <= p.seen
+            !landed(p, entries)
     );
 }
 
@@ -196,7 +232,7 @@ export function pendingStill(
  *  (chatpane.tsx). A landed message is done with: kept, its bubble came back when its record later left the conversation
  *  (an Esc rewind made it a dead branch, and "làm đi" stood under the conversation again until the 30-minute limit). */
 export function landedIds(pending: PendingMessage[], entries: AgentEntry[]): string[] {
-    return pending.filter((p) => userTextCount(entries, p.text) > p.seen).map((p) => p.id);
+    return pending.filter((p) => landed(p, entries)).map((p) => p.id);
 }
 
 /** Whether a send gets a pending bubble. A message does, and so does a command with a pending kind (a /btw, a bare

@@ -226,7 +226,9 @@ export function PetErrand({
                                 value={dest.kind === "no-folder" ? NO_FOLDER_DEST : dest.channel.oid}
                                 onChange={(event) => onPick(event.target.value)}
                                 className={cn(
-                                    "min-w-0 cursor-pointer appearance-none truncate rounded-[5px] bg-transparent py-0.5 pl-1 pr-4 font-medium text-inherit focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                    // the field is transparent, so the native list would open white with muted text:
+                                    // its options carry the surface and text tokens instead
+                                    "min-w-0 cursor-pointer appearance-none truncate rounded-[5px] bg-transparent py-0.5 pl-1 pr-4 font-medium text-inherit focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent [&_option]:bg-surface [&_option]:text-primary",
                                     compact ? "max-w-[142px]" : "max-w-[240px]"
                                 )}
                             >
