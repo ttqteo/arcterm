@@ -50,7 +50,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Canvas. <!-- big -->
 - Ask Jarvis now starts at No folder: ask a question and it answers in the popover, or give it a job and Jarvis hands
   it to the right project's agent, opens a new one there, or asks you which project when it is unsure. The agent that
-  got the job says which project Jarvis chose, with a Wrong project? button to move the job on. <!-- big -->
+  got the job says which project Jarvis chose, with a Wrong project? button to move the job on.
 - A Float tab whose agent replied while you were elsewhere carries a small dot until you look at it.
 - Sidecar, a second window for another screen that shows the Cockpit's agents at a glance (those asking, working or
   just finished, under the Cockpit's project and Live only filters; idle ones are only counted): the Sidecar button on
