@@ -160,21 +160,20 @@ describe("viewingTabIds", () => {
     const solo = { ...EMPTY_GRID, ids: [] };
 
     it("is the focused agent, and every cell of the grid when it is one of them", () => {
-        expect(viewingTabIds(true, true, "terminal", "b", grid)).toEqual(["a", "b", "c"]);
-        expect(viewingTabIds(true, true, "terminal", "z", grid)).toEqual(["z"]);
-        expect(viewingTabIds(true, true, "terminal", "z", solo)).toEqual(["z"]);
+        expect(viewingTabIds(true, "terminal", "b", grid)).toEqual(["a", "b", "c"]);
+        expect(viewingTabIds(true, "terminal", "z", grid)).toEqual(["z"]);
+        expect(viewingTabIds(true, "terminal", "z", solo)).toEqual(["z"]);
     });
 
-    it("is nothing while the window is unfocused, off the Agent surface, or showing history", () => {
-        expect(viewingTabIds(false, true, "terminal", "b", grid)).toEqual([]);
-        expect(viewingTabIds(true, false, "terminal", "b", grid)).toEqual([]);
-        expect(viewingTabIds(true, true, "history", "b", grid)).toEqual([]);
-        expect(viewingTabIds(true, true, "terminal", undefined, grid)).toEqual([]);
+    it("is nothing off the Agent surface, showing history, or with nothing focused", () => {
+        expect(viewingTabIds(false, "terminal", "b", grid)).toEqual([]);
+        expect(viewingTabIds(true, "history", "b", grid)).toEqual([]);
+        expect(viewingTabIds(true, "terminal", undefined, grid)).toEqual([]);
     });
 
     it("lists ids in a fixed order, so an unchanged view compares equal", () => {
         const shuffled = { ...EMPTY_GRID, ids: ["c", "a", "b"] };
-        expect(viewingTabIds(true, true, "terminal", "a", shuffled)).toEqual(["a", "b", "c"]);
+        expect(viewingTabIds(true, "terminal", "a", shuffled)).toEqual(["a", "b", "c"]);
     });
 });
 

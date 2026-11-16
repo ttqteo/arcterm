@@ -85,6 +85,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The agent you leave on screen no longer falls asleep while you work in another window: Sleep idle agents now spares
+  it whether or not arcterm has the focus.
+- Esc closes the Brief sheet again when you last clicked the cockpit behind it; Esc in a picker's open menu still
+  closes only the menu.
 - Switching the New dialog to Terminal no longer greys out Open terminal while an image pasted into the Task box is
   still saving: a terminal does not send the task, so it no longer waits on its images.
 - The harness menu in Ask Jarvis no longer runs off the bottom of a short window: it fits the space beside its button
