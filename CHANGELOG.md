@@ -62,6 +62,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Agents keep their colors in an arcterm reopened by `! task install` typed in a Claude Code session: that shell
+  sets `NO_COLOR` without the markers arcterm looked for, so every agent drew in plain white again.
 - A Chat message that ends with a file you mentioned is sent: Claude Code's file suggestions took its Enter, so the
   message sat unsent in Claude Code's box until your next one joined it.
 - Text typed right against a file chip in Chat's box gets a space before it, so it no longer joins the file's path and
