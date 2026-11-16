@@ -47998,15 +47998,16 @@ const chatQuote = {
             );
             const before = await boxText();
 
-            // 1. a selected passage of Claude's reply shows a small ↩ button just above its first line, its right edge on
-            // that line's end, so it covers none of the line's words; a right-click on the passage opens Reply and Copy
+            // 1. a selected passage of Claude's reply shows a small ↩ button diagonally off its top-right corner, so it
+            // covers none of its words; a right-click on the passage opens Reply and Copy
             const sel1 = await select(prose(0), CQ_PASSAGE);
             const small1 = await polishWaitFor(h, `!!${small}`, 3000);
             const place1 = await h.ev(`(() => {
                 const b = ${small}?.getBoundingClientRect();
                 const rs = window.getSelection().rangeCount ? [...window.getSelection().getRangeAt(0).getClientRects()].filter((r) => r.width > 0) : [];
                 const r = rs[0];
-                return b && r ? { w: Math.round(b.width), h: Math.round(b.height), above: b.bottom <= r.top && r.top - b.bottom < 10, atEnd: Math.abs(b.right - r.right) < 4 } : null;
+                const right = Math.max(...rs.map((x) => x.right));
+                return b && r ? { w: Math.round(b.width), h: Math.round(b.height), above: b.bottom <= r.top && r.top - b.bottom < 10, atCorner: b.left >= right && b.left - right < 6 } : null;
             })()`);
             await polishNap(300);
             await h.shot("cdp-shots/chat-quote-1-button.png");
@@ -48017,8 +48018,8 @@ const chatQuote = {
             await polishNap(300);
             await h.shot("cdp-shots/chat-quote-1-menu.png");
             rec(
-                "1. a selected passage shows a small ↩ button just above its first line, at that line's end (over none of its words), and a right-click on it opens Reply and Copy (the box starts empty)",
-                loaded && before === "" && sel1 && small1 && place1?.w <= 24 && place1?.h <= 24 && place1?.above === true && place1?.atEnd === true && up1 && JSON.stringify(menu1) === JSON.stringify(["Reply", "Copy"]),
+                "1. a selected passage shows a small ↩ button diagonally off its top-right corner (over none of its words), and a right-click on it opens Reply and Copy (the box starts empty)",
+                loaded && before === "" && sel1 && small1 && place1?.w <= 24 && place1?.h <= 24 && place1?.above === true && place1?.atCorner === true && up1 && JSON.stringify(menu1) === JSON.stringify(["Reply", "Copy"]),
                 { loaded, before, sel1, small1, place1, up1, menu1 }
             );
 

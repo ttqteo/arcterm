@@ -58,6 +58,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- In Chat, the ↩ Reply button on selected text now sits diagonally off the selection's top-right corner, clear of
+  its words.
 - In the Agent sidebar, a run's second line now starts under its title, lined up with an agent's, instead of under
   its icon.
 - In Chat, an agent's calls that read or edit the same file several times in a row now show as one line, "Edit

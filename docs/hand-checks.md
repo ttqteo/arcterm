@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The ↩ Reply button sits off the selection's top-right corner.** No dev app ran; CDP `chat-quote`
+  step 1 was updated to the new place without a run (`task verify:ui -- chat-quote`). In Chat, select a few lines of a
+  reply → the small ↩ sits just up and right of the widest line's end, touching the corner diagonally; a selection
+  against the pane's right edge keeps it inside the pane; with no room above it goes off the bottom-right corner.
 - [ ] (arcterm) **A run's second line lines up with an agent's.** No dev app ran. In the Agent sidebar, a run row
   (`› 7  Working · 7/7`, or a run with no plan yet reading `working`) → its second line starts under the title, at the
   same column as an agent's `planning · run 1c…`, not under the icon; its progress bar below is unchanged.
