@@ -38,6 +38,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   keep moving through the tree.
 - In a narrow pane, a brainstorm handed to a run shows the run under the summary instead of squeezing it, and each part
   you handed over puts its gist under its title.
+- With a brainstorm board open, `[` `]` and the arrow keys step through the boards its rail lists (the asked part's),
+  instead of every board of the canvas and its All view.
 
 ## 1.2.0 — 2026-11-16
 

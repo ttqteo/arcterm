@@ -42,6 +42,7 @@ import {
     openBrainstormBoard,
     openBrainstormDesign,
     shownBrainstormFile,
+    stepBrainstormBoard,
     toggleReviewRow,
 } from "@/app/view/agents/brainstormstore";
 import {
@@ -1357,6 +1358,11 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         const c = onCanvas(ctx) ? boardCanvas()! : null;
         return c != null && paneState(c) === "board" && !c.marking;
     };
+    // a board open over a brainstorm steps the boards its rail lists, which are one part's when a question is open
+    const stepBoard = (delta: number) =>
+        canvas()?.mode !== "canvas" && brainstormBoardOpen(model)
+            ? stepBrainstormBoard(focusId(), delta)
+            : stepCanvasBoard(focusId(), delta);
     const docReview = () => focusedDocReview(model);
     // the focused agent when the header offers its ✓ Close (donesuggest.ts), else undefined
     const doneAgent = (): AgentVM | undefined => {
@@ -2196,7 +2202,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             group: "Agent",
             label: "Previous board",
             when: boardStepReady,
-            run: () => stepCanvasBoard(focusId(), -1),
+            run: () => stepBoard(-1),
         },
         {
             id: "agent:canvas-next",
@@ -2204,7 +2210,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             group: "Agent",
             label: "Next board",
             when: boardStepReady,
-            run: () => stepCanvasBoard(focusId(), 1),
+            run: () => stepBoard(1),
         },
         {
             id: "agent:canvas-prev-arrow",
@@ -2212,7 +2218,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             group: "Agent",
             label: "Previous board",
             when: boardStepReady,
-            run: () => stepCanvasBoard(focusId(), -1),
+            run: () => stepBoard(-1),
         },
         {
             id: "agent:canvas-next-arrow",
@@ -2220,7 +2226,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             group: "Agent",
             label: "Next board",
             when: boardStepReady,
-            run: () => stepCanvasBoard(focusId(), 1),
+            run: () => stepBoard(1),
         },
         {
             id: "agent:mark-start",

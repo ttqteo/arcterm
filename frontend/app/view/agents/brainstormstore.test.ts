@@ -43,12 +43,15 @@ import {
     markBoardsSeen,
     moveReviewCursor,
     openBrainstormBoard,
+    railBoardsAtom,
     SEEN_BOARDS_KEY,
     setBrainstormMode,
     setReviewCursor,
+    stepBrainstormBoard,
     toggleReviewRow,
     updateBrainstorm,
 } from "./brainstormstore";
+import { attachCanvas, detachCanvas, getCanvas } from "./canvasstore";
 
 const IDS = ["a1", "a2"];
 const LAG = { topic: "lag", cwd: "/p" };
@@ -175,6 +178,32 @@ describe("brainstorm state", () => {
         expect(getBrainstorm("a1")?.board).toBe("Main.dc.html");
         openBrainstormBoard("a1", null);
         expect(getBrainstorm("a1")?.board).toBeNull();
+    });
+
+    it("steps an open board through the boards the rail lists, not every tab of the canvas", () => {
+        attachBrainstorm("a1", LAG, 100);
+        attachCanvas("a1", { topic: "lag", dir: "/p/.superpowers/design/lag", projectDir: "/p", board: "b.dc.html" });
+        openBrainstormBoard("a1", "b.dc.html");
+        globalStore.set(railBoardsAtom("a1"), ["a.dc.html", "b.dc.html"]);
+        stepBrainstormBoard("a1", 1);
+        expect(getBrainstorm("a1")?.board).toBe("a.dc.html");
+        expect(getCanvas("a1")).toMatchObject({ board: "a.dc.html", all: false });
+        stepBrainstormBoard("a1", -1);
+        expect(getBrainstorm("a1")?.board).toBe("b.dc.html");
+        expect(getCanvas("a1")?.board).toBe("b.dc.html");
+        detachCanvas("a1");
+        globalStore.set(railBoardsAtom("a1"), []);
+    });
+
+    it("leaves the board alone when no board is open or the rail lists none", () => {
+        attachBrainstorm("a1", LAG, 100);
+        globalStore.set(railBoardsAtom("a1"), ["a.dc.html", "b.dc.html"]);
+        stepBrainstormBoard("a1", 1);
+        expect(getBrainstorm("a1")?.board).toBeNull();
+        globalStore.set(railBoardsAtom("a1"), []);
+        openBrainstormBoard("a1", "b.dc.html");
+        stepBrainstormBoard("a1", 1);
+        expect(getBrainstorm("a1")?.board).toBe("b.dc.html");
     });
 
     it("ignores an update for an agent with nothing attached", () => {

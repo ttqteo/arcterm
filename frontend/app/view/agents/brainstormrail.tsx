@@ -13,6 +13,7 @@
 import { modalBackdrop, modalPanel } from "@/app/element/motiontokens";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { getApi } from "@/app/store/global";
+import { globalStore } from "@/app/store/jotaiStore";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
@@ -50,7 +51,7 @@ import {
     type RailTab,
 } from "./brainstormmodel";
 import { sendBrainstorm } from "./brainstormsend";
-import { openBrainstormBoard, type BrainstormState } from "./brainstormstore";
+import { openBrainstormBoard, railBoardsAtom, type BrainstormState } from "./brainstormstore";
 import { MarkLayer, MarkTray } from "./canvasmarking";
 import {
     boardLabel,
@@ -156,6 +157,12 @@ export function BrainstormRail({ agent, s, f, second, minWidth = RAIL_MIN_W, que
             openBrainstormBoard(agent.id, null);
         }
     }, [s.board, widened, agent.id]);
+    // what [ ] and ← → step while a board is open: the boards listed here (stepBrainstormBoard)
+    const listed = widened ? shownNames.join("\n") : "";
+    useEffect(() => {
+        globalStore.set(railBoardsAtom(agent.id), listed === "" ? [] : listed.split("\n"));
+        return () => globalStore.set(railBoardsAtom(agent.id), []);
+    }, [listed, agent.id]);
     // the tiles stay drawn under the open board's dialog, but are not for pointing at or scrolling to there
     const tilesDrawn = shownTab === "boards";
     const tilesShown = tilesDrawn && !widened;
