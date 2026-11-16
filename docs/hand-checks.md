@@ -16,6 +16,9 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A tight run line keeps its count.** Unit tests and typecheck only, no dev app ran. In the Agent
+  sidebar at 248px, a working run whose tasks wait in the job queue (`≡#3`) with its RAM shown: its second line reads
+  `Work… · 2/6` (or `Working · 2/6` when it fits), never `Working · …`; hover the words for the full line.
 - [ ] (arcterm) **The run chip's × hides finished runs.** Unit tests and typecheck only, no dev app ran. On an agent
   whose started runs have all landed (`2 runs` on its tree row and beside its name in the header), hover the chip → a
   small × shows after it; click it → the chip is gone from both places, and stays gone after a reload. With one run

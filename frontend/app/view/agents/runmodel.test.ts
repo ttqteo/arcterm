@@ -25,6 +25,7 @@ import {
     runRuntimeView,
     runStatusView,
     runTree,
+    splitProgressText,
     steerTarget,
 } from "./runmodel";
 
@@ -758,5 +759,21 @@ describe("canResume", () => {
         expect(canResume(failed({ dagoref: "dag:1" }), 0)).toBe(false);
         expect(canResume(failed({ phases: [{ kind: "execute", state: "blocked" }] }), 0)).toBe(false);
         expect(canResume(failed({}), 3)).toBe(false);
+    });
+});
+
+describe("splitProgressText", () => {
+    it("keeps a count or a place apart from the stage word, so a cut never takes it", () => {
+        expect(splitProgressText("Working · 2/6")).toEqual({ head: "Working", tail: " · 2/6" });
+        expect(splitProgressText("Working · 2/6 · 1 stuck")).toEqual({ head: "Working", tail: " · 2/6 · 1 stuck" });
+        expect(splitProgressText("Landing · #3 in line")).toEqual({ head: "Landing", tail: " · #3 in line" });
+    });
+    it("leaves a line with no count whole", () => {
+        expect(splitProgressText("Final check · verifying the merged result")).toEqual({
+            head: "Final check · verifying the merged result",
+            tail: "",
+        });
+        expect(splitProgressText("Wrapping up · lead")).toEqual({ head: "Wrapping up · lead", tail: "" });
+        expect(splitProgressText("Planning")).toEqual({ head: "Planning", tail: "" });
     });
 });
