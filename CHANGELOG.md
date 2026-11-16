@@ -162,6 +162,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run worker's header no longer spills its lead's long name over the project and under the Chat | Terminal switch:
+  the link back to the lead is cut to one line, the whole name on hover.
 - A council summary's long direction tag (two seats with long names) wraps inside its card instead of running past
   the edge.
 - Suggested replies under a council's or a Chat's box sit side by side when they fit, instead of one to a line.

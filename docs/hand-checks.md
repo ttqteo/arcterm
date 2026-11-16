@@ -386,3 +386,7 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) Tooltips show at once, long ones too: hover the RAM figure on a run row in the Agent tree (its title
   runs past 60 characters) → the chip shows with no wait, and moving the pointer off drops it at once. Vitest + eslint
   only, not tried in the app (`titletiphost.tsx`, `titletip.ts` `tipDelay` removed).
+- [ ] (arcterm) A run worker's header stays on one clean line: open a worker whose lead's name is a long goal → the
+  link back to the lead (↰ icon) is cut with an ellipsis at about 220px, the project name stays readable, and the model
+  and context figure stop short of the Chat | Terminal switch; hovering the link shows the whole name. Vitest + eslint
+  only, not tried in the app (`agentheader.tsx` `RunLinkItem`).

@@ -430,7 +430,9 @@ function RunLinkItem({
             : [];
     const hideLabel = hideable.length === 1 ? "Hide the finished run" : `Hide the ${hideable.length} finished runs`;
     return (
-        <span className="group/runlink inline-flex flex-none items-center gap-[3px]">
+        // a worker's way back reads as its lead's name, which is often a whole run goal: capped and cut to one line, the
+        // whole of it on hover, so it never runs over the project or under the view switch
+        <span className="group/runlink inline-flex min-w-[48px] max-w-[220px] shrink items-center gap-[3px]">
             <button
                 type="button"
                 data-run-link={link.click.kind}
@@ -438,11 +440,13 @@ function RunLinkItem({
                 onClick={clickable ? onClick : undefined}
                 disabled={!clickable}
                 title={link.title}
-                className="inline-flex flex-none cursor-pointer items-center gap-[5px] text-accent-soft hover:underline disabled:cursor-default disabled:text-muted disabled:no-underline"
+                className="inline-flex min-w-0 shrink cursor-pointer items-center gap-[5px] text-accent-soft hover:underline disabled:cursor-default disabled:text-muted disabled:no-underline"
             >
                 <Icon size={12} strokeWidth={2} aria-hidden className="flex-none" />
-                <span className={cn(link.mono && "font-mono text-[10.5px]")}>{text}</span>
-                {link.click.kind === "menu" ? <ChevronDown size={11} strokeWidth={2} aria-hidden /> : null}
+                <span className={cn("min-w-0 truncate", link.mono && "font-mono text-[10.5px]")}>{text}</span>
+                {link.click.kind === "menu" ? (
+                    <ChevronDown size={11} strokeWidth={2} aria-hidden className="flex-none" />
+                ) : null}
             </button>
             {hideable.length > 0 ? (
                 <button
