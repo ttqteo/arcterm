@@ -789,6 +789,7 @@ html[data-md-selection]::selection {
 }
 .md-selection-band {
     position: absolute;
+    border-radius: 3px;
     background-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
 }
 

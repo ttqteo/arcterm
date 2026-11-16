@@ -29,6 +29,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Changed
+
+- Selected text in Chat has slightly rounded corners, so the highlight looks softer.
+
 ### Fixed
 
 - Picking a whole paragraph in Chat no longer highlights the line number of a code block right below it.

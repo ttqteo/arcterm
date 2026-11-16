@@ -21,6 +21,9 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   council, keep talking after both end: the Done council card stays just above the agent's summary of it and the run's
   ✓ row where its `[arc] Run … landed` message came, both scrolling away with the conversation; only a run or council
   still going sits at the bottom.
+- [ ] (arcterm) **Chat's selection has softly rounded corners.** CSS only, no dev app ran. In Chat, select a word and
+  then a few wrapped lines: each highlighted line has 3px rounded ends, and the lines still meet without a gap that
+  reads as broken.
 - [ ] (arcterm) **A paragraph picked above a code block leaves its line number alone.** Unit tests and typecheck only,
   no dev app ran. In Chat, triple-click a paragraph that sits right above a code block: only the paragraph is
   highlighted, not the block's `1`, and a copy holds only the paragraph's text.
