@@ -291,6 +291,51 @@ func TestAgentsSendRefusals(t *testing.T) {
 	}
 }
 
+// a killed agent fires no end hook, so the roster still lists it; its shell, back at the prompt with nothing under it,
+// is read at send time, and the message is refused rather than typed into the shell (kael t-8)
+func TestASendToAKilledAgentIsRefused(t *testing.T) {
+	sent := scriptAgents(t, threeAgents())
+	scripted := readPromptBlock
+	readPromptBlock = func(ctx context.Context, blockId string) (promptBlock, error) {
+		pb, err := scripted(ctx, blockId)
+		pb.AgentGone = blockId == agentsBlockB
+		return pb, err
+	}
+	oldShell := shellHoldsNothing
+	t.Cleanup(func() { shellHoldsNothing = oldShell })
+	shellHoldsNothing = func(blockId string) bool { return blockId == agentsBlockB }
+	ws := &WshServer{}
+	_, err := ws.AgentsSendCommand(context.Background(), wshrpc.CommandAgentsSendData{Tab: agentsTabB, Text: "hi", FromORef: blockORef(agentsBlockA)})
+	if err == nil || !strings.Contains(err.Error(), "back at its shell prompt") || !strings.Contains(err.Error(), "nothing was sent") {
+		t.Fatalf("agents send: err = %v, want a shell-prompt refusal", err)
+	}
+	// a refused send leaves no send-back lock, so B's next message to A is not taken for an answer
+	if err := ws.AgentPromptCommand(context.Background(), wshrpc.CommandAgentPromptData{BlockId: agentsBlockB, Text: "go on"}); err == nil || !strings.Contains(err.Error(), "back at its shell prompt") {
+		t.Fatalf("agent prompt: err = %v, want a shell-prompt refusal", err)
+	}
+	if len(*sent) != 0 {
+		t.Fatalf("a refused send delivered %+v", *sent)
+	}
+	if _, err := ws.AgentsSendCommand(context.Background(), wshrpc.CommandAgentsSendData{Tab: agentsTabB, Text: "hi", FromORef: blockORef(agentsBlockC)}); err == nil {
+		t.Fatal("the second send was not refused")
+	}
+	if _, err := ws.AgentsSendCommand(context.Background(), wshrpc.CommandAgentsSendData{Tab: agentsTabA, Text: "hi", FromORef: blockORef(agentsBlockC)}); err != nil || len(*sent) != 1 {
+		t.Fatalf("a send to a live agent: err = %v, deliveries %+v", err, *sent)
+	}
+}
+
+// the shell reading runs only for a typed delivery: a block with a stream, or none running, is never read
+func TestLoadPromptBlockReadsTheShellOnlyForATypedDelivery(t *testing.T) {
+	ctx := context.Background()
+	_, stored := insertLeadTab(t, ctx)
+	old := shellHoldsNothing
+	t.Cleanup(func() { shellHoldsNothing = old })
+	shellHoldsNothing = func(string) bool { t.Error("read the shell of a block with no running controller"); return true }
+	if pb, err := loadPromptBlock(ctx, stored); err != nil || pb.AgentGone {
+		t.Fatalf("stored block with no controller: %+v, %v; want no shell reading", pb, err)
+	}
+}
+
 // what an asking agent waits on the user for: an open ask is a question, a waiting status with no ask is a question or
 // a permission prompt (the status does not say which)
 func TestAgentOpenPromptNamesWhatTheAgentWaitsOn(t *testing.T) {

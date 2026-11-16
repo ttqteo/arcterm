@@ -599,7 +599,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
 
     const toggleView = () => globalStore.set(cockpitViewAtom, view === "office" ? "cards" : "office");
     const onKeyDown = useCockpitKeyboard({
-        model, navigableIds, cursorId, setCursorId, answerTab, answerSel,
+        model, navigableIds, cursorId, setCursorId, answerTab,
         navCols, rowTargets, askTargets, roster: agents, lastJumpRef, setOpenComposerId,
         selectQuestion, toggleAnswer, submitAnswer, toggleBackground, openFocus, scrollToPulse, focusRowComposer,
         office: view === "office" ? officeKeys : undefined,

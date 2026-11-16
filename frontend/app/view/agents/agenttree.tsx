@@ -1075,15 +1075,31 @@ function RunSubline({
                 ) : runStage(run).key === "landing" && run.land?.state === "pending" ? (
                     <LandLine model={model} run={run} className={PROGRESS_TEXT[runStage(run).tone]} />
                 ) : (
-                    // the stage word gives way first: a queue tag or a long note may cut "Working", never "2/6"
-                    <span
-                        data-run-paused={paused ? "" : undefined}
-                        className={cn("flex min-w-0 whitespace-nowrap", PROGRESS_TEXT[runStage(run).tone])}
-                        title={progress.title}
-                    >
-                        <span className="min-w-0 truncate">{progressParts.head}</span>
-                        {progressParts.tail ? <span className="flex-none">{progressParts.tail}</span> : null}
-                    </span>
+                    // the stage word gives way first: a queue tag or a long note may cut "Working", never "2/6". The
+                    // two are siblings in the line itself, not one box holding both: a box that may shrink lets its
+                    // count spill out under the next thing (the ↰), and one that may not keeps "Working" from cutting.
+                    // The count pulls back over the line's gap and keeps its own space (a leading one would collapse).
+                    <>
+                        <span
+                            data-run-paused={paused ? "" : undefined}
+                            className={cn("min-w-0 truncate", PROGRESS_TEXT[runStage(run).tone])}
+                            title={progress.title}
+                        >
+                            {progressParts.head}
+                        </span>
+                        {progressParts.tail ? (
+                            <span
+                                data-run-progress-count
+                                className={cn(
+                                    "-ml-[6px] flex-none whitespace-nowrap",
+                                    PROGRESS_TEXT[runStage(run).tone]
+                                )}
+                                title={progress.title}
+                            >
+                                {" " + progressParts.tail.slice(1)}
+                            </span>
+                        ) : null}
+                    </>
                 )}
                 {note}
                 <OriginFrom model={model} run={run} />

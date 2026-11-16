@@ -34,11 +34,20 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Selected text in Chat has slightly rounded corners, so the highlight looks softer.
 - The chat box's `@` list shows the agents of the chat's own project first, so one there is no longer pushed out by
   agents of other projects.
+- While an agent asks you a single question, a message sent from the chat box goes to it at once as your answer,
+  instead of waiting until you answer on the question's card. A card with several questions still holds the message.
 
 ### Fixed
 
 - A run no longer freezes its other workers, merges and your actions for up to a minute while it checks out a task's
   tree and runs its Setup.
+- On Diff, n and p open the folder of the file they step to, so its row no longer stays hidden in a collapsed folder.
+- On the Cockpit, Enter sends a one-question ask you answered by typing only, as it already did for a picked option.
+- arcterm no longer fails to start the first time on a busy machine, and its store's write-ahead log stays
+  trimmed after a request times out instead of growing to the size of the largest write.
+- The Chat you are reading no longer jumps to the top when an agent you just launched finishes starting up.
+- A message you send while a Claude agent works no longer leaves it reading idle for the rest of that turn: Chat keeps
+  its Working line and the roster its working state.
 - An agent started with Work on stays on the initiative you picked: reading or writing another initiative along the
   way no longer moves its header and initiative band to that one.
 - The Jarvis hologram no longer turns into the pixel pet for a few seconds after a long day of opening and closing
@@ -63,10 +72,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   instead of every board of the canvas and its All view.
 - A pi that quits back to its shell leaves `wsh agents list`, so a message sent to it is no longer typed into the
   shell.
+- A message to an agent that was killed rather than quit (its terminal back at the shell prompt) is refused with a
+  reason, instead of being typed into the shell.
 - The Diff surface's refresh no longer briefly locks the git index, which could make an agent's commit in the same
   checkout fail with "index.lock exists".
 - A conversation whose transcript could not be read for a moment (a lock, an antivirus scan) no longer stays missing
   from Conversation History until arcterm restarts.
+- A run that a session started no longer draws its ↰ over the run's count (`0/5`) in a tight sidebar row: the
+  stage word gives way and the count stays whole beside the ↰.
 - If arcterm cannot write its Claude Code mod at launch, the hooks for pi, opencode, agy and Codex are still installed.
 - Bringing your own skills into arcterm treats `review` and `Review` as the same skill, as Windows and macOS do.
 

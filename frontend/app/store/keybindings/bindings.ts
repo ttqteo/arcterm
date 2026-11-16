@@ -79,7 +79,7 @@ import { parseDocReview } from "@/app/view/agents/docreview";
 import { focusedDocReview, openReview, stepDocReviewTab } from "@/app/view/agents/docreviewstore";
 import { doneSuggestion } from "@/app/view/agents/donesuggest";
 import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
-import { listOrder, stepInList, treeModeAtom } from "@/app/view/agents/filetree";
+import { collapsedDirsAtom, expandToShow, listOrder, stepInList, treeModeAtom } from "@/app/view/agents/filetree";
 import { minimizeRequested, toggleFloat } from "@/app/view/agents/floatstore";
 import {
     clearHistoryFilters,
@@ -2476,9 +2476,14 @@ function stepListFile(dir: 1 | -1): false | undefined {
     if (active == null) {
         return false;
     }
-    const next = stepInList(listOrder(active.files, globalStore.get(treeModeAtom)), active.open, dir);
+    const tree = globalStore.get(treeModeAtom);
+    const next = stepInList(listOrder(active.files, tree), active.open, dir);
     if (next == null) {
         return false;
+    }
+    if (tree) {
+        // a collapsed folder's files are still next in line: open the folders above the file, or its row stays hidden
+        globalStore.set(collapsedDirsAtom, expandToShow(globalStore.get(collapsedDirsAtom), next));
     }
     active.select(next);
 }

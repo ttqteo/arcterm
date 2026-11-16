@@ -64,6 +64,7 @@ import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
 import { canvasStateAtom } from "./canvasstore";
 import { cellInputOf } from "./cellinput";
+import { nextCellOrder } from "./cellorder";
 import { chatCapable, shownChatMode } from "./chatmode";
 import { chatModeAtom } from "./chatmodestore";
 import { ChatLayer } from "./chatpane";
@@ -312,6 +313,16 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     if (paneMounts !== storedMounts) {
         setPaneMounts(paneMounts);
     }
+    // The cell wrappers' DOM order (cellorder.ts): each tab keeps its place while it lives, a new one goes last. In the
+    // roster's order a launch that turned from a terminal into an agent moved the cells after it, and a moved wrapper
+    // resets the Chat being read in it to the top. Stored during render like the mounts above.
+    const cellTabs = mountable.filter((a) => a.blockId != null);
+    const [storedCellOrder, setCellOrder] = useState<readonly string[]>([]);
+    const cellOrder = nextCellOrder(storedCellOrder, cellTabs.map((a) => a.id));
+    if (cellOrder !== storedCellOrder) {
+        setCellOrder(cellOrder);
+    }
+    const cellTabById = new Map(cellTabs.map((a) => [a.id, a] as const));
     // a terminal whose pane has not mounted is still named by its last command in the tree
     useEffect(() => {
         for (const t of terminals) {
@@ -771,8 +782,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                 gridShown && tiled && "gap-[6px] p-[6px]"
                             )}
                         >
-                            {mountable
-                                .filter((a) => a.blockId != null)
+                            {cellOrder
+                                .map((id) => cellTabById.get(id)!)
                                 .map((a) => {
                                     const slot = cellOf.get(a.id);
                                     const cell = slot?.cell;

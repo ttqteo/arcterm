@@ -47082,6 +47082,36 @@ const agentChat = {
                     [B, C, D, E, F].includes(picked86) && written86 && pills86.length === 0 && shut86,
                 { listed86, list86, picked86, want86, pills86, shut86 }
             );
+
+            // 87. The chat's own project's agents lead the @ list: with A and the asleep F (last in the roster) moved to a
+            // project of their own, @agent lists F first; then @agent:<F's first 4 characters> (an id pasted after the @)
+            // lists F alone, and Enter writes agent:<F's 8 characters>
+            await AC.setRoster(h, acRoster(ctx, {}, { main: { project: "thesis" }, asleep: { project: "thesis" } }));
+            await polishNap(800);
+            await acClear(h, acBox(A));
+            await acType(h, acBox(A), "đọc @agent", false);
+            const listed87 = await polishWaitFor(h, `!!document.querySelector('[data-chat-mention^="ref:agent:"]')`, 8000);
+            const list87 = await acMentionState(h);
+            await h.shot("cdp-shots/agent-chat-87-same-project-first.png");
+            const refs87 = (list87?.rows ?? []).map((r) => r.key).filter((k) => k.startsWith("ref:agent:"));
+            await acClear(h, acBox(A));
+            await polishWaitFor(h, `!document.querySelector("[data-chat-mentions]")`, 3000);
+            await acType(h, acBox(A), `đọc @agent:${F.slice(0, 4)}`, false);
+            const listedId87 = await polishWaitFor(h, `!!document.querySelector('[data-chat-mention^="ref:agent:"]')`, 8000);
+            const byId87 = await acMentionState(h);
+            await h.shot("cdp-shots/agent-chat-87-agent-id-query.png");
+            const idRefs87 = (byId87?.rows ?? []).map((r) => r.key).filter((k) => k.startsWith("ref:"));
+            await acKey(h, acKeys.enter);
+            const want87 = `đọc agent:${F.slice(0, 8)} `;
+            const written87 = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify(want87)}`, 3000);
+            await acClear(h, acBox(A));
+            await AC.setRoster(h, acRoster(ctx));
+            rec(
+                "87. with A and F (last in the roster) in a project of their own, @agent lists F first among the agents; @agent:<F's first 4 characters> lists F as its one ref row, and Enter writes `agent:<F's 8 characters> `",
+                listed87 && refs87[0] === `ref:agent:${F}` && listedId87 && idRefs87.length === 1 &&
+                    idRefs87[0] === `ref:agent:${F}` && written87,
+                { refs87, idRefs87, want87, written87 }
+            );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
         }
@@ -47315,6 +47345,18 @@ const chatScrollKeep = {
                 "2. a new agent's row arrives in the sidebar; the chat being read keeps its node and its scroll (within 2 px)",
                 rowUp && after2.found && after2.marked && Math.abs(after2.top - placed) <= 2,
                 { rowUp, placed, ...after2 }
+            );
+
+            // 2b. the second now sorts before the main one, as a launch does when it turns from a terminal into an agent
+            // (reported 2026-11-16: the Chat being read jumped to the top as the new agent's Claude came up). The cells
+            // were drawn in the roster's order, so React moved the main agent's cell, which resets its scroll to 0
+            await AC.setRoster(h, cskRoster(ctx, ["second", "main"]));
+            await new Promise((r) => setTimeout(r, CSK_SETTLE_MS));
+            const after2b = await h.ev(cskRead(A));
+            rec(
+                "2b. the new agent moves ahead of the one being read in the roster; the chat keeps its node and its scroll (within 2 px)",
+                after2b.found && after2b.marked && Math.abs(after2b.top - placed) <= 2,
+                { placed, top: after2b.top, marked: after2b.marked, writes: after2b.writes?.length, hides: after2b.hides }
             );
 
             // 3. a third arrives as a launch still booting (a pending launch), the way + New shows one before its roster row

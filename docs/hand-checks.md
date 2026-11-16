@@ -16,17 +16,37 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Diff n / p open a collapsed folder.** Unit tests and typecheck only, no dev app ran. On Diff in tree
+  mode with changes in two folders, collapse the second, then press n until the next file is in it: the folder opens
+  and the file's row is selected on screen (3bc4f85dc).
+- [ ] (arcterm) **The Cockpit's Enter sends a typed answer.** Typecheck only, no dev app ran. With an agent asking one
+  question on the Cockpit, type an answer in its box without picking an option, move focus back to the card and press
+  Enter: the answer is sent, not the agent opened (3bc4f85dc).
+- [ ] (arcterm) **The Chat being read keeps its place when a launch finishes starting.** The CDP scenario
+  `chat-scroll-keep` (step 2b) checked it over a fixture roster, not a real launch. + New a Claude agent in another
+  project, switch to an agent whose Chat you have scrolled halfway up before the new one's Claude answers, and wait for
+  its title and first message: the Chat stays where you were reading.
+- [ ] (arcterm) **A message sent mid-turn keeps the agent working.** Unit tests only; the installed mod needs an
+  arcterm launch to pick it up. While a Claude agent runs a tool, type a message in Chat so it queues and interrupts the
+  tool: Chat keeps "Working · …" under the reply and `wsh agents list` reads `working` through the rest of that turn,
+  and wavesrv's log has no "dropped PreToolUse's working … reported after its turn ended" lines for it.
 - [ ] (arcterm) **A Work on session keeps its initiative.** Go tests only, no dev app ran. In Jarvis, Work on an
   initiative whose notes point at another one, and ask the agent to `wsh effort show` that other initiative: the Agent
   header and initiative band keep the one you picked (63184f53b).
+- [ ] (arcterm) **The chat box answers a single question.** Unit tests and typecheck only, no dev app ran. Have a
+  Claude agent ask one AskUserQuestion, then type a reply in the chat box (not the card) and press Send: it goes at
+  once, the card closes, and the agent goes on with your words as the answer, with no "Queued · sends once you answer"
+  line. An ask of two questions still shows that line and holds the message.
+- [ ] (arcterm) **A send to a killed agent is refused.** Unit tests only; the shell reading (`shellHoldsNothing`) never
+  ran against a real terminal. Start claude in an agent tab, then kill its process (Task Manager, or `taskkill /PID`,
+  not `/exit`) so the tab is back at its shell prompt: `wsh agents send <tab> hi` from another agent answers "back at
+  its shell prompt … nothing was sent", and nothing is typed into that shell. A send to a live agent still goes
+  through. Try it in a Git Bash tab and a PowerShell tab (Git Bash hides MSYS children from Windows, native ones it
+  shows), and on a Mac (the process list reads differently there).
 - [ ] (arcterm) **The Jarvis hologram no longer drops to the pixel pet.** Unit tests and typecheck only, no dev app
   ran. Use arcterm a working day with many agents and terminals opened, closed and switched between: `waveapp.log`
   has no `[hologram] failed` line, the hologram never turns into Sprout/Minion for 5 s, and terminals still draw sharp
   (WebGL) after switching back to one hidden for over 30 s.
-- [ ] (arcterm) **The `@` list puts the chat's own project's agents first.** Unit tests and typecheck only, no dev app
-  ran. With live agents in several projects, type `@agent` in a chat's box: the agents of that chat's project lead the
-  list. Then type `@agent:` and the first characters of an agent's id: that agent is the one row, and picking it writes
-  `agent:<id> `.
 - [ ] (arcterm) **A finished run or council stays where it finished in Chat.** The CDP scenario `chat-council` checked
   the council cards on fixtures; the run ✓ row has no scenario (unit tests only). In a real agent that ran a run and a
   council, keep talking after both end: the Done council card stays just above the agent's summary of it and the run's
@@ -120,7 +140,8 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   picture-only one.
 - [ ] (arcterm) **A tight run line keeps its count.** Unit tests and typecheck only, no dev app ran. In the Agent
   sidebar at 248px, a working run whose tasks wait in the job queue (`≡#3`) with its RAM shown: its second line reads
-  `Work… · 2/6` (or `Working · 2/6` when it fits), never `Working · …`; hover the words for the full line.
+  `Work… · 2/6` (or `Working · 2/6` when it fits), never `Working · …`; hover the words for the full line. A run a session started
+  (its ↰ after the words) keeps `· 0/5` whole beside the ↰, never under it.
 - [ ] (arcterm) **A wait on a council or an agent shows no terminal row.** Unit tests and typecheck only, no dev app
   ran. Have a Claude agent seat itself on a council (`wsh council start --agent self`, which runs
   `wsh council wait <id> --timeout 0` in the background) → no "Wait for council to finish" row under the agent in the

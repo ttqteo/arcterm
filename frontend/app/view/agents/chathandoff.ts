@@ -46,13 +46,13 @@ export function isHandoffAsk(questions: readonly { header?: string }[] | undefin
     return questions?.length === 1 && questions[0].header?.trim().toLowerCase() === HANDOFF_HEADER.toLowerCase();
 }
 
-/** Pure: whether words typed in the message box answer the agent's live ask, sent as its typed answer, instead of
- *  waiting behind it as any other question's do (sendHold). The handoff card has no field of its own and points at the
- *  box ("Or type below to answer in your own words"); a held ask is answered on its card, so it never is. */
-export function boxAnswersAsk(
-    ask: { hold?: boolean; questions?: readonly { header?: string }[] } | undefined
-): boolean {
-    return ask != null && !ask.hold && isHandoffAsk(ask.questions);
+/** Pure: whether words typed in the message box answer the agent's live ask, sent as its typed answer (what the card's
+ *  own "type your own answer" field sends), instead of waiting behind it (sendHold). An ask of one question is: the
+ *  agent reads the words the same either way, and the handoff card has no field of its own and points at the box ("Or
+ *  type below to answer in your own words"). With several questions the box can't tell which one the words answer, so
+ *  the message waits; a held ask is answered on its card, so it never is. */
+export function boxAnswersAsk(ask: { hold?: boolean; questions?: readonly unknown[] } | undefined): boolean {
+    return ask != null && !ask.hold && ask.questions?.length === 1;
 }
 
 export type HandoffRow = {
