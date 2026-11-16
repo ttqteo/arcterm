@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { doneSuggestion, landedCloseSuggestion } from "./donesuggest";
+import {
+    doneSuggestion,
+    landedCloseSuggestion,
+    originHoldsClose,
+    startedRunLanded,
+    startedRunTabIds,
+} from "./donesuggest";
+import type { Lineage, RunInfo } from "./runlineage";
 
 describe("doneSuggestion", () => {
     const done = { id: "a1", state: "idle" as const, committed: true };
@@ -64,6 +71,33 @@ describe("doneSuggestion", () => {
         expect(doneSuggestion(done, 0, none, 0, [blocked])).toBe(false);
     });
 
+    // a session that brainstormed a plan and handed it to `wsh runs start`: once that run lands, its work is in
+    it("offers it once a run it started has landed, with no commit of its own", () => {
+        const idle = { id: "a1", state: "idle" as const };
+        expect(
+            doneSuggestion(idle, 0, { r1: { originId: "a1", status: "done", land: { state: "landed" } } }, 0, noQueue)
+        ).toBe(true);
+        expect(
+            doneSuggestion(idle, 0, { r1: { originId: "a1", status: "done", land: { state: "held" } } }, 0, noQueue)
+        ).toBe(false);
+        expect(
+            doneSuggestion(idle, 0, { r1: { originId: "a2", status: "done", land: { state: "landed" } } }, 0, noQueue)
+        ).toBe(false);
+        // a second run it started still going holds it back
+        expect(
+            doneSuggestion(
+                idle,
+                0,
+                {
+                    r1: { originId: "a1", status: "done", land: { state: "landed" } },
+                    r2: { originId: "a1", status: "running" },
+                },
+                0,
+                noQueue
+            )
+        ).toBe(false);
+    });
+
     it("ignores a plan another agent queued, and offers it again once its own has started", () => {
         const other = { id: "q1", state: "waiting", data: { origintabid: "a2" } } as RunQueueEntry;
         const noOrigin = { id: "q2", state: "waiting", data: {} } as RunQueueEntry;
@@ -84,5 +118,42 @@ describe("landedCloseSuggestion", () => {
         expect(landedCloseSuggestion({}, 3)).toBe(false);
         expect(landedCloseSuggestion(null, 3)).toBe(false);
         expect(landedCloseSuggestion({ land: { state: "landed" } }, 0)).toBe(false);
+    });
+});
+
+describe("the ✓ of a landed run sits on the session that started it", () => {
+    const landed = (originId?: string) =>
+        ({ originId, land: { state: "landed" } }) as Pick<RunInfo, "originId" | "land">;
+
+    it("on the origin's row while it is open and awake, on the run's own row otherwise", () => {
+        expect(originHoldsClose(landed("a1"), [{ id: "a1" }])).toBe(true);
+        expect(originHoldsClose(landed("a1"), [{ id: "a1", sleeping: { since: 1, freedBytes: 0 } }])).toBe(false);
+        expect(originHoldsClose(landed("a1"), [{ id: "a2" }])).toBe(false);
+        expect(originHoldsClose(landed(undefined), [{ id: "a1" }])).toBe(false);
+    });
+
+    it("knows whether a run the agent started landed", () => {
+        expect(startedRunLanded("a1", { r1: landed("a1") })).toBe(true);
+        expect(startedRunLanded("a1", { r1: landed("a2") })).toBe(false);
+        expect(startedRunLanded("a1", { r1: { originId: "a1", land: { state: "pending" } } })).toBe(false);
+    });
+
+    it("lists the tabs its landed runs still hold, never the origin itself or a run still going", () => {
+        const lineage = {
+            runs: {
+                r1: { originId: "a1", land: { state: "landed" } },
+                r2: { originId: "a1", status: "running" },
+                r3: { originId: "a2", land: { state: "landed" } },
+            },
+            roles: {
+                w1: { kind: "worker", leadRunId: "r1", taskId: "t1" },
+                v1: { kind: "stage", leadRunId: "r1", stageRole: "verifier" },
+                w2: { kind: "worker", leadRunId: "r2", taskId: "t1" },
+                w3: { kind: "worker", leadRunId: "r3", taskId: "t1" },
+            },
+        } as unknown as Lineage;
+        const agents = ["a1", "w1", "v1", "w2", "w3"].map((id) => ({ id }));
+        expect(startedRunTabIds(lineage, agents, "a1")).toEqual(["w1", "v1"]);
+        expect(startedRunTabIds(lineage, agents, "a9")).toEqual([]);
     });
 });

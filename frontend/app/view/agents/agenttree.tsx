@@ -80,7 +80,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { confirmCloseProject, confirmCloseRun, confirmCloseSession } from "./agentactions";
-import { DONE_TITLE, doneSuggestion } from "./donesuggest";
+import { DONE_TITLE, doneSuggestion, ORIGIN_DONE_TITLE, startedRunLanded } from "./donesuggest";
 import { LandedClose } from "./landedclose";
 import { fallAsleepLabel, fallingAsleepOf } from "./fallasleepstore";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
@@ -1500,14 +1500,17 @@ function ParentRow({
                         e.stopPropagation();
                         confirmCloseSession(agent, model, "tree Done chip");
                     }}
-                    title={DONE_TITLE}
+                    title={
+                        !agent.committed && startedRunLanded(agent.id, lineageRuns) ? ORIGIN_DONE_TITLE : DONE_TITLE
+                    }
                     aria-label="Close"
                     className="flex h-[16px] w-[16px] flex-none cursor-pointer items-center justify-center rounded-[4px] text-success hover:bg-surface-hover"
                 >
                     <Check size={12} strokeWidth={2.4} aria-hidden />
                 </button>
             ) : null}
-            {/* a lead's run that landed and still holds sessions: the same ✓, closing the whole run */}
+            {/* a lead's run that landed and still holds sessions: the same ✓, closing the whole run (on the session
+                that started it instead, while that one is open) */}
             {lead != null ? <LandedClose model={model} run={lead.run} variant="chip" /> : null}
             <ServerMark servers={servers} />
             {cols}

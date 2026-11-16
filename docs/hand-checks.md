@@ -93,8 +93,11 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   the run lands its card folds to `✓ Run a9e0fd4f landed · merged into main …` → a green `✓ Close run · N open` sits at
   that row's right end; the rest of the row still opens the `[arc] Run …` message. Click it → the Close run confirm
   names the run and N sessions; confirm → the run's lead, workers and reviewers close, and the button goes. In the
-  Agent sidebar the run's row (`DUM-E Implementation Plan`, `Landed`) shows the same small green ✓ until then. A run
-  still landing, or held, shows neither.
+  Agent sidebar the ✓ sits on the agent that started the run (its row reads `merged · run …`), not on the run's row:
+  once you have read its last turn, click it → `Close agent and run` names N open sessions; Close all → it and the
+  run's sessions close, Close agent only → only it. Close that agent by Alt+W or its header ✓ → the same confirm. A
+  run started from + Run (no origin agent) keeps the small ✓ on its own row. A run still landing, or held, shows
+  neither. (Origin ✓: unit tests and typecheck only.)
 - [ ] (arcterm) **The run chip's × hides finished runs.** Unit tests and typecheck only, no dev app ran. On an agent
   whose started runs have all landed (`2 runs` on its tree row and beside its name in the header), hover the chip → a
   small × shows after it; click it → the chip is gone from both places, and stays gone after a reload. With one run

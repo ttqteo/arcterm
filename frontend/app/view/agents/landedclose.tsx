@@ -3,14 +3,15 @@
 //
 // The ✓ Close a landed run offers (donesuggest.ts landedCloseSuggestion): the same green mark a committed agent's row and
 // header offer, closing the sessions the run still holds (its lead, workers, reviewers) through the Close run confirm.
-// Chat draws it as a button on the ✓ row its run card folds into, the Agent tree as a chip on the run's row.
+// Chat draws it as a button on the ✓ row its run card folds into, the Agent tree as a chip on the run's row, unless
+// the session that started the run is open: that session's own ✓ Close offers the run's sessions with it.
 
 import { atom, useAtomValue } from "jotai";
 import { Check } from "lucide-react";
 import { useMemo } from "react";
 import { confirmCloseRun } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
-import { LANDED_TITLE, landedCloseSuggestion } from "./donesuggest";
+import { LANDED_TITLE, landedCloseSuggestion, originHoldsClose } from "./donesuggest";
 import { runAgentsOf, type RunInfo } from "./runlineage";
 
 // the cockpit focus ring (chatbrainstormparts FOCUS_RING), spelled here so the tree does not pull Chat in
@@ -34,6 +35,16 @@ export function useRunTabIds(model: AgentsViewModel | undefined, runId: string |
     return useMemo(() => (key === "" ? [] : key.split(",")), [key]);
 }
 
+/** Whether the session that started a run is open and awake (originHoldsClose), read as one boolean so a row redraws
+ *  only when that changes. */
+function useOriginOpen(model: AgentsViewModel | undefined, originId: string | undefined): boolean {
+    const openAtom = useMemo(
+        () => atom((get) => model != null && originHoldsClose({ originId }, get(model.agentsAtom))),
+        [model, originId]
+    );
+    return useAtomValue(openAtom);
+}
+
 function sessionsWord(n: number): string {
     return n === 1 ? "1 open session" : `${n} open sessions`;
 }
@@ -46,11 +57,12 @@ export function LandedClose({
     variant,
 }: {
     model: AgentsViewModel | undefined;
-    run: Pick<RunInfo, "runId" | "title" | "land"> | null | undefined;
+    run: Pick<RunInfo, "runId" | "title" | "land" | "originId"> | null | undefined;
     variant: "button" | "chip";
 }) {
     const tabIds = useRunTabIds(model, run?.runId);
-    if (run == null || !landedCloseSuggestion(run, tabIds.length)) {
+    const originOpen = useOriginOpen(model, run?.originId);
+    if (run == null || !landedCloseSuggestion(run, tabIds.length) || (variant === "chip" && originOpen)) {
         return null;
     }
     const title = `${LANDED_TITLE} (${sessionsWord(tabIds.length)})`;
