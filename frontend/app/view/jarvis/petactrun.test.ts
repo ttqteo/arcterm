@@ -35,7 +35,7 @@ vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { atom } from "jotai";
-import { actNavigates, runAct, sendErrand } from "./petactrun";
+import { actNavigates, runAct, sendErrand, streamConsult } from "./petactrun";
 import type { PetAct } from "./petacts";
 import { petActStateAtom, petErrandAtom, petPeekOpenAtom } from "./petstore";
 
@@ -306,6 +306,41 @@ describe("sendErrand", () => {
             text: "no such channel",
             status: "error",
         });
+    });
+});
+
+describe("streamConsult", () => {
+    it("posts the shown prompt but consults with another, and hands back every chunk as it grows", async () => {
+        postMessage.mockResolvedValue(undefined);
+        consult.mockReturnValue(
+            (async function* () {
+                yield { text: "one " };
+                yield { text: "two" };
+            })()
+        );
+        const seen: string[] = [];
+        const acc = await streamConsult("ch1", "claude", "what the person typed", "the routing prompt", (t) =>
+            seen.push(t)
+        );
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ channelid: "ch1", kind: "consult", author: "you", text: "what the person typed" })
+        );
+        expect(consult).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ channelid: "ch1", runtime: "claude", prompt: "the routing prompt" }),
+            { timeout: 130_000 }
+        );
+        // one consult id ties the posted message to the stream
+        const consultid = consult.mock.calls[0][1].consultid;
+        expect(postMessage.mock.calls[0][1].reforef).toBe(`consult:${consultid}`);
+        expect(seen).toEqual(["one ", "one two"]);
+        expect(acc).toBe("one two");
+    });
+
+    it("lets a failure through for its caller to place", async () => {
+        postMessage.mockRejectedValue(new Error("no such channel"));
+        await expect(streamConsult("ch-gone", "claude", "a", "b", () => {})).rejects.toThrow("no such channel");
     });
 });
 
