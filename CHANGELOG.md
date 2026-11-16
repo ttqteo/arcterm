@@ -57,6 +57,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Find in a document (Ctrl+F in the File tab) floats on the same frosted glass as find in a terminal.
 - The highlighted row in a frosted menu, picker or popover stays visible over a bright terminal: it lifts with a light tint instead of a solid grey, and the dim text in those panels is a shade brighter so it stays readable on it.
 - A brainstorm board opened over Chat now steps to the previous or next board with ← and →.
+- A brainstorm question about a part with no board of its own keeps the rail's Boards tab, listing every part's boards;
+  the rail still opens on Decided so far, where before the Boards tab was gone until a question with boards came.
 
 ### Fixed
 
