@@ -58,6 +58,11 @@ describe("screenCardOf", () => {
     it("draws nothing while the mode line shows: the prompt is up", () => {
         expect(screenCardOf(fixtures.idle, "asking")).toBeNull();
     });
+    it("draws the captured safeguards pause as its dialog, not as the foot of the screen", () => {
+        const card = screenCardOf(fixtures.pausedDialog, "asking");
+        expect(card?.kind).toBe("dialog");
+        expect(card?.kind === "dialog" && card.dialog.title).toBe("Session paused");
+    });
     it("draws nothing with no screen to read", () => {
         expect(screenCardOf(null, "asking")).toBeNull();
     });

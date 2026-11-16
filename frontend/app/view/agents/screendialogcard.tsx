@@ -30,8 +30,10 @@ import {
 } from "./screendialog";
 import type { TuiDialog } from "./tuiscreen";
 
-// the rows read off the bottom of the screen: a long dialog's text with room to spare
-const DIALOG_SCREEN_ROWS = 40;
+// the rows read off the bottom of the buffer: the whole screen, however tall. Claude Code 2.1.325 draws on the
+// alternate screen from the top, so on a 52-row screen the safeguards' pause sat on rows 10 to 21 and a read of the
+// bottom 40 missed its rule and title (tuiscreen.fixtures.json pausedDialog)
+const DIALOG_SCREEN_ROWS = 200;
 const DIALOG_POLL_MS = 1000;
 
 const CARD = "rounded-[9px] border border-asking/45 bg-askingbg p-3";

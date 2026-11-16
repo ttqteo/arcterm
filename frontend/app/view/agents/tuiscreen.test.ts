@@ -167,6 +167,27 @@ const pausedDialog = [
 ];
 
 describe("tuiDialog", () => {
+    // fixtures.pausedDialog is the real screen: Claude Code 2.1.325's PTY output replayed through xterm (130x52,
+    // alternate buffer), the prompt's words swapped out
+    it("reads the captured safeguards pause off the whole screen", () => {
+        const dialog = tuiDialog(fixtures.pausedDialog);
+        expect(dialog?.title).toBe("Session paused");
+        expect(dialog?.body).toHaveLength(2);
+        // four rows wrapped at the screen's edge, one paragraph
+        expect(dialog?.body[0]).toMatch(
+            /^Opus 5\.5's safeguards flagged this session\. .* and has stronger safeguards .* learn more: https:\/\/support\.claude\.com\/en\/articles\/8106465$/
+        );
+        expect(dialog?.body[1]).toBe("Details: `[cyber]`");
+        expect(dialog?.options).toEqual([
+            { n: 1, label: "Switch to Opus 4.8" },
+            { n: 2, label: "Edit prompt and retry with Opus 5.5" },
+        ]);
+        expect(dialog?.cursor).toBe(1);
+    });
+    it("misses it on the bottom 40 rows: the dialog sits at the top of a tall screen", () => {
+        // why the card reads the whole screen (2026-11-16: the card saw no rule and fell back to the screen's foot)
+        expect(tuiDialog(fixtures.pausedDialog.slice(-40))).toBeNull();
+    });
     it("reads a dialog no hook reports: its title, its text as paragraphs and its options", () => {
         expect(tuiDialog(pausedDialog)).toEqual({
             title: "Session paused",
