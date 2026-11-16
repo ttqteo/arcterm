@@ -14,6 +14,7 @@ import {
     queuedTag,
     recentBypass,
     runQueuedTag,
+    shortQueuedTag,
 } from "./jobqueue";
 import { jobQueueAtom, toggleJobQueue } from "./jobqueuestore";
 
@@ -70,9 +71,11 @@ export function JobQueueChip({ compact = false }: { compact?: boolean } = {}) {
 // An agent's tag while its heavy command waits its turn: its place in the queue, why in the tooltip. A click opens the
 // Jobs popover from the tag, where Run now and Skip are, and never reaches the row it sits on. It keeps its own clock,
 // as the chip does, so it turns to its warning past LONG_WAIT_MS without its row or header ticking every second.
-export function QueuedJobTag({ job }: { job: JobQueueJob }) {
+// `short` in the Agent tree: "#1", the words in the tooltip (shortQueuedTag), so it stays whole beside a row's columns.
+export function QueuedJobTag({ job, short }: { job: JobQueueJob; short?: boolean }) {
     useWaitClock();
-    return <QueueTagButton tag={queuedTag(job, Date.now())} attrs={{ "data-agent-queued": job.id }} />;
+    const tag = short ? shortQueuedTag(job, Date.now()) : queuedTag(job, Date.now());
+    return <QueueTagButton tag={tag} attrs={{ "data-agent-queued": job.id }} />;
 }
 
 // A run's tag while any of its jobs waits: its engine steps and its agents' commands, so a folded run still says it
@@ -93,8 +96,7 @@ function useWaitClock() {
     }, []);
 }
 
-// it shrinks and cuts its label before a row's RAM · tokens · age columns are pushed past the row's edge; the tooltip
-// keeps the whole of it
+// whole, never cut: in the Agent tree its label is short ("#1", "×2") and the words left of it shrink instead
 function QueueTagButton({
     tag,
     attrs,
@@ -114,12 +116,12 @@ function QueueTagButton({
                 toggleJobQueue(e.currentTarget);
             }}
             className={cn(
-                "flex min-w-0 cursor-pointer items-center gap-[3px] whitespace-nowrap rounded-[5px] px-[3px] py-[1px] text-[10.5px] font-semibold tabular-nums hover:bg-surface-hover",
+                "flex flex-none cursor-pointer items-center gap-[3px] whitespace-nowrap rounded-[5px] px-[3px] py-[1px] text-[10.5px] font-semibold tabular-nums hover:bg-surface-hover",
                 tag.warn ? "text-warning" : "text-muted"
             )}
         >
             <Icon size={10} aria-hidden className="flex-none" />
-            {tag.label ? <span className="truncate">{tag.label}</span> : null}
+            {tag.label ? <span>{tag.label}</span> : null}
         </button>
     );
 }

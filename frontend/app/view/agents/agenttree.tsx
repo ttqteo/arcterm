@@ -1434,7 +1434,7 @@ function ParentRow({
                     <ArrowUpRight size={10} strokeWidth={2.2} aria-hidden />
                 </button>
             ) : asking || startError != null ? null : queued ? (
-                <QueuedJobTag job={queued} />
+                <QueuedJobTag job={queued} short />
             ) : done ? (
                 // the chip's click is its own: it must not select the row it closes
                 <button
@@ -1917,7 +1917,7 @@ function WorkerRow({
                             {agent?.ask?.hold ? askingLabel(agent) : "asking"}
                         </span>
                     ) : queued ? (
-                        <QueuedJobTag job={queued} />
+                        <QueuedJobTag job={queued} short />
                     ) : null}
                     <RowCols
                         cells={rowCols(fields, { ram, tokens, age: workerAge(line) })}

@@ -291,9 +291,7 @@ export function runQueuedTag(
         return null;
     }
     if (jobs.length === 1) {
-        const tag = queuedTag(jobs[0], now);
-        const pos = jobs[0].position ?? 0;
-        return { ...tag, label: pos > 0 ? `#${pos}` : "", title: `${tag.label} · ${tag.title}` };
+        return shortQueuedTag(jobs[0], now);
     }
     const names = jobs.map((j) => (j.label ? `${j.label} (${j.name})` : j.name));
     return {
@@ -301,6 +299,14 @@ export function runQueuedTag(
         title: `${jobs.length} queued: ${jobs.length} of this run's jobs wait their turn in the heavy-job queue: ${names.join(", ")}`,
         warn: jobs.some((j) => now - j.queuedts > LONG_WAIT_MS),
     };
+}
+
+/** The Agent tree's tag for one waiting job, short so it stays whole beside a row's columns: its place, "#1" (the bare
+ * glyph when it has none), the words ("queued #1 · ") opening its tooltip. The header has room for queuedTag's words. */
+export function shortQueuedTag(job: JobQueueJob, now: number): { label: string; title: string; warn: boolean } {
+    const tag = queuedTag(job, now);
+    const pos = job.position ?? 0;
+    return { ...tag, label: pos > 0 ? `#${pos}` : "", title: `${tag.label} · ${tag.title}` };
 }
 
 /** What an agent's row and header say while its heavy command waits its turn: the head of the queue says why it waits
