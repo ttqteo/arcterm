@@ -50,6 +50,10 @@ describe("kindOf / wordOf / glyphKind", () => {
     it("reads an unknown state as waiting", () => {
         expect(kindOf(task("t", "mystery"))).toBe("waiting");
     });
+    it("reads a preparing task as live", () => {
+        expect(kindOf({ state: "preparing" })).toBe("live");
+        expect(glyphKind(task("t", "preparing"))).toBe("live");
+    });
 });
 
 describe("factOf", () => {
@@ -60,6 +64,10 @@ describe("factOf", () => {
     it("says starting before any activity", () => {
         const t = task("t-1", "running");
         expect(factOf(t, ctx([t]))).toBe("starting");
+    });
+    it("says a preparing task is making its tree, not that it is next to start", () => {
+        const t = task("t-1", "preparing");
+        expect(factOf(t, ctx([t]))).toBe("preparing its tree");
     });
     it("tells merged, merge-ready and awaiting-merge apart", () => {
         const a = task("a", "done", { merged: true });

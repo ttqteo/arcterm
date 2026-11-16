@@ -236,7 +236,7 @@ func buildCounts(g *waveobj.TaskGroup, askByTask map[string]wshrpc.DagAskItem, r
 			if mergeReadyTip(g, t) && mergeHeldBy(g, t) == "" {
 				c.MergeReady++
 			}
-		case TaskState_Running, TaskState_Reviewing:
+		case TaskState_Running, TaskState_Reviewing, TaskState_Preparing:
 			c.Running++
 		case TaskState_Stalled:
 			c.Stalled++

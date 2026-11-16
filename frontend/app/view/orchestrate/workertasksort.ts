@@ -34,6 +34,7 @@ export function workerBucket(td: DagTaskDigest, node: TaskNode): WorkerSortBucke
         case "running":
         case "verifying":
         case "reviewing":
+        case "preparing":
             return "running";
         case "done":
         case "merged":

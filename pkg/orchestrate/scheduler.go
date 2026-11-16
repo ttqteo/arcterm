@@ -221,10 +221,12 @@ func retryable(state string) bool {
 
 // skippable is the states a skip may drop a task from: nothing of it has landed or is landing. A stalled task's worker
 // and a reviewing task's reviewer are stopped first (prepareActionLocked). A running task is not in the list: stop it,
-// which fails it, and skip it then. Done, blocked-merge and the Verify states have landed or are landing.
+// which fails it, and skip it then. A preparing task has no process to stop: the skip takes the task, and the prepare
+// its tree was being made by is dropped by the next locked pass. Done, blocked-merge and the Verify states have landed
+// or are landing.
 func skippable(state string) bool {
 	switch state {
-	case TaskState_Pending, TaskState_Ready, TaskState_Stalled, TaskState_Reviewing, TaskState_ReviewFailed, TaskState_Failed:
+	case TaskState_Pending, TaskState_Ready, TaskState_Stalled, TaskState_Reviewing, TaskState_ReviewFailed, TaskState_Failed, TaskState_Preparing:
 		return true
 	}
 	return false

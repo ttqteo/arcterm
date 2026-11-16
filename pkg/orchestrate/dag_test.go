@@ -511,7 +511,8 @@ func TestEveryTaskStateIsClassified(t *testing.T) {
 }
 
 // taskStates must answer, for every state, what the readers' own switches answered before it replaced them: the
-// table is a refactor of ours, so no state moves into or out of a set. The sets here are written out by hand.
+// table is a refactor of ours, so no state moves into or out of a set. preparing is new, not moved: a stored state for
+// the span a task's tree and Setup are made outside the lock. The sets here are written out by hand.
 func TestTaskStatesClassifyAsTheSwitchesDid(t *testing.T) {
 	in := func(state string, set ...string) bool { return slices.Contains(set, state) }
 	for _, s := range declaredTaskStates(t) {
@@ -519,7 +520,10 @@ func TestTaskStatesClassifyAsTheSwitchesDid(t *testing.T) {
 		if want := in(s, TaskState_Running, TaskState_Stalled); c.active != want || taskActive(s) != want {
 			t.Errorf("%s: active = %v, want %v", s, c.active, want)
 		}
-		if want := in(s, TaskState_Running, TaskState_Stalled, TaskState_Reviewing); c.inFlight != want || taskInFlight(s) != want {
+		if want := in(s, TaskState_Running, TaskState_Stalled, TaskState_Preparing); c.slot != want {
+			t.Errorf("%s: slot = %v, want %v", s, c.slot, want)
+		}
+		if want := in(s, TaskState_Running, TaskState_Stalled, TaskState_Reviewing, TaskState_Preparing); c.inFlight != want || taskInFlight(s) != want {
 			t.Errorf("%s: inFlight = %v, want %v", s, c.inFlight, want)
 		}
 		if want := in(s, TaskState_Reviewing, TaskState_ReviewFailed); c.review != want || reviewState(s) != want {
@@ -541,7 +545,7 @@ func TestTaskStatesClassifyAsTheSwitchesDid(t *testing.T) {
 		switch s {
 		case TaskState_Pending, TaskState_Ready:
 			wantCancel = TaskState_Skipped
-		case TaskState_Running, TaskState_Stalled, TaskState_Reviewing, TaskState_ReviewFailed:
+		case TaskState_Running, TaskState_Stalled, TaskState_Reviewing, TaskState_ReviewFailed, TaskState_Preparing:
 			wantCancel = TaskState_Cancelled
 		}
 		g := &waveobj.TaskGroup{Tasks: []waveobj.TaskNode{{ID: "t-1", State: s}}}

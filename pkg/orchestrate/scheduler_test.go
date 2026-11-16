@@ -228,3 +228,42 @@ func TestCancelGroupCancelsReviewStates(t *testing.T) {
 		t.Fatalf("cancel must end review states, got %s and %s", g.Tasks[1].State, g.Tasks[2].State)
 	}
 }
+
+// a preparing task's tree and Setup are being made for its worker: it holds the slot the worker will use
+func TestNextToSpawnPreparingHoldsSlot(t *testing.T) {
+	g := groupWith(TaskState_Done, TaskState_Preparing)
+	g.Parallelism = 1
+	if got := NextToSpawn(g); len(got) != 0 {
+		t.Fatalf("a preparing task must hold its slot, got %v", got)
+	}
+}
+
+// the tree being prepared is the lane's: no task of that lane starts beside it
+func TestNextToSpawnPreparingHoldsItsLane(t *testing.T) {
+	g, err := NewTaskGroup("run-1", "ch-1", "g", 2, false, []waveobj.TaskNode{
+		{ID: "t-0", Label: "a"},
+		{ID: "t-1", Label: "b", Deps: []string{"t-0"}},
+	}, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Tasks[1].State = TaskState_Preparing
+	if got := NextToSpawn(&g); len(got) != 0 {
+		t.Fatalf("a task of a lane being prepared waits for the prepare, got %v", got)
+	}
+}
+
+func TestCancelGroupCancelsAPreparingTask(t *testing.T) {
+	g := groupWith(TaskState_Done, TaskState_Preparing)
+	CancelGroup(g)
+	if g.Tasks[1].State != TaskState_Cancelled {
+		t.Fatalf("cancel: preparing -> %s, want cancelled", g.Tasks[1].State)
+	}
+}
+
+func TestSkipTaskFromPreparing(t *testing.T) {
+	g := groupWith(TaskState_Done, TaskState_Preparing)
+	if err := SkipTask(g, "t-1"); err != nil || g.Tasks[1].State != TaskState_Skipped {
+		t.Fatalf("skip from preparing: err=%v state=%s", err, g.Tasks[1].State)
+	}
+}
