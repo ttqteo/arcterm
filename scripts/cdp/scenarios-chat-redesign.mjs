@@ -770,9 +770,10 @@ export default function (kit) {
                 );
             });
 
-            // 14c. a question typed back while the card waits is no answer: the card goes (the reply is the agent's to take),
-            // and comes back once the agent rewrites the file still asking it; the typed message's ✓ row says "You replied"
-            // and a clicked option's says "You picked"
+            // 14c. a question typed back while the card waits is no answer: the card holds its place as working, naming
+            // the line sent (the reply is the agent's to take), and waits again once the agent rewrites the file still
+            // asking it, the same end row throughout (the card never leaves and comes back); the typed message's ✓ row
+            // says "You replied" and a clicked option's says "You picked"
             await run("14c. brainstorm card typed reply", async (name) => {
                 const TYPED = "should the cap stay at 30 seconds?";
                 const questionCard = `${layerOf(A)}?.querySelector('[data-chat-bscard-kind="question"]')`;
@@ -789,6 +790,9 @@ export default function (kit) {
                 await writeBrainstorm(h, ctx, FILES_BRAINSTORM.open);
                 const waiting = await polishWaitFor(h, `${questionCard}?.getAttribute("data-chat-bscard-state") === "waiting"`, WAIT_MS);
                 await polishNap(600);
+                // the end row the card lives in, kept to tell whether it is the same element when the card waits again
+                const SLOT = `${layerOf(A)}?.querySelector("[data-chat-brainstorm-row]")`;
+                await h.ev(`(() => { window.__bsSlot = ${SLOT}; return true; })()`);
                 // 1. a question typed back in the box, sent
                 await clearBox(h, A);
                 await typeInBox(h, A, TYPED);
@@ -797,15 +801,19 @@ export default function (kit) {
                 const sentOk = await polishWaitFor(h, `((${inputOf(A)})?.innerText ?? "x").trim() === ""`, SHORT_MS);
                 // the message lands in the transcript the way the harness writes it
                 append(ctx, AC.userText(TYPED, ts(ctx)));
-                const hidden = await polishWaitFor(h, `${questionCard} == null`, WAIT_MS);
+                const held = await polishWaitFor(
+                    h,
+                    `${questionCard}?.getAttribute("data-chat-bscard-state") === "working" && (${questionCard}?.querySelector("[data-chat-bscard-sent]")?.textContent ?? "").includes(${JSON.stringify(TYPED)})`,
+                    WAIT_MS
+                );
                 const replied = await polishWaitFor(
                     h,
                     `[...(${layerOf(A)}?.querySelectorAll("[data-chat-bscard-answered]") ?? [])].some((r) => (r.textContent ?? "").includes(${JSON.stringify(TYPED)}))`,
                     WAIT_MS
                 );
                 await polishNap(500);
-                const whileHidden = await rows();
-                await shot(h, "14c-typed-reply-hidden");
+                const whileHeld = await rows();
+                await shot(h, "14c-typed-reply-held");
                 // 2. the agent rewrites the file, still asking question 1, later than the record
                 await polishNap(400);
                 await writeBrainstorm(
@@ -816,6 +824,7 @@ export default function (kit) {
                 // 3. the question card is drawn again
                 const back = await polishWaitFor(h, `${questionCard}?.getAttribute("data-chat-bscard-state") === "waiting"`, WAIT_MS);
                 await polishNap(600);
+                const sameSlot = await h.ev(`(() => { const el = ${SLOT}; return el != null && el === window.__bsSlot; })()`);
                 const whenBack = await rows();
                 await shot(h, "14c-typed-reply-back");
                 // 4. the typed message's row reads "You replied"; step 14's answer, a record with no flag, still "You picked"
@@ -841,10 +850,10 @@ export default function (kit) {
                 await shot(h, "14c-picked");
                 const pickedRow = whenPicked.find((r) => r.text.includes(OPTION));
                 rec(
-                    `${name}: a question typed in the box hides the card and its [data-chat-bscard-answered] row reads "You replied"; once the file is rewritten still asking question 1 [data-chat-bscard-kind="question"] is drawn again; a clicked option's row reads "You picked"`,
-                    waiting && sentOk && hidden && replied && back && typedRow?.label === "You replied" && clicked && picked &&
+                    `${name}: a question typed in the box holds the card as working with [data-chat-bscard-sent] naming it, and its [data-chat-bscard-answered] row reads "You replied"; once the file is rewritten still asking question 1 the card waits again in the same [data-chat-brainstorm-row] element; a clicked option's row reads "You picked"`,
+                    waiting && sentOk && held && replied && back && sameSlot === true && typedRow?.label === "You replied" && clicked && picked &&
                         pickedRow?.label === "You picked",
-                    { waiting, sentOk, hidden, replied, whileHidden, back, whenBack, oldRow, clicked, picked, whenPicked }
+                    { waiting, sentOk, held, replied, whileHeld, back, sameSlot, whenBack, oldRow, clicked, picked, whenPicked }
                 );
             });
 
