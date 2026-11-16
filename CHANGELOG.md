@@ -164,7 +164,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   instead of white.
 - Chat's Stop button on a turn Claude has not answered yet puts your message back in Chat's box, as Esc does. It
   used to stay hidden in the terminal's box and get stuck onto your next message.
-- A message that reached the conversation no longer comes back as a stuck bubble under it after an interrupt.
+- A message that reached the conversation no longer comes back as a stuck bubble under it after an interrupt, nor
+  stays as one when it reached it joined to another message.
 - Chat's pinned bar no longer shows "(picture)" for a message of only pictures or files: it keeps your last message
   that says something.
 - Interrupting a Claude agent in Chat no longer empties the conversation and loads it again from the top: on Windows

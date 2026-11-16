@@ -52,6 +52,22 @@ describe("landedIds", () => {
         expect(landedIds(pending, [user("làm đi"), user("báo council đi")])).toEqual(["b"]);
         expect(landedIds([], [user("x")])).toEqual([]);
     });
+
+    // text left in Claude Code's own box is sent in front of the next message, as one prompt: the message lands inside
+    // another, never as itself, and its bubble stood while the agent worked on (2026-11-16, "làm đibáo council đi")
+    it("names a message that landed inside a longer prompt, not one an earlier prompt already held", () => {
+        const before = [user("làm đi")];
+        const queued = pendingMessage("b", "báo council đi", before, 0, true);
+        expect(landedIds([queued], [...before, user("làm đibáo council đi")])).toEqual(["b"]);
+        // an earlier prompt that held the text was there at the send: not this message
+        const held = [user("đã báo council đi rồi")];
+        const again = pendingMessage("c", "báo council đi", held, 0, true);
+        expect(landedIds([again], held)).toEqual([]);
+        // a short text is too easily part of another message: only its own record lands it
+        const ok = pendingMessage("d", "ok", [], 0, true);
+        expect(landedIds([ok], [user("okay, go on")])).toEqual([]);
+        expect(pendingStill([queued], [...before, user("làm đibáo council đi")], 1)).toEqual([]);
+    });
 });
 
 describe("userTextCount", () => {
