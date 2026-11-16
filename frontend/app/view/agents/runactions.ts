@@ -62,6 +62,8 @@ export interface CreateRunOpts {
     lightReviewerRoute?: RoutePin | null;
     prototype?: string;
     autonomous?: boolean;
+    // the spec the goal builds (absolute); the run keeps it, so the next launcher can read its files
+    specPath?: string;
 }
 
 export function createRunPayload(
@@ -89,19 +91,29 @@ export function createRunPayload(
         ...(orchestrator && opts.prototype ? { prototype: opts.prototype } : {}),
         // false is sent too, as reviewerpicks is; the server refuses an explicit autonomous on a quick run
         ...(orchestrator && opts.autonomous != null ? { autonomous: opts.autonomous } : {}),
+        // a quick run's goal can name a spec as well, so this is not an orchestrator option
+        ...(opts?.specPath ? { specpath: opts.specPath } : {}),
         mode: opts?.mode,
         deferstart: opts?.deferStart,
     };
 }
 
-export async function createRun(channelId: string, goal: string, route: RoutePin, opts?: CreateRunOpts): Promise<Run> {
+// The data a start sends, in the active workspace. The one builder for both ways a launch goes: CreateRun with it, and
+// RunQueueAdd, which holds the same data until the run's turn comes.
+export function buildCreateRunData(
+    channelId: string,
+    goal: string,
+    route: RoutePin,
+    opts?: CreateRunOpts
+): CommandCreateRunData {
     if (!route.runtime) throw new Error("Choose a route");
-    const workspaceId = globalStore.get(atoms.workspaceId);
-    const rtn = await RpcApi.CreateRunCommand(
-        TabRpcClient,
-        createRunPayload(workspaceId, channelId, goal, route, opts),
-        { timeout: CREATE_RUN_TIMEOUT_MS }
-    );
+    return createRunPayload(globalStore.get(atoms.workspaceId), channelId, goal, route, opts);
+}
+
+export async function createRun(channelId: string, goal: string, route: RoutePin, opts?: CreateRunOpts): Promise<Run> {
+    const rtn = await RpcApi.CreateRunCommand(TabRpcClient, buildCreateRunData(channelId, goal, route, opts), {
+        timeout: CREATE_RUN_TIMEOUT_MS,
+    });
     if (rtn?.run == null) {
         // the launcher opens whatever comes back, and a null here surfaced as a TypeError about `id`
         throw new Error("creating the run returned no run");

@@ -59,6 +59,9 @@ type CommandCreateRunData struct {
 	Prototype string `json:"prototype,omitempty"`
 	// OriginTabId is the tab of the session that ran `wsh runs start`; empty from the cockpit.
 	OriginTabId string `json:"origintabid,omitempty"`
+	// SpecPath is the absolute path of the spec this run builds (a brainstorm's Approve sends it), which the run keeps
+	// (Run.SpecPath) so the next launcher's overlap check can read the files it names. Empty for a start with no spec.
+	SpecPath string `json:"specpath,omitempty"`
 	// AfterRunId is the run a queued start waited After, set by the run queue when it starts the entry; the run
 	// keeps it (Run.AfterRunId). Empty for every other start.
 	AfterRunId string `json:"afterrunid,omitempty"`

@@ -68,6 +68,8 @@ import brainstormFindingsScenarios from "./scenarios-brainstorm-findings.mjs";
 import brainstormJudgeScenarios from "./scenarios-brainstorm-judge.mjs";
 import brainstormReviewScenarios from "./scenarios-brainstorm-review.mjs";
 import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
+import runStartChoiceScenarios from "./scenarios-run-start-choice.mjs";
+import runQueueRecheckScenarios from "./scenarios-run-queue-recheck.mjs";
 import briefActScenarios from "./scenarios-brief-act.mjs";
 import chatBrainstormBandScenarios from "./scenarios-chat-brainstorm-band.mjs";
 import chatBrainstormReviewScenarios from "./scenarios-chat-brainstorm-review.mjs";
@@ -61593,7 +61595,8 @@ const runQueueScenario = {
                 return path;
             };
             const forPlan = { channelid: ctx.channelId, workspaceid: ctx.workspaceId, runtime: "claude", mode: "orchestrator", deferstart: true };
-            const add = (data, after) => h.rpc("runqueueadd", { data, ...(after ? { after } : {}) }, RQ_RPC);
+            // `after` is a run or entry id, or a list of them: the wire takes a list
+            const add = (data, after) => h.rpc("runqueueadd", { data, ...(after ? { after: [].concat(after) } : {}) }, RQ_RPC);
             const a = await add({
                 ...forPlan,
                 planpath: plan("a", RQ_TITLES.a),
@@ -62027,6 +62030,47 @@ const bqSheetFacts = (h) =>
         };
     })()`);
 
+// Opens the queue sheet on the queued plan titled `title`: closes any sheet, clicks Activity's Queued line (which opens the
+// sheet on the first plan the tab keeps) and steps Next until the header names `title`. The Brief must be on screen (a
+// scenario goes there first; see brief-run-queue's step 1). Resolves to whether the sheet is up on that plan.
+async function bqOpenQueued(h, title) {
+    const sheetUp = `document.querySelector('[data-jarvis-brief-sheet="queued"] [data-queue-sheet-act]') != null`;
+    const onPlan = `${BQ_SHEET_TITLE} === ${JSON.stringify(title)} && ${sheetUp}`;
+    const closed = await bqCloseSheet(h);
+    const clicked = closed && (await bqClickExpr(h, BQ_QUEUED_LINE));
+    if (!clicked || !(await polishWaitFor(h, sheetUp, 8000))) return false;
+    for (let i = 0; i < 40 && !(await h.ev(onPlan)); i++) {
+        const step = await h.ev(BQ_SHEET_STEP);
+        if (step == null || step.n >= step.total) break;
+        const before = await h.ev(BQ_SHEET_TITLE);
+        await bqClickExpr(h, BQ_NEXT_PLAN);
+        if (!(await polishWaitFor(h, `${BQ_SHEET_TITLE} !== ${JSON.stringify(before)}`, 4000))) break;
+    }
+    return polishWaitFor(h, onPlan, 4000);
+}
+
+// what the run-start-choice modules (scenarios-run-start-choice.mjs, scenarios-run-queue-recheck.mjs;
+// docs/superpowers/specs/2026-11-16-run-start-choice-design.md) take of this file. Defined here, after the run-queue and
+// Brief helpers above, because it names their constants; later tasks add scenarios only in the modules
+const RUN_START_KIT = {
+    ...BS_KIT,
+    ...KAEL_KITS,
+    run: RUN_KIT,
+    openLauncherStart,
+    OPEN_NEW_RUN,
+    NEW_BUTTON,
+    arrangeFixtureRun,
+    arrangeSheetDagRun,
+    // the Brief's queue sheet and the queue itself, as brief-run-queue reads them
+    bqOpenQueued,
+    bqCloseSheet,
+    bqSheetFacts,
+    bqClickExpr,
+    bqPoll,
+    bqWaitList,
+    rqList,
+};
+
 const briefRunQueueScenario = {
     name: "brief-run-queue",
     surface: "jarvis",
@@ -62074,7 +62118,8 @@ const briefRunQueueScenario = {
             const forPlan = { channelid: ctx.channelId, workspaceid: ctx.workspaceId, runtime: "claude", mode: "orchestrator", deferstart: true };
             const forGoal = { channelid: ctx.channelId, workspaceid: ctx.workspaceId, runtime: "claude", mode: "quick", deferstart: true };
             const add = async (key, data, after) => {
-                const entry = await h.rpc("runqueueadd", { data, ...(after ? { after } : {}) }, BQ_RPC);
+                // `after` is a run or entry id, or a list of them: the wire takes a list
+                const entry = await h.rpc("runqueueadd", { data, ...(after ? { after: [].concat(after) } : {}) }, BQ_RPC);
                 ctx.ids[key] = entry.id;
                 ctx.titles[key] = entry.title;
                 return entry;
@@ -62425,6 +62470,62 @@ const briefRunQueueScenario = {
                 "11. Remove on C's sheet asks first (removing nothing yet); confirming closes the queue sheet, toasts `<C> left the queue`, and drops C's entry, which Activity's Queued N no longer counts",
                 open11 && removeClicked && asked && listedBefore && toast != null && settled && !listedAfter,
                 JSON.stringify({ open11, removeClicked, asked, listedBefore, toast, sheetGone, settled, queuedN11, listedAfter })
+            );
+
+            // 12. an entry that waits on two runs (docs/superpowers/specs/2026-11-16-run-start-choice-design.md, "Overlap with
+            // several runs"): the wire's After is a list. Its queue sheet names both runs, one link each, and its Agent tree
+            // row reads `Queued · after <run A>, <run B>`. Run A is the fill run; run B is a second held quick run, so
+            // neither lands and the entry keeps waiting
+            const runBGoal = "Brief queue run B, the second run an entry waits on";
+            const goalF = "Brief queue goal F, after two runs";
+            const runB = await h.rpc(
+                "createrun",
+                { channelid: ctx.channelId, workspaceid: ctx.workspaceId, goal: runBGoal, runtime: "claude", mode: "quick", deferstart: true },
+                BQ_RPC
+            );
+            ctx.runBId = runB.run.id ?? runB.run.oid;
+            const entryF = await h.rpc(
+                "runqueueadd",
+                {
+                    data: { channelid: ctx.channelId, workspaceid: ctx.workspaceId, runtime: "claude", mode: "quick", deferstart: true, goal: goalF },
+                    after: [ctx.fillId, ctx.runBId],
+                },
+                BQ_RPC
+            );
+            ctx.ids.f = entryF.id;
+            const listedF = (await rqList(h)).find((x) => x.id === entryF.id);
+            await h.goto("jarvis");
+            await bqCloseSheet(h);
+            const counted12 = await queuedIsList(15000);
+            const open12 = await bqOpenQueued(h, goalF);
+            const f12 = await bqSheetFacts(h);
+            const links12 = await h.ev(`[...document.querySelectorAll("[data-queue-sheet-waits] button")].map((b) => b.textContent.trim())`);
+            await h.shot("cdp-shots/brief-run-queue-12-two-runs-sheet.png");
+            // the second run's name is a link of its own: it opens run B's sheet
+            const linkedB = await bqClickExpr(h, `document.querySelectorAll("[data-queue-sheet-waits] button")[1]`);
+            const runBOpened = await runSheetUp(ctx.runBId, 15000);
+            await bqCloseSheet(h);
+            await h.goto("agent");
+            const rowUp12 = await polishWaitFor(h, `${rqRow(entryF.id)} != null`, 15000);
+            await rqPoint(h, rqSel(entryF.id));
+            const rowF = (await rqRows(h)).find((r) => r.id === entryF.id) ?? null;
+            await h.shot("cdp-shots/brief-run-queue-12-two-runs-tree.png");
+            rec(
+                "12. an entry queued after two runs keeps both ids as a list; its queue sheet reads waits on <fill run>, <run B> with a link each (the second opens run B's sheet), and its Agent tree row reads Queued · after <fill run>, <run B>",
+                JSON.stringify(listedF?.after) === JSON.stringify([ctx.fillId, ctx.runBId]) &&
+                    counted12 &&
+                    open12 &&
+                    f12.waits?.includes(BQ_FILL_GOAL) &&
+                    f12.waits?.includes(runBGoal) &&
+                    f12.waits.indexOf(BQ_FILL_GOAL) < f12.waits.indexOf(runBGoal) &&
+                    links12.length === 2 &&
+                    links12[0].includes(BQ_FILL_GOAL) &&
+                    links12[1].includes(runBGoal) &&
+                    linkedB &&
+                    runBOpened &&
+                    rowUp12 &&
+                    rowF?.meta === `Queued · after ${BQ_FILL_GOAL}, ${runBGoal}`,
+                JSON.stringify({ after: listedF?.after, counted12, open12, waits: f12.waits, links12, linkedB, runBOpened, rowUp12, rowF })
             );
         } catch (err) {
             rec("the scenario stopped early: a page call failed", false, String(err?.message ?? err));
@@ -71145,6 +71246,8 @@ export const SCENARIOS = [
     ...brainstormJudgeScenarios(BS_KIT),
     ...brainstormReviewScenarios(BS_KIT),
     ...brainstormRunScenarios(BS_KIT),
+    ...runStartChoiceScenarios(RUN_START_KIT),
+    ...runQueueRecheckScenarios(RUN_START_KIT),
     canvasTabsScenario,
     canvasManyBoards,
     canvasGallery,

@@ -168,6 +168,7 @@ Every other action is a `brainstorm:` line:
 | `brainstorm: builder decide` | Move the first `check.yours` entry with no `a` into `check.calls` as `{ "text": <your decision>, "part": <its part> }`, fold it into that part and the spec (marked "Agent's call"), write the file. |
 | `brainstorm: keep talking` | Set `done: false` and `check: null`, and ask your next question. |
 | `brainstorm: approved` | Stop. Arc opens the run launcher with the spec attached. Do not start a run yourself. |
+| `brainstorm: queued <id>` | The run is queued: record nothing; `brainstorm: run <id>` follows when it starts. |
 | `brainstorm: run <id>` | A run started from this brainstorm: set `run` to the id. |
 
 After acting on any line, write the file once, then end the turn with one short line in the
@@ -495,7 +496,10 @@ decision.
 answered or decided by you, and every decision is `yours`.
 
 **The run.** On `brainstorm: approved`, stop; Arc opens the launcher on the `runShape` you set (the
-user can change it there), and sends `brainstorm: run <id>` once the run starts.
+user can change it there), and sends `brainstorm: run <id>` once the run starts. Approve may queue
+the run instead of starting it (the launcher's After run… or Queue, which Jarvis suggests when the
+spec shares files with a live run or the run cap is full): Arc then sends `brainstorm: queued <id>`
+at once. Record nothing for it, and wait; `brainstorm: run <id>` comes when the queue starts the run.
 
 **Resuming.** Asked to resume a brainstorm from a `brainstorm.json` path (a new agent after the old
 one exited): read the file, carry on from its `question` or its next step, and keep writing the

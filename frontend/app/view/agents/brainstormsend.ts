@@ -141,6 +141,18 @@ async function notifyRun(agent: AgentVM, runId: string, path: string, io: Prompt
     }
 }
 
+// The launcher queued the run (After run… or Queue): the agent hears the entry's id, records nothing and waits for the
+// `brainstorm: run <id>` line wavesrv sends when the entry starts (the launcher is closed by then). The mark remembers the
+// entry, so the card reads the queue for it (queuedForBrainstorm) and Approve stays off while it waits. A line that cannot
+// be sent is a warning, as the run's is: the entry is queued whatever the agent hears
+async function notifyQueued(agent: AgentVM, entryId: string, io: PromptIO): Promise<void> {
+    try {
+        await sendBrainstorm(agent, { kind: "queued", entryId }, io);
+    } catch (e) {
+        console.warn("brainstorm: telling the agent its run is queued failed", agent.id, entryId, e);
+    }
+}
+
 // Change on the approve bar: the launcher prefilled, with nothing typed into the agent
 export function openRunLauncher(
     model: AgentsViewModel,
@@ -156,7 +168,13 @@ export function openRunLauncher(
     const path = s.path;
     openLauncher(model, "run", {
         ...runPrefill(s.file, { projectName: projectOf(agent), cwd: s.cwd }),
+        // a queued start carries who waits for it, so wavesrv can tell the agent the run's id once the entry starts
+        brainstorm: { tab: agent.id, path },
         handback: {
+            queued: (entryId: string) => {
+                setStartingRun(agent.id, path, { runId: null, entryId });
+                void notifyQueued(agent, entryId, io);
+            },
             handedOff: () => setStartingRun(agent.id, path, { runId: null }),
             started: (runId: string) => {
                 setStartingRun(agent.id, path, { runId });

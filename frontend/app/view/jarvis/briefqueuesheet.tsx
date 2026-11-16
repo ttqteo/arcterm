@@ -22,8 +22,8 @@ import { runStage } from "@/app/view/agents/runstage";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue } from "jotai";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useEffect, useState, type HTMLAttributes, type ReactNode } from "react";
-import { queueSheetModel } from "./briefqueue";
+import { Fragment, useEffect, useState, type HTMLAttributes, type ReactNode } from "react";
+import { queueSheetModel, type SheetWait } from "./briefqueue";
 import { openQueueSheet } from "./briefqueuestore";
 import { SHEET_BTN } from "./briefrunsheet";
 import { sheetPosition } from "./briefsheetmodel";
@@ -140,13 +140,15 @@ function QueueSheetBody({ model, row }: { model: AgentsViewModel; row: QueuedRow
             }
         });
     };
-    const openWaits = () => {
-        if (m.waits.runId != null) {
-            fireAndForget(() => openOrPeekAddress(model, "run:" + m.waits.runId));
-        } else if (m.waits.entryId != null) {
-            openQueueSheet(m.waits.entryId);
+    const openWait = (w: SheetWait) => {
+        if (w.runId != null) {
+            fireAndForget(() => openOrPeekAddress(model, "run:" + w.runId));
+        } else if (w.entryId != null) {
+            openQueueSheet(w.entryId);
         }
     };
+    // one link for an entry after one run, one per run for an entry after several; text, joined by ", ", for room only
+    const waitLinks = m.waits.list ?? (m.waits.runId != null || m.waits.entryId != null ? [m.waits] : null);
     return (
         <div className="flex min-h-0 flex-1 flex-col bg-background">
             <div className="sc flex min-h-0 flex-1 flex-col gap-[11px] overflow-y-auto px-4 pb-3.5 pt-4 [&>*]:flex-none">
@@ -166,23 +168,32 @@ function QueueSheetBody({ model, row }: { model: AgentsViewModel; row: QueuedRow
                     <QueueStep entryId={entry.id} />
                 </div>
                 <Field label="waits on" data-queue-sheet-waits="">
-                    {m.waits.runId != null || m.waits.entryId != null ? (
-                        <button
-                            type="button"
-                            title={m.waits.runId != null ? "Open the run this waits on" : "Open the plan this waits on"}
-                            onClick={openWaits}
-                            className={LINK_BTN}
-                        >
-                            <span className="truncate">{m.waits.text}</span>
-                        </button>
-                    ) : (
-                        m.waits.text
-                    )}
+                    {waitLinks != null
+                        ? waitLinks.map((w, i) => (
+                              <Fragment key={(w.runId ?? w.entryId) + ":" + i}>
+                                  {i > 0 ? ", " : null}
+                                  <button
+                                      type="button"
+                                      title={
+                                          w.runId != null ? "Open the run this waits on" : "Open the plan this waits on"
+                                      }
+                                      onClick={() => openWait(w)}
+                                      className={LINK_BTN}
+                                  >
+                                      <span className="truncate">{w.text}</span>
+                                  </button>
+                              </Fragment>
+                          ))
+                        : m.waits.text}
                 </Field>
                 {m.reason != null ? (
+                    // a blocked entry's reason is a warning; a waiting one's is the re-check saying what it waits on too
                     <p
                         data-queue-sheet-reason
-                        className="whitespace-pre-wrap break-words text-[13px] leading-[1.5] text-warning"
+                        className={cn(
+                            "whitespace-pre-wrap break-words text-[13px] leading-[1.5]",
+                            m.blocked ? "text-warning" : "text-ink-mid"
+                        )}
                     >
                         {m.reason}
                     </p>

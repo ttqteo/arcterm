@@ -24,6 +24,7 @@ import { leadRuntimesAtom } from "./harnessstore";
 import { LAUNCHER_LABEL } from "./launcheragentfields";
 import { ColumnLabel, rowTone } from "./launcherrows";
 import { launcherGoalAtom, launcherPrototypeAtom } from "./launcherstore";
+import { WhenRow } from "./launcherwhenrow";
 import { RoutePicker } from "./routepicker";
 import { approvalsNote, START_OPTIONS, startNote, type StartFrom } from "./runconfig";
 import {
@@ -381,25 +382,35 @@ export function RunFields({ projectPath, goalRef, planRef, ramWarning }: RunFiel
 
 // The third column for a run row: a Quick run's lead model; an Orchestrate's start and width, with the capacity line
 // under the stepper (spec, Orchestrate board) spelled out
-export function RunColumn() {
+//
+// The When row closes it (launcherwhenrow.tsx): when the run starts is a setting of the run, and this column has the
+// room the fields above the columns lack. The column scrolls when the After list makes it taller than the band.
+export function RunColumn({ projectPath, channelId }: { projectPath: string; channelId: string | null }) {
     const shape = useAtomValue(runShapeAtom);
     const start = useAtomValue(startAtom);
     const parallelism = useAtomValue(parallelismAtom);
     const cap = useWorkerCapacity();
     const extra = extraWorkers(parallelism);
     const over = overCapacity(cap, extra);
+    const when = (
+        <>
+            <div aria-hidden className="mx-2 my-3 h-px shrink-0 bg-border" />
+            <WhenRow projectPath={projectPath} channelId={channelId} />
+        </>
+    );
     if (shape !== "orchestrator") {
         return (
-            <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
                 <ColumnLabel label="Model" focused={false} />
                 <div className={cn(FULL_WIDTH_PICKER, "px-1")}>
                     <LeadPicker />
                 </div>
+                {when}
             </div>
         );
     }
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
             <ColumnLabel label="Start from" focused={false} />
             <StartRows start={start} />
             <div aria-hidden className="mx-2 my-2 h-px shrink-0 bg-border" />
@@ -413,6 +424,7 @@ export function RunColumn() {
                     <span>{capacityWarnTitle(cap)}</span>
                 </div>
             ) : null}
+            {when}
         </div>
     );
 }

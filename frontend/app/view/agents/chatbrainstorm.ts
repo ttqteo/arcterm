@@ -20,6 +20,7 @@ import {
     partTitle,
     partView,
     plural,
+    queuedForBrainstorm,
     reviewHead,
     unseenSince,
     withStartingRun,
@@ -29,6 +30,8 @@ import {
     type BrainstormQuestion,
     type BuilderCheckView,
     type PartAnswer,
+    type QueueAfterRuns,
+    type QueuedForBrainstorm,
     type SeenMark,
     type SentenceDiff,
     type SentKind,
@@ -387,6 +390,9 @@ export type CheckCard = {
     spec: string[];
     rows: DecisionRowModel[];
     approveBlocker: string | null;
+    /** set while the run queue holds the run Approve started (the blocker says Queued, Queued after …, or why it is
+     *  blocked): not the user's turn, so the line stays plain */
+    queued?: true;
 };
 
 /** A run the brainstorm started; the run itself is read from the run store when the card draws. */
@@ -483,8 +489,9 @@ export function questionCard(file: BrainstormFile, q: BrainstormQuestion, exited
 /** What `brainstormCard` reads: the brainstorm as Arc shows it (`shownBrainstormFile`), the agent's send records, whether
  *  its process exited, the topic the records are matched against, the builder check as the pane reads it
  *  (`builderCheckView`), the kind of the line Arc sent that the agent has not taken yet (`BrainstormState.sent?.kind`),
- *  what the user has seen of the brainstorm, the run Approve is starting, and when the brainstorm file was last written
- *  (`BrainstormState.modifiedMs`, null while Arc has no time for it). */
+ *  what the user has seen of the brainstorm, the run Approve is starting, when the brainstorm file was last written
+ *  (`BrainstormState.modifiedMs`, null while Arc has no time for it), and the run queue as this brainstorm's Approve
+ *  reads it (`queue`: absent, the queue holds nothing for it). */
 export type CardInput = {
     file: BrainstormFile | null;
     records: readonly SentAnswer[];
@@ -495,7 +502,22 @@ export type CardInput = {
     seen: SeenMark | null;
     starting: StartingRunMark | null;
     modifiedMs: number | null;
+    queue?: QueueInput;
 };
+
+/** The run queue, for the card to find the entry its brainstorm's Approve queued: wavesrv's list, the run each started
+ *  entry became, the brainstorm's own path, and what the entries' After ids look like now. */
+export type QueueInput = {
+    entries: readonly RunQueueEntry[];
+    started: Readonly<Record<string, string>>;
+    path: string;
+    afterRuns?: QueueAfterRuns;
+};
+
+function queuedOf(input: CardInput): QueuedForBrainstorm | null {
+    const q = input.queue;
+    return q != null ? queuedForBrainstorm(q.entries, q.started, q.path, input.starting, q.afterRuns) : null;
+}
 
 // the text shownFile (brainstormmodel.ts) writes into the file while a `check` line is pending
 const CHECK_READING_TEXT = "A builder is reading the design.";
@@ -591,6 +613,7 @@ function checkCard(input: CardInput, f: BrainstormFile): CheckCard | null {
         return null;
     }
     const unseen = seenIds(f, input.seen);
+    const queued = queuedOf(input);
     const rows: DecisionRowModel[] = [];
     if (f.check != null) {
         const review = checkReview(f);
@@ -622,7 +645,8 @@ function checkCard(input: CardInput, f: BrainstormFile): CheckCard | null {
         calls: f.check?.calls.map((c) => c.text) ?? [],
         spec: f.check?.answered ?? [],
         rows,
-        approveBlocker: approveBlocker(f, input.starting),
+        approveBlocker: approveBlocker(f, input.starting, queued),
+        ...(queued != null && f.run == null ? { queued: true as const } : {}),
     };
 }
 
@@ -698,8 +722,9 @@ function newestStep(records: readonly SentAnswer[], topic: string): SentAnswer |
  *    design (a retry after a failed check) is an action, so it draws no second row;
  *  - `approved` and `keep-talking` are the builder step, with the questions the builder left for the user and the calls
  *    the agent made, and what the person did;
- *  - `run` is the run Arc told the agent about;
- *  - every other line is an action, hidden. */
+ *  - `run` is the run Arc told the agent about (wavesrv's own `run` line, for an entry that was queued, is paired with
+ *    the record runqueuestore.ts writes when the entry starts);
+ *  - every other line is an action, hidden, `queued` (the run waits in the queue) among them. */
 export function sendRecord(
     action: BrainstormAction,
     file: BrainstormFile | null,
@@ -745,6 +770,7 @@ export function sendRecord(
             };
         case "run":
             return { ...base, kind: "run", runId: action.runId };
+        case "queued":
         case "guess":
         case "skip":
         case "confirm":

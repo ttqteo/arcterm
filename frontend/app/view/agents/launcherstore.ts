@@ -15,6 +15,16 @@ import type { Runtime } from "./launch";
 import { draftShown, type LauncherKind } from "./launcher";
 import { imageRoom, type TaskImage } from "./launcherimages";
 import { appendPage, RESUME_PAGE, resumeScopeKey } from "./launcherresume";
+import {
+    applySuggestion,
+    failChecking,
+    pickChoice,
+    startChecking,
+    toggleTick,
+    WHEN_START,
+    type WhenChoice,
+    type WhenState,
+} from "./launcherwhen";
 import { pickRunShape, planPathAtom, startAtom } from "./runconfigstore";
 
 export const launcherKindAtom = atom<LauncherKind>("agent") as PrimitiveAtom<LauncherKind>;
@@ -28,6 +38,15 @@ export const launcherTaskAtom = atom("") as PrimitiveAtom<string>;
 export const launcherGoalAtom = atom("") as PrimitiveAtom<string>;
 // a canvas's board, from Build this…; it only rides an orchestrator run
 export const launcherPrototypeAtom = atom("") as PrimitiveAtom<string>;
+// The spec the goal builds (absolute), from a brainstorm's Approve: it names the files the When row compares with the
+// live runs', and the run keeps it. Cleared with the draft.
+export const launcherSpecPathAtom = atom("") as PrimitiveAtom<string>;
+// The brainstorm waiting for this run (its tab and brainstorm.json), kept on the queue entry when the start is queued so
+// wavesrv can tell it the run's id. Cleared with the draft.
+export const launcherBrainstormAtom = atom<RunQueueBrainstorm | null>(null) as PrimitiveAtom<RunQueueBrainstorm | null>;
+// The run launcher's When row: Run now, After run… or Queue, with Jarvis's suggestion (launcherwhen.ts). It lasts as the
+// draft does, so a pick survives a close; a launch ends it.
+export const launcherWhenAtom = atom<WhenState>(WHEN_START) as PrimitiveAtom<WhenState>;
 // a hand-edited command per runtime; a runtime with no entry runs its default
 export const launcherCommandAtom = atom<Partial<Record<Runtime, string>>>({}) as PrimitiveAtom<
     Partial<Record<Runtime, string>>
@@ -149,6 +168,8 @@ export function clearLauncherDraft(): void {
     globalStore.set(launcherGoalAtom, "");
     globalStore.set(planPathAtom, "");
     globalStore.set(launcherPrototypeAtom, "");
+    globalStore.set(launcherSpecPathAtom, "");
+    globalStore.set(launcherBrainstormAtom, null);
     globalStore.set(launcherWorktreeAtom, false);
     globalStore.set(launcherBranchAtom, null);
     globalStore.set(launcherResumeAtom, null);
@@ -189,10 +210,54 @@ export function removeTaskImage(id: string): void {
     globalStore.set(launcherImagesAtom, (prev) => prev.filter((i) => i.id !== id));
 }
 
-// A launch consumed the draft. Hand-edited commands go with it; the pick, the project and the flags stay.
+// A launch consumed the draft. Hand-edited commands go with it, and so does the When pick (Clear leaves it, as it leaves
+// the shape: it empties text); the pick, the project and the flags stay.
 export function endLauncherDraft(): void {
     clearLauncherDraft();
     globalStore.set(launcherCommandAtom, {});
+    globalStore.set(launcherWhenAtom, WHEN_START);
+}
+
+// The When row's suggestion, asked of wavesrv (RunStartSuggestCommand). The answer of a call that is no longer the newest
+// is dropped: the goal, the plan, the project or the spec moved on, and an older call can land after a newer one.
+let checkSeq = 0;
+
+function errorText(e: unknown): string {
+    return e instanceof Error ? e.message : String(e);
+}
+
+/** The inputs changed and the next check waits out its pause: the row reads Checking… at once, and an answer still on its
+ *  way, which is for the old inputs, is dropped. */
+export function markRunStartChecking(): void {
+    checkSeq++;
+    globalStore.set(launcherWhenAtom, startChecking);
+}
+
+/** Asks for the suggestion and applies it unless the person has already picked a choice by hand (launcherwhen.ts). Never
+ *  throws and never holds the Start button: a failed call reads Couldn't check: … and leaves Run now. */
+export async function checkRunStart(input: CommandRunStartSuggestData): Promise<void> {
+    const seq = ++checkSeq;
+    globalStore.set(launcherWhenAtom, startChecking);
+    try {
+        const suggestion = await RpcApi.RunStartSuggestCommand(TabRpcClient, input);
+        if (seq === checkSeq) {
+            globalStore.set(launcherWhenAtom, (state) => applySuggestion(state, suggestion));
+        }
+    } catch (e) {
+        if (seq !== checkSeq) {
+            return;
+        }
+        console.warn("launcher: the run start suggestion failed", e);
+        globalStore.set(launcherWhenAtom, (state) => failChecking(state, errorText(e)));
+    }
+}
+
+export function pickWhen(choice: WhenChoice): void {
+    globalStore.set(launcherWhenAtom, (state) => pickChoice(state, choice));
+}
+
+export function tickWhen(runId: string): void {
+    globalStore.set(launcherWhenAtom, (state) => toggleTick(state, runId));
 }
 
 // A different project re-defaults the worktree branch to that project's checked-out one: a branch typed for one repo
@@ -306,6 +371,10 @@ export function applyLauncherPrefill(projectNames: string[]): boolean {
     globalStore.set(startAtom, p.start);
     globalStore.set(launcherGoalAtom, p.goal);
     globalStore.set(launcherPrototypeAtom, p.prototype);
+    globalStore.set(launcherSpecPathAtom, p.specPath ?? "");
+    globalStore.set(launcherBrainstormAtom, p.brainstorm ?? null);
+    // a new run is no earlier draft's pick: the row asks again for its own (its inputs have just changed)
+    globalStore.set(launcherWhenAtom, WHEN_START);
     return true;
 }
 
@@ -314,6 +383,11 @@ export function takeLauncherHandback(): RunHandback | null {
     const handback = globalStore.get(launcherHandbackAtom);
     globalStore.set(launcherHandbackAtom, null);
     return handback;
+}
+
+// The handback without taking it: a queued start that fails stays in the dialog, so the next try still has it.
+export function peekLauncherHandback(): RunHandback | null {
+    return globalStore.get(launcherHandbackAtom);
 }
 
 // One launch at a time: a held Enter repeats the keydown, and each would start another agent.

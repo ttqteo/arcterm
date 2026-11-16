@@ -554,6 +554,7 @@ func (ws *WshServer) createRun(ctx context.Context, data wshrpc.CommandCreateRun
 		run.BaseBranch, _ = gitinfo.CurrentBranch(ctx, projectPath)
 	}
 	run.OriginTabId = data.OriginTabId
+	run.SpecPath = data.SpecPath
 	run.AfterRunId = data.AfterRunId
 	run.OriginNotify = data.OriginTabId != "" // the session that started it hears how it ended (notifyOrigins)
 	run.OriginTranscript = tabTranscriptPath(ctx, data.OriginTabId)

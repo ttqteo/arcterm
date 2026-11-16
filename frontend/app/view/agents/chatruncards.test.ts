@@ -359,16 +359,37 @@ describe("queuedView and queuedLabel", () => {
     });
 
     it("waits after a run, named by its title", () => {
-        const v = queuedView(ENTRY, [entry({ after: RUN })], {}, titles({ [RUN]: "Chat verdict handoff" }));
+        const v = queuedView(ENTRY, [entry({ after: [RUN] })], {}, titles({ [RUN]: "Chat verdict handoff" }));
         expect(v).toEqual({ state: "waiting", after: "Chat verdict handoff" });
         expect(queuedLabel(v)).toBe("Queued · after Chat verdict handoff");
     });
 
+    it("waits after two runs, naming both by their titles", () => {
+        const v = queuedView(ENTRY, [entry({ after: [RUN, OTHER] })], {}, titles({ [RUN]: "run A", [OTHER]: "run B" }));
+        expect(v).toEqual({ state: "waiting", after: "run A, run B" });
+        expect(queuedLabel(v)).toBe("Queued · after run A, run B");
+    });
+
+    it("names each of two runs by its short id when its title is not known, and the others by theirs", () => {
+        expect(queuedView(ENTRY, [entry({ after: [RUN, OTHER] })], {}, titles({}))).toEqual({
+            state: "waiting",
+            after: "3fa21b0c, 77c0de11",
+        });
+        expect(queuedView(ENTRY, [entry({ after: [RUN, OTHER] })], {}, titles({ [OTHER]: "run B" }))).toEqual({
+            state: "waiting",
+            after: "3fa21b0c, run B",
+        });
+    });
+
+    it("waits for room only for an entry whose After list is empty", () => {
+        expect(queuedView(ENTRY, [entry({ after: [] })], {}, titles({}))).toEqual({ state: "waiting" });
+    });
+
     it("names the run it waits after by its short id when its title is not known", () => {
-        const v = queuedView(ENTRY, [entry({ after: RUN })], {}, titles({}));
+        const v = queuedView(ENTRY, [entry({ after: [RUN] })], {}, titles({}));
         expect(v).toEqual({ state: "waiting", after: "3fa21b0c" });
         expect(queuedLabel(v)).toBe("Queued · after 3fa21b0c");
-        expect(queuedView(ENTRY, [entry({ after: RUN })], {}, () => "")).toEqual({
+        expect(queuedView(ENTRY, [entry({ after: [RUN] })], {}, () => "")).toEqual({
             state: "waiting",
             after: "3fa21b0c",
         });
@@ -386,7 +407,7 @@ describe("queuedView and queuedLabel", () => {
     });
 
     it("reads its own entry among others", () => {
-        const others = [entry({ id: "zzzz", state: "blocked", reason: "no" }), entry({ id: "yyyy", after: OTHER })];
+        const others = [entry({ id: "zzzz", state: "blocked", reason: "no" }), entry({ id: "yyyy", after: [OTHER] })];
         expect(queuedView(ENTRY, [...others, entry()], {}, titles({}))).toEqual({ state: "waiting" });
     });
 

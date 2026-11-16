@@ -16,6 +16,7 @@ const NO_OPS = [
     "open_path", // nor a default app to hand a document to
     "notify_os",
     "hold_window_frame",
+    "cloak_window", // a page has no native window to hide while its frame changes
     "redirect_minimize",
     "set_folded_chrome",
     "raise_topmost", // a page has no window to lift above another app; floatstore.ts only logs the answer

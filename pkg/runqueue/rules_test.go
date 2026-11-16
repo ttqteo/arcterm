@@ -32,8 +32,15 @@ func runMap(runs ...*waveobj.Run) map[string]*waveobj.Run {
 	return m
 }
 
-func mkEntry(id, after string) wshrpc.RunQueueEntry {
-	return wshrpc.RunQueueEntry{Id: id, After: after, Title: "plan " + id, State: wshrpc.RunQueueState_Waiting}
+// mkEntry is a waiting entry after the ids given; an empty id is no After.
+func mkEntry(id string, after ...string) wshrpc.RunQueueEntry {
+	e := wshrpc.RunQueueEntry{Id: id, Title: "plan " + id, State: wshrpc.RunQueueState_Waiting}
+	for _, a := range after {
+		if a != "" {
+			e.After = append(e.After, a)
+		}
+	}
+	return e
 }
 
 func blockedEntry(id, after, reason string) wshrpc.RunQueueEntry {
@@ -281,6 +288,100 @@ func TestNext(t *testing.T) {
 			start:     "",
 			block:     map[string]string{"q-a": "Dropped plan was cancelled"},
 			blockOn:   map[string]string{"q-a": "cancelled"},
+		},
+		{
+			name:      "after two landed runs starts",
+			entries:   []wshrpc.RunQueueEntry{mkEntry("q-a", "landed", "checkout")},
+			runs:      []*waveobj.Run{landed, checkout},
+			maxActive: 3,
+			start:     "q-a",
+		},
+		{
+			name:      "after two runs waits while the second still runs, and the entry behind it starts",
+			entries:   []wshrpc.RunQueueEntry{mkEntry("q-a", "landed", "running"), mkEntry("q-b", "")},
+			runs:      []*waveobj.Run{landed, running},
+			maxActive: 3,
+			start:     "q-b",
+		},
+		{
+			name:      "after two runs waits while the first still runs",
+			entries:   []wshrpc.RunQueueEntry{mkEntry("q-a", "running", "landed")},
+			runs:      []*waveobj.Run{landed, running},
+			maxActive: 3,
+			start:     "",
+		},
+		{
+			name:      "after two runs, one dirty hold, keeps waiting",
+			entries:   []wshrpc.RunQueueEntry{mkEntry("q-a", "landed", "dirty")},
+			runs:      []*waveobj.Run{landed, dirty},
+			maxActive: 3,
+			start:     "",
+		},
+		{
+			name:      "after two landed runs still waits for room",
+			entries:   []wshrpc.RunQueueEntry{mkEntry("q-a", "landed", "checkout")},
+			runs:      append(execRuns(3), landed, checkout),
+			maxActive: 3,
+			start:     "",
+		},
+		{
+			name:      "after two runs is blocked on the second when it ends held",
+			entries:   []wshrpc.RunQueueEntry{mkEntry("q-a", "landed", "held"), mkEntry("q-b", "")},
+			runs:      []*waveobj.Run{landed, held},
+			maxActive: 3,
+			start:     "q-b",
+			block:     map[string]string{"q-a": "Learned additions was held: the final stage failed"},
+			blockOn:   map[string]string{"q-a": "held"},
+		},
+		{
+			name:      "after two runs is blocked on the first when it is cancelled",
+			entries:   []wshrpc.RunQueueEntry{mkEntry("q-a", "cancelled", "landed")},
+			runs:      []*waveobj.Run{cancelled, landed},
+			maxActive: 3,
+			block:     map[string]string{"q-a": "Dropped plan was cancelled"},
+			blockOn:   map[string]string{"q-a": "cancelled"},
+		},
+		{
+			name:      "a held run blocks the entry while the other run it waits after is still going",
+			entries:   []wshrpc.RunQueueEntry{mkEntry("q-a", "running", "held")},
+			runs:      []*waveobj.Run{running, held},
+			maxActive: 3,
+			block:     map[string]string{"q-a": "Learned additions was held: the final stage failed"},
+			blockOn:   map[string]string{"q-a": "held"},
+		},
+		{
+			name:      "with two runs that never land, the first in the list names the block",
+			entries:   []wshrpc.RunQueueEntry{mkEntry("q-a", "cancelled", "held")},
+			runs:      []*waveobj.Run{cancelled, held},
+			maxActive: 3,
+			block:     map[string]string{"q-a": "Dropped plan was cancelled"},
+			blockOn:   map[string]string{"q-a": "cancelled"},
+		},
+		{
+			name:      "after a landed run and a queued entry is never ready",
+			entries:   []wshrpc.RunQueueEntry{mkEntry("q-b", "landed", "q-a"), mkEntry("q-a", "running")},
+			runs:      []*waveobj.Run{landed, running},
+			maxActive: 3,
+			start:     "",
+		},
+		{
+			name:      "an unknown id in the list blocks it with no run to lift it",
+			entries:   []wshrpc.RunQueueEntry{mkEntry("q-a", "landed", "gone"), mkEntry("q-b", "")},
+			runs:      []*waveobj.Run{landed},
+			maxActive: 3,
+			start:     "q-b",
+			block:     map[string]string{"q-a": "gone is not a run or a queued entry"},
+		},
+		{
+			name: "an entry blocked on the second of two runs is unblocked when it has landed",
+			entries: []wshrpc.RunQueueEntry{func() wshrpc.RunQueueEntry {
+				e := blockedEntry("q-a", "", "Learned additions was held")
+				e.After, e.BlockedOn = []string{"landed", "checkout"}, "checkout"
+				return e
+			}()},
+			runs:      []*waveobj.Run{landed, checkout},
+			maxActive: 3,
+			unblock:   []string{"q-a"},
 		},
 		{
 			name:      "after a queue entry is never ready",

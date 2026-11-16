@@ -112,7 +112,7 @@ import { LauncherPeekPane } from "./launcherpeekpanel";
 import { pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey, sessionTitle } from "./launcherresume";
 import { ResumeList } from "./launcherresumelist";
 import { ColumnLabel, digitOf, FilterLine, Keycap, NoTaskBox, rowTone } from "./launcherrows";
-import { startLauncherRun } from "./launcherrun";
+import { handBack, queueLauncherRun, startLauncherRun } from "./launcherrun";
 import { RunColumn, RunFields } from "./launcherrunfields";
 import {
     applyLauncherPrefill,
@@ -123,6 +123,7 @@ import {
     endLauncherLaunch,
     launcherAccountAtom,
     launcherAccountMenuAtom,
+    launcherBrainstormAtom,
     launcherBranchAtom,
     launcherBranchListAtom,
     launcherBusyAtom,
@@ -139,17 +140,21 @@ import {
     launcherResumeAtom,
     launcherRuntimeAtom,
     launcherSessionsAtom,
+    launcherSpecPathAtom,
     launcherTaskAtom,
     launcherToolAtom,
+    launcherWhenAtom,
     launcherWorktreeAtom,
     loadLauncherSessions,
     openLauncher,
+    peekLauncherHandback,
     pickLauncherProject,
     pickLauncherRuntime,
     pickLauncherTool,
     takeLauncherHandback,
 } from "./launcherstore";
 import { ToolFields, ToolList } from "./launchertoolfields";
+import { startBlocker, startLabel, waitingOn } from "./launcherwhen";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { busyLine } from "./parkedmodel";
 import { parkLaunch, settleParkedLaunch, showHeld, useMachine } from "./parkedstore";
@@ -358,6 +363,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const task = useAtomValue(launcherTaskAtom);
     const goal = useAtomValue(launcherGoalAtom);
     const prototype = useAtomValue(launcherPrototypeAtom);
+    const specPath = useAtomValue(launcherSpecPathAtom);
+    const brainstorm = useAtomValue(launcherBrainstormAtom);
+    const when = useAtomValue(launcherWhenAtom);
     const worktreeOn = useAtomValue(launcherWorktreeAtom);
     const branchPick = useAtomValue(launcherBranchAtom);
     const sessions = useAtomValue(launcherSessionsAtom);
@@ -449,8 +457,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const landingBranch = chosenBranch === currentBranch ? deriveBranch(currentBranch, branchNames) : chosenBranch;
     // only a tool's footer names the branch; an agent's names the account alone
     const branchNote = isTool && !toolAtHome && currentBranch ? `on ${currentBranch}` : "";
+    // a run's own blocker comes first; After with no run ticked has nothing to wait for (launcherwhen.ts)
     const blocker = isRun
-        ? launchBlocker({ shape, start, goal, planPath, preview })
+        ? (launchBlocker({ shape, start, goal, planPath, preview }) ?? startBlocker(when))
         : isTool
           ? toolBlocker(tool, toolLoad)
           : null;
@@ -986,7 +995,50 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
     };
 
+    // After run… and Queue start nothing here: the same data a start would send goes to the queue, which makes the run
+    // when its turn comes. The dialog closes on the entry, and the Agent tree shows it as a queued row. An error stays in
+    // the dialog (nothing was queued), and the handback is read, not taken, until the queue has the entry.
+    const queueRun = async (p: ProjectRow) => {
+        if (target == null) {
+            setError("Still reading your projects — try again in a moment.");
+            return;
+        }
+        if (!beginLauncherLaunch()) {
+            return;
+        }
+        setError(null);
+        const handback = peekLauncherHandback();
+        try {
+            const { entry } = await queueLauncherRun({
+                target: resolveChannelTarget(globalStore.get(channelsAtom), p.name, p.path) ?? target,
+                projectName: p.name,
+                config,
+                goal,
+                pickedRoute: routeTouched ? runRoute : null,
+                ...(specPath !== "" ? { specPath } : {}),
+                after: waitingOn(when),
+                ...(brainstorm != null ? { brainstorm } : {}),
+            });
+            takeLauncherHandback();
+            handBack(handback, { kind: "queued", entryId: entry.id });
+            endLauncherDraft();
+            close();
+            // a caller that filled the dialog keeps the person where it is, as a start does
+            if (handback == null) {
+                globalStore.set(model.surfaceAtom, "agent");
+            }
+        } catch (e) {
+            setError(String(e));
+        } finally {
+            endLauncherLaunch();
+        }
+    };
+
     const startRun = (p: ProjectRow) => {
+        if (when.choice !== "now") {
+            void queueRun(p);
+            return;
+        }
         if (target == null) {
             setError("Still reading your projects — try again in a moment.");
             return;
@@ -1010,6 +1062,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     config,
                     goal,
                     pickedRoute,
+                    ...(specPath !== "" ? { specPath } : {}),
                 }),
             handback,
         });
@@ -1685,7 +1738,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 <div data-launcher-column="third" onFocus={enterStep} className="relative min-w-0">
                                     <div className="absolute inset-0 flex flex-col px-2 py-3">
                                         {isRun ? (
-                                            <RunColumn />
+                                            <RunColumn projectPath={projectPath} channelId={pickedOid} />
                                         ) : isTool ? (
                                             <ToolList
                                                 tools={toolList}
@@ -1816,7 +1869,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             onClick={launch}
                             className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-300"
                         >
-                            {primaryLabel(kind, runtime, resume != null, tool?.name)}
+                            {isRun
+                                ? startLabel(when, primaryLabel(kind, runtime, resume != null, tool?.name))
+                                : primaryLabel(kind, runtime, resume != null, tool?.name)}
                         </DialogButton>
                     </div>
                 </div>

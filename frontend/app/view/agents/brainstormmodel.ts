@@ -9,6 +9,7 @@ import { sameRepoPath } from "@/util/paths";
 import type { AgentVM } from "./agentsviewmodel";
 import { canvasDir, canvasProjectDir, join, type CanvasBoard } from "./canvasmodel";
 import type { RunShape } from "./runconfig";
+import { entryAfter, isBlockedEntry } from "./runqueuemodel";
 
 export const BRAINSTORM_POLL_MS = 3000;
 export const BUILDER_PART = "builder";
@@ -602,7 +603,10 @@ export type BrainstormAction =
     | { kind: "builder-decide" }
     | { kind: "approved" }
     | { kind: "keep-talking" }
-    | { kind: "run"; runId: string };
+    | { kind: "run"; runId: string }
+    // Approve queued the run instead of starting it (After run… or Queue in the launcher): the agent records nothing and
+    // waits for the `run` line wavesrv sends when the entry starts
+    | { kind: "queued"; entryId: string };
 
 // a typed line is one line: every run of whitespace, newlines included, becomes one space
 function oneLine(text: string): string {
@@ -645,6 +649,8 @@ export function brainstormLine(a: BrainstormAction): string | null {
             return "brainstorm: keep talking";
         case "run":
             return `brainstorm: run ${a.runId}`;
+        case "queued":
+            return `brainstorm: queued ${a.entryId}`;
     }
 }
 
@@ -1457,8 +1463,10 @@ function capitalize(s: string): string {
 
 // A run Arc is starting from this design, from the launcher's Start until the file records it: CreateRun takes up to a
 // minute, and the agent hears the run's id only once it returns, so without this Approve reads as on in between and
-// starts the same run twice. runId is set once CreateRun has returned.
-export type StartingRunMark = { runId: string | null };
+// starts the same run twice. runId is set once CreateRun has returned. `entryId` marks a start the person queued instead
+// (After run… or Queue): the queue entry that holds it, which the queue itself then speaks for (queuedForBrainstorm), so
+// the mark alone does not keep Approve off.
+export type StartingRunMark = { runId: string | null; entryId?: string };
 
 export const RUN_STARTING = "The run is starting";
 
@@ -1467,13 +1475,82 @@ export function withStartingRun(f: BrainstormFile, starting: StartingRunMark | n
     return f.run == null && starting?.runId != null ? { ...f, run: starting.runId } : f;
 }
 
+/** What the run queue holds for a brainstorm's Approve: its entry waiting (`after` names the runs it waits on that have
+ *  not landed, as titles), blocked (the entry's block reason), or started (the run it became, before the agent has
+ *  recorded it). */
+export type QueuedForBrainstorm =
+    | { state: "waiting"; after?: string }
+    | { state: "blocked"; reason: string }
+    | { state: "started"; runId: string };
+
+/** What the queue's After ids look like now: the title of each run (an id that names a queued entry reads that entry's
+ *  own title) and the ids of the runs that have landed (those leave the entry waiting for room only). */
+export type QueueAfterRuns = { titles: Readonly<Record<string, string>>; landed: ReadonlySet<string> };
+
+const NO_AFTER_RUNS: QueueAfterRuns = { titles: {}, landed: new Set() };
+
+/** Pure: whether the entry was queued for the brainstorm at `path`: its `brainstorm.path` is that file, compared as a
+ *  path (an entry queued from elsewhere may spell it with the other slash, or another case on Windows). */
+export function isQueuedFor(entry: RunQueueEntry, path: string): boolean {
+    return entry.brainstorm != null && sameRepoPath(entry.brainstorm.path, path);
+}
+
+/** Pure: what the run queue holds for the brainstorm at `path`, or null when it holds nothing. The entry is found by the
+ *  `brainstorm.path` it was queued with. An entry that is no longer listed is a start when `mark` remembers its id and
+ *  `started` (runqueue:changed's entry -> run pairs) names the run it became; otherwise it is gone without a start (the
+ *  person removed it), and null turns Approve back on. */
+export function queuedForBrainstorm(
+    entries: readonly RunQueueEntry[],
+    started: Readonly<Record<string, string>>,
+    path: string,
+    mark: StartingRunMark | null,
+    afterRuns: QueueAfterRuns = NO_AFTER_RUNS
+): QueuedForBrainstorm | null {
+    const entry = entries.find((e) => isQueuedFor(e, path));
+    if (entry == null) {
+        const runId = mark?.entryId != null ? started[mark.entryId] : undefined;
+        return runId != null ? { state: "started", runId } : null;
+    }
+    if (isBlockedEntry(entry)) {
+        return { state: "blocked", reason: entry.reason ?? "" };
+    }
+    const titles = new Map(entries.map((e) => [e.id, e.title]));
+    // the runs it still waits for: one that has landed leaves only room to wait for
+    const after = entryAfter(entry)
+        .filter((id) => titles.has(id) || !afterRuns.landed.has(id))
+        .map((id) => afterRuns.titles[id] || titles.get(id) || id.slice(0, RUN_ID_CHARS));
+    return after.length > 0 ? { state: "waiting", after: after.join(", ") } : { state: "waiting" };
+}
+
+/** The words that stand where Approve was while the queue holds the run: Queued, Queued after <titles>, or the block
+ *  reason; a start that is under way reads as the launcher's own start does. */
+export function queuedLine(q: QueuedForBrainstorm): string {
+    switch (q.state) {
+        case "waiting":
+            return q.after != null ? `Queued after ${q.after}` : "Queued";
+        case "blocked":
+            return q.reason !== "" ? `Queued, but blocked: ${q.reason}` : "Queued, but blocked";
+        case "started":
+            return RUN_STARTING;
+    }
+}
+
 // why Approve is off, said in words beside it; null when it is on. The design is settled only once the builder is
-// answered, no talk question is open, and every decision is yours
-export function approveBlocker(f: BrainstormFile, starting: StartingRunMark | null = null): string | null {
+// answered, no talk question is open, and every decision is yours. `queued` is what the run queue holds for this
+// brainstorm (queuedForBrainstorm): a queued run stands where Approve was, and a queue entry that is gone leaves the
+// start's mark with nothing to keep Approve off
+export function approveBlocker(
+    f: BrainstormFile,
+    starting: StartingRunMark | null = null,
+    queued: QueuedForBrainstorm | null = null
+): string | null {
     if (f.run != null) {
         return null;
     }
-    if (starting != null) {
+    if (queued != null) {
+        return queuedLine(queued);
+    }
+    if (starting != null && starting.entryId == null) {
         return RUN_STARTING;
     }
     if (f.working != null) {
@@ -1757,8 +1834,16 @@ export function suggestedShape(f: BrainstormFile): RunShape {
 export function runPrefill(f: BrainstormFile, a: { projectName: string; cwd: string }): NewRunPrefill {
     const board = firstBoard(f);
     const prototype = f.canvas && board ? join(canvasProjectDir(canvasDir(a.cwd, f.canvas)), board) : undefined;
-    const goal = f.spec ? `Build ${f.title} as specified in ${absoluteSpec(f.spec, a.cwd)}.` : `Build ${f.title}.`;
-    return { projectName: a.projectName, shape: suggestedShape(f), goal, ...(prototype != null ? { prototype } : {}) };
+    const spec = f.spec ? absoluteSpec(f.spec, a.cwd) : null;
+    const goal = spec != null ? `Build ${f.title} as specified in ${spec}.` : `Build ${f.title}.`;
+    // the spec travels as data too, so the launcher's When row can compare its files with the live runs'
+    return {
+        projectName: a.projectName,
+        shape: suggestedShape(f),
+        goal,
+        ...(prototype != null ? { prototype } : {}),
+        ...(spec != null ? { specPath: spec } : {}),
+    };
 }
 
 export function runTitle(shape: RunShape): string {

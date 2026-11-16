@@ -139,6 +139,7 @@ const GOALS = {
     held: "verify chat-verdict-handoff: the held run",
     brainstorm: "verify chat-verdict-handoff: the brainstorm's held run",
     after: "verify chat-verdict-handoff: the run the queue waits on",
+    after2: "verify chat-verdict-handoff: the second run the queue waits on",
     queued: "verify chat-verdict-handoff: the queued run",
 };
 
@@ -1085,15 +1086,16 @@ export default function (kit) {
                 );
             });
 
-            // 8. a queued start: the card's own Queued line, after the run it waits on
+            // 8. a queued start: the card's own Queued line, after the two runs it waits on
             await run("8. queued run", async (name) => {
-                // the run it waits on never lands, so the entry stays queued
+                // the runs it waits on never land, so the entry stays queued
                 const afterId = await makeRun("after", { goal: GOALS.after, mode: "quick" });
+                const afterId2 = await makeRun("after2", { goal: GOALS.after2, mode: "quick" });
                 const entry = await h.rpc(
                     "runqueueadd",
                     {
                         data: { channelid: ctx.channelId, workspaceid: ctx.workspaceId, runtime: "claude", mode: "quick", deferstart: true, goal: GOALS.queued },
-                        after: afterId,
+                        after: [afterId, afterId2],
                     },
                     RPC
                 );
@@ -1101,7 +1103,11 @@ export default function (kit) {
                 append(
                     ctx,
                     AC.userText("queue the follow-up run", stamp(ctx)),
-                    ...startCall("toolu_cvh_start4", `wsh runs start --queue "${GOALS.queued}"`, `queued ${entry.id} (#1 in line) — waiting for ${GOALS.after} to finish`),
+                    ...startCall(
+                        "toolu_cvh_start4",
+                        `wsh runs start --queue --after ${afterId},${afterId2} "${GOALS.queued}"`,
+                        `queued ${entry.id} (#1 in line) — starts after ${GOALS.after}, ${GOALS.after2} have all landed`
+                    ),
                     AC.assistantText("It is queued; it starts when the run before it is over.", stamp(ctx))
                 );
                 await setAgent({ ends: true });
@@ -1112,8 +1118,12 @@ export default function (kit) {
                 const card = (await readRuns()).find((c) => c.id === entry.id);
                 await shot("8-queued-run");
                 rec(
-                    `${name}: the queued start draws its own card (stage queued) whose Queued line reads "Queued · after ${GOALS.after}"`,
-                    cardUp && card != null && card.stage === "queued" && card.queued != null && card.queued.includes(`Queued · after ${GOALS.after}`),
+                    `${name}: the queued start, after two runs, draws its own card (stage queued) whose Queued line reads "Queued · after ${GOALS.after}, ${GOALS.after2}"`,
+                    cardUp &&
+                        card != null &&
+                        card.stage === "queued" &&
+                        card.queued != null &&
+                        card.queued.includes(`Queued · after ${GOALS.after}, ${GOALS.after2}`),
                     { cardUp, card, entry: { id: entry.id, title: entry.title } }
                 );
             });

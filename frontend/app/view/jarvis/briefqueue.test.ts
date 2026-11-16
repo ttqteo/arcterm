@@ -49,29 +49,59 @@ const lineOf = (lines: BriefLine[], id: string) => lines.find((l) => l.queued?.e
 describe("withQueuedLines", () => {
     it("nests an entry under the run it waits on, right after that run", () => {
         const runs = [runLine("r1", "Board"), runLine("r2", "Other")];
-        const out = withQueuedLines(runs, rowsOf([entry("q-a", { after: "r1" })], { r1: "Board" }), "all", "", NOW);
+        const out = withQueuedLines(runs, rowsOf([entry("q-a", { after: ["r1"] })], { r1: "Board" }), "all", "", NOW);
         expect(ids(out)).toEqual(["r1", "q-a", "r2"]);
         expect(depthOf(out, "q-a")).toBe(1);
         expect(lineOf(out, "q-a").kind).toBe("↳ queued");
         expect(lineOf(out, "q-a").meta).toBe("after it lands");
     });
 
+    it("nests an entry after two runs under the first one that has not landed", () => {
+        const runs = [runLine("r1", "run A"), runLine("r2", "run B")];
+        const titles = { r1: "run A", r2: "run B" };
+        const e = [entry("q-a", { after: ["r1", "r2"] })];
+        const both = withQueuedLines(runs, rowsOf(e, titles), "all", "", NOW);
+        expect(ids(both)).toEqual(["r1", "q-a", "r2"]);
+        expect(lineOf(both, "q-a").meta).toBe("after it and 1 more land");
+        // r1 landed: only r2 is left, so the line sits under it and says what it said for one run
+        const second = withQueuedLines(runs, rowsOf(e, titles, new Set(["r1"])), "all", "", NOW);
+        expect(ids(second)).toEqual(["r1", "r2", "q-a"]);
+        expect(depthOf(second, "q-a")).toBe(1);
+        expect(lineOf(second, "q-a").meta).toBe("after it lands");
+        // both landed: room only
+        const room = withQueuedLines(runs, rowsOf(e, titles, new Set(["r1", "r2"])), "all", "", NOW);
+        expect(depthOf(room, "q-a")).toBe(0);
+        expect(lineOf(room, "q-a").meta).toBe("waiting for room");
+    });
+
+    it("puts an entry after two runs at the top, naming both, when the first one it waits on is not drawn", () => {
+        const out = withQueuedLines(
+            [runLine("r2", "run B")],
+            rowsOf([entry("q-a", { after: ["r1", "r2"] })], { r1: "run A", r2: "run B" }),
+            "all",
+            "",
+            NOW
+        );
+        expect(depthOf(out, "q-a")).toBe(0);
+        expect(lineOf(out, "q-a").meta).toBe("after run A, run B");
+    });
+
     it("nests a chain one level per link", () => {
-        const e = [entry("q-a", { after: "r1" }), entry("q-b", { after: "q-a" }), entry("q-c", { after: "q-b" })];
+        const e = [entry("q-a", { after: ["r1"] }), entry("q-b", { after: ["q-a"] }), entry("q-c", { after: ["q-b"] })];
         const out = withQueuedLines([runLine("r1", "Board")], rowsOf(e, { r1: "Board" }), "all", "", NOW);
         expect(ids(out)).toEqual(["r1", "q-a", "q-b", "q-c"]);
         expect([depthOf(out, "q-a"), depthOf(out, "q-b"), depthOf(out, "q-c")]).toEqual([1, 2, 3]);
     });
 
     it("puts an entry whose run is not drawn at the top, naming the run", () => {
-        const out = withQueuedLines([], rowsOf([entry("q-a", { after: "r9" })], { r9: "Board" }), "all", "", NOW);
+        const out = withQueuedLines([], rowsOf([entry("q-a", { after: ["r9"] })], { r9: "Board" }), "all", "", NOW);
         expect(depthOf(out, "q-a")).toBe(0);
         expect(lineOf(out, "q-a").kind).toBe("⏸ queued");
         expect(lineOf(out, "q-a").meta).toBe("after Board");
     });
 
     it("puts room-only entries after every run, in queue order", () => {
-        const e = [entry("q-a"), entry("q-b", { after: "r1" }), entry("q-c")];
+        const e = [entry("q-a"), entry("q-b", { after: ["r1"] }), entry("q-c")];
         const out = withQueuedLines([runLine("r1", "Board")], rowsOf(e, { r1: "Board" }), "all", "", NOW);
         expect(ids(out)).toEqual(["r1", "q-b", "q-a", "q-c"]);
         expect(lineOf(out, "q-a").meta).toBe("waiting for room");
@@ -82,7 +112,7 @@ describe("withQueuedLines", () => {
     it("treats an entry whose run has landed as waiting for room", () => {
         const out = withQueuedLines(
             [runLine("r1", "Board")],
-            rowsOf([entry("q-a", { after: "r1" })], { r1: "Board" }, new Set(["r1"])),
+            rowsOf([entry("q-a", { after: ["r1"] })], { r1: "Board" }, new Set(["r1"])),
             "all",
             "",
             NOW
@@ -116,7 +146,7 @@ describe("withQueuedLines", () => {
     });
 
     it("filters by the search, and a child of a filtered-out entry stands at the top", () => {
-        const e = [entry("q-a", { title: "Board follow-up" }), entry("q-b", { title: "Floors", after: "q-a" })];
+        const e = [entry("q-a", { title: "Board follow-up" }), entry("q-b", { title: "Floors", after: ["q-a"] })];
         const out = withQueuedLines([], rowsOf(e), "all", "floors", NOW);
         expect(ids(out)).toEqual(["q-b"]);
         expect(depthOf(out, "q-b")).toBe(0);
@@ -125,7 +155,7 @@ describe("withQueuedLines", () => {
 
     it("targets the entry and leaves the run lines as they were", () => {
         const runs = [runLine("r1", "Board")];
-        const out = withQueuedLines(runs, rowsOf([entry("q-a", { after: "r1" })], { r1: "Board" }), "all", "", NOW);
+        const out = withQueuedLines(runs, rowsOf([entry("q-a", { after: ["r1"] })], { r1: "Board" }), "all", "", NOW);
         expect(out[0]).toBe(runs[0]);
         expect(lineOf(out, "q-a").target).toEqual({ runQueue: "q-a" });
         expect(lineOf(out, "q-a").id).toBe("sessions:queued:q-a");
@@ -152,7 +182,7 @@ describe("queueSheetModel", () => {
     const slots = { maxActive: 3, active: 3 };
 
     it("words an entry waiting on a run, with the run's stage", () => {
-        const [row] = rowsOf([entry("q-a", { after: "r1" })], { r1: "Board" });
+        const [row] = rowsOf([entry("q-a", { after: ["r1"] })], { r1: "Board" });
         const m = queueSheetModel(row, { ...slots, afterStage: "working 2/5", now: NOW });
         expect(m.chip).toBe("Waiting on a run");
         expect(m.waits).toEqual({ text: "Board · working 2/5", runId: "r1" });
@@ -163,11 +193,57 @@ describe("queueSheetModel", () => {
     });
 
     it("words an entry waiting on another queued entry", () => {
-        const rows = rowsOf([entry("q-a"), entry("q-b", { after: "q-a" })]);
+        const rows = rowsOf([entry("q-a"), entry("q-b", { after: ["q-a"] })]);
         const m = queueSheetModel(rows[1], { ...slots, now: NOW });
         expect(m.chip).toBe("Waiting on a run");
         expect(m.waits).toEqual({ text: "Plan q-a", entryId: "q-a" });
         expect(m.runNext).toBe(true);
+    });
+
+    it("words an entry waiting on two runs: both titles, one link each, the stage on the first still going", () => {
+        const titles = { r1: "run A", r2: "run B" };
+        const [row] = rowsOf([entry("q-a", { after: ["r1", "r2"] })], titles);
+        const m = queueSheetModel(row, { ...slots, afterStage: "working 2/5", now: NOW });
+        expect(m.chip).toBe("Waiting on a run");
+        expect(m.waits.text).toBe("run A · working 2/5, run B");
+        expect(m.waits.runId).toBe("r1");
+        expect(m.waits.list).toEqual([
+            { text: "run A · working 2/5", runId: "r1" },
+            { text: "run B", runId: "r2" },
+        ]);
+        // r1 landed: the stage is r2's, and r2 is the link that stands for the entry
+        const [landed] = rowsOf([entry("q-a", { after: ["r1", "r2"] })], titles, new Set(["r1"]));
+        const m2 = queueSheetModel(landed, { ...slots, afterStage: "working 1/3", now: NOW });
+        expect(m2.waits.text).toBe("run A, run B · working 1/3");
+        expect(m2.waits.runId).toBe("r2");
+        expect(m2.waits.list?.map((w) => w.runId)).toEqual(["r1", "r2"]);
+    });
+
+    it("words an entry waiting on a run and a queued entry, each linking to its own sheet or run", () => {
+        const rows = rowsOf([entry("q-a"), entry("q-b", { after: ["r1", "q-a"] })], { r1: "run A" });
+        const m = queueSheetModel(rows[1], { ...slots, now: NOW });
+        expect(m.waits.text).toBe("run A, Plan q-a");
+        expect(m.waits.list).toEqual([
+            { text: "run A", runId: "r1" },
+            { text: "Plan q-a", entryId: "q-a" },
+        ]);
+    });
+
+    it("names the short ids of two runs whose titles are not known", () => {
+        const [row] = rowsOf([entry("q-a", { after: ["4f2a9c1e-7b3d", "9c1d0b7e-5a4f"] })]);
+        expect(queueSheetModel(row, { ...slots, now: NOW }).waits.text).toBe("4f2a9c1e, 9c1d0b7e");
+    });
+
+    it("gives a waiting entry its reason too, not only a blocked one's", () => {
+        const waiting = entry("q-a", {
+            after: ["r1", "r2"],
+            reason: "Waiting for run B too: both edit pkg/orchestrate/land.go",
+        });
+        const [row] = rowsOf([waiting], { r1: "run A", r2: "run B" });
+        const m = queueSheetModel(row, { ...slots, now: NOW });
+        expect(m.blocked).toBe(false);
+        expect(m.reason).toBe("Waiting for run B too: both edit pkg/orchestrate/land.go");
+        expect(queueSheetModel(rowsOf([entry("q-b")])[0], { ...slots, now: NOW }).reason).toBeNull();
     });
 
     it("words a room-only entry by the slots", () => {

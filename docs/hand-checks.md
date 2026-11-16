@@ -16,6 +16,14 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Approve on a brainstorm that queues.** CDP `run-start-choice-brainstorm` checked the Brainstorm tab's
+  approve bar against queue entries made over RPC; the launcher's own Queue from Approve, the `brainstorm: queued`
+  line, wavesrv's `brainstorm: run <id>` and Chat's card were not tried. Fill the run cap (`runs:maxactive`), approve a
+  design in a brainstorm and press Approve → in the launcher pick Queue → Start: the dialog closes, the agent's
+  terminal gets `brainstorm: queued q-…` and writes nothing, the tab's approve bar reads `Queued` (Approve off), and
+  Chat's Builder check card reads the same in grey, not amber. Raise the cap → the agent gets `brainstorm: run <id>`,
+  records the run, and Chat draws the run row for that line. Dequeue the entry instead → Approve is on again. Agent
+  surface, Brainstorm tab and Chat. Task 6 of the run-start-choice plan.
 - [ ] (arcterm) **A long council tag wraps in its card; suggestion chips share a line.** Not tried in the app: no dev
   app ran, typecheck only. Open a done council whose direction tag names two long seats (`Reviewer 3 (evaluation) and
   Phản biện have doubts`) → the tag wraps to two lines inside the card, its icon on the first. In that council's box

@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -58,14 +59,57 @@ func load() ([]wshrpc.RunQueueEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	var f queueFile
+	var f struct {
+		Entries []json.RawMessage `json:"entries"`
+	}
 	if err := json.Unmarshal(raw, &f); err != nil {
 		return nil, fmt.Errorf("reading %s: %w", storePath(), err)
 	}
-	if f.Entries == nil {
-		f.Entries = []wshrpc.RunQueueEntry{}
+	entries := make([]wshrpc.RunQueueEntry, 0, len(f.Entries))
+	for _, r := range f.Entries {
+		e, err := loadEntry(r)
+		if err != nil {
+			return nil, fmt.Errorf("reading %s: %w", storePath(), err)
+		}
+		entries = append(entries, e)
 	}
-	return f.Entries, nil
+	return entries, nil
+}
+
+// loadEntry reads one entry. A queue file written before After became a list holds a single id as a string, and an
+// entry with no After an empty one: both read as a list here, the one place that compatibility lives. save writes
+// the list form, so the next write converts the file.
+func loadEntry(raw json.RawMessage) (wshrpc.RunQueueEntry, error) {
+	// the outer After shadows the entry's own, so the raw value is ours to read either way
+	var e struct {
+		wshrpc.RunQueueEntry
+		After json.RawMessage `json:"after"`
+	}
+	if err := json.Unmarshal(raw, &e); err != nil {
+		return wshrpc.RunQueueEntry{}, err
+	}
+	entry := e.RunQueueEntry
+	entry.After = nil
+	if len(e.After) == 0 || string(e.After) == "null" {
+		return entry, nil
+	}
+	if e.After[0] == '"' {
+		var id string
+		if err := json.Unmarshal(e.After, &id); err != nil {
+			return wshrpc.RunQueueEntry{}, err
+		}
+		if id != "" {
+			entry.After = []string{id}
+		}
+		return entry, nil
+	}
+	if err := json.Unmarshal(e.After, &entry.After); err != nil {
+		return wshrpc.RunQueueEntry{}, err
+	}
+	if len(entry.After) == 0 {
+		entry.After = nil
+	}
+	return entry, nil
 }
 
 func save(entries []wshrpc.RunQueueEntry) error {
@@ -178,8 +222,9 @@ func SetWaiting(id string) error {
 	})
 }
 
-// Retarget points every entry that waits After fromId at toId, in one write: the way entries chained behind a queue
-// entry follow it to the run it became. Nothing is written when none match.
+// Retarget replaces fromId with toId inside the After list of every entry that holds it, in one write: the way
+// entries chained behind a queue entry follow it to the run it became. An entry that already waits on toId keeps it
+// once. Nothing is written when none match.
 func Retarget(fromId, toId string) error {
 	if fromId == "" || toId == "" {
 		return errors.New("retarget needs both a from id and a to id")
@@ -192,14 +237,56 @@ func Retarget(fromId, toId string) error {
 	}
 	changed := false
 	for i := range entries {
-		if entries[i].After == fromId {
-			entries[i].After = toId
-			changed = true
+		if !slices.Contains(entries[i].After, fromId) {
+			continue
 		}
+		after := make([]string, 0, len(entries[i].After))
+		for _, id := range entries[i].After {
+			if id == fromId {
+				id = toId
+			}
+			if !slices.Contains(after, id) {
+				after = append(after, id)
+			}
+		}
+		entries[i].After = after
+		changed = true
 	}
 	if !changed {
 		return nil
 	}
+	return save(entries)
+}
+
+// WaitAlsoOn has a waiting entry wait for more runs: it appends the ids it does not already hold, in the order given,
+// and sets Reason to why (the re-check's "Waiting for X too: both edit land.go"), in one write. The entry stays as it
+// is otherwise; one that was blocked meanwhile keeps its block whole, since a block is the newer truth. Nothing is
+// written when no id is new, and the reason is not set then either: there is nothing more to wait for.
+func WaitAlsoOn(id string, add []string, reason string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	entries, err := load()
+	if err != nil {
+		return err
+	}
+	i := indexOf(entries, id)
+	if i < 0 {
+		return notFound(id)
+	}
+	if entries[i].State == wshrpc.RunQueueState_Blocked {
+		return nil
+	}
+	after := slices.Clone(entries[i].After)
+	for _, a := range add {
+		if a != "" && !slices.Contains(after, a) {
+			after = append(after, a)
+		}
+	}
+	if len(after) == len(entries[i].After) {
+		return nil
+	}
+	entries[i].After = after
+	entries[i].Reason = reason
 	return save(entries)
 }
 

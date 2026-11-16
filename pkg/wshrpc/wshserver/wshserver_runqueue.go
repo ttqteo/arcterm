@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,6 +17,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/runqueue"
+	"github.com/wavetermdev/waveterm/pkg/runstart"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wps"
@@ -38,6 +40,12 @@ const (
 	// here, not with the other kinds in pkg/waveobj, because only this file writes it; the timeline shows an unknown
 	// kind by its name.
 	runEventKindQueuedStart = "queued-start"
+	// runEventKindBrainstormNoticeFailed is the run event on a run whose brainstorm could not be told its id (detail
+	// "tab" and "error"); the notice is not retried, so the timeline is where it shows.
+	runEventKindBrainstormNoticeFailed = "brainstorm-notice-failed"
+
+	// brainstormNoticeTimeout bounds the notice: waking a sleeping agent waits for its session.
+	brainstormNoticeTimeout = 2 * time.Minute
 )
 
 // seams the tests script: what the loop reads and calls outside the queue's own file
@@ -54,6 +62,15 @@ var (
 	}
 	runQueuePublish = func(data wshrpc.RunQueueChangedData) {
 		wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_RunQueueChanged, Data: data})
+	}
+	// runQueueRecheck is the check made when an entry's turn comes: the runs it must also wait for, and why. An error
+	// is advice lost, never a gate.
+	runQueueRecheck = recheckQueuedEntry
+	// runQueueGo runs the notice to a brainstorm's agent off the loop, which must not wait on an agent.
+	runQueueGo = func(f func()) { go f() }
+	// armBrainstormSleep arms a brainstorm agent's sleep after the run it was told: AgentsSleepAfterRunCommand.
+	armBrainstormSleep = func(ctx context.Context, data wshrpc.CommandAgentsSleepAfterRunData) error {
+		return (&WshServer{}).AgentsSleepAfterRunCommand(ctx, data)
 	}
 )
 
@@ -146,20 +163,32 @@ func startReadyEntries(ctx context.Context) {
 }
 
 // nextQueuedStart applies the rules to the queue as it is now: it blocks the entries that can never start, lifts the
-// blocks of entries whose run has landed since, and returns the one to start, if any. It reads nothing it cannot see
-// whole: an unreadable queue or run list starts nothing and changes nothing.
+// blocks of entries whose run has landed since, holds the entries whose turn it is for a run they must also wait for
+// (the re-check), and returns the one to start, if any. It reads nothing it cannot see whole: an unreadable queue or run
+// list starts nothing and changes nothing.
+//
+// A pass that changed the queue (an unblock, a hold) says its answer is stale, and the queue is read again: an entry
+// that waits again may be the one to start, and a held entry has to give way to the ready entries behind it. Each
+// stale pass is an unblock of every entry blocked on a run that landed, or one entry held (which then waits on a run
+// that is live, so the next pass skips it), so the passes are bounded by the queue's length.
 func nextQueuedStart(ctx context.Context) (wshrpc.RunQueueEntry, bool) {
-	entry, ok, unblocked := readQueuedStart(ctx)
-	if !unblocked {
-		return entry, ok
+	passes := 3
+	if entries, err := runqueue.List(); err == nil {
+		passes = len(entries) + 2
 	}
-	// an entry that waits again may be the one to start, and the pass above skipped it while it was blocked
-	entry, ok, _ = readQueuedStart(ctx)
-	return entry, ok
+	for range passes {
+		entry, ok, stale := readQueuedStart(ctx)
+		if !stale {
+			return entry, ok
+		}
+	}
+	log.Printf("runqueue: the queue kept changing through %d passes; starting nothing until the next evaluation", passes)
+	return wshrpc.RunQueueEntry{}, false
 }
 
-// readQueuedStart is one pass over the queue. unblocked says it set entries waiting again, so the answer is stale.
-func readQueuedStart(ctx context.Context) (entry wshrpc.RunQueueEntry, ok, unblocked bool) {
+// readQueuedStart is one pass over the queue. stale says it changed the queue (set entries waiting again, or held the
+// entry it would have started), so its answer is not to be used: read again.
+func readQueuedStart(ctx context.Context) (entry wshrpc.RunQueueEntry, ok, stale bool) {
 	entries, err := runqueue.List()
 	if err != nil {
 		log.Printf("runqueue: reading the queue: %v", err)
@@ -172,9 +201,7 @@ func readQueuedStart(ctx context.Context) (entry wshrpc.RunQueueEntry, ok, unblo
 	// a run that landed is done, so the loader reads it only when asked: the run each blocked entry waits on too
 	runIds := make([]string, 0, len(entries))
 	for _, e := range entries {
-		if e.After != "" {
-			runIds = append(runIds, e.After)
-		}
+		runIds = append(runIds, e.After...)
 		if e.BlockedOn != "" {
 			runIds = append(runIds, e.BlockedOn)
 		}
@@ -197,7 +224,7 @@ func readQueuedStart(ctx context.Context) (entry wshrpc.RunQueueEntry, ok, unblo
 	for _, id := range unblock {
 		switch err := runqueue.SetWaiting(id); {
 		case err == nil:
-			changed, unblocked = true, true
+			changed, stale = true, true
 		case !errors.Is(err, runqueue.ErrNotFound):
 			log.Printf("runqueue: unblocking %s: %v", id, err)
 		}
@@ -206,11 +233,77 @@ func readQueuedStart(ctx context.Context) (entry wshrpc.RunQueueEntry, ok, unblo
 		publishRunQueue()
 	}
 	for _, e := range entries {
-		if e.Id == start {
-			return e, true, unblocked
+		if e.Id != start {
+			continue
+		}
+		if stale {
+			// the answer is discarded anyway: no sense checking an entry the next pass may not name
+			return e, true, true
+		}
+		if recheckHolds(ctx, e) {
+			return wshrpc.RunQueueEntry{}, false, true
+		}
+		return e, true, false
+	}
+	return wshrpc.RunQueueEntry{}, false, stale
+}
+
+// recheckHolds is the re-check made when the entry's turn comes: its files, read now, against the runs live in its
+// project that were created after it was queued. A run that edits one of them is added to the entry's After with the
+// reason, and the entry waits on (true: it must not start, and the queue changed). An error is logged and the entry
+// starts: the check is advice, never a gate. Start now never gets here.
+func recheckHolds(ctx context.Context, e wshrpc.RunQueueEntry) bool {
+	add, reason, err := runQueueRecheck(ctx, e)
+	if err != nil {
+		log.Printf("runqueue: re-checking %s (%s) before its start: %v", e.Id, e.Title, err)
+		return false
+	}
+	var fresh []string
+	for _, id := range add {
+		if !slices.Contains(e.After, id) && !slices.Contains(fresh, id) {
+			fresh = append(fresh, id)
 		}
 	}
-	return wshrpc.RunQueueEntry{}, false, unblocked
+	if len(fresh) == 0 {
+		return false
+	}
+	switch err := runqueue.WaitAlsoOn(e.Id, fresh, reason); {
+	case err == nil:
+	case errors.Is(err, runqueue.ErrNotFound):
+		return true // the entry started or went while we looked: the queue changed under us
+	default:
+		log.Printf("runqueue: holding %s (%s) for %v: %v", e.Id, e.Title, fresh, err)
+		return false
+	}
+	log.Printf("runqueue: %s (%s) waits for %v too: %s", e.Id, e.Title, fresh, reason)
+	publishRunQueue()
+	return true
+}
+
+// recheckQueuedEntry is the check recheckHolds asks for: the entry's files (its goal, and its spec and plan as they are
+// now: what gets built is what is on disk then) against the live runs of its project that were created after it was
+// queued and that it does not already wait on. An entry that names no file is never held; only those runs are read.
+func recheckQueuedEntry(ctx context.Context, e wshrpc.RunQueueEntry) (add []string, reason string, err error) {
+	specText, err := readStartText("spec", resolvePlanPath(e.ProjectPath, e.Data.SpecPath))
+	if err != nil {
+		return nil, "", err
+	}
+	planText, err := readStartText("plan", resolvePlanPath(e.ProjectPath, e.Data.PlanPath))
+	if err != nil {
+		return nil, "", err
+	}
+	files := runstart.NewRunFiles(e.Data.Goal, specText, planText)
+	if len(files) == 0 {
+		return nil, "", nil
+	}
+	live, err := gatherLiveRuns(ctx, e.ProjectPath, func(r *waveobj.Run) bool {
+		return r.CreatedTs > e.QueuedTs && !slices.Contains(e.After, r.ID)
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	add, reason = runstart.RecheckAdds(files, live, e.QueuedTs, e.After)
+	return add, reason, nil
 }
 
 // startQueuedEntry creates the run the entry stands for. On success the entry leaves the queue, any entry chained
@@ -221,9 +314,12 @@ func startQueuedEntry(ctx context.Context, e wshrpc.RunQueueEntry) error {
 	defer cancel()
 	data := e.Data
 	// a queue entry id is "q-" + hex (RunQueueEntry.Id); an After still naming one (only Start now starts an entry
-	// past its After) is no run to remember
-	if e.After != "" && !strings.HasPrefix(e.After, "q-") {
-		data.AfterRunId = e.After
+	// past its After) is no run to remember. The run keeps one id: the first run the entry waited for.
+	for _, id := range e.After {
+		if !strings.HasPrefix(id, "q-") {
+			data.AfterRunId = id
+			break
+		}
 	}
 	rtn, err := runQueueCreateRun(sctx, data)
 	if err == nil && (rtn == nil || rtn.Run == nil) {
@@ -247,7 +343,49 @@ func startQueuedEntry(ctx context.Context, e wshrpc.RunQueueEntry) error {
 	leaveRunQueue(e.Id, run.ID)
 	appendRunEvent(ctx, e.Data.ChannelId, run.ID, runEventKindQueuedStart, nil, map[string]any{"entryid": e.Id})
 	publishRunQueue(wshrpc.RunQueueStarted{EntryId: e.Id, RunId: run.ID})
+	if e.Brainstorm != nil {
+		brainstorm := *e.Brainstorm
+		runQueueGo(func() { tellBrainstormItsRun(e.Data.ChannelId, run.ID, brainstorm) })
+	}
 	return nil
+}
+
+// tellBrainstormItsRun tells the agent that queued a run (spec 2026-11-16-run-start-choice-design.md) which run its
+// entry became: it arms the agent's sleep after that run, then sends `brainstorm: run <id>` through the path
+// AgentsAssignCommand takes, so the agent writes the id into its brainstorm.json and the cockpit follows the run. It
+// runs off the queue loop (waking a sleeping agent waits for its session) and is never retried: a failure is logged and
+// recorded as a run event on the new run, where the timeline shows it. A failed arm only costs the sleep, so the notice
+// still goes out.
+func tellBrainstormItsRun(channelId, runId string, b wshrpc.RunQueueBrainstorm) {
+	var err error
+	defer func() {
+		if p := recover(); p != nil {
+			panichandler.PanicHandler("runqueue brainstorm notice", p)
+			err = fmt.Errorf("the notice panicked: %v", p)
+		}
+		if err == nil {
+			return
+		}
+		log.Printf("runqueue: telling brainstorm tab %s its run %s: %v", b.Tab, runId, err)
+		appendRunEvent(context.Background(), channelId, runId, runEventKindBrainstormNoticeFailed, nil, map[string]any{"tab": b.Tab, "error": err.Error()})
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), brainstormNoticeTimeout)
+	defer cancel()
+	if aerr := armBrainstormSleep(ctx, wshrpc.CommandAgentsSleepAfterRunData{Tab: b.Tab, RunId: runId, Path: b.Path}); aerr != nil {
+		log.Printf("runqueue: arming brainstorm tab %s's sleep after run %s: %v", b.Tab, runId, aerr)
+	}
+	facts, ferr := loadAgentRosterFacts(ctx)
+	if ferr != nil {
+		err = ferr
+		return
+	}
+	rows := buildAgentRoster(facts)
+	target, rerr := resolveAgentTab(rows, b.Tab)
+	if rerr != nil {
+		err = rerr
+		return
+	}
+	err = deliverToAgent(ctx, rows, target, "brainstorm: run "+runId, nil)
 }
 
 // leaveRunQueue drops a started entry. If the file cannot be written the entry is remembered as started, so no
@@ -348,11 +486,18 @@ func (ws *WshServer) RunQueueAddCommand(ctx context.Context, data wshrpc.Command
 			title = planTitle(plan, d.PlanPath)
 		}
 	}
-	after, err := resolveQueueAfter(ctx, data.After)
-	if err != nil {
-		return nil, err
+	var after []string
+	for _, a := range data.After {
+		id, err := resolveQueueAfter(ctx, a)
+		if err != nil {
+			return nil, err
+		}
+		// an empty one is no After, and two spellings of one run are one wait
+		if id != "" && !slices.Contains(after, id) {
+			after = append(after, id)
+		}
 	}
-	entry, err := runqueue.Add(wshrpc.RunQueueEntry{Data: d, Title: title, ProjectPath: ch.ProjectPath, After: after})
+	entry, err := runqueue.Add(wshrpc.RunQueueEntry{Data: d, Title: title, ProjectPath: ch.ProjectPath, After: after, Brainstorm: data.Brainstorm})
 	if err != nil {
 		return nil, fmt.Errorf("queueing: %w", err)
 	}
@@ -471,7 +616,7 @@ func (ws *WshServer) RunQueueRemoveCommand(ctx context.Context, data wshrpc.Comm
 		return err
 	}
 	for _, dep := range entries {
-		if dep.After != e.Id {
+		if !slices.Contains(dep.After, e.Id) {
 			continue
 		}
 		if err := runqueue.SetBlocked(dep.Id, e.Title+" was removed", ""); err != nil && !errors.Is(err, runqueue.ErrNotFound) {
