@@ -88,6 +88,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Chat's permission card now answers an agent's claude.ai Artifact prompts (publish, delete), with a line saying what
+  it does to which artifact, instead of raw JSON and only Answer in Terminal.
+- Chat no longer suggests a reply that is only an HTML tag, such as `</br>`.
 - The agent you leave on screen no longer falls asleep while you work in another window: Sleep idle agents now spares
   it whether or not arcterm has the focus.
 - Esc closes the Brief sheet again when you last clicked the cockpit behind it; Esc in a picker's open menu still

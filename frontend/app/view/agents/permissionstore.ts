@@ -16,18 +16,22 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect } from "react";
+import { readTermLines } from "../term/termpaste";
 import {
     answerFailureMessage,
     choiceAnswer,
     headIdOf,
     keptChoice,
     moveChoice,
+    PERMISSION_SCREEN_ROWS,
     REFUSAL_MS,
     refusalClears,
     requestsGone,
+    type PermissionAnswer,
     type PermissionChoice,
     type Refusal,
 } from "./permissionmodel";
+import { tuiSelectYes } from "./tuiscreen";
 
 type Snapshot = AgentPermissionRequest[] | null;
 
@@ -171,26 +175,30 @@ export function usePermissionRequestState(
  *  the queue. The request's buttons stay locked until the call and the queue read after it have settled. A refusal ("that
  *  request is no longer waiting") becomes the agent's refusal line, raised once the queue has been read again, so it
  *  records the head the person now sees; the line clears by the rule in `refusalClears`, and on the next answer here. */
-export async function answerPermission(
-    oref: string,
-    id: string,
-    answer: { allow: boolean; choice?: 2 }
-): Promise<void> {
+export async function answerPermission(oref: string, id: string, answer: PermissionAnswer): Promise<void> {
     if (globalStore.get(permissionInFlightAtom).has(id)) {
         return;
     }
     globalStore.set(permissionInFlightAtom, new Set(globalStore.get(permissionInFlightAtom)).add(id));
     dropRefusal(oref);
     let failure: string | null = null;
-    try {
-        await RpcApi.AgentPermissionAnswerCommand(TabRpcClient, {
-            oref,
-            id,
-            allow: answer.allow,
-            choice: answer.choice,
-        });
-    } catch (err) {
-        failure = answerFailureMessage(err);
+    // a screen pick reads the dialog now, so the moves count from where its cursor is at the click
+    const pick = answer.screen ? screenYes(oref) : null;
+    if (answer.screen && pick == null) {
+        failure = "The dialog's Yes is not on screen: answer it in the terminal";
+    } else {
+        try {
+            await RpcApi.AgentPermissionAnswerCommand(TabRpcClient, {
+                oref,
+                id,
+                allow: answer.allow,
+                choice: answer.choice,
+                screen: answer.screen,
+                moves: pick?.moves,
+            });
+        } catch (err) {
+            failure = answerFailureMessage(err);
+        }
     }
     try {
         await reloadPermission(oref);
@@ -205,10 +213,17 @@ export async function answerPermission(
     }
 }
 
+/** Where the Yes of the dialog in `oref`'s terminal sits from its cursor, read now; null when the terminal or the list
+ *  is not there. */
+export function screenYes(oref: string): { moves: number; label: string } | null {
+    const lines = oref.startsWith("block:") ? readTermLines(oref.slice("block:".length), PERMISSION_SCREEN_ROWS) : null;
+    return lines == null ? null : tuiSelectYes(lines);
+}
+
 /** The card the chat box's keys answer, per agent block (ORef): the head it shows, its choices and the highlighted one.
  *  The card publishes it while it can answer its head and takes it back when it no longer can; the chat box reads it for
  *  ↑ ↓ Enter (permissionBoxKey), so the keys reach only a card on screen. */
-export type CardKeys = { headId: string; choices: PermissionChoice[]; current: PermissionChoice };
+export type CardKeys = { headId: string; choices: PermissionChoice[]; current: PermissionChoice; screen: boolean };
 
 export const permissionCardKeysAtom = atom<ReadonlyMap<string, CardKeys>>(new Map<string, CardKeys>()) as PrimitiveAtom<
     ReadonlyMap<string, CardKeys>
@@ -226,13 +241,18 @@ function setCardKeys(oref: string, keys: CardKeys | null): void {
 
 /** The card for `oref` shows request `headId` with these choices. A new head starts on Allow, as the prompt's own list
  *  does; the same head keeps its highlighted choice (keptChoice). */
-export function publishCardKeys(oref: string, headId: string, choices: PermissionChoice[]): void {
+export function publishCardKeys(oref: string, headId: string, choices: PermissionChoice[], screen = false): void {
     const prev = globalStore.get(permissionCardKeysAtom).get(oref);
     const current = prev?.headId === headId ? keptChoice(choices, prev.current) : "allow";
-    if (prev?.headId === headId && prev.current === current && prev.choices.join() === choices.join()) {
+    if (
+        prev?.headId === headId &&
+        prev.current === current &&
+        prev.screen === screen &&
+        prev.choices.join() === choices.join()
+    ) {
         return;
     }
-    setCardKeys(oref, { headId, choices, current });
+    setCardKeys(oref, { headId, choices, current, screen });
 }
 
 /** The card for `oref` no longer answers request `headId` (answered, gone, or the card left the screen). */
@@ -250,7 +270,7 @@ export function permissionCardKey(oref: string, action: "up" | "down" | "pick"):
         return false;
     }
     if (action === "pick") {
-        fireAndForget(() => answerPermission(oref, keys.headId, choiceAnswer(keys.current)));
+        fireAndForget(() => answerPermission(oref, keys.headId, choiceAnswer(keys.current, keys.screen)));
         return true;
     }
     setCardKeys(oref, { ...keys, current: moveChoice(keys.choices, keys.current, action === "up" ? -1 : 1) });

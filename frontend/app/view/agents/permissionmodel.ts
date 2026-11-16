@@ -18,7 +18,12 @@ const TITLES: Record<string, string> = {
     // the subagent dialog arcterm's gate hook puts up (Task is the tool's old name)
     Agent: "Wants to start a subagent",
     Task: "Wants to start a subagent",
+    // claude.ai Artifacts: publish, delete, and the consents around them
+    Artifact: "Wants to use an artifact",
 };
+
+/** How many rows off the bottom of the agent's terminal hold a permission dialog. */
+export const PERMISSION_SCREEN_ROWS = 30;
 
 /** Pure: the card's heading for the tool that asks. */
 export function permissionTitle(toolName: string): string {
@@ -118,9 +123,20 @@ export function permissionChoices(hasSecond: boolean): PermissionChoice[] {
     return hasSecond ? ["allow", "second", "deny"] : ["allow", "deny"];
 }
 
-/** Pure: what a choice sends, as its button does. */
-export function choiceAnswer(choice: PermissionChoice): { allow: boolean; choice?: 2 } {
-    return choice === "deny" ? { allow: false } : choice === "second" ? { allow: true, choice: 2 } : { allow: true };
+/** What the card sends: Allow, its second option, or Deny. `screen` asks the store to pick the dialog's Yes off the
+ *  terminal (a ScreenPick request, whose list does not start at Yes). */
+export type PermissionAnswer = { allow: boolean; choice?: 2; screen?: true };
+
+/** Pure: what a choice sends, as its button does. `screen`: the head is a ScreenPick request, whose Allow picks its Yes
+ *  off the screen. */
+export function choiceAnswer(choice: PermissionChoice, screen = false): PermissionAnswer {
+    if (choice === "deny") {
+        return { allow: false };
+    }
+    if (screen) {
+        return { allow: true, screen: true };
+    }
+    return choice === "second" ? { allow: true, choice: 2 } : { allow: true };
 }
 
 /** Pure: the highlighted choice once the choices changed. It is kept by what it is, not where it sat: the second button
