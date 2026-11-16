@@ -111,7 +111,7 @@ func TestGitChangesCommandPassesNumstatErrorThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GitChangesCommand: %v, want the list with the numstat error beside it", err)
 	}
-	if !strings.Contains(got.StatusZ, "a.txt") || !strings.Contains(got.NumstatError, "diff --numstat") {
+	if !strings.Contains(got.StatusZ, "a.txt") || !strings.Contains(got.NumstatError, "diff-index --numstat") {
 		t.Errorf("StatusZ %q, NumstatError %q; want the list and the error", got.StatusZ, got.NumstatError)
 	}
 }
