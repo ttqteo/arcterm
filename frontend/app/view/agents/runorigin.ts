@@ -63,6 +63,43 @@ export function startedRunsShown<T extends Pick<Run, "status"> & { createdts?: n
     return [runs.reduce((a, b) => ((b.createdts ?? 0) > (a.createdts ?? 0) ? b : a))];
 }
 
+// finishedRun reports whether a run a session started is over with nothing left for the person: landed, failed,
+// cancelled, or done with no branch to land. A held land, or a done run whose branch has yet to land, still waits on
+// them. Only a finished run can be hidden from its session's run chip.
+export function finishedRun(run: { status?: string; land?: Pick<RunLand, "state">; landPath?: string }): boolean {
+    if (run.land?.state === "landed") {
+        return true;
+    }
+    if (run.land?.state === "held") {
+        return false;
+    }
+    if (run.status === "failed" || run.status === "cancelled") {
+        return true;
+    }
+    return run.status === "done" && !run.land && !run.landPath;
+}
+
+// The run ids the person hid from their sessions' run chips (localStorage agents.hiddenRuns), newest last. Bad or
+// missing storage reads as none hidden.
+export const HIDDEN_RUNS_CAP = 500;
+export function parseHiddenRuns(raw: string | null): string[] {
+    if (!raw) {
+        return [];
+    }
+    try {
+        const v = JSON.parse(raw);
+        return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+    } catch {
+        return [];
+    }
+}
+
+// withHiddenRuns adds `ids` to the hidden list, each once, dropping the oldest past the cap
+export function withHiddenRuns(prev: readonly string[], ids: readonly string[]): string[] {
+    const next = prev.filter((id) => !ids.includes(id)).concat([...new Set(ids)]);
+    return next.slice(Math.max(0, next.length - HIDDEN_RUNS_CAP));
+}
+
 // startedRunsText is what the header says for them (startedRunsShown): one run by its goal, marked when it was
 // cancelled, several by how many and how many still go
 export function startedRunsText(runs: readonly (Pick<Run, "goal" | "status"> & { createdts?: number })[]): string {
@@ -134,13 +171,14 @@ function runLink(run: OriginRun): { label: string; title: string } {
 export function originLinks(
     agentId: string,
     runs: Readonly<Record<string, OriginRun>>,
-    queue: readonly RunQueueEntry[]
+    queue: readonly RunQueueEntry[],
+    hidden: ReadonlySet<string> = new Set()
 ): OriginLink | null {
     const links: (OriginLink & { ts: number })[] = [];
     // a cancelled run is not counted among them; it stands for itself only while the session has nothing else
     const cancelled: (OriginLink & { ts: number })[] = [];
     for (const run of Object.values(runs)) {
-        if (run.originId === agentId) {
+        if (run.originId === agentId && !hidden.has(run.runId)) {
             const link = {
                 ...runLink(run),
                 target: { kind: "run", runId: run.runId } as const,
@@ -178,6 +216,23 @@ export function originLinks(
         title: `${links.length} runs · newest: ${newest.title}`,
         target: newest.target,
     };
+}
+
+/** Pure: the runs the session `agentId`'s chip counts (originLinks, with the same `hidden`) that a Hide would take off
+ *  it: the finished ones. Empty when the chip shows only work still going, so it offers no Hide. */
+export function hideableOriginRuns(
+    agentId: string,
+    runs: Readonly<Record<string, OriginRun>>,
+    hidden: ReadonlySet<string>
+): string[] {
+    return Object.values(runs)
+        .filter(
+            (r) =>
+                r.originId === agentId &&
+                !hidden.has(r.runId) &&
+                finishedRun({ status: r.dag?.status ?? r.status, land: r.land, landPath: r.landPath })
+        )
+        .map((r) => r.runId);
 }
 
 /** Pure: the name a run's row says it came `from`: the session that started it, while its tab is in the roster. Null

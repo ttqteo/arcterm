@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Reply to text selected in Chat's conversation (chatquote.ts): the passage goes into the agent's chat box as a quote,
-// the caret under it. Two ways in: a small ↩ button just above the selection's first line, at its right end (below
-// the last line when the pane has no room above), so it never covers the words it would quote or the ones after
-// them, and a right-click on the selection, which opens a menu of Reply and Copy. It takes any text
+// the caret under it. Two ways in: a small ↩ button diagonally off the selection's top-right corner (its bottom-right
+// when the pane has no room above), so it never covers the words it would quote or the ones after them, and a right-click on the selection, which opens a menu of Reply and Copy. It takes any text
 // in the conversation, Claude's reply, your message or a tool's output alike, and only while the agent has a chat box to
 // take it. A right-click off the selection, or with nothing selected, leaves the row's own menu (Copy text, Fork from
 // here…) as it was. The button is drawn fixed in a portal, so no row's layout or transform moves it, and follows the
@@ -21,6 +20,8 @@ import { chatBoxText, hasChatBox, replaceChatBox } from "./chatinsert";
 import { withQuote } from "./chatquote";
 
 const BTN = 22;
+// how far the button sits off the selection's corner, across and up
+const CORNER_GAP = 2;
 
 function editable(node: Node | null): boolean {
     const el = node instanceof Element ? node : node?.parentElement;
@@ -102,8 +103,8 @@ function reply(target: QuoteTarget, p: Picked) {
 export function QuoteMenu({ rootRef, target }: { rootRef: RefObject<HTMLElement>; target: QuoteTarget }) {
     const [at, setAt] = useState<{ top: number; left: number } | null>(null);
 
-    // the button: just above the selection's first line, its right edge on that line's end; below the last line when
-    // the pane has no room above
+    // the button: diagonally off the selection's top-right corner (its widest line's end), the bottom-right corner when
+    // the pane has no room above; held inside the pane
     useEffect(() => {
         const update = () => {
             const root = rootRef.current;
@@ -131,15 +132,17 @@ export function QuoteMenu({ rootRef, target }: { rootRef: RefObject<HTMLElement>
                 setAt(null);
                 return;
             }
-            const above = first.top - BTN - 4;
-            const [top, line] = above >= view.top + 4 ? [above, first] : [last.bottom + 4, last];
+            // diagonal off the selection's corner: its widest line's right end, a hair out
+            const right = Math.max(...rects.map((r) => r.right));
+            const above = first.top - BTN - CORNER_GAP;
+            const top = above >= view.top + 4 ? above : last.bottom + CORNER_GAP;
             if (top + BTN > view.bottom - 4) {
                 setAt(null);
                 return;
             }
             setAt({
                 top,
-                left: Math.min(Math.max(line.right - BTN, view.left + 8), view.right - BTN - 8),
+                left: Math.min(Math.max(right + CORNER_GAP, view.left + 8), view.right - BTN - 8),
             });
         };
         document.addEventListener("selectionchange", update);

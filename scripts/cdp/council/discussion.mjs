@@ -1064,55 +1064,30 @@ async function notRun(h, ctx, rec) {
 
 const FOLLOWUP_TEXT = "Does this hold on a Mac?";
 
-// the channel's Top, Latest and Back, on a channel held short so it scrolls: the reader on a message in the middle jumps
-// to the top, then to the latest, and Back puts that message where it was in the view (Top then Latest keeps the place
-// the first jump saved)
+// the channel's Top and Latest, on a channel held short so it scrolls: the reader in the middle jumps to the top, then
+// to the latest, and no Back pill shows
 async function jumps(h, rec) {
     const ch = sel("[data-council-channel]");
     const pill = (name) => `!!document.querySelector('[data-council-jump="${name}"]')`;
     const scrollTop = () => h.ev(`document.querySelector(${ch})?.scrollTop ?? -1`);
-    // the item at the view's top (its place in the channel) and how far below the view's top it sits
-    const reading = () =>
-        h.ev(`(() => {
-            const el = document.querySelector(${ch});
-            const top = el.getBoundingClientRect().top;
-            const items = [...el.querySelectorAll("[data-council-item]")];
-            const at = items.findIndex((e) => e.getBoundingClientRect().bottom - top > 24);
-            return at < 0 ? null : { id: at, offset: Math.round(items[at].getBoundingClientRect().top - top) };
-        })()`);
     await h.ev(`(() => { const el = document.querySelector(${ch}); el.style.flex = "none"; el.style.height = "260px"; })()`);
     const mid = await h.ev(
         `(() => { const el = document.querySelector(${ch}); el.scrollTop = Math.round((el.scrollHeight - el.clientHeight) / 2); return el.scrollTop; })()`
     );
-    const was = await reading();
-    const offered = await until(h, `${pill("top")} && ${pill("latest")} && !${pill("back")}`);
+    const offered = await until(h, `${pill("top")} && ${pill("latest")}`);
     await click(h, '[data-council-jump="top"]');
-    const backAtTop = await until(h, `${pill("back")} && !${pill("top")}`);
+    const leftTop = await until(h, `!${pill("top")} && ${pill("latest")}`);
     const atTop = await scrollTop();
     await h.shot("cdp-shots/council-discussion-jumps.png");
     await click(h, '[data-council-jump="latest"]');
-    const backAtEnd = await until(h, `${pill("back")} && ${pill("top")} && !${pill("latest")}`);
+    const leftEnd = await until(h, `${pill("top")} && !${pill("latest")}`);
     const atEnd = await h.ev(`(() => { const el = document.querySelector(${ch}); return el.scrollHeight - el.scrollTop - el.clientHeight; })()`);
-    await click(h, '[data-council-jump="back"]');
-    const gone = await until(h, `!${pill("back")}`);
-    const now = await reading();
-    const backTo = await scrollTop();
+    const noBack = await h.ev(`!document.querySelector('[data-council-jump="back"]')`);
     const focused = await h.ev(`document.activeElement === document.querySelector(${ch})`);
     rec(
-        "jumps: Top and Latest show off the ends, each jump offers Back, and Back puts the message read before Top then Latest where it was, the channel keeping focus",
-        mid > 260 &&
-            offered &&
-            backAtTop &&
-            atTop === 0 &&
-            backAtEnd &&
-            atEnd < 2 &&
-            gone &&
-            Math.abs(backTo - mid) <= 2 &&
-            was != null &&
-            now?.id === was.id &&
-            Math.abs(now.offset - was.offset) <= 2 &&
-            focused,
-        { mid, offered, backAtTop, atTop, backAtEnd, atEnd, gone, backTo, was, now, focused }
+        "jumps: Top and Latest show off the ends and take the reader there, no Back pill shows, the channel keeping focus",
+        mid > 260 && offered && leftTop && atTop === 0 && leftEnd && atEnd < 2 && noBack && focused,
+        { mid, offered, leftTop, atTop, leftEnd, atEnd, noBack, focused }
     );
     await h.ev(`(() => { const el = document.querySelector(${ch}); el.style.flex = ""; el.style.height = ""; })()`);
 }

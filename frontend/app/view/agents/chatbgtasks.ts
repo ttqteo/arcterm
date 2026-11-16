@@ -4,12 +4,14 @@
 // Pure: what the chat box's background line (chatbgline.tsx) shows for an agent: its running background shell
 // commands, its Monitors and its background (async) subagents, newest first, and the words of each. A foreground
 // subagent the agent waits on inside its turn is not background work, so a fan-out never makes the line come and go.
+// A shell that only waits on a council or another agent (isWaitShell) is left out: the council card or the agent's
+// own row already shows what it waits on.
 // A sleeping agent's Claude Code session has exited, and its background work with it: nothing shows. No React and no
 // Wave runtime imports.
 
 import { currentModelAlias } from "./chatfootermodel";
 import { shortModel } from "./modelname";
-import { backgroundTaskKind, backgroundTaskSubline } from "./monitortasks";
+import { backgroundTaskKind, backgroundTaskSubline, isWaitShell } from "./monitortasks";
 import type { SubagentVM } from "./session-models/sessionviewmodel";
 import type { BackgroundTask } from "./transcriptprojection";
 
@@ -45,7 +47,7 @@ export function chatBgItems(input: {
     }
     const items: ChatBgItem[] = [];
     for (const t of input.tasks ?? []) {
-        if (t.status !== "running") {
+        if (t.status !== "running" || isWaitShell(t)) {
             continue;
         }
         items.push({

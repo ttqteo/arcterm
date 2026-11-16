@@ -36,6 +36,7 @@ declare global {
         | "runqueue:changed"
         | "memhygiene:update"
         | "services:changed"
+        | "dume:changed"
         | "xmastree:changed"
     ;
 
@@ -75,6 +76,7 @@ declare global {
         { event: "runqueue:changed"; data?: RunQueueChangedData; } | 
         { event: "memhygiene:update"; data?: null; } | 
         { event: "services:changed"; data?: ServicesData; } | 
+        { event: "dume:changed"; data?: DumeStatusData; } | 
         { event: "xmastree:changed"; data?: XmasTreeData; }
     );
 

@@ -100,8 +100,8 @@ import { useInitiativeReread, usePlanReview } from "./planreviewstore";
 import { openRailSection } from "./railsection";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
-import { startedRunsShown } from "./runorigin";
-import { openRunOrigin, useRunOrigin, useRunsStartedBy } from "./runoriginstore";
+import { finishedRun, startedRunsShown } from "./runorigin";
+import { hiddenRunIdsAtom, hideStartedRuns, openRunOrigin, useRunOrigin, useRunsStartedBy } from "./runoriginstore";
 import { runQueueAtom } from "./runqueuestore";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
@@ -357,7 +357,7 @@ const NO_RUN = atom<Run | undefined>(undefined);
 // The one run link (headermodel.runLink): a worker's or stage session's way back to its lead, a lead's (or a Quick run's
 // agent's) own run, or the runs a session started with `wsh runs start`. A click focuses the lead, opens the one run, or
 // opens the run menu in sections: this run, the session it was started from, the runs this session started. A cancelled
-// run is neither counted nor listed (startedRunsShown).
+// run is neither counted nor listed (startedRunsShown), nor one the person hid with the × beside the link.
 function RunLinkItem({
     model,
     agent,
@@ -369,7 +369,8 @@ function RunLinkItem({
     lineage: ReturnType<typeof useRunLineage>;
     width: HeaderWidth;
 }) {
-    const started = startedRunsShown(useRunsStartedBy(agent));
+    const hiddenRuns = useAtomValue(hiddenRunIdsAtom);
+    const started = startedRunsShown(useRunsStartedBy(agent).filter((r) => !hiddenRuns.has(r.oid)));
     // a worker's or stage session's way back is its lead
     const back = lineage?.kind === "worker" || lineage?.kind === "stage" ? lineage : null;
     // a lead's run, or a Quick run's agent's: a worker's or stage session's run is its task's, not its own
@@ -401,6 +402,8 @@ function RunLinkItem({
                     items.push({
                         label: row.label,
                         sublabel: row.meta,
+                        // the menu cuts a long goal to one line; the whole of it on hover
+                        title: row.label,
                         enabled: target != null,
                         attrs: { "data-run-menu-row": section.head },
                         click:
@@ -418,20 +421,46 @@ function RunLinkItem({
     const Icon = link.icon === "up" ? CornerLeftUp : Workflow;
     const text = width === "wide" ? link.text : link.short;
     const clickable = link.click.kind !== "none";
+    // only a session's started runs can be hidden: a lead's own run and a worker's way back are not the person's to drop
+    const hideable =
+        back == null && ownRunId == null
+            ? started
+                  .filter((r) => finishedRun({ status: r.status, land: r.land, landPath: r.landpath }))
+                  .map((r) => r.oid)
+            : [];
+    const hideLabel = hideable.length === 1 ? "Hide the finished run" : `Hide the ${hideable.length} finished runs`;
     return (
-        <button
-            type="button"
-            data-run-link={link.click.kind}
-            aria-haspopup={link.click.kind === "menu" ? "menu" : undefined}
-            onClick={clickable ? onClick : undefined}
-            disabled={!clickable}
-            title={link.title}
-            className="inline-flex flex-none cursor-pointer items-center gap-[5px] text-accent-soft hover:underline disabled:cursor-default disabled:text-muted disabled:no-underline"
-        >
-            <Icon size={12} strokeWidth={2} aria-hidden className="flex-none" />
-            <span className={cn(link.mono && "font-mono text-[10.5px]")}>{text}</span>
-            {link.click.kind === "menu" ? <ChevronDown size={11} strokeWidth={2} aria-hidden /> : null}
-        </button>
+        // a worker's way back reads as its lead's name, which is often a whole run goal: capped and cut to one line, the
+        // whole of it on hover, so it never runs over the project or under the view switch
+        <span className="group/runlink inline-flex min-w-[48px] max-w-[220px] shrink items-center gap-[3px]">
+            <button
+                type="button"
+                data-run-link={link.click.kind}
+                aria-haspopup={link.click.kind === "menu" ? "menu" : undefined}
+                onClick={clickable ? onClick : undefined}
+                disabled={!clickable}
+                title={link.title}
+                className="inline-flex min-w-0 shrink cursor-pointer items-center gap-[5px] text-accent-soft hover:underline disabled:cursor-default disabled:text-muted disabled:no-underline"
+            >
+                <Icon size={12} strokeWidth={2} aria-hidden className="flex-none" />
+                <span className={cn("min-w-0 truncate", link.mono && "font-mono text-[10.5px]")}>{text}</span>
+                {link.click.kind === "menu" ? (
+                    <ChevronDown size={11} strokeWidth={2} aria-hidden className="flex-none" />
+                ) : null}
+            </button>
+            {hideable.length > 0 ? (
+                <button
+                    type="button"
+                    data-run-link-hide
+                    title={hideLabel}
+                    aria-label={hideLabel}
+                    onClick={() => hideStartedRuns(hideable)}
+                    className="inline-flex flex-none cursor-pointer items-center rounded-[3px] text-muted opacity-0 hover:text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover/runlink:opacity-100"
+                >
+                    <X size={11} strokeWidth={2} aria-hidden />
+                </button>
+            ) : null}
+        </span>
     );
 }
 

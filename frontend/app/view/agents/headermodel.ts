@@ -109,7 +109,13 @@ export function runLink(input: RunLinkInput): RunLink | null {
             text: lead ?? lineage.runTitle ?? "no lead",
             short: "lead",
             mono: false,
-            title: lead != null ? `Go to the lead, ${lead}` : "The run's lead is not open",
+            // the header cuts a long name to one line, so the title carries the whole of it
+            title:
+                lead != null
+                    ? `Go to the lead, ${lead}`
+                    : lineage.runTitle != null
+                      ? `${lineage.runTitle}: the run's lead is not open`
+                      : "The run's lead is not open",
             click: lead != null ? { kind: "lead" } : { kind: "none" },
         };
     }

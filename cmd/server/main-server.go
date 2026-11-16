@@ -113,6 +113,7 @@ var snapshotBootSkips = []string{
 	"memhygiene.StartSweep",
 	"wshserver.StartCouncilRunner",
 	"wshserver.StartRunQueue",
+	"wshserver.StartDumeLoop",
 }
 
 // snapshotSkips is whether the boot call name stays off: only in a snapshot store, and only for a name in
@@ -647,6 +648,10 @@ func main() {
 	// Settings → Storage: a scan after a short delay, then the daily auto-clean when storage:autoclean is on
 	if !snapshotSkips("wshserver.StartStorage") { // its auto-clean removes worktrees, old sessions and package caches on the real machine
 		wshserver.StartStorage(context.Background())
+	}
+	// DUM-E: in the last hour of a 5h window with quota left, sonnet works the chunks owned by dum-e; dume:enabled is off by default
+	if !snapshotSkips("wshserver.StartDumeLoop") { // it starts runs in real checkouts
+		wshserver.StartDumeLoop(context.Background())
 	}
 	// a week after an engine session (task, review, stage) ends, its stored prompt keeps only its first line: 5 min
 	// after start, then daily

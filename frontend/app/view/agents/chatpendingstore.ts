@@ -30,7 +30,7 @@ export function addPending(
     busy: boolean,
     waking = false
 ): string {
-    const p = pendingMessage(`pending-${++nextId}`, text, entries, Date.now(), busy, waking);
+    const p = pendingMessage(`pending-${++nextId}`, text, entries, Date.now(), busy, waking, sentHistory(agentId));
     const m = new Map(globalStore.get(pendingAtom));
     // the ones the transcript has long since caught up with go too, so the list never grows over a long session
     m.set(agentId, [...(m.get(agentId) ?? NONE).filter((q) => Date.now() - q.sentAt < PENDING_QUEUED_MAX_MS), p]);

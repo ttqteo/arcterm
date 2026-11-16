@@ -109,6 +109,11 @@ func TestSummaryByTool(t *testing.T) {
 		{"Agent", `{"description":"Scan the docs","subagent_type":"Explore","model":"haiku","prompt":"p"}`, "Scan the docs (Explore on haiku)"},
 		{"Task", `{"description":"Find the call sites","prompt":"p"}`, "Find the call sites (general-purpose)"},
 		{"Agent", `{"prompt":"p"}`, `Agent {"prompt":"p"}`},
+		// an artifact: what it does and to what, its link or the file it publishes
+		{"Artifact", `{"action":"delete","url":"https://claude.ai/artifact/AEM9"}`, "delete https://claude.ai/artifact/AEM9"},
+		{"Artifact", `{"file_path":"C:\\s\\audit.html","icon":"chart"}`, `publish C:\s\audit.html`},
+		{"Artifact", `{"action":"publish","url":"https://claude.ai/artifact/X","file_path":"/s/a.html"}`, "publish /s/a.html → https://claude.ai/artifact/X"},
+		{"Artifact", `{"icon":"chart"}`, `Artifact {"icon":"chart"}`},
 		// a missing field falls back to the tool and its input
 		{"Bash", `{}`, `Bash {}`},
 		{"Edit", `{"old_string":"x"}`, `Edit {"old_string":"x"}`},
@@ -130,6 +135,22 @@ func TestSummaryByTool(t *testing.T) {
 	}
 	if got := Summary("ExitPlanMode", nil); got != "ExitPlanMode" {
 		t.Errorf("Summary with no input = %q, want the bare tool name", got)
+	}
+}
+
+func TestScreenPickTable(t *testing.T) {
+	// the Artifact dialogs are a No/Yes list with the cursor on No, so `1` would answer No
+	if !ScreenPick("Artifact") || Answerable("Artifact") {
+		t.Error("Artifact must be picked off the screen, never answered with `1`")
+	}
+	for _, name := range []string{"Bash", "ExitPlanMode", "mcp__x__y", ""} {
+		if ScreenPick(name) {
+			t.Errorf("ScreenPick(%q) = true, want false", name)
+		}
+	}
+	r := MakeRegistry()
+	if req := r.Raise(testORef, "Artifact", json.RawMessage(`{"action":"delete"}`), 1); !req.ScreenPick || req.Answerable {
+		t.Errorf("raised Artifact request = %+v, want screenpick only", req)
 	}
 }
 

@@ -686,6 +686,12 @@ func DocPdfFindCommand(w *wshutil.WshRpc, data wshrpc.CommandDocPdfFindData, opt
 	return resp, err
 }
 
+// command "dumestatus", wshserver.DumeStatusCommand
+func DumeStatusCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.DumeStatusData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.DumeStatusData](w, "dumestatus", nil, opts)
+	return resp, err
+}
+
 // command "effortbackfillbase", wshserver.EffortBackfillBaseCommand
 func EffortBackfillBaseCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortBackfillBaseData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEffortBackfillBaseRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEffortBackfillBaseRtnData](w, "effortbackfillbase", data, opts)

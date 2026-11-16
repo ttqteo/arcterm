@@ -49,6 +49,7 @@ type WshRpcInterface interface {
 	RunCommands
 	RunQueueCommands
 	RunStartCommands
+	DumeCommands
 	DagCommands
 	JobQueueCommands
 	MachineCommands

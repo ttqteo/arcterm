@@ -6,7 +6,8 @@
 // chat-brainstorm-review (chatbrainstormrun.tsx shares `RunCardBox`), now drawn at the `wsh runs start` call that started
 // a run: the run's name, its kind and its stage, updated in place, and Open run. A start the run queue still holds is the
 // same card in its own `Queued` stage, and moves to the run's stage when the queue starts it. When the run is over
-// (landed, complete, cancelled) or its `[arc] Run … landed|held` message came, the card folds in place into a ✓ row.
+// (landed, complete, cancelled) or its `[arc] Run … landed|held` message came, the card folds in place into a ✓ row; a
+// landed run that still holds sessions offers ✓ Close run at that row's end (landedclose.tsx).
 
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
@@ -20,6 +21,8 @@ import { runCardView, runDoneLine } from "./chatbrainstorm";
 import { CardShell, DoneRow, FOCUS_RING, SMALL_BTN, type CardState } from "./chatbrainstormparts";
 import { queuedState, runBody, runTag, type QueuedState, type RunBody } from "./chatruncardmodel";
 import { queuedLabel, runCardFolded, runEndedLine, type RunCardSlot, type RunEnded } from "./chatruncards";
+import { landedCloseSuggestion } from "./donesuggest";
+import { LandedClose, useRunTabIds } from "./landedclose";
 import { useRunInfo } from "./runlineagestore";
 import { queuedRowsAtom, runQueueAtom, runQueueStartedAtom, useRunQueueFeed } from "./runqueuestore";
 import type { StageTone } from "./runstage";
@@ -168,6 +171,8 @@ export function ChatRunCard({
     const runId = waiting ? null : (slot.runId ?? (queued?.view.state === "started" ? queued.view.runId : null));
     const read = useRunInfo(runId);
     const view = runCardView(read.run);
+    // a landed run that still holds sessions offers ✓ Close run on its ✓ row (a committed agent's Close, for a run)
+    const landedClose = landedCloseSuggestion(read.run, useRunTabIds(model, runId).length);
     let card: ReactNode = null;
     if (waiting) {
         const blocked = queued.view.state === "blocked";
@@ -193,6 +198,7 @@ export function ChatRunCard({
                 kind="run"
                 head={ended != null ? runEndedLine(runId, ended) : runDoneLine(view)}
                 detail={ended?.text}
+                action={landedClose ? <LandedClose model={model} run={read.run} variant="button" /> : undefined}
             />
         ) : (
             <RunCardBox

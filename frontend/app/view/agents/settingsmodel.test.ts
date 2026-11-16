@@ -225,6 +225,7 @@ describe("settingsSections", () => {
             "runs:wakeorigin",
             "power:keepawake",
             "jobs:mode",
+            "dume:enabled",
             "tokengate:enabled",
             "tokengate:sharepct",
             "tokengate:windowpct",
@@ -286,7 +287,7 @@ describe("settings pages", () => {
             "general/startup", "general/menubar", "general/notifications",
             "appearance/theme", "appearance/colors", "appearance/fonts", "appearance/agentrows", "appearance/chat",
             "agents/claudeaccount", "agents/sleep", "agents/flags",
-            "runs/runs", "runs/whilework", "runs/tokenburn",
+            "runs/runs", "runs/whilework", "runs/dume", "runs/tokenburn",
             "terminal/text", "terminal/cursor", "terminal/behavior",
             "headless/runtime", "headless/openrouter",
             "jarvis/form", "jarvis/behaviour", "jarvis/folding", "jarvis/office",
@@ -317,6 +318,7 @@ describe("settings pages", () => {
         expect(cards["agents/flags"].slice(0, 2)).toEqual(["newagent.remember", "newagent.runtime"]);
         expect(cards["runs/runs"]).toEqual(["run.route", "runs.maxactive", "runs.wakeorigin"]);
         expect(cards["runs/whilework"]).toEqual(["runs.keepawake", "runs.heavyjobs"]);
+        expect(cards["runs/dume"]).toEqual(["dume.enabled"]);
         expect(cards["runs/tokenburn"]).toEqual([
             "tokengate.enabled", "tokengate.sharepct", "tokengate.windowpct", "tokengate.agents", "tokengate.weekpct", "tokengate.sessionpct",
         ]);
@@ -358,8 +360,8 @@ describe("settings pages", () => {
         expect(new Set(ids).size).toBe(ids.length);
         // today's 60, the nine rows the reorganization added, the two compaction rows, the pet's stay row, Chat's fold
         // , the agent row's RAM, the pet's form and hologram size, and About's build commit, less the two Radar rows
-        // that went with Radar
-        expect(ids).toHaveLength(75 + RUNTIME_FLAGS.claude.length);
+        // that went with Radar, plus DUM-E's toggle
+        expect(ids).toHaveLength(76 + RUNTIME_FLAGS.claude.length);
     });
 
     it("finds moved rows by search", () => {

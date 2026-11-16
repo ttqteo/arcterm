@@ -141,6 +141,9 @@ type SettingsType struct {
 	RunsMaxActive  *int  `json:"runs:maxactive,omitempty"`  // active runs before a queued start waits (pkg/runqueue); unset is 3, 0 is no cap
 	RunsWakeOrigin *bool `json:"runs:wakeorigin,omitempty"` // message the session that started a run when it lands; unset is true
 
+	DumeClear   bool  `json:"dume:*,omitempty"`
+	DumeEnabled *bool `json:"dume:enabled,omitempty"` // DUM-E spends the 5h window's leftover on chunks owned by dum-e (pkg/dume); unset is off
+
 	PowerClear     bool  `json:"power:*,omitempty"`
 	PowerKeepAwake *bool `json:"power:keepawake,omitempty"` // hold off the Mac's idle sleep while work runs (pkg/keepawake); unset is true
 }

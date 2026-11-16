@@ -436,6 +436,20 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                     ],
                 },
                 {
+                    id: "dume",
+                    label: "DUM-E",
+                    rows: [
+                        {
+                            id: "dume.enabled",
+                            title: "Spend the leftover 5h window on chores",
+                            desc: "In the last hour before the 5-hour window resets, with 30% or more left and the week under pace, sonnet works the initiative chunks you gave owner dum-e, one at a time, each on its own branch. Nothing lands until you merge it.",
+                            key: "dume:enabled",
+                            scope: "synced",
+                            config: true,
+                        },
+                    ],
+                },
+                {
                     id: "tokenburn",
                     label: "Token burn",
                     rows: [

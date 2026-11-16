@@ -70,6 +70,7 @@ import { canSendNow, compactingNow, SEND_NOW_KEYS, turnStatsLabel, workingText }
 import { setChatMode, useChatMode } from "./chatmodestore";
 import {
     btwQuestion,
+    landedIds,
     pendingLine,
     pendingStill,
     queuedBubbleUp,
@@ -78,7 +79,7 @@ import {
     type PendingMessage,
 } from "./chatpending";
 import { useLostBash } from "./chatlostbashstore";
-import { usePending } from "./chatpendingstore";
+import { dropPendingIds, sentHistory, usePending } from "./chatpendingstore";
 import { risesFromBox } from "./chatsentrise";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import { SleepRunRows } from "./chatsleepbashrows";
@@ -108,6 +109,7 @@ import { useTranscriptWindow } from "./railtranscript";
 import { useBrainstormQueue } from "./runqueuestore";
 import { runtimeLogo } from "./runtimelogo";
 import { runtimeMeta } from "./runtimemeta";
+import { ScreenDialogCard } from "./screendialogcard";
 import { shipGitAtom } from "./shipstore";
 import { useStickToBottom } from "./sticktobottom";
 import { turnStats, type TurnStats } from "./transcriptprojection";
@@ -664,9 +666,16 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     // the messages sent from the box that the transcript does not hold yet; re-read each second while any shows, for the
     // two-minute limit and the idle one (a message cleared with Esc in the terminal never lands: PENDING_IDLE_MS)
     const sent = usePending(agent.id);
+    // a message the transcript took is forgotten, so its bubble never comes back when a rewind later drops its record
+    useEffect(() => {
+        const landed = landedIds(sent, entries, sentHistory(agent.id));
+        if (landed.length > 0) {
+            dropPendingIds(agent.id, landed);
+        }
+    }, [sent, entries, agent.id]);
     const [now, setNow] = useState(() => Date.now());
     const idleSince = useIdleSince(agent.state === "idle");
-    const pending = pendingStill(sent, entries, now, idleSince);
+    const pending = pendingStill(sent, entries, now, idleSince, sentHistory(agent.id));
     const showsPending = pending.length > 0;
     // the live reply, which ChatConversation reads itself so its ticks redraw only the conversation: held back while the
     // message that started its turn has not landed (its bubble is drawn under the conversation, and the reply belongs
@@ -967,6 +976,12 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                         ) : null}
                         <PermissionCard
                             agent={agent}
+                            askShown={asking}
+                            onOpenTerminal={() => setChatMode(agent.id, "terminal")}
+                        />
+                        <ScreenDialogCard
+                            agent={agent}
+                            entries={entries}
                             askShown={asking}
                             onOpenTerminal={() => setChatMode(agent.id, "terminal")}
                         />

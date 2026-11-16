@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // A pending land's line under its run in the Agent tree, and the peek it opens. The line says the step and how long
-// it has run, or what it waits on in the heavy-job queue (landprogress.ts); hovering it shows the lines another agent
-// needs to take the land over. A press opens the peek beside the tree: the same lines, Run now while the step waits
-// in the queue, Jobs, and Copy for an agent. Esc and a press outside close it. Mounted only while the land is pending,
+// it has run, or what it waits on in the heavy-job queue (landprogress.ts); hovering it shows that line in full. A
+// press opens the peek beside the tree: the step's state, the run and its base, the labelled fields (commands as
+// code), Run now while the step waits in the queue, Jobs, and Copy for an agent (the hand-over lines). Esc and a press outside close it. Mounted only while the land is pending,
 // so only those lines tick with the 1s clock.
 
 import { jobQueueAtom, toggleJobQueue } from "@/app/cockpit/jobqueuestore";
@@ -24,8 +24,10 @@ import {
 import { useAtomValue } from "jotai";
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import type { AgentsViewModel } from "./agents";
+import type { ShownState } from "./bgactivity";
 import { landProgress, type LandProgress } from "./landprogress";
 import type { RunInfo } from "./runlineage";
+import { StatusDot } from "./statusdot";
 
 // beside the tree, past its own 8px padding, as BackgroundTaskPeek sits
 const PEEK_GAP_PX = 16;
@@ -65,13 +67,23 @@ function PeekButton({ label, onClick, testId }: { label: string; onClick: () => 
     );
 }
 
+// a step running (or the merge being readied) works; one queued waits, and a RAM wait is the warning the line says
+function dotState(progress: LandProgress): ShownState {
+    if (progress.wait === "ram") {
+        return "asking";
+    }
+    return progress.wait != null ? "waiting" : "working";
+}
+
 function LandPeek({
     model,
+    run,
     progress,
     anchor,
     onClose,
 }: {
     model: AgentsViewModel;
+    run: RunInfo;
     progress: LandProgress;
     anchor: HTMLElement;
     onClose: () => void;
@@ -126,25 +138,53 @@ function LandPeek({
                 data-testid="land-peek"
                 data-land-wait={progress.wait ?? ""}
                 onKeyDown={onKeyDown}
-                className="z-[60] w-[420px] overflow-hidden rounded-[9px] border border-edge-strong bg-surface-raised shadow-popover-lg focus:outline-none"
+                className="z-[60] w-[400px] overflow-hidden rounded-[9px] border border-edge-strong bg-surface-raised shadow-popover-lg focus:outline-none"
             >
-                <div
-                    data-testid="land-peek-title"
-                    className={cn(
-                        "px-[10px] pt-[8px] pb-[6px] text-[12px] font-semibold",
-                        progress.wait === "ram" ? "text-warning" : "text-working"
-                    )}
-                >
-                    {progress.text}
+                <div className="flex items-start gap-[8px] px-[12px] pt-[10px] pb-[9px]">
+                    <StatusDot state={dotState(progress)} pulse className="mt-[5px]" />
+                    <div className="min-w-0 flex-1">
+                        <div
+                            data-testid="land-peek-title"
+                            className={cn(
+                                "text-[12.5px] leading-[1.35] font-semibold",
+                                progress.wait === "ram" ? "text-warning" : "text-primary"
+                            )}
+                        >
+                            {progress.text}
+                        </div>
+                        <div className="mt-[2px] flex min-w-0 items-center gap-[5px] text-[11px] text-muted">
+                            <span>Run</span>
+                            <span className="font-mono text-secondary" title={run.runId}>
+                                {run.runId.slice(0, 8)}
+                            </span>
+                            <span aria-hidden>→</span>
+                            <span className="truncate font-mono text-secondary">{progress.base}</span>
+                        </div>
+                    </div>
                 </div>
-                <div data-testid="land-peek-lines" className="space-y-[3px] px-[10px] pb-[8px]">
-                    {progress.lines.map((l) => (
-                        <div key={l} className="font-mono text-[10.5px] leading-[1.45] break-all text-secondary">
-                            {l}
+                <div
+                    data-testid="land-peek-lines"
+                    className="flex flex-col gap-[7px] border-t border-edge-mid px-[12px] py-[9px]"
+                >
+                    {progress.fields.map((f) => (
+                        <div key={f.label} className="flex min-w-0 items-baseline gap-[10px]">
+                            <span className="w-[54px] shrink-0 text-xxs font-medium tracking-wide text-muted uppercase">
+                                {f.label}
+                            </span>
+                            <div className="min-w-0 flex-1 text-[11.5px] leading-[1.45] text-secondary">
+                                {f.code ? (
+                                    <code className="rounded-[4px] border border-edge-faint bg-surface-code px-[5px] py-[1px] font-mono text-[10.5px] break-all text-code-inline">
+                                        {f.value}
+                                    </code>
+                                ) : (
+                                    <span className="[overflow-wrap:anywhere]">{f.value}</span>
+                                )}
+                                {f.note ? <div className="mt-[3px] text-[10.5px] text-muted">{f.note}</div> : null}
+                            </div>
                         </div>
                     ))}
                 </div>
-                <div className="flex items-center gap-[6px] border-t border-edge-mid px-[10px] py-[6px]">
+                <div className="flex items-center gap-[6px] border-t border-edge-mid px-[12px] py-[7px]">
                     {queued ? (
                         <PeekButton label="Run now" testId="land-peek-run-now" onClick={() => runNow(progress.job!)} />
                     ) : null}
@@ -168,7 +208,7 @@ function LandPeek({
     );
 }
 
-/** The run's line while its land is pending: a button whose title holds the hand-over lines, opening LandPeek. */
+/** The run's line while its land is pending: a button whose title holds the line in full, opening LandPeek. */
 export function LandLine({ model, run, className }: { model: AgentsViewModel; run: RunInfo; className?: string }) {
     const jobs = useAtomValue(jobQueueAtom)?.jobs;
     const now = useAtomValue(model.nowAtom);
@@ -184,7 +224,7 @@ export function LandLine({ model, run, className }: { model: AgentsViewModel; ru
                 type="button"
                 data-testid="land-line"
                 data-land-wait={progress.wait ?? ""}
-                title={progress.lines.join("\n")}
+                title={progress.tip}
                 aria-expanded={anchor != null}
                 onClick={(e) => {
                     // the run row's own press (select, fold) stays out of it
@@ -199,7 +239,9 @@ export function LandLine({ model, run, className }: { model: AgentsViewModel; ru
             >
                 {progress.text}
             </button>
-            {anchor != null ? <LandPeek model={model} progress={progress} anchor={anchor} onClose={close} /> : null}
+            {anchor != null ? (
+                <LandPeek model={model} run={run} progress={progress} anchor={anchor} onClose={close} />
+            ) : null}
         </>
     );
 }

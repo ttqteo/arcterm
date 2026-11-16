@@ -3,7 +3,14 @@
 
 import type { AgentAsk, AgentEntry, AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { describe, expect, it } from "vitest";
-import { keptMessages, messageRows, sidecarSnapshot } from "./sidecarsnapshot";
+import {
+    keptMessages,
+    messageRows,
+    scopeTiles,
+    sidecarSnapshot,
+    wallAgentIds,
+    type CockpitScope,
+} from "./sidecarsnapshot";
 import type { SidecarMessage } from "./sidecartypes";
 
 const NOW = 1_800_000_000_000;
@@ -375,5 +382,74 @@ describe("keptMessages", () => {
         const first = build([agent({ id: "a" })], { entries: { a: [say("one")] } });
         const second = build([agent({ id: "a" })], { kept: keptMessages(first) });
         expect(second.tiles[0].messages).toEqual(first.tiles[0].messages);
+    });
+});
+
+describe("wallAgentIds", () => {
+    const scope = (over: Partial<CockpitScope> = {}): CockpitScope => ({
+        now: NOW,
+        dismissed: new Set(),
+        backgrounded: new Set(),
+        projectFilter: "all",
+        liveOnly: false,
+        hidden: new Set(),
+        ...over,
+    });
+    const ids = (agents: AgentVM[], over: Partial<CockpitScope> = {}) => [...wallAgentIds(agents, scope(over))].sort();
+
+    it("shows the asking, the working and the agents idle for under 5 minutes, not the older idle ones", () => {
+        const agents = [
+            agent({ id: "ask", state: "asking" }),
+            agent({ id: "work", state: "working" }),
+            agent({ id: "fresh", idleSince: NOW - 60_000 }),
+            agent({ id: "old", idleSince: NOW - 6 * 3_600_000 }),
+            agent({ id: "never" }),
+            agent({ id: "asleep", idleSince: NOW - 2 * 86_400_000, sleeping: { since: NOW - 86_400_000 } } as AgentVM),
+        ];
+        expect(ids(agents)).toEqual(["ask", "fresh", "work"]);
+    });
+
+    it("leaves out a dismissed just-finished agent, the Background lane, the hidden and the terminals", () => {
+        const agents = [
+            agent({ id: "fresh", idleSince: NOW - 60_000 }),
+            agent({ id: "bg", state: "working" }),
+            agent({ id: "empty", state: "working" }),
+            agent({ id: "term", state: "working", kind: "terminal" } as AgentVM),
+            agent({ id: "work", state: "working" }),
+        ];
+        expect(
+            ids(agents, {
+                dismissed: new Set([`fresh:${NOW - 60_000}`]),
+                backgrounded: new Set(["bg"]),
+                hidden: new Set(["empty"]),
+            })
+        ).toEqual(["work"]);
+    });
+
+    it("a dismissal of an earlier idle episode does not hide the new one", () => {
+        expect(ids([agent({ id: "a", idleSince: NOW - 1000 })], { dismissed: new Set(["a:123"]) })).toEqual(["a"]);
+    });
+
+    it("follows the Cockpit's project filter and Live only", () => {
+        const agents = [
+            agent({ id: "arc", state: "working", project: "arcterm" }),
+            agent({ id: "arc-done", project: "arcterm", idleSince: NOW - 1000 }),
+            agent({ id: "thesis", state: "asking", project: "mit-thesis" }),
+        ];
+        expect(ids(agents, { projectFilter: "arcterm" })).toEqual(["arc", "arc-done"]);
+        expect(ids(agents, { liveOnly: true })).toEqual(["arc", "thesis"]);
+    });
+});
+
+describe("scopeTiles", () => {
+    it("keeps the named tiles in order and the whole roster's counts", () => {
+        const snap = build([
+            agent({ id: "a", state: "working" }),
+            agent({ id: "b" }),
+            agent({ id: "c", state: "asking" }),
+        ]);
+        const scoped = scopeTiles(snap, new Set(["a", "c"]));
+        expect(scoped.tiles.map((t) => t.id)).toEqual(["c", "a"]);
+        expect(scoped.counts).toEqual(snap.counts);
     });
 });

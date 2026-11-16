@@ -13,8 +13,7 @@
 //
 // An embedded page (iframe, embed, object) raises none: its title names it for a screen reader.
 //
-// Timing: a control's name shows at once; a detail (a sentence, or several lines) waits (titletip.ts tipDelay), so a
-// pointer crossing it on the way somewhere does not cover what the person is reading. Leaving before it shows cancels it.
+// Timing: every tip shows the moment the pointer arrives, a detail as much as a control's name.
 //
 // Placement: below the element, beside it in the nav rail, or whatever the nearest data-tip-placement says.
 //
@@ -26,7 +25,7 @@ import { autoUpdate, computePosition, flip, offset, shift, type Placement } from
 import { MotionConfig, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { tooltipReveal } from "./motiontokens";
-import { isFrameTag, keyDismissesTip, splitTitle, tipDelay, tooltipOrigin } from "./titletip";
+import { isFrameTag, keyDismissesTip, splitTitle, tooltipOrigin } from "./titletip";
 
 const STASH = "data-arc-title";
 
@@ -63,18 +62,9 @@ export function TitleTipHost() {
     const tipRef = useRef<HTMLDivElement>(null);
     const currentRef = useRef<HTMLElement | null>(null);
     const observerRef = useRef<MutationObserver | null>(null);
-    // a detail tip waiting to show (tipDelay)
-    const pendingRef = useRef<number | null>(null);
 
     useEffect(() => {
-        const cancelPending = () => {
-            if (pendingRef.current != null) {
-                window.clearTimeout(pendingRef.current);
-                pendingRef.current = null;
-            }
-        };
         const release = () => {
-            cancelPending();
             const el = currentRef.current;
             currentRef.current = null;
             observerRef.current?.disconnect();
@@ -122,18 +112,7 @@ export function TitleTipHost() {
             });
             observer.observe(el, { attributes: true, attributeFilter: ["title"] });
             observerRef.current = observer;
-            const delay = tipDelay(text);
-            if (delay === 0) {
-                setTip({ anchor: el, text, placement: placementFor(el) });
-                return;
-            }
-            // the title can change while it waits: the observer lifts the new text into the stash, read here
-            pendingRef.current = window.setTimeout(() => {
-                pendingRef.current = null;
-                if (currentRef.current === el && el.isConnected) {
-                    setTip({ anchor: el, text: el.getAttribute(STASH) ?? text, placement: placementFor(el) });
-                }
-            }, delay);
+            setTip({ anchor: el, text, placement: placementFor(el) });
         };
         const onOut = (e: PointerEvent) => {
             const el = currentRef.current;
@@ -147,7 +126,6 @@ export function TitleTipHost() {
         // screen, so a tip dropped on blur was never in the shot. Back in the window, the next pointer move
         // releases a tip the pointer has left.
         const dismiss = () => {
-            cancelPending();
             setTip(null);
         };
         const onKey = (e: KeyboardEvent) => {

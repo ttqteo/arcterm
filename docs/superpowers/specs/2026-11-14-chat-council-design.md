@@ -74,21 +74,31 @@ A button goes dead once pressed, until `council:changed` brings the new state.
 ### 2. Where the card sits (answer 6)
 
 While the council is queued, running or waiting on you, the card sits at the end of the conversation, above the
-composer, where the brainstorm card sits. When the council ends, the card leaves the end and its row (section 3) is
-drawn in place of the `wsh council start` tool row in the conversation.
+composer, where the brainstorm card sits. When the council ends, the card stays there and becomes its ended card
+(section 3); the `wsh council start` call stays a tool line in the work.
 
-### 3. When the council ends (answer 5; board `Council.dc.html`, states 4 and 5)
+Revised 2026-11-16 (board `chat-council/D-summary-panel.dc.html`): the ended row first replaced the start tool row, but
+an agent starts a council, waits in the background and works on, so its summary came many turns after the call and the
+row sat screens above it. After a compaction nothing near the summary said a council had run.
 
-- **Done** (state 4): one ✓ row, `✓ Council · <mode> · N directions|ideas · <elapsed>`, the feature dimmed, and
-  `Open report`. The row does not list the directions: the agent's own summary, right after it, is the content.
-- **Stopped, failed, not run** (state 5): the same row shape with its own mark (■, !, –), what happened
-  (`stopped in round N`, `failed in round N`, `not run`), the reason in one line (the council's error, or the
-  refusal's), and `Open council`.
+### 3. When the council ends (revised 2026-11-16; board `D-summary-panel.dc.html`)
+
+- **Done**: the ended card, in the brainstorm run card's shape: `Council · <mode>` with `✓ Done · N directions|ideas ·
+  <elapsed>`, `Open report ↗`, the feature as its title, and the council's one-line answer (`summary.answer`) under it
+  with a green dot.
+- **Stopped, failed, not run**: the same card with its own mark (■, !, –), what happened (`Stopped in round N`,
+  `Failed in round N`, `Not run`), the reason in one line (the council's error, or the refusal's), and
+  `Open council ↗`.
+- **The agent's summary**: the first prose the agent writes after the report reaches it (a `wsh council wait|show <id>`
+  call that printed it, or the <task-notification> of a background `wsh council wait <id>`, joined by tool-use id)
+  draws inside a council panel in the accent tint: a header `Council · <mode> · N directions · <elapsed>` with
+  `Open report`, then the prose as written (chatcouncil.ts `councilSummaries`). A council with no report yet, or not
+  loaded, leaves the prose plain.
 - **Running again** (builder question 2): done, stopped, failed and not-run are not final in the runner (a follow-up
   or re-summarize after done, `runner.go:2822` and `:3068`; a resume or retry, `:2886` and `:3225`; a not-run council
-  started from the app). A council that has ended once in this conversation stays a row at its start tool row for
-  good: the row updates its mark and text (running again, the follow-up round) and keeps `Open council`, but never
-  returns to the end of the conversation. The model needs the "has ended once" memory for this; the builder picks
+  started from the app). A council that has ended once in this conversation stays its ended card for good: the card
+  updates its mark and text (Running again, the follow-up round) and keeps `Open council`, but never turns back into
+  the live card. The model needs the "has ended once" memory for this; the builder picks
   where it lives.
 
 ### 4. The Doc review card (answer 4; board `DocReview.dc.html`, state 1)
@@ -159,10 +169,9 @@ did not name.
    no persisted store for a fact the council mostly carries itself. Accepted gap: a council stopped, then resumed after
    an app restart, returns to the end of the conversation until it ends again.
 4. **A start call outside the loaded transcript draws nothing.** Chat finds councils only by their start call, so a
-   council whose call is in an earlier page not loaded yet (or compacted away) has no card and no row; Show earlier
-   brings its row back. Why: a council takes minutes while its agent sits in `wsh council wait`, so a live council's
-   call is in the loaded tail in practice, and drawing an ended row at the end would leave it there for good.
-5. **Order at the end:** the trailing run cards, then the live council cards (oldest call first), then the brainstorm
+   council whose call is in an earlier page not loaded yet has no card. Why: a council takes minutes while its agent
+   sits in `wsh council wait`, so a live council's call is in the loaded tail in practice.
+5. **Order at the end:** the trailing run cards, then the council cards, live or ended (oldest call first), then the brainstorm
    card. A council's live card is drawn by the conversation, not by the dock, so it scrolls with the transcript as the
    brainstorm card does.
 6. **Card state from the council model's own words.** The card reuses `councilmodel.ts`: `headerChip`'s step word

@@ -3,13 +3,18 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    finishedRun,
+    HIDDEN_RUNS_CAP,
+    hideableOriginRuns,
     originLinks,
     originName,
     originRunInfo,
+    parseHiddenRuns,
     runOrigin,
     runsStartedBy,
     startedRunsShown,
     startedRunsText,
+    withHiddenRuns,
     type OriginRun,
 } from "./runorigin";
 
@@ -317,5 +322,65 @@ describe("originName", () => {
 
     it("is nothing once the origin tab is gone", () => {
         expect(originName({ originId: "tab-gone" }, agents)).toBeNull();
+    });
+});
+
+describe("hiding finished runs from the chip", () => {
+    const run = (runId: string, more: Partial<OriginRun> = {}): OriginRun => ({
+        runId,
+        title: `Title ${runId}`,
+        originId: "tab-a",
+        createdTs: 100,
+        ...more,
+    });
+    const byId = (...runs: OriginRun[]) => Object.fromEntries(runs.map((r) => [r.runId, r]));
+    const landed = { state: "landed" } as RunLand;
+    const held = { state: "held" } as RunLand;
+
+    it("counts a run as finished once it landed, failed, was cancelled, or is done with nothing to land", () => {
+        expect(finishedRun({ status: "done", land: landed })).toBe(true);
+        expect(finishedRun({ status: "failed" })).toBe(true);
+        expect(finishedRun({ status: "cancelled" })).toBe(true);
+        expect(finishedRun({ status: "done" })).toBe(true);
+    });
+
+    it("keeps a run that still waits: running, a held land, a done branch not landed yet", () => {
+        expect(finishedRun({ status: "executing" })).toBe(false);
+        expect(finishedRun({ status: "done", land: held })).toBe(false);
+        expect(finishedRun({ status: "done", landPath: "/w/run" })).toBe(false);
+    });
+
+    it("leaves hidden runs out of the chip, and drops the chip when they were all there was", () => {
+        const runs = byId(run("r1", { status: "done", land: landed }), run("r2", { status: "done", land: landed }));
+        expect(originLinks("tab-a", runs, [])?.label).toBe("2 runs");
+        expect(originLinks("tab-a", runs, [], new Set(["r1"]))?.label).toBe("merged");
+        expect(originLinks("tab-a", runs, [], new Set(["r1", "r2"]))).toBeNull();
+    });
+
+    it("offers the finished runs of that session to hide, not running ones, other sessions' or hidden ones", () => {
+        const runs = byId(
+            run("r1", { status: "done", land: landed }),
+            run("r2", { status: "executing" }),
+            run("r3", { status: "failed", originId: "tab-b" }),
+            run("r4", { status: "cancelled" })
+        );
+        expect(hideableOriginRuns("tab-a", runs, new Set()).sort()).toEqual(["r1", "r4"]);
+        expect(hideableOriginRuns("tab-a", runs, new Set(["r1"]))).toEqual(["r4"]);
+    });
+
+    it("reads the stored list, and anything broken as none", () => {
+        expect(parseHiddenRuns('["a","b"]')).toEqual(["a", "b"]);
+        expect(parseHiddenRuns('["a",3]')).toEqual(["a"]);
+        expect(parseHiddenRuns("{")).toEqual([]);
+        expect(parseHiddenRuns(null)).toEqual([]);
+    });
+
+    it("adds each id once, newest last, and keeps only the newest past the cap", () => {
+        expect(withHiddenRuns(["a", "b"], ["b", "c", "c"])).toEqual(["a", "b", "c"]);
+        const full = Array.from({ length: HIDDEN_RUNS_CAP }, (_, i) => `r${i}`);
+        const next = withHiddenRuns(full, ["new"]);
+        expect(next).toHaveLength(HIDDEN_RUNS_CAP);
+        expect(next[0]).toBe("r1");
+        expect(next.at(-1)).toBe("new");
     });
 });

@@ -27,7 +27,29 @@ const (
 	permAllowKey       = "1"
 	permAllowSecondKey = "2" // the second option: Yes, and don't ask again
 	permDenyKey        = "\x1b"
+	permDownKey        = "\x1b[B"
+	permUpKey          = "\x1b[A"
+	permEnterKey       = "\r"
+	// the most rows a screen pick moves: a No/Yes list is two, the longest consent list a handful
+	permMaxMoves = 8
 )
+
+// permKeyGap separates the keys of a screen pick, so the TUI reads each arrow and the Enter as keys of their own
+// rather than one escape sequence it does not know.
+var permKeyGap = 30 * time.Millisecond
+
+// screenPickKeys is the keys of a screen pick: Moves arrows, down when positive, then Enter.
+func screenPickKeys(moves int) []string {
+	key := permDownKey
+	if moves < 0 {
+		key, moves = permUpKey, -moves
+	}
+	keys := make([]string, 0, moves+1)
+	for range moves {
+		keys = append(keys, key)
+	}
+	return append(keys, permEnterKey)
+}
 
 // errNotAnswerable is the refusal of an Allow on a prompt whose choices the chat does not know (ExitPlanMode's plan
 // menu, an MCP tool's): the person answers it in the terminal.
@@ -101,24 +123,37 @@ func answerPermission(data wshrpc.CommandAgentPermissionAnswerData, blockId stri
 	if data.Choice < 0 || data.Choice > 2 {
 		return fmt.Errorf("choice %d is out of range: 0, 1 or 2", data.Choice)
 	}
+	if data.Screen && (data.Choice != 0 || data.Moves < -permMaxMoves || data.Moves > permMaxMoves) {
+		return fmt.Errorf("a screen pick moves at most %d rows and picks no choice", permMaxMoves)
+	}
 	permLock.Lock()
 	defer permLock.Unlock()
 	req, ok := agentperm.GlobalRegistry.ClaimHead(data.ORef, data.Id)
 	if !ok {
 		return agentperm.ErrNotPending
 	}
-	if data.Allow && !req.Answerable {
+	// a ScreenPick prompt is allowed only by a screen pick, and only it takes one: `1` is No on its list
+	if data.Allow && (data.Screen != req.ScreenPick || (!req.ScreenPick && !req.Answerable)) {
 		return errNotAnswerable
 	}
-	key := permDenyKey
+	keys := []string{permDenyKey}
 	if data.Allow {
-		key = permAllowKey
-		if data.Choice == 2 {
-			key = permAllowSecondKey
+		switch {
+		case data.Screen:
+			keys = screenPickKeys(data.Moves)
+		case data.Choice == 2:
+			keys = []string{permAllowSecondKey}
+		default:
+			keys = []string{permAllowKey}
 		}
 	}
-	if err := permSendInput(blockId, []byte(key)); err != nil {
-		return fmt.Errorf("typing the answer: %w", err)
+	for i, key := range keys {
+		if i > 0 {
+			time.Sleep(permKeyGap)
+		}
+		if err := permSendInput(blockId, []byte(key)); err != nil {
+			return fmt.Errorf("typing the answer: %w", err)
+		}
 	}
 	// Esc on the prompt rejects the request and ends the turn, so the rest of the queue goes with it
 	if data.Allow {

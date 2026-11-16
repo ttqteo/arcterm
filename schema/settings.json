@@ -248,6 +248,12 @@
         "runs:wakeorigin": {
           "type": "boolean"
         },
+        "dume:*": {
+          "type": "boolean"
+        },
+        "dume:enabled": {
+          "type": "boolean"
+        },
         "power:*": {
           "type": "boolean"
         },

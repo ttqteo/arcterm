@@ -97,6 +97,17 @@ export function dagProgressLabel(
     return { text, title: named };
 }
 
+/** Pure: a run line split for a narrow row, so a cut takes the stage word and never the count: "Working · 2/6" is
+ *  "Working" (may be cut) and " · 2/6" (always shown). A line whose part after the stage is not a count or a place
+ *  ("Final check · verifying…") stays whole, cut at its end. */
+export function splitProgressText(text: string): { head: string; tail: string } {
+    const at = text.indexOf(" · ");
+    if (at > 0 && /^#?\d/.test(text.slice(at + 3))) {
+        return { head: text.slice(0, at), tail: text.slice(at) };
+    }
+    return { head: text, tail: "" };
+}
+
 // runComplete is a run with nothing left to happen: landed, or done with nothing to land. a lead still wrapping up, a
 // land in flight or held, and a cancelled run are not complete.
 export function runComplete(run: Pick<RunInfo, "dag" | "status" | "land">): boolean {

@@ -409,6 +409,10 @@
 }
 
 :root {
+    /* every theme is dark (themes.ts): the browser-drawn parts — a <datalist>'s suggestions, the date and number
+       pickers, a select's list, unstyled scrollbars — draw dark too */
+    color-scheme: dark;
+
     --zoomfactor: 1;
     --zoomfactor-inv: 1;
 

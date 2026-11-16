@@ -285,14 +285,16 @@ function DirectionCard({
                 <span
                     data-council-tag
                     className={cn(
-                        "flex flex-none items-center gap-[5px] rounded-full px-2 py-[2px] text-[11px] font-semibold",
+                        // a long tag (two seats with long names) wraps inside the card instead of running past its
+                        // edge: the tag shrinks, and its corners stop being a pill once it takes two lines
+                        "flex min-w-0 items-start gap-[5px] rounded-[10px] px-2 py-[2px] text-[11px] font-semibold leading-[16px]",
                         row.tag === "Everyone agrees"
                             ? "bg-success/12 text-success-soft"
                             : "bg-askingbg text-warning-soft"
                     )}
                 >
-                    <Contrast size={12} aria-hidden />
-                    {row.tag}
+                    <Contrast size={12} aria-hidden className="mt-[2px] flex-none" />
+                    <span className="min-w-0">{row.tag}</span>
                 </span>
             </span>
             <span data-council-title className="text-[16.5px] font-semibold leading-[1.4] text-primary">

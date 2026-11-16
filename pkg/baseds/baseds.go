@@ -114,7 +114,10 @@ type AgentPermissionRequest struct {
 	ToolName   string `json:"toolname"`
 	Summary    string `json:"summary"`
 	Answerable bool   `json:"answerable"`
-	Ts         int64  `json:"ts"` // UnixMilli the request was raised
+	// ScreenPick: the prompt is a list whose order the chat reads off the terminal (the Artifact tool's No/Yes), so
+	// an Allow moves the cursor to its Yes and presses Enter instead of typing `1`
+	ScreenPick bool  `json:"screenpick,omitempty"`
+	Ts         int64 `json:"ts"` // UnixMilli the request was raised
 }
 
 // AgentPermissionData is the payload of Event_AgentPermission: the whole pending queue of one agent block,

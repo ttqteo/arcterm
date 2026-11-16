@@ -27,6 +27,7 @@ Mới bắt đầu thì đọc [Bắt đầu với arcterm](getting-started.md):
 |---|---|
 | [Orchestrator](orchestrator.md) | Quick, orchestrate từ goal hay plan file, review plan, merge và Verify, final stage, land, khôi phục, CLI |
 | [Plan file](plan-format.md) | Định dạng plan mà engine chạy: task, Depends on, Verify, Setup, Check, Final, Model |
+| [DUM-E](dume.md) | Dùng nốt quota 5 giờ còn dư: giao chunk của initiative, khi nào bắt đầu và dừng, branch để bạn land, `wsh dume status` |
 
 ## Agent và `wsh`
 

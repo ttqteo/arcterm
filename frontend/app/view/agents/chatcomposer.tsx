@@ -799,7 +799,7 @@ function ComposerBox({
         }
         const plan = takeBackPlan(
             key,
-            pendingStill(getPending(agent.id), entries ?? [], Date.now()),
+            pendingStill(getPending(agent.id), entries ?? [], Date.now(), null, sentHistory(agent.id)),
             entries,
             agent.state
         );
@@ -1403,7 +1403,16 @@ function ComposerBox({
                                         data-chat-stop
                                         aria-label="Stop (Esc)"
                                         title="Stop the agent (sends Esc)"
-                                        onClick={stop}
+                                        // the Esc key's path, not a bare Esc: a turn with no answer yet is rewound,
+                                        // and Claude Code puts its message back in its own box, out of sight, where
+                                        // the next send was typed onto it ("làm đibáo council đi", 2026-11-16).
+                                        // interrupt() takes it back into this box; when it does nothing (the agent
+                                        // is not working), the plain Esc stops it as before
+                                        onClick={() => {
+                                            if (!interrupt()) {
+                                                stop();
+                                            }
+                                        }}
                                         className="flex size-[34px] flex-none cursor-pointer items-center justify-center rounded-full bg-primary hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
                                     >
                                         <span aria-hidden className="size-[11px] rounded-[3px] bg-background" />
@@ -1603,7 +1612,7 @@ function SuggestChips({
                         const goes = c.kind === "next" && c.chunk != null && canGoOn;
                         const mark = chipIcon(c);
                         return (
-                            <motion.div key={c.text} {...part} className="min-w-0 shrink">
+                            <motion.div key={c.text} {...part} className="min-w-0 max-w-[340px] shrink">
                                 <Chip
                                     icon={mark != null ? SUGGEST_ICONS[mark] : undefined}
                                     label={c.text}

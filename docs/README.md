@@ -25,7 +25,7 @@ lists what each version changed for the user.
 | `superpowers/plans/` | Implementation plans while their work is in flight. Deleted once shipped; git history keeps them. |
 | `superpowers/briefs/` | Findings reports, roadmaps and decision briefs, kept only while something live cites them. |
 | `prototype/` | The few pre-rule design canvases that code comments and CDP scripts still cite. New mockups are never committed (`DESIGN.md` "Mockups"). |
-| `guide/` | The user guide (Vietnamese): one page per surface, runs, the plan format and agent integration. Start at `guide/README.md`; its screenshots go in `guide/images/`. |
+| `guide/` | The user guide (Vietnamese): one page per surface, runs, the plan format and agent integration, and [DUM-E](guide/dume.md) (chunks worked on the leftover 5h quota). Start at `guide/README.md`; its screenshots go in `guide/images/`. |
 
 ## Conventions
 

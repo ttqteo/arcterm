@@ -22,13 +22,43 @@ import { runFocusAgent, type RunInfo } from "./runlineage";
 import {
     originName,
     originRunInfo,
+    parseHiddenRuns,
     runOrigin,
     runsStartedBy,
+    withHiddenRuns,
     type OriginLinkTarget,
     type OriginRun,
     type RunOrigin,
 } from "./runorigin";
 import { loadSessionsArchive, sessionsArchiveAtom } from "./sessionsarchivestore";
+
+// The finished runs the person hid from their sessions' run chips (the × on the chip), kept in this browser's
+// localStorage: hiding is a view preference, so the run itself, Jarvis and `wsh runs` still have it.
+const HIDDEN_RUNS_KEY = "agents.hiddenRuns";
+
+function readHiddenRuns(): string[] {
+    try {
+        return parseHiddenRuns(localStorage.getItem(HIDDEN_RUNS_KEY));
+    } catch {
+        return [];
+    }
+}
+
+const hiddenRunListAtom = atom<string[]>(readHiddenRuns());
+export const hiddenRunIdsAtom = atom((get) => new Set(get(hiddenRunListAtom)));
+
+export function hideStartedRuns(ids: readonly string[]): void {
+    if (ids.length === 0) {
+        return;
+    }
+    const next = withHiddenRuns(globalStore.get(hiddenRunListAtom), ids);
+    globalStore.set(hiddenRunListAtom, next);
+    try {
+        localStorage.setItem(HIDDEN_RUNS_KEY, JSON.stringify(next));
+    } catch {
+        // storage unavailable: they stay hidden for this session
+    }
+}
 
 export function useRunOrigin(model: AgentsViewModel, run: Run | undefined): RunOrigin | null {
     const roster = useAtomValue(model.agentsAtom);

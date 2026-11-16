@@ -8,6 +8,14 @@ import type { AgentVM } from "./agentsviewmodel";
 import { runFinished, type RunInfo } from "./runlineage";
 
 export const DONE_TITLE = "Committed in its last turn: close this agent";
+export const LANDED_TITLE = "The run landed: close its sessions";
+
+/** Pure: a run offers ✓ Close once it landed and still holds open sessions (its lead, workers, reviewers): the engine
+ *  leaves them for you to read, and they hold RAM until closed. Drawn on the run's tree row and on the ✓ row Chat folds
+ *  the run's card into. */
+export function landedCloseSuggestion(run: Pick<RunInfo, "land"> | null | undefined, openTabs: number): boolean {
+    return run?.land?.state === "landed" && openTabs > 0;
+}
 
 /** Pure: an agent looks finished when it is idle, its last turn ended on a git commit, you have read that turn, it is
  *  not stopped on a part waiting for your reply, no run owns it (the engine closes a run's sessions itself), no run

@@ -405,6 +405,89 @@ func TestAnswerSecondChoiceRefusedWhenNotAnswerable(t *testing.T) {
 	}
 }
 
+func (f *permFixture) answerScreen(id string, moves int) error {
+	return (&WshServer{}).AgentPermissionAnswerCommand(context.Background(), wshrpc.CommandAgentPermissionAnswerData{
+		ORef: f.oref, Id: id, Allow: true, Screen: true, Moves: moves,
+	})
+}
+
+const artifactDelete = `{"action":"delete","url":"https://claude.ai/artifact/AEM9Fe36i45qw9ra56kSCn"}`
+
+func TestAnswerScreenPickMovesToYesThenEnter(t *testing.T) {
+	for _, tc := range []struct {
+		moves int
+		want  []string
+	}{
+		// "❯ No / Yes": Yes is one row down
+		{1, []string{"\x1b[B", "\r"}},
+		{-2, []string{"\x1b[A", "\x1b[A", "\r"}},
+		{0, []string{"\r"}},
+	} {
+		f := newPermFixture(t)
+		f.raise("Artifact", artifactDelete)
+		head := f.pending().Requests[0]
+		if !head.ScreenPick || head.Answerable {
+			t.Fatalf("Artifact request = %+v, want screenpick and not answerable", head)
+		}
+		if err := f.answerScreen(head.Id, tc.moves); err != nil {
+			t.Fatal(err)
+		}
+		if got := f.typedKeys(); !equalRows([][]string{got}, [][]string{tc.want}) {
+			t.Fatalf("moves %d typed %q, want %q", tc.moves, got, tc.want)
+		}
+		if got := f.pending().Requests; len(got) != 0 {
+			t.Fatalf("after the answer the queue is %+v, want empty", got)
+		}
+	}
+}
+
+func TestAnswerScreenPickRefusals(t *testing.T) {
+	f := newPermFixture(t)
+	f.raise("Artifact", artifactDelete)
+	head := f.pending().Requests[0]
+	before := len(f.published())
+	// a plain Allow would type `1`, which is No on this dialog
+	if err := f.answer(head.Id, true); !errors.Is(err, errNotAnswerable) {
+		t.Fatalf("plain Allow on Artifact = %v, want errNotAnswerable", err)
+	}
+	for _, moves := range []int{9, -9} {
+		if err := f.answerScreen(head.Id, moves); err == nil {
+			t.Errorf("moves %d was accepted", moves)
+		}
+	}
+	if err := (&WshServer{}).AgentPermissionAnswerCommand(context.Background(), wshrpc.CommandAgentPermissionAnswerData{
+		ORef: f.oref, Id: head.Id, Allow: true, Screen: true, Choice: 2,
+	}); err == nil {
+		t.Error("a screen pick with choice 2 was accepted")
+	}
+	if got := f.typedKeys(); len(got) != 0 {
+		t.Fatalf("typed %q", got)
+	}
+	if len(f.pending().Requests) != 1 || len(f.published()) != before {
+		t.Fatal("a refused screen pick changed or published the queue")
+	}
+	// a screen pick on a prompt whose `1` is Yes is refused too: it has its own answer
+	g := newPermFixture(t)
+	g.raise("Bash", `{"command":"one"}`)
+	if err := g.answerScreen(g.pending().Requests[0].Id, 1); err == nil {
+		t.Fatal("a screen pick on Bash was accepted")
+	}
+	if got := g.typedKeys(); len(got) != 0 {
+		t.Fatalf("typed %q", got)
+	}
+}
+
+func TestAnswerScreenPickDenyTypesEsc(t *testing.T) {
+	f := newPermFixture(t)
+	f.raise("Artifact", artifactDelete)
+	if err := f.answer(f.pending().Requests[0].Id, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.typedKeys(); len(got) != 1 || got[0] != "\x1b" {
+		t.Fatalf("typed %q, want Esc", got)
+	}
+}
+
 func TestAnswerChoiceOutOfRange(t *testing.T) {
 	f := newPermFixture(t)
 	f.raise("Bash", `{"command":"one"}`)

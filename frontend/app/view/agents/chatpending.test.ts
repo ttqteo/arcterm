@@ -15,6 +15,7 @@ import {
     echoStep,
     holdLine,
     isSendNowKey,
+    landedIds,
     pastesBody,
     pendingKind,
     pendingLine,
@@ -39,6 +40,52 @@ import {
 
 const user = (text: string): AgentEntry => ({ kind: "user", text });
 const msg = (text: string): AgentEntry => ({ kind: "message", text });
+
+// a message that landed is done with: its bubble must not come back when its record later leaves the conversation (a
+// rewind made it a dead branch, 2026-11-16: "làm đi" stood under the conversation again for half an hour)
+describe("landedIds", () => {
+    const sent = (id: string, text: string, seen = 0): PendingMessage => ({ id, text, sentAt: 0, seen });
+    it("names the pending messages the transcript holds more often than when they were sent", () => {
+        const pending = [sent("a", "làm đi", 1), sent("b", "báo council đi")];
+        expect(landedIds(pending, [user("làm đi")])).toEqual([]);
+        expect(landedIds(pending, [user("làm đi"), user("làm đi")])).toEqual(["a"]);
+        expect(landedIds(pending, [user("làm đi"), user("báo council đi")])).toEqual(["b"]);
+        expect(landedIds([], [user("x")])).toEqual([]);
+    });
+
+    // text left in Claude Code's own box is sent in front of the next message, as one prompt: the message lands inside
+    // another, never as itself, and its bubble stood while the agent worked on (2026-11-16, "làm đibáo council đi")
+    it("names a message that landed inside a longer prompt, not one an earlier prompt already held", () => {
+        const before = [user("làm đi")];
+        const queued = pendingMessage("b", "báo council đi", before, 0, true);
+        expect(landedIds([queued], [...before, user("làm đibáo council đi")])).toEqual(["b"]);
+        // an earlier prompt that held the text was there at the send: not this message
+        const held = [user("đã báo council đi rồi")];
+        const again = pendingMessage("c", "báo council đi", held, 0, true);
+        expect(landedIds([again], held)).toEqual([]);
+        expect(pendingStill([queued], [...before, user("làm đibáo council đi")], 1)).toEqual([]);
+    });
+
+    // a short text is too easily part of another message: it lands only at the end of a prompt, behind a whole message
+    // the box sent before, which is what was left in Claude Code's box
+    it("names a short message only behind a message the box sent", () => {
+        const history = ["làm đi", "ok"];
+        const ok = pendingMessage("d", "ok", [user("làm đi")], 0, true, false, history);
+        expect(landedIds([ok], [user("làm đi"), user("làm điok")], history)).toEqual(["d"]);
+        expect(landedIds([ok], [user("làm đi"), user("làm đi\nok")], history)).toEqual(["d"]);
+        expect(pendingStill([ok], [user("làm đi"), user("làm điok")], 1, null, history)).toEqual([]);
+        // inside or at the end of a message that is not one sent before: still waiting
+        for (const other of ["okay, go on", "look", "please say ok"]) {
+            expect(landedIds([ok], [user("làm đi"), user(other)], history)).toEqual([]);
+        }
+        // with no history at all only its own record lands it
+        expect(landedIds([ok], [user("làm đi"), user("làm điok")])).toEqual([]);
+        // a prompt that already held it behind a sent message at the send is not this one
+        const old = [user("làm điok")];
+        const again = pendingMessage("e", "ok", old, 0, true, false, history);
+        expect(landedIds([again], old, history)).toEqual([]);
+    });
+});
 
 describe("userTextCount", () => {
     it("counts the user entries holding exactly that text, ignoring edge whitespace and Claude's messages", () => {

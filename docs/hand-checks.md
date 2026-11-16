@@ -24,6 +24,111 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   Chat's Builder check card reads the same in grey, not amber. Raise the cap → the agent gets `brainstorm: run <id>`,
   records the run, and Chat draws the run row for that line. Dequeue the entry instead → Approve is on again. Agent
   surface, Brainstorm tab and Chat. Task 6 of the run-start-choice plan.
+- [ ] (arcterm) **A long council tag wraps in its card; suggestion chips share a line.** Not tried in the app: no dev
+  app ran, typecheck only. Open a done council whose direction tag names two long seats (`Reviewer 3 (evaluation) and
+  Phản biện have doubts`) → the tag wraps to two lines inside the card, its icon on the first. In that council's box
+  with three long asks, and in a Claude agent's Chat with long suggestions in the full-width column → two chips share
+  the first line (each up to 340px, cut with …), not one per line.
+- [ ] (arcterm) **A message that lands joined to another clears its Queued bubble.** Unit tests and typecheck only, no
+  dev app ran. In a build with 9504b430c, in a Claude agent's Chat: send `làm đi`, then in the agent's Terminal type
+  `xyz` in Claude Code's box without Enter, back in Chat send `báo council đi` while it works (it lands as one prompt
+  `xyzbáo council đi` once the turn ends) → its Queued bubble goes as that prompt lands, not 30 minutes later. Same
+  with a short one: after `làm đi`, leave `làm đi` in Claude Code's box and send `ok` → `làm điok` lands and the `ok`
+  bubble goes.
+- [ ] (arcterm) **A Claude Code menu no hook reports shows in Chat as a card.** Not tried in the app: unit tests on a
+  screen transcribed from a screenshot only (commits "fix(chat): a terminal menu no hook reports shows as a card" and
+  "fix(chat): Edit prompt comes back to the box; a screen Chat cannot read shows as its foot", 2026-11-16). When Claude
+  Code stops on the safeguards' "Session paused" menu, Chat shows a yellow card titled `Session paused` with its text
+  (paragraphs read naturally, not cut at the terminal's width), `1. Switch to Opus 4.8` / `2. Edit prompt and retry with
+  Opus 5.5` and Answer in Terminal, and within ~10 s the agent reads asking in the tree and Needs you. Switch picks it
+  and the card goes; Edit prompt empties Claude Code's box and puts the prompt in Chat's box, focused, and the prompt's
+  bubble leaves the conversation. A plain permission prompt still shows only the permission card. With an MCP form or
+  another unnumbered screen up while the agent reads waiting, Chat shows "Waiting on you in the terminal" with the foot
+  of the screen in mono; it never shows while Claude Code's prompt and mode line are up.
+- [ ] (arcterm) **A council an agent ran ends as a card at the end of Chat, its summary in a council panel.** The CDP
+  scenario `chat-council` covers fixture transcripts only (commit "feat(chat): an ended council stays a card at the end,
+  its summary in a council panel", 2026-11-16). Ask a Claude agent for a council (/arc:council) and let it wait in the
+  background → once it ends, Chat ends with a `Council · review` card (✓ Done · N directions, the answer, Open report)
+  after any run cards, and the agent's first reply after the council's notification sits in a tinted panel headed
+  `Council · review · N directions` with Open report; the `wsh council start` call stays a plain tool line.
+- [ ] (arcterm) **Sidecar's wall holds only the Cockpit's agents.** Unit tests and typecheck only; the rewritten
+  `sidecar-wall` scenario (steps 4-6, 14-15 and the new 24) was not run, since it needs the Tauri host (branch
+  `feat/sidecar-button`). Run `task verify:ui -- sidecar-wall` on a dev app. By hand: with agents idle for hours, Sidecar
+  shows only the asking, working and just-finished ones, the title bar still counts the idle ones, an agent that
+  finishes leaves the wall about 5 minutes later, and switching the Cockpit's project filter or Live only changes the
+  wall too.
+- [ ] (arcterm) **Sidecar opens from the Cockpit and from the Jarvis button.** Typecheck and the keybindings tests only,
+  no dev app ran (branch `feat/sidecar-button`). On the Cockpit, the header's Sidecar button (after Live only, in Cards
+  and in Office's bar) opens Sidecar, or brings it forward when it is open; a right-click on the Jarvis button at the
+  app bar's right end shows Open Sidecar first, above the fold items, and it does the same.
+- [ ] (arcterm) **The browser-drawn controls draw dark.** Not tried in the app: no dev app ran, and CDP cannot capture
+  a native popup (commit "fix(ui): the browser-drawn controls draw dark", 2026-11-16, `color-scheme: dark` on `:root`).
+  In Setup → Tools add a tool and click into its folder field → the project suggestions open dark, not white. An
+  unchecked checkbox (New dialog, Tools) and radio (Setup skill sync) are dark boxes now, not white, and still read
+  as controls; the Telegram card's time fields still open a dark picker.
+- [ ] (arcterm) **The Jarvis peek's project list opens dark.** Not tried in the app: CDP cannot capture a native
+  `<select>` popup (commit "fix(jarvis): the peek's project list opens on the theme's surface", 2026-11-16). Open the
+  Jarvis peek and click "No folder" under the Ask box → the list is the dark surface with primary text, like Setup's
+  selects, not white with grey names; switch theme and it follows (`peterrand.tsx`, `[&_option]` classes).
+- [ ] (arcterm) **A council's discussion has no ↩ Back pill.** Unit tests and typecheck only, no dev app ran
+  (commit "feat(council): drop the Back jump pill from the discussion", 2026-11-16). Open a council with a long discussion, scroll to the middle, click ↑ Top then ↓ Latest →
+  only ↑ and ↓ ever show in the bottom-right corner, each still glides to its end, and j/k still move after a click.
+- [ ] (arcterm) **The pinned bar skips a picture-only message.** Unit tests and typecheck only, no dev app ran. In a
+  build with f67013e11, in a Claude agent's Chat send a message, then one that is only a pasted picture, then scroll
+  up past both → the pinned bar shows the text message, never "(picture)"; its ↑ and its n/m count step over the
+  picture-only one.
+- [ ] (arcterm) **A tight run line keeps its count.** Unit tests and typecheck only, no dev app ran. In the Agent
+  sidebar at 248px, a working run whose tasks wait in the job queue (`≡#3`) with its RAM shown: its second line reads
+  `Work… · 2/6` (or `Working · 2/6` when it fits), never `Working · …`; hover the words for the full line.
+- [ ] (arcterm) **A wait on a council or an agent shows no terminal row.** Unit tests and typecheck only, no dev app
+  ran. Have a Claude agent seat itself on a council (`wsh council start --agent self`, which runs
+  `wsh council wait <id> --timeout 0` in the background) → no "Wait for council to finish" row under the agent in the
+  tree and no background line above Chat's box; the council card and its own tree row still show, and the report
+  still comes back when the council ends. The same holds for `wsh agents wait <tab>` run in the background. A build or
+  dev server run in the background still shows as before.
+- [ ] (arcterm) **A landed run offers ✓ Close run.** No dev app ran. In the Chat of an agent that started a run, once
+  the run lands its card folds to `✓ Run a9e0fd4f landed · merged into main …` → a green `✓ Close run · N open` sits at
+  that row's right end; the rest of the row still opens the `[arc] Run …` message. Click it → the Close run confirm
+  names the run and N sessions; confirm → the run's lead, workers and reviewers close, and the button goes. In the
+  Agent sidebar the run's row (`DUM-E Implementation Plan`, `Landed`) shows the same small green ✓ until then. A run
+  still landing, or held, shows neither.
+- [ ] (arcterm) **The run chip's × hides finished runs.** Unit tests and typecheck only, no dev app ran. On an agent
+  whose started runs have all landed (`2 runs` on its tree row and beside its name in the header), hover the chip → a
+  small × shows after it; click it → the chip is gone from both places, and stays gone after a reload. With one run
+  still going, the × hides only the finished one and the chip reads that run's progress. A lead's own `run 1c…` link
+  shows no ×.
+- [ ] (arcterm) **An interrupt keeps Chat's conversation in place.** No dev app ran. In a build with 1b304b177 (it
+  reinstalls the arc mod on launch), on Windows, send a Claude agent in Chat a long task and press Esc while it works →
+  the conversation stays where it was: no skeleton, no blank, no redraw from the top. Before, it emptied and loaded
+  again whole on every interrupt.
+- [ ] (arcterm) **New project leaves out the council bench's folders.** No dev app ran. In a build with 28dcb26a5,
+  open + → New project → no row's path is under the app's data dir (`…\dev.arc.app\data\council-bench-projects\…`:
+  spec-live-agents, bugs-orchestrate, goalpost-guard…); typing still finds folders on disk.
+- [ ] (arcterm) **A pending land's peek reads as a card.** No dev app ran. In the Agent sidebar, hover a run's
+  `Landing · Verify r…` line → the tip is two lines (`Landing into main · Verify running 18s`, then that a click opens
+  the details), not the run id and commands. Click the line → the peek shows a green pulsing dot and the line in full,
+  `Run a9e0fd4f → main` under it, then rows labelled STEP / COMMAND / INSPECT (WHY and JOB while queued) with the
+  commands and job id in code chips; the dot is yellow on a RAM wait. Copy for an agent still copies the old lines
+  (`Run … · land pending into main`, `Step: …`, `Command: …`).
+- [ ] (arcterm) **A long menu row is cut, not stretched.** No dev app ran. On an agent that started runs with long
+  goals, click `N runs ▾` in its header → the menu is at most ~520px wide, each Started runs row is one line ending in
+  `…` with its status (`done`, `running`) still at the right, and hovering a row shows the whole goal. Other menus
+  (the header's ⋯, a tree row's right-click) look as before.
+- [ ] (arcterm) DUM-E: with dume:enabled on, a dum-e chunk pending and under an hour to the 5h reset with 30%+ left, a
+  sonnet quick run starts in a wave/dume-… worktree within 5 min; when it ends the chunk reads "ready to land" with a
+  git merge line, and the Brief header line follows along.
+- [ ] (arcterm) **The ↩ Reply button sits off the selection's top-right corner.** No dev app ran; CDP `chat-quote`
+  step 1 was updated to the new place without a run (`task verify:ui -- chat-quote`). In Chat, select a few lines of a
+  reply → the small ↩ sits just up and right of the widest line's end, touching the corner diagonally; a selection
+  against the pane's right edge keeps it inside the pane; with no room above it goes off the bottom-right corner.
+- [ ] (arcterm) **A run's second line lines up with an agent's.** No dev app ran. In the Agent sidebar, a run row
+  (`› 7  Working · 7/7`, or a run with no plan yet reading `working`) → its second line starts under the title, at the
+  same column as an agent's `planning · run 1c…`, not under the icon; its progress bar below is unchanged.
+- [ ] (arcterm) **Chat's permission card answers an Artifact prompt.** Unit tests and typecheck only; the screen
+  reader (`tuiSelectYes`) was tested on a list written from a screenshot, not a capture. Have an agent delete a
+  throwaway artifact → the card reads `Wants to use an artifact`, `delete https://claude.ai/artifact/…`, with Allow and
+  Deny; Allow deletes it (the terminal's cursor moves from No to Yes, then Enter), Deny cancels. Also check the
+  publish consent, if it asks. Agent surface, Chat. dc372ecbd.
 - [ ] (arcterm) **The brainstorm card holds its place from step to step.** CDP `chat-redesign` 14c checked the held
   state and that the end row is the same element; the motion itself was never watched. In a live brainstorm in Chat,
   click an option → the card stays, its rows dimmed, `Sent · <answer>` in its footer, no collapse; when the next
@@ -306,3 +411,10 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   session `.jsonl` away) and Resume from the palette → it reports why, and the Agent tree gains no extra terminal for
   the run; put the file back and Resume again → one new tab opens and the worker continues. Unit-tested only. Commit:
   5019e90c8 (`interrupted.go` `resumeInNewTab`, `swapPhaseWorker`).
+- [ ] (arcterm) Tooltips show at once, long ones too: hover the RAM figure on a run row in the Agent tree (its title
+  runs past 60 characters) → the chip shows with no wait, and moving the pointer off drops it at once. Vitest + eslint
+  only, not tried in the app (`titletiphost.tsx`, `titletip.ts` `tipDelay` removed).
+- [ ] (arcterm) A run worker's header stays on one clean line: open a worker whose lead's name is a long goal → the
+  link back to the lead (↰ icon) is cut with an ellipsis at about 220px, the project name stays readable, and the model
+  and context figure stop short of the Chat | Terminal switch; hovering the link shows the whole name. Vitest + eslint
+  only, not tried in the app (`agentheader.tsx` `RunLinkItem`).

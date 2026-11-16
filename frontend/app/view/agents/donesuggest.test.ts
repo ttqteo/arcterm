@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { doneSuggestion } from "./donesuggest";
+import { doneSuggestion, landedCloseSuggestion } from "./donesuggest";
 
 describe("doneSuggestion", () => {
     const done = { id: "a1", state: "idle" as const, committed: true };
@@ -69,5 +69,20 @@ describe("doneSuggestion", () => {
         const noOrigin = { id: "q2", state: "waiting", data: {} } as RunQueueEntry;
         expect(doneSuggestion(done, 0, none, 0, [other, noOrigin])).toBe(true);
         expect(doneSuggestion(done, 0, none, 0, noQueue)).toBe(true);
+    });
+});
+
+describe("landedCloseSuggestion", () => {
+    it("offers Close on a landed run that still holds open sessions", () => {
+        expect(landedCloseSuggestion({ land: { state: "landed" } }, 3)).toBe(true);
+    });
+
+    it("holds back while the run has not landed, or once nothing of it is open", () => {
+        for (const state of ["queued", "pending", "resolving", "held"]) {
+            expect(landedCloseSuggestion({ land: { state } }, 3)).toBe(false);
+        }
+        expect(landedCloseSuggestion({}, 3)).toBe(false);
+        expect(landedCloseSuggestion(null, 3)).toBe(false);
+        expect(landedCloseSuggestion({ land: { state: "landed" } }, 0)).toBe(false);
     });
 });

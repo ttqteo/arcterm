@@ -39,33 +39,75 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - `wsh runs start --after` and the queue can wait on several runs: an entry starts once every one of them has landed,
   and the Agent tree, Chat and the Brief name them all. A queued entry also checks again when its turn comes and
   waits for a newer run that edits the same files, saying why in its sheet.
+- Chat's message box draws a ``` fenced block as a code box while you type it, in the code font, so a pasted command
+  reads as code before you send it. Code typed on the fence's own line (```` ```curl https://… ````) now stays in the
+  block in your sent message instead of disappearing as its language name.
+- An agent's run chip (`2 runs` on its tree row and in its header) has an × on hover that hides the runs it started
+  that are over (landed, done, failed or cancelled), so a finished session stops carrying them; a run still going, or
+  one whose land is held, stays. Jarvis and the runs list keep them.
 - When an agent drew option boards in its Canvas and asks you to pick one, Chat ends with a card: one row per board
   (A, B, C… with the board's title) that sends your pick in one click, a button to open each board, and Compare in
-  Canvas.
+  Canvas. <!-- big -->
 - Ask Jarvis now starts at No folder: ask a question and it answers in the popover, or give it a job and Jarvis hands
   it to the right project's agent, opens a new one there, or asks you which project when it is unsure. The agent that
-  got the job says which project Jarvis chose, with a Wrong project? button to move the job on.
+  got the job says which project Jarvis chose, with a Wrong project? button to move the job on. <!-- big -->
 - A Float tab whose agent replied while you were elsewhere carries a small dot until you look at it.
-- Sidecar, a second window for another screen that shows every agent at a glance: Ctrl+P → Open Sidecar. It opens
+- Sidecar, a second window for another screen that shows the Cockpit's agents at a glance (those asking, working or
+  just finished, under the Cockpit's project and Live only filters; idle ones are only counted): the Sidecar button on
+  the Cockpit's header, Open Sidecar on a right-click of the Jarvis button in the app bar, or Ctrl+P → Open Sidecar. It opens
   maximized on your other screen (centred when you have one), F11 or its full-screen button toggles full screen, and
   it closes with arcterm's window, and opens again where you left it (screen, size, full screen) the next time arcterm
-  starts, unless you closed it yourself. <!-- try: open-sidecar -->
+  starts, unless you closed it yourself. <!-- try: open-sidecar --> <!-- big -->
 - Sidecar warns you when the machine is strained. Its title bar always shows the memory free and the CPU; when the
   memory runs low, or the CPU stays over 90% for 2 minutes, a band over the wall says which and since when, and names
   the three agents that weigh most. Stop ends the process that weighs most (after you confirm, the agent keeps running)
   and Sleep agent frees the whole agent. The band turns red when the machine is about to run out of memory, the × hides
   it until it changes, and it clears 30 seconds after the machine calms down.
-- Sidecar's tiles scroll back: scroll up inside a tile to read earlier messages, and an agent that is asleep or has been
-  idle a while still shows its last two messages instead of "No recent messages".
+- Sidecar's tiles scroll back: scroll up inside a tile to read earlier messages.
 - Sidecar's small form: drag the window narrower than about 1100 px and it shows only what waits on you, one card per
   question with its options as 1–9 keys (arrows move between cards, Enter opens the agent). The S button on its title
   bar shrinks it to 340×440 and pins it on top of your other windows; pressed again it goes back to where it was, and
   it reopens small and pinned after a restart. <!-- try: open-sidecar -->
 - Jump to any earlier prompt from the bar pinned at the top of Chat: its counter (10/12) or a right-click on the bar
-  lists every prompt you sent in the conversation, and picking one scrolls back to it (arrows and Enter work too).
+  lists every prompt you sent in the conversation, and picking one scrolls back to it (arrows and Enter work too). <!-- big -->
+- DUM-E: turn it on in Settings → Runs & limits, give an initiative chunk the owner `dum-e`, and in the last hour of a
+  5-hour window with quota to spare, sonnet works it on its own branch for you to merge. The Brief header and
+  `wsh dume status` say what it did and why. <!-- big -->
+- In Chat, a `! command` sent to a sleeping agent runs right away in its folder without waking it. The agent reads
+  the command and its output with your next message, and a command that failed has Ask agent to fix, which wakes the
+  agent to look into it.
+- The version at the bottom right names the commit the build was made from (`v1.1.3 · e999f3db4`, `-dirty` when it
+  held uncommitted edits), and Settings → About has it as a Commit row, so two builds of one version can be told apart.
+- In Chat, Shift+Enter on a suggested reply picked with Tab puts its text in the box so you can edit it before sending.
+- In Chat, a message that moved the agent to another initiative chunk shows a "Chunk N · name" divider above it, so
+  you can tell where each chunk's work begins.
+- The initiative band in Chat shows three steps on how to use it the first time you open it; Got it hides them and
+  the ? beside the band's chevron brings them back.
+- An initiative chunk not yet done now says when the code has moved since it was written ("Written 23 commits ago:
+  check it still holds"), with Mark checked once it is still right. Agents started on a chunk check it against the
+  current code before following it, and reread the open chunks after finishing one.
+- An open initiative chunk that names a file now says when that file changed or went away since the chunk was written
+  ("councilstore.ts changed 4 times since this was written"), on the chunk and as a "changed since" or "file gone"
+  chip on its row in the plan. Chunks written before this get the commit of the day they were added, and arcterm
+  checks every initiative on its own every 15 minutes; `wsh effort stale` lists the flagged chunks.
 
 ### Changed
 
+- A council an agent ran stays a card at the end of Chat once it ends (Done, its directions, its answer and Open report),
+  instead of a one-line row back where the agent started it, and the agent's summary of its report sits in a council
+  panel you can't miss.
+- Every tooltip shows the moment you hover, long ones included (they used to wait over half a second).
+- A council's discussion no longer shows the ↩ Back button after Top or Latest; only ↑ Top and ↓ Latest stay.
+- An agent waiting in the background on a council or another agent no longer shows that wait as a terminal row in the
+  Agent sidebar or above Chat's message box: the council card or the other agent's own row already shows it.
+- A run that landed offers ✓ Close run, like the ✓ Close of an agent that committed: on its ✓ row in the Chat that
+  started it, and as a ✓ on its row in the Agent sidebar. It closes the sessions the run still holds, after a confirm.
+- A run's Landing line in the Agent sidebar shows a short tip on hover, and a click opens a tidier card: the step's
+  state with a status dot, the run and the branch it lands into, then labelled rows with the commands as code.
+- In Chat, the ↩ Reply button on selected text now sits diagonally off the selection's top-right corner, clear of
+  its words.
+- In the Agent sidebar, a run's second line now starts under its title, lined up with an agent's, instead of under
+  its icon.
 - In Chat, an agent's calls that read or edit the same file several times in a row now show as one line, "Edit
   rail.tsx ×4 +1 −24", that opens to each call; every edit line also shows the lines it added and removed.
 - The Reply button over text you select in Chat now sits above the selection instead of over the words after it.
@@ -93,9 +135,73 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A brainstorm board opened over Chat now steps to the previous or next board with ← and →.
 - A brainstorm question about a part with no board of its own keeps the rail's Boards tab, listing every part's boards;
   the rail still opens on Decided so far, where before the Boards tab was gone until a question with boards came.
+- Going from Full to Float and back no longer jumps: the window fades out, changes size out of sight and fades back
+  in. Reduced motion keeps the instant switch.
+- Float's usage on its ledge is compact: the free RAM and each plan's percent alone; the bars and the 5-hour countdown
+  are in its tooltip.
+- Reply to selected text takes less room: in Chat and a council's Discussion the big Reply button under a selection is
+  now a small ↩ at the end of its last line, so it no longer covers the line below. Right-clicking the selection also
+  offers Reply (and Copy).
+- Jarvis's initiatives stop jumping around while you look at them: the order is set when you open Jarvis, and one
+  that changes after that keeps its place and gets a dot instead. Leave Jarvis and come back to re-sort.
+- Finished initiatives no longer count in Jarvis's "Pinned N of M": the heading says how many are done, and the
+  done ones leave the cards and the list for a "Show N done" button under it. A pinned one stays a card.
+- Jarvis set to the hologram now shows as the hologram in Float too, on the float bar where Sprout would stand, and
+  when the window folds, in Sprout's place on your screen. Before, both kept Sprout.
+- The Cockpit, Jarvis, Diff and Setup move on the same smooth spring as Chat: rows and cards open and fold instead of
+  jumping, and a filter switch or a big update still shows at once.
+- A suggested reply clicked over text you typed now asks on the chip itself ("Replace & send") instead of in a notice
+  in the corner: click it again or press Enter to send, or keep typing or press Esc to keep your text. A council's
+  suggested asks work the same way.
+- A sleeping agent's message box shows the suggested replies too, and `Tab` walks them there: sending one wakes the
+  agent with it, as a typed message does.
+- A suggested reply that asks for a build ("build đi") carries a hammer, as commit's and push's chips carry theirs.
+- Chat's suggested replies stay on one line in a narrow box, such as a float window: a long one is shortened with …,
+  and its whole text shows on hover and in the box once `Tab` picks it.
+- In Chat, `Shift`+`Enter` on a suggested reply picked with `Tab` now adds its text after what you typed instead of
+  replacing it; `Enter` twice still replaces your text and sends.
+- Chat's jump to the latest message is now ⌘↓ (Ctrl+↓ on Windows) instead of ⌘End, which a Mac laptop has no key for.
+- In the initiative band, Work on this is now Switch to this chunk, so it no longer reads like Jarvis's Work on (which
+  opens a new agent), and it tells the agent at once when the message box is empty. With a draft in the box, the
+  switch still goes with your next message, and the line above the box says so.
+- In a council, Chốt (set as direction) shows a compass instead of a pin, so it no longer looks like Pin to Report
+  beside it on a seat's message. A pinned chat seat's Final proposal in the saved report names the chat with its key
+  (`notes · 0976023f`), as the Report does.
+- A council's Setup says what each expert looks at, such as Memory watcher (memory).
+- Radar is gone: its surface, its scans and their saved findings, its Settings card, and `Ctrl+G` `r`. The nav rail
+  now runs Cockpit, Jarvis, Agent, Usage, then Code and Diff, so `Ctrl+6` opens Diff, and a Startup surface set to
+  Radar opens Cockpit.
 
 ### Fixed
 
+- A run worker's header no longer spills its lead's long name over the project and under the Chat | Terminal switch:
+  the link back to the lead is cut to one line, the whole name on hover.
+- A council summary's long direction tag (two seats with long names) wraps inside its card instead of running past
+  the edge.
+- Suggested replies under a council's or a Chat's box sit side by side when they fit, instead of one to a line.
+- A menu Claude Code shows in its terminal that Chat knew nothing about (the safeguards' "Session paused" choice of
+  model, for one) now shows in Chat as a card with its text and a button per choice, instead of an empty chat that
+  only read "asking". "Edit prompt and retry" brings your prompt back into Chat's box to edit, and anything else an
+  agent waits on in its terminal (a form, a "Press Enter") shows as the foot of its screen with Answer in Terminal.
+- An agent Claude Code's safeguards pause now reads asking, so it shows under Needs you, instead of idle.
+- The project list under the Jarvis peek's Ask box opens in the app's dark colors instead of white with grey names.
+- Lists and boxes the browser draws itself, such as a field's suggestions and unchecked checkboxes, are dark now
+  instead of white.
+- Chat's Stop button on a turn Claude has not answered yet puts your message back in Chat's box, as Esc does. It
+  used to stay hidden in the terminal's box and get stuck onto your next message.
+- A message that reached the conversation no longer comes back as a stuck bubble under it after an interrupt, nor
+  stays as one when it reached it joined to another message.
+- Chat's pinned bar no longer shows "(picture)" for a message of only pictures or files: it keeps your last message
+  that says something.
+- Interrupting a Claude agent in Chat no longer empties the conversation and loads it again from the top: on Windows
+  the interrupt named the agent's transcript with other slashes, and Chat took it for a new conversation.
+- New project no longer lists the folders arcterm makes for its own agents (the council bench's practice projects)
+  among the folders Claude Code has worked in.
+- A menu with a long row, such as an agent's Started runs list, no longer spreads across the window: the row is cut
+  to one line with an ellipsis and the run's status stays in view; hover a run to read its whole goal.
+- Chat's permission card now answers an agent's claude.ai Artifact prompts (publish, delete), with a line saying what
+  it does to which artifact, instead of raw JSON and only Answer in Terminal.
+- Chat no longer suggests a reply that is only an HTML tag, such as `</br>`.
 - The agent you leave on screen no longer falls asleep while you work in another window: Sleep idle agents now spares
   it whether or not arcterm has the focus.
 - Esc closes the Brief sheet again when you last clicked the cockpit behind it; Esc in a picker's open menu still
@@ -116,8 +222,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A row in the Agent sidebar no longer pushes its RAM · tokens · age off its end: a run link such as `plan queued #1`,
   what an agent asks you, a worker's held ask or `in council` shortens instead, its tooltip still saying it in full.
   A run, agent or worker waiting in the job queue shows a short `#1` (or `×2` for a run) instead of `queued #1`, whole
-  beside its progress and columns; hover it for the words.
-
+  beside its progress and columns; hover it for the words. When the row is tight, a run line cuts its `Working`, never
+  its `2/6`.
 - Agents keep their colors in an arcterm reopened by `! task install` typed in a Claude Code session: that shell
   sets `NO_COLOR` without the markers arcterm looked for, so every agent drew in plain white again.
 - A Chat message that ends with a file you mentioned is sent: Claude Code's file suggestions took its Enter, so the
@@ -272,66 +378,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the history loads.
 - A worker tab that joins a run appears under the run in the Agent tree from its first frame, instead of jumping there
   a moment later.
-
-### Added
-
-- In Chat, a `! command` sent to a sleeping agent runs right away in its folder without waking it. The agent reads
-  the command and its output with your next message, and a command that failed has Ask agent to fix, which wakes the
-  agent to look into it.
-- The version at the bottom right names the commit the build was made from (`v1.1.3 · e999f3db4`, `-dirty` when it
-  held uncommitted edits), and Settings → About has it as a Commit row, so two builds of one version can be told apart.
-- In Chat, Shift+Enter on a suggested reply picked with Tab puts its text in the box so you can edit it before sending.
-- In Chat, a message that moved the agent to another initiative chunk shows a "Chunk N · name" divider above it, so
-  you can tell where each chunk's work begins.
-- The initiative band in Chat shows three steps on how to use it the first time you open it; Got it hides them and
-  the ? beside the band's chevron brings them back.
-- An initiative chunk not yet done now says when the code has moved since it was written ("Written 23 commits ago:
-  check it still holds"), with Mark checked once it is still right. Agents started on a chunk check it against the
-  current code before following it, and reread the open chunks after finishing one.
-- An open initiative chunk that names a file now says when that file changed or went away since the chunk was written
-  ("councilstore.ts changed 4 times since this was written"), on the chunk and as a "changed since" or "file gone"
-  chip on its row in the plan. Chunks written before this get the commit of the day they were added, and arcterm
-  checks every initiative on its own every 15 minutes; `wsh effort stale` lists the flagged chunks.
-
-### Changed
-
-- Going from Full to Float and back no longer jumps: the window fades out, changes size out of sight and fades back
-  in. Reduced motion keeps the instant switch.
-- Float's usage on its ledge is compact: the free RAM and each plan's percent alone; the bars and the 5-hour countdown
-  are in its tooltip.
-- Reply to selected text takes less room: in Chat and a council's Discussion the big Reply button under a selection is
-  now a small ↩ at the end of its last line, so it no longer covers the line below. Right-clicking the selection also
-  offers Reply (and Copy).
-- Jarvis's initiatives stop jumping around while you look at them: the order is set when you open Jarvis, and one
-  that changes after that keeps its place and gets a dot instead. Leave Jarvis and come back to re-sort.
-- Finished initiatives no longer count in Jarvis's "Pinned N of M": the heading says how many are done, and the
-  done ones leave the cards and the list for a "Show N done" button under it. A pinned one stays a card.
-- Jarvis set to the hologram now shows as the hologram in Float too, on the float bar where Sprout would stand, and
-  when the window folds, in Sprout's place on your screen. Before, both kept Sprout.
-- The Cockpit, Jarvis, Diff and Setup move on the same smooth spring as Chat: rows and cards open and fold instead of
-  jumping, and a filter switch or a big update still shows at once.
-- A suggested reply clicked over text you typed now asks on the chip itself ("Replace & send") instead of in a notice
-  in the corner: click it again or press Enter to send, or keep typing or press Esc to keep your text. A council's
-  suggested asks work the same way.
-- A sleeping agent's message box shows the suggested replies too, and `Tab` walks them there: sending one wakes the
-  agent with it, as a typed message does.
-- A suggested reply that asks for a build ("build đi") carries a hammer, as commit's and push's chips carry theirs.
-- Chat's suggested replies stay on one line in a narrow box, such as a float window: a long one is shortened with …,
-  and its whole text shows on hover and in the box once `Tab` picks it.
-- In Chat, `Shift`+`Enter` on a suggested reply picked with `Tab` now adds its text after what you typed instead of
-  replacing it; `Enter` twice still replaces your text and sends.
-- Chat's jump to the latest message is now ⌘↓ (Ctrl+↓ on Windows) instead of ⌘End, which a Mac laptop has no key for.
-- In the initiative band, Work on this is now Switch to this chunk, so it no longer reads like Jarvis's Work on (which
-  opens a new agent), and it tells the agent at once when the message box is empty. With a draft in the box, the
-  switch still goes with your next message, and the line above the box says so.
-
-- In a council, Chốt (set as direction) shows a compass instead of a pin, so it no longer looks like Pin to Report
-  beside it on a seat's message. A pinned chat seat's Final proposal in the saved report names the chat with its key
-  (`notes · 0976023f`), as the Report does.
-- A council's Setup says what each expert looks at, such as Memory watcher (memory).
-- Radar is gone: its surface, its scans and their saved findings, its Settings card, and `Ctrl+G` `r`. The nav rail
-  now runs Cockpit, Jarvis, Agent, Usage, then Code and Diff, so `Ctrl+6` opens Diff, and a Startup surface set to
-  Radar opens Cockpit.
 
 ## 1.1.3 — 2026-11-14
 
