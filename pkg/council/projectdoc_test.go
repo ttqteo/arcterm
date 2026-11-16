@@ -175,3 +175,31 @@ func TestSyncProjectDoc(t *testing.T) {
 		t.Errorf("missing project: %q %v %v, want nothing done", path, changed, err)
 	}
 }
+
+// Windows refuses to rename over a file another handle holds open, and Go opens files without delete sharing: a reader
+// of CLAUDE.md (a launching agent, an editor, the doc-sync test's poll) made the rewrite fail, and nothing retried it
+// until the memory moved again (TestCouncilDocSyncFollowsTheMemory flaked this way under load).
+func TestSyncProjectDocWaitsOutAReaderHoldingTheFile(t *testing.T) {
+	useTempRoot(t)
+	project := t.TempDir()
+	if err := Save(decisionsCouncil("c1", project, 1_793_800_000_000, "Settle the problem")); err != nil {
+		t.Fatal(err)
+	}
+	claude := filepath.Join(project, "CLAUDE.md")
+	if err := os.WriteFile(claude, []byte("# Rules\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := os.Open(claude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := time.AfterFunc(100*time.Millisecond, func() { reader.Close() })
+	defer released.Stop()
+	defer reader.Close()
+
+	if _, changed, err := SyncProjectDoc(project); err != nil || !changed {
+		t.Fatalf("SyncProjectDoc with a reader holding CLAUDE.md = %v %v, want it written once the reader lets go", changed, err)
+	}
+	b, _ := os.ReadFile(claude)
+	mustContain(t, "CLAUDE.md", string(b), "# Rules\n\n"+docBegin, "Settle the problem")
+}

@@ -39,6 +39,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- What a council settled now reaches the project's CLAUDE.md even when an agent or an editor has the file open at that
+  moment (Windows); before, that update was dropped until the council's Memory changed again.
 - A run no longer freezes its other workers, merges and your actions for up to a minute while it checks out a task's
   tree and runs its Setup.
 - A message a run's lead sends a working task now reaches its worker, not a `claude -p` the worker started.

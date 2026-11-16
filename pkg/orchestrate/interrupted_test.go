@@ -34,6 +34,22 @@ func newInterruptedRun(t *testing.T, mutate func(*waveobj.Run)) (string, waveobj
 	return ch.OID, run
 }
 
+// recordStoppedDagRuns records the runs of dagOID whose workers MarkInterruptedRuns stops. It sweeps the whole store, which
+// other tests' dags share, so a run another test left orphaned is stopped too and must not count here.
+func recordStoppedDagRuns(t *testing.T, dagOID string) *[]string {
+	t.Helper()
+	var stopped []string
+	old := stopRunWorkers
+	stopRunWorkers = func(_ context.Context, r *waveobj.Run) error {
+		if r.DagORef == dagOID {
+			stopped = append(stopped, r.ID)
+		}
+		return nil
+	}
+	restoreAfterStages(t, func() { stopRunWorkers = old })
+	return &stopped
+}
+
 // captureRunEvents records the kinds appended per run id while the test runs.
 func captureRunEvents(t *testing.T) map[string][]string {
 	t.Helper()
@@ -175,13 +191,7 @@ func TestMarkInterruptedRunsLeavesTheLandResolverTheOwnersLandNames(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	var stopped []string
-	oldStop := stopRunWorkers
-	stopRunWorkers = func(_ context.Context, r *waveobj.Run) error {
-		stopped = append(stopped, r.ID)
-		return nil
-	}
-	restoreAfterStages(t, func() { stopRunWorkers = oldStop })
+	stopped := recordStoppedDagRuns(t, dag.OID)
 
 	MarkInterruptedRuns(ctx)
 
@@ -189,8 +199,8 @@ func TestMarkInterruptedRunsLeavesTheLandResolverTheOwnersLandNames(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != jarvis.RunStatus_Executing || len(stopped) != 0 {
-		t.Fatalf("the land's resolver: status %s, stopped %v; want it left executing for tendResolver", got.Status, stopped)
+	if got.Status != jarvis.RunStatus_Executing || len(*stopped) != 0 {
+		t.Fatalf("the land's resolver: status %s, stopped %v; want it left executing for tendResolver", got.Status, *stopped)
 	}
 }
 
@@ -214,13 +224,7 @@ func TestMarkInterruptedRunsCancelsDagRunsNoTaskReferences(t *testing.T) {
 	if err := wstore.AppendRun(ctx, dag.ChannelId, orphan); err != nil {
 		t.Fatal(err)
 	}
-	var stopped []string
-	oldStop := stopRunWorkers
-	stopRunWorkers = func(_ context.Context, r *waveobj.Run) error {
-		stopped = append(stopped, r.ID)
-		return nil
-	}
-	restoreAfterStages(t, func() { stopRunWorkers = oldStop })
+	stopped := recordStoppedDagRuns(t, dag.OID)
 
 	MarkInterruptedRuns(ctx)
 
@@ -233,8 +237,8 @@ func TestMarkInterruptedRunsCancelsDagRunsNoTaskReferences(t *testing.T) {
 			t.Fatalf("run %s: status %s, want %s", id, got.Status, want)
 		}
 	}
-	if !slices.Equal(stopped, []string{orphan.ID}) {
-		t.Fatalf("stopped %v, want only the orphan %s, so a resync cannot start its worker again", stopped, orphan.ID)
+	if !slices.Equal(*stopped, []string{orphan.ID}) {
+		t.Fatalf("stopped %v, want only the orphan %s, so a resync cannot start its worker again", *stopped, orphan.ID)
 	}
 }
 
