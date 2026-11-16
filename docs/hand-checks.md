@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The Jarvis hologram no longer drops to the pixel pet.** Unit tests and typecheck only, no dev app
+  ran. Use arcterm a working day with many agents and terminals opened, closed and switched between: `waveapp.log`
+  has no `[hologram] failed` line, the hologram never turns into Sprout/Minion for 5 s, and terminals still draw sharp
+  (WebGL) after switching back to one hidden for over 30 s.
 - [ ] (arcterm) **A finished run or council stays where it finished in Chat.** The CDP scenario `chat-council` checked
   the council cards on fixtures; the run ✓ row has no scenario (unit tests only). In a real agent that ran a run and a
   council, keep talking after both end: the Done council card stays just above the agent's summary of it and the run's

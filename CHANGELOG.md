@@ -35,6 +35,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The Jarvis hologram no longer turns into the pixel pet for a few seconds after a long day of opening and closing
+  terminals: closed and hidden terminals now give their graphics slot back at once instead of holding it.
 - Picking a whole paragraph in Chat no longer highlights the line number of a code block right below it.
 - A finished run or council in Chat now stays where it finished instead of following every new reply to the bottom:
   a run's ✓ row sits where its landed (or held) message came, and a council's Done card where its report reached the

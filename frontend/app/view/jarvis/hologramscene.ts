@@ -584,6 +584,10 @@ export class HologramScene {
         });
         this.composer.passes.forEach((pass) => pass.dispose?.());
         this.composer.dispose();
+        // three's dispose() keeps the context live, one of Chromium's ~16, until a garbage collection: a resize, a
+        // Full/Float switch or a retry after a loss would leave the old one behind, pushing toward the cap whose
+        // overflow costs the hologram its own
+        this.renderer.forceContextLoss();
         this.renderer.dispose();
     }
 }
