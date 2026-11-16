@@ -33,6 +33,7 @@ import { TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { debounce } from "throttle-debounce";
 import { JobQueueChip } from "./jobqueuechip";
+import { openSidecar } from "./sidecaropen";
 import { versionInfoAtom } from "./versioninfo";
 
 // Handoff top app bar (38px). Replaces CockpitTitlebar + the old "+ New Agent" strip.
@@ -92,13 +93,19 @@ export function useFoldName(): string {
     return hologram ? "Jarvis" : PET_CHARACTER_NAME[character];
 }
 
-// a right-click on a fold button switches window:autosprout, the fold that follows you out of the app, and picks the
-// corner the fold lands in (floatstore.ts)
+// a right-click on a fold button opens Sidecar, the other way to keep the agents in sight once you look away, switches
+// window:autosprout, the fold that follows you out of the app, and picks the corner the fold lands in (floatstore.ts)
 export function showFoldMenu(e: React.MouseEvent): void {
     const on = autoSproutOn(globalStore.get(getSettingsKeyAtom("window:autosprout")));
     const corner = spotCorner(globalStore.get(sproutSpotAtom));
     ContextMenuModel.getInstance().showContextMenu(
         [
+            {
+                label: "Open Sidecar",
+                sublabel: "Every agent at a glance, on another screen",
+                click: () => openSidecar(),
+            },
+            { type: "separator" },
             {
                 label: "Fold when you leave arcterm",
                 type: "checkbox",

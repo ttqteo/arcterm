@@ -41,7 +41,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   it to the right project's agent, opens a new one there, or asks you which project when it is unsure. The agent that
   got the job says which project Jarvis chose, with a Wrong project? button to move the job on. <!-- big -->
 - A Float tab whose agent replied while you were elsewhere carries a small dot until you look at it.
-- Sidecar, a second window for another screen that shows every agent at a glance: Ctrl+P → Open Sidecar. It opens
+- Sidecar, a second window for another screen that shows every agent at a glance: the Sidecar button on the Cockpit's
+  header, Open Sidecar on a right-click of the Jarvis button in the app bar, or Ctrl+P → Open Sidecar. It opens
   maximized on your other screen (centred when you have one), F11 or its full-screen button toggles full screen, and
   it closes with arcterm's window, and opens again where you left it (screen, size, full screen) the next time arcterm
   starts, unless you closed it yourself. <!-- try: open-sidecar --> <!-- big -->
