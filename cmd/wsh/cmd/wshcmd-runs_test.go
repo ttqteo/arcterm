@@ -662,14 +662,15 @@ func TestRunsShowLinesPrintsTheLinePlace(t *testing.T) {
 
 func TestRunsReleasedLines(t *testing.T) {
 	queue := []wshrpc.RunQueueEntry{
-		{Id: "q-0001", After: "r-1", Title: "Docs", State: wshrpc.RunQueueState_Waiting},
-		{Id: "q-0002", After: "r-9", Title: "Other run's", State: wshrpc.RunQueueState_Waiting},
-		{Id: "q-0003", After: "r-1", Title: "Was blocked by it", State: wshrpc.RunQueueState_Blocked, BlockedOn: "r-1"},
-		{Id: "q-0004", After: "r-1", Title: "Failed to start", State: wshrpc.RunQueueState_Blocked, Reason: "the plan is gone"},
+		{Id: "q-0001", After: []string{"r-1"}, Title: "Docs", State: wshrpc.RunQueueState_Waiting},
+		{Id: "q-0002", After: []string{"r-9"}, Title: "Other run's", State: wshrpc.RunQueueState_Waiting},
+		{Id: "q-0003", After: []string{"r-1"}, Title: "Was blocked by it", State: wshrpc.RunQueueState_Blocked, BlockedOn: "r-1"},
+		{Id: "q-0004", After: []string{"r-1"}, Title: "Failed to start", State: wshrpc.RunQueueState_Blocked, Reason: "the plan is gone"},
 		{Id: "q-0005", Title: "No after", State: wshrpc.RunQueueState_Waiting},
+		{Id: "q-0006", After: []string{"r-7", "r-1"}, Title: "Two runs", State: wshrpc.RunQueueState_Waiting},
 	}
 	got := runsReleasedLines("r-1", queue)
-	want := []string{"         queued runs after it start when there is room: q-0001 Docs, q-0003 Was blocked by it"}
+	want := []string{"         queued runs after it start when there is room: q-0001 Docs, q-0003 Was blocked by it, q-0006 Two runs (also after r-7)"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("released = %q, want %q", got, want)
 	}
@@ -795,18 +796,67 @@ func TestRunsWantsQueue(t *testing.T) {
 	cases := []struct {
 		name  string
 		queue bool
-		after string
+		after []string
 		want  bool
 	}{
-		{"neither starts now", false, "", false},
-		{"--queue", true, "", true},
-		{"--after implies --queue", false, "q-3f2a", true},
-		{"both", true, "4f2a", true},
+		{"neither starts now", false, nil, false},
+		{"--queue", true, nil, true},
+		{"--after implies --queue", false, []string{"q-3f2a"}, true},
+		{"several --after", false, []string{"4f2a", "9c1d"}, true},
+		{"both", true, []string{"4f2a"}, true},
 	}
 	for _, c := range cases {
 		if got := runsWantsQueue(c.queue, c.after); got != c.want {
 			t.Errorf("%s: runsWantsQueue(%v, %q) = %v, want %v", c.name, c.queue, c.after, got, c.want)
 		}
+	}
+}
+
+func TestRunsAfterIds(t *testing.T) {
+	cases := []struct {
+		name   string
+		values []string
+		want   []string
+	}{
+		{"none", nil, nil},
+		{"one", []string{"4f2a"}, []string{"4f2a"}},
+		{"a comma list", []string{"a,b"}, []string{"a", "b"}},
+		{"a comma list and a repeat", []string{"a,b", "c"}, []string{"a", "b", "c"}},
+		{"a run and a queue entry", []string{"r1,q-3f2a"}, []string{"r1", "q-3f2a"}},
+		{"blanks are no id", []string{"", " a , ,b,", ","}, []string{"a", "b"}},
+		{"an id twice is one wait", []string{"a,b", "a"}, []string{"a", "b"}},
+	}
+	for _, c := range cases {
+		if got := runsAfterIds(c.values); !slices.Equal(got, c.want) {
+			t.Errorf("%s: runsAfterIds(%q) = %q, want %q", c.name, c.values, got, c.want)
+		}
+	}
+}
+
+// `--after a,b --after c` is three ids: the registered flag takes both spellings, and what it parses is what the
+// start sends.
+func TestRunsStartAfterFlagTakesCommaListsAndRepeats(t *testing.T) {
+	flags := runsStartCmd.Flags()
+	flag := flags.Lookup("after")
+	if flag == nil {
+		t.Fatal("wsh runs start has no --after")
+	}
+	// the flag set is the command's own: put the flag back as it was, so a second run starts clean
+	t.Cleanup(func() {
+		if list, ok := flag.Value.(interface{ Replace([]string) error }); ok {
+			_ = list.Replace(nil)
+		}
+		flag.Changed = false
+	})
+	if err := flags.Parse([]string{"--after", "a,b", "--after", "c"}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := flags.GetStringSlice("after")
+	if err != nil {
+		t.Fatalf("--after is not a list flag: %v", err)
+	}
+	if got := runsAfterIds(raw); !slices.Equal(got, []string{"a", "b", "c"}) {
+		t.Fatalf("--after a,b --after c = %q, want three ids", got)
 	}
 }
 
@@ -825,10 +875,14 @@ func TestRunsQueuedLine(t *testing.T) {
 			"queued q-3f2a (#1 in line) — starts when no run is active"},
 		{"no cap", wshrpc.RunQueueEntry{Id: "q-3f2a"}, 1, 0, "",
 			"queued q-3f2a (#1 in line) — starts at once: runs:maxactive is 0, no cap"},
-		{"after a run", wshrpc.RunQueueEntry{Id: "q-3f2a", After: "4f2a-long-id"}, 1, 3, "Learned additions",
+		{"after a run", wshrpc.RunQueueEntry{Id: "q-3f2a", After: []string{"4f2a-long-id"}}, 1, 3, "Learned additions",
 			"queued q-3f2a (#1 in line) — starts after Learned additions lands"},
-		{"after a run with no known title", wshrpc.RunQueueEntry{Id: "q-3f2a", After: "4f2a-long-id"}, 1, 3, "",
+		{"after a run with no known title", wshrpc.RunQueueEntry{Id: "q-3f2a", After: []string{"4f2a-long-id"}}, 1, 3, "",
 			"queued q-3f2a (#1 in line) — starts after 4f2a-long-id lands"},
+		{"after two runs", wshrpc.RunQueueEntry{Id: "q-3f2a", After: []string{"4f2a-long-id", "9c1d-long-id"}}, 1, 3, "Learned additions, Docs",
+			"queued q-3f2a (#1 in line) — starts after Learned additions, Docs have all landed"},
+		{"after two runs with no known titles", wshrpc.RunQueueEntry{Id: "q-3f2a", After: []string{"4f2a-long-id", "9c1d-long-id"}}, 1, 3, "",
+			"queued q-3f2a (#1 in line) — starts after 4f2a-long-id, 9c1d-long-id have all landed"},
 	}
 	for _, c := range cases {
 		if got := runsQueuedLine(c.entry, c.place, c.maxActive, c.afterTitle); got != c.want {
@@ -841,7 +895,7 @@ func TestRunsQueuePlaceCountsWaitingEntriesOnly(t *testing.T) {
 	queue := []wshrpc.RunQueueEntry{
 		{Id: "q-0001", State: wshrpc.RunQueueState_Blocked},
 		{Id: "q-0002", State: wshrpc.RunQueueState_Waiting},
-		{Id: "q-0003", State: wshrpc.RunQueueState_Waiting, After: "r1"},
+		{Id: "q-0003", State: wshrpc.RunQueueState_Waiting, After: []string{"r1"}},
 		{Id: "q-0004", State: wshrpc.RunQueueState_Waiting},
 	}
 	for id, want := range map[string]int{"q-0002": 1, "q-0003": 2, "q-0004": 3, "q-0001": 0, "q-9999": 0} {
@@ -855,11 +909,12 @@ func TestRunsQueueLinesMarkEachEntry(t *testing.T) {
 	queue := []wshrpc.RunQueueEntry{
 		{Id: "q-0001", State: wshrpc.RunQueueState_Blocked, Reason: "Learned additions was held: conflict", Title: "Brainstorm", ProjectPath: "/work/arc", QueuedTs: 1_000},
 		{Id: "q-0002", State: wshrpc.RunQueueState_Waiting, Title: "Rail", ProjectPath: "/work/arc", QueuedTs: 2_000},
-		{Id: "q-0003", State: wshrpc.RunQueueState_Waiting, After: "4f2a", Title: "Docs", ProjectPath: "/work/arc", QueuedTs: 3_000},
+		{Id: "q-0003", State: wshrpc.RunQueueState_Waiting, After: []string{"4f2a"}, Title: "Docs", ProjectPath: "/work/arc", QueuedTs: 3_000},
 		{Id: "q-0004", State: wshrpc.RunQueueState_Waiting, Title: "Late", ProjectPath: "/work/arc", QueuedTs: 4_000},
+		{Id: "q-0005", State: wshrpc.RunQueueState_Waiting, After: []string{"4f2a", "9c1d"}, Title: "Both", ProjectPath: "/work/arc", QueuedTs: 4_500},
 	}
 	lines := runsQueueLines(queue, queue, false, 5_000)
-	if len(lines) != 4 {
+	if len(lines) != 5 {
 		t.Fatalf("lines = %q", lines)
 	}
 	for _, want := range []string{"q-0001", "blocked: Learned additions was held: conflict", "Brainstorm"} {
@@ -876,9 +931,12 @@ func TestRunsQueueLinesMarkEachEntry(t *testing.T) {
 	if !strings.Contains(lines[3], "queued #3") {
 		t.Errorf("the place counts every waiting entry before it, an After one too: %q", lines[3])
 	}
+	if !strings.Contains(lines[4], "after 4f2a, 9c1d") || strings.Contains(lines[4], "queued #") {
+		t.Errorf("an entry after two runs names both: %q", lines[4])
+	}
 
 	// the place is the queue's, not the listing's: showing only the last entry still says #3
-	if only := runsQueueLines(queue[3:], queue, false, 5_000); len(only) != 1 || !strings.Contains(only[0], "queued #3") {
+	if only := runsQueueLines(queue[3:4], queue, false, 5_000); len(only) != 1 || !strings.Contains(only[0], "queued #3") {
 		t.Errorf("place over the whole queue: %q", only)
 	}
 	if all := runsQueueLines(queue[:1], queue, true, 5_000); !strings.Contains(all[0], "arc") {

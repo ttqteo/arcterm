@@ -2436,7 +2436,7 @@ describe("jarvisCountsByProject", () => {
     });
 
     it("files a blocked queue entry under its queued row's folder, and leaves out what names no run", () => {
-        const queue = [{ project: "portal", entry: { id: "q1" } as RunQueueEntry, place: 1 }];
+        const queue = [{ project: "portal", entry: { id: "q1" } as RunQueueEntry, place: 1, afters: [] }];
         const counts = jarvisCountsByProject(
             [item({ queueid: "q1" }), item({ kind: "learn-proposal" }), item({ runid: "gone" })],
             {},

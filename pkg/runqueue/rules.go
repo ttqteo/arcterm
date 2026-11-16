@@ -82,11 +82,11 @@ type Block struct {
 }
 
 // Next walks the queue in order. start is the id of the first waiting entry that may start now: its After is empty
-// or a run that landed, and fewer than maxActive top-level runs are active (maxActive 0 is no cap). block names each
-// waiting entry that can never start by waiting, with the reason: its After run was cancelled or ended held, or its
-// After is neither a run nor a queued entry. An entry that waits on a run still going, a dirty hold or another
-// queued entry (never ready: it has no run to have landed) is neither started nor blocked, and does not hold up the
-// entries behind it. A blocked entry is skipped, except that unblock lists the ones blocked on a run (BlockedOn) that
+// or every id in it is a run that landed, and fewer than maxActive top-level runs are active (maxActive 0 is no cap).
+// block names each waiting entry that can never start by waiting, with the reason: one of its After runs was
+// cancelled or ended held (On is that run), or an After id is neither a run nor a queued entry. An entry that waits
+// on a run still going, a dirty hold or another queued entry (never ready: it has no run to have landed) is neither
+// started nor blocked, and does not hold up the entries behind it. A blocked entry is skipped, except that unblock lists the ones blocked on a run (BlockedOn) that
 // has landed since: a held run is landed later by hand, and these carry on. They are not started in this call; the
 // caller sets them waiting and asks again. An entry blocked for any other cause has no BlockedOn and stays blocked.
 func Next(entries []wshrpc.RunQueueEntry, runs map[string]*waveobj.Run, maxActive int) (start string, block map[string]Block, unblock []string) {
@@ -112,28 +112,42 @@ func Next(entries []wshrpc.RunQueueEntry, runs map[string]*waveobj.Run, maxActiv
 			}
 			continue
 		}
-		if e.After == "" {
-			if start == "" && room {
-				start = e.Id
-			}
-			continue
-		}
-		if after, ok := runs[e.After]; ok {
-			final, landed, reason := Outcome(after)
-			switch {
-			case !final:
-			case landed:
-				if start == "" && room {
-					start = e.Id
-				}
-			default:
-				block[e.Id] = Block{Reason: runTitle(after) + " was " + endedAs(after, reason), On: e.After}
-			}
-		} else if !queued[e.After] {
-			block[e.Id] = Block{Reason: e.After + " is not a run or a queued entry"}
+		ready, b, blocked := afterState(e.After, runs, queued)
+		switch {
+		case blocked:
+			block[e.Id] = b
+		case ready && start == "" && room:
+			start = e.Id
 		}
 	}
 	return start, block, unblock
+}
+
+// afterState reads an entry's After list. ready is true when every id is a run that landed (an empty list is ready).
+// blocked is true, with the first reason in list order, when any id can never land: a run that ended held or
+// cancelled, or an id that is neither a run nor a queued entry. That wins over another id still going: the entry
+// would wait for the rest and then not start. An id still going, a dirty hold, or a queued entry (never ready: it has
+// no run to have landed) leaves the entry waiting.
+func afterState(after []string, runs map[string]*waveobj.Run, queued map[string]bool) (ready bool, b Block, blocked bool) {
+	ready = true
+	for _, id := range after {
+		if run, ok := runs[id]; ok {
+			final, landed, reason := Outcome(run)
+			switch {
+			case !final:
+				ready = false
+			case !landed:
+				if !blocked {
+					b, blocked = Block{Reason: runTitle(run) + " was " + endedAs(run, reason), On: id}, true
+				}
+			}
+		} else if queued[id] {
+			ready = false
+		} else if !blocked {
+			b, blocked = Block{Reason: id + " is not a run or a queued entry"}, true
+		}
+	}
+	return ready && !blocked, b, blocked
 }
 
 // endedAs words how a final run that did not land ended, to follow "was": "held: <reason>" or "cancelled".

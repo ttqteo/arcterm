@@ -8,6 +8,7 @@ import { queuedLabel } from "./chatruncards";
 import { queuedRows } from "./runqueuemodel";
 
 const RUN = "3fa21b0c-9d4e-4f6a-8b1c-0123456789ab";
+const OTHER_RUN = "77c0de11-1111-4222-8333-444455556666";
 const ENTRY = "q4k9x2mz";
 
 const stage = { key: "working", label: "Working · 2 of 5 tasks", tone: "working", needsYou: false };
@@ -69,16 +70,31 @@ describe("queuedState", () => {
     });
 
     it("waits after a run, named by the title the tree's row resolves", () => {
-        const s = read([entry({ after: RUN })], {}, { [RUN]: "Chat verdict handoff" });
+        const s = read([entry({ after: [RUN] })], {}, { [RUN]: "Chat verdict handoff" });
         expect(queuedLabel(s.view)).toBe("Queued · after Chat verdict handoff");
     });
 
+    it("waits after two runs, named by both titles", () => {
+        const s = read([entry({ after: [RUN, OTHER_RUN] })], {}, { [RUN]: "run A", [OTHER_RUN]: "run B" });
+        expect(queuedLabel(s.view)).toBe("Queued · after run A, run B");
+    });
+
+    it("keeps naming both while only one of two runs has landed, and says Queued once both have", () => {
+        const e = entry({ after: [RUN, OTHER_RUN] });
+        const titles = { [RUN]: "run A", [OTHER_RUN]: "run B" };
+        expect(queuedLabel(read([e], {}, titles, [RUN]).view)).toBe("Queued · after run A, run B");
+        expect(queuedLabel(read([e], {}, titles, [OTHER_RUN]).view)).toBe("Queued · after run A, run B");
+        const both = read([e], {}, titles, [RUN, OTHER_RUN]);
+        expect(both.view).toEqual({ state: "waiting" });
+        expect(queuedLabel(both.view)).toBe("Queued");
+    });
+
     it("names the run it waits after by its short id while its title is unknown", () => {
-        expect(queuedLabel(read([entry({ after: RUN })]).view)).toBe("Queued · after 3fa21b0c");
+        expect(queuedLabel(read([entry({ after: [RUN] })]).view)).toBe("Queued · after 3fa21b0c");
     });
 
     it("waits for room only once the run it waited after has landed", () => {
-        const s = read([entry({ after: RUN })], {}, { [RUN]: "Chat verdict handoff" }, [RUN]);
+        const s = read([entry({ after: [RUN] })], {}, { [RUN]: "Chat verdict handoff" }, [RUN]);
         expect(s.view).toEqual({ state: "waiting" });
         expect(queuedLabel(s.view)).toBe("Queued");
     });

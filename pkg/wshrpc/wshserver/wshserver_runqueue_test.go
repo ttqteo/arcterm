@@ -160,13 +160,20 @@ func (w *queueWorld) publishCount() int {
 	return len(w.published)
 }
 
-// queueEntry adds an entry as the command would have, with a title that doubles as the goal the fake create sees.
-func queueEntry(t *testing.T, title, after string) wshrpc.RunQueueEntry {
+// queueEntry adds an entry as the command would have, with a title that doubles as the goal the fake create sees. It
+// waits After the ids given; an empty id is no After.
+func queueEntry(t *testing.T, title string, after ...string) wshrpc.RunQueueEntry {
 	t.Helper()
+	var afterIds []string
+	for _, a := range after {
+		if a != "" {
+			afterIds = append(afterIds, a)
+		}
+	}
 	e, err := runqueue.Add(wshrpc.RunQueueEntry{
 		Title:       title,
 		ProjectPath: "/proj",
-		After:       after,
+		After:       afterIds,
 		Data: wshrpc.CommandCreateRunData{
 			ChannelId: "ch-queue", WorkspaceId: "ws", Goal: title, Mode: jarvis.RunMode_Orchestrator,
 			PlanPath: "/plans/" + title + ".md", OriginTabId: "tab-1",
@@ -345,6 +352,55 @@ func TestRunQueueEntryAfterARun(t *testing.T) {
 	evaluateRunQueue(context.Background())
 	if got := w.createdGoals(); !sameStrings(got, "Alpha") {
 		t.Fatalf("created %v, want Alpha once its After run landed", got)
+	}
+}
+
+// an entry after two runs starts only once both have landed
+func TestRunQueueEntryAfterTwoRunsStartsOnceBothLanded(t *testing.T) {
+	w := useQueueWorld(t)
+	w.setRun(&waveobj.Run{ID: "r1", Goal: "First", Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: "landed"}})
+	w.setRun(&waveobj.Run{ID: "r2", Goal: "Second", Status: jarvis.RunStatus_Executing})
+	queueEntry(t, "Alpha", "r1", "r2")
+
+	evaluateRunQueue(context.Background())
+	if got := w.createdGoals(); len(got) != 0 {
+		t.Fatalf("started %v while its second After run is still going", got)
+	}
+	if e := queueEntries(t)[0]; e.State != wshrpc.RunQueueState_Waiting {
+		t.Fatalf("an entry waiting on a running run keeps waiting, got %q", e.State)
+	}
+
+	w.setRun(&waveobj.Run{ID: "r2", Goal: "Second", Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: "landed"}})
+	evaluateRunQueue(context.Background())
+	if got := w.createdGoals(); !sameStrings(got, "Alpha") {
+		t.Fatalf("created %v, want Alpha once both After runs landed", got)
+	}
+	// the run keeps one id: the first run the entry waited for
+	if w.created[0].AfterRunId != "r1" {
+		t.Fatalf("AfterRunId = %q, want r1", w.created[0].AfterRunId)
+	}
+}
+
+// any one of the runs ending held blocks the entry, on that run, and it carries on when that run lands later
+func TestRunQueueEntryAfterTwoRunsIsBlockedWhenTheSecondEndsHeld(t *testing.T) {
+	w := useQueueWorld(t)
+	w.setRun(&waveobj.Run{ID: "r1", Goal: "First", Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: "landed"}})
+	w.setRun(&waveobj.Run{ID: "r2", Goal: "Second", Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: "held", Reason: "merge conflict"}})
+	queueEntry(t, "Alpha", "r1", "r2")
+
+	evaluateRunQueue(context.Background())
+	alpha := queueEntries(t)[0]
+	if alpha.State != wshrpc.RunQueueState_Blocked || alpha.BlockedOn != "r2" || !strings.Contains(alpha.Reason, "Second was held") {
+		t.Fatalf("an entry after a held run is blocked on it, naming it: %+v", alpha)
+	}
+	if got := w.createdGoals(); len(got) != 0 {
+		t.Fatalf("started %v", got)
+	}
+
+	w.setRun(&waveobj.Run{ID: "r2", Goal: "Second", Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: "landed"}})
+	evaluateRunQueue(context.Background())
+	if got := w.createdGoals(); !sameStrings(got, "Alpha") {
+		t.Fatalf("created %v, want Alpha once the held run landed later", got)
 	}
 }
 
@@ -545,6 +601,20 @@ func TestRunQueueStartCarriesARunAfterOntoTheRun(t *testing.T) {
 	}
 }
 
+// an After list that starts with a queue entry still carries the first run id it holds
+func TestRunQueueStartNowCarriesTheFirstRunOfTheListNotAQueueEntry(t *testing.T) {
+	w := useQueueWorld(t)
+	w.maxActive = 0
+	a := queueEntry(t, "Alpha", "")
+	b := queueEntry(t, "Beta", a.Id, "r1", "r2")
+	if err := (&WshServer{}).RunQueueStartNowCommand(context.Background(), wshrpc.CommandRunQueueIdData{Id: b.Id}); err != nil {
+		t.Fatalf("StartNow(B): %v", err)
+	}
+	if len(w.created) != 1 || w.created[0].AfterRunId != "r1" {
+		t.Fatalf("want AfterRunId r1, the first After that is no queue entry, got %+v", w.created)
+	}
+}
+
 func TestRunQueueStartNowPastAQueuedAfterCarriesNoAfterRun(t *testing.T) {
 	w := useQueueWorld(t)
 	w.maxActive = 0
@@ -634,6 +704,26 @@ func TestRunQueueRemoveDropsTheEntryAndBlocksWhatWaitedOnIt(t *testing.T) {
 	}
 }
 
+// an entry that waited on the removed one and on a run is blocked all the same: it can never start by waiting
+func TestRunQueueRemoveBlocksAnEntryThatWaitsOnTheRemovedOneAndARun(t *testing.T) {
+	useQueueWorld(t)
+	alpha := queueEntry(t, "Alpha", "")
+	queueEntry(t, "Beta", alpha.Id, "r1")
+	queueEntry(t, "Gamma", "r1")
+
+	if err := (&WshServer{}).RunQueueRemoveCommand(context.Background(), wshrpc.CommandRunQueueIdData{Id: alpha.Id}); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	entries := queueEntries(t)
+	beta := entryByTitle(t, entries, "Beta")
+	if beta.State != wshrpc.RunQueueState_Blocked || beta.Reason != "Alpha was removed" || beta.BlockedOn != "" {
+		t.Fatalf("an entry whose list held the removed one is blocked: %+v", beta)
+	}
+	if gamma := entryByTitle(t, entries, "Gamma"); gamma.State != wshrpc.RunQueueState_Waiting {
+		t.Fatalf("an entry that waits only on the run is untouched, got %q", gamma.State)
+	}
+}
+
 func TestRunQueueEntryAfterAQueuedEntryFollowsItToItsRun(t *testing.T) {
 	w := useQueueWorld(t)
 	w.maxActive = 1
@@ -648,11 +738,45 @@ func TestRunQueueEntryAfterAQueuedEntryFollowsItToItsRun(t *testing.T) {
 	if len(left) != 1 || left[0].Title != "Beta" {
 		t.Fatalf("queue = %v", entryTitles(left))
 	}
-	if left[0].After != w.runId(1) {
+	if !sameStrings(left[0].After, w.runId(1)) {
 		t.Fatalf("Beta waits After %q, want the run Alpha became (%s)", left[0].After, w.runId(1))
 	}
 	if left[0].State != wshrpc.RunQueueState_Waiting {
 		t.Fatalf("Beta is %q (%q): it waits on the run, it is not blocked", left[0].State, left[0].Reason)
+	}
+}
+
+// an entry that waits on a queue entry and on a run follows the entry to its run and keeps waiting on the other run
+func TestRunQueueEntryAfterAQueuedEntryAndARunFollowsOnlyTheEntry(t *testing.T) {
+	w := useQueueWorld(t)
+	w.maxActive = 1
+	w.setRun(&waveobj.Run{ID: "r9", Goal: "Learned additions", Status: jarvis.RunStatus_Executing, ParentLeadORef: "lead"}) // a child: no cap
+	alpha := queueEntry(t, "Alpha", "")
+	queueEntry(t, "Beta", "r9", alpha.Id)
+	evaluateRunQueue(context.Background())
+
+	left := queueEntries(t)
+	if len(left) != 1 || left[0].Title != "Beta" || !sameStrings(left[0].After, "r9", w.runId(1)) {
+		t.Fatalf("Beta waits After r9 and the run Alpha became (%s), got %+v", w.runId(1), left)
+	}
+}
+
+// the loop must read every run of every After list, or a landed run (done, so not listed) would never be seen
+func TestRunQueueReadsEveryRunAnEntryWaitsAfter(t *testing.T) {
+	useQueueWorld(t)
+	queueEntry(t, "Alpha", "r1", "r2")
+	queueEntry(t, "Beta", "r3")
+
+	var asked []string
+	runQueueLoadRuns = func(ctx context.Context, afterIds []string) (map[string]*waveobj.Run, error) {
+		asked = append(asked, afterIds...)
+		return map[string]*waveobj.Run{}, nil
+	}
+	evaluateRunQueue(context.Background())
+	for _, id := range []string{"r1", "r2", "r3"} {
+		if !slices.Contains(asked, id) {
+			t.Fatalf("asked for runs %v, want %s too", asked, id)
+		}
 	}
 }
 
@@ -927,7 +1051,8 @@ func TestRunQueueAdd(t *testing.T) {
 		}
 		return path
 	}
-	add := func(ch *waveobj.Channel, data wshrpc.CommandCreateRunData, after string) (*wshrpc.RunQueueEntry, error) {
+	// after is what --after was given: an empty one is no After, as the command treats it
+	add := func(ch *waveobj.Channel, data wshrpc.CommandCreateRunData, after ...string) (*wshrpc.RunQueueEntry, error) {
 		data.ChannelId, data.WorkspaceId = ch.OID, "ws"
 		return (&WshServer{}).RunQueueAddCommand(ctx, wshrpc.CommandRunQueueAddData{Data: data, After: after})
 	}
@@ -1008,9 +1133,57 @@ func TestRunQueueAdd(t *testing.T) {
 			if err != nil {
 				t.Fatalf("After %q: %v", given, err)
 			}
-			if e.After != runId {
+			if !sameStrings(e.After, runId) {
 				t.Fatalf("After %q stored as %q, want the full id %q", given, e.After, runId)
 			}
+		}
+	})
+
+	t.Run("resolves each of several Afters, drops a repeat and an empty one, and keeps the order given", func(t *testing.T) {
+		useQueueWorld(t)
+		ch := newChannel(t)
+		path := writePlan(t, t.TempDir(), "plan.md", plan)
+		first, second := uuid.NewString(), uuid.NewString()
+		for _, id := range []string{first, second} {
+			if err := wstore.AppendRun(ctx, ch.OID, waveobj.Run{ID: id, Status: jarvis.RunStatus_Done}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		queued, err := add(ch, wshrpc.CommandCreateRunData{Mode: jarvis.RunMode_Orchestrator, PlanPath: path}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// a run by its prefix, the same run in full, an empty one, a queued entry by its prefix, then another run
+		e, err := add(ch, wshrpc.CommandCreateRunData{Mode: jarvis.RunMode_Orchestrator, PlanPath: path}, first[:8], first, "", queued.Id[:5], second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := []string{first, queued.Id, second}; !sameStrings(e.After, want...) {
+			t.Fatalf("After stored as %q, want %q", e.After, want)
+		}
+		stored, err := runqueue.Resolve(e.Id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !sameStrings(stored.After, first, queued.Id, second) {
+			t.Fatalf("the file holds After %q", stored.After)
+		}
+	})
+
+	t.Run("refuses the whole add when one of several Afters is unknown", func(t *testing.T) {
+		useQueueWorld(t)
+		ch := newChannel(t)
+		path := writePlan(t, t.TempDir(), "plan.md", plan)
+		runId := uuid.NewString()
+		if err := wstore.AppendRun(ctx, ch.OID, waveobj.Run{ID: runId, Status: jarvis.RunStatus_Done}); err != nil {
+			t.Fatal(err)
+		}
+		_, err := add(ch, wshrpc.CommandCreateRunData{Mode: jarvis.RunMode_Orchestrator, PlanPath: path}, runId, "no-such-run")
+		if err == nil || !strings.Contains(err.Error(), "no-such-run") {
+			t.Fatalf("error = %v, want it to name the unknown After", err)
+		}
+		if left := queueEntries(t); len(left) != 0 {
+			t.Fatalf("a refused add left %v in the queue", entryTitles(left))
 		}
 	})
 
@@ -1041,7 +1214,7 @@ func TestRunQueueAdd(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if second.After != first.Id {
+		if !sameStrings(second.After, first.Id) {
 			t.Fatalf("After stored as %q, want the entry's full id %q", second.After, first.Id)
 		}
 	})

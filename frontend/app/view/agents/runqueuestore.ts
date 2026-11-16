@@ -33,17 +33,22 @@ const queueAfterRunsAtom: Atom<AfterRuns> = atom((get) => {
     const queued = new Set(entries.map((e) => e.id));
     const after: AfterRuns = { titles: {}, landed: new Set() };
     for (const e of entries) {
-        if (!e.after || queued.has(e.after) || e.after in after.titles) {
-            continue;
-        }
-        const run = get(WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", e.after)));
-        if (run == null) {
-            continue;
-        }
-        const dag = run.dagoref ? get(WOS.getWaveObjectAtom<TaskGroup>(WOS.makeORef("dag", run.dagoref))) : undefined;
-        after.titles[e.after] = runTitle(run, dag);
-        if (runLanded(run)) {
-            after.landed.add(e.after);
+        // every id of the list: an entry after two runs reads both
+        for (const id of e.after ?? []) {
+            if (queued.has(id) || id in after.titles) {
+                continue;
+            }
+            const run = get(WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", id)));
+            if (run == null) {
+                continue;
+            }
+            const dag = run.dagoref
+                ? get(WOS.getWaveObjectAtom<TaskGroup>(WOS.makeORef("dag", run.dagoref)))
+                : undefined;
+            after.titles[id] = runTitle(run, dag);
+            if (runLanded(run)) {
+                after.landed.add(id);
+            }
         }
     }
     return after;

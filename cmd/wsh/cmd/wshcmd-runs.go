@@ -71,7 +71,9 @@ A launch can take minutes. If it reports no reply, the run may still have starte
 --queue hands the start to arcterm instead: it checks the plan now, then starts the run when fewer than
 the runs:maxactive setting (default 3) top-level runs are active. The plan is read and the base commit
 taken when the run starts, not when it is queued; the route is fixed now. --after <run-id or q-id> also
-waits for that run to land (a unique prefix of either id works) and implies --queue.`,
+waits for that run to land (a unique prefix of either id works) and implies --queue. Repeat --after or give
+a comma list (--after r1,r2 --after q-3f2a) to wait for all of them: it starts once every one has landed,
+and is blocked if any one ends held or cancelled.`,
 	Args:    cobra.MaximumNArgs(1),
 	PreRunE: preRunSetupRpcClient,
 	RunE:    runsStartRun,
@@ -248,7 +250,7 @@ func init() {
 	f.String("effort", "", "initiative to attach the run to (id from 'wsh effort list')")
 	f.String("chunk", "", "the initiative's chunk: its label or 1-based number")
 	f.Bool("queue", false, "queue the start: arcterm starts it when fewer than runs:maxactive runs are active")
-	f.String("after", "", "run id or queue entry id (a unique prefix of either) to wait for: starts once that run has landed; implies --queue")
+	f.StringSlice("after", nil, "run id or queue entry id (a unique prefix of either) to wait for: starts once that run has landed; repeat it or give a comma list to wait for several; implies --queue")
 	f.Bool("json", false, "JSON output")
 	for _, c := range []*cobra.Command{runsStartCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsPauseCmd, runsResumeCmd, runsEndFinalCmd, runsRerunFinalCmd, runsRelaunchLeadCmd, runsLandCmd, runsAckCmd} {
 		c.Flags().String("project", "", "project directory (default: the current directory)")
@@ -323,7 +325,8 @@ func runsStartRun(cmd *cobra.Command, args []string) error {
 	data.ChannelId = ch.OID
 	data.OriginTabId = getTabIdFromEnv()
 	queue, _ := cmd.Flags().GetBool("queue")
-	if after := flag("after"); runsWantsQueue(queue, after) {
+	rawAfter, _ := cmd.Flags().GetStringSlice("after")
+	if after := runsAfterIds(rawAfter); runsWantsQueue(queue, after) {
 		return runsQueueStart(cmd, data, after)
 	}
 	rtn, err := wshclient.CreateRunCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: runsStartTimeoutMs})
@@ -428,13 +431,28 @@ func runsStartErr(err error) error {
 }
 
 // runsWantsQueue is whether a start is handed to the run queue: --queue, or --after, which only a queue can honour.
-func runsWantsQueue(queue bool, after string) bool {
-	return queue || after != ""
+func runsWantsQueue(queue bool, after []string) bool {
+	return queue || len(after) > 0
+}
+
+// runsAfterIds is what --after was given as a list of ids: each value may be a comma list, a blank one is no id, and
+// an id given twice is one wait. The order is the order given. Each id is resolved by the server, which keeps today's
+// error for a typo.
+func runsAfterIds(values []string) []string {
+	var ids []string
+	for _, v := range values {
+		for _, id := range strings.Split(v, ",") {
+			if id = strings.TrimSpace(id); id != "" && !slices.Contains(ids, id) {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
 }
 
 // runsQueueStart queues the start the flags built: the same data a start would have sent, so the route and the
 // origin session are fixed now, and the server checks the plan before it accepts the entry.
-func runsQueueStart(cmd *cobra.Command, data wshrpc.CommandCreateRunData, after string) error {
+func runsQueueStart(cmd *cobra.Command, data wshrpc.CommandCreateRunData, after []string) error {
 	entry, err := wshclient.RunQueueAddCommand(RpcClient, wshrpc.CommandRunQueueAddData{Data: data, After: after}, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
 	if err != nil {
 		return err
@@ -452,22 +470,29 @@ func runsQueueStart(cmd *cobra.Command, data wshrpc.CommandCreateRunData, after 
 	return nil
 }
 
-// runsQueueAfterTitle names what an entry waits for, for the queued line: a queued entry's title, or a run's first
-// goal line. Empty when it cannot be found; the line then names the id.
+// runsQueueAfterTitle names what an entry waits for, for the queued line: each After id by a queued entry's title or a
+// run's first goal line (the id itself when it cannot be found), joined by ", ". Empty when the entry waits for
+// nothing.
 func runsQueueAfterTitle(cmd *cobra.Command, e wshrpc.RunQueueEntry, entries []wshrpc.RunQueueEntry) string {
-	if e.After == "" {
-		return ""
+	names := make([]string, 0, len(e.After))
+	for _, id := range e.After {
+		names = append(names, runsAfterName(cmd, id, entries))
 	}
+	return strings.Join(names, ", ")
+}
+
+// runsAfterName is one After id by its title, or the id when no title can be found.
+func runsAfterName(cmd *cobra.Command, id string, entries []wshrpc.RunQueueEntry) string {
 	for _, other := range entries {
-		if other.Id == e.After {
-			return other.Title
+		if other.Id == id {
+			return cmp.Or(other.Title, id)
 		}
 	}
-	if _, run, err := runsFind(cmd, e.After); err == nil {
+	if _, run, err := runsFind(cmd, id); err == nil {
 		title, _, _ := strings.Cut(run.Goal, "\n")
-		return runsClip(title, runsGoalWidth)
+		return cmp.Or(runsClip(title, runsGoalWidth), id)
 	}
-	return ""
+	return id
 }
 
 // runsQueuedReport is what `start --queue` prints once the entry is in. The loop starts an entry the moment there is
@@ -489,10 +514,13 @@ func runsQueuedReport(entry wshrpc.RunQueueEntry, list wshrpc.CommandRunQueueLis
 func runsQueuedLine(e wshrpc.RunQueueEntry, place, maxActive int, afterTitle string) string {
 	head := fmt.Sprintf("queued %s (#%d in line) — ", e.Id, place)
 	switch {
-	case e.After != "":
+	case len(e.After) > 0:
 		name := afterTitle
 		if name == "" {
-			name = e.After
+			name = strings.Join(e.After, ", ")
+		}
+		if len(e.After) > 1 {
+			return head + "starts after " + name + " have all landed"
 		}
 		return head + "starts after " + name + " lands"
 	case maxActive <= 0:
@@ -543,8 +571,8 @@ func runsQueueLines(shown, queue []wshrpc.RunQueueEntry, withProject bool, now i
 		switch {
 		case e.State == wshrpc.RunQueueState_Blocked:
 			mark = "blocked: " + runsClip(e.Reason, runsReasonWidth)
-		case e.After != "":
-			mark = "after " + e.After
+		case len(e.After) > 0:
+			mark = "after " + strings.Join(e.After, ", ")
 		default:
 			mark = fmt.Sprintf("queued #%d", runsQueuePlace(queue, e.Id))
 		}
@@ -1397,14 +1425,25 @@ func runsQueuedLandTail(r *waveobj.Run, runs []*waveobj.Run) string {
 }
 
 // runsReleasedLines name the queued starts that wait on a run that has just landed: the loop starts each once there
-// is room. A start blocked for any other reason stays blocked, so it is not named.
+// is room. A start blocked for any other reason stays blocked, so it is not named. One that waits on other runs too
+// is named with them, since it starts only when they have landed as well.
 func runsReleasedLines(runID string, queue []wshrpc.RunQueueEntry) []string {
 	var names []string
 	for _, e := range queue {
-		if e.After != runID || (e.State == wshrpc.RunQueueState_Blocked && e.BlockedOn != runID) {
+		if !slices.Contains(e.After, runID) || (e.State == wshrpc.RunQueueState_Blocked && e.BlockedOn != runID) {
 			continue
 		}
-		names = append(names, strings.TrimSpace(e.Id+" "+runsClip(e.Title, runsGoalWidth)))
+		name := strings.TrimSpace(e.Id + " " + runsClip(e.Title, runsGoalWidth))
+		var others []string
+		for _, id := range e.After {
+			if id != runID {
+				others = append(others, runsShortRun(id))
+			}
+		}
+		if len(others) > 0 {
+			name += " (also after " + strings.Join(others, ", ") + ")"
+		}
+		names = append(names, name)
 	}
 	if len(names) == 0 {
 		return nil

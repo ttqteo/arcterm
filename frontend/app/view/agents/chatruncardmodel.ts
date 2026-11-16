@@ -38,8 +38,9 @@ export function runTag(live: boolean, needsYou: boolean): CardState {
 export type QueuedState = { view: QueuedView; name: string; head: "Orchestrator run" | "Quick run" };
 
 /** Reads one queued start from the queue: `queue` and `started` as the run queue store holds them, `rows` the tree's rows
- *  (`queuedRows`), which resolve the title of the run an entry waits after. An After that has landed leaves only room to
- *  wait for, as the tree's row reads it, so the card says "Queued", not "Queued · after <run>". */
+ *  (`queuedRows`), which resolve the title of each run an entry waits after. An After that has landed (every run of it,
+ *  for an entry after several) leaves only room to wait for, as the tree's row reads it, so the card says "Queued", not
+ *  "Queued · after <run>". */
 export function queuedState(
     entryId: string,
     queue: readonly RunQueueEntry[],
@@ -47,7 +48,7 @@ export function queuedState(
     rows: readonly QueuedRow[]
 ): QueuedState {
     const row = rows.find((r) => r.entry.id === entryId);
-    const afterTitle = (id: string) => (row?.entry.after === id ? row.afterTitle : undefined);
+    const afterTitle = (id: string) => row?.afters.find((a) => a.id === id)?.title;
     const view = queuedView(entryId, queue, started, afterTitle);
     const entry = queue.find((e) => e.id === entryId);
     return {

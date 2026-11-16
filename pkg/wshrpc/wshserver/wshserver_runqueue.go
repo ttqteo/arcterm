@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -172,9 +173,7 @@ func readQueuedStart(ctx context.Context) (entry wshrpc.RunQueueEntry, ok, unblo
 	// a run that landed is done, so the loader reads it only when asked: the run each blocked entry waits on too
 	runIds := make([]string, 0, len(entries))
 	for _, e := range entries {
-		if e.After != "" {
-			runIds = append(runIds, e.After)
-		}
+		runIds = append(runIds, e.After...)
 		if e.BlockedOn != "" {
 			runIds = append(runIds, e.BlockedOn)
 		}
@@ -221,9 +220,12 @@ func startQueuedEntry(ctx context.Context, e wshrpc.RunQueueEntry) error {
 	defer cancel()
 	data := e.Data
 	// a queue entry id is "q-" + hex (RunQueueEntry.Id); an After still naming one (only Start now starts an entry
-	// past its After) is no run to remember
-	if e.After != "" && !strings.HasPrefix(e.After, "q-") {
-		data.AfterRunId = e.After
+	// past its After) is no run to remember. The run keeps one id: the first run the entry waited for.
+	for _, id := range e.After {
+		if !strings.HasPrefix(id, "q-") {
+			data.AfterRunId = id
+			break
+		}
 	}
 	rtn, err := runQueueCreateRun(sctx, data)
 	if err == nil && (rtn == nil || rtn.Run == nil) {
@@ -348,9 +350,16 @@ func (ws *WshServer) RunQueueAddCommand(ctx context.Context, data wshrpc.Command
 			title = planTitle(plan, d.PlanPath)
 		}
 	}
-	after, err := resolveQueueAfter(ctx, data.After)
-	if err != nil {
-		return nil, err
+	var after []string
+	for _, a := range data.After {
+		id, err := resolveQueueAfter(ctx, a)
+		if err != nil {
+			return nil, err
+		}
+		// an empty one is no After, and two spellings of one run are one wait
+		if id != "" && !slices.Contains(after, id) {
+			after = append(after, id)
+		}
 	}
 	entry, err := runqueue.Add(wshrpc.RunQueueEntry{Data: d, Title: title, ProjectPath: ch.ProjectPath, After: after, Brainstorm: data.Brainstorm})
 	if err != nil {
@@ -471,7 +480,7 @@ func (ws *WshServer) RunQueueRemoveCommand(ctx context.Context, data wshrpc.Comm
 		return err
 	}
 	for _, dep := range entries {
-		if dep.After != e.Id {
+		if !slices.Contains(dep.After, e.Id) {
 			continue
 		}
 		if err := runqueue.SetBlocked(dep.Id, e.Title+" was removed", ""); err != nil && !errors.Is(err, runqueue.ErrNotFound) {

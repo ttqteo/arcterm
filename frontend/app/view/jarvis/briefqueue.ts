@@ -7,33 +7,46 @@
 // resolves each entry's place and its After's title.
 
 import { formatAge, formatAgo } from "@/app/view/agents/agentsviewmodel";
-import { isBlockedEntry, queuedRoute, type QueuedRow } from "@/app/view/agents/runqueuemodel";
+import {
+    afterName,
+    isBlockedEntry,
+    queuedRoute,
+    type QueuedAfter,
+    type QueuedRow,
+} from "@/app/view/agents/runqueuemodel";
 import { filterLines, keepsRunKind, type BriefLine, type RunKindFilter } from "./briefrows";
 
 // a queued line is never stale: the Runs region's fold of old runs leaves it drawn
 export type QueuedLine = BriefLine & { stale: false };
 
-// what an entry waits on: a run or a queued entry that has not landed, or nothing but room
+// what an entry waits on: the first run or queued entry in its After that has not landed, or nothing but room. An
+// entry after several runs is drawn under the first one still going.
 function waitsOn(row: QueuedRow): string | null {
-    const after = row.entry.after;
-    return after && !row.afterMet ? after : null;
+    return row.afters.find((a) => !a.landed)?.id ?? null;
 }
 
-function afterName(row: QueuedRow): string {
-    return row.afterTitle ?? (row.entry.after ?? "").slice(0, 8);
+// every After, named, as one line reads them: "run A, run B"
+function afterNames(row: QueuedRow): string {
+    return row.afterTitle ?? row.afters.map(afterName).join(", ");
+}
+
+// the Afters that have not landed: a nested line says "after it lands" only when that is all it waits on
+function pendingCount(row: QueuedRow): number {
+    return row.afters.filter((a) => !a.landed).length;
 }
 
 function queuedLine(row: QueuedRow, depth: number, now: number): QueuedLine {
     const { entry } = row;
     const blocked = isBlockedEntry(entry);
     const waits = waitsOn(row) != null;
+    const nestedMeta = pendingCount(row) > 1 ? `after it and ${pendingCount(row) - 1} more land` : "after it lands";
     return {
         id: "sessions:queued:" + entry.id,
         kind: depth > 0 ? "↳ queued" : "⏸ queued",
         kindTone: "muted",
         title: entry.title,
         note: "",
-        meta: !waits ? "waiting for room" : depth > 0 ? "after it lands" : `after ${afterName(row)}`,
+        meta: !waits ? "waiting for room" : depth > 0 ? nestedMeta : `after ${afterNames(row)}`,
         state: blocked ? "blocked" : `#${row.place}`,
         stateTone: "muted",
         progress: null,
@@ -115,12 +128,17 @@ export function liveRunCount(lines: readonly (BriefLine & { stale?: boolean })[]
     return lines.filter((l) => !l.stale && l.queued == null).length;
 }
 
+/** One thing an entry waits on, as the sheet's waits line draws it: a link when it is a run or a queued entry. */
+export type SheetWait = { text: string; runId?: string; entryId?: string };
+
 export type QueueSheetModel = {
     chip: string;
     blocked: boolean;
+    // why a blocked entry is blocked, or why a waiting one waits on (the re-check's "Waiting for run X too: …")
     reason: string | null;
-    // what it waits on; runId or entryId when that is something to open
-    waits: { text: string; runId?: string; entryId?: string };
+    // what it waits on; runId or entryId is the first After that has not landed, when that is something to open.
+    // `list` is every After, in the entry's order, drawn as one link each; present only for an entry after several
+    waits: SheetWait & { list?: SheetWait[] };
     plan: string | null;
     goal: string | null;
     route: string;
@@ -130,9 +148,16 @@ export type QueueSheetModel = {
     runNext: boolean;
 };
 
-/** Pure: the queue sheet's lines. `afterStage` is the stage of the run it waits on, when it waits on a run that is
- *  loaded; maxActive and active are runs:maxactive (0 is no cap) and the active runs, from RunQueueList; originName is
- *  the roster's name for the entry's origintabid (useOriginName), null when that tab is not known. */
+// an After as a link: a queued entry (its id is "q-" + hex, RunQueueEntry.Id) opens its sheet, a run opens its own
+function waitFor(id: string, text: string): SheetWait {
+    return id.startsWith("q-") ? { text, entryId: id } : { text, runId: id };
+}
+
+/** Pure: the queue sheet's lines. `afterStage` is the stage of the first run it waits on that has not landed, when that
+ *  run is loaded; maxActive and active are runs:maxactive (0 is no cap) and the active runs, from RunQueueList;
+ *  originName is the roster's name for the entry's origintabid (useOriginName), null when that tab is not known. The
+ *  reason is the entry's own, whether it is blocked or waits on: a waiting entry has one only when the re-check added a
+ *  run to its After. */
 export function queueSheetModel(
     row: QueuedRow,
     i: { maxActive: number; active: number; afterStage?: string; originName?: string | null; now: number }
@@ -140,17 +165,22 @@ export function queueSheetModel(
     const { entry } = row;
     const blocked = isBlockedEntry(entry);
     const parent = waitsOn(row);
-    const onEntry = parent != null && parent.startsWith("q-");
-    const waits =
-        parent == null
-            ? { text: i.maxActive > 0 ? `a free slot (${i.active} of ${i.maxActive} running)` : "a free slot" }
-            : onEntry
-              ? { text: afterName(row), entryId: parent }
-              : { text: i.afterStage ? `${afterName(row)} · ${i.afterStage}` : afterName(row), runId: parent };
+    // the stage belongs to the run named at the first pending After, the one the model hands to useAfterStage
+    const named = (a: QueuedAfter) =>
+        a.id === parent && i.afterStage && !a.id.startsWith("q-") ? `${afterName(a)} · ${i.afterStage}` : afterName(a);
+    const list = row.afters.length > 1 ? row.afters.map((a) => waitFor(a.id, named(a))) : undefined;
+    let waits: QueueSheetModel["waits"];
+    if (parent == null) {
+        waits = { text: i.maxActive > 0 ? `a free slot (${i.active} of ${i.maxActive} running)` : "a free slot" };
+    } else if (list != null) {
+        waits = { ...waitFor(parent, list.map((w) => w.text).join(", ")), list };
+    } else {
+        waits = waitFor(parent, named(row.afters[0]));
+    }
     return {
         chip: blocked ? "Blocked" : parent != null ? "Waiting on a run" : `Queued #${row.place}`,
         blocked,
-        reason: blocked ? entry.reason || null : null,
+        reason: entry.reason || null,
         waits,
         plan: entry.data.planpath || null,
         goal: entry.data.planpath ? null : entry.data.goal || null,

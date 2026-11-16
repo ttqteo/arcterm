@@ -2361,7 +2361,7 @@ declare global {
     // wshrpc.CommandRunQueueAddData
     type CommandRunQueueAddData = {
         data: CommandCreateRunData;
-        after?: string;
+        after?: string[];
         brainstorm?: RunQueueBrainstorm;
     };
 
@@ -4623,7 +4623,7 @@ declare global {
         data: CommandCreateRunData;
         title: string;
         projectpath: string;
-        after?: string;
+        after?: string[];
         queuedts: number;
         state: string;
         reason?: string;

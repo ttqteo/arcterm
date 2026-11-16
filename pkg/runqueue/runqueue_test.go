@@ -4,6 +4,7 @@
 package runqueue
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -27,12 +28,19 @@ func useTempStore(t *testing.T) string {
 	return path
 }
 
-func addPlan(t *testing.T, title, after string) wshrpc.RunQueueEntry {
+// addPlan queues a plan after the ids given; an empty id is no After.
+func addPlan(t *testing.T, title string, after ...string) wshrpc.RunQueueEntry {
 	t.Helper()
+	var afterIds []string
+	for _, a := range after {
+		if a != "" {
+			afterIds = append(afterIds, a)
+		}
+	}
 	e, err := Add(wshrpc.RunQueueEntry{
 		Title:       title,
 		ProjectPath: "/proj",
-		After:       after,
+		After:       afterIds,
 		Data:        wshrpc.CommandCreateRunData{PlanPath: title + ".md", OriginTabId: "tab-1"},
 	})
 	if err != nil {
@@ -98,11 +106,11 @@ func TestAddListRoundTrip(t *testing.T) {
 
 	list, _ := List()
 	got := list[1]
-	if got.Title != "beta" || got.After != "run-1" || got.ProjectPath != "/proj" ||
+	if got.Title != "beta" || !sameIds(got.After, "run-1") || got.ProjectPath != "/proj" ||
 		got.Data.PlanPath != "beta.md" || got.Data.OriginTabId != "tab-1" {
 		t.Errorf("entry did not round trip: %+v", got)
 	}
-	if list[2].After != a.Id {
+	if !sameIds(list[2].After, a.Id) {
 		t.Errorf("after = %q, want the first entry's id %q", list[2].After, a.Id)
 	}
 
@@ -300,18 +308,25 @@ func TestRetarget(t *testing.T) {
 	c := addPlan(t, "c", a.Id)
 	d := addPlan(t, "d", "run-9")
 	e := addPlan(t, "e", "")
+	// waits on the entry and on a run: Retarget swaps the one id and leaves the other
+	f := addPlan(t, "f", "run-2", a.Id)
+	// already waits on the run the entry became: it keeps it once
+	g := addPlan(t, "g", a.Id, "run-1")
 
 	if err := Retarget(a.Id, "run-1"); err != nil {
 		t.Fatalf("Retarget: %v", err)
 	}
 	list, _ := List()
-	wantAfter := map[string]string{a.Id: "", b.Id: "run-1", c.Id: "run-1", d.Id: "run-9", e.Id: ""}
+	wantAfter := map[string][]string{
+		a.Id: nil, b.Id: {"run-1"}, c.Id: {"run-1"}, d.Id: {"run-9"}, e.Id: nil,
+		f.Id: {"run-2", "run-1"}, g.Id: {"run-1"},
+	}
 	for _, entry := range list {
-		if entry.After != wantAfter[entry.Id] {
+		if !sameIds(entry.After, wantAfter[entry.Id]...) {
 			t.Errorf("%s after = %q, want %q", entry.Title, entry.After, wantAfter[entry.Id])
 		}
 	}
-	if !sameIds(ids(t), a.Id, b.Id, c.Id, d.Id, e.Id) {
+	if !sameIds(ids(t), a.Id, b.Id, c.Id, d.Id, e.Id, f.Id, g.Id) {
 		t.Errorf("Retarget changed the order: %v", ids(t))
 	}
 }
@@ -345,8 +360,104 @@ func TestRetargetNeedsBothIds(t *testing.T) {
 		t.Error("Retarget to an empty id succeeded")
 	}
 	list, _ := List()
-	if list[0].After != "" {
+	if len(list[0].After) != 0 {
 		t.Errorf("a refused Retarget changed an entry: %+v", list[0])
+	}
+}
+
+// writeQueueFile puts raw JSON where the store reads it, the way an older wavesrv left it.
+func writeQueueFile(t *testing.T, path, raw string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadReadsASingleAfterIdAsAList(t *testing.T) {
+	path := useTempStore(t)
+	writeQueueFile(t, path, `{"entries": [
+		{"id": "q-0001", "data": {"planpath": "a.md"}, "title": "one", "projectpath": "/proj", "after": "r1", "queuedts": 1, "state": "waiting"},
+		{"id": "q-0002", "data": {"planpath": "b.md"}, "title": "two", "projectpath": "/proj", "after": "", "queuedts": 2, "state": "waiting"},
+		{"id": "q-0003", "data": {"planpath": "c.md"}, "title": "three", "projectpath": "/proj", "queuedts": 3, "state": "blocked", "reason": "kept", "blockedon": "r1"},
+		{"id": "q-0004", "data": {"planpath": "d.md"}, "title": "four", "projectpath": "/proj", "after": ["r1", "r2"], "queuedts": 4, "state": "waiting"},
+		{"id": "q-0005", "data": {"planpath": "e.md"}, "title": "five", "projectpath": "/proj", "after": null, "queuedts": 5, "state": "waiting"},
+		{"id": "q-0006", "data": {"planpath": "f.md"}, "title": "six", "projectpath": "/proj", "after": [], "queuedts": 6, "state": "waiting"}
+	]}`)
+	list, err := List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	want := map[string][]string{"q-0001": {"r1"}, "q-0002": nil, "q-0003": nil, "q-0004": {"r1", "r2"}, "q-0005": nil, "q-0006": nil}
+	if len(list) != len(want) {
+		t.Fatalf("List returned %d entries, want %d", len(list), len(want))
+	}
+	for _, e := range list {
+		if !sameIds(e.After, want[e.Id]...) {
+			t.Errorf("%s after = %q, want %q", e.Id, e.After, want[e.Id])
+		}
+		if e.After != nil && len(e.After) == 0 {
+			t.Errorf("%s after is an empty non-nil list, want none", e.Id)
+		}
+	}
+	// the other fields come through the shadowed read untouched
+	if list[0].Title != "one" || list[0].Data.PlanPath != "a.md" || list[0].ProjectPath != "/proj" || list[0].QueuedTs != 1 {
+		t.Errorf("entry fields were lost reading an old file: %+v", list[0])
+	}
+	if list[2].State != wshrpc.RunQueueState_Blocked || list[2].Reason != "kept" || list[2].BlockedOn != "r1" {
+		t.Errorf("a blocked entry lost its block reading an old file: %+v", list[2])
+	}
+}
+
+func TestLoadThenSaveWritesAList(t *testing.T) {
+	path := useTempStore(t)
+	writeQueueFile(t, path, `{"entries": [
+		{"id": "q-0001", "data": {"planpath": "a.md"}, "title": "one", "projectpath": "/proj", "after": "r1", "queuedts": 1, "state": "waiting"}
+	]}`)
+	if err := MoveFirst("q-0001"); err != nil { // any write converts the file
+		t.Fatalf("MoveFirst: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Entries []struct {
+			After json.RawMessage `json:"after"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatalf("the saved file is not JSON: %v", err)
+	}
+	if len(f.Entries) != 1 {
+		t.Fatalf("saved %d entries, want 1", len(f.Entries))
+	}
+	var got []string
+	if err := json.Unmarshal(f.Entries[0].After, &got); err != nil || !sameIds(got, "r1") {
+		t.Errorf("saved after = %s (%v), want [\"r1\"]", f.Entries[0].After, err)
+	}
+	list, _ := List()
+	if len(list) != 1 || !sameIds(list[0].After, "r1") {
+		t.Errorf("the converted file reads back as %+v, want after [r1]", list)
+	}
+}
+
+func TestLoadRejectsAnAfterThatIsNeitherAStringNorAList(t *testing.T) {
+	path := useTempStore(t)
+	writeQueueFile(t, path, `{"entries": [{"id": "q-0001", "after": 7}]}`)
+	if _, err := List(); err == nil {
+		t.Error("List of an entry whose after is a number succeeded")
+	}
+	if _, err := Add(wshrpc.RunQueueEntry{Title: "x"}); err == nil {
+		t.Error("Add over an unreadable entry succeeded, which would overwrite the file")
+	}
+}
+
+func TestAddKeepsAListOfAfterIds(t *testing.T) {
+	useTempStore(t)
+	e := addPlan(t, "two runs", "r1", "r2")
+	list, _ := List()
+	if len(list) != 1 || !sameIds(list[0].After, "r1", "r2") || !sameIds(e.After, "r1", "r2") {
+		t.Errorf("an entry after two runs came back as %+v / %+v", e.After, list)
 	}
 }
 

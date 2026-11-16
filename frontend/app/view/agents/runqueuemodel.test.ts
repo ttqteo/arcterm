@@ -83,7 +83,7 @@ describe("queuedRows", () => {
     });
 
     it("keeps the place of an entry that waits on another, so the ones behind it count it", () => {
-        const rows = queuedRows([entry("q-a"), entry("q-b", { after: "q-a" }), entry("q-c")], {});
+        const rows = queuedRows([entry("q-a"), entry("q-b", { after: ["q-a"] }), entry("q-c")], {});
         expect(rows.map((r) => r.place)).toEqual([1, 2, 3]);
     });
 
@@ -91,31 +91,89 @@ describe("queuedRows", () => {
         const rows = queuedRows(
             [
                 entry("q-a", { title: "Learned additions" }),
-                entry("q-b", { after: "q-a" }),
-                entry("q-c", { after: "run-1" }),
+                entry("q-b", { after: ["q-a"] }),
+                entry("q-c", { after: ["run-1"] }),
             ],
             { "run-1": "Setup tab" }
         );
         expect(rows.map((r) => r.afterTitle)).toEqual([undefined, "Learned additions", "Setup tab"]);
     });
 
+    it("joins the titles of every run an entry waits on", () => {
+        const rows = queuedRows(
+            [entry("q-a", { title: "Brainstorm ideas" }), entry("q-b", { after: ["run-1", "q-a", "run-2"] })],
+            { "run-1": "run A", "run-2": "run B" }
+        );
+        expect(rows[1].afterTitle).toBe("run A, Brainstorm ideas, run B");
+    });
+
+    it("reads a run whose title is not known as its short id, among the ones that are", () => {
+        const [row] = queuedRows([entry("q-a", { after: ["run-1", "4f2a9c1e-7b3d-4e5a-8c6f-1a2b3c4d5e6f"] })], {
+            "run-1": "run A",
+        });
+        expect(row.afterTitle).toBe("run A, 4f2a9c1e");
+    });
+
     it("leaves the title out when the run it waits on is not known", () => {
-        const [row] = queuedRows([entry("q-a", { after: "run-9" })], {});
+        const [row] = queuedRows([entry("q-a", { after: ["run-9"] })], {});
         expect(row.afterTitle).toBeUndefined();
+        const [two] = queuedRows([entry("q-a", { after: ["run-8", "run-9"] })], {});
+        expect(two.afterTitle).toBeUndefined();
+    });
+
+    it("lists each After with its title and whether it has landed, in the entry's order", () => {
+        const rows = queuedRows(
+            [entry("q-a", { title: "Brainstorm ideas" }), entry("q-b", { after: ["run-2", "q-a", "run-1", "run-9"] })],
+            { "run-1": "run A", "run-2": "run B" },
+            new Set(["run-1", "q-a"])
+        );
+        // a queued entry never counts as landed, even when its id sits in the landed set
+        expect(rows[1].afters).toEqual([
+            { id: "run-2", title: "run B", landed: false },
+            { id: "q-a", title: "Brainstorm ideas", landed: false },
+            { id: "run-1", title: "run A", landed: true },
+            { id: "run-9", landed: false },
+        ]);
+        expect(rows[0].afters).toEqual([]);
+    });
+
+    it("leaves the title and the met mark out for an entry with no After, whether the field is missing or empty", () => {
+        for (const e of [entry("q-a"), entry("q-a", { after: [] })]) {
+            const [row] = queuedRows([e], {}, new Set(["run-1"]));
+            expect(row.afterTitle).toBeUndefined();
+            expect(row.afterMet).toBeUndefined();
+        }
     });
 
     it("marks an After met only for a run that has landed, never for a queued entry", () => {
         const rows = queuedRows(
             [
                 entry("q-a"),
-                entry("q-b", { after: "q-a" }),
-                entry("q-c", { after: "run-1" }),
-                entry("q-d", { after: "run-2" }),
+                entry("q-b", { after: ["q-a"] }),
+                entry("q-c", { after: ["run-1"] }),
+                entry("q-d", { after: ["run-2"] }),
             ],
             { "run-1": "Setup tab", "run-2": "Other" },
             new Set(["run-1", "q-a"])
         );
         expect(rows.map((r) => r.afterMet)).toEqual([undefined, undefined, true, undefined]);
+    });
+
+    it("marks an After met only when every run it waits on has landed", () => {
+        const e = (...after: string[]) => entry("q-x", { after });
+        const met = (entryAfter: RunQueueEntry, landed: string[]) =>
+            queuedRows([entryAfter], { "run-1": "run A", "run-2": "run B" }, new Set(landed))[0].afterMet;
+        expect(met(e("run-1", "run-2"), ["run-1", "run-2"])).toBe(true);
+        expect(met(e("run-1", "run-2"), ["run-1"])).toBeUndefined();
+        expect(met(e("run-1", "run-2"), ["run-2"])).toBeUndefined();
+        expect(met(e("run-1", "run-2"), [])).toBeUndefined();
+        // a queued entry in the list is never met, so the entry keeps waiting on it
+        const rows = queuedRows(
+            [entry("q-a"), entry("q-b", { after: ["run-1", "q-a"] })],
+            { "run-1": "run A" },
+            new Set(["run-1", "q-a"])
+        );
+        expect(rows[1].afterMet).toBeUndefined();
     });
 
     it("is empty for an empty queue", () => {
@@ -132,23 +190,38 @@ describe("queuedMeta", () => {
     });
 
     it("reads Queued · after <title> for an entry whose After is unmet", () => {
-        expect(queuedMeta(row(entry("q-b", { after: "run-1" }), { "run-1": "Learned additions" }))).toBe(
+        expect(queuedMeta(row(entry("q-b", { after: ["run-1"] }), { "run-1": "Learned additions" }))).toBe(
             "Queued · after Learned additions"
         );
-        expect(queuedMeta(row(entry("q-b", { after: "q-a" }), {}, [entry("q-a", { title: "Brainstorm ideas" })]))).toBe(
-            "Queued · after Brainstorm ideas"
-        );
+        expect(
+            queuedMeta(row(entry("q-b", { after: ["q-a"] }), {}, [entry("q-a", { title: "Brainstorm ideas" })]))
+        ).toBe("Queued · after Brainstorm ideas");
+    });
+
+    it("reads Queued · after <title>, <title> for an entry that waits on two runs", () => {
+        const e = entry("q-b", { after: ["run-1", "run-2"] });
+        const titles = { "run-1": "run A", "run-2": "run B" };
+        expect(queuedMeta(row(e, titles))).toBe("Queued · after run A, run B");
+        // one landed and one not: it still waits, and still names both
+        expect(queuedMeta(queuedRows([e], titles, new Set(["run-1"]))[0])).toBe("Queued · after run A, run B");
+        // both landed: only room is left to wait for
+        expect(queuedMeta(queuedRows([e], titles, new Set(["run-1", "run-2"]))[0])).toBe("Queued #1");
+    });
+
+    it("falls back to the short ids of two runs whose titles are not known", () => {
+        const e = entry("q-b", { after: ["4f2a9c1e-7b3d", "9c1d0b7e-5a4f"] });
+        expect(queuedMeta(row(e))).toBe("Queued · after 4f2a9c1e, 9c1d0b7e");
     });
 
     it("reads Queued #N for an entry whose After run has landed: only room is left to wait for", () => {
-        const e = entry("q-b", { after: "run-1" });
+        const e = entry("q-b", { after: ["run-1"] });
         const [first, second] = queuedRows([entry("q-a"), e], { "run-1": "Learned additions" }, new Set(["run-1"]));
         expect(queuedMeta(first)).toBe("Queued #1");
         expect(queuedMeta(second)).toBe("Queued #2");
     });
 
     it("reads Queued · after <title> for an entry whose After run is still going, held or not landed", () => {
-        const e = entry("q-b", { after: "run-1" });
+        const e = entry("q-b", { after: ["run-1"] });
         expect(queuedMeta(queuedRows([e], { "run-1": "Learned additions" }, new Set())[0])).toBe(
             "Queued · after Learned additions"
         );
@@ -159,7 +232,7 @@ describe("queuedMeta", () => {
 
     it("reads Queued · after <title> for an entry that waits on a queued entry, whatever the landed set holds", () => {
         const rows = queuedRows(
-            [entry("q-a", { title: "Brainstorm ideas" }), entry("q-b", { after: "q-a" })],
+            [entry("q-a", { title: "Brainstorm ideas" }), entry("q-b", { after: ["q-a"] })],
             {},
             new Set(["q-a"])
         );
@@ -167,7 +240,9 @@ describe("queuedMeta", () => {
     });
 
     it("falls back to a short id when the title of what it waits on is not known", () => {
-        expect(queuedMeta(row(entry("q-b", { after: "4f2a9c1e-7b3d-4e5a-8c6f-1a2b3c4d5e6f" })))).toBe("Queued · after 4f2a9c1e");
+        expect(queuedMeta(row(entry("q-b", { after: ["4f2a9c1e-7b3d-4e5a-8c6f-1a2b3c4d5e6f"] })))).toBe(
+            "Queued · after 4f2a9c1e"
+        );
     });
 
     it("reads Blocked · <reason> for a blocked entry, even one that has an After", () => {
@@ -176,7 +251,7 @@ describe("queuedMeta", () => {
         );
         expect(
             queuedMeta(
-                row(entry("q-b", { state: "blocked", reason: "Setup was cancelled", after: "run-1" }), {
+                row(entry("q-b", { state: "blocked", reason: "Setup was cancelled", after: ["run-1"] }), {
                     "run-1": "Setup",
                 })
             )

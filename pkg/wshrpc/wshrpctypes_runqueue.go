@@ -16,15 +16,17 @@ const (
 
 // RunQueueEntry is one queued run start. The queue's order is the order of the entries in its file.
 type RunQueueEntry struct {
-	Id          string               `json:"id"`              // "q-" + 4 hex, its own id space
-	Data        CommandCreateRunData `json:"data"`            // what wsh runs start would have sent
-	Title       string               `json:"title"`           // the plan's title, for rows and messages
-	ProjectPath string               `json:"projectpath"`     // the channel's project, for the tree's folder
-	After       string               `json:"after,omitempty"` // a run id or a queue entry id
-	QueuedTs    int64                `json:"queuedts"`
-	State       string               `json:"state"` // RunQueueState_*
-	Reason      string               `json:"reason,omitempty"`
-	BlockedOn   string               `json:"blockedon,omitempty"` // the run whose outcome blocked it; set only for that kind of block
+	Id          string               `json:"id"`          // "q-" + 4 hex, its own id space
+	Data        CommandCreateRunData `json:"data"`        // what wsh runs start would have sent
+	Title       string               `json:"title"`       // the plan's title, for rows and messages
+	ProjectPath string               `json:"projectpath"` // the channel's project, for the tree's folder
+	// After lists what the entry waits for: run ids and queue entry ids. It starts once every run in it has landed.
+	// A queue file written before this was a list held one id as a string; pkg/runqueue reads that as a one-element list.
+	After     []string `json:"after,omitempty"`
+	QueuedTs  int64    `json:"queuedts"`
+	State     string   `json:"state"`               // RunQueueState_*
+	Reason    string   `json:"reason,omitempty"`    // why a blocked entry is blocked, or why a waiting one waits on (the re-check's reason)
+	BlockedOn string   `json:"blockedon,omitempty"` // the run whose outcome blocked it; set only for that kind of block
 	// Brainstorm is the brainstorm whose Approve queued this start, so wavesrv can tell its agent the run's id when
 	// the entry starts, and the brainstorm's card can find its own entry. Nil for every other entry.
 	Brainstorm *RunQueueBrainstorm `json:"brainstorm,omitempty"`
@@ -47,7 +49,7 @@ type RunQueueCommands interface {
 
 type CommandRunQueueAddData struct {
 	Data  CommandCreateRunData `json:"data"`
-	After string               `json:"after,omitempty"` // a run id or a queue entry id, or a unique prefix of either
+	After []string             `json:"after,omitempty"` // run ids and queue entry ids, or a unique prefix of each; the entry waits for all
 	// Brainstorm is set when a brainstorm's Approve queues the start; the entry keeps it (RunQueueEntry.Brainstorm).
 	Brainstorm *RunQueueBrainstorm `json:"brainstorm,omitempty"`
 }

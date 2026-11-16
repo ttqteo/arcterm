@@ -150,8 +150,9 @@ export type QueuedView =
     | { state: "started"; runId: string }
     | { state: "gone" };
 
-/** Reads one queued start from the queue. `after` names the run (or entry) it waits on by `afterTitle`, its short id
- *  when no title is known. An entry still in the queue is read from it, whatever `started` says. */
+/** Reads one queued start from the queue. `after` names every run (or entry) it waits on by `afterTitle`, its short id
+ *  when no title is known, joined by ", " ("run A, run B"). An entry still in the queue is read from it, whatever
+ *  `started` says. */
 export function queuedView(
     entryId: string,
     queue: readonly RunQueueEntry[],
@@ -163,8 +164,9 @@ export function queuedView(
         if (entry.state === "blocked") {
             return { state: "blocked", reason: entry.reason ?? "" };
         }
-        return entry.after
-            ? { state: "waiting", after: afterTitle(entry.after) || shortRunId(entry.after) }
+        const after = entry.after ?? [];
+        return after.length > 0
+            ? { state: "waiting", after: after.map((id) => afterTitle(id) || shortRunId(id)).join(", ") }
             : { state: "waiting" };
     }
     const runId = started[entryId];
