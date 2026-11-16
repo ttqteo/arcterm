@@ -55,6 +55,7 @@ describe("permissionTitle", () => {
         expect(permissionTitle("WebSearch")).toBe("Wants to search the web");
         expect(permissionTitle("Agent")).toBe("Wants to start a subagent");
         expect(permissionTitle("Task")).toBe("Wants to start a subagent");
+        expect(permissionTitle("Artifact")).toBe("Wants to use an artifact");
     });
 
     it("falls back to the tool's own name", () => {
@@ -244,6 +245,11 @@ describe("the card's choices from the keyboard", () => {
         expect(choiceAnswer("allow")).toEqual({ allow: true });
         expect(choiceAnswer("second")).toEqual({ allow: true, choice: 2 });
         expect(choiceAnswer("deny")).toEqual({ allow: false });
+    });
+
+    it("picks the Yes off the screen for a prompt that is a list of its own", () => {
+        expect(choiceAnswer("allow", true)).toEqual({ allow: true, screen: true });
+        expect(choiceAnswer("deny", true)).toEqual({ allow: false });
     });
 
     it("moves the highlight with ↑ and ↓, held at the ends", () => {

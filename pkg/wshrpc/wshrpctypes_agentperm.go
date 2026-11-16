@@ -38,4 +38,9 @@ type CommandAgentPermissionAnswerData struct {
 	// Choice picks which option an Allow types: 0 or 1 the first (`1`), 2 the second (`2`). Any value but 0, 1 or 2 is an
 	// error, Allow or Deny; a Deny types no option.
 	Choice int `json:"choice,omitempty"`
+	// Screen answers a ScreenPick request (the Artifact tool's No/Yes list): an Allow moves the cursor Moves rows (down
+	// when positive, up when negative, at most 8) to the Yes the chat read off the terminal, then presses Enter. A
+	// ScreenPick request takes an Allow only this way, and only it takes one; Choice stays 0.
+	Screen bool `json:"screen,omitempty"`
+	Moves  int  `json:"moves,omitempty"`
 }

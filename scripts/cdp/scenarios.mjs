@@ -33133,7 +33133,7 @@ const brainstormMode = {
                 s2w.working.includes("Writing up your answer.") &&
                 !s2w.answerBox &&
                 s2w.question === "" &&
-                s2w.treeLine === "writing up your answer",
+                s2w.treeLine === "Writing up your answer",
             { ...bsBrief(s2w), working: s2w.working, answerBox: s2w.answerBox, treeLine: s2w.treeLine }
         );
         const opened2w = await bsOpenDesign(h);
@@ -33796,7 +33796,7 @@ const brainstormMode = {
 
         // 7. the tree line and the attention popup
         bsWrite(ctx, BS_FILES.late);
-        const s7 = await bsUntil(h, ctx, (s) => s.treeLine === "asking question 5");
+        const s7 = await bsUntil(h, ctx, (s) => s.treeLine === "Asking question 5");
         const row = await h.ev(BS_ROW_READ);
         rec(
             "7. the agent's row reads asking question 5, with the asking dot",
@@ -33813,7 +33813,7 @@ const brainstormMode = {
             // the question leaves the outward list, then comes back while Arc reads as unfocused: a new item
             await h.ev("document.hasFocus = () => false");
             bsWrite(ctx, BS_FILES.lateWorking);
-            const away = await bsUntil(h, ctx, (s) => s.treeLine === "writing up your answer");
+            const away = await bsUntil(h, ctx, (s) => s.treeLine === "Writing up your answer");
             const before = await h.ev("window.__bsFlashes.length");
             bsWrite(ctx, BS_FILES.late);
             const flashed = await polishWaitFor(h, `window.__bsFlashes.slice(${before}).includes("Informational")`, BS_POLL_WAIT_MS);

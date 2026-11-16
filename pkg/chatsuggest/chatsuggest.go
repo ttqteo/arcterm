@@ -153,10 +153,17 @@ func tail(s string, max int) string {
 var (
 	bulletRe     = regexp.MustCompile(`^(?:[-*•]\s+|\d+[.)]\s+)`)
 	commitPushRe = regexp.MustCompile(`(?i)\b(commit|push)\b`)
+	// an HTML tag the model sometimes answers with or tacks on ("</br>", "<br/>", "<b>…</b>")
+	tagRe = regexp.MustCompile(`</?[A-Za-z][A-Za-z0-9]*(?:\s[^<>]*)?/?>`)
 )
 
-// Parse reads the model's answer: one reply per line, numbering, bullets and quotes taken off, NONE and empty lines
-// skipped, a reply past replyRunes dropped (a cut reply would send half a sentence), the same reply kept once (sameReply:
+// saysSomething reports whether a reply holds a letter or a digit: a line of dashes or an ellipsis is no reply.
+func saysSomething(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) >= 0
+}
+
+// Parse reads the model's answer: one reply per line, numbering, bullets, HTML tags and quotes taken off, NONE and
+// lines with no letter or digit left skipped, a reply past replyRunes dropped (a cut reply would send half a sentence), the same reply kept once (sameReply:
 // "build di", "ok build đi" and "Build đi!" are one), and at most three answers to a question or one next step. A next step never commits or pushes: the rules offer those.
 func Parse(text string, question bool) []string {
 	limit := maxNext
@@ -167,8 +174,8 @@ func Parse(text string, question bool) []string {
 	seen := map[string]bool{}
 	for _, line := range strings.Split(text, "\n") {
 		s := bulletRe.ReplaceAllString(strings.TrimSpace(line), "")
-		s = strings.TrimSpace(strings.Trim(s, "\"'`“”‘’"))
-		if s == "" || strings.EqualFold(strings.TrimRight(s, "."), "NONE") || utf8.RuneCountInString(s) > replyRunes {
+		s = strings.TrimSpace(strings.Trim(strings.TrimSpace(tagRe.ReplaceAllString(s, "")), "\"'`“”‘’"))
+		if !saysSomething(s) || strings.EqualFold(strings.TrimRight(s, "."), "NONE") || utf8.RuneCountInString(s) > replyRunes {
 			continue
 		}
 		if !question && commitPushRe.MatchString(s) {

@@ -740,7 +740,7 @@ function BrainstormTreeLine({ model, f, asking }: { model: AgentsViewModel; f: B
                         fireAndForget(() => openTarget(model, { kind: "run", runId: line.runId! }));
                     }}
                     title="Open the run"
-                    className="min-w-0 cursor-pointer truncate text-left text-ink-mid hover:underline"
+                    className="min-w-0 cursor-pointer truncate text-left hover:underline"
                 >
                     {line.text}
                 </button>
