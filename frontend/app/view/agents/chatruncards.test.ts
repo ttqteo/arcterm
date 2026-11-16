@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     conversationRuns,
+    itemTimes,
     pairRunEnded,
     parseRunEnded,
     placeRunCards,
@@ -618,5 +619,49 @@ describe("placeTrailingRuns", () => {
             ])
         );
         expect(placed.end).toEqual([]);
+    });
+
+    it("keeps a run over with no message after the last item that ran a tool before it ended", () => {
+        const times = [
+            { key: "you:1" },
+            { key: "agent:2", ms: 1_000 },
+            { key: "you:5" },
+            { key: "agent:6", ms: 5_000 },
+            { key: "agent:9", ms: 9_000 },
+        ];
+        const placed = placeTrailingRuns(["quick", "going", "early"], ended([]), {
+            endOf: new Map([
+                ["quick", 6_000],
+                ["early", 500],
+            ]),
+            times,
+        });
+        // ended before any tool ran: nothing to follow, so it stays at the end, as one still going does
+        expect(placed.at).toEqual(new Map([["agent:6", ["quick"]]]));
+        expect(placed.end).toEqual(["going", "early"]);
+    });
+
+    it("prefers the run-ended message to the run's end time", () => {
+        const placed = placeTrailingRuns(["run-a"], ended([["you:12", "run-a"]]), {
+            endOf: new Map([["run-a", 1_000]]),
+            times: [{ key: "agent:2", ms: 900 }],
+        });
+        expect(placed.at).toEqual(new Map([["you:12", ["run-a"]]]));
+    });
+});
+
+describe("itemTimes", () => {
+    it("reads an agent item's latest tool-call time, and none for an item with no timed tool", () => {
+        const work = (...startedAt: (number | undefined)[]) => ({
+            kind: "work",
+            work: { actions: startedAt.map((ms) => (ms != null ? { startedAt: ms } : {})) },
+        });
+        expect(
+            itemTimes([
+                { key: "you:1", kind: "you" },
+                { key: "agent:2", kind: "agent", parts: [{ kind: "prose" }, work(300, undefined), work(200)] },
+                { key: "agent:5", kind: "agent", parts: [{ kind: "prose" }, work(NaN)] },
+            ])
+        ).toEqual([{ key: "you:1" }, { key: "agent:2", ms: 300 }, { key: "agent:5" }]);
     });
 });

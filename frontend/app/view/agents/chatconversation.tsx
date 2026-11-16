@@ -93,7 +93,14 @@ import {
 } from "./chatmodel";
 import { btwQuestion } from "./chatpending";
 import { ChatRunCard } from "./chatruncard";
-import { pairRunEnded, placeRunCards, placeTrailingRuns, type RunCardSlot, type RunEnded } from "./chatruncards";
+import {
+    itemTimes,
+    pairRunEnded,
+    placeRunCards,
+    placeTrailingRuns,
+    type RunCardSlot,
+    type RunEnded,
+} from "./chatruncards";
 import { withMarks } from "./chatskim";
 import { useSkimFold } from "./chatskimstore";
 import { placeStepLists, stepsPartKey, type AgentNow } from "./chatsteplist";
@@ -1119,8 +1126,18 @@ export function ChatConversation({
         }
         return byRun;
     }, [endedMessages]);
-    // a run no call names stays at the end while it goes on, and its ✓ row stays where its run-ended message came
-    const trailingRuns = useMemo(() => placeTrailingRuns(placed.trailing, endedMessages), [placed, endedMessages]);
+    // a run no call names stays at the end while it goes on; its ✓ row stays where its run-ended message came, or, for
+    // one over with no message (a quick run), after the last item that ran a tool before it ended
+    const trailingRuns = useMemo(() => {
+        const endOf = new Map<string, number>();
+        for (const r of convRuns) {
+            const endMs = r.completedts || r.cancelledts;
+            if (endMs) {
+                endOf.set(r.oid, endMs);
+            }
+        }
+        return placeTrailingRuns(placed.trailing, endedMessages, { endOf, times: itemTimes(stored) });
+    }, [placed, endedMessages, convRuns, stored]);
     // how many of the last items are drawn. Entries arriving at the end are drawn on top of it, so the first drawn item
     // stays put while the agent works; entries the caller put in front (onLoadEarlier) are drawn a step of once asked for
     const [win, setWin] = useState({ shown: CHAT_RENDER_STEP, len: items.length, head: entries[0], asked: false });

@@ -224,23 +224,42 @@ export function pairRunEnded(
     return paired;
 }
 
-/** Where the runs no call names (`placeRunCards`' `trailing`) draw: a run whose run-ended message came draws its ✓ row
- *  where that message is in the conversation (the message itself draws nothing), the last one when it ended more than
- *  once, so it stays where it ended as the conversation goes on; one still going, or over with no message, stays at
- *  the end. `ended` is `pairRunEnded`'s map, in the conversation's order. `at` lists, by message key, the runs drawn
- *  there, oldest first; `end` keeps `trailing`'s order. */
+/** Where the runs no call names (`placeRunCards`' `trailing`) draw, so a run that is over stays where it ended as the
+ *  conversation goes on and only one still going sits at the end:
+ *
+ *  - a run whose run-ended message came draws its ✓ row where that message is in the conversation (the message itself
+ *    draws nothing), the last one when it ended more than once. `ended` is `pairRunEnded`'s map, in the conversation's
+ *    order.
+ *  - a run over with no such message (a quick run never lands, so nothing is typed into the session) draws after the
+ *    last item that ran a tool before it ended (`endOf`: its completed or cancelled time; `times`: each item's latest
+ *    tool-call time, in the conversation's order, from `itemTimes`). Only tool calls carry a time in the conversation,
+ *    so a message or a reply with none between that item and the run's end draws after the run.
+ *  - any other stays at the end.
+ *
+ *  `at` lists, by item key, the runs drawn after it, oldest first; `end` keeps `trailing`'s order. */
 export function placeTrailingRuns(
     trailing: readonly string[],
-    ended: ReadonlyMap<string, { runId: string }>
+    ended: ReadonlyMap<string, { runId: string }>,
+    byTime?: { endOf: ReadonlyMap<string, number>; times: readonly { key: string; ms?: number }[] }
 ): { at: Map<string, string[]>; end: string[] } {
     const lastMessage = new Map<string, string>();
     for (const [key, { runId }] of ended) {
         lastMessage.set(runId, key);
     }
+    const lastBefore = (endMs: number): string | undefined => {
+        let key: string | undefined;
+        for (const t of byTime?.times ?? []) {
+            if (t.ms != null && t.ms <= endMs) {
+                key = t.key;
+            }
+        }
+        return key;
+    };
     const at = new Map<string, string[]>();
     const end: string[] = [];
     for (const runId of trailing) {
-        const key = lastMessage.get(runId);
+        const endMs = byTime?.endOf.get(runId);
+        const key = lastMessage.get(runId) ?? (endMs != null ? lastBefore(endMs) : undefined);
         if (key == null) {
             end.push(runId);
         } else {
@@ -248,6 +267,28 @@ export function placeTrailingRuns(
         }
     }
     return { at, end };
+}
+
+/** Each item's latest tool-call time (UnixMilli), in order: an agent item's work actions' `startedAt`; none for an item
+ *  that ran no tool with a time (a message, a reply, a marker). */
+export function itemTimes(
+    items: readonly {
+        key: string;
+        kind: string;
+        parts?: readonly { kind: string; work?: { actions: readonly { startedAt?: number }[] } }[];
+    }[]
+): { key: string; ms?: number }[] {
+    return items.map((item) => {
+        let ms: number | undefined;
+        for (const part of item.kind === "agent" ? (item.parts ?? []) : []) {
+            for (const a of part.kind === "work" ? (part.work?.actions ?? []) : []) {
+                if (a.startedAt != null && Number.isFinite(a.startedAt) && (ms == null || a.startedAt > ms)) {
+                    ms = a.startedAt;
+                }
+            }
+        }
+        return ms != null ? { key: item.key, ms } : { key: item.key };
+    });
 }
 
 /** The run card's ✓ row text once it ended: "Run 3fa21b0c landed · merged into main" or "Run 3fa21b0c held: <reason>". */
