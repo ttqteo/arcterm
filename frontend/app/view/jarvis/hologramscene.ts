@@ -572,6 +572,10 @@ export class HologramScene {
         this.bloom.strength = BLOOM * m.flare;
         this.bloom.threshold = BLOOM_THRESHOLD_HUD + (BLOOM_THRESHOLD_SPHERE - BLOOM_THRESHOLD_HUD) * sphere;
         this.composer.render();
+        // Past its ~16 live contexts Chromium loses the one with the oldest flush id (GetLastFlushIdCHROMIUM), and a
+        // frame handed to the compositor does not move it: drawing at 15 fps all day, the hologram still read as the
+        // oldest and was the one lost, never an idle terminal. An explicit flush keeps it the newest. Non-blocking.
+        this.renderer.getContext().flush();
     }
 
     dispose(): void {
