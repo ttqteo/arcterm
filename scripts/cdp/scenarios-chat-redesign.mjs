@@ -6,6 +6,7 @@
 // [data-chat-action-chip] (diff or terminal, each once it has something to show: steps 2, 6b, 20),
 // [data-chat-suggest-chip] (step 18, the suggested replies; window.__chatSuggestFake answers their model call),
 // [data-chat-suggest-panel], [data-chat-step][data-chat-step-running], [data-chat-step-chip], [data-chat-step-more],
+// [data-chat-step-fold] and [data-chat-step-calls] (step 7b, a run of edits of one file as one line),
 // [data-chat-bscard][data-chat-bscard-state], [data-chat-bscard-option], [data-chat-bscard-send],
 // [data-chat-bscard-open], [data-chat-bscard-kind], [data-chat-bscard-answered], [data-chat-jump], and the existing
 // data-chat-* attributes agent-chat reads. ([data-chat-bscard-pointer] is read only to assert it is gone: the builder check
@@ -467,6 +468,11 @@ export default function (kit) {
                         AC.toolUse(`toolu_cr_edit${i}`, "Edit", { file_path: file(f), old_string: "export const retries = 0;", new_string: "export const retries = 3;\nexport const backoff = true;" }, u(-12 + i)),
                         AC.toolResult(`toolu_cr_edit${i}`, "The file has been updated successfully.", u(-11 + i)),
                     ]),
+                    // two more edits of the last file in a row: with the one before, one "Edit config.ts ×3" line (step 7b)
+                    ...[0, 1].flatMap((i) => [
+                        AC.toolUse(`toolu_cr_again${i}`, "Edit", { file_path: file(FILES[3]), old_string: `export const backoff = ${i === 0};`, new_string: `export const backoff = ${i !== 0};` }, u(-7 + i)),
+                        AC.toolResult(`toolu_cr_again${i}`, "The file has been updated successfully.", u(-6 + i)),
+                    ]),
                     // the last call has no result yet: it is in flight
                     AC.toolUse("toolu_cr_inflight", "Read", { file_path: file(FILES[1]) }, u(-3))
                 );
@@ -549,6 +555,37 @@ export default function (kit) {
                     `${name}: a step shows [data-chat-step-chip]s and a [data-chat-step-more] +N; clicking a finished step opens its output under it`,
                     many != null && markBefore === false && spot != null && opened && under?.below === true && under.inside === true,
                     { many, markBefore, spot, opened, under, steps: got.slice(0, 8) }
+                );
+            });
+
+            // 7b. three edits of one file in a row are one line, "Edit config.ts ×3", that opens to the three calls
+            await run("7b. step fold", async (name) => {
+                const FOLD = `${layerOf(A)}?.querySelector("[data-chat-tools] [data-chat-step-fold]")`;
+                const before = await h.ev(`(() => {
+                    const fold = ${FOLD};
+                    fold?.scrollIntoView({ block: "center" });
+                    return { text: ${FLAT}(fold), count: fold?.getAttribute("data-chat-step-fold") ?? null, chips: fold?.querySelectorAll("[data-chat-step-chip]").length ?? 0, calls: !!fold?.parentElement?.querySelector("[data-chat-step-calls]") };
+                })()`);
+                await polishNap(300);
+                const p = await h.ev(`(() => { const r = ${FOLD}?.getBoundingClientRect(); return r ? { x: r.left + 24, y: r.top + r.height / 2 } : null; })()`);
+                let calls = null;
+                if (p != null) {
+                    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: p.x, y: p.y });
+                    await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: p.x, y: p.y, button: "left", clickCount: 1 });
+                    await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: p.x, y: p.y, button: "left", clickCount: 1 });
+                    await polishWaitFor(h, `!!${FOLD}?.parentElement?.querySelector("[data-chat-step-calls]")`, SHORT_MS);
+                    await polishNap(500);
+                    calls = await h.ev(`(() => {
+                        const list = ${FOLD}?.parentElement?.querySelector("[data-chat-step-calls]");
+                        const lines = [...(list?.querySelectorAll("[data-chat-step]") ?? [])];
+                        return { lines: lines.length, chips: lines.reduce((n, l) => n + l.querySelectorAll("[data-chat-step-chip]").length, 0), expanded: ${FOLD}?.getAttribute("aria-expanded") };
+                    })()`);
+                }
+                await shot(h, "7b-step-fold");
+                rec(
+                    `${name}: one [data-chat-step-fold]="3" line reads Edit config.ts ×3 with one chip, closed; a click opens [data-chat-step-calls] with its three calls, chipless`,
+                    before.count === "3" && /Edit\s*config\.ts\s*×3/.test(before.text) && before.chips === 1 && !before.calls && calls?.lines === 3 && calls.chips === 0 && calls.expanded === "true",
+                    { before, calls }
                 );
             });
 

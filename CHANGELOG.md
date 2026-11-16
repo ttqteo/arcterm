@@ -55,6 +55,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- In Chat, an agent's calls that read or edit the same file several times in a row now show as one line, "Edit
+  rail.tsx ×4 +1 −24", that opens to each call; every edit line also shows the lines it added and removed.
 - The Reply button over text you select in Chat now sits above the selection instead of over the words after it.
 - The agent's session card in the right rail no longer shows a Tools row counting each kind of tool call.
 - The command palette's New run and New agent rows, and its Quick and Orchestrate rows, now say they open the New

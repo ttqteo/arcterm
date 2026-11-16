@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentActionEntry, EditFile } from "./agentsviewmodel";
-import { MAX_STEP_CHIPS, stepElapsed, stepOf } from "./chatsteps";
+import { editCounts, foldOf, MAX_STEP_CHIPS, stepElapsed, stepOf, stepRows } from "./chatsteps";
 
 const action = (verb: string, extra: Partial<AgentActionEntry> = {}): AgentActionEntry => ({
     kind: "action",
@@ -184,5 +184,114 @@ describe("stepOf", () => {
         // a result landed: not running even while the session works
         expect(stepOf({ ...pending, outcome: "ok" }, true).running).toBe(false);
         expect(stepOf({ ...pending, outcome: "fail" }, true).running).toBe(false);
+    });
+});
+
+const edit = (path: string, adds: number, dels: number, extra: Partial<AgentActionEntry> = {}): AgentActionEntry =>
+    action("edited", {
+        target: path.split("/").pop(),
+        path,
+        outcome: "ok",
+        detail: { kind: "edit", files: [{ ...file(path), adds, dels }] },
+        ...extra,
+    });
+const read = (path: string, extra: Partial<AgentActionEntry> = {}): AgentActionEntry =>
+    action("read", { target: path.split("/").pop(), path, outcome: "ok", summary: "25 lines", ...extra });
+
+describe("stepRows", () => {
+    it("folds a run of the same verb on the same file, in order, each line keyed by its first call", () => {
+        const calls = [
+            read("/r/a.test.ts"),
+            read("/r/a.test.ts"),
+            read("/r/a.ts"),
+            edit("/r/a.ts", 5, 9),
+            edit("/r/a.ts", 2, 6),
+            edit("/r/a.test.ts", 0, 11),
+            edit("/r/rail.tsx", 0, 9),
+            edit("/r/rail.tsx", 1, 6),
+        ];
+        expect(stepRows(calls).map((r) => [r.start, r.actions.length])).toEqual([
+            [0, 2],
+            [2, 1],
+            [3, 2],
+            [5, 1],
+            [6, 2],
+        ]);
+    });
+
+    it("never folds across another call, a different verb, or a call that touched several files", () => {
+        const two = action("edited", {
+            outcome: "ok",
+            detail: { kind: "edit", files: [file("/r/a.ts"), file("/r/b.ts")] },
+        });
+        const calls = [edit("/r/a.ts", 1, 0), read("/r/b.ts"), edit("/r/a.ts", 1, 0), read("/r/a.ts"), two, two];
+        expect(stepRows(calls).map((r) => r.actions.length)).toEqual([1, 1, 1, 1, 1, 1]);
+    });
+
+    it("a failed or blocked call keeps its own line and ends the run", () => {
+        const calls = [
+            edit("/r/a.ts", 1, 0),
+            edit("/r/a.ts", 1, 0, { outcome: "fail" }),
+            edit("/r/a.ts", 1, 0),
+            edit("/r/a.ts", 1, 0, { outcome: "blocked" }),
+            edit("/r/a.ts", 1, 0),
+            edit("/r/a.ts", 1, 0),
+        ];
+        expect(stepRows(calls).map((r) => r.actions.length)).toEqual([1, 1, 1, 1, 2]);
+    });
+
+    it("a call still in flight joins the run of its file (its path, before the diff lands)", () => {
+        const pending = action("edited", { target: "a.ts", path: "/r/a.ts" });
+        expect(stepRows([edit("/r/a.ts", 1, 0), pending]).map((r) => r.actions.length)).toEqual([2]);
+    });
+
+    it("matches a path written with either slash", () => {
+        expect(stepRows([read("C:\\r\\a.ts"), read("C:/r/a.ts")]).map((r) => r.actions.length)).toEqual([2]);
+    });
+});
+
+describe("foldOf", () => {
+    it("adds up the run: count, time, and an edit run's lines", () => {
+        const f = foldOf(
+            [edit("/r/rail.tsx", 0, 9, { durationMs: 5_700 }), edit("/r/rail.tsx", 1, 6, { durationMs: 5_100 })],
+            false
+        );
+        expect(f.step.verb).toBe("Edit");
+        expect(f.step.chips).toEqual([{ kind: "file", path: "/r/rail.tsx" }]);
+        expect(f.count).toBe(2);
+        expect(f.durationMs).toBe(10_800);
+        expect(f.edits).toEqual({ adds: 1, dels: 15 });
+        expect(f.step.running).toBe(false);
+    });
+
+    it("keeps a read's summary only when every call says the same", () => {
+        expect(foldOf([read("/r/a.ts"), read("/r/a.ts")], false).summary).toBe("25 lines");
+        expect(foldOf([read("/r/a.ts"), read("/r/a.ts", { summary: "80 lines" })], false).summary).toBeUndefined();
+        expect(foldOf([read("/r/a.ts"), read("/r/a.ts")], false).edits).toBeUndefined();
+    });
+
+    it("is running while its last call is in flight, counting from that call's start", () => {
+        const pending = action("edited", { target: "a.ts", path: "/r/a.ts", startedAt: 1_000 });
+        const f = foldOf([edit("/r/a.ts", 1, 2, { durationMs: 900 }), pending], true);
+        expect(f.step.running).toBe(true);
+        expect(f.runningSince).toBe(1_000);
+        expect(f.edits).toEqual({ adds: 1, dels: 2 });
+        expect(foldOf([edit("/r/a.ts", 1, 2), pending], false).step.running).toBe(false);
+    });
+});
+
+describe("editCounts", () => {
+    it("adds an edit's files up, and is null without an edit detail", () => {
+        const two = action("edited", {
+            detail: {
+                kind: "edit",
+                files: [
+                    { ...file("/r/a.ts"), adds: 3, dels: 1 },
+                    { ...file("/r/b.ts"), adds: 2, dels: 4 },
+                ],
+            },
+        });
+        expect(editCounts(two)).toEqual({ adds: 5, dels: 5 });
+        expect(editCounts(read("/r/a.ts"))).toBeNull();
     });
 });
