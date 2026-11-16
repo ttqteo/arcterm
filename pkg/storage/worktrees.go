@@ -127,6 +127,7 @@ func treeProject(ctx context.Context, wt string) string {
 // judge decides whether a tree may go: one the engine did not make, or whose run still goes, stays; one with
 // uncommitted changes is guarded.
 func (runWorktrees) judge(ctx context.Context, env *Env, wt string, it *StorageItem) {
+	// a DUM-E tree (key dume-…, pkg/dume) names back to no run, so it is "not a run worktree" here and stays for its loop
 	runID, ok := env.RunOfWorktree(wt)
 	if !ok {
 		it.Reason = "not a run worktree"

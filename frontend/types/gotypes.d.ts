@@ -3400,6 +3400,29 @@ declare global {
         decisions: DecisionCard[];
     };
 
+    // wshrpc.DumeChunk
+    type DumeChunk = {
+        effortoid: string;
+        effort: string;
+        chunk: string;
+        runid?: string;
+        branch?: string;
+    };
+
+    // wshrpc.DumeStatusData
+    type DumeStatusData = {
+        enabled: boolean;
+        reason?: string;
+        decidedts?: number;
+        fivehourpct?: number;
+        fivehourreset?: number;
+        running?: DumeChunk;
+        waiting: number;
+        toland?: DumeChunk[];
+        blocked: number;
+        done: number;
+    };
+
     // waveobj.Effort
     type Effort = WaveObj & {
         title: string;
@@ -4826,6 +4849,8 @@ declare global {
         "jobs:pauseuntil"?: number;
         "runs:maxactive"?: number;
         "runs:wakeorigin"?: boolean;
+        "dume:*"?: boolean;
+        "dume:enabled"?: boolean;
         "power:*"?: boolean;
         "power:keepawake"?: boolean;
     };

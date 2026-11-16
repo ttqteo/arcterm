@@ -48,6 +48,7 @@ type WshRpcInterface interface {
 	ChannelCommands
 	RunCommands
 	RunQueueCommands
+	DumeCommands
 	DagCommands
 	JobQueueCommands
 	MachineCommands

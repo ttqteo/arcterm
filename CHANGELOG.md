@@ -55,6 +55,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   it reopens small and pinned after a restart. <!-- try: open-sidecar -->
 - Jump to any earlier prompt from the bar pinned at the top of Chat: its counter (10/12) or a right-click on the bar
   lists every prompt you sent in the conversation, and picking one scrolls back to it (arrows and Enter work too).
+- DUM-E: turn it on in Settings → Runs & limits, give an initiative chunk the owner `dum-e`, and in the last hour of a
+  5-hour window with quota to spare, sonnet works it on its own branch for you to merge. The Brief header and
+  `wsh dume status` say what it did and why.
 
 ### Changed
 

@@ -50,6 +50,9 @@ const (
 	// held services (pkg/services): the whole list, after every change to a service's state
 	Event_ServicesChanged = "services:changed" // type: wshrpc.ServicesData
 
+	// DUM-E (pkg/dume): its status, after every tick that changes it
+	Event_DumeChanged = "dume:changed" // type: wshrpc.DumeStatusData
+
 	// the Christmas tree's season ledger (pkg/xmastree): the whole data, after a task joins it
 	Event_XmasTreeChanged = "xmastree:changed" // type: wshrpc.XmasTreeData
 )
@@ -84,6 +87,7 @@ var AllEvents []string = []string{
 	Event_RunQueueChanged,
 	Event_MemHygieneUpdate,
 	Event_ServicesChanged,
+	Event_DumeChanged,
 	Event_XmasTreeChanged,
 }
 

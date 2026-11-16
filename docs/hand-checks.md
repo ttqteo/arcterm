@@ -23,6 +23,9 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   goals, click `N runs ▾` in its header → the menu is at most ~520px wide, each Started runs row is one line ending in
   `…` with its status (`done`, `running`) still at the right, and hovering a row shows the whole goal. Other menus
   (the header's ⋯, a tree row's right-click) look as before.
+- [ ] (arcterm) DUM-E: with dume:enabled on, a dum-e chunk pending and under an hour to the 5h reset with 30%+ left, a
+  sonnet quick run starts in a wave/dume-… worktree within 5 min; when it ends the chunk reads "ready to land" with a
+  git merge line, and the Brief header line follows along.
 - [ ] (arcterm) **The ↩ Reply button sits off the selection's top-right corner.** No dev app ran; CDP `chat-quote`
   step 1 was updated to the new place without a run (`task verify:ui -- chat-quote`). In Chat, select a few lines of a
   reply → the small ↩ sits just up and right of the widest line's end, touching the corner diagonally; a selection

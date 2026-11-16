@@ -933,6 +933,86 @@ const briefSurface = {
     },
 };
 
+// --- brief-dume-line: DUM-E's line in the Brief header ---------------------------------------------------------------
+// docs/superpowers/plans/2026-11-16-dume.md. With dume:enabled on, the header carries a DUM-E line after the fleet line,
+// on the same row, and it truncates rather than wraps; with the setting off the line is gone (the setting is the
+// switch). The loop's first tick comes minutes after wavesrv starts, so the line reads `DUM-E · not checked yet`:
+// only the `DUM-E · ` prefix is asserted. Arrange turns the setting on; teardown puts the person's own value back
+// (null when it was unset).
+const BDL_KEY = "dume:enabled";
+const BDL_LINE = `document.querySelector('[data-jarvis-brief-band="dume"]')`;
+
+const briefDumeLine = {
+    name: "brief-dume-line",
+    surface: "jarvis",
+    async arrange(h) {
+        const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+        const prev = { [BDL_KEY]: settings[BDL_KEY] ?? null };
+        await srSet(h, { [BDL_KEY]: true });
+        return { prev };
+    },
+    async assert(h) {
+        const steps = [];
+        await briefViewport(h, 1600, 1000);
+        await h.goto("jarvis");
+        await polishWaitFor(h, `!!document.querySelector('[data-jarvis-brief-band="fleet"]')`, 15000);
+
+        // 1. the line is there, after the fleet line on the same row, one line high
+        const shown = await polishWaitFor(h, `${BDL_LINE} != null`, 8000);
+        await polishNap(300);
+        await h.shot("cdp-shots/brief-dume-line.png");
+        const line = await h.ev(`(() => {
+            const d = ${BDL_LINE};
+            const f = document.querySelector('[data-jarvis-brief-band="fleet"]');
+            if (!d || !f) return { dume: !!d, fleet: !!f };
+            const dr = d.getBoundingClientRect();
+            const fr = f.getBoundingClientRect();
+            const cs = getComputedStyle(d);
+            return {
+                text: d.textContent,
+                title: d.getAttribute('title'),
+                sameRow: Math.abs((dr.top + dr.bottom) / 2 - (fr.top + fr.bottom) / 2) < 4,
+                after: dr.left >= fr.right - 0.5,
+                height: Math.round(dr.height),
+                width: Math.round(dr.width),
+                nowrap: cs.whiteSpace === 'nowrap',
+                ellipsis: cs.textOverflow === 'ellipsis',
+            };
+        })()`);
+        steps.push({
+            step: "1. with dume:enabled on, the Brief header has a DUM-E line after the fleet line on one row, truncating rather than wrapping",
+            ok:
+                shown &&
+                typeof line.text === "string" &&
+                line.text.startsWith("DUM-E · ") &&
+                line.title === line.text &&
+                line.sameRow === true &&
+                line.after === true &&
+                line.height > 0 &&
+                line.height < 24 &&
+                line.width <= 320 &&
+                line.nowrap === true &&
+                line.ellipsis === true,
+            detail: JSON.stringify({ shown, ...line }),
+        });
+
+        // 2. the setting is the switch: unset, the line is gone
+        await srSet(h, { [BDL_KEY]: null });
+        const gone = await polishWaitFor(h, `${BDL_LINE} == null`, 5000);
+        steps.push({
+            step: "2. with dume:enabled unset, the line is gone from the header",
+            ok: gone,
+            detail: JSON.stringify({ gone }),
+        });
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.cdp("Emulation.clearDeviceMetricsOverride").catch(() => {});
+        await srSet(h, ctx.prev).catch(() => {});
+        await h.goto("cockpit");
+    },
+};
+
 // --- the redesigned Brief (docs/superpowers/specs/2026-10-12-jarvis-brief-redesign-design.md) ----------------------
 // brief-layout, brief-chunk-panel and brief-run-sheet-order show every view that spec changed. Their shared helpers:
 const briefNap = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -52468,9 +52548,9 @@ const settingsRuns = {
         await polishNap(200);
         await h.shot("cdp-shots/settings-runs-1-defaults.png");
         rec(
-            "1. Runs & limits holds Runs, While work runs and Token burn; unset, the nine new rows read their defaults with no changed dot",
+            "1. Runs & limits holds Runs, While work runs, DUM-E and Token burn; unset, the nine new rows read their defaults with no changed dot",
             pageOpen &&
-                JSON.stringify(first.cards) === JSON.stringify(["runs", "whilework", "tokenburn"]) &&
+                JSON.stringify(first.cards) === JSON.stringify(["runs", "whilework", "dume", "tokenburn"]) &&
                 first.maxactive === 3 &&
                 first.wakeorigin === "true" &&
                 JSON.stringify(first.pace) === JSON.stringify(["Auto"]) &&
@@ -52578,6 +52658,59 @@ const settingsRuns = {
         const back = srNull();
         for (const k of Object.keys(ctx.prev)) back[k] = ctx.prev[k];
         await srSet(h, back);
+        await h.goto("cockpit");
+    },
+};
+
+// --- settings-dume-toggle: the DUM-E card on Settings > Runs & limits ---------------------------------------------------
+// docs/superpowers/plans/2026-11-16-dume.md. Unset reads off; the toggle writes dume:enabled. Arrange unsets the key and
+// teardown puts the person's own value back (null when it was unset), so a person who has DUM-E on keeps it on.
+const DUME_KEY = "dume:enabled";
+const DUME_SWITCH = `document.querySelector('[data-setting-card="dume"] [data-setting-row="dume.enabled"] [role="switch"]')`;
+
+const settingsDumeToggle = {
+    name: "settings-dume-toggle",
+    surface: "settings",
+    async arrange(h) {
+        const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+        const prev = { [DUME_KEY]: settings[DUME_KEY] ?? null };
+        await srSet(h, { [DUME_KEY]: null });
+        return { prev };
+    },
+    async assert(h) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+
+        await h.goto("settings");
+        const pageOpen = await spOpen(h, "runs");
+        const row = await polishWaitFor(h, `${DUME_SWITCH} != null`, 5000);
+        const unset = await h.ev(
+            `({ label: ${DUME_SWITCH}?.getAttribute("aria-label") ?? null, checked: ${DUME_SWITCH}?.getAttribute("aria-checked") ?? null })`
+        );
+        await srScroll(h, "dume");
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-dume-toggle-1-off.png");
+        rec(
+            "1. Settings > Runs & limits has a DUM-E card with the Spend the leftover 5h window on chores row, off while the key is unset",
+            pageOpen && row && unset.label === "Spend the leftover 5h window on chores" && unset.checked === "false",
+            JSON.stringify({ pageOpen, row, ...unset })
+        );
+
+        await h.ev(`${DUME_SWITCH}?.click()`);
+        const on = await srWaitStored(h, (s) => s[DUME_KEY] === true);
+        const shownOn = await polishWaitFor(h, `${DUME_SWITCH}?.getAttribute("aria-checked") === "true"`, 3000);
+        await srScroll(h, "dume");
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-dume-toggle-2-on.png");
+        rec(
+            "2. clicking the toggle stores dume:enabled true and the switch reads on",
+            on.ok && shownOn,
+            `stored=${on.stored[DUME_KEY]} shownOn=${shownOn}`
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await srSet(h, ctx.prev);
         await h.goto("cockpit");
     },
 };
@@ -53354,10 +53487,10 @@ const SP_PAGES = [
     { id: "general", cards: ["startup", "menubar", "notifications"] },
     { id: "appearance", cards: ["theme", "colors", "fonts", "agentrows", "chat"] },
     { id: "agents", cards: ["claudeaccount", "sleep", "flags"] },
-    { id: "runs", cards: ["runs", "whilework", "tokenburn"] },
+    { id: "runs", cards: ["runs", "whilework", "dume", "tokenburn"] },
     { id: "terminal", cards: ["text", "cursor", "behavior"] },
     { id: "headless", cards: ["runtime", "openrouter"] },
-    { id: "jarvis", cards: ["jarvis", "form", "behaviour", "folding", "office"] },
+    { id: "jarvis", cards: ["form", "behaviour", "folding", "office"] },
     {
         id: "storage",
         cards: ["vault", "runworktrees", "sessions", "housekeeping", "buildoutput", "packagecaches", "canvases", "autoclean"],
@@ -70918,6 +71051,7 @@ export const SCENARIOS = [
     petBubbleDismiss,
     elementPrimitives,
     briefSurface,
+    briefDumeLine,
     briefLayout,
     briefChunkPanel,
     briefRunSheetOrder,
@@ -70942,6 +71076,7 @@ export const SCENARIOS = [
     settingsHeadless,
     settingsKeepAwake,
     settingsRuns,
+    settingsDumeToggle,
     settingsTelegram,
     settingsVaultSync,
     settingsPages,
