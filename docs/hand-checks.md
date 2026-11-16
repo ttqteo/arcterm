@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A send to a killed agent is refused.** Unit tests only; the shell reading (`shellHoldsNothing`) never
+  ran against a real terminal. Start claude in an agent tab, then kill its process (Task Manager, or `taskkill /PID`,
+  not `/exit`) so the tab is back at its shell prompt: `wsh agents send <tab> hi` from another agent answers "back at
+  its shell prompt … nothing was sent", and nothing is typed into that shell. A send to a live agent still goes
+  through. Try it in a Git Bash tab and a PowerShell tab (Git Bash hides MSYS children from Windows, native ones it
+  shows), and on a Mac (the process list reads differently there).
 - [ ] (arcterm) **The Jarvis hologram no longer drops to the pixel pet.** Unit tests and typecheck only, no dev app
   ran. Use arcterm a working day with many agents and terminals opened, closed and switched between: `waveapp.log`
   has no `[hologram] failed` line, the hologram never turns into Sprout/Minion for 5 s, and terminals still draw sharp
