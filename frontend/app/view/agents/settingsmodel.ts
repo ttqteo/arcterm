@@ -612,9 +612,24 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
             blurb: "Who Jarvis is, how it shows and behaves, when the window folds into it, and how the Office looks and sounds.",
             cards: [
                 {
-                    id: "jarvis",
-                    label: "Jarvis",
+                    // one card: the form first, then only the rows of the form picked (settingspages/jarvis.tsx)
+                    id: "form",
+                    label: "Form",
                     rows: [
+                        {
+                            id: "appearance.petform",
+                            title: "Shows as",
+                            desc: "The hologram, the default, sits bottom-right, blue when calm, amber when something waits on you (WebGL, about 20–40 MB more); in Float it stands on the float bar, and folded the window becomes it. A character is a pixel creature that walks the footer.",
+                            key: "jarvis.pet.form",
+                            scope: "local",
+                        },
+                        {
+                            id: "appearance.petholosize",
+                            title: "Hologram size",
+                            desc: "L is 132 px.",
+                            key: "jarvis.pet.hologramsize",
+                            scope: "local",
+                        },
                         {
                             id: "appearance.petcharacter",
                             title: "Character",
@@ -627,26 +642,6 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             title: "Vietnam's colours",
                             desc: "On 30/4, 1/5 and 2/9 it wears the flag shirt even when this is off.",
                             key: "jarvis.pet.outfit",
-                            scope: "local",
-                        },
-                    ],
-                },
-                {
-                    id: "form",
-                    label: "Form",
-                    rows: [
-                        {
-                            id: "appearance.petform",
-                            title: "Shows as",
-                            desc: "The hologram, the default, sits bottom-right, blue when calm, amber when something waits on you (WebGL, about 20–40 MB more). In Float it stands on the float bar, folded it takes Sprout's place. Sprout walks the footer.",
-                            key: "jarvis.pet.form",
-                            scope: "local",
-                        },
-                        {
-                            id: "appearance.petholosize",
-                            title: "Hologram size",
-                            desc: "L is 132 px. Sprout keeps its size.",
-                            key: "jarvis.pet.hologramsize",
                             scope: "local",
                         },
                     ],

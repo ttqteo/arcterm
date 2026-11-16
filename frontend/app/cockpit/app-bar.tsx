@@ -78,10 +78,18 @@ function HologramGlyph() {
 
 // The fold buttons' tooltip, here and on the float bar: on a Mac, ⌘M folds too while window:minimize says Sprout
 export function useFoldTitle(): string {
-    const character = petCharacter(useAtomValue(petCharacterAtom));
+    const into = useFoldName();
     const choice = minimizeChoice(useAtomValue(getSettingsKeyAtom("window:minimize")));
-    const title = `Fold into ${PET_CHARACTER_NAME[character]}`;
+    const title = `Fold into ${into}`;
     return isMacOS() && choice === "sprout" ? `${title} (⌘M)` : title;
+}
+
+// what the window folds into: the hologram is Jarvis itself, whichever character is picked; only the character form
+// folds into the character
+export function useFoldName(): string {
+    const character = petCharacter(useAtomValue(petCharacterAtom));
+    const hologram = petForm(useAtomValue(petFormAtom)) === "hologram";
+    return hologram ? "Jarvis" : PET_CHARACTER_NAME[character];
 }
 
 // a right-click on a fold button switches window:autosprout, the fold that follows you out of the app, and picks the
@@ -248,7 +256,7 @@ export function WindowControls() {
     const maximized = useWindowMaximized();
     // minimize folds the window into Sprout unless window:minimize sends it to the taskbar (floatstore.ts)
     const toSprout = minimizeChoice(useAtomValue(getSettingsKeyAtom("window:minimize"))) === "sprout";
-    const character = petCharacter(useAtomValue(petCharacterAtom));
+    const foldName = useFoldName();
     return (
         <div
             data-tauri-drag-region
@@ -257,7 +265,7 @@ export function WindowControls() {
         >
             <button
                 onClick={minimizeRequested}
-                aria-label={toSprout ? `Fold into ${PET_CHARACTER_NAME[character]}` : "Minimize"}
+                aria-label={toSprout ? `Fold into ${foldName}` : "Minimize"}
                 className="flex h-full w-11 cursor-pointer items-center justify-center text-secondary hover:bg-hover"
             >
                 &#x2013;

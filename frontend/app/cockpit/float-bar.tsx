@@ -11,14 +11,12 @@ import { exitFloat, floatPinnedAtom, foldToSprout, setFloatPinned } from "@/app/
 import { StatusDot } from "@/app/view/agents/statusdot";
 import { toolTerminalName } from "@/app/view/agents/toolsmodel";
 import { toolsStatusAtom } from "@/app/view/agents/toolsstore";
-import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
-import { petCharacterAtom } from "@/app/view/jarvis/petstore";
 import { formatChordString } from "@/util/keysym";
 import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Minus, PictureInPicture2, Pin, SquareTerminal, X } from "lucide-react";
-import { showFoldMenu, useFoldTitle, WindowControls } from "./app-bar";
+import { showFoldMenu, useFoldName, useFoldTitle, WindowControls } from "./app-bar";
 
 // The app bar's place in float mode (floatstore.ts): the window is the focused agent's terminal, so the bar is what
 // you drag it by, whose terminal it is and what it is doing (the agent header steps out, so this is the one header),
@@ -35,7 +33,7 @@ function floatTitleTip(agent: AgentVM): string {
 export function FloatBar({ model }: { model: AgentsViewModel }) {
     const mac = isMacOS();
     const pinned = useAtomValue(floatPinnedAtom);
-    const character = petCharacter(useAtomValue(petCharacterAtom));
+    const foldName = useFoldName();
     const foldTitle = useFoldTitle();
     const focusId = useAtomValue(model.focusIdAtom);
     const agents = useAtomValue(model.agentsAtom);
@@ -140,7 +138,7 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
                 <button
                     type="button"
                     data-float-minimize
-                    aria-label={`Fold into ${PET_CHARACTER_NAME[character]}`}
+                    aria-label={`Fold into ${foldName}`}
                     title={foldTitle}
                     onClick={() => fireAndForget(foldToSprout)}
                     onContextMenu={showFoldMenu}

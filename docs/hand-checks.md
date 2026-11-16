@@ -6,6 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) **Settings → Jarvis & Office → Form shows only the picked form's rows.** Unit test and typecheck only;
+  no dev app was running. Shows as reads Hologram | Character, Hologram first. On Hologram the card holds Shows as and
+  Hologram size, and no Character or Vietnam's colours; switch to Character → Hologram size goes, Character and
+  Vietnam's colours appear under it. On Hologram, search "flag" → the card shows Vietnam's colours (not an empty card).
+  Hover the fold button (app bar −, and the float bar's on a Mac) → "Fold into Jarvis" on Hologram, "Fold into Minion"
+  on Character with Minion. Commit: fix(settings) Jarvis's form is Hologram or Character
+
 - [ ] (arcterm) **Full ↔ Float switch on a Mac and in a release build.** Measured only in the Windows dev app over CDP
   (540–710 ms per switch, was 1.1–1.3 s). On a Mac: `Shift+F` in and out a few times → no flicker of the shadow or the
   traffic lights mid-fade, the float lands in its place with its shadow, and the hologram powers on in the ledge slot
