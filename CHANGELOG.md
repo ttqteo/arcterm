@@ -83,6 +83,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The brainstorm card in Chat no longer vanishes and pops back at every step: once you answer, the question stays in
+  place with your answer under it until the agent's next question, Confirm or builder check takes its spot, and the card
+  eases to its new height instead of collapsing and reopening.
 - The harness menu in Ask Jarvis no longer runs off the bottom of a short window: it fits the space beside its button
   and scrolls, so every harness can be picked.
 - Ctrl+R and Ctrl+Shift+R no longer try to redraw a sleeping agent's terminal, whose process has ended.

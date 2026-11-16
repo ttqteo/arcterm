@@ -42,7 +42,7 @@ import { brainstormAtom, brainstormSeenAtom, shownBrainstormFile } from "./brain
 import { AskRow } from "./channelsprimitives";
 import { ChatBand } from "./chatband";
 import { boxPlaceholder, type BoxState } from "./chatboxstate";
-import { brainstormCard } from "./chatbrainstorm";
+import { brainstormCard, holdCard, type ChatCard } from "./chatbrainstorm";
 import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstormstore";
 import { boxAnswerRecord, boxPlaceholderOverride } from "./chatbrainstormwire";
 import { ChatComposer } from "./chatcomposer";
@@ -551,7 +551,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const procExit = useAtomValue(getProcExitAtom(agent.blockId ?? ""));
     const exited = procExited(procExit, agent.sleeping);
     const brainstormTopic = brainstormState?.topic ?? "";
-    const card = useMemo(() => {
+    const nextCard = useMemo(() => {
         const s = brainstormState;
         // the builder check as the Brainstorm tab reads it (brainstormpane.tsx): the card and the tab say one thing
         const check: BuilderCheckView =
@@ -579,6 +579,18 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
         agent.state,
         agent.idleSince,
     ]);
+    // the card the conversation shows: the one the brainstorm makes, else the question shown last while the agent works
+    // on (holdCard), so the card never leaves and comes back between two questions
+    const shownCard = useRef<ChatCard | null>(null);
+    const agentWorking = agent.state === "working";
+    const fileGone = brainstormState?.file == null;
+    const card = useMemo(
+        () => holdCard(shownCard.current, nextCard, agentWorking, fileGone),
+        [nextCard, agentWorking, fileGone]
+    );
+    useLayoutEffect(() => {
+        shownCard.current = card;
+    }, [card]);
     // the box's state, as the box reports it (chatboxstate.ts); it words the empty box. Until the box has said, what the
     // agent's state already tells.
     const [boxNow, setBoxNow] = useState<BoxState>(() =>
