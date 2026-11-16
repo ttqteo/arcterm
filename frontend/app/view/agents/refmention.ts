@@ -37,18 +37,26 @@ const KIND_WORDS: Record<RefKind, readonly string[]> = {
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const oneLine = (s: string | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
 
-/** The live agents a chat can refer to: every agent but the chat's own and plain terminals. */
+/** The live agents a chat can refer to: every agent but the chat's own and plain terminals, the ones in the chat's own
+ *  project first (the likeliest to name, and the ones the row cap would otherwise push out), each group in roster
+ *  order. */
 export function agentRefs(agents: readonly AgentVM[], selfId: string): RefItem[] {
-    return agents
-        .filter((a) => a.id !== selfId && (a.kind == null || a.kind === "agent" || a.kind === "background"))
-        .map((a, i) => ({
-            kind: "agent" as const,
-            id: a.id,
-            label: clip(oneLine(a.task) || a.name, 80),
-            detail: [a.project, a.agent, a.state].filter(Boolean).join(" · "),
-            // the roster's order (asking, working, idle) is kept
-            ts: -i,
-        }));
+    const project = agents.find((a) => a.id === selfId)?.project ?? "";
+    const others = agents.filter(
+        (a) => a.id !== selfId && (a.kind == null || a.kind === "agent" || a.kind === "background")
+    );
+    const ordered =
+        project === ""
+            ? others
+            : [...others.filter((a) => a.project === project), ...others.filter((a) => a.project !== project)];
+    return ordered.map((a, i) => ({
+        kind: "agent" as const,
+        id: a.id,
+        label: clip(oneLine(a.task) || a.name, 80),
+        detail: [a.project, a.agent, a.state].filter(Boolean).join(" · "),
+        // the roster's order (asking, working, idle) is kept within each group
+        ts: -i,
+    }));
 }
 
 /** A project's runs a chat can refer to: the top-level ones (a task's run is read through its parent), newest first. */
@@ -94,16 +102,29 @@ export function queryKind(query: string): RefKind | null {
     return null;
 }
 
+// a query written as a reference: `agent:b9b1`, `tab:b9b1`, `run:`, `council:0c28` (an id pasted after the `@`)
+const ADDRESS_QUERY = /^(agent|tab|run|council):([0-9a-f-]*)$/;
+
 /**
  * The rows the `@` query lists, at most REF_MAX_ROWS: with no query none (a bare `@` lists files, as it always has); a
- * query that names a kind lists that kind's items; any other lists the items whose id starts with it or whose label or
- * detail holds every word of it. A query that holds a `/` or a `.` is a path, and lists none. Agents first, then runs,
- * then councils, each newest first.
+ * query that names a kind lists that kind's items; a query written as `kind:<id>` lists that kind's items whose id
+ * starts with it; any other lists the items whose id starts with it or whose label or detail holds every word of it.
+ * A query that holds a `/` or a `.` is a path, and lists none. Agents first, then runs, then councils, each newest
+ * first.
  */
 export function refMatches(query: string, items: readonly RefItem[]): RefItem[] {
     const q = query.trim().toLowerCase();
     if (q === "" || /[/.\\]/.test(q)) {
         return [];
+    }
+    const address = ADDRESS_QUERY.exec(q);
+    if (address != null) {
+        const kind: RefKind = address[1] === "tab" ? "agent" : (address[1] as RefKind);
+        const id = address[2];
+        return items
+            .filter((it) => it.kind === kind && it.id.toLowerCase().startsWith(id))
+            .sort((a, b) => b.ts - a.ts)
+            .slice(0, REF_MAX_ROWS);
     }
     const kind = queryKind(q);
     const words = q.split(/\s+/);
