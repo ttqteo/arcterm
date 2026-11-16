@@ -64,6 +64,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Every tooltip shows the moment you hover, long ones included (they used to wait over half a second).
 - An agent waiting in the background on a council or another agent no longer shows that wait as a terminal row in the
   Agent sidebar or above Chat's message box: the council card or the other agent's own row already shows it.
 - A run that landed offers ✓ Close run, like the ✓ Close of an agent that committed: on its ✓ row in the Chat that

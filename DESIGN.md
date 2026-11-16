@@ -450,9 +450,8 @@ Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
   parentheses (`Hide the review (Esc)`). `element/titletiphost.tsx` shows a
   control's name immediately in the app's own chip, the shortcut muted at the right,
   revealed in 90 ms from the side facing the control (`tooltipReveal`) and gone
-  at once; a detail (over 60 characters, or several lines) waits 600 ms
-  (`titletip.ts` `tipDelay`), so passing over it while reading does not cover the
-  text. `data-tip-placement` overrides where it opens. Put a detail's `title` on
+  at once; a detail (a sentence, several lines) shows immediately too, with no
+  delay. `data-tip-placement` overrides where it opens. Put a detail's `title` on
   the small thing it explains, never on a row as wide as the text under it.
 - **Shortcut labels** — on Windows a shortcut is spelled out in words joined by
   `+`, each key capitalized: `Ctrl+Enter`, `Ctrl+Shift+P`, `Alt+Backspace`, `Esc`.

@@ -354,3 +354,6 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   session `.jsonl` away) and Resume from the palette → it reports why, and the Agent tree gains no extra terminal for
   the run; put the file back and Resume again → one new tab opens and the worker continues. Unit-tested only. Commit:
   5019e90c8 (`interrupted.go` `resumeInNewTab`, `swapPhaseWorker`).
+- [ ] (arcterm) Tooltips show at once, long ones too: hover the RAM figure on a run row in the Agent tree (its title
+  runs past 60 characters) → the chip shows with no wait, and moving the pointer off drops it at once. Vitest + eslint
+  only, not tried in the app (`titletiphost.tsx`, `titletip.ts` `tipDelay` removed).
