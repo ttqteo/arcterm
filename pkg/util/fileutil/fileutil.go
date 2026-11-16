@@ -158,17 +158,28 @@ const (
 	renameRetryMaxDelay = 50 * time.Millisecond
 )
 
-// RenameReplacing is os.Rename over an existing file, retrying for up to a second while Windows refuses it because
-// another handle holds the target open (Go itself opens files without delete sharing).
+// RenameReplacing is os.Rename over an existing file. On Windows it lands at once under readers that opened the file
+// with OpenShared, and retries for up to a second while another handle holds the target open (Go itself opens files
+// without delete sharing).
 func RenameReplacing(from, to string) error {
 	deadline := time.Now().Add(renameRetryFor)
 	for delay := time.Millisecond; ; delay = min(delay*2, renameRetryMaxDelay) {
-		err := os.Rename(from, to)
+		err := renameOnce(from, to)
 		if err == nil || runtime.GOOS != "windows" || !errors.Is(err, fs.ErrPermission) || time.Now().After(deadline) {
 			return err
 		}
 		time.Sleep(delay)
 	}
+}
+
+// ReadFileShared is os.ReadFile through OpenShared: a file read this way never holds back a RenameReplacing of it.
+func ReadFileShared(path string) ([]byte, error) {
+	f, err := OpenShared(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(f)
 }
 
 var (

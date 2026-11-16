@@ -195,6 +195,37 @@ func TestListComparesProjectsAsThePathsAre(t *testing.T) {
 	}
 }
 
+// Under load Windows finds no file by a council's name for an instant while a Save replaces it, its temp file still
+// there: a Load then waits the Save out. A council with no Save in flight that is missing says so at once.
+func TestLoadWaitsOutASaveReplacingTheFile(t *testing.T) {
+	if !isWindows {
+		t.Skip("only Windows loses the name mid-replace")
+	}
+	root := useTempRoot(t)
+	c := sampleCouncil("c1", `D:\p`)
+	if err := Save(c); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "councils", "c1.json")
+	// the moment of the replace: the name is gone, the temp file holds the next save
+	if err := os.Rename(path, path+".tmp"); err != nil {
+		t.Fatal(err)
+	}
+	landed := time.AfterFunc(50*time.Millisecond, func() { os.Rename(path+".tmp", path) })
+	defer landed.Stop()
+	if got, err := Load("c1"); err != nil || got.Id != "c1" {
+		t.Fatalf("Load during a save's replace = %v, %v; want the council once the save lands", got, err)
+	}
+
+	start := time.Now()
+	if _, err := Load("gone"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Load of a missing council = %v, want not found", err)
+	}
+	if waited := time.Since(start); waited > 200*time.Millisecond {
+		t.Errorf("a missing council took %v to say so, want at once", waited)
+	}
+}
+
 func TestListEmptyWhenNoStore(t *testing.T) {
 	useTempRoot(t)
 	got, err := List(`D:\p`)

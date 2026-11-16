@@ -68,3 +68,45 @@ func TestAtomicWriteFileWhileReaderHoldsFile(t *testing.T) {
 		t.Fatalf("file holds %q (err %v), want the new content", data, err)
 	}
 }
+
+// A reader that opened the file with OpenShared never holds a replace back, however long it keeps it open: readers that
+// reopen a council back to back starved its Save past the retry above on a loaded machine. The reader keeps reading
+// the file it opened, so it never sees half of the new one.
+func TestRenameReplacingLandsUnderASharedReader(t *testing.T) {
+	dir := t.TempDir()
+	target, tmp := filepath.Join(dir, "c1.json"), filepath.Join(dir, "c1.json.tmp")
+	if err := os.WriteFile(target, []byte("old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tmp, []byte("new"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := OpenShared(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	start := time.Now()
+	if err := RenameReplacing(tmp, target); err != nil {
+		t.Fatalf("RenameReplacing under a shared reader: %v", err)
+	}
+	if waited := time.Since(start); waited > renameRetryFor/2 {
+		t.Errorf("the replace waited %v, want it to land without waiting for the reader", waited)
+	}
+	if got, err := ReadFileShared(target); err != nil || string(got) != "new" {
+		t.Errorf("the file holds %q (err %v), want the new content", got, err)
+	}
+	held := make([]byte, 8)
+	n, _ := reader.Read(held)
+	if string(held[:n]) != "old" {
+		t.Errorf("the open reader read %q, want the file it opened", held[:n])
+	}
+}
+
+func TestReadFileSharedReportsAMissingFile(t *testing.T) {
+	_, err := ReadFileShared(filepath.Join(t.TempDir(), "gone.json"))
+	if !os.IsNotExist(err) {
+		t.Fatalf("err = %v, want one that reads as not existing", err)
+	}
+}
