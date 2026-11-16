@@ -6,18 +6,52 @@
 // (narrationtimeline.tsx), the compact read (compacttranscript.tsx) and chat (chatconversation.tsx); each marks its
 // prompts with data-user-prompt.
 // The scroll back is smooth, so the reply visibly runs back up to the prompt it answers, unless motion is reduced.
+// Given every prompt's text (prompts), the bar also lists them: a counter at its right ("10/12"), or a right-click
+// anywhere on it, opens the list under the bar, and picking one scrolls to it the same way. The list is portalled, so
+// the scroller's overflow does not clip it and its frost blurs the reply rather than the band.
 // A sticky row sticks below the scroller's top padding, which would leave a gap above the band that content scrolling
 // past shows in. So the bar covers the padding itself: it reads its scroller's padding-top, lifts the row by that much
 // and adds it to the band's top padding, and a scroller that holds it may have any top padding.
 
+import { KeyCap } from "@/app/element/keycap";
 import { springPop } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
-import { ArrowUp } from "lucide-react";
-import { AnimatePresence, motion, useMotionValue, useReducedMotion } from "motion/react";
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { pinnedPromptIndex, pinnedPromptPush, PROMPT_JUMP_EVENT } from "./pinnedprompt";
+import {
+    autoUpdate,
+    flip,
+    FloatingPortal,
+    size as floatingSize,
+    offset,
+    shift,
+    useDismiss,
+    useFloating,
+    useInteractions,
+} from "@floating-ui/react";
+import { ArrowUp, ChevronsUpDown } from "lucide-react";
+import { AnimatePresence, motion, MotionConfig, useMotionValue, useReducedMotion } from "motion/react";
+import {
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+    type KeyboardEvent,
+    type MouseEvent,
+    type RefObject,
+} from "react";
+import {
+    pinnedPromptIndex,
+    pinnedPromptPush,
+    PROMPT_JUMP_EVENT,
+    PROMPT_MENU_MIN,
+    promptCounter,
+    promptMenuWidth,
+    stepPromptMenu,
+} from "./pinnedprompt";
 
 const PROMPT_SELECTOR = "[data-user-prompt]";
+
+// the list's height cap: about nine rows, then it scrolls inside
+const PROMPT_MENU_MAX_H = 380;
 
 /** Set on the scroller while a pinned prompt shows: how far below the sticky line (the scroller's top padding) the
  *  band's bottom edge sits, so another sticky row (a code block's head, codeblock.tsx) sticks under the band, not
@@ -127,11 +161,14 @@ function useScrollerPaddingTop(rootRef: RefObject<HTMLElement>, on: boolean): nu
  *  The band pops in from the top edge as your prompt scrolls away and out as it comes back (springPop), and the next
  *  prompt shoves it up as it comes up under it, in step with the scroll (pinnedPromptPush): a band that blinked on and
  *  off over the bubble it stands for read as a jump. Each pinned prompt is its own row, keyed by its index, so one
- *  leaving and the next arriving cross over instead of the text swapping in place. */
+ *  leaving and the next arriving cross over instead of the text swapping in place.
+ *  prompts, when given, is every prompt's text in the order of root's data-user-prompt elements (text is prompts[index]);
+ *  with PROMPT_MENU_MIN or more the bar offers the list of them. */
 export function PinnedPromptBar({
     rootRef,
     index,
     text,
+    prompts,
     bg,
     className,
     cardClassName,
@@ -139,6 +176,7 @@ export function PinnedPromptBar({
     rootRef: RefObject<HTMLElement>;
     index: number;
     text: string | undefined;
+    prompts?: readonly string[];
     bg: string;
     className?: string;
     cardClassName?: string;
@@ -160,6 +198,7 @@ export function PinnedPromptBar({
                         rootRef={rootRef}
                         index={index}
                         text={text}
+                        prompts={prompts}
                         bg={bg}
                         pad={pad}
                         cardClassName={cardClassName}
@@ -170,12 +209,23 @@ export function PinnedPromptBar({
     );
 }
 
+// root's index-th prompt, scrolled to the top of its scroller; a feed that sticks to its tail lets go first
+function scrollToPrompt(root: HTMLElement | null, index: number, smooth: boolean) {
+    const target = root?.querySelectorAll<HTMLElement>(PROMPT_SELECTOR)[index];
+    if (root == null || target == null) {
+        return;
+    }
+    root.dispatchEvent(new Event(PROMPT_JUMP_EVENT, { bubbles: true }));
+    target.scrollIntoView({ block: "start", behavior: smooth ? "smooth" : "auto" });
+}
+
 // the band of one pinned prompt: it follows the prompt after it (pinnedPromptPush) for as long as it is drawn, its
 // exit included, so a band on its way out still moves with the scroll
 function PinnedBand({
     rootRef,
     index,
     text,
+    prompts,
     bg,
     pad,
     cardClassName,
@@ -183,6 +233,7 @@ function PinnedBand({
     rootRef: RefObject<HTMLElement>;
     index: number;
     text: string;
+    prompts?: readonly string[];
     bg: string;
     pad: number; // the scroller's top padding the band covers (useScrollerPaddingTop)
     cardClassName?: string;
@@ -190,6 +241,54 @@ function PinnedBand({
     const reduce = useReducedMotion();
     const bandRef = useRef<HTMLDivElement>(null);
     const push = useMotionValue(0);
+    const menu = prompts != null && prompts.length >= PROMPT_MENU_MIN ? prompts : null;
+    const [open, setOpen] = useState(false);
+    const listRef = useRef<HTMLDivElement>(null);
+    const counterRef = useRef<HTMLButtonElement>(null);
+    // the list hangs under the whole card, its right edge on the card's, as wide as the card up to PROMPT_MENU_MAX_W
+    const { refs, floatingStyles, context } = useFloating({
+        open,
+        onOpenChange: setOpen,
+        placement: "bottom-end",
+        strategy: "fixed",
+        middleware: [
+            offset(6),
+            flip({ padding: 8 }),
+            shift({ padding: 8 }),
+            floatingSize({
+                padding: 8,
+                apply({ availableHeight, rects, elements }) {
+                    elements.floating.style.setProperty(
+                        "--prompt-menu-max-h",
+                        `${Math.min(PROMPT_MENU_MAX_H, availableHeight)}px`
+                    );
+                    elements.floating.style.setProperty(
+                        "--prompt-menu-w",
+                        `${promptMenuWidth(rects.reference.width)}px`
+                    );
+                },
+            }),
+        ],
+        whileElementsMounted: autoUpdate,
+    });
+    const { getFloatingProps } = useInteractions([useDismiss(context)]);
+    // focus moves to the prompt you are reading, centred in the list, so the keys start from it and Escape closes the
+    // list before anything under it
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        const frame = requestAnimationFrame(() => {
+            const list = listRef.current;
+            const row = list?.querySelector<HTMLButtonElement>(`[data-prompt-item="${index}"]`);
+            if (list == null || row == null) {
+                return;
+            }
+            list.scrollTop = row.offsetTop - list.clientHeight / 2 + row.offsetHeight / 2;
+            row.focus({ preventScroll: true });
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [open]);
     useEffect(() => {
         const root = rootRef.current;
         const scroller = scrollParent(root);
@@ -226,14 +325,32 @@ function PinnedBand({
             reportBandBottom(scroller, band, null);
         };
     }, [rootRef, index, push, pad]);
-    const jump = () => {
-        const root = rootRef.current;
-        const target = root?.querySelectorAll<HTMLElement>(PROMPT_SELECTOR)[index];
-        if (target == null) {
+    const jump = () => scrollToPrompt(rootRef.current, index, !reduce);
+    const pick = (i: number) => {
+        setOpen(false);
+        scrollToPrompt(rootRef.current, i, !reduce);
+    };
+    // a right-click anywhere on the card opens the list, not the webview's own menu; nothing behind the bar takes it
+    const onCardMenu = (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setOpen(true);
+    };
+    const onListKey = (e: KeyboardEvent) => {
+        // the list is portalled, but React still bubbles its keys to the pane, whose own Escape would act too
+        if (e.key === "Escape") {
+            e.stopPropagation();
+            setOpen(false);
+            counterRef.current?.focus({ preventScroll: true });
             return;
         }
-        root.dispatchEvent(new Event(PROMPT_JUMP_EVENT, { bubbles: true }));
-        target.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+        const rows = [...(listRef.current?.querySelectorAll<HTMLButtonElement>("[data-prompt-item]") ?? [])];
+        const next = stepPromptMenu(rows.indexOf(document.activeElement as HTMLButtonElement), e.key, rows.length);
+        if (next == null) {
+            return;
+        }
+        e.preventDefault();
+        rows[next].focus();
     };
     // with an earlier prompt above it, the bar reads as the top of a stack: one card's edge shows under it, never more.
     // y is the scroll's, not an entrance: the band arrives on opacity + scale like any card
@@ -263,17 +380,149 @@ function PinnedBand({
                     over the reply scrolling beneath, so it takes the strong edge and the 1px micro-shadow of floating
                     chrome (DESIGN.md "Elevation & Depth"): with the mid edge it sank into the page in a small window */}
                 <div className={cn("relative rounded-[8px]", bg)}>
-                    <button
-                        type="button"
-                        onClick={jump}
-                        title="Back to this prompt"
-                        className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] border border-edge-strong bg-surface-raised px-3 py-[5px] text-left shadow-popover-line hover:bg-surface-hover"
+                    <div
+                        ref={refs.setReference}
+                        onContextMenu={menu != null ? onCardMenu : undefined}
+                        className="flex items-stretch rounded-[8px] border border-edge-strong bg-surface-raised shadow-popover-line"
                     >
-                        <span className="min-w-0 flex-1 truncate text-[12.5px] text-primary">{text}</span>
-                        <ArrowUp size={12} strokeWidth={2.2} aria-hidden className="flex-none text-muted" />
-                    </button>
+                        <button
+                            type="button"
+                            onClick={jump}
+                            title="Back to this prompt"
+                            className={cn(
+                                "flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-3 py-[5px] text-left hover:bg-surface-hover",
+                                menu != null ? "rounded-l-[7px]" : "rounded-[7px]"
+                            )}
+                        >
+                            <span className="min-w-0 flex-1 truncate text-[12.5px] text-primary">{text}</span>
+                            <ArrowUp size={12} strokeWidth={2.2} aria-hidden className="flex-none text-muted" />
+                        </button>
+                        {menu != null ? (
+                            <>
+                                <span aria-hidden className="my-[5px] w-px flex-none bg-edge-mid" />
+                                <button
+                                    ref={counterRef}
+                                    type="button"
+                                    data-prompt-counter
+                                    onClick={() => setOpen((o) => !o)}
+                                    aria-haspopup="menu"
+                                    aria-expanded={open}
+                                    aria-label={`All your prompts (${index + 1} of ${menu.length})`}
+                                    title="All your prompts"
+                                    className={cn(
+                                        "flex flex-none cursor-pointer items-center gap-1 rounded-r-[7px] pl-[9px] pr-2 text-[11.5px] tabular-nums text-muted hover:bg-surface-hover",
+                                        open && "bg-surface-hover"
+                                    )}
+                                >
+                                    {promptCounter(index, menu.length)}
+                                    <ChevronsUpDown size={12} strokeWidth={2} aria-hidden />
+                                </button>
+                            </>
+                        ) : null}
+                    </div>
                 </div>
             </div>
+            {menu != null ? (
+                <FloatingPortal>
+                    <div ref={refs.setFloating} style={floatingStyles} {...getFloatingProps()} className="z-[80]">
+                        <MotionConfig reducedMotion="user">
+                            <AnimatePresence>
+                                {open ? (
+                                    <motion.div
+                                        role="menu"
+                                        aria-label="Your prompts"
+                                        variants={springPop}
+                                        initial="initial"
+                                        animate="animate"
+                                        exit="exit"
+                                        style={{ transformOrigin: "top right" }}
+                                        className="flex max-h-[var(--prompt-menu-max-h)] w-[var(--prompt-menu-w)] flex-col overflow-hidden rounded-[12px] border border-edge-mid frost shadow-popover-md"
+                                    >
+                                        <PromptMenuBody
+                                            listRef={listRef}
+                                            prompts={menu}
+                                            index={index}
+                                            onPick={pick}
+                                            onKey={onListKey}
+                                        />
+                                    </motion.div>
+                                ) : null}
+                            </AnimatePresence>
+                        </MotionConfig>
+                    </div>
+                </FloatingPortal>
+            ) : null}
         </motion.div>
+    );
+}
+
+// the list of your prompts in conversation order, the one you are reading marked; focus is the cursor, so the pointer
+// moves it too and only one row is ever lifted
+function PromptMenuBody({
+    listRef,
+    prompts,
+    index,
+    onPick,
+    onKey,
+}: {
+    listRef: RefObject<HTMLDivElement>;
+    prompts: readonly string[];
+    index: number;
+    onPick: (i: number) => void;
+    onKey: (e: KeyboardEvent) => void;
+}) {
+    return (
+        <>
+            <div className="flex flex-none items-baseline justify-between px-3 pb-[5px] pt-[9px]">
+                <span className="text-[11.5px] font-medium text-muted">Your prompts</span>
+                <span className="text-[11px] tabular-nums text-muted">{prompts.length}</span>
+            </div>
+            {/* data-owns-keys: the list is portalled out of the pane's own key region, so without it the dispatcher
+                read focus here as nowhere in particular and a surface binding could take Escape or an arrow first */}
+            <div
+                ref={listRef}
+                data-prompt-list
+                data-owns-keys
+                onKeyDown={onKey}
+                className="sc relative flex min-h-0 flex-col gap-px overflow-y-auto px-1 pb-1"
+            >
+                {prompts.map((text, i) => (
+                    <button
+                        key={i}
+                        type="button"
+                        role="menuitem"
+                        data-prompt-item={i}
+                        aria-current={i === index || undefined}
+                        onClick={() => onPick(i)}
+                        onMouseEnter={(e) => e.currentTarget.focus({ preventScroll: true })}
+                        className={cn(
+                            "flex h-[30px] w-full flex-none cursor-pointer items-center gap-2.5 rounded-[6px] px-2 text-left outline-none focus:bg-surface-hover",
+                            i === index && "bg-surface-selected focus:bg-surface-selected"
+                        )}
+                    >
+                        <span className="w-[18px] flex-none text-right text-[11px] tabular-nums text-muted">
+                            {i + 1}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[12.5px] text-primary">{text}</span>
+                        {i === index ? <span className="flex-none text-[11px] text-muted">reading</span> : null}
+                    </button>
+                ))}
+            </div>
+            <div className="flex flex-none items-center gap-3 border-t border-edge-mid px-3 py-1.5 text-[11px] text-muted">
+                <span className="flex items-center gap-1">
+                    <KeyCap chord="ArrowUp" variant="inline" />
+                    <KeyCap chord="ArrowDown" variant="inline" />
+                    move
+                </span>
+                <span className="flex items-center gap-1">
+                    <KeyCap chord="Enter" variant="inline" />
+                    go to prompt
+                </span>
+                <span className="flex items-center gap-1">
+                    <KeyCap chord="Esc" variant="inline" />
+                    close
+                </span>
+            </div>
+        </>
     );
 }

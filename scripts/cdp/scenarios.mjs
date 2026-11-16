@@ -44312,6 +44312,80 @@ const agentChat = {
                 { pin27, back27 }
             );
 
+            // 27b. the pinned bar lists your prompts: with the first prompt pinned its counter reads 1/N, a click on it opens
+            // the list of all N under the bar with the first marked as the one you are reading and focused, ArrowDown moves
+            // focus to the next, Escape closes it, a right-click on the bar opens it again, and picking the last prompt scrolls
+            // it into view and closes the list
+            const pmMenu = `document.querySelector('[role="menu"][aria-label="Your prompts"]')`;
+            const pin27b = await h.ev(`(async () => {
+                const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+                const sc = ${acScroller(A)};
+                const conv = ${acLayer(A)}?.querySelector("[data-chat-conversation]");
+                const first = conv?.querySelector("[data-user-prompt]");
+                if (!sc || !conv || !first) return { ok: false, why: "no scroller, conversation or prompt" };
+                sc.scrollTop = Math.round(first.getBoundingClientRect().bottom - sc.getBoundingClientRect().top + sc.scrollTop) + 6;
+                for (let i = 0; i < 60 && !conv.querySelector("[data-prompt-counter]"); i++) await wait(50);
+                const counter = conv.querySelector("[data-prompt-counter]");
+                return {
+                    ok: !!counter,
+                    prompts: conv.querySelectorAll("[data-user-prompt]").length,
+                    counter: counter?.textContent.trim() ?? null,
+                };
+            })()`);
+            await h.ev(`${acLayer(A)}?.querySelector("[data-chat-conversation] [data-prompt-counter]")?.click()`);
+            const open27b = await polishWaitFor(h, `!!${pmMenu} && document.activeElement?.dataset?.promptItem === "0"`, 3000);
+            const menu27b = await h.ev(`(() => {
+                const m = ${pmMenu};
+                const rows = [...(m?.querySelectorAll("[data-prompt-item]") ?? [])];
+                const bar = ${acLayer(A)}?.querySelector("[data-pinned-prompt] [data-prompt-counter]")?.parentElement?.getBoundingClientRect();
+                const r = m?.getBoundingClientRect();
+                return {
+                    rows: rows.length,
+                    current: rows.findIndex((b) => b.getAttribute("aria-current") === "true"),
+                    reading: rows[0]?.textContent.includes("reading") ?? false,
+                    under: !!bar && !!r && r.top >= bar.bottom && Math.abs(r.right - bar.right) <= 1,
+                    expanded: ${acLayer(A)}?.querySelector("[data-prompt-counter]")?.getAttribute("aria-expanded") ?? null,
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-chat-27b-prompt-menu.png");
+            await acKey(h, acKeys.down);
+            const moved27b = await h.ev(`document.activeElement?.dataset?.promptItem ?? null`);
+            await acKey(h, acKeys.escape);
+            const closed27b = await polishWaitFor(h, `!${pmMenu}`, 3000);
+            const stayed27b = await h.ev(acOnScreen(A));
+            const card27b = await h.ev(`(() => {
+                const r = ${acLayer(A)}?.querySelector("[data-pinned-prompt] [data-prompt-counter]")?.parentElement?.getBoundingClientRect();
+                return r ? { x: r.left + 40, y: r.top + r.height / 2 } : null;
+            })()`);
+            if (card27b != null) {
+                for (const type of ["mousePressed", "mouseReleased"]) {
+                    await h.cdp("Input.dispatchMouseEvent", { type, x: card27b.x, y: card27b.y, button: "right", clickCount: 1 });
+                }
+            }
+            const reopened27b = await polishWaitFor(h, `!!${pmMenu}`, 3000);
+            await h.ev(`[...(${pmMenu}?.querySelectorAll("[data-prompt-item]") ?? [])].pop()?.click()`);
+            const picked27b = await h.ev(`(async () => {
+                const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+                const sc = ${acScroller(A)};
+                const last = [...(${acLayer(A)}?.querySelectorAll("[data-chat-conversation] [data-user-prompt]") ?? [])].pop();
+                if (!sc || !last) return { ok: false };
+                const inView = () => {
+                    const r = last.getBoundingClientRect();
+                    const s = sc.getBoundingClientRect();
+                    return r.top >= s.top - 1 && r.bottom <= s.bottom + 1;
+                };
+                for (let i = 0; i < 80 && (!inView() || ${pmMenu}); i++) await wait(50);
+                return { ok: true, inView: inView(), menuGone: !${pmMenu} };
+            })()`);
+            rec(
+                "27b. the pinned bar's counter reads 1/N with the first prompt pinned; it opens the list of all N prompts under the bar, the first marked reading and focused; ArrowDown moves focus, Escape closes it and the chat stays; a right-click on the bar reopens it; picking the last prompt scrolls it into view and closes the list",
+                pin27b?.ok === true && pin27b.prompts >= 2 && pin27b.counter === `1/${pin27b.prompts}` &&
+                    open27b && menu27b.rows === pin27b.prompts && menu27b.current === 0 && menu27b.reading && menu27b.under && menu27b.expanded === "true" &&
+                    moved27b === "1" && closed27b && stayed27b && card27b != null && reopened27b &&
+                    picked27b?.ok === true && picked27b.inView && picked27b.menuGone,
+                { pin27b, open27b, menu27b, moved27b, closed27b, stayed27b, reopened27b, picked27b }
+            );
+
             // 28. the model chip opens a plain menu of the four families (names only) with the current one checked; Escape closes
             // it; picking Sonnet types its full model id into the block and closes the menu
             await showAgent(A);

@@ -1747,6 +1747,7 @@ export function ChatConversation({
                 rootRef={rootRef}
                 index={pinned}
                 text={prompts[pinned]}
+                prompts={prompts}
                 bg="bg-background"
                 className="-mb-4"
                 cardClassName="mr-10"
