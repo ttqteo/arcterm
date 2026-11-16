@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The Token burn gate gathers parallel spawns on `$.clock.sleep`.** Vitest and the mod typecheck only.
+  The gate's gather wait used `setTimeout`, which a mod's declared environment does not have; whether it was missing at
+  run time was never seen. After `wsh install-agent-hooks` (or a launch), have a Claude session in arcterm start 3
+  subagents in one message → one Token burn card naming 3 agents, and no `arc: tool.call hook` failure line in the
+  transcript. Commit: the `chore(claude-mods): typecheck …` one.
 - [ ] (arcterm) **A run's Setup no longer holds the dag lock.** Go tests and the `dag-preparing` CDP scenario only (a
   seeded dag in a worktree dev app); the run's Final ended unverified on one flaky wshserver test. On the installed
   build, run a plan of three or more tasks in this repo (its `.arc/setup` makes each tree): the task cards read

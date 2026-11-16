@@ -170,6 +170,31 @@ describe("createSpawnGate", () => {
         ]);
     });
 
+    // a mod has no setTimeout: register.ts builds the gate with no sleep, and each check brings its hook's clock
+    it("gathers on the opening check's own sleep when the gate has none", async () => {
+        let wake = () => {};
+        const slept: number[] = [];
+        const sleep = (ms: number) => {
+            slept.push(ms);
+            return new Promise<void>((resolve) => (wake = resolve));
+        };
+        const gate = createSpawnGate(null);
+        const { asked, ask } = asker(allow(null));
+        const a = gate.check("Agent", {}, ask, undefined, sleep);
+        const b = gate.check("Agent", {}, ask, undefined, sleep);
+        wake();
+        expect(await Promise.all([a, b])).toEqual([null, null]);
+        expect(slept).toHaveLength(1);
+        expect(asked).toHaveLength(1);
+        expect(asked[0]?.agents).toBe(2);
+    });
+
+    it("refuses a check with no sleep from the gate or the call", async () => {
+        const gate = createSpawnGate(null);
+        const { ask } = asker(allow(null));
+        await expect(gate.check("Agent", {}, ask)).rejects.toThrow(/no sleep/);
+    });
+
     it("gives a spawn that arrives while the card waits the same verdict", async () => {
         let answer: (v: SpawnVerdict) => void = () => {};
         const asked: Group[] = [];

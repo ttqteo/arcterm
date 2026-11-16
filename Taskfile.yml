@@ -427,8 +427,10 @@ tasks:
         cmd: '{{.RMRF}} "$LOCALAPPDATA/dev.arc.app-dev/data"'
 
     check:ts:
-        desc: Typecheck TypeScript code (frontend).
-        cmd: node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit
+        desc: Typecheck TypeScript code (frontend, then the Claude Code mods under claude/).
+        cmds:
+            - cmd: node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit
+            - cmd: node scripts/check-mods.mjs
         deps:
             - npm:install
 

@@ -536,8 +536,9 @@ async function takesSlot($: EngineInterface, command: string): Promise<boolean> 
 // the last context reading, for the Token burn card
 let lastContext: { tokens: number; window: number } | null = null;
 
-// gathers parallel spawns onto one card and keeps the person's say; session.start clears it
-const spawnGate = createSpawnGate((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+// gathers parallel spawns onto one card and keeps the person's say; session.start clears it. a mod has no setTimeout:
+// the hook that opens a group gathers on its own $.clock.sleep, passed to each check
+const spawnGate = createSpawnGate(null);
 
 // `wsh tokengate` for one group. never rejects: a failure of wsh's lets the spawn run, so only a verdict line
 // changes the default, not wsh's exit or an empty stdout
@@ -999,14 +1000,17 @@ export const register: Register = (on) => {
     }
 
     // a costly spawn waits on the person's card; refused in code, as the shell is. always runs outside arcterm
+    // Task is the Agent tool's old name, gone from the typed tool list but still matched by an Agent call; the matcher
+    // is typed per tool, so the cast names one, and the hook reads e as a plain record
     for (const tool of ["Agent", "Task", "Workflow"] as const) {
-        on("tool.call", { tool }, async ($, e, next) => {
+        on("tool.call", { tool: tool as "Agent" }, async ($, e, next) => {
             const why = active
                 ? await spawnGate.check(
                       tool,
                       e as unknown as Record<string, unknown>,
                       (g, earlier, held) => askTokengate($, g, earlier, held),
-                      (until) => waitInFlight($, until)
+                      (until) => waitInFlight($, until),
+                      (ms) => $.clock.sleep(ms)
                   )
                 : null;
             return why === null ? next(e) : { deny: why };

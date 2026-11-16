@@ -157,19 +157,18 @@ export function goalState(entries: readonly GoalEntry[]): GoalState | null {
  *  records after the last of them (a proposal's answer, a prompt after a settled goal). Null at once for lines with
  *  none, the common case, so a long conversation is not parsed on every append. */
 export function goalFromLines(lines: readonly string[]): GoalState | null {
+    // a loop, not findLastIndex: the frontend imports this file, and its tsconfig's lib predates es2023
     let last = -1;
-    for (let i = lines.length - 1; i >= 0; i--) {
-        if (lines[i].includes('"goal_status"') || lines[i].includes('"ProposeGoal"')) {
+    lines.forEach((line, i) => {
+        if (line.includes('"goal_status"') || line.includes('"ProposeGoal"')) {
             last = i;
-            break;
         }
-    }
+    });
     if (last < 0) {
         return null;
     }
     const entries: GoalEntry[] = [];
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
+    for (const [i, line] of lines.entries()) {
         const goalLine = line.includes('"goal_status"') || line.includes('"ProposeGoal"');
         if (!goalLine && !(i > last && line.includes('"type":"user"'))) {
             continue;
