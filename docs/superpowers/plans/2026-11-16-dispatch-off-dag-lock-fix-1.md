@@ -35,8 +35,7 @@ too. An equivalent mechanism is fine if the tests below hold.
 
 ### Task 1: A skip of a preparing task waits for its prepare; a cancel drops the dag's prepares
 
-**Files:** `pkg/orchestrate/treeprep.go`, `pkg/orchestrate/rewind.go`, `pkg/orchestrate/mutation.go`,
-`pkg/orchestrate/treeprep_test.go`
+**Files:** `pkg/orchestrate/treeprep.go`, `pkg/orchestrate/rewind.go`, `pkg/orchestrate/mutation.go`, `pkg/orchestrate/treeprep_test.go`
 
 - [ ] **Step 1: Write the failing tests** in `treeprep_test.go`, beside `TestSkipDuringSetupSpawnsNothing`:
   - `TestASkipOfARetriedTaskWaitsForItsPrepare`: a task with an earlier attempt (so `taskStartBase` is non-empty and
