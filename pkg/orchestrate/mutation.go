@@ -247,14 +247,17 @@ func ApplyAction(ctx context.Context, dagID, taskID, action string, target waveo
 
 // ApplyActionBy records by's action on a task; by is ActionByLead or ActionByHuman.
 func ApplyActionBy(ctx context.Context, dagID, taskID, action, by string, target waveobj.RoutePin) error {
-	if err := applyAction(ctx, dagID, taskID, action, by, target); err != nil {
+	recorded, err := applyAction(ctx, dagID, taskID, action, by, target)
+	if !recorded {
 		return err
 	}
-	// after the action let go of the dag's ticks: this one covers every tick it turned away
-	return Schedule(ctx, dagID)
+	// the action is recorded even when its stopped worker's tab would not close: tick for the ticks it turned away
+	return errors.Join(err, Schedule(ctx, dagID))
 }
 
-func applyAction(ctx context.Context, dagID, taskID, action, by string, target waveobj.RoutePin) error {
+// applyAction reports whether the action was recorded on the task, which is what lets a tick follow it: an action
+// refused or cut short before that changed nothing a tick should act on.
+func applyAction(ctx context.Context, dagID, taskID, action, by string, target waveobj.RoutePin) (recorded bool, err error) {
 	taskActions.Lock(dagID)
 	defer taskActions.Unlock(dagID)
 	var prep *taskPrep
@@ -263,13 +266,13 @@ func applyAction(ctx context.Context, dagID, taskID, action, by string, target w
 		prep, err = prepareActionLocked(ctx, dagID, taskID, action, target)
 		return err
 	}); err != nil {
-		return err
+		return false, err
 	}
 	if prep != nil {
 		// the worker's run is cancelled by now, so the action finishes whether or not its caller still waits
 		ctx = context.WithoutCancel(ctx)
 		if err := prep.run(ctx); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if err := withDagMutation(dagID, func() error {
@@ -278,9 +281,9 @@ func applyAction(ctx context.Context, dagID, taskID, action, by string, target w
 		}
 		return applyActionLockedBy(ctx, dagID, taskID, action, by, target)
 	}); err != nil {
-		return err
+		return false, err
 	}
-	return prep.closeWorkerTab(ctx, taskID)
+	return true, prep.closeWorkerTab(ctx, taskID)
 }
 
 // taskPrep is the slow half of a skip, retry or escalate: stopping the task's worker and rewinding its lane. It is
