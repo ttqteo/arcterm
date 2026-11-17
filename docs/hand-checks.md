@@ -641,3 +641,9 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   agent's terminal, the run in Jarvis, the council's discussion; Ctrl-click peeks; a working agent's badge pulses green
   and an asking one shows an amber ring. A token typed or pasted into the box stays text (badges only in the bubble).
   Checked only with seeded atoms in the `chat-ref-badges` CDP scenario, not against a real project's runs and councils.
+- [ ] (arcterm) A calmer turn in Chat with a live agent (`chatsteps.ts`, `chatstepsummary.ts`, `chatturnfiles.tsx`): while
+  it works, a running stretch stays one folded line with its spinner and opens only on a click, and the Working line
+  reads `Working` and its stats with no `· <activity>` tail; a stretch of one described command reads as its
+  description; a finished stretch under 10 s shows no time. When a turn that edited files ends, a card lists them with
+  their +/− lines; a row opens the Diff on that file and See all opens the agent's whole Diff. Checked only in the
+  `agent-chat` CDP scenario with fixture turns.
