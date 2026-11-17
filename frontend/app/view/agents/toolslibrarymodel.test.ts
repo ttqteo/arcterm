@@ -311,11 +311,20 @@ describe("overrideKeywords", () => {
         });
     });
 
-    it("gives a built-in with no entry its command, since the entry needs one", () => {
+    it("writes a built-in with no entry without its command, so the built-in's command is not pinned", () => {
         expect(overrideKeywords(tool("lazygit"), undefined, { shows: "panel" })).toEqual({
-            command: "lazygit",
             shows: "panel",
         });
+    });
+
+    it("takes Keep running from the config entry over a status read before the click", () => {
+        const stale = tool("docs", { category: "Yours", user: true, command: "npm", port: "auto", autostart: false });
+        const current: ToolKeywords = { command: "npm", port: "auto", autostart: true };
+        expect(overrideKeywords(stale, current, { shows: "panel" })).toMatchObject({ autostart: true });
+        const staleOn = tool("docs", { category: "Yours", user: true, command: "npm", port: "auto", autostart: true });
+        expect(overrideKeywords(staleOn, { command: "npm", port: "auto" }, { shows: "panel" })).not.toHaveProperty(
+            "autostart"
+        );
     });
 
     it("rebuilds a yours tool whole from its status, so a change loses none of its fields", () => {

@@ -555,13 +555,14 @@ export function councilRowsByProject(
 }
 
 export type ProjectTreeRow =
-    // a project's folder: the agents it holds (done workers aside) and the terminals, the agents among them waiting on
-    // you, and those working now
+    // a project's folder: the agents it holds (done workers aside), the terminals and the held services it lists, the
+    // agents among them waiting on you, and those working now
     | {
           kind: "group";
           project: string;
           agents: number;
           terminals: number;
+          services: number;
           attn: number;
           running: number;
           open: boolean;
@@ -856,6 +857,7 @@ export function projectTree(input: {
             project,
             agents: folder?.group.count ?? 0,
             terminals: list.length,
+            services: services.filter((s) => serviceFolder(s) === project).length,
             attn: folder?.group.attn ?? 0,
             running: folder?.group.running ?? 0,
             open,
@@ -936,11 +938,16 @@ export function projectLabel(project: string): string {
     return project === HOME_PROJECT ? "No folder" : project;
 }
 
-/** Pure: what a folded folder says it holds: "2 agents · 1 terminal", only "2 terminals" when it holds no agent and only
- *  "2 agents" when it holds no terminal, "" for neither. */
-export function folderCounts(agents: number, terminals: number): string {
+/** Pure: what a folded folder says it holds: "2 agents · 1 terminal · 1 app", each part only when it is not zero, so a
+ *  folder of only services reads "1 app" rather than nothing; "" for none. A held service is an app, as Setup → Tools
+ *  and the footer's Servers name it. */
+export function folderCounts(agents: number, terminals: number, services = 0): string {
     const part = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
-    return [agents > 0 ? part(agents, "agent") : "", terminals > 0 ? part(terminals, "terminal") : ""]
+    return [
+        agents > 0 ? part(agents, "agent") : "",
+        terminals > 0 ? part(terminals, "terminal") : "",
+        services > 0 ? part(services, "app") : "",
+    ]
         .filter(Boolean)
         .join(" · ");
 }

@@ -829,7 +829,20 @@ describe("projectTree", () => {
         it("folder with only a service", () => {
             const rows = build([], [], { services: [svc("web", "ops")] });
             expect(rows.map((r) => r.kind)).toEqual(["group", "service"]);
-            expect(rows[0]).toMatchObject({ kind: "group", project: "ops", agents: 0, terminals: 0, open: true });
+            expect(rows[0]).toMatchObject({
+                kind: "group",
+                project: "ops",
+                agents: 0,
+                terminals: 0,
+                services: 1,
+                open: true,
+            });
+        });
+
+        it("a folded folder of only services counts them, so it does not read empty", () => {
+            const rows = build([], [], { services: [svc("web", "ops"), svc("docs", "ops")], collapsed: ["ops"] });
+            expect(rows).toHaveLength(1);
+            expect(rows[0]).toMatchObject({ kind: "group", project: "ops", terminals: 0, services: 2, open: false });
         });
 
         it("service without a tab still has a row", () => {
@@ -2095,6 +2108,11 @@ describe("folderCounts", () => {
     });
     it("is empty for a folder that holds nothing", () => {
         expect(folderCounts(0, 0)).toBe("");
+        expect(folderCounts(0, 0, 0)).toBe("");
+    });
+    it("counts the held services as apps, last", () => {
+        expect(folderCounts(0, 0, 1)).toBe("1 app");
+        expect(folderCounts(1, 2, 2)).toBe("1 agent · 2 terminals · 2 apps");
     });
 });
 
@@ -2289,7 +2307,7 @@ describe("treeNavIds", () => {
     it("skips a worker row whose session is gone, and rows that are not a session", () => {
         const gone = { kind: "worker", project: "p", run: {}, task: {} } as unknown as ProjectTreeRow;
         const rows: ProjectTreeRow[] = [
-            { kind: "group", project: "p", agents: 1, terminals: 0, attn: 0, running: 0, open: true },
+            { kind: "group", project: "p", agents: 1, terminals: 0, services: 0, attn: 0, running: 0, open: true },
             gone,
             { kind: "divider", project: "p" },
         ];

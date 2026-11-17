@@ -798,8 +798,8 @@ function RunningBadge({ n }: { n: number }) {
 // What a folded folder holds, the nav rail's agent mark and a terminal's, each with its number, so it fits beside the
 // name and the badges; folderCounts' words are its label. It is the part of the far end that gives way: a mark that
 // finds no room wraps onto a hidden second line, whole.
-function FolderCounts({ agents, terminals }: { agents: number; terminals: number }) {
-    const label = folderCounts(agents, terminals);
+function FolderCounts({ agents, terminals, services }: { agents: number; terminals: number; services: number }) {
+    const label = folderCounts(agents, terminals, services);
     if (label === "") {
         return null;
     }
@@ -820,6 +820,12 @@ function FolderCounts({ agents, terminals }: { agents: number; terminals: number
                 <span className="flex h-[14px] flex-none items-center gap-[3px]">
                     <SquareTerminal size={11} aria-hidden />
                     {terminals}
+                </span>
+            ) : null}
+            {services > 0 ? (
+                <span className="flex h-[14px] flex-none items-center gap-[3px]">
+                    <AppWindow size={11} aria-hidden />
+                    {services}
                 </span>
             ) : null}
         </span>
@@ -4303,7 +4309,11 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                         {r.running > 0 ? <RunningBadge n={r.running} /> : null}
                                                         {r.attn > 0 ? <AskingBadge n={r.attn} /> : null}
                                                         {r.open ? null : (
-                                                            <FolderCounts agents={r.agents} terminals={r.terminals} />
+                                                            <FolderCounts
+                                                                agents={r.agents}
+                                                                terminals={r.terminals}
+                                                                services={r.services}
+                                                            />
                                                         )}
                                                     </>
                                                 }

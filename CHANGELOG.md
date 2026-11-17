@@ -34,6 +34,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Leaving the Transcript tab after reading a long session back to its start gives that memory back: arcterm keeps
   only the session's recent part for when you come back, as it does after a first read.
 
+### Fixed
+
+- A folded project folder that holds only apps says how many it holds, rather than looking empty.
+- Changing where a built-in tool opens (Setup → Tools) no longer fixes its command in `tools.json`, so a later
+  arcterm that changes the tool's command still reaches you.
+- Changing Opens in or Shows right after turning Keep running on or off no longer undoes that Keep running click.
+- Opening an app and starting it at nearly the same moment no longer leaves an extra tab behind.
+
 ## 1.3.0 — 2026-11-17
 
 ### Added
