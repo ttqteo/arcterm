@@ -1620,6 +1620,12 @@ export class RpcApiType {
         return client.wshRpcCall("sealrunevidence", data, opts);
     }
 
+    // command "searchsessions" [call]
+    SearchSessionsCommand(client: WshClient, data: CommandSearchSessionsData, opts?: RpcOpts): Promise<CommandSearchSessionsRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "searchsessions", data, opts);
+        return client.wshRpcCall("searchsessions", data, opts);
+    }
+
     // command "serviceopen" [call]
     ServiceOpenCommand(client: WshClient, data: CommandServiceData, opts?: RpcOpts): Promise<ServiceStatus> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "serviceopen", data, opts);
