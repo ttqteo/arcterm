@@ -4,6 +4,7 @@ import {
     agentsInCouncil,
     backgroundTaskRows,
     buildAgentTree,
+    closablePicked,
     tasksShown,
     TASK_FOLD_AT,
     discussTogetherSeats,
@@ -1313,6 +1314,36 @@ describe("row multi-selection", () => {
         it("leaves a row that is no agent row alone", () => {
             const sel = selectOnly("a");
             expect(extendRow(sel, "terminal-1", "a", rows)).toBe(sel);
+        });
+    });
+
+    describe("closablePicked", () => {
+        const vm = (id: string, extra: { runId?: string; state?: string; sleeping?: object } = {}) => ({
+            id,
+            name: id.toUpperCase(),
+            state: extra.state ?? "idle",
+            runId: extra.runId,
+            sleeping: extra.sleeping,
+        });
+        const agents = [vm("a"), vm("b", { state: "working" }), vm("c", { runId: "run-1" }), vm("d", { sleeping: {} })];
+        const all = ["a", "b", "c", "d"];
+        it("takes the picked agents that work for no run, in the order they were picked, with what the label reads", () => {
+            const got = closablePicked({ ids: ["d", "c", "b", "a"], anchor: "a" }, agents, all);
+            expect(got.map((r) => r.vm.id)).toEqual(["d", "b", "a"]);
+            expect(got.map((r) => [r.name, r.state, r.sleeping])).toEqual([
+                ["D", "idle", true],
+                ["B", "working", false],
+                ["A", "idle", false],
+            ]);
+        });
+        it("is empty with fewer than two rows picked, counting only rows still in the tree", () => {
+            expect(closablePicked(selectOnly("a"), agents, all)).toEqual([]);
+            expect(closablePicked({ ids: ["a", "gone"], anchor: "a" }, agents, all)).toEqual([]);
+            expect(closablePicked(NO_ROW_SELECTION, agents, all)).toEqual([]);
+        });
+        it("is empty when every picked agent works for a run", () => {
+            const runs = [vm("x", { runId: "r" }), vm("y", { runId: "r" })];
+            expect(closablePicked({ ids: ["x", "y"], anchor: "y" }, runs, ["x", "y"])).toEqual([]);
         });
     });
 

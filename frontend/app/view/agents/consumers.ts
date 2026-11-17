@@ -378,10 +378,13 @@ export function pickedRows(view: ConsumersView, picked: ReadonlySet<string>): Co
     return view.groups.flatMap((g) => g.rows).filter((r) => picked.has(r.id) && canPick(r));
 }
 
-const working = (rows: ConsumerRow[]) => rows.filter((r) => !r.sleeping && r.state === "working");
+/** What closing several agents at once reads of each: the Resource Manager's ticked rows, the Agent tree's picked rows. */
+export type ClosePick = Pick<ConsumerRow, "name" | "state" | "sleeping">;
+
+const working = (rows: ClosePick[]) => rows.filter((r) => !r.sleeping && r.state === "working");
 
 /** The Close button under the ticked rows: how many it closes, and how many of them are working. */
-export function closePickedLabel(rows: ConsumerRow[]): string {
+export function closePickedLabel(rows: ClosePick[]): string {
     const n = rows.length;
     const busy = working(rows).length;
     return `Close ${n} ${n === 1 ? "agent" : "agents"}${busy > 0 ? ` · ${busy} working` : ""}`;
@@ -389,7 +392,7 @@ export function closePickedLabel(rows: ConsumerRow[]): string {
 
 /** What Close asks first when a ticked agent is working, naming each; null when none is, which closes at once: the
  * conversations of the rest stay under Conversations to resume. */
-export function closePickedConfirm(rows: ConsumerRow[]): string | null {
+export function closePickedConfirm(rows: ClosePick[]): string | null {
     const names = working(rows).map((r) => r.name);
     if (names.length === 0) {
         return null;

@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
@@ -12,6 +13,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import type { ConfirmHow } from "./closelog";
 import { closeTabLogged, logClose } from "./closetab";
 import { dismissKey, toggleInSet } from "./cockpitsurfacemodel";
+import { closePickedConfirm, closePickedLabel, type ClosePick } from "./consumers";
 import { startedRunTabIds } from "./donesuggest";
 import { noteClosed } from "./recentlyclosed";
 import { leadRunTabIds } from "./runlineage";
@@ -170,6 +172,39 @@ export function closeSessions(vms: ClosingVM[], why: string): void {
         vms.map((vm) => vm.id),
         why
     );
+}
+
+// Close on several agents at once (the Resource Manager's ticked rows, the Agent tree's picked rows): at once when none
+// of them is working, else after a confirm naming the working ones; a toast says what closed, and `done` runs after
+// (to clear the selection). Their conversations stay under Conversations to resume.
+export function confirmCloseAgents(rows: (ClosePick & { vm: ClosingVM })[], from: string, done?: () => void): void {
+    if (rows.length === 0) {
+        return;
+    }
+    const closeNow = () => {
+        closeSessions(
+            rows.map((r) => r.vm),
+            from
+        );
+        done?.();
+        pushToast({
+            title: rows.length === 1 ? `Closed ${rows[0].name}` : `Closed ${rows.length} agents`,
+            message: "",
+            level: "info",
+        });
+    };
+    const ask = closePickedConfirm(rows);
+    if (ask == null) {
+        closeNow();
+        return;
+    }
+    modalsModel.pushModal("ConfirmModal", {
+        title: "Close agents",
+        message: ask,
+        confirmLabel: closePickedLabel(rows),
+        destructive: true,
+        onConfirm: closeNow,
+    });
 }
 
 // NUDGE_INPUT is what the rail's Resume types: a quiet agent picks it up as a new turn
