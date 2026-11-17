@@ -48534,7 +48534,12 @@ const chatQuote = {
             const place7 = await h.ev(`(() => {
                 const a = ${link6}.getBoundingClientRect();
                 const b = ${copyBox}.getBoundingClientRect();
-                return { linkRight: Math.round(a.right), btnLeft: Math.round(b.left), sameLine: b.top < a.bottom && b.bottom > a.top };
+                // on the link's top-right corner: it rises over the line, its foot on the link's top half
+                return {
+                    linkRight: Math.round(a.right),
+                    btnLeft: Math.round(b.left),
+                    corner: b.top < a.top && b.bottom > a.top && b.bottom <= a.top + a.height / 2,
+                };
             })()`);
             await polishNap(300);
             await h.shot("cdp-shots/chat-quote-7-copy-button.png");
@@ -48552,8 +48557,8 @@ const chatQuote = {
             await polishWaitFor(h, `window.__cqWrote != null`, 2000);
             const wrote7 = await h.ev(`(() => { navigator.clipboard.writeText = window.__cqKeep; return window.__cqWrote; })()`);
             rec(
-                "7. hovering a link shows its copy button (hidden before) right at the link's end on its line, and pressing it copies the link's url",
-                hidden7 === "hidden" && shown7 && place7.sameLine && Math.abs(place7.btnLeft - place7.linkRight) <= 4 && copied7 && wrote7 === CQ_LINK,
+                "7. hovering a link shows its copy button (hidden before) on the link's top-right corner, over no word of its line, and pressing it copies the link's url",
+                hidden7 === "hidden" && shown7 && place7.corner && Math.abs(place7.btnLeft - place7.linkRight) <= 4 && copied7 && wrote7 === CQ_LINK,
                 { hidden7, shown7, place7, wrote7 }
             );
 
