@@ -24920,6 +24920,21 @@ const finalStageScenario = {
         const rec = (step, ok, detail) => steps.push({ step, ok: fstHolds(ok), detail: JSON.stringify(detail) });
         const shot = (name) => h.shot(`cdp-shots/final-stage-${name}.png`);
         const clickRow = () => finalShotsClick(h, FST_ROW);
+        // the stage's row keeps the focus B2 gives it only while it is drawn: an engine tick that writes its dag over
+        // the seed (fstShow) drops the row for a moment, the surface syncs the focus to the lead it then defaults to
+        // (agentsurface.tsx) and the row comes back unselected. Under load that hit between B3 and B4 (2026-11-18:
+        // B4-B6 read the lead with no pane), so a wait that reads the stage's pane clicks a row drawn unselected again
+        // on each nudge and counts it; a focus that leaves the row every time still fails the step
+        ctx.reselected = 0;
+        const reselect = (wait) => ({
+            nudge: async () => {
+                await wait.nudge();
+                if (await h.ev(`(() => { const r = ${FST_ROW}; return r != null && !r.classList.contains("bg-accentbg"); })()`)) {
+                    ctx.reselected++;
+                    await clickRow();
+                }
+            },
+        });
         const closeViewer = async () => {
             await finalShotsClick(h, `document.querySelector("[data-final-shots-viewer]")?.querySelector('button[aria-label="Close"]')`);
             await polishWaitFor(h, `document.querySelector("[data-final-shots-viewer]") == null`, 3000);
@@ -25002,7 +25017,7 @@ const finalStageScenario = {
         await shot("b2-tree-dag");
 
         wait = await fstShow(h, ctx, "alongside");
-        a = await fstAgent(h, (s) => s.rows[0].sub.startsWith("Check") && s.pane.steps[0].text === "passed 22s", wait);
+        a = await fstAgent(h, (s) => s.rows[0].sub.startsWith("Check") && s.pane.steps[0].text === "passed 22s", reselect(wait));
         await shot("b3-alongside-pane");
         d = await fstDag(h, ctx, (s) => s.node.meta === "round 1 · Check · verifier", wait);
         rec(
@@ -25020,7 +25035,7 @@ const finalStageScenario = {
         await shot("b3-alongside-dag");
 
         wait = await fstShow(h, ctx, "reviewing");
-        a = await fstAgent(h, (s) => s.rows[0].sub.startsWith("verifier reviewing") && s.pane.steps[3].state === "passed", wait);
+        a = await fstAgent(h, (s) => s.rows[0].sub.startsWith("verifier reviewing") && s.pane.steps[3].state === "passed", reselect(wait));
         await shot("b4-reviewing-pane");
         d = await fstDag(h, ctx, (s) => s.node.meta.startsWith("round 2 · verifier"), wait);
         rec(
@@ -25036,12 +25051,12 @@ const finalStageScenario = {
                 /^round 2 · verifier · 4m \d\ds$/.test(d.node.meta) &&
                 fstSame(d.node.strip, [...fstRepeat("passed", 4), "running"]) &&
                 d.peek.open === false,
-            { row: a?.rows, pane: a?.pane?.steps, past: a?.stage?.past, node: d?.node, open: d?.peek?.open }
+            { row: a?.rows, pane: a?.pane?.steps, past: a?.stage?.past, node: d?.node, open: d?.peek?.open, reselected: ctx.reselected }
         );
         await shot("b4-reviewing-dag");
 
         wait = await fstShow(h, ctx, "failed");
-        a = await fstAgent(h, (s) => s.rows[0].tone === "fail" && s.pane.steps[3].state === "failed", wait);
+        a = await fstAgent(h, (s) => s.rows[0].tone === "fail" && s.pane.steps[3].state === "failed", reselect(wait));
         await shot("b5-failed-pane");
         await finalShotsClick(h, `${FST_PANE}?.querySelector("[data-final-shots-link]")`);
         const paneViewer = (await fstUntil(h, FST_AGENT, (s) => s.viewer))?.viewer;
@@ -25069,7 +25084,7 @@ const finalStageScenario = {
                 d.peek.text.includes(fstFlat(FST_DETAIL)) &&
                 d.peek.shots != null &&
                 peekViewer,
-            { row: a?.rows, slot: a?.slot, pane: a?.pane, paneViewer, node: d?.node, peek: d?.peek, peekViewer }
+            { row: a?.rows, slot: a?.slot, pane: a?.pane, paneViewer, node: d?.node, peek: d?.peek, peekViewer, reselected: ctx.reselected }
         );
 
         // a step that ended kept its output beside the round's ARC_FINAL_OUT (finalStepsDir); only Check's is
@@ -25077,7 +25092,7 @@ const finalStageScenario = {
         const keptDir = join(ctx.out, "1-steps");
         mkdirSync(keptDir, { recursive: true });
         writeFileSync(join(keptDir, "check.txt"), `${FST_KEPT_MARK}\n`);
-        await h.goto("agent");
+        await fstAgent(h, (s) => s.rows[0].selected && s.pane != null, reselect(wait));
         const paneCell = (key) => `${FST_PANE}?.querySelector('[data-final-step="${key}"]')`;
         const keptRead = `(() => ({
             pane: (${FST_PANE}?.textContent ?? "").replace(/\\s+/g, " ").trim(),
@@ -25122,7 +25137,7 @@ const finalStageScenario = {
         );
 
         wait = await fstShow(h, ctx, "fixing");
-        a = await fstAgent(h, (s) => s.rows[0].sub.startsWith("round 2") && s.rows[0].tone === "wait", wait);
+        a = await fstAgent(h, (s) => s.rows[0].sub.startsWith("round 2") && s.rows[0].tone === "wait" && s.pane != null, reselect(wait));
         await shot("b6-fixing-pane");
         d = await fstDag(h, ctx, (s) => s.node.meta.startsWith("round 2 waits on"), wait);
         rec(
@@ -25135,7 +25150,7 @@ const finalStageScenario = {
                 d.node.meta === "round 2 waits on t-1, t-2, t-3" &&
                 fstSame(d.node.strip, fstRepeat("waiting", 5)) &&
                 fstSame(d.peek.past, [{ round: "1", text: "round 1 · failed at Final" }]),
-            { row: a?.rows, pane: a?.pane, past: a?.stage?.past, node: d?.node, peek: d?.peek }
+            { row: a?.rows, pane: a?.pane, past: a?.stage?.past, node: d?.node, peek: d?.peek, reselected: ctx.reselected }
         );
         await shot("b6-fixing-dag");
 
@@ -29751,6 +29766,25 @@ const sampleSummary = (frames) => ({
     },
 });
 const slidOk = (frames) => frames.some(barMidFlight) && barMatches(frames.at(-1));
+// a gap past this before the first sampled frame or between two is a stall, not a frame
+const PALETTE_STALL_MS = 100;
+const sampleStalled = (frames) => frames.some((f, i) => f.t - (i ? frames[i - 1].t : 0) > PALETTE_STALL_MS);
+
+// sampleSlide is sampleIndicator for a step that asserts a slide. A stall can swallow the 360 ms ease, so no frame
+// sees the bar mid-flight (run 04bd30dc's round-1 Final: first frame at 239 ms, mid 0, past the warm-up): such a
+// sample is taken again, up to 3 tries, after reset puts the source scope back. A sample with no stall that did not
+// slide is returned at once, so a bar that jumps still fails the step.
+async function sampleSlide(h, actionExpr, targetScope, reset, sourceScope) {
+    const stalls = [];
+    for (let tries = 1; ; tries++) {
+        const frames = await sampleIndicator(h, actionExpr, targetScope);
+        if (slidOk(frames) || !sampleStalled(frames) || tries === 3) return { frames, tries, stalls };
+        stalls.push(sampleSummary(frames));
+        await settleIndicator(h, targetScope);
+        await h.ev(reset);
+        await settleIndicator(h, sourceScope);
+    }
+}
 
 async function settleIndicator(h, scope) {
     const settled = await polishWaitFor(
@@ -29795,7 +29829,8 @@ const paletteScopeIndicator = {
             await h.ev(paletteKey("Tab", { shiftKey: true }));
             await settleIndicator(h, "all");
 
-            const toNeeds = await sampleIndicator(h, paletteKey("Tab"), "needs");
+            const toNeedsSlide = await sampleSlide(h, paletteKey("Tab"), "needs", paletteKey("Tab", { shiftKey: true }), "all");
+            const toNeeds = toNeedsSlide.frames;
             await settleIndicator(h, "needs");
             const one = await h.ev(`(() => {
                 const bars = [...(${PALETTE}?.querySelectorAll('[data-palette-scope-indicator]') ?? [])];
@@ -29805,12 +29840,15 @@ const paletteScopeIndicator = {
             rec(
                 "1. Tab from All slides the bar to Needs you; one bar, inside the pressed tab",
                 slidOk(toNeeds) && one.count === 1 && one.inPressed === "true",
-                JSON.stringify({ sample: sampleSummary(toNeeds), one })
+                JSON.stringify({ sample: sampleSummary(toNeeds), tries: toNeedsSlide.tries, stalls: toNeedsSlide.stalls, one })
             );
 
             const back = await sampleIndicator(h, paletteKey("Tab", { shiftKey: true }), "all");
-            const wrap = await sampleIndicator(h, paletteKey("Tab", { shiftKey: true }), "commands");
-            const bksp = await sampleIndicator(h, paletteKey("Backspace"), "all");
+            // Shift+Tab from All wraps to Commands, so Tab from Commands wraps back
+            const wrapSlide = await sampleSlide(h, paletteKey("Tab", { shiftKey: true }), "commands", paletteKey("Tab"), "all");
+            const wrap = wrapSlide.frames;
+            const bkspSlide = await sampleSlide(h, paletteKey("Backspace"), "all", paletteKey("Tab", { shiftKey: true }), "commands");
+            const bksp = bkspSlide.frames;
             await h.ev(paletteKey("Tab", { shiftKey: true }));
             const capture = await h.ev(`({
                 bar: ${PALETTE}?.querySelector('[data-palette-scope-indicator]')?.getBoundingClientRect().left ?? null,
@@ -29827,7 +29865,11 @@ const paletteScopeIndicator = {
                 JSON.stringify({
                     back: sampleSummary(back),
                     wrap: sampleSummary(wrap),
+                    wrapTries: wrapSlide.tries,
+                    wrapStalls: wrapSlide.stalls,
                     backspace: sampleSummary(bksp),
+                    backspaceTries: bkspSlide.tries,
+                    backspaceStalls: bkspSlide.stalls,
                     midSlideShot: capture,
                 })
             );
@@ -37827,7 +37869,8 @@ const agentRailTabs = {
                 blockid: term.blockId,
                 inputdata64: Buffer.from(`echo '${ctx.printedPath}'\r`).toString("base64"),
             });
-            ctx.printed = (await uploadsTermHas(h, term.blockId, "a.txt:2")).seen;
+            // a fresh shell's prompt and echo took past 5 s beside 6 CPU burners (2026-11-17)
+            ctx.printed = (await uploadsTermHas(h, term.blockId, "a.txt:2", 15000)).seen;
             await h.rpc("uireveal", { address: `agent:${RAIL_TABS_AGENT}` }, UI_ROUTE);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
@@ -38046,17 +38089,32 @@ const agentRailTabs = {
         await railTabsKey(h, "p", "KeyP", 80, MOD_BIT);
         const paletteUp = await polishWaitFor(h, `document.activeElement?.tagName === "INPUT"`, 5000);
         if (paletteUp) await h.cdp("Input.insertText", { text: "f:a.txt" });
-        await railTabsNap(1500);
+        // Enter fires the selected row: wait until it is a.txt's, not a fixed nap. Beside 6 CPU burners the file list was
+        // not in by 1.5 s, Enter picked nothing and left the palette open (2026-11-17), a modal the next step's reveal
+        // refused
+        const fileRow = paletteUp && (await polishWaitFor(h, `(${PALETTE}?.querySelector('[role="option"][aria-selected="true"]')?.textContent ?? "").includes("a.txt")`, 10000));
         if (paletteUp) await railTabsKey(h, "Enter", "Enter", 13);
         const viaPalette = paletteUp && (await polishWaitFor(h, `${railTabsFileText}.includes("a.txt")`, 8000));
         const surface8 = await h.activeSurfaceLabel();
-        rec("8. picking a.txt in the palette on the Agent surface opens it on the File tab", viaPalette && surface8 === "Agent", JSON.stringify({ paletteUp, viaPalette, surface8 }));
+        rec("8. picking a.txt in the palette on the Agent surface opens it on the File tab", viaPalette && surface8 === "Agent", JSON.stringify({ paletteUp, fileRow, viaPalette, surface8 }));
 
-        // 9. the plain terminal: the hover hint, then a real Ctrl+click
+        // 9. the plain terminal: the hover hint, then a real Ctrl+click. A palette step 8 left open (its pick failed) is a
+        // modal, and the cockpit's UI API refuses a reveal while one is up ("the user is busy"): uncaught, that threw the
+        // whole scenario away, steps 0-8 with it (2026-11-17, beside 6 CPU burners). So it is closed first, and a reveal
+        // that still fails is this step's failure, not the scenario's.
         const term = ctx.terminals[0];
-        await h.rpc("uireveal", { address: `agent:${term.tabId}` }, UI_ROUTE);
+        if (await h.ev(`!!${PALETTE_INPUT}`).catch(() => false)) {
+            await railTabsKey(h, "Escape", "Escape", 27);
+            await polishWaitFor(h, `!${PALETTE_INPUT}`, 3000);
+        }
+        let revealed9 = true;
+        try {
+            await h.rpc("uireveal", { address: `agent:${term.tabId}` }, UI_ROUTE);
+        } catch (e) {
+            revealed9 = String(e?.message ?? e);
+        }
         await railTabsNap(1000);
-        const at = ctx.printed ? await h.ev(`window.__arcTermPathLinks?.locate(${JSON.stringify(term.blockId)}, ${JSON.stringify(ctx.printedPath)})`) : null;
+        const at = revealed9 === true && ctx.printed ? await h.ev(`window.__arcTermPathLinks?.locate(${JSON.stringify(term.blockId)}, ${JSON.stringify(ctx.printedPath)})`) : null;
         let hint = false;
         if (at) {
             await railTabsMouse(h, "mouseMoved", at.x - 4, at.y);
@@ -38072,8 +38130,8 @@ const agentRailTabs = {
         await h.shot("cdp-shots/agent-rail-tabs-terminal.png");
         rec(
             "9. the plain terminal's printed a.txt:2 shows the hover hint, and Ctrl+click opens the Code surface on a.txt at line 2",
-            ctx.shellUp === true && ctx.printed === true && at != null && hint && onLine && surface9 === "Code",
-            JSON.stringify({ shellUp: ctx.shellUp, printed: ctx.printed, at, hint, onLine, surface9 })
+            revealed9 === true && ctx.shellUp === true && ctx.printed === true && at != null && hint && onLine && surface9 === "Code",
+            JSON.stringify({ revealed9, shellUp: ctx.shellUp, printed: ctx.printed, at, hint, onLine, surface9 })
         );
 
         // 10. the nav
@@ -39872,10 +39930,11 @@ async function uploadsTermText(h, blockId) {
     }
 }
 
-async function uploadsTermHas(h, blockId, needle) {
+// ms is how long to wait for it: 5 s by default, as a step that checks text never shows waits it out in full
+async function uploadsTermHas(h, blockId, needle, ms = 5000) {
     const want = uploadsPlainText(needle);
     let text = null;
-    for (let waited = 0; waited < 5000; waited += 500) {
+    for (let waited = 0; waited < ms; waited += 500) {
         text = await uploadsTermText(h, blockId);
         if (text != null && text.includes(want)) return { seen: true, readable: true };
         await polishNap(500);
