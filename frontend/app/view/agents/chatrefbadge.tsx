@@ -94,15 +94,18 @@ export function useResolvedRef(kind: RefKind, id: string): ResolvedRef {
 }
 
 /** The badge's look: the file pill's frame, filled and bordered in the kind's colour, its mark, its name and (an agent
- *  working or asking) its state's dot. `selected` is the box's pill under the keyboard; an unresolved token is dashed. */
+ *  working or asking) its state's dot. `selected` is the box's pill under the keyboard; an unresolved token is dashed.
+ *  `opens` is whether a click opens what it names, which its tooltip says: the bubble's does, the box's only selects. */
 export function RefBadgeFace({
     resolved,
     raw,
     selected = false,
+    opens = true,
 }: {
     resolved: ResolvedRef;
     raw: string;
     selected?: boolean;
+    opens?: boolean;
 }) {
     const look = badgeLook(resolved);
     const known = resolved.status === "resolved";
@@ -114,7 +117,7 @@ export function RefBadgeFace({
             data-ref-state={resolved.status}
             data-ref-mark={look.mark ?? ""}
             data-ref-selected={selected ? "true" : "false"}
-            title={refTitle(resolved)}
+            title={refTitle(resolved, { opens })}
             className={cn(
                 "relative -top-[1.5px] mx-px inline-flex h-5 max-w-[240px] items-center gap-1 rounded-[6px] border px-1.5 align-middle text-[12.5px] leading-none text-ink-hi",
                 selected ? "border-accent bg-accent/12" : look.frame

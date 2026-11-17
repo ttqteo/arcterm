@@ -42,7 +42,7 @@ function RefMentionPill({ nodeKey, kind, id, raw }: { nodeKey: NodeKey; kind: Re
     };
     return (
         <span onClick={select}>
-            <RefBadgeFace resolved={resolved} raw={raw} selected={selected} />
+            <RefBadgeFace resolved={resolved} raw={raw} selected={selected} opens={false} />
         </span>
     );
 }

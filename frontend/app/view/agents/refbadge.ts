@@ -116,11 +116,12 @@ export function badgeLook(r: ResolvedRef): BadgeLook {
     return { frame: `${meta.line} ${meta.softBg}`, mark: "runtime", dot };
 }
 
-/** Pure: the badge's tooltip: name · kind short-id · state (click to open), or why it is not one. */
-export function refTitle(r: ResolvedRef): string {
+/** Pure: the badge's tooltip: name · kind short-id · state, ending "(click to open)" when the badge opens what it names
+ *  (the bubble's does, the message box's only selects: `opens: false`), or why it is not one. */
+export function refTitle(r: ResolvedRef, { opens = true }: { opens?: boolean } = {}): string {
     if (r.status === "unresolved") {
         return r.reason;
     }
     const state = r.kind === "agent" && r.state != null ? ` · ${r.state}` : "";
-    return `${r.name} · ${r.kind} ${r.id.slice(0, 8)}${state} (click to open)`;
+    return `${r.name} · ${r.kind} ${r.id.slice(0, 8)}${state}${opens ? " (click to open)" : ""}`;
 }

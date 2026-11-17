@@ -42,7 +42,7 @@ opens what it names.
     run's goal, one line.
   - council: `mark-council` dot, new `mark-council-soft` / `mark-council-line` tokens; name = the council's feature.
   - The name truncates at 240px max; the tooltip holds the full name, kind, 8-char id and state, ending "(click to
-    open)".
+    open)" in the bubble only (in the box a click selects the badge, so its tooltip stops after the state).
 - **Agent state** on a live agent's badge: working = a green dot pulsing through `pulsedriver.tsx`; asking = an amber
   ring (a hollow dot, so it differs by shape, not only colour), pulsing; idle and asleep = no dot. It follows the
   roster live.

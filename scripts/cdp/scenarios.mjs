@@ -48761,7 +48761,8 @@ const chatMath = {
 // run, the council and a run that is not there: the first three resolve (B's runtime mark and asking ring, the tints and names
 // of the run and the council), the fourth stays a dashed token with no role, and a click or Enter on B's badge focuses B. Then
 // `@agent` in A's box picks B: the box draws the same badge, Backspace beside it selects it, the next one takes the whole
-// token away. The text never changes: the box's text is read from Lexical's own state, since a badge draws a name.
+// token away. The text never changes: the box's text is read from Lexical's own state, since a badge draws a name. Last, back on
+// the bubble: a Ctrl-click on B's badge peeks B in the avatar popup (A stays focused), and the run badge lifts on hover.
 
 const CRB_RUN_ID = "071a8e3b-5c4d-4e2f-9a10-3b7c1d2e4f56";
 const CRB_COUNCIL_ID = "c0ffee11-2233-4455-8677-99aabbccddee";
@@ -48994,9 +48995,10 @@ const chatRefBadges = {
             const inBoxBadge = await crbReadBadge(h, inBox);
             const text6 = await h.ev(crbBoxText(acBox(A)));
             rec(
-                "6. @agent lists B; Enter writes `agent:<B> ` (the box's text exactly that) and the box draws B's resolved badge, not selected",
+                "6. @agent lists B; Enter writes `agent:<B> ` (the box's text exactly that) and the box draws B's resolved badge, not selected, its title starting with B's name and not offering to open it (a click there selects)",
                 listed && firstKey === `ref:agent:${B}` && written && boxed && inBoxBadge?.state === "resolved" && inBoxBadge.mark === "runtime" &&
-                    inBoxBadge.name === CRB_NAME_B && inBoxBadge.selected === "false" && text6 === want,
+                    inBoxBadge.name === CRB_NAME_B && inBoxBadge.selected === "false" && text6 === want &&
+                    inBoxBadge.title?.startsWith(CRB_NAME_B) === true && !inBoxBadge.title.includes("click to open"),
                 { listed, firstKey, written, boxed, inBoxBadge, text6 }
             );
 
@@ -49021,6 +49023,91 @@ const chatRefBadges = {
                 "7. with the caret right after the badge, Backspace selects it (data-ref-selected) and leaves the text as it was; Backspace again takes the whole token and its badge away",
                 selected && kept === want && gone && typeof left === "string" && !left.includes("agent:") && !left.includes(B8),
                 { selected, kept, gone, left, acValLeft }
+            );
+
+            // the bubble's badges again, with real mouse events at a badge's centre (the box is empty now, and step 7's `@` read the
+            // project's runs and councils over the seed, so put it back first)
+            await showChat();
+            await crbSeed(h, ctx.project);
+            const bubbleBadges = await polishWaitFor(
+                h,
+                `!!${inBubble(tokens.agent)} && ${inBubble(tokens.run)}?.getAttribute("data-ref-state") === "resolved"`,
+                8000
+            );
+            // the badge's role=button wrapper brought into view, with the point at its centre and whether that point lands on it
+            const centreOf = (expr) =>
+                h.ev(`(() => {
+                    const b = ${expr}?.closest('[role="button"]');
+                    if (!b) return null;
+                    b.scrollIntoView({ block: "center" });
+                    const r = b.getBoundingClientRect();
+                    const x = Math.round(r.x + r.width / 2);
+                    const y = Math.round(r.y + r.height / 2);
+                    return { x, y, hit: b.contains(document.elementFromPoint(x, y)) };
+                })()`);
+            const mouse = (type, x, y, extra = {}) => h.cdp("Input.dispatchMouseEvent", { type, x, y, ...extra });
+            const peekState = () =>
+                h.ev(`(() => {
+                    const p = document.querySelector("[data-pet-peek-item]");
+                    return p ? { item: p.dataset.petPeekItem, status: p.dataset.petPeekStatus, hasNameB: p.textContent.includes(${JSON.stringify(CRB_NAME_B)}) } : null;
+                })()`);
+
+            // 8. the peek gesture is what peek-ctrl-click uses (PEEK_BIT on the move and both presses): the popup shows B and writes no selection
+            const agentAt = bubbleBadges ? await centreOf(inBubble(tokens.agent)) : null;
+            let peeked = false;
+            let peekOpen = null;
+            let stayedOnA = false;
+            if (agentAt?.hit) {
+                await mouse("mouseMoved", agentAt.x, agentAt.y, { modifiers: PEEK_BIT });
+                for (const type of ["mousePressed", "mouseReleased"]) {
+                    await mouse(type, agentAt.x, agentAt.y, { button: "left", clickCount: 1, modifiers: PEEK_BIT });
+                }
+                peeked = await polishWaitFor(h, `!!document.querySelector('[data-pet-peek-item="agent"][data-pet-peek-status="ready"]')`, 10000);
+                // the reveal animation settles before the readings
+                await polishNap(400);
+                peekOpen = await peekState();
+                stayedOnA = (await focused()) === A;
+            }
+            // a real key event: the popup handles Escape on its dialog, which holds focus, not on the document
+            for (const type of ["keyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+            }
+            const popupClosed = await polishWaitFor(h, `!document.querySelector('[data-pet-peek-item]')`, 4000);
+            const stillA = (await focused()) === A;
+            rec(
+                "8. Ctrl-click (the platform's peek gesture) on B's agent badge in A's bubble opens the avatar popup's peek of B, ready, and A stays the focused agent; Escape closes the popup",
+                bubbleBadges && agentAt?.hit === true && peeked && peekOpen?.item === "agent" && peekOpen.status === "ready" && peekOpen.hasNameB === true &&
+                    stayedOnA && popupClosed && stillA,
+                { bubbleBadges, agentAt, peeked, peekOpen, stayedOnA, popupClosed, stillA }
+            );
+
+            // 9. hover lifts the fill a step (hover:brightness-125 on the wrapper, through transition-[filter]) and leaving puts it back
+            const filterOf = () =>
+                h.ev(`(() => {
+                    const b = ${inBubble(tokens.run)}?.closest('[role="button"]');
+                    return b ? { filter: getComputedStyle(b).filter, hovered: b.matches(":hover") } : null;
+                })()`);
+            const runAt = bubbleBadges ? await centreOf(inBubble(tokens.run)) : null;
+            // a point off every badge: the corner of the page, past the transition before each reading
+            let rest = null;
+            let hover = null;
+            let away = null;
+            if (runAt?.hit) {
+                await mouse("mouseMoved", 2, 2);
+                await polishNap(400);
+                rest = await filterOf();
+                await mouse("mouseMoved", runAt.x, runAt.y);
+                await polishNap(400);
+                hover = await filterOf();
+                await mouse("mouseMoved", 2, 2);
+                await polishNap(400);
+                away = await filterOf();
+            }
+            rec(
+                "9. moving the mouse over the run badge's role=button wrapper makes its computed filter brightness(1.25), and moving away returns it to none",
+                runAt?.hit === true && rest?.filter === "none" && rest.hovered === false && hover?.filter === "brightness(1.25)" && hover.hovered === true &&
+                    away?.filter === "none" && away.hovered === false,
+                { runAt, rest, hover, away }
             );
         } catch (e) {
             rec("the scenario threw", false, String(e?.stack ?? e));

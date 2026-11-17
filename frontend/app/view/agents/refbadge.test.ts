@@ -117,4 +117,15 @@ describe("badgeLook and refTitle", () => {
         );
         expect(refTitle(resolveRef("agent", "deadbeef", src))).toBe("No agent deadbeef is open");
     });
+    it("leaves '(click to open)' off a title when the badge does not open (the message box's)", () => {
+        expect(refTitle(resolveRef("agent", "3fa1c2e0", src), { opens: false })).toBe("api-tests · agent 3fa1c2e0 · asking");
+        expect(refTitle(resolveRef("run", "071a8e3b", src), { opens: false })).toBe(
+            "Close the tree's picked rows · run 071a8e3b"
+        );
+        // opens: true is the default, and an unresolved title is the reason either way
+        expect(refTitle(resolveRef("agent", "3fa1c2e0", src), { opens: true })).toBe(
+            "api-tests · agent 3fa1c2e0 · asking (click to open)"
+        );
+        expect(refTitle(resolveRef("agent", "deadbeef", src), { opens: false })).toBe("No agent deadbeef is open");
+    });
 });
