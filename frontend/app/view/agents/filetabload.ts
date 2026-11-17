@@ -92,6 +92,21 @@ const OS_OPENABLE = new Set(
     )
 );
 
+/** The first of the paths that is a file on disk, or null when none is (a failed check counts as missing). */
+export async function firstExistingFile(paths: readonly string[]): Promise<string | null> {
+    for (const path of paths) {
+        try {
+            const info = await RpcApi.FileInfoCommand(TabRpcClient, { info: { path } });
+            if (info != null && !info.notfound && !info.isdir) {
+                return path;
+            }
+        } catch {
+            // missing, as readPanelFile reads a failed check
+        }
+    }
+    return null;
+}
+
 /** Pure: whether Open can hand the file to the OS's default app (a .pptx to PowerPoint). */
 export function canOpenInOsApp(path: string): boolean {
     const m = /\.([A-Za-z0-9]+)$/.exec(path);

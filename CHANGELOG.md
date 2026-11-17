@@ -45,6 +45,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   conversation at once, instead of opening each of those rows one by one.
 - Chat no longer draws commit suggestion cards: an agent that has to ask before committing asks in plain words again.
 
+### Fixed
+
+- A file an agent edited on your other machine (a session started on Windows and resumed on the Mac) opens from the
+  card at a turn's end, found in the agent's folder here, instead of "This file no longer exists".
+
 ## 1.3.0 — 2026-11-17
 
 ### Added
