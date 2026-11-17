@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SHARDS, SHARD_MIN_TESTS, countTopLevelTests, dealShards, failedVitestFiles, failedVitestTests, goSummary, goTestEnv, limiter, needsGoGraph, packageResults, partitionPackages, planVerify, readChanged, readChangedFile, reportFlaky, rerunVitestAlone, rerunnableTests, runPattern, testSharded, typechecked } from "./verify.mjs";
+import { LOAD_FAILED, SHARDS, SHARD_MIN_TESTS, countTopLevelTests, dealShards, failedVitestFiles, failedVitestTests, goSummary, goTestEnv, limiter, needsGoGraph, packageResults, partitionPackages, planVerify, readChanged, readChangedFile, reportFlaky, rerunVitestAlone, rerunnableTests, runPattern, testSharded, typechecked } from "./verify.mjs";
 
 const MOD = "github.com/wavetermdev/waveterm";
 const graph = [
@@ -209,14 +209,18 @@ describe("rerunning failed vitest files alone", () => {
         expect(failedVitestFiles("")).toBeNull();
         expect(failedVitestFiles(null)).toBeNull();
     });
-    it("calls a collection error real, even beside a failed test, since a rerun of the other files would hide it", () => {
+    it("reruns a file that failed to load with the others, since under low RAM a file can time out while it loads", () => {
         // vitest reports a file that failed to load as a case named for the file itself
         const xml = junit([
             [A, "flaky one", "failure"],
             [B, B, "failure"],
         ]);
-        expect(failedVitestFiles(xml)).toBeNull();
-        expect(failedVitestFiles(junit([[B, B, "failure"]]))).toBeNull();
+        expect(failedVitestTests(xml)).toEqual([
+            { file: A, name: "flaky one" },
+            { file: B, name: LOAD_FAILED },
+        ]);
+        expect(failedVitestFiles(xml)).toEqual([A, B]);
+        expect(failedVitestFiles(junit([[B, B, "failure"]]))).toEqual([B]);
     });
     it("reads a self-closing passing case and a failed case after it", () => {
         const xml = `<testsuite><testcase classname="${A}" name="ok" time="0"/><testcase classname="${A}" name="bad" time="0"><failure message="x"></failure></testcase></testsuite>`;
