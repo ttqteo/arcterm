@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A Claude agent's header and a split cell's bar switch between Chat and Terminal with one icon button instead of
+  the worded Chat | Terminal control; with a canvas, brainstorm or review open the header keeps the worded control.
 - Selected text in Chat has slightly rounded corners, so the highlight looks softer.
 - The chat box's `@` list shows the agents of the chat's own project first, so one there is no longer pushed out by
   agents of other projects.
