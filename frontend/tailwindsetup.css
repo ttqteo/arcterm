@@ -808,6 +808,13 @@ svg [aria-label="tip"] g path {
 ::highlight(doc-find-current) {
     background-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
 }
+/* Find in a session opened from a search hit (sessionfindbar.tsx): the same look as the File tab's. */
+::highlight(session-find) {
+    background-color: color-mix(in srgb, var(--color-warning) 28%, transparent);
+}
+::highlight(session-find-current) {
+    background-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
 /* The finding in focus in the review dialog: the document blocks it names stay, the rest dims. */
 [data-doc-focusing] > * {
     transition: opacity 150ms ease;

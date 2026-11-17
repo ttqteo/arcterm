@@ -112,14 +112,17 @@ function Caret({ open }: { open: boolean }) {
     return <Icon size={12} strokeWidth={2.2} aria-hidden className="shrink-0" />;
 }
 
-// your message: a box, no label, long ones clamped, with what you pasted under it
+// your message: a box, no label, long ones clamped, with what you pasted under it. `entry` is its entry index, on the
+// element holding its text as data-find-entry: what a find in the transcript (sessionfindbar.tsx) paints its matches in
 function UserMessage({
     text,
     images,
+    entry,
     onContextMenu,
 }: {
     text: string;
     images?: string[];
+    entry: number;
     onContextMenu: (e: React.MouseEvent) => void;
 }) {
     // a launch's attached images ride the prompt as paths; they show as pictures, not as the block that names them
@@ -132,7 +135,7 @@ function UserMessage({
             className="mt-4 rounded-[8px] border border-accent/30 bg-accent/10 px-3 py-2"
         >
             {said.text ? (
-                <div className="text-[13px] leading-[1.55] text-primary">
+                <div data-find-entry={entry} className="text-[13px] leading-[1.55] text-primary">
                     <PromptText text={said.text} />
                 </div>
             ) : null}
@@ -142,8 +145,16 @@ function UserMessage({
 }
 
 // the agent's prose: plain text, with a copy button that shows on hover (the thumbs Antigravity has beside it have
-// nothing to send to)
-function AssistantMessage({ text, onContextMenu }: { text: string; onContextMenu: (e: React.MouseEvent) => void }) {
+// nothing to send to). `entry`: as UserMessage's
+function AssistantMessage({
+    text,
+    entry,
+    onContextMenu,
+}: {
+    text: string;
+    entry: number;
+    onContextMenu: (e: React.MouseEvent) => void;
+}) {
     const [copied, setCopied] = useState(false);
     useEffect(() => {
         if (!copied) {
@@ -154,7 +165,7 @@ function AssistantMessage({ text, onContextMenu }: { text: string; onContextMenu
     }, [copied]);
     return (
         <div data-compact-message onContextMenu={onContextMenu} className="group/msg mt-3">
-            <div className="text-[13px] leading-[1.6] text-secondary">
+            <div data-find-entry={entry} className="text-[13px] leading-[1.6] text-secondary">
                 <MarkdownMessage text={text} />
             </div>
             <button
@@ -559,9 +570,16 @@ export function CompactTranscript({
     const drawItem = (item: CompactItem, idx: number): ReactNode => {
         switch (item.kind) {
             case "user":
-                return <UserMessage text={item.text} images={item.images} onContextMenu={copyMenu(item.text)} />;
+                return (
+                    <UserMessage
+                        text={item.text}
+                        images={item.images}
+                        entry={item.index}
+                        onContextMenu={copyMenu(item.text)}
+                    />
+                );
             case "message":
-                return <AssistantMessage text={item.text} onContextMenu={copyMenu(item.text)} />;
+                return <AssistantMessage text={item.text} entry={item.index} onContextMenu={copyMenu(item.text)} />;
             case "work": {
                 const key = keyFor(item.startIndex, keyOffset);
                 // the live trailing line shows open, so a click on it folds it (kept apart; it stops counting once the

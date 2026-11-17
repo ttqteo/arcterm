@@ -181,6 +181,9 @@ export interface RunView {
     landed: number;
     total: number;
     members: RunMember[];
+    // every session the run holds, not only the one each member opens by default: a search hit can sit in a task's
+    // reviewer or an earlier attempt (foundSession, sessionsfind.ts)
+    sessions: LiveSession[];
     needs: RunMember[];
     ask?: { member: string; num: string; text: string };
     tokens: number;
@@ -360,6 +363,7 @@ export function runView(input: RunViewInput): RunView {
         landed: taskMembers.filter((m) => m.status.key === "done").length,
         total: taskMembers.length,
         members: [...members, ...stageMembers],
+        sessions: group.sessions,
         needs: members.filter((m) => needsYou(m.status)),
         ask: askTask ? { member: askTask.key, num: askTask.num, text: askText || "" } : undefined,
         tokens: sum(group.sessions, (s) => s.tokenstotal),
