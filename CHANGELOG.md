@@ -44,6 +44,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   agents of other projects.
 - While an agent asks you a single question, a message sent from the chat box goes to it at once as your answer,
   instead of waiting until you answer on the question's card. A card with several questions still holds the message.
+- Asking an agent to "create an agent in <project>" now opens a real agent in that project's tree, with its own tab,
+  instead of a hidden subagent inside the asking session.
 
 ### Fixed
 

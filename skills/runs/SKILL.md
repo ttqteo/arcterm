@@ -1,11 +1,20 @@
 ---
 name: runs
-description: Use when you need to start an arcterm run (quick, or orchestrator from a goal or a plan file), check on or cancel a run, or see what is waiting on the user — via `wsh runs`; or message a live agent tab, read its answer, or wait until it stops working — via `wsh agents`; or read what an id the person names holds (a live agent, a run, a council, a past conversation, an initiative: "đọc agent <hash> rồi …") — via `wsh read`; or clean up what arcterm and its runs left on disk (run trees, old sessions, logs, build output) — via `wsh storage`.
+description: Use when the person asks you to create, open or start an agent ("tạo agent bên <project> và làm …", "open an agent in X") — that is an arcterm agent with its own tab, a quick run via `wsh runs start --project <dir>`, never the Agent tool; or when you need to start an arcterm run (quick, or orchestrator from a goal or a plan file), check on or cancel a run, or see what is waiting on the user — via `wsh runs`; or message a live agent tab, read its answer, or wait until it stops working — via `wsh agents`; or read what an id the person names holds (a live agent, a run, a council, a past conversation, an initiative: "đọc agent <hash> rồi …") — via `wsh read`; or clean up what arcterm and its runs left on disk (run trees, old sessions, logs, build output) — via `wsh storage`.
 ---
 
 # arcterm runs from the command line
 
 `wsh runs` does what the cockpit's + Run launcher and run sheet do. `wsh runs <cmd> --help` has every flag.
+
+**"Tạo agent" means an arcterm agent, not a subagent.** When the person asks you to create, open or start an agent
+("tạo agent bên worktree SIEM-portal và làm", "spin up an agent in X to do Y"), start a quick run with the task as its
+goal: `wsh runs start "<goal>" --project <dir>`, where `<dir>` is the folder they named (a linked worktree makes the
+run work in that worktree). It opens an agent with its own tab under that project, which they can watch and talk to.
+Do not use the Agent tool for it: a subagent runs hidden inside your session and never shows under the other project.
+Use the Agent tool only when they say subagent. The rules below apply as for any start (`wsh runs route` first; the
+folder must belong to a project in the cockpit, or pass `--channel`). Put everything the agent needs in the goal: it
+does not see this conversation.
 
 - `wsh runs start "<goal>"` or `wsh runs start --plan <plan.md>`: a plan implies an orchestrator run.
   `--effort <id> --chunk <label|n>` attaches it to an initiative chunk (ids from `wsh effort list`).
