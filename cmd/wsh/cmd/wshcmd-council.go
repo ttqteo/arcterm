@@ -1126,8 +1126,8 @@ var (
 	councilBenchGate = tokengateDecide
 )
 
-// councilBenchSpawn is the spawn the gate is asked about for a whole bench: one Council per run of the plan, priced at
-// the plan's own estimate.
+// councilBenchSpawn is the spawn the gate is asked about for a whole bench: one agent per run of the plan, whatever its
+// variant (solo, council, team, brainstorm), all under the Council tool and priced at the plan's own estimate.
 func councilBenchSpawn(plan *wshrpc.CouncilBenchRtnData) tokengate.Spawn {
 	return tokengate.Spawn{Tool: "Council", Agents: len(plan.Items), EstimateTokens: plan.Estimate}
 }

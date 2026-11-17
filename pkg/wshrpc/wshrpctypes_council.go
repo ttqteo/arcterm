@@ -284,7 +284,7 @@ type CommandCouncilBenchData struct {
 
 // CouncilBenchRtnData is a bench's plan: the runs in the order they go, their total estimate in tokens, and the cases
 // left out for a missing project folder or key (one line each). A call without DryRun has started the bench in wavesrv
-// when it returns it; the councils run one at a time and the results file takes each as it ends.
+// when it returns it; its runs, whatever their variant, go one at a time and the results file takes each as it ends.
 type CouncilBenchRtnData struct {
 	Items    []bench.CouncilBenchPlanItem `json:"items"`
 	Estimate int64                        `json:"estimate"`

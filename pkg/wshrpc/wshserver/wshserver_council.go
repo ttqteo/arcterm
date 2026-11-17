@@ -668,8 +668,9 @@ func planCouncilBench(dataDir string, opts bench.Options) (*wshrpc.CouncilBenchR
 	return &wshrpc.CouncilBenchRtnData{Items: items, Estimate: estimate, Skipped: skipped}, nil
 }
 
-// CouncilBenchCommand plans a benchmark and, without DryRun, starts it in the background and returns at once: the
-// councils run one at a time, each ends in a line of the results file, and `wsh council bench results` reads them. A
+// CouncilBenchCommand plans a benchmark and, without DryRun, starts it in the background and returns at once: its runs
+// (a solo agent, a council, an agent team or the brainstorm skill) go one at a time (bench.Run), each ends in a line of
+// the results file, and `wsh council bench results` reads them. A
 // dry run prices the plan and starts nothing, so the caller asks the Token burn gate between the two calls. Only one
 // bench runs at a time; a dry run still answers while it does.
 func (ws *WshServer) CouncilBenchCommand(ctx context.Context, data wshrpc.CommandCouncilBenchData) (*wshrpc.CouncilBenchRtnData, error) {
