@@ -44426,6 +44426,8 @@ const agentChat = {
             await polishWaitFor(h, `!${acCard(A)}`, 3000);
             await acQueue(h, orefA, [perm("perm-k2", "Bash", "npm run test:keys -- --again")]);
             await polishWaitFor(h, `!!${acCard(A)}?.querySelector("[data-permission-allow]")`, 3000);
+            // the card publishes its picked choice in an effect after the buttons mount: wait for the ring, not the button
+            await polishWaitFor(h, `JSON.stringify(${ringOn11b}) === '["allow"]'`, 3000);
             const ringNew = await h.ev(ringOn11b);
             await h.ev(`${acBox(A)}?.focus()`);
             await acKey(h, acKeys.enter);
