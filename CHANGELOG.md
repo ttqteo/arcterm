@@ -68,6 +68,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Claude Code's "trust this folder?" prompt shows in Chat as a card with No, exit and Yes, I trust this folder, where
   Chat used to stay on the agent's last step while the terminal waited for an answer. The agent reads asking and
   counts in Needs you while the prompt waits, instead of staying "working".
+- The Agent sidebar widens to 280px whenever RAM and Tokens are both on, Age on or off, so a row's second line has
+  room for its words; turning RAM or Tokens off still narrows it to 248px.
+- Chat's Working dot crackles with current while the agent works: bolts strike out from its core at a new angle,
+  length and zigzag each time, the core flickers, and now and then the dot and the Working words jolt and flare. With
+  reduced motion it stays still, as before.
 
 ### Changed
 

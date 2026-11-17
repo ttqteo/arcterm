@@ -622,6 +622,13 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   the agent's tree row shows a green server mark with `:<port>`, and folding its project's folder shows the port on the
   folder. From a plain terminal, the row reads `terminal · <name>` and Log opens the file, not the pane. Close the agent
   → the row keeps its name. Unit-tested only (`pkg/devservers/detached.go`, `treeservers.ts`), not tried in the app.
+- [ ] (arcterm) The Agent sidebar is 280px with RAM and Tokens on and Age off (`agentTreeWidth`, `rowfields.ts`): in
+  Settings → Appearance → Agent sidebar turn Age off; the sidebar stays 280px and a lead's second line reads its words
+  (`Working · 0/7`), not `W… · 0/7`. Turn Tokens off too and it narrows to 248px.
+- [ ] (arcterm) Chat's Working dot crackles (`workingglyph.tsx`, `pulse.ts` noise pulses): with a live agent working,
+  watch the dot for ten seconds: bolts strike at different angles and lengths, the core flickers, the dot and the
+  `Working…` words jolt now and then but stay readable, and it does not feel frantic. The CPU in Task Manager stays
+  where it was with the old dot (the driver is still 12fps).
 - [ ] (arcterm) Chat ref badges with real data: in a live agent's Chat, pick an agent, a run and a council from `@` →
   each shows as a tinted badge with its name (the box keeps the text `agent:<8>`); send → the bubble's badges open the
   agent's terminal, the run in Jarvis, the council's discussion; Ctrl-click peeks; a working agent's badge pulses green
