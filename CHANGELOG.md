@@ -84,6 +84,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   reduced motion it stays still, as before.
 - An agent with more than two servers running shows the first two ports and `+N` beside its server mark
   (`:5175 :9230 +2`) instead of every port; hovering the mark still lists them all.
+- When an agent's header is too narrow for everything, its buttons on the right (Chat, Terminal, Ship, Close) show
+  only their icons, so the name, project and model keep their room and no longer run under the buttons; the words
+  come back once there is space. Hover a button for its name, and Close for the session's tokens.
 
 ### Changed
 

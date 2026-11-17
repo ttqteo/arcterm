@@ -634,6 +634,10 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) The Agent sidebar is 280px with RAM and Tokens on and Age off (`agentTreeWidth`, `rowfields.ts`): in
   Settings → Appearance → Agent sidebar turn Age off; the sidebar stays 280px and a lead's second line reads its words
   (`Working · 0/7`), not `W… · 0/7`. Turn Tokens off too and it narrows to 248px.
+- [ ] (arcterm) The agent header drops its button words when short of room (`nextHeaderLabels`, `headermodel.ts`):
+  with an agent that has Ship and Close, narrow the window or open a split until the header crowds; Chat, Terminal,
+  Ship and Close become icons, the model and context (`opus 120k`) never draw under the Chat switch, and widening
+  brings the words back without flicker. Hovering Close names the session's tokens.
 - [ ] (arcterm) A server mark keeps two ports (`shortPortsLabel`, `devserversmodel.ts`): an agent or run row in the
   Agent tree whose background servers listen on four ports reads `:5175 :9230 +2` beside the green server glyph, and
   hovering it lists all four ports with their commands.

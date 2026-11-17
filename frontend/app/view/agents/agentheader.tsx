@@ -57,7 +57,7 @@ import {
     X,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { closeAgentChord, confirmCloseSession, interruptAgent } from "./agentactions";
 import { contextLevel, contextTokens } from "./agentrailmodel";
 import type { AgentsViewModel } from "./agents";
@@ -92,9 +92,11 @@ import {
     initiativeTitle,
     initiativeTitleShown,
     modelShown,
+    nextHeaderLabels,
     runLink,
     runMenuSections,
     unlinkedText,
+    type HeaderLabels,
     type HeaderWidth,
 } from "./headermodel";
 import { toggleBandPart } from "./initiativebandstore";
@@ -568,17 +570,37 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // cluster stays; their words shorten, and Split, Float and Fullscreen fold into More.
     const rootRef = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState<HeaderWidth>("wide");
+    // The right side's words (Chat, Terminal, Ship, Close · tokens) give way to their icons when the left side does not
+    // fit beside them (headermodel.nextHeaderLabels): what the header measures past its edge, plus what the name, the
+    // project and the clusters have had cut. Read on every draw as well as on a resize, since a longer state or token
+    // count changes the fit without changing the header's width.
+    const [labels, setLabels] = useState<HeaderLabels>({ shown: true, need: null });
+    const nameRef = useRef<HTMLSpanElement>(null);
+    const projectRef = useRef<HTMLSpanElement>(null);
+    const clustersRef = useRef<HTMLDivElement>(null);
+    const readFit = useCallback(() => {
+        const el = rootRef.current;
+        if (el == null) {
+            return;
+        }
+        const px = el.getBoundingClientRect().width;
+        setWidth(headerWidth(px));
+        const cut = (e: HTMLElement | null) => (e == null ? 0 : Math.max(0, e.scrollWidth - e.clientWidth));
+        const overflow = cut(el) + cut(clustersRef.current) + cut(nameRef.current) + cut(projectRef.current);
+        setLabels((prev) => nextHeaderLabels(prev, px, overflow));
+    }, []);
     useLayoutEffect(() => {
         const el = rootRef.current;
         if (el == null) {
             return;
         }
-        const read = () => setWidth(headerWidth(el.getBoundingClientRect().width));
-        read();
-        const ro = new ResizeObserver(read);
+        readFit();
+        const ro = new ResizeObserver(readFit);
         ro.observe(el);
         return () => ro.disconnect();
-    }, []);
+    }, [readFit]);
+    useLayoutEffect(readFit);
+    const words = labels.shown;
     const { nameMax, clusterGap } = headerLayout(width);
     const folded = foldsIntoMore(width);
     // Split, Float and Fullscreen each sit in the header or only in More (Settings → Appearance → Agent header); a narrow
@@ -805,6 +827,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             ref={rootRef}
             data-agent-header
             data-header-width={width}
+            data-header-labels={words ? "words" : "icons"}
             onContextMenu={openHeaderMenu}
             className="flex shrink-0 select-none items-center gap-[10px] whitespace-nowrap border-b border-border bg-background px-[18px] py-[8px]"
         >
@@ -823,7 +846,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 className="flex min-w-[120px] shrink-[3] items-baseline gap-[8px]"
                 style={nameMax ? { maxWidth: nameMax } : undefined}
             >
-                <span className="min-w-0 shrink truncate text-[14px] font-semibold text-foreground">
+                <span ref={nameRef} className="min-w-0 shrink truncate text-[14px] font-semibold text-foreground">
                     {lineage?.kind === "lead" ? (
                         <Workflow
                             size={13}
@@ -872,13 +895,15 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             {/* three clusters, each led by its icon: where it works (project / initiative), its run, and its model and
                 context. None is ever hidden: a narrow header shortens their words, and the project gives way first */}
             <div
+                ref={clustersRef}
                 data-header-clusters
-                className="ml-[2px] flex min-w-0 shrink items-center text-[11px] text-muted"
+                // clipped, so a cluster that cannot shrink further is cut here and never drawn under the buttons
+                className="ml-[2px] flex min-w-0 shrink items-center overflow-hidden text-[11px] text-muted"
                 style={{ gap: clusterGap }}
             >
                 <span data-header-location className="inline-flex min-w-0 items-center gap-[5px]">
                     <Folder size={12} strokeWidth={2} aria-hidden className="flex-none text-ink-faint" />
-                    <span title={project || undefined} className="min-w-[40px] truncate">
+                    <span ref={projectRef} title={project || undefined} className="min-w-[40px] truncate">
                         {project || "—"}
                     </span>
                     {agent.effortId != null ? (
@@ -938,7 +963,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                           label: (
                                               <>
                                                   <MessageSquare size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
-                                                  Chat
+                                                  {words ? "Chat" : null}
                                               </>
                                           ),
                                           title: chatAsleep
@@ -952,7 +977,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 label: (
                                     <>
                                         <SquareTerminal size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
-                                        Terminal
+                                        {words ? "Terminal" : null}
                                     </>
                                 ),
                                 title: chatAsleep
@@ -970,7 +995,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                           label: (
                                               <>
                                                   <Lightbulb size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
-                                                  Brainstorm
+                                                  {words ? "Brainstorm" : null}
                                                   {brainstormDot === "asking" ? (
                                                       <span
                                                           aria-label="asking you"
@@ -996,7 +1021,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                           label: (
                                               <>
                                                   <LayoutGrid size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
-                                                  Canvas
+                                                  {words ? "Canvas" : null}
                                                   {isUnseen(canvas) ? (
                                                       <span
                                                           aria-label="updated since you last looked"
@@ -1016,7 +1041,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                           label: (
                                               <>
                                                   <FileCheck size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
-                                                  Review
+                                                  {words ? "Review" : null}
                                                   {view !== "review" && !sent ? (
                                                       <span
                                                           aria-label="waiting on you"
@@ -1064,6 +1089,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 onClick={() => fireAndForget(() => shipAgent(agent, ship.kind))}
                                 disabled={held}
                                 title={`${ship.title} (${formatChordString("Alt:s")})`}
+                                aria-label={ship.kind === "ship" ? "Ship" : "Commit"}
                                 className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-accent/45 px-[9px] py-[5px] text-[12px] font-semibold text-accent hover:border-accent disabled:cursor-default disabled:opacity-40 disabled:hover:border-accent/45"
                             >
                                 {ship.kind === "ship" ? (
@@ -1071,7 +1097,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 ) : (
                                     <GitCommitHorizontal size={14} strokeWidth={2.2} aria-hidden />
                                 )}
-                                {ship.kind === "ship" ? "Ship" : "Commit"}
+                                {words ? (ship.kind === "ship" ? "Ship" : "Commit") : null}
                             </button>
                         ) : null}
                         {done ? (
@@ -1080,12 +1106,14 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 data-agent-header-done
                                 onClick={closeTerminal}
                                 disabled={held}
-                                title={`${!agent.committed && startedRunLanded(agent.id, lineageRuns) ? ORIGIN_DONE_TITLE : DONE_TITLE} (${formatChordString("Alt:w")})`}
+                                // with the words gone the session's tokens move into the title
+                                title={`${!agent.committed && startedRunLanded(agent.id, lineageRuns) ? ORIGIN_DONE_TITLE : DONE_TITLE} (${formatChordString("Alt:w")})${!words && sessionTokens ? ` · ${formatTokens(sessionTokens)} tokens` : ""}`}
+                                aria-label="Close"
                                 className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-success/45 px-[9px] py-[5px] text-[12px] font-semibold text-success hover:border-success disabled:cursor-default disabled:opacity-40 disabled:hover:border-success/45"
                             >
                                 <Check size={14} strokeWidth={2.2} aria-hidden />
-                                Close
-                                {sessionTokens ? (
+                                {words ? "Close" : null}
+                                {words && sessionTokens ? (
                                     <span className="font-normal tabular-nums text-muted">
                                         · {formatTokens(sessionTokens)} tok
                                     </span>
