@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { smallAsks, smallKey } from "./sidecarlayout";
 import { SidecarCounts } from "./sidecartitlebar";
 import type { SidecarAct, SidecarSnapshot, SidecarTile } from "./sidecartypes";
-import { ageText, resolveSelection } from "./sidecarwallmodel";
+import { ageText, answerAct, resolveSelection } from "./sidecarwallmodel";
 
 export interface SidecarSmallProps {
     snap: SidecarSnapshot;
@@ -63,7 +63,7 @@ export function SidecarSmall({ snap, receivedAt, clock, send }: SidecarSmallProp
                 send(
                     action.kind === "open"
                         ? { kind: "open", id: action.id }
-                        : { kind: "answer", id: action.id, option: action.option }
+                        : { kind: "answer", id: action.id, option: action.option, key: action.key }
                 );
             }
         };
@@ -108,7 +108,12 @@ export function SidecarSmall({ snap, receivedAt, clock, send }: SidecarSmallProp
                             }}
                             onSelect={() => setSelectedId(tile.id)}
                             onOpen={() => send({ kind: "open", id: tile.id })}
-                            onAnswer={(option) => send({ kind: "answer", id: tile.id, option })}
+                            onAnswer={(option) => {
+                                const answer = answerAct(tile, option);
+                                if (answer != null) {
+                                    send(answer);
+                                }
+                            }}
                         />
                     ))
                 )}

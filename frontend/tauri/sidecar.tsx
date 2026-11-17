@@ -6,7 +6,7 @@
 // popover's page (tray.tsx) it never boots the cockpit, the wsh client, WOS or a store: the main window owns all of
 // them, and a second copy here would cost its RAM again. Spec 2026-11-13-sidecar-design.md, section 2.
 
-import { layoutFor, type FormChange } from "@/app/cockpit/sidecarlayout";
+import { layoutFor, type FormChange, type SidecarLayout } from "@/app/cockpit/sidecarlayout";
 import { SidecarSmall } from "@/app/cockpit/sidecarsmall";
 import { SidecarTitleBar, toggleSidecarFullscreen } from "@/app/cockpit/sidecartitlebar";
 import {
@@ -43,17 +43,22 @@ interface Heard {
 // the form the page shows until the host has answered: the full Sidecar, unpinned
 const FULL_FORM: SidecarForm = { small: false, pinned: false };
 
-// The layout follows the window's width alone (one pure rule, no hysteresis), so a drag across the line just switches and
-// nothing reloads: the same snapshot feeds either layout.
-function useInnerWidth(): number {
-    const [width, setWidth] = useState(() => window.innerWidth);
+// The layout follows the window's width against its screen's (one pure rule, no hysteresis), so a drag across the line
+// just switches and nothing reloads: the same snapshot feeds either layout. The screen is read again on each resize,
+// since a move to a screen of another scale resizes the page.
+function readLayout(): SidecarLayout {
+    return layoutFor(window.innerWidth, window.screen?.availWidth);
+}
+
+function useLayout(): SidecarLayout {
+    const [layout, setLayout] = useState<SidecarLayout>(readLayout);
     useEffect(() => {
-        const onResize = () => setWidth(window.innerWidth);
+        const onResize = () => setLayout(readLayout());
         window.addEventListener("resize", onResize);
         onResize();
         return () => window.removeEventListener("resize", onResize);
     }, []);
-    return width;
+    return layout;
 }
 
 // The host's form (the S button's small form, the pin) is the host's to keep: the page reads it once at load and takes the
@@ -81,7 +86,7 @@ function useSidecarForm(): [SidecarForm, (change: FormChange) => void] {
 function SidecarRoot() {
     useApplyCockpitTheme();
     const [heard, setHeard] = useState<Heard | null>(null);
-    const layout = layoutFor(useInnerWidth());
+    const layout = useLayout();
     const [form, changeForm] = useSidecarForm();
     // Date.now() too: the wall adds (clock - heard.at) to the snapshot's own `now`, so the two must share one clock
     const [clock, setClock] = useState(() => Date.now());

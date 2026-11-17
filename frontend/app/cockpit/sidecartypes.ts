@@ -23,7 +23,8 @@ export interface SidecarMessage {
 export interface SidecarAsk {
     question: string;
     options: string[];
-    answerable: boolean; // one question, not multi-select, 1 to 9 options: 1-9 answers it from the tile
+    answerable: boolean; // one question, not multi-select, 1 to 9 options, and a key: 1-9 answers it from the tile
+    key?: string; // the ask's identity (askSentKey): an answer names it, so a new ask never takes an answer meant for the old
 }
 
 export interface SidecarTile {
@@ -81,7 +82,7 @@ export interface SidecarSnapshot {
 export type SidecarAct =
     | { kind: "hello" }
     | { kind: "open"; id: string }
-    | { kind: "answer"; id: string; option: number }
+    | { kind: "answer"; id: string; option: number; key: string } // key: the ask the page showed (SidecarAsk.key)
     | { kind: "older"; id: string; before: string | null; count: number } // count 1..50
     | { kind: "stop"; id: string; pid: number } // must match a heavy row's process
     | { kind: "sleep"; id: string }; // must be a heavy row
