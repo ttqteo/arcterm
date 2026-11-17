@@ -152,12 +152,15 @@ const (
 	//   task-review-started  a reviewer was spawned for a finished task ("taskid", "runid")
 	//   task-review-passed   "taskid", "note", "downstream"
 	//   task-review-failed   "taskid", "note", "round", "final" (true when it went to the lead)
+	//   task-fix-round       the round after a task's first failed review started: in the session that built the
+	//                        task ("samesession" true) or in a fresh worker ("reason": why not the same session)
 	//   review-overruled     the lead approved a task whose review failed ("taskid")
 	//   task-amended         the lead added a note to a task not started yet ("taskid", "text")
 	//   task-lead-told       the lead typed into a running worker or reviewer ("taskid", "text")
 	RunEventKindTaskReviewStarted = "task-review-started"
 	RunEventKindTaskReviewPassed  = "task-review-passed"
 	RunEventKindTaskReviewFailed  = "task-review-failed"
+	RunEventKindTaskFixRound      = "task-fix-round"
 	RunEventKindReviewOverruled   = "review-overruled"
 	RunEventKindTaskAmended       = "task-amended"
 	RunEventKindTaskLeadTold      = "task-lead-told"

@@ -227,6 +227,8 @@ func publishEvent(ctx context.Context, data wps.WaveEvent) {
 		orchestrate.NoteLeadStatus(ctx, &data)
 		// an agy worker names its own conversation: its first report is where the run learns the id
 		orchestrate.NoteWorkerSession(ctx, &data)
+		// a review fix round reopens a worker's session only while its context is small (orchestrate/fixround.go)
+		orchestrate.NoteWorkerContext(&data)
 		noteAgentTurnEnded(ctx, &data)
 		noteAgentInTurn(ctx, &data)
 		noteRunSleepStatus(ctx, &data)
