@@ -5,8 +5,9 @@ form's list (section 1a, board F) with two layouts of one dashboard: **P**, the 
 one. The window, the bridge, the snapshot event, the strain model and the keys stay as that spec built them.
 
 **Prototype:** `D:\projects\arcterm\.superpowers\design\cockpit-window\project\` (boards `P-live`, `Q-compact-live`,
-and the five states `P-calm`, `P-orbit-dashboard`, `P-high`, `P-critical`, `P-failed`). Boards D, E and F in the same
-folder are the shipped design this replaces.
+and the five states `P-calm`, `P-orbit-dashboard`, `P-high`, `P-critical`, `P-failed`). Boards D, E and F, the shipped
+design this replaces, moved to `cockpit-window/replaced/`. The taskbar icon's board is
+`D:\projects\arcterm\.superpowers\design\sidecar-icon\project\F-badge-screen.dc.html`.
 
 ## Why
 
@@ -63,7 +64,8 @@ The core's number and the Needs you rows are one list, built in the bridge:
 3. **What waits on you in Jarvis**: `attentionAtom` (`view/agents/attentionstore.ts:18`, computed by
    `pkg/jarvis/attention.go` and polled) minus the asks (`splitAttention`'s `jarvis` half: gates, blocked tasks, runs
    to confirm or land, escalations, due chunks). Each row says its kind and opens through `openTarget` on Enter. A run
-   held at Final or with a failed task is a row with **Failed**.
+   held at Final or with a failed task is a row with **Failed**: kind `run-unverified`, or `dag-blocked` with `retry`
+   (what `kindWord` already words "failed").
 
 The bridge does not read `attentionAtom` today; it subscribes to it like the other stores it watches.
 
@@ -128,6 +130,19 @@ The wall (`sidecarwall.tsx`, `sidecarwallmodel.ts` tiling and scrollback), the s
 (`sidecarsmall.tsx`), the `older` act and `SIDECAR_OLDER_EVENT`, and `sidecarhistory.ts`. Grep every import before
 deleting. The title bar keeps its buttons; its counts move into the core.
 
+## Taskbar (Windows)
+
+Sidecar is its own taskbar button, not a second window under arcterm's. The host gives the Sidecar window its own
+AppUserModelID (`<identifier>.sidecar`: `dev.arc.app.sidecar` packaged, `dev.arc.app-dev.sidecar` in dev), the way
+`set_window_app_user_model_id` in `main.rs` gives the main window the identifier, and sets
+`PKEY_AppUserModel_PreventPinning`: a pin of it would relaunch arcterm, not Sidecar. Its icon is arcterm's mark with a
+small screen badge (board `F-badge-screen`): the mark unchanged, a rounded `accent-500` square of 44% of the icon's
+width flush with the bottom-right corner, cut out of the tile by a transparent gap of `max(1, round(size/24))` px, a
+white pixel screen inside it (a 5×5 grid: a frame of four rows and a one-cell stand). `scripts/gen-app-icon.mjs` draws
+it pixel-exact at the same sizes as `icon.ico` into `src-tauri/icons/icon-sidecar.ico`; the host loads the frame each
+size needs from the bytes embedded in the exe, and Sidecar's window takes it in place of the exe's own icon. macOS has
+one Dock icon per app: nothing changes there.
+
 ## Verification
 
 A CDP scenario per state for each layout (the five states × P and Q), injected through the Sidecar fixture path the
@@ -139,4 +154,7 @@ lanes. Unit tests: `sidecarneeds.ts` (the three sources, the question heuristic,
 
 - The question heuristic will misfire on a rhetorical question at the end of a report. Measure on a week of real
   transcripts before trusting it; a miss only puts a row in Needs you, and answering or opening it clears it.
-- Whether a Jarvis row's Enter should open the main window's Jarvis sheet or act in place (a gate's Approve).
+- Whether a Jarvis row's Enter should also act in place (a gate's Approve). The first build opens it in the main window
+  through `openTarget`, nothing more.
+- Which icon Windows draws for a window whose AppUserModelID has no shortcut: the window's own (`WM_SETICON`) or the
+  exe's. Only a packaged build shows it (the dev app shares the exe's icon either way); a hand check.
