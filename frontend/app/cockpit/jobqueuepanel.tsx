@@ -22,7 +22,7 @@ import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue } from "jotai";
 import { Pause } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
     bypassLine,
     formatElapsed,
@@ -39,7 +39,13 @@ import {
     sourceLabel,
     type JobAgent,
 } from "./jobqueue";
-import { jobQueueAtom, jobQueueOpenAtom, jobQueueOpenerAtom, useJobQueueFeed } from "./jobqueuestore";
+import {
+    jobQueueAtom,
+    jobQueueFocusAtom,
+    jobQueueOpenAtom,
+    jobQueueOpenerAtom,
+    useJobQueueFeed,
+} from "./jobqueuestore";
 
 function close(): void {
     globalStore.set(jobQueueOpenAtom, false);
@@ -152,11 +158,14 @@ function Row({
     now,
     agents,
     model,
+    focused,
 }: {
     job: JobQueueJob;
     now: number;
     agents: readonly JobAgent[];
     model: AgentsViewModel;
+    // the job of the row whose tag opened the popover: drawn selected
+    focused: boolean;
 }) {
     const running = job.running === true;
     const target = openTargetFor(job, agents);
@@ -166,7 +175,12 @@ function Row({
         <div
             data-job-row={job.id}
             data-state={running ? "running" : "queued"}
-            className="flex flex-col gap-[1px] px-3 py-[5px] hover:bg-surface-hover"
+            data-job-focus={focused ? "" : undefined}
+            aria-current={focused ? "true" : undefined}
+            className={cn(
+                "flex flex-col gap-[1px] px-3 py-[5px]",
+                focused ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
         >
             <div className="flex items-center gap-2">
                 {running ? (
@@ -254,7 +268,15 @@ export function JobQueuePanel({ model }: { model: AgentsViewModel }) {
     const data = useAtomValue(jobQueueAtom);
     const agents = useAtomValue(model.agentsAtom);
     const placement = usePanelPlacement(open, useAtomValue(jobQueueOpenerAtom));
+    const focus = useAtomValue(jobQueueFocusAtom);
+    const listRef = useRef<HTMLDivElement>(null);
     const now = useNow(open);
+    // a long list scrolls to the first selected job, so the tag's row is in view when the popover opens
+    useLayoutEffect(() => {
+        if (open && focus.length > 0) {
+            listRef.current?.querySelector("[data-job-focus]")?.scrollIntoView({ block: "nearest" });
+        }
+    }, [open, focus]);
     useEffect(() => {
         if (!open) {
             return;
@@ -309,13 +331,22 @@ export function JobQueuePanel({ model }: { model: AgentsViewModel }) {
                         </label>
                     </div>
                     <PauseBar data={data} now={now} />
-                    <div data-job-queue-list className="max-h-[56vh] overflow-y-auto py-1">
+                    <div ref={listRef} data-job-queue-list className="max-h-[56vh] overflow-y-auto py-1">
                         {jobs.length === 0 ? (
                             <div data-job-queue-empty className="px-3 py-2 text-[12px] text-muted">
                                 No heavy jobs running.
                             </div>
                         ) : (
-                            jobs.map((j) => <Row key={j.id} job={j} now={now} agents={agents} model={model} />)
+                            jobs.map((j) => (
+                                <Row
+                                    key={j.id}
+                                    job={j}
+                                    now={now}
+                                    agents={agents}
+                                    model={model}
+                                    focused={focus.includes(j.id)}
+                                />
+                            ))
                         )}
                     </div>
                     {bypass == null ? null : (

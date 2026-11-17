@@ -564,3 +564,9 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   restarting arcterm, keep talking until the agent sets `run` back to null and asks again (a question or a builder
   check) → Chat shows that card. Before, Approve's in-memory start mark brought the finished run back and its folded
   card hid every later one. Unit-tested only (`brainstormpoller.ts` `settleBrainstorm`), not tried in the app.
+- [ ] (arcterm) Heavy jobs popover from a tree tag: with a job queued, click an agent's `#1` (or a run's `×2`) in the
+  Agent tree → the popover opens with that agent's (or run's) job rows drawn selected and scrolled into view; the app
+  bar's Jobs chip opens it with none selected. Unit-tested only (`jobqueuestore.ts` `toggleJobQueue`), not tried in the app.
+- [ ] (arcterm) No keycaps beside the view switch and Mark done: open an agent with a canvas → no Alt+C keycap in the
+  header, Alt+C still walks the views; an agent on an initiative chunk → the band's and the ◇ popover's Mark done show
+  no `m`, and `m` still marks it done. Typecheck only, not tried in the app.

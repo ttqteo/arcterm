@@ -348,7 +348,6 @@ function PopoverBody({
                             className={cn(BTN, "h-[22px] gap-[6px] px-[8px] text-[11px]")}
                         >
                             Mark done
-                            <kbd className="font-mono text-[10px] font-normal text-ink-mid">m</kbd>
                         </button>
                     ) : null}
                     {!isMine && renaming == null ? (

@@ -10,7 +10,6 @@ import { queuedJobFor } from "@/app/cockpit/jobqueue";
 import { QueuedJobTag } from "@/app/cockpit/jobqueuechip";
 import { jobQueueAtom } from "@/app/cockpit/jobqueuestore";
 import { pushToast } from "@/app/cockpit/notificationstore";
-import { KeyCap } from "@/app/element/keycap";
 import { useSettle } from "@/app/element/motionhooks";
 import { MOTION } from "@/app/element/motiontokens";
 import { Segmented } from "@/app/element/segmented";
@@ -540,14 +539,11 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const chatShown = chatCapable(agent);
     const chatAsleep = chatShown && agent.sleeping != null;
     const shownView: CellView = chatShown ? cellView(view, chatAsleep ? "chat" : chatMode) : view;
-    // Chat's header shows what Terminal's does (the runtime mark, state word, model and context) except the Alt+C keycap
-    // (the box holds the focus, not the TUI); its ◇ initiative link opens the band under the header, as `i` does there,
-    // instead of the popover.
+    // In Chat the header's ◇ initiative link opens the band under the header, as `i` does there, instead of the popover.
+    // No header shows an Alt+C keycap: the chord still switches the view (docs/keyboard-shortcuts.md)
     const lean = chatShown && shownView === "chat";
     const viewControl = chatShown || hasCanvas || docReview != null || brainstorm != null;
     const viewOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null);
-    // what Alt+C walks: asleep it skips the disabled Terminal (agent:view-cycle passes the same asleep flag)
-    const keyOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null, chatAsleep);
     // Chat and Terminal alone are one icon toggle, as in a split cell's bar; with a canvas, brainstorm or review the
     // worded control picks among them all
     const chatToggleOnly = chatShown && !hasCanvas && docReview == null && brainstorm == null;
@@ -920,24 +916,6 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         {DOC_REVIEW_HEADERS[review.kind]}
                         <ChevronLeft size={12} strokeWidth={2} aria-hidden />
                     </button>
-                ) : null}
-                {viewControl && !lean ? (
-                    // the bare b, c and r are typed into the TUI while it holds focus, so the chord that switches from
-                    // inside it sits on screen beside the control (Chat's box holds the focus instead, and leaves it out)
-                    <KeyCap
-                        chord="Alt:c"
-                        variant="inline"
-                        className="cursor-default"
-                        title={
-                            chatShown
-                                ? keyOptions.length >= 2
-                                    ? `Switch ${listViews(keyOptions, "and", true)}, also from inside the terminal`
-                                    : "Switches the view once the agent wakes"
-                                : brainstorm != null
-                                  ? "Switch Terminal, Brainstorm and Review, also from inside the terminal"
-                                  : "Switch Terminal, Canvas and Review, also from inside the terminal"
-                        }
-                    />
                 ) : null}
                 {chatToggleOnly ? (
                     <ChatToggle agent={agent} iconSize={15} className={ICON_BTN} />

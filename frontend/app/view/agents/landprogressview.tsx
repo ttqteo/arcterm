@@ -193,7 +193,7 @@ function LandPeek({
                         testId="land-peek-jobs"
                         onClick={() => {
                             onClose();
-                            toggleJobQueue(anchor);
+                            toggleJobQueue(anchor, progress.job != null ? [progress.job.id] : []);
                         }}
                     />
                     <span className="flex-1" />

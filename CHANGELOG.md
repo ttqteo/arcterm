@@ -38,6 +38,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A queue tag in the Agent tree (`#1`, `×2`) opens the Heavy jobs popover with that row's jobs selected, so you see at
+  once which one is yours.
+- The agent header no longer shows the Alt+C keycap, and Mark done no longer shows its `m` keycap (its tooltip still
+  names it); both keys still work.
 - Selected text in Chat that wraps over several lines is highlighted as one shape: the corners where one line meets
   the next are square, and only its outer corners are rounded.
 - A project's Overview fits the screen: the header and Activity stay put, and Now and History each scroll on their
