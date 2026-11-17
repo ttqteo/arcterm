@@ -45,21 +45,39 @@ window its own AppUserModelID and the badge icon `gen-app-icon.mjs` draws.
    Task 8 switches the page and deletes it. Why: every worker typechecks its own tree, and tasks 2–7 run in parallel.
 2. **An answer still names its agent and its ask** (`{kind:"answer"; id; option; key}`), but `validateAct` checks it
    against `snap.needs` (an `ask` row with that `id` and `askKey`), not against `snap.tiles`: the orbit holds 8 agents,
-   and a ninth asking agent is still a Needs you row.
+   and a ninth asking agent is still a Needs you row. **`option` stays 0-based, as today** (`wallKey` maps key `1` to
+   option 0; `validateAct` takes `0..options.length-1`): key `2` sends `option: 1`.
 3. **A Jarvis row opens through one new act, `{kind:"need"; key}`.** The bridge keeps the `PeekRow`s it built
-   (`queueRows` in `view/jarvis/petpeekmodel.ts`, as the tray does) by key and opens `rowPeekTarget(row)` with
-   `openTarget`, then `showMain()`. A question row's Enter is the existing `open` act. Why: the tray already turns an
-   attention item into the target its escort opens; Sidecar reuses that, not a second mapping.
-4. **The question heuristic reads the full last message from `liveEntriesByIdAtom`**, not the tile's cut rows (cut to
-   240 characters from the start, which loses the end). An agent with no entries streamed gets no question row.
+   (`queueRows` in `view/jarvis/petpeekmodel.ts`, as the tray does) by key. `rowPeekTarget(row)` returns a
+   `PetTarget` (`{kind:"oref"; ref; anchor?}`), not an `OpenTarget`, so the bridge opens it as `petpeek.tsx:916` does:
+   `openAddress(model, t.ref, { anchor: t.anchor })`, then `showMain()`. A question row's Enter is the existing `open`
+   act. Why: the tray already turns an attention item into the target its escort opens; Sidecar reuses that, not a
+   second mapping.
+4. **The question heuristic reads the full last message**, not the tile's cut rows (cut to 240 characters from the
+   start, which loses the end): per agent, `entriesToShow(liveEntriesByIdAtom[id] ?? [], agent.previousInfo)`
+   (`view/agents/agentrowmodel.ts:11`), the same fallback the agent row uses, so a fixture roster (which carries
+   `previousInfo`, no live stream) reaches it too. An agent with neither gets no question row.
 5. **The run box shows the newest active orchestrator run in `model.lineageAtom`'s `runs`** (not done, not quick),
-   with `runProgress(run.dag)` and `runTitle`. "due today" is the first `chunk-due` attention item's `chunklabel`,
-   left out when there is none.
-6. **A run's lane** is its lead agent's lane: the bridge records the lead's states like any agent's, and a `failed`
-   rail event from `runRailEvents(run, runEventsAtom(runId))` turns the lane red from that event's `ts`. The bridge
-   calls `ensureRunEvents(runId, channelId)` once per active run it shows.
+   with `runProgress(run.dag)` and `run.title` (`RunInfo` already carries its title; `runTitle` takes a `Run`, not a
+   `RunInfo`). "due today" is the first `chunk-due` attention item's `chunklabel`, left out when there is none. In
+   DEV, `window.__sidecarRun(box)` overrides it (Task 4), since a fixture roster has no server run in the lineage.
+6. **A run is failed while a failed need names it**: a Needs you row with `failed` whose attention item's `runid` is
+   the run's id. Engine events never set `failed` (a retried task's `task-failed` stays in the history and would frame
+   the window red for good); they only date it: when the run is failed, its lead's lane turns red from the first
+   `failed` rail event of `runRailEvents(run, runEventsAtom(runId))` if there is one, else from the moment the need
+   appeared. The bridge calls `ensureRunEvents(runId, channelId)` once per active run it shows.
 7. **The usage rings read `planDonuts(...)` in the bridge** (the same pure function `usePlanDonuts` wraps), the
    `claude` provider's `fivehour.pct` and `week.pct`. No Claude provider: those two rings are drawn empty with `–`.
+8. **The timeline records for the bridge's whole life, not only while Sidecar is open** (spec "The timeline's data":
+   the bridge keeps the history because it is always mounted). One subscription to the roster atom starts when the
+   bridge mounts and stops when it unmounts, never on close; it holds the `Timeline` in the bridge's module scope.
+   It is cheap (one pure reduce per roster change). The snapshot build reads it; it does not reset it.
+9. **Spans go to the page unclipped** (the recorder already drops spans that ended more than 2 hours ago); the page
+   clips the first to the window's edge in `laneBars`. A span clipped in the bridge would differ on every build and
+   defeat `sameSnapshot`.
+10. **Q is drawn for the host's small form, 340 × 440** (`sidecar.rs` `SMALL_SIZE`/`MIN_SIZE` and its tests), not the
+    board's 380 px: the window size is the shipped contract and the spec keeps the window as it is. The spec's
+    "380 px" is amended to 340 px.
 
 ## Tokens used by the views (no hex in components)
 
@@ -170,24 +188,30 @@ function orbitRank(t: SidecarTile, waiting: ReadonlySet<string>): number {
 }
 
 /**
- * The agents the orbit draws: every one when they fit, else those that wait on you or failed (`waiting` holds the
- * agents with a question row), then working, then finished, in the snapshot's order, up to `max`. Asleep agents are
- * never drawn. `more` counts the rest, for the core's `+N`.
+ * The agents the orbit draws: every one that is not asleep, in the snapshot's order, when they fit; past `max`, those
+ * that wait on you or failed (`waiting` holds the agents with a question row), then working, then finished, each group
+ * in the snapshot's order, up to `max`. Asleep agents are never drawn. `more` counts the rest, for the core's `+N`.
  */
 export function orbitTiles(
     tiles: SidecarTile[],
     waiting: ReadonlySet<string>,
     max = ORBIT_MAX
 ): { tiles: SidecarTile[]; more: number } {
-    const drawn = tiles
-        .map((t, i) => ({ t, i, r: orbitRank(t, waiting) }))
-        .filter((x) => x.r < 3)
-        .sort((x, y) => x.r - y.r || x.i - y.i)
-        .slice(0, max)
-        .map((x) => x.t);
+    const awake = tiles.filter((t) => t.state !== "asleep");
+    const drawn =
+        awake.length <= max
+            ? awake
+            : awake
+                  .map((t, i) => ({ t, i, r: orbitRank(t, waiting) }))
+                  .sort((x, y) => x.r - y.r || x.i - y.i)
+                  .slice(0, max)
+                  .map((x) => x.t);
     return { tiles: drawn, more: tiles.length - drawn.length };
 }
 ```
+
+The first test (`[working, asking]` kept in that order) holds because 8 or fewer are never ranked; add a fourth test
+with 9 awake tiles where an asking one sits last, to show ranking starts only past 8.
 
 **Step 5:** run the test → PASS. `task check:ts` → exit 0.
 
@@ -210,8 +234,11 @@ The three sources, one list, oldest first (spec "What waits on you"). Pure: the 
 - `lastQuestion(entries)`: the last `message` entry's question; `null` when a `user` entry follows it; `null` with no
   message; an `action` after the message does not cancel it.
 - `sidecarNeeds`: asks come from tiles in state `asking` (`who` = name, `text` = `ask.question`, `options`,
-  `answerable`, `askKey` = `ask.key`, `sent`, `since` = tile.since); a `review` or `idle` tile with a question in its
-  entries is a `question` row (`since` = tile.since); an `asking` tile never also gets a question row; `asleep` never;
+  `answerable`, `askKey` = `ask.key`, `sent`, `since` = tile.since); a `review` tile with a question in its entries is
+  a `question` row (`since` = tile.since); an `idle` tile is one only within the 5-minute grace (`now - since <=
+  IDLE_GRACE_MS`, from `view/agents/agentsviewmodel.ts:1083`; an idle tile with no `since` counts as within it), so
+  an idle tile 6 minutes old with a question gets no row (test both sides of the edge); an `asking` tile never also
+  gets a question row; `asleep` never;
   jarvis items become rows with `word` = `kindWord(item.kind, item.retry)`, `failed` true exactly for `run-unverified`
   and for `dag-blocked` with `retry: true`; `who` = `item.channelname || item.source`; items of kind `ask` are skipped
   (the caller passes `splitAttention(...).jarvis`, but be safe); the whole list sorts by `since` ascending, ties keep
@@ -230,7 +257,7 @@ The three sources, one list, oldest first (spec "What waits on you"). Pure: the 
 // snapshot carries, a finished agent whose last message ends in a question (a heuristic: never a 1-9 answer), and what
 // Jarvis holds for you (attentionAtom's jarvis half). One list, oldest first. Pure.
 
-import type { AgentEntry } from "@/app/view/agents/agentsviewmodel";
+import { IDLE_GRACE_MS, type AgentEntry } from "@/app/view/agents/agentsviewmodel";
 import { kindWord } from "@/app/view/jarvis/briefingmodel";
 import type { SidecarNeed, SidecarTile } from "./sidecartypes";
 
@@ -266,7 +293,7 @@ export function lastQuestion(entries: readonly AgentEntry[]): string | null {
 
 export interface NeedsInput {
     tiles: readonly SidecarTile[]; // the whole roster's tiles (the base snapshot), not the orbit's 8
-    entriesById: Readonly<Record<string, AgentEntry[]>>;
+    entriesById: Readonly<Record<string, AgentEntry[]>>; // per agent: entriesToShow(live, previousInfo) (decision 4)
     jarvis: readonly AttentionItem[];
     now: number; // UnixMilli: the `since` of a tile that has none
 }
@@ -287,7 +314,10 @@ export function sidecarNeeds(input: NeedsInput): SidecarNeed[] {
             if (t.ask.key != null) n.askKey = t.ask.key;
             if (t.sent) n.sent = true;
             asks.push(n);
-        } else if (t.state === "review" || t.state === "idle") {
+        } else if (
+            t.state === "review" ||
+            (t.state === "idle" && input.now - (t.since ?? input.now) <= IDLE_GRACE_MS)
+        ) {
             const q = lastQuestion(input.entriesById[t.id] ?? []);
             if (q != null) {
                 questions.push({ key: `q:${t.id}`, kind: "question", id: t.id, who: t.name, since: t.since ?? input.now, text: q });
@@ -330,7 +360,8 @@ UnixMilli; if it is seconds, multiply by 1000 here and say so in a comment.
 - `review` and `idle` both map to `finished`; `asleep` closes the open span and opens none; `failed: true` maps to `failed` whatever the state;
 - an agent missing from `seen` is dropped;
 - spans that ended more than 2 hours before `now` are dropped; at most 64 spans per agent, the newest kept;
-- `spansInWindow(spans, now)` clips a span that began before `now - 2h` to start there, and leaves `to` off an open span;
+- a span that began before `now - 2h` and is still open, or ended inside the window, is kept as it is (unclipped:
+  the page clips it, decision 9), and a sighting in the same state returns the same object even as the window moves;
 - `failedFrom(events)` returns the `ts` of the first `failed` rail event, or `null`.
 
 **Step 2:** `npx vitest run frontend/app/cockpit/sidecartimeline.test.ts` → FAIL.
@@ -404,14 +435,6 @@ export function recordTimeline(t: Timeline, seen: readonly Sighting[], now: numb
     return changed ? next : t;
 }
 
-/** The spans inside the window ending at `now`, the first clipped to start at its edge. */
-export function spansInWindow(spans: readonly SidecarSpan[], now: number): SidecarSpan[] {
-    const edge = now - TIMELINE_WINDOW_MS;
-    return spans
-        .filter((s) => s.to == null || s.to >= edge)
-        .map((s) => (s.from < edge ? { ...s, from: edge } : s));
-}
-
 /** When a run's engine events first say it failed, or null. */
 export function failedFrom(events: readonly RailEvent[]): number | null {
     const f = events.filter((e) => e.kind === "failed").map((e) => e.ts);
@@ -429,18 +452,22 @@ otherwise see: the length check above covers it; test it.
 ---
 
 ### Task 4: The bridge builds the dashboard's snapshot
-**Depends on:** Task 2 (calls `sidecarNeeds`), Task 3 (calls `recordTimeline`, `spansInWindow` and `failedFrom`)
-**Files:** `frontend/app/cockpit/sidecarbridge.tsx`, `frontend/app/cockpit/sidecarbridgemodel.ts`, `frontend/app/cockpit/sidecarbridgemodel.test.ts`
+**Depends on:** Task 2 (calls `sidecarNeeds`), Task 3 (calls `recordTimeline` and `failedFrom`)
+**Files:** `frontend/app/cockpit/sidecarbridge.tsx`, `frontend/app/cockpit/sidecarbridgemodel.ts`, `frontend/app/cockpit/sidecarbridgemodel.test.ts`, `frontend/app/cockpit/sidecarsnapshot.ts`
 
-In `sidecarbridgemodel.ts`: `validateAct`, and `sameSnapshot` if it compares fields one by one.
+In `sidecarbridgemodel.ts`: `validateAct` and `sameSnapshot`.
 
-**Step 1: Failing tests for `validateAct`:**
+**Step 1: Failing tests for `validateAct` and `sameSnapshot`:**
 - an `answer` act is valid when `last.needs` has an `ask` row with that `id`, `answerable: true`, `askKey === act.key`
-  and `option` in `1..options.length`; refused when the `askKey` differs ("the ask of "x" changed since the page showed
-  it", the existing wording), and when the agent is not in `needs` even if it is a tile;
+  and `option` in `0..options.length-1` (0-based, as today: decision 2); refused for `option === options.length`,
+  when the `askKey` differs ("the ask of "x" changed since the page showed it", the existing wording), and when the
+  agent is not in `needs` even if it is a tile;
 - a `need` act is valid only for a `jarvis` row's key in `last.needs`; refused otherwise ("need: "k" is not waiting");
 - `open` stays valid for any tile id **or** any `question`/`ask` row's `id` (an agent past the orbit's 8 can be opened
-  from its row).
+  from its row);
+- `sameSnapshot` (`sidecarbridgemodel.ts:208`, today `counts`/`tiles`/`machine`/`strain` only) is false when only
+  `needs`, only `run`, only `usage` or only `more` differs, one `it` each; extend it with
+  `same(a.needs, b.needs) && same(a.run, b.run) && same(a.usage, b.usage) && a.more === b.more`.
 
 **Step 2:** `npx vitest run frontend/app/cockpit/sidecarbridgemodel.test.ts` → FAIL. **Step 3:** implement in
 `validateAct`; keep the `older` act's checks until Task 8. → PASS.
@@ -450,36 +477,50 @@ In `sidecarbridgemodel.ts`: `validateAct`, and `sameSnapshot` if it compares fie
 1. Keep `const base = sidecarSnapshot(...)` (the whole roster).
 2. `jarvis`: `splitAttention(attention()).jarvis`, where `attention()` is
    `(import.meta.env.DEV ? globalStore.get(attentionFixtureAtom) : null) ?? globalStore.get(attentionAtom)`.
-3. `needs = sidecarNeeds({ tiles: base.tiles, entriesById: globalStore.get(liveEntriesByIdAtom), jarvis, now })`.
+3. `needs = sidecarNeeds({ tiles: base.tiles, entriesById, jarvis, now })`, with `entriesById[a.id] =
+   entriesToShow(globalStore.get(liveEntriesByIdAtom)[a.id] ?? [], a.previousInfo)` for each roster agent (decision 4).
 4. The run box (decision 5): from `globalStore.get(model.lineageAtom).runs`, the active orchestrator runs (status not
-   done/cancelled, `mode !== "quick"`), newest `createdTs`; `leadId` = the agent whose `runId` is that run and whose
-   lineage role is lead (`lineage.roles[id]`); `failed` = a failed need whose underlying item's `runid` is that run, or
-   `failedFrom(runRailEvents(run, globalStore.get(runEventsAtom(run.runId))))` is not null. Call
+   done/cancelled, `mode !== "quick"`), newest `createdTs`; `title` = `run.title`; `done`/`total` from
+   `runProgress(run.dag)`; `leadId` = the agent whose `runId` is that run and whose lineage role is lead
+   (`lineage.roles[id]`); `failed` (decision 6) = some need has `failed` and its attention item's `runid` is the
+   run's id (keep the item per need key while building, so the need need not carry it). Call
    `ensureRunEvents(run.runId, run.channelId)` once per run id (keep a `Set`). `due` = the first `chunk-due` item's
-   `chunklabel`.
+   `chunklabel`. In DEV, a box set through `window.__sidecarRun` (step 12) replaces the lineage's, `failed` still
+   derived here from the needs.
 5. Tiles: on each tile set `failed` when it is the run box's lead and the run failed; `diff` from
    `globalStore.get(diffStatsByIdAtom)[t.id]` (`adds`, `dels`) for `review` tiles.
-6. Timeline: `timeline = recordTimeline(timeline, base.tiles.map(...sightings), now)`, kept in the effect's closure next
-   to `kept`; reset on `stopFeeds()`/closed like the other state. A run lead's spans from `failedFrom` on are `failed`
-   (close the lead's open span there when it began earlier).
+6. Timeline (decision 8): a module-scope `timeline` and a `failedLeads` set; one subscription to the roster atom,
+   made when the bridge mounts (not when Sidecar opens) and dropped on unmount, runs `timeline = recordTimeline(
+   timeline, sightings, Date.now())` on each change, where a sighting is `{id, state, since, failed:
+   failedLeads.has(id)}` for each roster agent that is not a terminal, with `state` and `since` exactly as the snapshot
+   computes them (`tileState` and `since` in `sidecarsnapshot.ts:103,107`, private today: export them and add them to
+   this task's files). The build sets `failedLeads` to the failed run's lead (empty otherwise) and, when that set
+   changed, records once more at once. When a lead turns failed and `failedFrom(runRailEvents(run, runEvents))` is
+   earlier than its open span's start, close the open span there instead (the event dates the failure). Nothing
+   resets the timeline on close.
 7. The orbit: `const waiting = new Set(needs.filter((n) => n.kind === "question").map((n) => n.id!))`;
    `const { tiles, more } = orbitTiles(scopeTiles(base, wallAgentIds(...)).tiles, waiting)`; each orbit tile carries
-   `spans: spansInWindow(timeline[t.id] ?? [], now)`.
+   `spans: timeline[t.id] ?? []`, unclipped (decision 9).
 8. Usage (decision 7): `planDonuts(agents, globalStore.get(savedRateLimitsAtom), globalStore.get(activeClaudeKeyAtom),
    globalStore.get(claudeIdentityAtom), now)`, the `claude` entry, rounded to whole percents.
 9. The snapshot: `{ ...base-with-orbit-tiles, more, needs, run, usage, machine, strain }`; `counts` stays the whole
    roster's.
 10. Subscribe (in the same list as `sidecarbridge.tsx:569-585`): `attentionAtom`, `attentionFixtureAtom` (DEV),
     `model.lineageAtom`, `diffStatsByIdAtom`, `savedRateLimitsAtom`, and each shown run's `runEventsAtom` (re-subscribe
-    when the run changes). Every subscription stops on close, as the others do.
-11. Act `need`: look the key up in the last `queueRows(jarvis, agents)` the build kept; `openTarget(model,
-    rowPeekTarget(row))`, then `showMain()`. Log and do nothing when the row has no target.
-12. DEV seam beside the others (`sidecarbridge.tsx:95-115`): `window.__sidecarAttention?: (items: AttentionItem[] |
-    null) => void`, which sets `attentionFixtureAtom` and rebuilds now. Document it in the declare block.
+    when the run changes). Every one of these stops on close, as the others do; only step 6's roster subscription
+    lives as long as the bridge.
+11. Act `need` (decision 3): look the key up in the last `queueRows(jarvis, agents)` the build kept; `const t =
+    rowPeekTarget(row)`; when `t` is set, `openAddress(model, t.ref, { anchor: t.anchor })`, then `showMain()`. Log
+    and do nothing when the row has no target.
+12. DEV seams beside the others (`sidecarbridge.tsx:95-115`), documented in the declare block:
+    `window.__sidecarAttention?: (items: AttentionItem[] | null) => void`, which sets `attentionFixtureAtom` and
+    rebuilds now; and `window.__sidecarRun?: (box: Omit<SidecarRunBox, "failed"> | null) => void`, which holds a run
+    box that replaces the lineage's (null: back to the lineage) and rebuilds now. The second exists because a fixture
+    roster has no server run in `lineageAtom`, so Task 10 could not show a run box or a failed lead otherwise.
 
 **Step 5:** `npx vitest run frontend/app/cockpit/` → PASS. `task check:ts` → exit 0.
 
-**Step 6: Commit** `git commit -m "feat(sidecar): the bridge sends Needs you, the timeline, the run and usage" -- frontend/app/cockpit/sidecarbridge.tsx frontend/app/cockpit/sidecarbridgemodel.ts frontend/app/cockpit/sidecarbridgemodel.test.ts`
+**Step 6: Commit** `git commit -m "feat(sidecar): the bridge sends Needs you, the timeline, the run and usage" -- frontend/app/cockpit/sidecarbridge.tsx frontend/app/cockpit/sidecarbridgemodel.ts frontend/app/cockpit/sidecarbridgemodel.test.ts frontend/app/cockpit/sidecarsnapshot.ts`
 
 ---
 
@@ -504,15 +545,17 @@ see it pass.
 - `orbitPoints(n, cx, cy, rx, ry)`: `n` points on an ellipse, the first at the top (−90°), evenly spaced clockwise;
   `n = 0` → `[]`. Test 1, 4 and 8 points to 1 px.
 - `ringDash(pct, r)`: `{ dash, gap }` for an SVG circle of radius `r`, `pct` clamped to 0..100; `undefined` pct → 0.
-- `laneBars(spans, now, width)`: each span to `{ x, w, state }` over the 2-hour window, at least 2 px wide, `to`
-  missing → `now`.
+- `laneBars(spans, now, width)`: each span to `{ x, w, state }` over the 2-hour window ending at `now`, at least 2 px
+  wide, `to` missing → `now`; a span that began before the window's edge is clipped to start at `x = 0`, one that
+  ended before it is dropped (the bridge sends spans unclipped: decision 9). Test both.
 - `needHow(need)`: answerable ask → `1 Merge · 2 Keep the branch` (first 4 options, each `n Label`); a sent ask →
   `Sent`; other asks and questions → `Enter: reply in the main window`; jarvis → `Enter: open in the main window`.
 - `dashKey(key, layout, sel, needs, nodes)` → `{ kind: "select"; sel } | { kind: "open"; id } | { kind: "need"; key } |
   { kind: "answer"; id; option; key } | null`, with `sel = { area: "needs" | "orbit"; index }`: ArrowUp/Down move in
   Needs you (stop at the ends, from none to the first); on P ArrowLeft/Right move through the orbit's nodes (wrapping);
   on Q left/right are not its own; Enter on an ask/question row → `open` its agent, on a jarvis row → `need`, on a
-  node → `open`; 1–9 → `answer` only on a selected answerable, unsent ask row with that many options. Reuse
+  node → `open`; 1–9 → `answer` only on a selected answerable, unsent ask row with that many options, `option` 0-based
+  (key `2` → `option: 1`, decision 2). Reuse
   `wallKey` and `answerAct`'s rules (`sidecarwallmodel.ts:175`, `:202`); keep the wall's tests passing.
 - `selectionAfter(sel, needs, nodes)`: keeps the selection on the same key or id when the list changes, else clamps.
 
@@ -557,9 +600,9 @@ bottom.
 - **Keys:** one `keydown` listener on the page through `dashKey("orbit", …)`; acts go out through `send`. 1–9 sends
   `answerAct`'s act. F11 stays the page's.
 
-Show it in the dev app before committing: open Sidecar maximized with a fixture roster
-(`npm run cockpit:fixtures -- <scenario>`) and `node scripts/cdp-shot.mjs` the Sidecar page (Task 10's scenario
-names it). **Commit** `git commit -m "feat(sidecar): P, the orbit dashboard" -- frontend/app/cockpit/sidecarorbit.tsx`
+This tree cannot show P yet (the page switches in Task 8, the bridge's new fields come from Task 4): no dev-app
+check here. Its acceptance is `sidecar-orbit` steps 1–6 (Task 10), which the Final runs; the attributes above are
+what those steps assert, so keep their names exactly. **Commit** `git commit -m "feat(sidecar): P, the orbit dashboard" -- frontend/app/cockpit/sidecarorbit.tsx`
 
 ---
 
@@ -569,13 +612,18 @@ names it). **Commit** `git commit -m "feat(sidecar): P, the orbit dashboard" -- 
 
 `bg-errorbg` and `animate-sidecar-ping` come from Task 9, which runs beside this task (see Task 6).
 
-Board `Q-compact-live` at 380 px. Root `data-sidecar-dashboard="compact"` with the same `data-sidecar-state` and
+Board `Q-compact-live`, drawn at the host's small form, 340 × 440 (decision 10: the board is 380 px wide; keep its
+order and proportions and let the Needs you rows scroll inside their own list, never the page). Root `data-sidecar-dashboard="compact"` with the same `data-sidecar-state` and
 `data-sidecar-frame` (frame 2 px). Top: the core at 112 px (`data-sidecar-core`, `coreTone`, rings at the same rule)
-with the figures beside it (5-hour %, week %, RAM used, `N working`). Then the strain as one line (level, the heaviest
-job, its **Stop** and **Sleep**, the same acts `sidecarband.tsx` sends). Then the Needs you rows as on P (same
+with the figures beside it (5-hour %, week %, RAM used, `N working`). Then the strain as one line
+(`data-sidecar-strainline`, shown only at amber or red: level, the heaviest job, its **Stop** and **Sleep** buttons,
+the same acts `sidecarband.tsx` sends). Then the Needs you rows as on P (same
 attributes, same keys through `dashKey("compact", …)`), `All clear` / `Nothing waits on you.` when empty
 (`data-sidecar-allclear`). Bottom: one dot per orbit tile (`data-sidecar-dot={id}`, `nodeTone`, `title` = name and
-`nodeLine`) beside `Run 7 of 9 · 1h 34m` when a run shows. No timeline.
+`nodeLine`) beside `Run 7 of 9 · 1h 34m` when a run shows. No timeline. A waiting row or dot carries
+`animate-sidecar-ping` and a failed row `bg-errorbg`, as on P.
+
+No dev-app check in this tree (see Task 6); its acceptance is `sidecar-compact` (Task 10), which the Final runs.
 
 **Commit** `git commit -m "feat(sidecar): Q, the compact dashboard" -- frontend/app/cockpit/sidecarcompact.tsx`
 
@@ -585,7 +633,12 @@ attributes, same keys through `dashKey("compact", …)`), `All clear` / `Nothing
 **Depends on:** Task 4, Task 6, Task 7
 **Files:** `frontend/tauri/sidecar.tsx`, `frontend/app/cockpit/sidecartitlebar.tsx`, `frontend/app/cockpit/sidecarkeys.ts`, `frontend/app/cockpit/sidecarkeys.test.ts`, `frontend/app/cockpit/sidecarstrainmodel.ts`, `frontend/app/cockpit/sidecarlayout.ts`, `frontend/app/cockpit/sidecarlayout.test.ts`, `frontend/app/cockpit/sidecarorbitmodel.ts`, `frontend/app/cockpit/sidecarorbitmodel.test.ts`, `frontend/app/cockpit/sidecarorbit.tsx`, `frontend/app/cockpit/sidecarcompact.tsx`
 **Files:** `frontend/app/cockpit/sidecarwall.tsx`, `frontend/app/cockpit/sidecarwallmodel.ts`, `frontend/app/cockpit/sidecarwallmodel.test.ts`, `frontend/app/cockpit/sidecarsmall.tsx`, `frontend/app/cockpit/sidecarhistory.ts`, `frontend/app/cockpit/sidecarhistory.test.ts`
-**Files:** `frontend/app/cockpit/sidecartypes.ts`, `frontend/app/cockpit/sidecarsnapshot.ts`, `frontend/app/cockpit/sidecarsnapshot.test.ts`, `frontend/app/cockpit/sidecarbridgemodel.ts`, `frontend/app/cockpit/sidecarbridgemodel.test.ts`, `frontend/app/cockpit/sidecarbridge.tsx`, `CHANGELOG.md`
+**Files:** `frontend/app/cockpit/sidecartypes.ts`, `frontend/app/cockpit/sidecarsnapshot.ts`, `frontend/app/cockpit/sidecarsnapshot.test.ts`, `frontend/app/cockpit/sidecarbridgemodel.ts`, `frontend/app/cockpit/sidecarbridgemodel.test.ts`, `frontend/app/cockpit/sidecarbridge.tsx`, `frontend/app/cockpit/sidecarneeds.test.ts`, `CHANGELOG.md`
+
+Dropping `SidecarTile.messages` breaks every test that builds a tile with `messages: []`: Task 2's
+`sidecarneeds.test.ts` and Task 5's `sidecarorbitmodel.test.ts` included. Grep `messages` under
+`frontend/app/cockpit/` and fix each test file it lists (`uiapi.ts`, `whatsnew.ts` and `traybridge.tsx` use the word
+for something else: check, don't touch them unless they read `SidecarTile`).
 
 What changes where:
 
@@ -634,7 +687,8 @@ What changes where:
 ---
 
 ### Task 10: CDP scenarios for P and Q
-**Depends on:** Task 8 (its scenarios drive the P and Q page Task 8 switches the window over to)
+**Depends on:** Task 8 (its scenarios drive the P and Q page Task 8 switches the window over to), Task 9 (asserts the
+ping and `bg-errorbg` classes), Task 11 (asserts the Sidecar app id's log line)
 **Files:** `scripts/cdp/scenarios-sidecar.mjs`, `docs/hand-checks.md`, `docs/open-issues.md`
 
 What changes where:
@@ -644,9 +698,29 @@ What changes where:
   and heavy seams, teardown)
 - Modify: `docs/hand-checks.md`, `docs/open-issues.md` (RAM watch)
 
-One roster, `dashboard`: two working agents (one an orchestrator lead with a run of 9 tasks, 7 done), one asking with
-an answerable ask (`Merge into main?`, options `Merge`, `Keep the branch`), one asking with a multi-select ask, one
-`review` agent whose last message is `Xong. Bạn chọn (a) hay (b)?` with no user entry after it, one `review` agent
+**What carries over from `sidecar-wall`** (its step numbers today), moved into the two new scenarios with their
+asserts unchanged except where the counts moved into the core:
+- into `sidecar-orbit`, before the state steps: 1 (Ctrl+P → Open Sidecar), 2 (the page's own window calls), 3 (the
+  waiting state before the first snapshot, now with no dashboard instead of no wall), 13 (F11 toggles full screen),
+  14–22 (the strain band: readings, CPU, Stop ask/confirm/cancel, Sleep, × hide, red hold and step-down), 24 (folded
+  idle and asleep agents have no node: assert no `data-sidecar-node` for them);
+- into `sidecar-compact`: 25 (at 900 px wide the page is the small form, now `data-sidecar-dashboard="compact"`), 26
+  (S shrinks to 340 × 440 and pins), 28 (the pin button), 29 (S again restores the size), 30 (no ask: `All clear`,
+  the main window's size and focus unmoved);
+- dropped with the wall, coverage lost on purpose: 4 (counts in the title bar: the core's number replaces it, asserted
+  in the state steps), 5–9 (tiling 2x2 … 40 agents), 10–12 (tile arrows, Enter, 2 answers a tile: replaced by the
+  keys' steps below), 23 (scrollback), 27 (small-form cards: replaced by Q's keys step). There is no "closes with the
+  main window" step today; the hand check below covers it.
+
+**The run box.** A fixture roster has no server run in `lineageAtom`, so the scenario sets the run through Task 4's
+DEV seam: `window.__sidecarRun({ id: "fx-sc-run", leadId: <the lead's id>, title: "Sidecar orbit", done: 7, total: 9,
+since: <now − 1h 34m> })`, and the P-failed `dag-blocked` item carries `runid: "fx-sc-run"`. Clear it
+(`__sidecarRun(null)`) in teardown. The question row reads the `review` agent's `previousInfo` (decision 4): put its
+last message there.
+
+One roster, `dashboard`: two working agents (one the run's lead), one asking with an answerable ask (`Merge into
+main?`, options `Merge`, `Keep the branch`), one asking with a multi-select ask, one `review` agent whose
+`previousInfo` ends with the message `Xong. Bạn chọn (a) hay (b)?` and no user entry after it, one `review` agent
 whose last message ends in a period, and the two parked agents of today's roster. State steps (each a screenshot and
 asserts on the attributes Tasks 6 and 7 define):
 
@@ -656,16 +730,18 @@ asserts on the attributes Tasks 6 and 7 define):
 2. **P-orbit-dashboard** (board `P-orbit-dashboard`): the full roster and one `dag-gate` attention item: state
    `normal`; core `4` (2 asks, 1 question, 1 gate); rows oldest first; the question row's text is `Bạn chọn (a) hay
    (b)?` and its how `Enter: reply in the main window`; the answerable ask's how `1 Merge · 2 Keep the branch`; 8 or
-   fewer nodes; one lane per node; `data-sidecar-run` reads `7 of 9 tasks`. Then keys: ArrowDown to the answerable
-   ask, `2` → `__sidecarActs` ends with `{kind:"answer", option:2, key:<its key>}`; ArrowDown to the gate, Enter →
-   `{kind:"need", key:<gate key>}`.
+   fewer nodes; one lane per node; `data-sidecar-run` reads `7 of 9 tasks`; each asking node and each ask or question
+   row carries `animate-sidecar-ping`, and a working node does not. Then keys: ArrowDown to the answerable ask, `2` →
+   `__sidecarActs` ends with `{kind:"answer", option:1, key:<its key>}` (0-based: decision 2); ArrowDown to the gate,
+   Enter → `{kind:"need", key:<gate key>}`.
 3. **P-high** (board `P-high`): `__sidecarMachine` + `__sidecarFeed` to RAM high: state `high`, frame `warning`, the
    band shows and the run box does not, the core reads `⚠ RAM high`.
 4. **P-critical** (board `P-critical`): RAM critical with `__sidecarHeavy` naming one agent: state `critical`, frame
    `error`, the band's Stop and Sleep, the heavy node's line names its GB and command.
 5. **P-failed** (board `P-failed`): RAM back to normal; attention fixture adds a `dag-blocked` item with `retry: true`
-   and the lead's `runid`: state `failed`, frame `error`, the first row leads with `Failed`, the lead's node tone
-   `error`, its lane's last bar `data-span-state="failed"`, core tone `error`.
+   and `runid: "fx-sc-run"`: state `failed`, frame `error`, the first row leads with `Failed` and its class list has
+   `bg-errorbg`, the lead's node tone `error` and it carries `animate-sidecar-ping`, its lane's last bar
+   `data-span-state="failed"`, core tone `error`.
 6. **P-live** (board `P-live`): without reloading, step through normal → high → critical → normal → failed with the
    seams, each within 2 s: assert the state and frame attributes follow each change (the page reacts with no reload)
    and that a new need row appears with no full redraw (the earlier rows' elements are the same nodes: mark one with a
@@ -673,8 +749,15 @@ asserts on the attributes Tasks 6 and 7 define):
 
 **`sidecar-compact`** (the S button's small form, as today's steps reach it): **Q-compact-live** (board
 `Q-compact-live`): the five states in turn as above; each asserts `data-sidecar-dashboard="compact"`, the state and
-frame, the core's number, the rows, one `data-sidecar-dot` per orbit tile, and in calm `data-sidecar-allclear`. The
-keys' step repeats ArrowDown + `1` on the answerable ask.
+frame, the core's number, the rows, one `data-sidecar-dot` per orbit tile, and in calm `data-sidecar-allclear`; in
+normal the ask rows carry `animate-sidecar-ping`; in high and critical `data-sidecar-strainline` shows with its Stop
+and Sleep buttons (and is absent in calm and normal); in failed the Failed row has `bg-errorbg`. The keys' step repeats
+ArrowDown to the answerable ask + `1` → `{kind:"answer", option:0, key:<its key>}`.
+
+**The taskbar id (Task 11), in `sidecar-orbit` after step 1, Windows only** (skipped with a note elsewhere): read the
+dev app's `waveapp.log` (in its data dir: `ARC_DEV_DATA_DIR`'s `data` folder when set, as `final-verify.mjs` sets it,
+else `%LOCALAPPDATA%\dev.arc.app-dev\data`; check `main.rs`'s log setup for the exact path) and assert a line
+`[sidecar] app id dev.arc.app-dev.sidecar` written after the open.
 
 `docs/hand-checks.md`: `- [ ] (arcterm) Sidecar P/Q across a real day: the question heuristic's misses, the ping from
 across the room, RAM of P with 12 agents after a day`; for Task 11 (it owns no doc file): `- [ ] (arcterm) Packaged
@@ -682,7 +765,8 @@ build: Sidecar has its own taskbar button with the screen badge, not arcterm's i
 taskbar"; closing arcterm closes it`. `docs/open-issues.md` RAM watch: measure P with 12 agents after a day on screen
 against the 100 MB budget.
 
-Run `task verify:ui -- sidecar-orbit sidecar-compact` against the dev app → PASS. **Commit** `git commit -m "test(sidecar): CDP scenarios for the orbit dashboard, full and compact" -- scripts/cdp/scenarios-sidecar.mjs docs/hand-checks.md docs/open-issues.md`
+Run `ARC_FINAL_OUT=<a temp dir> node scripts/cdp/final-verify.mjs sidecar-orbit sidecar-compact` (it starts its own
+dev app from this tree, runs the two, and stops it) → exit 0. **Commit** `git commit -m "test(sidecar): CDP scenarios for the orbit dashboard, full and compact" -- scripts/cdp/scenarios-sidecar.mjs docs/hand-checks.md docs/open-issues.md`
 
 ---
 
@@ -770,14 +854,19 @@ any, to `src-tauri/Cargo.toml`.
 **Step 4: The app id.** Turn `set_window_app_user_model_id` (`main.rs:253`) into a `#[cfg(windows)]` helper that
 takes the id and a `prevent_pinning: bool` (setting `PKEY_AppUserModel_PreventPinning` to a `VT_BOOL` true in the
 same property store, before `Commit`); keep the main window's call and its `not(debug_assertions)` gate exactly as
-they are (the dev main window must keep no id). `open_window` sets the Sidecar window's id right after `build()`:
-`format!("{}.sidecar", identifier)` packaged and `format!("{}-dev.sidecar", identifier)` in dev
-(`app.config().identifier`), `prevent_pinning: true`; log a failure with `log_line`, never fail the open. Keep the
-long comment on COM memory with the code it describes.
+they are (the dev main window must keep no id). The id comes from a pure, platform-free `fn sidecar_app_id(identifier:
+&str, dev: bool) -> String` (`"<identifier>.sidecar"`, or `"<identifier>-dev.sidecar"` when `dev`), with a failing
+test first: `sidecar_app_id("dev.arc.app", false) == "dev.arc.app.sidecar"` and `sidecar_app_id("dev.arc.app", true)
+== "dev.arc.app-dev.sidecar"`. `open_window` sets the Sidecar window's id right after `build()` with
+`sidecar_app_id(&app.config().identifier, cfg!(debug_assertions))`, `prevent_pinning: true`, and writes
+`log_line("[sidecar] app id <id>")` once it is set (Task 10's scenario asserts this line; keep its wording
+exact); log a failure with `log_line`, never fail the open. Keep the long comment on COM memory with the code it
+describes.
 
-**Step 5:** `cargo test --manifest-path src-tauri/Cargo.toml` → PASS; `cargo build --manifest-path src-tauri/Cargo.toml`
-→ builds. In the dev app (`task dev`): open Sidecar; the taskbar shows a second button with the badge icon; close the
-main window → Sidecar closes as before. Screenshot the taskbar for the report if you can; otherwise say it was not seen.
+**Step 5:** `cargo test --manifest-path src-tauri/Cargo.toml` → PASS (the `pick_ico_frame` and `sidecar_app_id`
+tests among them); `cargo build --manifest-path src-tauri/Cargo.toml` → builds. Acceptance in the run is those tests
+plus Task 10's log-line step; the taskbar button itself is the packaged hand check. If you can run `task dev` here,
+open Sidecar and say whether the taskbar showed a second button; otherwise say it was not seen.
 
 The packaged path is left to the hand check Task 10 writes (only a packaged build runs it).
 

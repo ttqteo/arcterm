@@ -41,7 +41,8 @@ asked for a mini dashboard, with a cinematic look, that reacts as things change.
 
 ### Q, the compact window (small layout today)
 
-The same story at 380 px wide, pinned beside your work: the core shrunk to 112 px with the figures beside it, the
+The same story at the small form's 340 × 440 (the host's `SMALL_SIZE`, unchanged; the board is drawn at 380 px),
+pinned beside your work: the core shrunk to 112 px with the figures beside it, the
 strain as one line with the heaviest job's Stop and Sleep, the Needs you rows, and at the bottom one dot per agent in
 the orbit's order (its colour, its name and state on hover) beside `Run 7 of 9 · 1h 34m`. No timeline. With nothing
 waiting: `All clear` and `Nothing waits on you.` The frame follows the same rule at 2 px.
