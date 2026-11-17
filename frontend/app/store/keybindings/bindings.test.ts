@@ -2642,11 +2642,14 @@ describe("Agent → Canvas gallery keys", () => {
     beforeEach(() => {
         globalStore.set(centerModeAtom, "canvases");
         globalStore.set(canvasGalleryAtom, FRESH);
-        // two today, one long ago: the cursor walks across the group edge
+        // two today, one long ago: the cursor walks across the group edge. One now for all three: the gallery draws the
+        // newest first and keeps this order only on a tie, so a clock tick between two Date.now() calls put beta first
+        // and moved the cursor's card (the flaky "opens the card under the cursor", 5 times from 2026-10-16 to 11-12)
+        const now = Date.now();
         globalStore.set(canvasListAtom, [
-            canvas("alpha", Date.now(), ["Main", "States"]),
-            canvas("beta", Date.now(), ["Main"]),
-            canvas("old", Date.now() - 40 * DAY, ["Main"]),
+            canvas("alpha", now, ["Main", "States"]),
+            canvas("beta", now, ["Main"]),
+            canvas("old", now - 40 * DAY, ["Main"]),
         ]);
     });
 
