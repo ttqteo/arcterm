@@ -18,9 +18,8 @@
 //     reading goes through the strain model's `trackStrain`, and the snapshot carries the rounded figures and the strain;
 //   - the heavy agents, only while a strain band exists: by RAM the Consumers reading (loadConsumers every 5 s), by CPU
 //     the per-agent CPU reading every 2 s; neither runs while the band is down;
-//   - Stop and Sleep from a band row, and the older act (scrollback) answered on sidecar:older.
-// The wall holds only agents the main window streams (asking, working, idle within the grace window), so a tile's rows
-// come from that stream, or from `kept` once it stops.
+//   - Stop and Sleep from a band row.
+// The orbit holds only agents the main window streams (asking, working, idle within the grace window).
 //
 // Part 3 (spec 2026-11-17-sidecar-orbit-dashboard-design.md) builds the dashboard's snapshot beside the tiles: the Needs
 // you list (sidecarneeds.ts), the active run and its lead, the plan rings, the orbit's eight agents with each one's spans
@@ -68,7 +67,6 @@ import {
     afterClosed,
     afterEmit,
     afterHello,
-    answerOlder,
     applyPressure,
     attachNotes,
     decorateTiles,
@@ -96,11 +94,8 @@ import {
     type FeedState,
     type HeavyNotes,
 } from "./sidecarbridgemodel";
-import { olderFromMemory, readOlderFromFile } from "./sidecarhistory";
 import { sidecarNeeds } from "./sidecarneeds";
 import {
-    keptMessages,
-    messageRows,
     orbitTiles,
     scopeTiles,
     sidecarSnapshot,
@@ -122,10 +117,8 @@ import { failedFrom, recordTimeline, type Sighting, type Timeline } from "./side
 import {
     SIDECAR_ACT_EVENT,
     SIDECAR_CLOSED_EVENT,
-    SIDECAR_OLDER_EVENT,
     SIDECAR_SNAPSHOT_EVENT,
     type SidecarAct,
-    type SidecarMessage,
     type SidecarRunBox,
     type SidecarSnapshot,
     type SidecarStrain,
@@ -183,8 +176,6 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
         let mounted = true;
         let live = false;
         let feed: FeedState = EMPTY_FEED;
-        // the rows each tile last showed (decision 3): an agent whose stream stops keeps them
-        let kept: Record<string, SidecarMessage[]> = {};
         let timer: ReturnType<typeof setTimeout> | null = null;
 
         // The machine and the strain band (decisions 8 to 11).
@@ -331,16 +322,7 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
         const assemble = (): SidecarSnapshot => {
             const agents = globalStore.get(model.agentsAtom);
             const entries = globalStore.get(liveEntriesByIdAtom);
-            const base = sidecarSnapshot(
-                agents,
-                entries,
-                globalStore.get(model.sentIdsAtom),
-                kept,
-                globalStore.get(model.nowAtom)
-            );
-            // the snapshot already falls back to `kept` for a tile with no rows of its own, so what it holds is the
-            // roster's rows and nothing for an agent that has left
-            kept = keptMessages(base);
+            const base = sidecarSnapshot(agents, globalStore.get(model.sentIdsAtom), globalStore.get(model.nowAtom));
             // the subscription records on each roster change; this makes the timeline current for the build whatever the
             // order the stores notified in, and is a no-op when nothing moved
             record();
@@ -666,28 +648,6 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                     }
                     return;
                 }
-                case "older":
-                    fireAndForget(async () => {
-                        const vm = globalStore.get(model.agentsAtom).find((a) => a.id === act.id);
-                        const entries = globalStore.get(liveEntriesByIdAtom)[act.id] ?? [];
-                        const answer = await answerOlder(
-                            act,
-                            {
-                                // the rows the main window holds, as part 1's snapshot reads them (a fixture agent's previousInfo too)
-                                all: messageRows(entriesToShow(entries, vm?.previousInfo), Infinity),
-                                shown: feed.lastSent?.tiles.find((t) => t.id === act.id)?.messages ?? [],
-                                path: vm?.transcriptPath,
-                                agent: vm?.agent,
-                            },
-                            { memory: olderFromMemory, file: readOlderFromFile },
-                            log
-                        );
-                        // nothing is kept after the answer
-                        await emitTo(SIDECAR_LABEL, SIDECAR_OLDER_EVENT, answer).catch((e) =>
-                            log(`older answer to ${act.id} not sent: ${String(e)}`)
-                        );
-                    });
-                    return;
                 case "stop":
                     fireAndForget(async () => {
                         if (heavySeam() != null) {

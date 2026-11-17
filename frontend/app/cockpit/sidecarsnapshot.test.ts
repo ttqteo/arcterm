@@ -1,32 +1,16 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { AgentAsk, AgentEntry, AgentVM } from "@/app/view/agents/agentsviewmodel";
+import type { AgentAsk, AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { describe, expect, it } from "vitest";
-import {
-    keptMessages,
-    messageRows,
-    orbitTiles,
-    scopeTiles,
-    sidecarSnapshot,
-    wallAgentIds,
-    type CockpitScope,
-} from "./sidecarsnapshot";
-import type { SidecarMessage, SidecarTile, SidecarTileState } from "./sidecartypes";
+import { orbitTiles, scopeTiles, sidecarSnapshot, wallAgentIds, type CockpitScope } from "./sidecarsnapshot";
+import type { SidecarTile, SidecarTileState } from "./sidecartypes";
 
 const NOW = 1_800_000_000_000;
 
 function agent(over: Partial<AgentVM> & { id: string }): AgentVM {
     return { name: over.id, task: "", state: "idle", ...over };
 }
-
-const say = (text: string): AgentEntry => ({ kind: "message", text });
-const act = (verb: string, target: string, outcome?: "ok" | "fail" | "blocked"): AgentEntry => ({
-    kind: "action",
-    verb,
-    target,
-    outcome,
-});
 
 function ask(over: Partial<AgentAsk> = {}): AgentAsk {
     return {
@@ -36,94 +20,9 @@ function ask(over: Partial<AgentAsk> = {}): AgentAsk {
     };
 }
 
-function build(
-    agents: AgentVM[],
-    extra: {
-        entries?: Record<string, AgentEntry[]>;
-        sent?: string[];
-        kept?: Record<string, SidecarMessage[]>;
-    } = {}
-) {
-    return sidecarSnapshot(agents, extra.entries ?? {}, new Set(extra.sent ?? []), extra.kept ?? {}, NOW);
+function build(agents: AgentVM[], extra: { sent?: string[] } = {}) {
+    return sidecarSnapshot(agents, new Set(extra.sent ?? []), NOW);
 }
-
-describe("messageRows", () => {
-    it("pairs each message with the last action before the next message", () => {
-        const rows = messageRows(
-            [say("one"), act("READ", "a.go"), act("RAN", "go test"), say("two"), act("EDIT", "b.go", "ok")],
-            8
-        );
-        expect(rows).toEqual([
-            { say: "one", tool: { verb: "RAN", target: "go test" } },
-            { say: "two", tool: { verb: "EDIT", target: "b.go", outcome: "ok" } },
-        ]);
-    });
-
-    it("makes one tool-only row of the latest actions before the first message", () => {
-        const rows = messageRows([act("READ", "a.go"), act("RAN", "ls", "fail"), say("hello")], 8);
-        expect(rows).toEqual([{ tool: { verb: "RAN", target: "ls", outcome: "fail" } }, { say: "hello" }]);
-    });
-
-    it("gives a lone tool-only row for entries that hold no message", () => {
-        expect(messageRows([act("READ", "a"), act("READ", "b")], 8)).toEqual([{ tool: { verb: "READ", target: "b" } }]);
-    });
-
-    it("leaves a message with no tool as the sentence alone", () => {
-        expect(messageRows([say("just words")], 8)).toEqual([{ say: "just words" }]);
-    });
-
-    it("skips every other entry kind", () => {
-        const rows = messageRows(
-            [
-                { kind: "user", text: "do it" },
-                { kind: "command", name: "/clear" },
-                { kind: "compaction" },
-                { kind: "notification", summary: "done" },
-                { kind: "interrupted" },
-                say("answer"),
-                { kind: "user", text: "more" },
-                act("RAN", "x"),
-            ],
-            8
-        );
-        expect(rows).toEqual([{ say: "answer", tool: { verb: "RAN", target: "x" } }]);
-    });
-
-    it("drops a message with no words and no tool, and keeps the tool of one with no words", () => {
-        expect(messageRows([say("   "), say("kept")], 8)).toEqual([{ say: "kept" }]);
-        expect(messageRows([say(""), act("RAN", "x")], 8)).toEqual([{ tool: { verb: "RAN", target: "x" } }]);
-    });
-
-    it("keeps at most max rows, the newest, newest last", () => {
-        const entries: AgentEntry[] = [];
-        for (let i = 1; i <= 12; i++) {
-            entries.push(say(`m${i}`));
-        }
-        const rows = messageRows(entries, 8);
-        expect(rows).toHaveLength(8);
-        expect(rows.map((r) => r.say)).toEqual(["m5", "m6", "m7", "m8", "m9", "m10", "m11", "m12"]);
-        expect(messageRows(entries, 2).map((r) => r.say)).toEqual(["m11", "m12"]);
-        expect(messageRows(entries, 0)).toEqual([]);
-    });
-
-    it("cuts a long sentence to 240 chars", () => {
-        const long = "x".repeat(300);
-        const [row] = messageRows([say(long)], 8);
-        expect(row.say).toHaveLength(240);
-        expect(row.say!.endsWith("…")).toBe(true);
-        expect(messageRows([say("y".repeat(240))], 8)[0].say).toBe("y".repeat(240));
-    });
-
-    it("does not cut a surrogate pair in two", () => {
-        const [row] = messageRows([say("a".repeat(238) + "😀" + "tail")], 8);
-        expect(row.say!.length).toBeLessThanOrEqual(240);
-        expect(row.say!.slice(0, -1)).not.toMatch(/[\ud800-\udbff]$/);
-    });
-
-    it("is empty for no entries", () => {
-        expect(messageRows([], 8)).toEqual([]);
-    });
-});
 
 describe("sidecarSnapshot order and counts", () => {
     it("orders asking, working, review, idle, asleep, and counts need you / working / idle", () => {
@@ -331,68 +230,6 @@ describe("sidecarSnapshot asks", () => {
     });
 });
 
-describe("sidecarSnapshot messages", () => {
-    const rowsOf = (a: AgentVM, extra: Parameters<typeof build>[1] = {}) => build([a], extra).tiles[0].messages;
-
-    it("builds a tile's rows from its live entries", () => {
-        const rows = rowsOf(agent({ id: "a" }), { entries: { a: [say("hi"), act("RAN", "ls", "ok")] } });
-        expect(rows).toEqual([{ say: "hi", tool: { verb: "RAN", target: "ls", outcome: "ok" } }]);
-    });
-
-    it("prefers live entries over previousInfo", () => {
-        const a = agent({ id: "a", previousInfo: [say("old")] });
-        expect(rowsOf(a, { entries: { a: [say("live")] } })).toEqual([{ say: "live" }]);
-        expect(rowsOf(a)).toEqual([{ say: "old" }]);
-        expect(rowsOf(a, { entries: { a: [] } })).toEqual([{ say: "old" }]);
-    });
-
-    it("caps a tile at 8 rows", () => {
-        const entries = Array.from({ length: 20 }, (_, i) => say(`m${i}`));
-        const rows = rowsOf(agent({ id: "a" }), { entries: { a: entries } });
-        expect(rows).toHaveLength(8);
-        expect(rows[7].say).toBe("m19");
-    });
-
-    it("falls back to the rows the tile last had only when the entries give none", () => {
-        const kept = { a: [{ say: "kept row" }] };
-        expect(rowsOf(agent({ id: "a" }), { kept })).toEqual([{ say: "kept row" }]);
-        expect(rowsOf(agent({ id: "a" }), { kept, entries: { a: [] } })).toEqual([{ say: "kept row" }]);
-        expect(rowsOf(agent({ id: "a" }), { kept, entries: { a: [{ kind: "user", text: "q" }] } })).toEqual([
-            { say: "kept row" },
-        ]);
-        expect(rowsOf(agent({ id: "a" }), { kept, entries: { a: [say("fresh")] } })).toEqual([{ say: "fresh" }]);
-        expect(rowsOf(agent({ id: "a", previousInfo: [say("prev")] }), { kept })).toEqual([{ say: "prev" }]);
-    });
-
-    it("shows no rows for an agent with no entries, no previousInfo and nothing kept", () => {
-        expect(rowsOf(agent({ id: "a" }))).toEqual([]);
-        expect(rowsOf(agent({ id: "a" }), { kept: { other: [{ say: "x" }] } })).toEqual([]);
-    });
-});
-
-describe("keptMessages", () => {
-    it("holds the rows of each tile that has some and leaves out the rest", () => {
-        const snap = build([agent({ id: "a" }), agent({ id: "b" }), agent({ id: "c" })], {
-            entries: { a: [say("one")], c: [say("three"), act("RAN", "x")] },
-        });
-        expect(keptMessages(snap)).toEqual({
-            a: [{ say: "one" }],
-            c: [{ say: "three", tool: { verb: "RAN", target: "x" } }],
-        });
-    });
-
-    it("is empty for a snapshot with no rows", () => {
-        expect(keptMessages(build([agent({ id: "a" })]))).toEqual({});
-        expect(keptMessages(build([]))).toEqual({});
-    });
-
-    it("round-trips: a snapshot built on what the last one kept shows the same rows", () => {
-        const first = build([agent({ id: "a" })], { entries: { a: [say("one")] } });
-        const second = build([agent({ id: "a" })], { kept: keptMessages(first) });
-        expect(second.tiles[0].messages).toEqual(first.tiles[0].messages);
-    });
-});
-
 describe("wallAgentIds", () => {
     const scope = (over: Partial<CockpitScope> = {}): CockpitScope => ({
         now: NOW,
@@ -479,7 +316,6 @@ describe("orbitTiles", () => {
         name: id,
         runtime: "Claude",
         state,
-        messages: [],
         ...(failed ? { failed } : {}),
     });
     it("keeps all of 8 or fewer, in order", () => {

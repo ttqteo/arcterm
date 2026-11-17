@@ -13,6 +13,7 @@ import { springReveal } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { ageText } from "./sidecarkeys";
 import {
     coreLabel,
     coreTone,
@@ -39,11 +40,10 @@ import type {
     SidecarSnapshot,
     SidecarStrain,
 } from "./sidecartypes";
-import { ageText } from "./sidecarwallmodel";
 
 export interface SidecarCompactProps {
     snap: SidecarSnapshot;
-    // `receivedAt` and `clock` are both Date.now() on the Sidecar page, and only their difference is used (the wall's rule)
+    // `receivedAt` and `clock` are both Date.now() on the Sidecar page, and only their difference is used (P's rule)
     receivedAt: number;
     clock: number;
     send: (act: SidecarAct) => void;

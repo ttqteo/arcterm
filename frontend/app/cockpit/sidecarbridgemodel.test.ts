@@ -3,7 +3,7 @@
 
 import type { ProviderDonuts } from "@/app/view/agents/ratelimitstore";
 import type { RunInfo, RunRole } from "@/app/view/agents/runlineage";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
     EMPTY_FEED,
     EMPTY_NOTES,
@@ -12,7 +12,6 @@ import {
     afterClosed,
     afterEmit,
     afterHello,
-    answerOlder,
     applyPressure,
     attachNotes,
     decorateTiles,
@@ -43,7 +42,6 @@ import { EMPTY_TRACK, strainNow, trackStrain } from "./sidecarstrainmodel";
 import type {
     SidecarHeavy,
     SidecarMachine,
-    SidecarMessage,
     SidecarNeed,
     SidecarRunBox,
     SidecarSnapshot,
@@ -54,7 +52,7 @@ import type {
 } from "./sidecartypes";
 
 function tile(id: string, over: Partial<SidecarTile> = {}): SidecarTile {
-    return { id, name: id, runtime: "Claude · opus", state: "working", messages: [], ...over };
+    return { id, name: id, runtime: "Claude · opus", state: "working", ...over };
 }
 
 function snap(tiles: SidecarTile[], now = 1000): SidecarSnapshot {
@@ -300,57 +298,10 @@ describe("validateAct", () => {
         expect(r).toEqual({ ok: true, act: { kind: "open", id: "w1" } });
     });
 
-    describe("older", () => {
-        it("takes an older of a tile in the last snapshot, with a cursor or null, count 1 to 50", () => {
-            expect(validateAct({ kind: "older", id: "w1", before: null, count: 10 }, roster)).toEqual({
-                ok: true,
-                act: { kind: "older", id: "w1", before: null, count: 10 },
-            });
-            expect(validateAct({ kind: "older", id: "a1", before: "m:12", count: 1 }, roster)).toEqual({
-                ok: true,
-                act: { kind: "older", id: "a1", before: "m:12", count: 1 },
-            });
-            expect(validateAct({ kind: "older", id: "a1", before: "f:300", count: 50 }, roster)).toEqual({
-                ok: true,
-                act: { kind: "older", id: "a1", before: "f:300", count: 50 },
-            });
-        });
-
-        it("refuses an id with no tile, no id, no snapshot, and a before that is neither a string nor null", () => {
-            expect(validateAct({ kind: "older", id: "ghost", before: null, count: 10 }, roster)).toEqual({
-                ok: false,
-                reason: 'older: no tile "ghost" in the last snapshot',
-            });
-            expect(validateAct({ kind: "older", before: null, count: 10 }, roster)).toEqual({
-                ok: false,
-                reason: "older: no id",
-            });
-            expect(validateAct({ kind: "older", id: "w1", before: null, count: 10 }, null)).toEqual({
-                ok: false,
-                reason: "older: no snapshot has gone out yet",
-            });
-            for (const before of [undefined, 3, {}, [], true]) {
-                const r = validateAct({ kind: "older", id: "w1", before, count: 10 }, roster);
-                expect(r).toEqual({
-                    ok: false,
-                    reason: `older: before ${String(before)} is neither a cursor nor null`,
-                });
-            }
-        });
-
-        it("refuses a count that is not a whole number from 1 to 50", () => {
-            for (const count of [0, 51, 1.5, -3, NaN, Infinity, "10", null, undefined]) {
-                const r = validateAct({ kind: "older", id: "w1", before: null, count }, roster);
-                expect(r.ok).toBe(false);
-                if (r.ok === false) {
-                    expect(r.reason).toMatch(/^older: count /);
-                }
-            }
-        });
-
-        it("keeps only the fields of an older", () => {
-            const r = validateAct({ kind: "older", id: "w1", before: "m:3", count: 5, extra: 1 }, roster);
-            expect(r).toEqual({ ok: true, act: { kind: "older", id: "w1", before: "m:3", count: 5 } });
+    it("refuses the scrollback's older act, which the dashboard no longer has", () => {
+        expect(validateAct({ kind: "older", id: "w1", before: null, count: 10 }, roster)).toEqual({
+            ok: false,
+            reason: 'unknown act kind "older"',
         });
     });
 
@@ -442,10 +393,11 @@ describe("sameSnapshot", () => {
         expect(sameSnapshot(snap([asking], 1), snap([asking], 99999))).toBe(true);
     });
 
-    it("sees a changed tile, a changed message, a changed order and a changed count", () => {
+    it("sees a changed tile, a changed ask, a changed order and a changed count", () => {
         const base = snap([tile("a"), tile("b")]);
         expect(sameSnapshot(base, snap([tile("a"), tile("b", { state: "idle" })]))).toBe(false);
-        expect(sameSnapshot(base, snap([tile("a"), tile("b", { messages: [{ say: "hi" }] })]))).toBe(false);
+        const ask = { question: "Q?", options: [], answerable: false };
+        expect(sameSnapshot(base, snap([tile("a"), tile("b", { ask })]))).toBe(false);
         expect(sameSnapshot(base, snap([tile("b"), tile("a")]))).toBe(false);
         expect(sameSnapshot(base, snap([tile("a")]))).toBe(false);
         expect(sameSnapshot(base, { ...base, counts: { asking: 1, working: 1, idle: 0 } })).toBe(false);
@@ -877,78 +829,6 @@ describe("sleepNote and stopNote", () => {
         const long = stopNote(new Error("x".repeat(500)));
         expect(long.length).toBeLessThanOrEqual(160);
         expect(long.endsWith("…")).toBe(true);
-    });
-});
-
-describe("answerOlder", () => {
-    const rows = (n: number, from = 0): SidecarMessage[] =>
-        Array.from({ length: n }, (_, i) => ({ say: `m${from + i}` }));
-    const shown = rows(3, 100);
-    const act = (before: string | null, count = 10) => ({ id: "a1", before, count });
-
-    function readers() {
-        return { memory: vi.fn(), file: vi.fn() };
-    }
-
-    it("pages the rows the main window holds for an agent that has some, past what the tile shows", async () => {
-        const r = readers();
-        const all = rows(30);
-        r.memory.mockReturnValue({ rows: rows(10, 17), next: "m:17" });
-        const out = await answerOlder(act(null), { all, shown }, r, vi.fn());
-        expect(out).toEqual({ id: "a1", before: null, rows: rows(10, 17), next: "m:17" });
-        expect(r.memory).toHaveBeenCalledWith(all, shown.length, null, 10);
-        expect(r.file).not.toHaveBeenCalled();
-    });
-
-    it("hands the cursor back to the page unchanged in the answer, and to the reader", async () => {
-        const r = readers();
-        r.memory.mockReturnValue({ rows: [], next: null });
-        const out = await answerOlder(act("m:17", 25), { all: rows(30), shown }, r, vi.fn());
-        expect(out).toEqual({ id: "a1", before: "m:17", rows: [], next: null });
-        expect(r.memory).toHaveBeenCalledWith(expect.anything(), shown.length, "m:17", 25);
-    });
-
-    it("reads the transcript file for an agent with nothing in memory", async () => {
-        const r = readers();
-        r.file.mockResolvedValue({ rows: rows(4), next: "f:100" });
-        const out = await answerOlder(
-            act("f:500"),
-            { all: [], shown, path: "C:/t/a.jsonl", agent: "claude" },
-            r,
-            vi.fn()
-        );
-        expect(out).toEqual({ id: "a1", before: "f:500", rows: rows(4), next: "f:100" });
-        expect(r.file).toHaveBeenCalledWith("C:/t/a.jsonl", "claude", "f:500", shown);
-        expect(r.memory).not.toHaveBeenCalled();
-    });
-
-    it("answers rows [] and next null when the read fails, and logs it: no error loop", async () => {
-        const r = readers();
-        r.file.mockRejectedValue(new Error("no transcript file yet at C:/t/a.jsonl"));
-        const log = vi.fn();
-        const out = await answerOlder(act(null), { all: [], shown, path: "C:/t/a.jsonl" }, r, log);
-        expect(out).toEqual({ id: "a1", before: null, rows: [], next: null });
-        expect(log).toHaveBeenCalledTimes(1);
-        expect(log.mock.calls[0][0]).toContain("a1");
-        expect(log.mock.calls[0][0]).toContain("no transcript file yet");
-    });
-
-    it("answers nothing earlier for an agent with neither entries in memory nor a transcript path", async () => {
-        const r = readers();
-        for (const path of [undefined, ""]) {
-            const out = await answerOlder(act(null), { all: [], shown, path }, r, vi.fn());
-            expect(out).toEqual({ id: "a1", before: null, rows: [], next: null });
-        }
-        expect(r.memory).not.toHaveBeenCalled();
-        expect(r.file).not.toHaveBeenCalled();
-    });
-
-    it("prefers memory over the file when both exist: the main window's rows are the ones the tile shows", async () => {
-        const r = readers();
-        r.memory.mockReturnValue({ rows: [], next: null });
-        await answerOlder(act(null), { all: rows(5), shown, path: "C:/t/a.jsonl" }, r, vi.fn());
-        expect(r.memory).toHaveBeenCalledTimes(1);
-        expect(r.file).not.toHaveBeenCalled();
     });
 });
 

@@ -23,6 +23,7 @@ import {
     type RefObject,
 } from "react";
 import { SidecarBand } from "./sidecarband";
+import { ageText } from "./sidecarkeys";
 import {
     coreLabel,
     coreTone,
@@ -55,7 +56,6 @@ import type {
     SidecarTile,
     StrainLevel,
 } from "./sidecartypes";
-import { ageText } from "./sidecarwallmodel";
 
 export interface SidecarOrbitProps {
     snap: SidecarSnapshot;

@@ -14,7 +14,7 @@ const you = (text: string): AgentEntry => ({ kind: "user", text });
 const act = (verb: string, target: string): AgentEntry => ({ kind: "action", verb, target, outcome: "ok" });
 
 function tile(id: string, state: SidecarTileState, over: Partial<SidecarTile> = {}): SidecarTile {
-    return { id, name: `agent-${id}`, runtime: "Claude · opus", state, messages: [], ...over };
+    return { id, name: `agent-${id}`, runtime: "Claude · opus", state, ...over };
 }
 
 function item(over: Partial<AttentionItem>): AttentionItem {

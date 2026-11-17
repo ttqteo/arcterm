@@ -25,7 +25,7 @@ const MIN = 60_000;
 const NOW = 1_800_000_000_000;
 
 function tile(id: string, over: Partial<SidecarTile> = {}): SidecarTile {
-    return { id, name: id, runtime: "Claude", state: "working", messages: [], ...over };
+    return { id, name: id, runtime: "Claude", state: "working", ...over };
 }
 
 function need(key: string, over: Partial<SidecarNeed> = {}): SidecarNeed {

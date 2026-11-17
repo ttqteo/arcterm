@@ -70,6 +70,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Claude Code's "trust this folder?" prompt shows in Chat as a card with No, exit and Yes, I trust this folder, where
   Chat used to stay on the agent's last step while the terminal waited for an answer. The agent reads asking and
   counts in Needs you while the prompt waits, instead of staying "working".
+- Sidecar is now a dashboard: what waits on you counted in the middle of an orbit of your agents, the queue to answer
+  from, the run and the last 2 hours, framed red when RAM is critical or a run fails; shrunk, it keeps the count, the
+  queue and a dot per agent.
+- On Windows, Sidecar has its own taskbar button with its own icon, arcterm's mark with a small screen, instead of
+  sharing arcterm's.
 
 ### Changed
 

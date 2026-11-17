@@ -7,8 +7,8 @@
 // and builds the snapshot's `strain`; the page (sidecarband.tsx, sidecartitlebar.tsx) reads the words from here. No
 // store, no RPC, no React: the Sidecar page boots no store and imports this directly.
 
+import { formatTileAge } from "./sidecarkeys";
 import type { SidecarHeavy, SidecarMachine, SidecarStrain, SidecarTile, StrainLevel } from "./sidecartypes";
-import { formatTileAge } from "./sidecarwallmodel";
 
 /** The machine's CPU counts as hot while every reading is over this, percent. */
 export const CPU_HOT_PCT = 90;
@@ -219,7 +219,7 @@ export function bandTitle(s: SidecarStrain): string {
     return s.level === "red" ? "The machine is about to run out of memory" : "The machine is strained";
 }
 
-/** "3 min" (the wall's hours-and-minutes past an hour), "<1 min" before a minute. */
+/** "3 min" (the dashboard's hours-and-minutes past an hour), "<1 min" before a minute. */
 function ageWords(ms: number): string {
     if (ms < MIN_MS) {
         return "<1 min";

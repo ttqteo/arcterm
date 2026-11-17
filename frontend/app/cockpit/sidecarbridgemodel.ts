@@ -6,21 +6,18 @@
 // these functions what to do at each change, hello and close, so the throttle and the last-sent memory are tested here
 // and not through a timer. Part 2 adds what the bridge needs to feed the strain band: how a machine reading becomes the
 // snapshot's figures (rounded, so a poll does not re-emit), which polls the band needs, a heavy row's note, the notes
-// Stop and Sleep leave, and the answer to an older act.
+// Stop and Sleep leave.
 
 import type { SleepOutcome } from "@/app/view/agents/agentsleep";
 import type { DiffStats } from "@/app/view/agents/agentsviewmodel";
 import type { ProviderDonuts } from "@/app/view/agents/ratelimitstore";
 import { runFinished, runProgress, type RunInfo, type RunRole } from "@/app/view/agents/runlineage";
-import type { OlderPage } from "./sidecarhistory";
 import { strainBy, type MachineReading, type StrainState } from "./sidecarstrainmodel";
 import type {
     SidecarAct,
     SidecarHeavy,
     SidecarMachine,
-    SidecarMessage,
     SidecarNeed,
-    SidecarOlder,
     SidecarRunBox,
     SidecarSnapshot,
     SidecarSpan,
@@ -44,10 +41,6 @@ export type ActCheck = { ok: true; act: SidecarAct } | { ok: false; reason: stri
 function isRecord(v: unknown): v is Record<string, unknown> {
     return typeof v === "object" && v !== null && !Array.isArray(v);
 }
-
-// How many rows one older act may ask for (decision 5: the page asks for 10).
-const OLDER_MIN = 1;
-const OLDER_MAX = 50;
 
 /** The heavy row of the last snapshot's strain band that a stop or a sleep names; the page can only act on a row it was shown. */
 function heavyRow(
@@ -143,35 +136,6 @@ export function validateAct(raw: unknown, last: SidecarSnapshot | null): ActChec
                 return { ok: false, reason: `answer: the ask of "${id}" changed since the page showed it` };
             }
             return { ok: true, act: { kind: "answer", id, option, key: raw.key } };
-        }
-        case "older": {
-            const id = raw.id;
-            if (typeof id !== "string") {
-                return { ok: false, reason: "older: no id" };
-            }
-            if (last == null) {
-                return { ok: false, reason: "older: no snapshot has gone out yet" };
-            }
-            if (!last.tiles.some((t) => t.id === id)) {
-                return { ok: false, reason: `older: no tile "${id}" in the last snapshot` };
-            }
-            const cursor = raw.before;
-            let before: string | null;
-            if (cursor === null) {
-                before = null;
-            } else if (typeof cursor === "string") {
-                before = cursor;
-            } else {
-                return { ok: false, reason: `older: before ${String(cursor)} is neither a cursor nor null` };
-            }
-            const count = raw.count;
-            if (typeof count !== "number" || !Number.isInteger(count) || count < OLDER_MIN || count > OLDER_MAX) {
-                return {
-                    ok: false,
-                    reason: `older: count ${String(count)} is not a whole number from ${OLDER_MIN} to ${OLDER_MAX}`,
-                };
-            }
-            return { ok: true, act: { kind: "older", id, before, count } };
         }
         case "stop": {
             const row = heavyRow("stop", raw, last);
@@ -607,53 +571,4 @@ export function stopNote(e: unknown): string {
         return "Couldn't stop it";
     }
     return text.length <= NOTE_MAX_CHARS ? text : text.slice(0, NOTE_MAX_CHARS - 1) + "…";
-}
-
-/** What an older act is answered from: the rows the main window holds for the agent, or its transcript file. */
-export interface OlderInput {
-    all: SidecarMessage[]; // the rows the main window holds, oldest first; empty for an agent with no entries in memory
-    shown: SidecarMessage[]; // the rows the last snapshot sent for the tile
-    path?: string; // its transcript file
-    agent?: string; // its harness, which picks the transcript projector
-}
-
-/** The two readers `answerOlder` calls (sidecarhistory.ts's olderFromMemory and readOlderFromFile), passed in so the rule is tested without an RPC. */
-export interface OlderReaders {
-    memory: (all: SidecarMessage[], shownCount: number, before: string | null, count: number) => OlderPage;
-    file: (
-        path: string,
-        agent: string | undefined,
-        before: string | null,
-        shown: SidecarMessage[]
-    ) => Promise<OlderPage>;
-}
-
-/**
- * The answer to an older act (decision 5). An agent with entries in memory pages from them, one with none and a transcript
- * path from the file, any other has nothing earlier. Never rejects: a failed file read is logged through `onError` and
- * answered `rows: [], next: null`, which the page shows as the start of what arcterm holds and stops asking.
- */
-export async function answerOlder(
-    act: { id: string; before: string | null; count: number },
-    input: OlderInput,
-    readers: OlderReaders,
-    onError: (message: string) => void
-): Promise<SidecarOlder> {
-    const answer = (page: OlderPage): SidecarOlder => ({
-        id: act.id,
-        before: act.before,
-        rows: page.rows,
-        next: page.next,
-    });
-    if (input.all.length > 0) {
-        return answer(readers.memory(input.all, input.shown.length, act.before, act.count));
-    }
-    if (input.path != null && input.path !== "") {
-        try {
-            return answer(await readers.file(input.path, input.agent, act.before, input.shown));
-        } catch (e) {
-            onError(`older ${act.id}: the transcript read failed: ${e instanceof Error ? e.message : String(e)}`);
-        }
-    }
-    return answer({ rows: [], next: null });
 }

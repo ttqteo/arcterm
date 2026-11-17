@@ -4,21 +4,13 @@
 // What the cockpit sends the Sidecar window and what it sends back (spec 2026-11-13-sidecar-design.md). The Sidecar
 // page (frontend/tauri/sidecar.tsx) holds no store of its own: the main window's bridge builds a SidecarSnapshot from
 // the cockpit's stores and emits it as sidecar:snapshot; the page emits each click as a SidecarAct on sidecar:act, and
-// the host tells the main window the Sidecar window is gone with sidecar:closed, and the main window answers an older
-// act (scrollback) with sidecar:older. Plain data only: it crosses a Tauri event.
+// the host tells the main window the Sidecar window is gone with sidecar:closed. Plain data only: it crosses a Tauri event.
 
 export const SIDECAR_SNAPSHOT_EVENT = "sidecar:snapshot"; // main → sidecar window
 export const SIDECAR_ACT_EVENT = "sidecar:act"; // sidecar page → main
 export const SIDECAR_CLOSED_EVENT = "sidecar:closed"; // host → main, when the Sidecar window is destroyed
-export const SIDECAR_OLDER_EVENT = "sidecar:older"; // main → sidecar window: the answer to an older act
 
 export type SidecarTileState = "asking" | "working" | "review" | "idle" | "asleep";
-
-/** One row of a tile: what the agent said, then the tool it ran. Either may be missing, never both. */
-export interface SidecarMessage {
-    say?: string;
-    tool?: { verb: string; target: string; outcome?: "ok" | "fail" | "blocked" };
-}
 
 export interface SidecarAsk {
     question: string;
@@ -76,7 +68,6 @@ export interface SidecarTile {
     state: SidecarTileState;
     since?: number; // UnixMilli the state began, for the age
     ctxPct?: number;
-    messages: SidecarMessage[];
     ask?: SidecarAsk;
     sent?: boolean; // the answer to its ask has gone out and the agent has not moved on yet
     failed?: boolean; // the agent's run failed, or it holds a failed need
@@ -132,17 +123,8 @@ export type SidecarAct =
     | { kind: "open"; id: string }
     | { kind: "need"; key: string } // a Jarvis row: must be a need of the last snapshot
     | { kind: "answer"; id: string; option: number; key: string } // key: the ask the page showed (SidecarAsk.key)
-    | { kind: "older"; id: string; before: string | null; count: number } // count 1..50
     | { kind: "stop"; id: string; pid: number } // must match a heavy row's process
     | { kind: "sleep"; id: string }; // must be a heavy row
-
-/** The answer to an older act, main → sidecar window: rows oldest first, `next` null when nothing is earlier. */
-export interface SidecarOlder {
-    id: string;
-    before: string | null;
-    rows: SidecarMessage[];
-    next: string | null;
-}
 
 /** What the host's sidecar_form command answers: whether the window is in its small form and pinned on top. */
 export interface SidecarForm {

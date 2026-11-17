@@ -6,6 +6,7 @@
 // state and its alert frame, the core's tone and label, a node's tone and its one line, where the nodes sit on the
 // orbit, a ring's dash, a lane's bars, how a Needs you row is answered, and the keys with the selection they move.
 
+import { ageText, answerAct, canAnswer, moveSelection, sidecarKey } from "./sidecarkeys";
 import type {
     SidecarAct,
     SidecarNeed,
@@ -15,7 +16,6 @@ import type {
     SidecarSpanState,
     SidecarTile,
 } from "./sidecartypes";
-import { ageText, answerAct, canAnswer, moveSelection, wallKey } from "./sidecarwallmodel";
 
 // ---- The screen ----
 
@@ -321,7 +321,7 @@ export function dashKey(
     needs: readonly SidecarNeed[],
     nodes: readonly SidecarTile[]
 ): DashKeyAction | null {
-    const action = wallKey(key);
+    const action = sidecarKey(key);
     if (action == null) {
         return null;
     }
