@@ -71,13 +71,8 @@ the accent) · `diff-added` / `diff-removed` for `+N −N`.
 ---
 
 ### Task 1: Snapshot types and the orbit's capacity
-
 **Depends on:** none
-
-**Files:**
-- Modify: `frontend/app/cockpit/sidecartypes.ts`
-- Modify: `frontend/app/cockpit/sidecarsnapshot.ts`
-- Test: `frontend/app/cockpit/sidecarsnapshot.test.ts`
+**Files:** `frontend/app/cockpit/sidecartypes.ts`, `frontend/app/cockpit/sidecarsnapshot.ts`, `frontend/app/cockpit/sidecarsnapshot.test.ts`
 
 **Step 1: Add the wire types** (keep every existing field; Task 8 removes the old ones).
 
@@ -201,12 +196,8 @@ export function orbitTiles(
 ---
 
 ### Task 2: What waits on you (`sidecarneeds.ts`)
-
-**Depends on:** Task 1
-
-**Files:**
-- Create: `frontend/app/cockpit/sidecarneeds.ts`
-- Test: `frontend/app/cockpit/sidecarneeds.test.ts`
+**Depends on:** Task 1 (uses the `SidecarNeed` and `SidecarTile` types it adds)
+**Files:** `frontend/app/cockpit/sidecarneeds.ts`, `frontend/app/cockpit/sidecarneeds.test.ts`
 
 The three sources, one list, oldest first (spec "What waits on you"). Pure: the bridge passes in what it read.
 
@@ -328,12 +319,8 @@ UnixMilli; if it is seconds, multiply by 1000 here and say so in a comment.
 ---
 
 ### Task 3: The 2-hour timeline (`sidecartimeline.ts`)
-
-**Depends on:** Task 1
-
-**Files:**
-- Create: `frontend/app/cockpit/sidecartimeline.ts`
-- Test: `frontend/app/cockpit/sidecartimeline.test.ts`
+**Depends on:** Task 1 (uses the `SidecarSpan` type it adds)
+**Files:** `frontend/app/cockpit/sidecartimeline.ts`, `frontend/app/cockpit/sidecartimeline.test.ts`
 
 **Step 1: Write the failing tests**, one `it` each:
 
@@ -442,13 +429,10 @@ otherwise see: the length check above covers it; test it.
 ---
 
 ### Task 4: The bridge builds the dashboard's snapshot
+**Depends on:** Task 2 (calls `sidecarNeeds`), Task 3 (calls `recordTimeline`, `spansInWindow` and `failedFrom`)
+**Files:** `frontend/app/cockpit/sidecarbridge.tsx`, `frontend/app/cockpit/sidecarbridgemodel.ts`, `frontend/app/cockpit/sidecarbridgemodel.test.ts`
 
-**Depends on:** Task 2, Task 3
-
-**Files:**
-- Modify: `frontend/app/cockpit/sidecarbridge.tsx`
-- Modify: `frontend/app/cockpit/sidecarbridgemodel.ts` (`validateAct`, `sameSnapshot` if it compares fields)
-- Test: `frontend/app/cockpit/sidecarbridgemodel.test.ts`
+In `sidecarbridgemodel.ts`: `validateAct`, and `sameSnapshot` if it compares fields one by one.
 
 **Step 1: Failing tests for `validateAct`:**
 - an `answer` act is valid when `last.needs` has an `ask` row with that `id`, `answerable: true`, `askKey === act.key`
@@ -500,12 +484,8 @@ otherwise see: the length check above covers it; test it.
 ---
 
 ### Task 5: The page model (`sidecarorbitmodel.ts`)
-
-**Depends on:** Task 1
-
-**Files:**
-- Create: `frontend/app/cockpit/sidecarorbitmodel.ts`
-- Test: `frontend/app/cockpit/sidecarorbitmodel.test.ts`
+**Depends on:** Task 1 (reads the snapshot fields it adds)
+**Files:** `frontend/app/cockpit/sidecarorbitmodel.ts`, `frontend/app/cockpit/sidecarorbitmodel.test.ts`
 
 Everything the two views decide, pure, so the `.tsx` files only draw. Write each test first, see it fail, implement,
 see it pass.
@@ -541,11 +521,11 @@ see it pass.
 ---
 
 ### Task 6: P, the full window (`sidecarorbit.tsx`)
+**Depends on:** Task 5 (draws from its page model)
+**Files:** `frontend/app/cockpit/sidecarorbit.tsx`
 
-**Depends on:** Task 5, Task 9
-
-**Files:**
-- Create: `frontend/app/cockpit/sidecarorbit.tsx`
+`bg-errorbg` and `animate-sidecar-ping` come from Task 9, which runs beside this task: use the class names as Task 9
+defines them; they render once both have merged (a missing class compiles, it only draws nothing).
 
 Draw board `P-orbit-dashboard` and its state boards from `SidecarSnapshot`, with the page model for every decision.
 Props as the wall's today: `{ snap, receivedAt, clock, send }`. Layout (copy sizes from the board): a two-column grid,
@@ -584,11 +564,10 @@ names it). **Commit** `git commit -m "feat(sidecar): P, the orbit dashboard" -- 
 ---
 
 ### Task 7: Q, the compact window (`sidecarcompact.tsx`)
+**Depends on:** Task 5 (draws from its page model)
+**Files:** `frontend/app/cockpit/sidecarcompact.tsx`
 
-**Depends on:** Task 5, Task 9
-
-**Files:**
-- Create: `frontend/app/cockpit/sidecarcompact.tsx`
+`bg-errorbg` and `animate-sidecar-ping` come from Task 9, which runs beside this task (see Task 6).
 
 Board `Q-compact-live` at 380 px. Root `data-sidecar-dashboard="compact"` with the same `data-sidecar-state` and
 `data-sidecar-frame` (frame 2 px). Top: the core at 112 px (`data-sidecar-core`, `coreTone`, rings at the same rule)
@@ -603,10 +582,13 @@ attributes, same keys through `dashKey("compact", …)`), `All clear` / `Nothing
 ---
 
 ### Task 8: Switch the page over and remove the wall
-
 **Depends on:** Task 4, Task 6, Task 7
+**Files:** `frontend/tauri/sidecar.tsx`, `frontend/app/cockpit/sidecartitlebar.tsx`, `frontend/app/cockpit/sidecarkeys.ts`, `frontend/app/cockpit/sidecarkeys.test.ts`, `frontend/app/cockpit/sidecarstrainmodel.ts`, `frontend/app/cockpit/sidecarlayout.ts`, `frontend/app/cockpit/sidecarlayout.test.ts`, `frontend/app/cockpit/sidecarorbitmodel.ts`, `frontend/app/cockpit/sidecarorbitmodel.test.ts`, `frontend/app/cockpit/sidecarorbit.tsx`, `frontend/app/cockpit/sidecarcompact.tsx`
+**Files:** `frontend/app/cockpit/sidecarwall.tsx`, `frontend/app/cockpit/sidecarwallmodel.ts`, `frontend/app/cockpit/sidecarwallmodel.test.ts`, `frontend/app/cockpit/sidecarsmall.tsx`, `frontend/app/cockpit/sidecarhistory.ts`, `frontend/app/cockpit/sidecarhistory.test.ts`
+**Files:** `frontend/app/cockpit/sidecartypes.ts`, `frontend/app/cockpit/sidecarsnapshot.ts`, `frontend/app/cockpit/sidecarsnapshot.test.ts`, `frontend/app/cockpit/sidecarbridgemodel.ts`, `frontend/app/cockpit/sidecarbridgemodel.test.ts`, `frontend/app/cockpit/sidecarbridge.tsx`, `CHANGELOG.md`
 
-**Files:**
+What changes where:
+
 - Modify: `frontend/tauri/sidecar.tsx` (draw `SidecarOrbit` for `wall` layout, `SidecarCompact` for `small`; the comment
   on "nothing on this page animates" now points to the spec's Motion section; keep `[&_button]:transition-none`)
 - Modify: `frontend/app/cockpit/sidecartitlebar.tsx` (the counts move into the core: drop `SidecarCounts` from the
@@ -622,7 +604,9 @@ attributes, same keys through `dashKey("compact", …)`), `All clear` / `Nothing
   `kept` (grep first: `messageRows` may have other users)
 - Modify: `CHANGELOG.md` (Unreleased, `Changed`): `Sidecar is now a dashboard: what waits on you counted in the middle
   of an orbit of your agents, the queue to answer from, the run and the last 2 hours, framed red when RAM is critical
-  or a run fails; shrunk, it keeps the count, the queue and a dot per agent.`
+  or a run fails; shrunk, it keeps the count, the queue and a dot per agent.` and a second line, for Task 11's change
+  (Task 11 runs beside this one and owns no shared file): `On Windows, Sidecar has its own taskbar button with its own
+  icon, arcterm's mark with a small screen, instead of sharing arcterm's.`
 
 **Before deleting a file, grep every import of it, `import type` and re-exports included** (AGENTS.md). Then
 `npx vitest run frontend/app/cockpit/` → PASS, `task check:ts` → exit 0, `npx eslint` on the touched paths.
@@ -632,10 +616,11 @@ attributes, same keys through `dashKey("compact", …)`), `All clear` / `Nothing
 ---
 
 ### Task 9: Tokens, the ping and the DESIGN.md exception
-
 **Depends on:** none
+**Files:** `frontend/tailwindsetup.css`, `frontend/app/view/agents/themes.ts`, `DESIGN.md`
 
-**Files:**
+What changes where:
+
 - Modify: `frontend/tailwindsetup.css`: `--color-errorbg: rgba(224, 114, 108, 0.14);` beside `--color-askingbg`
   (`:83`); a `@keyframes sidecarPing` (a ring growing from scale 1 to 2.2 while its opacity goes 0.6 → 0, 1.8 s,
   infinite) and the utility `animate-sidecar-ping`, with `@media (prefers-reduced-motion: reduce)` turning it off.
@@ -649,10 +634,11 @@ attributes, same keys through `dashKey("compact", …)`), `All clear` / `Nothing
 ---
 
 ### Task 10: CDP scenarios for P and Q
+**Depends on:** Task 8 (its scenarios drive the P and Q page Task 8 switches the window over to)
+**Files:** `scripts/cdp/scenarios-sidecar.mjs`, `docs/hand-checks.md`, `docs/open-issues.md`
 
-**Depends on:** Task 8
+What changes where:
 
-**Files:**
 - Modify: `scripts/cdp/scenarios-sidecar.mjs` (replace the `sidecar-wall` scenario with `sidecar-orbit` and
   `sidecar-compact`, both `host: true`, keeping its harness: the fixture roster, `attachByUrl`, the hold, the machine
   and heavy seams, teardown)
@@ -691,25 +677,22 @@ frame, the core's number, the rows, one `data-sidecar-dot` per orbit tile, and i
 keys' step repeats ArrowDown + `1` on the answerable ask.
 
 `docs/hand-checks.md`: `- [ ] (arcterm) Sidecar P/Q across a real day: the question heuristic's misses, the ping from
-across the room, RAM of P with 12 agents after a day` and `docs/open-issues.md` RAM watch: measure P with 12 agents
-after a day on screen against the 100 MB budget.
+across the room, RAM of P with 12 agents after a day`; for Task 11 (it owns no doc file): `- [ ] (arcterm) Packaged
+build: Sidecar has its own taskbar button with the screen badge, not arcterm's icon; right-click shows no "Pin to
+taskbar"; closing arcterm closes it`. `docs/open-issues.md` RAM watch: measure P with 12 agents after a day on screen
+against the 100 MB budget.
 
 Run `task verify:ui -- sidecar-orbit sidecar-compact` against the dev app → PASS. **Commit** `git commit -m "test(sidecar): CDP scenarios for the orbit dashboard, full and compact" -- scripts/cdp/scenarios-sidecar.mjs docs/hand-checks.md docs/open-issues.md`
 
 ---
 
 ### Task 11: Sidecar's own taskbar button and icon (Windows)
-
 **Depends on:** none
+**Files:** `scripts/gen-app-icon.mjs`, `src-tauri/icons/icon-sidecar.ico`, `src-tauri/src/main.rs`, `src-tauri/src/sidecar.rs`, `src-tauri/Cargo.toml`
 
-**Files:**
-- Modify: `scripts/gen-app-icon.mjs` (also write `src-tauri/icons/icon-sidecar.ico`)
-- Create: `src-tauri/icons/icon-sidecar.ico` (generated, committed like `icon.ico`)
-- Modify: `src-tauri/src/main.rs` (generalise `set_window_app_user_model_id`)
-- Modify: `src-tauri/src/sidecar.rs` (`open_window`, `:644`)
-- Modify: `CHANGELOG.md` (Unreleased, `Changed`): `On Windows, Sidecar has its own taskbar button with its own icon,
-  arcterm's mark with a small screen, instead of sharing arcterm's.`
-- Modify: `docs/hand-checks.md`
+`icon-sidecar.ico` is generated by `gen-app-icon.mjs` and committed like `icon.ico`. Its CHANGELOG line is written by
+Task 8 and its hand check by Task 10, which run beside this task: do not touch `CHANGELOG.md` or `docs/hand-checks.md`
+here.
 
 **Step 1: The icon.** In `gen-app-icon.mjs`, `render()` takes an optional badge, drawn after the glyph exactly as the
 board's generator drew it (spec "Taskbar"):
@@ -796,8 +779,6 @@ long comment on COM memory with the code it describes.
 → builds. In the dev app (`task dev`): open Sidecar; the taskbar shows a second button with the badge icon; close the
 main window → Sidecar closes as before. Screenshot the taskbar for the report if you can; otherwise say it was not seen.
 
-`docs/hand-checks.md`: `- [ ] (arcterm) Packaged build: Sidecar has its own taskbar button with the screen badge,
-not arcterm's icon; right-click shows no "Pin to taskbar"; closing arcterm closes it` (only a packaged build runs the
-packaged path).
+The packaged path is left to the hand check Task 10 writes (only a packaged build runs it).
 
-**Commit** `git commit -m "feat(sidecar): its own taskbar button and icon on Windows" -- scripts/gen-app-icon.mjs src-tauri/icons/icon-sidecar.ico src-tauri/src/main.rs src-tauri/src/sidecar.rs src-tauri/Cargo.toml CHANGELOG.md docs/hand-checks.md`
+**Commit** `git commit -m "feat(sidecar): its own taskbar button and icon on Windows" -- scripts/gen-app-icon.mjs src-tauri/icons/icon-sidecar.ico src-tauri/src/main.rs src-tauri/src/sidecar.rs src-tauri/Cargo.toml`
