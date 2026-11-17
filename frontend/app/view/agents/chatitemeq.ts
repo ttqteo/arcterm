@@ -93,8 +93,6 @@ function samePart(a: AgentPart, b: AgentPart): boolean {
                 a.work.actions.length === b.work.actions.length &&
                 a.work.actions.every((action, i) => sameAction(action, b.work.actions[i]))
             );
-        case "files":
-            return b.kind === "files" && a.adds === b.adds && a.dels === b.dels && sameFiles(a.files, b.files);
         // the moments are small, plain data (a verdict and its reviewer call, a question, an anchor): compared whole
         case "verdict":
             return (

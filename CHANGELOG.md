@@ -60,6 +60,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Chat sums up each stretch of tools in words ("Edited server.js, ran 2 commands +5 −2 · 38s"), says what a running
   tool is doing, and shows a command by its description; the command itself shows when you open the line.
+- An opened stretch of tools in Chat is one bordered box with a plain row per tool ("Edited server.js +5"): a command
+  opens to its command and output in the box, a file's name opens the file, and a failed tool says so in red on its
+  own row. The file chips under each stretch are gone: the edit rows carry the files and their counts.
 - A council's Setup draws each seat's letter on a disc in its colour, as the Discussion and the map do, instead of a
   coloured ring.
 - The agent header keeps Split and Fullscreen in its More (⋯) menu, so it shows only More, Float and Close beside the

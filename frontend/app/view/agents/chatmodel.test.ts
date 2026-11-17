@@ -124,7 +124,7 @@ describe("chatItems", () => {
         expect(items[2]).not.toHaveProperty("switchNote");
     });
 
-    it("gives a plain exchange one 'you' and one agent group of prose, work, files, prose", () => {
+    it("gives a plain exchange one 'you' and one agent group of prose, work, prose: no file chips after the work", () => {
         const items = chatItems([
             you("fix the parser"),
             says("On it."),
@@ -135,25 +135,14 @@ describe("chatItems", () => {
         expect(items.map((i) => i.kind)).toEqual(["you", "agent"]);
         expect(items[0]).toEqual({ kind: "you", key: expect.any(String), text: "fix the parser" });
         const group = agentOf(items, 1);
-        expect(group.parts.map((p) => p.kind)).toEqual(["prose", "work", "files", "prose"]);
+        expect(group.parts.map((p) => p.kind)).toEqual(["prose", "work", "prose"]);
         expect(group.parts[0]).toEqual({ kind: "prose", text: "On it." });
         const work = group.parts[1];
         expect(work.kind === "work" && work.work.actions.map((a) => a.verb)).toEqual(["read", "edited"]);
-        expect(group.parts[2]).toMatchObject({ kind: "files", adds: 3, dels: 1 });
-        expect(group.parts[3]).toEqual({ kind: "prose", text: "Done." });
+        expect(group.parts[2]).toEqual({ kind: "prose", text: "Done." });
     });
 
-    it("carries the merged per-file counts of the work's edits on its files part", () => {
-        const group = agentOf(
-            chatItems([edit(file("a.ts", 3, 1)), action("read"), edit(file("a.ts", 4, 2), file("b.ts", 1, 0))]),
-            0
-        );
-        const files = group.parts.find((p) => p.kind === "files");
-        expect(files).toMatchObject({ kind: "files", adds: 8, dels: 3 });
-        expect(files?.kind === "files" && files.files.map((f) => f.path)).toEqual(["a.ts", "b.ts"]);
-    });
-
-    it("adds no files part for work that edited nothing", () => {
+    it("is the work part alone for work that edited nothing", () => {
         const group = agentOf(chatItems([action("read"), action("grep")]), 0);
         expect(group.parts.map((p) => p.kind)).toEqual(["work"]);
     });
@@ -697,7 +686,7 @@ describe("chatItems: verdict, handoff, run-start, council-start and Doc review p
                 action("bash"),
                 edit(file("a.ts", 1, 0)),
             ]);
-            expect(kinds(items)).toEqual(["work", "verdict", "work", "files"]);
+            expect(kinds(items)).toEqual(["work", "verdict", "work"]);
             const before = part(items, 0);
             const after = part(items, 2);
             expect(before.kind === "work" && before.work.actions.map((a) => a.verb)).toEqual(["read", "grep"]);
@@ -732,11 +721,11 @@ describe("chatItems: verdict, handoff, run-start, council-start and Doc review p
             expect(verdict).not.toHaveProperty("reviewer");
         });
 
-        it("keeps the files each piece of a cut stretch edited after that piece", () => {
+        it("keeps the edits each piece of a cut stretch made in that piece, with no file chips after it", () => {
             const items = chatItems([you("go"), edit(file("a.ts", 2, 1)), reported("x"), edit(file("b.ts", 4, 0))]);
-            expect(kinds(items)).toEqual(["work", "files", "verdict", "work", "files"]);
-            expect(part(items, 1)).toMatchObject({ kind: "files", adds: 2, dels: 1 });
-            expect(part(items, 4)).toMatchObject({ kind: "files", adds: 4, dels: 0 });
+            expect(kinds(items)).toEqual(["work", "verdict", "work"]);
+            expect(part(items, 0)).toMatchObject({ kind: "work", work: { adds: 2, dels: 1 } });
+            expect(part(items, 2)).toMatchObject({ kind: "work", work: { adds: 4, dels: 0 } });
         });
     });
 
@@ -822,9 +811,9 @@ describe("chatItems: verdict, handoff, run-start, council-start and Doc review p
             expect(kinds(chatItems([you("x"), action("bash")]))).toEqual(["work"]);
         });
 
-        it("keeps the files the stretch edited before the call after its work part", () => {
+        it("puts the run's card straight after the stretch that edited files before the call", () => {
             const items = chatItems([you("x"), edit(file("a.ts", 1, 0)), runsStart("started run 3fa21b0c (x)\n")]);
-            expect(kinds(items)).toEqual(["work", "files", "runstart"]);
+            expect(kinds(items)).toEqual(["work", "runstart"]);
         });
     });
 
@@ -880,9 +869,9 @@ describe("chatItems: verdict, handoff, run-start, council-start and Doc review p
             expect(kinds(chatItems([you("x"), action("bash")]))).toEqual(["work"]);
         });
 
-        it("keeps the files the stretch edited before the call after its work part", () => {
+        it("puts the council's card straight after the stretch that edited files before the call", () => {
             const items = chatItems([you("x"), edit(file("a.ts", 1, 0)), councilStart(STARTED)]);
-            expect(kinds(items)).toEqual(["work", "files", "councilstart"]);
+            expect(kinds(items)).toEqual(["work", "councilstart"]);
         });
 
         it("leaves a wsh runs start call to the run card", () => {

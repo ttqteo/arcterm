@@ -24,7 +24,6 @@ import type {
     AgentState,
     AskQuestionDetail,
     BtwAnswer,
-    EditFile,
     ShellResult,
 } from "./agentsviewmodel";
 import { hasCardBlock, splitCardBlocks, type CommitSuggestion } from "./chatcommit";
@@ -45,8 +44,6 @@ export type AgentPart =
     // written, which the transcript does not hold yet (chatlive.ts)
     | { kind: "prose"; text: string; uuid?: string; live?: true }
     | { kind: "work"; work: WorkItem }
-    // the files that work edited, once per path with the summed counts; follows its work part
-    | { kind: "files"; files: EditFile[]; adds: number; dels: number }
     // Five moments Chat draws as cards of their own (chatverdict.ts, chathandoff.ts, chatruncards.ts, chatcouncil.ts,
     // chatdocreview.ts); each `key` is `<kind>:<entry index>` of the message or call it came from, so it holds as entries
     // append. A reviewer's verdict: an ```arc-review block cut out of a reply, or a `ReportFindings` call (`reviewer`: the
@@ -239,14 +236,6 @@ function momentOf(action: AgentActionEntry): Moment | null {
     return null;
 }
 
-// a work part, and the files part that follows it when its tools edited any
-function pushWork(parts: AgentPart[], work: WorkItem): void {
-    parts.push({ kind: "work", work });
-    if (work.files.length > 0) {
-        parts.push({ kind: "files", files: work.files, adds: work.adds, dels: work.dels });
-    }
-}
-
 type VerdictPart = Extract<AgentPart, { kind: "verdict" }>;
 
 /**
@@ -367,7 +356,9 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
                 const cut = (to: number): void => {
                     if (to > from) {
                         const whole = from === 0 && to === item.actions.length;
-                        pushWork(parts, whole ? item : workOf(item.startIndex + from, item.actions.slice(from, to)));
+                        // its edit rows carry the files it edited and their counts: no file chips follow it
+                        const work = whole ? item : workOf(item.startIndex + from, item.actions.slice(from, to));
+                        parts.push({ kind: "work", work });
                     }
                     from = to;
                 };
