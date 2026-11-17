@@ -1245,10 +1245,12 @@ async function compactStates(h, ctx, side, rec, shot) {
     await press(side, "1");
     let answered = [];
     await until(async () => (answered = await actsSince(h, before)).length > 0, 5000);
-    await sleep(400);
-    // the answer went out: the ask's row and its dot stop pinging
-    const sentView = await readDash(side);
-    const sentQuiet = row(sentView, NEED.ask)?.ping === false && drawnOf(sentView, ASK_ID)?.ping === false;
+    // the answer went out: the ask's row and its dot stop pinging once the main window's next snapshot marks it sent.
+    // Q shows no `Sent` to wait on as P does, so wait on the ping itself: a fixed 400 ms read it before the snapshot came
+    const quiet = (got) => row(got, NEED.ask)?.ping === false && drawnOf(got, ASK_ID)?.ping === false;
+    let sentView = await readDash(side);
+    await until(async () => quiet((sentView = await readDash(side))), 5000);
+    const sentQuiet = quiet(sentView);
     await press(side, "ArrowDown");
     await press(side, "ArrowDown");
     await press(side, "ArrowDown");
