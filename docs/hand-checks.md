@@ -582,3 +582,6 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   view; click an edited file's name → the File tab opens it; a stretch with a failed Edit → "Edit failed" in red on its
   row, the folded line stays muted; no file chips under a stretch. Checked only in the headless-Chrome build
   (`agent-chat` CDP), not in WebView2, and not in a light theme (`chatstepsview.tsx`).
+- [ ] (arcterm) Checks after a brainstorm's run starts: brainstorm with a builder check (and a judge), Approve, and let
+  the run start → the brainstorming agent's row loses its checks chip (`> ✓`) and the check rows under it; a check that
+  still asks, or the one selected, stays. Unit-tested only (`agenttreemodel.ts` `checksSuperseded`), not tried in the app.
