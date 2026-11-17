@@ -3,7 +3,6 @@ import {
     answerLine,
     answerParts,
     brainstormPrompt,
-    canRunSummary,
     defaultCouncilView,
     directionRows,
     directionsHeading,
@@ -589,21 +588,6 @@ describe("isWeakEvidence", () => {
         expect(isWeakEvidence({ ref: "screenshot:rail.png#top" }, false)).toBe(false);
         expect(isWeakEvidence({ ref: "screenshot:rail.png#top@0,0,0.5,0.5", cite: "ok" }, true)).toBe(false);
         expect(isWeakEvidence({ ref: "screenshot:rail.png#top@0,0,2,2", cite: "wrong" }, true)).toBe(false);
-    });
-});
-
-describe("canRunSummary", () => {
-    it("is on for a council the runner summarizes, whatever round it stopped at", () => {
-        for (const state of ["done", "stopped", "failed", "awaiting-you"]) {
-            expect(canRunSummary(council({ state, round: 1 }))).toBe(true);
-        }
-    });
-
-    it("is off while the council runs, before it ran, and with nothing to summarize", () => {
-        expect(canRunSummary(council({ state: "running" }))).toBe(false);
-        expect(canRunSummary(council({ state: "not-run" }))).toBe(false);
-        expect(canRunSummary(council({ proposals: [] }))).toBe(false);
-        expect(canRunSummary(council({ proposals: undefined }))).toBe(false);
     });
 });
 
