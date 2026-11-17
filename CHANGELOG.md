@@ -120,6 +120,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An agent's step list in Chat shows as a checklist when it writes its steps as a Markdown task list (`- [ ] …`),
+  instead of as a block of code.
 - A run whose lead was started again (after arcterm restarted, or when the lead's process died) keeps its new lead
   on the run's row in the Agent tree, instead of the old lead's sleeping tab holding the row and the new lead showing
   as a separate agent.

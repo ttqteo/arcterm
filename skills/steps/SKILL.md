@@ -25,7 +25,8 @@ One step per line, a marker then the step's text:
 
 - `[x]` done, `[>]` being worked on, `[ ]` not started.
 - Keep each step to a short line, in the order you will do them.
-- A line without one of the three markers is ignored, so write nothing else inside the block.
+- A line without one of the three markers is ignored, so write nothing else inside the block. A list bullet before the
+  marker (`- [ ]`) is read past, but write the marker first.
 
 ## Keep it current
 
