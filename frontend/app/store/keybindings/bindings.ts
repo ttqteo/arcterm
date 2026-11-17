@@ -54,6 +54,14 @@ import {
 import { paneState } from "@/app/view/agents/canvasmodel";
 import { focusedCanvas, focusedCanvasMode, setMarking, stepCanvasBoard } from "@/app/view/agents/canvasstore";
 import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
+import {
+    chatFocusReadOnAtom,
+    conversationShown,
+    FOCUS_READ_KEYS,
+    focusConversation,
+    focusedConversationAgent,
+    focusReaderOf,
+} from "@/app/view/agents/chatfocusreadstore";
 import { focusChatBox, hasChatBox, interruptChat } from "@/app/view/agents/chatinsert";
 import { CHAT_JUMP_KEYS, jumpChatToLatest } from "@/app/view/agents/chatjump";
 import { cellView, cellViewOptions, chatCapable, nextCellView } from "@/app/view/agents/chatmode";
@@ -588,6 +596,17 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             label: "Translate",
             when: (ctx) => !ctx.modalOpen,
             run: () => toggleTranslate(),
+        },
+        {
+            // Chat's focus read (chatfocusreadstore.ts), as the toggle beside Skim does: global across agents and
+            // remembered. A chord, so it works from the chat box. Not Escape (in Chat it stops a working turn) and not
+            // [ or ] (Telex rewrites them).
+            id: "chat-focus-read",
+            keys: FOCUS_READ_KEYS,
+            group: "Global",
+            label: "Focus read in Chat: one block at a time, the rest dimmed",
+            when: (ctx) => !ctx.modalOpen,
+            run: () => toggleFocusRead(model),
         },
         {
             // Open a tool (lazygit, yazi, btop…) in the focused agent's folder, from a focused terminal too. Not bare
@@ -1222,6 +1241,34 @@ const agentNav = (ctx: KeyContext) =>
 // from the conversation being read. j, k and Ctrl+Tab still step agents anywhere off a text field.
 const inAgentTree = () =>
     typeof document !== "undefined" && document.activeElement?.closest?.("[data-agent-tree]") != null;
+// Focus read's toggle. On the Agent surface it turns focus read on or off for the Chat on screen, and as it turns on puts
+// the focus in the conversation so J/K step at once; with no Chat on screen it passes (inside a terminal the key is the
+// TUI's). From another surface (What's new's Try it) it turns focus read on and opens the Agent surface.
+function toggleFocusRead(model: AgentsViewModel): false | void {
+    if (globalStore.get(model.surfaceAtom) !== "agent") {
+        globalStore.set(chatFocusReadOnAtom, true);
+        globalStore.set(model.surfaceAtom, "agent");
+        return;
+    }
+    const id = globalStore.get(model.focusIdAtom);
+    if (!centerAtRest() || !conversationShown(id)) {
+        return false;
+    }
+    const next = !globalStore.get(chatFocusReadOnAtom);
+    globalStore.set(chatFocusReadOnAtom, next);
+    if (next) {
+        focusConversation(id);
+    }
+}
+
+// Focus read's keys act in the Chat conversation that holds the focus, while focus read is on (chatfocusreadstore.ts)
+const focusReadAgent = (): string | null => (globalStore.get(chatFocusReadOnAtom) ? focusedConversationAgent() : null);
+const focusReadKeys = (ctx: KeyContext) =>
+    navigateStrict(ctx) &&
+    ctx.surface === "agent" &&
+    centerAtRest() &&
+    initiativePopoverClosed() &&
+    focusReadAgent() != null;
 const agentNavStrict = (ctx: KeyContext) =>
     navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest() && initiativePopoverClosed();
 // The Canvas gallery covers the terminal as History does, with keys of its own: the arrows, Enter and `/` on its grid,
@@ -1740,7 +1787,8 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "k",
             group: "Agent",
             label: "Previous agent",
-            when: (ctx) => agentNav(ctx) && !inBrainstormReview(ctx),
+            // in a Chat conversation read with focus read, j and k step its blocks instead (agent:focus-read-*)
+            when: (ctx) => agentNav(ctx) && !inBrainstormReview(ctx) && focusReadAgent() == null,
             run: () => step(-1),
         },
         {
@@ -1748,7 +1796,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "j",
             group: "Agent",
             label: "Next agent",
-            when: (ctx) => agentNav(ctx) && !inBrainstormReview(ctx),
+            when: (ctx) => agentNav(ctx) && !inBrainstormReview(ctx) && focusReadAgent() == null,
             run: () => step(1),
         },
         {
@@ -1992,6 +2040,46 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                     return false;
                 }
                 return ctx.editable ? false : undefined;
+            },
+        },
+        ...(
+            [
+                ["agent:focus-read-next", "j", "Focus read: the next block onto the line", 1],
+                ["agent:focus-read-prev", "k", "Focus read: the previous block onto the line", -1],
+                ["agent:focus-read-next-space", "Space", "Focus read: the next block onto the line", 1],
+                ["agent:focus-read-prev-space", "Shift:Space", "Focus read: the previous block onto the line", -1],
+            ] as const
+        ).map(
+            ([id, key, label, dir]): Binding => ({
+                // With focus read on and the focus in a Chat conversation (a click in it, or turning focus read on):
+                // never in the box, the Agent tree (where j/k step agents) or the terminal
+                id,
+                keys: key,
+                group: "Agent",
+                label,
+                when: focusReadKeys,
+                run: () => {
+                    const reader = focusReaderOf(focusReadAgent() ?? "");
+                    if (reader == null) {
+                        return false;
+                    }
+                    reader.step(dir);
+                },
+            })
+        ),
+        {
+            id: "agent:focus-read-quote",
+            keys: "q",
+            group: "Agent",
+            label: "Focus read: quote the lit block into the chat box",
+            when: focusReadKeys,
+            // a step list or a card quotes nothing, and the key is still taken
+            run: () => {
+                const reader = focusReaderOf(focusReadAgent() ?? "");
+                if (reader == null) {
+                    return false;
+                }
+                reader.quote();
             },
         },
         {

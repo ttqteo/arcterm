@@ -8,7 +8,16 @@ import remarkMark from "@/app/element/remark-mark";
 import { openLink } from "@/app/store/global";
 import { cn } from "@/util/util";
 import { Lightbulb } from "lucide-react";
-import { Fragment, memo, useEffect, useRef, type ReactNode } from "react";
+import {
+    Children,
+    Fragment,
+    isValidElement,
+    memo,
+    useEffect,
+    useRef,
+    type ComponentProps,
+    type ReactNode,
+} from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -99,12 +108,39 @@ function MdLink({ href, children }: { href?: string; children?: ReactNode }) {
     );
 }
 
+// A fenced block, a diagram or a formula as one block: Chat's focus read lights and dims it whole and Q quotes a code block
+// in it fenced with `data-md-lang` (chatfocusreadview.ts). A plain div, so the margins inside collapse through it as before.
+function Fenced({ lang, children }: { lang?: string; children: ReactNode }) {
+    return (
+        <div data-md-block="fence" data-md-lang={lang ?? ""}>
+            {children}
+        </div>
+    );
+}
+
+// A list item holding a list: the words before that list wrapped as one block (`data-md-li-head`), so focus read lights
+// the item's own line apart from its nested items. Any other item draws as it did.
+function MdListItem({ node: _node, children, ...props }: ComponentProps<"li"> & { node?: unknown }) {
+    const parts = Children.toArray(children);
+    const at = parts.findIndex((c) => isValidElement(c) && (c.type === "ul" || c.type === "ol"));
+    if (at <= 0) {
+        return <li {...props}>{children}</li>;
+    }
+    return (
+        <li {...props}>
+            <div data-md-li-head>{parts.slice(0, at)}</div>
+            {parts.slice(at)}
+        </li>
+    );
+}
+
 const MD_COMPONENTS: Components = {
     a: ({ href, children }) => <MdLink href={href}>{children}</MdLink>,
+    li: MdListItem,
     // the copy button sits outside the scroller, so it stays on the corner while a wide table scrolls; the box
     // shrinks to a short table instead of running the panel's width
     table: ({ node, children }) => (
-        <div className="group relative w-fit max-w-full">
+        <div data-md-block="table" className="group relative w-fit max-w-full">
             <div className="agent-table-wrap">
                 <table>{children}</table>
             </div>
@@ -115,7 +151,11 @@ const MD_COMPONENTS: Components = {
     ),
     pre: ({ children }) => {
         const { lang, raw } = fencedOf(children);
-        return lang === "math" ? <DisplayMath tex={raw} /> : <CodeBlock code={raw} lang={lang} />;
+        return (
+            <Fenced lang={lang}>
+                {lang === "math" ? <DisplayMath tex={raw} /> : <CodeBlock code={raw} lang={lang} />}
+            </Fenced>
+        );
     },
     code: ({ className, children }) => {
         const text = typeof children === "string" ? children : null;
@@ -163,23 +203,27 @@ const MARK_COMPONENT: Components = {
 const DIAGRAM_COMPONENT: Components = {
     pre: ({ children }) => {
         const { lang, raw } = fencedOf(children);
-        if (lang === VISUAL_LANG) {
-            return <VisualBlock raw={raw} />;
-        }
-        // the turn's step checklist (chatsteplistview.tsx); outside Chat's host it is the code block
-        if (lang === STEPS_LANG) {
-            return <StepsBlock raw={raw} />;
-        }
-        // the card an agent proposes (chatinitiativecard.tsx); outside Chat's host it is the code block
-        if (lang === INITIATIVE_LANG) {
-            return <InitiativeBlockView raw={raw} />;
-        }
-        if (lang === "math") {
-            return <DisplayMath tex={raw} />;
-        }
-        return lang === "mermaid" ? <Mermaid chart={raw} /> : <CodeBlock code={raw} lang={lang} />;
+        return <Fenced lang={lang}>{diagramOf(lang, raw)}</Fenced>;
     },
 };
+
+function diagramOf(lang: string | undefined, raw: string): ReactNode {
+    if (lang === VISUAL_LANG) {
+        return <VisualBlock raw={raw} />;
+    }
+    // the turn's step checklist (chatsteplistview.tsx); outside Chat's host it is the code block
+    if (lang === STEPS_LANG) {
+        return <StepsBlock raw={raw} />;
+    }
+    // the card an agent proposes (chatinitiativecard.tsx); outside Chat's host it is the code block
+    if (lang === INITIATIVE_LANG) {
+        return <InitiativeBlockView raw={raw} />;
+    }
+    if (lang === "math") {
+        return <DisplayMath tex={raw} />;
+    }
+    return lang === "mermaid" ? <Mermaid chart={raw} /> : <CodeBlock code={raw} lang={lang} />;
+}
 
 // `filemention` and `refmention` are not HTML tags, so they are not keys of react-markdown's Components type
 const MENTION_COMPONENT = {

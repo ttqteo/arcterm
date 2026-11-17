@@ -26,7 +26,7 @@ import { loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowDown, Highlighter } from "lucide-react";
+import { ArrowDown, Highlighter, TextSearch } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, useIsPresent, useReducedMotion, type Variants } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
@@ -55,6 +55,8 @@ import { isDocReviewAsk } from "./chatdocreview";
 import { ChatDocReviewCard } from "./chatdocreviewcard";
 import { chatEmptyError, chatEmptyView } from "./chatempty";
 import { ChatFileCards } from "./chatfilecards";
+import { chatFocusReadOnAtom, FOCUS_READ_KEYS } from "./chatfocusreadstore";
+import { useFocusRead } from "./chatfocusreadview";
 import { splitAttachments } from "./chatfiles";
 import { ChatGoalStrip } from "./chatgoal";
 import { isHandoffAsk } from "./chathandoff";
@@ -504,6 +506,38 @@ function SkimToggle() {
     );
 }
 
+// Chat's focus read toggle, beside Skim: one block at a time, the rest dimmed (chatfocusreadview.ts). Global across
+// agents, remembered (chatfocusreadstore.ts). Turning it on puts the focus in the conversation, so J/K step at once.
+function FocusReadToggle({ scrollRef }: { scrollRef: RefObject<HTMLDivElement | null> }) {
+    const [on, setOn] = useAtom(chatFocusReadOnAtom);
+    const keys = formatChordString(FOCUS_READ_KEYS);
+    return (
+        <button
+            type="button"
+            data-chat-focus-read-toggle
+            aria-pressed={on}
+            aria-label="Focus read"
+            title={
+                on
+                    ? `Focus read: on, J/K step, Q quotes (${keys} or click to turn off)`
+                    : `Focus read: read one block at a time (${keys})`
+            }
+            onClick={() => {
+                setOn(!on);
+                if (!on) {
+                    scrollRef.current?.focus({ preventScroll: true });
+                }
+            }}
+            className={cn(
+                "absolute right-[42px] top-2 z-20 flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[8px] border border-edge-mid bg-surface-raised hover:bg-surface-hover",
+                on ? "text-accent" : "text-muted"
+            )}
+        >
+            <TextSearch size={13} strokeWidth={2} aria-hidden />
+        </button>
+    );
+}
+
 // `barred`: the cell has a grid bar on top (h-[26px], gridcellbar.tsx), which stays visible above the chat.
 // What an `agent:`, `run:` or `council:` reference resolves against (chatrefbadge.tsx) wraps the whole pane, so the
 // conversation, the pending bubbles and the box's pills all draw their badges from it. The project is the registered
@@ -628,6 +662,11 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     );
     const dockRef = useRef<HTMLDivElement>(null);
     useDockPadding(scrollRef, dockRef);
+    // Focus read: the reading line's tick in the gutter, and the dimming held off while you follow the agent's work at
+    // the bottom, so Chat then looks as it does without it
+    const focusRead = useAtomValue(chatFocusReadOnAtom);
+    const focusTickRef = useRef<HTMLDivElement>(null);
+    useFocusRead(agent.id, scrollRef, focusTickRef, focusRead, agent.state === "working" && atBottom);
     // false while ChatLayer's exit plays: the pane is still drawn (fading) but already gone as far as input goes
     const present = useIsPresent();
     const streaming = surface === "agent";
@@ -892,8 +931,12 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                 <div
                     ref={scrollRef}
                     onScroll={onScroll}
+                    // focusable (not in the Tab order), so a click in the conversation puts the focus there, where focus
+                    // read's J/K/Space/Q act (bindings.ts)
+                    data-chat-scroller
+                    tabIndex={-1}
                     // the bottom padding is the dock's (useDockPadding)
-                    className="flex h-full flex-col overflow-y-auto px-[22px]"
+                    className="flex h-full flex-col overflow-y-auto px-[22px] outline-none"
                 >
                     {opening ? (
                         // the first message stands for the conversation: no skeleton or empty state over it
@@ -1020,6 +1063,17 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                 </div>
                 {/* floats over the scroller (the pinned prompt bar leaves room for it); not on the loading or empty state */}
                 {!loading && !empty ? <SkimToggle /> : null}
+                {!loading && !empty ? <FocusReadToggle scrollRef={scrollRef} /> : null}
+                {/* focus read's reading line: a short accent tick in the gutter, placed by useFocusRead */}
+                {focusRead ? (
+                    <div
+                        ref={focusTickRef}
+                        data-chat-focus-line
+                        aria-hidden
+                        style={{ display: "none" }}
+                        className="pointer-events-none absolute z-10 h-[20px] w-[3px] -translate-y-1/2 rounded-full bg-accent"
+                    />
+                ) : null}
                 {/* the conversation runs out under the box: transparent at the top, the pane's background at the foot (a
                     functional fade, DESIGN.md), clear of the scrollbar so that stays whole */}
                 <div

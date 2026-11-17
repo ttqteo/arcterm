@@ -31,6 +31,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- **Focus read in Chat**: turn it on with the button beside the highlighter (or Alt+R) and a reading line a third of
+  the way down lights one block of the conversation at a time and dims the rest. `J` / `K` or Space step block by
+  block, `Q` quotes the lit block into the box (a code block fenced, a table as a table), and scrolling settles the
+  nearest block onto the line. A reply still being written and anything waiting on you are never dimmed.
+  <!-- try: chat-focus-read --> <!-- big -->
 - An agent whose chat box holds a message you started and did not send shows a pencil after its name in the Agent
   tree, so you can find the one you were writing to.
 - The Agent tree shows a server's port (`:4321`) on the agent or terminal that runs it, and on its project's folder

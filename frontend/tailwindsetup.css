@@ -836,6 +836,24 @@ html[data-md-selection]::selection {
 .agent-md p:last-child {
     margin-bottom: 0;
 }
+/* a list item's own line above its nested list (markdownmessage.tsx MdListItem) keeps the gap it had before the wrap */
+.agent-md [data-md-li-head] > p:last-child {
+    margin-bottom: 0.4em;
+}
+
+/* Chat's focus read (chatfocusreadview.ts): every block off the reading line drops to 32%, on the Fluid ease at
+   durMicro; the lit block, a reply still being written and what waits on you carry no data-fr-block dim */
+[data-fr-block] {
+    transition: opacity 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+[data-focus-read] [data-fr-block]:not([data-fr-lit]) {
+    opacity: 0.32;
+}
+@media (prefers-reduced-motion: reduce) {
+    [data-fr-block] {
+        transition: none;
+    }
+}
 .agent-md ul,
 .agent-md ol {
     margin: 0.2em 0 0.4em 1.1em;
