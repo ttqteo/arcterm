@@ -34,6 +34,31 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Typing in the find bar of a long session no longer lags: each key took up to a few tenths of a second on a session
   with a million characters of conversation, and now takes a few milliseconds.
 
+### Changed
+
+- Agents with no project now sit in No folder in the Agent tree, with the terminals that have none, rather than in a
+  separate "ungrouped" folder.
+- An app's row in the Agent tree says its state in a word or two (external, port taken, no page, retry in 8s), so it
+  is no longer cut off. Hover the row for the full sentence.
+- → Sonnet in the Consumers panel re-runs a working run worker's task on Sonnet, after a confirm: a model switch
+  would only land when its turn ends, which for a worker is the end of its task.
+- A terminal in a split shows a terminal mark in its bar, and Move to the panel, as it does when it is the one in focus.
+
+### Fixed
+
+- The Consumers panel no longer shows a pi or codex agent as using no tokens: it says it cannot tell, since it reads
+  only Claude's transcripts.
+- Picking No folder for a tool in the New dialog opens it in your home folder even when you have a project named Home.
+- A folded project folder that holds only apps says how many it holds, rather than looking empty.
+- Changing where a built-in tool opens (Setup → Tools) no longer fixes its command in `tools.json`, so a later
+  arcterm that changes the tool's command still reaches you.
+- Changing Opens in or Shows right after turning Keep running on or off no longer undoes that Keep running click.
+- Opening an app and starting it at nearly the same moment no longer leaves an extra tab behind.
+- A server in the agent's rail that refuses to stop (access denied) says why on its row, and an app that refuses Stop
+  or Restart from its menu says so, rather than the click seeming to do nothing.
+- A terminal on another machine is no longer marked as in a removed folder because a local folder with the same path
+  was deleted.
+
 ## 1.3.0 — 2026-11-17
 
 ### Added

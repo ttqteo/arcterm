@@ -55,6 +55,8 @@ import {
     runRowName,
     SLEEPING_GROUP,
     sleepingByProject,
+    sonnetRerunMessage,
+    sonnetVia,
     staleLine,
     STATE_DOT,
     stopWorkerMessage,
@@ -74,8 +76,10 @@ import { fmt, usd } from "./usagestats";
 import { useWaking } from "./wakingstore";
 import { formatGB } from "./workercapacity";
 
-// whether `/model` switches a Claude session inside a running turn: the consumers-panel plan's Task 1 could not check
-// it (no tmux), so a mid-turn switch is worded as waiting for the next turn
+// whether `/model` switches a Claude session inside a running turn: it does not. The mod runs it with
+// `$.command.run`, which Claude Code queues until the session is idle (its plugin API types), and a typed /model is
+// queued with the prompts typed mid-turn; so a mid-turn switch is worded as waiting for the next turn, and a working
+// worker is re-run on Sonnet instead (sonnetVia)
 const MODEL_SWITCH_APPLIES_MIDTURN = false;
 
 // stopping a worker waits for it to exit
@@ -117,7 +121,45 @@ function stop(row: ConsumerRow, model: AgentsViewModel): void {
     });
 }
 
+// spec decision 9's fallback: the worker stops (its task Failed, stopped-by-human), and escalate repins the task to
+// Sonnet and returns it to pending, so the engine dispatches a fresh worker on it
+function rerunOnSonnet(row: ConsumerRow): void {
+    const dag = row.dag as ConsumerDag;
+    modalsModel.pushModal("ConfirmModal", {
+        title: "Re-run on Sonnet",
+        message: sonnetRerunMessage(row),
+        confirmLabel: "Re-run on Sonnet",
+        onConfirm: () =>
+            fireAndForget(async () => {
+                const base = { channelid: dag.channelid, runid: dag.runid, taskid: dag.taskid };
+                try {
+                    await RpcApi.DagActionCommand(
+                        TabRpcClient,
+                        { ...base, action: "stop" },
+                        { timeout: STOP_TIMEOUT_MS }
+                    );
+                    await RpcApi.DagActionCommand(TabRpcClient, { ...base, action: "escalate", model: "sonnet" });
+                    pushToast({
+                        title: `Worker ${dag.taskid} re-runs on Sonnet`,
+                        message: "Its task starts over with a fresh worker.",
+                        level: "info",
+                    });
+                } catch (e) {
+                    pushToast({
+                        title: `Couldn't re-run worker ${dag.taskid} on Sonnet`,
+                        message: String(e),
+                        level: "error",
+                    });
+                }
+            }),
+    });
+}
+
 function toSonnet(row: ConsumerRow): void {
+    if (sonnetVia(row) === "rerun") {
+        rerunOnSonnet(row);
+        return;
+    }
     fireAndForget(async () => {
         try {
             const rtn = await RpcApi.AgentsSetModelCommand(TabRpcClient, { tab: row.id, model: "sonnet" });

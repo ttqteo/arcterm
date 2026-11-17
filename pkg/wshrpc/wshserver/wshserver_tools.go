@@ -36,7 +36,9 @@ func (ws *WshServer) ToolsSetUserCommand(ctx context.Context, data wshrpc.Comman
 	}
 	tool := *data.Tool
 	tool.Command = strings.TrimSpace(tool.Command)
-	if tool.Command == "" {
+	// an entry for a built-in or detected id overrides only what it names (arctools.Merge), so it needs no command:
+	// changing where a built-in opens must not pin its command
+	if tool.Command == "" && !arctools.IsCatalogId(id) {
 		return fmt.Errorf("tool command is required")
 	}
 	return wconfig.SetUserTool(id, &tool)

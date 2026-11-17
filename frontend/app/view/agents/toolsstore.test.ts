@@ -1,8 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
-import { atom } from "jotai";
+import { atom, type PrimitiveAtom } from "jotai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The store's wiring around the RPCs and the wave events, with both mocked: what opening a tool asks launchAgent for, and
@@ -301,6 +302,21 @@ describe("openTool", () => {
             projectPath: "C:/code/arcterm",
             projectName: "arcterm",
         });
+    });
+
+    it("a Home pick opens in Home even when a project of the user's is named Home", async () => {
+        const before = globalStore.get(atoms.fullConfigAtom);
+        globalStore.set(atoms.fullConfigAtom as PrimitiveAtom<FullConfigType>, {
+            ...before,
+            projects: { Home: { path: "C:/code/Home" } },
+        });
+        try {
+            const model = fakeModel({ focusId: "tab-a", agents: [{ id: "tab-a", name: "a", project: "arcterm" }] });
+            await openTool(model, status("lazygit", { opensin: "root" }), { home: true, place: "centre" });
+            expect(m.launchAgent.mock.calls[0][1]).toMatchObject({ projectPath: "~", projectName: "Home" });
+        } finally {
+            globalStore.set(atoms.fullConfigAtom as PrimitiveAtom<FullConfigType>, before);
+        }
     });
 
     it("a tool that opens in Home goes to Home, in the home folder", async () => {

@@ -299,3 +299,19 @@ func TestMergeService(t *testing.T) {
 		}
 	}
 }
+
+// A tools.json entry for a built-in that names only where it opens keeps the built-in's command and Needs: Setup →
+// Tools writes such an entry without a command, so a later change of the built-in's command reaches the user.
+func TestMergeCommandlessBuiltinEntry(t *testing.T) {
+	got := Merge(Builtin(), map[string]wconfig.ToolKeywords{"lazygit": {OpensIn: OpensInRoot}})
+	lg := got[0]
+	if lg.Id != "lazygit" || lg.Command != "lazygit" || lg.OpensIn != OpensInRoot || !lg.User {
+		t.Errorf("command-less override = %+v, want the built-in command with Opens in root", lg)
+	}
+	if !IsCatalogId("lazygit") || !IsCatalogId("tig") {
+		t.Error("IsCatalogId misses a built-in or a detected id")
+	}
+	if IsCatalogId("ghdash") || IsCatalogId("") {
+		t.Error("IsCatalogId takes an id the catalog does not have")
+	}
+}

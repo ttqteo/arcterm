@@ -21,12 +21,13 @@ import {
     portsLabel,
     serverLabel,
     serverUrl,
+    stopRefusal,
     terminalLog,
     uptimeLabel,
     type DevServerRow,
     type TerminalLog,
 } from "./devserversmodel";
-import { stopDevServer } from "./devserversstore";
+import { forgetDevServer, stopDevServer } from "./devserversstore";
 import { openTerminalLog } from "./terminallog";
 import type { BackgroundTask } from "./transcriptprojection";
 
@@ -114,6 +115,22 @@ function DevServerItem({
     onPin: (row: DevServerRow) => void;
 }) {
     const [confirming, setConfirming] = useState(false);
+    // a refused Stop (access denied, a process another user started) says why on the row; one that finds the process
+    // already gone only drops it
+    const [stopError, setStopError] = useState<string | null>(null);
+    const stop = async () => {
+        setStopError(null);
+        try {
+            await stopDevServer(row);
+        } catch (e) {
+            const refusal = stopRefusal(e);
+            if (refusal.kind === "exited") {
+                forgetDevServer(row);
+            } else {
+                setStopError(refusal.text);
+            }
+        }
+    };
     return (
         <div
             data-dev-server={row.pid}
@@ -191,11 +208,20 @@ function DevServerItem({
                         </button>
                         <ServerStopButton
                             confirmLabel="Stop?"
-                            onStop={() => fireAndForget(() => stopDevServer(row))}
+                            onStop={() => fireAndForget(stop)}
                             onConfirmingChange={setConfirming}
                         />
                     </span>
                 </div>
+                {stopError != null ? (
+                    <div
+                        data-dev-server-stop-error
+                        title={stopError}
+                        className="min-w-0 truncate text-[10.5px] text-error"
+                    >
+                        Couldn't stop it: {stopError}
+                    </div>
+                ) : null}
             </div>
         </div>
     );

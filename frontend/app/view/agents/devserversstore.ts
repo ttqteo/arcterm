@@ -95,6 +95,11 @@ export function useDevServers(
 // pid + createms names one process, so the row goes from all of them. A failed stop throws and leaves the row.
 export async function stopDevServer(row: DevServerRow): Promise<void> {
     await RpcApi.StopDevServerCommand(TabRpcClient, { pid: row.pid, createms: row.createms });
+    forgetDevServer(row);
+}
+
+/** Drops a server from the rail's lists until the next scan: it was stopped, or a refused Stop found it already gone. */
+export function forgetDevServer(row: DevServerRow): void {
     globalStore.set(devServersAtom, (map) =>
         Object.fromEntries(
             Object.entries(map).map(([id, entry]) => [

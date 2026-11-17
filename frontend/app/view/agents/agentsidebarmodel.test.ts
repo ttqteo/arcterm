@@ -725,6 +725,21 @@ describe("projectTree", () => {
         expect(shape(rows)).toEqual(["group:waveterm:1a:0t", "a:a", "group:ops:0a:2t", "t:t1", "t:t2"]);
     });
 
+    it("files an agent with no project in Home with the terminals that have none, one folder, last", () => {
+        const rows = build([agent("x", undefined, ""), agent("a")], [term("h", null), term("t1", "ops")]);
+        expect(shape(rows)).toEqual([
+            "group:waveterm:1a:0t",
+            "a:a",
+            "group:ops:0a:1t",
+            "t:t1",
+            `group:${HOME_PROJECT}:1a:1t`,
+            "a:x",
+            `divider:${HOME_PROJECT}`,
+            "t:h",
+        ]);
+        expect(rows.some((r) => r.project === UNGROUPED_PROJECT)).toBe(false);
+    });
+
     it("files a terminal with no project under Home, last", () => {
         const rows = build([agent("a")], [term("h", null), term("t1", "ops"), term("t2")]);
         expect(shape(rows)).toEqual([
@@ -829,7 +844,20 @@ describe("projectTree", () => {
         it("folder with only a service", () => {
             const rows = build([], [], { services: [svc("web", "ops")] });
             expect(rows.map((r) => r.kind)).toEqual(["group", "service"]);
-            expect(rows[0]).toMatchObject({ kind: "group", project: "ops", agents: 0, terminals: 0, open: true });
+            expect(rows[0]).toMatchObject({
+                kind: "group",
+                project: "ops",
+                agents: 0,
+                terminals: 0,
+                services: 1,
+                open: true,
+            });
+        });
+
+        it("a folded folder of only services counts them, so it does not read empty", () => {
+            const rows = build([], [], { services: [svc("web", "ops"), svc("docs", "ops")], collapsed: ["ops"] });
+            expect(rows).toHaveLength(1);
+            expect(rows[0]).toMatchObject({ kind: "group", project: "ops", terminals: 0, services: 2, open: false });
         });
 
         it("service without a tab still has a row", () => {
@@ -2095,6 +2123,11 @@ describe("folderCounts", () => {
     });
     it("is empty for a folder that holds nothing", () => {
         expect(folderCounts(0, 0)).toBe("");
+        expect(folderCounts(0, 0, 0)).toBe("");
+    });
+    it("counts the held services as apps, last", () => {
+        expect(folderCounts(0, 0, 1)).toBe("1 app");
+        expect(folderCounts(1, 2, 2)).toBe("1 agent · 2 terminals · 2 apps");
     });
 });
 
@@ -2289,7 +2322,7 @@ describe("treeNavIds", () => {
     it("skips a worker row whose session is gone, and rows that are not a session", () => {
         const gone = { kind: "worker", project: "p", run: {}, task: {} } as unknown as ProjectTreeRow;
         const rows: ProjectTreeRow[] = [
-            { kind: "group", project: "p", agents: 1, terminals: 0, attn: 0, running: 0, open: true },
+            { kind: "group", project: "p", agents: 1, terminals: 0, services: 0, attn: 0, running: 0, open: true },
             gone,
             { kind: "divider", project: "p" },
         ];
@@ -2471,6 +2504,17 @@ describe("projectClose: what Close project closes", () => {
         lineage,
         serviceTabs: new Set(["svc"]),
     };
+
+    it("takes Home's agents with no project along with its terminals with none", () => {
+        const got = projectClose({
+            ...input,
+            project: HOME_PROJECT,
+            agents: [agent("loose", undefined, ""), agent("a1", undefined, "arc")],
+            terminals: [term("h", ""), term("t1")],
+        });
+        expect(got.agents.map((a) => a.id)).toEqual(["loose"]);
+        expect(got.terminals.map((t) => t.id)).toEqual(["h"]);
+    });
 
     it("takes the folder's agents with its run's workers and stage sessions, and its terminals but a service's", () => {
         const close = projectClose(input);

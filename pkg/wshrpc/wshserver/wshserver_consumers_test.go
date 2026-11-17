@@ -84,6 +84,8 @@ func TestGetConsumersReportsEachAgentsRamTokensAndTask(t *testing.T) {
 	}
 	facts := threeAgents()
 	facts.Tabs[0].Status.TranscriptPath = transcript
+	// C runs pi: its transcript is not read for tokens even when it names one the reader would parse
+	facts.Tabs[2].Status.TranscriptPath = transcript
 	facts.Runs = consumersRuns()
 	scriptAgents(t, facts)
 	// the shells sit under wavesrv (this process): A's shell 100 runs claude 101; B's shell is 200; C's shell has
@@ -121,6 +123,9 @@ func TestGetConsumersReportsEachAgentsRamTokensAndTask(t *testing.T) {
 	}
 	if !a.TokensRead || len(a.Tokens) != 1 || a.Tokens[0].Output != 4200 || a.Tokens[0].Model != "claude-opus-4-8" {
 		t.Fatalf("A's tokens = %+v (read %v)", a.Tokens, a.TokensRead)
+	}
+	if c.TokensRead || len(c.Tokens) != 0 {
+		t.Fatalf("C runs pi, whose transcript the token window cannot read: tokens %+v (read %v)", c.Tokens, c.TokensRead)
 	}
 	if b.RamBytes == nil || *b.RamBytes != 1024*consumersMB || b.Dag == nil || *b.Dag != (wshrpc.ConsumerDag{ChannelId: "ch-1", RunId: "run-owner", TaskId: "t-3"}) {
 		t.Fatalf("B = %+v (dag %+v), want 1 GB and task t-3 of the owner run", b, b.Dag)

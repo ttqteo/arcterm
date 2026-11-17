@@ -276,3 +276,17 @@ export function matchLogTask<
 export function pollMs(railVisible: boolean): number {
     return railVisible ? 5000 : 30000;
 }
+
+// a StopDevServer refusal that says the listed process is no longer the one running (pkg/devservers)
+const ALREADY_EXITED = /is not running|PID was reused|no longer the server/i;
+
+/** Pure: what a refused Stop of a listed server says. "exited" when the process it listed is already gone (or its PID
+ *  now belongs to another program): nothing is wrong, the list is only out of date. Otherwise the refusal's own words,
+ *  such as access denied for a process another user or an elevated shell started. */
+export function stopRefusal(e: unknown): { kind: "exited" } | { kind: "refused"; text: string } {
+    const text = e instanceof Error ? e.message : String(e);
+    if (ALREADY_EXITED.test(text)) {
+        return { kind: "exited" };
+    }
+    return { kind: "refused", text: text.replace(/^Error:\s*/, "") || "the process refused to stop" };
+}

@@ -129,6 +129,17 @@ func Builtin() []Tool {
 // only once its command is found, and joins the library when the user adds it (a tools.json entry of its id, which
 // Merge lays over it like any built-in). Only tools that open usefully with no argument are here, and none carries an
 // install line: the library never offers to install one.
+// IsCatalogId reports whether id is a built-in or detected tool's, whose tools.json entry overrides fields of a tool
+// the catalog already has, its command included, rather than defining a tool of the user's own.
+func IsCatalogId(id string) bool {
+	for _, t := range append(Builtin(), Detected()...) {
+		if t.Id == id {
+			return true
+		}
+	}
+	return false
+}
+
 func Detected() []Tool {
 	tool := func(id, category, purpose, command, opensIn string) Tool {
 		return Tool{Id: id, Name: id, Category: category, Purpose: purpose, Command: command, OpensIn: opensIn, Shows: ShowsCentre, Detected: true}

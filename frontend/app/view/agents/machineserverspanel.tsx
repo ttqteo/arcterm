@@ -23,7 +23,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { openFileInPanel, openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
 import { pinServerAsApp, suggestForFolder } from "./appsuggeststore";
-import { copyText, portsLabel, serverUrl, uptimeLabel, type TerminalLog } from "./devserversmodel";
+import { copyText, portsLabel, serverUrl, stopRefusal, uptimeLabel, type TerminalLog } from "./devserversmodel";
 import { buildMachineServers, logHost, restartPlan, type MachineBadge, type MachineRow } from "./machineservers";
 import {
     forgetMachineServer,
@@ -51,15 +51,8 @@ const RESTART_TIP = "Restart in arcterm: stop it and run it again in a terminal,
 const RESTART_CONFIRM_MS = 3000;
 const BADGE = "rounded-[4px] px-1 text-[10.5px]";
 
-// a StopDevServer refusal that says the listed process is no longer the one running (pkg/devservers)
-const ALREADY_EXITED = /is not running|PID was reused|no longer the server/i;
-
 function close(): void {
     globalStore.set(machineServersOpenAtom, false);
-}
-
-function errorText(e: unknown): string {
-    return e instanceof Error ? e.message : String(e);
 }
 
 async function stopServer(row: MachineRow): Promise<void> {
@@ -72,11 +65,11 @@ async function stopServer(row: MachineRow): Promise<void> {
         }
         forgetMachineServer(row.server);
     } catch (e) {
-        const text = errorText(e);
-        if (ALREADY_EXITED.test(text)) {
+        const refusal = stopRefusal(e);
+        if (refusal.kind === "exited") {
             pushToast({ title: "That process already exited", message: "The list is refreshed.", level: "info" });
         } else {
-            pushToast({ title: "Couldn't stop it", message: text, level: "error" });
+            pushToast({ title: "Couldn't stop it", message: refusal.text, level: "error" });
         }
         // either way the list is out of date
         fireAndForget(() => loadMachineServers());
@@ -91,9 +84,9 @@ async function restartServer(model: AgentsViewModel, row: MachineRow): Promise<v
     try {
         await RpcApi.StopDevServerCommand(TabRpcClient, { pid: s.pid, createms: s.createms });
     } catch (e) {
-        const text = errorText(e);
-        if (!ALREADY_EXITED.test(text)) {
-            pushToast({ title: "Couldn't stop it", message: text, level: "error" });
+        const refusal = stopRefusal(e);
+        if (refusal.kind === "refused") {
+            pushToast({ title: "Couldn't stop it", message: refusal.text, level: "error" });
             fireAndForget(() => loadMachineServers());
             return;
         }

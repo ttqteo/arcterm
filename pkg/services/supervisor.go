@@ -202,10 +202,50 @@ type Supervisor struct {
 	svcs   map[string]*svc
 	booted bool
 	shown  map[string]bool // the services on screen, as the frontend last reported them
+
+	// one lock per service id, held around Ensure (ensureTab); taken before mu, never while mu is held
+	ensuring map[string]*sync.Mutex
 }
 
 func New(d Deps) *Supervisor {
-	return &Supervisor{d: d, svcs: map[string]*svc{}}
+	return &Supervisor{d: d, svcs: map[string]*svc{}, ensuring: map[string]*sync.Mutex{}}
+}
+
+// ensureTab runs Ensure for one service at a time. Two overlapping first Starts (or an Open and a Start) of a service
+// that has no tab yet would each create one, and the loser's would stay until the next boot closed it as a second tab:
+// in turn, the second reads the def after the first recorded its tab, and Ensure reuses it. ok, checked under mu before
+// Ensure, says whether the call still wants the tab (false: nothing is done, and ran is false). The tab and block are
+// recorded on the service whatever happened to it meanwhile, so a tab made for a start that was stopped stays its tab.
+func (s *Supervisor) ensureTab(ctx context.Context, id string, ok func(v *svc) bool) (tabId, blockId string, ran bool, err error) {
+	s.mu.Lock()
+	l := s.ensuring[id]
+	if l == nil {
+		l = &sync.Mutex{}
+		s.ensuring[id] = l
+	}
+	s.mu.Unlock()
+	l.Lock()
+	defer l.Unlock()
+
+	s.mu.Lock()
+	v := s.svcs[id]
+	if v == nil || !ok(v) {
+		s.mu.Unlock()
+		return "", "", false, nil
+	}
+	def := s.defLocked(v)
+	s.mu.Unlock()
+
+	tabId, blockId, err = s.d.Ensure(ctx, def)
+	if err != nil {
+		return "", "", true, err
+	}
+	s.mu.Lock()
+	if v := s.svcs[id]; v != nil {
+		v.tabId, v.blockId = tabId, blockId
+	}
+	s.mu.Unlock()
+	return tabId, blockId, true, nil
 }
 
 // Seen takes the whole set of services on screen; each call replaces the last. Ids it does not know are kept. Before
@@ -580,26 +620,19 @@ func (s *Supervisor) Boot(ctx context.Context) {
 
 // Open makes sure the service has its tab and block, without starting it.
 func (s *Supervisor) Open(ctx context.Context, id string) (wshrpc.ServiceStatus, error) {
-	s.mu.Lock()
-	v := s.svcs[id]
-	if v == nil {
-		s.mu.Unlock()
-		return wshrpc.ServiceStatus{}, fmt.Errorf("no service %q", id)
-	}
-	def := s.defLocked(v)
-	s.mu.Unlock()
-
-	tabId, blockId, err := s.d.Ensure(ctx, def)
+	_, _, ran, err := s.ensureTab(ctx, id, func(*svc) bool { return true })
 	if err != nil {
 		return wshrpc.ServiceStatus{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	v = s.svcs[id]
+	v := s.svcs[id]
 	if v == nil {
+		if !ran {
+			return wshrpc.ServiceStatus{}, fmt.Errorf("no service %q", id)
+		}
 		return wshrpc.ServiceStatus{}, fmt.Errorf("service %q was removed", id)
 	}
-	v.tabId, v.blockId = tabId, blockId
 	s.publishLocked()
 	return s.statusOf(v), nil
 }
@@ -691,17 +724,16 @@ func (s *Supervisor) startService(ctx context.Context, id string, byPerson bool)
 		s.remember(id, func(r *Remembered) { r.Port = port })
 	}
 
-	s.mu.Lock()
-	v = s.svcs[id]
-	if v == nil || v.gen != gen {
-		s.mu.Unlock()
+	tabId, blockId, ran, err := s.ensureTab(ctx, id, func(v *svc) bool {
+		if v.gen != gen {
+			return false
+		}
+		v.port = port
+		return true
+	})
+	if !ran {
 		return nil
 	}
-	v.port = port
-	def := s.defLocked(v)
-	s.mu.Unlock()
-
-	tabId, blockId, err := s.d.Ensure(ctx, def)
 	if err != nil {
 		_ = s.settle(id, gen, func(v *svc) { s.crashLocked(v, 1) })
 		return fmt.Errorf("preparing the service's terminal: %w", err)
@@ -713,7 +745,6 @@ func (s *Supervisor) startService(ctx context.Context, id string, byPerson bool)
 		return nil
 	}
 	now := s.d.Now()
-	v.tabId, v.blockId = tabId, blockId
 	v.state = StateStarting
 	v.procStart = now
 	v.startedMs = now.UnixMilli() // the waiting card counts from it; running resets it to when the page answered
