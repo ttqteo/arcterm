@@ -6,19 +6,24 @@
 // these functions what to do at each change, hello and close, so the throttle and the last-sent memory are tested here
 // and not through a timer. Part 2 adds what the bridge needs to feed the strain band: how a machine reading becomes the
 // snapshot's figures (rounded, so a poll does not re-emit), which polls the band needs, a heavy row's note, the notes
-// Stop and Sleep leave, and the answer to an older act.
+// Stop and Sleep leave.
 
 import type { SleepOutcome } from "@/app/view/agents/agentsleep";
-import type { OlderPage } from "./sidecarhistory";
+import type { DiffStats } from "@/app/view/agents/agentsviewmodel";
+import type { ProviderDonuts } from "@/app/view/agents/ratelimitstore";
+import { runFinished, runProgress, type RunInfo, type RunRole } from "@/app/view/agents/runlineage";
 import { strainBy, type MachineReading, type StrainState } from "./sidecarstrainmodel";
 import type {
     SidecarAct,
     SidecarHeavy,
     SidecarMachine,
-    SidecarMessage,
-    SidecarOlder,
+    SidecarNeed,
+    SidecarRunBox,
     SidecarSnapshot,
+    SidecarSpan,
     SidecarStrain,
+    SidecarTile,
+    SidecarUsage,
     StrainLevel,
 } from "./sidecartypes";
 
@@ -36,10 +41,6 @@ export type ActCheck = { ok: true; act: SidecarAct } | { ok: false; reason: stri
 function isRecord(v: unknown): v is Record<string, unknown> {
     return typeof v === "object" && v !== null && !Array.isArray(v);
 }
-
-// How many rows one older act may ask for (decision 5: the page asks for 10).
-const OLDER_MIN = 1;
-const OLDER_MAX = 50;
 
 /** The heavy row of the last snapshot's strain band that a stop or a sleep names; the page can only act on a row it was shown. */
 function heavyRow(
@@ -81,10 +82,29 @@ export function validateAct(raw: unknown, last: SidecarSnapshot | null): ActChec
             if (last == null) {
                 return { ok: false, reason: "open: no snapshot has gone out yet" };
             }
-            if (!last.tiles.some((t) => t.id === raw.id)) {
-                return { ok: false, reason: `open: no tile "${raw.id}" in the last snapshot` };
+            // an agent past the orbit's eight is no tile, but its ask or question row can still be opened
+            const id = raw.id;
+            const known =
+                last.tiles.some((t) => t.id === id) ||
+                (last.needs ?? []).some((n) => n.id === id && (n.kind === "ask" || n.kind === "question"));
+            if (!known) {
+                return { ok: false, reason: `open: no tile "${id}" in the last snapshot` };
             }
-            return { ok: true, act: { kind: "open", id: raw.id } };
+            return { ok: true, act: { kind: "open", id } };
+        }
+        case "need": {
+            if (typeof raw.key !== "string") {
+                return { ok: false, reason: "need: no key" };
+            }
+            if (last == null) {
+                return { ok: false, reason: "need: no snapshot has gone out yet" };
+            }
+            // only a Jarvis row opens through this act: an ask or question row names its agent, and opens through `open`
+            const key = raw.key;
+            if (!(last.needs ?? []).some((n) => n.kind === "jarvis" && n.key === key)) {
+                return { ok: false, reason: `need: "${key}" is not waiting` };
+            }
+            return { ok: true, act: { kind: "need", key } };
         }
         case "answer": {
             if (typeof raw.id !== "string") {
@@ -93,62 +113,29 @@ export function validateAct(raw: unknown, last: SidecarSnapshot | null): ActChec
             if (last == null) {
                 return { ok: false, reason: "answer: no snapshot has gone out yet" };
             }
-            const tile = last.tiles.find((t) => t.id === raw.id);
-            if (tile == null) {
-                return { ok: false, reason: `answer: no tile "${raw.id}" in the last snapshot` };
+            // checked against the Needs you list, not the tiles: the orbit holds eight agents, and a ninth asking agent is
+            // still a row to answer
+            const id = raw.id;
+            const need = (last.needs ?? []).find((n) => n.kind === "ask" && n.id === id);
+            if (need == null) {
+                return { ok: false, reason: `answer: "${id}" has no ask in the last snapshot` };
             }
-            if (tile.ask == null) {
-                return { ok: false, reason: `answer: "${tile.id}" has no ask` };
+            if (!need.answerable) {
+                return { ok: false, reason: `answer: the ask of "${id}" is not answerable from the list` };
             }
-            if (!tile.ask.answerable) {
-                return { ok: false, reason: `answer: the ask of "${tile.id}" is not answerable from a tile` };
-            }
+            const options = need.options ?? [];
             const option = raw.option;
-            if (
-                typeof option !== "number" ||
-                !Number.isInteger(option) ||
-                option < 0 ||
-                option >= tile.ask.options.length
-            ) {
+            if (typeof option !== "number" || !Number.isInteger(option) || option < 0 || option >= options.length) {
                 return {
                     ok: false,
-                    reason: `answer: option ${String(option)} is not one of the ${tile.ask.options.length} options of "${tile.id}"`,
+                    reason: `answer: option ${String(option)} is not one of the ${options.length} options of "${id}"`,
                 };
             }
             // the page names the ask it showed: a snapshot that brought a new ask since then must not take this answer
-            if (typeof raw.key !== "string" || tile.ask.key == null || raw.key !== tile.ask.key) {
-                return { ok: false, reason: `answer: the ask of "${tile.id}" changed since the page showed it` };
+            if (typeof raw.key !== "string" || need.askKey == null || raw.key !== need.askKey) {
+                return { ok: false, reason: `answer: the ask of "${id}" changed since the page showed it` };
             }
-            return { ok: true, act: { kind: "answer", id: tile.id, option, key: raw.key } };
-        }
-        case "older": {
-            const id = raw.id;
-            if (typeof id !== "string") {
-                return { ok: false, reason: "older: no id" };
-            }
-            if (last == null) {
-                return { ok: false, reason: "older: no snapshot has gone out yet" };
-            }
-            if (!last.tiles.some((t) => t.id === id)) {
-                return { ok: false, reason: `older: no tile "${id}" in the last snapshot` };
-            }
-            const cursor = raw.before;
-            let before: string | null;
-            if (cursor === null) {
-                before = null;
-            } else if (typeof cursor === "string") {
-                before = cursor;
-            } else {
-                return { ok: false, reason: `older: before ${String(cursor)} is neither a cursor nor null` };
-            }
-            const count = raw.count;
-            if (typeof count !== "number" || !Number.isInteger(count) || count < OLDER_MIN || count > OLDER_MAX) {
-                return {
-                    ok: false,
-                    reason: `older: count ${String(count)} is not a whole number from ${OLDER_MIN} to ${OLDER_MAX}`,
-                };
-            }
-            return { ok: true, act: { kind: "older", id, before, count } };
+            return { ok: true, act: { kind: "answer", id, option, key: raw.key } };
         }
         case "stop": {
             const row = heavyRow("stop", raw, last);
@@ -209,7 +196,155 @@ export function sameSnapshot(a: SidecarSnapshot | null, b: SidecarSnapshot | nul
     if (a == null || b == null) {
         return false;
     }
-    return same(a.counts, b.counts) && same(a.tiles, b.tiles) && same(a.machine, b.machine) && same(a.strain, b.strain);
+    return (
+        same(a.counts, b.counts) &&
+        same(a.tiles, b.tiles) &&
+        same(a.machine, b.machine) &&
+        same(a.strain, b.strain) &&
+        same(a.needs, b.needs) &&
+        same(a.run, b.run) &&
+        same(a.usage, b.usage) &&
+        a.more === b.more
+    );
+}
+
+/**
+ * The tiles with a `since` on every one, for the Needs you list. A tile with none (no state clock, no idle stamp) would
+ * make a need whose `since` is the build's own `now`: a different row on every build, and a snapshot sent each time.
+ * Such a tile is dated by the first build that saw it in its state, which `seen` (key `<id>:<state>`) remembers; the
+ * map it returns holds only the tiles still lacking one, so a tile that moves on or leaves is forgotten. A tile with its
+ * own `since` is passed through as it is, and the tiles come back untouched when none lacks one.
+ */
+export function stampSince(
+    tiles: SidecarTile[],
+    seen: ReadonlyMap<string, number>,
+    now: number
+): { tiles: SidecarTile[]; seen: Map<string, number> } {
+    const next = new Map<string, number>();
+    if (tiles.every((t) => t.since != null)) {
+        return { tiles, seen: next };
+    }
+    const stamped = tiles.map((t) => {
+        if (t.since != null) {
+            return t;
+        }
+        const key = `${t.id}:${t.state}`;
+        const at = seen.get(key) ?? now;
+        next.set(key, at);
+        return { ...t, since: at };
+    });
+    return { tiles: stamped, seen: next };
+}
+
+/**
+ * The newest orchestrator run that has not ended, for the run box. A quick run never plans, so it has no dag to show;
+ * a run is over by `runFinished` (its dag's status or its own: done, cancelled). Newest by `createdTs` (none: oldest),
+ * the lower run id on a tie so the choice does not move between builds.
+ */
+export function newestActiveRun(runs: Readonly<Record<string, RunInfo>>): RunInfo | null {
+    let best: RunInfo | null = null;
+    for (const r of Object.values(runs)) {
+        if (r.mode === "quick" || runFinished(r)) {
+            continue;
+        }
+        const at = r.createdTs ?? 0;
+        const bestAt = best?.createdTs ?? 0;
+        if (best == null || at > bestAt || (at === bestAt && r.runId < best.runId)) {
+            best = r;
+        }
+    }
+    return best;
+}
+
+/** The roster agent that leads a run: the one whose lineage role is lead of it. */
+export function runLeadId(roles: Readonly<Record<string, RunRole>>, runId: string): string | undefined {
+    return Object.keys(roles).find((id) => {
+        const role = roles[id];
+        return role.kind === "lead" && role.runId === runId;
+    });
+}
+
+/**
+ * Whether a run is failed (plan decision 6): while a failed need names it, that is a Needs you row with `failed` whose
+ * attention item (`items`, by need key) has this run's id. Engine events never set it: a retried task's `task-failed`
+ * stays in the history and would keep the window red for good.
+ */
+export function runFailed(
+    needs: readonly SidecarNeed[],
+    items: ReadonlyMap<string, { runid?: string }>,
+    runId: string
+): boolean {
+    return needs.some((n) => n.failed === true && items.get(n.key)?.runid === runId);
+}
+
+/** The first due chunk's label (Jarvis's `chunk-due` items), for the run box's "due today". */
+export function dueLabel(items: readonly AttentionItem[]): string | undefined {
+    const label = items.find((i) => i.kind === "chunk-due" && i.chunklabel != null && i.chunklabel !== "")?.chunklabel;
+    return label ?? undefined;
+}
+
+/** The run box of a run: its title, its progress over the dag's tasks, and what the bridge worked out around it. */
+export function runBoxOf(run: RunInfo, o: { leadId?: string; failed: boolean; due?: string }): SidecarRunBox {
+    const { done, total } = runProgress(run.dag);
+    return {
+        id: run.runId,
+        ...(o.leadId != null ? { leadId: o.leadId } : {}),
+        title: run.title,
+        done,
+        total,
+        failed: o.failed,
+        ...(run.createdTs != null ? { since: run.createdTs } : {}),
+        ...(o.due != null ? { due: o.due } : {}),
+    };
+}
+
+/**
+ * When a failed lead's lane turns red (plan review N2): the engine's date of the failure, when it is later than the
+ * lane's open span began (an earlier one would draw a failed span before the work it follows) and not after `now`;
+ * otherwise unset, which the timeline reads as now.
+ */
+export function failureAt(
+    failedAt: number | null,
+    spans: readonly SidecarSpan[] | undefined,
+    now: number
+): number | undefined {
+    if (failedAt == null || failedAt > now) {
+        return undefined;
+    }
+    const last = spans != null && spans.length > 0 ? spans[spans.length - 1] : undefined;
+    return last == null || last.to != null || failedAt > last.from ? failedAt : undefined;
+}
+
+/** The plan rings: the claude provider's 5-hour and weekly windows in whole percents; a window with no reading is left out. */
+export function usageOf(donuts: readonly ProviderDonuts[]): SidecarUsage {
+    const claude = donuts.find((d) => d.provider === "claude");
+    const whole = (pct: number | undefined) => (pct != null && Number.isFinite(pct) ? Math.round(pct) : undefined);
+    const five = whole(claude?.fivehour.pct);
+    const week = whole(claude?.week.pct);
+    return {
+        ...(five != null ? { fiveHourPct: five } : {}),
+        ...(week != null ? { weekPct: week } : {}),
+    };
+}
+
+/**
+ * The tiles with what only the bridge knows: the failed run's lead is `failed`, and a review tile carries the lines its
+ * work added and removed (none when nothing changed). A tile it changes nothing on comes back as it was.
+ */
+export function decorateTiles(
+    tiles: SidecarTile[],
+    o: { failedLead?: string; diffs: Readonly<Record<string, DiffStats | undefined>> }
+): SidecarTile[] {
+    return tiles.map((t) => {
+        const stats = t.state === "review" ? o.diffs[t.id] : undefined;
+        const diff =
+            stats != null && (stats.adds > 0 || stats.dels > 0) ? { adds: stats.adds, dels: stats.dels } : null;
+        const failed = o.failedLead != null && t.id === o.failedLead;
+        if (!failed && diff == null) {
+            return t;
+        }
+        return { ...t, ...(failed ? { failed: true } : {}), ...(diff != null ? { diff } : {}) };
+    });
 }
 
 /** What the bridge remembers of its feed: the snapshot the page last got, and when it went out. */
@@ -436,53 +571,4 @@ export function stopNote(e: unknown): string {
         return "Couldn't stop it";
     }
     return text.length <= NOTE_MAX_CHARS ? text : text.slice(0, NOTE_MAX_CHARS - 1) + "…";
-}
-
-/** What an older act is answered from: the rows the main window holds for the agent, or its transcript file. */
-export interface OlderInput {
-    all: SidecarMessage[]; // the rows the main window holds, oldest first; empty for an agent with no entries in memory
-    shown: SidecarMessage[]; // the rows the last snapshot sent for the tile
-    path?: string; // its transcript file
-    agent?: string; // its harness, which picks the transcript projector
-}
-
-/** The two readers `answerOlder` calls (sidecarhistory.ts's olderFromMemory and readOlderFromFile), passed in so the rule is tested without an RPC. */
-export interface OlderReaders {
-    memory: (all: SidecarMessage[], shownCount: number, before: string | null, count: number) => OlderPage;
-    file: (
-        path: string,
-        agent: string | undefined,
-        before: string | null,
-        shown: SidecarMessage[]
-    ) => Promise<OlderPage>;
-}
-
-/**
- * The answer to an older act (decision 5). An agent with entries in memory pages from them, one with none and a transcript
- * path from the file, any other has nothing earlier. Never rejects: a failed file read is logged through `onError` and
- * answered `rows: [], next: null`, which the page shows as the start of what arcterm holds and stops asking.
- */
-export async function answerOlder(
-    act: { id: string; before: string | null; count: number },
-    input: OlderInput,
-    readers: OlderReaders,
-    onError: (message: string) => void
-): Promise<SidecarOlder> {
-    const answer = (page: OlderPage): SidecarOlder => ({
-        id: act.id,
-        before: act.before,
-        rows: page.rows,
-        next: page.next,
-    });
-    if (input.all.length > 0) {
-        return answer(readers.memory(input.all, input.shown.length, act.before, act.count));
-    }
-    if (input.path != null && input.path !== "") {
-        try {
-            return answer(await readers.file(input.path, input.agent, act.before, input.shown));
-        } catch (e) {
-            onError(`older ${act.id}: the transcript read failed: ${e instanceof Error ? e.message : String(e)}`);
-        }
-    }
-    return answer({ rows: [], next: null });
 }

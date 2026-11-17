@@ -1,20 +1,18 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Sidecar's title bar (boards D-fit-by-count, E-strain-band and F-small-asks). The window has no frame of its own, so the
-// page draws the name, the three counts in the wall's words, the machine's figures and the window buttons; in the small
-// layout it shrinks to the name, the short figures and the S, pin and close buttons (the counts move into the small
-// form's head). It runs on the slim page (frontend/tauri/sidecar.tsx), which boots no cockpit store: this file may
-// import only the Tauri window API and the shared types.
+// Sidecar's title bar (boards E-strain-band, P-orbit-dashboard and Q-compact-live). The window has no frame of its own, so
+// the page draws the name, the machine's figures and the window buttons; in the small layout it shrinks to the name, the
+// short figures and the S, pin and close buttons. What waits on you is counted in the dashboard's core, not here. It
+// runs on the slim page (frontend/tauri/sidecar.tsx), which boots no cockpit store: this file may import only the Tauri
+// window API and the shared types.
 
 import { cn } from "@/util/util";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState, type ReactNode } from "react";
 import { pinButtonChange, smallButtonChange, type FormChange, type SidecarLayout } from "./sidecarlayout";
 import { machineReadout } from "./sidecarstrainmodel";
-import type { SidecarForm, SidecarMachine, SidecarSnapshot, SidecarStrain } from "./sidecartypes";
-
-type Counts = SidecarSnapshot["counts"];
+import type { SidecarForm, SidecarMachine, SidecarStrain } from "./sidecartypes";
 
 function logFailure(what: string, err: unknown): void {
     console.error(`sidecar: ${what} failed`, err);
@@ -54,27 +52,6 @@ function useFullscreen(): boolean {
     return fullscreen;
 }
 
-function Count(props: { kind: keyof Counts; n: number; label: string; tone: string }) {
-    // the wrapper holds the number and its words, so a reader (a person, the CDP scenario) gets "3 need you" whole
-    return (
-        <span data-sidecar-count={props.kind} className="whitespace-nowrap">
-            <b className={cn("font-semibold tabular-nums", props.tone)}>{props.n}</b> {props.label}
-        </span>
-    );
-}
-
-/** The three counts in the wall's words: the title bar's, and the small form's head (the same words, a different place). */
-export function SidecarCounts(props: { counts: Counts; className?: string }) {
-    const { counts } = props;
-    return (
-        <div className={cn("flex items-baseline text-secondary", props.className)}>
-            <Count kind="asking" n={counts.asking} label="need you" tone="text-asking" />
-            <Count kind="working" n={counts.working} label="working" tone="text-working" />
-            <Count kind="idle" n={counts.idle} label="idle" tone="text-primary" />
-        </div>
-    );
-}
-
 // the figure's colour: amber and red are the warning and error tokens the band uses, so the bar and the band agree
 const TONE = { normal: "text-primary", amber: "text-warning", red: "text-error" } as const;
 
@@ -112,8 +89,8 @@ function Machine(props: {
     );
 }
 
-// tabIndex -1 and no focus on press: a button left focused would take the Enter that opens the selected agent and the
-// arrow keys of the wall, and a frameless window's controls are the mouse's anyway (F11 is the keyboard's).
+// tabIndex -1 and no focus on press: a button left focused would take the Enter that opens the selected row and the
+// arrow keys of the dashboard, and a frameless window's controls are the mouse's anyway (F11 is the keyboard's).
 function TitleButton(props: {
     name: "small" | "pin" | "minimize" | "maximize" | "fullscreen" | "close";
     label: string;
@@ -168,7 +145,6 @@ function CloseGlyph() {
 }
 
 export interface SidecarTitleBarProps {
-    counts: Counts | null;
     machine?: SidecarMachine;
     strain?: SidecarStrain;
     layout: SidecarLayout;
@@ -180,7 +156,7 @@ export interface SidecarTitleBarProps {
 export function SidecarTitleBar(props: SidecarTitleBarProps) {
     const win = getCurrentWindow();
     const fullscreen = useFullscreen();
-    const { counts, machine, strain, layout, form } = props;
+    const { machine, strain, layout, form } = props;
     const small = layout === "small";
 
     // S is in both layouts: it is the way into the small form and the way back out
@@ -251,8 +227,6 @@ export function SidecarTitleBar(props: SidecarTitleBarProps) {
                 <span className="text-muted">/</span>
                 <span className="font-semibold text-primary">Sidecar</span>
             </div>
-            {/* no counts before the first snapshot: a 0 there would read as "nothing needs you" */}
-            {counts == null ? null : <SidecarCounts counts={counts} className="ml-3 gap-3.5 text-[13px]" />}
             {/* the machine's two figures, always once a snapshot carries them: the band speaks only past a threshold */}
             {machine == null ? null : <Machine machine={machine} strain={strain} short={false} className="ml-3" />}
             <div className="ml-auto flex h-full items-center gap-4">

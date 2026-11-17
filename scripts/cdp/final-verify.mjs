@@ -349,13 +349,20 @@ export function writeFinalManifest(shotsDir, out) {
     }
 }
 
-function runVerify(port, scenarios) {
+// The environment verify.mjs runs in: the dev app's CDP port, and the store it was started on (ARC_DEV_DATA_DIR, the one
+// the app itself gets below), so a scenario that reads the app's own files (sidecar-orbit reads <store>/data/waveapp.log)
+// reads this app's and never the person's own dev app's, which a process-wide ARC_DEV_DATA_DIR would otherwise name or leave unset
+export function verifyEnv(port, store, env = process.env) {
+    return { ...env, CDP_PORT: String(port), ARC_DEV_DATA_DIR: store };
+}
+
+function runVerify(port, scenarios, store) {
     const script = fileURLToPath(new URL("./verify.mjs", import.meta.url));
     return new Promise((resolve) => {
         // node 20 (what a Mac often has) has no global WebSocket without the flag, which attach.mjs needs; later nodes take it
         const child = spawn(process.execPath, ["--experimental-websocket", script, ...scenarios], {
             stdio: "inherit",
-            env: { ...process.env, CDP_PORT: String(port) },
+            env: verifyEnv(port, store),
         });
         child.on("exit", (code) => resolve(code ?? 1));
         child.on("error", () => resolve(1));
@@ -458,7 +465,7 @@ async function main() {
                     ? `dev app did not answer on :${port}`
                     : `dev app exited with code ${dev.exitCode} before answering on :${port}`) + (said ? `: ${said}` : "");
         } else {
-            code = await runVerify(port, scenarios);
+            code = await runVerify(port, scenarios, store);
             // its reason line is printed already, but the store cleanup below may print after it; say it again last
             if (code === EXIT_UNVERIFIED) reason = `the dev app's code on :${vitePort} did not start, so no scenario ran`;
             if (mode === "browser" && code === 0) {
