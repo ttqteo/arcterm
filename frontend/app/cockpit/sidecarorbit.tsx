@@ -278,7 +278,7 @@ export function SidecarOrbit({ snap, receivedAt, clock, send }: SidecarOrbitProp
         >
             <div
                 aria-hidden="true"
-                className="pointer-events-none fixed inset-0 z-50 transition-[box-shadow] duration-500 motion-reduce:transition-none"
+                className="pointer-events-none fixed inset-0 z-50 rounded-[var(--sidecar-corner,0px)] transition-[box-shadow] duration-500 motion-reduce:transition-none"
                 style={{ boxShadow: FRAME[frame] }}
             />
             <div className="grid min-h-0 flex-[3_1_0%] grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">

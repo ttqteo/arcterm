@@ -20,6 +20,10 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   false in `~/.claude.json`, leave a Claude agent with 100k+ of context idle on screen for about 55 minutes: it gets one
   `/compact` (its summary lands, the composer's draft is untouched) and is not put to sleep; the next turn after an
   hour writes only the summary's cache (Usage → Cold resumes does not count it). Commit e2f38fb4f.
+- [ ] (arcterm) **No white flash switching between HTML files.** Lint and the typecheck only. Open two dark HTML
+  pages as tabs in the File pane (or Code), switch back and forth: the pane stays dark until the page draws, a page
+  with no background still shows on white, and a kept scroll position still comes back.
+
 - [ ] (arcterm) **Session search on your real transcripts.** The three `session-search-*` scenarios answer the search
   from a mock; nothing has run `SearchSessions` over real transcripts in the app. Agent → Conversation History → type a
   word you remember from an old Claude conversation → "N results" (with "· indexing…" the first time, clearing on its

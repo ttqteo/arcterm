@@ -8,6 +8,7 @@ import {
     editCounts,
     fileWhere,
     foldOf,
+    foreignPathGuesses,
     MAX_STEP_CHIPS,
     stepElapsed,
     stepOf,
@@ -470,6 +471,34 @@ describe("fileWhere", () => {
         expect(fileWhere("/repo/pkg/x.go", null)).toEqual({ name: "x.go", folder: "pkg" });
         expect(fileWhere("pkg/x.go", undefined)).toEqual({ name: "x.go", folder: "pkg" });
         expect(fileWhere("x.go", undefined)).toEqual({ name: "x.go", folder: "" });
+    });
+});
+
+describe("foreignPathGuesses", () => {
+    it("reads each tail of a Windows path against the cwd on a Mac, longest first", () => {
+        expect(foreignPathGuesses("d:\\ttq\\mit-thesis\\obsidian_harness\\a.html", "/Users/me/thesis", false)).toEqual([
+            "/Users/me/thesis/ttq/mit-thesis/obsidian_harness/a.html",
+            "/Users/me/thesis/mit-thesis/obsidian_harness/a.html",
+            "/Users/me/thesis/obsidian_harness/a.html",
+            "/Users/me/thesis/a.html",
+        ]);
+        expect(foreignPathGuesses("D:/p/a.go", "/r", false)).toEqual(["/r/p/a.go", "/r/a.go"]);
+    });
+    it("reads each tail of a Mac path against the cwd on Windows, in its separator", () => {
+        expect(foreignPathGuesses("/Users/me/thesis/a/b.md", "D:\\mit", true)).toEqual([
+            "D:\\mit\\Users\\me\\thesis\\a\\b.md",
+            "D:\\mit\\me\\thesis\\a\\b.md",
+            "D:\\mit\\thesis\\a\\b.md",
+            "D:\\mit\\a\\b.md",
+            "D:\\mit\\b.md",
+        ]);
+    });
+    it("has no guesses for a path this machine opens as written, or with no cwd", () => {
+        expect(foreignPathGuesses("/Users/me/a.go", "/Users/me", false)).toEqual([]);
+        expect(foreignPathGuesses("C:\\r\\a.go", "C:\\r", true)).toEqual([]);
+        expect(foreignPathGuesses("\\\\server\\share\\a.go", "C:\\r", true)).toEqual([]);
+        expect(foreignPathGuesses("pkg/a.go", "/r", false)).toEqual([]);
+        expect(foreignPathGuesses("d:\\p\\a.go", null, false)).toEqual([]);
     });
 });
 

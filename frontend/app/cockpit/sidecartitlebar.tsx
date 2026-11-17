@@ -14,6 +14,15 @@ import { pinButtonChange, smallButtonChange, type FormChange, type SidecarLayout
 import { machineReadout } from "./sidecarstrainmodel";
 import type { SidecarForm, SidecarMachine, SidecarStrain } from "./sidecartypes";
 
+/** The host built the window with macOS's native frame, its title bar laid over the page (src-tauri/src/sidecar.rs
+ *  `sidecar_builder`): the traffic lights are the window buttons, so the bar leaves them their room and draws none of
+ *  its own (the green light is full screen). Read from the page's url, so a browser stand-in on a Mac keeps the bar of
+ *  a frameless window. */
+export const NATIVE_MAC_FRAME = new URLSearchParams(window.location.search).get("frame") === "mac";
+
+// the room the traffic lights take at the bar's left, as the main window's app bar leaves it; they hide in full screen
+const MAC_LIGHTS_ROOM = "pl-[92px]";
+
 function logFailure(what: string, err: unknown): void {
     console.error(`sidecar: ${what} failed`, err);
 }
@@ -158,6 +167,8 @@ export function SidecarTitleBar(props: SidecarTitleBarProps) {
     const fullscreen = useFullscreen();
     const { machine, strain, layout, form } = props;
     const small = layout === "small";
+    const mac = NATIVE_MAC_FRAME;
+    const lightsRoom = mac && !fullscreen;
 
     // S is in both layouts: it is the way into the small form and the way back out
     const sButton = (
@@ -181,7 +192,12 @@ export function SidecarTitleBar(props: SidecarTitleBarProps) {
                 data-sidecar-titlebar
                 data-sidecar-layout="small"
                 data-tauri-drag-region="deep"
-                className="flex h-8 shrink-0 select-none items-center gap-2 border-b border-border bg-surface pl-3 pr-1"
+                className={cn(
+                    "flex shrink-0 select-none items-center gap-2 border-b border-border bg-surface",
+                    // a Mac's bar is the main window's height, where the lights sit
+                    mac ? "h-[38px] pr-2" : "h-8 pr-1",
+                    lightsRoom ? MAC_LIGHTS_ROOM : "pl-3"
+                )}
             >
                 <span className="shrink-0 text-[12px] font-semibold text-primary">Sidecar</span>
                 {import.meta.env.DEV ? <span className="shrink-0 text-[12px] text-muted">(dev)</span> : null}
@@ -199,15 +215,17 @@ export function SidecarTitleBar(props: SidecarTitleBarProps) {
                         <path d="M12 17v5M9 10.8V4h6v6.8l3 3.2H6z" />
                     </svg>
                 </TitleButton>
-                {/* the person's own close: the host reads it as "do not reopen Sidecar next launch" */}
-                <TitleButton
-                    name="close"
-                    label="Close"
-                    onClick={windowAction("closing", () => win.close())}
-                    className={cn(SMALL_BTN, "hover:bg-error hover:text-white")}
-                >
-                    <CloseGlyph />
-                </TitleButton>
+                {/* the person's own close: the host reads it as "do not reopen Sidecar next launch" (a Mac's red light) */}
+                {mac ? null : (
+                    <TitleButton
+                        name="close"
+                        label="Close"
+                        onClick={windowAction("closing", () => win.close())}
+                        className={cn(SMALL_BTN, "hover:bg-error hover:text-white")}
+                    >
+                        <CloseGlyph />
+                    </TitleButton>
+                )}
             </div>
         );
     }
@@ -218,7 +236,11 @@ export function SidecarTitleBar(props: SidecarTitleBarProps) {
             data-sidecar-layout="wall"
             // "deep": the whole bar drags, the buttons opt out (the main window's app bar does the same)
             data-tauri-drag-region="deep"
-            className="flex h-[38px] shrink-0 select-none items-center gap-4 border-b border-border bg-surface pl-3.5"
+            className={cn(
+                "flex h-[38px] shrink-0 select-none items-center gap-4 border-b border-border bg-surface",
+                lightsRoom ? MAC_LIGHTS_ROOM : "pl-3.5",
+                mac && "pr-3.5"
+            )}
         >
             <div className="flex items-center gap-2 text-[13px]">
                 <span className="font-bold text-primary">arcterm</span>
@@ -231,68 +253,80 @@ export function SidecarTitleBar(props: SidecarTitleBarProps) {
             {machine == null ? null : <Machine machine={machine} strain={strain} short={false} className="ml-3" />}
             <div className="ml-auto flex h-full items-center gap-4">
                 {sButton}
-                <TitleButton
-                    name="fullscreen"
-                    label={fullscreen ? "Exit full screen (F11)" : "Full screen (F11)"}
-                    pressed={fullscreen}
-                    onClick={windowAction("toggling full screen", toggleSidecarFullscreen)}
-                    className={BOXED_BTN}
-                >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                        {fullscreen ? (
-                            <path d="M3 8h3a2 2 0 0 0 2-2V3M16 3v3a2 2 0 0 0 2 2h3M21 16h-3a2 2 0 0 0-2 2v3M8 21v-3a2 2 0 0 0-2-2H3" />
-                        ) : (
-                            <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
-                        )}
-                    </svg>
-                </TitleButton>
-                <div className="flex h-full">
-                    <TitleButton
-                        name="minimize"
-                        label="Minimize"
-                        onClick={windowAction("minimizing", () => win.minimize())}
-                        className={WINDOW_BTN}
-                    >
-                        <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.6"
+                {/* a Mac's traffic lights are the window buttons, the green one full screen */}
+                {mac ? null : (
+                    <>
+                        <TitleButton
+                            name="fullscreen"
+                            label={fullscreen ? "Exit full screen (F11)" : "Full screen (F11)"}
+                            pressed={fullscreen}
+                            onClick={windowAction("toggling full screen", toggleSidecarFullscreen)}
+                            className={BOXED_BTN}
                         >
-                            <path d="M5 12h14" />
-                        </svg>
-                    </TitleButton>
-                    {/* the planned capability (spec 1) has toggle-maximize but no is-maximized, so the button cannot tell
+                            <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                            >
+                                {fullscreen ? (
+                                    <path d="M3 8h3a2 2 0 0 0 2-2V3M16 3v3a2 2 0 0 0 2 2h3M21 16h-3a2 2 0 0 0-2 2v3M8 21v-3a2 2 0 0 0-2-2H3" />
+                                ) : (
+                                    <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
+                                )}
+                            </svg>
+                        </TitleButton>
+                        <div className="flex h-full">
+                            <TitleButton
+                                name="minimize"
+                                label="Minimize"
+                                onClick={windowAction("minimizing", () => win.minimize())}
+                                className={WINDOW_BTN}
+                            >
+                                <svg
+                                    width="12"
+                                    height="12"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.6"
+                                >
+                                    <path d="M5 12h14" />
+                                </svg>
+                            </TitleButton>
+                            {/* the planned capability (spec 1) has toggle-maximize but no is-maximized, so the button cannot tell
                         Maximize from Restore: one glyph, one name */}
-                    <TitleButton
-                        name="maximize"
-                        label="Maximize or restore"
-                        onClick={windowAction("toggling maximize", () => win.toggleMaximize())}
-                        className={WINDOW_BTN}
-                    >
-                        <svg
-                            width="11"
-                            height="11"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.6"
-                        >
-                            <rect x="4" y="4" width="16" height="16" />
-                        </svg>
-                    </TitleButton>
-                    {/* the person's own close: the host reads it as "do not reopen Sidecar next launch" */}
-                    <TitleButton
-                        name="close"
-                        label="Close"
-                        onClick={windowAction("closing", () => win.close())}
-                        className="h-full w-11 hover:bg-error hover:text-white"
-                    >
-                        <CloseGlyph />
-                    </TitleButton>
-                </div>
+                            <TitleButton
+                                name="maximize"
+                                label="Maximize or restore"
+                                onClick={windowAction("toggling maximize", () => win.toggleMaximize())}
+                                className={WINDOW_BTN}
+                            >
+                                <svg
+                                    width="11"
+                                    height="11"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.6"
+                                >
+                                    <rect x="4" y="4" width="16" height="16" />
+                                </svg>
+                            </TitleButton>
+                            {/* the person's own close: the host reads it as "do not reopen Sidecar next launch" */}
+                            <TitleButton
+                                name="close"
+                                label="Close"
+                                onClick={windowAction("closing", () => win.close())}
+                                className="h-full w-11 hover:bg-error hover:text-white"
+                            >
+                                <CloseGlyph />
+                            </TitleButton>
+                        </div>
+                    </>
+                )}
             </div>
         </div>
     );

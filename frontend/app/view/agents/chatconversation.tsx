@@ -36,6 +36,7 @@ import { MOTION } from "@/app/element/motiontokens";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { openOrPeek } from "@/app/view/jarvis/openref";
+import { isWindows } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import {
@@ -118,13 +119,14 @@ import { withMarks } from "./chatskim";
 import { useSkimFold } from "./chatskimstore";
 import { placeStepLists, stepsPartKey, type AgentNow } from "./chatsteplist";
 import { ChatStepsHost, StepsPart } from "./chatsteplistview";
-import { turnFileAbs, turnFiles } from "./chatsteps";
+import { foreignPathGuesses, turnFileAbs, turnFiles } from "./chatsteps";
 import { ChatSteps } from "./chatstepsview";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatTurnFiles } from "./chatturnfiles";
 import { VERDICT_TOPIC, verdictMode, type VerdictMode } from "./chatverdict";
 import { ChatVerdictCard } from "./chatverdictcard";
 import { CouncilText } from "./councilchat";
+import { firstExistingFile } from "./filetabload";
 import { CompactionDivider, InterruptedDivider, PromptImages, TaskNotificationRow } from "./narrationtimeline";
 import { pinnedLabel } from "./pinnedlabel";
 import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
@@ -1298,7 +1300,16 @@ export function ChatConversation({
                   return;
               }
               // reread: the agent may have changed it since its tab was last open
-              openFileInPanel(model!, agent!.id, { abs, root: cwd || null, reread: Date.now() });
+              const open = (at: string) =>
+                  openFileInPanel(model!, agent!.id, { abs: at, root: cwd || null, reread: Date.now() });
+              // a path the session wrote on the other machine (Windows `d:\…` read on a Mac) is looked for under the
+              // agent's directory here; found nowhere, it opens as written and the tab says the file is gone
+              const guesses = foreignPathGuesses(abs, cwd, isWindows());
+              if (guesses.length === 0) {
+                  open(abs);
+                  return;
+              }
+              fireAndForget(async () => open((await firstExistingFile(guesses)) ?? abs));
           }
         : null;
     const openTurnDiff = useCallback((path?: string) => diffRef.current?.(path), []);
