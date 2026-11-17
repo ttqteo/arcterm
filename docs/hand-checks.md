@@ -629,6 +629,9 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) The Agent sidebar is 280px with RAM and Tokens on and Age off (`agentTreeWidth`, `rowfields.ts`): in
   Settings → Appearance → Agent sidebar turn Age off; the sidebar stays 280px and a lead's second line reads its words
   (`Working · 0/7`), not `W… · 0/7`. Turn Tokens off too and it narrows to 248px.
+- [ ] (arcterm) A server mark keeps two ports (`shortPortsLabel`, `devserversmodel.ts`): an agent or run row in the
+  Agent tree whose background servers listen on four ports reads `:5175 :9230 +2` beside the green server glyph, and
+  hovering it lists all four ports with their commands.
 - [ ] (arcterm) Chat's Working dot crackles (`workingglyph.tsx`, `pulse.ts` noise pulses): with a live agent working,
   watch the dot for ten seconds: bolts strike at different angles and lengths, the core flickers, the dot and the
   `Working…` words jolt now and then but stay readable, and it does not feel frantic. The CPU in Task Manager stays

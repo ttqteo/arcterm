@@ -75,6 +75,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Chat's Working dot crackles with current while the agent works: bolts strike out from its core at a new angle,
   length and zigzag each time, the core flickers, and now and then the dot and the Working words jolt and flare. With
   reduced motion it stays still, as before.
+- An agent with more than two servers running shows the first two ports and `+N` beside its server mark
+  (`:5175 :9230 +2`) instead of every port; hovering the mark still lists them all.
 
 ### Changed
 
