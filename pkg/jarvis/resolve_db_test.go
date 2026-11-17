@@ -64,8 +64,8 @@ func TestResolveRunWorkerFromMeta_FallsBackToScan(t *testing.T) {
 	}
 }
 
-// The fallback narrows the run rows by a substring match on the oref, so a run that only quotes a tab
-// oref in its goal is a candidate. It is not that tab's run, and must not resolve as one.
+// A run that only quotes a tab oref in its goal is not that tab's run, and must not resolve as one: only a
+// phase's worker list makes a run the tab's.
 func TestResolveRunWorkerFromMeta_IgnoresAnORefInGoalText(t *testing.T) {
 	ctx := context.Background()
 	ch, err := wstore.CreateChannel(ctx, "rw-goaltext", "/p")

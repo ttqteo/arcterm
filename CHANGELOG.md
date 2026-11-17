@@ -45,6 +45,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- arcterm no longer stalls for seconds at a time with many agents open on a store holding thousands of past runs:
+  each agent's asks, effort updates and the resource meter made the backend re-read every run (tens of MB) to find
+  the agent's run, which held up messages you sent and terminal output.
 - A council's Summary no longer offers Summarize when every idea in it is still a held draft or was dropped, as the
   Discussion already did: the summary had nothing to work from and could only fail.
 - What a council settled now reaches the project's CLAUDE.md even when an agent or an editor has the file open at that

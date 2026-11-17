@@ -9,6 +9,7 @@ import (
 	"log"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -112,13 +113,17 @@ func EnsureChannelAtPath(ctx context.Context, name, projectPath string) (*waveob
 // DeleteChannel deletes the channel with the rows that belong to it: its runs, their events and dags, and
 // its messages.
 func DeleteChannel(ctx context.Context, channelId string) error {
-	return WithTx(ctx, func(tx *TxWrap) error {
+	err := WithTx(ctx, func(tx *TxWrap) error {
 		tx.Exec(`DELETE FROM db_run WHERE json_extract(data, '$.channeloid') = ?`, channelId)
 		tx.Exec(`DELETE FROM db_channelmessage WHERE json_extract(data, '$.channeloid') = ?`, channelId)
 		tx.Exec(`DELETE FROM db_runevent WHERE channelid = ?`, channelId)
 		tx.Exec(`DELETE FROM db_dag WHERE json_extract(data, '$.channelid') = ?`, channelId)
 		return DBDelete(tx.Context(), waveobj.OType_Channel, channelId)
 	})
+	if err == nil {
+		runGen.Add(1)
+	}
+	return err
 }
 
 func GetChannels(ctx context.Context) ([]*waveobj.Channel, error) {
@@ -208,7 +213,19 @@ func PostChannelMessageIf(ctx context.Context, channelId string, msg waveobj.Cha
 // It runs on the writer's goroutine, so it must return at once: the run queue's loop sets it to a non-blocking poke.
 var RunChangedHook func()
 
+// runGen counts the run writes that committed: AppendRun, UpdateRun, DeleteChannel's, and a run row written
+// through DBInsert, DBUpdate or DBDelete.
+var runGen atomic.Uint64
+
+// RunGen is the count of committed run writes, for a reader that keeps something derived from the run rows: when
+// it is unchanged since the reader built it, no run was written since. Read it before reading the rows, so a write
+// that lands between the two shows as a changed count on the next look.
+func RunGen() uint64 {
+	return runGen.Load()
+}
+
 func runChanged() {
+	runGen.Add(1)
 	if hook := RunChangedHook; hook != nil {
 		hook()
 	}
@@ -357,18 +374,6 @@ func selectRuns(ctx context.Context, query string, args ...any) ([]*waveobj.Run,
 		}
 		return rtn, nil
 	})
-}
-
-// GetRunCandidatesByWorker returns, oldest first, the runs whose row text contains workerORef. That is a
-// substring match made without decoding any row, so it also hits a run that only quotes the oref (in its
-// goal, say): the caller confirms the oref is one of a phase's workers. Pure read (read pool).
-func GetRunCandidatesByWorker(ctx context.Context, workerORef string) ([]*waveobj.Run, error) {
-	if workerORef == "" {
-		return nil, nil
-	}
-	return selectRuns(ctx, `SELECT oid, version, data FROM db_run
-		WHERE instr(data, ?) > 0
-		ORDER BY json_extract(data, '$.createdts') ASC`, workerORef)
 }
 
 // GetRunsBySessionIds returns the runs launched under any of sessionIds, as the current Run.SessionId or as

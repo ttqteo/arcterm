@@ -114,8 +114,8 @@ type RunWorkerMatch struct {
 // gated by the tier: it answers "whose worker is this", and handleAsk applies the tier to the channel it
 // returns. On any miss (unstamped worker, empty runoref, load error) it falls back to the run-row scan so
 // a best-effort stamp gap can never regress resolution; a stamp that names a run no longer listing the
-// worker is scanned for once per stamp (the scan costs hundreds of ms on a store of thousands of runs, and
-// attention asks every 5-10s). nil = no run.
+// worker is scanned for once per stamp (attention asks every 5-10s). The scan reads the worker index
+// (runWorkers), which reads the run rows again only after a run is written. nil = no run.
 func ResolveRunWorkerFromMeta(ctx context.Context, askingORef string) *RunWorkerMatch {
 	runORef, channelORef, err := wstore.GetWorkerOwner(ctx, askingORef)
 	if err != nil || runORef == "" || channelORef == "" {
@@ -207,16 +207,22 @@ func phaseIdxForWorker(run *waveobj.Run, workerORef string) int {
 var scanRunWorker = resolveRunWorkerByScan
 
 // resolveRunWorkerByScan is the fallback for a worker with no usable stamp: the oldest run row one of
-// whose phases lists the oref. The store only narrows the rows to those whose text contains the oref, so
-// a run that merely quotes it (in its goal, say) is ruled out here. A run whose channel is gone is skipped.
+// whose phases lists the oref. A run whose channel is gone is skipped. The candidates come from the
+// worker index (runWorkers), and the run is read fresh from its row before it is matched.
 func resolveRunWorkerByScan(ctx context.Context, askingORef string) *RunWorkerMatch {
-	runs, err := wstore.GetRunCandidatesByWorker(ctx, askingORef)
+	runs, err := runWorkers.candidates(ctx, askingORef)
 	if err != nil {
 		log.Printf("jarvis: finding the run of worker %s: %v", askingORef, err)
 		return nil
 	}
+	return matchRunWorker(ctx, runs, askingORef)
+}
+
+// matchRunWorker is the first of runs (oldest first) one of whose phases lists workerORef and whose channel
+// still exists; nil for none.
+func matchRunWorker(ctx context.Context, runs []*waveobj.Run, workerORef string) *RunWorkerMatch {
 	for _, run := range runs {
-		phaseIdx := phaseIdxForWorker(run, askingORef)
+		phaseIdx := phaseIdxForWorker(run, workerORef)
 		if phaseIdx < 0 {
 			continue
 		}
