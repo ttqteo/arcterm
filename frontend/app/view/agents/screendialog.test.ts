@@ -38,6 +38,19 @@ describe("screenWatched", () => {
     });
 });
 
+describe("screenCardOf (footer joined to its rule)", () => {
+    it("draws no terminal card while the mode line shows, even joined to the box's rule", () => {
+        const rule = "─".repeat(60);
+        const lines = [rule, "❯", rule + "  ⏵⏵ auto mode on (shift+tab to cycle) · ← 3 agents"];
+        expect(screenCardOf(lines, "waiting")).toBeNull();
+    });
+    it("draws no terminal card for a mode line whose words no reader knows", () => {
+        const rule = "─".repeat(60);
+        const lines = [rule, "❯", rule, "  ⏵⏵ careful mode on (shift+tab to cycle)"];
+        expect(screenCardOf(lines, "asking")).toBeNull();
+    });
+});
+
 describe("screenCardOf", () => {
     it("draws a dialog in any state, idle and working included", () => {
         for (const state of ["asking", "waiting", "idle", "working", undefined]) {

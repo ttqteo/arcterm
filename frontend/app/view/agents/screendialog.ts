@@ -9,7 +9,7 @@
 
 import type { AgentEntry } from "./agentsviewmodel";
 import { stripResultLines } from "./chatinitiative";
-import { tuiDialog, tuiMode, tuiScreenTail, type TuiDialog } from "./tuiscreen";
+import { tuiDialog, tuiPromptUp, tuiScreenTail, type TuiDialog } from "./tuiscreen";
 
 export type ScreenCard = { kind: "dialog"; dialog: TuiDialog } | { kind: "terminal"; rows: string[] };
 
@@ -23,7 +23,8 @@ export function screenWatched(agent: { sleeping?: unknown }, hasPermissionHead: 
 
 /** Pure: the card one read of the screen calls for. A dialog draws in any state. The foot of the screen draws only while
  *  the agent waits on the person (asking: Claude Code reported itself blocked; waiting: a Notification nudge) and its
- *  mode line is covered: a mode line in view means the prompt is up, and nothing on screen asks. null with no screen. */
+ *  mode line is covered: a mode line in view, whatever mode it names (tuiPromptUp), means the prompt is up, and nothing
+ *  on screen asks. null with no screen. */
 export function screenCardOf(lines: string[] | null, state: string | undefined): ScreenCard | null {
     if (lines == null) {
         return null;
@@ -32,7 +33,7 @@ export function screenCardOf(lines: string[] | null, state: string | undefined):
     if (dialog != null) {
         return { kind: "dialog", dialog };
     }
-    if ((state !== "asking" && state !== "waiting") || tuiMode(lines) != null) {
+    if ((state !== "asking" && state !== "waiting") || tuiPromptUp(lines)) {
         return null;
     }
     const rows = tuiScreenTail(lines);

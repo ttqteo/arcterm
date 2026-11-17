@@ -68,6 +68,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Chat no longer shows a "Waiting on you in the terminal" card quoting only Claude Code's mode line while an agent
+  waits on you, and the mode chip under the chat box follows Shift+Tab again. A permission dialog's card also stops
+  showing the dashed lines around a command as part of its text.
 - An idle agent about to sleep no longer gets `/compact` every 10 minutes ("Not enough messages to compact") when
   the compaction does not show up where arcterm looks: one that found nothing to compact, or never landed, lets it
   sleep. A session forked off an agent's tab (moved to the background) now reports its work into the tab instead of

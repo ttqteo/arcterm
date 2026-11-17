@@ -16,6 +16,13 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **No terminal card over a prompt that is up.** Vitest only (fixtures with their rules joined, as
+  `readTermLines` gives them); never tried in the app. In a Claude agent in auto mode, let it stop and wait on you
+  (a Notification, or a brainstorm question): Chat shows no "Waiting on you in the terminal" card quoting
+  `⏵⏵ auto mode on`. Press Shift+Tab in the terminal a few times: the mode chip under the chat box follows each mode.
+  Have it run a Bash command that needs permission: the dialog card's text holds no `╌╌╌` lines
+  (`tuiscreen.ts` `splitRules`, `tuiPromptUp`).
+
 - [ ] (arcterm) **Agents start without a PowerShell around them (Windows).** Go tests only (`shellexec`); never tried
   in the app. Launch a Claude agent, resume one, and start a run worker: each works as before (hooks report, Chat and
   the terminal show it, `wsh` found, stop and restart work), and Task Manager's process tree shows `claude.exe` straight

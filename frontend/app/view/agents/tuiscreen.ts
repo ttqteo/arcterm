@@ -24,6 +24,19 @@ export interface TuiOption {
 // row's start so a marker quoted in the conversation above never counts.
 const modeFooter = /^\s*(?:⏵⏵|⏸)\s*(bypass permissions|accept edits|plan mode|auto mode|manual mode) on\b/i;
 
+// a rule at the front of a row, solid (─) or dashed (╌), and what follows it
+const ruleHead = /^(\s*(?:─{8,}|╌{8,}))(.*)$/;
+
+/** Claude Code draws its rules, solid and dashed, the screen's full width, so xterm marks the row after one as a wrap of
+ *  it and readTermLines joins the two: "────…────❯ text", "────…──── ⏵⏵ auto mode on", "╌╌╌…╌╌╌  echo hi". This
+ *  splits each rule back off onto a row of its own, so the screen reads as Claude Code drew it. */
+export function splitRules(lines: string[]): string[] {
+    return lines.flatMap((line) => {
+        const m = ruleHead.exec(line);
+        return m == null || m[2].trim() === "" ? [line] : [m[1], m[2]];
+    });
+}
+
 const modeByWords: Record<string, ClaudeMode> = {
     "bypass permissions": "bypassPermissions",
     "accept edits": "acceptEdits",
@@ -37,7 +50,8 @@ const modeByWords: Record<string, ClaudeMode> = {
 const footerRows = 6;
 
 // the mode the footer names, or null when no footer shows (a dialog or a menu covers it, or the screen is empty)
-export function tuiMode(lines: string[]): ClaudeMode | null {
+export function tuiMode(screen: string[]): ClaudeMode | null {
+    const lines = splitRules(screen);
     let seen = 0;
     for (let i = lines.length - 1; i >= 0 && seen < footerRows; i--) {
         if (lines[i].trim() === "") {
@@ -56,6 +70,27 @@ export function tuiMode(lines: string[]): ClaudeMode | null {
 // per level (○ low, ◐ medium, ● high, ◉ xhigh, ◈ max, from Claude Code 2.1.323's own table), the level, then
 // "· /effort" (e.g. "◐ medium · /effort"). Anchored at the row's end, so a line quoted mid-row never counts.
 const effortLine = /[○◐●◉◈]\s+(low|medium|high|xhigh|max)\b[^·]*·\s*\/effort\s*$/i;
+
+// a footer row by its glyph alone, whatever words follow it
+const footerGlyph = /^\s*(?:⏵⏵|⏸)\s*\S/;
+
+/** Whether the footer under Claude Code's input box shows, so the prompt is up, read by its glyph (⏵⏵ or ⏸) and not by
+ *  the mode's words: a Claude Code that words a mode in a way tuiMode does not know (2.1.319 brought "manual mode") still
+ *  shows its prompt. */
+export function tuiPromptUp(screen: string[]): boolean {
+    const lines = splitRules(screen);
+    let seen = 0;
+    for (let i = lines.length - 1; i >= 0 && seen < footerRows; i--) {
+        if (lines[i].trim() === "") {
+            continue;
+        }
+        seen++;
+        if (footerGlyph.test(lines[i])) {
+            return true;
+        }
+    }
+    return false;
+}
 
 // the effort the line over the box names, or null when it does not show
 export function tuiEffort(lines: string[]): EffortLevel | null {
@@ -130,7 +165,8 @@ function ruleAbove(lines: string[], from: number): { at: number; width: number; 
  *  numbered options. null with no options on screen, or no rule over them (a numbered list in a reply has neither the
  *  cursor nor the rule). A row as long as the rule, give or take a word, was wrapped there, so it runs on into the next
  *  row's paragraph; a blank row ends a paragraph. */
-export function tuiDialog(lines: string[]): TuiDialog | null {
+export function tuiDialog(screen: string[]): TuiDialog | null {
+    const lines = splitRules(screen);
     const run = dialogRun(lines);
     if (run == null) {
         return null;
@@ -172,7 +208,8 @@ const TAIL_ROWS = 14;
 /** The foot of Claude Code's screen as the person would read it there: the non-blank rows under its last solid rule (the
  *  rule's own row counts for what it swallowed), or with no rule the last rows on screen; at most TAIL_ROWS, the
  *  bottom ones. For a screen this module has no reader for (a form, a "Press Enter to continue"). */
-export function tuiScreenTail(lines: string[]): string[] {
+export function tuiScreenTail(screen: string[]): string[] {
+    const lines = splitRules(screen);
     const rule = ruleAbove(lines, lines.length - 1);
     const rows = rule == null ? lines : [rule.rest, ...lines.slice(rule.at + 1)];
     return rows

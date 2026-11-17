@@ -1,6 +1,49 @@
 import { describe, expect, it } from "vitest";
-import { tuiDialog, tuiEffort, tuiMode, tuiPermissionOptions, tuiScreenTail, tuiSelectYes } from "./tuiscreen";
+import {
+    splitRules,
+    tuiDialog,
+    tuiEffort,
+    tuiMode,
+    tuiPermissionOptions,
+    tuiPromptUp,
+    tuiScreenTail,
+    tuiSelectYes,
+} from "./tuiscreen";
 import fixtures from "./tuiscreen.fixtures.json";
+
+// The screen as readTermLines gives it on a live terminal: each full-width rule, solid or dashed, joined to the row after
+// it, which xterm marked a wrap (read off Claude Code 2.1.3xx on 2026-11-17: "────…────❯ ", "────…──── ⏵⏵ auto mode on").
+function joinRules(lines: string[]): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        if (/^\s*(─{8,}|╌{8,})\s*$/.test(lines[i]) && i + 1 < lines.length && lines[i + 1].trim() !== "") {
+            out.push(lines[i] + lines[i + 1]);
+            i++;
+        } else {
+            out.push(lines[i]);
+        }
+    }
+    return out;
+}
+
+describe("a screen whose rules came back joined to the row after them", () => {
+    const screens = Object.entries(fixtures) as [string, string[]][];
+    it("joins something in the captured screens, so the cases below test the join", () => {
+        expect(screens.filter(([, l]) => joinRules(l).length < l.length).length).toBeGreaterThan(5);
+    });
+    it.each(screens)("%s reads the same as drawn", (_, lines) => {
+        const joined = joinRules(lines);
+        expect(tuiMode(joined)).toBe(tuiMode(lines));
+        expect(tuiDialog(joined)).toEqual(tuiDialog(lines));
+        expect(tuiScreenTail(joined)).toEqual(tuiScreenTail(lines));
+    });
+    it("keeps a rule with nothing after it as it is", () => {
+        expect(splitRules(["─".repeat(20), "╌".repeat(20) + "  "])).toEqual(["─".repeat(20), "╌".repeat(20) + "  "]);
+    });
+    it("splits a dashed rule off the command it framed", () => {
+        expect(splitRules(["╌".repeat(12) + "  echo hi"])).toEqual(["╌".repeat(12), "  echo hi"]);
+    });
+});
 
 // every screen here was captured off Claude Code 2.1.319 (tuiscreen.fixtures.json), not written by hand
 describe("tuiMode", () => {
@@ -32,8 +75,29 @@ describe("tuiMode", () => {
         const lines = ["the footer says ⏸ plan mode on today", ...fixtures.idle];
         expect(tuiMode(lines)).toBe("auto");
     });
+    it("reads a footer joined to the box's bottom rule, which xterm marked a wrap", () => {
+        const rule = "─".repeat(60);
+        const lines = [rule, "❯", rule + "  ⏵⏵ auto mode on (shift+tab to cycle) · ← 3 agents"];
+        expect(tuiMode(lines)).toBe("auto");
+    });
     it("matches case-insensitively", () => {
         expect(tuiMode(["❯", "  ⏸ PLAN MODE ON (shift+tab to cycle)"])).toBe("plan");
+    });
+});
+
+describe("tuiPromptUp", () => {
+    it("sees the footer in every captured screen tuiMode reads, and in none it does not", () => {
+        for (const lines of Object.values(fixtures) as string[][]) {
+            expect(tuiPromptUp(lines)).toBe(tuiMode(lines) != null);
+            expect(tuiPromptUp(joinRules(lines))).toBe(tuiMode(lines) != null);
+        }
+    });
+    it("sees a footer whose mode words no reader knows", () => {
+        expect(tuiPromptUp(["❯", "  ⏵⏵ careful mode on (shift+tab to cycle)"])).toBe(true);
+        expect(tuiMode(["❯", "  ⏵⏵ careful mode on (shift+tab to cycle)"])).toBeNull();
+    });
+    it("ignores a glyph quoted mid-row in the conversation", () => {
+        expect(tuiPromptUp(["the footer says ⏵⏵ auto mode on", "", "  > ____"])).toBe(false);
     });
 });
 
