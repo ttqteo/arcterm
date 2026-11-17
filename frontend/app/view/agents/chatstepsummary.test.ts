@@ -106,7 +106,7 @@ describe("stepSummary: finished", () => {
 
     it("a harness's own tool names count by their detail (agy's run_command is a command)", () => {
         const s = stepSummary(
-            [action("run_command", { detail: { kind: "bash", command: "ls", output: "", exit: 0 } })],
+            [action("run_command", { target: "ls", detail: { kind: "bash", command: "ls", output: "", exit: 0 } })],
             false
         );
         expect(s.text).toBe("Ran a command");
@@ -147,6 +147,33 @@ describe("stepSummary: finished", () => {
     });
 });
 
+describe("stepSummary: one command", () => {
+    it("reads as its description", () => {
+        const s = stepSummary([ran("Checked the working tree after the restart", { command: "git status" })], false);
+        expect(s.text).toBe("Checked the working tree after the restart");
+    });
+
+    it("with no description keeps Ran a command", () => {
+        expect(stepSummary([ran("git status")], false).text).toBe("Ran a command");
+    });
+
+    it("failed, still reads as its description", () => {
+        const s = stepSummary([ran("Run the told tests", { command: "go test ./pkg/x", outcome: "fail" })], false);
+        expect(s.text).toBe("Run the told tests");
+    });
+
+    it("beside other calls stays counted", () => {
+        const s = stepSummary(
+            [ran("Typechecked the frontend", { command: "task check:ts" }), ran("List", { command: "ls" })],
+            false
+        );
+        expect(s.text).toBe("Ran 2 commands");
+        expect(stepSummary([ran("Typecheck", { command: "tsc" }), edit("/r/a.ts")], false).text).toBe(
+            "Edited a.ts, ran a command"
+        );
+    });
+});
+
 describe("stepSummary: running", () => {
     it("names the call in flight, a command by its first line", () => {
         const s = stepSummary(
@@ -156,14 +183,14 @@ describe("stepSummary: running", () => {
         expect(s).toEqual({ running: true, text: "Running npm test", more: 0, edits: null });
     });
 
-    it("a described command by its description, a leading Run or Ran said as Running", () => {
+    it("a described command by its description, as the agent wrote it", () => {
         const described = (target: string) =>
             stepSummary([action("ran", { target, command: "npm test", startedAt: 5 })], true).text;
-        expect(described("Run the test suite")).toBe("Running the test suite");
-        expect(described("Ran tests to confirm new test fails")).toBe("Running tests to confirm new test fails");
+        expect(described("Run verify on packages my changes can break")).toBe(
+            "Run verify on packages my changes can break"
+        );
+        expect(described("Ran tests to confirm new test fails")).toBe("Ran tests to confirm new test fails");
         expect(described("Install dependencies")).toBe("Install dependencies");
-        // a word that only starts with run is not the verb
-        expect(described("Runtime check")).toBe("Runtime check");
     });
 
     it("several in flight: the latest to start, and the rest as more", () => {
@@ -188,9 +215,20 @@ describe("stepSummary: running", () => {
 
 describe("stretchTime", () => {
     it("formats as workedFor does, without its words", () => {
-        expect(stretchTime(400)).toBe("");
-        expect(stretchTime(38_000)).toBe("38s");
-        expect(stretchTime(192_000)).toBe("3m 12s");
-        expect(stretchTime(3_900_000)).toBe("1h 5m");
+        expect(stretchTime(38_000, false)).toBe("38s");
+        expect(stretchTime(192_000, false)).toBe("3m 12s");
+        expect(stretchTime(3_900_000, false)).toBe("1h 5m");
+    });
+
+    it("a finished stretch shows no time under 10 seconds", () => {
+        expect(stretchTime(400, false)).toBe("");
+        expect(stretchTime(5_000, false)).toBe("");
+        expect(stretchTime(9_999, false)).toBe("");
+        expect(stretchTime(10_000, false)).toBe("10s");
+    });
+
+    it("a running stretch always counts", () => {
+        expect(stretchTime(3_000, true)).toBe("3s");
+        expect(stretchTime(400, true)).toBe("");
     });
 });

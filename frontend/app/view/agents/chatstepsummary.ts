@@ -4,10 +4,12 @@
 // The folded line of a stretch of tool calls in Chat (chatstepsview.tsx ChatSteps), as words: "Edited server.js, ran 2
 // commands, read 5 files", then the stretch's +/− lines and its time. The clauses that change something come first, then
 // the ones that only looked, merged into one; only calls that succeeded count, and a stretch in which every call failed
-// reads by what it tried. While a call is in flight the line says what it is doing instead: "Running npm test +2". Pure.
+// reads by what it tried. A stretch of one described command reads as its description, as the agent wrote it ("Checked
+// the working tree after the restart"). While a call is in flight the line says what it is doing instead: "Running npm
+// test +2", a described command its description as written. Pure.
 
 import type { AgentActionEntry } from "./agentsviewmodel";
-import { chipsOf, editCounts, plainVerb, type StepChip } from "./chatsteps";
+import { chipsOf, editCounts, plainVerb, succeeded, type StepChip } from "./chatsteps";
 import { inFlight, workedFor } from "./compacttimeline";
 
 export interface StretchSummary {
@@ -73,8 +75,6 @@ function kindOf(a: AgentActionEntry): Kind {
     }
     return "tool";
 }
-
-const succeeded = (a: AgentActionEntry) => a.outcome !== "fail" && a.outcome !== "blocked" && a.verb !== "blocked";
 
 function baseName(path: string): string {
     return path.split(/[\\/]/).pop() || path;
@@ -182,12 +182,12 @@ function chipText(chip: StepChip): string {
 }
 
 /** Pure: what a call in flight is doing: "Running npm test", "Reading server.js"; a described command by its
- *  description, which already says what it does, its leading Run or Ran said as Running ("Ran tests to confirm…" →
- *  "Running tests to confirm…", as the canvas draws it). */
+ *  description as the agent wrote it, which already says what it does ("Run verify on packages…", as Calm.dc.html
+ *  draws it: a leading Run rewritten to Running read as broken English). */
 export function doingText(a: AgentActionEntry): string {
     const [chip] = chipsOf(a);
     if (chip?.kind === "description") {
-        return chip.text.replace(/^(?:Run|Ran|Running)\b/i, "Running");
+        return chip.text;
     }
     const kind = kindOf(a);
     const verb = kind === "tool" ? `${DOING.tool} ${plainVerb(a.verb).toLowerCase()}` : DOING[kind];
@@ -214,7 +214,11 @@ export function stepSummary(actions: AgentActionEntry[], live: boolean): Stretch
         }
     }
     let text: string;
-    if (ok.length > 0) {
+    const only = actions.length === 1 && kindOf(actions[0]) === "run" ? chipsOf(actions[0])[0] : undefined;
+    if (only?.kind === "description") {
+        // one command reads as its description, failed or not: the line stays muted, the row keeps its exit mark
+        text = only.text;
+    } else if (ok.length > 0) {
         text = capitalised(clauses(ok, "past").join(", "));
     } else if (actions.length > 0) {
         text = `Tried to ${clauses(actions, "base").join(", ")}`;
@@ -224,7 +228,14 @@ export function stepSummary(actions: AgentActionEntry[], live: boolean): Stretch
     return { running: false, text, more: 0, edits };
 }
 
-/** Pure: a stretch's time as the line's tail says it, "38s", "3m 12s", "1h 5m" (workedFor's numbers); "" under a second. */
-export function stretchTime(durationMs: number): string {
+/** A finished stretch's line shows no time under this: a few seconds on every line was noise between the paragraphs. */
+export const MIN_SHOWN_MS = 10_000;
+
+/** Pure: a stretch's time as the line's tail says it, "38s", "3m 12s", "1h 5m" (workedFor's numbers); "" under a second,
+ *  and "" for a finished stretch under MIN_SHOWN_MS. A running stretch always counts. */
+export function stretchTime(durationMs: number, running: boolean): string {
+    if (!running && durationMs < MIN_SHOWN_MS) {
+        return "";
+    }
     return workedFor(durationMs).replace(/^Worked(?: for )?/, "");
 }

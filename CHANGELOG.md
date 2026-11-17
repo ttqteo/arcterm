@@ -44,6 +44,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A turn in Chat reads calmer: a stretch of one command reads as what the agent said it does ("Checked the working
+  tree") instead of "Ran a command", a running stretch stays one folded line with its spinner until you open it, the
+  Working line no longer repeats the running call, and a finished stretch shows its time only from 10 s up. A finished
+  turn that changed files ends in a card of those files with their +/− lines; click a file to open it in the Diff, or
+  See all for every change.
 - Opening a run from an agent (a brainstorm's run line in the Agent tree, its Open run, or Open run on Chat's run card)
   shows it in the Agent tree first, its lead selected and its lanes unfolded, instead of switching to Jarvis; a run with
   no agent left in the tree still opens in Jarvis.
