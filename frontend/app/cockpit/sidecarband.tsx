@@ -1,9 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Sidecar strain band (spec 2026-11-13-sidecar-design.md, section 4; board E-strain-band): one band over the wall
+// The Sidecar strain band (spec 2026-11-13-sidecar-design.md, section 4; board E-strain-band): one band over the dashboard
 // when the machine is strained, saying what is strained and since when, and naming the agents that weigh most with a
-// Stop and a Sleep for each. It draws the snapshot's `strain` and sends `stop` and `sleep` acts; the wall holds whether
+// Stop and a Sleep for each. It draws the snapshot's `strain` and sends `stop` and `sleep` acts; the page holds whether
 // the × hid it. Stop asks in place first (page-local state), and there is no band-wide action. Nothing here animates.
 // The page is storeless: only the types, the pure models and React.
 
@@ -71,7 +71,7 @@ export function SidecarBand({ strain, machine, now, onHide, send }: SidecarBandP
                     aria-label="Hide until it changes"
                     title="Hide until it changes"
                     tabIndex={-1}
-                    // a click must not leave the button holding focus: Enter belongs to the wall, not to it
+                    // a click must not leave the button holding focus: Enter belongs to the dashboard, not to it
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={onHide}
                     className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary"
@@ -108,7 +108,7 @@ function HeavyRow({ h, send }: { h: SidecarHeavy; send: (act: SidecarAct) => voi
         setConfirm(null);
     }
     const asking = proc != null && confirm === proc.pid;
-    // none of these may keep focus after a press: Enter and the arrows belong to the wall
+    // none of these may keep focus after a press: Enter and the arrows belong to the dashboard
     const press = { type: "button" as const, tabIndex: -1, onMouseDown: (e: MouseEvent) => e.preventDefault() };
     return (
         <div

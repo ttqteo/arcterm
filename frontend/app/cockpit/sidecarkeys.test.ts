@@ -8,7 +8,6 @@ import {
     canAnswer,
     formatTileAge,
     moveSelection,
-    resolveSelection,
     sidecarKey,
     tileAgeMs,
 } from "./sidecarkeys";
@@ -47,33 +46,6 @@ describe("moveSelection", () => {
     it("no items, or an index past the end, comes back inside the list", () => {
         expect(moveSelection(0, "ArrowRight", 3, 0)).toBe(0);
         expect(moveSelection(12, "ArrowLeft", 3, 5)).toBe(3);
-    });
-});
-
-describe("resolveSelection", () => {
-    const ids = (...s: string[]) => s;
-
-    it("keeps the selected id when the order changes", () => {
-        expect(resolveSelection("b", ids("a", "b", "c"), ids("c", "b", "a"))).toBe("b");
-    });
-
-    it("an item that leaves moves the selection to the same index", () => {
-        expect(resolveSelection("b", ids("a", "b", "c"), ids("a", "c"))).toBe("c");
-        expect(resolveSelection("a", ids("a", "b", "c"), ids("x", "b", "c"))).toBe("x");
-    });
-
-    it("clamps to the last item when the list got shorter than the index", () => {
-        expect(resolveSelection("e", ids("a", "b", "c", "d", "e"), ids("a", "b"))).toBe("b");
-    });
-
-    it("selects the first item when nothing was selected, and none when nothing is there", () => {
-        expect(resolveSelection(null, ids(), ids("a", "b"))).toBe("a");
-        expect(resolveSelection("a", ids("a"), ids())).toBeNull();
-        expect(resolveSelection(null, ids(), ids())).toBeNull();
-    });
-
-    it("an id the previous list never held falls back to the first item", () => {
-        expect(resolveSelection("zzz", ids("a", "b"), ids("a", "b"))).toBe("a");
     });
 });
 

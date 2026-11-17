@@ -8,7 +8,7 @@
 //
 // It does no work while no page is live. A page is live from its `hello` until the host's `sidecar:closed`; it
 // re-sends `hello` every 2 s until its first snapshot arrives, so either launch order works. The stores it watches are
-// agentsAtom, liveEntriesByIdAtom and sentIdsAtom, and the Cockpit's filters and ~15 s structural clock, since the wall
+// agentsAtom, liveEntriesByIdAtom and sentIdsAtom, and the Cockpit's filters and ~15 s structural clock, since the dashboard
 // shows only what the Cockpit's grid shows (sidecarsnapshot.ts wallAgentIds); never the 1 s nowAtom tick (it reads
 // `now` once per build): a subscription to the tick would re-emit forever. It never makes the main window stream more
 // agents.
@@ -137,7 +137,7 @@ let failedLeads: ReadonlyMap<string, number | undefined> = new Map();
 
 declare global {
     interface Window {
-        // DEV test seams for the sidecar-wall CDP scenario (decisions 13 and 14); all are compiled out of a production build
+        // DEV test seams for the sidecar-orbit and sidecar-compact CDP scenarios (decisions 13 and 14); all are compiled out of a production build
         // every act the bridge received, in order, valid or not
         __sidecarActs?: unknown[];
         // true: the bridge is not live (it emits nothing) and ignores hello, so the page stays on its waiting state;

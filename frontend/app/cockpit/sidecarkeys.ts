@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // What the Sidecar dashboard's keys and ages are made of (spec 2026-11-17-sidecar-orbit-dashboard-design.md): the arrow
-// keys' step through a list, the selection that survives a snapshot, a duration written the way the board writes it, the
-// key a press means, and the answer an ask row takes. Pure; sidecarorbitmodel.ts builds the page's keys from them and the
-// two views draw the ages. They lived beside the wall's tiling until the dashboard replaced the wall.
+// keys' step through a list, a duration written the way the board writes it, the key a press means, and the answer an
+// ask row takes. Pure; sidecarorbitmodel.ts builds the page's keys from them (and keeps the selection across a snapshot,
+// `selectionAfter`) and the two views draw the ages. They lived beside the wall's tiling until the dashboard replaced
+// the wall.
 
 import type { SidecarAct, SidecarTile } from "./sidecartypes";
 
@@ -29,26 +30,6 @@ export function moveSelection(index: number, key: MoveKey, cols: number, count: 
         case "ArrowDown":
             return i + cols <= count - 1 ? i + cols : i;
     }
-}
-
-/**
- * The selected id after the snapshot changed: the same one when it is still there, else the one now at the index it
- * had (clamped to the new list), else the first; null when there are none. `prevIds` is the order the selection was last
- * resolved against, which tells where an item that left stood.
- */
-export function resolveSelection(
-    selectedId: string | null,
-    prevIds: readonly string[],
-    ids: readonly string[]
-): string | null {
-    if (ids.length === 0) {
-        return null;
-    }
-    if (selectedId != null && ids.includes(selectedId)) {
-        return selectedId;
-    }
-    const was = selectedId == null ? -1 : prevIds.indexOf(selectedId);
-    return ids[was < 0 ? 0 : Math.min(was, ids.length - 1)];
 }
 
 const MIN_MS = 60_000;
