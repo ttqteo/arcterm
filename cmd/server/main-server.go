@@ -41,6 +41,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/projectactivity"
 	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
+	"github.com/wavetermdev/waveterm/pkg/remotemode"
 	"github.com/wavetermdev/waveterm/pkg/runpause"
 	"github.com/wavetermdev/waveterm/pkg/runprune"
 	"github.com/wavetermdev/waveterm/pkg/runregulator"
@@ -610,6 +611,16 @@ func main() {
 	}
 	if !snapshotSkips("runTelebot") { // the copied settings may hold a paired chat and its token
 		runTelebot()
+	}
+	remotemode.AgentsHook = wshserver.RemoteAgents // wshserver imports remotemode, so remotemode reads the roster and transcripts through these; before Restore
+	remotemode.TranscriptHook = wshserver.RemoteTranscript
+	if !snapshotSkips("remotemode.Restore") { // the copied store may hold remote mode on, which would start a tunnel
+		go func() {
+			defer func() {
+				panichandler.PanicHandler("remotemode.Restore", recover())
+			}()
+			remotemode.Restore()
+		}()
 	}
 	// after the config watcher: each run resolves the vault path from config
 	if !snapshotSkips("wavevault.StartSyncLoop") { // opening the copied vault (no .git) would git init it and sync it with the remote the copied settings name

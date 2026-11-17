@@ -16,6 +16,14 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Remote mode on a real phone (ported from the kael fork).** The `remote-switch`, `remote-hand` and
+  `remote-phone` scenarios cover Settings → Remote, the footer chip, the More menu's Hand to phone and the phone page
+  against fixtures; nothing has run against a real tunnel. With a Cloudflare named tunnel and an Access app set up as in
+  `docs/remote-phone.md`: `wsh remote on` → the footer reads Remote on; install the page on an iPhone from Safari, log in
+  from inside the installed app, turn on notifications; an agent's question pushes to the phone and an answer there
+  reaches the agent; with Telegram paired too, the question goes to both and the first answer wins (the other side says
+  it was answered). Hand a claude agent over (`p`): its transcript, a prompt, Stop and a permission Allow work from the
+  phone; Take back returns it.
 - [ ] (arcterm) **An awake agent is compacted when Claude Code's idle compaction is off.** With `autoCompactEnabled`
   false in `~/.claude.json`, leave a Claude agent with 100k+ of context idle on screen for about 55 minutes: it gets one
   `/compact` (its summary lands, the composer's draft is untouched) and is not put to sleep; the next turn after an

@@ -201,6 +201,69 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
             ],
         },
         {
+            id: "remote",
+            name: "Remote",
+            blurb: "Your phone as a remote for arcterm, through your own Cloudflare tunnel, while you turn it on: what waits on you, answering agent questions, and driving an agent you hand over.",
+            cards: [
+                {
+                    id: "remotemode",
+                    label: "Remote mode",
+                    keywords: ["phone", "iphone", "mobile", "pwa", "push", "hand over", "cloudflare"],
+                    rows: [
+                        {
+                            id: "remote.mode",
+                            title: "Remote mode",
+                            desc: "While on, what waits on you reaches your phone, and you can answer agent questions and drive handed-over agents from it. The phone can turn it off too.",
+                            key: "secretstore · arc_remote",
+                            scope: "local",
+                        },
+                        {
+                            id: "remote.status",
+                            title: "Status",
+                            desc: "Setup, the tunnel, the public address, and whether a phone has subscribed.",
+                        },
+                    ],
+                },
+                {
+                    id: "remotesetup",
+                    label: "Tunnel & Access",
+                    keywords: ["cloudflare", "tunnel", "access", "zero trust", "token"],
+                    rows: [
+                        {
+                            id: "remote.tunneltoken",
+                            title: "Tunnel token",
+                            desc: "The named tunnel's connector token, from Zero Trust > Networks > Tunnels. Write-only: arcterm never shows it again. Paste a refreshed one to replace it.",
+                        },
+                        {
+                            id: "remote.hostname",
+                            title: "Hostname",
+                            desc: "The tunnel's public hostname, e.g. arc.example.com. Its service must be http://localhost on the port below.",
+                        },
+                        {
+                            id: "remote.port",
+                            title: "Local port",
+                            desc: "Where the phone listener binds on this machine.",
+                        },
+                        {
+                            id: "remote.team",
+                            title: "Access team",
+                            desc: "Your Zero Trust team name: acme for acme.cloudflareaccess.com.",
+                        },
+                        {
+                            id: "remote.aud",
+                            title: "Access audience tag",
+                            desc: "The AUD tag of the Access application that guards the hostname.",
+                        },
+                        {
+                            id: "remote.email",
+                            title: "Owner email",
+                            desc: "The only Access identity arcterm lets in, whatever the Access policy allows.",
+                        },
+                    ],
+                },
+            ],
+        },
+        {
             id: "appearance",
             name: "Appearance",
             blurb: "Theme, colors and fonts, what an agent row in the sidebar shows, and whether Chat folds long replies.",

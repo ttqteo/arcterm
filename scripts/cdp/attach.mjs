@@ -173,6 +173,12 @@ export async function attachByUrl(match, { port = Number(process.env.CDP_PORT) |
     }
 }
 
+// Attaches to a page of another browser (remote-phone's headless phone), whose shots join the run's list; it has no
+// cockpit, so its ready check is trivially true.
+export function openPage(target, shots) {
+    return attachTarget(target, { pageReady: "true", shots });
+}
+
 async function attachTarget(target, { pageReady = PAGE_READY, shots = [] } = {}) {
     const client = await connect(target.webSocketDebuggerUrl);
     await client.send("Runtime.enable");

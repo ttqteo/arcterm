@@ -55,6 +55,9 @@ const (
 
 	// the Christmas tree's season ledger (pkg/xmastree): the whole data, after a task joins it
 	Event_XmasTreeChanged = "xmastree:changed" // type: wshrpc.XmasTreeData
+
+	// remote mode (pkg/remotemode): its status, after every change
+	Event_RemoteStatus = "remote:status" // type: *wshrpc.RemoteStatusData
 )
 
 var AllEvents []string = []string{
@@ -89,6 +92,7 @@ var AllEvents []string = []string{
 	Event_ServicesChanged,
 	Event_DumeChanged,
 	Event_XmasTreeChanged,
+	Event_RemoteStatus,
 }
 
 type WaveEvent struct {

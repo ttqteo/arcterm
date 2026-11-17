@@ -4324,3 +4324,12 @@ describe("agent arrows", () => {
         }
     });
 });
+
+describe("agent:hand-to-phone", () => {
+    it("is on p, and no other Agent binding uses p", () => {
+        const agentBindings = buildAgentBindings(stubModel());
+        const hand = agentBindings.find((b) => b.id === "agent:hand-to-phone");
+        expect(hand?.keys).toBe("p");
+        expect(agentBindings.filter((b) => b.keys === "p").map((b) => b.id)).toEqual(["agent:hand-to-phone"]);
+    });
+});

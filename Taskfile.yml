@@ -19,6 +19,7 @@ tasks:
         deps:
             - npm:install
             - sync:piartifacts
+            - sync:remoteweb
             - tauri:sync-version
             - build:backend:devhost
             - build:backend:devhost:full
@@ -56,6 +57,7 @@ tasks:
         deps:
             - npm:install
             - sync:piartifacts
+            - sync:remoteweb
             - build:backend:devhost
             - build:backend:devhost:full
         env:
@@ -328,6 +330,30 @@ tasks:
         generates:
             - pi/themes/arc.json
 
+    sync:remoteweb:
+        desc: Write the phone page's generated assets under pkg/remotemode/web/static (tokens.css from the @theme block, the woff2 fonts, the 256 px icon, projectors.js bundled from the cockpit's claude and pi projectors, markdown.js bundled from the cockpit's markdown parser) from their single sources (generated, never hand-edited).
+        run: once
+        cmds:
+            - cmd: node scripts/sync-remote-web.mjs
+        sources:
+            - scripts/sync-remote-web.mjs
+            - frontend/tailwindsetup.css
+            - public/fonts/hanken-grotesk-variable.woff2
+            - public/fonts/jetbrains-mono-variable.woff2
+            - src-tauri/icons/icon.ico
+            - frontend/app/view/agents/remoteprojectors.ts
+            - frontend/app/view/agents/transcriptprojection.ts
+            - frontend/app/view/agents/pitranscriptprojection.ts
+            - frontend/app/view/agents/tooldetail.ts
+            - frontend/app/view/agents/agentsviewmodel.ts
+            - frontend/app/view/agents/remotemarkdown.ts
+        generates:
+            - pkg/remotemode/web/static/tokens.css
+            - pkg/remotemode/web/static/fonts/*.woff2
+            - pkg/remotemode/web/static/icon.png
+            - pkg/remotemode/web/static/projectors.js
+            - pkg/remotemode/web/static/markdown.js
+
     sync:piartifacts:
         desc: Copy authored pi/ artifacts into their go:embed locations under cmd/wsh/cmd (generated, never hand-edited).
         # several builds run side by side depend on it (dev:final): once per `task` run, not one copy each at once
@@ -368,6 +394,7 @@ tasks:
     build:server:internal:
         deps:
             - sync:piartifacts
+            - sync:remoteweb
         requires:
             vars:
                 - ARCHS

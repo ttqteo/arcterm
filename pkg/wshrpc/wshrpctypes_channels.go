@@ -100,8 +100,9 @@ type AttentionItem struct {
 	RunId        string `json:"runid,omitempty"`
 	Source       string `json:"source"` // the run's goal, or the worker's name
 	Text         string `json:"text"`
-	Action       string `json:"action"`   // Review | Decide | Answer
-	PhaseIdx     int    `json:"phaseidx"` // gate items only: the phase AdvanceRun must address to approve or send back
+	Reason       string `json:"reason,omitempty"` // the bare hold reason, set only for run-land-held (the phone page shows it)
+	Action       string `json:"action"`           // Review | Decide | Answer
+	PhaseIdx     int    `json:"phaseidx"`         // gate items only: the phase AdvanceRun must address to approve or send back
 	WaitingSince int64  `json:"waitingsince"`
 	// TaskId is the task a dag-gate approves or a dag-blocked item names; Retry says retrying it is the
 	// right action (a circuit break), not a merge the human resolves by hand.

@@ -64,6 +64,7 @@ import { JobQueuePanel } from "./jobqueuepanel";
 import { setupOpenFileSubscription } from "./openfilestore";
 import { setupUiClient } from "./uiclient";
 import { NotificationToasts } from "./notificationtoasts";
+import { RemoteStatusPoller } from "./remotereadout";
 import { startResMonPolling } from "./resmonstore";
 
 const AgentsBlockId = "cockpit-agents";
@@ -204,6 +205,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <NowTicker model={model} />
             <BackgroundAgentsPoller />
+            <RemoteStatusPoller />
             <AttentionPoller model={model} />
             <BrainstormPoller model={model} />
             <PulseDriver />
