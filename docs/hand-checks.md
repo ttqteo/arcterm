@@ -178,6 +178,12 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   this folder` (no numbers), the second one highlighted. Yes picks it (the terminal moves on past the prompt) and the
   card goes. If no card shows, the prompt has no solid rule over it on the real screen: capture its PTY output for
   `tuiscreen.fixtures.json`.
+- [ ] (arcterm) **An unclosed tag in a Markdown Preview shows as text; a highlight around a bare link closes.** Unit
+  tests only, no dev app ran (commit "fix(markdown): an unclosed tag in a Preview shows as text; a mark closes on the
+  == a bare URL swallowed"). Open `harnesspov/harnesspov/agent/prompts/system.md` (mit-thesis) in Preview: line 4
+  reads `"script":"<a complete Node CommonJS script>"}` as written and nothing after it is blue. A `<details>` with
+  its `</details>` in a README still folds. In Chat, an answer with `==… http://localhost:4321/.==` draws the sentence
+  highlighted with no `==` showing, the link ending at `4321/`.
 - [ ] (arcterm) **A council an agent ran ends as a card at the end of Chat, its summary in a council panel.** The CDP
   scenario `chat-council` covers fixture transcripts only (commit "feat(chat): an ended council stays a card at the end,
   its summary in a council panel", 2026-11-16). Ask a Claude agent for a council (/arc:council) and let it wait in the
