@@ -41876,6 +41876,8 @@ const CONSUMERS_READING = {
 };
 const CONSUMERS_STOP_WORKER =
     "Stop worker t-3 of run 85548d0b? Its task stops and is not retried; tasks after it wait until you Retry or Skip it in the run.";
+// → Sonnet on a working worker re-runs its task on Sonnet (sonnetRerunMessage): /model would wait for its turn
+const CONSUMERS_SONNET_RERUN = "Re-run worker t-3 of run 85548d0b on Sonnet?";
 const CONSUMERS_STOP_MINE = `End the session for "${CONSUMERS_MINE}"? This stops the agent and can't be undone.`;
 const CONSUMERS_STOP_LIVE = `End the session for "${CONSUMERS_LIVE}"? This stops the agent and can't be undone.`;
 
@@ -42159,13 +42161,21 @@ const consumersPopover = {
             JSON.stringify(tokens)
         );
 
+        // the worker is working: /model would only land when its turn, its whole task, ends, so → Sonnet asks to re-run
+        // the task on Sonnet, then stops the worker and escalates the task to Sonnet
         await h.ev(`${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-sonnet]")?.click()`);
-        const sonnetToast = await polishWaitFor(h, consumersToastExpr("arcterm switch", "Sonnet"), 3000);
-        const sonnetCall = (await calls()).find((c) => c.command === "agentssetmodel");
+        const rerunConfirm = await polishWaitFor(h, `!!${consumersDialogExpr(CONSUMERS_SONNET_RERUN)}`, 3000);
+        await h.shot("cdp-shots/consumers-sonnet-rerun.png");
+        await h.ev(`[...(${consumersDialogExpr(CONSUMERS_SONNET_RERUN)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim().startsWith("Re-run on Sonnet"))?.click()`);
+        const sonnetToast = await polishWaitFor(h, consumersToastExpr("Worker t-3 re-runs on Sonnet"), 3000);
+        const sonnetCalls = (await calls()).filter((c) => c.command === "dagaction").map((c) => c.data);
+        const task = { channelid: "fx-ch", runid: "85548d0b-fx", taskid: "t-3" };
         rec(
-            "7. → Sonnet sends /model sonnet to the worker's tab and a toast says so",
-            sonnetToast && sonnetCall?.data?.tab === "fx-consumers-worker" && sonnetCall?.data?.model === "sonnet",
-            JSON.stringify({ sonnetToast, sonnetCall })
+            "7. → Sonnet on the working worker asks to re-run its task on Sonnet, then stops it and escalates the task to sonnet",
+            rerunConfirm && sonnetToast &&
+                JSON.stringify(sonnetCalls) === JSON.stringify([{ ...task, action: "stop" }, { ...task, action: "escalate", model: "sonnet" }]) &&
+                !(await calls()).some((c) => c.command === "agentssetmodel"),
+            JSON.stringify({ rerunConfirm, sonnetToast, sonnetCalls })
         );
 
         await h.ev(`${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-stop]")?.click()`);
@@ -42173,7 +42183,8 @@ const consumersPopover = {
         await h.shot("cdp-shots/consumers-stop-worker.png");
         await h.ev(`[...(${consumersDialogExpr(CONSUMERS_STOP_WORKER)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim().startsWith("Stop worker"))?.click()`);
         const stopToast = await polishWaitFor(h, consumersToastExpr("Worker t-3 stopped"), 3000);
-        const stopCall = (await calls()).find((c) => c.command === "dagaction");
+        // the newest: step 7's re-run sent a stop and an escalate before it
+        const stopCall = (await calls()).filter((c) => c.command === "dagaction").at(-1);
         rec(
             "8. Stop on a worker asks the run confirm, then sends the stop dag action for its task",
             workerConfirm && stopToast &&
@@ -61348,7 +61359,8 @@ const servicesTree = {
                 freed &&
                 stillAsleep &&
                 fixedRow?.state === "sleeping" &&
-                fixedRow.words === "sleeping",
+                // a service the person stopped reads stopped, not sleeping (serviceTreeWords: wavesrv's Off)
+                fixedRow.words === "stopped",
             JSON.stringify({ openedFixed, heldBefore, stopped: stopped.ok, freed, stillAsleep, fixedRow })
         );
 
