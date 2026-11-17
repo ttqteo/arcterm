@@ -39,6 +39,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Clicking a file in the card that ends a turn in Chat opens it in the rail beside the terminal, in a tab of its own;
   See all still opens the Diff.
+- Switching back to an agent in Chat shows a skeleton while it reads what the agent wrote meanwhile, then draws the
+  conversation at once, instead of opening each of those rows one by one.
 - Chat no longer draws commit suggestion cards: an agent that has to ask before committing asks in plain words again.
 
 ## 1.3.0 — 2026-11-17
