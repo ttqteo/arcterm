@@ -530,6 +530,17 @@ function ComposerBox({
                     box.focus({ preventScroll: true });
                     return true;
                 },
+                // no caret asked for: the editor places none while it is not focused (a caret set in it would take the
+                // focus), and its focus() puts one at the end
+                write: (t) => {
+                    const box = editorRef.current;
+                    if (box == null || box.readOnly) {
+                        return false;
+                    }
+                    recalled.current = { at: null, shown: "" };
+                    latest.current.setText(t);
+                    return true;
+                },
                 interrupt: () => interruptRef.current(),
             }),
         [agent.id]

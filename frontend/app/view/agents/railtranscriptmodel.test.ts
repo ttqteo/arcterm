@@ -13,6 +13,7 @@ import {
     prependChunk,
     shouldStream,
     showsCompactions,
+    tailWindow,
     type LoadedWindow,
 } from "./railtranscriptmodel";
 
@@ -126,6 +127,25 @@ describe("appendLines", () => {
     it("leaves the window it was given alone", () => {
         const before = win();
         appendLines(before, { lines: ["l13"], end: 150 });
+        expect(before).toEqual(win());
+    });
+});
+
+describe("tailWindow", () => {
+    it("keeps the last lines of a window read back further, with the start moved to match", () => {
+        const w = win({ lines: ["l0", "l1", "l2", "l3", "l4"], start: 0, total: 5, end: 50 });
+        expect(tailWindow(w, 2)).toEqual({ lines: ["l3", "l4"], start: 3, total: 5, end: 50 });
+    });
+
+    it("hands back the same window when it holds no more than the tail", () => {
+        const w = win();
+        expect(tailWindow(w, 3)).toBe(w);
+        expect(tailWindow(w, 2000)).toBe(w);
+    });
+
+    it("leaves the window it was given alone", () => {
+        const before = win();
+        tailWindow(before, 1);
         expect(before).toEqual(win());
     });
 });

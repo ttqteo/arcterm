@@ -69,6 +69,17 @@ export function appendLines(w: LoadedWindow, answer: AppendAnswer): LoadedWindow
     return { lines, start: w.start, total: Math.max(w.total, w.start + lines.length), end: answer.end };
 }
 
+// The window a reader leaves behind in the cache: only its last `maxLines` lines, which is what a fresh read of the tail
+// holds. A window read back to the start of a long session would otherwise stay in memory, every line of it, until other
+// transcripts push it out. The same window when it holds no more than that.
+export function tailWindow(w: LoadedWindow, maxLines: number): LoadedWindow {
+    const drop = w.lines.length - maxLines;
+    if (drop <= 0) {
+        return w;
+    }
+    return { lines: w.lines.slice(drop), start: w.start + drop, total: w.total, end: w.end };
+}
+
 // The `keyOffset` CompactTranscript takes after a prepend: how many entries the loads have put in front so far. The
 // lines are projected whole again after a load, so the entries added in front are the growth in their count.
 export function keyOffsetAfter(prev: number, entriesBefore: number, entriesAfter: number): number {

@@ -6,8 +6,9 @@
 // popover's page (tray.tsx) it never boots the cockpit, the wsh client, WOS or a store: the main window owns all of
 // them, and a second copy here would cost its RAM again. Spec 2026-11-13-sidecar-design.md, section 2.
 
+import { SidecarCompact } from "@/app/cockpit/sidecarcompact";
 import { layoutFor, type FormChange, type SidecarLayout } from "@/app/cockpit/sidecarlayout";
-import { SidecarSmall } from "@/app/cockpit/sidecarsmall";
+import { SidecarOrbit } from "@/app/cockpit/sidecarorbit";
 import { SidecarTitleBar, toggleSidecarFullscreen } from "@/app/cockpit/sidecartitlebar";
 import {
     SIDECAR_ACT_EVENT,
@@ -16,7 +17,6 @@ import {
     type SidecarForm,
     type SidecarSnapshot,
 } from "@/app/cockpit/sidecartypes";
-import { SidecarWall } from "@/app/cockpit/sidecarwall";
 import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
 import { loadFonts } from "@/util/fontutil";
 import { invoke } from "@tauri-apps/api/core";
@@ -26,7 +26,7 @@ import { createRoot } from "react-dom/client";
 import "./tailwind.css";
 
 // the main window may start after this page (a reopened Sidecar loads first): until a snapshot arrives the page asks
-// again, so either launch order shows the wall
+// again, so either launch order shows the dashboard
 const HELLO_RETRY_MS = 2000;
 // ages are minutes and hours: a redraw every 30 s keeps them honest at no other cost
 const CLOCK_TICK_MS = 30_000;
@@ -44,8 +44,8 @@ interface Heard {
 const FULL_FORM: SidecarForm = { small: false, pinned: false };
 
 // The layout follows the window's width against its screen's (one pure rule, no hysteresis), so a drag across the line
-// just switches and nothing reloads: the same snapshot feeds either layout. The screen is read again on each resize,
-// since a move to a screen of another scale resizes the page.
+// just switches and nothing reloads: the same snapshot feeds P (the "wall" layout) and Q (the "small" one). The screen
+// is read again on each resize, since a move to a screen of another scale resizes the page.
 function readLayout(): SidecarLayout {
     return layoutFor(window.innerWidth, window.screen?.availWidth);
 }
@@ -88,7 +88,7 @@ function SidecarRoot() {
     const [heard, setHeard] = useState<Heard | null>(null);
     const layout = useLayout();
     const [form, changeForm] = useSidecarForm();
-    // Date.now() too: the wall adds (clock - heard.at) to the snapshot's own `now`, so the two must share one clock
+    // Date.now() too: the dashboard adds (clock - heard.at) to the snapshot's own `now`, so the two must share one clock
     const [clock, setClock] = useState(() => Date.now());
 
     useEffect(() => {
@@ -141,10 +141,10 @@ function SidecarRoot() {
     }, []);
 
     return (
-        // nothing on this page animates (spec decision 14), so the base layer's button transitions go too
+        // the only motion is the dashboard's own (the spec's Motion section: a waiting item's ping, a row's reveal, the
+        // frame's and the ring's colour); the base layer's button transitions go, so a button never moves on its own
         <div className="flex h-screen w-screen flex-col overflow-hidden bg-background font-sans text-primary [&_button]:transition-none">
             <SidecarTitleBar
-                counts={heard?.snap.counts ?? null}
                 machine={heard?.snap.machine}
                 strain={heard?.snap.strain}
                 layout={layout}
@@ -160,15 +160,15 @@ function SidecarRoot() {
                     Waiting for arcterm…
                 </div>
             ) : layout === "small" ? (
-                <SidecarSmall snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
+                <SidecarCompact snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
             ) : (
-                <SidecarWall snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
+                <SidecarOrbit snap={heard.snap} receivedAt={heard.at} clock={clock} send={send} />
             )}
         </div>
     );
 }
 
 loadFonts();
-// the window never scrolls: the wall fits one screen, or scrolls inside itself
+// the window never scrolls: P is drawn to fit it, and Q's Needs you list scrolls inside itself
 document.body.classList.add("overflow-hidden");
 createRoot(document.getElementById("sidecar")!).render(<SidecarRoot />);

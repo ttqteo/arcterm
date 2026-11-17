@@ -69,6 +69,7 @@ describe("buildThemeVars — the default preset equals the @theme literals", () 
         "--color-accent-400",
         "--color-accentbg",
         "--color-error",
+        "--color-errorbg",
         "--color-warning",
         "--color-asking",
         "--color-success",

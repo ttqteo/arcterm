@@ -13,8 +13,8 @@ highest-numbered `hand-checks-N.md` until this file is under 250 lines; when tha
 its lines. Lines in an older part are ticked and removed where they are; a part left empty is deleted and taken off the
 list (its number is not reused).
 
-Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
-[part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
+Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
+[part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
 - [ ] (arcterm) **Session search on your real transcripts.** The three `session-search-*` scenarios answer the search
   from a mock; nothing has run `SearchSessions` over real transcripts in the app. Agent → Conversation History → type a
@@ -23,6 +23,30 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   hit, Enter / Shift+Enter step through the matches, Esc closes the bar. New agent → Claude → `/` or the Session
   column's magnifier → the same word lists title and "Matched by content" rows. Note how long the first search takes.
   `conversationhistory.tsx`, `launcherresumelist.tsx`, `sessionsdetail.tsx`; commits 4b9814411, c7fdf4883, 104a440a8.
+- [ ] (arcterm) **Closing Sidecar frees its two window icons; a reopen still draws the badge.** Windows only; the code is
+  unit-tested but was never run in an app. Open Task Manager → Details, add the "GDI objects" and "USER objects"
+  columns, then open and close Sidecar (Ctrl+P → Open Sidecar) ten times → arcterm's counts come back to the same
+  level after each close instead of growing by two per cycle, and after each reopen the title bar and the taskbar
+  button still draw the screen-badge icon. Commit: fix(sidecar) free the window's icons when Sidecar closes
+- [ ] (arcterm) **Sidecar P/Q across a real day: the question heuristic's misses, the ping from across the room, RAM of
+  P with 12 agents after a day.** The `sidecar-orbit` and `sidecar-compact` scenarios read fixtures: they cannot judge
+  a real day. With real agents for a day: (1) a finished agent whose last message asks something gets a Needs you row
+  (Enter: reply in the main window), and a rhetorical question at the end of a report does too, which is the miss to
+  count (spec "Open": a miss only adds a row, and answering or opening it clears it); note the false rows and any
+  question it did not catch. (2) From across the room (a second screen, 2 m away), a waiting node or row pings and you
+  see it without reading; nothing else on the screen moves. (3) RAM of P with 12 agents after a day on screen, against
+  the 100 MB budget: write the figures into the "Sidecar, part 3" row of `docs/open-issues.md` "RAM watch" (the main
+  window's renderer grows on its own: read Sidecar's renderer plus the GPU process it adds, as the part-1 row does).
+  Commit: test(sidecar) CDP scenarios for the orbit dashboard, full and compact
+- [ ] (arcterm) **Packaged build: Sidecar has its own taskbar button with the screen badge, not arcterm's icon;
+  right-click shows no "Pin to taskbar"; closing arcterm closes it.** Windows only; the dev app shares the exe's icon
+  either way and the `sidecar-orbit` scenario only reads the log line `[sidecar] app id dev.arc.app-dev.sidecar`. Install
+  a `task tauri:build` build and open Sidecar → it is its own taskbar button, not grouped under arcterm's, drawn with
+  arcterm's mark and a small screen badge in its corner; right-click its button → no Pin to taskbar (a pin would relaunch
+  arcterm, not Sidecar); close the main window with the tray icon off (Settings → `app:tray`) → Sidecar closes with it.
+  The spec's open question is answered here: which icon Windows draws for a window whose id has no shortcut, the
+  window's own (`WM_SETICON`) or the exe's; if the exe's, say so and the host's icon call is the next thing to look at.
+  Commit: feat(sidecar) its own taskbar button and icon on Windows
 - [ ] (arcterm) **The one-line Chat box's menus and asleep line.** The `chat-redesign` scenario checks the row, the
   grown box and the line under it, not these. In Chat with a live Claude agent: click the model ("Opus 5.5 High")
   under the box → its menu opens upward, its right edge on the model's, and Effort / More models open their panels to
@@ -53,10 +77,11 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 
 - [ ] (arcterm) **Sidecar keeps asks, answers the ask you saw, and fills a high-scale screen.** Vitest and the
   typecheck only; no dev app ran (branch `fix/sidecar-council`). (1) Set the Cockpit's project filter to one project,
-  or send an agent to Background, and have that agent ask a 2-option question: it shows on Sidecar's wall and in the
-  small form. (2) Answer a tile with 1: it lands as before; `answer … refused` in `waveapp.log` only when the ask
-  changed under you. (3) On a 1920 px screen at 175%, maximize or full-screen Sidecar: the wall shows, not the small
-  form; drag it narrow and the small form comes back.
+  or send an agent to Background, and have that agent ask a 2-option question: it shows on Sidecar's orbit (P) and in
+  the compact window (Q) as a Needs you row. (2) Answer the row with 1: it lands as before; `answer … refused` in
+  `waveapp.log` only when the ask changed under you. (3) On a 1920 px screen at 175%, maximize or full-screen Sidecar: P
+  shows, not Q; drag it narrow and Q comes back. (The wall and its tiles went with the orbit dashboard; the
+  `sidecar-orbit` and `sidecar-compact` scenarios read the same rows.)
 - [ ] (arcterm) **Close on the Agent tree's picked rows.** The `tree-multi-close` scenario reads the menu and the
   confirm on a fixture roster and cancels; nothing was ever closed. In the app, Ctrl+click two idle agents (no run) in
   the sidebar, right-click one → Close 2 agents closes both at once, a toast says "Closed 2 agents", the picks clear,
@@ -680,3 +705,4 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   description; a finished stretch under 10 s shows no time. When a turn that edited files ends, a card lists them with
   their +/− lines; a row opens the Diff on that file and See all opens the agent's whole Diff. Checked only in the
   `agent-chat` CDP scenario with fixture turns.
+- [ ] (arcterm) Focus read in Chat (`chatfocusreadview.ts`): with a real wheel and a trackpad, a stopped scroll settles the nearest block onto the line in one short glide and never fights an ongoing fling; `Space` / `Shift+Space` step like `j` / `k`; with reduced motion the step jumps and the dimming has no fade; while a live agent writes a reply and you sit at the bottom nothing is dimmed, and scrolling up brings the dimming back; `j` / `q` typed with Telex on act as keys in the conversation. The `chat-focus-read` scenario drives keys and `scrollTop` only

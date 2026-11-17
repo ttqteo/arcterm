@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { SHIMMED } from "../browserconfig";
 
 const FRONTEND = resolve(__dirname, "../..");
@@ -15,8 +15,9 @@ const SHIM_MODULES: Record<string, () => Promise<Record<string, unknown>>> = {
     "http.ts": () => import("./http"),
 };
 
-// every .ts/.tsx under frontend/ but tests, built output and the stand-ins themselves, read once for the file: the
-// walk reads ~2,000 files, which under the full suite took past vitest's 5 s
+// every .ts/.tsx under frontend/ but tests, built output and the stand-ins themselves, read once for the file in the
+// beforeAll below: ~1,300 files, 80 ms warm but 4 s cold on an idle machine, and an engine Verify reads them cold
+// (a fresh worktree) beside the full suite, where the walk and the stand-ins' imports passed a case's 30 s
 let read: { path: string; text: string }[] | undefined;
 function sources(): { path: string; text: string }[] {
     read ??= readdirSync(FRONTEND, { recursive: true, encoding: "utf8" })
@@ -52,16 +53,26 @@ function tauriImports(): Map<string, Set<string>> {
 }
 
 describe("the stand-ins cover what the frontend uses", () => {
-    // dynamically imports every stand-in and walks the frontend's sources: past vitest's 5 s default under the full suite
-    it("shims every Tauri module the frontend imports, and exports every name it takes", async () => {
+    // the cold walk and the stand-ins' first imports are paid here, so no case's timeout depends on machine load
+    const shims: Record<string, Record<string, unknown>> = {};
+    beforeAll(async () => {
+        sources();
+        for (const [file, load] of Object.entries(SHIM_MODULES)) shims[file] = await load();
+    }, 120000);
+
+    it("shims every Tauri module the frontend imports, and exports every name it takes", () => {
         const found = tauriImports();
         expect(found.size).toBeGreaterThan(0);
         for (const [mod, names] of found) {
             expect(Object.keys(SHIMMED), `${mod} has no stand-in in browserconfig.ts SHIMMED`).toContain(mod);
-            const shim = await SHIM_MODULES[SHIMMED[mod]]();
+            const shim = shims[SHIMMED[mod]];
+            expect(
+                shim,
+                `browserconfig.ts SHIMMED names ${SHIMMED[mod]}, which SHIM_MODULES does not load`
+            ).toBeDefined();
             for (const name of names) expect(shim[name], `${mod} stand-in lacks ${name}`).toBeDefined();
         }
-    }, 30000);
+    });
 
     it("answers every Tauri command the frontend invokes", async () => {
         const { BROWSER_COMMANDS } = await import("./core");

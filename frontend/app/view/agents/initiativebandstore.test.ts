@@ -241,6 +241,7 @@ describe("switchAndTell", () => {
             },
             append: () => true,
             replace: () => true,
+            write: () => true,
             focus: () => true,
             interrupt: () => false,
         };
