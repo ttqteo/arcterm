@@ -20,9 +20,7 @@ Spec: `docs/superpowers/specs/2026-11-17-chat-ref-badges-design.md`. The run's c
 
 **Depends on:** none
 
-**Files:** `frontend/app/view/agents/refbadge.ts`, `frontend/app/view/agents/refbadge.test.ts`,
-`frontend/app/view/agents/chatrefbadge.tsx`, `frontend/app/view/agents/chateditorrefpill.tsx`,
-`docs/superpowers/specs/2026-11-17-chat-ref-badges-design.md`, `scripts/cdp/scenarios.mjs`
+**Files:** `frontend/app/view/agents/refbadge.ts`, `frontend/app/view/agents/refbadge.test.ts`, `frontend/app/view/agents/chatrefbadge.tsx`, `frontend/app/view/agents/chateditorrefpill.tsx`, `docs/superpowers/specs/2026-11-17-chat-ref-badges-design.md`, `scripts/cdp/scenarios.mjs`
 
 In the box a click on a badge selects it (`chateditorrefpill.tsx`), and only the bubble's badge opens its target, yet
 both titles end "(click to open)" (`refTitle`). Give `refTitle` a second argument, `{ opens: boolean }`, default
@@ -32,8 +30,7 @@ it; `RefMentionNode`'s decorate passes `opens={false}`. `RefBadge` (the bubble) 
 `refbadge.test.ts` (a resolved agent and a run with `opens: false`, an unresolved one unchanged). In the spec's
 **Look** bullet, say the tooltip ends "(click to open)" in the bubble only.
 
-In the `chat-ref-badges` scenario, step 6 also reads the box badge's `title` (`crbReadBadge` already reads the badge;
-add the title if it lacks it) and requires that it starts with `CRB_NAME_B` and does not contain "click to open";
+In the `chat-ref-badges` scenario, step 6 also checks the box badge's `title` (`crbReadBadge` already reads it) and requires that it starts with `CRB_NAME_B` and does not contain "click to open";
 the step's text says so.
 
 **Acceptance:** `npx vitest run frontend/app/view/agents/refbadge.test.ts` passes, and the `chat-ref-badges`
@@ -41,7 +38,7 @@ scenario's step 6 passes with the box badge's title free of "click to open".
 
 ### Task 2: Scenario steps for a bubble badge's Ctrl-click peek and its hover
 
-**Depends on:** Task 1 (uses step 6's `crbReadBadge` title change; both edit the same scenario)
+**Depends on:** Task 1 (uses Task 1's step 6 in `scripts/cdp/scenarios.mjs`; both edit the same scenario)
 
 **Files:** `scripts/cdp/scenarios.mjs`
 
