@@ -16,6 +16,15 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A first review fail reopens the worker's session.** Go unit tests only, with the resume stubbed; no
+  engine run (commit 01900d143). (1) Run a small plan with a claude worker whose task the reviewer will fail (a task
+  that asks for a test it skips). → On the fail, the worker's own tab restarts with the findings as its first prompt
+  (scrollback above it), no new worker row appears in the Agent tree, and the run timeline shows `t-N: review fix
+  round in the same session`. (2) The worker fixes, runs `wsh jarvis complete`, and the second reviewer starts; the
+  task does not stall in the first minute after the reopen. (3) Restart arcterm between the worker's complete and the
+  fail (no context figure survives a restart) → the timeline shows `t-N: fresh worker: the worker reported no context
+  size` and a new worker tab starts as before.
+
 - [ ] (arcterm) **Sidecar keeps asks, answers the ask you saw, and fills a high-scale screen.** Vitest and the
   typecheck only; no dev app ran (branch `fix/sidecar-council`). (1) Set the Cockpit's project filter to one project,
   or send an agent to Background, and have that agent ask a 2-option question: it shows on Sidecar's wall and in the
