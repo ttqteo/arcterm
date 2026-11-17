@@ -17,6 +17,7 @@ import { FilePill } from "./chatfilepill";
 import { INITIATIVE_LANG } from "./chatinitiative";
 import { InitiativeBlockView } from "./chatinitiativecard";
 import { copyableHref } from "./chatlink";
+import { RefBadge } from "./chatrefbadge";
 import { STEPS_LANG } from "./chatsteplist";
 import { StepsBlock } from "./chatsteplistview";
 import { VISUAL_LANG } from "./chatvisual";
@@ -27,7 +28,9 @@ import { guardDollars } from "./mathdollars";
 import { PathLink } from "./pathlinkcontext";
 import { inlinePathOf } from "./pathlinks";
 import { MathToken } from "./prosetokens";
+import type { RefKind } from "./refmention";
 import remarkFileMention from "./remarkfilemention";
+import remarkRefMention from "./remarkrefmention";
 import { paintSelectionIn } from "./selectionpaint";
 import { trimTripleClick } from "./selectiontrim";
 
@@ -138,9 +141,10 @@ const MD_COMPONENTS: Components = {
 // as the page it names where a visual host provides one (Chat's, chatvisualview.tsx), as code elsewhere (an ```arc-initiative
 // block the same way: the card an agent proposes where Chat's initiative host provides one, chatinitiativecard.tsx, and an
 // ```arc-steps block as its turn's checklist where Chat's steps host provides one, chatsteplistview.tsx), and `mentions`
-// draws an `@path` (remarkfilemention.ts) as a file pill (chatfilepill.tsx). They combine: each adds its plugin and its
-// component to the same map. A council's messages take marks and diagrams, your bubble in Chat takes mentions; an
-// agent's transcript takes none, so it never loads mermaid.
+// draws an `@path` (remarkfilemention.ts) as a file pill (chatfilepill.tsx) and an `agent:`, `run:` or `council:`
+// reference (remarkrefmention.ts) as a badge (chatrefbadge.tsx; plain text where Chat provides nothing to resolve it
+// against). They combine: each adds its plugin and its component to the same map. A council's messages take marks and
+// diagrams, your bubble in Chat takes mentions; an agent's transcript takes none, so it never loads mermaid.
 export interface MarkdownExtras {
     marks?: boolean;
     diagrams?: boolean;
@@ -176,10 +180,18 @@ const DIAGRAM_COMPONENT: Components = {
     },
 };
 
-// `filemention` is not an HTML tag, so it is not a key of react-markdown's Components type
+// `filemention` and `refmention` are not HTML tags, so they are not keys of react-markdown's Components type
 const MENTION_COMPONENT = {
     filemention: ({ path, children }: { path?: string; children?: ReactNode }) =>
         path != null && path !== "" ? <FilePill path={path} /> : <>{children}</>,
+    refmention: ({ kind, id, raw, children }: { kind?: RefKind; id?: string; raw?: string; children?: ReactNode }) =>
+        kind != null && id != null && raw != null ? (
+            <RefBadge kind={kind} id={id} raw={raw}>
+                {children}
+            </RefBadge>
+        ) : (
+            <>{children}</>
+        ),
 } as unknown as Components;
 
 // one plugin list and one components map per set of extras, built once, so react-markdown never sees a new one on a
@@ -201,7 +213,7 @@ function pluginsFor(extras: MarkdownExtras): PluggableList {
             remarkMath,
             ...(extras.marks ? [remarkMark] : []),
             // after the marks, so a mention inside a ==mark== is found too
-            ...(extras.mentions ? [remarkFileMention] : []),
+            ...(extras.mentions ? [remarkFileMention, remarkRefMention] : []),
         ];
         PLUGINS_BY_EXTRAS.set(key, out);
     }
