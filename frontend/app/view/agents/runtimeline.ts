@@ -67,6 +67,7 @@ const KIND_TITLE: Record<string, string> = {
     "task-review-started": "Review started",
     "task-review-passed": "Review passed",
     "task-review-failed": "Review failed",
+    "task-fix-round": "Review fix round",
     "review-overruled": "Lead overruled the review",
     "task-amended": "Lead amended a task",
     "task-lead-told": "Lead told a worker",
@@ -128,6 +129,7 @@ const KIND_TONE: Record<string, string> = {
     "task-review-passed": "text-success",
     "task-review-failed": "text-warning",
     "task-review-started": "text-muted",
+    "task-fix-round": "text-muted",
     "review-overruled": "text-muted",
     "task-amended": "text-muted",
     "task-lead-told": "text-muted",
@@ -252,6 +254,7 @@ export function eventText(event: RunEvent): string {
         reason?: string;
         entryid?: string;
         model?: string;
+        samesession?: boolean;
     }>(event);
     const task = d?.taskid ?? "";
     // an engine retry carries no actor, so it keeps the generic text
@@ -282,6 +285,10 @@ export function eventText(event: RunEvent): string {
         case "task-review-passed":
         case "task-review-failed":
             return [`${eventTitle(event)} · ${task}`, d?.note?.replace(/\s+/g, " ")].filter(Boolean).join(" · ");
+        case "task-fix-round":
+            return d?.samesession
+                ? `${task}: review fix round in the same session`
+                : [`${task}: fresh worker`, d?.reason].filter(Boolean).join(": ");
         case "merge-held":
             return [`${d?.held ?? 0} merge(s) held`, d?.reason].filter(Boolean).join(" · ");
         case "queued-start":

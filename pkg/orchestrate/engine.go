@@ -693,8 +693,10 @@ func scheduleLocked(ctx context.Context, dagID string, held map[string]bool, job
 	}
 	// review: apply verdicts, replace a reviewer that ended without one, spawn the missing ones. Before the
 	// task-done accounting below, so a pass is counted done in the tick that applied it.
+	// every worker the tick starts, a review fix round's reopened session included, for cleanupScheduleFailure
+	var spawned []spawnedWorkerInfo
 	clock.enter("review")
-	advanceReviews(ctx, spawnCtx, g, owner, runs, now, &afterCommit)
+	advanceReviews(ctx, spawnCtx, g, owner, runs, now, &spawned, &afterCommit)
 	// the plan reviewer, before dispatch: NextToSpawn holds every task until its review clears
 	clock.enter("plan review")
 	advancePlanReview(ctx, spawnCtx, g, owner, now, &afterCommit)
@@ -795,7 +797,6 @@ func scheduleLocked(ctx context.Context, dagID string, held map[string]bool, job
 		}
 	}
 	clock.enter("dispatch")
-	var spawned []spawnedWorkerInfo
 	// a task whose tree an earlier pass made spawns first: the prepared trees are warm, and what they free is room
 	// for the claims below
 	ready, preps := settlePreparing(ctx, g, held, &afterCommit)

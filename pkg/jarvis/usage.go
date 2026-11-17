@@ -110,10 +110,17 @@ func RunUsage(ctx context.Context, owner *waveobj.Run, children []*waveobj.Run) 
 		}
 		return a.CreatedTs < b.CreatedTs
 	})
+	// a review fix round reopens the session that built its task under a run of its own, and the transcript holds
+	// both rounds: it counts once, on the first run
+	counted := map[string]bool{}
 	for _, c := range launched {
 		if ctx.Err() != nil {
 			break
 		}
+		if counted[c.SessionId] {
+			continue
+		}
+		counted[c.SessionId] = true
 		rows = append(rows, sessionUsage(UsageRole(c), c.TaskId, SessionTranscriptPath(c))...)
 	}
 	return rows

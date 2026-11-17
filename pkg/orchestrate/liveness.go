@@ -447,14 +447,16 @@ func childStillOpen(ctx context.Context, channelId, runID string) bool {
 
 // workerTurnEndedAt is when a worker last reported its turn over (the Stop hook's idle), 0 while its latest
 // report is anything else, it has none, or its process is gone: the exit path publishes idle too, and a dead
-// worker is not sitting at a prompt with finished work. A var so tests can script it.
+// worker is not sitting at a prompt with finished work. An idle from before the run started is an earlier run's in
+// the same session (a review fix round reopens the session that built the task), not this run's turn. A var so tests
+// can script it.
 var workerTurnEndedAt = func(ctx context.Context, run *waveobj.Run) int64 {
 	blockId, alive := workerBlockFn(ctx, run)
 	if blockId == "" || !alive {
 		return 0
 	}
 	st := LatestAgentStatus(blockId, runTabID(run))
-	if st.State != baseds.AgentState_Idle {
+	if st.State != baseds.AgentState_Idle || st.Ts < spawnTs(run) {
 		return 0
 	}
 	return st.Ts

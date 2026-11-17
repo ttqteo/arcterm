@@ -46,6 +46,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   shows it in the Agent tree first, its lead selected and its lanes unfolded, instead of switching to Jarvis; a run with
   no agent left in the tree still opens in Jarvis.
 - A canvas board's screenshot button (Copy, at the board's top right) shows a camera instead of the copy icon.
+- When a run's reviewer rejects a task for the first time, the worker that built it gets the findings in its own
+  session and tab, so it fixes its work remembering why it did what it did, instead of a new worker starting over. A
+  worker whose context is already 150k tokens or more, or one that can't be reopened, is still replaced by a new one;
+  the run's timeline says which happened.
 - A queue tag in the Agent tree (`#1`, `×2`) opens the Heavy jobs popover with that row's jobs selected, so you see at
   once which one is yours.
 - The agent header no longer shows the Alt+C keycap, and Mark done no longer shows its `m` keycap (its tooltip still
