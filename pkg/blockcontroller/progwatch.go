@@ -27,7 +27,11 @@ type progWatch struct {
 	now      func() time.Time
 	schedule func(d time.Duration, f func()) *time.Timer
 
-	scan    progstatus.Scanner // touched by the read loop alone
+	scan progstatus.Scanner // touched by the read loop alone
+	// the trust prompt's scan, nil once it is over: the process reported a state, or the prompt was seen (read loop
+	// alone)
+	trust   *trustScan
+	startMs int64
 	mu      sync.Mutex
 	last    *progstatus.Report
 	lastMs  int64
@@ -45,6 +49,8 @@ func newProgWatch(blockId string, reply func()) *progWatch {
 		},
 		now:      time.Now,
 		schedule: time.AfterFunc,
+		trust:    &trustScan{},
+		startMs:  time.Now().UnixMilli(),
 	}
 }
 
@@ -55,9 +61,38 @@ func (w *progWatch) output(chunk []byte) {
 		case ev.Probe:
 			w.reply()
 		case ev.Report != nil && ev.Report.ID == "":
+			// a program that reports its state is past any trust prompt
+			w.trust = nil
 			w.report(*ev.Report)
 		}
 	}
+	if w.trust != nil && w.trust.Feed(chunk) {
+		w.trust = nil
+		w.trustAsks()
+	}
+}
+
+// trustAsks reads the agent asking once Claude Code's folder trust prompt shows, which no hook reports (hooks load once
+// the folder is trusted). Only while nothing has reported since the process started: a report since means Claude Code
+// is past its prompt, and the markers came in a conversation it shows. Yes ends it (the SessionStart hook reports
+// idle), and so does No (the exit).
+func (w *progWatch) trustAsks() {
+	latest := w.latest()
+	if latest.Ts >= w.startMs || latest.State == baseds.AgentState_Asking {
+		return
+	}
+	agent := latest.Agent
+	if agent == "" {
+		agent = "claude"
+	}
+	w.mu.Lock()
+	stopped := w.stopped
+	w.mu.Unlock()
+	if stopped {
+		return
+	}
+	log.Printf("agent status: block %s shows Claude Code's folder trust prompt; reading it asking\n", w.blockId)
+	w.publish(baseds.AgentState_Asking, agent, w.now().UnixMilli())
 }
 
 // report keeps the newest root report and checks it once the hooks have had QuietMs to report the change
