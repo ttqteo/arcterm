@@ -151,18 +151,22 @@ type SessionInfo struct {
 	Events         []SessionEvent
 }
 
+// claudeLine is the part of a claude transcript line that the session, its events, its prompts (claudeTypedText),
+// its replies (claudeReplyText) and the tail messages are derived from.
 type claudeLine struct {
-	Type        string        `json:"type"`
-	AiTitle     string        `json:"aiTitle"`     // an ai-title record: Claude Code's running name for the session
-	IsMeta      bool          `json:"isMeta"`      // a companion Claude Code writes beside a prompt (an image's size), no prompt itself
-	IsSidechain bool          `json:"isSidechain"` // with Origin, whether a person sent the record (sentByPerson)
-	Origin      *claudeOrigin `json:"origin"`
-	Timestamp   string        `json:"timestamp"` // events derivation; session derivation ignores it
-	Cwd         string        `json:"cwd"`
-	GitBranch   string        `json:"gitBranch"`
-	Entrypoint  string        `json:"entrypoint"`
-	RequestID   string        `json:"requestId"`
-	Message     struct {
+	Type             string           `json:"type"`
+	AiTitle          string           `json:"aiTitle"`          // an ai-title record: Claude Code's running name for the session
+	IsMeta           bool             `json:"isMeta"`           // a companion Claude Code writes beside a prompt (an image's size), no prompt itself
+	IsSidechain      bool             `json:"isSidechain"`      // with Origin, whether a person sent the record (sentByPerson)
+	IsCompactSummary bool             `json:"isCompactSummary"` // the summary Claude Code writes when it compacts the session, no prompt
+	Origin           *claudeOrigin    `json:"origin"`
+	Attachment       claudeAttachment `json:"attachment"` // a message typed while the session is busy arrives as a queued_command one
+	Timestamp        string           `json:"timestamp"`  // events derivation; session derivation ignores it
+	Cwd              string           `json:"cwd"`
+	GitBranch        string           `json:"gitBranch"`
+	Entrypoint       string           `json:"entrypoint"`
+	RequestID        string           `json:"requestId"`
+	Message          struct {
 		ID      string          `json:"id"`
 		Model   string          `json:"model"`
 		Content json.RawMessage `json:"content"`

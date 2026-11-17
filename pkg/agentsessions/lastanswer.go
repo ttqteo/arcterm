@@ -35,22 +35,24 @@ func claudeLastAnswer(lines []string) (string, int64) {
 		if !strings.Contains(lines[i], `"type":"assistant"`) {
 			continue
 		}
-		var rec struct {
-			Type        string `json:"type"`
-			Timestamp   string `json:"timestamp"`
-			IsSidechain bool   `json:"isSidechain"`
-			Message     struct {
-				Content json.RawMessage `json:"content"`
-			} `json:"message"`
-		}
-		if json.Unmarshal([]byte(lines[i]), &rec) != nil || rec.Type != "assistant" || rec.IsSidechain {
+		var rec claudeLine
+		if json.Unmarshal([]byte(lines[i]), &rec) != nil {
 			continue
 		}
-		if text := textBlocks(rec.Message.Content); text != "" {
+		if text := claudeReplyText(rec); text != "" {
 			return text, parseTs(rec.Timestamp)
 		}
 	}
 	return "", 0
+}
+
+// claudeReplyText is the text the session itself said in a record: the text blocks of a main-chain assistant
+// message. Thinking and tool calls are not text blocks, and a subagent's message is a sidechain.
+func claudeReplyText(rec claudeLine) string {
+	if rec.Type != "assistant" || rec.IsSidechain {
+		return ""
+	}
+	return textBlocks(rec.Message.Content)
 }
 
 func piLastAnswer(file *pisession.File) (string, int64) {
@@ -59,18 +61,23 @@ func piLastAnswer(file *pisession.File) (string, int64) {
 		return "", 0
 	}
 	for i := len(branch) - 1; i >= 0; i-- {
-		var m struct {
-			Role    string          `json:"role"`
-			Content json.RawMessage `json:"content"`
-		}
-		if len(branch[i].Message) == 0 || json.Unmarshal(branch[i].Message, &m) != nil || m.Role != "assistant" {
-			continue
-		}
-		if text := textBlocks(m.Content); text != "" {
+		if text := piReplyText(branch[i]); text != "" {
 			return text, parseTs(branch[i].Timestamp)
 		}
 	}
 	return "", 0
+}
+
+// piReplyText is the text blocks of a pi assistant message, "" for any other entry.
+func piReplyText(e pisession.Entry) string {
+	var m struct {
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+	}
+	if len(e.Message) == 0 || json.Unmarshal(e.Message, &m) != nil || m.Role != "assistant" {
+		return ""
+	}
+	return textBlocks(m.Content)
 }
 
 // maxErrorText bounds a provider error carried into a one-line reason; a provider can answer with a whole page.
