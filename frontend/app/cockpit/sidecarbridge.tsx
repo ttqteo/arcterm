@@ -30,10 +30,10 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { entriesToShow } from "@/app/view/agents/agentrowmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { sleepWithConfirm } from "@/app/view/agents/agentsleep";
-import { answerAgentAsk } from "@/app/view/agents/askanswer";
-import { CONSUMERS_POLL_MS, consumersReadingAtom, loadConsumers } from "@/app/view/agents/consumersstore";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
+import { answerAgentAsk } from "@/app/view/agents/askanswer";
 import { hiddenAgentIds } from "@/app/view/agents/cockpitsurfacemodel";
+import { CONSUMERS_POLL_MS, consumersReadingAtom, loadConsumers } from "@/app/view/agents/consumersstore";
 import { idsWithEntriesAtom, liveEntriesByIdAtom } from "@/app/view/agents/livetranscriptatoms";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { isMacOS, isWindows } from "@/util/platformutil";
@@ -453,10 +453,11 @@ export function SidecarBridge({ model }: { model: AgentsViewModel }) {
                     });
                     return;
                 case "answer": {
-                    const sent = answerAgentAsk(model, act.id, { 0: new Set([act.option]) }, {});
+                    // act.key is the ask the page showed: a newer ask the throttle has not sent yet takes nothing
+                    const sent = answerAgentAsk(model, act.id, { 0: new Set([act.option]) }, {}, act.key);
                     if (!sent) {
                         log(
-                            `answer ${act.option + 1} to ${act.id} refused: nothing sent (the agent is gone, its ask was already answered, or it has no ask to answer)`
+                            `answer ${act.option + 1} to ${act.id} refused: nothing sent (the agent is gone, its ask was already answered or changed, or it has no ask to answer)`
                         );
                     }
                     return;

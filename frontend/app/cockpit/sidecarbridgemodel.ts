@@ -115,7 +115,11 @@ export function validateAct(raw: unknown, last: SidecarSnapshot | null): ActChec
                     reason: `answer: option ${String(option)} is not one of the ${tile.ask.options.length} options of "${tile.id}"`,
                 };
             }
-            return { ok: true, act: { kind: "answer", id: tile.id, option } };
+            // the page names the ask it showed: a snapshot that brought a new ask since then must not take this answer
+            if (typeof raw.key !== "string" || tile.ask.key == null || raw.key !== tile.ask.key) {
+                return { ok: false, reason: `answer: the ask of "${tile.id}" changed since the page showed it` };
+            }
+            return { ok: true, act: { kind: "answer", id: tile.id, option, key: raw.key } };
         }
         case "older": {
             const id = raw.id;

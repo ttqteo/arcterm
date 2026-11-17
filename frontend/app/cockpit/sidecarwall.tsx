@@ -35,8 +35,8 @@ import {
 } from "./sidecartypes";
 import {
     ageText,
+    answerAct,
     applyOlder,
-    canAnswer,
     EMPTY_HISTORY,
     foldSlid,
     markAsked,
@@ -246,9 +246,12 @@ export function SidecarWall({ snap, receivedAt, clock, send }: SidecarWallProps)
             if (action.kind === "open") {
                 e.preventDefault();
                 send({ kind: "open", id: tiles[index].id });
-            } else if (canAnswer(tiles[index], action.option)) {
-                e.preventDefault();
-                send({ kind: "answer", id: tiles[index].id, option: action.option });
+            } else {
+                const answer = answerAct(tiles[index], action.option);
+                if (answer != null) {
+                    e.preventDefault();
+                    send(answer);
+                }
             }
         };
         window.addEventListener("keydown", onKey);
@@ -331,7 +334,12 @@ export function SidecarWall({ snap, receivedAt, clock, send }: SidecarWallProps)
                             }}
                             onSelect={() => setSelectedId(tile.id)}
                             onOpen={() => send({ kind: "open", id: tile.id })}
-                            onAnswer={(option) => send({ kind: "answer", id: tile.id, option })}
+                            onAnswer={(option) => {
+                                const answer = answerAct(tile, option);
+                                if (answer != null) {
+                                    send(answer);
+                                }
+                            }}
                         />
                     ))
                 )}

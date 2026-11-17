@@ -18,16 +18,21 @@ export interface AgentAnswer {
 }
 
 // The answer to send to the agent's live ask, validated against it, or null when there is nothing to send (no such
-// agent, already sent, incomplete answer, no oref).
+// agent, already sent, incomplete answer, no oref). `expectKey`, when given, is the ask the answer was chosen for
+// (askSentKey): a live ask that is another one takes nothing, so an answer shown for one question never lands on the next.
 export function agentAnswer(
     model: AskModel,
     agentId: string,
     selections: Record<number, Set<number>>,
-    texts: Record<number, string>
+    texts: Record<number, string>,
+    expectKey?: string
 ): AgentAnswer | null {
     const agent = globalStore.get(model.agentsAtom).find((a) => a.id === agentId);
     const askKey = agent ? askSentKey(agent) : undefined;
     if (!agent || askKey == null || globalStore.get(model.sentIdsAtom).has(askKey)) {
+        return null;
+    }
+    if (expectKey != null && askKey !== expectKey) {
         return null;
     }
     const qs = agent.ask?.questions ?? [];
@@ -46,15 +51,17 @@ export function markAskSent(model: AskModel, askKey: string): void {
 // The one answer send, shared by the Cockpit's answer bar and the palette's inline answers. Validates the
 // answer against the agent's live ask, sends it once, and marks the ask sent so the answer bar locks. A send the
 // agent never receives unlocks the ask again and says so.
-// Returns false when nothing was sent (no such agent, already sent, incomplete answer, no oref). The creature's
-// peek sends the same answer but awaits it, so a failure lands on its button (petactrun.ts).
+// Returns false when nothing was sent (no such agent, already sent, incomplete answer, no oref, or not the ask
+// `expectKey` names). The creature's peek sends the same answer but awaits it, so a failure lands on its button
+// (petactrun.ts).
 export function answerAgentAsk(
     model: AskModel,
     agentId: string,
     selections: Record<number, Set<number>>,
-    texts: Record<number, string>
+    texts: Record<number, string>,
+    expectKey?: string
 ): boolean {
-    const answer = agentAnswer(model, agentId, selections, texts);
+    const answer = agentAnswer(model, agentId, selections, texts, expectKey);
     if (answer == null) {
         return false;
     }

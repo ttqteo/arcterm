@@ -6,7 +6,7 @@
 // This file is sidecarwallmodel.ts, never sidecarwall.ts: Vite and TS resolve .ts before .tsx, so a sidecarwall.ts
 // beside the component would shadow it.
 
-import type { SidecarMessage, SidecarOlder, SidecarTile } from "./sidecartypes";
+import type { SidecarAct, SidecarMessage, SidecarOlder, SidecarTile } from "./sidecartypes";
 
 /** The gap between tiles, px. */
 export const WALL_GAP = 12;
@@ -185,10 +185,28 @@ export function wallKey(key: string): WallKeyAction | null {
     return /^[1-9]$/.test(key) ? { kind: "answer", option: Number(key) - 1 } : null;
 }
 
-/** Whether the tile's ask takes this option from the keyboard or a button: answerable, not sent yet, and it has it. */
+/** Whether the tile's ask takes this option from the keyboard or a button: answerable, keyed, not sent yet, and it has it. */
 export function canAnswer(tile: Pick<SidecarTile, "ask" | "sent"> | undefined, option: number): boolean {
     const ask = tile?.ask;
-    return ask != null && ask.answerable && tile?.sent !== true && option >= 0 && option < ask.options.length;
+    return (
+        ask != null &&
+        ask.answerable &&
+        ask.key != null &&
+        tile?.sent !== true &&
+        option >= 0 &&
+        option < ask.options.length
+    );
+}
+
+/** The answer act for this option of the tile's ask, naming the ask it answers; null when canAnswer says no. */
+export function answerAct(
+    tile: Pick<SidecarTile, "id" | "ask" | "sent"> | undefined,
+    option: number
+): Extract<SidecarAct, { kind: "answer" }> | null {
+    if (tile == null || !canAnswer(tile, option)) {
+        return null;
+    }
+    return { kind: "answer", id: tile.id, option, key: tile.ask!.key! };
 }
 
 // ---- A tile's scrollback (spec section 3 "Scrollback"; decisions 5 and 6) ----

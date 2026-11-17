@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Sidecar keeps asks, answers the ask you saw, and fills a high-scale screen.** Vitest and the
+  typecheck only; no dev app ran (branch `fix/sidecar-council`). (1) Set the Cockpit's project filter to one project,
+  or send an agent to Background, and have that agent ask a 2-option question: it shows on Sidecar's wall and in the
+  small form. (2) Answer a tile with 1: it lands as before; `answer … refused` in `waveapp.log` only when the ask
+  changed under you. (3) On a 1920 px screen at 175%, maximize or full-screen Sidecar: the wall shows, not the small
+  form; drag it narrow and the small form comes back.
 - [ ] (arcterm) **Close on the Agent tree's picked rows.** The `tree-multi-close` scenario reads the menu and the
   confirm on a fixture roster and cancels; nothing was ever closed. In the app, Ctrl+click two idle agents (no run) in
   the sidebar, right-click one → Close 2 agents closes both at once, a toast says "Closed 2 agents", the picks clear,

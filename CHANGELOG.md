@@ -82,6 +82,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A run's Final verification shows a long output line whole, wrapped in its box, instead of cutting it off at the
   box's right edge.
+- Sidecar shows every agent that is asking you, even one in another project than the Cockpit's filter or in the
+  Background lane, where the title bar could say "1 need you" while the small form said nothing waits on you.
+- A 1-9 answer from Sidecar goes only to the question you saw: when the agent asked something new in the meantime, the
+  answer is dropped instead of landing on the new question.
+- A maximized or full-screen Sidecar on a high-scale screen (a 1920 px screen at 175%) shows the wall of agents instead
+  of the small form.
 - A highlighted sentence in Chat that ends on a bare link (`==… http://localhost:4321/.==`) is highlighted again,
   instead of showing its `==` marks with the link running on into them.
 - A Markdown Preview that holds a placeholder in angle brackets (`<a complete script>`, `<name>`) shows it as written,

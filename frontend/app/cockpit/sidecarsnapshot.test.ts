@@ -269,7 +269,12 @@ describe("sidecarSnapshot asks", () => {
     const askTile = (a: AgentAsk | undefined) => build([agent({ id: "a", state: "asking", ask: a })]).tiles[0].ask!;
 
     it("answers one single-select question with 1 to 9 options from the tile", () => {
-        expect(askTile(ask())).toEqual({ question: "Which one?", options: ["A", "B", "C"], answerable: true });
+        expect(askTile(ask())).toEqual({
+            question: "Which one?",
+            options: ["A", "B", "C"],
+            answerable: true,
+            key: "ask-1",
+        });
         const nine = Array.from({ length: 9 }, (_, i) => ({ label: `o${i + 1}` }));
         expect(askTile(ask({ questions: [{ question: "q", options: nine }] })).answerable).toBe(true);
         expect(askTile(ask({ questions: [{ question: "q", options: [{ label: "only" }] }] })).answerable).toBe(true);
@@ -295,6 +300,8 @@ describe("sidecarSnapshot asks", () => {
         expect(askTile(ask({ questions: [{ question: "q", options: [] }] })).answerable).toBe(false);
         expect(askTile(ask({ questions: [{ question: "q" }] })).answerable).toBe(false);
         const ten = Array.from({ length: 10 }, (_, i) => ({ label: `o${i + 1}` }));
+        // an ask with no id has nothing an answer could name: it is answered in the main window
+        expect(askTile(ask({ askId: undefined })).answerable).toBe(false);
         const tooMany = askTile(ask({ questions: [{ question: "q", options: ten }] }));
         expect(tooMany.answerable).toBe(false);
         expect(tooMany.options).toHaveLength(10);
@@ -434,10 +441,21 @@ describe("wallAgentIds", () => {
         const agents = [
             agent({ id: "arc", state: "working", project: "arcterm" }),
             agent({ id: "arc-done", project: "arcterm", idleSince: NOW - 1000 }),
-            agent({ id: "thesis", state: "asking", project: "mit-thesis" }),
+            agent({ id: "thesis", state: "working", project: "mit-thesis" }),
         ];
         expect(ids(agents, { projectFilter: "arcterm" })).toEqual(["arc", "arc-done"]);
         expect(ids(agents, { liveOnly: true })).toEqual(["arc", "thesis"]);
+    });
+
+    it("keeps an asking agent whatever the project filter or its lane", () => {
+        const agents = [
+            agent({ id: "arc", state: "working", project: "arcterm" }),
+            agent({ id: "thesis", state: "asking", project: "mit-thesis" }),
+            agent({ id: "bg-ask", state: "asking", project: "arcterm" }),
+            agent({ id: "bg-work", state: "working", project: "arcterm" }),
+        ];
+        const shown = ids(agents, { projectFilter: "arcterm", backgrounded: new Set(["bg-ask", "bg-work"]) });
+        expect([...shown].sort()).toEqual(["arc", "bg-ask", "thesis"]);
     });
 });
 

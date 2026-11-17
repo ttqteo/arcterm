@@ -69,7 +69,7 @@ function snapWith(over: Partial<SidecarSnapshot>): SidecarSnapshot {
 
 const asking = tile("a1", {
     state: "asking",
-    ask: { question: "Pick one", options: ["x", "y", "z"], answerable: true },
+    ask: { question: "Pick one", options: ["x", "y", "z"], answerable: true, key: "ask-a1" },
 });
 const elsewhere = tile("a2", {
     state: "asking",
@@ -113,9 +113,19 @@ describe("validateAct", () => {
 
     it("takes an answer to an answerable ask, option 0 up to the last one", () => {
         for (const option of [0, 1, 2]) {
-            expect(validateAct({ kind: "answer", id: "a1", option }, roster)).toEqual({
+            expect(validateAct({ kind: "answer", id: "a1", option, key: "ask-a1" }, roster)).toEqual({
                 ok: true,
-                act: { kind: "answer", id: "a1", option },
+                act: { kind: "answer", id: "a1", option, key: "ask-a1" },
+            });
+        }
+    });
+
+    it("refuses an answer that names another ask than the tile's, or none", () => {
+        // the page showed ask-old; a snapshot since brought ask-a1, so the number was picked for another question
+        for (const key of ["ask-old", undefined, 7]) {
+            expect(validateAct({ kind: "answer", id: "a1", option: 0, key }, roster)).toEqual({
+                ok: false,
+                reason: 'answer: the ask of "a1" changed since the page showed it',
             });
         }
     });
@@ -138,7 +148,7 @@ describe("validateAct", () => {
 
     it("refuses an option out of range or not a whole number", () => {
         for (const option of [-1, 3, 9, 0.5, NaN, Infinity, "1", null, undefined]) {
-            const r = validateAct({ kind: "answer", id: "a1", option }, roster);
+            const r = validateAct({ kind: "answer", id: "a1", option, key: "ask-a1" }, roster);
             expect(r.ok).toBe(false);
             if (r.ok === false) {
                 expect(r.reason).toMatch(/^answer: option /);

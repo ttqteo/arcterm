@@ -134,15 +134,22 @@ function askOf(a: AgentVM): SidecarAsk {
         return { question: terminalAskNote(a) ?? "Waiting on you.", options: [], answerable: false };
     }
     const options = (first.options ?? []).map((o) => o.label);
-    return {
+    // an answer names the ask it answers, so one with no key is answered in the main window
+    const key = askSentKey(a);
+    const out: SidecarAsk = {
         question: first.question || first.header || "",
         options,
         answerable:
+            key != null &&
             ask!.questions.length === 1 &&
             first.multiSelect !== true &&
             options.length >= 1 &&
             options.length <= MAX_ANSWER_OPTIONS,
     };
+    if (key != null) {
+        out.key = key;
+    }
+    return out;
 }
 
 function tileOf(
@@ -234,10 +241,20 @@ export type CockpitScope = {
  * the whole roster. That is the asking and working agents and those that went idle within the grace window (5 min) and
  * were not dismissed, minus the Background lane, under the Cockpit's project filter and Live only, minus the agents
  * with nothing to show yet. The idle list the Cockpit folds away stays off the wall; the title bar still counts it.
+ * An asking agent is the exception: it shows whatever its lane or the filter, because the title bar counts it as
+ * needing you and the small form exists to list it; a filter that hid it would leave "1 need you" with nothing to answer.
  */
 export function wallAgentIds(agents: AgentVM[], scope: CockpitScope): Set<string> {
+    const asking: AgentVM[] = [];
     const shown = agents.filter((a) => {
-        if (a.kind === "terminal" || scope.backgrounded.has(a.id) || scope.hidden.has(a.id)) {
+        if (a.kind === "terminal" || scope.hidden.has(a.id)) {
+            return false;
+        }
+        if (a.state === "asking") {
+            asking.push(a);
+            return false;
+        }
+        if (scope.backgrounded.has(a.id)) {
             return false;
         }
         if (a.state === "idle" && (!isRecentlyIdle(a, scope.now) || scope.dismissed.has(dismissKey(a)))) {
@@ -245,7 +262,11 @@ export function wallAgentIds(agents: AgentVM[], scope: CockpitScope): Set<string
         }
         return true;
     });
-    return new Set(filterAgents(shown, scope.projectFilter, scope.liveOnly).map((a) => a.id));
+    const ids = new Set(filterAgents(shown, scope.projectFilter, scope.liveOnly).map((a) => a.id));
+    for (const a of asking) {
+        ids.add(a.id);
+    }
+    return ids;
 }
 
 /** The snapshot with only the tiles `ids` names, in its order; the counts stay the whole roster's. */

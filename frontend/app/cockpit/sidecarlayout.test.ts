@@ -12,7 +12,7 @@ function tile(id: string, over: Partial<SidecarTile> = {}): SidecarTile {
 function asking(id: string, since: number | undefined, options: string[] = ["Yes", "No"], over = {}): SidecarTile {
     const t = tile(id, {
         state: "asking",
-        ask: { question: `Q ${id}?`, options, answerable: options.length > 0 },
+        ask: { question: `Q ${id}?`, options, answerable: options.length > 0, key: `ask-${id}` },
         ...over,
     });
     if (since != null) {
@@ -31,6 +31,17 @@ describe("layoutFor", () => {
     it("the narrowest window and a wide screen land on their side", () => {
         expect(layoutFor(340)).toBe("small");
         expect(layoutFor(1920)).toBe("wall");
+    });
+
+    it("a window that fills a high-scale screen is the wall, whatever its CSS width", () => {
+        // 1920 px at 175%: the screen and a maximized or full-screen window are both about 1097 CSS px
+        expect(layoutFor(1097, 1097)).toBe("wall");
+        expect(layoutFor(1085, 1097)).toBe("wall");
+        // the same screen, the window dragged narrower: the small form
+        expect(layoutFor(700, 1097)).toBe("small");
+        expect(layoutFor(340, 1097)).toBe("small");
+        // a screen that is not known reads as width alone
+        expect(layoutFor(1097, 0)).toBe("small");
     });
 
     it("a window not measured yet (0 px) is the small form, not a crash", () => {
@@ -87,10 +98,10 @@ describe("smallKey", () => {
     });
 
     it("1-9 answers the selected card's option, only when it has that option", () => {
-        expect(smallKey("1", cards, 0)).toEqual({ kind: "answer", id: "a", option: 0 });
-        expect(smallKey("2", cards, 0)).toEqual({ kind: "answer", id: "a", option: 1 });
+        expect(smallKey("1", cards, 0)).toEqual({ kind: "answer", id: "a", option: 0, key: "ask-a" });
+        expect(smallKey("2", cards, 0)).toEqual({ kind: "answer", id: "a", option: 1, key: "ask-a" });
         expect(smallKey("3", cards, 0)).toBeNull();
-        expect(smallKey("3", cards, 1)).toEqual({ kind: "answer", id: "b", option: 2 });
+        expect(smallKey("3", cards, 1)).toEqual({ kind: "answer", id: "b", option: 2, key: "ask-b" });
         expect(smallKey("9", cards, 1)).toBeNull();
     });
 
