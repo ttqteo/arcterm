@@ -27855,16 +27855,28 @@ const launcherResume = {
         const tabId = appeared ? await h.ev(`(${asleepCover})?.getAttribute('data-sleeping-transcript') ?? null`) : null;
         ctx.asleepTab = tabId;
         let cell = null;
+        let bubbleUp = false;
         if (tabId) {
             await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${tabId}"] [data-agent-sleeping]')`, 15000);
+            // the cell first draws its transcript skeleton, and the load that fills it is slow on a loaded machine
+            // (run 2c5d7a8b's Final read a cell with no bubble yet): wait for the one prompt's bubble, not for the
+            // composer, whose placeholder holds the same task text from the first frame
+            bubbleUp = await polishWaitFor(
+                h,
+                `(document.querySelector('[data-sleeping-transcript="${tabId}"] [data-chat-you]')?.textContent ?? '').trim() === ${JSON.stringify(LAUNCHER_RESUME_TASK)}`,
+                30000
+            );
             cell = await h.ev(`(() => {
                 const cover = document.querySelector('[data-sleeping-transcript="${tabId}"]');
+                // the drawn conversation, without the box under it (its placeholder says the task too)
+                const drawn = cover?.cloneNode(true);
+                drawn?.querySelectorAll('[data-sleeping-composer]').forEach((n) => n.remove());
                 return {
                     moon: !!document.querySelector('[data-agent-row="${tabId}"] [data-agent-sleeping]'),
                     // the chat box says it sleeps (the card over the terminal shows only for a failed wake)
                     card: !!document.querySelector('[data-sleeping-card="${tabId}"]'),
                     asleepNote: (document.querySelector('[data-sleeping-composer="${tabId}"] [data-chat-asleep]')?.textContent ?? '').trim(),
-                    conversation: (cover?.textContent ?? '').includes(${JSON.stringify(LAUNCHER_RESUME_TASK)}),
+                    conversation: (drawn?.textContent ?? '').includes(${JSON.stringify(LAUNCHER_RESUME_TASK)}),
                     // the conversation is chat's: your message as a bubble, from the transcript's one prompt
                     bubble: (cover?.querySelector('[data-chat-you]')?.textContent ?? '').trim(),
                     // the box is the chat pane's editor (a contenteditable): its placeholder is the sibling drawn while it is empty
@@ -27877,7 +27889,7 @@ const launcherResume = {
             "6b. Open asleep from the Agent tree's Conversations menu makes the session a new agent row with the moon; its cell shows the conversation as a bubble and the box to wake it, which says Asleep since",
             appeared && tabId != null && cell?.moon && cell.conversation && cell.bubble === LAUNCHER_RESUME_TASK &&
                 !cell.card && cell.asleepNote.includes("Asleep since") && /to wake it/.test(cell.composer ?? ""),
-            JSON.stringify({ rowUp, appeared, tabId, cell })
+            JSON.stringify({ rowUp, appeared, tabId, bubbleUp, cell })
         );
 
         let meta = null;
