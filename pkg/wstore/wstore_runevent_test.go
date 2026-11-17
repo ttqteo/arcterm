@@ -119,8 +119,8 @@ func TestRunEventPrune(t *testing.T) {
 			t.Fatalf("append: %v", err)
 		}
 	}
-	// the append itself pruned to the newest maxRunEventsPerRun rows; count directly because
-	// QueryRunEvents caps at 500 and cannot observe the 1000-row retention bound.
+	// the append itself pruned to the newest maxRunEventsPerRun rows; counted straight from the table so the
+	// retention bound is checked apart from QueryRunEvents, whose limit the call below checks.
 	count, err := WithReadTxRtn(ctx, func(tx *TxWrap) (int, error) {
 		return tx.GetInt(`SELECT COUNT(*) FROM db_runevent WHERE runid = ?`, "run-2"), tx.Err
 	})
