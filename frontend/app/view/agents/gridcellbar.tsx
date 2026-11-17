@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The slim bar over each cell of the agent grid while there is more than one: the agent's status dot and
-// name, a Claude agent's Chat / Terminal toggle (dimmed while it sleeps, ChatToggle reads that itself), and an x that
+// name, a Claude agent's Chat | Terminal switch (dimmed while it sleeps, ChatSwitch reads that itself), and an x that
 // takes the cell out of the grid (the agent keeps running). The bar is also the handle for rearranging: drag it onto
 // another cell and the drop zones answer as they do for a row from the tree.
 
@@ -11,7 +11,7 @@ import { GripVertical, X } from "lucide-react";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
 import type { AgentVM } from "./agentsviewmodel";
 import { chatCapable } from "./chatmode";
-import { ChatToggle } from "./chatswitch";
+import { ChatSwitch } from "./chatswitch";
 import { StatusDot } from "./statusdot";
 
 export function GridCellBar({ agent, focused, onRemove }: { agent: AgentVM; focused: boolean; onRemove: () => void }) {
@@ -30,14 +30,7 @@ export function GridCellBar({ agent, focused, onRemove }: { agent: AgentVM; focu
             <GripVertical size={12} aria-hidden className="shrink-0 text-ink-faint" />
             <StatusDot state={agent.state} pulse={agent.state !== "idle"} className="!h-[7px] !w-[7px]" />
             <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{agent.name}</span>
-            {chatCapable(agent) ? (
-                <ChatToggle
-                    agent={agent}
-                    iconSize={12}
-                    keyHint="in the focused cell"
-                    className="flex h-[18px] w-[18px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-muted hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                />
-            ) : null}
+            {chatCapable(agent) ? <ChatSwitch agent={agent} /> : null}
             <button
                 type="button"
                 data-agent-cell-remove={agent.id}

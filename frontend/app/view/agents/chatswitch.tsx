@@ -1,76 +1,87 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Chat / Terminal toggle: one icon button that shows the view a click switches to (the terminal mark while Chat
-// shows, the speech bubble while the terminal does). It sits in a split cell's bar and in the single-cell header when
-// Chat and Terminal are the only views; a header that also offers a canvas, brainstorm or review keeps the worded
-// control. Asleep it stays drawn, dimmed and disabled: a sleeping agent always draws the conversation, and there is no
-// terminal to show until it is woken.
+// The compact Chat | Terminal switch in a split cell's bar. A canvas, review or brainstorm takes the whole centre,
+// never a cell, so a cell only ever chooses between these two; the single-cell header has the full control. The
+// selected option's fill slides to the other when one is picked (indicatorSlide; reduced motion snaps it). Asleep it
+// stays drawn, dimmed, with Chat selected and both options disabled: a sleeping cell always draws the conversation,
+// and there is no terminal to show until the agent is woken.
 
-import { MOTION } from "@/app/element/motiontokens";
+import { indicatorSlide } from "@/app/element/motiontokens";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
-import { MessageSquare, SquareTerminal } from "lucide-react";
+import { MessageSquare, SquareTerminal, type LucideIcon } from "lucide-react";
 import { MotionConfig, motion } from "motion/react";
+import { useId } from "react";
 import type { AgentVM } from "./agentsviewmodel";
 import type { ChatMode } from "./chatmode";
 import { selectCellView, useChatMode } from "./chatmodestore";
 
+// each word carries its glyph, as the header's switch draws them
+const OPTIONS: { key: ChatMode; label: string; Icon: LucideIcon }[] = [
+    { key: "chat", label: "Chat", Icon: MessageSquare },
+    { key: "terminal", label: "Terminal", Icon: SquareTerminal },
+];
+
 export const ASLEEP_VIEW_TITLE = "Wake the agent to show its terminal";
 
-export function ChatToggle({
-    agent,
-    className,
-    iconSize,
-    keyHint,
-}: {
-    agent: AgentVM;
-    className: string;
-    iconSize: number;
-    // where the chord works, after it in the title: the header's switches the focused agent, a cell's the focused cell
-    keyHint?: string;
-}) {
+export function ChatSwitch({ agent }: { agent: AgentVM }) {
     const asleep = agent.sleeping != null;
-    // asleep, the agent draws the conversation whatever the stored mode says
+    // asleep, the cell draws the conversation whatever the stored mode says
     const stored = useChatMode(agent);
-    const mode: ChatMode = asleep ? "chat" : stored;
-    const next: ChatMode = mode === "chat" ? "terminal" : "chat";
+    const mode = asleep ? "chat" : stored;
     const key = formatChordString("Mod:Shift:k");
-    const label = next === "terminal" ? "Show terminal" : "Show chat";
-    const Icon = next === "terminal" ? SquareTerminal : MessageSquare;
+    // unique per switch, so two cells' switches never share a fill
+    const fillId = useId();
     return (
-        <button
-            type="button"
+        <div
+            role="group"
+            aria-label={`Show ${agent.name}'s chat or terminal`}
             data-agent-chat-switch={agent.id}
-            data-chat-view={mode}
+            data-chat-mode={mode}
             data-chat-view-asleep={asleep ? "" : undefined}
-            aria-label={label}
-            title={asleep ? ASLEEP_VIEW_TITLE : `${label} (${key}${keyHint ? ` ${keyHint}` : ""})`}
-            disabled={asleep}
-            // a cell's bar is a drag handle: a press on the toggle is a click, never the start of a drag
+            // the bar is a drag handle: a press on the switch is a click, never the start of a drag
             draggable={false}
             onDragStart={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
             }}
-            onClick={() => selectCellView(agent.id, next, Date.now())}
             className={cn(
-                className,
-                "disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted"
+                "flex shrink-0 cursor-default rounded-[5px] border border-border bg-surface-raised p-[2px]",
+                asleep && "opacity-40"
             )}
         >
             <MotionConfig reducedMotion="user">
-                {/* re-keyed so each switch replays the fade-in, marking the flip */}
-                <motion.span
-                    key={next}
-                    initial={{ scale: 0.6, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
-                    className="block"
-                >
-                    <Icon size={iconSize} strokeWidth={1.8} aria-hidden />
-                </motion.span>
+                {OPTIONS.map((o) => (
+                    <button
+                        key={o.key}
+                        type="button"
+                        aria-pressed={mode === o.key}
+                        title={asleep ? ASLEEP_VIEW_TITLE : `${o.label} (${key} in the focused cell)`}
+                        disabled={asleep}
+                        onClick={() => selectCellView(agent.id, o.key, Date.now())}
+                        className={cn(
+                            "relative rounded-[3px] border-0 bg-transparent px-[7px] py-[1px] text-[10.5px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            asleep ? "cursor-default" : "cursor-pointer",
+                            mode === o.key ? "text-primary" : cn("text-muted", !asleep && "hover:text-primary")
+                        )}
+                    >
+                        {mode === o.key ? (
+                            <motion.span
+                                layoutId={fillId}
+                                data-slide-fill
+                                aria-hidden
+                                transition={indicatorSlide}
+                                className="absolute inset-0 rounded-[inherit] bg-accentbg"
+                            />
+                        ) : null}
+                        <span className="relative flex items-center gap-[4px]">
+                            <o.Icon size={11} strokeWidth={2} aria-hidden />
+                            {o.label}
+                        </span>
+                    </button>
+                ))}
             </MotionConfig>
-        </button>
+        </div>
     );
 }
