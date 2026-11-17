@@ -8,6 +8,7 @@
 
 import { isMacOS } from "@/util/platformutil";
 import { formatAgo } from "./agentsviewmodel";
+import { HEADER_BUTTON_ROWS } from "./headerbuttons";
 import { RUNTIME_FLAGS, type Runtime } from "./launch";
 import { ROW_FIELD_ROWS } from "./rowfields";
 import { CARD_COPY, CARD_ORDER } from "./storagemodel";
@@ -279,6 +280,17 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         title: r.title,
                         desc: r.desc,
                         key: "agent.row.fields",
+                        scope: "local" as const,
+                    })),
+                },
+                {
+                    id: "agentheader",
+                    label: "Agent header",
+                    rows: HEADER_BUTTON_ROWS.map((r) => ({
+                        id: r.id,
+                        title: r.title,
+                        desc: r.desc,
+                        key: "agent.header.buttons",
                         scope: "local" as const,
                     })),
                 },

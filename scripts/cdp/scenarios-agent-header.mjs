@@ -83,6 +83,17 @@ const show = (h, id, mode) =>
         return true;`
     );
 
+// the agent header's button choices (headerbuttonsstore.ts): each button on or off, or null for the defaults
+const setHeaderButtons = (h, value) =>
+    pageEval(
+        h,
+        `const { headerButtonsAtom } = await mod("app/view/agents/headerbuttonsstore.ts");
+        const { HEADER_BUTTONS, DEFAULT_HEADER_BUTTONS } = await mod("app/view/agents/headerbuttons.ts");
+        const want = ${JSON.stringify(value)} ?? DEFAULT_HEADER_BUTTONS;
+        for (const b of HEADER_BUTTONS) globalStore.set(headerButtonsAtom, b, want[b]);
+        return true;`
+    );
+
 const focused = (h) => pageEval(h, `return globalStore.get(agentsModel().focusIdAtom);`);
 
 const HEADER = `document.querySelector("[data-agent-header]")`;
@@ -296,6 +307,35 @@ export default function (kit) {
                 );
                 await narrowTo(h, null);
 
+                // 6c. wide, by default Split and Fullscreen sit in More and Float in the header; Settings → Appearance →
+                // Agent header turning all three on puts them back in the header
+                await setHeaderButtons(h, null);
+                await polishWaitFor(h, `${HEADER}?.getAttribute("data-header-width") !== "narrow" && !!${HEADER}?.querySelector("[data-agent-header-float]")`, WAIT_MS);
+                await polishNap(300);
+                const wide = await h.ev(readHeader);
+                await shot(h, "6c-wide-default");
+                await mouse(h, "[data-agent-header] [data-agent-header-more]");
+                await polishWaitFor(h, `${menuText}.includes("Fullscreen terminal")`, WAIT_MS);
+                const wideMore = await h.ev(menuText);
+                await closeMenu(h);
+                await setHeaderButtons(h, { split: true, float: true, fullscreen: true });
+                await polishWaitFor(h, `!!${HEADER}?.querySelector("[data-agent-split]")`, WAIT_MS);
+                const allOn = await h.ev(readHeader);
+                await shot(h, "6d-wide-all-buttons");
+                await mouse(h, "[data-agent-header] [data-agent-header-more]");
+                await polishWaitFor(h, `${menuText}.includes("Fullscreen terminal")`, WAIT_MS);
+                const allOnMore = await h.ev(menuText);
+                await closeMenu(h);
+                await setHeaderButtons(h, null);
+                rec(
+                    "6c. wide: by default no Split or Fullscreen button, Float shown, and More holds Split and Fullscreen; with all three on in the setting the header shows Split, Float and Fullscreen and More no longer lists Split or Float",
+                    wide?.width !== "narrow" && !wide?.split && wide?.float && !wide?.fullscreen &&
+                        wideMore.includes("Split") && wideMore.includes("Fullscreen terminal") && !wideMore.includes("Float window") &&
+                        allOn?.split && allOn.float && allOn.fullscreen &&
+                        !allOnMore.includes("Split") && !allOnMore.includes("Float window"),
+                    { wide, wideMore, allOn, allOnMore }
+                );
+
                 // 7. very narrow: the initiative is its ◇ alone, the project gives way first
                 await show(h, IDS.chat, "chat");
                 await waitHeader(h, "Fix table 4.2", `!!${HEADER}.querySelector("[data-initiative-link-open]")`);
@@ -323,6 +363,7 @@ export default function (kit) {
                     }
                 };
                 await attempt("restore the header width", () => narrowTo(h, null));
+                await attempt("restore the header buttons", () => setHeaderButtons(h, null));
                 await attempt("drop the fixture roster", () => setRoster(h, null));
                 if (ctx.prevQueue !== undefined) await attempt("restore the job queue", () => setQueue(h, ctx.prevQueue));
                 for (const runId of ctx.runIds ?? []) {

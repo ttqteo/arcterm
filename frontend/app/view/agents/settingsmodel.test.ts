@@ -285,7 +285,7 @@ describe("settings pages", () => {
         );
         expect(Object.keys(cards)).toEqual([
             "general/startup", "general/menubar", "general/notifications",
-            "appearance/theme", "appearance/colors", "appearance/fonts", "appearance/agentrows", "appearance/chat",
+            "appearance/theme", "appearance/colors", "appearance/fonts", "appearance/agentrows", "appearance/agentheader", "appearance/chat",
             "agents/claudeaccount", "agents/sleep", "agents/flags",
             "runs/runs", "runs/whilework", "runs/dume", "runs/tokenburn",
             "terminal/text", "terminal/cursor", "terminal/behavior",
@@ -307,6 +307,9 @@ describe("settings pages", () => {
         expect(cards["appearance/fonts"]).toEqual(["fonts.sans", "fonts.mono"]);
         expect(cards["appearance/agentrows"]).toEqual([
             "appearance.rowmodel", "appearance.rowbranch", "appearance.rowram", "appearance.rowtokens", "appearance.rowage",
+        ]);
+        expect(cards["appearance/agentheader"]).toEqual([
+            "appearance.headersplit", "appearance.headerfloat", "appearance.headerfullscreen",
         ]);
         expect(cards["agents/claudeaccount"]).toEqual([]);
         expect(cards["agents/sleep"]).toEqual([
@@ -360,8 +363,8 @@ describe("settings pages", () => {
         expect(new Set(ids).size).toBe(ids.length);
         // today's 60, the nine rows the reorganization added, the two compaction rows, the pet's stay row, Chat's fold
         // , the agent row's RAM, the pet's form and hologram size, and About's build commit, less the two Radar rows
-        // that went with Radar, plus DUM-E's toggle
-        expect(ids).toHaveLength(76 + RUNTIME_FLAGS.claude.length);
+        // that went with Radar, plus DUM-E's toggle and the agent header's three buttons
+        expect(ids).toHaveLength(79 + RUNTIME_FLAGS.claude.length);
     });
 
     it("finds moved rows by search", () => {
