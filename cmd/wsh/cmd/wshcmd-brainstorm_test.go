@@ -96,3 +96,42 @@ func TestBrainstormCheckCmdRefusesAMissingArgument(t *testing.T) {
 		t.Errorf("empty path: err = %v, sent = %v; want a refusal before any RPC", err, sent)
 	}
 }
+
+func TestBrainstormCloseCmdSendsCallerAndAbsolutePath(t *testing.T) {
+	var got []wshrpc.CommandUiBrainstormCloseData
+	send := func(d wshrpc.CommandUiBrainstormCloseData) (string, error) {
+		got = append(got, d)
+		return "Closed the brainstorm topic.", nil
+	}
+	rel := filepath.Join(".superpowers", "brainstorm", "topic", "brainstorm.json")
+	notice, err := brainstormCloseStart(brainstormTestBlock, rel, send)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if notice != "Closed the brainstorm topic." {
+		t.Errorf("notice = %q, want the cockpit's as it came", notice)
+	}
+	if len(got) != 1 {
+		t.Fatalf("sent %d requests, want 1", len(got))
+	}
+	if got[0].CallerBlockId != brainstormTestBlock {
+		t.Errorf("caller = %q, want %q", got[0].CallerBlockId, brainstormTestBlock)
+	}
+	if !filepath.IsAbs(got[0].File) || !strings.HasSuffix(got[0].File, rel) {
+		t.Errorf("file = %q, want the absolute form of %q", got[0].File, rel)
+	}
+}
+
+func TestBrainstormCloseCmdNeedsTheAgentsTerminal(t *testing.T) {
+	sent := false
+	_, err := brainstormCloseStart("", "brainstorm.json", func(wshrpc.CommandUiBrainstormCloseData) (string, error) {
+		sent = true
+		return "", nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "agent's terminal") {
+		t.Errorf("err = %v, want one naming the agent's terminal", err)
+	}
+	if sent {
+		t.Error("sent a request with no caller block")
+	}
+}

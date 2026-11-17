@@ -771,6 +771,7 @@ export function sendRecord(
         case "run":
             return { ...base, kind: "run", runId: action.runId };
         case "queued":
+        case "close":
         case "guess":
         case "skip":
         case "confirm":
@@ -782,6 +783,21 @@ export function sendRecord(
         case "builder-decide":
             return { ...base, kind: "action" };
     }
+}
+
+/** The brainstorm topic whose sent lines the conversation pairs with their messages: the attached brainstorm's, else,
+ *  once it was closed, the newest topic a record names (a verdict's excepted), so its answers keep drawing as ✓ rows and
+ *  its action lines as nothing instead of turning back into raw `brainstorm: …` bubbles. */
+export function answersTopic(attached: string, records: readonly SentAnswer[], verdictTopic: string): string {
+    if (attached !== "") {
+        return attached;
+    }
+    for (let i = records.length - 1; i >= 0; i--) {
+        if (records[i].topic !== verdictTopic) {
+            return records[i].topic;
+        }
+    }
+    return "";
 }
 
 /** "Question 2 · Motion", or "Question 2" when the question names no part: the card's header and the ✓ row's start. */

@@ -40,6 +40,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the next are square, and only its outer corners are rounded.
 - A project's Overview fits the screen: the header and Activity stay put, and Now and History each scroll on their
   own.
+- Close brainstorm in the agent's More (⋯) menu takes the brainstorm pane and its Chat card down so you can talk on
+  in the terminal, and telling the agent to stop the brainstorm now closes it too. The file keeps what was decided,
+  and resuming it brings the pane back.
+
+### Changed
+
+- Chat sums up each stretch of tools in words ("Edited server.js, ran 2 commands +5 −2 · 38s"), says what a running
+  tool is doing, and shows a command by its description; the command itself shows when you open the line.
 - A council's Setup draws each seat's letter on a disc in its colour, as the Discussion and the map do, instead of a
   coloured ring.
 - The agent header keeps Split and Fullscreen in its More (⋯) menu, so it shows only More, Float and Close beside the
@@ -51,6 +59,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   agents of other projects.
 - While an agent asks you a single question, a message sent from the chat box goes to it at once as your answer,
   instead of waiting until you answer on the question's card. A card with several questions still holds the message.
+- Asking an agent to "create an agent in <project>" now opens a real agent in that project's tree, with its own tab,
+  instead of a hidden subagent inside the asking session.
 
 ### Fixed
 
@@ -59,6 +69,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   sleep. A session forked off an agent's tab (moved to the background) now reports its work into the tab instead of
   being dropped as late.
 - A run's lead row in the Agent tree shows one queue tag for the lead's waiting command, not the same `#1` twice.
+- arcterm no longer stalls for seconds at a time with many agents open on a store holding thousands of past runs:
+  each agent's asks, effort updates and the resource meter made the backend re-read every run (tens of MB) to find
+  the agent's run, which held up messages you sent and terminal output.
 - A council's Summary no longer offers Summarize when every idea in it is still a held draft or was dropped, as the
   Discussion already did: the summary had nothing to work from and could only fail.
 - What a council settled now reaches the project's CLAUDE.md even when an agent or an editor has the file open at that

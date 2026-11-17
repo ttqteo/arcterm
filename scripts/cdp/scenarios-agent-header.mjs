@@ -72,7 +72,7 @@ const setQueue = (h, data) =>
     );
 
 // Chat or Terminal for one agent (chatmodestore.ts), and the agent in focus on the Agent surface
-const show = (h, id, mode) =>
+const showRaw = (h, id, mode) =>
     pageEval(
         h,
         `const { setChatMode } = await mod("app/view/agents/chatmodestore.ts");
@@ -143,6 +143,23 @@ const narrowTo = (h, px) => h.ev(`(() => { const hd = ${HEADER}; if (!hd) return
 
 export default function (kit) {
     const { polishWaitFor, polishNap } = kit;
+    // the fixture's blocks are not real ones, so a pane's controller start fails ("error getting block: not found") and
+    // the header reads failed to start, which rightly wins over the fixture's state (as in scenarios.mjs's job-queue
+    // tag). Every agent here but the failed one is about its fixture state: clear that refusal once the pane has tried
+    const show = async (h, id, mode) => {
+        await showRaw(h, id, mode);
+        if (id === IDS.failed) {
+            return;
+        }
+        await polishWaitFor(h, `!!${HEADER}?.querySelector("[data-agent-start-error]")`, 3000);
+        await pageEval(
+            h,
+            `const { getStartErrorAtom } = await mod("app/view/agents/agentcontrollerstore.ts");
+            globalStore.set(getStartErrorAtom(${JSON.stringify(`fx-blk-${id.slice(3)}`)}), undefined);
+            return true;`
+        );
+        await polishWaitFor(h, `!${HEADER}?.querySelector("[data-agent-start-error]")`, 3000);
+    };
     const waitHeader = async (h, name, extra = "true") => polishWaitFor(h, `(${HEADER}?.querySelector("[data-header-name] .font-semibold")?.textContent ?? "").includes(${JSON.stringify(name)}) && (${extra})`, WAIT_MS);
     return [
         {
@@ -173,7 +190,7 @@ export default function (kit) {
                     ctx.workerRunId = randomUUID();
                     const dagId = randomUUID();
                     await seedObjects(h, [
-                        { otype: "dag", oid: dagId, version: 1, runid: ctx.leadRunId, status: "executing", tasks: [{ id: "T3", label: "Write servicesmodel.ts", runid: ctx.workerRunId, status: "running" }] },
+                        { otype: "dag", oid: dagId, version: 1, runid: ctx.leadRunId, status: "executing", tasks: [{ id: "T3", label: "Write servicesmodel.ts", runid: ctx.workerRunId, state: "running" }] },
                         { otype: "run", oid: ctx.workerRunId, version: 1, id: ctx.workerRunId, goal: "T3", mode: "quick", status: "running", dagoref: dagId, workspaceid: ctx.workspaceId, projectpath: ctx.cwd, phases: [], createdts: Date.now() },
                     ]);
                     ctx.roster = agentHeader(Date.now(), { leadRunId: ctx.leadRunId, workerRunId: ctx.workerRunId, effortId: effort.effortoid });
@@ -208,7 +225,7 @@ export default function (kit) {
                         plain.unlinked === "initiative" &&
                         plain.run?.kind === "menu" &&
                         plain.run.text === "2 runs · 2 active" &&
-                        /^opus 4.5 d+(.d+)?k$/.test(plain.model ?? "") &&
+                        /^opus 4\.5\s*\d+(\.\d+)?k$/.test(plain.model ?? "") &&
                         !plain.dots,
                     plain
                 );
@@ -223,7 +240,7 @@ export default function (kit) {
                     `2. Chat: the runtime mark, "working", "sonnet 4.5" and its context, and "mit-thesis / ◇ ${INITIATIVE}"; no Alt+C keycap`,
                     chat?.runtime === true &&
                         chat.state === "working" &&
-                        /^sonnet 4.5 d+(.d+)?k$/.test(chat.model ?? "") &&
+                        /^sonnet 4\.5\s*\d+(\.\d+)?k$/.test(chat.model ?? "") &&
                         chat.initiative === INITIATIVE &&
                         chat.initiativeIcon &&
                         chat.location.startsWith("mit-thesis") &&
@@ -246,9 +263,10 @@ export default function (kit) {
                     `3. lead: the Workflow icon before its name, "run ${ctx.leadRunId.slice(0, 8)}" as its run link, and its menu reads This run (id · goal) and Started from (the plain session)`,
                     leadIcon === true &&
                         lead?.run?.text === `run ${ctx.leadRunId.slice(0, 8)}` &&
-                        menu.includes("This run") &&
+                        // innerText reads the section titles as their CSS uppercase draws them
+                        /this run/i.test(menu) &&
                         menu.includes(`run ${ctx.leadRunId.slice(0, 8)} · Schedule runs`) &&
-                        menu.includes("Started from") &&
+                        /started from/i.test(menu) &&
                         menu.includes("Pull history and sync"),
                     { lead, leadIcon, menu }
                 );
@@ -296,7 +314,7 @@ export default function (kit) {
                     narrow?.width === "narrow" &&
                         narrow.unlinked === "" &&
                         narrow.run?.text === "2" &&
-                        /^opus d+(.d+)?k$/.test(narrow.model ?? "") &&
+                        /^opus\s*\d+(\.\d+)?k$/.test(narrow.model ?? "") &&
                         !narrow.split &&
                         !narrow.float &&
                         !narrow.fullscreen &&
@@ -348,7 +366,7 @@ export default function (kit) {
                 await narrowTo(h, null);
                 rec(
                     "7. very narrow (460px): the initiative is its ◇ alone, its title in the tooltip; the model and context still show",
-                    tiny?.width === "tiny" && tiny.initiative === "" && tiny.initiativeIcon && iniTitle.includes(INITIATIVE) && /^sonnet d+(.d+)?k$/.test(tiny.model ?? ""),
+                    tiny?.width === "tiny" && tiny.initiative === "" && tiny.initiativeIcon && iniTitle.includes(INITIATIVE) && /^sonnet\s*\d+(\.\d+)?k$/.test(tiny.model ?? ""),
                     { tiny, iniTitle }
                 );
                 return steps;

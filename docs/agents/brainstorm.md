@@ -65,6 +65,15 @@ the skill tells them not to use it: a lead routes every question through AskUser
 | Keep talking | `brainstorm: keep talking` | clears `done` and `check`, asks again |
 | Approve and start run | `brainstorm: approved`, then the launcher opens | stops; does not start a run itself |
 | (the run starts) | `brainstorm: run <id>`, sent by the launcher | records `run` |
+| Close brainstorm (the agent header's ⋯ menu) | `brainstorm: close` (Arc stops a judge still weighing first), then Arc takes the pane down | writes nothing, talks on in the terminal |
+
+**Closing.** A brainstorm closes in one of two ways, and both end in `dismissBrainstorm` (`brainstormstore.ts`): the
+agent is detached and its tab loses `session:brainstorm`, so the switch, the Brainstorm tab and the Chat card go.
+The file and its `history` stay, and Chat keeps pairing the lines already sent with their messages (`answersTopic`).
+The user picks Close brainstorm in the header (`closeBrainstorm`, `brainstormsend.ts`). Or the user tells the agent
+to stop the brainstorm, and the agent runs `wsh brainstorm close <brainstorm.json>`, which the cockpit serves as
+`UiBrainstormCloseCommand` (`uiclient.ts`, verdict in `uiapi.ts`). That path sends no line back. A write of the file with
+the agent's file tool reveals it again, and so does resuming it from the palette.
 
 Lines go out through `AgentPromptCommand` (`brainstormsend.ts`), the same path canvas marks use:
 a session whose arc mod holds a control stream runs the line as a prompt, leaving a half-typed draft
@@ -380,7 +389,7 @@ to the judge**). The judge rides the builder check's machinery.
 | Builder check's and judge's pure parts: prompts, the judge's result check (`JudgeFileBytes`), result paths, lines (a leaf package: it imports neither `jarvis` nor `waveobj`, so the council bench can use it) | `pkg/brainstormcheck` |
 | Builder check's and judge's handlers, watcher, routes, startup sweep | `pkg/wshrpc/wshserver/wshserver_brainstorm.go` |
 | What a watcher tick decides about a run (`decideBuilderCheck`, `decideJudge`) | `pkg/wshrpc/wshserver/wshserver_brainstormdecide.go` |
-| `wsh brainstorm check`, `wsh brainstorm judge` | `cmd/wsh/cmd/wshcmd-brainstorm.go` |
+| `wsh brainstorm check`, `wsh brainstorm judge`, `wsh brainstorm close` | `cmd/wsh/cmd/wshcmd-brainstorm.go` |
 | The reviewer's launcher and liveness | `pkg/orchestrate/stagesession.go` (`LaunchJudgingSession`, `JudgingSessionLost`) |
 | The agent's protocol | `skills/brainstorm/SKILL.md` (edit here; the mod copy is generated) |
 

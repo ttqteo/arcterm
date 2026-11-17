@@ -607,7 +607,9 @@ export type BrainstormAction =
     | { kind: "run"; runId: string }
     // Approve queued the run instead of starting it (After run… or Queue in the launcher): the agent records nothing and
     // waits for the `run` line wavesrv sends when the entry starts
-    | { kind: "queued"; entryId: string };
+    | { kind: "queued"; entryId: string }
+    // the user closed the brainstorm from the agent's header: the pane is gone, the talk goes on in the terminal
+    | { kind: "close" };
 
 // a typed line is one line: every run of whitespace, newlines included, becomes one space
 function oneLine(text: string): string {
@@ -652,6 +654,8 @@ export function brainstormLine(a: BrainstormAction): string | null {
             return `brainstorm: run ${a.runId}`;
         case "queued":
             return `brainstorm: queued ${a.entryId}`;
+        case "close":
+            return "brainstorm: close";
     }
 }
 
@@ -948,9 +952,10 @@ export function judgeWait(f: BrainstormFile, linePending: boolean): boolean {
     return !linePending && f.working != null && (f.question?.approaches?.length ?? 0) > 0;
 }
 
-// a line sent during the wait stops the judge: an answer or Skip, which the agent takes before the judge's options
+// a line sent during the wait stops the judge: an answer or Skip, which the agent takes before the judge's options, or
+// Close, after which its options would land on no question
 export function stopsJudge(a: BrainstormAction, f: BrainstormFile | null, linePending: boolean): boolean {
-    return f != null && judgeWait(f, linePending) && (a.kind === "answer" || a.kind === "skip");
+    return f != null && judgeWait(f, linePending) && (a.kind === "answer" || a.kind === "skip" || a.kind === "close");
 }
 
 // what the design view's main area holds: the question, or the agent writing, unless the user opened the design

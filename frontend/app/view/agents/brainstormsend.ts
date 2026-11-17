@@ -17,6 +17,7 @@ import {
     type BrainstormAction,
 } from "./brainstormmodel";
 import {
+    dismissBrainstorm,
     getBrainstorm,
     setStartingRun,
     shownBrainstormFile,
@@ -123,6 +124,22 @@ export async function sendBrainstorm(
     // the agent writes its file once, at the end of its turn: until then the pane says it is writing
     const modifiedMs = getBrainstorm(agent.id)?.modifiedMs ?? null;
     updateBrainstorm(agent.id, (s) => ({ ...s, sent: { at: now, modifiedMs, kind: sentKind(action) } }));
+}
+
+// Close brainstorm in the agent's header: the agent hears `brainstorm: close` (and a judge still weighing is stopped,
+// stopsJudge), then the pane, its tab and its Chat card go. The file stays: resuming it from the palette, or the agent
+// writing it again, brings the pane back. A line that cannot be sent still closes the pane, which is what was asked
+export async function closeBrainstorm(
+    agent: AgentVM,
+    io: PromptIO = tauriPromptIO,
+    dismiss: (agentId: string) => Promise<void> = dismissBrainstorm
+): Promise<void> {
+    try {
+        await sendBrainstorm(agent, { kind: "close" }, io);
+    } catch (e) {
+        console.warn("brainstorm close: telling the agent failed", agent.id, e);
+    }
+    await dismiss(agent.id);
 }
 
 // the run's id goes back to the agent, which records it in the file: the tree and the pane then show the run. The

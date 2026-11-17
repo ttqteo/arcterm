@@ -14,7 +14,7 @@ import {
     type BrainstormAction,
     type BrainstormFile,
 } from "./brainstormmodel";
-import { approveAndOpenRun, openRunLauncher, sendBrainstorm } from "./brainstormsend";
+import { approveAndOpenRun, closeBrainstorm, openRunLauncher, sendBrainstorm } from "./brainstormsend";
 import {
     attachBrainstorm,
     brainstormsAtom,
@@ -177,6 +177,7 @@ describe("sendBrainstorm", () => {
         { kind: "keep-talking" },
         { kind: "run", runId: "r1" },
         { kind: "queued", entryId: "q-1" },
+        { kind: "close" },
     ];
 
     it.each(actions)("sends the $kind line to the agent's block as a prompt", async (action) => {
@@ -718,5 +719,35 @@ describe("openRunLauncher", () => {
             handback.queued!("q-3f2a");
             expect(getBrainstorm(AGENT.id)!.starting).toBeNull();
         });
+    });
+});
+
+describe("closeBrainstorm", () => {
+    it("tells the agent, then closes the pane", async () => {
+        const io = fakeIO();
+        const order: string[] = [];
+        const dismiss = async (id: string) => {
+            order.push(...io.calls, `dismiss ${id}`);
+        };
+        await closeBrainstorm(AGENT, io, dismiss);
+        expect(io.sent).toEqual([["blk-1", "brainstorm: close"]]);
+        expect(order).toEqual(["prompt blk-1", "dismiss a1"]);
+    });
+
+    it("stops a judge still weighing before the line goes", async () => {
+        updateBrainstorm(AGENT.id, (s) => ({ ...s, file: WAIT }));
+        const io = fakeIO();
+        await closeBrainstorm(AGENT, io, async () => {});
+        expect(io.calls).toEqual(["stop blk-1", "prompt blk-1"]);
+    });
+
+    it("closes the pane even when the line cannot be sent", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        const dismissed: string[] = [];
+        await closeBrainstorm(AGENT, fakeIO(true), async (id) => {
+            dismissed.push(id);
+        });
+        expect(dismissed).toEqual(["a1"]);
+        warn.mockRestore();
     });
 });

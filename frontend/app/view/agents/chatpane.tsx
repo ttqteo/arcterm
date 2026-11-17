@@ -43,7 +43,7 @@ import { canvasStateAtom } from "./canvasstore";
 import { AskRow } from "./channelsprimitives";
 import { ChatBand } from "./chatband";
 import { boxPlaceholder, type BoxState } from "./chatboxstate";
-import { brainstormCard, holdCard, type ChatCard } from "./chatbrainstorm";
+import { answersTopic, brainstormCard, holdCard, type ChatCard } from "./chatbrainstorm";
 import { brainstormAnswersAtom, recordBrainstormAnswer } from "./chatbrainstormstore";
 import { boxAnswerRecord, boxPlaceholderOverride } from "./chatbrainstormwire";
 import { canvasPick } from "./chatcanvaspick";
@@ -98,6 +98,7 @@ import { markChunkDone, requestModelSuggest, useEffortDetail, useModelSuggest } 
 import { TaggedPromptText } from "./chattagblock";
 import { withoutTakenBack } from "./chattakeback";
 import { noteTakenBack, useTakenBack } from "./chattakebackstore";
+import { VERDICT_TOPIC } from "./chatverdict";
 import { ChatVisualHost } from "./chatvisualview";
 import { switchAgentChunk } from "./initiativebandstore";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
@@ -557,6 +558,8 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
     const procExit = useAtomValue(getProcExitAtom(agent.blockId ?? ""));
     const exited = procExited(procExit, agent.sleeping);
     const brainstormTopic = brainstormState?.topic ?? "";
+    // a closed brainstorm draws no card, but its lines already sent still pair with their messages
+    const pairedTopic = answersTopic(brainstormTopic, sentAnswers, VERDICT_TOPIC);
     // the run queue, for the card to find the entry Approve queued (queuedForBrainstorm): it reads Queued where Approve was
     const brainstormQueue = useBrainstormQueue(brainstormState?.path ?? null);
     const nextCard = useMemo(() => {
@@ -895,7 +898,7 @@ export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; age
                                     onOpenTerminal={asleep ? undefined : () => setChatMode(agent.id, "terminal")}
                                     brainstorm={{
                                         agent,
-                                        topic: brainstormTopic,
+                                        topic: pairedTopic,
                                         answers: sentAnswers,
                                         card,
                                         state: brainstormState,

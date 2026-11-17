@@ -17,6 +17,7 @@ import {
 } from "./brainstormmodel";
 import {
     addAnswer,
+    answersTopic,
     brainstormCard,
     builderAnswerText,
     builderDoneLine,
@@ -1465,5 +1466,31 @@ describe("sendRecord", () => {
         });
         // whatever the file holds, even none
         expect(send(action, null)).toMatchObject({ kind: "action" });
+    });
+});
+
+describe("answersTopic", () => {
+    const rec = (topic: string): SentAnswer => ({ topic, n: 0, part: "", text: "x", sentAt: 1, seen: 0 });
+
+    it("is the attached brainstorm's topic while one is attached", () => {
+        expect(answersTopic("lag", [rec("old")], "arc:verdict")).toBe("lag");
+    });
+
+    it("is the newest record's topic once the brainstorm was closed, a verdict's skipped", () => {
+        expect(answersTopic("", [rec("old"), rec("lag"), rec("arc:verdict")], "arc:verdict")).toBe("lag");
+    });
+
+    it("is empty with nothing attached and no brainstorm record", () => {
+        expect(answersTopic("", [rec("arc:verdict")], "arc:verdict")).toBe("");
+        expect(answersTopic("", [], "arc:verdict")).toBe("");
+    });
+});
+
+describe("sendRecord close", () => {
+    it("keeps the close line as an action, which draws nothing", () => {
+        expect(sendRecord({ kind: "close" }, null, [], "lag", "brainstorm: close", 0, 1000)).toMatchObject({
+            kind: "action",
+            text: "brainstorm: close",
+        });
     });
 });

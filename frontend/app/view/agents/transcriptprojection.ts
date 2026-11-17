@@ -465,6 +465,9 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     (action as any)._tool = block.name;
                     if (block.name === "Bash" && typeof block.input?.command === "string") {
                         (action as any)._command = block.input.command;
+                        if (action.target.trim() !== "" && action.target.trim() !== block.input.command.trim()) {
+                            action.command = block.input.command;
+                        }
                         if (block.input.run_in_background === true && typeof block.id === "string") {
                             (action as any)._bgId = block.id;
                         }

@@ -2606,6 +2606,12 @@ declare global {
         classes?: TranslateClass[];
     };
 
+    // wshrpc.CommandUiBrainstormCloseData
+    type CommandUiBrainstormCloseData = {
+        file: string;
+        callerblockid: string;
+    };
+
     // wshrpc.CommandUiInvokeData
     type CommandUiInvokeData = {
         actionid: string;
