@@ -4,7 +4,17 @@
 import { describe, expect, it } from "vitest";
 import type { AgentActionEntry, EditFile } from "./agentsviewmodel";
 import type { AgentPart } from "./chatmodel";
-import { editCounts, fileWhere, foldOf, MAX_STEP_CHIPS, stepElapsed, stepOf, stepRows, turnFiles } from "./chatsteps";
+import {
+    editCounts,
+    fileWhere,
+    foldOf,
+    MAX_STEP_CHIPS,
+    stepElapsed,
+    stepOf,
+    stepRows,
+    turnFileAbs,
+    turnFiles,
+} from "./chatsteps";
 
 const action = (verb: string, extra: Partial<AgentActionEntry> = {}): AgentActionEntry => ({
     kind: "action",
@@ -460,5 +470,21 @@ describe("fileWhere", () => {
         expect(fileWhere("/repo/pkg/x.go", null)).toEqual({ name: "x.go", folder: "pkg" });
         expect(fileWhere("pkg/x.go", undefined)).toEqual({ name: "x.go", folder: "pkg" });
         expect(fileWhere("x.go", undefined)).toEqual({ name: "x.go", folder: "" });
+    });
+});
+
+describe("turnFileAbs", () => {
+    it("keeps an absolute path as written", () => {
+        expect(turnFileAbs("/notes/obsidian_harness/a.html", "/repo")).toBe("/notes/obsidian_harness/a.html");
+        expect(turnFileAbs("C:\\repo\\a.go", null)).toBe("C:\\repo\\a.go");
+    });
+    it("reads a relative path against the cwd, in its separator", () => {
+        expect(turnFileAbs("pkg/a.go", "/repo/")).toBe("/repo/pkg/a.go");
+        expect(turnFileAbs("./a.go", "/repo")).toBe("/repo/a.go");
+        expect(turnFileAbs("pkg\\a.go", "C:\\repo")).toBe("C:\\repo\\pkg\\a.go");
+    });
+    it("has nowhere to open a relative path without a cwd", () => {
+        expect(turnFileAbs("pkg/a.go", undefined)).toBeNull();
+        expect(turnFileAbs("pkg/a.go", "")).toBeNull();
     });
 });

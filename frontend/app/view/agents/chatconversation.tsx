@@ -55,6 +55,7 @@ import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type Rea
 import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
 import { getProcExitAtom } from "./agentcontrollerstore";
 import { agentDiffScope, openDiff } from "./agentdiffnav";
+import { openFileInPanel } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
 import {
     conversationText,
@@ -117,7 +118,7 @@ import { withMarks } from "./chatskim";
 import { useSkimFold } from "./chatskimstore";
 import { placeStepLists, stepsPartKey, type AgentNow } from "./chatsteplist";
 import { ChatStepsHost, StepsPart } from "./chatsteplistview";
-import { turnFiles } from "./chatsteps";
+import { turnFileAbs, turnFiles } from "./chatsteps";
 import { ChatSteps } from "./chatstepsview";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatTurnFiles } from "./chatturnfiles";
@@ -1285,11 +1286,23 @@ export function ChatConversation({
     const forkRef = useRef<((p: ForkPoint) => void) | null>(null);
     forkRef.current = canFork ? (p) => forkFromChat(model!, agent!, p) : null;
     const forkHere = useCallback((p: ForkPoint) => forkRef.current?.(p), []);
-    // the card of a finished turn's files opens the Diff on the agent's working tree, on a file or on all of it; only with
-    // the cockpit and the agent around (a transcript of an ended session has no Diff to open), through a ref as above
+    // the card of a finished turn's files opens a file in the rail, in a tab of its own beside the terminal, and See all
+    // the Diff on the agent's working tree (a relative path with no cwd to read it against falls back to the Diff on it);
+    // only with the cockpit and the agent around (a transcript of an ended session has nothing to open them in), through
+    // a ref as above
     const canOpenDiff = !!model && !!agent;
     const diffRef = useRef<((path?: string) => void) | null>(null);
-    diffRef.current = canOpenDiff ? (path) => openDiff(model!, agentDiffScope(agent!.id, agent!.name), path) : null;
+    diffRef.current = canOpenDiff
+        ? (path) => {
+              const abs = path == null ? null : turnFileAbs(path, cwd);
+              if (abs == null) {
+                  openDiff(model!, agentDiffScope(agent!.id, agent!.name), path);
+                  return;
+              }
+              // reread: the agent may have changed it since its tab was last open
+              openFileInPanel(model!, agent!.id, { abs, root: cwd || null, reread: Date.now() });
+          }
+        : null;
     const openTurnDiff = useCallback((path?: string) => diffRef.current?.(path), []);
     // Add to initiative… is offered in a live Claude agent's Chat (a caller that passed the cockpit and the agent). It
     // opens a card after the last item as it is when asked, so the item key and the agent go through a ref as well
@@ -1419,7 +1432,7 @@ export function ChatConversation({
                 }
             }
         });
-        // the card of the turn's files: its folders read against the cwd, its rows open the Diff only with an agent
+        // the card of the turn's files: its folders read against the cwd, its rows open (the rail, the Diff) only with an agent
         if (item.parts.some((part) => part.kind === "work")) {
             out.push(`files:${cwd ?? ""}:${canOpenDiff}`);
         }

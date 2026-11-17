@@ -339,3 +339,16 @@ export function fileWhere(path: string, cwd: string | null | undefined): { name:
     const absolute = /^(?:[a-z]:)?\//i.test(norm);
     return { name, folder: absolute ? (dir.split("/").pop() ?? "") : dir };
 }
+
+/** Pure: where a turn's file is on disk, to open it: an absolute path as written, a relative one read against the agent's
+ *  directory (in that directory's separator), or null when it is relative and the directory is not known. */
+export function turnFileAbs(path: string, cwd: string | null | undefined): string | null {
+    if (/^(?:[a-z]:)?[\\/]/i.test(path)) {
+        return path;
+    }
+    if (cwd == null || cwd === "") {
+        return null;
+    }
+    const sep = cwd.includes("\\") && !cwd.includes("/") ? "\\" : "/";
+    return `${cwd.replace(/[\\/]+$/, "")}${sep}${path.replace(/^\.[\\/]/, "")}`;
+}
