@@ -3208,3 +3208,28 @@ func TestGetChangesRepoFacts(t *testing.T) {
 		}
 	})
 }
+
+// A read whose time ran out is no answer: a repo must not read as "not a repo" (IsRepo false, no error), which a
+// run's evidence seal takes for a real empty and freezes into the snapshot. A directory that is not a repo still is one.
+func TestChangeReadsOutOfTimeFailInsteadOfReadingAsNoRepo(t *testing.T) {
+	dir, base := repoCommittedOnBase(t)
+	done, cancel := context.WithCancel(context.Background())
+	cancel()
+	reads := map[string]func(context.Context, string) (*Changes, error){
+		"GetChanges live": func(ctx context.Context, d string) (*Changes, error) { return GetChanges(ctx, d, "") },
+		"GetChanges ref":  func(ctx context.Context, d string) (*Changes, error) { return GetChanges(ctx, d, base) },
+		"GetRangeChanges": func(ctx context.Context, d string) (*Changes, error) { return GetRangeChanges(ctx, d, base, "HEAD") },
+		"GetTrailerCommitsChanges": func(ctx context.Context, d string) (*Changes, error) {
+			return GetTrailerCommitsChanges(ctx, d, base, "HEAD", "Run", func(string) bool { return true })
+		},
+	}
+	plain := t.TempDir()
+	for name, read := range reads {
+		if ch, err := read(done, dir); err == nil {
+			t.Errorf("%s with its time run out = %+v, nil, want an error", name, ch)
+		}
+		if ch, err := read(context.Background(), plain); err != nil || ch.IsRepo {
+			t.Errorf("%s of a plain directory = %+v, %v, want IsRepo false and no error", name, ch, err)
+		}
+	}
+}
