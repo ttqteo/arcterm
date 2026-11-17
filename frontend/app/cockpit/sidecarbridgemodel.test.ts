@@ -1,6 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import type { ProviderDonuts } from "@/app/view/agents/ratelimitstore";
+import type { RunInfo, RunRole } from "@/app/view/agents/runlineage";
 import { describe, expect, it, vi } from "vitest";
 import {
     EMPTY_FEED,
@@ -13,19 +15,28 @@ import {
     answerOlder,
     applyPressure,
     attachNotes,
+    decorateTiles,
+    dueLabel,
+    failureAt,
     heavyPolls,
     machineOf,
+    newestActiveRun,
     planChange,
     readingFresh,
     readingOf,
     roundHeavy,
+    runBoxOf,
+    runFailed,
+    runLeadId,
     runningJobs,
     sameSnapshot,
     setNote,
     sleepNote,
+    stampSince,
     stopNote,
     strainOf,
     syncNotes,
+    usageOf,
     validateAct,
 } from "./sidecarbridgemodel";
 import { EMPTY_TRACK, strainNow, trackStrain } from "./sidecarstrainmodel";
@@ -33,9 +44,13 @@ import type {
     SidecarHeavy,
     SidecarMachine,
     SidecarMessage,
+    SidecarNeed,
+    SidecarRunBox,
     SidecarSnapshot,
+    SidecarSpan,
     SidecarStrain,
     SidecarTile,
+    SidecarUsage,
 } from "./sidecartypes";
 
 function tile(id: string, over: Partial<SidecarTile> = {}): SidecarTile {
@@ -75,7 +90,58 @@ const elsewhere = tile("a2", {
     state: "asking",
     ask: { question: "Pick several", options: ["x", "y"], answerable: false },
 });
-const roster = snap([asking, elsewhere, tile("w1")]);
+// the Needs you list the answer, need and open acts are checked against: an answerable ask, one the main window answers,
+// a finished agent's question and a Jarvis row; "far" is an agent past the orbit's eight, so it is no tile of the snapshot
+const askNeed: SidecarNeed = {
+    key: "ask:a1",
+    kind: "ask",
+    id: "a1",
+    who: "a1",
+    since: 10,
+    text: "Pick one",
+    options: ["x", "y", "z"],
+    answerable: true,
+    askKey: "ask-a1",
+};
+const elsewhereNeed: SidecarNeed = {
+    key: "ask:a2",
+    kind: "ask",
+    id: "a2",
+    who: "a2",
+    since: 20,
+    text: "Pick several",
+    options: ["x", "y"],
+    answerable: false,
+};
+const questionNeed: SidecarNeed = {
+    key: "q:far",
+    kind: "question",
+    id: "far",
+    who: "far",
+    since: 30,
+    text: "Ship it?",
+};
+const farAskNeed: SidecarNeed = {
+    key: "ask:far2",
+    kind: "ask",
+    id: "far2",
+    who: "far2",
+    since: 40,
+    text: "Which?",
+    options: ["a", "b"],
+    answerable: true,
+    askKey: "ask-far2",
+};
+const jarvisNeed: SidecarNeed = {
+    key: "gate:run1:2",
+    kind: "jarvis",
+    who: "Plan run",
+    since: 50,
+    text: "Review the plan",
+    word: "gate",
+};
+const needs = [askNeed, elsewhereNeed, questionNeed, farAskNeed, jarvisNeed];
+const roster: SidecarSnapshot = { ...snap([asking, elsewhere, tile("w1")]), needs };
 
 describe("validateAct", () => {
     it("takes hello with no snapshot sent yet", () => {
@@ -111,7 +177,20 @@ describe("validateAct", () => {
         });
     });
 
-    it("takes an answer to an answerable ask, option 0 up to the last one", () => {
+    it("takes an open of a question or ask row's agent that is no tile (past the orbit's eight)", () => {
+        expect(validateAct({ kind: "open", id: "far" }, roster)).toEqual({
+            ok: true,
+            act: { kind: "open", id: "far" },
+        });
+        expect(validateAct({ kind: "open", id: "far2" }, roster)).toEqual({
+            ok: true,
+            act: { kind: "open", id: "far2" },
+        });
+        // a Jarvis row has no agent: its key is no id to open
+        expect(validateAct({ kind: "open", id: "gate:run1:2" }, roster).ok).toBe(false);
+    });
+
+    it("takes an answer to an answerable ask in needs, option 0 up to the last one", () => {
         for (const option of [0, 1, 2]) {
             expect(validateAct({ kind: "answer", id: "a1", option, key: "ask-a1" }, roster)).toEqual({
                 ok: true,
@@ -120,7 +199,14 @@ describe("validateAct", () => {
         }
     });
 
-    it("refuses an answer that names another ask than the tile's, or none", () => {
+    it("takes an answer to an ask row whose agent is no tile of the snapshot", () => {
+        expect(validateAct({ kind: "answer", id: "far2", option: 1, key: "ask-far2" }, roster)).toEqual({
+            ok: true,
+            act: { kind: "answer", id: "far2", option: 1, key: "ask-far2" },
+        });
+    });
+
+    it("refuses an answer that names another ask than the row's, or none", () => {
         // the page showed ask-old; a snapshot since brought ask-a1, so the number was picked for another question
         for (const key of ["ask-old", undefined, 7]) {
             expect(validateAct({ kind: "answer", id: "a1", option: 0, key }, roster)).toEqual({
@@ -130,23 +216,38 @@ describe("validateAct", () => {
         }
     });
 
-    it("refuses an answer to an unknown id", () => {
-        const r = validateAct({ kind: "answer", id: "ghost", option: 0 }, roster);
-        expect(r).toEqual({ ok: false, reason: 'answer: no tile "ghost" in the last snapshot' });
-    });
-
-    it("refuses an answer to a tile with no ask, or an ask the main window answers", () => {
+    it("refuses an answer to an id that is not in needs, a tile that has no ask row included", () => {
+        const ghost = validateAct({ kind: "answer", id: "ghost", option: 0 }, roster);
+        expect(ghost).toEqual({ ok: false, reason: 'answer: "ghost" has no ask in the last snapshot' });
+        // w1 is a tile, but nothing of it waits on you
         expect(validateAct({ kind: "answer", id: "w1", option: 0 }, roster)).toEqual({
             ok: false,
-            reason: 'answer: "w1" has no ask',
+            reason: 'answer: "w1" has no ask in the last snapshot',
         });
+        // a tile that still holds an ask the needs no longer list: the answer is checked against needs, not the tile
+        const gone: SidecarSnapshot = { ...roster, needs: needs.filter((n) => n.key !== "ask:a1") };
+        expect(validateAct({ kind: "answer", id: "a1", option: 0, key: "ask-a1" }, gone).ok).toBe(false);
+        // a question row is no ask, so no number answers it
+        expect(validateAct({ kind: "answer", id: "far", option: 0, key: "x" }, roster).ok).toBe(false);
+        expect(validateAct({ kind: "answer", id: "a1", option: 0, key: "ask-a1" }, snap([asking]))).toEqual({
+            ok: false,
+            reason: 'answer: "a1" has no ask in the last snapshot',
+        });
+        expect(validateAct({ kind: "answer", id: "a1", option: 0, key: "ask-a1" }, null)).toEqual({
+            ok: false,
+            reason: "answer: no snapshot has gone out yet",
+        });
+    });
+
+    it("refuses an answer to an ask the main window answers", () => {
         expect(validateAct({ kind: "answer", id: "a2", option: 0 }, roster)).toEqual({
             ok: false,
-            reason: 'answer: the ask of "a2" is not answerable from a tile',
+            reason: 'answer: the ask of "a2" is not answerable from the list',
         });
     });
 
     it("refuses an option out of range or not a whole number", () => {
+        // 3 is options.length: the last option is 2
         for (const option of [-1, 3, 9, 0.5, NaN, Infinity, "1", null, undefined]) {
             const r = validateAct({ kind: "answer", id: "a1", option, key: "ask-a1" }, roster);
             expect(r.ok).toBe(false);
@@ -154,6 +255,44 @@ describe("validateAct", () => {
                 expect(r.reason).toMatch(/^answer: option /);
             }
         }
+    });
+
+    describe("need", () => {
+        it("takes a need of a Jarvis row's key in the last snapshot", () => {
+            expect(validateAct({ kind: "need", key: "gate:run1:2" }, roster)).toEqual({
+                ok: true,
+                act: { kind: "need", key: "gate:run1:2" },
+            });
+        });
+
+        it("refuses a key that is not a Jarvis row, an ask or question row's key included", () => {
+            expect(validateAct({ kind: "need", key: "nope" }, roster)).toEqual({
+                ok: false,
+                reason: 'need: "nope" is not waiting',
+            });
+            expect(validateAct({ kind: "need", key: "ask:a1" }, roster)).toEqual({
+                ok: false,
+                reason: 'need: "ask:a1" is not waiting',
+            });
+            expect(validateAct({ kind: "need", key: "q:far" }, roster).ok).toBe(false);
+        });
+
+        it("refuses a missing or non-string key, no needs in the snapshot, and no snapshot", () => {
+            expect(validateAct({ kind: "need" }, roster)).toEqual({ ok: false, reason: "need: no key" });
+            expect(validateAct({ kind: "need", key: 4 }, roster).ok).toBe(false);
+            expect(validateAct({ kind: "need", key: "gate:run1:2" }, snap([tile("w1")])).ok).toBe(false);
+            expect(validateAct({ kind: "need", key: "gate:run1:2" }, null)).toEqual({
+                ok: false,
+                reason: "need: no snapshot has gone out yet",
+            });
+        });
+
+        it("keeps only the fields of the act it returns", () => {
+            expect(validateAct({ kind: "need", key: "gate:run1:2", extra: 1 }, roster)).toEqual({
+                ok: true,
+                act: { kind: "need", key: "gate:run1:2" },
+            });
+        });
     });
 
     it("keeps only the fields of the act it returns", () => {
@@ -349,6 +488,48 @@ describe("sameSnapshot", () => {
     it("treats nothing sent as different from any snapshot", () => {
         expect(sameSnapshot(null, snap([]))).toBe(false);
         expect(sameSnapshot(snap([]), null)).toBe(false);
+    });
+
+    // the dashboard's four fields: each one alone makes a different snapshot
+    const run: SidecarRunBox = { id: "r1", title: "Build it", done: 1, total: 4, failed: false };
+    const usage: SidecarUsage = { fiveHourPct: 40, weekPct: 12 };
+    const full = snapWith({ needs: [askNeed, jarvisNeed], run, usage, more: 2 });
+    const again = () =>
+        snapWith({ needs: [{ ...askNeed }, { ...jarvisNeed }], run: { ...run }, usage: { ...usage }, more: 2 });
+
+    it("is the same when needs, run, usage and more are equal by value", () => {
+        expect(sameSnapshot(full, again())).toBe(true);
+        expect(sameSnapshot(snapWith({}), snapWith({}))).toBe(true);
+    });
+
+    it("sees a changed needs alone", () => {
+        expect(sameSnapshot(full, { ...again(), needs: [askNeed] })).toBe(false);
+        expect(sameSnapshot(full, { ...again(), needs: [{ ...askNeed, since: 11 }, jarvisNeed] })).toBe(false);
+        expect(sameSnapshot(full, { ...again(), needs: undefined })).toBe(false);
+        expect(sameSnapshot(snapWith({}), { ...snapWith({}), needs: [askNeed] })).toBe(false);
+    });
+
+    it("sees a changed run alone", () => {
+        expect(sameSnapshot(full, { ...again(), run: { ...run, done: 2 } })).toBe(false);
+        expect(sameSnapshot(full, { ...again(), run: { ...run, failed: true } })).toBe(false);
+        expect(sameSnapshot(full, { ...again(), run: undefined })).toBe(false);
+    });
+
+    it("sees a changed usage alone", () => {
+        expect(sameSnapshot(full, { ...again(), usage: { ...usage, fiveHourPct: 41 } })).toBe(false);
+        expect(sameSnapshot(full, { ...again(), usage: { fiveHourPct: 40 } })).toBe(false);
+        expect(sameSnapshot(full, { ...again(), usage: undefined })).toBe(false);
+    });
+
+    it("sees a changed more alone", () => {
+        expect(sameSnapshot(full, { ...again(), more: 3 })).toBe(false);
+        expect(sameSnapshot(full, { ...again(), more: undefined })).toBe(false);
+    });
+
+    it("sees a changed span on a tile (the timeline rides on the tiles)", () => {
+        const a = snap([tile("a", { spans: [{ state: "working", from: 1 }] })]);
+        expect(sameSnapshot(a, snap([tile("a", { spans: [{ state: "working", from: 1 }] })]))).toBe(true);
+        expect(sameSnapshot(a, snap([tile("a", { spans: [{ state: "working", from: 1, to: 5 }] })]))).toBe(false);
     });
 });
 
@@ -768,5 +949,233 @@ describe("answerOlder", () => {
         await answerOlder(act(null), { all: rows(5), shown, path: "C:/t/a.jsonl" }, r, vi.fn());
         expect(r.memory).toHaveBeenCalledTimes(1);
         expect(r.file).not.toHaveBeenCalled();
+    });
+});
+
+describe("stampSince", () => {
+    it("leaves a tile that has a since alone, and returns the same tiles when none lacks one", () => {
+        const tiles = [tile("a", { since: 5 }), tile("b", { since: 9, state: "idle" })];
+        const r = stampSince(tiles, new Map(), 100);
+        expect(r.tiles).toBe(tiles);
+        expect(r.seen.size).toBe(0);
+    });
+
+    it("gives a tile with no since the build that first saw it, and the same one on every build after", () => {
+        const tiles = [tile("a", { state: "idle" })];
+        const first = stampSince(tiles, new Map(), 100);
+        expect(first.tiles[0].since).toBe(100);
+        const later = stampSince(tiles, first.seen, 9000);
+        expect(later.tiles[0].since).toBe(100);
+        // so a need built from it is the same row on the next build
+        expect(sameSnapshot({ ...snap(first.tiles), needs: [] }, { ...snap(later.tiles), needs: [] })).toBe(true);
+    });
+
+    it("starts over when the tile's state changes, and forgets a tile that has left", () => {
+        const first = stampSince([tile("a", { state: "idle" }), tile("b", { state: "idle" })], new Map(), 100);
+        const next = stampSince([tile("a", { state: "review" })], first.seen, 200);
+        expect(next.tiles[0].since).toBe(200);
+        expect([...next.seen.keys()]).toEqual(["a:review"]);
+    });
+
+    it("does not change the tiles it was given", () => {
+        const tiles = [tile("a", { state: "idle" })];
+        stampSince(tiles, new Map(), 100);
+        expect(tiles[0].since).toBeUndefined();
+    });
+});
+
+function runInfo(runId: string, over: Partial<RunInfo> = {}): RunInfo {
+    return { runId, channelId: `ch-${runId}`, title: `Run ${runId}`, project: "arcterm", ...over };
+}
+
+describe("newestActiveRun", () => {
+    it("is the newest run that has not ended", () => {
+        const runs = {
+            old: runInfo("old", { createdTs: 100, status: "running" }),
+            mid: runInfo("mid", { createdTs: 200, status: "running" }),
+            done: runInfo("done", { createdTs: 900, status: "done" }),
+        };
+        expect(newestActiveRun(runs)?.runId).toBe("mid");
+    });
+
+    it("skips a quick run, a done or cancelled run (by its dag too), and is null with none left", () => {
+        const runs = {
+            quick: runInfo("quick", { createdTs: 500, mode: "quick", status: "running" }),
+            cancelled: runInfo("cancelled", { createdTs: 400, status: "cancelled" }),
+            dagDone: runInfo("dagDone", {
+                createdTs: 300,
+                status: "running",
+                dag: { status: "done", tasks: [] } as never,
+            }),
+        };
+        expect(newestActiveRun(runs)).toBeNull();
+        expect(newestActiveRun({})).toBeNull();
+    });
+
+    it("counts a blocked run, which waits on you, as active; a run with no createdTs is oldest; ties go by id", () => {
+        const runs = {
+            b: runInfo("b", { createdTs: 50, status: "blocked" }),
+            a: runInfo("a", { createdTs: 50, status: "blocked" }),
+            none: runInfo("none", { status: "running" }),
+        };
+        expect(newestActiveRun(runs)?.runId).toBe("a");
+        expect(newestActiveRun({ none: runs.none })?.runId).toBe("none");
+    });
+});
+
+describe("runLeadId", () => {
+    it("is the agent whose role is lead of that run, not a worker or stage of it", () => {
+        const roles: Record<string, RunRole> = {
+            w1: { kind: "worker", leadRunId: "r1", taskId: "t1" },
+            s1: { kind: "stage", leadRunId: "r1", stageRole: "final" },
+            lead2: { kind: "lead", runId: "r2" },
+            lead1: { kind: "lead", runId: "r1" },
+        };
+        expect(runLeadId(roles, "r1")).toBe("lead1");
+        expect(runLeadId(roles, "r2")).toBe("lead2");
+        expect(runLeadId(roles, "r3")).toBeUndefined();
+    });
+});
+
+describe("runFailed", () => {
+    const failedNeed: SidecarNeed = { ...jarvisNeed, key: "unverified:r1", failed: true };
+    const items = new Map([
+        ["unverified:r1", { runid: "r1" }],
+        ["gate:run1:2", { runid: "r1" }],
+    ]);
+
+    it("is true while a failed need's attention item names the run", () => {
+        expect(runFailed([failedNeed], items, "r1")).toBe(true);
+    });
+
+    it("is false for another run, for a need that is not failed, and for a failed need whose item has no run", () => {
+        expect(runFailed([failedNeed], items, "r2")).toBe(false);
+        expect(runFailed([jarvisNeed], items, "r1")).toBe(false);
+        expect(runFailed([{ ...failedNeed, key: "orphan" }], new Map([["orphan", {}]]), "r1")).toBe(false);
+        expect(runFailed([failedNeed], new Map(), "r1")).toBe(false);
+        expect(runFailed([], items, "r1")).toBe(false);
+    });
+});
+
+describe("dueLabel", () => {
+    const item = (kind: string, chunklabel?: string) => ({ kind, chunklabel }) as AttentionItem;
+
+    it("is the first chunk-due item's label, and none when there is none", () => {
+        expect(dueLabel([item("dag-gate", "x"), item("chunk-due", "Re-measure RAM"), item("chunk-due", "Later")])).toBe(
+            "Re-measure RAM"
+        );
+        expect(dueLabel([item("dag-gate"), item("chunk-due")])).toBeUndefined();
+        expect(dueLabel([item("chunk-due", "")])).toBeUndefined();
+        expect(dueLabel([])).toBeUndefined();
+    });
+});
+
+describe("runBoxOf", () => {
+    const dag = {
+        status: "running",
+        tasks: [{ state: "done" }, { state: "skipped" }, { state: "running" }, { state: "pending" }],
+    } as never;
+
+    it("carries the title, the progress, when it began and what it was given", () => {
+        expect(
+            runBoxOf(runInfo("r1", { createdTs: 70, dag }), { leadId: "L", failed: false, due: "Re-measure" })
+        ).toEqual({
+            id: "r1",
+            leadId: "L",
+            title: "Run r1",
+            done: 2,
+            total: 4,
+            failed: false,
+            since: 70,
+            due: "Re-measure",
+        });
+    });
+
+    it("leaves out the lead, since and due it has none of, and counts 0 of 0 before a dag", () => {
+        const box = runBoxOf(runInfo("r2"), { failed: true });
+        expect(box).toEqual({ id: "r2", title: "Run r2", done: 0, total: 0, failed: true });
+        expect("leadId" in box || "since" in box || "due" in box).toBe(false);
+    });
+});
+
+describe("failureAt", () => {
+    const open = (from: number): SidecarSpan[] => [{ state: "working", from }];
+
+    it("is the engine's date when it is later than the open span began", () => {
+        expect(failureAt(500, open(300), 900)).toBe(500);
+    });
+
+    it("is unset (now) when the engine's date is not later than the open span's start, or after now, or unknown", () => {
+        expect(failureAt(300, open(300), 900)).toBeUndefined();
+        expect(failureAt(200, open(300), 900)).toBeUndefined();
+        expect(failureAt(1000, open(300), 900)).toBeUndefined();
+        expect(failureAt(null, open(300), 900)).toBeUndefined();
+    });
+
+    it("is the engine's date for a lead with no open span (none yet, or its last span closed)", () => {
+        expect(failureAt(500, undefined, 900)).toBe(500);
+        expect(failureAt(500, [], 900)).toBe(500);
+        expect(failureAt(500, [{ state: "working", from: 100, to: 400 }], 900)).toBe(500);
+    });
+});
+
+describe("usageOf", () => {
+    const donut = (provider: string, five?: number, week?: number): ProviderDonuts => ({
+        provider,
+        fivehour: { pct: five },
+        week: { pct: week },
+    });
+
+    it("is the claude provider's two windows, in whole percents", () => {
+        expect(usageOf([donut("codex", 90, 90), donut("claude", 41.6, 12.2)])).toEqual({
+            fiveHourPct: 42,
+            weekPct: 12,
+        });
+    });
+
+    it("leaves a window out when it has no reading, and is empty with no claude provider", () => {
+        expect(usageOf([donut("claude", 30)])).toEqual({ fiveHourPct: 30 });
+        expect(usageOf([donut("claude", undefined, 5)])).toEqual({ weekPct: 5 });
+        expect(usageOf([donut("claude", NaN, Infinity)])).toEqual({});
+        expect(usageOf([donut("codex", 50, 50)])).toEqual({});
+        expect(usageOf([])).toEqual({});
+    });
+});
+
+describe("decorateTiles", () => {
+    it("marks the lead of a failed run failed, and no one else", () => {
+        const tiles = [tile("L"), tile("w")];
+        const out = decorateTiles(tiles, { failedLead: "L", diffs: {} });
+        expect(out[0].failed).toBe(true);
+        expect(out[1].failed).toBeUndefined();
+    });
+
+    it("gives a review tile its diff, and only a review tile with lines changed", () => {
+        const diffs = {
+            r: { files: 2, adds: 12, dels: 3 },
+            zero: { files: 0, adds: 0, dels: 0 },
+            w: { files: 1, adds: 5, dels: 5 },
+        };
+        const out = decorateTiles(
+            [
+                tile("r", { state: "review" }),
+                tile("zero", { state: "review" }),
+                tile("w"),
+                tile("none", { state: "review" }),
+            ],
+            { diffs }
+        );
+        expect(out[0].diff).toEqual({ adds: 12, dels: 3 });
+        expect(out[1].diff).toBeUndefined();
+        expect(out[2].diff).toBeUndefined();
+        expect(out[3].diff).toBeUndefined();
+    });
+
+    it("returns tiles it did not change as they were, and never changes the ones it was given", () => {
+        const tiles = [tile("a"), tile("b", { state: "review" })];
+        const out = decorateTiles(tiles, { diffs: { b: { files: 1, adds: 1, dels: 0 } } });
+        expect(out[0]).toBe(tiles[0]);
+        expect(out[1]).not.toBe(tiles[1]);
+        expect(tiles[1].diff).toBeUndefined();
     });
 });

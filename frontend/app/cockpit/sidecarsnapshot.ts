@@ -100,11 +100,13 @@ function restingState(a: AgentVM): SidecarTileState {
     return a.edited || a.committed ? "review" : "idle";
 }
 
-function tileState(a: AgentVM): SidecarTileState {
+/** The tile state of an agent; the bridge's timeline records the same state the tile shows. */
+export function tileState(a: AgentVM): SidecarTileState {
     return a.state === "asking" || a.state === "working" ? a.state : restingState(a);
 }
 
-function since(a: AgentVM, state: SidecarTileState, now: number): number | undefined {
+/** When the agent's tile state began, UnixMilli, if it says; the timeline's first sighting starts its span here. */
+export function since(a: AgentVM, state: SidecarTileState, now: number): number | undefined {
     switch (state) {
         case "asking":
             return a.stateSince ?? (a.blockedMs != null ? now - a.blockedMs : undefined);
