@@ -43719,15 +43719,35 @@ async function acType(h, boxExpr, text, enter = true) {
         }
     }
 }
+// the header's Chat / Terminal icon toggle (Chat and Terminal alone); with a canvas, brainstorm or review the worded group
+const acHeaderToggle = `document.querySelector('[data-agent-header] [data-agent-chat-switch]')`;
 const acHeader = (h) =>
     h.ev(`(() => {
+        const t = ${acHeaderToggle};
+        if (t)
+            return {
+                toggle: {
+                    view: t.getAttribute("data-chat-view"),
+                    label: t.getAttribute("aria-label"),
+                    disabled: t.disabled,
+                    asleepMark: t.hasAttribute("data-chat-view-asleep"),
+                    icon: t.querySelector("svg")?.getAttribute("class") ?? "",
+                    opacity: Number(getComputedStyle(t).opacity),
+                },
+            };
         const g = ${acHeaderGroup};
         return g
             ? { label: g.getAttribute("aria-label"), buttons: [...g.querySelectorAll("button")].map((b) => ({ text: b.textContent.trim(), pressed: b.getAttribute("aria-pressed") === "true" })) }
             : null;
     })()`);
+// picks a view: the toggle is clicked only when it does not already show that view
 const acHeaderClick = (h, label) =>
     h.ev(`(() => {
+        const t = ${acHeaderToggle};
+        if (t) {
+            if (t.getAttribute("data-chat-view") !== ${JSON.stringify(label.toLowerCase())}) t.click();
+            return !t.disabled;
+        }
         const b = [...(${acHeaderGroup}?.querySelectorAll("button") ?? [])].find((x) => x.textContent.trim() === ${JSON.stringify(label)});
         b?.click();
         return !!b;
@@ -44073,10 +44093,11 @@ const agentChat = {
             })()`);
             await h.shot("cdp-shots/agent-chat-1-bubbles.png");
             rec(
-                "1a. a Claude cell opens in Chat: the control reads Chat | Terminal with Chat selected; your message is a bubble on the right, the agent's prose is a page column (step 31 reads its look), a work pill and a file chip show, the run's launch prompt and a pointer line are sent cards",
+                "1a. a Claude cell opens in Chat: the header's toggle shows Chat and offers the terminal (its icon and Show terminal); your message is a bubble on the right, the agent's prose is a page column (step 31 reads its look), a work pill and a file chip show, the run's launch prompt and a pointer line are sent cards",
                 loaded &&
-                    header1?.buttons?.map((b) => b.text).join("|") === "Chat|Terminal" &&
-                    header1.buttons[0].pressed &&
+                    header1?.toggle?.view === "chat" &&
+                    header1.toggle.label === "Show terminal" &&
+                    /terminal/.test(header1.toggle.icon) &&
                     bubbles.items === 6 &&
                     bubbles.you === AC_USER_TEXT &&
                     bubbles.youGap != null && bubbles.youGap >= -1 && bubbles.youGap <= 3 &&
@@ -44239,7 +44260,7 @@ const agentChat = {
             rec(
                 "6. picking Terminal removes the chat layer, keeps the same xterm with focus in it and shows the rail's Transcript tab; picking Chat brings the layer back with focus in the box",
                 gone && term6.sameXterm && term6.railTranscript && focusTerm.xterm &&
-                    header6?.buttons?.find((b) => b.pressed)?.text === "Terminal" &&
+                    header6?.toggle?.view === "terminal" && header6.toggle.label === "Show chat" &&
                     back && same6 && focusChat.box && railBack === false,
                 { gone, term6, focusTerm, header6, back, same6, focusChat, railBack }
             );
@@ -44269,24 +44290,24 @@ const agentChat = {
             );
             await polishWaitFor(h, `!!${acLayer(B)} && !!${acLayer(A)}`, AC_WAIT_MS);
             const split = await h.ev(`(() => ({
-                switches: [...document.querySelectorAll("[data-agent-chat-switch]")].map((s) => [s.getAttribute("data-agent-chat-switch"), s.getAttribute("data-chat-mode")]),
+                switches: [...document.querySelectorAll("[data-agent-cell-bar] [data-agent-chat-switch]")].map((s) => [s.getAttribute("data-agent-chat-switch"), s.getAttribute("data-chat-view")]),
                 bars: document.querySelectorAll("[data-agent-cell-bar] [data-agent-chat-switch]").length,
             }))()`);
-            await h.ev(`[...document.querySelectorAll('[data-agent-chat-switch="${B}"] button')].find((b) => b.textContent.trim() === "Terminal")?.click()`);
+            await h.ev(`document.querySelector('[data-agent-cell-bar] [data-agent-chat-switch="${B}"]')?.click()`);
             await polishWaitFor(h, `!${acLayer(B)}`, 3000);
             const flipped = await h.ev(`(() => ({
-                a: document.querySelector('[data-agent-chat-switch="${A}"]')?.getAttribute("data-chat-mode"),
-                b: document.querySelector('[data-agent-chat-switch="${B}"]')?.getAttribute("data-chat-mode"),
+                a: document.querySelector('[data-agent-cell-bar] [data-agent-chat-switch="${A}"]')?.getAttribute("data-chat-view"),
+                b: document.querySelector('[data-agent-cell-bar] [data-agent-chat-switch="${B}"]')?.getAttribute("data-chat-view"),
                 layerA: !!${acLayer(A)},
                 layerB: !!${acLayer(B)},
             }))()`);
             await h.shot("cdp-shots/agent-chat-8-split.png");
-            await h.ev(`[...document.querySelectorAll('[data-agent-chat-switch="${B}"] button')].find((b) => b.textContent.trim() === "Chat")?.click()`);
+            await h.ev(`document.querySelector('[data-agent-cell-bar] [data-agent-chat-switch="${B}"]')?.click()`);
             await polishWaitFor(h, `!!${acLayer(B)}`, 3000);
             await AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`);
             await showAgent(A);
             rec(
-                "8. in a split of two Claude cells each grid bar has its own switch, and flipping B leaves A in Chat",
+                "8. in a split of two Claude cells each grid bar has its own toggle, and flipping B leaves A in Chat",
                 opened === true && split.bars === 2 && JSON.stringify(split.switches.map((s) => s[0]).sort()) === JSON.stringify([A, B].sort()) &&
                     split.switches.every((s) => s[1] === "chat") &&
                     flipped.a === "chat" && flipped.b === "terminal" && flipped.layerA && !flipped.layerB,
@@ -44528,28 +44549,20 @@ const agentChat = {
                     modeChip: !!box?.querySelector("button[data-chat-mode]"),
                     attach: !!box?.querySelector("[data-chat-attach]"),
                     onePane: cover?.getAttribute("data-agent-chat") === ${JSON.stringify(F)},
-                    view: [...(${acHeaderGroup}?.querySelectorAll("button") ?? [])].map((b) => ({
-                        text: b.textContent.trim(),
-                        pressed: b.getAttribute("aria-pressed") === "true",
-                        disabled: b.disabled,
-                        asleepMark: b.hasAttribute("data-chat-view-asleep"),
-                        opacity: Number(getComputedStyle(b).opacity),
-                    })),
                 };
             })()`);
+            sleep14.view = (await acHeader(h))?.toggle ?? null;
             await h.shot("cdp-shots/agent-chat-14-asleep.png");
-            // Chat stays usable asleep (the way back to the conversation from a canvas, review or brainstorm); Terminal is
-            // disabled and dimmed
+            // the conversation shows, and the toggle to the terminal is disabled and dimmed until the agent wakes
             const viewDim =
-                (sleep14.view ?? []).length === 2 &&
-                !sleep14.view[0].disabled && !sleep14.view[0].asleepMark && sleep14.view[0].opacity > 0.9 &&
-                sleep14.view[1].disabled && sleep14.view[1].asleepMark && sleep14.view[1].opacity > 0.35 && sleep14.view[1].opacity < 0.45;
+                sleep14.view != null && sleep14.view.view === "chat" && sleep14.view.disabled && sleep14.view.asleepMark &&
+                sleep14.view.opacity > 0.35 && sleep14.view.opacity < 0.45;
             rec(
-                "14. an asleep Claude agent is the one chat pane (the root is both the chat layer and the sleeping cover) with your bubble, the agent's prose and the wake box: the model as a label and Asleep, no model chip, no attach, no mode chip; the header's Chat | Terminal control shows Chat selected and usable, Terminal disabled and dimmed",
+                "14. an asleep Claude agent is the one chat pane (the root is both the chat layer and the sleeping cover) with your bubble, the agent's prose and the wake box: the model as a label and Asleep, no model chip, no attach, no mode chip; the header's Chat / Terminal toggle shows Chat, disabled and dimmed",
                 asleep && sleep14.you === "an earlier question" && sleep14.agent && sleep14.onePane &&
                     (sleep14.placeholder ?? "").includes("to wake it") && sleep14.send === "Wake" &&
                     sleep14.label === "opus" && !sleep14.modelChip && (sleep14.asleepNote ?? "").includes("Asleep") && !sleep14.modeChip && !sleep14.attach &&
-                    sleep14.view?.map((b) => b.text).join("|") === "Chat|Terminal" && sleep14.view[0].pressed && !sleep14.view[1].pressed && viewDim,
+                    viewDim,
                 sleep14
             );
 
@@ -44591,7 +44604,7 @@ const agentChat = {
                 C.detachCanvas(${JSON.stringify(F)});
                 return true;`
             );
-            const restored14a = await polishWaitFor(h, `(${AC_VIEW_NOW}) === "Chat*|Terminal!"`, 4000);
+            const restored14a = await polishWaitFor(h, `${acHeaderToggle}?.getAttribute("data-chat-view") === "chat" && ${acHeaderToggle}?.disabled === true`, 4000);
             rec(
                 "14a. on the asleep agent with a canvas attached (Terminal disabled, Chat and Canvas usable), Alt+C walks Chat → Canvas → Chat and never selects Terminal, and a click on Chat from the Canvas goes back to the conversation; the stored chat mode is not Terminal",
                 three14a && atChat14a === "Chat*|Terminal!|Canvas" && onCanvas14a && afterChat14a === "Chat|Terminal!|Canvas*" &&
@@ -44611,13 +44624,10 @@ const agentChat = {
             const switchF = await polishWaitFor(h, `!!document.querySelector('[data-agent-cell-bar] [data-agent-chat-switch="${F}"]') && !!${acLayer(F)}`, AC_WAIT_MS);
             const switch14 = await h.ev(`(() => {
                 const s = document.querySelector('[data-agent-cell-bar] [data-agent-chat-switch="${F}"]');
-                const bs = [...(s?.querySelectorAll("button") ?? [])];
                 return {
-                    mode: s?.getAttribute("data-chat-mode") ?? null,
+                    mode: s?.getAttribute("data-chat-view") ?? null,
                     asleepMark: s?.hasAttribute("data-chat-view-asleep") ?? false,
-                    texts: bs.map((b) => b.textContent.trim()),
-                    pressed: bs.map((b) => b.getAttribute("aria-pressed") === "true"),
-                    disabled: bs.map((b) => b.disabled),
+                    disabled: s?.disabled ?? false,
                     opacity: s ? Number(getComputedStyle(s).opacity) : null,
                     awakeSwitch: document.querySelector('[data-agent-cell-bar] [data-agent-chat-switch="${A}"]')?.hasAttribute("data-chat-view-asleep") ?? null,
                 };
@@ -44625,9 +44635,8 @@ const agentChat = {
             await h.shot("cdp-shots/agent-chat-14-asleep-split.png");
             await AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`);
             rec(
-                "14b. in a split the asleep agent's grid-bar Chat | Terminal switch is drawn with Chat selected, both buttons disabled and dimmed, while the awake agent's is not",
-                splitF === true && switchF && switch14.mode === "chat" && switch14.asleepMark && switch14.texts.join("|") === "Chat|Terminal" &&
-                    switch14.pressed[0] && !switch14.pressed[1] && switch14.disabled.every(Boolean) &&
+                "14b. in a split the asleep agent's grid-bar Chat / Terminal toggle is drawn showing Chat, disabled and dimmed, while the awake agent's is not",
+                splitF === true && switchF && switch14.mode === "chat" && switch14.asleepMark && switch14.disabled &&
                     switch14.opacity != null && switch14.opacity > 0.35 && switch14.opacity < 0.45 && switch14.awakeSwitch === false,
                 { splitF, switchF, switch14 }
             );
@@ -44909,7 +44918,7 @@ const agentChat = {
                 slashUp && items23.some((t) => t.startsWith("/compact")) && items23.some((t) => t.startsWith("/code-review")) &&
                     items23.some((t) => t.startsWith("/arc:council")) && picked23 && fetched23.length === 0 &&
                     live23.length >= 1 && live23.every((c) => c.data.blockid === blockA) &&
-                    flipped23 && header23?.buttons?.find((b) => b.pressed)?.text === "Terminal" &&
+                    flipped23 && header23?.toggle?.view === "terminal" &&
                     JSON.stringify(sentModel) === JSON.stringify(["/model", "\r"]),
                 { slashUp, items23, picked23, fetched23: fetched23.length, live23: live23.length, flipped23, header23, sentModel }
             );
@@ -45403,27 +45412,23 @@ const agentChat = {
                 { sleepingUp32, woke32, screen32, mode32, woken32, slept32 }
             );
 
-            // 33. the transitions: the header's view control has one sliding fill, which moves from the Chat option to the Terminal one
-            // when Terminal is picked (mid-travel ~80 ms in, settled by ~500 ms); the chat layer leaves with pointer events off and
-            // focus already in the xterm; the grid bar's switch slides the same way in a split
-            const flip33 = (group, label, exit) => `(async () => {
+            // 33. the transitions: the header's Chat / Terminal toggle shows the terminal mark while Chat shows; a click flips the
+            // view and the icon to the speech bubble, which fades in (below full opacity in its first frames, settled by ~500 ms);
+            // the chat layer leaves with pointer events off and focus already in the xterm; the grid bar's toggle flips the same
+            // way in a split
+            const flip33 = (toggle, exit) => `(async () => {
                 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-                const grp = ${group};
-                const button = (l) => [...(grp?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === l);
-                const fills = () => [...(grp?.querySelectorAll("[data-slide-fill]") ?? [])];
-                const where = () => fills().map((f) => f.closest("button")?.textContent.trim());
-                const rectOf = (el) => {
-                    const r = el?.getBoundingClientRect();
-                    return r ? { left: r.left, width: r.width } : null;
+                const t = ${toggle};
+                if (!t) return { ok: false, why: "no toggle" };
+                const icon = () => t.querySelector("svg")?.getAttribute("class") ?? "";
+                const opacity = () => {
+                    const sp = t.querySelector("span");
+                    return sp ? Number(getComputedStyle(sp).opacity) : null;
                 };
-                const target = button(${JSON.stringify(label)});
-                if (!grp || !target) return { ok: false, why: "no control or option" };
-                const out = { ok: true, start: where(), leaving: false, wrapperNone: false, focusInXterm: false, wrapperPe: [] };
+                const out = { ok: true, start: t.getAttribute("data-chat-view"), startIcon: icon(), leaving: false, wrapperNone: false, focusInXterm: false, wrapperPe: [], minOpacity: 1 };
                 const t0 = performance.now();
-                target.click();
+                t.click();
                 await wait(0);
-                out.first = where();
-                let r80 = null;
                 while (performance.now() - t0 < 520) {
                     if (${exit}) {
                         const layer = ${acLayer(A)};
@@ -45436,28 +45441,24 @@ const agentChat = {
                             if (a?.closest?.(".xterm") && a.closest("[data-agent-terminal]")?.getAttribute("data-agent-terminal") === ${JSON.stringify(A)}) out.focusInXterm = true;
                         }
                     }
-                    if (r80 == null && performance.now() - t0 >= 80) {
-                        r80 = rectOf(fills()[0]);
-                        out.at80 = where();
-                    }
+                    const o = opacity();
+                    if (o != null) out.minOpacity = Math.min(out.minOpacity, o);
                     await wait(10);
                 }
-                out.r80 = r80;
-                out.settled = rectOf(fills()[0]);
-                out.end = where();
-                out.count = fills().length;
-                out.moved = !!r80 && !!out.settled && (Math.abs(r80.left - out.settled.left) > 1 || Math.abs(r80.width - out.settled.width) > 1);
+                out.end = t.getAttribute("data-chat-view");
+                out.endIcon = icon();
+                out.label = t.getAttribute("aria-label");
+                out.settled = opacity();
                 return out;
             })()`;
-            const slid = (f, from, to) =>
-                f?.ok === true && JSON.stringify(f.start) === JSON.stringify([from]) && JSON.stringify(f.first) === JSON.stringify([to]) &&
-                JSON.stringify(f.at80) === JSON.stringify([to]) && JSON.stringify(f.end) === JSON.stringify([to]) && f.count === 1 && f.moved;
+            const flippedIcon = (f) =>
+                f?.ok === true && f.start === "chat" && f.end === "terminal" && /terminal/.test(f.startIcon) && /message/.test(f.endIcon) &&
+                f.label === "Show chat" && f.minOpacity < 0.9 && f.settled != null && f.settled > 0.99;
             await showAgent(A);
             await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat"); window.__arcChatMode.set(${JSON.stringify(B)}, "chat")`);
             await polishWaitFor(h, `!!${acBox(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, AC_WAIT_MS);
             await polishNap(500);
-            const head33 = await h.ev(`(() => { const g = ${acHeaderGroup}; return [...(g?.querySelectorAll("[data-slide-fill]") ?? [])].map((f) => f.closest("button")?.textContent.trim()); })()`);
-            const toTerm = await h.ev(flip33(acHeaderGroup, "Terminal", true)).catch((e) => ({ ok: false, why: String(e?.message ?? e) }));
+            const toTerm = await h.ev(flip33(acHeaderToggle, true)).catch((e) => ({ ok: false, why: String(e?.message ?? e) }));
             const gone33 = await polishWaitFor(h, `!${acLayer(A)}`, 3000);
             const focus33 = await acFocusIn(h, A);
             await h.shot("cdp-shots/agent-chat-33-transitions-terminal.png");
@@ -45470,16 +45471,16 @@ const agentChat = {
             await acHeaderClick(h, "Chat");
             await polishWaitFor(h, `!!${acLayer(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, 3000);
             rec(
-                "33a. the header's view control has one sliding fill, in the Chat option; picking Terminal puts the one fill in the Terminal option, and ~80 ms in it is mid-travel (its rect differs from the settled one)",
-                JSON.stringify(head33) === JSON.stringify(["Chat"]) && slid(toTerm, "Chat", "Terminal"),
-                { head33, toTerm }
+                "33a. the header's toggle shows the terminal mark while Chat shows; a click flips the view to Terminal and the icon to the speech bubble (Show chat), which fades in and settles",
+                flippedIcon(toTerm),
+                { toTerm }
             );
             rec(
                 "33b. while the chat layer leaves it takes no pointer events and focus is already in the cell's xterm; the layer is then gone, and picking Chat brings it back with focus in the box",
                 toTerm?.ok === true && toTerm.leaving && toTerm.wrapperNone && toTerm.focusInXterm && gone33 && focus33.xterm && back33,
                 { leaving: toTerm?.leaving, wrapperNone: toTerm?.wrapperNone, wrapperPe: toTerm?.wrapperPe, focusInXterm: toTerm?.focusInXterm, gone33, focus33, back33 }
             );
-            // the same slide on the grid bar's switch in a split of A and B
+            // the same flip on the grid bar's toggle in a split of A and B
             const splitB = await AC.agentPage(
                 h,
                 `const G = await mod("app/view/agents/gridstore.ts");
@@ -45488,18 +45489,17 @@ const agentChat = {
             const barUp33 = await polishWaitFor(h, `!!${acLayer(A)} && !!${acLayer(B)} && !!document.querySelector('[data-agent-cell-bar] [data-agent-chat-switch="${A}"]')`, AC_WAIT_MS);
             await polishNap(500);
             const switchA = `document.querySelector('[data-agent-cell-bar] [data-agent-chat-switch="${A}"]')`;
-            const bar33 = await h.ev(`[...(${switchA}?.querySelectorAll("[data-slide-fill]") ?? [])].map((f) => f.closest("button")?.textContent.trim())`);
-            const barTerm = await h.ev(flip33(switchA, "Terminal", false)).catch((e) => ({ ok: false, why: String(e?.message ?? e) }));
+            const barTerm = await h.ev(flip33(switchA, false)).catch((e) => ({ ok: false, why: String(e?.message ?? e) }));
             await polishWaitFor(h, `!${acLayer(A)}`, 3000);
             await h.shot("cdp-shots/agent-chat-33-transitions-split.png");
-            await h.ev(`[...(${switchA}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Chat")?.click()`);
+            await h.ev(`${switchA}?.click()`);
             await polishWaitFor(h, `!!${acLayer(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, 3000);
             await AC.agentPage(h, `const G = await mod("app/view/agents/gridstore.ts"); G.endSplit(agentsModel()); return true;`);
             await showAgent(A);
             rec(
-                "33c. in a split the grid bar's switch has one fill in the Chat option, and picking Terminal slides it to the Terminal option the same way",
-                splitB === true && barUp33 && JSON.stringify(bar33) === JSON.stringify(["Chat"]) && slid(barTerm, "Chat", "Terminal"),
-                { splitB, barUp33, bar33, barTerm }
+                "33c. in a split the grid bar's toggle flips the same way: the terminal mark while Chat shows, the speech bubble fading in once Terminal does",
+                splitB === true && barUp33 && flippedIcon(barTerm),
+                { splitB, barUp33, barTerm }
             );
 
             // 34. skim: the sentences the skim mod marked draw highlighted in Chat. The marks come from a skim_fixture.json in a folder

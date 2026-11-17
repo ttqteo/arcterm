@@ -68,7 +68,7 @@ import { canForkInChat } from "./chatfork";
 import { forkFromChat } from "./chatforkaction";
 import { cellView, cellViewOptions, chatCapable, type CellView } from "./chatmode";
 import { selectCellView, useChatMode } from "./chatmodestore";
-import { ASLEEP_VIEW_TITLE } from "./chatswitch";
+import { ASLEEP_VIEW_TITLE, ChatToggle } from "./chatswitch";
 import { canDrive } from "./consumers";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
@@ -544,6 +544,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const viewOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null);
     // what Alt+C walks: asleep it skips the disabled Terminal (agent:view-cycle passes the same asleep flag)
     const keyOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null, chatAsleep);
+    // Chat and Terminal alone are one icon toggle, as in a split cell's bar; with a canvas, brainstorm or review the
+    // worded control picks among them all
+    const chatToggleOnly = chatShown && !hasCanvas && docReview == null && brainstorm == null;
 
     // The grid's cells, to tell the Split button whether a split is showing. Only agents and terminals with a terminal
     // can be cells (gridstore.eligibleIds).
@@ -917,7 +920,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         }
                     />
                 ) : null}
-                {viewControl ? (
+                {chatToggleOnly ? (
+                    <ChatToggle agent={agent} iconSize={15} className={ICON_BTN} />
+                ) : viewControl ? (
                     // one control for whatever can stand in the terminal's place: a canvas or a brainstorm (never both), a
                     // Doc review, or both; and for a Claude agent, Chat or its terminal in the terminal's own slot
                     <Segmented<CellView>
