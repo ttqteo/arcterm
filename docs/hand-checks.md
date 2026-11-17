@@ -634,6 +634,11 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) The Agent sidebar is 280px with RAM and Tokens on and Age off (`agentTreeWidth`, `rowfields.ts`): in
   Settings → Appearance → Agent sidebar turn Age off; the sidebar stays 280px and a lead's second line reads its words
   (`Working · 0/7`), not `W… · 0/7`. Turn Tokens off too and it narrows to 248px.
+- [ ] (arcterm) A relaunched lead stays on its run's row (`isCurrentLead`, `staleLead`, `runlineage.ts` /
+  `agenttreemodel.ts`): with an orchestrator run executing, restart arcterm (or let its lead die so the engine
+  relaunches it); the run's row in the Agent tree is the new lead's, working, and the old lead's sleeping tab has no
+  row of its own. An agent whose brainstorm run was cancelled and queued again reads `plan queued #N` alone, with no
+  `cancelled · run …` beside it.
 - [ ] (arcterm) A server mark keeps two ports (`shortPortsLabel`, `devserversmodel.ts`): an agent or run row in the
   Agent tree whose background servers listen on four ports reads `:5175 :9230 +2` beside the green server glyph, and
   hovering it lists all four ports with their commands.
