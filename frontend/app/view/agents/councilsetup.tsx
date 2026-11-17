@@ -32,6 +32,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { showCouncil, showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatTokens } from "./agentsviewmodel";
+import { CouncilAvatar } from "./councilchat";
 import type { CouncilLang } from "./councillang";
 import { councilProjectKey, councilProjectName, type CouncilSetupDraft, type SeatableAgent } from "./councilmodel";
 import {
@@ -135,17 +136,6 @@ const SECONDARY =
     "flex h-[26px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-mid bg-surface-raised px-[10px] text-[13px] text-primary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent";
 const ICON_BUTTON =
     "flex h-6 w-6 flex-none cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent";
-
-// the identity colors stay the same in every theme (the conn-* palette); spelled out so Tailwind sees the classes
-const RING: Record<ExpertTone, string> = {
-    "conn-1": "border-conn-1 text-conn-1",
-    "conn-2": "border-conn-2 text-conn-2",
-    "conn-3": "border-conn-3 text-conn-3",
-    "conn-6": "border-conn-6 text-conn-6",
-    "conn-7": "border-conn-7 text-conn-7",
-    "conn-8": "border-conn-8 text-conn-8",
-    coordinator: "border-primary text-primary",
-};
 
 // ---- the role library ----
 
@@ -421,6 +411,8 @@ function MenuButton({
     );
 }
 
+// a seat's avatar as the Discussion, the map and the tree draw it (CouncilAvatar); a suggested seat not taken yet is
+// the dashed, muted one
 function Avatar({
     expert,
     tone,
@@ -433,15 +425,12 @@ function Avatar({
     dashed?: boolean;
 }) {
     return (
-        <span
-            aria-hidden
-            className={cn(
-                "flex h-[22px] w-[22px] flex-none items-center justify-center rounded-full border-2 text-[10px] font-bold",
-                dashed ? "border-dashed border-muted text-muted" : RING[tone]
-            )}
-        >
-            {expertInitial(expert, lang)}
-        </span>
+        <CouncilAvatar
+            tone={dashed ? "muted" : tone}
+            name={seatName(expert, lang)}
+            initials={expertInitial(expert, lang)}
+            dashed={dashed}
+        />
     );
 }
 

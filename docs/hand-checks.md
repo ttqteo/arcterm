@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A council's Setup draws its seats with `CouncilAvatar`.** Typecheck and eslint only; never seen: no dev
+  app was up. The seats in Setup were a coloured ring on no fill, and now are the Discussion's faint disc in the seat's
+  colour; a suggested seat stays the dashed, muted ring. `task verify:ui -- council-setup` → passes, and its shots show
+  the seat rows with discs that match the Discussion's for the same seats (same colour, same letter). Commit: the
+  `chore(council): Setup's seats use CouncilAvatar` one.
 - [ ] (arcterm) **`chat-initiative-band` step 3 now asserts that `i` puts the focus in the band.** Never run: no dev app
   was up. With one running, `task verify:ui -- chat-initiative-band` → step "3. band expanded" passes; if it fails only
   on `viaKey.focused`, the band opens on `i` without taking the focus, which `chatband.tsx` says it does (a bug, not the
