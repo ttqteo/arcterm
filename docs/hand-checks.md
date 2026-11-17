@@ -171,6 +171,13 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   bubble leaves the conversation. A plain permission prompt still shows only the permission card. With an MCP form or
   another unnumbered screen up while the agent reads waiting, Chat shows "Waiting on you in the terminal" with the foot
   of the screen in mono; it never shows while Claude Code's prompt and mode line are up.
+- [ ] (arcterm) **Claude Code's folder trust prompt shows in Chat as a card.** Unit tests on a screen written from a
+  screenshot only, no dev app ran (commit "fix(chat): Claude Code's folder trust prompt shows as a card"). Resume a Claude
+  agent in a folder Claude Code does not trust yet (another drive-letter case of a trusted one did it on 2026-11-17):
+  Chat shows a yellow card titled `Accessing workspace:` with its text and two buttons, `No, exit` and `Yes, I trust
+  this folder` (no numbers), the second one highlighted. Yes picks it (the terminal moves on past the prompt) and the
+  card goes. If no card shows, the prompt has no solid rule over it on the real screen: capture its PTY output for
+  `tuiscreen.fixtures.json`.
 - [ ] (arcterm) **A council an agent ran ends as a card at the end of Chat, its summary in a council panel.** The CDP
   scenario `chat-council` covers fixture transcripts only (commit "feat(chat): an ended council stays a card at the end,
   its summary in a council panel", 2026-11-16). Ask a Claude agent for a council (/arc:council) and let it wait in the

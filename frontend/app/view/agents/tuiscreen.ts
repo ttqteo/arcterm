@@ -142,6 +142,9 @@ export interface TuiDialog {
     options: TuiOption[];
     /** the option the cursor is on */
     cursor: number;
+    /** a list with no numbers (the folder trust prompt's " ❯ Yes, I trust this folder"), which takes no digit: the
+     *  arrows walk to an option and Enter picks it */
+    plain?: true;
 }
 
 // the solid rule Claude Code draws across the screen over a dialog (a dashed ╌ rule inside one frames a command). The
@@ -162,12 +165,14 @@ function ruleAbove(lines: string[], from: number): { at: number; width: number; 
 }
 
 /** The dialog at the bottom of Claude Code's screen, whatever it asks: the rows from the solid rule over it down to its
- *  numbered options. null with no options on screen, or no rule over them (a numbered list in a reply has neither the
- *  cursor nor the rule). A row as long as the rule, give or take a word, was wrapped there, so it runs on into the next
- *  row's paragraph; a blank row ends a paragraph. */
+ *  options, numbered ("❯ 1. Yes") or plain ("❯ Yes, I trust this folder", the folder trust prompt, which Claude Code
+ *  draws before it loads any hook). null with no options on screen, or no rule over them (a numbered list in a reply has
+ *  neither the cursor nor the rule); a plain list also not while the mode line shows, so the input box's own "❯" never
+ *  reads as one. A row as long as the rule, give or take a word, was wrapped there, so it runs on into the next row's
+ *  paragraph; a blank row ends a paragraph. */
 export function tuiDialog(screen: string[]): TuiDialog | null {
     const lines = splitRules(screen);
-    const run = dialogRun(lines);
+    const run = dialogRun(lines) ?? (tuiPromptUp(lines) ? null : plainDialogRun(lines));
     if (run == null) {
         return null;
     }
@@ -196,7 +201,25 @@ export function tuiDialog(screen: string[]): TuiDialog | null {
         }
         open = row.trimEnd().length >= width - WRAP_SLACK;
     }
-    return { title: rows[first].trim(), body, options: run.options, cursor: run.cursor };
+    const dialog: TuiDialog = { title: rows[first].trim(), body, options: run.options, cursor: run.cursor };
+    if ("plain" in run) {
+        dialog.plain = true;
+    }
+    return dialog;
+}
+
+// the bottom-most plain select list (" ❯ Yes" with its peers at the label's column), as a run of options
+function plainDialogRun(lines: string[]): { start: number; options: TuiOption[]; cursor: number; plain: true } | null {
+    const list = plainList(lines);
+    if (list == null) {
+        return null;
+    }
+    return {
+        start: list.first,
+        options: list.labels.map((label, i) => ({ n: i + 1, label })),
+        cursor: list.at - list.first + 1,
+        plain: true,
+    };
 }
 
 // how far short of the screen's edge a wrapped row can end: the longest word that did not fit
@@ -228,22 +251,45 @@ const yesLabel = /^yes\b/i;
  *  its numbers; a plain one (the Artifact tool's " ❯ No / Yes") by the rows around the cursor at the label's column,
  *  up to a blank row or a row at another indent. The input box's own "❯" is no list: it has no rows beside it. */
 export function tuiSelectYes(lines: string[]): { moves: number; label: string } | null {
-    let at = -1;
-    for (let i = lines.length - 1; i >= 0; i--) {
-        if (cursorRow.test(lines[i])) {
-            at = i;
-            break;
-        }
-    }
+    const at = lastCursorRow(lines);
     if (at < 0) {
         return null;
     }
-    const [, lead, label] = cursorRow.exec(lines[at]);
-    const numbered = numberedLabel.exec(label);
+    const numbered = numberedLabel.exec(cursorRow.exec(lines[at])[2]);
     if (numbered) {
         const cursor = Number(numbered[1]);
         const yes = tuiPermissionOptions(lines).find((o) => yesLabel.test(o.label));
         return yes == null ? null : { moves: yes.n - cursor, label: yes.label };
+    }
+    const list = plainList(lines);
+    if (list == null) {
+        return null;
+    }
+    const yes = list.labels.findIndex((l) => yesLabel.test(l));
+    return yes < 0 ? null : { moves: list.first + yes - list.at, label: list.labels[yes] };
+}
+
+// the bottom-most cursor row on screen; -1 for none
+function lastCursorRow(lines: string[]): number {
+    for (let i = lines.length - 1; i >= 0; i--) {
+        if (cursorRow.test(lines[i])) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/** The plain select list around the bottom-most cursor row (" ❯ No" with "   Yes" under it): the rows at the label's
+ *  column, up to a blank row or a row at another indent, with the cursor mark stripped. `first` is its first row, `at`
+ *  the cursor's. null with no cursor row, a numbered one, or a cursor row alone (the input box's "❯"). */
+function plainList(lines: string[]): { first: number; at: number; labels: string[] } | null {
+    const at = lastCursorRow(lines);
+    if (at < 0) {
+        return null;
+    }
+    const [, lead, label] = cursorRow.exec(lines[at]);
+    if (numberedLabel.test(label)) {
+        return null;
     }
     const col = lead.length;
     const atCol = (row: string | undefined) =>
@@ -259,9 +305,7 @@ export function tuiSelectYes(lines: string[]): { moves: number; label: string } 
     if (last === first) {
         return null;
     }
-    const labels = lines.slice(first, last + 1).map((row, i) => (first + i === at ? label : row.trim()));
-    const yes = labels.findIndex((l) => yesLabel.test(l));
-    return yes < 0 ? null : { moves: first + yes - at, label: labels[yes] };
+    return { first, at, labels: lines.slice(first, last + 1).map((row, i) => (first + i === at ? label : row.trim())) };
 }
 
 // the run of options from row `start`, and the number of the one the cursor is on (0 for none)
