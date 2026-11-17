@@ -172,3 +172,19 @@ func TestIsBrainstormSession(t *testing.T) {
 		}
 	}
 }
+
+// A review fix round reopens its task's session under a run of its own: the shared transcript counts once.
+func TestRunUsageCountsASharedSessionOnce(t *testing.T) {
+	root := usageRoot(t)
+	wt := t.TempDir()
+	writeClaudeSession(t, root, wt, "work-1", usageLine("a", "claude-sonnet", 1, 2, 3, 0, 0))
+	children := []*waveobj.Run{
+		{ID: "round1", Runtime: "claude", ProjectPath: wt, TaskId: "t-1", SessionId: "work-1", CreatedTs: 1},
+		{ID: "round2", Runtime: "claude", ProjectPath: wt, TaskId: "t-1", SessionId: "work-1", CreatedTs: 2},
+	}
+	got := RunUsage(context.Background(), nil, children)
+	want := []waveobj.UsageRow{{Role: "worker", TaskId: "t-1", Model: "claude-sonnet", Input: 1, Output: 2, CacheRead: 3, Msgs: 1}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("RunUsage =\n%+v\nwant\n%+v", got, want)
+	}
+}

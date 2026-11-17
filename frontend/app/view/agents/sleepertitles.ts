@@ -4,12 +4,12 @@
 // The titles of sleeping agents' conversations, read from their own transcripts. A sleeping agent has no process to
 // report its ai-title, and the Conversations archive that stands in for it holds only the newest sessions
 // (sessionsarchivestore's LIMIT): an agent asleep behind more of them read as its project's name. Claude Code writes the
-// ai-title again near the end of every turn, so the transcript's tail holds it. Each path is read once a launch.
+// ai-title again near the end of every turn, so the transcript's tail holds it. Each path is read once a launch, one
+// at a time; a read that fails is tried again.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect } from "react";
 import type { AgentsViewModel } from "./agents";
@@ -57,14 +57,67 @@ export async function loadSleeperTitle(path: string, agent: string | undefined):
     }
 }
 
+// a failed read waits RETRY_MS times its count before the next try, and stops after MAX_TRIES
+const RETRY_MS = 15_000;
+const MAX_TRIES = 4;
+
+type SleeperRead = { path: string; agent?: string };
+
+/** The reads of sleeping agents' titles, one at a time. At launch every sleeper is read at once, each tail a few
+ *  hundred KB: as a burst they landed while the window was still loading, wavesrv's websocket write timed out and the
+ *  connection was replaced, and the reads it carried failed. A failed read used to be forgotten for the whole launch,
+ *  so its agent read as its project's name until arcterm restarted; it is now tried again after a wait. `schedule`
+ *  stands in for setTimeout in tests. */
+export function sleeperTitleQueue(
+    read: (path: string, agent: string | undefined) => Promise<void>,
+    schedule: (fn: () => void, ms: number) => void
+): (items: SleeperRead[]) => void {
+    const pending: SleeperRead[] = [];
+    const failures = new Map<string, number>();
+    let draining = false;
+    const drain = async () => {
+        if (draining) {
+            return;
+        }
+        draining = true;
+        try {
+            while (pending.length > 0) {
+                const s = pending.shift();
+                try {
+                    await read(s.path, s.agent);
+                } catch (e) {
+                    const n = (failures.get(titleKey(s.path)) ?? 0) + 1;
+                    failures.set(titleKey(s.path), n);
+                    console.log("sleeper title: reading", s.path, "failed", `(try ${n} of ${MAX_TRIES}):`, e);
+                    if (n < MAX_TRIES) {
+                        schedule(() => enqueue([s]), RETRY_MS * n);
+                    }
+                }
+            }
+        } finally {
+            draining = false;
+        }
+    };
+    const enqueue = (items: SleeperRead[]) => {
+        pending.push(...items);
+        void drain();
+    };
+    return enqueue;
+}
+
+const enqueueSleeperTitles = sleeperTitleQueue(loadSleeperTitle, (fn, ms) => setTimeout(fn, ms));
+
 /** Reads the title of each sleeping agent's transcript as it appears on the roster. In the always-mounted shell, since
  *  every surface names agents (the sidebar, the Consumers panel, the header). */
 export function useSleeperTitles(model: AgentsViewModel): void {
     const agents = useAtomValue(model.agentsAtom);
     useEffect(() => {
-        for (const s of sleepersToTitle(agents, asked)) {
+        const next = sleepersToTitle(agents, asked);
+        for (const s of next) {
             asked.add(titleKey(s.path));
-            fireAndForget(() => loadSleeperTitle(s.path, s.agent));
+        }
+        if (next.length > 0) {
+            enqueueSleeperTitles(next);
         }
     }, [agents]);
 }

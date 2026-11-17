@@ -64,7 +64,7 @@ func taskByReviewRunID(g *waveobj.TaskGroup, runID string) *waveobj.TaskNode {
 // advanceReviews moves every reviewing task one step: a recorded verdict is applied, a reviewer that ended
 // without one is replaced once, and a task with no reviewer gets one. It runs in the tick, before the task-done
 // accounting, so a pass is counted done in the tick that applies it.
-func advanceReviews(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run, runs map[string]*waveobj.Run, now int64, afterCommit *[]func()) {
+func advanceReviews(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run, runs map[string]*waveobj.Run, now int64, spawned *[]spawnedWorkerInfo, afterCommit *[]func()) {
 	for i := range g.Tasks {
 		t := &g.Tasks[i]
 		if t.State != TaskState_Reviewing {
@@ -75,7 +75,7 @@ func advanceReviews(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owner *
 			continue // unreadable this tick; the next one retries
 		}
 		if t.ReviewRunID != "" && t.ReviewVerdict != "" {
-			applyReviewVerdict(ctx, g, t, worker, afterCommit)
+			applyReviewVerdict(ctx, spawnCtx, g, t, owner, worker, now, spawned, afterCommit)
 			continue
 		}
 		if t.ReviewRunID != "" {
@@ -246,7 +246,7 @@ func spendReviewRespawn(ctx context.Context, g *waveobj.TaskGroup, t *waveobj.Ta
 
 // applyReviewVerdict acts on a recorded verdict. The reviewer completes its own run after the verdict, so it
 // is not stopped here: it is queued, and the watchdog stops it once that run is done and its turn is over.
-func applyReviewVerdict(ctx context.Context, g *waveobj.TaskGroup, t *waveobj.TaskNode, worker *waveobj.Run, afterCommit *[]func()) {
+func applyReviewVerdict(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, t *waveobj.TaskNode, owner, worker *waveobj.Run, now int64, spawned *[]spawnedWorkerInfo, afterCommit *[]func()) {
 	channelID, reviewerRunID := g.ChannelId, t.ReviewRunID
 	*afterCommit = append(*afterCommit, func() { queueFinishedSession(channelID, reviewerRunID) })
 	t.ReviewRunID = ""
@@ -310,11 +310,16 @@ func applyReviewVerdict(ctx context.Context, g *waveobj.TaskGroup, t *waveobj.Ta
 		return
 	}
 	round := t.ReviewRound
-	// back to a worker in the same lane tree, which still holds the rejected commit; taskPrompt carries the findings
-	t.State = TaskState_Pending
-	t.RunID = ""
+	// the session that built the task fixes it with its context intact; failing that, a fresh worker in the same lane
+	// tree, which still holds the rejected commit, gets the findings in taskPrompt
+	fresh := sameSessionFixRound(ctx, spawnCtx, g, t, owner, worker, now, spawned)
+	if fresh != "" {
+		t.State = TaskState_Pending
+		t.RunID = ""
+	}
 	*afterCommit = append(*afterCommit, func() {
 		appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindTaskReviewFailed, nil, map[string]any{"taskid": taskID, "note": note, "round": round, "final": false})
+		appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindTaskFixRound, nil, map[string]any{"taskid": taskID, "samesession": fresh == "", "reason": fresh})
 	})
 }
 

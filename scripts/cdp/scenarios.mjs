@@ -44219,17 +44219,26 @@ const agentChat = {
             await AC.setRoster(h, acRoster(ctx, { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined }));
             const working = await polishWaitFor(h, `(${acLayer(A)}?.querySelector("[data-chat-working]")?.textContent ?? "").includes(${JSON.stringify(AC_ACTIVITY)}) && !!${acLayer(A)}?.querySelector("[data-chat-stop]")`, AC_WAIT_MS);
             await h.shot("cdp-shots/agent-chat-4-working.png");
-            // the working dot is a small Jarvis hologram: pulsedriver turns its rings (--spin) and flashes its sparks
+            // the working dot is a small Jarvis hologram live with current: pulsedriver turns its rings (--spin), jolts it
+            // (--jolt), flickers its core (--flick), and strikes each bolt at its own angle (--arc) as it flashes (--spark);
+            // the words beside it catch the jolt (--volt)
             const HOLO = `${acLayer(A)}?.querySelector("[data-chat-working] svg.holo-spin")`;
-            const spin0 = await h.ev(`${HOLO}?.style.getPropertyValue("--spin") ?? null`);
+            const readHolo = `(() => { const s = ${HOLO}; const v = (sel, p) => s?.querySelector(sel)?.style.getPropertyValue(p) ?? "";
+                return s == null ? null : {
+                    spin: s.style.getPropertyValue("--spin"), sparks: s.querySelectorAll("polyline").length,
+                    size: Math.round(s.getBoundingClientRect().width), jolt: v(".holo-jolt", "--jolt"),
+                    flick: v(".holo-core", "--flick"),
+                    arcs: [...s.querySelectorAll(".holo-arc, .holo-arc-slow")].map((g) => g.style.getPropertyValue("--arc")),
+                    volt: ${acLayer(A)}?.querySelector("[data-chat-working] .volt-text")?.style.getPropertyValue("--volt") ?? "" }; })()`;
+            const holo0 = await h.ev(readHolo);
             await polishNap(400);
-            const holo = await h.ev(`(() => { const s = ${HOLO}; return s == null ? null : {
-                spin: s.style.getPropertyValue("--spin"), sparks: s.querySelectorAll("polyline").length,
-                size: Math.round(s.getBoundingClientRect().width) }; })()`);
+            const holo = await h.ev(readHolo);
             rec(
-                "4a. the working line's dot is the hologram: its rings turn and it carries three sparks",
-                holo != null && holo.sparks === 3 && holo.size === 14 && holo.spin !== "" && holo.spin !== spin0,
-                { spin0, holo }
+                "4a. the working line's dot is the hologram live with current: its rings turn, it jolts and its core flickers, its four bolts each strike their own way, and its words catch the jolt",
+                holo != null && holo.sparks === 4 && holo.size === 14 && holo.spin !== "" && holo.spin !== holo0?.spin &&
+                    holo.jolt !== "" && holo.jolt !== holo0?.jolt && holo.flick !== "" && holo.flick !== holo0?.flick &&
+                    holo.arcs.length === 4 && new Set(holo.arcs).size === 4 && holo.volt !== "",
+                { holo0, holo }
             );
             const stopsBefore = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-stop]")?.click()`);
@@ -48288,7 +48297,8 @@ const CQ_QUESTIONS = ["is the oracle checked by hand?", "how do I check it by ha
 const CQ_REPLIES = [
     // its first paragraph runs long enough to wrap, which step 8 selects across
     "Not yet. Every number rests on it, so it is the one real gate: a wrong oracle passes a wrong fix and fails a right one, and no amount of later testing finds it, because every later test is scored against that same oracle.\n\nThe rest can wait.",
-    "Pick thirty cases at random and rerun each in a clean tree.\n\nThe steps are at https://example.com/oracle-check.",
+    // its last paragraph holds two code spans, of which step 9 selects the first
+    "Pick thirty cases at random and rerun each in a clean tree.\n\nThe steps are at https://example.com/oracle-check.\n\nRun `make check` there, then `make report`.",
 ];
 const CQ_PASSAGE = "Every number rests on it";
 const CQ_LINK = "https://example.com/oracle-check";
@@ -48595,6 +48605,48 @@ const chatQuote = {
                     bands8.some((b) => /(^|\s)0(px)?(\s|$)/.test(b.radius)) &&
                     bands8.some((b) => b.radius.includes("3px")),
                 { sel8, bands8 }
+            );
+
+            // 9. a code span the selection takes in drops its own background, so the band reads as one shade over it and
+            // the words beside it; a code span outside the selection keeps its background, and gets it back once cleared
+            const codes9 = `${prose(1)}?.querySelectorAll("p code")`;
+            const bg9 = (i) => `getComputedStyle(${codes9}[${i}]).backgroundColor`;
+            const before9 = await h.ev(bg9(0));
+            const sel9 = await h.ev(`(() => {
+                const codes = ${codes9};
+                if (!codes || codes.length < 2) return false;
+                const range = document.createRange();
+                range.setStart(codes[0].parentElement, 0);
+                range.setEndAfter(codes[0]);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+                return true;
+            })()`);
+            const marked9 = await polishWaitFor(h, `${codes9}[0].hasAttribute("data-md-selected")`, 3000);
+            const during9 = await h.ev(`({
+                inside: ${bg9(0)},
+                outside: ${bg9(1)},
+                outsideMarked: ${codes9}[1].hasAttribute("data-md-selected"),
+                bands: ${prose(1)}.querySelectorAll(".md-selection-band").length,
+            })`);
+            await polishNap(200);
+            await h.shot("cdp-shots/chat-quote-9-code-selection.png");
+            await h.ev(`window.getSelection().removeAllRanges()`);
+            const cleared9 = await polishWaitFor(h, `!${codes9}[0].hasAttribute("data-md-selected")`, 3000);
+            const after9 = await h.ev(bg9(0));
+            rec(
+                "9. a selected code span shows no background of its own under the band, the unselected one keeps its own, and clearing the selection gives it back",
+                sel9 &&
+                    marked9 &&
+                    during9.bands >= 1 &&
+                    during9.inside === "rgba(0, 0, 0, 0)" &&
+                    !during9.outsideMarked &&
+                    during9.outside === before9 &&
+                    before9 !== "rgba(0, 0, 0, 0)" &&
+                    cleared9 &&
+                    after9 === before9,
+                { sel9, marked9, before9, during9, cleared9, after9 }
             );
         } catch (e) {
             rec("the scenario threw", false, String(e?.stack ?? e));

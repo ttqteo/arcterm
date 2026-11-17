@@ -173,6 +173,21 @@ describe("eventText", () => {
         expect(eventText(eventWith("8", 1, "queued-start"))).toBe("Started from the queue");
         expect(eventText(eventWith("9", 1, "queued-start", {}))).toBe("Started from the queue");
     });
+
+    it("says whether a review fix round kept the worker's session, and why not", () => {
+        expect(eventText(eventWith("10", 1, "task-fix-round", { taskid: "t-2", samesession: true, reason: "" }))).toBe(
+            "t-2: review fix round in the same session"
+        );
+        expect(
+            eventText(
+                eventWith("11", 1, "task-fix-round", {
+                    taskid: "t-2",
+                    samesession: false,
+                    reason: "the worker's context is 162k tokens",
+                })
+            )
+        ).toBe("t-2: fresh worker: the worker's context is 162k tokens");
+    });
 });
 
 describe("eventText: the human's and the lead's task actions", () => {

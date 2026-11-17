@@ -16,6 +16,23 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A pencil marks an agent with an unsent message.** Vitest and the typecheck only. Type half a message
+  (or attach a file) in one agent's Chat box, pick another agent → the first one's row in the Agent tree shows a small
+  accent pencil after its name (also in a split row's cell); pick it again → the pencil is gone while you are on it;
+  send or clear the box → it does not come back. Commit: feat/draft-mark.
+- [ ] (arcterm) **Sleeping agents keep their titles across a restart.** Vitest and the typecheck only. With several
+  agents asleep (some on transcripts of a few MB), restart arcterm a few times → every sleeping row in the Agent tree
+  shows its conversation's title, none its project's name; if a row starts as the project's name it turns into the
+  title within a minute (`sleepertitles.ts`, the read queue that retries).
+- [ ] (arcterm) **A first review fail reopens the worker's session.** Go unit tests only, with the resume stubbed; no
+  engine run (commit 01900d143). (1) Run a small plan with a claude worker whose task the reviewer will fail (a task
+  that asks for a test it skips). → On the fail, the worker's own tab restarts with the findings as its first prompt
+  (scrollback above it), no new worker row appears in the Agent tree, and the run timeline shows `t-N: review fix
+  round in the same session`. (2) The worker fixes, runs `wsh jarvis complete`, and the second reviewer starts; the
+  task does not stall in the first minute after the reopen. (3) Restart arcterm between the worker's complete and the
+  fail (no context figure survives a restart) → the timeline shows `t-N: fresh worker: the worker reported no context
+  size` and a new worker tab starts as before.
+
 - [ ] (arcterm) **Sidecar keeps asks, answers the ask you saw, and fills a high-scale screen.** Vitest and the
   typecheck only; no dev app ran (branch `fix/sidecar-council`). (1) Set the Cockpit's project filter to one project,
   or send an agent to Background, and have that agent ask a 2-option question: it shows on Sidecar's wall and in the
@@ -187,6 +204,12 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   asking" (Go tests, and the scanner on that agent's real stored output, only), the agent also reads asking in the
   tree and counts in Needs you while the prompt waits, even unopened (`waveapp.log`: "shows Claude Code's folder trust
   prompt; reading it asking"); after Yes it reads idle, or working on the restore's nudge, and after No, exit idle.
+- [ ] (arcterm) **Opening a run from an agent shows it in the Agent tree, not Jarvis.** Unit tests (`runTreeAgent`) and
+  typecheck only, no dev app ran (commit "fix(agents): a run opened from an agent shows in the Agent tree"). With a
+  brainstorm whose approved run is under way: click its run line in the tree (`working · …`, title Show the run in the
+  tree), its pane's Open run, and Open run on Chat's run card → each stays on Agent, selects the run's lead (or, with no
+  lead tab, the run's agent that asks or works) and unfolds the run's lanes under it. With the lead closed and no task
+  at work, each opens the run in Jarvis as before.
 - [ ] (arcterm) **A canvas board's screenshot button shows a camera.** Typecheck only, no dev app ran (commit
   "fix(canvas): the board's screenshot button shows a camera"). Open an agent's Canvas: the board's top-right button
   reads a camera icon then `Copy`; a click turns it into ✓ `Copied` and puts the board's picture on the clipboard.
@@ -603,6 +626,13 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   the agent's tree row shows a green server mark with `:<port>`, and folding its project's folder shows the port on the
   folder. From a plain terminal, the row reads `terminal · <name>` and Log opens the file, not the pane. Close the agent
   → the row keeps its name. Unit-tested only (`pkg/devservers/detached.go`, `treeservers.ts`), not tried in the app.
+- [ ] (arcterm) The Agent sidebar is 280px with RAM and Tokens on and Age off (`agentTreeWidth`, `rowfields.ts`): in
+  Settings → Appearance → Agent sidebar turn Age off; the sidebar stays 280px and a lead's second line reads its words
+  (`Working · 0/7`), not `W… · 0/7`. Turn Tokens off too and it narrows to 248px.
+- [ ] (arcterm) Chat's Working dot crackles (`workingglyph.tsx`, `pulse.ts` noise pulses): with a live agent working,
+  watch the dot for ten seconds: bolts strike at different angles and lengths, the core flickers, the dot and the
+  `Working…` words jolt now and then but stay readable, and it does not feel frantic. The CPU in Task Manager stays
+  where it was with the old dot (the driver is still 12fps).
 - [ ] (arcterm) Chat ref badges with real data: in a live agent's Chat, pick an agent, a run and a council from `@` →
   each shows as a tinted badge with its name (the box keeps the text `agent:<8>`); send → the bubble's badges open the
   agent's terminal, the run in Jarvis, the council's discussion; Ctrl-click peeks; a working agent's badge pulses green

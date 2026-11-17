@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cubicBezier, pulseOpacity, PULSES, pulseStart, pulseValue, type PulseSpec } from "./pulse";
+import { cubicBezier, noiseAt, pulseOpacity, PULSES, pulseStart, pulseValue, type PulseSpec } from "./pulse";
 
 describe("cubicBezier", () => {
     it("pins the endpoints", () => {
@@ -107,15 +107,58 @@ describe("pulseValue", () => {
         expect(pulseValue(PULSES["holo-spin"], 1000)).toBeCloseTo(0.25, 5);
     });
 
-    it("is the breath's opacity for every pulse that is not a sweep", () => {
+    it("is the breath's opacity for every pulse that is not a sweep or a jitter", () => {
         const sweeps = new Set(["shimmer-jarvis", "holo-spin", "holo-spark", "holo-spark-slow"]);
         for (const [cls, spec] of Object.entries(PULSES)) {
-            if (sweeps.has(cls)) {
+            if (sweeps.has(cls) || spec.noise != null) {
                 continue;
             }
             expect(spec.sweep).toBeFalsy();
             expect(pulseValue(spec, 300)).toBe(pulseOpacity(spec, 300));
         }
+    });
+});
+
+describe("noise pulses", () => {
+    const jolt = PULSES["holo-jolt"];
+
+    it("holds one value through a step and takes a new one at the next", () => {
+        expect(pulseValue(jolt, 0)).toBe(pulseValue(jolt, jolt.noise! - 1));
+        expect(pulseValue(jolt, jolt.noise!)).not.toBe(pulseValue(jolt, 0));
+        // the same step gives the same value however late it is read
+        expect(pulseValue(jolt, 5 * jolt.noise! + 3)).toBe(noiseAt(5));
+    });
+
+    it("stays in [0, 1) and spreads over it, never settling into a pattern", () => {
+        const values = Array.from({ length: 400 }, (_, i) => noiseAt(i));
+        expect(values.every((v) => v >= 0 && v < 1)).toBe(true);
+        // each quarter of the range is hit about as often as the others
+        for (let q = 0; q < 4; q++) {
+            const n = values.filter((v) => v >= q / 4 && v < (q + 1) / 4).length;
+            expect(n).toBeGreaterThan(60);
+            expect(n).toBeLessThan(140);
+        }
+        expect(new Set(values).size).toBe(values.length);
+    });
+
+    it("gives each seed its own sequence, so two elements never jitter in step", () => {
+        const a = Array.from({ length: 20 }, (_, i) => pulseValue(jolt, i * jolt.noise!, 1));
+        const b = Array.from({ length: 20 }, (_, i) => pulseValue(jolt, i * jolt.noise!, 2));
+        expect(a.filter((v, i) => v === b[i])).toHaveLength(0);
+        // and one seed's sequence is still the same every time it is read
+        expect(pulseValue(jolt, 3 * jolt.noise!, 7)).toBe(noiseAt(3, 7));
+    });
+
+    it("reads a negative or non-finite elapsed time as the first step", () => {
+        expect(pulseValue(jolt, -50)).toBe(noiseAt(0));
+        expect(pulseValue(jolt, Number.NaN)).toBe(noiseAt(0));
+    });
+
+    it("moves a spark's strike only between its flashes: its step is the spark's period", () => {
+        expect(PULSES["holo-arc"].noise).toBe(PULSES["holo-spark"].periodMs);
+        expect(PULSES["holo-arc"].periodMs).toBe(PULSES["holo-spark"].periodMs);
+        expect(PULSES["holo-arc-slow"].noise).toBe(PULSES["holo-spark-slow"].periodMs);
+        expect(PULSES["holo-arc-slow"].periodMs).toBe(PULSES["holo-spark-slow"].periodMs);
     });
 });
 

@@ -989,7 +989,9 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                         {working != null && !empty && !opening ? (
                             <div data-chat-working className="flex items-center gap-2 text-[12px] text-muted">
                                 <WorkingGlyph />
-                                <span className="min-w-0 truncate shimmer-jarvis">{working}</span>
+                                <span className="volt-text flex min-w-0">
+                                    <span className="min-w-0 truncate shimmer-jarvis">{working}</span>
+                                </span>
                                 {turn != null ? <TurnStatsText stats={turn} /> : null}
                             </div>
                         ) : null}

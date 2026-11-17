@@ -253,6 +253,21 @@ export function runFocusAgent<T extends { id: string; state: string; blockId?: s
     return tabs.find((a) => a.state === "asking") ?? tabs.find((a) => a.state !== "idle");
 }
 
+// runTreeAgent is the tab a link to a run selects in the Agent tree, where the run shows under that tab's row: its
+// lead's, else the tab its lead-less row opens (runFocusAgent). Only tabs with a terminal; undefined when the run has
+// none in the tree, and the link opens the run in Jarvis instead.
+export function runTreeAgent<T extends { id: string; state: string; blockId?: string }>(
+    lineage: Lineage,
+    agents: T[],
+    runId: string
+): T | undefined {
+    const lead = agents.find((a) => {
+        const role = lineage.roles[a.id];
+        return a.blockId != null && role?.kind === "lead" && role.runId === runId;
+    });
+    return lead ?? runFocusAgent(lineage, agents, runId);
+}
+
 // leadRunTabIds is every tab of the run agentId leads, its own included, when the run holds any besides the lead:
 // closing the lead alone would leave those nested under a lead-less run row. Undefined for anything else.
 export function leadRunTabIds<T extends { id: string }>(

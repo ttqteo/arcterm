@@ -30,8 +30,9 @@ và độ đậm nhạt, không bỏ thông tin nào.
 
 ### Độ rộng
 
-Cây Agent không kéo được. Nó rộng **280px chỉ khi cả ba cột RAM · token · tuổi đều bật**; hai cột bất kỳ (RAM + token
-cũng vậy) vừa ở 248px. Tắt bất kỳ cột nào (Settings → Appearance → Agent sidebar) thì nó về **248px** như cũ. Sửa ngày 2026-11-13, sau khi người dùng hỏi sao không
+Cây Agent không kéo được. Nó rộng **280px khi cả RAM và token đều bật** (có tuổi hay không); tuổi đi với một trong hai
+vừa ở 248px. Tắt RAM hoặc token (Settings → Appearance → Agent sidebar) thì nó về **248px** như cũ. Sửa ngày
+2026-11-17: RAM + token ở 248px chỉ còn chừng 60px cho chữ dòng 2 (`W… · 0/7`, `buil…`). Sửa ngày 2026-11-13, sau khi người dùng hỏi sao không
 để sidebar hẹp như bản cũ: 280px cố định làm việc tắt cột không trả lại được chỗ nào. Quy tắc nằm ở `agentTreeWidth`
 (`rowfields.ts`). Cây (`agenttree.tsx`) và `wideWidthMax` (`agentrailtabs.ts`) cùng đọc quy tắc này.
 

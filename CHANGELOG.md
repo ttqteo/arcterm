@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- An agent whose chat box holds a message you started and did not send shows a pencil after its name in the Agent
+  tree, so you can find the one you were writing to.
 - The Agent tree shows a server's port (`:4321`) on the agent or terminal that runs it, and on its project's folder
   while the folder is folded or when no row of it holds the server, so you can tell which project has a server up.
 - Pick several agents in the Agent sidebar (Ctrl+click, Shift+click) and right-click one: Close N agents closes them
@@ -45,7 +47,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A reference or an `@path` you type or paste into Chat's box becomes a badge or a file pill as soon as a space or
   punctuation follows it, and deleting one leaves a single space.
+- Opening a run from an agent (a brainstorm's run line in the Agent tree, its Open run, or Open run on Chat's run card)
+  shows it in the Agent tree first, its lead selected and its lanes unfolded, instead of switching to Jarvis; a run with
+  no agent left in the tree still opens in Jarvis.
 - A canvas board's screenshot button (Copy, at the board's top right) shows a camera instead of the copy icon.
+- When a run's reviewer rejects a task for the first time, the worker that built it gets the findings in its own
+  session and tab, so it fixes its work remembering why it did what it did, instead of a new worker starting over. A
+  worker whose context is already 150k tokens or more, or one that can't be reopened, is still replaced by a new one;
+  the run's timeline says which happened.
 - A queue tag in the Agent tree (`#1`, `×2`) opens the Heavy jobs popover with that row's jobs selected, so you see at
   once which one is yours.
 - The agent header no longer shows the Alt+C keycap, and Mark done no longer shows its `m` keycap (its tooltip still
@@ -64,6 +73,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Claude Code's "trust this folder?" prompt shows in Chat as a card with No, exit and Yes, I trust this folder, where
   Chat used to stay on the agent's last step while the terminal waited for an answer. The agent reads asking and
   counts in Needs you while the prompt waits, instead of staying "working".
+- The Agent sidebar widens to 280px whenever RAM and Tokens are both on, Age on or off, so a row's second line has
+  room for its words; turning RAM or Tokens off still narrows it to 248px.
+- Chat's Working dot crackles with current while the agent works: bolts strike out from its core at a new angle,
+  length and zigzag each time, the core flickers, and now and then the dot and the Working words jolt and flare. With
+  reduced motion it stays still, as before.
 
 ### Changed
 
@@ -89,6 +103,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A sleeping agent keeps its conversation's title after arcterm restarts, instead of now and then reading as its
+  project's name until the next restart.
+- Selecting text in Chat that runs over a `code` span highlights it in the same colour as the words around it, instead
+  of a second, darker shade where the span's own background showed through.
 - A run's Final verification shows a long output line whole, wrapped in its box, instead of cutting it off at the
   box's right edge.
 - Sidecar shows every agent that is asking you, even one in another project than the Cockpit's filter or in the
