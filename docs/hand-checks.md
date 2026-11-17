@@ -43,25 +43,6 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   `wsh brainstorm close <path>`, prints "Closed the brainstorm …", the same three things go, and a toast names it.
   (3) Resume it from the palette (Brainstorms ›) and the pane comes back on its open question.
 
-- [ ] (arcterm) **Chat's worded stretch line and described commands.** Never run: the scenario run was stopped for low
-  memory before it started. `task verify:ui -- agent-chat chat-redesign` → agent-chat 1a (fold reads "Edited client.ts,
-  read client.ts" +N −N · Ns), 1a2 (fold opened), 26 ("Reading client.ts"); chat-redesign 6 ("Reading retry.ts"), 8
-  ("Edited 4 files, read 2 files and searched"), 20 ("Running npm test"), 21 (a Bash row reads its description, the
-  command shows once opened). By eye: a long sentence cuts with … and the counts and time stay visible.
-- [ ] (arcterm) **A council's Setup draws its seats with `CouncilAvatar`.** Typecheck and eslint only; never seen: no dev
-  app was up. The seats in Setup were a coloured ring on no fill, and now are the Discussion's faint disc in the seat's
-  colour; a suggested seat stays the dashed, muted ring. `task verify:ui -- council-setup` → passes, and its shots show
-  the seat rows with discs that match the Discussion's for the same seats (same colour, same letter). Commit: the
-  `chore(council): Setup's seats use CouncilAvatar` one.
-- [ ] (arcterm) **wavesrv no longer re-reads every run to place an agent with no run stamp.** Installed build, several
-  agents open: in PowerShell, sample `(Get-CimInstance -Query "SELECT ReadTransferCount FROM Win32_Process WHERE
-  ProcessId=<wavesrv pid>").ReadTransferCount` twice 20 s apart → a few MB/s at most (before: ~175 MB/s in 36–57 MB
-  and ~420 MB bursts, store "context deadline exceeded" in `waveapp.log`); typing in Chat never fails with `EC-TIME`.
-  `pkg/jarvis/runworkers.go`, branch `fix/run-scan-cache`.
-- [ ] (arcterm) **`chat-initiative-band` step 3 now asserts that `i` puts the focus in the band.** Never run: no dev app
-  was up. With one running, `task verify:ui -- chat-initiative-band` → step "3. band expanded" passes; if it fails only
-  on `viaKey.focused`, the band opens on `i` without taking the focus, which `chatband.tsx` says it does (a bug, not the
-  scenario). Commit: the `test(cdp): chat-initiative-band …` one.
 - [ ] (arcterm) **A council's Summary uses the Discussion's `canSummarize`.** Vitest and typecheck only. Open a council
   whose only idea is a held draft (Summary, no summary yet) → no Summarize button; one with a sent idea that is done,
   stopped or failed in round 1 → Summarize shows, and Summarize again is on once there is a summary. Commit: the
