@@ -160,7 +160,7 @@ describe("final-verify.mjs", () => {
         writeFileSync(
             fakeDev,
             `const fs = require("fs"), path = require("path");
-fs.writeFileSync(${JSON.stringify(envFile)}, JSON.stringify(process.env));
+fs.writeFileSync(${JSON.stringify(envFile)}, JSON.stringify({ ...process.env, FAKE_DEV_CWD: process.cwd() }));
 const data = path.join(process.env.ARC_DEV_DATA_DIR, "data");
 fs.mkdirSync(data, { recursive: true });
 fs.writeFileSync(path.join(data, "waveapp.log"), "boot log");
@@ -187,10 +187,14 @@ fs.writeFileSync(path.join(data, "waveapp.log"), "boot log");
         const cfg = JSON.parse(readFileSync(join(out, "tauri.final.json"), "utf8"));
         const port = Number(new URL(cfg.build.devUrl).port);
         expect(port).toBeGreaterThan(heldPort);
-        expect(cfg.build.beforeDevCommand).toContain(`--port ${port} --strictPort`);
+        expect(cfg.build.beforeDevCommand.script).toContain(`--port ${port} --strictPort`);
+        // the dev command builds through the slot's link to the tree, and vite stays in the tree's own path
+        // (the tree is the temp dir run() starts the script in)
+        expect(basename(cfg.build.beforeDevCommand.cwd)).toMatch(/^final-cwd-/);
 
         const env = JSON.parse(readFileSync(envFile, "utf8"));
         const base = join(dir, "localappdata", "arc-final");
+        expect(env.FAKE_DEV_CWD).toBe(join(base, "tree"));
         expect(env.CARGO_TARGET_DIR).toBe(join(base, "target"));
         // wavesrv binds <store>/data/wave.sock, and windows caps a unix socket path at 108 bytes: measured on the
         // real base, since this test's base sits under a longer temp dir
