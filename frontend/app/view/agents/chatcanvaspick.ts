@@ -18,7 +18,8 @@ export type CanvasPick = { question: string; rows: PickRow[] };
 const OPTION_BOARD = /^([A-Z])-(.+)\.dc\.html$/;
 // the title's own "Option A: " prefix, which the row's letter already says
 const OPTION_PREFIX = /^option\s+[A-Z]\s*[:—–-]\s*/i;
-const SEPARATOR = "[—–:.)\\-]";
+// the comma too: "**A, chip trầm**" is how an agent often names an option inside the bold
+const SEPARATOR = "[—–:.,)\\-]";
 // a line that opens an option: an optional bullet, the letter (bold or not), then a separator or the bold's end
 const OPTION_LINE = new RegExp(
     `^(?:[-*+•]\\s+|\\d+[.)]\\s+)?(\\*\\*|__)?([A-Z])\\s*(${SEPARATOR})?\\s*(\\*\\*|__)?\\s*(${SEPARATOR})?(?=\\s|$)`
@@ -40,7 +41,9 @@ export function namedLetters(reply: string): Set<string> {
         }
         const [, open, letter, sep1, close, sep2] = m;
         const bold = open != null && close === open;
-        if ((open != null || close != null) && !bold) {
+        // a bold that wraps the letter and its title ("**A, chip trầm**") closes later: the separator vouches for it
+        const wraps = open != null && close == null && sep1 != null;
+        if ((open != null || close != null) && !bold && !wraps) {
             continue;
         }
         if (bold || sep1 != null || sep2 != null) {

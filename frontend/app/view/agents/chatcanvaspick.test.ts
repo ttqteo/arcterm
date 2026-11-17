@@ -44,6 +44,15 @@ describe("namedLetters", () => {
         expect([...namedLetters(reply)].sort()).toEqual(["A", "B", "C", "D", "E", "F", "G"]);
     });
 
+    it("reads a comma after the letter, inside the bold or out", () => {
+        const reply = [
+            "- **A, chip trầm** (`A-quiet-chip.dc.html`): cùng khung với pill file.",
+            "- **B**, nhãn chữ",
+            "C, nhuộm màu",
+        ].join("\n");
+        expect([...namedLetters(reply)].sort()).toEqual(["A", "B", "C"]);
+    });
+
     it("skips a sentence that opens with a capital, a word, a board name and a letter in a code block", () => {
         const reply = [
             "I think so.",
