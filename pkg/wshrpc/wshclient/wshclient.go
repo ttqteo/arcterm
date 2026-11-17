@@ -1614,6 +1614,12 @@ func SealRunEvidenceCommand(w *wshutil.WshRpc, data wshrpc.CommandSealRunEvidenc
 	return err
 }
 
+// command "searchsessions", wshserver.SearchSessionsCommand
+func SearchSessionsCommand(w *wshutil.WshRpc, data wshrpc.CommandSearchSessionsData, opts *wshrpc.RpcOpts) (*wshrpc.CommandSearchSessionsRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandSearchSessionsRtnData](w, "searchsessions", data, opts)
+	return resp, err
+}
+
 // command "serviceopen", wshserver.ServiceOpenCommand
 func ServiceOpenCommand(w *wshutil.WshRpc, data wshrpc.CommandServiceData, opts *wshrpc.RpcOpts) (*wshrpc.ServiceStatus, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.ServiceStatus](w, "serviceopen", data, opts)

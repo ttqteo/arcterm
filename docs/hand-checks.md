@@ -16,6 +16,13 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Session search on your real transcripts.** The three `session-search-*` scenarios answer the search
+  from a mock; nothing has run `SearchSessions` over real transcripts in the app. Agent → Conversation History → type a
+  word you remember from an old Claude conversation → "N results" (with "· indexing…" the first time, clearing on its
+  own within seconds), each card with the word marked in its snippet; click one → it opens with the find bar at the
+  hit, Enter / Shift+Enter step through the matches, Esc closes the bar. New agent → Claude → `/` or the Session
+  column's magnifier → the same word lists title and "Matched by content" rows. Note how long the first search takes.
+  `conversationhistory.tsx`, `launcherresumelist.tsx`, `sessionsdetail.tsx`; commits 4b9814411, c7fdf4883, 104a440a8.
 - [ ] (arcterm) **Closing Sidecar frees its two window icons; a reopen still draws the badge.** Windows only; the code is
   unit-tested but was never run in an app. Open Task Manager → Details, add the "GDI objects" and "USER objects"
   columns, then open and close Sidecar (Ctrl+P → Open Sidecar) ten times → arcterm's counts come back to the same

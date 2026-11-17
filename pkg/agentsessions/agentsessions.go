@@ -151,18 +151,22 @@ type SessionInfo struct {
 	Events         []SessionEvent
 }
 
+// claudeLine is the part of a claude transcript line that the session, its events, its prompts (claudeTypedText),
+// its replies (claudeReplyText) and the tail messages are derived from.
 type claudeLine struct {
-	Type        string        `json:"type"`
-	AiTitle     string        `json:"aiTitle"`     // an ai-title record: Claude Code's running name for the session
-	IsMeta      bool          `json:"isMeta"`      // a companion Claude Code writes beside a prompt (an image's size), no prompt itself
-	IsSidechain bool          `json:"isSidechain"` // with Origin, whether a person sent the record (sentByPerson)
-	Origin      *claudeOrigin `json:"origin"`
-	Timestamp   string        `json:"timestamp"` // events derivation; session derivation ignores it
-	Cwd         string        `json:"cwd"`
-	GitBranch   string        `json:"gitBranch"`
-	Entrypoint  string        `json:"entrypoint"`
-	RequestID   string        `json:"requestId"`
-	Message     struct {
+	Type             string           `json:"type"`
+	AiTitle          string           `json:"aiTitle"`          // an ai-title record: Claude Code's running name for the session
+	IsMeta           bool             `json:"isMeta"`           // a companion Claude Code writes beside a prompt (an image's size), no prompt itself
+	IsSidechain      bool             `json:"isSidechain"`      // with Origin, whether a person sent the record (sentByPerson)
+	IsCompactSummary bool             `json:"isCompactSummary"` // the summary Claude Code writes when it compacts the session, no prompt
+	Origin           *claudeOrigin    `json:"origin"`
+	Attachment       claudeAttachment `json:"attachment"` // a message typed while the session is busy arrives as a queued_command one
+	Timestamp        string           `json:"timestamp"`  // events derivation; session derivation ignores it
+	Cwd              string           `json:"cwd"`
+	GitBranch        string           `json:"gitBranch"`
+	Entrypoint       string           `json:"entrypoint"`
+	RequestID        string           `json:"requestId"`
+	Message          struct {
 		ID      string          `json:"id"`
 		Model   string          `json:"model"`
 		Content json.RawMessage `json:"content"`
@@ -754,6 +758,9 @@ type provider struct {
 	// archive marks the folder arcterm moves its runs' and temp folders' sessions to: a project page reads its own
 	// folder there or nothing, never a walk of the whole archive
 	archive bool
+	// digest is fused plus the transcript's text turns, from the same parse: it reads the transcript itself and
+	// answers (nil, {}, nil, nil) for a file that carries no session. Only the runtimes search covers set it.
+	digest func(path, stem string) (*SessionInfo, sessionEvents, []Turn, error)
 }
 
 // claudeArchiveProvider reads the sessions sessionarchive moved out of root, nil when root has no archive.
@@ -781,23 +788,41 @@ func claudeProvider(root string) provider {
 		skipDir: func(_, path string) bool { return filepath.Base(path) == "subagents" },
 		// one shared unmarshal pass for both derivations — claude transcripts dominate the scan cost
 		fused: func(path string, id string, lines []string) (*SessionInfo, sessionEvents) {
+			return claudeDerive(path, id, parseClaudeLines(lines))
+		},
+		// the digest's one parse also yields the turns
+		digest: func(path, id string) (*SessionInfo, sessionEvents, []Turn, error) {
+			lines, err := readLines(path)
+			if err != nil {
+				return nil, sessionEvents{}, nil, err
+			}
 			recs := parseClaudeLines(lines)
-			folder := filepath.Base(filepath.Dir(path))
-			s := claudeSessionFrom(id, folder, recs)
+			s, se := claudeDerive(path, id, recs)
 			if s == nil {
-				return nil, sessionEvents{}
+				return nil, sessionEvents{}, nil, nil
 			}
-			// none of its cwds names the folder (begun on another machine, its transcript synced over and never
-			// resumed here): it belongs to the folder's directory when that is on this disk, where it lists and resumes
-			if !strings.EqualFold(agentobserve.SlugifyCwd(s.ProjectPath), folder) {
-				if p, ok := pathOfSlug(folder, runtime.GOOS, map[string][]string{}); ok {
-					s.ProjectPath, s.ProjectName = p, filepath.Base(p)
-				}
-			}
-			return s, claudeEventsFrom(recs)
+			return s, se, claudeTurns(recs), nil
 		},
 		resumeCmd: func(s *SessionInfo) string { return claudeResumeCommand(s.ID, s.ProjectPath, wavebase.GetHomeDir()) },
 	}
+}
+
+// claudeDerive folds a transcript's parsed lines, filed under the store folder of path's directory, into its session
+// and its events; (nil, {}) when the file carries no session.
+func claudeDerive(path, id string, recs []claudeLine) (*SessionInfo, sessionEvents) {
+	folder := filepath.Base(filepath.Dir(path))
+	s := claudeSessionFrom(id, folder, recs)
+	if s == nil {
+		return nil, sessionEvents{}
+	}
+	// none of its cwds names the folder (begun on another machine, its transcript synced over and never
+	// resumed here): it belongs to the folder's directory when that is on this disk, where it lists and resumes
+	if !strings.EqualFold(agentobserve.SlugifyCwd(s.ProjectPath), folder) {
+		if p, ok := pathOfSlug(folder, runtime.GOOS, map[string][]string{}); ok {
+			s.ProjectPath, s.ProjectName = p, filepath.Base(p)
+		}
+	}
+	return s, claudeEventsFrom(recs)
 }
 
 // claudeAskSettingsArg is the ask-only settings the New launcher starts a Home agent under (wsh install-agent-hooks
@@ -1152,25 +1177,43 @@ func piProvider(root string) provider {
 			return err == nil && strings.ContainsRune(rel, filepath.Separator)
 		},
 		fused: func(path, _ string, _ []string) (*SessionInfo, sessionEvents) {
-			file, err := pisession.Read(path)
-			// a read that failed (a lock, a handle limit) is not the file's answer, unlike one that parsed badly:
-			// it must not be cached as no session
-			var pathErr *fs.PathError
-			if errors.As(err, &pathErr) && !errors.Is(err, fs.ErrNotExist) {
-				return nil, sessionEvents{readErr: err}
+			s, se, _ := readPiSession(path)
+			return s, se
+		},
+		// the file is parsed once: its turns come off the same pisession.File as the session and its events
+		digest: func(path, _ string) (*SessionInfo, sessionEvents, []Turn, error) {
+			s, se, file := readPiSession(path)
+			if se.readErr != nil {
+				return nil, sessionEvents{}, nil, se.readErr
 			}
-			if err != nil {
-				log.Printf("agentsessions: skipping malformed pi session %q: %v", path, err)
-				return nil, sessionEvents{}
-			}
-			s := extractPiSession(file, path)
 			if s == nil {
-				return nil, sessionEvents{}
+				return nil, sessionEvents{}, nil, nil
 			}
-			return s, extractPiEvents(file)
+			return s, se, piTurns(file), nil
 		},
 		resumeCmd: func(s *SessionInfo) string { return "pi --session " + s.TranscriptPath },
 	}
+}
+
+// readPiSession parses a pi session file once and derives its session and events from it, returning the parsed file
+// too for a caller that wants more of it. A file with no session answers (nil, {}, nil).
+func readPiSession(path string) (*SessionInfo, sessionEvents, *pisession.File) {
+	file, err := pisession.Read(path)
+	// a read that failed (a lock, a handle limit) is not the file's answer, unlike one that parsed badly:
+	// it must not be cached as no session
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) && !errors.Is(err, fs.ErrNotExist) {
+		return nil, sessionEvents{readErr: err}, nil
+	}
+	if err != nil {
+		log.Printf("agentsessions: skipping malformed pi session %q: %v", path, err)
+		return nil, sessionEvents{}, nil
+	}
+	s := extractPiSession(file, path)
+	if s == nil {
+		return nil, sessionEvents{}, nil
+	}
+	return s, extractPiEvents(file), file
 }
 
 // extractPiSession folds one parsed Pi v3 session file into a SessionInfo. The header is authoritative for

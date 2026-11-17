@@ -54,6 +54,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   conversation's age or an initiative's chunks done; click one to open it. <!-- big -->
 - A link in Chat shows a small copy button on its top-right corner when you hover it, over none of the words around
   it, and a right-click on it offers Copy link: either copies its url without selecting the text.
+- The New dialog's Project and Session columns have a magnifier (or `/`) that opens a search box in place of the column
+  header. Project filters by name; for Claude Code and Pi, Session filters by title at once and then adds the sessions
+  whose conversation holds the words, under "Matched by content", each with its snippet. <!-- try: new-agent -->
+- Conversation History has a search box that finds past sessions of the last 30 days, across projects, by what was said in
+  them, and opens a result scrolled to its match with a find bar (`Enter` for the next match). <!-- try: go:history --> <!-- big -->
 
 ### Changed
 

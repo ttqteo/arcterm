@@ -5,7 +5,10 @@
 // (agentcenter.ts). A recency-grouped list with a pinned "All activity" entry. An orchestrator run is one entry, with
 // a row under it only for the members that need you; its detail lists the lead and every task and reads the one in
 // view. Every other session is its own entry. Live agents are overlaid (matched by transcript path) so the primary
-// action is Jump (live) or Resume (ended). @theme tokens only — no hardcoded colors.
+// action is Jump (live) or Resume (ended). A search box under the title finds a conversation by what was said in it
+// (SearchSessions, every project): while it holds a query the list shows the results as solo cards, and the sessions
+// they name that no loaded page holds join the ones History groups and resolves against, so a click can open them.
+// @theme tokens only — no hardcoded colors.
 
 import { cardVariants, MOTION } from "@/app/element/motiontokens";
 import { SkeletonLine, SkeletonRows } from "@/app/element/skeleton";
@@ -13,9 +16,9 @@ import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindin
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Activity, ArrowLeft, Check, Workflow } from "lucide-react";
+import { Activity, ArrowLeft, Check, Search, Workflow } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatAge, formatAgeShort, formatTokens } from "./agentsviewmodel";
@@ -24,6 +27,7 @@ import type { RunInfo } from "./runlineage";
 import { runDigestsAtom, useRunDigests } from "./runlineagestore";
 import { useRunObjects } from "./runobjects";
 import { runtimeMeta } from "./runtimemeta";
+import { SearchSnippet } from "./searchsnippet";
 import {
     filterByStatus,
     groupByRecency,
@@ -37,10 +41,13 @@ import {
     sessionsErrorAtom,
     sessionsLoadingMoreAtom,
     totalEvents,
+    withLookedUp,
     type LiveSession,
     type SessionStatusFilter,
 } from "./sessionsarchivestore";
 import { eventColor, RunDetail, runSessionPrimary, SEG_COLOR, SoloDetail, StatusMark } from "./sessionsdetail";
+import { useSessionSearch } from "./sessionsearchstore";
+import { findTerms, openSessionHit } from "./sessionsfind";
 import {
     defaultMember,
     groupRunSessions,
@@ -89,6 +96,15 @@ function keepRow(r: Row, f: SessionStatusFilter): boolean {
     return filterByStatus([r.session!], f).length > 0;
 }
 
+// a search answer holds at most this many sessions, newest first (the backend's default Limit; the request sets none)
+const SEARCH_LIMIT = 200;
+
+// one search result as a card in the list: its session as History holds it (the live overlay applied) and the answer
+interface ResultRow {
+    row: Row;
+    result: SessionSearchResult;
+}
+
 function needsRow(r: Row): boolean {
     return r.run ? r.run.view.needs.length > 0 : r.session!.needsAttention;
 }
@@ -113,6 +129,10 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     const [member, setMember] = useAtom(model.sessionsMemberAtom);
     const [filter, setFilter] = useAtom(model.sessionsStatusFilterAtom);
     const digests = useAtomValue(runDigestsAtom);
+    // the search box: a query with terms replaces the paged list with the SearchSessions results (every project)
+    const [query, setQuery] = useState("");
+    const search = useSessionSearch(query, {});
+    const searching = useMemo(() => findTerms(query).length > 0, [query]);
 
     useEffect(() => {
         fireAndForget(loadSessionsArchive);
@@ -122,17 +142,25 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     // filter changes: a list that does not fill its container has no scrollbar and so no scroll event, and keeps
     // loading until it fills or the store's cursor is "" (the store sends one request at a time and none after that).
     // A hidden History (the Agent surface stays mounted) measures 0 high, which would read as "at the end" and load
-    // every page: it checks only while it has a height, and again when its surface comes back
+    // every page: it checks only while it has a height, and again when its surface comes back. While the search box
+    // holds a query it loads none: a short results list fills no scroll and would page through the whole archive, and
+    // the cursor it leaves is where the paged list picks up again when the box is cleared
     const listRef = useRef<HTMLDivElement>(null);
     const loadIfAtEnd = useCallback(() => {
         const el = listRef.current;
-        if (el != null && el.clientHeight > 0 && nearListEnd(el)) {
+        if (!searching && el != null && el.clientHeight > 0 && nearListEnd(el)) {
             fireAndForget(loadMoreSessionsArchive);
         }
-    }, []);
+    }, [searching]);
     useEffect(loadIfAtEnd, [loadIfAtEnd, base, cursor, filter, onSurface]);
 
-    const live = useMemo(() => (base == null ? [] : overlayLive(base, roster, now)), [base, roster, now]);
+    // the loaded sessions plus the results' that no loaded page holds (older ones), so a result opens in the detail;
+    // the live overlay applies to both. Everything History groups and resolves below reads this list.
+    const resultSessions = useMemo(() => (search.results ?? []).map((r) => r.session), [search.results]);
+    const live = useMemo(
+        () => overlayLive(withLookedUp(base ?? [], resultSessions), roster, now),
+        [base, resultSessions, roster, now]
+    );
     const { runs: runGroups, solos } = useMemo(() => groupRunSessions(live), [live]);
 
     // each run's own object and its dag
@@ -226,20 +254,64 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
         }
     };
 
-    // publish the "All activity" + row order for global j/k list-nav. cursor==selection. Refs keep the
-    // controller stable while reading this render's rows, so it isn't re-registered on every roster tick; the ids are
-    // keyed by content, since groupByRecency hands back fresh arrays every render.
-    const navIdsKey = ["all", ...groups.flatMap((g) => g.items.map((r) => r.key))].join("\n");
-    const navIds = useMemo(() => navIdsKey.split("\n"), [navIdsKey]);
+    // the results, one solo card per session as the answer lists them (newest first), under the status filter as
+    // keepRow filters solo rows. A run's session is a card of its own here, not a part of the run's card.
+    const liveByKey = new Map(live.map((s) => [sessionKey(s), s]));
+    const resultRows: ResultRow[] = (searching ? (search.results ?? []) : []).flatMap((result) => {
+        const s = liveByKey.get(sessionKey(result.session));
+        if (s == null) {
+            return [];
+        }
+        const row: Row = { key: sessionKey(s), live: s.live, lastactivets: s.lastactivets, session: s };
+        return keepRow(row, filter) ? [{ row, result }] : [];
+    });
+    // a click selects the session as History does (a run's session selects its run and member) and opens it at the hit
+    const openResult = (result: SessionSearchResult) => openSessionHit(model, result, query.trim(), search.terms);
+    const selectResult = (key: string) => {
+        const hit = resultRows.find((r) => r.row.key === key);
+        if (hit != null) {
+            openResult(hit.result);
+        }
+    };
+    // a result is selected when its session's selection is the one in view (a run's member counts)
+    const resultActive = (result: SessionSearchResult) => {
+        const to = sessionSelection(result.session);
+        return sel === to.sel && (to.member == null || member === to.member);
+    };
+    // Esc empties the box and brings the paged list back; Esc on an empty box gives the keys back to the page. The Esc
+    // that leaves the centre stands down while an input holds focus, so neither leaves History.
+    const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
+        if (e.key !== "Escape") {
+            return;
+        }
+        e.preventDefault();
+        if (query !== "") {
+            setQuery("");
+        } else {
+            e.currentTarget.blur();
+        }
+    };
+
+    // publish the "All activity" + row order for global j/k list-nav (the results' keys while searching).
+    // cursor==selection. Refs keep the controller stable while reading this render's rows, so it isn't re-registered
+    // on every roster tick; the ids are keyed by content, since groupByRecency hands back fresh arrays every render.
+    const navIdsKey = (
+        searching ? resultRows.map((r) => r.row.key) : ["all", ...groups.flatMap((g) => g.items.map((r) => r.key))]
+    ).join("\n");
+    const navIds = useMemo(() => (navIdsKey === "" ? [] : navIdsKey.split("\n")), [navIdsKey]);
     const selectRef = useRef(select);
-    selectRef.current = select;
+    selectRef.current = searching ? selectResult : select;
     const actRef = useRef<() => void>(() => {});
     actRef.current = () => {
         if (primary) {
             runSessionPrimary(model, primary);
         }
     };
-    const cursorId = viewRunId ? runSelKey(viewRunId) : sel;
+    const cursorId = searching
+        ? (resultRows.find((r) => resultActive(r.result))?.row.key ?? sel)
+        : viewRunId
+          ? runSelKey(viewRunId)
+          : sel;
     const listNav = useMemo<ListNavController>(
         () => ({
             surface: "agent",
@@ -294,6 +366,20 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                                     </span>
                                 ) : null}
                             </div>
+                            <label className="flex h-8 items-center gap-2 rounded-lg border border-border bg-surface px-2.5 focus-within:border-accent">
+                                <Search size={13} aria-hidden className="flex-none text-muted" />
+                                <input
+                                    data-history-search
+                                    type="text"
+                                    value={query}
+                                    onChange={(e) => setQuery(e.target.value)}
+                                    onKeyDown={onSearchKey}
+                                    placeholder="Search conversations"
+                                    aria-label="Search conversations"
+                                    spellCheck={false}
+                                    className="min-w-0 flex-1 bg-transparent text-[12.5px] text-primary outline-none placeholder:text-muted"
+                                />
+                            </label>
                             <div
                                 role="group"
                                 aria-label="Status filter"
@@ -322,84 +408,143 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                         </div>
                         <div
                             ref={listRef}
+                            data-history-list
                             onScroll={loadIfAtEnd}
                             className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-3 pb-10"
                         >
-                            <button
-                                type="button"
-                                onClick={() => setSel("all")}
-                                className={cn(
-                                    "flex w-full cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-[9px] text-left",
-                                    sel === "all"
-                                        ? "border-accent bg-surface-selected"
-                                        : "border-border bg-surface hover:bg-surface-hover"
-                                )}
-                            >
-                                <Activity size={14} strokeWidth={1.8} className="flex-none text-ink-mid" aria-hidden />
-                                <span className="flex-1 text-[12.5px] font-semibold text-secondary">All activity</span>
-                                <span className="text-[10.5px] tabular-nums text-muted">
-                                    {totalEvents(scopedSessions)} events
-                                </span>
-                            </button>
-
-                            {base == null ? (
-                                <SkeletonRows className="mt-3 min-h-0 flex-1 space-y-[7px]">
-                                    {(i) => <SkeletonLine key={i} className="h-[58px] rounded-[10px]" />}
-                                </SkeletonRows>
-                            ) : groups.length === 0 ? (
-                                <div className="mt-6">
-                                    <SurfaceEmptyState
-                                        title="No sessions found"
-                                        body="Sessions appear here as agents run. Start one to begin."
-                                        action={{
-                                            label: "New agent",
-                                            onClick: () => openLauncher(model, "agent"),
-                                        }}
-                                    />
-                                </div>
-                            ) : (
-                                groups.map((g) => (
-                                    <div key={g.key} className="flex flex-col gap-1.5">
-                                        <div className="flex items-center gap-2.5 px-1 pb-0.5 pt-3">
-                                            <span className={cn(REGION_LABEL, "text-muted")}>{g.label}</span>
-                                            <div className="h-px flex-1 bg-edge-faint" />
-                                            <span className="text-[10.5px] tabular-nums text-muted">
-                                                {g.items.length}
-                                            </span>
+                            {searching ? (
+                                <>
+                                    {search.error != null ? (
+                                        <div data-history-search-error className="px-1 pt-3 text-[12px] text-muted">
+                                            Search failed: {search.error}
                                         </div>
-                                        <AnimatePresence initial={false} mode="popLayout">
-                                            {g.items.map((r) =>
-                                                r.run ? (
-                                                    <RunCard
-                                                        key={r.key}
-                                                        view={r.run.view}
-                                                        active={viewRunId === r.run.group.runId}
-                                                        member={member}
-                                                        now={now}
-                                                        onSelect={() => select(r.key)}
-                                                        onMember={(key) => selectMember(r.run!.group.runId, key)}
-                                                    />
-                                                ) : (
-                                                    <SoloCard
-                                                        key={r.key}
-                                                        session={r.session!}
-                                                        active={sel === r.key}
-                                                        now={now}
-                                                        onSelect={() => setSel(r.key)}
-                                                    />
-                                                )
-                                            )}
-                                        </AnimatePresence>
-                                    </div>
-                                ))
+                                    ) : search.results == null ? (
+                                        <div className="px-1 pt-3 text-[12px] text-muted">Searching…</div>
+                                    ) : resultRows.length === 0 ? (
+                                        <div data-history-search-empty className="px-1 pt-3 text-[12px] text-muted">
+                                            {search.incomplete
+                                                ? "No conversations match yet · indexing…"
+                                                : "No conversations match"}
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="flex items-center gap-2.5 px-1 pb-0.5 pt-1">
+                                                <span
+                                                    data-history-results-head
+                                                    className={cn(REGION_LABEL, "text-muted")}
+                                                >
+                                                    {resultRows.length} {resultRows.length === 1 ? "result" : "results"}
+                                                    {search.incomplete ? " · indexing…" : ""}
+                                                    {search.truncated ? ` · newest ${SEARCH_LIMIT}` : ""}
+                                                </span>
+                                                <div className="h-px flex-1 bg-edge-faint" />
+                                            </div>
+                                            {resultRows.map(({ row, result }) => (
+                                                <SoloCard
+                                                    key={row.key}
+                                                    session={row.session!}
+                                                    active={resultActive(result)}
+                                                    now={now}
+                                                    onSelect={() => openResult(result)}
+                                                    result={{
+                                                        title: sessionLabel(row.session!, runTitles),
+                                                        hit: result.hits?.[0],
+                                                    }}
+                                                />
+                                            ))}
+                                        </>
+                                    )}
+                                </>
+                            ) : (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSel("all")}
+                                        className={cn(
+                                            "flex w-full cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-[9px] text-left",
+                                            sel === "all"
+                                                ? "border-accent bg-surface-selected"
+                                                : "border-border bg-surface hover:bg-surface-hover"
+                                        )}
+                                    >
+                                        <Activity
+                                            size={14}
+                                            strokeWidth={1.8}
+                                            className="flex-none text-ink-mid"
+                                            aria-hidden
+                                        />
+                                        <span className="flex-1 text-[12.5px] font-semibold text-secondary">
+                                            All activity
+                                        </span>
+                                        <span className="text-[10.5px] tabular-nums text-muted">
+                                            {totalEvents(scopedSessions)} events
+                                        </span>
+                                    </button>
+
+                                    {base == null ? (
+                                        <SkeletonRows className="mt-3 min-h-0 flex-1 space-y-[7px]">
+                                            {(i) => <SkeletonLine key={i} className="h-[58px] rounded-[10px]" />}
+                                        </SkeletonRows>
+                                    ) : groups.length === 0 ? (
+                                        <div className="mt-6">
+                                            <SurfaceEmptyState
+                                                title="No sessions found"
+                                                body="Sessions appear here as agents run. Start one to begin."
+                                                action={{
+                                                    label: "New agent",
+                                                    onClick: () => openLauncher(model, "agent"),
+                                                }}
+                                            />
+                                        </div>
+                                    ) : (
+                                        groups.map((g) => (
+                                            <div key={g.key} className="flex flex-col gap-1.5">
+                                                <div className="flex items-center gap-2.5 px-1 pb-0.5 pt-3">
+                                                    <span className={cn(REGION_LABEL, "text-muted")}>{g.label}</span>
+                                                    <div className="h-px flex-1 bg-edge-faint" />
+                                                    <span className="text-[10.5px] tabular-nums text-muted">
+                                                        {g.items.length}
+                                                    </span>
+                                                </div>
+                                                <AnimatePresence initial={false} mode="popLayout">
+                                                    {g.items.map((r) =>
+                                                        r.run ? (
+                                                            <RunCard
+                                                                key={r.key}
+                                                                view={r.run.view}
+                                                                active={viewRunId === r.run.group.runId}
+                                                                member={member}
+                                                                now={now}
+                                                                onSelect={() => select(r.key)}
+                                                                onMember={(key) =>
+                                                                    selectMember(r.run!.group.runId, key)
+                                                                }
+                                                            />
+                                                        ) : (
+                                                            <SoloCard
+                                                                key={r.key}
+                                                                session={r.session!}
+                                                                active={sel === r.key}
+                                                                now={now}
+                                                                onSelect={() => setSel(r.key)}
+                                                            />
+                                                        )
+                                                    )}
+                                                </AnimatePresence>
+                                            </div>
+                                        ))
+                                    )}
+                                    {loadingMore ? (
+                                        <div className="flex-none px-1 py-2 text-[11.5px] text-muted">
+                                            Loading older sessions…
+                                        </div>
+                                    ) : null}
+                                </>
                             )}
-                            {loadingMore ? (
-                                <div className="flex-none px-1 py-2 text-[11.5px] text-muted">Loading older sessions…</div>
-                            ) : null}
                         </div>
                     </div>
 
-                    <div className="flex min-w-0 flex-1 flex-col px-8 pb-[22px] pt-[18px]">
+                    <div data-history-detail className="flex min-w-0 flex-1 flex-col px-8 pb-[22px] pt-[18px]">
                         <AnimatePresence mode="wait" initial={false}>
                             <motion.div
                                 key={detailKind}
@@ -547,11 +692,14 @@ function SoloCard({
     active,
     now,
     onSelect,
+    result,
 }: {
     session: LiveSession;
     active: boolean;
     now: number;
     onSelect: () => void;
+    // a search result: the title it reads under (a run's session reads as its run) and its first hit's snippet
+    result?: { title: string; hit?: SessionHit };
 }) {
     const rt = runtimeMeta(session.runtime);
     return (
@@ -562,6 +710,7 @@ function SoloCard({
             animate="animate"
             exit="exit"
             type="button"
+            data-history-result={result != null ? sessionKey(session) : undefined}
             onClick={onSelect}
             className={cn(
                 // cardVariants animates opacity per frame: the base button transition must not ease it too
@@ -571,7 +720,7 @@ function SoloCard({
         >
             <span className="flex w-full items-center gap-2">
                 <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-primary">
-                    {session.task || "(untitled session)"}
+                    {result?.title ?? (session.task || "(untitled session)")}
                 </span>
                 <StatusMark status={soloStatus(session, now)} />
             </span>
@@ -588,6 +737,7 @@ function SoloCard({
                     <span className="flex-none whitespace-nowrap">{formatTokens(session.tokenstotal)} tok</span>
                 ) : null}
             </span>
+            {result?.hit != null ? <SearchSnippet hit={result.hit} /> : null}
         </motion.button>
     );
 }

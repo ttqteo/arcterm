@@ -13,7 +13,7 @@ import { landOn } from "@/app/view/jarvis/returnsurface";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ArrowLeft, Check, GitFork, Trash2 } from "lucide-react";
-import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { showTerminal } from "./agentcenter";
 import { openDiff, projectDiffScope } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
@@ -22,21 +22,35 @@ import { formatAgeShort, formatTokens } from "./agentsviewmodel";
 import { CompactTranscript } from "./compacttranscript";
 import { runtimeMeta } from "./runtimemeta";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
+import { SessionFindBar, useFindPaint } from "./sessionfindbar";
 import type { LiveSession } from "./sessionsarchivestore";
+import {
+    findEnded,
+    findTerms,
+    foundSession,
+    needsCentre,
+    sessionFindAtom,
+    sessionFoundAtom,
+    stepFind,
+    type FindMark,
+    type SessionFind,
+} from "./sessionsfind";
 import {
     canOpenAsleep,
     forkLaunchOpts,
     LEAD_MEMBER,
     reopenLaunchOpts,
+    sessionKey,
     sessionPrimary,
     type RunMember,
     type RunView,
     type Status,
     type StatusKey,
 } from "./sessionsruns";
+import { transcriptMatches } from "./transcriptfind";
 import { atBottom } from "./transcriptfollow";
 import { transcriptPlace } from "./transcriptplace";
-import { useTranscriptRead } from "./transcriptread";
+import { TAIL_LINES, useTranscriptRead } from "./transcriptread";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
 const STATUS_STYLE: Record<StatusKey, { color: string; mark: "pulse" | "dot" | "check" | "ring" | "none" }> = {
@@ -313,13 +327,23 @@ function clock(ts: number): string {
     return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-function ActivityList({ events }: { events: SessionEvent[] }) {
+// `mark` is the event a search hit opened at: outlined (aria-current) and scrolled to the middle of the view
+function ActivityList({ events, mark }: { events: SessionEvent[]; mark?: number }) {
+    const markRef = useRef<HTMLDivElement>(null);
+    useLayoutEffect(() => {
+        markRef.current?.scrollIntoView({ block: "center" });
+    }, [mark]);
     return (
         <div className="flex flex-col">
             {events.map((e, i) => (
                 <div
                     key={i}
-                    className="grid grid-cols-[44px_8px_minmax(0,1fr)] gap-x-3.5 border-b border-edge-faint py-2.5"
+                    ref={i === mark ? markRef : undefined}
+                    aria-current={i === mark ? true : undefined}
+                    className={cn(
+                        "grid grid-cols-[44px_8px_minmax(0,1fr)] gap-x-3.5 border-b border-edge-faint py-2.5",
+                        i === mark && "rounded-[6px] ring-1 ring-inset ring-accent"
+                    )}
                 >
                     <span className="pt-0.5 text-[10.5px] tabular-nums text-muted">{clock(e.ts)}</span>
                     <span
@@ -341,14 +365,38 @@ function ActivityList({ events }: { events: SessionEvent[] }) {
     );
 }
 
+// where a find opens in the matches: a turn hit's ord is its position among the session's turn hits, which is its place in
+// the list the bar counts
+const startPos = (f: SessionFind | null) => (f?.target.kind === "turn" ? f.target.ord : 0);
+
+// Selecting another session ends the find (findEnded, read from the selection and never from the session a pane renders:
+// while History animates from one detail to another the outgoing one still renders the old session). The find is the
+// bar; the found session is what a run's member keeps showing after the bar is closed, and both end together here.
+function useEndFind(model: AgentsViewModel) {
+    const found = useAtomValue(sessionFoundAtom);
+    const sel = useAtomValue(model.sessionsSelAtom);
+    const member = useAtomValue(model.sessionsMemberAtom);
+    const ended = findEnded(found, sel, member);
+    useEffect(() => {
+        if (ended) {
+            globalStore.set(sessionFindAtom, null);
+            globalStore.set(sessionFoundAtom, null);
+        }
+    }, [ended]);
+    return { found, sel };
+}
+
 // SessionBody is the scrolling read of one session: its transcript, opened at the end, or its events. The Overview's
-// quick look (sessionpeek.tsx) reads it too.
+// quick look (sessionpeek.tsx) reads it too. With `findable` (Conversation History's detail), a session a search result
+// opened (sessionsfind.ts) opens at its hit instead: the whole transcript, a find bar over every match in its prompts
+// and replies, and the matches painted, the current one centred; an event hit opens the Activity view at that event.
 export function SessionBody({
     model,
     session,
     empty,
     className,
     pinBg,
+    findable,
 }: {
     model: AgentsViewModel;
     session?: LiveSession;
@@ -356,25 +404,34 @@ export function SessionBody({
     className?: string;
     // the scroller's background, for the transcript's pinned prompt (CompactTranscript)
     pinBg?: string;
+    findable?: boolean;
 }) {
     const view = useAtomValue(model.sessionsViewAtom);
+    const anyFind = useAtomValue(sessionFindAtom);
+    const found = useAtomValue(sessionFoundAtom);
+    const key = session != null ? sessionKey(session) : null;
+    const find = findable && key != null && anyFind?.sessionKey === key ? anyFind : null;
+    // The whole file, not its tail: a hit can sit in the first turn. It stays whole once the bar is closed (the found
+    // mark outlives it), so closing neither reads again nor jumps.
+    const full = !!findable && key != null && (find != null || found?.sessionKey === key);
     const read = view === "transcript" ? session : undefined;
-    const entries = useTranscriptRead(read?.transcriptpath, read?.runtime, read?.live ?? false);
+    const entries = useTranscriptRead(read?.transcriptpath, read?.runtime, read?.live ?? false, full);
     const scrollRef = useRef<HTMLDivElement>(null);
     // opened at the end, or where its reader left it (CompactTranscript restores a kept place, transcriptplace.ts); after
-    // that, a re-read of a running session follows only a reader who is still at the end
+    // that, a re-read of a running session follows only a reader who is still at the end. Not a found session: it opens at
+    // its hit and its place is not kept.
     const opened = useRef<string | undefined>(undefined);
     const following = useRef(true);
-    const placeId = read?.transcriptpath ? `session:${read.transcriptpath}` : undefined;
+    const placeId = read?.transcriptpath && !full ? `session:${read.transcriptpath}` : undefined;
     useLayoutEffect(() => {
         const el = scrollRef.current;
-        if (!el || !entries?.length) {
+        if (!el || !entries?.length || full) {
             return;
         }
-        const key = session?.transcriptpath;
+        const path = session?.transcriptpath;
         const placed = placeId != null && transcriptPlace(placeId) != null;
-        if (opened.current !== key) {
-            opened.current = key;
+        if (opened.current !== path) {
+            opened.current = path;
             following.current = !placed;
         }
         if (following.current && !placed) {
@@ -382,13 +439,51 @@ export function SessionBody({
         }
     }, [entries]);
 
+    // The bar's query, editable to refine the find, and the match it stands on; a new result resets both.
+    const [edit, setEdit] = useState({ of: find, text: find?.query ?? "", pos: startPos(find) });
+    if (edit.of !== find) {
+        setEdit({ of: find, text: find?.query ?? "", pos: startPos(find) });
+    }
+    const terms = find == null ? [] : edit.text === find.query ? find.terms : findTerms(edit.text);
+    const termsKey = JSON.stringify(terms);
+    const onTranscript = find != null && view === "transcript";
+    // counted over the entries' text, so it holds the matches in items the transcript has not drawn; null while it loads
+    const matches = useMemo(
+        () => (onTranscript && entries != null ? transcriptMatches(entries, terms) : null),
+        [onTranscript, entries, termsKey]
+    );
+    const total = matches?.length ?? null;
+    const cur = total ? Math.min(edit.pos, total - 1) : 0;
+    const target = matches != null && matches.length > 0 ? matches[cur] : null;
+    // The view goes to the current match when the match changes (another result, refined terms, a step), not when a
+    // running session is read again: a re-read redraws every range and would snap the reader back from what they scroll
+    // to read (needsCentre). CompactTranscript draws back to the match's item; useFindPaint then paints and centres.
+    const limit = full ? -1 : TAIL_LINES;
+    const centred = useRef<FindMark | null>(null);
+    const [jump, setJump] = useState<{ index: number; nonce: number } | undefined>(undefined);
+    useLayoutEffect(() => {
+        if (find == null || target == null) {
+            centred.current = null;
+            return;
+        }
+        const mark: FindMark = { find, terms: termsKey, pos: cur, limit };
+        if (needsCentre(centred.current, mark)) {
+            centred.current = mark;
+            setJump((j) => ({ index: target.entry, nonce: (j?.nonce ?? 0) + 1 }));
+        }
+    }, [find, target?.entry, termsKey, cur, limit]);
+    useFindPaint(scrollRef, onTranscript, terms, target, jump?.nonce ?? 0);
+
     let body: ReactNode;
     if (session == null) {
         body = <div className="py-4 text-[13px] text-muted">{empty}</div>;
     } else if (view === "activity") {
         body =
             session.events.length > 0 ? (
-                <ActivityList events={session.events} />
+                <ActivityList
+                    events={session.events}
+                    mark={find?.target.kind === "event" ? find.target.ord : undefined}
+                />
             ) : (
                 <div className="py-4 text-[13px] text-muted">No activity yet.</div>
             );
@@ -403,6 +498,7 @@ export function SessionBody({
                 active={session.live}
                 placeId={placeId}
                 pinBg={pinBg}
+                scrollTo={find != null ? jump : undefined}
                 onReview={
                     session.projectpath
                         ? () => openDiff(model, projectDiffScope(session.projectname || "project", session.projectpath))
@@ -412,15 +508,33 @@ export function SessionBody({
         );
     }
     return (
-        <div
-            ref={scrollRef}
-            onScroll={(e) => {
-                following.current = atBottom(e.currentTarget);
-            }}
-            className={cn("min-h-0 flex-1 overflow-y-auto", className)}
-        >
-            {body}
-        </div>
+        <>
+            {onTranscript ? (
+                <SessionFindBar
+                    text={edit.text}
+                    onText={(text) => setEdit((e) => ({ ...e, text, pos: 0 }))}
+                    pos={cur}
+                    total={total}
+                    onStep={(dir) =>
+                        setEdit((e) => ({
+                            ...e,
+                            pos: stepFind(Math.min(e.pos, Math.max(0, (total ?? 0) - 1)), total ?? 0, dir),
+                        }))
+                    }
+                    onClose={() => globalStore.set(sessionFindAtom, null)}
+                    focusOn={find}
+                />
+            ) : null}
+            <div
+                ref={scrollRef}
+                onScroll={(e) => {
+                    following.current = atBottom(e.currentTarget);
+                }}
+                className={cn("min-h-0 flex-1 overflow-y-auto", className)}
+            >
+                {body}
+            </div>
+        </>
     );
 }
 
@@ -481,6 +595,7 @@ export function SoloDetail({
     onBack?: () => void;
     backLabel?: string;
 }) {
+    useEndFind(model);
     const rt = runtimeMeta(session.runtime);
     const status: Status = session.live
         ? session.needsAttention
@@ -527,7 +642,7 @@ export function SoloDetail({
                 {/* a resumable session resumes from its composer, below */}
                 {resumable ? null : <PrimaryButton model={model} session={session} strong />}
             </div>
-            <SessionBody model={model} session={session} empty="" className="pb-2" />
+            <SessionBody model={model} session={session} empty="" className="pb-2" findable />
             {resumable ? <ResumeComposer key={session.id} model={model} session={session} /> : null}
         </div>
     );
@@ -599,6 +714,10 @@ export function RunDetail({
     memberSession?: LiveSession;
     now: number;
 }) {
+    // a search hit can sit in another of the run's sessions than the one the member opens by default (its reviewer, an
+    // earlier attempt): the found one is shown in its place while the find holds
+    const { found, sel } = useEndFind(model);
+    const shown = foundSession(found, sel, member.key, view.sessions) ?? memberSession;
     const lead = view.members[0].session;
     const head: Status =
         view.live || view.head.key !== "done" ? view.head : { key: "done", text: `done · ${view.head.text} ago` };
@@ -688,16 +807,17 @@ export function RunDetail({
                         <div className="mb-1.5 flex items-center gap-3">
                             <h3 className="min-w-0 flex-1 truncate text-[15px] font-bold text-primary">{title}</h3>
                             <ViewToggle model={model} />
-                            {memberSession ? <DeleteSessionButton session={memberSession} /> : null}
-                            {memberSession ? <PrimaryButton model={model} session={memberSession} /> : null}
+                            {shown ? <DeleteSessionButton session={shown} /> : null}
+                            {shown ? <PrimaryButton model={model} session={shown} /> : null}
                         </div>
-                        <Meta items={sessionMeta(memberSession, [{ k: "status", v: member.status.text }])} />
+                        <Meta items={sessionMeta(shown, [{ k: "status", v: member.status.text }])} />
                     </div>
                     <SessionBody
                         model={model}
-                        session={memberSession}
+                        session={shown}
                         empty={memberEmpty(member)}
                         className="px-4 pb-4"
+                        findable
                     />
                 </div>
             </div>

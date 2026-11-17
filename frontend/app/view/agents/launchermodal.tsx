@@ -109,7 +109,14 @@ import {
     type PeekState,
 } from "./launcherpeek";
 import { LauncherPeekPane } from "./launcherpeekpanel";
-import { pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey, sessionTitle } from "./launcherresume";
+import {
+    pickedResume,
+    resumeChoices,
+    resumeLaunchSpec,
+    resumeScopeKey,
+    sessionSearchable,
+    sessionTitle,
+} from "./launcherresume";
 import { ResumeList } from "./launcherresumelist";
 import { ColumnLabel, digitOf, FilterLine, Keycap, NoTaskBox, rowTone } from "./launcherrows";
 import { handBack, queueLauncherRun, startLauncherRun } from "./launcherrun";
@@ -139,7 +146,9 @@ import {
     launcherRestoredAtom,
     launcherResumeAtom,
     launcherRuntimeAtom,
+    launcherSearchedAtom,
     launcherSessionsAtom,
+    launcherSessionSearchAtom,
     launcherSpecPathAtom,
     launcherTaskAtom,
     launcherToolAtom,
@@ -189,6 +198,7 @@ import {
 } from "./runconfigstore";
 import { agentProject } from "./runlineage";
 import { RuntimeMark } from "./runtimemark";
+import { useSessionSearch } from "./sessionsearchstore";
 import { sessionKey } from "./sessionsruns";
 import { setupTabAtom } from "./setupstore";
 import { startingTitle } from "./startingrunsmodel";
@@ -370,6 +380,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const branchPick = useAtomValue(launcherBranchAtom);
     const sessions = useAtomValue(launcherSessionsAtom);
     const resumeId = useAtomValue(launcherResumeAtom);
+    const searchedSession = useAtomValue(launcherSearchedAtom);
+    const sessionSearchBox = useAtomValue(launcherSessionSearchAtom);
     const images = useAtomValue(launcherImagesAtom);
     const commands = useAtomValue(launcherCommandAtom);
     const naFlags = useAtomValue(naFlagsAtom);
@@ -395,6 +407,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const cap = useWorkerCapacity();
     const [zone, setZone] = useState<"start" | "project" | "tools" | "task" | null>(null);
     const [filter, setFilter] = useState("");
+    // the Project column's search box: it holds `filter`, and goes with it when focus leaves the column
+    const [projectSearch, setProjectSearch] = useState(false);
     const [home, setHome] = useState("");
     // the No folder path, created and trusted for Claude Code by wavesrv; "" until it answers, which keeps the row hidden
     const [noFolder, setNoFolder] = useState("");
@@ -449,7 +463,15 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     // the sessions this agent and project offer, and the one picked (a pick no longer on offer launches nothing)
     const choices = resumeChoices(sessions, runtime, projectPath);
     const scopeKey = resumeScopeKey(runtime, projectPath);
-    const resume = isAgent ? pickedResume(choices, resumeId) : null;
+    // a session the Session column's search found can be the pick though no loaded page holds it
+    const resume = isAgent ? pickedResume(choices, resumeId, searchedSession, scopeKey) : null;
+    // The Session column's content search, asked here and not in the list: picking a Claude session draws the list again
+    // inside the resume step, and its answer must survive that. Nothing is asked while the box is closed or empty.
+    const sessionSearchOn = isAgent && sessionSearchable(runtime);
+    const sessionAnswer = useSessionSearch(sessionSearchOn && sessionSearchBox.open ? sessionSearchBox.query : "", {
+        runtime,
+        projectPath,
+    });
     // a resumed session keeps its own folder, so the worktree option is neither shown nor applied
     const wantsWorktree = isAgent && !atHome && resume == null && worktreeOn && runtimeSupportsWorktree(runtime);
     const chosenBranch = (branchPick ?? currentBranch).trim();
@@ -837,6 +859,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const close = () => {
         setError(null);
         setFilter("");
+        setProjectSearch(false);
         closeLauncher(model);
     };
 
@@ -863,6 +886,25 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         setFilter(next);
         const matches = projectColumnPicks(filterProjects(candidates, next), homeShown, next).map((name) => ({ name }));
         pickProject(projectAfterFilter(matches, pickKey));
+    };
+
+    // The Project column's search box (the magnifier, or /). Its input takes focus once the box is drawn, a frame later.
+    const focusProjectBox = () =>
+        projectRef.current?.querySelector<HTMLInputElement>("[data-launcher-search] input")?.focus();
+    const openProjectSearch = () => {
+        if (projectSearch) {
+            focusProjectBox();
+            return;
+        }
+        setProjectSearch(true);
+        requestAnimationFrame(focusProjectBox);
+    };
+    // Escape and the ×: the filter goes with the box, and focus returns to the column (first, so the input's blur finds
+    // the focus still inside the column and the column's onBlur keeps its state until it is cleared here)
+    const closeProjectSearch = () => {
+        projectRef.current?.focus();
+        setProjectSearch(false);
+        applyFilter("");
     };
 
     const register = () => {
@@ -1207,6 +1249,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 accountMenuOpen: accountMenuShown,
                 resumePicked: resume != null,
                 stepShown,
+                projectSearchOpen: projectSearch,
                 textField: textField != null,
             },
             {
@@ -1298,6 +1341,12 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             case "filter":
                 applyFilter(action.next);
                 return;
+            case "search-project":
+                // a pinned app runs in its own folder: the column is not used, and has nothing to search
+                if (!ownFolder) {
+                    openProjectSearch();
+                }
+                return;
             case "launch":
                 launch();
                 return;
@@ -1319,7 +1368,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 } else if (action.what === "account") {
                     globalStore.set(launcherAccountMenuAtom, false);
                 } else if (action.what === "filter") {
-                    applyFilter("");
+                    closeProjectSearch();
                 }
                 return;
             case "close":
@@ -1527,6 +1576,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                         scopeKey={scopeKey}
                                         pickedId={resume?.id ?? null}
                                         onBack={() => leaveStep("project")}
+                                        searchable={sessionSearchOn}
+                                        answer={sessionAnswer}
                                     />
                                 </div>
                             </div>
@@ -1593,10 +1644,16 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                         setZone("project");
                                         setResumeStep(false);
                                     }}
-                                    onBlur={() => {
+                                    onBlur={(e) => {
+                                        // focus moving inside the column (onto its search box, off it, onto a row's
+                                        // click) keeps the filter: the box is the column's own
+                                        if (e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                                            return;
+                                        }
                                         // a list narrowed by a query you can no longer see reads as projects gone missing
                                         setZone(null);
                                         setFilter("");
+                                        setProjectSearch(false);
                                     }}
                                     className="relative min-w-0 border-r border-border outline-none"
                                 >
@@ -1605,6 +1662,22 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                             label="Project"
                                             focused={projectFocused}
                                             hint={ownFolder ? "" : projectHint}
+                                            search={
+                                                ownFolder
+                                                    ? undefined
+                                                    : {
+                                                          column: "project",
+                                                          open: projectSearch,
+                                                          query: filter,
+                                                          hint: `${visible.length} of ${candidates.length}`,
+                                                          label: "Search projects",
+                                                          onOpen: openProjectSearch,
+                                                          onChange: applyFilter,
+                                                          onClose: closeProjectSearch,
+                                                          // the column itself has focus; its picked row is the cursor
+                                                          onDown: () => projectRef.current?.focus(),
+                                                      }
+                                            }
                                         />
                                         {ownFolder ? (
                                             <div
@@ -1614,7 +1687,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                                 Not used: {tool!.name} runs in its own folder.
                                             </div>
                                         ) : null}
-                                        {filter !== "" ? (
+                                        {filter !== "" && !projectSearch ? (
                                             <FilterLine
                                                 query={filter}
                                                 shown={visible.length}
@@ -1768,6 +1841,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                                 scopeKey={scopeKey}
                                                 pickedId={resume?.id ?? null}
                                                 onBack={() => projectRef.current?.focus()}
+                                                searchable={sessionSearchOn}
+                                                answer={sessionAnswer}
                                             />
                                         ) : (
                                             <>

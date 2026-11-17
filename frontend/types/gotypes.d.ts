@@ -2428,6 +2428,24 @@ declare global {
         runid: string;
     };
 
+    // wshrpc.CommandSearchSessionsData
+    type CommandSearchSessionsData = {
+        query: string;
+        runtime?: string;
+        projectpath?: string;
+        runagents?: boolean;
+        maxhits?: number;
+        limit?: number;
+    };
+
+    // wshrpc.CommandSearchSessionsRtnData
+    type CommandSearchSessionsRtnData = {
+        results: SessionSearchResult[];
+        terms: string[];
+        incomplete?: boolean;
+        truncated?: boolean;
+    };
+
     // wshrpc.CommandServiceData
     type CommandServiceData = {
         id: string;
@@ -4802,6 +4820,15 @@ declare global {
         text: string;
     };
 
+    // wshrpc.SessionHit
+    type SessionHit = {
+        kind: string;
+        speaker: string;
+        ord: number;
+        text: string;
+        marks: number[][];
+    };
+
     // wshrpc.SessionInfo
     type SessionInfo = {
         id: string;
@@ -4823,6 +4850,14 @@ declare global {
         role: string;
         text: string;
         ts: number;
+    };
+
+    // wshrpc.SessionSearchResult
+    type SessionSearchResult = {
+        session: SessionActivity;
+        hits: SessionHit[];
+        turnhits: number;
+        eventhits: number;
     };
 
     // wconfig.SettingsType

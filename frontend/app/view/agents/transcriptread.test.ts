@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { LoadedWindow } from "./railtranscriptmodel";
-import { TAIL_LINES, transcriptAsk, windowAfter } from "./transcriptread";
+import { readChanged, TAIL_LINES, transcriptAsk, windowAfter } from "./transcriptread";
 
 const lines = (from: number, n: number) => Array.from({ length: n }, (_, i) => `l${from + i}`);
 
@@ -44,6 +44,43 @@ describe("transcriptAsk", () => {
             path: "/t.jsonl",
             maxlines: TAIL_LINES,
         });
+    });
+
+    it("asks for the whole file when full is set and no window is held, for any runtime", () => {
+        // a search hit can sit in the first turn, which the tail window does not hold
+        expect(transcriptAsk("/t.jsonl", "claude", null, true)).toEqual({ path: "/t.jsonl", maxlines: -1 });
+        expect(transcriptAsk("/t.jsonl", "pi", null, true)).toEqual({ path: "/t.jsonl", maxlines: -1 });
+        expect(transcriptAsk("/t.jsonl", "claude", null, false)).toEqual({ path: "/t.jsonl", maxlines: TAIL_LINES });
+    });
+
+    it("reads the whole file again when full is set and the window holds no complete line", () => {
+        expect(transcriptAsk("/t.jsonl", "claude", held({ lines: [], end: 0 }), true)).toEqual({
+            path: "/t.jsonl",
+            maxlines: -1,
+        });
+    });
+
+    it("still appends once a window is held, full or not", () => {
+        expect(transcriptAsk("/t.jsonl", "claude", held(), true)).toEqual({ path: "/t.jsonl", frombyte: 900_000 });
+    });
+});
+
+describe("readChanged", () => {
+    const reader = { path: "/t.jsonl", runtime: "claude", full: false };
+
+    it("is false for the same session read the same way", () => {
+        expect(readChanged(reader, "/t.jsonl", "claude", false)).toBe(false);
+    });
+
+    it("is true for another path or runtime", () => {
+        expect(readChanged(reader, "/u.jsonl", "claude", false)).toBe(true);
+        expect(readChanged(reader, "/t.jsonl", "pi", false)).toBe(true);
+    });
+
+    it("is true when full flips either way, so the held tail window is dropped and the file read afresh", () => {
+        // a session open on its tail that a find then targets must not keep the tail window and only append to it
+        expect(readChanged(reader, "/t.jsonl", "claude", true)).toBe(true);
+        expect(readChanged({ ...reader, full: true }, "/t.jsonl", "claude", false)).toBe(true);
     });
 });
 
