@@ -7,14 +7,84 @@ import { register } from "./register";
 
 type Handler = (...args: any[]) => Promise<unknown>;
 
+// each hook under `event` or `event:tool`, and a hook's .catch handler under the same key plus ".catch"
 function registered(): Map<string, Handler> {
     const handlers = new Map<string, Handler>();
     register(((event: string, filterOrHandler: unknown, handler?: Handler) => {
         const tool = handler ? (filterOrHandler as { tool?: string }).tool : undefined;
-        handlers.set(tool ? `${event}:${tool}` : event, handler ?? (filterOrHandler as Handler));
+        const key = tool ? `${event}:${tool}` : event;
+        handlers.set(key, handler ?? (filterOrHandler as Handler));
+        return { catch: (caught: Handler) => handlers.set(`${key}.catch`, caught) };
     }) as never);
     return handlers;
 }
+
+// the `next` a .catch handler gets: why the hook failed and whether it had called next
+function caughtNext<T>(answer: T, called: boolean, kind: "throw" | "timeout" = "throw") {
+    return Object.assign(
+        vi.fn(async () => answer),
+        { called, error: { kind, message: "boom", budget: 1000 } }
+    );
+}
+
+describe("a gating hook that fails", () => {
+    it("refuses a shell command whose guard threw before it went on", async () => {
+        const handlers = registered();
+        for (const tool of ["Bash", "PowerShell"]) {
+            const caught = handlers.get(`tool.call:${tool}.catch`)!;
+            const next = caughtNext("ran", false);
+            const out = (await caught({}, { command: "ls" }, next)) as { deny?: string };
+            expect(next).not.toHaveBeenCalled();
+            expect(out.deny).toMatch(/^Refused by arcterm: its command check failed \(boom\)/);
+        }
+    });
+
+    it("keeps a shell command that already ran, or outwaited its budget in the job queue", async () => {
+        const handlers = registered();
+        const caught = handlers.get("tool.call:Bash.catch")!;
+        expect(await caught({}, { command: "ls" }, caughtNext("ran", true))).toBe("ran");
+        expect(await caught({}, { command: "ls" }, caughtNext("ran", false, "timeout"))).toBe("ran");
+    });
+
+    it("asks before an edit whose foreign-repo check failed, and keeps a deny", async () => {
+        const handlers = registered();
+        for (const tool of ["Edit", "Write", "NotebookEdit"]) {
+            const caught = handlers.get(`tool.check:${tool}.catch`)!;
+            const asked = (await caught({}, { input: {} }, caughtNext({ decision: "allow" }, true))) as {
+                decision: string;
+                reason?: string;
+            };
+            expect(asked.decision).toBe("ask");
+            expect(asked.reason).toMatch(/could not check whether this file is in another repo/);
+            const denied = { decision: "deny", reason: "rule" };
+            expect(await caught({}, { input: {} }, caughtNext(denied, true))).toBe(denied);
+        }
+    });
+
+    it("keeps an @mention that failed on its way from this session's model", async () => {
+        const handlers = registered();
+        await handlers.get("session.start")!(arcEngine([]), { cwd: "/repo" }, async () => undefined);
+        const caught = handlers.get("prompt.submit.catch")!;
+        const fill = vi.fn(async () => undefined);
+        const $ = { prompt: { fill } };
+        const mention = { text: "@3f2a91bc review this", origin: { kind: "composer" } };
+        const next = caughtNext("kept", false);
+        expect(await caught($, mention, next)).toEqual({ drop: "arc: not sent to @3f2a91bc: boom" });
+        expect(next).not.toHaveBeenCalled();
+        expect(fill).toHaveBeenCalledWith({ text: "@3f2a91bc review this" });
+        const plain = { text: "review this", origin: { kind: "composer" } };
+        expect(await caught($, plain, caughtNext("kept", false))).toBe("kept");
+    });
+
+    it("lets every other gating hook go on as if it were absent", async () => {
+        const handlers = registered();
+        for (const key of ["tool.call:Agent", "tool.call:Edit", "tool.check:Bash", "tool.call:AskUserQuestion"]) {
+            const next = caughtNext("beneath", false);
+            expect(await handlers.get(`${key}.catch`)!({}, {}, next)).toBe("beneath");
+            expect(next).toHaveBeenCalledOnce();
+        }
+    });
+});
 
 // an engine inside an arcterm block whose wsh answers every jobslot with {"run":true}
 function arcEngine(spawned: string[][]) {
