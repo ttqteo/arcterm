@@ -56,7 +56,8 @@ opens what it names.
   (`chateditor.tsx`) and a typing-time rebuild is editor work outside v1. No motion: it is a keyboard action seen often.
 - **In the bubble** a resolved badge is a button that opens its target through `openTarget` with the full id
   (`openref.ts`: agent → its terminal on the Agent surface, run → Jarvis, council → its discussion); Ctrl-click
-  peeks, as other router links do. Hover lifts the fill one step (`transition-colors`, the default micro timing).
+  peeks, as other router links do. Hover brightens the badge (`hover:brightness-125`, `transition-[filter]`), so one class lifts every
+  kind's tint.
 - **Scope:** your bubbles and the message box. An agent's prose keeps `agent:…` as text in v1 (open question).
 - An agent that ended after the message was sent shows as unresolved; mapping a closed tab to its conversation is
   out of scope (the mockup's "đã đóng" and initiative / conversation cells are not built in v1).
