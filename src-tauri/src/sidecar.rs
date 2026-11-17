@@ -624,6 +624,83 @@ fn note(what: &str, result: tauri::Result<()>) {
     }
 }
 
+/// Sidecar's own icon: arcterm's mark with a small screen badge, one PNG frame per size
+/// (scripts/gen-app-icon.mjs writes it beside icon.ico). The exe carries it as bytes, not as a resource, so the
+/// Sidecar window can take it while the exe keeps its own icon.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub const SIDECAR_ICO: &[u8] = include_bytes!("../icons/icon-sidecar.ico");
+
+/// The frame of an ICO that draws best at `size` px, as (offset, length) into `ico`: the exact size, else the smallest
+/// larger, else the largest (a width byte of 0 is 256; of two frames of one size the first). None for a buffer that is
+/// not an ICO, or is cut short anywhere in its directory or in a frame's bytes.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn pick_ico_frame(ico: &[u8], size: u32) -> Option<(usize, usize)> {
+    let word = |at: usize| ico.get(at..at + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
+    let long = |at: usize| ico.get(at..at + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize);
+    // reserved 0, type 1 (icon; 2 is a cursor)
+    if word(0)? != 0 || word(2)? != 1 {
+        return None;
+    }
+    let mut best: Option<((u8, u32), usize, usize)> = None;
+    for n in 0..word(4)? as usize {
+        let entry = 6 + n * 16;
+        let width = match ico.get(entry..entry + 16)?[0] {
+            0 => 256,
+            w => w as u32,
+        };
+        let (len, offset) = (long(entry + 8)?, long(entry + 12)?);
+        if len == 0 || offset.checked_add(len)? > ico.len() {
+            return None;
+        }
+        // exact first, then the larger ones smallest first, then the smaller ones largest first
+        let rank = match width.cmp(&size) {
+            std::cmp::Ordering::Equal => (0, 0),
+            std::cmp::Ordering::Greater => (1, width),
+            std::cmp::Ordering::Less => (2, u32::MAX - width),
+        };
+        if best.as_ref().map_or(true, |(r, _, _)| rank < *r) {
+            best = Some((rank, offset, len));
+        }
+    }
+    best.map(|(_, offset, len)| (offset, len))
+}
+
+/// An icon of Sidecar's icon at `size` px, made from the frame that draws best at it (a PNG frame goes in as it is).
+/// The caller owns it: a window's icon lives as long as the window.
+#[cfg(windows)]
+pub fn make_icon(size: i32) -> Result<windows_sys::Win32::UI::WindowsAndMessaging::HICON, String> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{CreateIconFromResourceEx, LR_DEFAULTCOLOR};
+    // the version every icon resource states
+    const ICON_VERSION: u32 = 0x0003_0000;
+
+    if size <= 0 {
+        return Err(format!("no icon size for its window ({size})"));
+    }
+    let (at, len) = pick_ico_frame(SIDECAR_ICO, size as u32).ok_or("its icon has no frame to draw")?;
+    let icon = unsafe {
+        CreateIconFromResourceEx(
+            SIDECAR_ICO[at..at + len].as_ptr(),
+            len as u32,
+            1, // an icon, not a cursor
+            ICON_VERSION,
+            size,
+            size,
+            LR_DEFAULTCOLOR,
+        )
+    };
+    if icon.is_null() {
+        return Err(format!("making its {size}px icon failed"));
+    }
+    Ok(icon)
+}
+
+/// The AppUserModelID of the Sidecar window: the app's identifier with `.sidecar` on the end (`-dev` first in a dev
+/// build, which shares the identifier with the packaged app), so the taskbar draws it as its own button.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn sidecar_app_id(identifier: &str, dev: bool) -> String {
+    format!("{identifier}{}.sidecar", if dev { "-dev" } else { "" })
+}
+
 /// Open Sidecar: the window built hidden, placed and shown when there is none; unminimized, shown and focused when
 /// there is one.
 pub fn open(app: &AppHandle) -> tauri::Result<()> {
@@ -650,11 +727,22 @@ fn open_window(app: &AppHandle, focus: bool) -> tauri::Result<()> {
         .decorations(false)
         .visible(false)
         .build()?;
-    // the exe's own multi-frame icon, as the main window takes, so the taskbar draws the frame made for its size
+    // its own taskbar button (Windows): its own AppUserModelID, no pinning (a pin of it would relaunch arcterm, not
+    // Sidecar), and its own icon (arcterm's mark with a screen badge, the frame made for each size). On the main thread,
+    // where COM is up for the property store.
     #[cfg(windows)]
-    if let Ok(hwnd) = win.hwnd() {
-        let hwnd = hwnd.0 as isize;
-        let _ = app.run_on_main_thread(move || crate::use_resource_window_icons(hwnd));
+    {
+        let id = sidecar_app_id(&app.config().identifier, cfg!(debug_assertions));
+        let for_icons = win.clone();
+        let _ = app.run_on_main_thread(move || {
+            match crate::set_window_app_user_model_id(&for_icons, &id, true) {
+                None => log_line(&format!("[sidecar] app id {id}")),
+                Some(failed) => log_line(&failed),
+            }
+            if let Ok(hwnd) = for_icons.hwnd() {
+                crate::use_sidecar_icons(hwnd.0 as isize);
+            }
+        });
     }
     // open before it is placed: what its placing does to its frame is kept only while it is open
     apply(Change::Opened);
@@ -1906,5 +1994,143 @@ mod tests {
         // the S button and the pin are the host command, not window calls the page makes
         assert!(!got.contains(&"core:window:allow-set-position"));
         assert!(!got.contains(&"core:window:allow-set-always-on-top"));
+    }
+
+    // --- its own taskbar button and icon (Windows; the pure parts run everywhere) ---
+
+    // An ICO holding one frame per width byte (0 stands for 256), frame n being 8 + n bytes of 0xA0 + n: so a pick's
+    // offset and length say which frame it was.
+    fn fake_ico(widths: &[u8]) -> Vec<u8> {
+        let mut out = vec![0, 0, 1, 0];
+        out.extend_from_slice(&(widths.len() as u16).to_le_bytes());
+        let mut offset = 6 + 16 * widths.len();
+        let mut frames = Vec::new();
+        for (n, w) in widths.iter().enumerate() {
+            let len = 8 + n;
+            out.extend_from_slice(&[*w, *w, 0, 0, 1, 0, 32, 0]);
+            out.extend_from_slice(&(len as u32).to_le_bytes());
+            out.extend_from_slice(&(offset as u32).to_le_bytes());
+            frames.extend(std::iter::repeat(0xA0 + n as u8).take(len));
+            offset += len;
+        }
+        out.extend(frames);
+        out
+    }
+
+    // the frame fake_ico made at index n, as pick_ico_frame names it
+    fn frame_of(widths: &[u8], n: usize) -> Option<(usize, usize)> {
+        let offset = 6 + 16 * widths.len() + (0..n).map(|k| 8 + k).sum::<usize>();
+        Some((offset, 8 + n))
+    }
+
+    #[test]
+    fn pick_ico_frame_takes_the_exact_size() {
+        let w = [32, 16, 20, 24, 40, 48, 64, 0];
+        let ico = fake_ico(&w);
+        assert_eq!(pick_ico_frame(&ico, 32), frame_of(&w, 0));
+        assert_eq!(pick_ico_frame(&ico, 16), frame_of(&w, 1));
+        assert_eq!(pick_ico_frame(&ico, 24), frame_of(&w, 3));
+        assert_eq!(pick_ico_frame(&ico, 64), frame_of(&w, 6));
+        // a width byte of 0 is 256
+        assert_eq!(pick_ico_frame(&ico, 256), frame_of(&w, 7));
+    }
+
+    #[test]
+    fn pick_ico_frame_without_the_size_takes_the_smallest_larger() {
+        let w = [32, 16, 20, 24, 40, 48, 64, 0];
+        let ico = fake_ico(&w);
+        assert_eq!(pick_ico_frame(&ico, 17), frame_of(&w, 2)); // 20
+        assert_eq!(pick_ico_frame(&ico, 25), frame_of(&w, 0)); // 32, not 40 or 48
+        assert_eq!(pick_ico_frame(&ico, 49), frame_of(&w, 6)); // 64
+        assert_eq!(pick_ico_frame(&ico, 65), frame_of(&w, 7)); // 256
+        assert_eq!(pick_ico_frame(&ico, 1), frame_of(&w, 1)); // 16
+    }
+
+    #[test]
+    fn pick_ico_frame_larger_than_every_frame_takes_the_largest() {
+        let w = [16, 48, 32];
+        let ico = fake_ico(&w);
+        assert_eq!(pick_ico_frame(&ico, 64), frame_of(&w, 1));
+        assert_eq!(pick_ico_frame(&ico, 4096), frame_of(&w, 1));
+        // a 256 frame (width byte 0) is the largest, not the smallest
+        let w = [16, 0, 32];
+        assert_eq!(pick_ico_frame(&fake_ico(&w), 512), frame_of(&w, 1));
+    }
+
+    #[test]
+    fn pick_ico_frame_of_the_same_size_twice_takes_the_first() {
+        let w = [16, 32, 32];
+        let ico = fake_ico(&w);
+        assert_eq!(pick_ico_frame(&ico, 32), frame_of(&w, 1));
+        assert_eq!(pick_ico_frame(&ico, 20), frame_of(&w, 1));
+    }
+
+    #[test]
+    fn pick_ico_frame_of_a_truncated_or_non_ico_buffer_is_none() {
+        let w = [16, 32];
+        let ico = fake_ico(&w);
+        assert_eq!(pick_ico_frame(&[], 32), None);
+        // a header cut short, then a directory cut short
+        assert_eq!(pick_ico_frame(&ico[..5], 32), None);
+        assert_eq!(pick_ico_frame(&ico[..6 + 16 + 3], 32), None);
+        // the last frame's bytes cut short
+        assert_eq!(pick_ico_frame(&ico[..ico.len() - 1], 32), None);
+        // no frames at all
+        assert_eq!(pick_ico_frame(&[0, 0, 1, 0, 0, 0], 32), None);
+        // a cursor (type 2), a reserved word that is not 0, a PNG, and text
+        let mut cursor = ico.clone();
+        cursor[2] = 2;
+        assert_eq!(pick_ico_frame(&cursor, 32), None);
+        let mut reserved = ico.clone();
+        reserved[0] = 1;
+        assert_eq!(pick_ico_frame(&reserved, 32), None);
+        assert_eq!(pick_ico_frame(b"\x89PNG\r\n\x1a\n and then some more bytes", 32), None);
+        assert_eq!(pick_ico_frame(b"not an icon at all, not even close", 32), None);
+        // a frame whose offset points past the buffer, however large
+        let mut far = ico.clone();
+        far[6 + 12..6 + 16].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert_eq!(pick_ico_frame(&far, 16), None);
+    }
+
+    #[test]
+    fn pick_ico_frame_reads_the_icon_the_exe_embeds() {
+        // every size gen-app-icon.mjs draws is in it, each frame a PNG
+        for size in [16u32, 20, 24, 32, 40, 48, 64, 96, 128, 256] {
+            let (at, len) = pick_ico_frame(SIDECAR_ICO, size).expect("a frame");
+            assert!(at + len <= SIDECAR_ICO.len());
+            assert_eq!(&SIDECAR_ICO[at..at + 8], b"\x89PNG\r\n\x1a\n");
+            // exact: the PNG's width is the size asked for
+            let width = u32::from_be_bytes(SIDECAR_ICO[at + 16..at + 20].try_into().unwrap());
+            assert_eq!(width, size);
+        }
+    }
+
+    // Windows takes a PNG frame of the ICO as it is: the sizes the taskbar and the title bar ask for, at 100% to 300%
+    #[cfg(windows)]
+    #[test]
+    fn windows_makes_an_icon_from_each_frame_of_the_sidecar_ico() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::DestroyIcon;
+        for size in [16, 20, 24, 32, 40, 48, 64, 96, 128, 256] {
+            let icon = make_icon(size).unwrap_or_else(|e| panic!("{size}px: {e}"));
+            assert!(unsafe { DestroyIcon(icon) } != 0, "{size}px");
+        }
+        // a size between two frames takes the next one up, and nothing is not a size
+        assert!(make_icon(30).is_ok());
+        assert!(make_icon(0).is_err());
+        assert!(make_icon(-1).is_err());
+    }
+
+    #[test]
+    fn sidecar_app_id_is_the_identifier_with_sidecar_on_the_end() {
+        assert_eq!(sidecar_app_id("dev.arc.app", false), "dev.arc.app.sidecar");
+        assert_eq!(sidecar_app_id("dev.arc.app", true), "dev.arc.app-dev.sidecar");
+    }
+
+    #[test]
+    fn sidecar_app_id_is_not_the_main_windows_id() {
+        // a dev build's main window keeps no id at all, and a packaged one's is the bare identifier
+        for dev in [false, true] {
+            assert_ne!(sidecar_app_id("dev.arc.app", dev), "dev.arc.app");
+        }
     }
 }

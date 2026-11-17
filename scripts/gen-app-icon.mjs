@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Writes src-tauri/icons/icon.ico, icon.icns and icon.png: the arcterm "t>" mark drawn pixel-exact at
 // every size Windows and macOS ask for, instead of downscaling public/logos/arcterm.png, which smears
-// pixel art at taskbar sizes.
+// pixel art at taskbar sizes. Also writes icon-sidecar.ico (Windows only): the same mark with a small screen badge,
+// the icon of the Sidecar window's own taskbar button (src-tauri/src/sidecar.rs embeds it).
 //
 // The geometry is measured from public/logos/arcterm.png (2048px): a #111 tile with circular corners
 // of radius 400/2048, and a white glyph on a 12x9 cell grid (one cell = 91 source px) whose blocks
@@ -18,9 +19,13 @@ import { deflateSync } from "node:zlib";
 const OUT = "src-tauri/icons/icon.ico";
 const ICNS_OUT = "src-tauri/icons/icon.icns";
 const PNG_OUT = "src-tauri/icons/icon.png";
+const SIDECAR_OUT = "src-tauri/icons/icon-sidecar.ico";
 const TILE = [0x11, 0x11, 0x11];
 const GLYPH = [0xff, 0xff, 0xff];
 const CORNER = 400 / 2048;
+const BADGE_GROUND = [0x4d, 0x80, 0xd1]; // accent-500
+// the screen: a 5x5 grid, a frame of four rows and a one-cell stand
+const BADGE_SCREEN = [[0, 0, 5, 1], [0, 1, 1, 2], [4, 1, 1, 2], [0, 3, 5, 1], [2, 4, 1, 1]];
 
 // [cx, cy, cw, ch] runs of cells: the t (stem, crossbar, hook, base), then the chevron's nine blocks
 const CELLS = [
@@ -74,7 +79,54 @@ const ICNS_TYPES = [
     ["ic10", 1024],
 ];
 
-function render(size, step, block, tile = size) {
+// how much of pixel (x, y) a rounded rect covers, supersampled 4x4
+function cover(x, y, rx, ry, w, h, r) {
+    let hit = 0;
+    for (let sy = 0; sy < 4; sy++) {
+        for (let sx = 0; sx < 4; sx++) {
+            const fx = x + (sx + 0.5) / 4 - rx;
+            const fy = y + (sy + 0.5) / 4 - ry;
+            if (fx < 0 || fy < 0 || fx > w || fy > h) continue;
+            const dx = Math.max(r - fx, fx - (w - r), 0);
+            const dy = Math.max(r - fy, fy - (h - r), 0);
+            if (dx * dx + dy * dy <= r * r) hit++;
+        }
+    }
+    return hit / 16;
+}
+
+// Sidecar's badge: a rounded square of 44% of the icon flush with its bottom-right corner, cut out of the tile by a
+// transparent gap, with the screen drawn white inside it
+function badge(px, size) {
+    const B = Math.round(size * 0.44);
+    const g = Math.max(1, Math.round(size / 24));
+    const at = size - B;
+    const r = B * 0.3;
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            const i = (y * size + x) * 4;
+            px[i + 3] = Math.round(px[i + 3] * (1 - cover(x, y, at - g, at - g, B + 2 * g, B + 2 * g, r + g)));
+            const c = cover(x, y, at, at, B, B, r);
+            if (c > 0) {
+                px.set(BADGE_GROUND, i);
+                px[i + 3] = Math.round(255 * c);
+            }
+        }
+    }
+    const step = Math.max(1, Math.floor((B * 0.62) / 5));
+    const o = at + Math.round((B - 5 * step) / 2);
+    for (const [cx, cy, cw, ch] of BADGE_SCREEN) {
+        for (let y = o + cy * step; y < o + (cy + ch) * step; y++) {
+            for (let x = o + cx * step; x < o + (cx + cw) * step; x++) {
+                const i = (y * size + x) * 4;
+                px.set(GLYPH, i);
+                px[i + 3] = 255;
+            }
+        }
+    }
+}
+
+function render(size, step, block, tile = size, withBadge = false) {
     const px = new Uint8Array(size * size * 4);
     const r = tile * CORNER;
     const inset = (size - tile) / 2;
@@ -113,6 +165,7 @@ function render(size, step, block, tile = size) {
             }
         }
     }
+    if (withBadge) badge(px, size);
     return px;
 }
 
@@ -224,6 +277,15 @@ const images = SIZES.map(([size, step, block]) => {
 });
 writeFileSync(OUT, ico(images));
 console.log(`wrote ${OUT}: ${SIZES.map(([s]) => s).join(", ")}px`);
+
+// Sidecar's icon: the same sizes in the same order, the badge drawn over each
+const sidecarImages = SIZES.map(([size, step, block]) => {
+    const data = png(size, render(size, step, block, size, true));
+    if (previewDir) writeFileSync(join(previewDir, `sidecar-${size}.png`), data);
+    return { size, data };
+});
+writeFileSync(SIDECAR_OUT, ico(sidecarImages));
+console.log(`wrote ${SIDECAR_OUT}: ${SIZES.map(([s]) => s).join(", ")}px`);
 
 const macIcons = new Map(
     MAC_SIZES.map(([size, tile, step, block]) => {

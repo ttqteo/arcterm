@@ -233,6 +233,33 @@ fn use_resource_window_icons(hwnd: isize) {
     }
 }
 
+// Sidecar's window takes its own icon, not the exe's: arcterm's mark with a small screen badge, which the exe
+// carries as bytes (sidecar::SIDECAR_ICO) rather than as a resource, since the resource is the exe's own icon. Same
+// as above: the frame made for each size Windows draws (the small icon in the title bar, the big one on the taskbar),
+// at the DPI of the window. CreateIconFromResourceEx takes a PNG frame as it is.
+#[cfg(windows)]
+fn use_sidecar_icons(hwnd: isize) {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SendMessageW, ICON_BIG, ICON_SMALL, SM_CXICON, SM_CXSMICON, WM_SETICON,
+    };
+
+    unsafe {
+        let hwnd = hwnd as HWND;
+        let dpi = GetDpiForWindow(hwnd);
+        for (which, metric) in [(ICON_BIG, SM_CXICON), (ICON_SMALL, SM_CXSMICON)] {
+            // the window keeps the icon for as long as it lives, so nothing frees it here
+            match sidecar::make_icon(GetSystemMetricsForDpi(metric, dpi)) {
+                Ok(icon) => {
+                    SendMessageW(hwnd, WM_SETICON, which as usize, icon as isize);
+                }
+                Err(why) => applog::log_line(&format!("[sidecar] {why}")),
+            }
+        }
+    }
+}
+
 // The NSIS installer stamps the bundle identifier as the AppUserModelID of the Start Menu shortcut,
 // but Tauri never gives the process one, so the taskbar saw two apps in one exe: launched from that
 // shortcut the window was `dev.arc.app`, launched from a pin made without it (a reinstall unpins and
@@ -241,44 +268,62 @@ fn use_resource_window_icons(hwnd: isize) {
 // moves a button that is already up when the id arrives. It goes on the window, not the process
 // (SetCurrentProcessExplicitAppUserModelID): Task Manager groups a process that claims a registered
 // app id by that id alone, so wavesrv, the agents and the WebView2 processes, which carry none, stood
-// apart from arcterm as their own rows. Packaged only: dev shares the identifier and must stay separate.
-// Returns the line to log on failure, as applog is not open yet when the window is built.
+// apart from arcterm as their own rows. The main window's call is packaged only: dev shares the identifier and must
+// stay separate (a dev main window keeps no id; the dev Sidecar window takes its own, below).
+//
+// Sidecar's window is its own taskbar button: sidecar.rs gives it its own id (`sidecar::sidecar_app_id`) with
+// `prevent_pinning`, which sets PKEY_AppUserModel_PreventPinning in the same store before the commit: no shortcut
+// launches Sidecar, so a pin of its button would relaunch arcterm, not Sidecar.
+//
+// Returns the line to log on failure, as applog is not open yet when the main window is built.
 //
 // The string must be COM memory (CoTaskMemAlloc, as InitPropVariantFromString makes it), cleared with
 // PropVariantClear after SetValue. Pointing pwszVal at a Rust Vec corrupted the heap (0xc0000374) and
 // every packaged launch died before applog opened, so the log showed nothing (build cdfa1afd4, 2026-11-09).
-// Dev builds compile this out, so only a packaged build exercises it: launch one after changing it.
-#[cfg(all(windows, not(debug_assertions)))]
-fn set_window_app_user_model_id(window: &tauri::WebviewWindow, identifier: &str) -> Option<String> {
+// The main window's call is compiled out of a dev build, so only a packaged build exercises it: launch one after
+// changing this.
+#[cfg(windows)]
+fn set_window_app_user_model_id(window: &tauri::WebviewWindow, id: &str, prevent_pinning: bool) -> Option<String> {
     use windows::core::PWSTR;
-    use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
+    use windows::Win32::Foundation::VARIANT_TRUE;
+    use windows::Win32::Storage::EnhancedStorage::{PKEY_AppUserModel_ID, PKEY_AppUserModel_PreventPinning};
     use windows::Win32::System::Com::CoTaskMemAlloc;
     use windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PROPVARIANT};
-    use windows::Win32::System::Variant::VT_LPWSTR;
+    use windows::Win32::System::Variant::{VT_BOOL, VT_LPWSTR};
     use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow};
 
     let hwnd = match window.hwnd() {
         Ok(h) => h,
-        Err(e) => return Some(format!("[tauri] no window handle for the app id: {}", e)),
+        Err(e) => return Some(format!("[tauri] no window handle for the app id {}: {}", id, e)),
     };
-    let wide: Vec<u16> = identifier.encode_utf16().chain(std::iter::once(0)).collect();
+    let wide: Vec<u16> = id.encode_utf16().chain(std::iter::once(0)).collect();
     let set = unsafe {
         let buf = CoTaskMemAlloc(wide.len() * std::mem::size_of::<u16>()) as *mut u16;
         if buf.is_null() {
-            return Some("[tauri] no memory for the window's app id".to_string());
+            return Some(format!("[tauri] no memory for the window's app id {}", id));
         }
         std::ptr::copy_nonoverlapping(wide.as_ptr(), buf, wide.len());
         let mut value = PROPVARIANT::default();
         let inner = &mut *value.Anonymous.Anonymous;
         inner.vt = VT_LPWSTR;
         inner.Anonymous.pwszVal = PWSTR(buf);
-        let set = SHGetPropertyStoreForWindow::<IPropertyStore>(hwnd)
-            .and_then(|store| store.SetValue(&PKEY_AppUserModel_ID, &value).and_then(|_| store.Commit()));
+        let set = SHGetPropertyStoreForWindow::<IPropertyStore>(hwnd).and_then(|store| {
+            store.SetValue(&PKEY_AppUserModel_ID, &value)?;
+            if prevent_pinning {
+                // a plain VT_BOOL holds no memory of its own: nothing to free
+                let mut yes = PROPVARIANT::default();
+                let inner = &mut *yes.Anonymous.Anonymous;
+                inner.vt = VT_BOOL;
+                inner.Anonymous.boolVal = VARIANT_TRUE;
+                store.SetValue(&PKEY_AppUserModel_PreventPinning, &yes)?;
+            }
+            store.Commit()
+        });
         // the store keeps its own copy; this frees ours
         let _ = PropVariantClear(&mut value);
         set
     };
-    set.err().map(|e| format!("[tauri] setting the window's app id failed: {}", e))
+    set.err().map(|e| format!("[tauri] setting the window's app id {} failed: {}", id, e))
 }
 
 // The bundle ships wsh version-named (e.g. wsh-0.14.5-windows.x64.exe), not a plain
@@ -490,7 +535,7 @@ fn main() {
             #[cfg(all(windows, not(debug_assertions)))]
             let app_id_note = app
                 .get_webview_window(MAIN_WINDOW_LABEL)
-                .and_then(|w| set_window_app_user_model_id(&w, &app.config().identifier));
+                .and_then(|w| set_window_app_user_model_id(&w, &app.config().identifier, false));
             macwindow::free_close_window_key();
             macwindow::watch_arrivals(app.handle());
             if let Some(w) = app.get_webview_window("main") {
