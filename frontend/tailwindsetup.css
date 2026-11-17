@@ -825,6 +825,11 @@ html[data-md-selection]::selection {
     padding: 0 3px;
     border-radius: 3px;
 }
+/* a code span the selection takes in (selectionpaint.ts): the band alone shows, one shade over the span and the words
+   beside it */
+.agent-md code[data-md-selected] {
+    background: transparent;
+}
 /* Defensive: MarkdownMessage renders fenced code through CodeBlock today, which emits no pre/code. */
 .agent-md pre code {
     color: inherit;

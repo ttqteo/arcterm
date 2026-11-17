@@ -89,6 +89,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Selecting text in Chat that runs over a `code` span highlights it in the same colour as the words around it, instead
+  of a second, darker shade where the span's own background showed through.
 - A run's Final verification shows a long output line whole, wrapped in its box, instead of cutting it off at the
   box's right edge.
 - Sidecar shows every agent that is asking you, even one in another project than the Cockpit's filter or in the
