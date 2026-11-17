@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The agent header keeps Split and Fullscreen in its More (⋯) menu, so it shows only More, Float and Close beside the
+  view control; Settings → Appearance → Agent header puts any of Split, Float and Fullscreen back in the header.
 - A Claude agent's header and a split cell's bar switch between Chat and Terminal with one icon button instead of
   the worded Chat | Terminal control; with a canvas, brainstorm or review open the header keeps the worded control.
 - Selected text in Chat has slightly rounded corners, so the highlight looks softer.

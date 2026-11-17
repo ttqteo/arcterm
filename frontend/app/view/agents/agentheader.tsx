@@ -77,6 +77,8 @@ import { fallAsleepLabel, useFallingAsleep } from "./fallasleepstore";
 import { isFinalStageId } from "./finalstage";
 import { floatModeAtom, toggleFloat } from "./floatstore";
 import { agentGridAtom, currentGrid, eligibleIds, gridProjects, openInSplit, removeFromGrid } from "./gridstore";
+import { inHeader } from "./headerbuttons";
+import { headerButtonsAtom } from "./headerbuttonsstore";
 import {
     foldsIntoMore,
     headerLayout,
@@ -577,6 +579,12 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     }, []);
     const { nameMax, clusterGap } = headerLayout(width);
     const folded = foldsIntoMore(width);
+    // Split, Float and Fullscreen each sit in the header or only in More (Settings → Appearance → Agent header); a narrow
+    // header folds them all into More
+    const headerButtons = useAtomValue(headerButtonsAtom);
+    const splitInHeader = inHeader(headerButtons, "split", folded);
+    const floatInHeader = inHeader(headerButtons, "float", folded);
+    const fullscreenInHeader = inHeader(headerButtons, "fullscreen", folded);
 
     // The visible way to a second cell: every other live agent and terminal of this agent's project (a split holds one
     // project's), and what to do with none (dragging a sidebar row onto the terminal works too, but nothing on screen
@@ -711,8 +719,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 click: () => forkFromChat(model, agent),
             });
         }
-        if (canSplit && folded) {
-            // a narrow header has no Split button: its menu is here instead
+        if (canSplit && !splitInHeader) {
+            // no Split button in the header (the setting, or a narrow header): its menu is here instead
             items.push({
                 label: "Split",
                 sublabel: splitShown ? `${cellCount} shown` : "show another agent beside this one",
@@ -749,8 +757,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 accel: "f",
                 click: () => globalStore.set(terminalFullscreenAtom, !fullscreen),
             });
-            if (folded) {
-                // a narrow header has no Float button either
+            if (!floatInHeader) {
+                // nor a Float button
                 items.push({
                     label: floating ? "Leave float" : "Float window",
                     icon: <PictureInPicture2 size={15} />,
@@ -1043,7 +1051,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         <Ellipsis size={15} strokeWidth={1.8} aria-hidden />
                     </button>
                 ) : null}
-                {canSplit && !folded ? (
+                {canSplit && splitInHeader ? (
                     <button
                         type="button"
                         data-agent-split
@@ -1094,49 +1102,49 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 ) : null}
                             </button>
                         ) : null}
-                        {/* a narrow header folds Float and Fullscreen into More */}
-                        {folded ? null : (
-                            <>
-                                <button
-                                    type="button"
-                                    data-agent-header-float
-                                    onClick={() => fireAndForget(() => toggleFloat(model))}
-                                    aria-pressed={floating}
-                                    title={`${floating ? "Leave float" : "Float window"} (${formatChordString("Shift:f")})`}
-                                    className={cn(ICON_BTN, floating && ICON_BTN_ON)}
+                        {/* each in the header or only in More, by the setting; a narrow header folds both into More */}
+                        {floatInHeader ? (
+                            <button
+                                type="button"
+                                data-agent-header-float
+                                onClick={() => fireAndForget(() => toggleFloat(model))}
+                                aria-pressed={floating}
+                                title={`${floating ? "Leave float" : "Float window"} (${formatChordString("Shift:f")})`}
+                                className={cn(ICON_BTN, floating && ICON_BTN_ON)}
+                            >
+                                <PictureInPicture2 size={15} strokeWidth={1.8} aria-hidden />
+                            </button>
+                        ) : null}
+                        {fullscreenInHeader ? (
+                            <motion.button
+                                type="button"
+                                onClick={() => globalStore.set(terminalFullscreenAtom, !fullscreen)}
+                                title={
+                                    fullscreen
+                                        ? `Exit fullscreen (${formatChordString("f")} or ${formatChordString("Escape")})`
+                                        : `Fullscreen terminal (${formatChordString("f")})`
+                                }
+                                aria-pressed={fullscreen}
+                                whileHover={{ scale: 1.06 }}
+                                whileTap={{ scale: 0.85 }}
+                                className={cn(ICON_BTN, fullscreen && ICON_BTN_ON, "active:scale-none")}
+                            >
+                                {/* re-keyed so each toggle replays the rotate-in, reinforcing the state flip */}
+                                <motion.span
+                                    key={fullscreen ? "min" : "max"}
+                                    initial={{ rotate: -90, opacity: 0 }}
+                                    animate={{ rotate: 0, opacity: 1 }}
+                                    transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
+                                    className="block"
                                 >
-                                    <PictureInPicture2 size={15} strokeWidth={1.8} aria-hidden />
-                                </button>
-                                <motion.button
-                                    type="button"
-                                    onClick={() => globalStore.set(terminalFullscreenAtom, !fullscreen)}
-                                    title={
-                                        fullscreen
-                                            ? `Exit fullscreen (${formatChordString("f")} or ${formatChordString("Escape")})`
-                                            : `Fullscreen terminal (${formatChordString("f")})`
-                                    }
-                                    aria-pressed={fullscreen}
-                                    whileHover={{ scale: 1.06 }}
-                                    whileTap={{ scale: 0.85 }}
-                                    className={cn(ICON_BTN, fullscreen && ICON_BTN_ON, "active:scale-none")}
-                                >
-                                    {/* re-keyed so each toggle replays the rotate-in, reinforcing the state flip */}
-                                    <motion.span
-                                        key={fullscreen ? "min" : "max"}
-                                        initial={{ rotate: -90, opacity: 0 }}
-                                        animate={{ rotate: 0, opacity: 1 }}
-                                        transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
-                                        className="block"
-                                    >
-                                        {fullscreen ? (
-                                            <Minimize2 size={15} strokeWidth={1.8} />
-                                        ) : (
-                                            <Maximize2 size={15} strokeWidth={1.8} />
-                                        )}
-                                    </motion.span>
-                                </motion.button>
-                            </>
-                        )}
+                                    {fullscreen ? (
+                                        <Minimize2 size={15} strokeWidth={1.8} />
+                                    ) : (
+                                        <Maximize2 size={15} strokeWidth={1.8} />
+                                    )}
+                                </motion.span>
+                            </motion.button>
+                        ) : null}
                         <button
                             type="button"
                             onClick={closeTerminal}

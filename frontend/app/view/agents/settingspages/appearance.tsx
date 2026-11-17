@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Settings > Appearance: the palette every surface derives from, its role colors, the interface and code
-// faces, what an agent row in the sidebar shows, and whether Chat folds a long reply. The terminal's own face is a Terminal setting; Jarvis and
+// faces, what an agent row in the sidebar shows, which buttons the agent header keeps out of More, and whether Chat
+// folds a long reply. The terminal's own face is a Terminal setting; Jarvis and
 // the office are Jarvis & Office.
 
 import { cn } from "@/util/util";
@@ -15,6 +16,8 @@ import { LightString } from "../christmaslights";
 import { useChristmasDecor } from "../christmasstore";
 import { MONO_FONTS, SANS_FONTS } from "../fonts";
 import { fontMonoAtom, fontSansAtom } from "../fontstore";
+import { HEADER_BUTTON_ROWS } from "../headerbuttons";
+import { headerButtonsAtom } from "../headerbuttonsstore";
 import { ROW_FIELD_ROWS } from "../rowfields";
 import { rowFieldsAtom } from "../rowfieldsstore";
 import { Segmented, SettingCard, SettingRow, Toggle } from "../settingsui";
@@ -37,6 +40,9 @@ export function AppearancePage() {
             </SettingCard>
             <SettingCard id="agentrows" label="Agent sidebar">
                 <AgentRowFieldRows />
+            </SettingCard>
+            <SettingCard id="agentheader" label="Agent header">
+                <HeaderButtonRows />
             </SettingCard>
             <SettingCard id="chat" label="Chat">
                 <ChatFoldRow />
@@ -218,6 +224,24 @@ function ColorRows() {
 }
 
 // One toggle per piece of meta an agent row shows (rowfields.ts); off hides it from the row only
+// on: the button sits in the agent header; off: only in its More (⋯) menu
+function HeaderButtonRows() {
+    const [buttons, setButton] = useAtom(headerButtonsAtom);
+    return (
+        <>
+            {HEADER_BUTTON_ROWS.map((r) => (
+                <SettingRow key={r.id} id={r.id}>
+                    <Toggle
+                        on={buttons[r.button]}
+                        onToggle={() => setButton(r.button, !buttons[r.button])}
+                        label={`${r.title} in the header`}
+                    />
+                </SettingRow>
+            ))}
+        </>
+    );
+}
+
 function AgentRowFieldRows() {
     const [fields, setField] = useAtom(rowFieldsAtom);
     return (

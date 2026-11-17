@@ -511,3 +511,7 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   Split two Claude agents → each cell bar has the same small icon. Asleep the icon is dimmed and does nothing. Attach a
   canvas → the header shows the worded Chat | Terminal | Canvas control again. Typecheck only, not tried in the app;
   the `agent-chat` CDP scenario was updated but not run (`chatswitch.tsx` `ChatToggle`).
+- [ ] (arcterm) Agent header buttons: open an agent → the header has More (⋯), Float and Close, no Split or Fullscreen
+  button; ⋯ lists Split (its submenu) and Fullscreen terminal. Settings → Appearance → Agent header: turn Split and
+  Fullscreen on → both buttons come back and Split leaves ⋯; turn Float off → its button goes and ⋯ lists Float window.
+  The `agent-header-redesign` scenario's step 6c covers it (`headerbuttons.ts`).

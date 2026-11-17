@@ -34,6 +34,8 @@ import type { AgentsViewModel } from "./agents";
 import { DEFAULT_STARTUP_SURFACE, startupSurfaceAtom } from "./cockpitprefsstore";
 import { DEFAULT_MONO, DEFAULT_SANS } from "./fonts";
 import { fontMonoAtom, fontSansAtom } from "./fontstore";
+import { DEFAULT_HEADER_BUTTONS, HEADER_BUTTON_ROWS } from "./headerbuttons";
+import { headerButtonsAtom } from "./headerbuttonsstore";
 import { RUNTIME_FLAGS, type Runtime } from "./launch";
 import { DEFAULT_REMEMBER_FLAGS, naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { DEFAULT_HOURS, sanitizeHours } from "./officebehavior";
@@ -123,6 +125,7 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
     const [flags, setFlags] = useAtom(naFlagsAtom);
     const [remember, setRemember] = useAtom(naRememberFlagsAtom);
     const [rowFields, setRowField] = useAtom(rowFieldsAtom);
+    const [headerButtons, setHeaderButton] = useAtom(headerButtonsAtom);
 
     const local: Record<string, LocalBinding> = {
         "appearance.theme": {
@@ -187,6 +190,12 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
             revert: () => setRemember(DEFAULT_REMEMBER_FLAGS),
         },
     };
+    for (const r of HEADER_BUTTON_ROWS) {
+        local[r.id] = {
+            changed: headerButtons[r.button] !== DEFAULT_HEADER_BUTTONS[r.button],
+            revert: () => setHeaderButton(r.button, DEFAULT_HEADER_BUTTONS[r.button]),
+        };
+    }
     for (const r of ROW_FIELD_ROWS) {
         local[r.id] = {
             changed: rowFields[r.field] !== DEFAULT_ROW_FIELDS[r.field],
