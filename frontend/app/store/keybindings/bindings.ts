@@ -3,8 +3,8 @@
 
 import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
 import { peekClickLabel } from "@/app/cockpit/ctrlheld";
-import { openSidecar } from "@/app/cockpit/sidecaropen";
 import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
+import { openSidecar } from "@/app/cockpit/sidecaropen";
 import { escapeMenusOpenAtom } from "@/app/hook/useEscapeClose";
 import { anyModalOpen } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -17,10 +17,6 @@ import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agen
 import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
 import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { setAgentView, type AgentView } from "@/app/view/agents/agentview";
-import { cellView, cellViewOptions, chatCapable, nextCellView } from "@/app/view/agents/chatmode";
-import { focusChatBox, hasChatBox, interruptChat } from "@/app/view/agents/chatinsert";
-import { CHAT_JUMP_KEYS, jumpChatToLatest } from "@/app/view/agents/chatjump";
-import { getChatMode, selectCellView } from "@/app/view/agents/chatmodestore";
 import {
     checkMain,
     checkReview,
@@ -34,8 +30,6 @@ import {
     type ReviewRow,
 } from "@/app/view/agents/brainstormmodel";
 import { sendBrainstorm } from "@/app/view/agents/brainstormsend";
-import { councilChatNavAtom } from "@/app/view/agents/councilchatnav";
-import { moveIdea } from "@/app/view/agents/councilchatmodel";
 import {
     focusedBrainstorm,
     moveReviewCursor,
@@ -60,9 +54,12 @@ import {
 import { paneState } from "@/app/view/agents/canvasmodel";
 import { focusedCanvas, focusedCanvasMode, setMarking, stepCanvasBoard } from "@/app/view/agents/canvasstore";
 import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
+import { focusChatBox, hasChatBox, interruptChat } from "@/app/view/agents/chatinsert";
+import { CHAT_JUMP_KEYS, jumpChatToLatest } from "@/app/view/agents/chatjump";
+import { cellView, cellViewOptions, chatCapable, nextCellView } from "@/app/view/agents/chatmode";
+import { getChatMode, selectCellView } from "@/app/view/agents/chatmodestore";
 import { sendPendingComments } from "@/app/view/agents/commentsend";
 import { sideJumpTarget, type CompareRow } from "@/app/view/agents/comparerows";
-import { canDrive } from "@/app/view/agents/consumers";
 import {
     compareOnAtom,
     compareRefsAtom,
@@ -71,6 +68,9 @@ import {
     setCompareRefs,
     swapCompareRefs,
 } from "@/app/view/agents/comparestore";
+import { canDrive } from "@/app/view/agents/consumers";
+import { moveIdea } from "@/app/view/agents/councilchatmodel";
+import { councilChatNavAtom } from "@/app/view/agents/councilchatnav";
 import { commentOnSelection } from "@/app/view/agents/diffcommentlayer";
 import { panelFoldedAtom, panelTabAtom } from "@/app/view/agents/difflayout";
 import { gotoChange } from "@/app/view/agents/diffnav";
@@ -92,7 +92,6 @@ import { anyFilterActive } from "@/app/view/agents/historyquery";
 import { toggleBandPart } from "@/app/view/agents/initiativebandstore";
 import { initiativePopoverAtom, openInitiativeLinkPicker } from "@/app/view/agents/initiativepopover";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
-import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { canApply, cardKeyAction, isPending, memoryCard, stepChange, stepQueue } from "@/app/view/agents/memorymodel";
 import {
@@ -105,6 +104,7 @@ import {
     shownCard,
     type MemVerdict,
 } from "@/app/view/agents/memorystore";
+import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { canRequest } from "@/app/view/agents/proseanchor";
 import {
     dockedTerminalAtom,
@@ -132,6 +132,7 @@ import { toggleBlame } from "@/app/view/code/codeblamestore";
 import { projectComments } from "@/app/view/code/codereview";
 import { codeReviewsAtom, codeReviewSendOpenAtom, startComment } from "@/app/view/code/codereviewstore";
 import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
+import { toggleSide } from "@/app/view/code/codeside";
 import {
     caretWord,
     codeCursorAtom,
@@ -152,15 +153,14 @@ import {
     startRename,
     toggleDir,
 } from "@/app/view/code/codestore";
-import { toggleSide } from "@/app/view/code/codeside";
 import { treeKeyAction, type TreeKey } from "@/app/view/code/codetreekeys";
 import { toggleCodeWrap, toggleWrap } from "@/app/view/code/codewrap";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { COMPOSER_FIELDS, COMPOSER_SELECTOR } from "@/app/view/jarvis/composerkey";
-import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
-import { chunkViewOpenAtom, initiativeSheetOpenAtom, sheetChunkMoveAtom } from "@/app/view/jarvis/initiativesheetstore";
 import { councilSheetAtom } from "@/app/view/jarvis/councilsheetstore";
 import { togglePin } from "@/app/view/jarvis/effortstore";
+import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
+import { chunkViewOpenAtom, initiativeSheetOpenAtom, sheetChunkMoveAtom } from "@/app/view/jarvis/initiativesheetstore";
 import {
     briefCursorInitiativeAtom,
     briefPeekRecordAtom,
@@ -1429,9 +1429,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             return false;
         }
         const agent = chatAgent();
-        return (
-            agent != null && agent.state === "working" && slotView() === "terminal" && getChatMode(agent) === "chat"
-        );
+        return agent != null && agent.state === "working" && slotView() === "terminal" && getChatMode(agent) === "chat";
     };
     const redrawFocused = () => {
         const id = focusId();
@@ -2005,8 +2003,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "Mod:r",
             group: "Agent",
             label: "Redraw the terminal",
-            when: (ctx) =>
-                (isMacOS() || !ctx.editable) && ctx.surface === "agent" && !ctx.modalOpen && centerAtRest(),
+            when: (ctx) => (isMacOS() || !ctx.editable) && ctx.surface === "agent" && !ctx.modalOpen && centerAtRest(),
             run: () => redrawFocused(),
         },
         {

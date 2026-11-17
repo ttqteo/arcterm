@@ -26,11 +26,11 @@ import { EndFinalForm } from "@/app/view/agents/endfinalform";
 import { RerunFinalStage } from "@/app/view/agents/finalstageviews";
 import { resumeRun } from "@/app/view/agents/runactions";
 import { AskCard, CancelRunButton, CancelSurvivorsCard } from "@/app/view/agents/runcards";
-import { RunMenu } from "@/app/view/agents/runmenu";
 import { needsEvidenceSeal, verifCounts } from "@/app/view/agents/runcompletion";
 import { useRunEvents } from "@/app/view/agents/runeventstore";
 import { RunGoal } from "@/app/view/agents/rungoalview";
 import { leadPhaseFailed, runTitle } from "@/app/view/agents/runlineage";
+import { RunMenu } from "@/app/view/agents/runmenu";
 import {
     cancelSurvivors,
     canResume,
@@ -39,7 +39,6 @@ import {
     isTerminal,
     leadAsker,
     leadWorker,
-    liveWorkers,
 } from "@/app/view/agents/runmodel";
 import { openRunOrigin, useRunOrigin } from "@/app/view/agents/runoriginstore";
 import { runStage } from "@/app/view/agents/runstage";
@@ -57,8 +56,8 @@ import { openTaskWorker, resolveTaskWorker, type TaskWorkerView } from "@/app/vi
 import { groupEvents, railRows, type EventGroup } from "@/app/view/orchestrate/timelinegroups";
 import { groupTime, SpineGlyph } from "@/app/view/orchestrate/timelinerail";
 import { cn, fireAndForget } from "@/util/util";
-import { atom, useAtomValue, useSetAtom, type Atom } from "jotai";
-import { ArrowUpRight, Check, ChevronDown, ChevronRight, CornerDownRight } from "lucide-react";
+import { atom, useAtomValue, type Atom } from "jotai";
+import { ArrowUpRight, ChevronDown, ChevronRight, CornerDownRight } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { RunComposer } from "./briefcomposer";
 import { RunSettingsPanel, SHEET_BTN, type WaitingQuestion } from "./briefrunsheet";
@@ -71,7 +70,6 @@ import { openOrPeekAddress } from "./openref";
 import { RunReportView } from "./runreportview";
 import type { LinkedGroupRead } from "./runsettings";
 import {
-    configLine,
     doneBody,
     finalStageEndable,
     landDock,
