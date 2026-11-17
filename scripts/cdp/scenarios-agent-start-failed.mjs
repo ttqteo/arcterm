@@ -17,9 +17,12 @@ const REFUSAL_WAIT_MS = 10_000;
 // the app's own module instances, and the app's one AgentsViewModel
 const LIB = `
     const mod = async (path) => {
-        const names = performance.getEntriesByType("resource").map((e) => e.name.split("?")[0]);
-        const hit = names.filter((n) => n.endsWith("/" + path)).pop();
-        const base = names.find((n) => n.endsWith("/app/store/jotaiStore.ts"));
+        // the url as loaded, ?t= stamp kept: a module Vite hot-updated before the page loaded is served stamped, and
+        // importing it bare loads a second instance whose atoms the app never reads
+        const names = performance.getEntriesByType("resource").map((e) => e.name);
+        const bare = (n) => n.split("?")[0];
+        const hit = names.filter((n) => bare(n).endsWith("/" + path)).pop();
+        const base = names.map(bare).find((n) => n.endsWith("/app/store/jotaiStore.ts"));
         if (hit == null && base == null) throw new Error("no app module url for " + path);
         return import(hit ?? base.replace("app/store/jotaiStore.ts", path));
     };
