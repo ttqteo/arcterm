@@ -58,6 +58,21 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   or Restart from its menu says so, rather than the click seeming to do nothing.
 - A terminal on another machine is no longer marked as in a removed folder because a local folder with the same path
   was deleted.
+### Added
+
+- The Task box of New agent works like Chat's box: `@` names an agent, a run, a council, a past conversation or an
+  initiative as well as a file, `/` lists Claude Code's commands, and any file can be attached (paste, drop, the
+  paperclip or Cmd+U / Ctrl+U), not only images.
+- A Jarvis theme in Settings → Appearance: a deep navy ground, thin cyan-tinted edges and a cyan accent, like a
+  heads-up display.
+
+### Changed
+
+- Clicking a file in the card that ends a turn in Chat opens it in the rail beside the terminal, in a tab of its own;
+  See all still opens the Diff.
+- Switching back to an agent in Chat shows a skeleton while it reads what the agent wrote meanwhile, then draws the
+  conversation at once, instead of opening each of those rows one by one.
+- Chat no longer draws commit suggestion cards: an agent that has to ask before committing asks in plain words again.
 
 ## 1.3.0 — 2026-11-17
 

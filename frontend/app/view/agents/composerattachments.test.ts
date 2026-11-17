@@ -1,15 +1,22 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
     appendAttachments,
     attachmentBlocker,
     attachmentsFromPaths,
     classifyKind,
+    clearDraftAttachments,
+    composeLaunchTask,
+    draftAttachments,
+    FILES_HEADER,
     isOversize,
     MAX_ATTACHMENT_BYTES,
     messageWithAttachments,
+    patchDraftAttachment,
+    readyPaths,
+    setDraftAttachments,
     type Attachment,
 } from "./composerattachments";
 import { splitAttachedImages } from "./launcherimages";
@@ -136,5 +143,65 @@ describe("attachmentBlocker", () => {
         expect(attachmentBlocker([att({ status: "error", path: undefined })])).toBe(
             "Retry or remove the failed attachment"
         );
+    });
+});
+
+describe("readyPaths", () => {
+    it("splits the ready ones into images and other files, leaving out uploads in flight and failures", () => {
+        expect(
+            readyPaths([
+                att({ id: "1", kind: "image", path: "/k/a.png" }),
+                att({ id: "2", path: "/k/notes.md" }),
+                att({ id: "3", kind: "image", status: "uploading", path: undefined }),
+                att({ id: "4", status: "error", path: undefined }),
+            ])
+        ).toEqual({ images: ["/k/a.png"], files: ["/k/notes.md"] });
+    });
+});
+
+describe("composeLaunchTask", () => {
+    it("puts the files block under the task and the images block last", () => {
+        const got = composeLaunchTask("claude", " fix it ", ["/k/a.png"], ["/k/notes.md"], false);
+        expect(got.extraArgs).toEqual([]);
+        expect(got.task).toBe(`fix it\n\n${FILES_HEADER}\n- /k/notes.md\n\nAttached images:\n- /k/a.png`);
+        // the bubble still draws the images: their block is the prompt's last lines
+        expect(splitAttachedImages(got.task).paths).toEqual(["/k/a.png"]);
+    });
+    it("gives codex starting fresh its images as --image, the files staying in the prompt", () => {
+        const got = composeLaunchTask("codex", "look", ["/k/a.png"], ["/k/notes.md"], false);
+        expect(got.extraArgs).toEqual(["--image", "/k/a.png"]);
+        expect(got.task).toBe(`look\n\n${FILES_HEADER}\n- /k/notes.md`);
+    });
+    it("leaves a task with nothing attached as typed, trimmed", () => {
+        expect(composeLaunchTask("claude", " hi ", [], [], false)).toEqual({ task: "hi", extraArgs: [] });
+    });
+});
+
+describe("a box's draft read from outside it", () => {
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    afterEach(() => {
+        clearDraftAttachments("k");
+        revoke.mockClear();
+    });
+    it("is set, patched and read by key", () => {
+        setDraftAttachments("k", [att({ id: "a", kind: "image", path: "/k/a.png" })]);
+        patchDraftAttachment("k", "a", { previewUrl: "blob:a" });
+        expect(draftAttachments("k")).toEqual([
+            att({ id: "a", kind: "image", path: "/k/a.png", previewUrl: "blob:a" }),
+        ]);
+        expect(draftAttachments("other")).toEqual([]);
+    });
+    it("leaves a chip removed meanwhile gone when a late patch lands", () => {
+        setDraftAttachments("k", [att({ id: "a" })]);
+        clearDraftAttachments("k");
+        patchDraftAttachment("k", "a", { previewUrl: "blob:a" });
+        expect(draftAttachments("k")).toEqual([]);
+    });
+    it("frees the previews of what it held when cleared or replaced", () => {
+        setDraftAttachments("k", [att({ id: "a", previewUrl: "blob:a" })]);
+        setDraftAttachments("k", [att({ id: "b", previewUrl: "blob:b" })]);
+        expect(revoke.mock.calls.map((c) => c[0])).toEqual(["blob:a"]);
+        clearDraftAttachments("k");
+        expect(revoke.mock.calls.map((c) => c[0])).toEqual(["blob:a", "blob:b"]);
     });
 });

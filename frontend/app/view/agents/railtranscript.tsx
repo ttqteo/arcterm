@@ -90,6 +90,9 @@ export function useTranscriptWindow(path: string, runtime: string | undefined) {
     const [view, setView] = useState<View | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [noEarlier, setNoEarlier] = useState(false);
+    // the transcript whose first read since it was shown has landed (or failed): until then a kept window is behind on
+    // what the agent wrote meanwhile, and Chat draws a skeleton rather than open those rows one by one as they catch up
+    const [caughtUp, setCaughtUp] = useState<string | null>(null);
     const viewRef = useRef<View | null>(null);
     const ctx = useRef({ path, runtime });
     ctx.current = { path, runtime };
@@ -345,7 +348,11 @@ export function useTranscriptWindow(path: string, runtime: string | undefined) {
         lastReadAt.current = null;
         if (path) {
             // a kept window reads only the lines written since it was left (a rewritten file reads the tail again)
-            void (kept != null ? readAppend(mine) : readTail(mine));
+            void (kept != null ? readAppend(mine) : readTail(mine)).finally(() => {
+                if (mine === token.current) {
+                    setCaughtUp(path);
+                }
+            });
         }
         return () => {
             token.current += 1;
@@ -369,6 +376,8 @@ export function useTranscriptWindow(path: string, runtime: string | undefined) {
         // the window belongs to its own transcript: right after a switch the old one is not shown, the new one's kept
         // window is (until the effect above has put it in state), so a switch back draws no skeleton frame
         view: view != null && view.path === path ? view : path ? (viewCache.get(path, runtime) ?? null) : null,
+        // the view shown is a kept window still reading what was written since it was left
+        catchingUp: path !== "" && caughtUp !== path,
         error,
         noEarlier,
         loadEarlier,

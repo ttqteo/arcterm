@@ -26,14 +26,20 @@ import type {
     BtwAnswer,
     ShellResult,
 } from "./agentsviewmodel";
-import { hasCardBlock, splitCardBlocks, type CommitSuggestion } from "./chatcommit";
 import { councilStartAnchor, type CouncilAnchor } from "./chatcouncil";
 import { isDocReviewAsk } from "./chatdocreview";
 import { isHandoffAsk } from "./chathandoff";
 import { sentSleepRuns, sentSwitch, SWITCH_NOTE } from "./chatinitiative";
 import { runStartAnchor, type RunAnchor } from "./chatruncards";
 import { runShell, runStatus } from "./chatsleepbash";
-import { pairReviewer, verdictFromFindings, type ReviewerCall, type Verdict } from "./chatverdict";
+import {
+    pairReviewer,
+    REVIEW_LANG,
+    splitReviewBlocks,
+    verdictFromFindings,
+    type ReviewerCall,
+    type Verdict,
+} from "./chatverdict";
 import { groupCompact, workOf, type CompactItem, type WorkItem } from "./compacttimeline";
 import { opensPanel } from "./slashcommands";
 import type { TurnStats } from "./transcriptprojection";
@@ -49,8 +55,6 @@ export type AgentPart =
     // append. A reviewer's verdict: an ```arc-review block cut out of a reply, or a `ReportFindings` call (`reviewer`: the
     // Agent / Task call a block judges, when one pairs)
     | { kind: "verdict"; key: string; verdict: Verdict; reviewer?: ReviewerCall }
-    // a commit suggestion: an ```arc-commit block cut out of a reply (chatcommit.ts), keyed `commit:<entry index>`
-    | { kind: "commit"; key: string; commit: CommitSuggestion }
     // the plan handoff: an AskUserQuestion with the header `Handoff`, answered or not (`question.picked` / `typed`)
     | { kind: "handoff"; key: string; question: AskQuestionDetail }
     // a `wsh runs start` call's run: where that run's card sits (the call itself stays a tool line in the work before it)
@@ -243,8 +247,8 @@ type VerdictPart = Extract<AgentPart, { kind: "verdict" }>;
  * messages, a sent card or a marker joins one group; a marker splits the agent's side in two, since it is a point in the
  * conversation of its own.
  *
- * A group is cut at five moments, each a part of its own: a reply holding an ```arc-review or ```arc-commit block (the
- * prose before and after it kept as parts), a `ReportFindings` call, a `Handoff` ask and a Doc review ask (all cut out of the stretch of
+ * A group is cut at five moments, each a part of its own: a reply holding an ```arc-review block (the prose before and
+ * after it kept as parts), a `ReportFindings` call, a `Handoff` ask and a Doc review ask (all cut out of the stretch of
  * tools they sit in, no tool line left for them), and a `wsh runs start` or `wsh council start` call whose output names a
  * run or a council (the stretch is split after the call, which stays a tool line).
  */
@@ -307,32 +311,21 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
             case "message": {
                 const uuid = recordUuid(entries[item.index]);
                 const parts = agentParts(item.index);
-                // a reply with no card block is kept as it was written (the split trims the prose around a block)
-                const pieces = hasCardBlock(item.text) ? splitCardBlocks(item.text) : [];
-                if (!pieces.some((p) => p.kind !== "prose")) {
+                // a reply with no review block is kept as it was written (the split trims the prose around a block)
+                const pieces = item.text.includes(REVIEW_LANG) ? splitReviewBlocks(item.text) : [];
+                const blocks = pieces.filter((p) => p.kind === "verdict").length;
+                if (blocks === 0) {
                     parts.push({ kind: "prose", text: item.text, ...(uuid != null ? { uuid } : {}) });
                     break;
                 }
-                // each kind counts its own blocks: a reply's one verdict keeps the key `verdict:<index>` beside a commit
-                const total = { verdict: 0, commit: 0 };
-                for (const p of pieces) {
-                    if (p.kind !== "prose") {
-                        total[p.kind]++;
-                    }
-                }
-                const seen = { verdict: 0, commit: 0 };
+                let n = 0;
                 for (const piece of pieces) {
                     if (piece.kind === "prose") {
                         parts.push({ kind: "prose", text: piece.text, ...(uuid != null ? { uuid } : {}) });
                         continue;
                     }
-                    const n = seen[piece.kind]++;
-                    const key =
-                        total[piece.kind] > 1 ? `${piece.kind}:${item.index}.${n}` : `${piece.kind}:${item.index}`;
-                    if (piece.kind === "commit") {
-                        parts.push({ kind: "commit", key, commit: piece.commit });
-                        continue;
-                    }
+                    const key = blocks > 1 ? `verdict:${item.index}.${n}` : `verdict:${item.index}`;
+                    n++;
                     const part: VerdictPart = { kind: "verdict", key, verdict: piece.verdict };
                     parts.push(part);
                     unpaired.push({ part, blockIndex: item.index, calls });
@@ -413,15 +406,15 @@ export function chatItems(entries: AgentEntry[]): ChatItem[] {
 }
 
 /**
- * Pure: whether the agent went on after the verdict or commit suggestion at `parts[p]` of an agent item, which is when its
- * card stops waiting on you and folds. It did when it wrote another reply or made another call after the entry the verdict came from (the key
+ * Pure: whether the agent went on after the verdict at `parts[p]` of an agent item, which is when its card stops waiting
+ * on you and folds. It did when it wrote another reply or made another call after the entry the verdict came from (the key
  * holds that entry's index), or is writing one now (a `live` prose part after it). The closing words of the reply that
  * holds a block ("Tell me which of these to fix.") are the same entry, so they are no sign of it: the card waits while
  * nothing but those follows it. `entries` are the ones `chatItems` was given.
  */
 export function agentWentOn(entries: readonly AgentEntry[], parts: readonly AgentPart[], p: number): boolean {
     const part = parts[p];
-    if (part?.kind !== "verdict" && part?.kind !== "commit") {
+    if (part?.kind !== "verdict") {
         return false;
     }
     if (parts.slice(p + 1).some((q) => q.kind === "prose" && q.live)) {

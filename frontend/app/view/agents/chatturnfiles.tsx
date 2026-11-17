@@ -3,9 +3,10 @@
 //
 // The card at a finished turn's end in Chat, as Claude Desktop's "Changed N files": every file the turn's edits changed
 // (chatsteps.ts turnFiles), its name bright, its folder muted and its +N −N summed over the turn. Two files or more: an
-// "Edited N files" header, a row each, and See all with the turn's totals; one file: its row alone. A row opens the Diff on
-// that file, See all on the agent's working tree; with nothing to open them in (an ended session's transcript) the rows are
-// plain text and See all is left out. The Diff shows the working tree now, the card's numbers are the turn's. Design:
+// "Edited N files" header, a row each, and See all with the turn's totals; one file: its row alone. A row opens that file
+// in the rail, in a tab of its own, See all the Diff on the agent's working tree; with nothing to open them in (an ended
+// session's transcript) the rows are plain text and See all is left out. The Diff shows the working tree now, the card's
+// numbers are the turn's. Design:
 // .superpowers/design/chat-compact-work/project/Calm.dc.html (bottom).
 
 import { cn } from "@/util/util";
@@ -94,7 +95,7 @@ export function ChatTurnFiles({
     files: TurnFile[];
     // the agent's working directory, which a row's folder is said relative to
     cwd?: string | null;
-    // opens the Diff on a file, or on the whole working tree with none; left out where there is no Diff to open
+    // opens a file in the rail, or the Diff on the whole working tree with none; left out where there is nowhere to open
     onOpen?: (path?: string) => void;
 }) {
     const open = (path?: string) => (onOpen != null ? () => onOpen(path) : undefined);

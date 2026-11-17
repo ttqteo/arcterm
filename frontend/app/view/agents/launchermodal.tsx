@@ -49,6 +49,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { centerModeAtom, overviewProjectAtom, showCouncilSetup, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { channelsAtom, primeChannels } from "./channelsstore";
+import type { EditorLike } from "./chateditor";
 import { RailSantaHat } from "./christmashat";
 import {
     accountLaunchMeta,
@@ -58,6 +59,13 @@ import {
     projectLaunchAccount,
     type AccountChoice,
 } from "./claudeaccount";
+import {
+    attachmentBlocker,
+    attachmentDraftsAtom,
+    composeLaunchTask,
+    readyPaths,
+    type Attachment,
+} from "./composerattachments";
 import { councilAtom, councilListAtom, councilSelAtom, councilSetupProjectAtom, councilViewAtom } from "./councilstore";
 import { harnessesAtom, harnessPreferenceAtom, resolveDefaultRuntime } from "./harnessstore";
 import {
@@ -97,7 +105,6 @@ import {
     type StartRowId,
 } from "./launcher";
 import { AgentFields, useProjectBranches } from "./launcheragentfields";
-import { composeTaskWithImages, imagesHoldLaunch } from "./launcherimages";
 import {
     createPeekLoader,
     PEEK_COUNT,
@@ -128,6 +135,7 @@ import {
     closeLauncher,
     endLauncherDraft,
     endLauncherLaunch,
+    LAUNCHER_DRAFT,
     launcherAccountAtom,
     launcherAccountMenuAtom,
     launcherBrainstormAtom,
@@ -137,7 +145,6 @@ import {
     launcherCommandAtom,
     launcherFlagMenuAtom,
     launcherGoalAtom,
-    launcherImagesAtom,
     launcherKindAtom,
     launcherOwnProjectAtom,
     launcherPrefillAtom,
@@ -210,8 +217,15 @@ import { useWorkerCapacity } from "./workercapacitystore";
 
 // Tab's stops, in DOM order; the close button is tabIndex -1 because Esc does the same, and the Task row's buttons and
 // the draft's Clear are tabIndex -1 because they are for the pointer
+const NO_ATTACHMENTS: Attachment[] = [];
+
+// the Task box is the editor's contenteditable (promptbox.ts), not a textarea
 const FOCUSABLE =
-    'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), textarea:not([disabled]), [tabindex="0"]';
+    'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), textarea:not([disabled]), [tabindex="0"], [contenteditable="true"]';
+
+// the Task box's editable element (or a node in it): the editor's handle is no DOM element to compare a target with
+const inTaskBox = (target: EventTarget): boolean =>
+    target instanceof Element && target.closest("[data-launcher-task]") != null;
 
 // the resume step's agent and project in the title, each a way back to its column
 const CRUMB =
@@ -380,9 +394,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const branchPick = useAtomValue(launcherBranchAtom);
     const sessions = useAtomValue(launcherSessionsAtom);
     const resumeId = useAtomValue(launcherResumeAtom);
+    // the Task box's chips (promptbox.ts), kept under LAUNCHER_DRAFT so a close keeps them and the launch reads them here
+    const attachments = useAtomValue(attachmentDraftsAtom).get(LAUNCHER_DRAFT) ?? NO_ATTACHMENTS;
     const searchedSession = useAtomValue(launcherSearchedAtom);
     const sessionSearchBox = useAtomValue(launcherSessionSearchAtom);
-    const images = useAtomValue(launcherImagesAtom);
     const commands = useAtomValue(launcherCommandAtom);
     const naFlags = useAtomValue(naFlagsAtom);
     const restored = useAtomValue(launcherRestoredAtom);
@@ -418,7 +433,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const projectRef = useRef<HTMLDivElement>(null);
     const toolListRef = useRef<HTMLDivElement>(null);
     const goalRef = useRef<HTMLTextAreaElement>(null);
-    const taskRef = useRef<HTMLTextAreaElement>(null);
+    const taskRef = useRef<EditorLike>(null);
     const planRef = useRef<HTMLInputElement>(null);
 
     const startList = useMemo(() => startRows(harnesses), [harnesses]);
@@ -479,12 +494,16 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const landingBranch = chosenBranch === currentBranch ? deriveBranch(currentBranch, branchNames) : chosenBranch;
     // only a tool's footer names the branch; an agent's names the account alone
     const branchNote = isTool && !toolAtHome && currentBranch ? `on ${currentBranch}` : "";
-    // a run's own blocker comes first; After with no run ticked has nothing to wait for (launcherwhen.ts)
+    // a run's own blocker comes first; After with no run ticked has nothing to wait for (launcherwhen.ts). An agent waits
+    // on a file still being attached, and on one that failed, as Chat's Send does: sending past it would drop the file
+    // without a word. A terminal sends no task, so what a pick of an agent left in the box never holds it.
     const blocker = isRun
         ? (launchBlocker({ shape, start, goal, planPath, preview }) ?? startBlocker(when))
         : isTool
           ? toolBlocker(tool, toolLoad)
-          : null;
+          : isAgent && runtimeShowsTask(runtime)
+            ? attachmentBlocker(attachments)
+            : null;
     const activeAccount = useAtomValue(activeClaudeAccountAtom);
     const claudeIdentity = useAtomValue(claudeIdentityAtom);
     const registry = useAtomValue(projectsAtom);
@@ -547,10 +566,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 ? newAgentRamWarning(cap, "run", "worker")
                 : null
             : newAgentRamWarning(cap, runtime);
-    // an image still being written has no path to send yet; one that failed does not hold the launch, nor does any for
-    // a terminal, which sends no task
-    const imagesWriting = isAgent && imagesHoldLaunch(runtime, images);
-    const primaryDisabled = where == null || blocker != null || busy || imagesWriting;
+    const primaryDisabled = where == null || blocker != null || busy;
     // the list the third column holds, which → from Project steps into
     const thirdList: "resume" | "tools" | null =
         isAgent && runtime !== "terminal" && choices.length > 0 ? "resume" : isTool ? "tools" : null;
@@ -930,11 +946,14 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         if (!beginLauncherLaunch()) {
             return;
         }
-        // the task with its images: codex starting fresh takes them as --image after the prompt, the rest as a block
-        const { task: fullTask, extraArgs } = composeTaskWithImages(
+        // the task with its attachments: files as the "read these files" block; images as codex starting fresh takes
+        // them (--image after the prompt), else as the "Attached images:" block. A terminal sends none of it.
+        const riding = runtimeShowsTask(runtime) ? readyPaths(attachments) : { images: [], files: [] };
+        const { task: fullTask, extraArgs } = composeLaunchTask(
             runtime,
             runtimeShowsTask(runtime) ? task : "",
-            images.flatMap((i) => (i.path ? [i.path] : [])),
+            riding.images,
+            riding.files,
             resume != null
         );
         // a resume replaces the command (and, for pi, the argv and the transcript to preflight)
@@ -982,8 +1001,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     };
 
     // Hold the agent: what the dialog holds (its project, command, branch, task and images) becomes a held agent, which
-    // the centre then shows as a launched agent would be shown. The images ride as their files under ~/.arc/attachments,
-    // which outlive the dialog; one that failed to write is left.
+    // the centre then shows as a launched agent would be shown. The attachments ride as their paths: a pasted or dropped
+    // file's kept copy under ~/.arc/attachments, which outlives the dialog, or a picked file where it is.
     const holdAgentRow = async (p: ProjectRow) => {
         let branch: string | undefined;
         if (wantsWorktree) {
@@ -1020,7 +1039,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                       }
                     : {}),
                 task,
-                images: images.flatMap((i) => (i.path ? [i.path] : [])),
+                ...readyPaths(attachments),
                 reason: machineBusy,
             });
             if (!globalStore.get(naRememberFlagsAtom)) {
@@ -1156,8 +1175,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         if (where == null) {
             return;
         }
-        // Enter and Mod+Enter reach here as well as the button, which is disabled while an image is still writing
-        if (imagesWriting) {
+        // Enter and Mod+Enter reach here as well as the button, which is disabled while a file is still being attached
+        if (isAgent && blocker != null) {
             return;
         }
         if (isCouncil) {
@@ -1202,7 +1221,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         if (target instanceof Element && target.closest("[data-launcher-resume]")) {
             return "resume";
         }
-        if (target != null && (target === taskRef.current || target === goalRef.current)) {
+        if (target != null && (inTaskBox(target) || target === goalRef.current)) {
             return "task";
         }
         if (target instanceof HTMLTextAreaElement) {
@@ -1509,13 +1528,13 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         data-launcher-fields
                         onFocus={(e) => {
                             const target: EventTarget = e.target;
-                            if (target === taskRef.current || target === goalRef.current) {
+                            if (inTaskBox(target) || target === goalRef.current) {
                                 setZone("task");
                             }
                         }}
                         onBlur={(e) => {
                             const target: EventTarget = e.target;
-                            if (target === taskRef.current || target === goalRef.current) {
+                            if (inTaskBox(target) || target === goalRef.current) {
                                 setZone(null);
                             }
                         }}
@@ -1548,6 +1567,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                     resume={resume}
                                     home={atHome}
                                     filesRoot={atHome ? "" : projectPath}
+                                    projectName={atHome ? "" : (project?.name ?? "")}
                                     taskRef={taskRef}
                                 />
                             </>

@@ -87,7 +87,7 @@ describe("buildThemeVars — the default preset equals the @theme literals", () 
     }
 });
 
-for (const id of [DEFAULT_THEME_PRESET, "graphite", "spider", "christmas"]) {
+for (const id of [DEFAULT_THEME_PRESET, "graphite", "spider", "christmas", "jarvis"]) {
     describe(`${id} — contrast floor (DESIGN.md)`, () => {
         const p = activePalette(id);
         it("muted clears 4.5:1 on the background and on a hovered row", () => {
@@ -100,15 +100,17 @@ for (const id of [DEFAULT_THEME_PRESET, "graphite", "spider", "christmas"]) {
     });
 }
 
-describe("christmas — text and status colours clear 4.5:1 (DESIGN.md)", () => {
-    const p = activePalette("christmas");
-    for (const role of ["text", "secondary", "accent", "success", "warning", "error"] as const) {
-        it(`${role} on the background and on the surface`, () => {
-            expect(contrast(p[role], p.bg)).toBeGreaterThanOrEqual(4.5);
-            expect(contrast(p[role], p.surface)).toBeGreaterThanOrEqual(4.5);
-        });
-    }
-});
+for (const id of ["christmas", "jarvis"]) {
+    describe(`${id} — text and status colours clear 4.5:1 (DESIGN.md)`, () => {
+        const p = activePalette(id);
+        for (const role of ["text", "secondary", "accent", "success", "warning", "error"] as const) {
+            it(`${role} on the background and on the surface`, () => {
+                expect(contrast(p[role], p.bg)).toBeGreaterThanOrEqual(4.5);
+                expect(contrast(p[role], p.surface)).toBeGreaterThanOrEqual(4.5);
+            });
+        }
+    });
+}
 
 // The panel of a frosted overlay (frost class, DESIGN.md "Overlays") is --color-panel over the blurred backdrop. The
 // backdrop is the worst case a terminal can put behind it: its background with its brightest colour covering 20% of
@@ -147,6 +149,7 @@ describe("--color-panel — the panel alpha keeps muted text at 4.5:1 over the b
         onedark: 0.88, // for its text on a hovered row (panelAlpha), not its muted
         monokai: 0.6,
         christmas: 0.6,
+        jarvis: 0.6,
     };
     it("the table lists every built-in theme", () => {
         expect(Object.keys(EXPECTED).sort()).toEqual(THEMES.map((t) => t.id).sort());
@@ -195,6 +198,7 @@ describe("--color-panel — the panel alpha keeps muted text at 4.5:1 over the b
         onedark: [PanelHoverLift, PanelHoverLift],
         monokai: [PanelHoverLift, PanelSelectedLift],
         christmas: [PanelHoverLift, PanelSelectedLift],
+        jarvis: [PanelHoverLift, PanelSelectedLift],
     };
     function liftOf(vars: Record<string, string>, key: string): number {
         const m = /^rgba\(255, 255, 255, ([\d.]+)\)$/.exec(vars[key]);
@@ -275,8 +279,8 @@ describe("helpers", () => {
         expect(colorOf(p, {}, "accent")).toBe("#5e9cff");
         expect(colorOf(p, { accent: "#123456" }, "accent")).toBe("#123456");
     });
-    it("THEMES ships the ten dark presets — light mode was declined and removed", () => {
-        expect(THEMES).toHaveLength(10);
+    it("THEMES ships the eleven dark presets — light mode was declined and removed", () => {
+        expect(THEMES).toHaveLength(11);
         expect(THEMES[0].id).toBe(DEFAULT_THEME_PRESET);
     });
     it("Spider is Claude's palette with the suit's blue accent, a pinker error and the suit's blue", () => {
