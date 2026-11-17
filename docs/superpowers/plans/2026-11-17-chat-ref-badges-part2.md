@@ -5,7 +5,7 @@
 **Goal:** `session:<id>` (a past conversation) and `effort:<id>` (an initiative) draw as badges in Chat's box and
 bubbles, like part 1's agent, run and council badges, and the `@` picker offers them.
 
-**Architecture:** Part 1 (plan `docs/superpowers/plans/2026-11-17-chat-ref-badges.md`, merged before this starts)
+**Architecture:** Part 1 (run efdd9375, landed; its plan was deleted on shipping, git history keeps it)
 built `refbadge.ts` (find, resolve, look), `remarkrefmention.ts`, `chatrefbadge.tsx` (`RefBadgeFace`, `RefBadge`,
 `useResolvedRef`, `ChatRefLinks`), the `ref` segment in `chateditormodel.ts` and `chateditorrefpill.tsx`. This plan
 widens the kind set in those modules and adds two sources; read them first, and follow their names where they

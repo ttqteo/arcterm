@@ -1,11 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The chat message box: a small Lexical editor that draws a file you @-mentioned as a pill (chateditorpill.tsx). It is a
-// VIEW of plain text, not a second source of truth: `value` is the message as the agent receives it (a pill written
-// `@<path>`, `@"<path>"` when the path holds a space), every edit is read back into that text and a caret offset and
-// handed to `onChange`, and a `value` that is not what the editor last said (a picker's pick, a recalled message, an
-// insert, a send) rebuilds the editor from it, a mention that is complete becoming a pill. So the slash menu, the `@`
+// The chat message box: a small Lexical editor that draws a file you @-mentioned as a pill (chateditorpill.tsx) and an
+// `agent:<id>`, `run:<id>` or `council:<id>` reference as a badge (chateditorrefpill.tsx). It is a VIEW of plain text,
+// not a second source of truth: `value` is the message as the agent receives it (a pill written `@<path>`, `@"<path>"`
+// when the path holds a space, a badge as the token was written), every edit is read back into that text and a caret
+// offset and handed to `onChange`, and a `value` that is not what the editor last said (a picker's pick, a recalled
+// message, an insert, a send) rebuilds the editor from it, a mention or a reference that is complete becoming a pill or
+// a badge (one typed or pasted by hand stays text until then). So the slash menu, the `@`
 // picker, recall and the send path go on working on a string and offsets, and the handle this editor gives its parent
 // (`EditorLike`) answers like the part of a `<textarea>` they use. The arithmetic (text <-> lines, caret <-> offset) is
 // chateditornodes.ts / chateditormodel.ts; this file is the Lexical wiring around it.
@@ -70,6 +72,7 @@ import {
     type EditorPlace,
 } from "./chateditornodes";
 import { $createFileMentionNode, $isFileMentionNode, FileMentionNode } from "./chateditorpill";
+import { $createRefMentionNode, $isRefMentionNode, RefMentionNode } from "./chateditorrefpill";
 import { gapAfterMention, gapBeforeMention } from "./filementiontokens";
 
 /** The part of an `HTMLTextAreaElement` the box's callers (the slash menu, the `@` picker, recall, insert) use, so a
@@ -152,20 +155,29 @@ interface Doc {
 
 const END: EditorPlace = { line: Number.MAX_SAFE_INTEGER, index: Number.MAX_SAFE_INTEGER, offset: 0 };
 
+/** a file pill or a reference badge: the two things the caret steps over whole */
+function $isPillNode(node: LexicalNode | null | undefined): node is FileMentionNode | RefMentionNode {
+    return $isFileMentionNode(node) || $isRefMentionNode(node);
+}
+
 function segmentOfNode(node: LexicalNode): Segment {
     if ($isFileMentionNode(node)) {
         return { kind: "pill", path: node.getPath() };
+    }
+    if ($isRefMentionNode(node)) {
+        return { kind: "ref", ref: node.getRefKind(), id: node.getId(), raw: node.getRaw() };
     }
     return { kind: "text", text: $isLineBreakNode(node) ? "\n" : node.getTextContent() };
 }
 
 /** Text typed right against a pill would join its mention (`@a/b.json` + `đọc` is a mention of `a/b.jsonđọc`, a file
  *  that does not exist; filementiontokens.ts gapAfterMention): the text node takes a space on the pill's side, the caret
- *  staying where it was in the text. */
+ *  staying where it was in the text. A reference badge takes the same gap (`agent:7cd99627` + `a` reads as the id
+ *  `7cd99627a`): a reference ends and starts at the same punctuation and spaces a file mention does. */
 function $gapAroundPills(node: TextNode): void {
     const text = node.getTextContent();
-    const front = $isFileMentionNode(node.getPreviousSibling()) && gapAfterMention(text);
-    const back = $isFileMentionNode(node.getNextSibling()) && gapBeforeMention(text);
+    const front = $isPillNode(node.getPreviousSibling()) && gapAfterMention(text);
+    const back = $isPillNode(node.getNextSibling()) && gapBeforeMention(text);
     if (!front && !back) {
         return;
     }
@@ -272,11 +284,12 @@ function $setPoint(point: PointType, doc: Doc, place: EditorPlace): void {
     point.set(paragraph.getKey(), place.index + (after ? 1 : 0), "element");
 }
 
-/** whether the selection is on a pill: a pill selected (Backspace or ← beside it), or a collapsed caret right after one */
+/** whether the selection is on a pill (a file pill or a reference badge): one selected (Backspace or ← beside it), or a
+ *  collapsed caret right after one */
 function $selectionOnPill(doc: Doc): boolean {
     const selection = $getSelection();
     if ($isNodeSelection(selection)) {
-        return selection.getNodes().some($isFileMentionNode);
+        return selection.getNodes().some($isPillNode);
     }
     if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
         return false;
@@ -311,6 +324,8 @@ function $rebuild(segments: Segment[], caret: number | null): void {
     for (const seg of buildLine(segments)) {
         if (seg.kind === "pill") {
             paragraph.append($createFileMentionNode(seg.path));
+        } else if (seg.kind === "ref") {
+            paragraph.append($createRefMentionNode(seg.ref, seg.id, seg.raw));
         } else if (isBreak(seg)) {
             paragraph.append($createLineBreakNode());
         } else {
@@ -355,7 +370,7 @@ function $deletePill(event: KeyboardEvent, backward: boolean): boolean {
     const selection = $getSelection();
     const doc = $readDoc();
     if ($isNodeSelection(selection)) {
-        const pills = selection.getNodes().filter($isFileMentionNode);
+        const pills = selection.getNodes().filter($isPillNode);
         const at = $selectionOffsets(doc);
         if (pills.length === 0 || at == null) {
             return false;
@@ -756,7 +771,7 @@ export const ChatEditor = forwardRef<EditorLike, ChatEditorProps>(function ChatE
     // read once, when the editor is made; later values reach it through the Bridge
     const [initialConfig] = useState(() => ({
         namespace: "arc-chat-editor",
-        nodes: [FileMentionNode],
+        nodes: [FileMentionNode, RefMentionNode],
         // a fenced line's text (chateditorfences.tsx)
         theme: { text: { code: FENCED_TEXT_CLASS } },
         editable: !p.readOnly,

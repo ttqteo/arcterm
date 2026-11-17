@@ -39,7 +39,7 @@ export function AgentPathLinks({ agent, children }: { agent: AgentVM; children: 
 
 // a drag that ends on the link selects text and also fires a click: a selection reaching into it means the person was
 // selecting, not opening
-function selectingInto(el: Element): boolean {
+export function selectingInto(el: Element): boolean {
     const sel = window.getSelection();
     return sel != null && !sel.isCollapsed && sel.containsNode(el, true);
 }

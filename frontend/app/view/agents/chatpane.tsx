@@ -80,6 +80,7 @@ import {
 } from "./chatpending";
 import { useLostBash } from "./chatlostbashstore";
 import { dropPendingIds, sentHistory, usePending } from "./chatpendingstore";
+import { ChatRefLinks } from "./chatrefbadge";
 import { risesFromBox } from "./chatsentrise";
 import { chatSkimOnAtom, refreshSkimMarks } from "./chatskimstore";
 import { SleepRunRows } from "./chatsleepbashrows";
@@ -106,6 +107,7 @@ import { activityAtomFor } from "./livetranscriptatoms";
 import { PromptImages, useNow } from "./narrationtimeline";
 import { AgentPathLinks } from "./pathlinkcontext";
 import { PermissionCard } from "./permissioncard";
+import { projectsAtom } from "./projectsstore";
 import { useTranscriptWindow } from "./railtranscript";
 import { useBrainstormQueue } from "./runqueuestore";
 import { runtimeLogo } from "./runtimelogo";
@@ -501,8 +503,22 @@ function SkimToggle() {
     );
 }
 
-// `barred`: the cell has a grid bar on top (h-[26px], gridcellbar.tsx), which stays visible above the chat
+// `barred`: the cell has a grid bar on top (h-[26px], gridcellbar.tsx), which stays visible above the chat.
+// What an `agent:`, `run:` or `council:` reference resolves against (chatrefbadge.tsx) wraps the whole pane, so the
+// conversation, the pending bubbles and the box's pills all draw their badges from it. The project is the registered
+// project's path, which is what runs and councils are kept under: never the agent's cwd, a worktree for a run's worker.
 export function ChatPane({ model, agent, barred }: { model: AgentsViewModel; agent: AgentVM; barred: boolean }) {
+    const projects = useAtomValue(projectsAtom);
+    const project = projects[agent.project ?? ""]?.path ?? "";
+    const refLinks = useMemo(() => ({ model, project, selfId: agent.id }), [model, project, agent.id]);
+    return (
+        <ChatRefLinks value={refLinks}>
+            <ChatPaneBody model={model} agent={agent} barred={barred} />
+        </ChatRefLinks>
+    );
+}
+
+function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent: AgentVM; barred: boolean }) {
     const path = agent.transcriptPath ?? "";
     const surface = useAtomValue(model.surfaceAtom);
     const { view, error, loadEarlier, requestAppend } = useTranscriptWindow(path, agent.agent);

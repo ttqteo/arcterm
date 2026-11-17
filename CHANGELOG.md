@@ -35,6 +35,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   while the folder is folded or when no row of it holds the server, so you can tell which project has a server up.
 - Pick several agents in the Agent sidebar (Ctrl+click, Shift+click) and right-click one: Close N agents closes them
   together, asking first when one is working. Agents working for a run stay; close those from their run.
+- References to agents, runs and councils you write in Chat (`agent:7cd99627`, or picked from `@`) show as badges with
+  their name, tinted by kind, with a live agent's state; click one to open it.
 - A link in Chat shows a small copy button on its top-right corner when you hover it, over none of the words around
   it, and a right-click on it offers Copy link: either copies its url without selecting the text.
 

@@ -42,7 +42,7 @@ opens what it names.
     run's goal, one line.
   - council: `mark-council` dot, new `mark-council-soft` / `mark-council-line` tokens; name = the council's feature.
   - The name truncates at 240px max; the tooltip holds the full name, kind, 8-char id and state, ending "(click to
-    open)".
+    open)" in the bubble only (in the box a click selects the badge, so its tooltip stops after the state).
 - **Agent state** on a live agent's badge: working = a green dot pulsing through `pulsedriver.tsx`; asking = an amber
   ring (a hollow dot, so it differs by shape, not only colour), pulsing; idle and asleep = no dot. It follows the
   roster live.
@@ -51,11 +51,13 @@ opens what it names.
   7cd99627 is open", "No run 071a8e3b in this project", "agent:7cd9 names 2 agents".
 - **In the box** a resolved or unresolved token becomes a Lexical decorator node as `@path` does: a click selects it,
   Backspace beside it selects it (accent ring, `border-accent bg-accent/12`), Backspace again deletes the whole token.
-  It forms once the token is followed by a space or punctuation, or is picked from `@`, so a half-typed id is not
-  boxed. No motion: it is a keyboard action seen often.
+  It forms only when the box's value is set from outside (a pick from `@`, a draft or prompt brought back), the rule
+  `@path` pills follow; a token typed or pasted stays text, since the box rebuilds its nodes only on an outside value
+  (`chateditor.tsx`) and a typing-time rebuild is editor work outside v1. No motion: it is a keyboard action seen often.
 - **In the bubble** a resolved badge is a button that opens its target through `openTarget` with the full id
   (`openref.ts`: agent → its terminal on the Agent surface, run → Jarvis, council → its discussion); Ctrl-click
-  peeks, as other router links do. Hover lifts the fill one step (`transition-colors`, the default micro timing).
+  peeks, as other router links do. Hover brightens the badge (`hover:brightness-125`, `transition-[filter]`), so one class lifts every
+  kind's tint.
 - **Scope:** your bubbles and the message box. An agent's prose keeps `agent:…` as text in v1 (open question).
 - An agent that ended after the message was sent shows as unresolved; mapping a closed tab to its conversation is
   out of scope (the mockup's "đã đóng" and initiative / conversation cells are not built in v1).

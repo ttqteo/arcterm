@@ -16,6 +16,16 @@ import {
 
 const text = (t: string): Segment => ({ kind: "text", text: t });
 const pill = (path: string): Segment => ({ kind: "pill", path });
+const ref = (raw: string): Segment => {
+    const m = /(agent|tab|run|council):([0-9a-f-]+)/i.exec(raw)!;
+    const k = m[1].toLowerCase();
+    return {
+        kind: "ref",
+        ref: k === "tab" ? "agent" : (k as "agent" | "run" | "council"),
+        id: m[2].toLowerCase(),
+        raw,
+    };
+};
 const BR = text("\n");
 
 describe("buildLine", () => {
@@ -67,9 +77,50 @@ describe("linesText", () => {
             "two\nlines @x/y.ts\n\nand a third\n",
             "\n\n",
             "mail a@b.c and @alice here",
+            "hỏi @agent:7cd99627, rồi run:071a8e3b",
+            "agent:7cd99627\nrun:071a8e3b @x/y.ts\n(council:0c28ab12)",
         ]) {
             expect(linesText([buildLine(segmentsOf(t))])).toBe(t);
         }
+    });
+
+    it("writes a ref segment as it was written, `@` and case kept", () => {
+        expect(linesText([[text("hỏi "), ref("@Agent:7CD99627"), text(", rồi "), ref("run:071a8e3b")]])).toBe(
+            "hỏi @Agent:7CD99627, rồi run:071a8e3b"
+        );
+    });
+});
+
+describe("buildLine and references", () => {
+    it("keeps a ref segment as it is, and breaks lines around it", () => {
+        expect(buildLine(segmentsOf("a\nagent:7cd99627\nb"))).toEqual([
+            text("a"),
+            BR,
+            ref("agent:7cd99627"),
+            BR,
+            text("b"),
+        ]);
+        expect(buildLine(segmentsOf("hỏi @agent:7cd99627, rồi run:071a8e3b"))).toEqual([
+            text("hỏi "),
+            ref("@agent:7cd99627"),
+            text(", rồi "),
+            ref("run:071a8e3b"),
+        ]);
+    });
+
+    it("is not a line break", () => {
+        expect(isBreak(ref("agent:7cd99627"))).toBe(false);
+    });
+
+    it("maps places beside a ref as beside a pill", () => {
+        // "ab" [ref @run:071a8e3b = 13 chars] "cd"
+        const line: EditorLine = [text("ab"), ref("@run:071a8e3b"), text("cd")];
+        expect(linesText([line])).toBe("ab@run:071a8e3bcd");
+        expect(placeOffset([line], { line: 0, index: 1, offset: 0 })).toBe(2);
+        expect(placeOffset([line], { line: 0, index: 1, offset: 1 })).toBe(15);
+        expect(placeOf([line], 2)).toEqual({ line: 0, index: 0, offset: 2 });
+        expect(placeOf([line], 15)).toEqual({ line: 0, index: 1, offset: 1 });
+        expect(placeOf([line], 7)).toEqual({ line: 0, index: 1, offset: 1 });
     });
 });
 
@@ -190,5 +241,19 @@ describe("adjacentPill", () => {
         expect(adjacentPill([], 0, 0, true)).toBeNull();
         expect(adjacentPill([], 0, 0, false)).toBeNull();
         expect(adjacentPill(line, 99, 0, true)).toBeNull();
+    });
+
+    it("finds a ref segment as it finds a pill", () => {
+        // "ab" [ref] "cd" [ref] [pill]
+        const mixed: EditorLine = [text("ab"), ref("agent:7cd99627"), text("cd"), ref("@run:071a8e3b"), pill("c/3.ts")];
+        expect(adjacentPill(mixed, 1, 1, true)).toBe(1); // after a ref
+        expect(adjacentPill(mixed, 2, 0, true)).toBe(1); // at the start of the text that follows it
+        expect(adjacentPill(mixed, 0, 2, true)).toBeNull(); // before it: only text behind
+        expect(adjacentPill(mixed, 4, 0, true)).toBe(3); // a pill right after a ref: the ref is behind it
+        expect(adjacentPill(mixed, 0, 2, false)).toBe(1); // end of text, ref next
+        expect(adjacentPill(mixed, 1, 0, false)).toBe(1); // before a ref
+        expect(adjacentPill(mixed, 1, 1, false)).toBeNull(); // after it, text next
+        expect(adjacentPill(mixed, 2, 2, false)).toBe(3);
+        expect(adjacentPill(mixed, 3, 1, false)).toBe(4); // after a ref, a pill next
     });
 });

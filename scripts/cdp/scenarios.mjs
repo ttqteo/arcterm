@@ -48770,6 +48770,409 @@ const chatMath = {
     },
 };
 
+// --- chat-ref-badges: `agent:`, `run:` and `council:` references drawn as badges (refbadge.ts, chatrefbadge.tsx,
+// remarkrefmention.ts, chateditorrefpill.tsx; spec 2026-11-17-chat-ref-badges-design.md). The chat's agent A is in a registered
+// project whose run and council are put in the app's own stores; a second agent B is asking, on codex. A's bubble names B, the
+// run, the council and a run that is not there: the first three resolve (B's runtime mark and asking ring, the tints and names
+// of the run and the council), the fourth stays a dashed token with no role, and a click or Enter on B's badge focuses B. Then
+// `@agent` in A's box picks B: the box draws the same badge, Backspace beside it selects it, the next one takes the whole
+// token away. The text never changes: the box's text is read from Lexical's own state, since a badge draws a name. Last, back on
+// the bubble: a Ctrl-click on B's badge peeks B in the avatar popup (A stays focused), and the run badge lifts on hover.
+
+const CRB_RUN_ID = "071a8e3b-5c4d-4e2f-9a10-3b7c1d2e4f56";
+const CRB_COUNCIL_ID = "c0ffee11-2233-4455-8677-99aabbccddee";
+const CRB_RUN_GOAL = "Close the tree's picked rows\ntogether";
+const CRB_RUN_NAME = "Close the tree's picked rows";
+const CRB_COUNCIL_FEATURE = "Chat compact work";
+const CRB_NAME_A = "ref badges main";
+const CRB_NAME_B = "ref badges asking";
+
+function crbRoster(ctx) {
+    const now = Date.now();
+    const base = { project: ctx.project, task: "", agent: "claude", model: "opus", state: "idle", idleSince: now - 60_000 };
+    return [
+        { ...base, id: ctx.tabs.main.tabId, name: CRB_NAME_A, blockId: ctx.tabs.main.blockId, transcriptPath: ctx.transcript },
+        {
+            ...base,
+            id: ctx.tabs.second.tabId,
+            name: CRB_NAME_B,
+            blockId: ctx.tabs.second.blockId,
+            agent: "codex",
+            model: "gpt-5",
+            state: "asking",
+            blockedMs: 30_000,
+            ask: {
+                askId: "ask-crb-1",
+                oref: `block:${ctx.tabs.second.blockId}`,
+                questions: [{ header: "Pick", question: "Which one?", options: [{ label: "This" }, { label: "That" }] }],
+            },
+        },
+    ];
+}
+
+// The project's run and council, put in the app's own stores (a non-null atom is not read again by useResolvedRef). projectRunsAtom
+// is keyed by the exact path string, so it is the one the page's config holds for the project, which is what the chat resolves with.
+// Typing `@` in the box reads both again over the seed (useRefItems), so a step that follows one seeds again.
+const crbSeed = (h, project) =>
+    AC.agentPage(
+        h,
+        `const P = await mod("app/view/agents/projectsstore.ts");
+        const path = globalStore.get(P.projectsAtom)[${JSON.stringify(project)}]?.path;
+        if (!path) throw new Error("the page's config has no path for the project " + ${JSON.stringify(project)});
+        const H = await mod("app/view/agents/projecthistorystore.ts");
+        const C = await mod("app/view/agents/councilstore.ts");
+        const now = Date.now();
+        globalStore.set(H.projectRunsAtom(path), { runs: [{ oid: ${JSON.stringify(CRB_RUN_ID)}, goal: ${JSON.stringify(CRB_RUN_GOAL)} }], error: null });
+        globalStore.set(C.councilListAtom(path), [
+            { id: ${JSON.stringify(CRB_COUNCIL_ID)}, project: path, feature: ${JSON.stringify(CRB_COUNCIL_FEATURE)}, experts: [], state: "done", round: 1, tokens: 0, calls: 0, created: now, updated: now },
+        ]);
+        return path;`
+    );
+
+// What the box holds as the agent receives it, read from Lexical's own state: a badge draws a name, so the box's innerText (acVal)
+// is not the text. A ref node is its token as written (raw), a line break is a newline, paragraphs are lines.
+const crbBoxText = (boxExpr) =>
+    `((e) => {
+        const ed = e?.__lexicalEditor;
+        if (!ed) return null;
+        const text = (n) => (n.type === "ref-mention" ? n.raw : n.type === "linebreak" ? "\\n" : typeof n.text === "string" ? n.text : (n.children ?? []).map(text).join(""));
+        return ed.getEditorState().toJSON().root.children.map(text).join("\\n");
+    })(${boxExpr})`;
+
+// what one badge shows, from the element carrying data-chat-ref (an expression that finds it); null when it is not there
+const crbReadBadge = (h, badgeExpr) =>
+    h.ev(`(() => {
+        const el = ${badgeExpr};
+        if (!el) return null;
+        const cs = getComputedStyle(el);
+        return {
+            state: el.getAttribute("data-ref-state"),
+            mark: el.getAttribute("data-ref-mark"),
+            selected: el.getAttribute("data-ref-selected"),
+            name: el.querySelector("[data-ref-name]")?.textContent ?? null,
+            text: el.textContent,
+            dots: [...el.querySelectorAll("[data-ref-dot]")].map((d) => d.getAttribute("data-ref-dot")),
+            title: el.getAttribute("title"),
+            role: el.getAttribute("role"),
+            parentRole: el.parentElement?.getAttribute("role") ?? null,
+            background: cs.backgroundColor,
+            border: cs.borderTopColor,
+            borderStyle: cs.borderTopStyle,
+        };
+    })()`);
+
+const chatRefBadges = {
+    name: "chat-ref-badges",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-ref-badges-")),
+            project: `verify-ref-badges-${Date.now().toString(36)}`,
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+        };
+        let at = "registering the project";
+        try {
+            await h.rpc("createproject", { name: ctx.project, path: ctx.dir });
+            ctx.projectMade = true;
+            await waitForProjectInConfig(h, ctx.project);
+            at = "resetting the grid";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tabs";
+            ctx.tabs = {
+                main: await acMakeTab(h, ctx, { label: CRB_NAME_A }),
+                second: await acMakeTab(h, ctx, { label: CRB_NAME_B }),
+            };
+            at = "writing the transcript";
+            const B = ctx.tabs.second.tabId;
+            const base = Date.now() - 7_200_000;
+            const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
+            ctx.transcript = AC.writeTranscript(ctx.dir, "ref-badges", [
+                AC.userText(
+                    `Hỏi agent:${B.slice(0, 8)} xem run:${CRB_RUN_ID.slice(0, 8)} và council:${CRB_COUNCIL_ID.slice(0, 8)}, còn run:deadbeef thì sao.`,
+                    { ...o(0), uuid: "u1" }
+                ),
+                AC.assistantText("Mình sẽ hỏi lại từng cái.", { ...o(2), uuid: "a1" }),
+            ]);
+            at = "setting the roster";
+            await AC.setRoster(h, crbRoster(ctx));
+            at = "seeding the project's run and council";
+            ctx.projectPath = await crbSeed(h, ctx.project);
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture project, agents and transcript", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const B = ctx.tabs.second.tabId;
+        const B8 = B.slice(0, 8);
+        const tokens = { agent: `agent:${B8}`, run: `run:${CRB_RUN_ID.slice(0, 8)}`, council: `council:${CRB_COUNCIL_ID.slice(0, 8)}`, missing: "run:deadbeef" };
+        const inBubble = (token) => `document.querySelector('[data-agent-chat="${A}"] [data-chat-conversation] [data-chat-ref="${token}"]')`;
+        const inBox = `${acBox(A)}?.querySelector('[data-chat-ref]')`;
+        const focused = () => AC.agentPage(h, `return globalStore.get(agentsModel().focusIdAtom);`);
+        const waitFocus = async (id, ms = 8000) => {
+            for (let waited = 0; waited < ms; waited += 250) {
+                if ((await focused()) === id) return true;
+                await polishNap(250);
+            }
+            return false;
+        };
+        // A's chat on screen, in chat mode
+        const showChat = async () => {
+            await AC.focusAgent(h, A);
+            await h.ev(`window.__arcChatMode.set(${JSON.stringify(A)}, "chat")`);
+            return polishWaitFor(h, `!!${acBox(A)} && ${acLayer(A)}?.hasAttribute("data-chat-leaving") === false`, 8000);
+        };
+        const press = (expr) =>
+            h.ev(`(() => { const b = ${expr}?.closest('[role="button"]'); if (!b) return false; b.click(); return true; })()`);
+        const transparent = (c) => c == null || c === "transparent" || c === "rgba(0, 0, 0, 0)";
+        try {
+            const shown = await showChat();
+            // anything that read the project's runs or councils since the arrange is put back under the seed
+            await crbSeed(h, ctx.project);
+            const drawn = await polishWaitFor(
+                h,
+                `${Object.values(tokens).map((t) => `!!${inBubble(t)}`).join(" && ")} && ${inBubble(tokens.run)}.getAttribute("data-ref-state") === "resolved" && ${inBubble(tokens.council)}.getAttribute("data-ref-state") === "resolved"`,
+                15000
+            );
+            const agent = await crbReadBadge(h, inBubble(tokens.agent));
+            const run = await crbReadBadge(h, inBubble(tokens.run));
+            const council = await crbReadBadge(h, inBubble(tokens.council));
+            const missing = await crbReadBadge(h, inBubble(tokens.missing));
+            rec(
+                "1. the bubble's agent:<B> badge is resolved with B's runtime mark, B's label as its name and an asking ring",
+                shown && drawn && agent?.state === "resolved" && agent.mark === "runtime" && agent.name === CRB_NAME_B && agent.dots.length === 1 && agent.dots[0] === "asking",
+                { shown, drawn, agent }
+            );
+            rec(
+                "2. its run:<id> badge is resolved with the run's mark and the goal's first line, its council:<id> badge with the council's mark and its feature",
+                run?.state === "resolved" && run.mark === "run" && run.name === CRB_RUN_NAME &&
+                    council?.state === "resolved" && council.mark === "council" && council.name === CRB_COUNCIL_FEATURE,
+                { run, council }
+            );
+            rec(
+                "3. the run and the council badges are filled and bordered (not transparent: the identity tokens exist), each in its own colours",
+                run != null && council != null && !transparent(run.background) && !transparent(run.border) && !transparent(council.background) &&
+                    !transparent(council.border) && run.background !== council.background && run.border !== council.border,
+                { run: [run?.background, run?.border], council: [council?.background, council?.border] }
+            );
+            rec(
+                "4. run:deadbeef is unresolved: its token as the text, dashed, a title starting \"No run deadbeef\" and no role; the three resolved badges sit in a role=button",
+                missing?.state === "unresolved" && missing.text === tokens.missing && missing.borderStyle === "dashed" && missing.title?.startsWith("No run deadbeef") === true &&
+                    missing.role == null && missing.parentRole !== "button" &&
+                    [agent, run, council].every((b) => b?.parentRole === "button"),
+                { missing, parentRoles: [agent, run, council].map((b) => b?.parentRole) }
+            );
+            // the bubble alone for the contact sheet, before `@` in the box reads the project's runs and councils again
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges.png");
+
+            const clicked = await press(inBubble(tokens.agent));
+            const byClick = clicked && (await waitFocus(B));
+            await showChat();
+            const backToA = (await focused()) === A;
+            await polishWaitFor(h, `!!${inBubble(tokens.agent)}`, 5000);
+            const focusedBadge = await h.ev(`(() => {
+                const b = ${inBubble(tokens.agent)}?.closest('[role="button"]');
+                if (!b) return false;
+                b.focus();
+                return document.activeElement === b;
+            })()`);
+            await acKey(h, acKeys.enter);
+            const byEnter = focusedBadge && (await waitFocus(B));
+            await showChat();
+            const againA = (await focused()) === A;
+            rec(
+                "5. a click on B's badge makes B the focused agent, and so does Enter on the focused badge (A is focused again between)",
+                byClick && backToA && byEnter && againA,
+                { clicked, byClick, backToA, focusedBadge, byEnter, againA }
+            );
+
+            await acClear(h, acBox(A));
+            await acType(h, acBox(A), "đọc @agent", false);
+            const listed = await polishWaitFor(h, `!!document.querySelector('[data-chat-mention^="ref:agent:"]')`, 8000);
+            const list = await acMentionState(h);
+            const firstKey = (list?.rows ?? []).map((r) => r.key).find((k) => k.startsWith("ref:agent:")) ?? "";
+            await acKey(h, acKeys.enter);
+            const want = `đọc agent:${B8} `;
+            const written = await polishWaitFor(h, `${crbBoxText(acBox(A))} === ${JSON.stringify(want)}`, 3000);
+            const boxed = await polishWaitFor(h, `!!${inBox}`, 3000);
+            const inBoxBadge = await crbReadBadge(h, inBox);
+            const text6 = await h.ev(crbBoxText(acBox(A)));
+            rec(
+                "6. @agent lists B; Enter writes `agent:<B> ` (the box's text exactly that) and the box draws B's resolved badge, not selected, its title starting with B's name and not offering to open it (a click there selects)",
+                listed && firstKey === `ref:agent:${B}` && written && boxed && inBoxBadge?.state === "resolved" && inBoxBadge.mark === "runtime" &&
+                    inBoxBadge.name === CRB_NAME_B && inBoxBadge.selected === "false" && text6 === want &&
+                    inBoxBadge.title?.startsWith(CRB_NAME_B) === true && !inBoxBadge.title.includes("click to open"),
+                { listed, firstKey, written, boxed, inBoxBadge, text6 }
+            );
+
+            // a pick leaves the badge and a space with the caret after both: one step left puts the caret right after the badge
+            await polishNap(250);
+            await acKey(h, acKeys.left);
+            await polishNap(150);
+            await acKey(h, acKeys.backspace);
+            const selected = await polishWaitFor(h, `${inBox}?.getAttribute("data-ref-selected") === "true"`, 3000);
+            const kept = await h.ev(crbBoxText(acBox(A)));
+            // the `@` read the project's runs and councils again over the seed: put back, so the shot's bubble badges resolve
+            await crbSeed(h, ctx.project);
+            await polishWaitFor(h, `${inBubble(tokens.run)}?.getAttribute("data-ref-state") === "resolved"`, 5000);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-box.png");
+            await acKey(h, acKeys.backspace);
+            const gone = await polishWaitFor(h, `!${inBox}`, 3000);
+            const left = await h.ev(crbBoxText(acBox(A)));
+            const acValLeft = await h.ev(acVal(acBox(A)));
+            await acClear(h, acBox(A));
+            rec(
+                "7. with the caret right after the badge, Backspace selects it (data-ref-selected) and leaves the text as it was; Backspace again takes the whole token and its badge away",
+                selected && kept === want && gone && typeof left === "string" && !left.includes("agent:") && !left.includes(B8),
+                { selected, kept, gone, left, acValLeft }
+            );
+
+            // the bubble's badges again, with real mouse events at a badge's centre (the box is empty now, and step 7's `@` read the
+            // project's runs and councils over the seed, so put it back first)
+            await showChat();
+            await crbSeed(h, ctx.project);
+            const bubbleBadges = await polishWaitFor(
+                h,
+                `!!${inBubble(tokens.agent)} && ${inBubble(tokens.run)}?.getAttribute("data-ref-state") === "resolved"`,
+                8000
+            );
+            // the badge's role=button wrapper brought into view, with the point at its centre and whether that point lands on it
+            const centreOf = (expr) =>
+                h.ev(`(() => {
+                    const b = ${expr}?.closest('[role="button"]');
+                    if (!b) return null;
+                    b.scrollIntoView({ block: "center" });
+                    const r = b.getBoundingClientRect();
+                    const x = Math.round(r.x + r.width / 2);
+                    const y = Math.round(r.y + r.height / 2);
+                    return { x, y, hit: b.contains(document.elementFromPoint(x, y)) };
+                })()`);
+            const mouse = (type, x, y, extra = {}) => h.cdp("Input.dispatchMouseEvent", { type, x, y, ...extra });
+            const peekState = () =>
+                h.ev(`(() => {
+                    const p = document.querySelector("[data-pet-peek-item]");
+                    return p ? { item: p.dataset.petPeekItem, status: p.dataset.petPeekStatus, hasNameB: p.textContent.includes(${JSON.stringify(CRB_NAME_B)}) } : null;
+                })()`);
+
+            // 8. the peek gesture is what peek-ctrl-click uses (PEEK_BIT on the move and both presses): the popup shows B and writes no selection
+            const agentAt = bubbleBadges ? await centreOf(inBubble(tokens.agent)) : null;
+            let peeked = false;
+            let peekOpen = null;
+            let stayedOnA = false;
+            if (agentAt?.hit) {
+                await mouse("mouseMoved", agentAt.x, agentAt.y, { modifiers: PEEK_BIT });
+                for (const type of ["mousePressed", "mouseReleased"]) {
+                    await mouse(type, agentAt.x, agentAt.y, { button: "left", clickCount: 1, modifiers: PEEK_BIT });
+                }
+                peeked = await polishWaitFor(h, `!!document.querySelector('[data-pet-peek-item="agent"][data-pet-peek-status="ready"]')`, 10000);
+                // the reveal animation settles before the readings
+                await polishNap(400);
+                peekOpen = await peekState();
+                stayedOnA = (await focused()) === A;
+            }
+            // a real key event: the popup handles Escape on its dialog, which holds focus, not on the document
+            for (const type of ["keyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+            }
+            const popupClosed = await polishWaitFor(h, `!document.querySelector('[data-pet-peek-item]')`, 4000);
+            const stillA = (await focused()) === A;
+            rec(
+                "8. Ctrl-click (the platform's peek gesture) on B's agent badge in A's bubble opens the avatar popup's peek of B, ready, and A stays the focused agent; Escape closes the popup",
+                bubbleBadges && agentAt?.hit === true && peeked && peekOpen?.item === "agent" && peekOpen.status === "ready" && peekOpen.hasNameB === true &&
+                    stayedOnA && popupClosed && stillA,
+                { bubbleBadges, agentAt, peeked, peekOpen, stayedOnA, popupClosed, stillA }
+            );
+
+            // 9. hover lifts the fill a step (hover:brightness-125 on the wrapper, through transition-[filter]) and leaving puts it back
+            const filterOf = () =>
+                h.ev(`(() => {
+                    const b = ${inBubble(tokens.run)}?.closest('[role="button"]');
+                    return b ? { filter: getComputedStyle(b).filter, hovered: b.matches(":hover") } : null;
+                })()`);
+            const runAt = bubbleBadges ? await centreOf(inBubble(tokens.run)) : null;
+            // a point off every badge: the corner of the page, past the transition before each reading
+            let rest = null;
+            let hover = null;
+            let away = null;
+            if (runAt?.hit) {
+                await mouse("mouseMoved", 2, 2);
+                await polishNap(400);
+                rest = await filterOf();
+                await mouse("mouseMoved", runAt.x, runAt.y);
+                await polishNap(400);
+                hover = await filterOf();
+                await mouse("mouseMoved", 2, 2);
+                await polishNap(400);
+                away = await filterOf();
+            }
+            rec(
+                "9. moving the mouse over the run badge's role=button wrapper makes its computed filter brightness(1.25), and moving away returns it to none",
+                runAt?.hit === true && rest?.filter === "none" && rest.hovered === false && hover?.filter === "brightness(1.25)" && hover.hovered === true &&
+                    away?.filter === "none" && away.hovered === false,
+                { runAt, rest, hover, away }
+            );
+        } catch (e) {
+            rec("the scenario threw", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-ref-badges teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the drafts", () =>
+            AC.agentPage(
+                h,
+                `const S = await mod("app/view/agents/wakingstore.ts");
+                for (const id of ${JSON.stringify(ctx.tabIds ?? [])}) S.setWakeDraft(id, "");
+                return true;`
+            )
+        );
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tabs", () => acCloseTabs(h, ctx));
+        await step("restore the grid and the chat modes", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        if (ctx.projectMade) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            await step("remove the project", async () => {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (s) => (s || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.dir))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        await step("remove the fixture transcript", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- chat-initiative: Add to an initiative from Chat (docs/superpowers/specs/2026-11-12-chat-add-to-initiative-design.md, plan
 // 2026-11-13-chat-add-to-initiative.md Task 6). A Claude agent's reply holds three ```arc-initiative blocks (a note on its own
 // initiative, a chunk, a new initiative under a topic) and a fourth that is broken JSON; Chat draws the three as cards and
@@ -71907,6 +72310,7 @@ export const SCENARIOS = [
     chatFork,
     chatQuote,
     chatMath,
+    chatRefBadges,
     chatInitiative,
     chatCanvasPick,
     ...chatRedesignScenarios(CR_KIT),

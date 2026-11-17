@@ -3,12 +3,13 @@
 //
 // The part of the chat message box (chateditor.tsx) that is arithmetic on its content, with no Lexical in it, so it can
 // be tested. The editor's content is lines (Lexical paragraphs); a line is one `Segment` per Lexical child, in order: a
-// text node is a text segment, a file pill a pill segment, and a line break a text segment holding just "\n". The text
-// of the whole box is the lines joined with "\n", each pill written as `mentionText(path)`. These functions turn the
+// text node is a text segment, a file pill a pill segment, a reference (agent, run or council) a ref segment, and a line
+// break a text segment holding just "\n". The text of the whole box is the lines joined with "\n", each pill written as
+// `mentionText(path)` and each reference as it was written (`raw`). These functions turn the
 // text (chateditormodel.ts) into the line the editor builds, and map a place in the lines (line, child, offset) to an
 // offset in the text and back, so a caret can be reported as a string offset and set from one. Pure.
 
-import { locate, mentionText, plainOffset, segmentLength, type Segment } from "./chateditormodel";
+import { isAtom, locate, mentionText, plainOffset, segmentLength, type Segment } from "./chateditormodel";
 
 /** One Lexical paragraph's children, a segment each. A line break is `{ kind: "text", text: "\n" }`. */
 export type EditorLine = Segment[];
@@ -26,9 +27,10 @@ export function isBreak(s: Segment): boolean {
     return s.kind === "text" && s.text === "\n";
 }
 
-/** Pure: the text a segment stands for: a text run as it is, a pill as the mention it is written as. */
+/** Pure: the text a segment stands for: a text run as it is, a pill as the mention it is written as, a reference as
+ *  written. */
 function segmentText(s: Segment): string {
-    return s.kind === "text" ? s.text : mentionText(s.path);
+    return s.kind === "text" ? s.text : s.kind === "ref" ? s.raw : mentionText(s.path);
 }
 
 /** Pure: the whole box's text for its lines: each line's segments written out, the lines joined with "\n". */
@@ -42,7 +44,7 @@ export function linesText(lines: EditorLine[]): string {
 export function buildLine(segments: Segment[]): EditorLine {
     const out: EditorLine = [];
     for (const s of segments) {
-        if (s.kind === "pill") {
+        if (isAtom(s)) {
             out.push(s);
             continue;
         }
@@ -94,25 +96,25 @@ export function placeOf(lines: EditorLine[], plain: number): EditorPlace {
         : { line: last, ...locate(lines[last], Number.MAX_SAFE_INTEGER) };
 }
 
-/** Pure: the index of the pill a Backspace (`backward`) or a Delete would take for a collapsed caret at `index`/`offset`
- *  of the line: the pill right behind the caret, or right ahead of it, with nothing but the caret between. Null when
- *  the caret is inside a text, or a line break (or the line's edge) is the neighbour. */
+/** Pure: the index of the pill (or reference) a Backspace (`backward`) or a Delete would take for a collapsed caret at
+ *  `index`/`offset` of the line: the one right behind the caret, or right ahead of it, with nothing but the caret
+ *  between. Null when the caret is inside a text, or a line break (or the line's edge) is the neighbour. */
 export function adjacentPill(line: EditorLine, index: number, offset: number, backward: boolean): number | null {
     const seg = line[index];
     if (seg == null) {
         return null;
     }
-    const isPill = (i: number) => line[i]?.kind === "pill";
+    const isPill = (i: number) => line[i] != null && isAtom(line[i]);
     if (backward) {
         if (offset > 0) {
-            return seg.kind === "pill" ? index : null;
+            return isAtom(seg) ? index : null;
         }
         return isPill(index - 1) ? index - 1 : null;
     }
-    if (seg.kind === "pill" && offset <= 0) {
+    if (isAtom(seg) && offset <= 0) {
         return index;
     }
-    // a pill's offset is 0 | 1 (before | after it), not a character count
-    const atEnd = seg.kind === "pill" ? offset > 0 : offset >= segmentLength(seg);
+    // a pill's (or a reference's) offset is 0 | 1 (before | after it), not a character count
+    const atEnd = isAtom(seg) ? offset > 0 : offset >= segmentLength(seg);
     return atEnd && isPill(index + 1) ? index + 1 : null;
 }
