@@ -345,7 +345,7 @@ git commit -m "feat(chat): find, resolve and style agent, run and council refere
 
 ### Task 3: The badge, its sources and its context
 
-**Depends on:** Task 2
+**Depends on:** Task 2 (uses `resolveRef`, `badgeLook` and `refTitle` from refbadge.ts)
 
 **Files:** `frontend/app/view/agents/chatrefbadge.tsx`, `frontend/app/view/agents/pathlinkcontext.tsx`
 
@@ -409,7 +409,7 @@ git commit -m "feat(chat): the ref badge, its sources and context" -- frontend/a
 
 ### Task 4: Ref segments in the message box's model
 
-**Depends on:** Task 2
+**Depends on:** Task 2 (uses `refSpans` from refbadge.ts)
 
 **Files:** `frontend/app/view/agents/chateditormodel.ts`, `frontend/app/view/agents/chateditormodel.test.ts`, `frontend/app/view/agents/chateditornodes.ts`, `frontend/app/view/agents/chateditornodes.test.ts`
 
@@ -472,7 +472,7 @@ git commit -m "feat(chat): the message box's model knows agent, run and council 
 
 ### Task 5: Badges in your sent bubble
 
-**Depends on:** Task 3
+**Depends on:** Task 3 (uses `RefBadge` and `ChatRefLinks` from chatrefbadge.tsx; its plugin uses Task 2's `refSpans` through it)
 
 **Files:** `frontend/app/view/agents/remarkrefmention.ts`, `frontend/app/view/agents/remarkrefmention.test.ts`, `frontend/app/view/agents/markdownmessage.tsx`, `frontend/app/view/agents/chatpane.tsx`
 
@@ -541,7 +541,7 @@ git commit -m "feat(chat): agent, run and council references draw as badges in y
 
 ### Task 6: Badges in the message box
 
-**Depends on:** Task 3, Task 4
+**Depends on:** Task 3 (uses `RefBadgeFace` and `useResolvedRef` from chatrefbadge.tsx), Task 4 (uses the `ref` segment it adds)
 
 **Files:** `frontend/app/view/agents/chateditorrefpill.tsx`, `frontend/app/view/agents/chateditor.tsx`
 
@@ -580,7 +580,7 @@ git commit -m "feat(chat): agent, run and council references draw as badges in t
 
 ### Task 7: CDP scenario and changelog
 
-**Depends on:** Task 1, Task 5, Task 6
+**Depends on:** Task 1 (step 3 reads the tint tokens it adds), Task 5 (the bubble's `data-chat-ref` / `data-ref-*` badges it wires), Task 6 (the box's badge after an `@` pick)
 
 **Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`
 
