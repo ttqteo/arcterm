@@ -12,6 +12,7 @@ type UiCommands interface {
 	UiStateCommand(ctx context.Context) (*UiState, error)
 	UiRevealCommand(ctx context.Context, data CommandUiRevealData) (string, error)
 	UiInvokeCommand(ctx context.Context, data CommandUiInvokeData) (string, error)
+	UiBrainstormCloseCommand(ctx context.Context, data CommandUiBrainstormCloseData) (string, error)
 }
 
 type UiState struct {
@@ -39,4 +40,11 @@ type CommandUiRevealData struct {
 type CommandUiInvokeData struct {
 	ActionId      string `json:"actionid"`
 	CallerBlockId string `json:"callerblockid,omitempty"`
+}
+
+// CommandUiBrainstormCloseData closes the brainstorm the caller's agent has attached: its pane and Chat card go,
+// the file stays, and the agent's next write of it brings the pane back.
+type CommandUiBrainstormCloseData struct {
+	File          string `json:"file"` // the brainstorm.json, absolute
+	CallerBlockId string `json:"callerblockid"`
 }

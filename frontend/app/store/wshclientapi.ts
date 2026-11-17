@@ -1830,6 +1830,12 @@ export class RpcApiType {
         return client.wshRpcCall("translate", data, opts);
     }
 
+    // command "uibrainstormclose" [call]
+    UiBrainstormCloseCommand(client: WshClient, data: CommandUiBrainstormCloseData, opts?: RpcOpts): Promise<string> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "uibrainstormclose", data, opts);
+        return client.wshRpcCall("uibrainstormclose", data, opts);
+    }
+
     // command "uiinvoke" [call]
     UiInvokeCommand(client: WshClient, data: CommandUiInvokeData, opts?: RpcOpts): Promise<string> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "uiinvoke", data, opts);

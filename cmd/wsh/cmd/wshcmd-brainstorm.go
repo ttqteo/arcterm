@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -37,11 +38,46 @@ var brainstormJudgeCmd = &cobra.Command{
 	RunE:    brainstormJudgeRun,
 }
 
+var brainstormCloseCmd = &cobra.Command{
+	Use:   "close <brainstorm.json>",
+	Short: "close this agent's brainstorm in the cockpit: its pane, tab and Chat card go, the file stays (writing it again reopens it)",
+	Args:  cobra.ExactArgs(1),
+	// runs after cobra has validated the arguments, so a missing path never reaches the RPC
+	PreRunE: preRunSetupRpcClient,
+	RunE:    brainstormCloseRun,
+}
+
 func init() {
 	brainstormJudgeCmd.Flags().String("line", "", "the user's pushback or \"double check\" as they typed it, for a rerun")
 	brainstormCmd.AddCommand(brainstormCheckCmd)
 	brainstormCmd.AddCommand(brainstormJudgeCmd)
+	brainstormCmd.AddCommand(brainstormCloseCmd)
 	rootCmd.AddCommand(brainstormCmd)
+}
+
+func brainstormCloseRun(cmd *cobra.Command, args []string) error {
+	send := func(data wshrpc.CommandUiBrainstormCloseData) (string, error) {
+		return wshclient.UiBrainstormCloseCommand(RpcClient, data, uiOpts())
+	}
+	notice, err := brainstormCloseStart(os.Getenv("WAVETERM_BLOCKID"), args[0], send)
+	if err != nil {
+		return uiErr(err)
+	}
+	printNotice(notice)
+	return nil
+}
+
+// brainstormCloseStart resolves the path to absolute and asks the cockpit, which holds the pane, to close it for the
+// caller's agent: only the agent's own terminal names which agent that is.
+func brainstormCloseStart(blockId, file string, send func(wshrpc.CommandUiBrainstormCloseData) (string, error)) (string, error) {
+	if blockId == "" {
+		return "", fmt.Errorf("run wsh brainstorm close from the agent's terminal (WAVETERM_BLOCKID is not set)")
+	}
+	abs, err := brainstormAbsPath(file)
+	if err != nil {
+		return "", err
+	}
+	return send(wshrpc.CommandUiBrainstormCloseData{File: abs, CallerBlockId: blockId})
 }
 
 func brainstormCheckRun(cmd *cobra.Command, args []string) error {

@@ -12,16 +12,18 @@ import { deriveKeyContext, lastKeyActivityTs } from "@/app/store/keybindings/dis
 import { bindingsAtom } from "@/app/store/keybindings/store";
 import { modalsModel } from "@/app/store/modalmodel";
 import { RpcResponseHelper, WshClient } from "@/app/store/wshclient";
-import { DefaultRouter } from "@/app/store/wshrpcutil";
+import { RpcApi } from "@/app/store/wshclientapi";
+import { DefaultRouter, TabRpcClient } from "@/app/store/wshrpcutil";
 import { showHistory } from "@/app/view/agents/agentcenter";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { getBrainstorm } from "@/app/view/agents/brainstormstore";
+import { dismissBrainstorm, getBrainstorm } from "@/app/view/agents/brainstormstore";
 import { getCanvas } from "@/app/view/agents/canvasstore";
 import { briefPeekRecordAtom } from "@/app/view/jarvis/jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
 import { openAddress } from "@/app/view/jarvis/openref";
 import {
     AWAITING_CONFIRMATION,
+    brainstormCloseVerdict,
     BUSY_ERROR,
     callerName,
     COCKPIT_ROUTE_ID,
@@ -118,6 +120,30 @@ class CockpitUiClient extends WshClient {
         }
         this.trail(data.callerblockid, item.title);
         return "";
+    }
+
+    // `wsh brainstorm close`: the agent was told to stop the brainstorm, so its pane, tab and Chat card go. The agent asked,
+    // so no line goes back to it; a judge still weighing is stopped, or its options would land on no question
+    async handle_uibrainstormclose(rh: RpcResponseHelper, data: CommandUiBrainstormCloseData): Promise<string> {
+        const agent = this.roster().find((a) => a.blockId != null && a.blockId === data.callerblockid);
+        if (agent == null) {
+            throw new Error("Run wsh brainstorm close from the agent's terminal");
+        }
+        const verdict = brainstormCloseVerdict(getBrainstorm(agent.id), data.file);
+        if (verdict.kind === "error") {
+            throw new Error(verdict.message);
+        }
+        if (verdict.kind === "none") {
+            return verdict.message;
+        }
+        try {
+            await RpcApi.BrainstormJudgeStopCommand(TabRpcClient, { blockid: data.callerblockid });
+        } catch (e) {
+            console.warn("brainstorm close: stopping the judge failed", agent.id, e);
+        }
+        await dismissBrainstorm(agent.id);
+        this.trail(data.callerblockid, `closed the brainstorm ${verdict.topic}`);
+        return verdict.message;
     }
 
     private async waitForUser(): Promise<void> {

@@ -41,6 +41,7 @@ import {
     Folder,
     GitCommitHorizontal,
     GitFork,
+    LightbulbOff,
     Maximize2,
     Minimize2,
     PanelRight,
@@ -61,6 +62,7 @@ import { setAgentView, type AgentView } from "./agentview";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
 import { brainstormTabDot } from "./brainstormband";
 import { waitsOnUser } from "./brainstormmodel";
+import { closeBrainstorm } from "./brainstormsend";
 import { brainstormAtom, brainstormBandAtom, shownBrainstormFile } from "./brainstormstore";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
@@ -774,6 +776,15 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 label: railVisible ? "Hide details" : "Show details",
                 icon: <PanelRight size={15} />,
                 click: () => globalStore.set(railVisibleAtom, !railVisible),
+            });
+        }
+        if (brainstorm != null && blockId != null) {
+            items.push({
+                label: "Close brainstorm",
+                sublabel: "talk on in the terminal; the file stays",
+                icon: <LightbulbOff size={15} />,
+                attrs: { "data-more-close-brainstorm": "" },
+                click: () => fireAndForget(() => closeBrainstorm(agent)),
             });
         }
         if (blockId != null) {

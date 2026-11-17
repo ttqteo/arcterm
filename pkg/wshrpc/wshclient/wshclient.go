@@ -1822,6 +1822,12 @@ func TranslateCommand(w *wshutil.WshRpc, data wshrpc.CommandTranslateData, opts 
 	return resp, err
 }
 
+// command "uibrainstormclose", wshserver.UiBrainstormCloseCommand
+func UiBrainstormCloseCommand(w *wshutil.WshRpc, data wshrpc.CommandUiBrainstormCloseData, opts *wshrpc.RpcOpts) (string, error) {
+	resp, err := sendRpcRequestCallHelper[string](w, "uibrainstormclose", data, opts)
+	return resp, err
+}
+
 // command "uiinvoke", wshserver.UiInvokeCommand
 func UiInvokeCommand(w *wshutil.WshRpc, data wshrpc.CommandUiInvokeData, opts *wshrpc.RpcOpts) (string, error) {
 	resp, err := sendRpcRequestCallHelper[string](w, "uiinvoke", data, opts)
