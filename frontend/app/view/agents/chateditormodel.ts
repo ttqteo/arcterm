@@ -121,6 +121,30 @@ export function atomRunsIn(text: string, caret?: number): AtomRun[] {
     return out;
 }
 
+/** Where a caret stands once a text's runs are swapped for pills and badges (`caretAmongRuns`): `gap` is the text between
+ *  the runs (0 before the first run, `n` after run `n - 1`) and `offset` the characters into it; `before` is the run the
+ *  caret sits right before with no text between them. */
+export type RunCaret = { gap: number; offset: number } | { before: number };
+
+/** Pure: the caret's place among the runs of its text once they are swapped, so the swap can put it back where it was in
+ *  the text. A caret in the text between runs, or against a run's start with text before it, is in that text (the end of
+ *  it); one at a run's start with no text before it (the caret at 0 and a token starting there: `xagent:7cd99627 ` with
+ *  the `x` deleted) is `before` that run, which `replace` would otherwise carry to its far side. A caret inside a run is
+ *  null: `atomRunsIn` leaves a token the caret is in or ends. `runs` are in order and apart. */
+export function caretAmongRuns(runs: { start: number; end: number }[], caret: number): RunCaret | null {
+    for (let gap = 0; gap <= runs.length; gap++) {
+        const from = gap === 0 ? 0 : runs[gap - 1].end;
+        if (caret < from) {
+            return null;
+        }
+        const to = gap === runs.length ? Number.POSITIVE_INFINITY : runs[gap].start;
+        if (caret <= to) {
+            return from === to ? { before: gap } : { gap, offset: caret - from };
+        }
+    }
+    return null;
+}
+
 /** Pure: which of the two spaces around a pill that is taken away goes with it, so deleting `đọc @a/b.ts tiếp` leaves
  *  `đọc tiếp` and not two spaces. `before` and `after` are the text right before and right after the pill in its line ("" at
  *  the line's edge or beside another pill). "after" when a space follows and the pill is at the line's start or has a space

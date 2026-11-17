@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
     atomRunsIn,
     bangSkip,
+    caretAmongRuns,
     fromShown,
     gapToDrop,
     isAtom,
@@ -318,6 +319,42 @@ describe("atomRunsIn", () => {
         const t = "a @src/x.ts, agent:7cd99627 run:071a8e3b!";
         const runs = atomRunsIn(t);
         expect(runs.map((r) => t.slice(r.start, r.end))).toEqual(["@src/x.ts", "agent:7cd99627", "run:071a8e3b"]);
+    });
+});
+
+describe("caretAmongRuns", () => {
+    const runs = atomRunsIn("agent:7cd99627 run:071a8e3b ok"); // [0,14] and [15,27]
+
+    it("puts a caret at 0 before a run starting there, with no text between", () => {
+        expect(caretAmongRuns(runs, 0)).toEqual({ before: 0 });
+        expect(caretAmongRuns([{ start: 0, end: 14 }], 0)).toEqual({ before: 0 });
+    });
+    it("keeps a caret between two runs in the text between them, at its end", () => {
+        expect(caretAmongRuns(runs, 15)).toEqual({ gap: 1, offset: 1 });
+        expect(caretAmongRuns(runs, 28)).toEqual({ gap: 2, offset: 1 });
+    });
+    it("keeps a caret after the last run in the text after it, at the same distance from the run's end", () => {
+        expect(caretAmongRuns(runs, 30)).toEqual({ gap: 2, offset: 3 });
+        expect(caretAmongRuns([{ start: 2, end: 16 }], 17)).toEqual({ gap: 1, offset: 1 });
+    });
+    it("keeps a caret before the first run in the text before it, with text before the run", () => {
+        expect(caretAmongRuns([{ start: 2, end: 16 }], 0)).toEqual({ gap: 0, offset: 0 });
+        expect(caretAmongRuns([{ start: 2, end: 16 }], 2)).toEqual({ gap: 0, offset: 2 });
+    });
+    it("puts a caret before a run that follows another with no text between", () => {
+        expect(
+            caretAmongRuns(
+                [
+                    { start: 0, end: 5 },
+                    { start: 5, end: 9 },
+                ],
+                5
+            )
+        ).toEqual({ before: 1 });
+    });
+    it("has no place for a caret inside a run", () => {
+        expect(caretAmongRuns(runs, 5)).toBeNull();
+        expect(caretAmongRuns(runs, 20)).toBeNull();
     });
 });
 

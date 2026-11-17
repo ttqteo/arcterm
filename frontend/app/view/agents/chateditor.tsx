@@ -64,6 +64,7 @@ import { FENCED_TEXT_CLASS, FencedCode } from "./chateditorfences";
 import {
     atomRunsIn,
     bangSkip,
+    caretAmongRuns,
     fromShown,
     gapToDrop,
     segmentLength,
@@ -207,7 +208,9 @@ function $gapAroundPills(node: TextNode): void {
  *  punctuation after it, `atomRunsIn`): the node is split at the ends of each one and its middle part replaced by the node
  *  it stands for. The box's text does not change (a badge's text is its `raw`, a pill's `mentionText`), so the update
  *  listener reports nothing and no outside rebuild follows. `splitText` carries a caret in the node to the part it falls
- *  in, a caret at a token's end (still typing) never splits it, and one before a token stays before its badge. */
+ *  in and a caret at a token's end (still typing) never splits it, but `replace` moves a caret on the part it replaces to
+ *  the new node's far side: a caret at 0 with a token starting there would end up after its badge, so the caret is put
+ *  back at its offset in the text (`caretAmongRuns`) once the swaps are done. */
 function $atomsInTypedText(node: TextNode): void {
     const selection = $getSelection();
     const caret =
@@ -218,6 +221,8 @@ function $atomsInTypedText(node: TextNode): void {
     if (runs.length === 0) {
         return;
     }
+    const kept =
+        $isRangeSelection(selection) && selection.isCollapsed() && caret != null ? caretAmongRuns(runs, caret) : null;
     // which part is which token, read before anything is replaced or given a gap (both change a part's size)
     let at = 0;
     const swaps = node.splitText(...runs.flatMap((r) => [r.start, r.end])).map((part) => {
@@ -227,6 +232,8 @@ function $atomsInTypedText(node: TextNode): void {
         return { part, run };
     });
     const atoms: LexicalNode[] = [];
+    // the text part after run `n - 1` (0: before the first run), which is where a caret in the text between runs stays
+    const gaps: TextNode[] = [];
     for (const { part, run } of swaps) {
         if (run != null) {
             atoms.push(
@@ -236,6 +243,22 @@ function $atomsInTypedText(node: TextNode): void {
                         : $createFileMentionNode(run.seg.path)
                 )
             );
+        } else {
+            gaps[atoms.length] = part;
+        }
+    }
+    // after the swaps the current selection is not the object read above (a headless check found them different): read it again
+    const now = $getSelection();
+    if (kept != null && $isRangeSelection(now)) {
+        const atom = "before" in kept ? atoms[kept.before] : undefined;
+        const text = "gap" in kept ? gaps[kept.gap] : undefined;
+        for (const point of [now.anchor, now.focus]) {
+            if (atom != null) {
+                // no text before the badge: the caret sits on the paragraph at its index, a decorator holds none
+                point.set(atom.getParentOrThrow().getKey(), atom.getIndexWithinParent(), "element");
+            } else if (text != null && "gap" in kept) {
+                point.set(text.getKey(), Math.min(kept.offset, text.getTextContentSize()), "text");
+            }
         }
     }
     // the text now standing against a new pill or badge needs the gap rule too (`@"a b.md"x` leaves `x` against its pill)

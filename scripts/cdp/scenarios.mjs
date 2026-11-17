@@ -48832,7 +48832,8 @@ const chatMath = {
 // an initiative that are not there (dashed, with their reasons as titles). Then `@agent` in A's box picks B: the box draws the same
 // badge, Backspace beside it selects it, the next one takes the whole token away and leaves one space; `@init` and `@conv` list the
 // initiative and the conversation. A `run:<id>` typed with key events becomes a badge once a space follows it, `agent:<id>` with
-// nothing after it stays text, and a typed `@path` becomes a file pill. The text never changes: the box's text is read from
+// nothing after it stays text, and a typed `@path` becomes a file pill; a token made finished at the start of the box (Delete takes
+// the `x` off `xagent:<id> ` with the caret at 0) becomes a badge with the caret still before it. The text never changes: the box's text is read from
 // Lexical's own state, since a badge draws a name. Last, back on the bubble: a Ctrl-click on B's badge peeks B in the avatar popup
 // (A stays focused), and the run badge lifts on hover.
 
@@ -49059,8 +49060,14 @@ const chatRefBadges = {
         const E8 = ctx.effortId.slice(0, 8);
         const D8 = CRB_DONE_EFFORT_ID.slice(0, 8);
         const more = { session: `session:${S8}`, effort: `effort:${E8}`, done: `effort:${D8}`, noSession: "session:77aa01fe", noEffort: "effort:deadbeef" };
-        const inBubble =(token) => `document.querySelector('[data-agent-chat="${A}"] [data-chat-conversation] [data-chat-ref="${token}"]')`;
+        const inBubble = (token) => `document.querySelector('[data-agent-chat="${A}"] [data-chat-conversation] [data-chat-ref="${token}"]')`;
         const inBox = `${acBox(A)}?.querySelector('[data-chat-ref]')`;
+        // The `@` a step types reads the runs, councils and initiatives again over the seed, so the bubble behind a picker or a
+        // typed token shows the seeded run, council and finished initiative unresolved. Before such a shot, once the load has
+        // settled, the seed goes back and stays back until the bubble's seeded run badge reads resolved, so the shot shows what a
+        // person sees. True when it held.
+        const reseedForShot = () =>
+            crbReseedUntil(h, ctx, `${inBubble(tokens.run)}?.getAttribute("data-ref-state") === "resolved"`, 8000);
         const focused = () => AC.agentPage(h, `return globalStore.get(agentsModel().focusIdAtom);`);
         const waitFocus = async (id, ms = 8000) => {
             for (let waited = 0; waited < ms; waited += 250) {
@@ -49284,10 +49291,11 @@ const chatRefBadges = {
                 { selected, kept, gone, left, acValLeft }
             );
 
-            // 7a-7e: part 2 in the box. The picker lists a conversation and an initiative, a reference or an `@path` typed with key
-            // events becomes a badge or a file pill once a space follows it, and a token with nothing after it stays text.
+            // 7a-7f: part 2 in the box. The picker lists a conversation and an initiative, a reference or an `@path` typed with key
+            // events becomes a badge or a file pill once a space follows it, a token with nothing after it stays text, and the caret
+            // stays before a badge formed at the start of the box.
             // The conversation and the initiatives are seeded first; typing `@` reads the initiatives again, so the seed goes back
-            // after the picker steps (the typed badge below resolves a run: that read the runs, too).
+            // before each shot (reseedForShot: the typed badge below resolves a run, and that read the runs, too).
             await crbSeed(h, ctx);
             await acClear(h, acBox(A));
             await acType(h, acBox(A), "đọc @init", false);
@@ -49295,13 +49303,15 @@ const chatRefBadges = {
             const effortListed = await polishWaitFor(h, `!!document.querySelector('[data-chat-mention="${effortKey}"]')`, 8000);
             const effortList = await acMentionState(h);
             await polishNap(300);
+            const effortSeeded = await reseedForShot();
+            await polishNap(300);
             await h.shot("cdp-shots/chat-ref-badges-picker-effort.png");
             const effortRow = (effortList?.rows ?? []).find((r) => r.key === effortKey);
             await acClear(h, acBox(A));
             rec(
                 "7a. `@init` lists a row for the initiative, naming it",
                 effortListed && effortRow != null && effortRow.text.includes(CRB_EFFORT_TITLE),
-                { effortListed, effortList }
+                { effortListed, effortSeeded, effortList }
             );
 
             await crbSeed(h, ctx);
@@ -49310,13 +49320,15 @@ const chatRefBadges = {
             const sessionListed = await polishWaitFor(h, `!!document.querySelector('[data-chat-mention="${sessionKey}"]')`, 8000);
             const sessionList = await acMentionState(h);
             await polishNap(300);
+            const sessionSeeded = await reseedForShot();
+            await polishNap(300);
             await h.shot("cdp-shots/chat-ref-badges-picker-session.png");
             const sessionRow = (sessionList?.rows ?? []).find((r) => r.key === sessionKey);
             await acClear(h, acBox(A));
             rec(
                 "7b. `@conv` lists a row for the conversation, naming it",
                 sessionListed && sessionRow != null && sessionRow.text.includes(CRB_SESSION_NAME),
-                { sessionListed, sessionList }
+                { sessionListed, sessionSeeded, sessionList }
             );
 
             // 7c. the run is typed with key events into an empty box; typing `@` above read the runs again over the seed, so it goes
@@ -49342,11 +49354,13 @@ const chatRefBadges = {
             await polishNap(400);
             const stillText = await h.ev(crbBoxText(acBox(A)));
             const stillCount = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? -1`);
+            const stillSeeded = await reseedForShot();
+            await polishNap(300);
             await h.shot("cdp-shots/chat-ref-badges-typed.png");
             rec(
                 "7d. `agent:<id>` typed after it, with no character after, adds no badge: the box still holds the run's one, and the token is text",
                 stillCount === 1 && stillText === `xem ${runToken} agent:${A.slice(0, 8)}`,
-                { stillCount, stillText }
+                { stillCount, stillSeeded, stillText }
             );
             await acClear(h, acBox(A));
 
@@ -49358,12 +49372,46 @@ const chatRefBadges = {
             const pills = await acPills(h, acBox(A));
             const pillText = await h.ev(crbBoxText(acBox(A)));
             const pillRefs = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? -1`);
+            const pillSeeded = await reseedForShot();
+            await polishNap(300);
             await h.shot("cdp-shots/chat-ref-badges-typed-pill.png");
             await acClear(h, acBox(A));
             rec(
                 "7e. `xem @../arcterm/cdp-shots ` typed key by key holds one file pill (no badge) and its text is exactly what was typed",
                 pilled && pills.length === 1 && pills[0].path === "../arcterm/cdp-shots" && pillRefs === 0 && pillText === `xem ${mention} `,
-                { pilled, pills, pillRefs, pillText }
+                { pilled, pillSeeded, pills, pillRefs, pillText }
+            );
+
+            // 7f. the caret before a badge formed at it: `xagent:<A> ` is only text (the `x` makes it no reference), Home puts the caret
+            // at 0 and Delete takes the `x` away, which leaves a finished token starting at offset 0 with the caret at 0. The badge forms
+            // and the caret stays before it, as a typed token's caret goes back where it was in the text (a replaced node would carry it
+            // to the badge's far side). A `y` typed next stands before the badge: `y agent:<A> ` (the box's gap rule gives it a space
+            // against the badge) or `yagent:<A> `, never `agent:<A> y`.
+            const caretToken = `agent:${A.slice(0, 8)}`;
+            const homeKey = { key: "Home", code: "Home", windowsVirtualKeyCode: 36 };
+            const deleteKey = { key: "Delete", code: "Delete", windowsVirtualKeyCode: 46 };
+            await crbTypeKeys(h, acBox(A), `x${caretToken} `);
+            await polishNap(300);
+            const asText = await h.ev(crbBoxText(acBox(A)));
+            const asTextRefs = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? -1`);
+            await acKey(h, homeKey);
+            await polishNap(150);
+            await acKey(h, deleteKey);
+            const formedAtStart = await polishWaitFor(h, `${acBox(A)}?.querySelectorAll("[data-chat-ref]").length === 1`, 3000);
+            const formedText = await h.ev(crbBoxText(acBox(A)));
+            await crbTypeKeys(h, acBox(A), "y");
+            await polishNap(300);
+            const caretText = await h.ev(crbBoxText(acBox(A)));
+            const caretRefs = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? -1`);
+            const caretSeeded = await reseedForShot();
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-caret.png");
+            await acClear(h, acBox(A));
+            rec(
+                "7f. `xagent:<id> ` is text; with the caret at the start, Delete takes the `x` away and the token becomes one badge with the caret still before it: a `y` typed next stands ahead of the badge (`y agent:<id> `), not after it",
+                asText === `x${caretToken} ` && asTextRefs === 0 && formedAtStart && formedText === `${caretToken} ` && caretRefs === 1 &&
+                    (caretText === `y ${caretToken} ` || caretText === `y${caretToken} `),
+                { asText, asTextRefs, formedAtStart, formedText, caretText, caretRefs, caretSeeded }
             );
 
             // the bubble's badges again, with real mouse events at a badge's centre (the box is empty now, and the steps above read
@@ -49504,7 +49552,7 @@ const chatRefBadges = {
     },
 };
 
-// --- chat-initiative:Add to an initiative from Chat (docs/superpowers/specs/2026-11-12-chat-add-to-initiative-design.md, plan
+// --- chat-initiative: Add to an initiative from Chat (docs/superpowers/specs/2026-11-12-chat-add-to-initiative-design.md, plan
 // 2026-11-13-chat-add-to-initiative.md Task 6). A Claude agent's reply holds three ```arc-initiative blocks (a note on its own
 // initiative, a chunk, a new initiative under a topic) and a fourth that is broken JSON; Chat draws the three as cards and
 // leaves the fourth a code block. The steps handle them one by one (Edit, the chunk dropdown and the picker, Add, Dismiss), open
