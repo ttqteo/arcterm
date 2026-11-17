@@ -756,9 +756,19 @@ describe("projectTranscript detail", () => {
             L({ type: "assistant", message: { content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "npm test", description: "run tests" } }] } }),
             L({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "b1", is_error: false, content: "24 passing" }] } }),
         ]);
-        // the line shows the human description; the raw command lives in the detail
-        expect(out[0]).toMatchObject({ kind: "action", verb: "ran", target: "run tests" });
+        // the line shows the human description; the raw command lives in the detail, and on the action from the call on
+        expect(out[0]).toMatchObject({ kind: "action", verb: "ran", target: "run tests", command: "npm test" });
         expect((out[0] as any).detail).toEqual({ kind: "bash", command: "npm test", output: "24 passing", exit: 0 });
+    });
+
+    it("keeps a described Bash call's command on the action before its result, and none when the target is the command", () => {
+        const out = projectTranscript([
+            L({ type: "assistant", message: { content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "npm test", description: "run tests" } }] } }),
+            L({ type: "assistant", message: { content: [{ type: "tool_use", id: "b2", name: "Bash", input: { command: "go build" } }] } }),
+        ]);
+        expect(out[0]).toMatchObject({ verb: "ran", target: "run tests", command: "npm test" });
+        expect(out[1]).toMatchObject({ verb: "ran", target: "go build" });
+        expect((out[1] as any).command).toBeUndefined();
     });
 
     it("renders a Skill call as a labeled line (verb + skill name) with an args detail", () => {

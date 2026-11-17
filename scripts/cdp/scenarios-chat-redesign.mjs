@@ -1,5 +1,5 @@
 // The Chat redesign (docs/superpowers/specs/2026-11-11-chat-redesign-design.md, plan 2026-11-11-chat-redesign.md Task 7):
-// a floating message box that changes shape by state, step lines that fold into `Worked for…`, the frosted suggestion
+// a floating message box that changes shape by state, step lines that fold into one worded line, the frosted suggestion
 // panel, the type rhythm, the brainstorm question card in the conversation, the jump button, and frame timing while
 // blocks stream in. It is written against the spec's DOM contract ("Builder decisions"), not against the components:
 // [data-chat-box][data-chat-box-state], [data-chat-fade], [data-chat-send], [data-chat-stop],
@@ -477,7 +477,7 @@ export default function (kit) {
                     AC.toolUse("toolu_cr_inflight", "Read", { file_path: file(FILES[1]) }, u(-3))
                 );
                 await setRoster(WORKING);
-                const up = await polishWaitFor(h, `(${lastFold(A)}?.textContent ?? "").startsWith("Working for")`, WAIT_MS);
+                const up = await polishWaitFor(h, `${lastFold(A)}?.getAttribute("data-fold-state") === "running"`, WAIT_MS);
                 const lines = await polishWaitFor(h, `${layerOf(A)}?.querySelectorAll("[data-chat-tools] [data-chat-step]").length >= 5`, SHORT_MS);
                 await h.ev(`(() => { const r = ${layerOf(A)}?.querySelector("[data-chat-step-running]"); r?.scrollIntoView({ block: "center" }); return true; })()`);
                 await polishNap(400);
@@ -486,6 +486,8 @@ export default function (kit) {
                     const running = [...(layer?.querySelectorAll("[data-chat-step-running]") ?? [])];
                     return {
                         fold: ${FLAT}(${lastFold(A)}),
+                        foldState: ${lastFold(A)}?.getAttribute("data-fold-state") ?? null,
+                        sentence: ${lastFold(A)}?.querySelector("[data-fold-sentence]")?.textContent.trim() ?? "",
                         steps: layer?.querySelectorAll("[data-chat-tools] [data-chat-step]").length ?? 0,
                         running: running.length,
                         runningHasToolRunning: running.every((r) => r.hasAttribute("data-tool-running") || !!r.querySelector("[data-tool-running]") || !!r.closest("[data-tool-running]")),
@@ -494,8 +496,8 @@ export default function (kit) {
                 })()`);
                 await shot(h, "6-steps-running");
                 rec(
-                    `${name}: [data-chat-step] lines sit inside [data-chat-tools], exactly one [data-chat-step-running] also carries data-tool-running, and the [data-chat-work] [data-fold] header reads Working for`,
-                    up && lines && got.steps >= 5 && got.running === 1 && got.runningHasToolRunning && got.fold.startsWith("Working for"),
+                    `${name}: [data-chat-step] lines sit inside [data-chat-tools], exactly one [data-chat-step-running] also carries data-tool-running, and the [data-chat-work] [data-fold] header says what the call in flight is doing: Reading retry.ts, counting up`,
+                    up && lines && got.steps >= 5 && got.running === 1 && got.runningHasToolRunning && got.foldState === "running" && got.sentence === "Reading retry.ts" && /· \d+s$/.test(got.fold),
                     got
                 );
             });
@@ -589,22 +591,26 @@ export default function (kit) {
                 );
             });
 
-            // 8. the tools finish and the reply lands: the stretch folds into Worked for…
+            // 8. the tools finish and the reply lands: the stretch folds into its sentence
             await run("8. steps folded", async (name) => {
                 const u = (sec) => ts(ctx, sec * 1000);
                 append(ctx, AC.toolResult("toolu_cr_inflight", "export const delay = 100;", u(0)), AC.assistantText(REPLY, u(1)));
                 await setRoster({});
                 // the fold flips with the roster, before the transcript re-read draws the reply row: wait for both, then for the arrival spring (0.35 s) to finish
-                const folded = await polishWaitFor(h, `(${lastFold(A)}?.textContent ?? "").startsWith("Worked for") && (${layerOf(A)}?.textContent ?? "").includes("What changed")`, WAIT_MS);
+                const folded = await polishWaitFor(h, `${lastFold(A)}?.getAttribute("data-fold-state") === "done" && (${layerOf(A)}?.textContent ?? "").includes("What changed")`, WAIT_MS);
                 await polishNap(700);
                 await h.ev(`(() => { const s = ${scrollerOf(A)}; if (s) s.scrollTop = s.scrollHeight; return true; })()`);
                 await polishNap(400);
                 const got = await h.ev(`(() => {
                     const layer = ${layerOf(A)};
-                    return { fold: ${FLAT}(${lastFold(A)}), steps: layer?.querySelectorAll("[data-chat-step]").length ?? 0, reply: (layer?.textContent ?? "").includes("What changed") };
+                    return { fold: ${FLAT}(${lastFold(A)}), sentence: ${lastFold(A)}?.querySelector("[data-fold-sentence]")?.textContent.trim() ?? "", counts: ${lastFold(A)}?.querySelector("[data-fold-counts]")?.textContent.trim() ?? null, steps: layer?.querySelectorAll("[data-chat-step]").length ?? 0, reply: (layer?.textContent ?? "").includes("What changed") };
                 })()`);
                 await shot(h, "8-steps-folded");
-                rec(`${name}: with the reply landed the stretch is the [data-chat-work] [data-fold] line reading Worked for… and no [data-chat-step] is left`, folded && got.fold.startsWith("Worked for") && got.steps === 0 && got.reply, got);
+                rec(
+                    `${name}: with the reply landed the stretch is the [data-chat-work] [data-fold] line reading Edited 4 files, read 2 files and searched, then its +N −N lines and its time, and no [data-chat-step] is left`,
+                    folded && got.sentence === "Edited 4 files, read 2 files and searched" && /^\+\d+−\d+$/.test(got.counts ?? "") && /· \d+s$/.test(got.fold) && got.steps === 0 && got.reply,
+                    got
+                );
             });
 
             // 9. the type rhythm of the Chat column
@@ -1130,13 +1136,59 @@ export default function (kit) {
                 const shown = await polishWaitFor(h, `!!${layerOf(A)}?.querySelector('[data-chat-action-chip="terminal"]')`, WAIT_MS);
                 await polishNap(300);
                 const actions = await h.ev(`[...(${layerOf(A)}?.querySelectorAll("[data-chat-action-chip]") ?? [])].map(${FLAT})`);
+                const sentence = await h.ev(`${lastFold(A)}?.querySelector("[data-fold-sentence]")?.textContent.trim() ?? null`);
                 await shot(h, "20-running-terminal");
                 rec(
-                    `${name}: a command running 10 s or more offers [data-chat-action-chip="terminal"] Open the terminal, and no Show the diff in a turn that edited nothing`,
-                    shown && actions.join(",") === "Open the terminal",
-                    { shown, actions }
+                    `${name}: a command running 10 s or more offers [data-chat-action-chip="terminal"] Open the terminal, and no Show the diff in a turn that edited nothing; the fold, for a command with no description, reads Running npm test`,
+                    shown && actions.join(",") === "Open the terminal" && sentence === "Running npm test",
+                    { shown, actions, sentence }
                 );
                 await setRoster({});
+            });
+
+            // 21. a command with a description: its line says the description in place of Ran and the command, and the
+            // command shows at the top of the line once opened; a command with none keeps Ran and its first line
+            await run("21. described command", async (name) => {
+                append(
+                    ctx,
+                    AC.toolResult("toolu_cr_longbash", "24 passing", ts(ctx, -2_000)),
+                    AC.toolUse("toolu_cr_described", "Bash", { command: "curl -s localhost:5174/health", description: "Confirmed the server is no longer running" }, ts(ctx, -1_500)),
+                    AC.toolResult("toolu_cr_described", "curl: (7) Failed to connect", ts(ctx, -1_000)),
+                    AC.assistantText("The tests pass and the server is down.", ts(ctx, -500))
+                );
+                await setRoster({});
+                const lastWork = `[...(${layerOf(A)}?.querySelectorAll("[data-chat-work]") ?? [])].pop()`;
+                const lines = `[...(${lastWork}?.querySelectorAll("[data-chat-step]") ?? [])]`;
+                const folded = await polishWaitFor(h, `(${lastFold(A)}?.querySelector("[data-fold-sentence]")?.textContent.trim() ?? "") === "Ran 2 commands"`, WAIT_MS);
+                await h.ev(`${lastFold(A)}?.click()`);
+                const opened = await polishWaitFor(h, `${lines}.length === 2`, SHORT_MS);
+                await polishNap(450);
+                await h.ev(`${lines}[1]?.click()`);
+                const detail = await polishWaitFor(h, `!!${lines}[1]?.parentElement?.querySelector("[data-tool-panel]")`, SHORT_MS);
+                await polishNap(450);
+                const got = await h.ev(`(() => {
+                    const [plain, described] = ${lines};
+                    const chip = (s, kind) => s?.querySelector('[data-chat-step-chip="' + kind + '"]')?.textContent.trim() ?? null;
+                    return {
+                        plain: { text: ${FLAT}(plain).slice(0, 80), command: chip(plain, "command") },
+                        described: {
+                            text: ${FLAT}(described).slice(0, 80),
+                            description: chip(described, "description"),
+                            command: chip(described, "command"),
+                            panel: ${FLAT}(described?.parentElement?.querySelector("[data-tool-panel]")).slice(0, 200),
+                        },
+                    };
+                })()`);
+                await shot(h, "21-described-command");
+                rec(
+                    `${name}: the stretch folds into Ran 2 commands; opened, npm test keeps Ran and its command chip, the described call reads Confirmed the server is no longer running with no Ran and no command chip, and opening it shows curl -s localhost:5174/health`,
+                    folded && opened && detail &&
+                        got.plain.text.startsWith("Ran") && got.plain.command === "npm test" &&
+                        got.described.description === "Confirmed the server is no longer running" &&
+                        got.described.command == null && !got.described.text.startsWith("Ran") &&
+                        got.described.panel.includes("curl -s localhost:5174/health"),
+                    { folded, opened, detail, got }
+                );
             });
 
             return steps;

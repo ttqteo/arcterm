@@ -29,13 +29,16 @@ export type StepIcon =
     | "blocked"
     | "tool";
 
+// a command its call described ("Confirmed the server is no longer running") is a "description": the line shows those words
+// in place of the verb and the command, and the command shows when the line opens
 export type StepChip =
     | { kind: "file"; path: string }
     | { kind: "command"; text: string }
+    | { kind: "description"; text: string; command: string }
     | { kind: "text"; text: string };
 
 export interface Step {
-    verb: string;
+    verb: string; // "" for a described command: its description says what it did
     icon: StepIcon;
     chips: StepChip[]; // at most MAX_STEP_CHIPS
     more: number; // the things the call touched past the chips shown
@@ -60,13 +63,13 @@ const KNOWN: Record<string, { verb: string; icon: StepIcon }> = {
 };
 
 /** Pure: a verb we have no word for, as the line says it: "run_command" → "Run command". */
-function plainVerb(verb: string): string {
+export function plainVerb(verb: string): string {
     const words = verb.replace(/[_-]+/g, " ").trim();
     return words === "" ? "Tool" : words[0].toUpperCase() + words.slice(1);
 }
 
 /** Pure: the first non-empty line of a command, cut at MAX_CHIP_TEXT. */
-function firstLine(text: string): string {
+export function firstLine(text: string): string {
     const line =
         text
             .split("\n")
@@ -95,8 +98,20 @@ function distinct(paths: string[]): string[] {
     return [...new Set(paths.filter((p) => p !== ""))];
 }
 
+/** Pure: a command call's chip. `command` is the command line when the projection knows it apart from the target (the
+ *  bash detail's once the result lands, or the action's own `command` before then); a target that differs from it is the
+ *  call's description. With no command known the target is the command itself (pi, codex and opencode set it so). */
+function commandChips(target: string, command: string | undefined): StepChip[] {
+    const cmd = (command ?? "").trim();
+    if (cmd !== "" && target !== "" && target !== cmd) {
+        return [{ kind: "description", text: firstLine(target), command: cmd }];
+    }
+    const line = firstLine(cmd !== "" ? cmd : target);
+    return line !== "" ? [{ kind: "command", text: line }] : [];
+}
+
 /** Pure: everything the call touched, as chips in the order it names them (before the cut at MAX_STEP_CHIPS). */
-function chipsOf(a: AgentActionEntry): StepChip[] {
+export function chipsOf(a: AgentActionEntry): StepChip[] {
     const target = a.target.trim();
     const d = a.detail;
     // an edit names its files: one chip each (a call may touch several: codex and pi project a multi-file patch)
@@ -113,14 +128,9 @@ function chipsOf(a: AgentActionEntry): StepChip[] {
             return files.map((path) => ({ kind: "file", path }));
         }
     }
-    // a command, from its detail once the result lands (the target is its description then), else the target
-    if (d?.kind === "bash") {
-        const command = firstLine(d.command ?? target);
-        return command !== "" ? [{ kind: "command", text: command }] : [];
-    }
-    if (a.verb === "ran") {
-        const command = firstLine(target);
-        return command !== "" ? [{ kind: "command", text: command }] : [];
+    // a command: by its description when the call gave one, else by its first line
+    if (d?.kind === "bash" || a.verb === "ran") {
+        return commandChips(target, d?.kind === "bash" ? (d.command ?? a.command) : a.command);
     }
     if (a.path != null && a.path !== "") {
         return [{ kind: "file", path: a.path }];
@@ -225,7 +235,7 @@ export function stepOf(action: AgentActionEntry, live: boolean): Step {
     const known = KNOWN[action.verb];
     const all = chipsOf(action);
     return {
-        verb: known?.verb ?? plainVerb(action.verb),
+        verb: all[0]?.kind === "description" ? "" : (known?.verb ?? plainVerb(action.verb)),
         icon: known?.icon ?? "tool",
         chips: all.slice(0, MAX_STEP_CHIPS),
         more: Math.max(0, all.length - MAX_STEP_CHIPS),

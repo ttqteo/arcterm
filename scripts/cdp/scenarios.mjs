@@ -44084,7 +44084,11 @@ const agentChat = {
                     you: you?.textContent.trim() ?? null,
                     youGap: yr && cr ? Math.round(cr.right - yr.right) : null,
                     prose: who?.querySelector("[data-chat-prose]")?.textContent.trim() ?? null,
-                    pill: layer?.querySelector("[data-chat-work] [data-fold]")?.textContent.trim() ?? null,
+                    pill: (() => {
+                        const f = layer?.querySelector("[data-chat-work] [data-fold]");
+                        const t = (sel) => f?.querySelector(sel)?.textContent.trim() ?? null;
+                        return f == null ? null : { state: f.getAttribute("data-fold-state"), sentence: t("[data-fold-sentence]"), counts: t("[data-fold-counts]"), time: t("[data-fold-time]") };
+                    })(),
                     chip: layer?.querySelector("[data-chat-files] [data-chat-file]")?.getAttribute("data-chat-file") ?? null,
                     sentFrom: sent.map((s) => s.getAttribute("data-chat-from")),
                     sent: sent.map((s) => s.textContent.trim().slice(0, 100)),
@@ -44093,7 +44097,7 @@ const agentChat = {
             })()`);
             await h.shot("cdp-shots/agent-chat-1-bubbles.png");
             rec(
-                "1a. a Claude cell opens in Chat: the header's toggle shows Chat and offers the terminal (its icon and Show terminal); your message is a bubble on the right, the agent's prose is a page column (step 31 reads its look), a work pill and a file chip show, the run's launch prompt and a pointer line are sent cards",
+                "1a. a Claude cell opens in Chat: the header's toggle shows Chat and offers the terminal (its icon and Show terminal); your message is a bubble on the right, the agent's prose is a page column (step 31 reads its look), the stretch folds into the sentence Edited client.ts, read client.ts with its +/− counts and its time, a file chip shows, the run's launch prompt and a pointer line are sent cards",
                 loaded &&
                     header1?.toggle?.view === "chat" &&
                     header1.toggle.label === "Show terminal" &&
@@ -44102,11 +44106,33 @@ const agentChat = {
                     bubbles.you === AC_USER_TEXT &&
                     bubbles.youGap != null && bubbles.youGap >= -1 && bubbles.youGap <= 3 &&
                     bubbles.prose === AC_PROSE_1 &&
-                    /^Worked for .+ · 2 tools$/.test(bubbles.pill ?? "") &&
+                    bubbles.pill?.state === "done" &&
+                    bubbles.pill.sentence === "Edited client.ts, read client.ts" &&
+                    /^\+\d+(−\d+)?$/.test(bubbles.pill.counts ?? "") &&
+                    /^· \d+s$/.test(bubbles.pill.time ?? "") &&
                     (bubbles.chip ?? "").endsWith("client.ts") &&
                     JSON.stringify(bubbles.sentFrom) === JSON.stringify(["run", "run"]) &&
                     bubbles.launchAsBubble === false,
                 { header1, bubbles }
+            );
+            // the fold opened: one step line per call under the sentence, then folded again for the steps below
+            const foldA = `${acLayer(A)}?.querySelector("[data-chat-work] [data-fold]")`;
+            await h.ev(`${foldA}?.click()`);
+            const foldOpened = await polishWaitFor(h, `(${acLayer(A)}?.querySelectorAll("[data-chat-work] [data-chat-step]").length ?? 0) === 2`, AC_WAIT_MS);
+            await polishNap(450);
+            const foldOpen = await h.ev(`(() => ({
+                expanded: ${foldA}?.getAttribute("aria-expanded") ?? null,
+                sentence: ${foldA}?.querySelector("[data-fold-sentence]")?.textContent.trim() ?? null,
+                steps: [...(${acLayer(A)}?.querySelectorAll("[data-chat-work] [data-chat-step]") ?? [])].map((s) => s.textContent.trim().slice(0, 80)),
+            }))()`);
+            await h.shot("cdp-shots/agent-chat-1-fold-open.png");
+            await h.ev(`${foldA}?.click()`);
+            const foldRefolded = await polishWaitFor(h, `!${acLayer(A)}?.querySelector("[data-chat-work] [data-chat-step]")`, AC_WAIT_MS);
+            rec(
+                "1a2. a click opens the fold into its two step lines (Read, then Edit with its counts) under the same sentence, and a second click folds it",
+                foldOpened && foldRefolded && foldOpen.expanded === "true" && foldOpen.sentence === "Edited client.ts, read client.ts" &&
+                    foldOpen.steps.length === 2 && foldOpen.steps[0].startsWith("Read") && foldOpen.steps[1].startsWith("Edit"),
+                { foldOpened, foldRefolded, foldOpen }
             );
             // a codex agent has no Chat: its terminal shows, and the control (if any) has no Chat option
             await showAgent(C);
@@ -44984,7 +45010,7 @@ const agentChat = {
                 { screen25, second25, answer25 }
             );
 
-            // 26. a tool with no result while the agent works draws a spinner, not a check, and its stretch reads "Working for";
+            // 26. a tool with no result while the agent works draws a spinner, not a check, and its stretch says what it is doing;
             // once the agent is idle the same row is neutral. Hovering an agent bubble shows Copy; a fenced code block has its own
             const stamp26 = () => ({ cwd: ctx.dir, ts: new Date().toISOString() });
             acAppend(
@@ -44994,14 +45020,14 @@ const agentChat = {
             );
             await AC.setRoster(h, acRoster(ctx, workingA));
             const lastFold = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-work]") ?? [])].pop()?.querySelector("[data-fold]")`;
-            const stretchUp = await polishWaitFor(h, `(${lastFold}?.textContent ?? "").startsWith("Working for")`, 15000);
+            const stretchUp = await polishWaitFor(h, `${lastFold}?.getAttribute("data-fold-state") === "running"`, 15000);
             if (!(await h.ev(`!!${acLayer(A)}?.querySelector("[data-tool-running]")`))) {
                 await h.ev(`${lastFold}?.click()`);
             }
             const runningUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-tool-running]")`, 5000);
             const running26 = await h.ev(`(() => {
                 const row = ${acLayer(A)}?.querySelector("[data-tool-running]");
-                return { text: row?.textContent.replace(/\\s+/g, " ").trim() ?? null, settled: !!${acLayer(A)}?.querySelector("[data-tool-settled]"), fold: ${lastFold}?.textContent.trim() ?? null };
+                return { text: row?.textContent.replace(/\\s+/g, " ").trim() ?? null, settled: !!${acLayer(A)}?.querySelector("[data-tool-settled]"), fold: ${lastFold}?.querySelector("[data-fold-sentence]")?.textContent.trim() ?? null };
             })()`);
             // the spinner row is in the live stretch at the chat's tail: bring it into view for the shot
             await h.ev(`(() => { ${acLayer(A)}?.querySelector("[data-tool-running]")?.scrollIntoView({ block: "center" }); return true; })()`);
@@ -45046,8 +45072,8 @@ const agentChat = {
             await h.shot("cdp-shots/agent-chat-26-copy.png");
             await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2 });
             rec(
-                "26. a tool with no result while the agent works draws as running (no check) in a stretch reading Working for, and neutral once the agent is idle; hovering an agent bubble shows Copy; a fenced code block shows its Copy",
-                stretchUp && runningUp && /read/i.test(running26.text ?? "") && running26.settled === false && /^Working for/.test(running26.fold ?? "") &&
+                "26. a tool with no result while the agent works draws as running (no check) in a stretch reading Reading client.ts, and neutral once the agent is idle; hovering an agent bubble shows Copy; a fenced code block shows its Copy",
+                stretchUp && runningUp && /read/i.test(running26.text ?? "") && running26.settled === false && running26.fold === "Reading client.ts" &&
                     settledUp && spot != null && idleOpacity === "0" && hovered && code26.found && code26.shown && code26.button,
                 { stretchUp, runningUp, running26, settledUp, idleOpacity, hovered, code26 }
             );

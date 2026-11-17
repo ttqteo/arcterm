@@ -1,12 +1,12 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// A stretch of the agent's tool calls in Chat (the A-floating board): the "Worked for 38s · 5 tools" line, and under it, while
-// the stretch is the one running now or was opened by a click, one compact step line per call: an icon, a verb and a chip for
-// each thing it touched (chatsteps.ts), and a run of calls with the same verb on the same file as one line that opens to
-// them. A click on a line opens that call's output or diff below it. The lines open and fold on
-// the spring (springReveal), so a stretch that ends folds into its one line instead of vanishing. The detail body is
-// narrationtimeline.tsx's (ToolDetailBody), shared with the live feed; the rows around it are Chat's own.
+// A stretch of the agent's tool calls in Chat (the A-floating board): the "Edited server.js, ran 2 commands +5 −2 · 38s"
+// line (chatstepsummary.ts), and under it, while the stretch is the one running now or was opened by a click, one compact
+// step line per call: an icon, a verb and a chip for each thing it touched (chatsteps.ts), a described command by its
+// description alone, and a run of calls with the same verb on the same file as one line that opens to them. A click on a
+// line opens that call's output or diff below it. The lines open and fold on the spring (springReveal), so a stretch that
+// ends folds into its one line instead of vanishing. The detail body is narrationtimeline.tsx's (ToolDetailBody), shared with the live feed; the rows around it are Chat's own.
 // Named chatstepsview, not chatsteps: chatsteps.ts holds the pure model, and `./chatsteps` resolves to the .ts first.
 
 import { FileIcon } from "@/app/element/fileicon";
@@ -35,7 +35,8 @@ import { AnimatePresence, motion } from "motion/react";
 import { useState, type KeyboardEvent } from "react";
 import { burstRenderMode, detailExceedsInline, type AgentActionEntry } from "./agentsviewmodel";
 import { editCounts, foldOf, stepElapsed, stepOf, stepRows, type StepChip, type StepIcon } from "./chatsteps";
-import { inFlight, stretchMs, toolCountLabel, workedFor, workingFor, type WorkItem } from "./compacttimeline";
+import { stepSummary, stretchTime } from "./chatstepsummary";
+import { stretchMs, type WorkItem } from "./compacttimeline";
 import { ToolDetailBody, useNow } from "./narrationtimeline";
 import { PathLink } from "./pathlinkcontext";
 import { formatDuration } from "./tooldetail";
@@ -99,8 +100,21 @@ const CHIP_FRAME = "border border-edge-mid bg-surface";
 // path) cannot be told from a file in some other folder, so it is not a link
 const hasFolder = (path: string) => /[\\/]/.test(path);
 
-// `count`: the calls a folded line stands for, "×4" inside the file's chip
-function Chip({ chip, count }: { chip: StepChip; count?: number }) {
+// `count`: the calls a folded line stands for, "×4" inside the file's chip; `failed`: the call failed, so a described
+// command's words take the verb's red
+function Chip({ chip, count, failed }: { chip: StepChip; count?: number; failed?: boolean }) {
+    // a described command is the line's text, in the verb's colour; the command itself shows when the line opens
+    if (chip.kind === "description") {
+        return (
+            <span
+                data-chat-step-chip="description"
+                title={chip.command}
+                className={cn("min-w-0 truncate", failed ? "text-error" : "text-secondary")}
+            >
+                {chip.text}
+            </span>
+        );
+    }
     if (chip.kind === "command") {
         return (
             <span
@@ -273,8 +287,10 @@ function StepLine({
                 >
                     {step.running ? <StepSpinner /> : <Icon size={14} strokeWidth={1.8} aria-hidden />}
                 </span>
-                <span className={cn("shrink-0", failed ? "text-error" : "text-secondary")}>{step.verb}</span>
-                {bare ? null : step.chips.map((chip, i) => <Chip key={i} chip={chip} />)}
+                {step.verb !== "" ? (
+                    <span className={cn("shrink-0", failed ? "text-error" : "text-secondary")}>{step.verb}</span>
+                ) : null}
+                {bare ? null : step.chips.map((chip, i) => <Chip key={i} chip={chip} failed={failed} />)}
                 {!bare && step.more > 0 ? (
                     <span data-chat-step-more className="shrink-0 text-[12px] tabular-nums text-muted">
                         +{step.more}
@@ -481,8 +497,8 @@ function StepList({ work, live, now }: { work: WorkItem; live: boolean; now: num
     );
 }
 
-// "› Worked for 38s · 5 tools": a stretch of tools as one plain line between the agent's paragraphs, opening to its step
-// lines. A live session's last stretch is open while the agent works (burstRenderMode), and folds on the spring into this
+// "› Edited server.js, ran 2 commands +5 −2 · 38s": a stretch of tools as one plain line between the agent's paragraphs,
+// opening to its step lines; "› Running npm test +2 · 12s" while a call in it is in flight. A live session's last stretch is open while the agent works (burstRenderMode), and folds on the spring into this
 // line once the agent moves on; a click opens it again.
 export function ChatSteps({
     work,
@@ -502,8 +518,11 @@ export function ChatSteps({
     onToggle: () => void;
 }) {
     const shown = burstRenderMode({ userOpened: open, autoOpen, userClosed: closed }) !== "collapsed";
-    const running = work.actions.some((a) => inFlight(a, live));
+    const summary = stepSummary(work.actions, live);
+    const running = summary.running;
     const now = useNow(running);
+    const time = stretchTime(running ? stretchMs(work, now, live) : work.durationMs);
+    const edits = running ? null : summary.edits;
     return (
         <div data-chat-work className="flex flex-col">
             <button
@@ -511,16 +530,32 @@ export function ChatSteps({
                 data-fold
                 aria-expanded={shown}
                 onClick={onToggle}
-                className="flex cursor-pointer items-center gap-2 self-start px-1.5 py-[2px] text-[12px] text-muted hover:text-secondary"
+                data-fold-state={running ? "running" : "done"}
+                className="flex min-w-0 max-w-full cursor-pointer items-center gap-2 self-start px-1.5 py-[2px] text-[12px] text-muted hover:text-secondary"
             >
                 <FoldCaret open={shown} />
-                <span>
-                    {running ? workingFor(stretchMs(work, now, live)) : workedFor(work.durationMs)} ·{" "}
-                    {toolCountLabel(work.actions.length)}
+                {/* only the sentence truncates: the counts and the time stay in view. No failed call is in the sentence
+                    and no red is on this line: a tool that fails mid-turn is mostly the agent's own probe (a grep with no
+                    hit, a missing tool) that it gets past. A failed step keeps its red on its own line, once opened. */}
+                <span data-fold-sentence className="min-w-0 truncate">
+                    {summary.text}
                 </span>
-                {/* no failed count here: a tool that fails mid-turn is mostly the agent's own probe (a grep with no hit, a
-                    missing tool) that it gets past, and red on the folded line asks you to look at what needs nothing.
-                    A failed step keeps its red on its own line, once the fold is open. */}
+                {running && summary.more > 0 ? (
+                    <span data-fold-more className="-ml-1 shrink-0 tabular-nums">
+                        +{summary.more}
+                    </span>
+                ) : null}
+                {edits != null ? (
+                    <span data-fold-counts className="inline-flex shrink-0 gap-1 tabular-nums">
+                        <span className="text-success">+{edits.adds}</span>
+                        {edits.dels > 0 ? <span className="text-error">−{edits.dels}</span> : null}
+                    </span>
+                ) : null}
+                {time !== "" ? (
+                    <span data-fold-time className="shrink-0 tabular-nums">
+                        · {time}
+                    </span>
+                ) : null}
             </button>
             <AnimatePresence initial={false}>
                 {shown ? (

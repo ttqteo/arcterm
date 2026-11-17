@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Chat's worded stretch line and described commands.** Never run: the scenario run was stopped for low
+  memory before it started. `task verify:ui -- agent-chat chat-redesign` → agent-chat 1a (fold reads "Edited client.ts,
+  read client.ts" +N −N · Ns), 1a2 (fold opened), 26 ("Reading client.ts"); chat-redesign 6 ("Reading retry.ts"), 8
+  ("Edited 4 files, read 2 files and searched"), 20 ("Running npm test"), 21 (a Bash row reads its description, the
+  command shows once opened). By eye: a long sentence cuts with … and the counts and time stay visible.
 - [ ] (arcterm) **A council's Setup draws its seats with `CouncilAvatar`.** Typecheck and eslint only; never seen: no dev
   app was up. The seats in Setup were a coloured ring on no fill, and now are the Discussion's faint disc in the seat's
   colour; a suggested seat stays the dashed, muted ring. `task verify:ui -- council-setup` → passes, and its shots show
