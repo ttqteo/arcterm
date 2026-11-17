@@ -27,6 +27,13 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Fixed
+
+- Typing in the find bar of a long session no longer lags: each key took up to a few tenths of a second on a session
+  with a million characters of conversation, and now takes a few milliseconds.
+
 ## 1.3.0 — 2026-11-17
 
 ### Added

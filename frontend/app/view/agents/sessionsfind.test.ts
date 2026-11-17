@@ -10,6 +10,7 @@ import {
     findEnded,
     findRanges,
     findTerms,
+    foldedText,
     foundSession,
     hitSelection,
     needsCentre,
@@ -254,6 +255,24 @@ describe("findRanges", () => {
 
     it("skips an empty term", () => {
         expect(findRanges("abc", [""])).toEqual([]);
+    });
+
+    it("keeps offsets right past a character whose fold is longer (İ)", () => {
+        const text = "İstanbul istanbul";
+        expect(findRanges(text, ["istanbul"])).toEqual([[9, 17]]);
+        expect(slices(text, ["stan"])).toEqual(["stan", "stan"]);
+    });
+
+    it("folds a word-final Σ to σ, as Go does, and leaves a written ς alone", () => {
+        expect(slices("ΟΔΟΣ οδος", ["οδοσ"])).toEqual(["ΟΔΟΣ"]);
+        expect(slices("ΟΔΟΣ οδος", ["οδος"])).toEqual(["οδος"]);
+    });
+
+    it("folds the whole text as a fold one character at a time does", () => {
+        const perChar = (s: string) => [...s].map((c) => c.toLowerCase()).join("");
+        for (const s of ["ΟΔΟΣ Σ ΑΣ.", "Lỗi KẾT nối 🙂 ẞ Ǆ", "İ and I", "plain ascii TEXT", "ὈΔΥΣΣΕΎΣ"]) {
+            expect(foldedText(s)).toBe(perChar(s));
+        }
     });
 });
 

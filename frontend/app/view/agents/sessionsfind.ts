@@ -115,9 +115,30 @@ export function stepFind(pos: number, total: number, dir: 1 | -1): number {
     return total > 0 ? (pos + dir + total) % total : 0;
 }
 
+const FINAL_SIGMA = "ς";
+const SIGMA = "σ";
+
 // Folds case one code point at a time, so a folding that changes a character's length (İ) cannot shift the
-// offsets: at[i] is the original [start, end) of the character folded[i] came from.
-function foldText(text: string): { folded: string; at: [number, number][] } {
+// offsets: at[i] is the original [start, end) of the character folded[i] came from; null when every offset is its
+// own (folded[i] came from text[i]).
+//
+// The find bar folds the whole transcript on every keystroke, and building one pair per character cost 110-190 ms a
+// key on a 1 M-character transcript (RAM watch, 2026-11-17). So the whole string is lower-cased at once, and when its
+// length is unchanged no character changed length (only İ grows; none shrinks), so the offsets are the identity. The
+// one difference from a per-character fold is the final sigma, which a whole-string fold writes as ς where Σ ends a
+// word; the per-character fold, and Go's strings.ToLower, write σ, so those are put back.
+function foldText(text: string): { folded: string; at: [number, number][] | null } {
+    const low = text.toLowerCase();
+    if (low.length === text.length) {
+        if (!low.includes(FINAL_SIGMA)) {
+            return { folded: low, at: null };
+        }
+        let folded = "";
+        for (let i = 0; i < low.length; i++) {
+            folded += low[i] === FINAL_SIGMA && text[i] !== FINAL_SIGMA ? SIGMA : low[i];
+        }
+        return { folded, at: null };
+    }
     let folded = "";
     const at: [number, number][] = [];
     let i = 0;
@@ -149,7 +170,7 @@ export function findRanges(text: string, terms: string[]): [number, number][] {
         }
         // resumes past each occurrence, as the Go matcher does, so "aa" in "aaaa" is two touching ranges
         for (let i = folded.indexOf(t); i >= 0; i = folded.indexOf(t, i + t.length)) {
-            found.push([at[i][0], at[i + t.length - 1][1]]);
+            found.push(at == null ? [i, i + t.length] : [at[i][0], at[i + t.length - 1][1]]);
         }
     }
     found.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
