@@ -112,6 +112,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The Heavy jobs popover stays where it opened after Run now, instead of jumping to the bottom right corner when the
+  queue tag you opened it from goes away.
 - A sleeping agent keeps its conversation's title after arcterm restarts, instead of now and then reading as its
   project's name until the next restart.
 - Selecting text in Chat that runs over a `code` span highlights it in the same colour as the words around it, instead

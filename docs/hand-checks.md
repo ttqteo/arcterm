@@ -634,6 +634,9 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) The Agent sidebar is 280px with RAM and Tokens on and Age off (`agentTreeWidth`, `rowfields.ts`): in
   Settings → Appearance → Agent sidebar turn Age off; the sidebar stays 280px and a lead's second line reads its words
   (`Working · 0/7`), not `W… · 0/7`. Turn Tokens off too and it narrows to 248px.
+- [ ] (arcterm) The Heavy jobs popover keeps its place after Run now (`usePanelPlacement`, `consumerspanel.tsx`): open
+  it from a waiting agent's `≡#1` tag in the Agent tree and press Run now on that job; the tag goes, and the popover
+  stays hanging where it opened, not in the bottom right corner. The same from the app bar's jobs chip.
 - [ ] (arcterm) A server mark keeps two ports (`shortPortsLabel`, `devserversmodel.ts`): an agent or run row in the
   Agent tree whose background servers listen on four ports reads `:5175 :9230 +2` beside the green server glyph, and
   hovering it lists all four ports with their commands.
