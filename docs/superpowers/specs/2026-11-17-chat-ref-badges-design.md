@@ -53,7 +53,7 @@ opens what it names.
   Backspace beside it selects it (accent ring, `border-accent bg-accent/12`), Backspace again deletes the whole token.
   It forms when the box's value is set from outside (a pick from `@`, a draft or prompt brought back), and, from part
   2, when a typed or pasted token is followed by a space or punctuation (a `TextNode` transform), so a half-typed id
-  is not boxed; a typed `@path` keeps today's rule. Deleting a badge or a file pill takes one of the two gap spaces
+  is not boxed; a typed or pasted `@path` becomes a file pill by the same rule (added to part 2 on 2026-11-17). Deleting a badge or a file pill takes one of the two gap spaces
   around it with it, so `đọc agent:… ` reads `đọc `, not two spaces. No motion: it is a keyboard action seen often.
 - **In the bubble** a resolved badge is a button that opens its target through `openTarget` with the full id
   (`openref.ts`: agent → its terminal on the Agent surface, run → Jarvis, council → its discussion); Ctrl-click
