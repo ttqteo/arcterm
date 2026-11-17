@@ -27,7 +27,7 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
+## 1.3.0 — 2026-11-17
 
 ### Added
 
@@ -44,7 +44,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   together, asking first when one is working. Agents working for a run stay; close those from their run.
 - References to agents, runs, councils, past conversations and initiatives you write in Chat (`agent:7cd99627`,
   `session:9f31c2a4`, or picked from `@`) show as badges with their name, tinted by kind, with a live agent's state, a
-  conversation's age or an initiative's chunks done; click one to open it.
+  conversation's age or an initiative's chunks done; click one to open it. <!-- big -->
 - A link in Chat shows a small copy button on its top-right corner when you hover it, over none of the words around
   it, and a right-click on it offers Copy link: either copies its url without selecting the text.
 
@@ -80,8 +80,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   once which one is yours.
 - The agent header no longer shows the Alt+C keycap, and Mark done no longer shows its `m` keycap (its tooltip still
   names it); both keys still work.
-- Selected text in Chat that wraps over several lines is highlighted as one shape: the corners where one line meets
-  the next are square, and only its outer corners are rounded.
+- Selected text in Chat is highlighted as one shape with slightly rounded outer corners, also when it wraps over
+  several lines: the corners where one line meets the next are square.
 - A project's Overview fits the screen: the header and Activity stay put, and Now and History each scroll on their
   own.
 - Close brainstorm in the agent's More (⋯) menu takes the brainstorm pane and its Chat card down so you can talk on
@@ -104,9 +104,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - When an agent's header is too narrow for everything, its buttons on the right (Chat, Terminal, Ship, Close) show
   only their icons, so the name, project and model keep their room and no longer run under the buttons; the words
   come back once there is space. Hover a button for its name, and Close for the session's tokens.
-
-### Changed
-
 - Chat sums up each stretch of tools in words ("Edited server.js, ran 2 commands +5 −2 · 38s"), says what a running
   tool is doing, and shows a command by its description; the command itself shows when you open the line.
 - An opened stretch of tools in Chat is one bordered box with a plain row per tool ("Edited server.js +5"): a command
@@ -119,7 +116,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The agent header's view switch carries an icon before each word (Chat, Terminal, Brainstorm, Canvas, Review), as
   does a split cell's Chat | Terminal switch, and the header's buttons read the switch, Split, then More (⋯) beside
   Close.
-- Selected text in Chat has slightly rounded corners, so the highlight looks softer.
 - The chat box's `@` list shows the agents of the chat's own project first, so one there is no longer pushed out by
   agents of other projects.
 - While an agent asks you a single question, a message sent from the chat box goes to it at once as your answer,
@@ -194,11 +190,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   its Working line and the roster its working state.
 - An agent started with Work on stays on the initiative you picked: reading or writing another initiative along the
   way no longer moves its header and initiative band to that one.
-- The Jarvis hologram no longer turns into the pixel pet for a few seconds after a long day of opening and closing
-  terminals: closed and hidden terminals now give their graphics slot back at once instead of holding it.
 - The Jarvis hologram no longer turns into the pixel pet for a few seconds when you close or switch agents after a
-  while of using many terminals: terminals give their graphics slot back at once, and the hologram is no longer the
-  first one dropped when they run short.
+  while of using many terminals: closed and hidden terminals give their graphics slot back at once, and the hologram
+  is no longer the first one dropped when they run short.
 - Typing or pasting `@agent:<id>` (or `@run:`, `@council:`) in the chat box now finds that agent, run or council in
   the `@` list.
 - Picking a whole paragraph in Chat no longer highlights the line number of a code block right below it.
