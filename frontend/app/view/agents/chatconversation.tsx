@@ -38,7 +38,18 @@ import { ContextMenuModel } from "@/app/store/contextmenu";
 import { openOrPeek } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
-import { ArrowRight, ArrowUpRight, ChevronDown, ChevronRight, Copy, Diamond, EyeOff, Flag, GitFork } from "lucide-react";
+import {
+    ArrowRight,
+    ArrowUpRight,
+    ChevronDown,
+    ChevronRight,
+    Copy,
+    Diamond,
+    EyeOff,
+    Flag,
+    GitFork,
+    Link,
+} from "lucide-react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
@@ -79,6 +90,7 @@ import { ChatHandoffCard, ChatHandoffDone } from "./chathandoffcard";
 import { ChatInitiativeHost, InitiativeMessageCards } from "./chatinitiativecard";
 import { openMessageCard, useMessageCards } from "./chatinitiativestore";
 import { sameChatItem } from "./chatitemeq";
+import { linkAt } from "./chatlink";
 import { ChatQuoteMenu } from "./chatquotemenu";
 import { liveTexts, withLiveReply, type LiveReply } from "./chatlive";
 import { withLostBash, type LostBash } from "./chatlostbash";
@@ -1366,9 +1378,19 @@ export function ChatConversation({
         }
     }, []);
     const copyMenu: CopyMenu = useCallback(
-        (text, fork, initiative) => (e) =>
+        (text, fork, initiative) => (e) => {
+            const link = linkAt(e.target);
             ContextMenuModel.getInstance().showContextMenu(
                 [
+                    ...(link != null
+                        ? [
+                              {
+                                  label: "Copy link",
+                                  icon: <Link size={15} />,
+                                  click: () => void navigator.clipboard.writeText(link),
+                              },
+                          ]
+                        : []),
                     {
                         label: "Copy text",
                         icon: <Copy size={15} />,
@@ -1402,7 +1424,8 @@ export function ChatConversation({
                         : []),
                 ],
                 e
-            ),
+            );
+        },
         [addToInitiative]
     );
 

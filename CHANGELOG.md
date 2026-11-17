@@ -31,6 +31,15 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A link in Chat shows a copy button at its end when you hover it, and a right-click on it offers Copy link: either
+  copies its url without selecting the text.
+
+### Changed
+
+- Selected text in Chat that wraps over several lines is highlighted as one shape: the corners where one line meets
+  the next are square, and only its outer corners are rounded.
+- A project's Overview fits the screen: the header and Activity stay put, and Now and History each scroll on their
+  own.
 - Close brainstorm in the agent's More (⋯) menu takes the brainstorm pane and its Chat card down so you can talk on
   in the terminal, and telling the agent to stop the brainstorm now closes it too. The file keeps what was decided,
   and resuming it brings the pane back.
@@ -55,6 +64,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An idle agent about to sleep no longer gets `/compact` every 10 minutes ("Not enough messages to compact") when
+  the compaction does not show up where arcterm looks: one that found nothing to compact, or never landed, lets it
+  sleep. A session forked off an agent's tab (moved to the background) now reports its work into the tab instead of
+  being dropped as late.
+- A run's lead row in the Agent tree shows one queue tag for the lead's waiting command, not the same `#1` twice.
 - arcterm no longer stalls for seconds at a time with many agents open on a store holding thousands of past runs:
   each agent's asks, effort updates and the resource meter made the backend re-read every run (tens of MB) to find
   the agent's run, which held up messages you sent and terminal output.

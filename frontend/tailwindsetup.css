@@ -787,9 +787,9 @@ html[data-md-selection] ::selection,
 html[data-md-selection]::selection {
     background-color: transparent;
 }
+/* its border-radius is set per band (selectionpaint.ts bandRadius): square where it meets the line above or below */
 .md-selection-band {
     position: absolute;
-    border-radius: 3px;
     background-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
 }
 

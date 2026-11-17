@@ -22,6 +22,39 @@ export interface Band {
     top: number;
     width: number;
     height: number;
+    // which corners are rounded: a corner that meets the band of the line above or below is square, so wrapped lines
+    // read as one shape instead of a stack of pills with notches between them
+    round: { tl: boolean; tr: boolean; br: boolean; bl: boolean };
+}
+
+// how far apart two lines' bands may be and still meet (the rounding of line heights)
+const MEET_PX = 1;
+
+// squares the corners of each band that meet a band on the line above or below: a corner is square when that band
+// reaches at least as far out on its side
+function joinCorners(bands: Band[]): Band[] {
+    for (const b of bands) {
+        for (const o of bands) {
+            if (o === b || o.left >= b.left + b.width || o.left + o.width <= b.left) {
+                continue;
+            }
+            const above = Math.abs(o.top + o.height - b.top) <= MEET_PX;
+            const below = Math.abs(b.top + b.height - o.top) <= MEET_PX;
+            if (!above && !below) {
+                continue;
+            }
+            const outLeft = o.left <= b.left + 0.5;
+            const outRight = o.left + o.width >= b.left + b.width - 0.5;
+            if (above) {
+                b.round.tl &&= !outLeft;
+                b.round.tr &&= !outRight;
+            } else {
+                b.round.bl &&= !outLeft;
+                b.round.br &&= !outRight;
+            }
+        }
+    }
+    return bands;
 }
 
 // One band per run of selected text on a line: each glyph box grows to its line's height around its centre, and boxes
@@ -50,7 +83,13 @@ export function lineBands(rects: LineRect[]): Band[] {
         line.sort((a, b) => a.left - b.left);
         let cur = { ...line[0] };
         const flush = () =>
-            out.push({ left: cur.left, top: cur.top, width: cur.right - cur.left, height: cur.bottom - cur.top });
+            out.push({
+                left: cur.left,
+                top: cur.top,
+                width: cur.right - cur.left,
+                height: cur.bottom - cur.top,
+                round: { tl: true, tr: true, br: true, bl: true },
+            });
         for (const b of line.slice(1)) {
             // a code span's padding or a pill's margin leaves a few pixels of no text between two runs
             if (b.left <= cur.right + (cur.bottom - cur.top) * 0.4) {
@@ -64,7 +103,14 @@ export function lineBands(rects: LineRect[]): Band[] {
         }
         flush();
     }
-    return out;
+    return joinCorners(out);
+}
+
+// the CSS border-radius of a band: BAND_RADIUS on its rounded corners, none on the ones that meet another line
+export const BAND_RADIUS = 3;
+export function bandRadius(b: Band): string {
+    const r = (on: boolean) => (on ? `${BAND_RADIUS}px` : "0");
+    return `${r(b.round.tl)} ${r(b.round.tr)} ${r(b.round.br)} ${r(b.round.bl)}`;
 }
 
 // set on <html> while the selection takes in rendered Markdown; tailwindsetup.css hides the native paint under it
@@ -180,6 +226,7 @@ function draw(layer: HTMLElement, bands: Band[]) {
             el.style.top = `${b.top}px`;
             el.style.width = `${b.width}px`;
             el.style.height = `${b.height}px`;
+            el.style.borderRadius = bandRadius(b);
             return el;
         })
     );

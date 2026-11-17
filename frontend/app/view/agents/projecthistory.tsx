@@ -310,14 +310,18 @@ function useLazyLimit(reset: string): { limit: number; foot: (el: HTMLDivElement
         if (el == null) {
             return;
         }
-        // the Overview scrolls, not the window: watch the foot against it, a screen ahead
+        // the Overview scrolls, not the window: watch the foot against what scrolls it, a screen ahead. That is History's
+        // own column when the Overview is wide enough to fit the pane, else the whole page
+        const col = el.closest("[data-overview-history-col]");
+        const root =
+            col != null && getComputedStyle(col).overflowY !== "visible" ? col : el.closest("[data-project-overview]");
         const io = new IntersectionObserver(
             (entries) => {
                 if (entries.some((e) => e.isIntersecting)) {
                     setLimit((n) => n + HISTORY_PAGE);
                 }
             },
-            { root: el.closest("[data-project-overview]"), rootMargin: "0px 0px 400px 0px" }
+            { root, rootMargin: "0px 0px 400px 0px" }
         );
         io.observe(el);
         return () => io.disconnect();

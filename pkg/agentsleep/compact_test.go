@@ -48,6 +48,33 @@ func TestReadCacheStateAfterACompaction(t *testing.T) {
 	}
 }
 
+func TestReadCacheStateTakesNothingToCompactAsCompacted(t *testing.T) {
+	// a /compact right after another finds too little to summarize: the session is as compact as it gets
+	t1 := t0.Add(-20 * time.Minute)
+	nothing := `{"type":"system","subtype":"local_command","content":"<local-command-stdout>Not enough messages to compact.</local-command-stdout>","isSidechain":false}`
+	got := ReadCacheState([]string{assistantLine(t1, 1, 150_000, 1_000, 1_000, false), nothing})
+	if got.Tokens != 0 || !got.Compacted || got.LastTurn != t1 {
+		t.Fatalf("after nothing to compact got %+v, want no tokens, compacted, the last turn kept", got)
+	}
+	// another command's output says nothing of the cache
+	other := `{"type":"system","subtype":"local_command","content":"<local-command-stdout>Set model to opus</local-command-stdout>","isSidechain":false}`
+	got = ReadCacheState([]string{assistantLine(t1, 1, 150_000, 1_000, 1_000, false), other})
+	if got.Tokens == 0 || got.Compacted {
+		t.Fatalf("after another command got %+v, want the 150k context left as it was", got)
+	}
+}
+
+func TestDecideSleepsWithoutRetryingACompactionThatGaveUp(t *testing.T) {
+	c := big("a", 41*time.Minute)
+	c.CompactFailed = true
+	if got := Decide([]Candidate{c}, t0, compactOn, plentyOfRAM); !reflect.DeepEqual(got, Plan{Sleep: []string{"a"}}) {
+		t.Fatalf("got %+v, want it asleep without another compaction", got)
+	}
+	if CompactBeforeSleep(c, t0, compactOn) {
+		t.Fatal("the person's Sleep would send the compaction that gave up again")
+	}
+}
+
 func TestReadCacheStateKeepsTheLastWritesKind(t *testing.T) {
 	// a request that only reads the cache says nothing of its kind
 	got := ReadCacheState([]string{

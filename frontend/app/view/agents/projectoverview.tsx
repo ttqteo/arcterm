@@ -7,9 +7,11 @@
 // width at 2:3: on the left Now (projectnow.tsx: what waits on you, what runs, what finished unread) with the Branches
 // card under it (projectgraphcard.tsx: the newest commits of every branch over the commit graph), on the right History
 // (projecthistory.tsx: its sessions of the last 7 days, with the runs and councils each started, loaded a page at a
-// time as it scrolls). The page fills the centre pane, with no width cap. It reads the Needs you items (needsyou.ts,
-// scoped to this project) and the project's history once and hands them down. Under 1000px wide the columns stack in
-// the order Now, Branches, History; with no project path there is no History and the left column takes the row.
+// time as it scrolls). The page fills the centre pane, with no width cap. From 1000px wide it fits the pane: the header
+// and Activity stay put and each column scrolls on its own (the page itself scrolls only when the pane is too short to
+// give the columns 320px). It reads the Needs you items (needsyou.ts, scoped to this project) and the project's history
+// once and hands them down. Under 1000px wide the columns stack in the order Now, Branches, History and the page
+// scrolls as one; with no project path there is no History and the left column takes the row.
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -81,7 +83,7 @@ export function ProjectOverview({ model }: { model: AgentsViewModel }) {
 
     return (
         <div data-project-overview={project} className="@container min-h-0 flex-1 overflow-y-auto px-8 py-6">
-            <div className="flex flex-col gap-[22px]">
+            <div className="flex flex-col gap-[22px] @min-[1000px]:h-full">
                 <header className="flex flex-col gap-[10px]">
                     <div className="flex flex-wrap items-center gap-3">
                         <h1 className="text-[18px] font-semibold text-primary">{project}</h1>
@@ -131,15 +133,21 @@ export function ProjectOverview({ model }: { model: AgentsViewModel }) {
 
                 {path ? <ActivityCard path={path} sessions={sessionCount} /> : null}
 
-                <div className="flex flex-col gap-6 @min-[1000px]:flex-row @min-[1000px]:items-start">
-                    <div data-overview-left className="flex w-full min-w-0 flex-col gap-[22px] @min-[1000px]:flex-[2]">
+                <div className="flex flex-col gap-6 @min-[1000px]:min-h-[320px] @min-[1000px]:flex-1 @min-[1000px]:flex-row">
+                    <div
+                        data-overview-left
+                        className="flex w-full min-w-0 flex-col gap-[22px] @min-[1000px]:flex-[2] @min-[1000px]:overflow-y-auto"
+                    >
                         <NowColumn model={model} project={project} ny={ny} />
                         {path && git != null ? (
                             <GraphCard model={model} project={project} path={path} dirty={git.files} />
                         ) : null}
                     </div>
                     {path ? (
-                        <div data-overview-history-col className="w-full min-w-0 @min-[1000px]:flex-[3]">
+                        <div
+                            data-overview-history-col
+                            className="w-full min-w-0 @min-[1000px]:flex-[3] @min-[1000px]:overflow-y-auto"
+                        >
                             <HistoryColumn model={model} path={path} project={project} history={history} />
                         </div>
                     ) : null}
