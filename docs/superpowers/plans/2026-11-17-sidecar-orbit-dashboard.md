@@ -516,7 +516,7 @@ In `sidecarbridgemodel.ts`: `validateAct` and `sameSnapshot`.
     `window.__sidecarAttention?: (items: AttentionItem[] | null) => void`, which sets `attentionFixtureAtom` and
     rebuilds now; and `window.__sidecarRun?: (box: Omit<SidecarRunBox, "failed"> | null) => void`, which holds a run
     box that replaces the lineage's (null: back to the lineage) and rebuilds now. The second exists because a fixture
-    roster has no server run in `lineageAtom`, so Task 10 could not show a run box or a failed lead otherwise.
+    roster has no server run in `lineageAtom`, so Task 11 could not show a run box or a failed lead otherwise.
 
 **Step 5:** `npx vitest run frontend/app/cockpit/` → PASS. `task check:ts` → exit 0.
 
@@ -601,7 +601,7 @@ bottom.
   `answerAct`'s act. F11 stays the page's.
 
 This tree cannot show P yet (the page switches in Task 8, the bridge's new fields come from Task 4): no dev-app
-check here. Its acceptance is `sidecar-orbit` steps 1–6 (Task 10), which the Final runs; the attributes above are
+check here. Its acceptance is `sidecar-orbit` steps 1–6 (Task 11), which the Final runs; the attributes above are
 what those steps assert, so keep their names exactly. **Commit** `git commit -m "feat(sidecar): P, the orbit dashboard" -- frontend/app/cockpit/sidecarorbit.tsx`
 
 ---
@@ -623,7 +623,7 @@ attributes, same keys through `dashKey("compact", …)`), `All clear` / `Nothing
 `nodeLine`) beside `Run 7 of 9 · 1h 34m` when a run shows. No timeline. A waiting row or dot carries
 `animate-sidecar-ping` and a failed row `bg-errorbg`, as on P.
 
-No dev-app check in this tree (see Task 6); its acceptance is `sidecar-compact` (Task 10), which the Final runs.
+No dev-app check in this tree (see Task 6); its acceptance is `sidecar-compact` (Task 11), which the Final runs.
 
 **Commit** `git commit -m "feat(sidecar): Q, the compact dashboard" -- frontend/app/cockpit/sidecarcompact.tsx`
 
@@ -657,8 +657,8 @@ What changes where:
   `kept` (grep first: `messageRows` may have other users)
 - Modify: `CHANGELOG.md` (Unreleased, `Changed`): `Sidecar is now a dashboard: what waits on you counted in the middle
   of an orbit of your agents, the queue to answer from, the run and the last 2 hours, framed red when RAM is critical
-  or a run fails; shrunk, it keeps the count, the queue and a dot per agent.` and a second line, for Task 11's change
-  (Task 11 runs beside this one and owns no shared file): `On Windows, Sidecar has its own taskbar button with its own
+  or a run fails; shrunk, it keeps the count, the queue and a dot per agent.` and a second line, for Task 10's change
+  (Task 10 runs beside this one and owns no shared file): `On Windows, Sidecar has its own taskbar button with its own
   icon, arcterm's mark with a small screen, instead of sharing arcterm's.`
 
 **Before deleting a file, grep every import of it, `import type` and re-exports included** (AGENTS.md). Then
@@ -686,95 +686,12 @@ What changes where:
 
 ---
 
-### Task 10: CDP scenarios for P and Q
-**Depends on:** Task 8 (its scenarios drive the P and Q page Task 8 switches the window over to), Task 9 (asserts the ping and `bg-errorbg` classes), Task 11 (asserts the Sidecar app id's log line)
-**Files:** `scripts/cdp/scenarios-sidecar.mjs`, `docs/hand-checks.md`, `docs/open-issues.md`
-
-What changes where:
-
-- Modify: `scripts/cdp/scenarios-sidecar.mjs` (replace the `sidecar-wall` scenario with `sidecar-orbit` and
-  `sidecar-compact`, both `host: true`, keeping its harness: the fixture roster, `attachByUrl`, the hold, the machine
-  and heavy seams, teardown)
-- Modify: `docs/hand-checks.md`, `docs/open-issues.md` (RAM watch)
-
-**What carries over from `sidecar-wall`** (its step numbers today), moved into the two new scenarios with their
-asserts unchanged except where the counts moved into the core:
-- into `sidecar-orbit`, before the state steps: 1 (Ctrl+P → Open Sidecar), 2 (the page's own window calls), 3 (the
-  waiting state before the first snapshot, now with no dashboard instead of no wall), 13 (F11 toggles full screen),
-  14–22 (the strain band: readings, CPU, Stop ask/confirm/cancel, Sleep, × hide, red hold and step-down), 24 (folded
-  idle and asleep agents have no node: assert no `data-sidecar-node` for them);
-- into `sidecar-compact`: 25 (at 900 px wide the page is the small form, now `data-sidecar-dashboard="compact"`), 26
-  (S shrinks to 340 × 440 and pins), 28 (the pin button), 29 (S again restores the size), 30 (no ask: `All clear`,
-  the main window's size and focus unmoved);
-- dropped with the wall, coverage lost on purpose: 4 (counts in the title bar: the core's number replaces it, asserted
-  in the state steps), 5–9 (tiling 2x2 … 40 agents), 10–12 (tile arrows, Enter, 2 answers a tile: replaced by the
-  keys' steps below), 23 (scrollback), 27 (small-form cards: replaced by Q's keys step). There is no "closes with the
-  main window" step today; the hand check below covers it.
-
-**The run box.** A fixture roster has no server run in `lineageAtom`, so the scenario sets the run through Task 4's
-DEV seam: `window.__sidecarRun({ id: "fx-sc-run", leadId: <the lead's id>, title: "Sidecar orbit", done: 7, total: 9,
-since: <now − 1h 34m> })`, and the P-failed `dag-blocked` item carries `runid: "fx-sc-run"`. Clear it
-(`__sidecarRun(null)`) in teardown. The question row reads the `review` agent's `previousInfo` (decision 4): put its
-last message there.
-
-One roster, `dashboard`: two working agents (one the run's lead), one asking with an answerable ask (`Merge into
-main?`, options `Merge`, `Keep the branch`), one asking with a multi-select ask, one `review` agent whose
-`previousInfo` ends with the message `Xong. Bạn chọn (a) hay (b)?` and no user entry after it, one `review` agent
-whose last message ends in a period, and the two parked agents of today's roster. State steps (each a screenshot and
-asserts on the attributes Tasks 6 and 7 define):
-
-**`sidecar-orbit`** (window maximized at 1920×1080, as `WALL_VIEWPORT`):
-1. **P-calm** (board `P-calm`): roster with only the working and the period-ending agents, attention fixture `[]`:
-   `data-sidecar-state="calm"`, core `0`, `All clear`, frame `none`, no element with `animate-sidecar-ping`.
-2. **P-orbit-dashboard** (board `P-orbit-dashboard`): the full roster and one `dag-gate` attention item: state
-   `normal`; core `4` (2 asks, 1 question, 1 gate); rows oldest first; the question row's text is `Bạn chọn (a) hay
-   (b)?` and its how `Enter: reply in the main window`; the answerable ask's how `1 Merge · 2 Keep the branch`; 8 or
-   fewer nodes; one lane per node; `data-sidecar-run` reads `7 of 9 tasks`; each asking node and each ask or question
-   row carries `animate-sidecar-ping`, and a working node does not. Then keys: ArrowDown to the answerable ask, `2` →
-   `__sidecarActs` ends with `{kind:"answer", option:1, key:<its key>}` (0-based: decision 2); ArrowDown to the gate,
-   Enter → `{kind:"need", key:<gate key>}`.
-3. **P-high** (board `P-high`): `__sidecarMachine` + `__sidecarFeed` to RAM high: state `high`, frame `warning`, the
-   band shows and the run box does not, the core reads `⚠ RAM high`.
-4. **P-critical** (board `P-critical`): RAM critical with `__sidecarHeavy` naming one agent: state `critical`, frame
-   `error`, the band's Stop and Sleep, the heavy node's line names its GB and command.
-5. **P-failed** (board `P-failed`): RAM back to normal; attention fixture adds a `dag-blocked` item with `retry: true`
-   and `runid: "fx-sc-run"`: state `failed`, frame `error`, the first row leads with `Failed` and its class list has
-   `bg-errorbg`, the lead's node tone `error` and it carries `animate-sidecar-ping`, its lane's last bar
-   `data-span-state="failed"`, core tone `error`.
-6. **P-live** (board `P-live`): without reloading, step through normal → high → critical → normal → failed with the
-   seams, each within 2 s: assert the state and frame attributes follow each change (the page reacts with no reload)
-   and that a new need row appears with no full redraw (the earlier rows' elements are the same nodes: mark one with a
-   `data-probe` before and find it after).
-
-**`sidecar-compact`** (the S button's small form, as today's steps reach it): **Q-compact-live** (board
-`Q-compact-live`): the five states in turn as above; each asserts `data-sidecar-dashboard="compact"`, the state and
-frame, the core's number, the rows, one `data-sidecar-dot` per orbit tile, and in calm `data-sidecar-allclear`; in
-normal the ask rows carry `animate-sidecar-ping`; in high and critical `data-sidecar-strainline` shows with its Stop
-and Sleep buttons (and is absent in calm and normal); in failed the Failed row has `bg-errorbg`. The keys' step repeats
-ArrowDown to the answerable ask + `1` → `{kind:"answer", option:0, key:<its key>}`.
-
-**The taskbar id (Task 11), in `sidecar-orbit` after step 1, Windows only** (skipped with a note elsewhere): read the
-dev app's `waveapp.log` (in its data dir: `ARC_DEV_DATA_DIR`'s `data` folder when set, as `final-verify.mjs` sets it,
-else `%LOCALAPPDATA%\dev.arc.app-dev\data`; check `main.rs`'s log setup for the exact path) and assert a line
-`[sidecar] app id dev.arc.app-dev.sidecar` written after the open.
-
-`docs/hand-checks.md`: `- [ ] (arcterm) Sidecar P/Q across a real day: the question heuristic's misses, the ping from
-across the room, RAM of P with 12 agents after a day`; for Task 11 (it owns no doc file): `- [ ] (arcterm) Packaged
-build: Sidecar has its own taskbar button with the screen badge, not arcterm's icon; right-click shows no "Pin to
-taskbar"; closing arcterm closes it`. `docs/open-issues.md` RAM watch: measure P with 12 agents after a day on screen
-against the 100 MB budget.
-
-Run `ARC_FINAL_OUT=<a temp dir> node scripts/cdp/final-verify.mjs sidecar-orbit sidecar-compact` (it starts its own
-dev app from this tree, runs the two, and stops it) → exit 0. **Commit** `git commit -m "test(sidecar): CDP scenarios for the orbit dashboard, full and compact" -- scripts/cdp/scenarios-sidecar.mjs docs/hand-checks.md docs/open-issues.md`
-
----
-
-### Task 11: Sidecar's own taskbar button and icon (Windows)
+### Task 10: Sidecar's own taskbar button and icon (Windows)
 **Depends on:** none
 **Files:** `scripts/gen-app-icon.mjs`, `src-tauri/icons/icon-sidecar.ico`, `src-tauri/src/main.rs`, `src-tauri/src/sidecar.rs`, `src-tauri/Cargo.toml`
 
 `icon-sidecar.ico` is generated by `gen-app-icon.mjs` and committed like `icon.ico`. Its CHANGELOG line is written by
-Task 8 and its hand check by Task 10, which run beside this task: do not touch `CHANGELOG.md` or `docs/hand-checks.md`
+Task 8 (beside this task) and its hand check by Task 11 (after it): do not touch `CHANGELOG.md` or `docs/hand-checks.md`
 here.
 
 **Step 1: The icon.** In `gen-app-icon.mjs`, `render()` takes an optional badge, drawn after the glyph exactly as the
@@ -858,15 +775,98 @@ they are (the dev main window must keep no id). The id comes from a pure, platfo
 test first: `sidecar_app_id("dev.arc.app", false) == "dev.arc.app.sidecar"` and `sidecar_app_id("dev.arc.app", true)
 == "dev.arc.app-dev.sidecar"`. `open_window` sets the Sidecar window's id right after `build()` with
 `sidecar_app_id(&app.config().identifier, cfg!(debug_assertions))`, `prevent_pinning: true`, and writes
-`log_line("[sidecar] app id <id>")` once it is set (Task 10's scenario asserts this line; keep its wording
+`log_line("[sidecar] app id <id>")` once it is set (Task 11's scenario asserts this line; keep its wording
 exact); log a failure with `log_line`, never fail the open. Keep the long comment on COM memory with the code it
 describes.
 
 **Step 5:** `cargo test --manifest-path src-tauri/Cargo.toml` → PASS (the `pick_ico_frame` and `sidecar_app_id`
 tests among them); `cargo build --manifest-path src-tauri/Cargo.toml` → builds. Acceptance in the run is those tests
-plus Task 10's log-line step; the taskbar button itself is the packaged hand check. If you can run `task dev` here,
+plus Task 11's log-line step; the taskbar button itself is the packaged hand check. If you can run `task dev` here,
 open Sidecar and say whether the taskbar showed a second button; otherwise say it was not seen.
 
-The packaged path is left to the hand check Task 10 writes (only a packaged build runs it).
+The packaged path is left to the hand check Task 11 writes (only a packaged build runs it).
 
 **Commit** `git commit -m "feat(sidecar): its own taskbar button and icon on Windows" -- scripts/gen-app-icon.mjs src-tauri/icons/icon-sidecar.ico src-tauri/src/main.rs src-tauri/src/sidecar.rs src-tauri/Cargo.toml`
+
+---
+
+### Task 11: CDP scenarios for P and Q
+**Depends on:** Task 8 (its scenarios drive the P and Q page Task 8 switches the window over to), Task 9 (asserts the ping and `bg-errorbg` classes), Task 10 (asserts the Sidecar app id's log line)
+**Files:** `scripts/cdp/scenarios-sidecar.mjs`, `docs/hand-checks.md`, `docs/open-issues.md`
+
+What changes where:
+
+- Modify: `scripts/cdp/scenarios-sidecar.mjs` (replace the `sidecar-wall` scenario with `sidecar-orbit` and
+  `sidecar-compact`, both `host: true`, keeping its harness: the fixture roster, `attachByUrl`, the hold, the machine
+  and heavy seams, teardown)
+- Modify: `docs/hand-checks.md`, `docs/open-issues.md` (RAM watch)
+
+**What carries over from `sidecar-wall`** (its step numbers today), moved into the two new scenarios with their
+asserts unchanged except where the counts moved into the core:
+- into `sidecar-orbit`, before the state steps: 1 (Ctrl+P → Open Sidecar), 2 (the page's own window calls), 3 (the
+  waiting state before the first snapshot, now with no dashboard instead of no wall), 13 (F11 toggles full screen),
+  14–22 (the strain band: readings, CPU, Stop ask/confirm/cancel, Sleep, × hide, red hold and step-down), 24 (folded
+  idle and asleep agents have no node: assert no `data-sidecar-node` for them);
+- into `sidecar-compact`: 25 (at 900 px wide the page is the small form, now `data-sidecar-dashboard="compact"`), 26
+  (S shrinks to 340 × 440 and pins), 28 (the pin button), 29 (S again restores the size), 30 (no ask: `All clear`,
+  the main window's size and focus unmoved);
+- dropped with the wall, coverage lost on purpose: 4 (counts in the title bar: the core's number replaces it, asserted
+  in the state steps), 5–9 (tiling 2x2 … 40 agents), 10–12 (tile arrows, Enter, 2 answers a tile: replaced by the
+  keys' steps below), 23 (scrollback), 27 (small-form cards: replaced by Q's keys step). There is no "closes with the
+  main window" step today; the hand check below covers it.
+
+**The run box.** A fixture roster has no server run in `lineageAtom`, so the scenario sets the run through Task 4's
+DEV seam: `window.__sidecarRun({ id: "fx-sc-run", leadId: <the lead's id>, title: "Sidecar orbit", done: 7, total: 9,
+since: <now − 1h 34m> })`, and the P-failed `dag-blocked` item carries `runid: "fx-sc-run"`. Clear it
+(`__sidecarRun(null)`) in teardown. The question row reads the `review` agent's `previousInfo` (decision 4): put its
+last message there.
+
+One roster, `dashboard`: two working agents (one the run's lead), one asking with an answerable ask (`Merge into
+main?`, options `Merge`, `Keep the branch`), one asking with a multi-select ask, one `review` agent whose
+`previousInfo` ends with the message `Xong. Bạn chọn (a) hay (b)?` and no user entry after it, one `review` agent
+whose last message ends in a period, and the two parked agents of today's roster. State steps (each a screenshot and
+asserts on the attributes Tasks 6 and 7 define):
+
+**`sidecar-orbit`** (window maximized at 1920×1080, as `WALL_VIEWPORT`):
+1. **P-calm** (board `P-calm`): roster with only the working and the period-ending agents, attention fixture `[]`:
+   `data-sidecar-state="calm"`, core `0`, `All clear`, frame `none`, no element with `animate-sidecar-ping`.
+2. **P-orbit-dashboard** (board `P-orbit-dashboard`): the full roster and one `dag-gate` attention item: state
+   `normal`; core `4` (2 asks, 1 question, 1 gate); rows oldest first; the question row's text is `Bạn chọn (a) hay
+   (b)?` and its how `Enter: reply in the main window`; the answerable ask's how `1 Merge · 2 Keep the branch`; 8 or
+   fewer nodes; one lane per node; `data-sidecar-run` reads `7 of 9 tasks`; each asking node and each ask or question
+   row carries `animate-sidecar-ping`, and a working node does not. Then keys: ArrowDown to the answerable ask, `2` →
+   `__sidecarActs` ends with `{kind:"answer", option:1, key:<its key>}` (0-based: decision 2); ArrowDown to the gate,
+   Enter → `{kind:"need", key:<gate key>}`.
+3. **P-high** (board `P-high`): `__sidecarMachine` + `__sidecarFeed` to RAM high: state `high`, frame `warning`, the
+   band shows and the run box does not, the core reads `⚠ RAM high`.
+4. **P-critical** (board `P-critical`): RAM critical with `__sidecarHeavy` naming one agent: state `critical`, frame
+   `error`, the band's Stop and Sleep, the heavy node's line names its GB and command.
+5. **P-failed** (board `P-failed`): RAM back to normal; attention fixture adds a `dag-blocked` item with `retry: true`
+   and `runid: "fx-sc-run"`: state `failed`, frame `error`, the first row leads with `Failed` and its class list has
+   `bg-errorbg`, the lead's node tone `error` and it carries `animate-sidecar-ping`, its lane's last bar
+   `data-span-state="failed"`, core tone `error`.
+6. **P-live** (board `P-live`): without reloading, step through normal → high → critical → normal → failed with the
+   seams, each within 2 s: assert the state and frame attributes follow each change (the page reacts with no reload)
+   and that a new need row appears with no full redraw (the earlier rows' elements are the same nodes: mark one with a
+   `data-probe` before and find it after).
+
+**`sidecar-compact`** (the S button's small form, as today's steps reach it): **Q-compact-live** (board
+`Q-compact-live`): the five states in turn as above; each asserts `data-sidecar-dashboard="compact"`, the state and
+frame, the core's number, the rows, one `data-sidecar-dot` per orbit tile, and in calm `data-sidecar-allclear`; in
+normal the ask rows carry `animate-sidecar-ping`; in high and critical `data-sidecar-strainline` shows with its Stop
+and Sleep buttons (and is absent in calm and normal); in failed the Failed row has `bg-errorbg`. The keys' step repeats
+ArrowDown to the answerable ask + `1` → `{kind:"answer", option:0, key:<its key>}`.
+
+**The taskbar id (Task 10), in `sidecar-orbit` after step 1, Windows only** (skipped with a note elsewhere): read the
+dev app's `waveapp.log` (in its data dir: `ARC_DEV_DATA_DIR`'s `data` folder when set, as `final-verify.mjs` sets it,
+else `%LOCALAPPDATA%\dev.arc.app-dev\data`; check `main.rs`'s log setup for the exact path) and assert a line
+`[sidecar] app id dev.arc.app-dev.sidecar` written after the open.
+
+`docs/hand-checks.md`: `- [ ] (arcterm) Sidecar P/Q across a real day: the question heuristic's misses, the ping from
+across the room, RAM of P with 12 agents after a day`; for Task 10 (it owns no doc file): `- [ ] (arcterm) Packaged
+build: Sidecar has its own taskbar button with the screen badge, not arcterm's icon; right-click shows no "Pin to
+taskbar"; closing arcterm closes it`. `docs/open-issues.md` RAM watch: measure P with 12 agents after a day on screen
+against the 100 MB budget.
+
+Run `ARC_FINAL_OUT=<a temp dir> node scripts/cdp/final-verify.mjs sidecar-orbit sidecar-compact` (it starts its own
+dev app from this tree, runs the two, and stops it) → exit 0. **Commit** `git commit -m "test(sidecar): CDP scenarios for the orbit dashboard, full and compact" -- scripts/cdp/scenarios-sidecar.mjs docs/hand-checks.md docs/open-issues.md`
