@@ -44219,17 +44219,26 @@ const agentChat = {
             await AC.setRoster(h, acRoster(ctx, { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined }));
             const working = await polishWaitFor(h, `(${acLayer(A)}?.querySelector("[data-chat-working]")?.textContent ?? "").includes(${JSON.stringify(AC_ACTIVITY)}) && !!${acLayer(A)}?.querySelector("[data-chat-stop]")`, AC_WAIT_MS);
             await h.shot("cdp-shots/agent-chat-4-working.png");
-            // the working dot is a small Jarvis hologram: pulsedriver turns its rings (--spin) and flashes its sparks
+            // the working dot is a small Jarvis hologram live with current: pulsedriver turns its rings (--spin), jolts it
+            // (--jolt), flickers its core (--flick), and strikes each bolt at its own angle (--arc) as it flashes (--spark);
+            // the words beside it catch the jolt (--volt)
             const HOLO = `${acLayer(A)}?.querySelector("[data-chat-working] svg.holo-spin")`;
-            const spin0 = await h.ev(`${HOLO}?.style.getPropertyValue("--spin") ?? null`);
+            const readHolo = `(() => { const s = ${HOLO}; const v = (sel, p) => s?.querySelector(sel)?.style.getPropertyValue(p) ?? "";
+                return s == null ? null : {
+                    spin: s.style.getPropertyValue("--spin"), sparks: s.querySelectorAll("polyline").length,
+                    size: Math.round(s.getBoundingClientRect().width), jolt: v(".holo-jolt", "--jolt"),
+                    flick: v(".holo-core", "--flick"),
+                    arcs: [...s.querySelectorAll(".holo-arc, .holo-arc-slow")].map((g) => g.style.getPropertyValue("--arc")),
+                    volt: ${acLayer(A)}?.querySelector("[data-chat-working] .volt-text")?.style.getPropertyValue("--volt") ?? "" }; })()`;
+            const holo0 = await h.ev(readHolo);
             await polishNap(400);
-            const holo = await h.ev(`(() => { const s = ${HOLO}; return s == null ? null : {
-                spin: s.style.getPropertyValue("--spin"), sparks: s.querySelectorAll("polyline").length,
-                size: Math.round(s.getBoundingClientRect().width) }; })()`);
+            const holo = await h.ev(readHolo);
             rec(
-                "4a. the working line's dot is the hologram: its rings turn and it carries three sparks",
-                holo != null && holo.sparks === 3 && holo.size === 14 && holo.spin !== "" && holo.spin !== spin0,
-                { spin0, holo }
+                "4a. the working line's dot is the hologram live with current: its rings turn, it jolts and its core flickers, its four bolts each strike their own way, and its words catch the jolt",
+                holo != null && holo.sparks === 4 && holo.size === 14 && holo.spin !== "" && holo.spin !== holo0?.spin &&
+                    holo.jolt !== "" && holo.jolt !== holo0?.jolt && holo.flick !== "" && holo.flick !== holo0?.flick &&
+                    holo.arcs.length === 4 && new Set(holo.arcs).size === 4 && holo.volt !== "",
+                { holo0, holo }
             );
             const stopsBefore = (await acSettled(h, blockA)).length;
             await h.ev(`${acLayer(A)}?.querySelector("[data-chat-stop]")?.click()`);

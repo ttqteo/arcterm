@@ -31,6 +31,9 @@ export function PulseDriver() {
     useEffect(() => {
         const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
         const startedAt = new WeakMap<Element, number>();
+        // each element's own jitter sequence (pulse.ts noiseAt), handed out as the driver first sees it
+        const seeds = new WeakMap<Element, number>();
+        let nextSeed = 1;
         const shown = new WeakMap<Element, string>();
         // the property each element's curve went to, kept because a released element may have lost its class
         const written = new WeakMap<Element, string>();
@@ -40,6 +43,7 @@ export function PulseDriver() {
             el.style.removeProperty(written.get(el) ?? DEFAULT_PROP);
             written.delete(el);
             startedAt.delete(el);
+            seeds.delete(el);
             shown.delete(el);
         };
 
@@ -56,8 +60,9 @@ export function PulseDriver() {
                     if (start == null) {
                         start = pulseStart(now, spec, el.dataset.pulseLag);
                         startedAt.set(el, start);
+                        seeds.set(el, nextSeed++);
                     }
-                    const value = pulseValue(spec, now - start).toFixed(3);
+                    const value = pulseValue(spec, now - start, seeds.get(el)).toFixed(3);
                     // an unchanged write would still invalidate the dot's style
                     if (shown.get(el) !== value) {
                         const prop = spec.prop ?? DEFAULT_PROP;
