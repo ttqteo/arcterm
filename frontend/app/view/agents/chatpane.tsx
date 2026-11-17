@@ -32,6 +32,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject }
 import { goalFromLines } from "../../../../claude/arc-mod/hooks/goal-core";
 import { canStop } from "./agentcomposer";
 import { getProcExitAtom } from "./agentcontrollerstore";
+import { agentCwd } from "./agentcwd";
 import { agentDiffScope, openDiff } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
 import { sendToAgent, submitToAgent } from "./agentsubmit";
@@ -66,7 +67,7 @@ import { liveReplyAtom, startLiveReplyStream, stopLiveReplyStream } from "./chat
 import { ChatLocalCard } from "./chatlocalcards";
 import { closeLocalCard, showLocalCard, useLocalCards } from "./chatlocalstore";
 import { chatCapable } from "./chatmode";
-import { canSendNow, compactingNow, SEND_NOW_KEYS, turnStatsLabel, workingText } from "./chatmodel";
+import { canSendNow, compactingNow, SEND_NOW_KEYS, turnStatsLabel, workingLine } from "./chatmodel";
 import { setChatMode, useChatMode } from "./chatmodestore";
 import {
     btwQuestion,
@@ -666,7 +667,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
         refreshSkimMarks();
     }, [entries]);
 
-    const working = workingText(agent.state, agent.activity, entries);
+    const working = workingLine(agent.state, agent.activity);
     // the turn's time and output tokens, read back from the loaded lines to its prompt; only while it works, and not
     // while it compacts, which is no turn of its own
     const lines = view?.win.lines;
@@ -674,6 +675,9 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
     const turn = useMemo(() => (isWorking && lines != null ? turnStats(lines) : null), [isWorking, lines]);
     // the session's /goal, read from the same lines (goal-core.ts, shared with the arc mod's band in the TUI)
     const goal = useMemo(() => (lines != null ? goalFromLines(lines) : null), [lines]);
+    // where the agent works, which the card of a turn's files names folders against: its own, else the transcript's
+    // (a Claude record carries one a line or two in; the first 50 bound the parse for a transcript that has none)
+    const cwd = useMemo(() => agent.cwd ?? (lines != null ? agentCwd(lines.slice(0, 50)) : null), [agent.cwd, lines]);
     // a held command's card (a Token burn card, an Antigravity question) is answered in its dialog, not here
     const asking = agent.ask != null && !agent.ask.hold;
     // a read that has not landed yet shows a skeleton; one that failed (a transcript file that is not written yet, most
@@ -922,6 +926,7 @@ function ChatPaneBody({ model, agent, barred }: { model: AgentsViewModel; agent:
                                     }}
                                     model={model}
                                     agent={agent}
+                                    cwd={cwd}
                                 />
                             </AgentPathLinks>
                         </ChatVisualHost>

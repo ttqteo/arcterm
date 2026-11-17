@@ -21,6 +21,7 @@ import {
     filesRefreshFailedAtom,
     filesSelectedPathAtom,
     filesStateAtom,
+    linkedPath,
     loadFilesForScope,
     reloadChanges,
     requestFileLink,
@@ -382,6 +383,14 @@ describe("scoped file deep link", () => {
     it("an absent scope claims nothing", () => {
         requestFileLink(scopeKey(agentScopeVal("a1")), "pkg/jarvis/evidence.go");
         expect(consumeFileLink("", AVAILABLE)).toBeUndefined();
+    });
+    // Chat's card of a turn's files links the absolute path the agent's Edit named
+    it("an absolute path claims the listed path it ends in", () => {
+        requestFileLink(scopeKey(agentScopeVal("a1")), "D:\\repo\\pkg\\jarvis\\evidence.go");
+        expect(consumeFileLink(scopeKey(agentScopeVal("a1")), AVAILABLE)).toBe("pkg/jarvis/evidence.go");
+        expect(linkedPath("/repo/docs/open-issues.md", AVAILABLE)).toBe("docs/open-issues.md");
+        expect(linkedPath("/repo/xdocs/open-issues.md", AVAILABLE)).toBeUndefined();
+        expect(linkedPath("/repo/a/b.ts", ["b.ts", "a/b.ts"])).toBe("a/b.ts");
     });
 });
 

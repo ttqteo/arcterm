@@ -43287,6 +43287,8 @@ const AC_PROSE_1 = "I will read the sync client first.";
 const AC_EDIT_ERROR = "String to replace not found in file.";
 const AC_TEST_COMMAND = "npm test -- client";
 const AC_TEST_DESCRIPTION = "Ran the client tests";
+const AC_STATUS_DESCRIPTION = "Checked the working tree after the edit";
+const AC_NOTES_TEXT = "# Retry policy\n\nThree tries with backoff.\n";
 const AC_TEST_OUTPUT = "✔ retries the request 3 times\nℹ tests 1\nℹ pass 1\nℹ fail 0";
 // its second sentence is what step 34 marks as a skim highlight; it holds non-ASCII letters so the store file's UTF-8 decode is exercised
 const AC_SKIM_SENTENCE = "Không mất request nào.";
@@ -43378,6 +43380,7 @@ function acWriteFixtures(dir) {
     const base = Date.now() - 3_600_000;
     const o = (sec) => ({ cwd: dir, ts: new Date(base + sec * 1000).toISOString() });
     const edited = join(dir, "src", "sync", "client.ts");
+    const notes = join(dir, "docs", "retry-notes.md");
     const workerPrompt = readFileSync(new URL("../../claude/arc-view-mod/testdata/worker.txt", import.meta.url), "utf8").trim();
     const pointer = `Your instructions are in the file ${join(dir, "run-prompt.md").replace(/\\/g, "/")} (too long for a command line). Read the whole file now and follow it exactly, as if it were this message.`;
     const main = AC.writeTranscript(dir, AC_SESSION, [
@@ -43410,12 +43413,21 @@ function acWriteFixtures(dir) {
         AC.toolUse("toolu_ac_test", "Bash", { command: AC_TEST_COMMAND, description: AC_TEST_DESCRIPTION }, o(100)),
         AC.toolResult("toolu_ac_test", AC_TEST_OUTPUT, o(104)),
         AC.assistantText("The retry test passes.", o(106)),
+        // step 5c (Calm.dc.html): a stretch of one described command reads as its description, with no time under 10 s;
+        // then a Write to a second file, so the turn ends in the card of its two files
+        AC.toolUse("toolu_ac_status", "Bash", { command: "git status --short", description: AC_STATUS_DESCRIPTION }, o(108)),
+        AC.toolResult("toolu_ac_status", " M src/sync/client.ts", o(109)),
+        AC.assistantText("Adding a note on the retry policy.", o(110)),
+        AC.toolUse("toolu_ac_notes", "Write", { file_path: notes, content: AC_NOTES_TEXT }, o(112)),
+        AC.toolResult("toolu_ac_notes", `File created successfully at: ${notes}`, o(113)),
+        AC.assistantText("The client retries, and the note says how.", o(115)),
     ]);
     const simple = (name, ask, answer) =>
         AC.writeTranscript(dir, name, [AC.userText(ask, o(0)), AC.assistantText(answer, o(2))]);
     return {
         main,
         edited,
+        notes,
         workerPrompt,
         second: simple("chat-second", "second agent question", "second agent answer"),
         asleep: simple("chat-asleep", "an earlier question", "an earlier answer before it slept"),
@@ -43945,6 +43957,12 @@ const acFileCards = (h, id, text) =>
             more: you.querySelector("[data-chat-file-more]")?.textContent.trim() ?? null,
         };
     })()`);
+// A computed 1px border or hairline, as the window draws it: at a fractional display scale Chromium snaps it to whole device
+// pixels, so it reads 0.909091px at 110%
+const acHairline = (w) => {
+    const n = parseFloat(w ?? "");
+    return n > 0.5 && n <= 1;
+};
 const acScrollTo = (h, expr) => h.ev(`(() => { const e = ${expr}; e?.scrollIntoView({ block: "center" }); return !!e; })()`);
 
 // A captured screen (rows of text) on the fixture terminal of one block: cleared, then each row written at its place so the
@@ -44105,7 +44123,7 @@ const agentChat = {
             })()`);
             await h.shot("cdp-shots/agent-chat-1-bubbles.png");
             rec(
-                "1a. a Claude cell opens in Chat: the control reads Chat | Terminal with Chat selected; your message is a bubble on the right, the agent's prose is a page column (step 31 reads its look), the stretch folds into the sentence Edited client.ts, read client.ts with its +/− counts and its time, no file chip follows any stretch, the run's launch prompt and a pointer line are sent cards",
+                "1a. a Claude cell opens in Chat: the control reads Chat | Terminal with Chat selected; your message is a bubble on the right, the agent's prose is a page column (step 31 reads its look), the stretch folds into the sentence Edited client.ts, read client.ts with its +/− counts and no time (its 6 s are under 10 s, Calm.dc.html), no file chip follows any stretch, the run's launch prompt and a pointer line are sent cards",
                 loaded &&
                     header1?.buttons?.map((b) => b.text).join("|") === "Chat|Terminal" &&
                     header1.buttons[0].pressed &&
@@ -44116,7 +44134,7 @@ const agentChat = {
                     bubbles.pill?.state === "done" &&
                     bubbles.pill.sentence === "Edited client.ts, read client.ts" &&
                     /^\+\d+(−\d+)?$/.test(bubbles.pill.counts ?? "") &&
-                    /^· \d+s$/.test(bubbles.pill.time ?? "") &&
+                    bubbles.pill.time === null &&
                     bubbles.fileChips === 0 &&
                     JSON.stringify(bubbles.sentFrom) === JSON.stringify(["run", "run"]) &&
                     bubbles.launchAsBubble === false,
@@ -44150,7 +44168,7 @@ const agentChat = {
             rec(
                 "1a2. a click opens the fold into a bordered box (radius 10px, 1px border) of two rows divided by a hairline, Read client.ts then Edited client.ts with its counts, each a muted verb and a chevron with no tool icon, under the same sentence with no caret in front; a second click folds it",
                 foldOpened && foldRefolded && foldOpen.expanded === "true" && foldOpen.sentence === "Edited client.ts, read client.ts" &&
-                    foldOpen.firstIsSentence && foldOpen.box?.radius === "10px" && foldOpen.box.border === "1px" && foldOpen.hairline === "1px" &&
+                    foldOpen.firstIsSentence && foldOpen.box?.radius === "10px" && acHairline(foldOpen.box.border) && acHairline(foldOpen.hairline) &&
                     JSON.stringify(foldOpen.verbs) === JSON.stringify(["Read", "Edited"]) &&
                     foldOpen.steps[0].includes("client.ts") && foldOpen.steps[1].includes("client.ts") &&
                     foldOpen.svgs.every((n) => n === 1),
@@ -44215,9 +44233,19 @@ const agentChat = {
                 { pasted, chipPath, withFile, trayAfter, inputs3 }
             );
 
-            // 4. the agent working: the working line shows its activity, and Stop sends Esc
+            // 4. the agent working: the working line reads Working with no " · <activity>" tail (Calm.dc.html: the running
+            // stretch's own line names the call), and Stop sends Esc
             await AC.setRoster(h, acRoster(ctx, { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined }));
-            const working = await polishWaitFor(h, `(${acLayer(A)}?.querySelector("[data-chat-working]")?.textContent ?? "").includes(${JSON.stringify(AC_ACTIVITY)}) && !!${acLayer(A)}?.querySelector("[data-chat-stop]")`, AC_WAIT_MS);
+            const working = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-chat-working]") && !!${acLayer(A)}?.querySelector("[data-chat-stop]")`, AC_WAIT_MS);
+            const workingLine4 = await h.ev(`(() => {
+                const w = ${acLayer(A)}?.querySelector("[data-chat-working]");
+                return w == null ? null : {
+                    words: w.querySelector(".shimmer-jarvis")?.textContent.trim() ?? null,
+                    text: w.textContent.replace(/\\s+/g, " ").trim(),
+                    // the turn under way (the last one) has no card of its files yet: only the first turn's shows
+                    cards: [...(${acLayer(A)}?.querySelectorAll("[data-chat-turn-files]") ?? [])].map((c) => c.getAttribute("data-chat-turn-files")),
+                };
+            })()`);
             await h.shot("cdp-shots/agent-chat-4-working.png");
             // the working dot is a small Jarvis hologram: pulsedriver turns its rings (--spin) and flashes its sparks
             const HOLO = `${acLayer(A)}?.querySelector("[data-chat-working] svg.holo-spin")`;
@@ -44236,9 +44264,11 @@ const agentChat = {
             const stopped = await polishWaitFor(h, `window.${AC_MOCK_KEY}.calls.some((c) => c.command === "controllerinput" && c.data.input === "\\x1b")`, 3000);
             const afterStop = (await acInputs(h, blockA)).slice(stopsBefore);
             rec(
-                "4. with the agent working, the working line shows its activity and Stop sends Esc",
-                working && stopped && JSON.stringify(afterStop) === JSON.stringify(["\x1b"]),
-                { working, afterStop }
+                "4. with the agent working, the working line reads Working and names neither its activity (Reading chatpane.tsx) nor a running call; the turn under way shows no card of its files (only the first turn's one-file card is drawn); Stop sends Esc",
+                working && workingLine4?.words === "Working" && !workingLine4.text.includes(AC_ACTIVITY) &&
+                    /^Working ?(?:\(.*\))?$/.test(workingLine4.text) && JSON.stringify(workingLine4.cards) === JSON.stringify(["1"]) &&
+                    stopped && JSON.stringify(afterStop) === JSON.stringify(["\x1b"]),
+                { working, workingLine4, afterStop }
             );
 
             // 5. the second stretch (Main.dc.html, States.dc.html's failed call): it folds into Edited client.ts, ran a
@@ -44289,8 +44319,8 @@ const agentChat = {
             await polishNap(250);
             await h.shot("cdp-shots/agent-chat-5-box-opened.png");
             rec(
-                "5. the second stretch folds into Edited client.ts, ran a command with its +N and time and no red; opened, its box holds Edit failed client.ts in red with String to replace not found in file., Edited client.ts with its +N, and the command as Ran the client tests alone (no verb); the command opens to $ npm test -- client and its output inside the box, the failed edit to its diff, and no file chips follow",
-                fold5?.sentence === "Edited client.ts, ran a command" && /^\+\d+(−\d+)?$/.test(fold5.counts ?? "") && /^· \d+s$/.test(fold5.time ?? "") &&
+                "5. the second stretch folds into Edited client.ts, ran a command with its +N, no time (6 s, under 10 s) and no red; opened, its box holds Edit failed client.ts in red with String to replace not found in file., Edited client.ts with its +N, and the command as Ran the client tests alone (no verb); the command opens to $ npm test -- client and its output inside the box, the failed edit to its diff, and no file chips follow",
+                fold5?.sentence === "Edited client.ts, ran a command" && /^\+\d+(−\d+)?$/.test(fold5.counts ?? "") && fold5.time === null &&
                     fold5.red === false && opened5 && cmdOpen5 && failOpen5 &&
                     box5.failVerb === "Edit failed" && box5.failRed && box5.rows[0].includes("client.ts") && box5.rows[0].includes(AC_EDIT_ERROR) &&
                     box5.editVerb === "Edited" && /^\+\d+/.test(box5.editDiff ?? "") &&
@@ -44326,6 +44356,68 @@ const agentChat = {
             // folded again, so the steps below see the conversation as before
             await h.ev(`${W5}?.querySelector("[data-fold]")?.click()`);
             await polishWaitFor(h, `!${W5}?.querySelector("[data-chat-tools]")`, 3000);
+
+            // 5c. Calm.dc.html: a stretch of one described command reads as its description, with no counts and no time under
+            // 10 s; each finished turn ends in the card of the files its edits changed, the first turn's one file as a row
+            // alone (no header, no See all), the last turn's two as Edited 2 files, a row each in the order first touched with
+            // its folder and its +N, then See all with the turn's totals
+            // with the agent idle, so its last turn is finished; working again after, as the steps below expect
+            const W5c = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-work]") ?? [])][2]`;
+            await AC.setRoster(h, acRoster(ctx));
+            const idle5c = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector('[data-chat-turn-files="2"]')`, AC_WAIT_MS);
+            await polishNap(450);
+            const turn5c = await h.ev(`(() => {
+                const f = ${W5c}?.querySelector("[data-fold]");
+                const t = (el, sel) => el?.querySelector(sel)?.textContent.replace(/\\s+/g, " ").trim() ?? null;
+                const card = (n) => {
+                    const c = ${acLayer(A)}?.querySelector('[data-chat-turn-files="' + n + '"]');
+                    if (c == null) return null;
+                    const cs = getComputedStyle(c);
+                    const agent = c.closest("[data-chat-agent]");
+                    return {
+                        head: t(c, "[data-chat-turn-files-head]"),
+                        rows: [...c.querySelectorAll("[data-chat-turn-file]")].map((r) => ({
+                            path: r.getAttribute("data-chat-turn-file"),
+                            name: t(r, "[data-chat-turn-file-name]"),
+                            folder: t(r, "[data-chat-turn-file-folder]"),
+                            counts: t(r, "[data-chat-turn-files-counts]"),
+                            button: r.tagName === "BUTTON",
+                        })),
+                        all: t(c, "[data-chat-turn-files-all]"),
+                        radius: cs.borderTopLeftRadius,
+                        border: cs.borderTopWidth,
+                        // it follows the turn's last part
+                        last: agent?.lastElementChild?.contains(c) ?? false,
+                    };
+                };
+                return {
+                    fold: f == null ? null : { sentence: t(f, "[data-fold-sentence]"), counts: t(f, "[data-fold-counts]"), time: t(f, "[data-fold-time]"), state: f.getAttribute("data-fold-state") },
+                    one: card(1),
+                    two: card(2),
+                    cards: ${acLayer(A)}?.querySelectorAll("[data-chat-turn-files]").length ?? 0,
+                };
+            })()`);
+            await h.ev(`${acLayer(A)}?.querySelector('[data-chat-turn-files="2"]')?.scrollIntoView({ block: "center" })`);
+            await polishNap(250);
+            await h.shot("cdp-shots/agent-chat-5c-turn-files.png");
+            await AC.setRoster(h, acRoster(ctx, { state: "working", activity: AC_ACTIVITY, activeMs: 30_000, idleSince: undefined }));
+            const wantPaths5c = [ctx.files.edited, ctx.files.notes];
+            const sum5c = (turn5c.two?.rows ?? []).reduce((n, r) => n + Number(/^\+(\d+)/.exec(r.counts ?? "")?.[1] ?? NaN), 0);
+            rec(
+                "5c. the one-command stretch reads Checked the working tree after the edit, with no counts and no time; the first turn ends in a one-file card (client.ts, src/sync, +N, no header, no See all); the last turn ends in a card reading Edited 2 files, client.ts in src/sync then retry-notes.md in docs, each with its +N, then See all with the summed +N, in a 10px bordered box after the turn's last part",
+                idle5c && turn5c.fold?.sentence === AC_STATUS_DESCRIPTION && turn5c.fold.counts === null && turn5c.fold.time === null && turn5c.fold.state === "done" &&
+                    turn5c.cards === 2 &&
+                    turn5c.one?.head === null && turn5c.one.all === null && turn5c.one.rows.length === 1 &&
+                    turn5c.one.rows[0].path === ctx.files.edited && turn5c.one.rows[0].name === "client.ts" && turn5c.one.rows[0].folder === "src/sync" &&
+                    /^\+\d+(−\d+)?$/.test(turn5c.one.rows[0].counts ?? "") && turn5c.one.rows[0].button && turn5c.one.last &&
+                    turn5c.two?.head === "Edited 2 files" &&
+                    JSON.stringify(turn5c.two.rows.map((r) => r.path)) === JSON.stringify(wantPaths5c) &&
+                    JSON.stringify(turn5c.two.rows.map((r) => r.folder)) === JSON.stringify(["src/sync", "docs"]) &&
+                    turn5c.two.rows.every((r) => /^\+\d+(−\d+)?$/.test(r.counts ?? "") && r.button) &&
+                    new RegExp(`^See all ?\\+${sum5c}(−\\d+)?$`).test(turn5c.two.all ?? "") &&
+                    turn5c.two.radius === "10px" && acHairline(turn5c.two.border) && turn5c.two.last,
+                { idle5c, turn5c, sum5c }
+            );
 
             // 6. picking Terminal: the layer is gone, the xterm is the same element with focus, the rail has its Transcript
             // tab; picking Chat brings the layer back and focus to the box
@@ -45105,9 +45197,28 @@ const agentChat = {
             await AC.setRoster(h, acRoster(ctx, workingA));
             const lastFold = `[...(${acLayer(A)}?.querySelectorAll("[data-chat-work]") ?? [])].pop()?.querySelector("[data-fold]")`;
             const stretchUp = await polishWaitFor(h, `${lastFold}?.getAttribute("data-fold-state") === "running"`, 15000);
-            if (!(await h.ev(`!!${acLayer(A)}?.querySelector("[data-tool-running]")`))) {
-                await h.ev(`${lastFold}?.click()`);
-            }
+            // States.dc.html / Calm.dc.html: the running stretch stays one folded line (spinner, the call's words, its time
+            // counting) and does not open on its own
+            const timeUp26 = await polishWaitFor(h, `/^· \\d+s$/.test(${lastFold}?.querySelector("[data-fold-time]")?.textContent.trim() ?? "")`, 5000);
+            await polishNap(600);
+            const folded26 = await h.ev(`(() => {
+                const f = ${lastFold};
+                return {
+                    expanded: f?.getAttribute("aria-expanded") ?? null,
+                    rows: f?.parentElement?.querySelectorAll("[data-chat-step]").length ?? null,
+                    time: f?.querySelector("[data-fold-time]")?.textContent.trim() ?? null,
+                    sentence: f?.querySelector("[data-fold-sentence]")?.textContent.trim() ?? null,
+                };
+            })()`);
+            await h.ev(`${lastFold}?.scrollIntoView({ block: "center" })`);
+            await polishNap(200);
+            await h.shot("cdp-shots/agent-chat-26-running-folded.png");
+            rec(
+                "26a. a running stretch stays folded on its one line reading Reading client.ts, its time counting (· Ns), with no row shown until it is clicked",
+                stretchUp && timeUp26 && folded26.expanded === "false" && folded26.rows === 0 && folded26.sentence === "Reading client.ts",
+                { stretchUp, timeUp26, folded26 }
+            );
+            await h.ev(`${lastFold}?.click()`);
             const runningUp = await polishWaitFor(h, `!!${acLayer(A)}?.querySelector("[data-tool-running]")`, 5000);
             const running26 = await h.ev(`(() => {
                 const row = ${acLayer(A)}?.querySelector("[data-tool-running]");
@@ -47204,15 +47315,18 @@ const agentChat = {
             const picked86 = firstRef86.slice("ref:agent:".length);
             await acKey(h, acKeys.enter);
             const want86 = `đọc agent:${picked86.slice(0, 8)} `;
-            const written86 = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify(want86)}`, 3000);
+            // the reference draws as a badge (dcc9ed5aa), whose name is not the text: the box's text is read from Lexical's
+            // state (crbBoxText), where the badge is its token as written
+            const written86 = await polishWaitFor(h, `${crbBoxText(acBox(A))} === ${JSON.stringify(want86)}`, 3000);
+            const badges86 = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? null`);
             const pills86 = await acPills(h, acBox(A));
             const shut86 = await polishWaitFor(h, `!document.querySelector("[data-chat-mentions]")`, 3000);
             await acClear(h, acBox(A));
             rec(
-                "86. @agent lists the other live agents (not the chat's own) as ref rows ahead of any file; Enter writes `agent:<8-char id> ` in place of @agent, with no pill, and the list closes",
+                "86. @agent lists the other live agents (not the chat's own) as ref rows ahead of any file; Enter writes `agent:<8-char id> ` in place of @agent, drawn as one reference badge with no file pill, and the list closes",
                 listed86 && keys86[0]?.startsWith("ref:") && !keys86.includes(`ref:agent:${A}`) &&
-                    [B, C, D, E, F].includes(picked86) && written86 && pills86.length === 0 && shut86,
-                { listed86, list86, picked86, want86, pills86, shut86 }
+                    [B, C, D, E, F].includes(picked86) && written86 && badges86 === 1 && pills86.length === 0 && shut86,
+                { listed86, list86, picked86, want86, written86, badges86, pills86, shut86 }
             );
 
             // 87. The chat's own project's agents lead the @ list: with A and the asleep F (last in the roster) moved to a
@@ -47235,7 +47349,7 @@ const agentChat = {
             const idRefs87 = (byId87?.rows ?? []).map((r) => r.key).filter((k) => k.startsWith("ref:"));
             await acKey(h, acKeys.enter);
             const want87 = `đọc agent:${F.slice(0, 8)} `;
-            const written87 = await polishWaitFor(h, `${acVal(acBox(A))} === ${JSON.stringify(want87)}`, 3000);
+            const written87 = await polishWaitFor(h, `${crbBoxText(acBox(A))} === ${JSON.stringify(want87)}`, 3000);
             await acClear(h, acBox(A));
             await AC.setRoster(h, acRoster(ctx));
             rec(
@@ -47243,6 +47357,58 @@ const agentChat = {
                 listed87 && refs87[0] === `ref:agent:${F}` && listedId87 && idRefs87.length === 1 &&
                     idRefs87[0] === `ref:agent:${F}` && written87,
                 { refs87, idRefs87, want87, written87 }
+            );
+
+            // 88. Calm.dc.html's card opens the Diff: with the fixture folder a git repo whose client.ts has changed since its
+            // commit, a click on the card's client.ts row switches to the Diff on agent A's working tree with
+            // src/sync/client.ts selected; back on the agent, See all opens the Diff on the same scope
+            // a git that fails says how (a Final once saw `git init -q` fail with no output), and is tried once more
+            let git88 = null;
+            for (let i = 0; i < 2 && git88 !== "ok"; i++) {
+                try {
+                    fstGitInit(ctx.dir);
+                    git88 = "ok";
+                } catch (e) {
+                    git88 = `${String(e?.message ?? e).split("\n")[0]} (exit ${e?.status}, signal ${e?.signal}): ${String(e?.stderr ?? "").trim()}`;
+                    await polishNap(1000);
+                }
+            }
+            writeFileSync(ctx.files.edited, "export const retries = 3;\nexport const backoff = true;\nexport const delayMs = 400;\n");
+            await showAgent(A);
+            const card88 = `${acLayer(A)}?.querySelector('[data-chat-turn-files="2"]')`;
+            const cardUp88 = await polishWaitFor(h, `!!${card88}`, AC_WAIT_MS);
+            const diffState88 = () =>
+                AC.agentPage(
+                    h,
+                    `const G = await mod("app/view/agents/githistorystore.ts");
+                    const model = agentsModel();
+                    const scope = globalStore.get(model.diffScopeAtom);
+                    return { surface: globalStore.get(model.surfaceAtom), origin: scope?.repo?.origin ?? null, file: globalStore.get(G.selectedFileAtom) };`
+                );
+            const diffUntil88 = async (ok) => {
+                let got = await diffState88();
+                for (let i = 0; i < 40 && !ok(got); i++) {
+                    await polishNap(250);
+                    got = await diffState88();
+                }
+                return got;
+            };
+            await h.ev(`(() => { const r = ${card88}?.querySelector("[data-chat-turn-file]"); r?.scrollIntoView({ block: "center" }); r?.click(); return !!r; })()`);
+            const row88 = await diffUntil88((s) => s?.surface === "files" && /(^|\/)src\/sync\/client\.ts$/.test(s.file ?? ""));
+            // the file's two sides load after the selection: give them time to draw for the shot
+            await polishNap(1500);
+            await h.shot("cdp-shots/agent-chat-88-card-row-diff.png");
+            await showAgent(A);
+            await polishWaitFor(h, `!!${card88}`, AC_WAIT_MS);
+            await h.ev(`(() => { const r = ${card88}?.querySelector("[data-chat-turn-files-all]"); r?.scrollIntoView({ block: "center" }); r?.click(); return !!r; })()`);
+            const all88 = await diffUntil88((s) => s?.surface === "files");
+            await h.goto("agent");
+            rec(
+                "88. a click on the card's client.ts row opens the Diff on agent A's working tree with src/sync/client.ts selected; See all opens the Diff on the same agent",
+                git88 === "ok" && cardUp88 && row88?.surface === "files" && row88.origin?.kind === "agent" && row88.origin.id === A &&
+                    /(^|\/)src\/sync\/client\.ts$/.test(row88.file ?? "") &&
+                    all88?.surface === "files" && all88.origin?.kind === "agent" && all88.origin.id === A,
+                { git88, cardUp88, row88, all88 }
             );
         } catch (e) {
             rec("the scenario ran to its end", false, String(e?.message ?? e));
