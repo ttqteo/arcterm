@@ -3,8 +3,10 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    atomRunsIn,
     bangSkip,
     fromShown,
+    gapToDrop,
     isAtom,
     locate,
     mentionText,
@@ -279,5 +281,62 @@ describe("bash's `!` beside the editor", () => {
 
     it("an outside caret maps into the shown text, never before its start", () => {
         expect(fromShown(shownText("!ls", 1), 2 - 1, 1)).toEqual({ text: "!ls", caret: 2 });
+    });
+});
+
+describe("atomRunsIn", () => {
+    it("finds a finished reference, not one still being typed", () => {
+        expect(atomRunsIn("đọc agent:7cd99627 ", 19)).toMatchObject([
+            { start: 4, end: 18, seg: { kind: "ref", ref: "agent", id: "7cd99627", raw: "agent:7cd99627" } },
+        ]);
+        expect(atomRunsIn("đọc agent:7cd99627", 18)).toEqual([]); // caret at its end: still typing
+        expect(atomRunsIn("đọc agent:7cd99627, ok", 22)).toMatchObject([{ start: 4, end: 18 }]);
+    });
+    it("takes a pasted run of several", () => {
+        expect(atomRunsIn("run:071a8e3b council:c41d9e02 ", 30).map((r) => r.seg)).toMatchObject([
+            { kind: "ref", raw: "run:071a8e3b" },
+            { kind: "ref", raw: "council:c41d9e02" },
+        ]);
+    });
+    it("finds a finished @path, a folder too, as a file pill", () => {
+        expect(atomRunsIn("xem @../arcterm/cdp-shots ", 26)).toMatchObject([
+            { start: 4, end: 25, seg: { kind: "pill", path: "../arcterm/cdp-shots" } },
+        ]);
+        expect(atomRunsIn("@src/agent:7cd9.ts ", 19)).toMatchObject([
+            { seg: { kind: "pill", path: "src/agent:7cd9.ts" } },
+        ]);
+    });
+    it("leaves an @path still being typed", () => {
+        expect(atomRunsIn("xem @../arcterm/cdp-sh", 22)).toEqual([]);
+    });
+    it("takes every finished token when no caret is in the text", () => {
+        expect(atomRunsIn("đọc agent:7cd99627")).toMatchObject([{ start: 4, end: 18 }]);
+        expect(atomRunsIn("no tokens here", 3)).toEqual([]);
+        expect(atomRunsIn("")).toEqual([]);
+    });
+    it("the offsets slice the text the runs stand for", () => {
+        const t = "a @src/x.ts, agent:7cd99627 run:071a8e3b!";
+        const runs = atomRunsIn(t);
+        expect(runs.map((r) => t.slice(r.start, r.end))).toEqual(["@src/x.ts", "agent:7cd99627", "run:071a8e3b"]);
+    });
+});
+
+describe("gapToDrop", () => {
+    it("drops the space after a pill that has a space on both sides", () => {
+        expect(gapToDrop("đọc ", " ")).toBe("after");
+        expect(gapToDrop("đọc ", " tiếp")).toBe("after");
+    });
+    it("drops the space before a pill at the end of the line", () => {
+        expect(gapToDrop("đọc ", "")).toBe("before");
+    });
+    it("drops the space after a pill at the start of the line", () => {
+        expect(gapToDrop("", " tiếp")).toBe("after");
+    });
+    it("keeps a single space and punctuation", () => {
+        expect(gapToDrop("đọc", " tiếp")).toBeNull();
+        expect(gapToDrop("đọc ", ", tiếp")).toBeNull();
+        expect(gapToDrop("", "")).toBeNull();
+        expect(gapToDrop("đọc", "")).toBeNull();
+        expect(gapToDrop("", ", tiếp")).toBeNull();
     });
 });

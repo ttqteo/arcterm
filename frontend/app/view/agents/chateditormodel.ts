@@ -98,6 +98,43 @@ export function segmentLength(s: Segment): number {
     return s.kind === "text" ? s.text.length : s.kind === "ref" ? s.raw.length : mentionText(s.path).length;
 }
 
+/** An atom (a file pill or a reference) found in a text, with where it is: `start` to `end` is the token as written. */
+export interface AtomRun {
+    start: number;
+    end: number;
+    seg: Exclude<Segment, { kind: "text" }>;
+}
+
+/** Pure: the file mentions and references in `text` that are finished, with their offsets, in order: what the box makes a
+ *  pill or a badge of once typed or pasted, by the rules of `segmentsOf` (`caret` as there: a token the caret is in or at
+ *  the end of is still being typed, and left out; with no caret every finished token counts). */
+export function atomRunsIn(text: string, caret?: number): AtomRun[] {
+    const out: AtomRun[] = [];
+    let at = 0;
+    for (const seg of segmentsOf(text, caret)) {
+        const end = at + segmentLength(seg);
+        if (isAtom(seg)) {
+            out.push({ start: at, end, seg });
+        }
+        at = end;
+    }
+    return out;
+}
+
+/** Pure: which of the two spaces around a pill that is taken away goes with it, so deleting `đọc @a/b.ts tiếp` leaves
+ *  `đọc tiếp` and not two spaces. `before` and `after` are the text right before and right after the pill in its line ("" at
+ *  the line's edge or beside another pill). "after" when a space follows and the pill is at the line's start or has a space
+ *  before it; "before" when the pill ends the line after a space; null otherwise (a single space, or punctuation, stays). */
+export function gapToDrop(before: string, after: string): "before" | "after" | null {
+    if (after.startsWith(" ") && (before === "" || before.endsWith(" "))) {
+        return "after";
+    }
+    if (after === "" && before.endsWith(" ")) {
+        return "before";
+    }
+    return null;
+}
+
 /** Pure: the offset in the whole text of a place in the segments. In a text run `offset` is characters into it; for a
  *  pill or a reference it is 0 (before it) or 1 (after it). An offset out of range is clamped; an index past the list is
  *  the end. */
