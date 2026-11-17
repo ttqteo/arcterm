@@ -47,6 +47,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Switching between HTML files no longer flashes white before the page shows.
 - On a Mac, Sidecar is a native window like the main one: rounded corners, a shadow and the traffic lights, whose
   green button takes it full screen in both its forms.
 - A file an agent edited on your other machine (a session started on Windows and resumed on the Mac) opens from the
