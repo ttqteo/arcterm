@@ -13,6 +13,8 @@ export interface DevServerOwner {
     tabid?: string;
     name?: string;
     harness?: string;
+    // the agent or terminal started it with `wsh detach`, outside its process tree (pkg/devservers/detached.go)
+    detached?: boolean;
 }
 
 // the JSON shape of the Go devservers.Server (pkg/devservers)
@@ -160,7 +162,10 @@ export interface TerminalLog {
 
 export function terminalLog(row: DevServerRow): TerminalLog | null {
     const o = row.owner;
-    return o?.kind === "terminal" && o.tabid && o.blockid ? { tabId: o.tabid, blockId: o.blockid } : null;
+    // a server the terminal started with `wsh detach` writes to its own log file, not to the pane
+    return o?.kind === "terminal" && !o.detached && o.tabid && o.blockid
+        ? { tabId: o.tabid, blockId: o.blockid }
+        : null;
 }
 
 // "45s", "12m", "2h 14m", "3d 4h"; createms and now are epoch milliseconds

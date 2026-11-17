@@ -2239,6 +2239,16 @@ declare global {
         project?: string;
     };
 
+    // wshrpc.CommandRecordDetachedData
+    type CommandRecordDetachedData = {
+        pid: number;
+        startms: number;
+        blockid?: string;
+        cmd?: string;
+        cwd?: string;
+        log?: string;
+    };
+
     // wshrpc.CommandRemoteFileStreamData
     type CommandRemoteFileStreamData = {
         path: string;
@@ -4731,6 +4741,7 @@ declare global {
         tabid?: string;
         name?: string;
         harness?: string;
+        detached?: boolean;
     };
 
     // wshrpc.ServiceStatus

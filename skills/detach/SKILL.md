@@ -19,7 +19,8 @@ and when arcterm quits, restarts or is reinstalled. `wsh detach` starts a comman
 Rules:
 - Use it for a process the user will keep using after your turn: a dev server, a local database, a file watcher.
   A short build, test or one-off script runs as usual.
-- Tell the user its pid, log and stop command, since nothing in arcterm lists it.
+- Tell the user its pid, log and stop command. A process that listens on a port also shows in arcterm's Servers and
+  in the Agent tree under your row, named as yours; one that listens on none shows nowhere.
 - Before starting another copy, check the old one is gone (its port, or `tasklist /FI "PID eq <pid>"`).
 - "a job object above this process does not allow breakaway" means the terminal is inside an arcterm from
   before `wsh detach`, or another app's job: say so and run the command the usual way.

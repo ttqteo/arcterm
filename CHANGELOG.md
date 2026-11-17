@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- The Agent tree shows a server's port (`:4321`) on the agent or terminal that runs it, and on its project's folder
+  while the folder is folded or when no row of it holds the server, so you can tell which project has a server up.
 - Pick several agents in the Agent sidebar (Ctrl+click, Shift+click) and right-click one: Close N agents closes them
   together, asking first when one is working. Agents working for a run stay; close those from their run.
 - A link in Chat shows a small copy button on its top-right corner when you hover it, over none of the words around
@@ -88,6 +90,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   answer is dropped instead of landing on the new question.
 - A maximized or full-screen Sidecar on a high-scale screen (a 1920 px screen at 175%) shows the wall of agents instead
   of the small form.
+- A server an agent or terminal starts with `wsh detach` shows in Servers as that agent's or terminal's, with Log
+  opening its log file, instead of "no owner". One started before this update stays "no owner" until it is restarted.
 - A highlighted sentence in Chat that ends on a bare link (`==… http://localhost:4321/.==`) is highlighted again,
   instead of showing its `==` marks with the link running on into them.
 - A Markdown Preview that holds a placeholder in angle brackets (`<a complete script>`, `<name>`) shows it as written,

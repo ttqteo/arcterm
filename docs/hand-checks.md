@@ -600,3 +600,8 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) Checks after a brainstorm's run starts: brainstorm with a builder check (and a judge), Approve, and let
   the run start → the brainstorming agent's row loses its checks chip (`> ✓`) and the check rows under it; a check that
   still asks, or the one selected, stays. Unit-tested only (`agenttreemodel.ts` `checksSuperseded`), not tried in the app.
+- [ ] (arcterm) A `wsh detach` server has an owner: in an agent, `wsh detach npm run dev` in a repo with a dev server →
+  the footer's Servers names `claude · <agent>` on its row instead of "no owner", and Log opens the `arc-detach` log;
+  the agent's tree row shows a green server mark with `:<port>`, and folding its project's folder shows the port on the
+  folder. From a plain terminal, the row reads `terminal · <name>` and Log opens the file, not the pane. Close the agent
+  → the row keeps its name. Unit-tested only (`pkg/devservers/detached.go`, `treeservers.ts`), not tried in the app.
