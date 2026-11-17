@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **wavesrv no longer re-reads every run to place an agent with no run stamp.** Installed build, several
+  agents open: in PowerShell, sample `(Get-CimInstance -Query "SELECT ReadTransferCount FROM Win32_Process WHERE
+  ProcessId=<wavesrv pid>").ReadTransferCount` twice 20 s apart → a few MB/s at most (before: ~175 MB/s in 36–57 MB
+  and ~420 MB bursts, store "context deadline exceeded" in `waveapp.log`); typing in Chat never fails with `EC-TIME`.
+  `pkg/jarvis/runworkers.go`, branch `fix/run-scan-cache`.
 - [ ] (arcterm) **`chat-initiative-band` step 3 now asserts that `i` puts the focus in the band.** Never run: no dev app
   was up. With one running, `task verify:ui -- chat-initiative-band` → step "3. band expanded" passes; if it fails only
   on `viaKey.focused`, the band opens on `i` without taking the focus, which `chatband.tsx` says it does (a bug, not the

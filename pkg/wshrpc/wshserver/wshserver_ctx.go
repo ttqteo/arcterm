@@ -31,10 +31,10 @@ func ownerRunForBlock(ctx context.Context, blockOrefStr string) (*waveobj.Run, s
 	if err != nil || tabORef.OType != waveobj.OType_Tab {
 		return nil, "", false
 	}
-	// a stamped tab's run is read off its stamp; a tab with no usable stamp falls back to the store's narrowed scan
-	// of the run rows (jarvis.ResolveRunWorkerFromMeta), which skips a run whose channel is gone. Every effort
-	// update, resmon snapshot and ask resolves its block here, and the scan alone was ~330 ms per call on a store
-	// of thousands of runs.
+	// a stamped tab's run is read off its stamp; a tab with no usable stamp falls back to jarvis's worker index
+	// (jarvis.ResolveRunWorkerFromMeta), which skips a run whose channel is gone. Every effort update, resmon
+	// snapshot and ask resolves its block here: a scan of the run rows per call kept wavesrv reading ~175 MB/s on a
+	// store of 3,392 runs (2026-11-17).
 	m := jarvis.ResolveRunWorkerFromMeta(ctx, "tab:"+tabORef.OID)
 	if m == nil {
 		return nil, "", false

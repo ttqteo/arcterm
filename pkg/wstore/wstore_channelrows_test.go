@@ -415,35 +415,6 @@ func TestGetMessagesByRef(t *testing.T) {
 	}
 }
 
-func TestGetRunCandidatesByWorker(t *testing.T) {
-	ctx := context.Background()
-	ch, err := CreateChannel(ctx, "run-by-worker", "/p")
-	if err != nil {
-		t.Fatalf("create channel: %v", err)
-	}
-	worker := waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
-	owner := waveobj.Run{ID: uuid.NewString(), Goal: "g", CreatedTs: 2,
-		Phases: []waveobj.RunPhase{{Kind: "execute", WorkerOrefs: []string{worker}}}}
-	// a candidate only: it quotes the oref in its goal, which the caller has to rule out
-	quoting := waveobj.Run{ID: uuid.NewString(), Goal: "look at " + worker, CreatedTs: 1}
-	unrelated := waveobj.Run{ID: uuid.NewString(), Goal: "g", CreatedTs: 3}
-	for _, r := range []waveobj.Run{owner, quoting, unrelated} {
-		if err := AppendRun(ctx, ch.OID, r); err != nil {
-			t.Fatalf("append: %v", err)
-		}
-	}
-	got, err := GetRunCandidatesByWorker(ctx, worker)
-	if err != nil {
-		t.Fatalf("GetRunCandidatesByWorker: %v", err)
-	}
-	if len(got) != 2 || got[0].ID != quoting.ID || got[1].ID != owner.ID {
-		t.Fatalf("want the quoting run then the owner, oldest first, got %+v", got)
-	}
-	if none, err := GetRunCandidatesByWorker(ctx, ""); err != nil || len(none) != 0 {
-		t.Fatalf("an empty oref must match nothing, got %+v err=%v", none, err)
-	}
-}
-
 func TestGetRunReadsRow(t *testing.T) {
 	ctx := context.Background()
 	ch, err := CreateChannel(ctx, "getrun-row", "/p")
