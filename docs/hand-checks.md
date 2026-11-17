@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **No `/compact` loop before a sleep.** Unit tests only; never tried in the app. Have a Claude agent
+  with 100k+ of context go idle (sleep on, After idle for short), off screen, so the sleep loop compacts it: Chat
+  shows one `/compact Keep: …` and the agent sleeps once it lands. Run `/compact` by hand right before so the loop's
+  one answers "Not enough messages to compact": the agent still sleeps within a minute, with no second `/compact`
+  10 minutes later. With a session moved to the background from that tab, `waveapp.log` shows no "dropped
+  PreToolUse's working … reported after its turn ended" for its tools. Commit 0102ea983.
 - [ ] (arcterm) **Closing a brainstorm.** Unit tests and the typecheck only; never tried in the app. In an agent with a
   brainstorm open: (1) ⋯ → Close brainstorm. The Brainstorm tab, the header strip and the Chat card go, the agent gets
   `brainstorm: close` (hidden in Chat) and answers in the terminal, and the earlier ✓ rows stay ✓ rows rather than raw
