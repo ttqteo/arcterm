@@ -61,7 +61,9 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
                             <span className="w-[34px] shrink-0 select-none pr-[14px] text-right text-ink-faint">
                                 {i + 1}
                             </span>
+                            {/* one line's text, without its number: what Chat's focus read quotes a code block from */}
                             <span
+                                data-code-line
                                 className={cn(
                                     "pr-4",
                                     wrap && "min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]"

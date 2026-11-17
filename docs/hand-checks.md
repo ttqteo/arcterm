@@ -673,3 +673,4 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   description; a finished stretch under 10 s shows no time. When a turn that edited files ends, a card lists them with
   their +/− lines; a row opens the Diff on that file and See all opens the agent's whole Diff. Checked only in the
   `agent-chat` CDP scenario with fixture turns.
+- [ ] (arcterm) Focus read in Chat (`chatfocusreadview.ts`): with a real wheel and a trackpad, a stopped scroll settles the nearest block onto the line in one short glide and never fights an ongoing fling; `Space` / `Shift+Space` step like `j` / `k`; with reduced motion the step jumps and the dimming has no fade; while a live agent writes a reply and you sit at the bottom nothing is dimmed, and scrolling up brings the dimming back; `j` / `q` typed with Telex on act as keys in the conversation. The `chat-focus-read` scenario drives keys and `scrollTop` only

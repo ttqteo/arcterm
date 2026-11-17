@@ -48866,6 +48866,305 @@ const chatQuote = {
     },
 };
 
+// --- chat-focus-read: Focus read in Chat (chatfocusread.ts, chatfocusreadview.ts, chatfocusreadstore.ts). The toggle
+// beside Skim turns it on over a long reply: one block lit on the reading line, every other block dimmed to 32%, the
+// line's tick in the gutter, and the focus in the conversation. J steps the next block onto the line (the Agent tree's j
+// does not step agents there), Q puts the lit block in the box as a quote with the focus left in the conversation, a code
+// block quotes fenced and a table as a markdown table, J keeps stepping at the end of the conversation without pulling
+// the scroller off the bottom, and Alt+R turns it off again.
+
+const CFR_NAME = "focus read source";
+const CFR_QUESTION = "walk me through the release steps";
+const CFR_FIRST = "There are six steps, and the order matters because each one checks what the one before it left behind.";
+const CFR_REPLY = [
+    CFR_FIRST,
+    "First, make sure the tree is clean: an edit you forgot to commit would ride into the build, and nobody could tell which commit the installer came from.",
+    "Second, read the Unreleased lines of the changelog, since they decide the version the build takes.",
+    "## Build",
+    "Run the build from a commit, never from the working tree:",
+    "```sh\ntask tauri:build BUMP=auto\nls releases/\n```",
+    "- Check that the installer landed in releases.",
+    "- Check that its name carries the commit it was built from.",
+    "| Step | Who |\n|---|---|\n| Build | you |\n| Install | the person |",
+    "Third, hand the installer over with the one command that installs it, and say what to try first.",
+    "Fourth, keep the tag local: a bumped build tags its commit, and the tag is never pushed.",
+    "Fifth, write down what you could not check by hand, so the next build starts from it.",
+    "Sixth, close the loop: the release notes are the changelog lines, so a line that reads badly reads badly in the app too.",
+    "That is the whole of it. The build is the slow part; everything after it takes a minute.",
+    // the rest is long enough that every block above can be stepped onto the line
+    ...Array.from(
+        { length: 10 },
+        (_, i) =>
+            `Note ${i + 1}: a release that skips a step costs more later than the step costs now, so each one stays even when it looks like it has nothing to catch this time.`
+    ),
+].join("\n\n");
+// an earlier exchange above the reply, so the reply has room above it too
+const CFR_EARLIER_QUESTION = "what is left before the release?";
+const CFR_EARLIER = Array.from(
+    { length: 8 },
+    (_, i) => `Item ${i + 1}: one more thing to check before the build, written out as a full sentence so it wraps like a real paragraph does.`
+).join("\n\n");
+
+function cfrRoster(ctx) {
+    const now = Date.now();
+    return [
+        {
+            project: "arcterm",
+            state: "idle",
+            idleSince: now - 3_600_000,
+            task: "Release",
+            agent: "claude",
+            model: "opus",
+            id: ctx.tabs.main.tabId,
+            name: CFR_NAME,
+            blockId: ctx.tabs.main.blockId,
+            transcriptPath: ctx.transcript,
+            sleeping: { since: now - 3_600_000, freedBytes: 0 },
+        },
+    ];
+}
+
+const chatFocusRead = {
+    name: "chat-focus-read",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            dir: mkdtempSync(join(tmpdir(), "verify-chat-focus-read-")),
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+            prevModes: await h.ev(`localStorage.getItem("agent.chatmode")`),
+            prevFocusRead: await h.ev(`localStorage.getItem("chat.focusRead")`),
+        };
+        let at = "writing the transcript";
+        try {
+            const base = Date.now() - 7_200_000;
+            const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
+            const lines = [
+                AC.userText(CFR_EARLIER_QUESTION, { ...o(0), uuid: "u0" }),
+                AC.assistantText(CFR_EARLIER, { ...o(2), uuid: "a0" }),
+                AC.userText(CFR_QUESTION, { ...o(10), uuid: "u1" }),
+                AC.assistantText(CFR_REPLY, { ...o(12), uuid: "a1" }),
+            ];
+            ctx.transcript = AC.writeTranscript(ctx.dir, "focus-read-source", lines);
+            at = "resetting the grid and focus read";
+            await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
+            await h.ev(`localStorage.removeItem("agent.chatmode")`);
+            await h.ev(`localStorage.removeItem("chat.focusRead")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            at = "making the tab";
+            ctx.tabs = { main: await acMakeTab(h, ctx, { label: CFR_NAME }) };
+            at = "setting the roster";
+            await AC.setRoster(h, cfrRoster(ctx));
+        } catch (e) {
+            ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture agent and its transcript", false, ctx.arrangeError);
+            return steps;
+        }
+        const A = ctx.tabs.main.tabId;
+        const pane = `document.querySelector('[data-agent-chat="${A}"]')`;
+        const scroller = `${pane}?.querySelector("[data-chat-scroller]")`;
+        const boxText = () =>
+            AC.agentPage(h, `const I = await mod("app/view/agents/chatinsert.ts"); return I.chatBoxText(${JSON.stringify(A)});`);
+        const focusId = () => AC.agentPage(h, `return globalStore.get(agentsModel().focusIdAtom);`);
+        // the blocks in order, which one is lit, where it sits against the reading line, and where the focus is
+        const state = () =>
+            h.ev(`(() => {
+                const s = ${scroller};
+                if (!s) return null;
+                const blocks = [...s.querySelectorAll("[data-fr-block]")];
+                const lit = blocks.findIndex((b) => b.hasAttribute("data-fr-lit"));
+                const sr = s.getBoundingClientRect();
+                const line = Math.round(s.clientHeight / 3);
+                const r = lit >= 0 ? blocks[lit].getBoundingClientRect() : null;
+                const dim = blocks.find((b) => !b.hasAttribute("data-fr-lit"));
+                const tick = ${pane}?.querySelector("[data-chat-focus-line]");
+                return {
+                    on: s.hasAttribute("data-focus-read"),
+                    count: blocks.length,
+                    litCount: blocks.filter((b) => b.hasAttribute("data-fr-lit")).length,
+                    lit,
+                    litText: lit >= 0 ? blocks[lit].innerText : null,
+                    litCode: lit >= 0 && !!blocks[lit].querySelector("[data-code-line]"),
+                    litTable: lit >= 0 && !!blocks[lit].querySelector("table"),
+                    // the lit block's top from the line (negative: above it) and its height
+                    litTop: r ? Math.round(r.top - sr.top - line) : null,
+                    litH: r ? Math.round(r.height) : null,
+                    litOpacity: lit >= 0 ? getComputedStyle(blocks[lit]).opacity : null,
+                    dimOpacity: dim ? getComputedStyle(dim).opacity : null,
+                    tick: tick ? getComputedStyle(tick).display : "absent",
+                    tickAtLine: tick ? Math.abs(tick.getBoundingClientRect().top + tick.offsetHeight / 2 - sr.top - line) <= 2 : false,
+                    focusIn: !!document.activeElement?.closest?.("[data-chat-scroller]"),
+                    scrollTop: Math.round(s.scrollTop),
+                    max: Math.round(s.scrollHeight - s.clientHeight),
+                };
+            })()`);
+        const press = async (key, code, keyCode, modifiers = 0) => {
+            for (const type of ["keyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key, code, modifiers, windowsVirtualKeyCode: keyCode });
+            }
+            // a step scrolls smoothly: let it land
+            await polishNap(700);
+        };
+        const J = () => press("j", "KeyJ", 74);
+        const K = () => press("k", "KeyK", 75);
+        const Q = () => press("q", "KeyQ", 81);
+        // the lit block sits on the line: its top TOP_ABOVE (12) px above it, half a short block, within a few px
+        const onLine = (s) => s != null && s.litTop != null && Math.abs(s.litTop + Math.min(s.litH / 2, 12)) <= 3;
+        try {
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+            await AC.focusAgent(h, A);
+            const loaded = await polishWaitFor(h, `!!${pane}?.querySelector("[data-chat-prose] p") && !!${pane}?.querySelector("[data-chat-focus-read-toggle]")`, 15000);
+
+            // 1. the toggle turns focus read on: one block lit, the rest at 32%, the tick on the line, the focus in Chat
+            const at1 = await h.ev(caCenter(`${pane}?.querySelector("[data-chat-focus-read-toggle]")`));
+            for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: Math.round(at1.x), y: Math.round(at1.y), button: "left", clickCount: 1 });
+            }
+            const on1 = await polishWaitFor(h, `!!${scroller}?.hasAttribute("data-focus-read")`, 3000);
+            await polishNap(400);
+            const s1 = await state();
+            const pressed1 = await h.ev(`${pane}?.querySelector("[data-chat-focus-read-toggle]")?.getAttribute("aria-pressed")`);
+            await h.shot("cdp-shots/chat-focus-read-1-on.png");
+            rec(
+                "1. the toggle beside Skim turns focus read on: every block but one dims to 32%, the lit one stays at 1, the accent tick marks the line, and the focus is in the conversation",
+                loaded && on1 && pressed1 === "true" && s1?.count >= 12 && s1.litCount === 1 && s1.litOpacity === "1" && s1.dimOpacity === "0.32" && s1.tick === "block" && s1.tickAtLine && s1.focusIn,
+                { loaded, on1, pressed1, s1 }
+            );
+
+            // 2. from the reply's first paragraph, J puts the next block on the line, and the Agent tree's j does not step
+            // agents
+            await h.ev(`(() => {
+                const s = ${scroller};
+                const p = [...s.querySelectorAll("[data-chat-prose] p")].find((el) => el.innerText.startsWith(${JSON.stringify(CFR_FIRST.slice(0, 30))}));
+                s.scrollTop += p.getBoundingClientRect().top - s.getBoundingClientRect().top - s.clientHeight / 3 + 4;
+                return true;
+            })()`);
+            await polishNap(500);
+            const s2a = await state();
+            const id2a = await focusId();
+            await J();
+            const s2 = await state();
+            const id2 = await focusId();
+            await h.shot("cdp-shots/chat-focus-read-2-step.png");
+            rec(
+                "2. J lights the next block and scrolls it onto the reading line (its top just above the line); the focused agent stays the same",
+                s2a?.lit >= 0 && s2?.lit === s2a.lit + 1 && onLine(s2) && s2.litCount === 1 && id2 === id2a && id2 === A,
+                { s2a, s2, id2a, id2 }
+            );
+
+            // 3. Q puts the lit block in the box as a quote, the caret's fresh line under it, and the focus stays in Chat
+            const before3 = await boxText();
+            await Q();
+            const text3 = await boxText();
+            const s3 = await state();
+            await h.shot("cdp-shots/chat-focus-read-3-quote.png");
+            rec(
+                "3. Q puts the lit block in the chat box as a `> ` quote with a blank line under it, and the focus stays in the conversation",
+                before3 === "" && typeof s2?.litText === "string" && text3 === `> ${s2.litText.trim()}\n\n` && s3?.focusIn === true,
+                { before3, litText: s2?.litText, text3, focusIn: s3?.focusIn }
+            );
+
+            // 4. a code block quotes fenced, with its language, under the first quote
+            let s4 = await state();
+            for (let i = 0; i < 15 && s4 != null && !s4.litCode; i++) {
+                await J();
+                s4 = await state();
+            }
+            await Q();
+            const text4 = await boxText();
+            await h.shot("cdp-shots/chat-focus-read-4-code.png");
+            rec(
+                "4. stepping on to the code block and pressing Q adds it as a fenced quote, its language kept, under the first quote",
+                s4?.litCode === true && onLine(s4) && text4 === `${text3}> \`\`\`sh\n> task tauri:build BUMP=auto\n> ls releases/\n> \`\`\`\n\n`,
+                { s4, text4 }
+            );
+
+            // 5. a table quotes as a markdown table rebuilt from its cells
+            let s5 = await state();
+            for (let i = 0; i < 15 && s5 != null && !s5.litTable; i++) {
+                await J();
+                s5 = await state();
+            }
+            await Q();
+            const text5 = await boxText();
+            rec(
+                "5. Q on the table adds it as a markdown table rebuilt from its cells",
+                s5?.litTable === true && text5 === `${text4}> | Step | Who |\n> | --- | --- |\n> | Build | you |\n> | Install | the person |\n\n`,
+                { s5, text5 }
+            );
+
+            // 6. at the end of the conversation J keeps stepping through the last blocks, which stay below the line, and the
+            // scroller stays at its end; K steps back
+            await h.ev(`(${scroller}).scrollTop = (${scroller}).scrollHeight`);
+            await polishNap(600);
+            const s6a = await state();
+            await J();
+            const s6 = await state();
+            await K();
+            const s6b = await state();
+            await h.shot("cdp-shots/chat-focus-read-6-end.png");
+            rec(
+                "6. at the end of the conversation J lights the next block below the line without moving the scroller off its end, and K steps back",
+                s6a != null && s6a.scrollTop >= s6a.max - 2 && s6?.lit === s6a.lit + 1 && s6.scrollTop >= s6.max - 2 && s6.litTop > 0 && s6b?.lit === s6a.lit,
+                { s6a, s6, s6b }
+            );
+
+            // 7. Alt+R turns it off: nothing dimmed, no tick, the toggle up
+            await press("r", "KeyR", 82, 1);
+            const off7 = await polishWaitFor(h, `!${scroller}?.hasAttribute("data-focus-read") && !${pane}?.querySelector("[data-fr-block]")`, 3000);
+            const pressed7 = await h.ev(`${pane}?.querySelector("[data-chat-focus-read-toggle]")?.getAttribute("aria-pressed")`);
+            const tick7 = await h.ev(`!!${pane}?.querySelector("[data-chat-focus-line]")`);
+            await h.shot("cdp-shots/chat-focus-read-7-off.png");
+            rec("7. Alt+R turns focus read off: no block dimmed, no tick, the toggle up", off7 && pressed7 === "false" && tick7 === false, {
+                off7,
+                pressed7,
+                tick7,
+            });
+        } catch (e) {
+            rec("x. the scenario ran to the end", false, String(e?.stack ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`chat-focus-read teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the draft", () =>
+            AC.agentPage(
+                h,
+                `const S = await mod("app/view/agents/wakingstore.ts");
+                for (const id of ${JSON.stringify(ctx.tabIds ?? [])}) S.setWakeDraft(id, "");
+                return true;`
+            )
+        );
+        await step("restore the roster", () => AC.restoreRoster(h));
+        await step("close the fixture tab", () => acCloseTabs(h, ctx));
+        await step("restore the grid, the chat modes and focus read", () =>
+            h.ev(`(() => {
+                for (const [key, prev] of [[${JSON.stringify(GRID_KEY)}, ${JSON.stringify(ctx.prevGrid)}], ["agent.chatmode", ${JSON.stringify(ctx.prevModes)}], ["chat.focusRead", ${JSON.stringify(ctx.prevFocusRead)}]]) {
+                    if (prev == null) localStorage.removeItem(key);
+                    else localStorage.setItem(key, prev);
+                }
+                return true;
+            })()`)
+        );
+        await step("remove the fixture transcript", () => rmSync(ctx.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 // --- chat-math: formulas in Chat (markdownmessage.tsx, mathdollars.ts). A Claude reply holds inline `$…$` math, a `$$…$$`
 // display block, a one-line `$$…$$`, a price ("$5 and $10") and a code span with `$HOME`; Chat draws the three formulas with
 // KaTeX (two as display blocks) and leaves the price and the code as written.
@@ -72867,6 +73166,7 @@ export const SCENARIOS = [
     chatAsleepAttachJump,
     chatFork,
     chatQuote,
+    chatFocusRead,
     chatMath,
     chatRefBadges,
     chatInitiative,
