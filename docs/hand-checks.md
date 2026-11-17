@@ -643,6 +643,9 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   relaunches it); the run's row in the Agent tree is the new lead's, working, and the old lead's sleeping tab has no
   row of its own. An agent whose brainstorm run was cancelled and queued again reads `plan queued #N` alone, with no
   `cancelled · run …` beside it.
+- [ ] (arcterm) The Heavy jobs popover keeps its place after Run now (`usePanelPlacement`, `consumerspanel.tsx`): open
+  it from a waiting agent's `≡#1` tag in the Agent tree and press Run now on that job; the tag goes, and the popover
+  stays hanging where it opened, not in the bottom right corner. The same from the app bar's jobs chip.
 - [ ] (arcterm) A server mark keeps two ports (`shortPortsLabel`, `devserversmodel.ts`): an agent or run row in the
   Agent tree whose background servers listen on four ports reads `:5175 :9230 +2` beside the green server glyph, and
   hovering it lists all four ports with their commands.

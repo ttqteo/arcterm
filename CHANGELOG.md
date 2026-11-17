@@ -119,6 +119,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   on the run's row in the Agent tree, instead of the old lead's sleeping tab holding the row and the new lead showing
   as a separate agent.
 - An agent whose run you cancelled and then queued again reads only the queued plan, not `cancelled` beside it.
+- The Heavy jobs popover stays where it opened after Run now, instead of jumping to the bottom right corner when the
+  queue tag you opened it from goes away.
 - A sleeping agent keeps its conversation's title after arcterm restarts, instead of now and then reading as its
   project's name until the next restart.
 - Selecting text in Chat that runs over a `code` span highlights it in the same colour as the words around it, instead
