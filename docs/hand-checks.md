@@ -16,6 +16,14 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Commit card from a real agent.** The `chat-commit` scenario drives the card from a fixture transcript;
+  a live agent writing the block was never tried. In a Claude agent in a repo whose rules say to ask before committing
+  (e.g. SIEM), have it finish a change: instead of a prose "commit?" its reply ends in a Commit suggestion card
+  (message box, a tick per file, Commit). Edit the message, untick a file, press Commit → the card folds into
+  "Commit suggestion · N files — Commit sent", the agent commits exactly that message and those files
+  (`git show --stat HEAD`) and reports the hash. In arcterm itself (where the agent commits on its own) no card shows.
+  Also check the first prompt of a new session carries the full "Commit asks in arcterm" line and later ones the short
+  reminder (`commitask-core.ts`, `skills/commit/SKILL.md`, `chatcommitcard.tsx`).
 - [ ] (arcterm) **Closing a brainstorm.** Unit tests and the typecheck only; never tried in the app. In an agent with a
   brainstorm open: (1) ⋯ → Close brainstorm. The Brainstorm tab, the header strip and the Chat card go, the agent gets
   `brainstorm: close` (hidden in Chat) and answers in the terminal, and the earlier ✓ rows stay ✓ rows rather than raw

@@ -34,6 +34,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Close brainstorm in the agent's More (⋯) menu takes the brainstorm pane and its Chat card down so you can talk on
   in the terminal, and telling the agent to stop the brainstorm now closes it too. The file keeps what was decided,
   and resuming it brings the pane back.
+- An agent that must ask before committing shows a commit card in Chat: edit the message, untick a file, and press
+  Commit to have the agent commit exactly that.
 
 ### Changed
 

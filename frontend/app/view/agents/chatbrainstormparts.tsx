@@ -98,6 +98,7 @@ export type CardKind =
     | "check"
     | "run"
     | "verdict"
+    | "commit"
     | "handoff"
     | "council"
     | "docreview"
@@ -632,7 +633,7 @@ export function DoneRow({
     extra,
     dimText,
 }: {
-    kind: "builder-answer" | "design" | "builder" | "run" | "verdict" | "handoff" | "council" | "docreview";
+    kind: "builder-answer" | "design" | "builder" | "run" | "verdict" | "commit" | "handoff" | "council" | "docreview";
     head: ReactNode;
     text?: string;
     trailing?: string;

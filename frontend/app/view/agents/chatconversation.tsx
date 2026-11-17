@@ -107,6 +107,8 @@ import { placeStepLists, stepsPartKey, type AgentNow } from "./chatsteplist";
 import { ChatStepsHost, StepsPart } from "./chatsteplistview";
 import { ChatSteps } from "./chatstepsview";
 import { TaggedPromptText } from "./chattagblock";
+import { commitMode, type CommitMode } from "./chatcommit";
+import { ChatCommitCard } from "./chatcommitcard";
 import { VERDICT_TOPIC, verdictMode, type VerdictMode } from "./chatverdict";
 import { ChatVerdictCard } from "./chatverdictcard";
 import { CouncilText } from "./councilchat";
@@ -962,9 +964,9 @@ export function ChatConversation({
     // latest. Nothing to pair, nothing computed
     const sentAnswers = brainstorm?.answers;
     const sentTopic = brainstorm?.topic;
-    // The agent's send records, which hold the Fix and Skip lines of verdict cards (under VERDICT_TOPIC, sharing the
-    // brainstorm's store): a verdict card finds its record by its key and folds, and the line it sent draws nothing, so
-    // those pair with their own messages beside the brainstorm's.
+    // The agent's send records, which hold the Fix and Skip lines of verdict cards and the Commit lines of commit cards
+    // (under VERDICT_TOPIC, sharing the brainstorm's store): such a card finds its record by its key and folds, and the
+    // line it sent draws nothing, so those pair with their own messages beside the brainstorm's.
     const records = useAtomValue(brainstormAnswersAtom(agent?.id ?? ""));
     const verdictRecords = useMemo(() => {
         const byKey = new Map<string, SentAnswer>();
@@ -1423,6 +1425,21 @@ export function ChatConversation({
             record: verdictRecords.get(part.key) ?? null,
             v: part.verdict,
         });
+    // what a commit card is doing: the verdict card's rules (chatcommit.ts commitMode), its record kept beside theirs
+    const commitModeOf = (
+        item: Extract<ChatItem, { kind: "agent" }>,
+        part: Extract<AgentPart, { kind: "commit" }>,
+        p: number,
+        ctx: ItemCtx
+    ): CommitMode =>
+        commitMode({
+            last: ctx.lastDrawn && !agentWentOn(entries, item.parts, p),
+            live: !exited,
+            working: toolsLive,
+            nextIsYou: ctx.nextIsYou,
+            record: verdictRecords.get(part.key) ?? null,
+            c: part.commit,
+        });
     // Everything an item's cards draw from that the item itself does not hold, as one string for the kept element to be
     // compared by: whether the agent exited, the agent fields a card sends and opens through (a kept element would hold a
     // stale one), each verdict's mode, for each run call the place its run draws at and the run-ended message that folds
@@ -1438,6 +1455,8 @@ export function ChatConversation({
         item.parts.forEach((part, p) => {
             if (part.kind === "verdict") {
                 out.push(JSON.stringify(verdictModeOf(item, part, p, ctx)));
+            } else if (part.kind === "commit") {
+                out.push(JSON.stringify(commitModeOf(item, part, p, ctx)));
             } else if (part.kind === "handoff") {
                 out.push("handoff");
             } else if (part.kind === "docreview") {
@@ -1535,6 +1554,7 @@ export function ChatConversation({
                             (q) =>
                                 q.kind === "files" ||
                                 q.kind === "verdict" ||
+                                q.kind === "commit" ||
                                 q.kind === "handoff" ||
                                 q.kind === "docreview" ||
                                 q.kind === "runstart" ||
@@ -1567,6 +1587,16 @@ export function ChatConversation({
                         agent={agent}
                         model={model}
                         reviewer={part.reviewer}
+                    />
+                );
+            // a commit suggestion: a card while it waits on you (or the agent works, or has exited), its ✓ row once folded
+            case "commit":
+                return (
+                    <ChatCommitCard
+                        commitKey={part.key}
+                        commit={part.commit}
+                        mode={commitModeOf(item, part, p, ctx)}
+                        agent={agent}
                     />
                 );
             // the plan handoff: answered, its ✓ row. Unanswered, the live card is the dock's (chatpane.tsx), where the agent

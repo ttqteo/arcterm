@@ -75,12 +75,15 @@ export interface SentAnswer {
     /** answer: the words were typed (Chat's message box, the Brainstorm tab's words field) rather than picked from an
      *  option, so the ✓ row says "You replied". Unset for a click and for every record stored before this existed. */
     typed?: true;
-    /** verdict: the key of the verdict card the line came from (`verdict:<entry index>`) */
+    /** verdict: the key of the verdict card the line came from (`verdict:<entry index>`), or of the commit card
+     *  (`commit:<entry index>`, chatcommit.ts) */
     verdictKey?: string;
-    /** verdict: what was sent, Fix or Skip */
-    verdictOutcome?: "fix" | "skip";
+    /** verdict: what was sent, Fix or Skip, or a commit card's Commit */
+    verdictOutcome?: "fix" | "skip" | "commit";
     /** verdict: how many findings were ticked when Fix was sent */
     fixed?: number;
+    /** verdict: how many files a commit card's Commit sent */
+    files?: number;
 }
 
 export function recordKind(r: Pick<SentAnswer, "kind">): RecordKind {
@@ -162,7 +165,7 @@ function readRecord(r: SentAnswer): SentAnswer {
     if (typeof raw.kind === "string" && RECORD_KINDS.has(raw.kind)) {
         out.kind = raw.kind as RecordKind;
     }
-    for (const key of ["decisions", "questions", "calls", "fixed"] as const) {
+    for (const key of ["decisions", "questions", "calls", "fixed", "files"] as const) {
         const count = wholeCount(raw[key]);
         if (count !== undefined) {
             out[key] = count;
@@ -177,7 +180,7 @@ function readRecord(r: SentAnswer): SentAnswer {
     if (typeof raw.verdictKey === "string" && raw.verdictKey !== "") {
         out.verdictKey = raw.verdictKey;
     }
-    if (raw.verdictOutcome === "fix" || raw.verdictOutcome === "skip") {
+    if (raw.verdictOutcome === "fix" || raw.verdictOutcome === "skip" || raw.verdictOutcome === "commit") {
         out.verdictOutcome = raw.verdictOutcome;
     }
     if (raw.typed === true) {
