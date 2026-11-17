@@ -281,24 +281,27 @@ func TestJobslotOpenGivesUpOnASilentQueue(t *testing.T) {
 }
 
 // under swap the connect alone can take longer than the first-word deadline: that wait must not use it up, and
-// the request names when the caller gives up, a deadline counted from the connect
+// the request names when the caller gives up, a deadline counted from the connect. The bounds are the times either
+// side of the deadline's start, not a guess at how long that took: a 50ms deadline and a 30ms reply failed 1 run in 4
+// on a loaded machine.
 func TestJobslotOpenStartsTheDeadlineOnceConnected(t *testing.T) {
+	const wait = time.Second
 	yes := true
-	var connectedAt, giveUp time.Time
+	var connectedAt, startedAt, giveUp time.Time
 	msgs, _ := jobslotOpen(func() error {
-		time.Sleep(80 * time.Millisecond)
+		time.Sleep(wait + 100*time.Millisecond)
 		connectedAt = time.Now()
 		return nil
 	}, func(g time.Time) chan jobslotMsg {
-		giveUp = g
-		time.Sleep(30 * time.Millisecond)
+		startedAt, giveUp = time.Now(), g
 		return jobslotStream(jobslotMsg{Response: wshrpc.JobSlotUpdate{Run: &yes}})
-	}, time.Second, 50*time.Millisecond)
+	}, 10*time.Second, wait)
 	if msgs == nil {
 		t.Fatal("a slow connect used up the first-word deadline")
 	}
-	if d := giveUp.Sub(connectedAt); d < 40*time.Millisecond || d > 200*time.Millisecond {
-		t.Fatalf("gives up %s after the connect, want the 50ms deadline", d)
+	if giveUp.Before(connectedAt.Add(wait)) || giveUp.After(startedAt.Add(wait)) {
+		t.Fatalf("gives up %s after the connect and %s after the start, want the %s deadline counted from between them",
+			giveUp.Sub(connectedAt), giveUp.Sub(startedAt), wait)
 	}
 }
 
