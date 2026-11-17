@@ -31,6 +31,7 @@ import {
     type CouncilTone,
 } from "./councilmodel";
 import { isClosedCouncil, isUnreadCouncil, keptSince, type CouncilOpenedMap } from "./councilopened";
+import { HOME_NAME } from "./launcher";
 import type { Lineage, RunInfo } from "./runlineage";
 import type { QueuedRow } from "./runqueuemodel";
 import { overlayLive, type LiveSession } from "./sessionsarchivestore";
@@ -315,6 +316,16 @@ export function agentDigits(ids: readonly string[]): Map<string, number> {
 // the project name a terminal with no project is filed under: its own folder, last
 export const HOME_PROJECT = "~home";
 
+/** Pure: the tree folder a project name is filed under. No name, the agent tree's own "ungrouped" and "Home" (what the
+ *  New dialog stamps a No folder launch with) are all No folder (HOME_PROJECT), so a launch there never makes a second
+ *  folder beside it; "Home" stays a project of its own only when a registered project (`roots`) is named Home. */
+export function treeFolder(project: string | undefined, roots: ReadonlyMap<string, string>): string {
+    if (!project || project === UNGROUPED_PROJECT || (project === HOME_NAME && !roots.has(HOME_NAME))) {
+        return HOME_PROJECT;
+    }
+    return project;
+}
+
 // the agent body rows buildAgentTree emits under a project's group row (parent, lead, run, worker, ...)
 type AgentBodyRow = Exclude<AgentTreeRow, { kind: "group" }>;
 
@@ -471,17 +482,19 @@ export function projectClose(input: {
     terminals: readonly AgentVM[];
     lineage: Lineage;
     serviceTabs: ReadonlySet<string>;
+    roots?: ReadonlyMap<string, string>; // the registered projects, which tell a project named Home from No folder
 }): ProjectClose {
     const { project, lineage } = input;
+    const roots = input.roots ?? new Map<string, string>();
     const folderOf = (a: AgentVM): string => {
         const role = lineage.roles[a.id];
         const run = role?.kind === "worker" || role?.kind === "stage" ? lineage.runs[role.leadRunId] : undefined;
-        // as projectTree files them: an agent with no project is in No folder (Home), with the terminals that have none
-        return (run != null ? run.project : projectOf(a)) || HOME_PROJECT;
+        // as projectTree files them (treeFolder): an agent with no project is in No folder, with the terminals that have none
+        return treeFolder(run != null ? run.project : projectOf(a), roots);
     };
     const agents = input.agents.filter((a) => folderOf(a) === project);
     const terminals = input.terminals.filter(
-        (t) => !input.serviceTabs.has(t.id) && (projectOf(t) || HOME_PROJECT) === project
+        (t) => !input.serviceTabs.has(t.id) && treeFolder(projectOf(t), roots) === project
     );
     return { agents, terminals, working: agents.filter((a) => a.state === "working").length };
 }
@@ -734,7 +747,7 @@ export function projectTree(input: {
     const services = input.services ?? [];
     const serviceTabs = input.serviceTabs ?? new Set(services.flatMap((s) => (s.tabId ? [s.tabId] : [])));
     const terminals = input.terminals.filter((t) => !serviceTabs.has(t.id));
-    const serviceFolder = (s: { project: string }) => (s.project === "Home" ? HOME_PROJECT : s.project);
+    const serviceFolder = (s: { project: string }) => treeFolder(s.project, roots);
     const serviceRowsOf = (project: string): ProjectTreeRow[] =>
         services
             .filter((s) => serviceFolder(s) === project)
@@ -747,7 +760,7 @@ export function projectTree(input: {
     const startingFolder = (s: StartingRun) => s.project || HOME_PROJECT;
     const parked = input.parked ?? [];
     // "Home" is the launcher's name for No folder, whose folder in the tree is Home's
-    const parkedFolder = (p: ParkedLaunch) => (p.project === "" || p.project === "Home" ? HOME_PROJECT : p.project);
+    const parkedFolder = (p: ParkedLaunch) => treeFolder(p.project, roots);
     // the agents held while the machine was busy: agents still to start, so they sit right under the project's agents
     const parkedRowsOf = (project: string): ProjectTreeRow[] =>
         parked
@@ -762,7 +775,7 @@ export function projectTree(input: {
             .filter((q) => queueFolder(q) === project)
             .map((q): ProjectTreeRow => ({ kind: "queuedentry", ...q, project })),
     ];
-    const termProject = (t: AgentVM) => projectOf(t) || HOME_PROJECT;
+    const termProject = (t: AgentVM) => treeFolder(projectOf(t), roots);
     const termRows = (project: string, list: AgentVM[]): ProjectTreeRow[] =>
         list.map((terminal) => ({
             kind: "terminal",
@@ -821,13 +834,29 @@ export function projectTree(input: {
         const project = termProject(t);
         byProject.set(project, [...(byProject.get(project) ?? []), t]);
     }
-    // an agent with no project shares No folder (Home) with the terminals that have none, as the grid files it
-    // (gridstore's cellProject): the tree builds it an "ungrouped" folder of its own, renamed here
+    // an agent with no project, or launched in No folder, shares No folder with the terminals that have none
+    // (treeFolder): the agent tree builds it an "ungrouped" or a "Home" folder of its own, renamed here. Two groups that
+    // land in one folder add up.
     const bodies = new Map<string, { group: Extract<AgentTreeRow, { kind: "group" }>; body: AgentBodyRow[] }>();
     for (const t of tree) {
-        const r = t.project === UNGROUPED_PROJECT ? ({ ...t, project: HOME_PROJECT } as AgentTreeRow) : t;
+        const folder = treeFolder(t.project, roots);
+        const r = folder === t.project ? t : ({ ...t, project: folder } as AgentTreeRow);
         if (r.kind === "group") {
-            bodies.set(r.project, { group: r, body: [] });
+            const had = bodies.get(r.project);
+            bodies.set(
+                r.project,
+                had == null
+                    ? { group: r, body: [] }
+                    : {
+                          group: {
+                              ...had.group,
+                              count: had.group.count + r.count,
+                              attn: had.group.attn + r.attn,
+                              running: had.group.running + r.running,
+                          },
+                          body: had.body,
+                      }
+            );
         } else {
             bodies.get(r.project)?.body.push(r);
         }

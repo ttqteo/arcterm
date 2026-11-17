@@ -740,6 +740,37 @@ describe("projectTree", () => {
         expect(rows.some((r) => r.project === UNGROUPED_PROJECT)).toBe(false);
     });
 
+    it("files a No folder launch (stamped Home) in No folder, one folder with the ones that have no project", () => {
+        const rows = build(
+            [agent("x", undefined, ""), agent("y", undefined, "Home"), agent("a")],
+            [term("h", null), term("n", "Home")]
+        );
+        expect(shape(rows)).toEqual([
+            "group:waveterm:1a:0t",
+            "a:a",
+            `group:${HOME_PROJECT}:2a:2t`,
+            "a:x",
+            "a:y",
+            `divider:${HOME_PROJECT}`,
+            "t:h",
+            "t:n",
+        ]);
+    });
+
+    it("keeps a registered project named Home a folder of its own", () => {
+        const rows = build([agent("y", undefined, "Home")], [term("h", null), term("n", "Home")], {
+            roots: new Map([["Home", "C:/code/Home"]]),
+        });
+        expect(shape(rows)).toEqual([
+            "group:Home:1a:1t",
+            "a:y",
+            "divider:Home",
+            "t:n",
+            `group:${HOME_PROJECT}:0a:1t`,
+            "t:h",
+        ]);
+    });
+
     it("files a terminal with no project under Home, last", () => {
         const rows = build([agent("a")], [term("h", null), term("t1", "ops"), term("t2")]);
         expect(shape(rows)).toEqual([
@@ -2514,6 +2545,20 @@ describe("projectClose: what Close project closes", () => {
         });
         expect(got.agents.map((a) => a.id)).toEqual(["loose"]);
         expect(got.terminals.map((t) => t.id)).toEqual(["h"]);
+    });
+
+    it("closes a registered project named Home without the No folder launches", () => {
+        const all = {
+            ...input,
+            agents: [agent("mine", undefined, "Home"), agent("loose", undefined, "")],
+            terminals: [term("h", "")],
+        };
+        const home = projectClose({ ...all, project: "Home", roots: new Map([["Home", "C:/code/Home"]]) });
+        expect(home.agents.map((a) => a.id)).toEqual(["mine"]);
+        expect(home.terminals).toEqual([]);
+        // with no project named Home, a launch stamped Home is No folder's
+        const none = projectClose({ ...all, project: HOME_PROJECT });
+        expect(none.agents.map((a) => a.id)).toEqual(["mine", "loose"]);
     });
 
     it("takes the folder's agents with its run's workers and stage sessions, and its terminals but a service's", () => {

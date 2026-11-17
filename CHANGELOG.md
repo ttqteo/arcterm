@@ -33,6 +33,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Typing in the find bar of a long session no longer lags: each key took up to a few tenths of a second on a session
   with a million characters of conversation, and now takes a few milliseconds.
+- An agent or terminal started in No folder from the New dialog sits in No folder in the Agent tree, rather than in a
+  second folder named Home beside it. A project of yours named Home keeps its own folder.
 
 ### Changed
 
