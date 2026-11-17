@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Prettier sweep reordered imports in the palette, the route picker and the run sheet.** Typecheck,
+  eslint and the bindings/palette/route vitest only; no change meant, but import order sets module load order. In the
+  dev app open the command palette (Ctrl+K), a launcher's model picker, and a run's sheet in Jarvis → each opens and
+  draws as before. Commit: c378f3486.
 - [ ] (arcterm) **The arc mod's gating hooks carry a `.catch`.** Vitest, the mod typecheck and `claude plugin validate`
   only (all 15 now listed "with .catch"). The handlers run only when a hook fails, so day to day nothing should change:
   after `wsh install-agent-hooks` (or a launch), in a Claude session in arcterm run a Bash command, edit a file in the
