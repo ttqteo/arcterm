@@ -77,6 +77,7 @@ import chatInitiativeBandScenarios from "./scenarios-chat-initiative-band.mjs";
 import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
 import chatCodeBoxScenarios from "./scenarios-chat-code-box.mjs";
 import chatVerdictHandoffScenarios from "./scenarios-chat-verdict-handoff.mjs";
+import chatCommitScenarios from "./scenarios-chat-commit.mjs";
 import chatCouncilScenarios from "./scenarios-chat-council.mjs";
 import codeBlameDraftScenarios from "./scenarios-code-blame-draft.mjs";
 import codeFixesSessionScenarios from "./scenarios-code-fixes-session.mjs";
@@ -71668,6 +71669,7 @@ export const SCENARIOS = [
     ...chatBrainstormBandScenarios(CR_KIT),
     ...chatBrainstormReviewScenarios(CBR_KIT),
     ...chatVerdictHandoffScenarios(CBR_KIT),
+    ...chatCommitScenarios(CBR_KIT),
     ...chatCouncilScenarios(CR_KIT),
     ...overlaysFrostScenarios(OF_KIT),
     ...surfacesSpringScenarios(SS_KIT),

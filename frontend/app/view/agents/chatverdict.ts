@@ -141,7 +141,19 @@ const tidyProse = (text: string): string => text.replace(/^(?:[ \t]*\r?\n)+/, ""
 export function splitReviewBlocks(
     text: string
 ): ({ kind: "prose"; text: string } | { kind: "verdict"; verdict: Verdict })[] {
-    const out: ({ kind: "prose"; text: string } | { kind: "verdict"; verdict: Verdict })[] = [];
+    return splitFences(text, (lang, body) => (lang === REVIEW_LANG ? parseReviewBlock(body) : null)).map((p) =>
+        p.kind === "prose" ? p : { kind: "verdict", verdict: p.block }
+    );
+}
+
+export type FencePiece<T> = { kind: "prose"; text: string } | { kind: "block"; block: T };
+
+/** Pure: a reply as its prose and the fenced blocks `read` turns into cards, in order. `read` gets each closed fence's
+ *  language (the info string's first word) and body, and returns null for a fence that stays prose. A fence still being
+ *  written (no closing fence yet) and anything inside another code block stay in the prose; the prose around a block is
+ *  kept as parts of its own, blank ones dropped. */
+export function splitFences<T>(text: string, read: (lang: string, body: string) => T | null): FencePiece<T>[] {
+    const out: FencePiece<T>[] = [];
     const lines = text.split("\n");
     let prose: string[] = [];
     const flush = (): void => {
@@ -173,10 +185,10 @@ export function splitReviewBlocks(
             break;
         }
         const lang = open[2].trim().split(/\s+/)[0];
-        const verdict = lang === REVIEW_LANG ? parseReviewBlock(lines.slice(i + 1, close).join("\n")) : null;
-        if (verdict != null) {
+        const block = read(lang, lines.slice(i + 1, close).join("\n"));
+        if (block != null) {
             flush();
-            out.push({ kind: "verdict", verdict });
+            out.push({ kind: "block", block });
         } else {
             prose.push(...lines.slice(i, close + 1));
         }

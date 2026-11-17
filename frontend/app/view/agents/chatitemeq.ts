@@ -103,6 +103,8 @@ function samePart(a: AgentPart, b: AgentPart): boolean {
                 JSON.stringify(a.verdict) === JSON.stringify(b.verdict) &&
                 JSON.stringify(a.reviewer) === JSON.stringify(b.reviewer)
             );
+        case "commit":
+            return b.kind === "commit" && a.key === b.key && JSON.stringify(a.commit) === JSON.stringify(b.commit);
         case "handoff":
             return b.kind === "handoff" && a.key === b.key && JSON.stringify(a.question) === JSON.stringify(b.question);
         case "runstart":

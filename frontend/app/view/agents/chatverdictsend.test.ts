@@ -5,8 +5,9 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import { brainstormAnswers, brainstormSentAtom, SENT_STORAGE_KEY } from "./chatbrainstormstore";
+import { commitLine, commitRecord } from "./chatcommit";
 import { fixLine, skipLine, VERDICT_TOPIC, type Verdict } from "./chatverdict";
-import { sendVerdict } from "./chatverdictsend";
+import { sendCardLine, sendVerdict } from "./chatverdictsend";
 
 // the loaded transcript comes from the Chat window's cache (railtranscript.tsx); a test passes its own entries through
 // the io, so the pane's module graph is not loaded for it
@@ -149,6 +150,26 @@ describe("sendVerdict", () => {
             "This agent has no terminal to send to"
         );
         expect(io.sent).toEqual([]);
+        expect(brainstormAnswers(AGENT.id)).toEqual([]);
+    });
+});
+
+describe("sendCardLine with a commit card's line", () => {
+    const line = commitLine("subject", ["a.go"]);
+    const record = (seen: number) => commitRecord("commit:3", 1, line, seen, 1000);
+
+    it("sends the Commit line and keeps its record under the verdict topic", async () => {
+        const io = fakeIO();
+        await sendCardLine(AGENT, line, record, io);
+        expect(io.sent).toEqual([["blk-1", line]]);
+        expect(brainstormAnswers(AGENT.id)).toEqual([record(0)]);
+        expect(brainstormAnswers(AGENT.id)[0]).toMatchObject({ topic: VERDICT_TOPIC, verdictOutcome: "commit" });
+    });
+
+    it("a send that fails throws with the agent's name and leaves the card unsent", async () => {
+        await expect(sendCardLine(AGENT, line, record, fakeIO(true))).rejects.toThrow(
+            "Couldn't send to lag-alerts: boom"
+        );
         expect(brainstormAnswers(AGENT.id)).toEqual([]);
     });
 });

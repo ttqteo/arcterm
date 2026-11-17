@@ -8,5 +8,5 @@ package skills
 
 import "embed"
 
-//go:embed brainstorm cockpit council design detach doc-review handoff initiatives learn notes runs steps visual
+//go:embed brainstorm cockpit commit council design detach doc-review handoff initiatives learn notes runs steps visual
 var FS embed.FS

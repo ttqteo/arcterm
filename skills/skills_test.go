@@ -96,6 +96,27 @@ func TestStepsSkill(t *testing.T) {
 	}
 }
 
+// TestCommitSkill pins what the commit skill teaches: the arc-commit fence and its `---` separator (Chat's parser,
+// chatcommit.ts, reads them by these exact words), the line the Commit button sends back, and the pathspec commit
+// from a message file.
+func TestCommitSkill(t *testing.T) {
+	doc, err := fs.ReadFile(FS, "commit/SKILL.md")
+	if err != nil {
+		t.Fatalf("commit/SKILL.md is not embedded: %v", err)
+	}
+	if got := frontmatterName(t, string(doc)); got != "commit" {
+		t.Errorf("commit frontmatter name = %q, want commit", got)
+	}
+	for _, want := range []string{
+		"```arc-commit", "`---`", "Commit exactly these files with exactly this message, unchanged:",
+		"git commit -F <file> -- <paths>", "end the turn",
+	} {
+		if !strings.Contains(string(doc), want) {
+			t.Errorf("commit/SKILL.md does not mention %q", want)
+		}
+	}
+}
+
 func TestShippedSkills(t *testing.T) {
 	doc, err := fs.ReadFile(FS, "doc-review/SKILL.md")
 	if err != nil {
