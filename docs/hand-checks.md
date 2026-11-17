@@ -16,6 +16,25 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Sidecar P/Q across a real day: the question heuristic's misses, the ping from across the room, RAM of
+  P with 12 agents after a day.** The `sidecar-orbit` and `sidecar-compact` scenarios read fixtures: they cannot judge
+  a real day. With real agents for a day: (1) a finished agent whose last message asks something gets a Needs you row
+  (Enter: reply in the main window), and a rhetorical question at the end of a report does too, which is the miss to
+  count (spec "Open": a miss only adds a row, and answering or opening it clears it); note the false rows and any
+  question it did not catch. (2) From across the room (a second screen, 2 m away), a waiting node or row pings and you
+  see it without reading; nothing else on the screen moves. (3) RAM of P with 12 agents after a day on screen, against
+  the 100 MB budget: write the figures into the "Sidecar, part 3" row of `docs/open-issues.md` "RAM watch" (the main
+  window's renderer grows on its own: read Sidecar's renderer plus the GPU process it adds, as the part-1 row does).
+  Commit: test(sidecar) CDP scenarios for the orbit dashboard, full and compact
+- [ ] (arcterm) **Packaged build: Sidecar has its own taskbar button with the screen badge, not arcterm's icon;
+  right-click shows no "Pin to taskbar"; closing arcterm closes it.** Windows only; the dev app shares the exe's icon
+  either way and the `sidecar-orbit` scenario only reads the log line `[sidecar] app id dev.arc.app-dev.sidecar`. Install
+  a `task tauri:build` build and open Sidecar → it is its own taskbar button, not grouped under arcterm's, drawn with
+  arcterm's mark and a small screen badge in its corner; right-click its button → no Pin to taskbar (a pin would relaunch
+  arcterm, not Sidecar); close the main window with the tray icon off (Settings → `app:tray`) → Sidecar closes with it.
+  The spec's open question is answered here: which icon Windows draws for a window whose id has no shortcut, the
+  window's own (`WM_SETICON`) or the exe's; if the exe's, say so and the host's icon call is the next thing to look at.
+  Commit: feat(sidecar) its own taskbar button and icon on Windows
 - [ ] (arcterm) **A pencil marks an agent with an unsent message.** Vitest and the typecheck only. Type half a message
   (or attach a file) in one agent's Chat box, pick another agent → the first one's row in the Agent tree shows a small
   accent pencil after its name (also in a split row's cell); pick it again → the pencil is gone while you are on it;
@@ -35,10 +54,11 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 
 - [ ] (arcterm) **Sidecar keeps asks, answers the ask you saw, and fills a high-scale screen.** Vitest and the
   typecheck only; no dev app ran (branch `fix/sidecar-council`). (1) Set the Cockpit's project filter to one project,
-  or send an agent to Background, and have that agent ask a 2-option question: it shows on Sidecar's wall and in the
-  small form. (2) Answer a tile with 1: it lands as before; `answer … refused` in `waveapp.log` only when the ask
-  changed under you. (3) On a 1920 px screen at 175%, maximize or full-screen Sidecar: the wall shows, not the small
-  form; drag it narrow and the small form comes back.
+  or send an agent to Background, and have that agent ask a 2-option question: it shows on Sidecar's orbit (P) and in
+  the compact window (Q) as a Needs you row. (2) Answer the row with 1: it lands as before; `answer … refused` in
+  `waveapp.log` only when the ask changed under you. (3) On a 1920 px screen at 175%, maximize or full-screen Sidecar: P
+  shows, not Q; drag it narrow and Q comes back. (The wall and its tiles went with the orbit dashboard; the
+  `sidecar-orbit` and `sidecar-compact` scenarios read the same rows.)
 - [ ] (arcterm) **Close on the Agent tree's picked rows.** The `tree-multi-close` scenario reads the menu and the
   confirm on a fixture roster and cancels; nothing was ever closed. In the app, Ctrl+click two idle agents (no run) in
   the sidebar, right-click one → Close 2 agents closes both at once, a toast says "Closed 2 agents", the picks clear,
@@ -225,12 +245,12 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   background → once it ends, Chat ends with a `Council · review` card (✓ Done · N directions, the answer, Open report)
   after any run cards, and the agent's first reply after the council's notification sits in a tinted panel headed
   `Council · review · N directions` with Open report; the `wsh council start` call stays a plain tool line.
-- [ ] (arcterm) **Sidecar's wall holds only the Cockpit's agents.** Unit tests and typecheck only; the rewritten
-  `sidecar-wall` scenario (steps 4-6, 14-15 and the new 24) was not run, since it needs the Tauri host (branch
-  `feat/sidecar-button`). Run `task verify:ui -- sidecar-wall` on a dev app. By hand: with agents idle for hours, Sidecar
-  shows only the asking, working and just-finished ones, the title bar still counts the idle ones, an agent that
-  finishes leaves the wall about 5 minutes later, and switching the Cockpit's project filter or Live only changes the
-  wall too.
+- [ ] (arcterm) **Sidecar's orbit holds only the Cockpit's agents.** Unit tests and typecheck only; the wall's scenario
+  never ran, since it needs the Tauri host (branch `feat/sidecar-button`), and its steps went with the wall: the
+  `sidecar-orbit` scenario's "no node for the parked agents" step is the fixture version of this. Run `task verify:ui --
+  sidecar-orbit` on a dev app. By hand: with agents idle for hours, Sidecar's orbit shows only the asking, working and
+  just-finished ones, the core's idle count still counts the idle ones, an agent that finishes leaves the orbit about 5
+  minutes later, and switching the Cockpit's project filter or Live only changes the orbit too.
 - [ ] (arcterm) **Sidecar opens from the Cockpit and from the Jarvis button.** Typecheck and the keybindings tests only,
   no dev app ran (branch `feat/sidecar-button`). On the Cockpit, the header's Sidecar button (after Live only, in Cards
   and in Office's bar) opens Sidecar, or brings it forward when it is open; a right-click on the Jarvis button at the
@@ -373,23 +393,24 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   Sidecar on the same screen, at the same frame, full screen, without taking the focus from the main window. Close
   Sidecar with its own close button, quit, launch → it stays shut. Quit with Sidecar maximized, unplug that screen,
   launch → Sidecar comes up maximized on the main window's screen. Commit: feat(sidecar) Sidecar reopens as last time
-- [ ] (arcterm) **Sidecar will not drag below 340×440.** The `sidecar-wall` scenario cannot check it: on Windows the
+- [ ] (arcterm) **Sidecar will not drag below 340×440.** The `sidecar-orbit` scenario cannot check it: on Windows the
   host's `min_inner_size` clamps a person dragging an edge, not a programmatic `set_size` (a live run set 200×200 and read
-  200×207 back), so step 2 only checks the page's own window calls. Open Sidecar, drag its bottom-right corner toward the
-  top-left → it stops at 340×440 and the wall still draws whole tiles (no tile under 300 px wide). Commit: test(sidecar)
-  the sidecar-wall CDP scenario
+  200×207 back), so its window-calls step only checks the page's own window calls. Open Sidecar, drag its bottom-right
+  corner toward the top-left → it stops at 340×440 and Q still draws whole (no row cut off at the sides, no horizontal
+  scroll). Commit: test(sidecar) the sidecar-wall CDP scenario (that scenario is now `sidecar-orbit`)
 - [ ] (arcterm) **Sidecar's RAM against the 100 MB budget, on a release build.** The run could not take it: it needs
   `task tauri:build` and a day on screen. Install the build, run 12 agents, open Sidecar and leave it a day with the
   strain band showing for part of it (a heavy build, or one `yes > /dev/null` per core), then read the private working set of
   its WebView2 renderer plus the GPU process's growth when it opened (Task Manager → Details, or `Get-Process
   msedgewebview2` with Sidecar closed and open). Under 100 MB and level after the day → write the figures into the
-  part-2 row of `docs/open-issues.md` "RAM watch" and tick this; over → a defect to fix before the next release (the
-  spec's section 5). Part 1 read ~48 MB with 11 agents. Commit: test(sidecar) the sidecar-wall scenario for part 2
-- [ ] (arcterm) **The S button shrinks and restores a real window, and the relaunch keeps it.** The scenario presses S
-  and the pin on a real window (340×440 pinned, then back to the size it had, in the wall), but cannot relaunch the app,
-  so the relaunch is a Rust test of the decision only. Open Sidecar on a screen of a different scale from the main
-  window's and press S → it shrinks to 340×440 at that screen's top-right corner, pinned above other windows; drag it
-  wider than 1100 px → the wall shows and S stays pressed; press S → it returns to its first frame. Press S, then quit
+  "Sidecar, part 3" row of `docs/open-issues.md` "RAM watch" and tick this (the P/Q entry above reads P's share of it);
+  over → a defect to fix before the next release (the spec's section 5). Part 1 read ~48 MB with 11 agents. Commit:
+  test(sidecar) the sidecar-wall scenario for part 2
+- [ ] (arcterm) **The S button shrinks and restores a real window, and the relaunch keeps it.** The `sidecar-compact`
+  scenario presses S and the pin on a real window (340×440 pinned, then back to the size it had, in P), but cannot
+  relaunch the app, so the relaunch is a Rust test of the decision only. Open Sidecar on a screen of a different scale
+  from the main window's and press S → it shrinks to 340×440 at that screen's top-right corner, pinned above other
+  windows; drag it wider than 1100 px → P shows and S stays pressed; press S → it returns to its first frame. Press S, then quit
   arcterm (tray icon → Quit) and launch → Sidecar reopens small and pinned, and S still returns to the old frame. With
   Sidecar full screen or maximized, press S → it leaves that and shrinks; S again → full screen or maximized comes
   back. On a Mac, press S from macOS full screen and again. Commit: feat(sidecar) the host's small form — S shrinks and

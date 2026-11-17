@@ -21,6 +21,7 @@ import {
     sweepStaleStores,
     tauriConfig,
     unlinkBuildJunctions,
+    verifyEnv,
     writeFinalManifest,
 } from "./final-verify.mjs";
 import { SCENARIOS } from "./scenarios.mjs";
@@ -276,6 +277,13 @@ describe("hostOnlyScenarios", () => {
     });
     it("marks notify-toast, which drives the host's IPC itself", () => {
         expect(hostOnlyScenarios(SCENARIOS, ["notify-toast", "surface-smoke"])).toEqual(["notify-toast"]);
+    });
+});
+
+describe("verifyEnv", () => {
+    it("gives verify.mjs the dev app's port and its own store, over a process-wide ARC_DEV_DATA_DIR", () => {
+        const env = verifyEnv(9301, "C:/short/store", { PATH: "p", ARC_DEV_DATA_DIR: "C:/the/persons/own/dev/app" });
+        expect(env).toMatchObject({ PATH: "p", CDP_PORT: "9301", ARC_DEV_DATA_DIR: "C:/short/store" });
     });
 });
 
