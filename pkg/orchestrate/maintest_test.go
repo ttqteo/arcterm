@@ -69,8 +69,11 @@ func skipVerifier(_, _ context.Context, g *waveobj.TaskGroup, owner *waveobj.Run
 	releaseFinalTree(g, owner, afterCommit)
 }
 
-// stageLeakTimeout bounds how long a test's cleanup waits for the background stages it started.
-const stageLeakTimeout = 10 * time.Second
+// stageLeakTimeout bounds how long a test's cleanup waits for the background stages it started. A merge's Verify
+// stage runs a handful of git launches even with its command stubbed, ~1 s alone, and past 10 s with 8 copies of a
+// test on a loaded Windows machine (TestContinueReRunsAFailedVerify, 2026-11-17), so it gets a land's minute too: a
+// stage that truly leaks still fails the test, later.
+const stageLeakTimeout = 60 * time.Second
 
 // landStageTimeout bounds the wait for a background land a test drives to its end (waitLandStages). A whole land is
 // ~100 git launches, which on a loaded Windows machine took 13 to 20 s and failed

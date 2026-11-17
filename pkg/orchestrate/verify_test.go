@@ -21,6 +21,11 @@ const verifyCmd = "task test"
 // a test of a merge's own Verify needs a task still to land.
 var stillOpen = waveobj.TaskNode{ID: "t-9", Label: "still open"}
 
+// verifyAwaitTimeout bounds awaitVerify's wait for one Verify run, a bound on a hang, not on speed: a Verify run here
+// is ~1 s of git launches with its command stubbed, and 8 copies of TestContinueReRunsAFailedVerify on a loaded
+// Windows machine took past the 10 s it had in 47 of 80 runs (2026-11-17).
+const verifyAwaitTimeout = 60 * time.Second
+
 // awaitVerify returns a func that blocks until one more Verify run has recorded its result and ticked
 // its dag.
 func awaitVerify(t *testing.T) func() {
@@ -33,7 +38,7 @@ func awaitVerify(t *testing.T) func() {
 		t.Helper()
 		select {
 		case <-done:
-		case <-time.After(10 * time.Second):
+		case <-time.After(verifyAwaitTimeout):
 			t.Fatal("verify did not finish")
 		}
 	}
