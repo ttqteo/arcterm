@@ -45,10 +45,12 @@ const folderExistsAtom = atom<Record<string, boolean>>({}) as PrimitiveAtom<Reco
 let lastGone: string[] = [];
 
 // The ids of the terminals whose folder is gone. The same array while it holds the same ids, so a reader does not repaint
-// every time the terminal list ticks.
+// every time the terminal list ticks. Only a local terminal can be: folders are read on this machine and keyed by their
+// path, so a remote terminal whose cwd has the same text as a local folder would take that folder's answer.
 export const goneTerminalIdsAtom: Atom<string[]> = atom((get) => {
     const exists = get(folderExistsAtom);
-    const next = goneTerminals(get(liveTerminalsAtom), (cwd) => exists[normPath(cwd)], get(projectRootsAtom));
+    const local = get(liveTerminalsAtom).filter(isLocal);
+    const next = goneTerminals(local, (cwd) => exists[normPath(cwd)], get(projectRootsAtom));
     if (next.length === lastGone.length && next.every((id, i) => id === lastGone[i])) {
         return lastGone;
     }

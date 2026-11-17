@@ -41,6 +41,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   arcterm that changes the tool's command still reaches you.
 - Changing Opens in or Shows right after turning Keep running on or off no longer undoes that Keep running click.
 - Opening an app and starting it at nearly the same moment no longer leaves an extra tab behind.
+- A server in the agent's rail that refuses to stop (access denied) says why on its row, and an app that refuses Stop
+  or Restart from its menu says so, rather than the click seeming to do nothing.
+- A terminal on another machine is no longer marked as in a removed folder because a local folder with the same path
+  was deleted.
 
 ## 1.3.0 — 2026-11-17
 

@@ -12,6 +12,7 @@ import {
     serverName,
     serverUrl,
     shortPortsLabel,
+    stopRefusal,
     terminalLog,
     uptimeLabel,
     type DevServerRow,
@@ -328,5 +329,18 @@ describe("pollMs", () => {
     it("polls fast while the rail is visible and slowly otherwise", () => {
         expect(pollMs(true)).toBe(5000);
         expect(pollMs(false)).toBe(30000);
+    });
+});
+
+describe("stopRefusal", () => {
+    it("reads a process that is gone or replaced as exited", () => {
+        expect(stopRefusal(new Error("process 41 is not running"))).toEqual({ kind: "exited" });
+        expect(stopRefusal("PID was reused by another program")).toEqual({ kind: "exited" });
+    });
+    it("keeps any other refusal's words, such as access denied", () => {
+        expect(stopRefusal(new Error("Error: Access is denied."))).toEqual({
+            kind: "refused",
+            text: "Access is denied.",
+        });
     });
 });
