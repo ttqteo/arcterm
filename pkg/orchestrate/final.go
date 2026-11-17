@@ -356,12 +356,16 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 		}
 	}
 	tree := res.tree
+	// the Check that passed on this tree, told to Verify so it can leave out what that Check already ran
+	checkPassed := ""
 	if g.Check != "" {
 		var out string
-		if !step(FinalStep_Check, func(progress planProgress) (bool, string) {
+		if step(FinalStep_Check, func(progress planProgress) (bool, string) {
 			out, err = runPlanCommand(withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Check"}), owner.ID, PlanCmd_Check, ""), tree, g.Check, nil, VerifyTimeout, progress)
 			return err == nil, out
 		}) {
+			checkPassed = g.Check
+		} else {
 			switch {
 			case exitedUnverified(err):
 				res.unverified = append(res.unverified, couldNotVerifyItem("Check", g.Check, out))
@@ -381,7 +385,7 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 		var out string
 		var flaky []string
 		passed := step(FinalStep_Verify, func(progress planProgress) (bool, string) {
-			out, flaky, err = runVerifyCommand(withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Verify", Always: true}), owner.ID, PlanCmd_Verify, ""), tree, g.Verify, unscopedEnv, progress)
+			out, flaky, err = runVerifyCommand(withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Verify", Always: true}), owner.ID, PlanCmd_Verify, ""), tree, g.Verify, finalVerifyEnv(checkPassed), progress)
 			return err == nil, out
 		})
 		switch {

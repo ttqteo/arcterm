@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SHARDS, SHARD_MIN_TESTS, countTopLevelTests, dealShards, failedVitestFiles, failedVitestTests, goSummary, goTestEnv, limiter, needsGoGraph, packageResults, partitionPackages, planVerify, readChanged, readChangedFile, reportFlaky, rerunVitestAlone, rerunnableTests, runPattern, testSharded } from "./verify.mjs";
+import { SHARDS, SHARD_MIN_TESTS, countTopLevelTests, dealShards, failedVitestFiles, failedVitestTests, goSummary, goTestEnv, limiter, needsGoGraph, packageResults, partitionPackages, planVerify, readChanged, readChangedFile, reportFlaky, rerunVitestAlone, rerunnableTests, runPattern, testSharded, typechecked } from "./verify.mjs";
 
 const MOD = "github.com/wavetermdev/waveterm";
 const graph = [
@@ -418,5 +418,22 @@ describe("testSharded", () => {
             ["m/pkg/a", false],
             ["m/pkg/b", true],
         ]);
+    });
+});
+
+// the final stage's Verify leaves its tsc out only after a passing Check that ran the same whole-frontend typecheck
+describe("typechecked", () => {
+    it("counts task check:ts wherever it sits in the Check", () => {
+        expect(typechecked("task check:ts")).toBe(true);
+        expect(typechecked("task check:ts && go vet ./pkg/...")).toBe(true);
+        expect(typechecked("go vet ./pkg/... && task check:ts")).toBe(true);
+        expect(typechecked("NODE_OPTIONS=--max-old-space-size=4096 task --silent check:ts")).toBe(true);
+    });
+    it("does not count another task, a partial tsc, or no Check", () => {
+        expect(typechecked("task check:tsx")).toBe(false);
+        expect(typechecked("task check:version")).toBe(false);
+        expect(typechecked("npx tsc --noEmit -p claude/arc-mod")).toBe(false);
+        expect(typechecked("")).toBe(false);
+        expect(typechecked(undefined)).toBe(false);
     });
 });
