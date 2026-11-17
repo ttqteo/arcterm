@@ -13,7 +13,7 @@ import { getApi } from "@/app/store/global";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, SquareCheck, SquareDashed } from "lucide-react";
+import { Camera, Check, ChevronDown, ChevronLeft, ChevronRight, SquareCheck, SquareDashed } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
@@ -564,7 +564,8 @@ function CopyShotButton({
             {state === "copied" ? (
                 <Check size={12} strokeWidth={2} aria-hidden />
             ) : (
-                <Copy size={12} strokeWidth={1.8} aria-hidden />
+                // a camera, not the copy glyph: what it copies is a picture of the board
+                <Camera size={12} strokeWidth={1.8} aria-hidden />
             )}
             {state === "copied" ? "Copied" : "Copy"}
         </button>
