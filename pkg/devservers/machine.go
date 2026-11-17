@@ -30,6 +30,10 @@ type ServerOwner struct {
 	TabId   string `json:"tabid,omitempty"`
 	Name    string `json:"name,omitempty"` // the tab's name for an agent or terminal, the exe for an app
 	Harness string `json:"harness,omitempty"`
+	// the block started it with `wsh detach`, outside its process tree (detached.go)
+	Detached bool `json:"detached,omitempty"`
+	// a detached launch's time, which the pid's process must match (holds); 0 for a block's shell
+	startMs int64
 }
 
 // sessionRoots start apps rather than run them: a chain that reaches one intact belongs to the process below it
@@ -50,7 +54,7 @@ func OwnerOf(pid int32, procs map[int32]Proc, alive func(int32) bool, holders ma
 	app := func() (ServerOwner, string) { return ServerOwner{Kind: OwnerApp, Name: below.Name}, "" }
 	cur := pid
 	for hops := 0; hops <= maxAncestorHops; hops++ {
-		if h, ok := holders[cur]; ok {
+		if h, ok := holders[cur]; ok && holds(h, procs[cur], hasProc(procs, cur)) {
 			if h.Kind == OwnerAgent {
 				return h, underClaude
 			}

@@ -21,7 +21,7 @@
 // The user's packaged arcterm shares the dev app's image names, so only the PID this script spawned is ever killed.
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -291,12 +291,31 @@ export function unlinkBuildJunctions(root) {
     }
 }
 
-// merged over src-tauri/tauri.conf.json by `cargo tauri dev --config`, which pins vite to 5174
-function tauriConfig(vitePort) {
+// Points link (a junction) at root and returns it, or null when link is a real directory, which is never touched.
+// The dev app builds through it: rustc's incremental cache is keyed by the source files' paths, so a tree reached at a
+// new path each stage (every run has its own) recompiled the wave-tauri crate whole, 30 to 60 s, where the slot's cache
+// for the same path takes ~10 s. Only the link is ever removed, never what it points at.
+export function linkTree(link, root) {
+    try {
+        if (isLink(link)) rmdirSync(link);
+        else if (existsSync(link)) return null;
+        symlinkSync(root, link, "junction");
+        return link;
+    } catch (e) {
+        console.log(`could not link ${link} to ${root}, building from the tree's own path: ${e.message}`);
+        return null;
+    }
+}
+
+// merged over src-tauri/tauri.conf.json by `cargo tauri dev --config`, which pins vite to 5174. viteCwd keeps vite in
+// the tree's own path when the dev command runs through the link: vite reads its modules at their real paths, which
+// sit outside a root reached through a link
+export function tauriConfig(vitePort, viteCwd) {
+    const script = `npx vite --config frontend/tauri/vite.config.ts --port ${vitePort} --strictPort`;
     return {
         build: {
             devUrl: `http://localhost:${vitePort}`,
-            beforeDevCommand: `npx vite --config frontend/tauri/vite.config.ts --port ${vitePort} --strictPort`,
+            beforeDevCommand: viteCwd ? { script, cwd: viteCwd, wait: false } : script,
         },
     };
 }
@@ -372,12 +391,16 @@ async function main() {
 
     let devCmd;
     let devEnv;
+    let devCwd = process.cwd();
     if (mode === "browser") {
         devCmd = process.env.ARC_FINAL_DEV_CMD || "task dev:browser";
         devEnv = { ARC_BROWSER_CDP_PORT: String(port), ARC_BROWSER_VITE_PORT: String(vitePort) };
     } else {
+        // the slot's cargo cache stays warm for the one path every stage on it builds through
+        const linked = linkTree(slotPath("tree", slot), process.cwd());
+        if (linked) devCwd = linked;
         const configPath = join(out, "tauri.final.json");
-        writeFileSync(configPath, JSON.stringify(tauriConfig(vitePort), null, 2));
+        writeFileSync(configPath, JSON.stringify(tauriConfig(vitePort, linked ? process.cwd() : undefined), null, 2));
         devCmd = process.env.ARC_FINAL_DEV_CMD || `task dev:final -- --config "${configPath}"`;
         // inside the store, so it goes with it: nothing reads it after the run, and kept in ARC_FINAL_OUT it was ~76 MB
             // a round for the 30 days the engine keeps that dir
@@ -397,7 +420,7 @@ async function main() {
     // stdin stays an open pipe: `task dev` exits when its stdin closes
     const dev = spawn(devCmd, {
         shell: true,
-        cwd: process.cwd(),
+        cwd: devCwd,
         detached: process.platform !== "win32",
         stdio: ["pipe", log, log],
         env: {

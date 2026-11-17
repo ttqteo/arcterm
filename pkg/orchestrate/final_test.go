@@ -117,6 +117,30 @@ func TestFinalRunsVerifyUnscopedAfterCheck(t *testing.T) {
 	}
 }
 
+// Verify hears which Check passed on the tree, so it can leave out what that Check ran; with no passing Check the
+// value is set empty, so the server's own environment cannot speak for one
+func TestFinalVerifyHearsTheCheckThatPassed(t *testing.T) {
+	cases := []struct{ name, check, want string }{
+		{"passed", "true", "true"},
+		{"could not verify", "exit 3", ""},
+		{"no check", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv(checkPassedEnv, "inherited")
+			out := filepath.ToSlash(t.TempDir())
+			verify := `printf '%s' "${` + checkPassedEnv + `-unset}" > ` + out + `/heard`
+			f := finalFixture(t, verify, c.check, "")
+
+			runFinal(t, f)
+
+			if got := readFile(t, filepath.Join(out, "heard")); got != c.want {
+				t.Fatalf("Verify heard %s=%q, want %q", checkPassedEnv, got, c.want)
+			}
+		})
+	}
+}
+
 func TestFinalVerifyFailureFailsTheStage(t *testing.T) {
 	f := finalFixture(t, "echo '--- FAIL: TestX'; exit 1", "", "")
 

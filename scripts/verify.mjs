@@ -1,6 +1,8 @@
 // Verify for this repo's engine plans. At each merge the engine sets ARC_VERIFY_CHANGED to a file listing the
 // paths the merge changed; this tests only what those paths can break. Unset (the final stage, or a human), it
-// runs everything the patterns name, and typechecks the frontend. A scoped run never typechecks: one tsc takes 80
+// runs everything the patterns name, and typechecks the frontend, unless the Check that just passed on the tree
+// (ARC_CHECK_PASSED, set by the engine's final stage) already did: this repo's plans put `task check:ts` there, and a
+// second tsc on the same tree held every Final 80 to 120 s more. A scoped run never typechecks: one tsc takes 80
 // to 120 s whatever changed (an incremental one only skips when no TS file did, measured 2026-11-03), each merge's
 // Verify holds the next merge, and the worker already typechecked its own tree. A failed Go or vitest test that passes when rerun alone is flaky: the run
 // passes, and the test is appended to the file ARC_VERIFY_FLAKY names, so the engine reports it instead of a clean
@@ -31,6 +33,12 @@ export const SHARDS = 4;
 export const MAX_TEST_PROCESSES = 2 * SHARDS;
 const TOP_LEVEL_TEST = /^func (Test[A-Z0-9_]\w*)\s*\(/gm;
 const LISTED_TEST = /^(Test|Example|Fuzz)\w*$/;
+
+// typechecked reports whether the Check command that passed (ARC_CHECK_PASSED) ran `task check:ts`, which typechecks
+// the whole frontend as the final stage's tsc does. A tsc run another way may check part of it (-p), so it does not count
+export function typechecked(checkPassed) {
+    return /(^|[\s;&|(])task\s+(\S+\s+)*check:ts(\s|$|[;&|)])/.test(checkPassed ?? "");
+}
 
 // needsGoGraph reports whether a Go package can hold one of the paths: listing the module's graph takes tens of
 // seconds, and a merge of docs or frontend files cannot reach a Go test.
@@ -516,7 +524,11 @@ async function main(patterns) {
         if (!noGo) {
             await goTest(patterns);
         }
-        run("node", TSC);
+        if (typechecked(process.env.ARC_CHECK_PASSED)) {
+            console.log(`verify: the frontend typecheck is left out, the Check that passed ran it (${process.env.ARC_CHECK_PASSED})`);
+        } else {
+            run("node", TSC);
+        }
         runVitest(VITEST);
         return;
     }

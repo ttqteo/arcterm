@@ -6,16 +6,27 @@
 // what its keys do, and what the S and pin buttons ask of the host. Pure; sidecarsmall.tsx and the title bar draw it.
 
 import type { SidecarForm, SidecarSnapshot, SidecarTile } from "./sidecartypes";
-import { canAnswer, moveSelection, wallKey } from "./sidecarwallmodel";
+import { answerAct, moveSelection, wallKey } from "./sidecarwallmodel";
 
 /** From this window width (CSS px) the wall shows; narrower, the small form. */
 export const SMALL_BREAK_PX = 1100;
+/** A window this close to its screen's whole width (CSS px) fills it: maximized or full screen. */
+export const FILL_SLACK_PX = 16;
 
 export type SidecarLayout = "wall" | "small";
 
-/** The layout for a window `width` px wide. No hysteresis: a drag across the line just switches. */
-export function layoutFor(width: number): SidecarLayout {
-    return width >= SMALL_BREAK_PX ? "wall" : "small";
+/**
+ * The layout for a window `width` CSS px wide on a screen `screenWidth` CSS px wide (its available width; unknown:
+ * width alone). No hysteresis: a drag across the line just switches. A window that fills its screen shows the wall
+ * whatever its width: a 1920 px screen at 175% is 1097 CSS px, and a maximized or full-screen Sidecar there is the wall
+ * the person put on that screen, not the small form.
+ */
+export function layoutFor(width: number, screenWidth?: number): SidecarLayout {
+    if (width >= SMALL_BREAK_PX) {
+        return "wall";
+    }
+    const fills = screenWidth != null && screenWidth > 0 && width >= screenWidth - FILL_SLACK_PX;
+    return fills ? "wall" : "small";
 }
 
 /**
@@ -32,7 +43,7 @@ export function smallAsks(snap: Pick<SidecarSnapshot, "tiles">): SidecarTile[] {
 export type SmallKeyAction =
     | { kind: "select"; index: number }
     | { kind: "open"; id: string }
-    | { kind: "answer"; id: string; option: number };
+    | { kind: "answer"; id: string; option: number; key: string };
 
 /**
  * What a key does on the small form, with the card at index `selected` selected (-1: none). Arrow up and down move
@@ -58,7 +69,7 @@ export function smallKey(key: string, cards: readonly SidecarTile[], selected: n
     if (action.kind === "open") {
         return { kind: "open", id: card.id };
     }
-    return canAnswer(card, action.option) ? { kind: "answer", id: card.id, option: action.option } : null;
+    return answerAct(card, action.option);
 }
 
 /** What the page asks of the host's `sidecar_form`; a field left out changes nothing. */

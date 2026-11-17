@@ -16,6 +16,18 @@ type DevServerCommands interface {
 	// ListAllDevServersCommand is every listening process on the machine with its repo and owner (the footer's Servers)
 	ListAllDevServersCommand(ctx context.Context) (*CommandListDevServersRtnData, error)
 	StopDevServerCommand(ctx context.Context, data CommandStopDevServerData) error
+	// RecordDetachedCommand is `wsh detach` telling wavesrv what it started and from which block, so the server it
+	// runs is that block's rather than no one's (devservers/detached.go)
+	RecordDetachedCommand(ctx context.Context, data CommandRecordDetachedData) error
+}
+
+type CommandRecordDetachedData struct {
+	Pid     int32  `json:"pid"`
+	StartMs int64  `json:"startms"`
+	BlockId string `json:"blockid,omitempty"`
+	Cmd     string `json:"cmd,omitempty"`
+	Cwd     string `json:"cwd,omitempty"`
+	Log     string `json:"log,omitempty"`
 }
 
 type CommandListDevServersData struct {

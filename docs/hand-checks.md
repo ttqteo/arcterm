@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Sidecar keeps asks, answers the ask you saw, and fills a high-scale screen.** Vitest and the
+  typecheck only; no dev app ran (branch `fix/sidecar-council`). (1) Set the Cockpit's project filter to one project,
+  or send an agent to Background, and have that agent ask a 2-option question: it shows on Sidecar's wall and in the
+  small form. (2) Answer a tile with 1: it lands as before; `answer … refused` in `waveapp.log` only when the ask
+  changed under you. (3) On a 1920 px screen at 175%, maximize or full-screen Sidecar: the wall shows, not the small
+  form; drag it narrow and the small form comes back.
 - [ ] (arcterm) **Close on the Agent tree's picked rows.** The `tree-multi-close` scenario reads the menu and the
   confirm on a fixture roster and cancels; nothing was ever closed. In the app, Ctrl+click two idle agents (no run) in
   the sidebar, right-click one → Close 2 agents closes both at once, a toast says "Closed 2 agents", the picks clear,
@@ -564,11 +570,6 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   link back to the lead (↰ icon) is cut with an ellipsis at about 220px, the project name stays readable, and the model
   and context figure stop short of the Chat | Terminal switch; hovering the link shows the whole name. Vitest + eslint
   only, not tried in the app (`agentheader.tsx` `RunLinkItem`).
-- [ ] (arcterm) Chat / Terminal is one icon button: open a Claude agent → the header shows a terminal icon where the
-  Chat | Terminal words were; click it → the terminal shows and the icon becomes a speech bubble; click again → Chat.
-  Split two Claude agents → each cell bar has the same small icon. Asleep the icon is dimmed and does nothing. Attach a
-  canvas → the header shows the worded Chat | Terminal | Canvas control again. Typecheck only, not tried in the app;
-  the `agent-chat` CDP scenario was updated but not run (`chatswitch.tsx` `ChatToggle`).
 - [ ] (arcterm) Agent header buttons: open an agent → the header has More (⋯), Float and Close, no Split or Fullscreen
   button; ⋯ lists Split (its submenu) and Fullscreen terminal. Settings → Appearance → Agent header: turn Split and
   Fullscreen on → both buttons come back and Split leaves ⋯; turn Float off → its button goes and ⋯ lists Float window.
@@ -594,3 +595,8 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) Checks after a brainstorm's run starts: brainstorm with a builder check (and a judge), Approve, and let
   the run start → the brainstorming agent's row loses its checks chip (`> ✓`) and the check rows under it; a check that
   still asks, or the one selected, stays. Unit-tested only (`agenttreemodel.ts` `checksSuperseded`), not tried in the app.
+- [ ] (arcterm) A `wsh detach` server has an owner: in an agent, `wsh detach npm run dev` in a repo with a dev server →
+  the footer's Servers names `claude · <agent>` on its row instead of "no owner", and Log opens the `arc-detach` log;
+  the agent's tree row shows a green server mark with `:<port>`, and folding its project's folder shows the port on the
+  folder. From a plain terminal, the row reads `terminal · <name>` and Log opens the file, not the pane. Close the agent
+  → the row keeps its name. Unit-tested only (`pkg/devservers/detached.go`, `treeservers.ts`), not tried in the app.

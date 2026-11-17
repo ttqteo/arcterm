@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { SidecarMessage, SidecarTile } from "./sidecartypes";
 import {
     ageText,
+    answerAct,
     applyOlder,
     canAnswer,
     EMPTY_HISTORY,
@@ -256,8 +257,9 @@ describe("keys", () => {
         expect(wallKey("10")).toBeNull();
     });
 
-    const tile = (over: Partial<SidecarTile> = {}): Pick<SidecarTile, "ask" | "sent"> => ({
-        ask: { question: "Q?", options: ["A", "B", "C"], answerable: true },
+    const tile = (over: Partial<SidecarTile> = {}): Pick<SidecarTile, "id" | "ask" | "sent"> => ({
+        id: "t",
+        ask: { question: "Q?", options: ["A", "B", "C"], answerable: true, key: "ask-t" },
         ...over,
     });
 
@@ -269,6 +271,15 @@ describe("keys", () => {
         expect(canAnswer(tile({ ask: { question: "Q?", options: ["A"], answerable: false } }), 0)).toBe(false);
         expect(canAnswer({}, 0)).toBe(false);
         expect(canAnswer(undefined, 0)).toBe(false);
+        // an ask with no key cannot be named by an answer
+        expect(canAnswer(tile({ ask: { question: "Q?", options: ["A"], answerable: true } }), 0)).toBe(false);
+    });
+
+    it("builds the answer act naming the ask the tile shows", () => {
+        expect(answerAct(tile(), 1)).toEqual({ kind: "answer", id: "t", option: 1, key: "ask-t" });
+        expect(answerAct(tile(), 3)).toBeNull();
+        expect(answerAct(tile({ sent: true }), 0)).toBeNull();
+        expect(answerAct(undefined, 0)).toBeNull();
     });
 });
 

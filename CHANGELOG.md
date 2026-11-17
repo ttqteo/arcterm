@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- The Agent tree shows a server's port (`:4321`) on the agent or terminal that runs it, and on its project's folder
+  while the folder is folded or when no row of it holds the server, so you can tell which project has a server up.
 - Pick several agents in the Agent sidebar (Ctrl+click, Shift+click) and right-click one: Close N agents closes them
   together, asking first when one is working. Agents working for a run stay; close those from their run.
 - References to agents, runs and councils you write in Chat (`agent:7cd99627`, or picked from `@`) show as badges with
@@ -70,8 +72,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   coloured ring.
 - The agent header keeps Split and Fullscreen in its More (⋯) menu, so it shows only More, Float and Close beside the
   view control; Settings → Appearance → Agent header puts any of Split, Float and Fullscreen back in the header.
-- A Claude agent's header and a split cell's bar switch between Chat and Terminal with one icon button instead of
-  the worded Chat | Terminal control; with a canvas, brainstorm or review open the header keeps the worded control.
+- The agent header's view switch carries an icon before each word (Chat, Terminal, Brainstorm, Canvas, Review), as
+  does a split cell's Chat | Terminal switch, and the header's buttons read the switch, Split, then More (⋯) beside
+  Close.
 - Selected text in Chat has slightly rounded corners, so the highlight looks softer.
 - The chat box's `@` list shows the agents of the chat's own project first, so one there is no longer pushed out by
   agents of other projects.
@@ -82,6 +85,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run's Final verification shows a long output line whole, wrapped in its box, instead of cutting it off at the
+  box's right edge.
+- Sidecar shows every agent that is asking you, even one in another project than the Cockpit's filter or in the
+  Background lane, where the title bar could say "1 need you" while the small form said nothing waits on you.
+- A 1-9 answer from Sidecar goes only to the question you saw: when the agent asked something new in the meantime, the
+  answer is dropped instead of landing on the new question.
+- A maximized or full-screen Sidecar on a high-scale screen (a 1920 px screen at 175%) shows the wall of agents instead
+  of the small form.
+- A server an agent or terminal starts with `wsh detach` shows in Servers as that agent's or terminal's, with Log
+  opening its log file, instead of "no owner". One started before this update stays "no owner" until it is restarted.
 - A highlighted sentence in Chat that ends on a bare link (`==… http://localhost:4321/.==`) is highlighted again,
   instead of showing its `==` marks with the link running on into them.
 - A Markdown Preview that holds a placeholder in angle brackets (`<a complete script>`, `<name>`) shows it as written,

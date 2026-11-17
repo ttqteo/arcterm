@@ -302,6 +302,7 @@ import {
 import { subagentExpanded, visibleSubagents, type SubagentState } from "./session-models/sessionviewmodel";
 import { DigitHint } from "./digithint";
 import { ServerMark, StatusDot } from "./statusdot";
+import { folderServers, rowServers } from "./treeservers";
 import { clockTime } from "./monitortasks";
 import { backgroundTasksByIdAtom, focusSubagentAtom, monitorPeekAtom, subagentsByIdAtom } from "./subagentsstore";
 import { rowFieldsAtom } from "./rowfieldsstore";
@@ -1336,7 +1337,8 @@ function ParentRow({
     const startError = agent.startError;
     const shown = startError != null ? "idle" : shownState(agent.state, backgroundActivity(bgTasks, machineServers));
     // the dev servers it left listening: not work, so a green server glyph beside the state instead of a working dot
-    const servers = launchedServers(bgTasks, machineServers);
+    // and what it started with `wsh detach`, which Servers names it the owner of (treeservers.ts)
+    const servers = rowServers(machineServers, agent.id, launchedServers(bgTasks, machineServers));
     // its running ones as rows under it: only while its process lives, since a sleeping or terminal-less agent's
     // transcript still reads them as running
     const taskRows = backgroundTaskRows(bgTasks, agent.blockId != null && !agent.sleeping, now, machineServers);
@@ -1531,7 +1533,7 @@ function ParentRow({
             {/* a lead's run that landed and still holds sessions: the same ✓, closing the whole run (on the session
                 that started it instead, while that one is open) */}
             {lead != null ? <LandedClose model={model} run={lead.run} variant="chip" /> : null}
-            <ServerMark servers={servers} />
+            <ServerMark servers={servers} ports />
             {cols}
         </>
     );
@@ -2887,6 +2889,8 @@ function TerminalRow({
     const renaming = useAtomValue(renamingRowAtom) === terminal.id;
     const digit = useHeldDigit(navDigit);
     const line = useTerminalStatusLine(terminal.blockId);
+    // the servers it holds: run in its shell, or started from it with `wsh detach` (treeservers.ts)
+    const servers = rowServers(useAtomValue(machineServersReadingAtom).servers, terminal.id, []);
     const removed = state === "removed";
     // a removed terminal always names the folder it was in, even where no project root says which part is the worktree
     const chip = place ?? (removed ? folderName(terminal.cwd) : undefined);
@@ -2949,6 +2953,7 @@ function TerminalRow({
                             <StatusDot state="working" pulse className="!h-[6px] !w-[6px]" />
                         </span>
                     ) : null}
+                    <ServerMark servers={servers} ports />
                     {shows != null ? (
                         <span data-terminal-place={shows} className="flex-none text-[11px] text-ink-faint">
                             {shows}
@@ -4004,6 +4009,10 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         }
         return out;
     }, [registered]);
+    // a project's folder shows the servers up in its repo that none of its rows shows (all of them while folded), so
+    // which project has a server running reads from the tree (treeservers.ts)
+    const machineServers = useAtomValue(machineServersReadingAtom).servers;
+    const treeRowIds = useMemo(() => new Set([...agents, ...terminals].map((a) => a.id)), [agents, terminals]);
     // the tool library names and icons the terminals opened from it; read once on first mount
     const toolStatus = useAtomValue(toolsStatusAtom);
     useEffect(() => {
@@ -4246,6 +4255,15 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                 }
                                                 trailing={
                                                     <>
+                                                        <ServerMark
+                                                            servers={folderServers(
+                                                                machineServers,
+                                                                roots.get(r.project),
+                                                                r.open,
+                                                                treeRowIds
+                                                            )}
+                                                            ports
+                                                        />
                                                         {r.running > 0 ? <RunningBadge n={r.running} /> : null}
                                                         {r.attn > 0 ? <AskingBadge n={r.attn} /> : null}
                                                         {r.open ? null : (

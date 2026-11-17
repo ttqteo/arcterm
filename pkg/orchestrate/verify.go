@@ -116,6 +116,17 @@ const verifyChangedEnv = "ARC_VERIFY_CHANGED"
 // own environment cannot scope it.
 var unscopedEnv = []string{verifyChangedEnv + "="}
 
+// checkPassedEnv names the Check command that just passed on the final tree, for the final stage's Verify: a
+// Verify that runs part of that Check too (this repo's typechecks the frontend, as its Check does) may leave that
+// part out. Empty when no Check ran or it did not pass; a Verify that ignores it runs as before.
+const checkPassedEnv = "ARC_CHECK_PASSED"
+
+// finalVerifyEnv is the final stage's Verify env: unscoped, and naming the Check that passed, if one did. Set empty
+// rather than left out, so a value inherited from the server's own environment cannot speak for a Check.
+func finalVerifyEnv(checkPassed string) []string {
+	return append(slices.Clone(unscopedEnv), checkPassedEnv+"="+checkPassed)
+}
+
 // verifyFlakyEnv names a fresh, empty file a Verify command may append its flaky tests to, one per line: tests
 // that failed and then passed when the command reran them. A pass with lines in it is still a pass, and each line
 // becomes an unverified item of the run, so a race that passes on a rerun is never a silent pass. A failed Verify's
