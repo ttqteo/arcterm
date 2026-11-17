@@ -989,8 +989,8 @@ function RunResumeButton({ run }: { run: RunInfo }) {
     );
 }
 
-// RunSubline is a run row's second line: a chip folding its workers away, and how far the plan is. It starts under
-// the title, as an agent's second line does (UNDER_GLYPH).
+// RunSubline is a run row's second line: a chip folding its workers away, and how far the plan is. Like every second
+// line in the tree it starts at the row's left edge, under the glyph: it is information, not a column of titles.
 // a lead's second line: its workers chip and progress, then `note` (what the lead asks you), then `from <session>` when
 // a session started the run, then `trailing` (the lead's own badges and its columns) at its right end
 function RunSubline({
@@ -1023,7 +1023,7 @@ function RunSubline({
         // a finished bounded run's lead row reading planning for good, the same misreading of an absent
         // dag the engine had in ShouldCloseOrchestratorLead.
         return (
-            <div className={cn("mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums", UNDER_GLYPH)}>
+            <div className="mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums">
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
                 ) : run.land?.state === "pending" ? (
@@ -1058,12 +1058,7 @@ function RunSubline({
     return (
         <>
             {/* @container: a narrow line keeps the chip's count and drops its word, so the progress is not cut */}
-            <div
-                className={cn(
-                    "@container mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums",
-                    UNDER_GLYPH
-                )}
-            >
+            <div className="@container mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums">
                 <FoldChip
                     label={String(workers ? live : total)}
                     word={workers ? (live === 1 ? "worker" : "workers") : "tasks"}
@@ -1630,7 +1625,7 @@ function ParentRow({
                     // chip and its badges; while it brainstorms, the brainstorm's line in place of the model and the
                     // branch. @container: the subagents chip drops its word when this line is narrow, and the model
                     // truncates
-                    <div className={cn(CONVERSATION_META, "@container mt-[3px]", UNDER_GLYPH, dim && "text-ink-faint")}>
+                    <div className={cn(CONVERSATION_META, "@container mt-[3px]", dim && "text-ink-faint")}>
                         {askNote}
                         {waitsFor ? (
                             <span className="flex min-w-0 items-center gap-[3px]" title={`Waiting on ${waitsFor}`}>
@@ -2288,8 +2283,6 @@ function RowCols({ cells, ram }: { cells: RowCell[]; ram?: { attrs: Record<strin
         </span>
     );
 }
-// a second line starts under the title, past the runtime glyph and the gap after it
-const UNDER_GLYPH = "pl-[18px]";
 
 // the runtime's glyph at the head of a row, in a slot as wide as the run icon so titles line up. On an agent's row it
 // also carries the agent's state, where a dot used to: working pulses in the working green, asking in the warning colour, and
@@ -2488,7 +2481,7 @@ const ConversationRow = memo(function ConversationRow({
                 }
             />
             {branch || started ? (
-                <div className={cn(CONVERSATION_META, UNDER_GLYPH)}>
+                <div className={CONVERSATION_META}>
                     {branch ? <BranchLabel branch={branch} /> : null}
                     {branch && started ? (
                         <span aria-hidden className="flex-none text-ink-faint">
@@ -2535,7 +2528,7 @@ const RunConversationRow = memo(function RunConversationRow({
                 tokens={runTokens(row.group)}
                 icon={<Workflow size={12} strokeWidth={1.8} aria-hidden className="flex-none text-ink-mid" />}
             />
-            <div className={cn(CONVERSATION_META, UNDER_GLYPH)}>
+            <div className={CONVERSATION_META}>
                 {view.complete ? (
                     <span className="flex min-w-0 items-center gap-[4px] text-success">
                         <Check size={11} aria-hidden className="flex-none" />
