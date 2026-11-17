@@ -36,6 +36,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A Claude agent left idle on screen is compacted again before its prompt cache goes cold when Claude Code's own idle
   compaction is off (auto-compact or `idleCompaction` turned off): since 1.0.7 nothing compacted it, and the next turn
   after an hour re-read the whole conversation at the full rate.
+- An agent or terminal started in No folder from the New dialog sits in No folder in the Agent tree, rather than in a
+  second folder named Home beside it. A project of yours named Home keeps its own folder.
 
 ### Changed
 

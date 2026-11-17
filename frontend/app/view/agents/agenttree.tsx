@@ -2734,6 +2734,11 @@ function openFolderMenu(model: AgentsViewModel, project: string, e: React.MouseE
         terminals: globalStore.get(model.terminalsAtom),
         lineage: globalStore.get(model.lineageAtom),
         serviceTabs: treeServiceInput(globalStore.get(servicesAtom) ?? [], null).serviceTabs,
+        roots: new Map(
+            Object.entries(globalStore.get(projectsAtom) ?? {}).flatMap(([name, p]) =>
+                p?.path ? [[name, p.path]] : []
+            )
+        ),
     });
     if (close.agents.length + close.terminals.length > 0) {
         items.push(
