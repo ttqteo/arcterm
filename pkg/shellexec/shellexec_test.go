@@ -57,3 +57,38 @@ func TestEnsureWshOnPath(t *testing.T) {
 		}
 	})
 }
+
+func TestDirectProgramStartsOnlyAnExeGivenApartFromItsArgs(t *testing.T) {
+	found := map[string]string{
+		"claude": `C:\Users\me\.local\bin\claude.exe`,
+		"node":   `C:\nodejs\NODE.EXE`,
+		"pi":     `C:\npm\pi.cmd`,
+		"tool":   `C:\bin\tool.bat`,
+	}
+	look := func(name string) (string, error) {
+		if p, ok := found[name]; ok {
+			return p, nil
+		}
+		return "", exec.ErrNotFound
+	}
+	cases := []struct {
+		name string
+		goos string
+		argv []string
+		want string
+	}{
+		{"an exe on windows", "windows", []string{"claude", "--resume", "x"}, found["claude"]},
+		{"the extension in any case", "windows", []string{"node"}, found["node"]},
+		{"a cmd shim needs the shell", "windows", []string{"pi", "audit auth"}, ""},
+		{"a bat needs the shell", "windows", []string{"tool"}, ""},
+		{"not found: the shell decides (alias, profile function)", "windows", []string{"myalias"}, ""},
+		{"a line for the shell (no argv)", "windows", nil, ""},
+		{"an empty program", "windows", []string{""}, ""},
+		{"not windows: sh -c already runs it in its place", "darwin", []string{"claude"}, ""},
+	}
+	for _, c := range cases {
+		if got := directProgram(c.goos, c.argv, look); got != c.want {
+			t.Errorf("%s: directProgram(%q, %q) = %q, want %q", c.name, c.goos, c.argv, got, c.want)
+		}
+	}
+}

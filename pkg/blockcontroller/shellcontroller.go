@@ -808,6 +808,8 @@ func createCmdStrAndOpts(blockId string, blockMeta waveobj.MetaMapType, connName
 			return "", nil, fmt.Errorf("cmd should not have spaces if cmd:shell is false (use cmd:args)")
 		}
 		cmdArgs := restoreStartArgs(blockId, blockMeta, blockMeta.GetStringList(waveobj.MetaKey_CmdArgs))
+		// the words as they are too, so a program that is an .exe can start without the shell (shellexec.directProgram)
+		cmdOpts.Argv = append([]string{cmdStr}, cmdArgs...)
 		// shell escape the args for the target shell
 		for _, arg := range cmdArgs {
 			cmdStr = cmdStr + " " + quoteCmdArg(arg, shellType, shellPath)

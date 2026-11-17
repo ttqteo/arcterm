@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Agents start without a PowerShell around them (Windows).** Go tests only (`shellexec`); never tried
+  in the app. Launch a Claude agent, resume one, and start a run worker: each works as before (hooks report, Chat and
+  the terminal show it, `wsh` found, stop and restart work), and Task Manager's process tree shows `claude.exe` straight
+  under wavesrv with its conhost, no `powershell.exe` in between (before: one per agent, ~56 MB). A pi or codex agent
+  (a `.cmd` shim) still has its PowerShell. If something only your PowerShell profile set is now missing for an agent,
+  that is this change (`shellexec.directProgram`).
 - [ ] (arcterm) **Commit card from a real agent.** The `chat-commit` scenario drives the card from a fixture transcript;
   a live agent writing the block was never tried. In a Claude agent in a repo whose rules say to ask before committing
   (e.g. SIEM), have it finish a change: instead of a prose "commit?" its reply ends in a Commit suggestion card
