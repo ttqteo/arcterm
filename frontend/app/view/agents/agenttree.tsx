@@ -1315,8 +1315,10 @@ function ParentRow({
     // waitsOnUser says the wait is the brainstorm's, not a permission prompt
     const brainstormFile = shownBrainstormFile(useAtomValue(brainstormAtom(agent.id)));
     const mark = lead != null ? leadMark(lead.run, agent) : null;
-    // its heavy command waiting its turn in the job queue, whose tag takes the working dot's place
-    const queued = queuedJobFor(useAtomValue(jobQueueAtom), agent.blockId);
+    // its heavy command waiting its turn in the job queue, whose tag takes the working dot's place. Not on a lead's
+    // row: its run's tag (RunSubline, runQueuedJobs) already counts the lead's jobs, and both drew the same "#1"
+    const jobQueue = useAtomValue(jobQueueAtom);
+    const queued = lead != null ? null : queuedJobFor(jobQueue, agent.blockId);
     // its last turn committed, you have read it and no run it started is still going: the row offers to close it
     // (donesuggest.ts). A sleeping agent offers no Close even when its last turn committed: it is parked, not finished
     const lineageRuns = useAtomValue(model.lineageAtom).runs;

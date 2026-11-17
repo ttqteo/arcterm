@@ -16,6 +16,7 @@ import type { PluggableList } from "unified";
 import { FilePill } from "./chatfilepill";
 import { INITIATIVE_LANG } from "./chatinitiative";
 import { InitiativeBlockView } from "./chatinitiativecard";
+import { copyableHref } from "./chatlink";
 import { STEPS_LANG } from "./chatsteplist";
 import { StepsBlock } from "./chatsteplistview";
 import { VISUAL_LANG } from "./chatvisual";
@@ -58,8 +59,13 @@ function DisplayMath({ tex }: { tex: string }) {
     );
 }
 
-const MD_COMPONENTS: Components = {
-    a: ({ href, children }) => (
+// A link, with a copy button that shows on hover so its url can be taken without selecting it. The button hangs off the
+// link's end from a zero-width anchor, over the text after it, so showing it moves no word; the anchor sits in the
+// link's hover group, the button's box joined to the link's, so moving onto it keeps it shown. Not selectable: a
+// selection over the line neither paints nor copies it.
+function MdLink({ href, children }: { href?: string; children?: ReactNode }) {
+    const url = copyableHref(href);
+    const link = (
         <a
             href={href}
             onClick={(e) => {
@@ -70,7 +76,27 @@ const MD_COMPONENTS: Components = {
         >
             {children}
         </a>
-    ),
+    );
+    if (url == null) {
+        return link;
+    }
+    return (
+        <span data-md-link className="group/link">
+            {link}
+            <span className="relative inline-block w-0 select-none align-middle">
+                <span
+                    data-md-link-copy
+                    className="invisible absolute top-1/2 left-0 z-10 -translate-y-1/2 rounded bg-surface-raised pl-0.5 text-[13px] group-hover/link:visible group-focus-within/link:visible"
+                >
+                    <CopyButton content={url} title="Copy link" />
+                </span>
+            </span>
+        </span>
+    );
+}
+
+const MD_COMPONENTS: Components = {
+    a: ({ href, children }) => <MdLink href={href}>{children}</MdLink>,
     // the copy button sits outside the scroller, so it stays on the corner while a wide table scrolls; the box
     // shrinks to a short table instead of running the panel's width
     table: ({ node, children }) => (

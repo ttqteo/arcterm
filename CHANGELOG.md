@@ -29,8 +29,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- A link in Chat shows a copy button at its end when you hover it, and a right-click on it offers Copy link: either
+  copies its url without selecting the text.
+
 ### Changed
 
+- Selected text in Chat that wraps over several lines is highlighted as one shape: the corners where one line meets
+  the next are square, and only its outer corners are rounded.
+- A project's Overview fits the screen: the header and Activity stay put, and Now and History each scroll on their
+  own.
 - A council's Setup draws each seat's letter on a disc in its colour, as the Discussion and the map do, instead of a
   coloured ring.
 - The agent header keeps Split and Fullscreen in its More (⋯) menu, so it shows only More, Float and Close beside the
@@ -49,6 +58,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the compaction does not show up where arcterm looks: one that found nothing to compact, or never landed, lets it
   sleep. A session forked off an agent's tab (moved to the background) now reports its work into the tab instead of
   being dropped as late.
+- A run's lead row in the Agent tree shows one queue tag for the lead's waiting command, not the same `#1` twice.
 - A council's Summary no longer offers Summarize when every idea in it is still a held draft or was dropped, as the
   Discussion already did: the summary had nothing to work from and could only fail.
 - What a council settled now reaches the project's CLAUDE.md even when an agent or an editor has the file open at that
