@@ -663,9 +663,10 @@ describe("shownFile during the judge's wait", () => {
 });
 
 describe("stopsJudge", () => {
-    it("is an answer or Skip sent during the wait", () => {
+    it("is an answer, Skip or Close sent during the wait", () => {
         expect(stopsJudge({ kind: "answer", text: "x" }, waitFile(), false)).toBe(true);
         expect(stopsJudge({ kind: "skip" }, waitFile(), false)).toBe(true);
+        expect(stopsJudge({ kind: "close" }, waitFile(), false)).toBe(true);
     });
 
     it("is not any other line", () => {
@@ -738,6 +739,7 @@ describe("brainstormLine", () => {
         expect(brainstormLine({ kind: "builder-decide" })).toBe("brainstorm: builder decide");
         expect(brainstormLine({ kind: "approved" })).toBe("brainstorm: approved");
         expect(brainstormLine({ kind: "keep-talking" })).toBe("brainstorm: keep talking");
+        expect(brainstormLine({ kind: "close" })).toBe("brainstorm: close");
         expect(brainstormLine({ kind: "run", runId: "r-1" })).toBe("brainstorm: run r-1");
         expect(brainstormLine({ kind: "queued", entryId: "q-3f2a" })).toBe("brainstorm: queued q-3f2a");
     });

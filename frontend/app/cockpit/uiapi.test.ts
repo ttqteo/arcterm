@@ -6,6 +6,7 @@ import type { SurfaceKey } from "@/app/view/agents/agents";
 import { parseAddress } from "@/app/view/jarvis/address";
 import { describe, expect, it } from "vitest";
 import {
+    brainstormCloseVerdict,
     BUSY_POLL_MS,
     BUSY_WAIT_MS,
     callerName,
@@ -255,5 +256,27 @@ describe("callerName", () => {
     it("falls back when the caller is unknown or absent", () => {
         expect(callerName(roster, "zz")).toBe("An agent");
         expect(callerName(roster, undefined)).toBe("An agent");
+    });
+});
+
+describe("brainstormCloseVerdict", () => {
+    const attached = { topic: "lag", path: "C:\\p\\.superpowers\\brainstorm\\lag\\brainstorm.json" };
+
+    it("closes the brainstorm the caller has attached, the path compared as a path", () => {
+        expect(brainstormCloseVerdict(attached, "C:/p/.superpowers/brainstorm/lag/brainstorm.json")).toEqual({
+            kind: "close",
+            topic: "lag",
+            message: "Closed the brainstorm lag. The file stays; writing it again reopens the pane.",
+        });
+    });
+
+    it("refuses a path naming another brainstorm", () => {
+        const v = brainstormCloseVerdict(attached, "C:/p/.superpowers/brainstorm/other/brainstorm.json");
+        expect(v.kind).toBe("error");
+        expect(v.message).toContain("not C:/p/.superpowers/brainstorm/other/brainstorm.json");
+    });
+
+    it("has nothing to do with none attached, which is no failure", () => {
+        expect(brainstormCloseVerdict(null, "C:/p/x/brainstorm.json").kind).toBe("none");
     });
 });

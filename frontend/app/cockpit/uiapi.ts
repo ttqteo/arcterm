@@ -9,6 +9,7 @@ import type { CommandItem } from "@/app/cockpit/palette-commands";
 import type { CenterMode } from "@/app/view/agents/agentcenter";
 import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { parseAddress } from "@/app/view/jarvis/address";
+import { sameRepoPath } from "@/util/paths";
 
 // mirrors wshutil.RouteId_Cockpit
 export const COCKPIT_ROUTE_ID = "cockpit";
@@ -172,4 +173,29 @@ export function callerName(roster: readonly { blockId?: string; name: string }[]
         return UNKNOWN_CALLER;
     }
     return roster.find((a) => a.blockId === blockId)?.name ?? UNKNOWN_CALLER;
+}
+
+export type BrainstormCloseVerdict =
+    | { kind: "close"; topic: string; message: string }
+    | { kind: "none"; message: string }
+    | { kind: "error"; message: string };
+
+// `wsh brainstorm close <file>` closes the brainstorm the caller has attached, and only that one: a path naming another
+// is a mistake to report, not a different brainstorm to close. With none attached there is nothing to do, which is no
+// failure: the agent may be closing one the user already closed from the header.
+export function brainstormCloseVerdict(
+    attached: { topic: string; path: string } | null,
+    file: string
+): BrainstormCloseVerdict {
+    if (attached == null) {
+        return { kind: "none", message: "No brainstorm is open in this agent; nothing to close." };
+    }
+    if (!sameRepoPath(attached.path, file)) {
+        return { kind: "error", message: `This agent has ${attached.path} open, not ${file}` };
+    }
+    return {
+        kind: "close",
+        topic: attached.topic,
+        message: `Closed the brainstorm ${attached.topic}. The file stays; writing it again reopens the pane.`,
+    };
 }

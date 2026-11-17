@@ -29,6 +29,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- Close brainstorm in the agent's More (⋯) menu takes the brainstorm pane and its Chat card down so you can talk on
+  in the terminal, and telling the agent to stop the brainstorm now closes it too. The file keeps what was decided,
+  and resuming it brings the pane back.
+
 ### Changed
 
 - Chat sums up each stretch of tools in words ("Edited server.js, ran 2 commands +5 −2 · 38s"), says what a running

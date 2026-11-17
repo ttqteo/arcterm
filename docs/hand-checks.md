@@ -16,6 +16,13 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Closing a brainstorm.** Unit tests and the typecheck only; never tried in the app. In an agent with a
+  brainstorm open: (1) ⋯ → Close brainstorm. The Brainstorm tab, the header strip and the Chat card go, the agent gets
+  `brainstorm: close` (hidden in Chat) and answers in the terminal, and the earlier ✓ rows stay ✓ rows rather than raw
+  `brainstorm: …` bubbles. (2) Open another one, type "off brainstorm, bàn tiếp" to the agent. It runs
+  `wsh brainstorm close <path>`, prints "Closed the brainstorm …", the same three things go, and a toast names it.
+  (3) Resume it from the palette (Brainstorms ›) and the pane comes back on its open question.
+
 - [ ] (arcterm) **Chat's worded stretch line and described commands.** Never run: the scenario run was stopped for low
   memory before it started. `task verify:ui -- agent-chat chat-redesign` → agent-chat 1a (fold reads "Edited client.ts,
   read client.ts" +N −N · Ns), 1a2 (fold opened), 26 ("Reading client.ts"); chat-redesign 6 ("Reading retry.ts"), 8

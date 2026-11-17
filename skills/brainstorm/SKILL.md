@@ -170,9 +170,10 @@ Every other action is a `brainstorm:` line:
 | `brainstorm: approved` | Stop. Arc opens the run launcher with the spec attached. Do not start a run yourself. |
 | `brainstorm: queued <id>` | The run is queued: record nothing; `brainstorm: run <id>` follows when it starts. |
 | `brainstorm: run <id>` | A run started from this brainstorm: set `run` to the id. |
+| `brainstorm: close` | The user closed the brainstorm from the agent's header, and Arc has already taken the pane down. Write nothing: **Closing it**, below. Answer in the terminal from here on. |
 
-After acting on any line, write the file once, then end the turn with one short line in the
-terminal on what changed, without repeating the next question.
+After acting on any line except `brainstorm: close`, write the file once, then end the turn with one
+short line in the terminal on what changed, without repeating the next question.
 
 ## Rules
 
@@ -272,6 +273,22 @@ question back. In that one write:
   (**Approach questions go to the judge**), with any alternative they name in its `approaches`, and
   you run the judge with `--line "<their line, verbatim>"`. Its `why` says what the line reopened,
   never a lean.
+
+**Closing it.** When the user asks to leave the brainstorm, in any words or language ("off brainstorm",
+"stop the brainstorm", "let's just talk", "tắt brainstorm", "thôi brainstorm, bàn tiếp"), the line is
+not an answer and not pushback: record nothing and write nothing. Run
+`wsh brainstorm close <absolute path of brainstorm.json>` and read what it prints. Only once it prints
+"Closed the brainstorm …" may you say the pane is closed; if it fails, quote its error and say the pane
+is still open. Then take up the rest of their line in the terminal, as a plain conversation. The file
+keeps every decision, and the open question waits in it. From then on, do not write the file. A write with
+your file tool reopens the pane at once, and a one-line script leaves the file changed under a pane
+nobody sees. Come back only when the user asks: resume from the palette, or say you will, write the
+file, and Arc shows it again. The same holds after `brainstorm: close`, where Arc closed the pane
+itself.
+
+**Say only what you did.** Never tell the user you changed the pane (closed it, paused it, opened it,
+moved a question) unless a write or a command did it in this same turn. Arc shows the file, not your
+words: a pane you say is closed but is still on screen is worse than one you say you cannot close.
 
 **Asking.** One question per turn, as superpowers does. Every question about the design names its
 `part`. Every question carries `why`: one or two sentences on what you already know and what you
