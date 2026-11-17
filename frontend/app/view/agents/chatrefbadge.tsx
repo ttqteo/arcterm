@@ -20,9 +20,9 @@ import { selectingInto } from "./pathlinkcontext";
 import { loadProjectRuns, projectRunsAtom } from "./projecthistorystore";
 import { badgeLook, refTitle, resolveRef, type ResolvedRef } from "./refbadge";
 import type { RefKind } from "./refmention";
-import { loadRefEfforts, refEffortsAtom } from "./refmentionstore";
+import { loadRefEfforts, loadRefSessions, refEffortsAtom } from "./refmentionstore";
 import { RuntimeMark } from "./runtimemark";
-import { loadSessionsArchive, sessionsArchiveAtom } from "./sessionsarchivestore";
+import { sessionsArchiveAtom } from "./sessionsarchivestore";
 
 export interface RefLinksValue {
     model: AgentsViewModel;
@@ -58,19 +58,6 @@ function loadCouncilsOnce(project: string): void {
     void loadCouncils(project).finally(() => loadingCouncils.delete(project));
 }
 
-// loadSessionsArchive asked again while a scan runs scans once more, so ten conversation badges must not each ask
-let loadingSessions = false;
-
-function loadSessionsOnce(): void {
-    if (loadingSessions) {
-        return;
-    }
-    loadingSessions = true;
-    void loadSessionsArchive().finally(() => {
-        loadingSessions = false;
-    });
-}
-
 /** What `kind:id` names right now: the roster live; the chat project's runs and councils, and the conversations and
  *  initiatives of any project (each read once, when a token of its kind first needs them and nothing has read them yet).
  *  With no ChatRefLinks around, nothing is known. */
@@ -90,7 +77,7 @@ export function useResolvedRef(kind: RefKind, id: string): ResolvedRef {
     useEffect(() => {
         // a conversation and an initiative belong to no project: they load for a chat outside one too
         if (kind === "session" && sessionsUnread) {
-            loadSessionsOnce();
+            loadRefSessions();
         }
         if (kind === "effort" && effortsUnread) {
             fireAndForget(loadRefEfforts);

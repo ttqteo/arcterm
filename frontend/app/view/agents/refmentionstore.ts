@@ -39,11 +39,12 @@ export async function loadRefEfforts(): Promise<void> {
     }
 }
 
-// loadSessionsArchive asked again while a scan runs scans once more: one asker at a time, so an `@` typed again before the
-// first scan lands does not queue a second scan
+// loadSessionsArchive asked again while a scan runs scans once more: one asker at a time, so neither an `@` typed again
+// before the first scan lands, nor ten conversation badges, nor a badge and the picker together queue a second scan
 let loadingSessions = false;
 
-function loadSessionsOnce(): void {
+/** Reads the conversation archive for a ref badge or the picker; calls made while a scan is on its way start no second one. */
+export function loadRefSessions(): void {
     if (loadingSessions) {
         return;
     }
@@ -89,7 +90,7 @@ export function useRefItems(
     // the archive keeps its own list fresh elsewhere (the Agent tree, History); the picker reads it only when nothing has
     useEffect(() => {
         if (want && sessionsUnread) {
-            loadSessionsOnce();
+            loadRefSessions();
         }
     }, [want, sessionsUnread]);
     return useMemo(
