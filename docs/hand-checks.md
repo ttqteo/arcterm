@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **A council's Summary uses the Discussion's `canSummarize`.** Vitest and typecheck only. Open a council
+  whose only idea is a held draft (Summary, no summary yet) → no Summarize button; one with a sent idea that is done,
+  stopped or failed in round 1 → Summarize shows, and Summarize again is on once there is a summary. Commit: the
+  `chore(council): Summary uses canSummarize …` one.
 - [ ] (arcterm) **Prettier sweep reordered imports in the palette, the route picker and the run sheet.** Typecheck,
   eslint and the bindings/palette/route vitest only; no change meant, but import order sets module load order. In the
   dev app open the command palette (Ctrl+P), a launcher's model picker, and a run's sheet in Jarvis → each opens and

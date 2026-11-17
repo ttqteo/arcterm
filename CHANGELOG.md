@@ -43,6 +43,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A council's Summary no longer offers Summarize when every idea in it is still a held draft or was dropped, as the
+  Discussion already did: the summary had nothing to work from and could only fail.
 - What a council settled now reaches the project's CLAUDE.md even when an agent or an editor has the file open at that
   moment (Windows); before, that update was dropped until the council's Memory changed again.
 - A council no longer fails to save ("Access is denied") on a busy Windows machine while the cockpit is reading it,

@@ -65,6 +65,7 @@ import { mapWords } from "./councilmapmodel";
 import {
     STANCE_WORD,
     askedParts,
+    canSummarize,
     councilLang,
     draftFromCouncil,
     glanceFigures,
@@ -93,7 +94,6 @@ import {
 import {
     answerParts,
     brainstormPrompt,
-    canRunSummary,
     directionRows,
     directionsHeading,
     docAction,
@@ -912,7 +912,7 @@ function NoSummary({ c, busy, onSummarize }: { c: Council; busy: boolean; onSumm
             ) : (
                 <>
                     <span>There is no summary yet.</span>
-                    {canRunSummary(c) ? (
+                    {canSummarize(c) ? (
                         <button
                             type="button"
                             data-council-action="summarize"
@@ -1234,7 +1234,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                     <button
                         type="button"
                         data-council-action="summarize-again"
-                        disabled={!canRunSummary(c) || busy === "summarize"}
+                        disabled={!canSummarize(c) || busy === "summarize"}
                         onClick={() => void summarizeAgain()}
                         className={BUTTON}
                     >

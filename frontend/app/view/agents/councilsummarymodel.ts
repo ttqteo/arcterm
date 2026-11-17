@@ -354,16 +354,6 @@ export function evidenceLabel(e: CouncilEvidence, checked = false): string {
     return parseShotRef(e.ref) != null ? `Screenshot ${shotName(e.ref)}` : e.ref;
 }
 
-/** Pure: whether the Summary's Summarize and Summarize again can run: what the runner accepts (a council that is done,
- *  stopped, failed or waiting at the pause, with a proposal to summarize). canSummarize (councilmodel.ts) is the
- *  Discussion's rule and is off for a failed or stopped council still at round 1, which the runner does summarize. */
-export function canRunSummary(c: Council): boolean {
-    return (
-        (c.proposals ?? []).length > 0 &&
-        (c.state === "done" || c.state === "stopped" || c.state === "failed" || c.state === "awaiting-you")
-    );
-}
-
 // ---- Was this useful? ----
 
 export type CouncilRating = "useful" | "not";
