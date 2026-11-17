@@ -129,6 +129,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An agent's header and its run chip in the Agent tree list the runs it started in a project opened after arcterm
+  launched, instead of missing them until a restart.
 - An agent's step list in Chat shows as a checklist when it writes its steps as a Markdown task list (`- [ ] …`),
   instead of as a block of code.
 - A run whose lead was started again (after arcterm restarted, or when the lead's process died) keeps its new lead

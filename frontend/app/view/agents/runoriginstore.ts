@@ -87,15 +87,24 @@ export function openRunOrigin(model: AgentsViewModel, origin: RunOrigin): void {
 // the origin is read from these copies, which never changes; a run's status is its live object's.
 const originRunsAtom = atom<Record<string, Run>>({}) as PrimitiveAtom<Record<string, Run>>;
 
+// originChannelIds is the channels a load reads. The full load asks wavesrv for the list rather than reading
+// channelsAtom: that is the boot's snapshot, and a channel made since while no header watched (its run-created event
+// heard by nobody) is not in it, so its runs never reached the index.
+async function originChannelIds(channelId?: string): Promise<string[]> {
+    if (channelId != null) {
+        // a run in a project with no channel yet is in one the list has not loaded
+        if (!(globalStore.get(channelsAtom) ?? []).some((c) => c.oid === channelId)) {
+            await loadChannels();
+        }
+        return [channelId];
+    }
+    const rtn = await RpcApi.GetChannelsCommand(TabRpcClient);
+    return (rtn.channels ?? []).map((c) => c.oid);
+}
+
 // loadOriginRuns reads every channel's runs, or one channel's when a run was just created in it
 async function loadOriginRuns(channelId?: string): Promise<void> {
-    let channels = globalStore.get(channelsAtom);
-    // a run in a project with no channel yet is in one the list has not loaded
-    if (channels == null || (channelId != null && !channels.some((c) => c.oid === channelId))) {
-        await loadChannels();
-        channels = globalStore.get(channelsAtom) ?? [];
-    }
-    const ids = channelId != null ? [channelId] : channels.map((c) => c.oid);
+    const ids = await originChannelIds(channelId);
     const lists = await Promise.all(
         ids.map((id) =>
             RpcApi.GetChannelRunsCommand(TabRpcClient, { channelid: id }).then(
