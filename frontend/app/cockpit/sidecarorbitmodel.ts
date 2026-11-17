@@ -164,10 +164,18 @@ export function nodeTone(tile: SidecarTile, waiting: ReadonlySet<string>): Tone 
     }
 }
 
-/** Whether a node pings: while it waits on you (`warning`) or has failed (`error`). */
+/**
+ * Whether a node pings: while it waits on you (`warning`) or has failed (`error`). An ask whose answer went out
+ * (`sent`) no longer waits, so it stops; a failed one keeps pinging.
+ */
 export function pings(tile: SidecarTile, waiting: ReadonlySet<string>): boolean {
     const tone = nodeTone(tile, waiting);
-    return tone === "warning" || tone === "error";
+    return tone === "error" || (tone === "warning" && tile.sent !== true);
+}
+
+/** Whether a Needs you row's dot pings: the same rule as a node's, so a sent ask stops and a failed row keeps on. */
+export function needPings(need: SidecarNeed): boolean {
+    return need.failed === true || need.sent !== true;
 }
 
 // ---- Geometry ----
@@ -208,8 +216,10 @@ export interface LaneBar {
 
 /**
  * A lane's bars: each span as `{ x, w, state }` in a lane `width` px wide that shows the 2 hours ending at `now`. A span
- * with no `to` runs to `now`; one that began before the window starts at its edge, and one that ended at or before
- * the edge is dropped (the bridge sends the spans unclipped). A bar is at least 2 px wide and stays inside the lane.
+ * with no `to` runs to `now` (one that began a moment after `now`, the bridge's clock ahead of the snapshot's, begins
+ * at it, so a fresh failure draws at once); one that began before the window starts at its edge, and one that ended at
+ * or before the edge is dropped, as is a closed one that ends before it begins (the bridge sends the spans unclipped).
+ * A bar is at least 2 px wide and stays inside the lane.
  */
 export function laneBars(spans: readonly SidecarSpan[], now: number, width: number): LaneBar[] {
     if (!(width > 0)) {
@@ -222,7 +232,7 @@ export function laneBars(spans: readonly SidecarSpan[], now: number, width: numb
         if (to <= start) {
             continue;
         }
-        const from = Math.max(s.from, start);
+        const from = Math.max(s.to == null ? Math.min(s.from, now) : s.from, start);
         if (to < from) {
             continue;
         }

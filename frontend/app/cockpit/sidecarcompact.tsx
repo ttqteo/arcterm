@@ -20,6 +20,7 @@ import {
     dashKey,
     frameOf,
     needHow,
+    needPings,
     nodeLine,
     nodeTone,
     pings,
@@ -349,7 +350,7 @@ function sameSel(a: DashSel | null, b: DashSel | null): boolean {
     return a?.area === b?.area && a?.index === b?.index && a?.key === b?.key;
 }
 
-// A row that waits on you pings until it is answered (a sent ask has been, and stops); a failed one pings as it waits.
+// A row that waits on you pings until it is answered (a sent ask has been, and stops, as its dot does); a failed one pings.
 function NeedRow(props: {
     need: SidecarNeed;
     age: string;
@@ -362,7 +363,7 @@ function NeedRow(props: {
     const { need, selected } = props;
     const failed = need.failed === true;
     const tone: Tone = failed ? "error" : "warning";
-    const ping = need.sent !== true;
+    const ping = needPings(need);
     return (
         // the reveal opens the row's height on a spring, so the gap below is this wrapper's padding, not the list's
         <motion.div
@@ -594,8 +595,7 @@ export function SidecarCompact({ snap, receivedAt, clock, send }: SidecarCompact
                         key={tile.id}
                         id={tile.id}
                         tone={nodeTone(tile, waiting)}
-                        // an ask whose answer went out has been answered: its dot stops pinging as its row does
-                        ping={pings(tile, waiting) && tile.sent !== true}
+                        ping={pings(tile, waiting)}
                         tip={`${tile.name}: ${nodeLine(tile, run, snap.now, sinceArrived)}`}
                         halo={strain != null && heavyIds.has(tile.id) ? HALO[strain.level] : undefined}
                     />

@@ -9,6 +9,7 @@ import {
     frameOf,
     laneBars,
     needHow,
+    needPings,
     nodeLine,
     nodeTone,
     orbitPoints,
@@ -218,6 +219,30 @@ describe("nodeTone and pings", () => {
         expect(pings(tile("r", { state: "review" }), none)).toBe(false);
     });
 
+    it("an ask whose answer went out stops pinging: it no longer waits", () => {
+        expect(pings(tile("a", { state: "asking", sent: true }), none)).toBe(false);
+        expect(pings(tile("q", { state: "review", sent: true }), new Set(["q"]))).toBe(false);
+        expect(nodeTone(tile("a", { state: "asking", sent: true }), none)).toBe("warning");
+    });
+
+    it("a failed agent pings whether or not its answer went out", () => {
+        expect(pings(tile("f", { state: "asking", sent: true, failed: true }), none)).toBe(true);
+        expect(pings(tile("f", { state: "asking", failed: true }), none)).toBe(true);
+    });
+
+    it("an ask not yet answered pings", () => {
+        expect(pings(tile("a", { state: "asking", sent: false }), none)).toBe(true);
+        expect(pings(tile("a", { state: "asking" }), none)).toBe(true);
+    });
+
+    it("a Needs you row pings until its answer went out; a failed one pings", () => {
+        expect(needPings(ask("a"))).toBe(true);
+        expect(needPings(ask("a", { sent: true }))).toBe(false);
+        expect(needPings(question("q"))).toBe(true);
+        expect(needPings(need("g"))).toBe(true);
+        expect(needPings(need("f", { failed: true }))).toBe(true);
+    });
+
     it("waitingIds holds the agents with a question row", () => {
         expect([...waitingIds([ask("a"), question("q1"), need("g"), question("q2")])].sort()).toEqual(["q1", "q2"]);
         expect(waitingIds(undefined).size).toBe(0);
@@ -319,6 +344,20 @@ describe("laneBars", () => {
         expect(tiny).toEqual({ x: 360, w: 2, state: "failed" });
         const [edge] = laneBars([{ state: "working", from: NOW }], NOW, W);
         expect(edge).toEqual({ x: W - 2, w: 2, state: "working" });
+    });
+
+    it("an open span that began after now (the bridge's clock ran ahead of the snapshot's) draws a 2 px bar at the edge", () => {
+        expect(laneBars([{ state: "failed", from: NOW + 5000 }], NOW, W)).toEqual([
+            { x: W - 2, w: 2, state: "failed" },
+        ]);
+        expect(laneBars([{ state: "asking", from: NOW + 20 * MIN }], NOW, W)).toEqual([
+            { x: W - 2, w: 2, state: "asking" },
+        ]);
+    });
+
+    it("a closed span that ends before it begins is dropped", () => {
+        expect(laneBars([{ state: "working", from: NOW - 10 * MIN, to: NOW - 20 * MIN }], NOW, W)).toEqual([]);
+        expect(laneBars([{ state: "working", from: NOW + 5000, to: NOW + 1000 }], NOW, W)).toEqual([]);
     });
 
     it("keeps the spans' order, and draws nothing in a lane with no width", () => {

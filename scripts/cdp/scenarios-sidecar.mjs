@@ -42,7 +42,7 @@ const SIDECAR_URL = /\/sidecar\.html(?:[?#]|$)/i;
 const SIDECAR_READY = `!!document.querySelector("[data-sidecar-titlebar]")`;
 // the size every shape assert of P is made at (the board's): the page is pinned to it so the layout does not depend on the
 // screen the window opened on
-const WALL_VIEWPORT = { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false };
+const ORBIT_VIEWPORT = { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false };
 const NARROW_VIEWPORT = { width: 900, height: 800, deviceScaleFactor: 1, mobile: false };
 const MIN_WINDOW = { w: 340, h: 440 };
 const SMALL_BREAK_PX = 1100; // layoutFor (sidecarlayout.ts): P from this width, Q under it
@@ -995,6 +995,9 @@ async function orbitStates(h, ctx, side, rec, shot) {
     let answered = [];
     await until(async () => (answered = await actsSince(h, before)).length > 0, 5000);
     const sentShown = await waitFor(side.ev, `[...document.querySelectorAll(${JSON.stringify(needSel(NEED.ask))})].some((r) => r.textContent.includes("Sent"))`, 5000);
+    // an answer that went out no longer waits: the row and the node of that ask stop pinging
+    const sentView = await readDash(side);
+    const sentQuiet = row(sentView, NEED.ask)?.ping === false && drawnOf(sentView, ASK_ID)?.ping === false;
     let toGate = null;
     for (let i = 0; i < 5 && toGate !== NEED.gate; i++) {
         await press(side, "ArrowDown");
@@ -1007,7 +1010,7 @@ async function orbitStates(h, ctx, side, rec, shot) {
     let entered = [];
     await until(async () => (entered = await actsSince(h, beforeEnter)).length > 0, 5000);
     rec(
-        "P-orbit-dashboard keys: ArrowDown selects the answerable ask, 2 sends `{answer, option: 1}` naming its ask and the row then says Sent, and Enter on the gate sends `{need, key}`",
+        "P-orbit-dashboard keys: ArrowDown selects the answerable ask, 2 sends `{answer, option: 1}` naming its ask and the row then says Sent and, with its node, stops pinging, and Enter on the gate sends `{need, key}`",
         selectedFirst === NEED.ask &&
             answered.length === 1 &&
             answered[0]?.kind === "answer" &&
@@ -1015,11 +1018,12 @@ async function orbitStates(h, ctx, side, rec, shot) {
             answered[0].option === 1 &&
             answered[0].key === askIdOf(ASK_ID, ctx.tag) &&
             sentShown &&
+            sentQuiet &&
             toGate === NEED.gate &&
             entered.length === 1 &&
             entered[0]?.kind === "need" &&
             entered[0].key === NEED.gate,
-        { selectedFirst, answered, sentShown, toGate, entered }
+        { selectedFirst, answered, sentShown, sentQuiet, toGate, entered }
     );
     // the gate opened in the main window (a fixture run: it may say so in a toast): back on the Cockpit
     await h.goto("cockpit");
@@ -1064,15 +1068,14 @@ async function orbitStates(h, ctx, side, rec, shot) {
     await applyState(h, ctx, "failed");
     settled = await settleState(side, "failed", "orbit");
     // A fixture run has no engine events to date its failure, so the lead's lane turns red from the build that saw it, and
-    // that red span starts at the bridge's Date.now(), a moment after the snapshot's own `now`. The page draws a bar only
-    // once its `now` (the snapshot's plus the time since it arrived, its clock ticking every 30 s: sidecar.tsx
-    // CLOCK_TICK_MS) is past the span's start, so the first red bar shows within a tick, not at once
+    // that red span starts at the bridge's Date.now(), a moment after the snapshot's own `now`: `laneBars` clamps an open
+    // span's start to the page's `now`, so the bar draws with the snapshot, not on the page's next 30 s clock tick
     const redBarAt = Date.now();
     const redBar = await waitFor(
         side.ev,
         `[...(document.querySelector(${JSON.stringify(`[data-sidecar-lane="${WORK_ID}"]`)})?.querySelectorAll("[data-span-state]") ?? [])].at(-1)?.dataset.spanState === "failed"`,
-        40_000,
-        500
+        REACT_MS,
+        100
     );
     const redBarMs = Date.now() - redBarAt;
     await sleep(600);
@@ -1081,7 +1084,7 @@ async function orbitStates(h, ctx, side, rec, shot) {
     const lead = drawnOf(got, WORK_ID);
     const leadLane = got.lanes.find((l) => l.id === WORK_ID);
     rec(
-        "P-failed (board P-failed): with a task of the run failed the state is `failed` with an error frame and the core in error (`1 run failed`); the first row leads with Failed on `bg-errorbg`, the lead's node is `error` and pings, and its lane's last bar is failed (within the page's 30 s clock tick)",
+        "P-failed (board P-failed): with a task of the run failed the state is `failed` with an error frame and the core in error (`1 run failed`); the first row leads with Failed on `bg-errorbg`, the lead's node is `error` and pings, and its lane's last bar is failed (with the snapshot, no clock tick needed)",
         settled &&
             redBar &&
             shapeOk("failed", got, "orbit") &&
@@ -1243,6 +1246,9 @@ async function compactStates(h, ctx, side, rec, shot) {
     let answered = [];
     await until(async () => (answered = await actsSince(h, before)).length > 0, 5000);
     await sleep(400);
+    // the answer went out: the ask's row and its dot stop pinging
+    const sentView = await readDash(side);
+    const sentQuiet = row(sentView, NEED.ask)?.ping === false && drawnOf(sentView, ASK_ID)?.ping === false;
     await press(side, "ArrowDown");
     await press(side, "ArrowDown");
     await press(side, "ArrowDown");
@@ -1257,19 +1263,20 @@ async function compactStates(h, ctx, side, rec, shot) {
     let opens = [];
     await until(async () => (opens = await actsSince(h, mark)).length > 0, 5000);
     rec(
-        "Q's keys: ArrowDown selects the answerable ask and 1 sends `{answer, option: 0}` naming its ask; on the question row a digit sends nothing and Enter opens its agent in the main window",
+        "Q's keys: ArrowDown selects the answerable ask and 1 sends `{answer, option: 0}` naming its ask, after which its row and dot stop pinging; on the question row a digit sends nothing and Enter opens its agent in the main window",
         first === NEED.ask &&
             answered.length === 1 &&
             answered[0]?.kind === "answer" &&
             answered[0].id === ASK_ID &&
             answered[0].option === 0 &&
             answered[0].key === askIdOf(ASK_ID, ctx.tag) &&
+            sentQuiet &&
             onQuestion === NEED.question &&
             strays.length === 0 &&
             opens.length === 1 &&
             opens[0]?.kind === "open" &&
             opens[0].id === QUESTION_ID,
-        { first, answered, onQuestion, strays, opens }
+        { first, answered, sentQuiet, onQuestion, strays, opens }
     );
     // Enter opened the agent in the main window: back on the Cockpit
     await h.goto("cockpit");
@@ -1375,14 +1382,14 @@ export default function () {
                     await taskbarIdStep(rec, openedAt);
                     await windowCallsStep(side, rec);
                     // only now pin the page: every shape assert below is made at 1920x1080
-                    await side.cdp("Emulation.setDeviceMetricsOverride", WALL_VIEWPORT);
+                    await side.cdp("Emulation.setDeviceMetricsOverride", ORBIT_VIEWPORT);
                     await sleep(400);
 
                     // before the first snapshot the page says it is waiting, with the title bar and no dashboard; clearing the
                     // hold lets the page's next hello through and the dashboard appears within 5 s
                     await h.ev("window.__sidecarHold = true");
                     await side.reload();
-                    await side.cdp("Emulation.setDeviceMetricsOverride", WALL_VIEWPORT);
+                    await side.cdp("Emulation.setDeviceMetricsOverride", ORBIT_VIEWPORT);
                     // past the page's 2 s hello resend, so a hold that let one through would show here
                     await sleep(2600);
                     const waiting = await readDash(side);

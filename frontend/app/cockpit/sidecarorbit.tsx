@@ -31,6 +31,7 @@ import {
     frameOf,
     laneBars,
     needHow,
+    needPings,
     nodeLine,
     nodeTone,
     orbitPoints,
@@ -705,8 +706,8 @@ function NeedRow(props: {
 }) {
     const { need, selected } = props;
     const failed = need.failed === true;
-    // an answer that went out no longer waits: it stops pinging
-    const ping = need.sent !== true;
+    // an answer that went out no longer waits: it stops pinging, as its node does
+    const ping = needPings(need);
     return (
         <div
             role="option"
