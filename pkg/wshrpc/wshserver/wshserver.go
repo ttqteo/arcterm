@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 
 	"github.com/skratchdot/open-golang/open"
 	"github.com/wavetermdev/waveterm/pkg/agentask"
@@ -162,7 +163,11 @@ func staleAgentStatus(ev *wps.WaveEvent) bool {
 // outOfTurnStatus reports a tool hook's working that lands after its session's turn ended with no prompt
 // since: one that started after the Stop, which staleAgentStatus cannot order before it. Only a prompt opens
 // the next turn, and a working nothing will close again would hold every wake to that lead (run dca34385).
-// An idle from a mid-turn compaction's SessionStart does not end the turn: its next tool is still in it.
+// An idle from a mid-turn compaction's SessionStart does not end the turn: its next tool is still in it. Nor does an
+// idle another session reported: a session forked off the tab's (moved to the background, branched) works in a turn
+// of its own while the first still reports into the tab. Dropping the fork's working left the tab's status on the
+// first session's transcript, so the sleep loop read that one's cache and sent a compaction every CompactGiveUp that
+// landed in the fork, and the Sleep resumed the first session (2026-11-16).
 func outOfTurnStatus(ev *wps.WaveEvent) bool {
 	var data baseds.AgentStatusData
 	if utilfn.ReUnmarshal(&data, ev.Data) != nil || data.State != baseds.AgentState_Working {
@@ -177,7 +182,9 @@ func outOfTurnStatus(ev *wps.WaveEvent) bool {
 			if utilfn.ReUnmarshal(&last, prev.Data) != nil {
 				continue
 			}
-			if last.State == baseds.AgentState_Idle && last.Hook != baseds.AgentHook_SessionStart {
+			otherSession := last.TranscriptPath != "" && data.TranscriptPath != "" &&
+				!strings.EqualFold(last.TranscriptPath, data.TranscriptPath)
+			if last.State == baseds.AgentState_Idle && last.Hook != baseds.AgentHook_SessionStart && !otherSession {
 				log.Printf("agent status: dropped %s's working for %s, reported after its turn ended\n", data.Hook, data.ORef)
 				return true
 			}

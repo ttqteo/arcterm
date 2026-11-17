@@ -45,6 +45,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An idle agent about to sleep no longer gets `/compact` every 10 minutes ("Not enough messages to compact") when
+  the compaction does not show up where arcterm looks: one that found nothing to compact, or never landed, lets it
+  sleep. A session forked off an agent's tab (moved to the background) now reports its work into the tab instead of
+  being dropped as late.
 - A council's Summary no longer offers Summarize when every idea in it is still a held draft or was dropped, as the
   Discussion already did: the summary had nothing to work from and could only fail.
 - What a council settled now reaches the project's CLAUDE.md even when an agent or an editor has the file open at that

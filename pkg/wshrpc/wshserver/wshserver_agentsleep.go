@@ -330,6 +330,7 @@ func sleepAfterCompaction(ctx context.Context, row *agentRow, force bool, now ti
 		return nil
 	}
 	c := agentsleep.Candidate{Harness: row.Harness, HasStream: true, Cache: agentsleep.ReadCacheState(lines)}
+	c.CompactFailed = compactFailed(row.blockId, c.Cache.LastTurn)
 	if !agentsleep.CompactBeforeSleep(c, now, currentSleepSettings()) {
 		return nil
 	}
@@ -341,7 +342,7 @@ func sleepAfterCompaction(ctx context.Context, row *agentRow, force bool, now ti
 	if !sendCompact(row.blockId) {
 		return nil
 	}
-	setCompactPending(row.blockId, pendingCompact{sent: now, then: agentsleep.SleepAfterPerson, force: force})
+	setCompactPending(row.blockId, pendingCompact{sent: now, then: agentsleep.SleepAfterPerson, force: force, turn: c.Cache.LastTurn})
 	log.Printf("agent sleep: compacting %q (block %s) before the person's Sleep\n", row.Name, row.blockId)
 	return &wshrpc.CommandAgentsSleepRtnData{Compacting: true}
 }

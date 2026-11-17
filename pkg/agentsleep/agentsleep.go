@@ -58,6 +58,9 @@ type Candidate struct {
 	HasStream    bool       // its session's mod takes a compaction over the control stream, leaving the composer alone
 	CompactSent  time.Time  // when a compaction asked for earlier was sent; zero when none waits to land
 	AfterCompact SleepAfter // who wants it asleep once that compaction lands
+	// a compaction sent at this same last turn gave up without landing: another would fail the same way, so it sleeps
+	// as it is (a cache read off another session's transcript sent one every CompactGiveUp until the cache went cold)
+	CompactFailed bool
 }
 
 // Settings are the person's settings: Sleep idle agents and After idle for, then Compact before the cache goes
