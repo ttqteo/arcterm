@@ -28,7 +28,9 @@ import { sendChannelMessage } from "@/app/view/agents/channelactions";
 import { activeChannelAtom, channelsAtom, primeChannels } from "@/app/view/agents/channelsstore";
 import { harnessesAtom, harnessPreferenceAtom, resolveDefaultRuntime } from "@/app/view/agents/harnessstore";
 import type { Runtime } from "@/app/view/agents/launch";
+import { openLauncher } from "@/app/view/agents/launcherstore";
 import { naFlagsAtom } from "@/app/view/agents/naflagsstore";
+import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { openInFocusedPanel } from "@/app/view/agents/pathlinkroute";
 import { channelProjectLabel } from "@/app/view/agents/projectlabel";
 import { projectListAtom, projectsAtom, recentProjectsAtom, rowsWithChannel } from "@/app/view/agents/projectsstore";
@@ -57,17 +59,14 @@ import {
 } from "@/app/view/code/codestore";
 import { buildBriefIndex, rankBriefRows, type BriefRow } from "@/app/view/jarvis/briefpalette";
 import { workOnInitiative } from "@/app/view/jarvis/initiativeworkaction";
-import { openLauncher } from "@/app/view/agents/launcherstore";
-import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { openAddress, openTarget } from "@/app/view/jarvis/openref";
 import { jarvisHiddenAtom, showJarvis } from "@/app/view/jarvis/pethidestore";
 import { taskListAtom } from "@/app/view/jarvis/tasksstore";
+import { formatChordString } from "@/util/keysym";
 import { joinRepoPath, sameRepoPath } from "@/util/paths";
 import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
-import { formatChordString } from "@/util/keysym";
 import { atom, useAtomValue } from "jotai";
-import { LayoutGroup, motion } from "motion/react";
 import {
     ArrowUpRight,
     CircleX,
@@ -83,6 +82,7 @@ import {
     Users,
     type LucideIcon,
 } from "lucide-react";
+import { LayoutGroup, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { THING_KINDS } from "./actions";
 import {
@@ -1601,7 +1601,11 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         ...(selectedNote != null
             ? [
                   armedDelete
-                      ? { k: "del", text: `${formatChordString("del")} again deletes “${selectedNote.title}”`, arm: true }
+                      ? {
+                            k: "del",
+                            text: `${formatChordString("del")} again deletes “${selectedNote.title}”`,
+                            arm: true,
+                        }
                       : { k: "del", text: `Deletes it, after a second ${formatChordString("del")}` },
               ]
             : []),
@@ -1863,7 +1867,9 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                                     >
                                         <span>{s.label}</span>
                                         {count > 0 ? (
-                                            <span className="text-[10.5px] font-bold tabular-nums text-asking">{count}</span>
+                                            <span className="text-[10.5px] font-bold tabular-nums text-asking">
+                                                {count}
+                                            </span>
                                         ) : null}
                                         {on ? (
                                             <motion.span

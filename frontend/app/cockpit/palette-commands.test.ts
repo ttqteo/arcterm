@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Binding, KeyContext } from "@/app/store/keybindings/types";
-import { describe, expect, it, vi } from "vitest";
 import { THEMES } from "@/app/view/agents/themes";
+import { describe, expect, it, vi } from "vitest";
 import {
     brainstormLaunchOpts,
     buildBrainstormItems,
@@ -47,7 +47,10 @@ describe("buildCommandItems", () => {
     const ctx = postCloseContext("usage");
 
     it("omits bindings tagged paletteHidden", () => {
-        const items = buildCommandItems([bind({ id: "list:next", keys: "j", label: "Next item", paletteHidden: true })], ctx);
+        const items = buildCommandItems(
+            [bind({ id: "list:next", keys: "j", label: "Next item", paletteHidden: true })],
+            ctx
+        );
         expect(items).toEqual([]);
     });
 

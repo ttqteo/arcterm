@@ -1,27 +1,18 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
+import { dismissToast, toastsAtom } from "@/app/cockpit/notificationstore";
+import { buildCommandItems, START_DEFS } from "@/app/cockpit/palette-commands";
+import { escapeMenusOpenAtom } from "@/app/hook/useEscapeClose";
 import { registerModal } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
+import { confirmCloseSession } from "@/app/view/agents/agentactions";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
-import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
-import type { GalleryCanvas } from "@/app/view/agents/canvasgallery";
-import {
-    canvasGalleryAtom,
-    canvasListAtom,
-    cleanupAtom,
-    linkPickerAtom,
-    openLinkPicker,
-    scanAtom,
-    startCleanup,
-} from "@/app/view/agents/canvasgallerystore";
-import type { LauncherKind } from "@/app/view/agents/launcher";
-import { atom, type PrimitiveAtom } from "jotai";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
-import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
 import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
 import { railPanelsAtom, railTranscriptFocusAtom } from "@/app/view/agents/agentrailstore";
+import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
+import { setAgentView } from "@/app/view/agents/agentview";
 import type { BrainstormFile } from "@/app/view/agents/brainstormmodel";
 import { sendBrainstorm } from "@/app/view/agents/brainstormsend";
 import {
@@ -33,6 +24,16 @@ import {
     setReviewCursor,
     updateBrainstorm,
 } from "@/app/view/agents/brainstormstore";
+import type { GalleryCanvas } from "@/app/view/agents/canvasgallery";
+import {
+    canvasGalleryAtom,
+    canvasListAtom,
+    cleanupAtom,
+    linkPickerAtom,
+    openLinkPicker,
+    scanAtom,
+    startCleanup,
+} from "@/app/view/agents/canvasgallerystore";
 import {
     attachCanvas,
     detachCanvas,
@@ -41,36 +42,21 @@ import {
     setMarking,
     updateCanvas,
 } from "@/app/view/agents/canvasstore";
-import { setAgentView } from "@/app/view/agents/agentview";
+import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
 import { getChatMode, setChatMode } from "@/app/view/agents/chatmodestore";
+import { registerCommentSend } from "@/app/view/agents/commentsend";
 import { compareRefsAtom, setCompareRefs } from "@/app/view/agents/comparestore";
+import { councilChatNavAtom, type CouncilChatNav } from "@/app/view/agents/councilchatnav";
+import { commentOnSelection } from "@/app/view/agents/diffcommentlayer";
+import { splitAvailableAtom, splitViewAtom } from "@/app/view/agents/diffoptions";
 import { diffScopeAtom } from "@/app/view/agents/diffscopeatom";
 import { docReviewAtom } from "@/app/view/agents/docreview";
 import { addComment, getDocReview, setGeneralNote, syncDocReview } from "@/app/view/agents/docreviewstore";
 import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
 import { treeModeAtom } from "@/app/view/agents/filetree";
+import { floatModeAtom, minimizeRequested } from "@/app/view/agents/floatstore";
 import { graphOnAtom, historyFiltersAtom, historyScrollAtom, refreshHistory } from "@/app/view/agents/githistorystore";
 import { NO_FILTERS } from "@/app/view/agents/historyquery";
-import type { LineComment } from "@/app/view/agents/linecomments";
-import { activeReviewKeyAtom, lineReviewsAtom, type LineReviewState } from "@/app/view/agents/linecommentstore";
-import { confirmCloseSession } from "@/app/view/agents/agentactions";
-import { floatModeAtom, minimizeRequested } from "@/app/view/agents/floatstore";
-import {
-    dockedTerminalAtom,
-    railVisibleAtom,
-    terminalDockFoldedAtom,
-    terminalFullscreenAtom,
-} from "@/app/view/agents/railstore";
-import { NO_LINEAGE } from "@/app/view/agents/runlineage";
-import { closeSwitcher, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
-import { activeReviewAtom, reviewMarksAtom } from "@/app/view/agents/reviewmarks";
-import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
-import { dismissToast, toastsAtom } from "@/app/cockpit/notificationstore";
-import { buildCommandItems, START_DEFS } from "@/app/cockpit/palette-commands";
-import { openNewCouncil } from "@/app/view/agents/newcouncil";
-import { openToolPicker } from "@/app/view/agents/toolsstore";
-import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
-import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { bandPartsAtom } from "@/app/view/agents/initiativebandstore";
 import {
     initiativeLinkPickerAtom,
@@ -78,37 +64,58 @@ import {
     linkChipSelector,
     openInitiativeLinkPicker,
 } from "@/app/view/agents/initiativepopover";
-import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
-import { briefPeekRecordAtom, briefSheetOpenAtom, chunkMoveAtom } from "@/app/view/jarvis/jarvisstore";
-import { initiativeSheetAtom, sheetChunkMoveAtom } from "@/app/view/jarvis/initiativesheetstore";
-import { activeRunIdAtom, activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
-import { tourAtom } from "@/app/view/jarvis/jarvistourstore";
-import { peekTarget } from "@/app/view/jarvis/openref";
-import { itemKeyCommand } from "@/app/view/jarvis/peekitemmodel";
-import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
-import { peekKeyCommand } from "@/app/view/jarvis/petpeekmodel";
-import { briefCursorInitiativeAtom } from "@/app/view/jarvis/jarvisstore";
-import { councilSheetAtom } from "@/app/view/jarvis/councilsheetstore";
-import { togglePin } from "@/app/view/jarvis/effortstore";
-import { enterReview, exitReview, reviewModeAtom, reviewedAtom, reviewQueueAtom } from "@/app/view/jarvis/reviewstore";
-import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
-import { focusedTerminalBlockId, redrawTerminal } from "@/app/view/term/termwrap";
-import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
-import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
-import { escapeMenusOpenAtom } from "@/app/hook/useEscapeClose";
-import { registerCommentSend } from "@/app/view/agents/commentsend";
-import { commentOnSelection } from "@/app/view/agents/diffcommentlayer";
-import { splitAvailableAtom, splitViewAtom } from "@/app/view/agents/diffoptions";
+import type { LauncherKind } from "@/app/view/agents/launcher";
+import type { LineComment } from "@/app/view/agents/linecomments";
+import { activeReviewKeyAtom, lineReviewsAtom, type LineReviewState } from "@/app/view/agents/linecommentstore";
+import { openNewCouncil } from "@/app/view/agents/newcouncil";
+import {
+    dockedTerminalAtom,
+    railVisibleAtom,
+    terminalDockFoldedAtom,
+    terminalFullscreenAtom,
+} from "@/app/view/agents/railstore";
+import { activeReviewAtom, reviewMarksAtom } from "@/app/view/agents/reviewmarks";
+import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
+import { NO_LINEAGE } from "@/app/view/agents/runlineage";
+import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
+import { closeSwitcher, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
+import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { LIST_COLLAPSED_ROWS } from "@/app/view/agents/usageattribution";
 import { usageLensAtom, usageListShownAtom, usageWorkItemAtom, usageWorkScopeAtom } from "@/app/view/agents/usagestore";
 import { codeReviewsAtom, codeReviewSendOpenAtom, startComment } from "@/app/view/code/codereviewstore";
+import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
 import {
     caretWord,
     codeIndexAtom,
     codeProjectAtom,
+    codeTreeFocusedAtom,
     findReferences,
     goToDefinition,
 } from "@/app/view/code/codestore";
+import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
+import { councilSheetAtom } from "@/app/view/jarvis/councilsheetstore";
+import { togglePin } from "@/app/view/jarvis/effortstore";
+import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
+import { initiativeSheetAtom, sheetChunkMoveAtom } from "@/app/view/jarvis/initiativesheetstore";
+import {
+    briefCursorInitiativeAtom,
+    briefPeekRecordAtom,
+    briefSheetOpenAtom,
+    chunkMoveAtom,
+} from "@/app/view/jarvis/jarvisstore";
+import { activeRunIdAtom, activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
+import { tourAtom } from "@/app/view/jarvis/jarvistourstore";
+import { peekTarget } from "@/app/view/jarvis/openref";
+import { itemKeyCommand } from "@/app/view/jarvis/peekitemmodel";
+import { peekKeyCommand } from "@/app/view/jarvis/petpeekmodel";
+import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
+import { enterReview, exitReview, reviewedAtom, reviewModeAtom, reviewQueueAtom } from "@/app/view/jarvis/reviewstore";
+import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
+import { focusedTerminalBlockId, redrawTerminal } from "@/app/view/term/termwrap";
+import { setPlatform } from "@/util/platformutil";
+import { invoke } from "@tauri-apps/api/core";
+import { atom, type PrimitiveAtom } from "jotai";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
     buildAgentBindings,
     buildChannelsAskBindings,
@@ -125,9 +132,6 @@ import {
     buildUsageBindings,
     closeTarget,
 } from "./bindings";
-import { councilChatNavAtom, type CouncilChatNav } from "@/app/view/agents/councilchatnav";
-import { setPlatform } from "@/util/platformutil";
-import { invoke } from "@tauri-apps/api/core";
 import { listNavAtom } from "./listnav";
 import { matchBinding } from "./matcher";
 import type { KeyContext } from "./types";
@@ -317,11 +321,7 @@ describe("close-agent chord", () => {
         expect(b.when?.({ ...ctx("agent"), modalOpen: true })).toBe(false);
         vi.mocked(confirmCloseSession).mockClear();
         b.run(ctx("agent"));
-        expect(confirmCloseSession).toHaveBeenCalledWith(
-            expect.objectContaining({ id: "a1" }),
-            m,
-            "Mod+Shift+W"
-        );
+        expect(confirmCloseSession).toHaveBeenCalledWith(expect.objectContaining({ id: "a1" }), m, "Mod+Shift+W");
     });
 });
 
@@ -429,17 +429,8 @@ describe("surface switch [ / ]", () => {
 
     it("binds Mod+1..6 to SURFACE_ORDER, so Usage is Mod+4 and Diff is Mod+6", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
-        const chords = buildGlobalBindings(model).filter(
-            (b) => /^Mod:\d$/.test(b.keys) && b.id.startsWith("surface:")
-        );
-        expect(chords.map((b) => b.keys)).toEqual([
-            "Mod:1",
-            "Mod:2",
-            "Mod:3",
-            "Mod:4",
-            "Mod:5",
-            "Mod:6",
-        ]);
+        const chords = buildGlobalBindings(model).filter((b) => /^Mod:\d$/.test(b.keys) && b.id.startsWith("surface:"));
+        expect(chords.map((b) => b.keys)).toEqual(["Mod:1", "Mod:2", "Mod:3", "Mod:4", "Mod:5", "Mod:6"]);
         chords.find((b) => b.keys === "Mod:4")!.run(ctx());
         expect(globalStore.get(model.surfaceAtom)).toBe("usage");
         chords.find((b) => b.keys === "Mod:6")!.run(ctx());
@@ -577,8 +568,15 @@ describe("list-nav bindings", () => {
 
     it("first press from an empty/absent cursor lands on the first id", () => {
         const seen: string[] = [];
-        globalStore.set(listNavAtom, { surface: "jarvis", navigableIds: ["a", "b"], cursorId: undefined, setCursor: (id) => seen.push(id) });
-        buildListNavBindings(stubModel()).find((b) => b.id === "list:next-j")!.run(chanCtx);
+        globalStore.set(listNavAtom, {
+            surface: "jarvis",
+            navigableIds: ["a", "b"],
+            cursorId: undefined,
+            setCursor: (id) => seen.push(id),
+        });
+        buildListNavBindings(stubModel())
+            .find((b) => b.id === "list:next-j")!
+            .run(chanCtx);
         expect(seen).toEqual(["a"]);
         globalStore.set(listNavAtom, null);
     });
@@ -934,7 +932,12 @@ describe("brainstorm pane Escape", () => {
         expect(pick("b").when!(nav)).toBe(true);
         openBrainstormBoard("a1", "Split.dc.html");
         // one, two and three offered: a, b and c pick, d has no answer to pick
-        expect([pick("a"), pick("b"), pick("c"), pick("d")].map((b) => b.when!(nav))).toEqual([true, true, true, false]);
+        expect([pick("a"), pick("b"), pick("c"), pick("d")].map((b) => b.when!(nav))).toEqual([
+            true,
+            true,
+            true,
+            false,
+        ]);
         // b picks B here, rather than leaving for the terminal
         expect(claims("b")).toEqual(["agent:brainstorm-option-b"]);
         setMarking("a1", true);
@@ -1362,7 +1365,10 @@ describe("command palette chord", () => {
 
 describe("new run chord", () => {
     const build = () => {
-        const model = { surfaceAtom: atom<SurfaceKey>("cockpit"), launcherAtom: atom<LauncherKind | null>(null) } as any;
+        const model = {
+            surfaceAtom: atom<SurfaceKey>("cockpit"),
+            launcherAtom: atom<LauncherKind | null>(null),
+        } as any;
         return { model, b: buildGlobalBindings(model).find((x) => x.id === "new-run")! };
     };
 
@@ -1482,7 +1488,10 @@ describe("open sidecar", () => {
 
 describe("new agent chord", () => {
     it("is Mod+N and opens the launcher at the agent door", () => {
-        const model = { surfaceAtom: atom<SurfaceKey>("cockpit"), launcherAtom: atom<LauncherKind | null>(null) } as any;
+        const model = {
+            surfaceAtom: atom<SurfaceKey>("cockpit"),
+            launcherAtom: atom<LauncherKind | null>(null),
+        } as any;
         const b = buildGlobalBindings(model).find((x) => x.id === "new-agent")!;
         expect(b.keys).toBe("Mod:n");
         b.run(ctx());
@@ -3269,7 +3278,10 @@ describe("review mode on the Jarvis surface", () => {
 
     it("steps with the arrows and j/k around the pass, and Enter marks the one it is on and moves on", () => {
         enterReview(["a", "b", "c"], 100);
-        const run = (id: string) => buildJarvisBindings(model).find((b) => b.id === id)!.run(nav);
+        const run = (id: string) =>
+            buildJarvisBindings(model)
+                .find((b) => b.id === id)!
+                .run(nav);
         const cursor = () => globalStore.get(reviewModeAtom)?.cursor;
         run("jarvis:review-next");
         expect(cursor()).toBe("b");

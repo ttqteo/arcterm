@@ -164,7 +164,10 @@ export function filterPickerSections(sections: PickerSection[], query: string): 
         return sections;
     }
     return sections
-        .map((s) => ({ ...s, rows: s.rows.filter((r) => r.model.toLowerCase().includes(q) || r.provider.toLowerCase().includes(q)) }))
+        .map((s) => ({
+            ...s,
+            rows: s.rows.filter((r) => r.model.toLowerCase().includes(q) || r.provider.toLowerCase().includes(q)),
+        }))
         .filter((s) => s.rows.length > 0);
 }
 

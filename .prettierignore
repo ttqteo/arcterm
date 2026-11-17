@@ -6,3 +6,5 @@ frontend/node_modules
 *.min.*
 frontend/app/store/services.ts
 frontend/types/gotypes.d.ts
+# prettier strips the spaces around its code spans that hold backtick fences (```` ```markdown ````), changing the text
+docs/guide/plan-format.md

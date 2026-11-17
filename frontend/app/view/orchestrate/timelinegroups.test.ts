@@ -224,10 +224,12 @@ describe("eventDetail for an actor's action", () => {
 
 describe("eventDetail / groupHasDetail (rows that only repeat their title)", () => {
     it("gives a failed lead wake its reason and the lines behind it", () => {
-        expect(eventDetail(ev(0, "lead-wake-failed", undefined, { reason: "lead exited", lines: ["a", "b"] }))).toEqual({
-            text: "lead exited",
-            pre: "a\nb",
-        });
+        expect(eventDetail(ev(0, "lead-wake-failed", undefined, { reason: "lead exited", lines: ["a", "b"] }))).toEqual(
+            {
+                text: "lead exited",
+                pre: "a\nb",
+            }
+        );
     });
     it("is empty for a sealed evidence row with no note", () => {
         expect(eventDetail(ev(0, "evidence-sealed"))).toEqual({ text: "", pre: "" });

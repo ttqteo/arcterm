@@ -8,9 +8,9 @@ import {
     autoUpdate,
     flip,
     FloatingPortal,
+    size as floatingSize,
     offset,
     shift,
-    size as floatingSize,
     useClick,
     useDismiss,
     useFloating,
@@ -20,6 +20,15 @@ import {
 import { useAtomValue } from "jotai";
 import { Check, ChevronDown, Plus, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from "react";
+import {
+    harnessesAtom,
+    harnessesLoadingAtom,
+    loadRefusedRoutes,
+    refreshHarnessCatalog,
+    refusedRoutesAtom,
+    useEmptyCatalogRetry,
+} from "./harnessstore";
+import type { PickerSection } from "./route";
 import {
     allowPickerSections,
     buildPickerSections,
@@ -31,15 +40,6 @@ import {
     refusedRouteFor,
     scopePickerSections,
 } from "./route";
-import type { PickerSection } from "./route";
-import {
-    harnessesAtom,
-    harnessesLoadingAtom,
-    loadRefusedRoutes,
-    refreshHarnessCatalog,
-    refusedRoutesAtom,
-    useEmptyCatalogRetry,
-} from "./harnessstore";
 import { SubLabel } from "./sectionlabel";
 
 // The panel is portalled to the body so this is measured against the viewport. Rendered in place it was
@@ -239,155 +239,193 @@ export function RoutePicker({
                     data-owns-arrows
                     className="z-[80]"
                 >
-                <PopoverReveal
-                    open={open}
-                    origin="bottom left"
-                    className="flex max-h-[var(--route-picker-max-height)] w-[320px] flex-col overflow-hidden rounded-[11px] border border-border frost p-[5px] shadow-popover-md"
-                >
-                    <div role="group" aria-label="Available routes" className="flex min-h-0 flex-1 flex-col">
-                        <div className="flex items-center justify-between px-[9px] pb-1.5 pt-1">
-                            <SubLabel>{pickerTitleFor(title)}</SubLabel>
-                            <button
-                                type="button"
-                                onClick={() => void refreshHarnessCatalog()}
-                                aria-label="Refresh model catalog"
-                                title="Refresh model catalog"
-                                className="cursor-pointer rounded px-1.5 py-0.5 text-[11px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                            >
-                                <RotateCw size={12} />
-                            </button>
-                        </div>
-                        <input
-                            ref={searchRef}
-                            type="text"
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                                    event.preventDefault();
-                                    focusRow(event.key === "ArrowDown" ? 0 : rowKeys.length - 1);
-                                }
-                            }}
-                            placeholder="filter models…"
-                            aria-label="Filter models"
-                            className="mb-1 w-full rounded-[7px] border border-edge-mid bg-surface px-2 py-1 text-[11.5px] text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                        />
-                        <HarnessChips sections={matched} scope={scope} onScope={setScope} />
-                        {canInherit ? (
-                            <button
-                                type="button"
-                                aria-pressed={inheritedSelected}
-                                data-testid="route-option-inherit"
-                                onClick={() => choose(null)}
-                                className={cn(
-                                    "flex w-full cursor-pointer items-start rounded px-[9px] py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                                    inheritedSelected ? "bg-surface-raised text-accent" : "text-primary hover:bg-surface-hover"
-                                )}
-                            >
-                                <span className="min-w-0 flex-1 text-[12.5px] font-semibold">{emptyLabel}</span>
-                                {inheritedSelected ? <Check size={12} className="mt-[3px] flex-none text-accent" /> : null}
-                            </button>
-                        ) : null}
-                        {extraOption != null ? (
-                            <button
-                                type="button"
-                                aria-pressed={extraSelected}
-                                data-testid="route-option-extra"
-                                onClick={() => {
-                                    extraOption.onSelect();
-                                    close();
-                                }}
-                                className={cn(
-                                    "flex w-full cursor-pointer items-start rounded px-[9px] py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                                    extraSelected ? "bg-surface-raised text-accent" : "text-primary hover:bg-surface-hover"
-                                )}
-                            >
-                                <span className="min-w-0 flex-1 text-[12.5px] font-semibold">{extraOption.label}</span>
-                                {extraSelected ? <Check size={12} className="mt-[3px] flex-none text-accent" /> : null}
-                            </button>
-                        ) : null}
-                        <div data-testid="route-picker-scroll" className="min-h-0 overflow-y-auto overscroll-contain">
-                        {sections.map((section) => (
-                            <div key={section.runtime} className="mt-1 border-t border-border pt-1">
-                                <div className="px-[9px] py-1 text-[11px] font-semibold text-secondary">{section.label}</div>
-                                {section.rows.map((row) => {
-                                    const selectedRow = value?.runtime === row.runtime && value.model === row.model;
-                                    const key = `${row.runtime}:${row.model}`;
-                                    const index = rowKeys.indexOf(key);
-                                    return (
-                                        <button
-                                            key={row.model}
-                                            ref={(node) => {
-                                                if (node == null) {
-                                                    rowRefs.current.delete(key);
-                                                } else {
-                                                    rowRefs.current.set(key, node);
-                                                }
-                                            }}
-                                            type="button"
-                                            onKeyDown={(event) => navigateRow(event, index)}
-                                            aria-pressed={selectedRow}
-                                            data-testid={`route-option-${row.runtime}-${row.model}`}
-                                            data-refused={row.refusedtext ? "true" : undefined}
-                                            title={row.refusedtext || undefined}
-                                            onClick={() => choose({ runtime: row.runtime, model:row.model })}
-                                            className={cn(
-                                                "flex w-full cursor-pointer items-start gap-2 rounded px-[9px] py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                                                selectedRow ? "bg-surface-raised" : "hover:bg-surface-hover",
-                                                row.refusedtext && "opacity-55"
-                                            )}
-                                        >
-                                            <span className="min-w-0 flex-1">
-                                                <span className={cn("block text-[11.5px]", selectedRow ? "text-accent" : "text-primary")}>{row.model}</span>
-                                                <span className="mt-[2px] block text-[10.5px] text-muted">
-                                                    {pickerRowMeta(row)}
-                                                </span>
-                                            </span>
-                                            {selectedRow ? <Check size={12} className="mt-[3px] flex-none text-accent" /> : null}
-                                        </button>
-                                    );
-                                })}
-                                {customId?.runtime === section.runtime ? (
-                                    <div className="flex items-center gap-1.5 px-[9px] py-1.5">
-                                        <input
-                                            autoFocus
-                                            value={customId.draft}
-                                            onChange={(e) => setCustomId({ runtime: section.runtime, draft: e.target.value })}
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter" && customId.draft.trim()) {
-                                                    choose({ runtime: section.runtime, model:customId.draft.trim() });
-                                                }
-                                            }}
-                                            aria-label={`Custom model id for ${section.label}`}
-                                            className="min-w-0 flex-1 rounded-[7px] border border-edge-mid bg-surface px-2 py-1 text-[11px] text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => customId.draft.trim() && choose({ runtime: section.runtime, model:customId.draft.trim() })}
-                                            aria-label="Use custom model"
-                                            className="cursor-pointer rounded-md border border-edge-mid px-2 py-1 text-[10.5px] font-semibold text-secondary hover:border-edge-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                        >
-                                            Use
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <button
-                                        type="button"
-                                        onClick={() => setCustomId({ runtime: section.runtime, draft: "" })}
-                                        className="flex w-full cursor-pointer items-center gap-2 rounded px-[9px] py-1.5 text-left text-[11px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                    >
-                                        <Plus size={12} className="flex-none" />
-                                        custom model id…
-                                    </button>
-                                )}
+                    <PopoverReveal
+                        open={open}
+                        origin="bottom left"
+                        className="flex max-h-[var(--route-picker-max-height)] w-[320px] flex-col overflow-hidden rounded-[11px] border border-border frost p-[5px] shadow-popover-md"
+                    >
+                        <div role="group" aria-label="Available routes" className="flex min-h-0 flex-1 flex-col">
+                            <div className="flex items-center justify-between px-[9px] pb-1.5 pt-1">
+                                <SubLabel>{pickerTitleFor(title)}</SubLabel>
+                                <button
+                                    type="button"
+                                    onClick={() => void refreshHarnessCatalog()}
+                                    aria-label="Refresh model catalog"
+                                    title="Refresh model catalog"
+                                    className="cursor-pointer rounded px-1.5 py-0.5 text-[11px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                >
+                                    <RotateCw size={12} />
+                                </button>
                             </div>
-                        ))}
-                        {sections.length === 0 && !query ? (
-                            <div className="px-[9px] py-2 text-[11px] text-muted">{loading ? "Loading models…" : "No run routes available."}</div>
-                        ) : null}
+                            <input
+                                ref={searchRef}
+                                type="text"
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                                        event.preventDefault();
+                                        focusRow(event.key === "ArrowDown" ? 0 : rowKeys.length - 1);
+                                    }
+                                }}
+                                placeholder="filter models…"
+                                aria-label="Filter models"
+                                className="mb-1 w-full rounded-[7px] border border-edge-mid bg-surface px-2 py-1 text-[11.5px] text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            />
+                            <HarnessChips sections={matched} scope={scope} onScope={setScope} />
+                            {canInherit ? (
+                                <button
+                                    type="button"
+                                    aria-pressed={inheritedSelected}
+                                    data-testid="route-option-inherit"
+                                    onClick={() => choose(null)}
+                                    className={cn(
+                                        "flex w-full cursor-pointer items-start rounded px-[9px] py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                        inheritedSelected
+                                            ? "bg-surface-raised text-accent"
+                                            : "text-primary hover:bg-surface-hover"
+                                    )}
+                                >
+                                    <span className="min-w-0 flex-1 text-[12.5px] font-semibold">{emptyLabel}</span>
+                                    {inheritedSelected ? (
+                                        <Check size={12} className="mt-[3px] flex-none text-accent" />
+                                    ) : null}
+                                </button>
+                            ) : null}
+                            {extraOption != null ? (
+                                <button
+                                    type="button"
+                                    aria-pressed={extraSelected}
+                                    data-testid="route-option-extra"
+                                    onClick={() => {
+                                        extraOption.onSelect();
+                                        close();
+                                    }}
+                                    className={cn(
+                                        "flex w-full cursor-pointer items-start rounded px-[9px] py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                        extraSelected
+                                            ? "bg-surface-raised text-accent"
+                                            : "text-primary hover:bg-surface-hover"
+                                    )}
+                                >
+                                    <span className="min-w-0 flex-1 text-[12.5px] font-semibold">
+                                        {extraOption.label}
+                                    </span>
+                                    {extraSelected ? (
+                                        <Check size={12} className="mt-[3px] flex-none text-accent" />
+                                    ) : null}
+                                </button>
+                            ) : null}
+                            <div
+                                data-testid="route-picker-scroll"
+                                className="min-h-0 overflow-y-auto overscroll-contain"
+                            >
+                                {sections.map((section) => (
+                                    <div key={section.runtime} className="mt-1 border-t border-border pt-1">
+                                        <div className="px-[9px] py-1 text-[11px] font-semibold text-secondary">
+                                            {section.label}
+                                        </div>
+                                        {section.rows.map((row) => {
+                                            const selectedRow =
+                                                value?.runtime === row.runtime && value.model === row.model;
+                                            const key = `${row.runtime}:${row.model}`;
+                                            const index = rowKeys.indexOf(key);
+                                            return (
+                                                <button
+                                                    key={row.model}
+                                                    ref={(node) => {
+                                                        if (node == null) {
+                                                            rowRefs.current.delete(key);
+                                                        } else {
+                                                            rowRefs.current.set(key, node);
+                                                        }
+                                                    }}
+                                                    type="button"
+                                                    onKeyDown={(event) => navigateRow(event, index)}
+                                                    aria-pressed={selectedRow}
+                                                    data-testid={`route-option-${row.runtime}-${row.model}`}
+                                                    data-refused={row.refusedtext ? "true" : undefined}
+                                                    title={row.refusedtext || undefined}
+                                                    onClick={() => choose({ runtime: row.runtime, model: row.model })}
+                                                    className={cn(
+                                                        "flex w-full cursor-pointer items-start gap-2 rounded px-[9px] py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                                        selectedRow ? "bg-surface-raised" : "hover:bg-surface-hover",
+                                                        row.refusedtext && "opacity-55"
+                                                    )}
+                                                >
+                                                    <span className="min-w-0 flex-1">
+                                                        <span
+                                                            className={cn(
+                                                                "block text-[11.5px]",
+                                                                selectedRow ? "text-accent" : "text-primary"
+                                                            )}
+                                                        >
+                                                            {row.model}
+                                                        </span>
+                                                        <span className="mt-[2px] block text-[10.5px] text-muted">
+                                                            {pickerRowMeta(row)}
+                                                        </span>
+                                                    </span>
+                                                    {selectedRow ? (
+                                                        <Check size={12} className="mt-[3px] flex-none text-accent" />
+                                                    ) : null}
+                                                </button>
+                                            );
+                                        })}
+                                        {customId?.runtime === section.runtime ? (
+                                            <div className="flex items-center gap-1.5 px-[9px] py-1.5">
+                                                <input
+                                                    autoFocus
+                                                    value={customId.draft}
+                                                    onChange={(e) =>
+                                                        setCustomId({ runtime: section.runtime, draft: e.target.value })
+                                                    }
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "Enter" && customId.draft.trim()) {
+                                                            choose({
+                                                                runtime: section.runtime,
+                                                                model: customId.draft.trim(),
+                                                            });
+                                                        }
+                                                    }}
+                                                    aria-label={`Custom model id for ${section.label}`}
+                                                    className="min-w-0 flex-1 rounded-[7px] border border-edge-mid bg-surface px-2 py-1 text-[11px] text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        customId.draft.trim() &&
+                                                        choose({
+                                                            runtime: section.runtime,
+                                                            model: customId.draft.trim(),
+                                                        })
+                                                    }
+                                                    aria-label="Use custom model"
+                                                    className="cursor-pointer rounded-md border border-edge-mid px-2 py-1 text-[10.5px] font-semibold text-secondary hover:border-edge-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                                >
+                                                    Use
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => setCustomId({ runtime: section.runtime, draft: "" })}
+                                                className="flex w-full cursor-pointer items-center gap-2 rounded px-[9px] py-1.5 text-left text-[11px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                            >
+                                                <Plus size={12} className="flex-none" />
+                                                custom model id…
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                                {sections.length === 0 && !query ? (
+                                    <div className="px-[9px] py-2 text-[11px] text-muted">
+                                        {loading ? "Loading models…" : "No run routes available."}
+                                    </div>
+                                ) : null}
+                            </div>
                         </div>
-                    </div>
-                </PopoverReveal>
+                    </PopoverReveal>
                 </div>
             </FloatingPortal>
         </div>
@@ -396,12 +434,23 @@ export function RoutePicker({
 
 // One chip per harness that still has rows under the current query, so a harness with three models is one
 // click away instead of ~490 rows down the list. Hidden when there is nothing to choose between.
-function HarnessChips({ sections, scope, onScope }: { sections: PickerSection[]; scope: string | null; onScope: (runtime: string | null) => void }) {
+function HarnessChips({
+    sections,
+    scope,
+    onScope,
+}: {
+    sections: PickerSection[];
+    scope: string | null;
+    onScope: (runtime: string | null) => void;
+}) {
     if (sections.length < 2) {
         return null;
     }
     const active = sections.some((s) => s.runtime === scope) ? scope : null;
-    const chips = [{ runtime: null as string | null, label: "All" }, ...sections.map((s) => ({ runtime: s.runtime, label: s.label }))];
+    const chips = [
+        { runtime: null as string | null, label: "All" },
+        ...sections.map((s) => ({ runtime: s.runtime, label: s.label })),
+    ];
     return (
         <div className="mb-1 flex flex-wrap gap-1 px-[1px]">
             {chips.map((chip) => (
@@ -413,7 +462,9 @@ function HarnessChips({ sections, scope, onScope }: { sections: PickerSection[];
                     onClick={() => onScope(chip.runtime)}
                     className={cn(
                         "cursor-pointer rounded-full border px-2 py-[2px] text-[10.5px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                        active === chip.runtime ? "border-accent-700 bg-surface-raised text-accent" : "border-border text-muted hover:text-secondary"
+                        active === chip.runtime
+                            ? "border-accent-700 bg-surface-raised text-accent"
+                            : "border-border text-muted hover:text-secondary"
                     )}
                 >
                     {chip.label}
