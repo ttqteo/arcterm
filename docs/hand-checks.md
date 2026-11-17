@@ -177,7 +177,10 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   Chat shows a yellow card titled `Accessing workspace:` with its text and two buttons, `No, exit` and `Yes, I trust
   this folder` (no numbers), the second one highlighted. Yes picks it (the terminal moves on past the prompt) and the
   card goes. If no card shows, the prompt has no solid rule over it on the real screen: capture its PTY output for
-  `tuiscreen.fixtures.json`.
+  `tuiscreen.fixtures.json`. With wavesrv from "fix(agents): an agent on Claude Code's folder trust prompt reads
+  asking" (Go tests, and the scanner on that agent's real stored output, only), the agent also reads asking in the
+  tree and counts in Needs you while the prompt waits, even unopened (`waveapp.log`: "shows Claude Code's folder trust
+  prompt; reading it asking"); after Yes it reads idle, or working on the restore's nudge, and after No, exit idle.
 - [ ] (arcterm) **An unclosed tag in a Markdown Preview shows as text; a highlight around a bare link closes.** Unit
   tests only, no dev app ran (commit "fix(markdown): an unclosed tag in a Preview shows as text; a mark closes on the
   == a bare URL swallowed"). Open `harnesspov/harnesspov/agent/prompts/system.md` (mit-thesis) in Preview: line 4
