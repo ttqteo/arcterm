@@ -107,6 +107,9 @@ import { frostProbe, frostVerdict } from "./overlays-frost/frostcheck.mjs";
 import overlaysFrostScenarios from "./scenarios-overlays-frost.mjs";
 import paletteBrainstormResumeScenarios from "./scenarios-palette-brainstorm-resume.mjs";
 import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
+import sessionSearchFindScenarios from "./scenarios-session-search-find.mjs";
+import sessionSearchHistoryScenarios from "./scenarios-session-search-history.mjs";
+import sessionSearchLauncherScenarios from "./scenarios-session-search-launcher.mjs";
 import setupInstructionsScenarios from "./scenarios-setup-instructions.mjs";
 import sidecarScenarios from "./scenarios-sidecar.mjs";
 import surfacesSpringScenarios from "./scenarios-surfaces-spring.mjs";
@@ -72980,6 +72983,9 @@ export const SCENARIOS = [
     ...diffStatesScenarios(KAEL_KITS),
     ...usageLensScenarios(KAEL_KITS),
     ...usageWorkScenarios(KAEL_KITS),
+    ...sessionSearchLauncherScenarios(KAEL_KITS),
+    ...sessionSearchHistoryScenarios(KAEL_KITS),
+    ...sessionSearchFindScenarios(KAEL_KITS),
     ...setupInstructionsScenarios(KAEL_KITS),
     ...kaelKeysScenarios(KAEL_KITS),
     ...kaelAskKeysScenarios(KAEL_KITS),
