@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **No white flash switching between HTML files.** Lint and the typecheck only. Open two dark HTML
+  pages as tabs in the File pane (or Code), switch back and forth: the pane stays dark until the page draws, a page
+  with no background still shows on white, and a kept scroll position still comes back.
+
 - [ ] (arcterm) **Session search on your real transcripts.** The three `session-search-*` scenarios answer the search
   from a mock; nothing has run `SearchSessions` over real transcripts in the app. Agent → Conversation History → type a
   word you remember from an old Claude conversation → "N results" (with "· indexing…" the first time, clearing on its
