@@ -37,16 +37,21 @@ import {
     CornerLeftUp,
     Diamond,
     Ellipsis,
+    FileCheck,
     Folder,
     GitCommitHorizontal,
     GitFork,
+    LayoutGrid,
+    Lightbulb,
     LightbulbOff,
     Maximize2,
+    MessageSquare,
     Minimize2,
     PanelRight,
     PictureInPicture2,
     Plus,
     RotateCw,
+    SquareTerminal,
     Workflow,
     Wrench,
     X,
@@ -69,7 +74,7 @@ import { canForkInChat } from "./chatfork";
 import { forkFromChat } from "./chatforkaction";
 import { cellView, cellViewOptions, chatCapable, type CellView } from "./chatmode";
 import { selectCellView, useChatMode } from "./chatmodestore";
-import { ASLEEP_VIEW_TITLE, ChatToggle } from "./chatswitch";
+import { ASLEEP_VIEW_TITLE } from "./chatswitch";
 import { canDrive } from "./consumers";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
@@ -147,6 +152,8 @@ export const ICON_BTN_ON = "border-accent/50 bg-accentbg text-accent hover:bg-ac
 // an icon-button that is off for now (Close and More while the agent wakes)
 const ICON_BTN_OFF =
     "disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted";
+// the glyph before each word of the view switch (Chat, Terminal, Brainstorm, Canvas, Review)
+const VIEW_ICON = 13;
 
 // the view control's options as words: "chat, terminal or canvas" (or "Chat, Terminal and Canvas")
 function listViews(views: CellView[], join: "and" | "or", capital: boolean): string {
@@ -544,9 +551,6 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const lean = chatShown && shownView === "chat";
     const viewControl = chatShown || hasCanvas || docReview != null || brainstorm != null;
     const viewOptions = cellViewOptions(chatShown, hasCanvas, docReview != null, brainstorm != null);
-    // Chat and Terminal alone are one icon toggle, as in a split cell's bar; with a canvas, brainstorm or review the
-    // worded control picks among them all
-    const chatToggleOnly = chatShown && !hasCanvas && docReview == null && brainstorm == null;
 
     // The grid's cells, to tell the Split button whether a split is showing. Only agents and terminals with a terminal
     // can be cells (gridstore.eligibleIds).
@@ -917,9 +921,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         <ChevronLeft size={12} strokeWidth={2} aria-hidden />
                     </button>
                 ) : null}
-                {chatToggleOnly ? (
-                    <ChatToggle agent={agent} iconSize={15} className={ICON_BTN} />
-                ) : viewControl ? (
+                {viewControl ? (
                     // one control for whatever can stand in the terminal's place: a canvas or a brainstorm (never both), a
                     // Doc review, or both; and for a Claude agent, Chat or its terminal in the terminal's own slot
                     <Segmented<CellView>
@@ -933,7 +935,12 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 ? [
                                       {
                                           key: "chat" as const,
-                                          label: "Chat",
+                                          label: (
+                                              <>
+                                                  <MessageSquare size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
+                                                  Chat
+                                              </>
+                                          ),
                                           title: chatAsleep
                                               ? "Chat: the conversation so far"
                                               : `Chat (${formatChordString("Mod:Shift:k")})`,
@@ -942,7 +949,12 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 : []),
                             {
                                 key: "terminal",
-                                label: "Terminal",
+                                label: (
+                                    <>
+                                        <SquareTerminal size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
+                                        Terminal
+                                    </>
+                                ),
                                 title: chatAsleep
                                     ? ASLEEP_VIEW_TITLE
                                     : chatShown
@@ -957,6 +969,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                           key: "brainstorm" as const,
                                           label: (
                                               <>
+                                                  <Lightbulb size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
                                                   Brainstorm
                                                   {brainstormDot === "asking" ? (
                                                       <span
@@ -982,6 +995,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                           key: "canvas" as const,
                                           label: (
                                               <>
+                                                  <LayoutGrid size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
                                                   Canvas
                                                   {isUnseen(canvas) ? (
                                                       <span
@@ -1001,6 +1015,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                           key: "review" as const,
                                           label: (
                                               <>
+                                                  <FileCheck size={VIEW_ICON} strokeWidth={1.9} aria-hidden />
                                                   Review
                                                   {view !== "review" && !sent ? (
                                                       <span
@@ -1025,20 +1040,6 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                   : setAgentView(agent.id, v, Date.now())
                         }
                     />
-                ) : null}
-                {blockId != null ? (
-                    <button
-                        type="button"
-                        data-agent-header-more
-                        aria-haspopup="menu"
-                        aria-label="More"
-                        onClick={openHeaderMenu}
-                        disabled={held}
-                        title={heldTitle ?? "More: open a tool, redraw, interrupt, details"}
-                        className={cn(ICON_BTN, ICON_BTN_OFF)}
-                    >
-                        <Ellipsis size={15} strokeWidth={1.8} aria-hidden />
-                    </button>
                 ) : null}
                 {canSplit && splitInHeader ? (
                     <button
@@ -1134,6 +1135,19 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 </motion.span>
                             </motion.button>
                         ) : null}
+                        {/* More sits by Close, the way a window's menu sits by its close button */}
+                        <button
+                            type="button"
+                            data-agent-header-more
+                            aria-haspopup="menu"
+                            aria-label="More"
+                            onClick={openHeaderMenu}
+                            disabled={held}
+                            title={heldTitle ?? "More: open a tool, redraw, interrupt, details"}
+                            className={cn(ICON_BTN, ICON_BTN_OFF)}
+                        >
+                            <Ellipsis size={15} strokeWidth={1.8} aria-hidden />
+                        </button>
                         <button
                             type="button"
                             onClick={closeTerminal}

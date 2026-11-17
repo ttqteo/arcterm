@@ -570,11 +570,6 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   link back to the lead (↰ icon) is cut with an ellipsis at about 220px, the project name stays readable, and the model
   and context figure stop short of the Chat | Terminal switch; hovering the link shows the whole name. Vitest + eslint
   only, not tried in the app (`agentheader.tsx` `RunLinkItem`).
-- [ ] (arcterm) Chat / Terminal is one icon button: open a Claude agent → the header shows a terminal icon where the
-  Chat | Terminal words were; click it → the terminal shows and the icon becomes a speech bubble; click again → Chat.
-  Split two Claude agents → each cell bar has the same small icon. Asleep the icon is dimmed and does nothing. Attach a
-  canvas → the header shows the worded Chat | Terminal | Canvas control again. Typecheck only, not tried in the app;
-  the `agent-chat` CDP scenario was updated but not run (`chatswitch.tsx` `ChatToggle`).
 - [ ] (arcterm) Agent header buttons: open an agent → the header has More (⋯), Float and Close, no Split or Fullscreen
   button; ⋯ lists Split (its submenu) and Fullscreen terminal. Settings → Appearance → Agent header: turn Split and
   Fullscreen on → both buttons come back and Split leaves ⋯; turn Float off → its button goes and ⋯ lists Float window.
