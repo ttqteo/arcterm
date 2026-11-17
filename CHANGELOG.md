@@ -54,6 +54,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Working line no longer repeats the running call, and a finished stretch shows its time only from 10 s up. A finished
   turn that changed files ends in a card of those files with their +/− lines; click a file to open it in the Diff, or
   See all for every change.
+- Chat's box is one line now: `+` at its left, your text, and Send (Stop while the agent works) at its right. It grows
+  for several lines, an attachment or a `!` command, with `+` and Send moving to a row at its bottom. The model and
+  effort, the permission mode and the context ring sit under the box as plain text, and the Show the diff / Open the
+  terminal chips and the suggested replies sit above it.
 - The second line of each row in the Agent tree (a run's workers chip and progress, an agent's model and badges, a
   conversation's details) starts at the row's left edge, under its icon, so a narrow tree shows more of it: a run's
   "Working · 0/3" now reads whole from a 240 px tree instead of 300 px. Narrower than that, the run's line leaves out

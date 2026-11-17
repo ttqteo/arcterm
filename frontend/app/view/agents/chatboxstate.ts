@@ -69,7 +69,7 @@ export function boxPlaceholder(state: BoxState, agentName: string, override?: st
 /** A piece of a hint line: plain text, or a key drawn as a keycap. */
 export type HintPart = string | { key: string };
 
-/** The idle or asleep line while suggested replies show under the box: it names Tab, which walks them (chatsuggest.ts
+/** The idle or asleep line while suggested replies show above the box: it names Tab, which walks them (chatsuggest.ts
  *  stepPick). Asleep it still says a message wakes the agent, as a chip's does. Only those two lines with no question
  *  waiting get it; every other state keeps its own words. */
 export function boxTabPlaceholder(agentName: string, asleep = false): HintPart[] {
@@ -77,4 +77,28 @@ export function boxTabPlaceholder(agentName: string, asleep = false): HintPart[]
         return [`message ${agentName} to wake it, `, { key: "Tab" }, " for suggestions… (Enter)"];
     }
     return [`Reply to ${agentName}, `, { key: "Tab" }, " for suggestions, @ to mention, / for commands"];
+}
+
+/** The box's layout (chat-compact-composer/Main.dc.html): one row 44px high (`+`, the text, Send or Stop), or grown, the
+ *  text and the attachments on top and `+` and Send/Stop in a row at the bottom. */
+export type BoxLayout = "row" | "grown";
+
+export interface BoxLayoutInput {
+    /** the text in the box, as the agent would receive it */
+    text: string;
+    /** how many attachments wait in the box */
+    attachments: number;
+    /** the text is a bash command (`!`): its caption and shell well need the grown box */
+    bash: boolean;
+    /** the editor measured past one line since the text was last empty. It is a latch, not the current measure: a line
+     *  that wraps only at the row's narrower width would fit again once grown, and the box would flip back and forth */
+    wrapped: boolean;
+}
+
+/** Several lines, an attachment or bash mode grow the box; an empty text lets go of a wrap. */
+export function boxLayout(i: BoxLayoutInput): BoxLayout {
+    if (i.bash || i.attachments > 0 || i.text.includes("\n") || (i.wrapped && i.text !== "")) {
+        return "grown";
+    }
+    return "row";
 }
