@@ -16,6 +16,12 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The one-line Chat box's menus and asleep line.** The `chat-redesign` scenario checks the row, the
+  grown box and the line under it, not these. In Chat with a live Claude agent: click the model ("Opus 5.5 High")
+  under the box → its menu opens upward, its right edge on the model's, and Effort / More models open their panels to
+  the menu's left, all on screen in a narrow float window too; the permission mode opens its menu the same way. Put the
+  agent to sleep → "Asleep · …" with the moon sits at the left of the line under the box, the model muted at its right,
+  `+` gone from the box and Send reading Wake. `chatfooter.tsx`, `chatcomposer.tsx`.
 - [ ] (arcterm) **The When row's choices are pill badges.** Prettier only. + Run → a project → the third column's
   When row shows Run now, After run… and Queue as separate rounded pills (wrapping on a narrow column, "After run…"
   never cut off), the picked one accent-tinted, and the one Jarvis suggests carries a small "Jarvis" badge inside it

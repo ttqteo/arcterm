@@ -38,10 +38,22 @@ describe("parseSteps", () => {
     });
 
     it("skips a line that does not parse and trims the text", () => {
-        expect(parseSteps("Steps:\n[x]   Look  \n[?] odd\n- [ ] bullet\n[ ]\n\n[>] Find\r\n")).toEqual([
+        expect(parseSteps("Steps:\n[x]   Look  \n[?] odd\n- bullet\n[ ]\n\n[>] Find\r\n")).toEqual([
             { text: "Look", state: "done" },
             { text: "Find", state: "working" },
         ]);
+    });
+
+    it("reads a step written as a Markdown task list item, past its bullet or number", () => {
+        expect(parseSteps("- [x] Look\n* [>] Find\n+ [ ] Fix\n1. [ ] Test\n2) [ ] Ship")).toEqual([
+            { text: "Look", state: "done" },
+            { text: "Find", state: "working" },
+            { text: "Fix", state: "pending" },
+            { text: "Test", state: "pending" },
+            { text: "Ship", state: "pending" },
+        ]);
+        // a bullet with no space before the marker is not one
+        expect(parseSteps("-[ ] tight")).toEqual([]);
     });
 
     it("is empty when no line parses", () => {

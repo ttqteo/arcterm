@@ -49381,7 +49381,7 @@ const crbSeed = (h, ctx) =>
         const then = now - 2 * 3_600_000;
         const conversation = {
             id: ${JSON.stringify(CRB_SESSION_ID)}, runtime: "claude", projectpath: path, projectname: ${JSON.stringify(ctx.project)}, branch: "",
-            task: ${JSON.stringify(CRB_SESSION_TASK)}, model: "", tokenstotal: 0, lastactivets: then, resumecommand: "", transcriptpath: "",
+            task: ${JSON.stringify(CRB_SESSION_TASK)}, model: "", tokenstotal: 0, lastactivets: then, resumecommand: "claude --resume ${CRB_SESSION_ID}", transcriptpath: "",
             status: "done", startedts: then - 60_000, durationms: 60_000, events: [],
         };
         globalStore.set(S.sessionsArchiveAtom, [conversation, ...(globalStore.get(S.sessionsArchiveAtom) ?? []).filter((s) => s.id !== conversation.id)]);

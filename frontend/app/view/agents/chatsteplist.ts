@@ -21,8 +21,10 @@ export interface Step {
 const MARKER_STATE: Record<string, StepState> = { x: "done", X: "done", ">": "working", " ": "pending" };
 const STATE_MARKER: Record<StepState, string> = { done: "x", working: ">", pending: " " };
 
-// `[x] text`, `[>] text`, `[ ] text`; leading and trailing blanks are not part of the step
-const STEP_LINE = /^\s*\[([xX> ])\]\s+(\S.*?)\s*$/;
+// `[x] text`, `[>] text`, `[ ] text`; leading and trailing blanks are not part of the step. A list bullet before the
+// marker (`- [ ]`, `* [x]`, `1. [>]`), as a Markdown task list writes it, is read past: an agent writing that form got
+// a code block where its checklist should have been
+const STEP_LINE = /^\s*(?:[-*+]\s+|\d+[.)]\s+)?\[([xX> ])\]\s+(\S.*?)\s*$/;
 
 /** Pure: a block's steps, in order. A line that does not parse is skipped; [] when none does. */
 export function parseSteps(raw: string): Step[] {
