@@ -42,6 +42,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A canvas board's screenshot button (Copy, at the board's top right) shows a camera instead of the copy icon.
 - A queue tag in the Agent tree (`#1`, `×2`) opens the Heavy jobs popover with that row's jobs selected, so you see at
   once which one is yours.
 - The agent header no longer shows the Alt+C keycap, and Mark done no longer shows its `m` keycap (its tooltip still
