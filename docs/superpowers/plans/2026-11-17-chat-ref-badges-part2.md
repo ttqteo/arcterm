@@ -170,9 +170,93 @@ Run the tests — PASS.
 git commit -m "feat(chat): the @ picker offers past conversations and initiatives" -- frontend/app/view/agents/refmention.ts frontend/app/view/agents/refmention.test.ts frontend/app/view/agents/refmentionstore.ts frontend/app/view/agents/filemention.tsx
 ```
 
-### Task 4: Scenario, changelog, hand check
+### Task 4: The box badges a typed or pasted token, and a deleted pill takes one space
 
-**Depends on:** Task 3 (the scenario's picker step lists the conversation and initiative rows it adds)
+**Depends on:** Task 1 (both edit `chateditormodel.test.ts`; the transform badges the session: and effort: kinds Task 1 adds)
+
+**Files:** `frontend/app/view/agents/chateditor.tsx`, `frontend/app/view/agents/chateditormodel.ts`, `frontend/app/view/agents/chateditormodel.test.ts`
+
+Two gaps part 1 left (spec "In the box"):
+
+- Today a reference becomes a badge in the box only when the box's value is set from outside (a pick from `@`, a
+  draft brought back): `chateditor.tsx` rebuilds its nodes only there (`$rebuild(segmentsOf(...))` under the
+  `external` tag). A token the person types or pastes stays text until it is sent.
+- Backspace on a selected pill (`$deletePill`, the `$isNodeSelection` branch) removes the node and leaves the gap
+  spaces on both sides, so `đọc agent:7cd99627 ` reads `đọc  ` (two spaces). The same happens to an `@path` pill.
+
+**Step 1: Failing tests** (in `chateditormodel.test.ts`), for two new pure helpers in `chateditormodel.ts`:
+
+```ts
+describe("refRunsIn", () => {
+    it("finds a finished token, not one still being typed", () => {
+        expect(refRunsIn("đọc agent:7cd99627 ", 19)).toEqual([{ start: 4, end: 18, raw: "agent:7cd99627" }]);
+        expect(refRunsIn("đọc agent:7cd99627", 18)).toEqual([]); // caret at its end: still typing
+        expect(refRunsIn("đọc agent:7cd99627, ok", 22)).toEqual([{ start: 4, end: 18, raw: "agent:7cd99627" }]);
+    });
+    it("takes a pasted run of several", () => {
+        expect(refRunsIn("run:071a8e3b council:c41d9e02 ", 30).map((r) => r.raw)).toEqual([
+            "run:071a8e3b",
+            "council:c41d9e02",
+        ]);
+    });
+    it("leaves an @path alone", () => {
+        expect(refRunsIn("@src/agent:7cd9.ts ", 19)).toEqual([]);
+    });
+});
+
+describe("gapToDrop", () => {
+    it("drops the space after a pill that has a space on both sides", () => {
+        expect(gapToDrop("đọc ", " ")).toBe("after");
+        expect(gapToDrop("đọc ", " tiếp")).toBe("after");
+    });
+    it("drops the space before a pill at the end of the line", () => {
+        expect(gapToDrop("đọc ", "")).toBe("before");
+    });
+    it("drops the space after a pill at the start of the line", () => {
+        expect(gapToDrop("", " tiếp")).toBe("after");
+    });
+    it("keeps a single space and punctuation", () => {
+        expect(gapToDrop("đọc", " tiếp")).toBeNull();
+        expect(gapToDrop("đọc ", ", tiếp")).toBeNull();
+    });
+});
+```
+
+Run: `npx vitest run frontend/app/view/agents/chateditormodel.test.ts` — FAIL.
+
+**Step 2: Implement the helpers.** `refRunsIn(text, caret?)` returns the `ref` segments of `segmentsOf(text, caret)` with
+their offsets (only refs: a typed `@path` keeps today's rule, it pills only from outside); `gapToDrop(before, after)`
+says which of the two gap spaces a removed pill leaves behind goes: `"after"` when `after` starts with a space and
+`before` is empty or ends in a space, `"before"` when `after` is empty and `before` ends in a space, else `null`. Run
+the tests — PASS.
+
+**Step 3: Badge while typing.** In the `TextNode` transform `chateditor.tsx` registers for `$gapAroundPills` (not while
+composing, not in bash mode: `props.current.bash` draws no pills), before the gap rule: take the caret's offset in the
+node when the selection's focus is in it, run `refRunsIn(node text, that offset)`, and for each run (from the last to
+the first) split the text node at its ends (`splitText`) and replace the middle with
+`$createRefMentionNode(seg.ref, seg.id, seg.raw)`; put the caret back where it was in the text (after the badge when it
+was in the text after it). The box's value stays the same string (the badge's text is its `raw`), so the
+update listener sends no change and no `external` rebuild follows. A paste goes through the same transform: a pasted
+token followed by a space or punctuation becomes a badge, one at the very end waits for the next character, as a typed
+one does.
+
+**Step 4: One space after a delete.** In `$deletePill`'s node-selection branch, for each removed pill read the text
+just before it and just after it in its line (the sibling text nodes, or "" at a line edge or beside another pill),
+remove the pill, then drop one space as `gapToDrop` says (the first character of the text after, or the last of the
+text before), and place the caret where the pill was. This applies to `@path` pills too.
+
+**Step 5: Check.** `npx vitest run frontend/app/view/agents/chateditormodel.test.ts` — PASS. The scenario steps that
+show both are Task 5's.
+
+**Step 6: Commit**
+
+```bash
+git commit -m "feat(chat): a reference typed or pasted in the box becomes a badge; deleting a pill leaves one space" -- frontend/app/view/agents/chateditor.tsx frontend/app/view/agents/chateditormodel.ts frontend/app/view/agents/chateditormodel.test.ts
+```
+
+### Task 5: Scenario, changelog, hand check
+
+**Depends on:** Task 3, Task 4 (the scenario's picker step lists the rows Task 3 adds; its typing and delete steps show Task 4)
 
 **Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/hand-checks.md`
 
@@ -183,14 +267,21 @@ git commit -m "feat(chat): the @ picker offers past conversations and initiative
   titles start "No conversation 77aa01fe" / "No initiative deadbeef";
 - typing `@init` into the box lists an initiative group (or, with none in the dev store, no error and the files list
   still shown), and typing `@conv` lists the conversation rows (the fixture's own transcript is a conversation of
-  the archive once it has loaded; if the dev store's archive is empty, record the row count instead of failing).
+  the archive once it has loaded; if the dev store's archive is empty, record the row count instead of failing);
+- typing (key events, not a value set from outside) `xem run:<the seeded run's 8> ` into an empty box leaves a
+  `[data-chat-ref]` badge in the box whose name is the run's goal, and the box's text (`crbBoxText`) is exactly
+  `xem run:<8> `; typing `agent:<A8>` with no character after it leaves it as text (no new badge);
+- part 1's delete step (Backspace twice beside a badge) now reads the box's text with a single space where the badge
+  was (`đọc ` before, it read `đọc  `).
 
 Run: `CDP_PORT=9222 task verify:ui -- chat-ref-badges` — PASS.
 
 **Step 2: Changelog.** Widen part 1's `Added` line (same `## Unreleased`): "References to agents, runs, councils,
 past conversations and initiatives you write in Chat …".
 
-**Step 3: Hand check.** Add to `docs/hand-checks.md`:
+**Step 3: Hand check.** In `docs/hand-checks.md`, in the line "Chat ref badges with real data", replace "A token typed
+or pasted into the box stays text (badges only in the bubble)." with "A token typed or pasted into the box becomes a
+badge once a space or punctuation follows it; deleting a badge leaves one space." Then add:
 `- [ ] (arcterm) Chat ref badges: a session: of a recent conversation shows its title and age and reopens it; an effort: shows its done/total and opens the initiative`
 
 **Step 4: Commit**

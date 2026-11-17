@@ -51,9 +51,10 @@ opens what it names.
   7cd99627 is open", "No run 071a8e3b in this project", "agent:7cd9 names 2 agents".
 - **In the box** a resolved or unresolved token becomes a Lexical decorator node as `@path` does: a click selects it,
   Backspace beside it selects it (accent ring, `border-accent bg-accent/12`), Backspace again deletes the whole token.
-  It forms only when the box's value is set from outside (a pick from `@`, a draft or prompt brought back), the rule
-  `@path` pills follow; a token typed or pasted stays text, since the box rebuilds its nodes only on an outside value
-  (`chateditor.tsx`) and a typing-time rebuild is editor work outside v1. No motion: it is a keyboard action seen often.
+  It forms when the box's value is set from outside (a pick from `@`, a draft or prompt brought back), and, from part
+  2, when a typed or pasted token is followed by a space or punctuation (a `TextNode` transform), so a half-typed id
+  is not boxed; a typed `@path` keeps today's rule. Deleting a badge or a file pill takes one of the two gap spaces
+  around it with it, so `đọc agent:… ` reads `đọc `, not two spaces. No motion: it is a keyboard action seen often.
 - **In the bubble** a resolved badge is a button that opens its target through `openTarget` with the full id
   (`openref.ts`: agent → its terminal on the Agent surface, run → Jarvis, council → its discussion); Ctrl-click
   peeks, as other router links do. Hover brightens the badge (`hover:brightness-125`, `transition-[filter]`), so one class lifts every
