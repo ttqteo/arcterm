@@ -80,6 +80,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run's Final verification shows a long output line whole, wrapped in its box, instead of cutting it off at the
+  box's right edge.
 - A highlighted sentence in Chat that ends on a bare link (`==… http://localhost:4321/.==`) is highlighted again,
   instead of showing its `==` marks with the link running on into them.
 - A Markdown Preview that holds a placeholder in angle brackets (`<a complete script>`, `<name>`) shows it as written,

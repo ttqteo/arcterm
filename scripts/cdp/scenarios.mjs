@@ -24429,7 +24429,9 @@ const FST_COMMIT = "c0ffee5a".padEnd(40, "0");
 // Part A's commands run. Verify writes three lines and then one every 3s for 15 minutes: the engine publishes the
 // tail from the command's own writes, the first one at once and then at most every 10s
 const FST_MARK = "final-stage verify";
-const FST_LIVE_VERIFY = `printf '${FST_MARK} 1\\n${FST_MARK} 2\\n${FST_MARK} 3\\n'; for i in $(seq 1 300); do sleep 3; echo "${FST_MARK} still running $i"; done`;
+// a line far wider than the pane, as a dev app's start line with its config path: it wraps, and its end shows
+const FST_LONG = `${FST_MARK} long ${"/users/x/final-shots/f68b0618-72a1/tauri.final.json".repeat(8)} end-of-long-line`;
+const FST_LIVE_VERIFY = `printf '${FST_MARK} 1\\n${FST_LONG}\\n${FST_MARK} 2\\n${FST_MARK} 3\\n'; for i in $(seq 1 300); do sleep 3; echo "${FST_MARK} still running $i"; done`;
 const FST_LIVE_FINAL = "true";
 const FST_KEPT_MARK = "final-stage kept check output";
 const FST_DETAIL = [
@@ -24531,6 +24533,11 @@ const FST_AGENT = `(() => {
                   text: flat(pane),
                   steps: stepsOf(pane),
                   output: outputOf(pane),
+                  // the output box shows every line whole: nothing runs past its right edge
+                  outputFits: (() => {
+                      const box = pane.querySelector("[data-final-output]");
+                      return box != null && box.scrollWidth <= box.clientWidth + 1;
+                  })(),
                   end: pane.querySelector("[data-final-end]") != null,
                   form: pane.querySelector("[data-run-sheet-end-final]") != null,
                   past: pastOf(pane),
@@ -25324,13 +25331,15 @@ const finalStageScenario = {
         await finalShotsClick(h, `${FST_TREE}?.querySelector("[data-final-row]")`);
         a = await fstUntil(h, FST_AGENT, (s) => s.rows[0].selected && s.pane.output != null && s.stage != null);
         rec(
-            "A4. clicking the tree's row focuses it: the pipeline, the running command and its output, the stage's facts and step list once, and End final stage",
+            "A4. clicking the tree's row focuses it: the pipeline, the running command and its output (a long line wrapped, not cut), the stage's facts and step list once, and End final stage",
             () =>
                 a.rows[0].selected &&
                 a.railSteps === a.stage.steps.length &&
                 fstSame(fstStates(a.pane.steps), ["passed", "running", "waiting", "waiting"]) &&
                 a.pane.text.includes(`$ ${FST_LIVE_VERIFY}`) &&
                 a.pane.output.includes(`${FST_MARK} 3`) &&
+                a.pane.output.includes("end-of-long-line") &&
+                a.pane.outputFits &&
                 a.pane.end &&
                 fstSame(fstStates(a.stage.steps), ["passed", "running", "waiting", "waiting"]) &&
                 ["Commit", "Tree", "Reviewers"].every((fact) => a.stage.text.includes(fact)) &&
