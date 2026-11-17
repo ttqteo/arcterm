@@ -83,6 +83,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   instead of showing its `==` marks with the link running on into them.
 - A Markdown Preview that holds a placeholder in angle brackets (`<a complete script>`, `<name>`) shows it as written,
   instead of turning everything after it into one link or hiding it.
+- Once a brainstorm's run is under way, its agent's row in the Agent sidebar drops the builder check and judge chip
+  and their rows; a check that still asks you, or that you have selected, stays.
 - Chat's quick pick card now shows when an agent names its canvas options as "**A, chip trầm**", with a comma
   after the letter, instead of leaving you only the guessed reply chips.
 - A brainstorm you keep talking in after its run finished shows its cards in Chat again (a builder question, Confirm the

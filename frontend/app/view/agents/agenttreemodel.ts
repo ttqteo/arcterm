@@ -138,6 +138,24 @@ export function checksShown(
     return live;
 }
 
+/** Pure: whether a brainstorm's check and judge sessions are behind it, so its row drops them, chip and rows: a run the
+ *  agent started (`originId`) was made after the last of their records, the brainstorm approved and running. One that
+ *  asks you or holds the focus still shows (checksShown), and a check started after that run is a new one. */
+export function checksSuperseded(
+    owner: Pick<AgentVM, "id" | "builderCheck" | "brainstormJudge">,
+    nested: readonly { agent: AgentVM }[],
+    runs: Record<string, Pick<RunInfo, "originId" | "createdTs">>,
+    focusId: string | undefined
+): boolean {
+    if (nested.some((n) => n.agent.state === "asking" || n.agent.id === focusId)) {
+        return false;
+    }
+    const last = Math.max(
+        ...[owner.builderCheck, owner.brainstormJudge].map((r) => (r?.runId ? r.ts : Number.NEGATIVE_INFINITY))
+    );
+    return Object.values(runs).some((r) => r.originId === owner.id && r.createdTs != null && r.createdTs > last);
+}
+
 const NO_FOLDS: TreeFolds = { collapsed: new Set(), doneOpen: new Map(), queuedOpen: new Set(), extrasOpen: new Set() };
 
 export function taskFoldKey(runId: string, taskId: string): string {
@@ -517,6 +535,8 @@ export function buildAgentTree(
     }
     type Nested = { agent: AgentVM; stageRole: string; state: BuilderCheckRecord["state"] };
     const checks = new Map<string, Nested[]>(); // by the brainstorming agent's id
+    // the agents whose checks a run they started has left behind: nothing of them shows or counts (checksSuperseded)
+    const superseded = new Set<string>();
 
     const groups: { project: string; items: TopItem[] }[] = [];
     const byProject = new Map<string, TopItem[]>();
@@ -549,6 +569,12 @@ export function buildAgentTree(
             push({ kind: "parent", agent: a, project: projectOf(a) || UNGROUPED_PROJECT });
         }
     }
+    for (const [ownerId, nested] of checks) {
+        const owner = sorted.find((a) => a.id === ownerId);
+        if (owner != null && checksSuperseded(owner, nested, lineage.runs, focusId)) {
+            superseded.add(ownerId);
+        }
+    }
 
     const byId = new Map(agents.map((a) => [a.id, a] as const));
     const rows: AgentTreeRow[] = [];
@@ -577,7 +603,7 @@ export function buildAgentTree(
         // own folder either way)
         const withChecks = (row: Extract<AgentTreeRow, { kind: "parent" }>): AgentTreeRow[] => {
             const nested = checks.get(row.agent.id);
-            if (nested == null || nested.length === 0) {
+            if (nested == null || nested.length === 0 || superseded.has(row.agent.id)) {
                 return [row];
             }
             const key = checksKey(nested.map((n) => n.agent.runId ?? n.agent.id));
@@ -589,7 +615,8 @@ export function buildAgentTree(
         };
         for (const item of g.items) {
             if (item.kind === "parent") {
-                const members = [item.agent, ...(checks.get(item.agent.id) ?? []).map((n) => n.agent)];
+                const nested = superseded.has(item.agent.id) ? [] : (checks.get(item.agent.id) ?? []);
+                const members = [item.agent, ...nested.map((n) => n.agent)];
                 count += members.length;
                 attn += members.filter((a) => a.state === "asking").length;
                 running += members.filter((a) => a.state === "working").length;
