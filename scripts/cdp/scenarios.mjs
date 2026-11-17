@@ -49954,27 +49954,48 @@ const chatRefBadges = {
                     const b = ${inBubble(tokens.run)}?.closest('[role="button"]');
                     return b ? { filter: getComputedStyle(b).filter, hovered: b.matches(":hover") } : null;
                 })()`);
+            const runWrap = `${inBubble(tokens.run)}?.closest('[role="button"]')`;
+            // a reading once the filter's transition has reached what the step expects, or past 3 s, as it stands then
+            const filterSettled = async (want) => {
+                await polishWaitFor(h, `${runWrap} && getComputedStyle(${runWrap}).filter === ${JSON.stringify(want)}`, 3000);
+                return filterOf();
+            };
+            // A move that lands on the badge can still leave the wrapper short of :hover on a busy machine (run 3b228cde's
+            // Final: hit, yet hovered false and filter none 400 ms later): the bubble redraws or shifts the badge under a
+            // pointer at rest, and the new node gets :hover only on the next move. So each try finds the centre again, moves
+            // there, and waits for :hover; the hover style itself is still what the step asserts.
+            const hoverRun = async () => {
+                let at = null;
+                for (let tries = 1; tries <= 4; tries++) {
+                    at = await centreOf(inBubble(tokens.run));
+                    if (at?.hit) {
+                        await mouse("mouseMoved", at.x, at.y);
+                        if (await polishWaitFor(h, `!!${runWrap}?.matches(":hover")`, 2000)) return { ...at, tries };
+                        await mouse("mouseMoved", 2, 2);
+                    }
+                    await polishNap(250);
+                }
+                return at && { ...at, tries: 0 };
+            };
             const runAt = bubbleBadges ? await centreOf(inBubble(tokens.run)) : null;
-            // a point off every badge: the corner of the page, past the transition before each reading
+            // a point off every badge: the corner of the page
             let rest = null;
+            let hoverAt = null;
             let hover = null;
             let away = null;
             if (runAt?.hit) {
                 await mouse("mouseMoved", 2, 2);
-                await polishNap(400);
-                rest = await filterOf();
-                await mouse("mouseMoved", runAt.x, runAt.y);
-                await polishNap(400);
-                hover = await filterOf();
+                rest = await filterSettled("none");
+                hoverAt = await hoverRun();
+                hover = await filterSettled("brightness(1.25)");
                 await mouse("mouseMoved", 2, 2);
-                await polishNap(400);
-                away = await filterOf();
+                away = await filterSettled("none");
             }
             rec(
                 "9. moving the mouse over the run badge's role=button wrapper makes its computed filter brightness(1.25), and moving away returns it to none",
                 runAt?.hit === true && rest?.filter === "none" && rest.hovered === false && hover?.filter === "brightness(1.25)" && hover.hovered === true &&
                     away?.filter === "none" && away.hovered === false,
-                { runAt, rest, hover, away }
+                { runAt, hoverAt, rest, hover, away }
             );
         } catch (e) {
             rec("the scenario threw", false, String(e?.stack ?? e));
