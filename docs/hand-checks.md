@@ -640,3 +640,4 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   once a space or punctuation follows it; deleting one leaves one space.
   Checked only with seeded atoms in the `chat-ref-badges` CDP scenario, not against a real project's runs and councils.
 - [ ] (arcterm) Chat ref badges: a session: of a recent conversation shows its title and age and a click reopens it as an agent; an effort: whose chunks are all done shows its done/total in green
+- [ ] (arcterm) Chat box: a token finished through Telex (the IME's composition end) becomes a badge, and a real clipboard paste of `xem run:<id> agent:<id> ` gives two badges; the scenario types with key events only, so neither path ran in a live app
