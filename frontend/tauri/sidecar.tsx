@@ -9,7 +9,7 @@
 import { SidecarCompact } from "@/app/cockpit/sidecarcompact";
 import { layoutFor, type FormChange, type SidecarLayout } from "@/app/cockpit/sidecarlayout";
 import { SidecarOrbit } from "@/app/cockpit/sidecarorbit";
-import { SidecarTitleBar, toggleSidecarFullscreen } from "@/app/cockpit/sidecartitlebar";
+import { NATIVE_MAC_FRAME, SidecarTitleBar, toggleSidecarFullscreen } from "@/app/cockpit/sidecartitlebar";
 import {
     SIDECAR_ACT_EVENT,
     SIDECAR_SNAPSHOT_EVENT,
@@ -169,6 +169,10 @@ function SidecarRoot() {
 }
 
 loadFonts();
+// a native Mac window rounds its corners, so the alert frame (an inset edge over the whole window) follows them
+if (NATIVE_MAC_FRAME) {
+    document.documentElement.style.setProperty("--sidecar-corner", "12px");
+}
 // the window never scrolls: P is drawn to fit it, and Q's Needs you list scrolls inside itself
 document.body.classList.add("overflow-hidden");
 createRoot(document.getElementById("sidecar")!).render(<SidecarRoot />);

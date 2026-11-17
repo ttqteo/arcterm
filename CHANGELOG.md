@@ -47,6 +47,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- On a Mac, Sidecar is a native window like the main one: rounded corners, a shadow and the traffic lights, whose
+  green button takes it full screen in both its forms.
 - A file an agent edited on your other machine (a session started on Windows and resumed on the Mac) opens from the
   card at a turn's end, found in the agent's folder here, instead of "This file no longer exists".
 

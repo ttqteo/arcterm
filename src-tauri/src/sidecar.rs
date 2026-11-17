@@ -769,6 +769,32 @@ pub fn sidecar_app_id(identifier: &str, dev: bool) -> String {
     format!("{identifier}{}.sidecar", if dev { "-dev" } else { "" })
 }
 
+/// The page draws its own title bar, as the main window's does. On Windows the window has no frame at all and the page
+/// draws the window buttons too. On macOS it keeps the native frame with the title bar laid over the page
+/// (`tauri.macos.conf.json` does the same for the main window): a frameless window there has square corners, no shadow
+/// and no traffic lights, so no green button for full screen. The page learns which from `?frame=mac`, and leaves the
+/// lights their room and drops its own window buttons. The red light raises the `CloseRequested` the page's close does.
+fn sidecar_builder(app: &AppHandle) -> WebviewWindowBuilder<'_, tauri::Wry, AppHandle> {
+    #[cfg(target_os = "macos")]
+    let page = "sidecar.html?frame=mac";
+    #[cfg(not(target_os = "macos"))]
+    let page = "sidecar.html";
+    let builder = WebviewWindowBuilder::new(app, SIDECAR_LABEL, WebviewUrl::App(page.into()))
+        .title(TITLE)
+        .inner_size(FIRST_SIZE.0, FIRST_SIZE.1)
+        .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
+        .resizable(true);
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        // the main window's place for them: both title bars are 38 px tall on a Mac
+        .traffic_light_position(tauri::LogicalPosition::new(16.0, 21.0));
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.decorations(false);
+    builder
+}
+
 /// Open Sidecar: the window built hidden, placed and shown when there is none; unminimized, shown and focused when
 /// there is one.
 pub fn open(app: &AppHandle) -> tauri::Result<()> {
@@ -786,15 +812,7 @@ fn open_window(app: &AppHandle, focus: bool) -> tauri::Result<()> {
         win.show()?;
         return win.set_focus();
     }
-    let win = WebviewWindowBuilder::new(app, SIDECAR_LABEL, WebviewUrl::App("sidecar.html".into()))
-        .title(TITLE)
-        .inner_size(FIRST_SIZE.0, FIRST_SIZE.1)
-        .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
-        .resizable(true)
-        // the page draws its own title bar, as the main window's does
-        .decorations(false)
-        .visible(false)
-        .build()?;
+    let win = sidecar_builder(app).visible(false).build()?;
     // its own taskbar button (Windows): its own AppUserModelID, no pinning (a pin of it would relaunch arcterm, not
     // Sidecar), and its own icon (arcterm's mark with a screen badge, the frame made for each size). On the main thread,
     // where COM is up for the property store.

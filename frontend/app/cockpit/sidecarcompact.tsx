@@ -620,7 +620,7 @@ export function SidecarCompact({ snap, receivedAt, clock, send }: SidecarCompact
                 aria-hidden="true"
                 data-sidecar-frame-edge
                 className={cn(
-                    "pointer-events-none fixed inset-0 z-50 transition-[box-shadow] duration-500 motion-reduce:transition-none",
+                    "pointer-events-none fixed inset-0 z-50 rounded-[var(--sidecar-corner,0px)] transition-[box-shadow] duration-500 motion-reduce:transition-none",
                     FRAME[frame]
                 )}
             />
