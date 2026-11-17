@@ -1,5 +1,5 @@
 // session-search-launcher: the magnifier and filter box in the New agent dialog's Project and Session columns
-// (docs/superpowers/plans/2026-11-17-session-search.md, Task 5; board A of the `session-search` canvas). One scenario,
+// (spec docs/superpowers/specs/2026-11-17-session-search-design.md; board A of the `session-search` canvas). One scenario,
 // `session-search-launcher`: it answers `searchsessions`, `getrecentsessions` and `getsessionpeek` in-page through
 // RpcApi.setMockRpcClient, so it never depends on the developer's transcripts, and registers two temp projects the way
 // launcher-resume does. It never presses Launch or Resume. kit is scenarios.mjs's KAEL_KITS ({ rt, code, files, jarvis }).

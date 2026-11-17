@@ -1,5 +1,5 @@
 // session-search-find: opening a search result at its hit, with the find bar
-// (docs/superpowers/plans/2026-11-17-session-search.md, Task 7). One scenario, `session-search-find`: it answers
+// (spec docs/superpowers/specs/2026-11-17-session-search-design.md). One scenario, `session-search-find`: it answers
 // `getsessionsactivity` and `getagenttranscript` in-page through RpcApi.setMockRpcClient (as installAhMock in
 // scenarios.mjs does), so it never depends on the developer's transcripts, and it opens a hit by calling openSessionHit
 // (sessionsfind.ts) with a mocked SessionSearchResult, so it does not depend on History's search box either.
