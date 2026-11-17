@@ -15,9 +15,11 @@ const SHIM_MODULES: Record<string, () => Promise<Record<string, unknown>>> = {
     "http.ts": () => import("./http"),
 };
 
-// every .ts/.tsx under frontend/ but tests, built output and the stand-ins themselves
+// every .ts/.tsx under frontend/ but tests, built output and the stand-ins themselves, read once for the file: the
+// walk reads ~2,000 files, which under the full suite took past vitest's 5 s
+let read: { path: string; text: string }[] | undefined;
 function sources(): { path: string; text: string }[] {
-    return readdirSync(FRONTEND, { recursive: true, encoding: "utf8" })
+    read ??= readdirSync(FRONTEND, { recursive: true, encoding: "utf8" })
         .filter(
             (p) =>
                 /\.tsx?$/.test(p) &&
@@ -25,6 +27,7 @@ function sources(): { path: string; text: string }[] {
                 !/(^|[\\/])(dist|node_modules|browsershim)[\\/]/.test(p)
         )
         .map((p) => ({ path: p, text: readFileSync(join(FRONTEND, p), "utf8") }));
+    return read;
 }
 
 // module -> value names the frontend takes from it, static (import { a, type B }) and dynamic (const { a } = await import())
