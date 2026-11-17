@@ -37,6 +37,7 @@ const session = (id: string, task: string, agoMs: number, extra: Partial<Session
         projectname: "arcterm",
         task,
         lastactivets: NOW - agoMs,
+        resumecommand: `claude --resume ${id}`,
         ...extra,
     }) as SessionActivity;
 
@@ -164,6 +165,21 @@ describe("sessionRefs", () => {
         expect(refs[1].id).toBe("o0000000");
         // without a project path the newest 20 are all that is listed
         expect(sessionRefs([...others, mine], "", NOW).map((r) => r.id)).not.toContain("mine0000-1");
+    });
+
+    it("lists only what the palette lists: no engine worker, reviewer or stage, nor one that cannot resume", () => {
+        const refs = sessionRefs(
+            [
+                session("plain000-1", "a conversation", HOUR),
+                session("lead0000-1", "a run's lead", HOUR, { role: "lead" }),
+                session("worker00-1", "a worker", HOUR, { role: "worker" }),
+                session("review00-1", "a reviewer", HOUR, { role: "reviewer" }),
+                session("noresume-1", "cannot resume", HOUR, { resumecommand: "" }),
+            ],
+            "",
+            NOW
+        );
+        expect(refs.map((r) => r.id)).toEqual(["plain000-1", "lead0000-1"]);
     });
 
     it("is empty before the archive loads", () => {
