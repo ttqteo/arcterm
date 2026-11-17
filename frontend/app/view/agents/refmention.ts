@@ -91,8 +91,9 @@ export function councilRefs(councils: readonly Council[] | null | undefined): Re
     }));
 }
 
-/** The past conversations a chat can refer to, from the archive's loaded pages: the newest 20, those at the chat
- *  project's path first (`projectPath`, the registered path; the scan names a session's project for the last segment of
+/** The past conversations a chat can refer to, from the archive's loaded pages: the ones the command palette lists
+ *  (resumable, outside an engine run or its lead; a run's workers, reviewers and stages would fill the 20), the newest
+ *  20, those at the chat project's path first (`projectPath`, the registered path; the scan names a session's project for the last segment of
  *  its cwd, which a registered name need not equal), each group newest first. Ordered before the cut, so the project's one
  *  old conversation is not pushed out by 20 newer ones elsewhere. */
 export function sessionRefs(
@@ -101,7 +102,9 @@ export function sessionRefs(
     now: number
 ): RefItem[] {
     const here = projectPath === "" ? "" : normPath(projectPath);
-    const newestFirst = [...(sessions ?? [])].sort((a, b) => b.lastactivets - a.lastactivets);
+    // paletteSessions' rule; sessionsarchivestore.ts is not pure, so it is repeated here
+    const picked = (sessions ?? []).filter((s) => s.resumecommand && (!s.role || s.role === "lead"));
+    const newestFirst = [...picked].sort((a, b) => b.lastactivets - a.lastactivets);
     const ordered =
         here === ""
             ? newestFirst

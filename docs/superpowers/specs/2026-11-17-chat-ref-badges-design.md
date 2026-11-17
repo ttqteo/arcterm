@@ -99,7 +99,8 @@ Mockup: board `Session-effort.dc.html` of the same canvas. Built after part 1 la
 - **Tooltip:** `Fix CDP fails · conversation 9f31d0b4 · claude · arcterm · 3d ago (click to open)`;
   `Chat polish · initiative e9b20f17 · 4 of 9 chunks done (click to open)`.
 - **Unresolved:** as part 1 ("No conversation 77aa01fe in the loaded history", "No initiative e9b20f17").
-- **Picker:** the `@` list also offers conversations (the newest 20 of the loaded archive, the chat's project first)
+- **Picker:** the `@` list also offers conversations (the newest 20 of the loaded archive that the command palette
+  lists, `paletteSessions`' rule: resumable, not an engine run's worker, reviewer or stage; the chat's project first)
   and initiatives (not archived, the chat's project first); `@session`, `@conv`, `@hội thoại`, `@effort`,
   `@initiative` narrow to a kind; a pick writes `session:<8>` / `effort:<8>`.
 
