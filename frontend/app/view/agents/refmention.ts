@@ -8,7 +8,7 @@
 
 import type { AgentVM } from "./agentsviewmodel";
 
-export type RefKind = "agent" | "run" | "council";
+export type RefKind = "agent" | "run" | "council" | "session" | "effort";
 
 export interface RefItem {
     kind: RefKind;
@@ -32,6 +32,8 @@ const KIND_WORDS: Record<RefKind, readonly string[]> = {
     agent: ["agent", "agents", "chat", "tab"],
     run: ["run", "runs"],
     council: ["council", "councils", "hội đồng"],
+    session: ["session", "sessions", "conversation", "conversations", "hội thoại"],
+    effort: ["effort", "efforts", "initiative", "initiatives"],
 };
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -86,7 +88,7 @@ export function councilRefs(councils: readonly Council[] | null | undefined): Re
     }));
 }
 
-const kindOrder: Record<RefKind, number> = { agent: 0, run: 1, council: 2 };
+const kindOrder: Record<RefKind, number> = { agent: 0, run: 1, council: 2, session: 3, effort: 4 };
 
 /** The kind a query asks for by name: "@run", "@coun", "@agent" (two letters at least), else null. */
 export function queryKind(query: string): RefKind | null {

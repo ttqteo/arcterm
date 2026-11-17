@@ -132,8 +132,20 @@ describe("segmentsOf and references", () => {
         ]);
     });
     it("makes nothing of a word that only looks like one", () => {
-        expect(segmentsOf("agent:7cd and xagent:7cd99627 and session:7cd99627")).toEqual([
-            text("agent:7cd and xagent:7cd99627 and session:7cd99627"),
+        expect(segmentsOf("agent:7cd and xagent:7cd99627 and xsession:7cd99627")).toEqual([
+            text("agent:7cd and xagent:7cd99627 and xsession:7cd99627"),
+        ]);
+    });
+    it("makes a ref segment of a session: or effort: reference that is finished", () => {
+        expect(segmentsOf("đọc session:9f31d0b4 ")).toEqual([
+            text("đọc "),
+            { kind: "ref", ref: "session", id: "9f31d0b4", raw: "session:9f31d0b4" },
+            text(" "),
+        ]);
+        expect(segmentsOf("xem effort:e9b20f17 nhé")).toEqual([
+            text("xem "),
+            { kind: "ref", ref: "effort", id: "e9b20f17", raw: "effort:e9b20f17" },
+            text(" nhé"),
         ]);
     });
 });
