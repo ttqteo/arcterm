@@ -98,6 +98,67 @@ export function segmentLength(s: Segment): number {
     return s.kind === "text" ? s.text.length : s.kind === "ref" ? s.raw.length : mentionText(s.path).length;
 }
 
+/** An atom (a file pill or a reference) found in a text, with where it is: `start` to `end` is the token as written. */
+export interface AtomRun {
+    start: number;
+    end: number;
+    seg: Exclude<Segment, { kind: "text" }>;
+}
+
+/** Pure: the file mentions and references in `text` that are finished, with their offsets, in order: what the box makes a
+ *  pill or a badge of once typed or pasted, by the rules of `segmentsOf` (`caret` as there: a token the caret is in or at
+ *  the end of is still being typed, and left out; with no caret every finished token counts). */
+export function atomRunsIn(text: string, caret?: number): AtomRun[] {
+    const out: AtomRun[] = [];
+    let at = 0;
+    for (const seg of segmentsOf(text, caret)) {
+        const end = at + segmentLength(seg);
+        if (isAtom(seg)) {
+            out.push({ start: at, end, seg });
+        }
+        at = end;
+    }
+    return out;
+}
+
+/** Where a caret stands once a text's runs are swapped for pills and badges (`caretAmongRuns`): `gap` is the text between
+ *  the runs (0 before the first run, `n` after run `n - 1`) and `offset` the characters into it; `before` is the run the
+ *  caret sits right before with no text between them. */
+export type RunCaret = { gap: number; offset: number } | { before: number };
+
+/** Pure: the caret's place among the runs of its text once they are swapped, so the swap can put it back where it was in
+ *  the text. A caret in the text between runs, or against a run's start with text before it, is in that text (the end of
+ *  it); one at a run's start with no text before it (the caret at 0 and a token starting there: `xagent:7cd99627 ` with
+ *  the `x` deleted) is `before` that run, which `replace` would otherwise carry to its far side. A caret inside a run is
+ *  null: `atomRunsIn` leaves a token the caret is in or ends. `runs` are in order and apart. */
+export function caretAmongRuns(runs: { start: number; end: number }[], caret: number): RunCaret | null {
+    for (let gap = 0; gap <= runs.length; gap++) {
+        const from = gap === 0 ? 0 : runs[gap - 1].end;
+        if (caret < from) {
+            return null;
+        }
+        const to = gap === runs.length ? Number.POSITIVE_INFINITY : runs[gap].start;
+        if (caret <= to) {
+            return from === to ? { before: gap } : { gap, offset: caret - from };
+        }
+    }
+    return null;
+}
+
+/** Pure: which of the two spaces around a pill that is taken away goes with it, so deleting `đọc @a/b.ts tiếp` leaves
+ *  `đọc tiếp` and not two spaces. `before` and `after` are the text right before and right after the pill in its line ("" at
+ *  the line's edge or beside another pill). "after" when a space follows and the pill is at the line's start or has a space
+ *  before it; "before" when the pill ends the line after a space; null otherwise (a single space, or punctuation, stays). */
+export function gapToDrop(before: string, after: string): "before" | "after" | null {
+    if (after.startsWith(" ") && (before === "" || before.endsWith(" "))) {
+        return "after";
+    }
+    if (after === "" && before.endsWith(" ")) {
+        return "before";
+    }
+    return null;
+}
+
 /** Pure: the offset in the whole text of a place in the segments. In a text run `offset` is characters into it; for a
  *  pill or a reference it is 0 (before it) or 1 (after it). An offset out of range is clamped; an index past the list is
  *  the end. */

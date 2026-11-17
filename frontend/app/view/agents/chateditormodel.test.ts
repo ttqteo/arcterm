@@ -3,8 +3,11 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    atomRunsIn,
     bangSkip,
+    caretAmongRuns,
     fromShown,
+    gapToDrop,
     isAtom,
     locate,
     mentionText,
@@ -132,8 +135,20 @@ describe("segmentsOf and references", () => {
         ]);
     });
     it("makes nothing of a word that only looks like one", () => {
-        expect(segmentsOf("agent:7cd and xagent:7cd99627 and session:7cd99627")).toEqual([
-            text("agent:7cd and xagent:7cd99627 and session:7cd99627"),
+        expect(segmentsOf("agent:7cd and xagent:7cd99627 and xsession:7cd99627")).toEqual([
+            text("agent:7cd and xagent:7cd99627 and xsession:7cd99627"),
+        ]);
+    });
+    it("makes a ref segment of a session: or effort: reference that is finished", () => {
+        expect(segmentsOf("đọc session:9f31d0b4 ")).toEqual([
+            text("đọc "),
+            { kind: "ref", ref: "session", id: "9f31d0b4", raw: "session:9f31d0b4" },
+            text(" "),
+        ]);
+        expect(segmentsOf("xem effort:e9b20f17 nhé")).toEqual([
+            text("xem "),
+            { kind: "ref", ref: "effort", id: "e9b20f17", raw: "effort:e9b20f17" },
+            text(" nhé"),
         ]);
     });
 });
@@ -267,5 +282,98 @@ describe("bash's `!` beside the editor", () => {
 
     it("an outside caret maps into the shown text, never before its start", () => {
         expect(fromShown(shownText("!ls", 1), 2 - 1, 1)).toEqual({ text: "!ls", caret: 2 });
+    });
+});
+
+describe("atomRunsIn", () => {
+    it("finds a finished reference, not one still being typed", () => {
+        expect(atomRunsIn("đọc agent:7cd99627 ", 19)).toMatchObject([
+            { start: 4, end: 18, seg: { kind: "ref", ref: "agent", id: "7cd99627", raw: "agent:7cd99627" } },
+        ]);
+        expect(atomRunsIn("đọc agent:7cd99627", 18)).toEqual([]); // caret at its end: still typing
+        expect(atomRunsIn("đọc agent:7cd99627, ok", 22)).toMatchObject([{ start: 4, end: 18 }]);
+    });
+    it("takes a pasted run of several", () => {
+        expect(atomRunsIn("run:071a8e3b council:c41d9e02 ", 30).map((r) => r.seg)).toMatchObject([
+            { kind: "ref", raw: "run:071a8e3b" },
+            { kind: "ref", raw: "council:c41d9e02" },
+        ]);
+    });
+    it("finds a finished @path, a folder too, as a file pill", () => {
+        expect(atomRunsIn("xem @../arcterm/cdp-shots ", 26)).toMatchObject([
+            { start: 4, end: 25, seg: { kind: "pill", path: "../arcterm/cdp-shots" } },
+        ]);
+        expect(atomRunsIn("@src/agent:7cd9.ts ", 19)).toMatchObject([
+            { seg: { kind: "pill", path: "src/agent:7cd9.ts" } },
+        ]);
+    });
+    it("leaves an @path still being typed", () => {
+        expect(atomRunsIn("xem @../arcterm/cdp-sh", 22)).toEqual([]);
+    });
+    it("takes every finished token when no caret is in the text", () => {
+        expect(atomRunsIn("đọc agent:7cd99627")).toMatchObject([{ start: 4, end: 18 }]);
+        expect(atomRunsIn("no tokens here", 3)).toEqual([]);
+        expect(atomRunsIn("")).toEqual([]);
+    });
+    it("the offsets slice the text the runs stand for", () => {
+        const t = "a @src/x.ts, agent:7cd99627 run:071a8e3b!";
+        const runs = atomRunsIn(t);
+        expect(runs.map((r) => t.slice(r.start, r.end))).toEqual(["@src/x.ts", "agent:7cd99627", "run:071a8e3b"]);
+    });
+});
+
+describe("caretAmongRuns", () => {
+    const runs = atomRunsIn("agent:7cd99627 run:071a8e3b ok"); // [0,14] and [15,27]
+
+    it("puts a caret at 0 before a run starting there, with no text between", () => {
+        expect(caretAmongRuns(runs, 0)).toEqual({ before: 0 });
+        expect(caretAmongRuns([{ start: 0, end: 14 }], 0)).toEqual({ before: 0 });
+    });
+    it("keeps a caret between two runs in the text between them, at its end", () => {
+        expect(caretAmongRuns(runs, 15)).toEqual({ gap: 1, offset: 1 });
+        expect(caretAmongRuns(runs, 28)).toEqual({ gap: 2, offset: 1 });
+    });
+    it("keeps a caret after the last run in the text after it, at the same distance from the run's end", () => {
+        expect(caretAmongRuns(runs, 30)).toEqual({ gap: 2, offset: 3 });
+        expect(caretAmongRuns([{ start: 2, end: 16 }], 17)).toEqual({ gap: 1, offset: 1 });
+    });
+    it("keeps a caret before the first run in the text before it, with text before the run", () => {
+        expect(caretAmongRuns([{ start: 2, end: 16 }], 0)).toEqual({ gap: 0, offset: 0 });
+        expect(caretAmongRuns([{ start: 2, end: 16 }], 2)).toEqual({ gap: 0, offset: 2 });
+    });
+    it("puts a caret before a run that follows another with no text between", () => {
+        expect(
+            caretAmongRuns(
+                [
+                    { start: 0, end: 5 },
+                    { start: 5, end: 9 },
+                ],
+                5
+            )
+        ).toEqual({ before: 1 });
+    });
+    it("has no place for a caret inside a run", () => {
+        expect(caretAmongRuns(runs, 5)).toBeNull();
+        expect(caretAmongRuns(runs, 20)).toBeNull();
+    });
+});
+
+describe("gapToDrop", () => {
+    it("drops the space after a pill that has a space on both sides", () => {
+        expect(gapToDrop("đọc ", " ")).toBe("after");
+        expect(gapToDrop("đọc ", " tiếp")).toBe("after");
+    });
+    it("drops the space before a pill at the end of the line", () => {
+        expect(gapToDrop("đọc ", "")).toBe("before");
+    });
+    it("drops the space after a pill at the start of the line", () => {
+        expect(gapToDrop("", " tiếp")).toBe("after");
+    });
+    it("keeps a single space and punctuation", () => {
+        expect(gapToDrop("đọc", " tiếp")).toBeNull();
+        expect(gapToDrop("đọc ", ", tiếp")).toBeNull();
+        expect(gapToDrop("", "")).toBeNull();
+        expect(gapToDrop("đọc", "")).toBeNull();
+        expect(gapToDrop("", ", tiếp")).toBeNull();
     });
 });

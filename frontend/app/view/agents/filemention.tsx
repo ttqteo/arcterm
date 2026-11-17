@@ -11,7 +11,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { reloadFileIndex } from "@/app/view/code/codestore";
 import { makeConnRoute } from "@/util/util";
-import { Bot, File as FileGlyph, Folder, Play, Users } from "lucide-react";
+import { Bot, File as FileGlyph, Flag, Folder, History, Play, Users } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { EditorLike, KeyLike } from "./chateditor";
 import {
@@ -49,7 +49,7 @@ type MentionRow =
 const rowKey = (row: MentionRow) =>
     row.kind === "path" ? row.path : row.kind === "entry" ? row.key : `ref:${row.item.kind}:${row.item.id}`;
 
-const REF_ICONS = { agent: Bot, run: Play, council: Users } as const;
+const REF_ICONS = { agent: Bot, run: Play, council: Users, session: History, effort: Flag } as const;
 
 // one folder's listing while the picker is open: nothing yet (being read), its entries, or an error
 type DirListing = { entries?: BrowseEntry[]; error?: boolean };

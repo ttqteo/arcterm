@@ -1,11 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// A reference to an agent, a run or a council in Chat (`agent:7cd99627`, as the `@` picker writes it, refmention.ts
-// refToken), drawn as a badge: which words are references, what each names, and how its badge looks. Pure: the box's
-// pills (chateditorrefpill.tsx) and your sent bubble's (remarkrefmention.ts, chatrefbadge.tsx) share it, so the two
-// agree. The text is never changed: a badge stands for its token as written. session: and effort: stay text for now.
+// A reference to an agent, a run, a council, a past conversation (`session:`) or an initiative (`effort:`) in Chat
+// (`agent:7cd99627`, as the `@` picker writes it, refmention.ts refToken), drawn as a badge: which words are references,
+// what each names, and how its badge looks. Pure: the box's pills (chateditorrefpill.tsx) and your sent bubble's
+// (remarkrefmention.ts, chatrefbadge.tsx) share it, so the two agree. The text is never changed: a badge stands for its
+// token as written.
 
+import { formatAge, formatAgo } from "./agentsviewmodel";
 import type { RefKind } from "./refmention";
 import { runtimeMeta } from "./runtimemeta";
 
@@ -21,7 +23,8 @@ export interface RefSpan {
 
 // a token stands as its own word: at the start, or after whitespace or an opening bracket; it ends at whitespace,
 // punctuation or the end. 4+ hex characters, dashes inside (a whole uuid pastes too).
-const REF_RE = /(^|[\s([{])(@?(agent|tab|run|council):([0-9a-f]{4,}(?:-[0-9a-f]+)*))(?=$|[\s.,;:!?)\]}'"])/gi;
+const REF_RE =
+    /(^|[\s([{])(@?(agent|tab|run|council|session|effort):([0-9a-f]{4,}(?:-[0-9a-f]+)*))(?=$|[\s.,;:!?)\]}'"])/gi;
 
 /** Pure: the references in `text`, in order. With `caret`, one the caret is in or at the end of (still being typed) is
  *  left out, as `mentionTokens` does for a file. */
@@ -46,17 +49,34 @@ export interface RefSources {
     councils: readonly { id: string; feature?: string }[];
     /** the chat's project folder, "" for a chat outside one (its runs and councils are not looked up) */
     project: string;
+    /** the past conversations a `session:` can name, from any project; missing reads as none */
+    sessions?: readonly Pick<SessionActivity, "id" | "runtime" | "task" | "projectname" | "lastactivets">[];
+    /** the initiatives an `effort:` can name, from any project; missing reads as none */
+    efforts?: readonly Pick<EffortSummary, "oref" | "title" | "done" | "total">[];
+    /** the clock a conversation's age is read against; missing reads as Date.now() */
+    now?: number;
 }
 
 export type ResolvedRef =
     | {
           status: "resolved";
           kind: RefKind;
-          /** the full id, for the router */
+          /** the full id, for the router (an initiative's is its oid, without `effort:`) */
           id: string;
           name: string;
           runtime?: string;
           state?: "asking" | "working" | "idle";
+          /** a conversation's project name */
+          project?: string;
+          /** the short fact beside the name: a conversation's age ("3d"), an initiative's chunks ("4/9") */
+          meta?: string;
+          /** an initiative with all its chunks done */
+          metaDone?: boolean;
+          /** a conversation's age in ms (now - its last activity), for the tooltip */
+          ageMs?: number;
+          /** an initiative's chunks done and in all, for the tooltip */
+          done?: number;
+          total?: number;
       }
     | { status: "unresolved"; reason: string };
 
@@ -67,16 +87,63 @@ function pick<T>(items: readonly T[], idOf: (t: T) => string, id: string): T[] {
     return exact.length > 0 ? exact : items.filter((t) => idOf(t).toLowerCase().startsWith(id));
 }
 
-/** Pure: what `kind:id` names among the chat's sources: the exact id, else the one id it starts. */
+const PLURALS: Record<RefKind, string> = {
+    agent: "agents",
+    run: "runs",
+    council: "councils",
+    session: "conversations",
+    effort: "initiatives",
+};
+
+const effortOid = (oref: string) => oref.replace(/^effort:/, "");
+
+/** Pure: what `kind:id` names among the chat's sources: the exact id, else the one id it starts. A conversation and an
+ *  initiative are looked up first: they belong to no project, so a chat outside one names them too. */
 export function resolveRef(kind: RefKind, id: string, src: RefSources): ResolvedRef {
     id = id.toLowerCase();
-    const many = (n: number): ResolvedRef => ({ status: "unresolved", reason: `${kind}:${id} names ${n} ${kind}s` });
+    const many = (n: number): ResolvedRef => ({
+        status: "unresolved",
+        reason: `${kind}:${id} names ${n} ${PLURALS[kind]}`,
+    });
     if (kind === "agent") {
         const hits = pick(src.agents, (a) => a.id, id);
         if (hits.length === 0) return { status: "unresolved", reason: `No agent ${id} is open` };
         if (hits.length > 1) return many(hits.length);
         const a = hits[0];
         return { status: "resolved", kind, id: a.id, name: a.name, runtime: a.agent, state: a.state };
+    }
+    if (kind === "session") {
+        const hits = pick(src.sessions ?? [], (s) => s.id, id);
+        if (hits.length === 0) return { status: "unresolved", reason: `No conversation ${id} in the loaded history` };
+        if (hits.length > 1) return many(hits.length);
+        const s = hits[0];
+        const ageMs = (src.now ?? Date.now()) - s.lastactivets;
+        return {
+            status: "resolved",
+            kind,
+            id: s.id,
+            name: firstLine(s.task) || s.projectname || id,
+            runtime: s.runtime,
+            project: s.projectname,
+            meta: formatAge(ageMs),
+            ageMs,
+        };
+    }
+    if (kind === "effort") {
+        const hits = pick(src.efforts ?? [], (e) => effortOid(e.oref), id);
+        if (hits.length === 0) return { status: "unresolved", reason: `No initiative ${id}` };
+        if (hits.length > 1) return many(hits.length);
+        const e = hits[0];
+        return {
+            status: "resolved",
+            kind,
+            id: effortOid(e.oref),
+            name: firstLine(e.title) || id,
+            meta: `${e.done}/${e.total}`,
+            metaDone: e.total > 0 && e.done === e.total,
+            done: e.done,
+            total: e.total,
+        };
     }
     if (src.project === "") {
         return { status: "unresolved", reason: `This chat has no project to find ${kind} ${id} in` };
@@ -96,18 +163,21 @@ export function resolveRef(kind: RefKind, id: string, src: RefSources): Resolved
 export interface BadgeLook {
     /** border and fill classes (the frame itself is chatrefbadge.tsx's) */
     frame: string;
-    mark: "runtime" | "run" | "council" | null;
+    mark: "runtime" | "run" | "council" | "session" | "effort" | null;
     dot: "working" | "asking" | null;
 }
 
 const UNRESOLVED_FRAME = "border-dashed border-edge-strong bg-transparent text-muted";
+const NEUTRAL_FRAME = "border-edge-mid bg-surface";
 
 /** Pure: how a badge looks (option C): an agent in its runtime's tint with its state's dot, a run and a council in
- *  their marks' tints, an unresolved token dashed. */
+ *  their marks' tints, a conversation and an initiative neutral and told apart by their marks, an unresolved token
+ *  dashed. */
 export function badgeLook(r: ResolvedRef): BadgeLook {
     if (r.status === "unresolved") {
         return { frame: UNRESOLVED_FRAME, mark: null, dot: null };
     }
+    if (r.kind === "session" || r.kind === "effort") return { frame: NEUTRAL_FRAME, mark: r.kind, dot: null };
     if (r.kind === "run") return { frame: "border-mark-run-line bg-mark-run-soft", mark: "run", dot: null };
     if (r.kind === "council")
         return { frame: "border-mark-council-line bg-mark-council-soft", mark: "council", dot: null };
@@ -116,12 +186,25 @@ export function badgeLook(r: ResolvedRef): BadgeLook {
     return { frame: `${meta.line} ${meta.softBg}`, mark: "runtime", dot };
 }
 
-/** Pure: the badge's tooltip: name · kind short-id · state, ending "(click to open)" when the badge opens what it names
- *  (the bubble's does, the message box's only selects: `opens: false`), or why it is not one. */
+/** Pure: the badge's tooltip: name · kind short-id · what else is known (an agent's state; a conversation's runtime,
+ *  project and age; an initiative's chunks), ending "(click to open)" when the badge opens what it names (the bubble's
+ *  does, the message box's only selects: `opens: false`), or why it is not one. */
 export function refTitle(r: ResolvedRef, { opens = true }: { opens?: boolean } = {}): string {
     if (r.status === "unresolved") {
         return r.reason;
     }
-    const state = r.kind === "agent" && r.state != null ? ` · ${r.state}` : "";
-    return `${r.name} · ${r.kind} ${r.id.slice(0, 8)}${state}${opens ? " (click to open)" : ""}`;
+    const id8 = r.id.slice(0, 8);
+    const parts = [r.name];
+    if (r.kind === "session") {
+        parts.push(`conversation ${id8}`);
+        for (const p of [r.runtime, r.project]) if (p) parts.push(p);
+        parts.push(formatAgo(r.ageMs));
+    } else if (r.kind === "effort") {
+        parts.push(`initiative ${id8}`);
+        if (r.total != null) parts.push(`${r.done} of ${r.total} chunks done`);
+    } else {
+        parts.push(`${r.kind} ${id8}`);
+        if (r.kind === "agent" && r.state != null) parts.push(r.state);
+    }
+    return parts.join(" · ") + (opens ? " (click to open)" : "");
 }

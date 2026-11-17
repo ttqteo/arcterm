@@ -49001,14 +49001,20 @@ const chatMath = {
     },
 };
 
-// --- chat-ref-badges: `agent:`, `run:` and `council:` references drawn as badges (refbadge.ts, chatrefbadge.tsx,
-// remarkrefmention.ts, chateditorrefpill.tsx; spec 2026-11-17-chat-ref-badges-design.md). The chat's agent A is in a registered
-// project whose run and council are put in the app's own stores; a second agent B is asking, on codex. A's bubble names B, the
-// run, the council and a run that is not there: the first three resolve (B's runtime mark and asking ring, the tints and names
-// of the run and the council), the fourth stays a dashed token with no role, and a click or Enter on B's badge focuses B. Then
-// `@agent` in A's box picks B: the box draws the same badge, Backspace beside it selects it, the next one takes the whole
-// token away. The text never changes: the box's text is read from Lexical's own state, since a badge draws a name. Last, back on
-// the bubble: a Ctrl-click on B's badge peeks B in the avatar popup (A stays focused), and the run badge lifts on hover.
+// --- chat-ref-badges: `agent:`, `run:`, `council:`, `session:` and `effort:` references drawn as badges (refbadge.ts,
+// chatrefbadge.tsx, remarkrefmention.ts, chateditorrefpill.tsx; spec 2026-11-17-chat-ref-badges-design.md). The chat's agent A is
+// in a registered project whose run and council are put in the app's own stores; a second agent B is asking, on codex. A's bubble
+// names B, the run, the council and a run that is not there: the first three resolve (B's runtime mark and asking ring, the tints
+// and names of the run and the council), the fourth stays a dashed token with no role, and a click or Enter on B's badge focuses B.
+// It also names a conversation (seeded into the archive's atom: its title, `2h`, a History mark), a real initiative (`0/2`, a Flag
+// mark; a click opens it in the Brief's sheet), a seeded finished initiative (`2/2` in the success colour) and a conversation and
+// an initiative that are not there (dashed, with their reasons as titles). Then `@agent` in A's box picks B: the box draws the same
+// badge, Backspace beside it selects it, the next one takes the whole token away and leaves one space; `@init` and `@conv` list the
+// initiative and the conversation. A `run:<id>` typed with key events becomes a badge once a space follows it, `agent:<id>` with
+// nothing after it stays text, and a typed `@path` becomes a file pill; a token made finished at the start of the box (Delete takes
+// the `x` off `xagent:<id> ` with the caret at 0) becomes a badge with the caret still before it. The text never changes: the box's text is read from
+// Lexical's own state, since a badge draws a name. Last, back on the bubble: a Ctrl-click on B's badge peeks B in the avatar popup
+// (A stays focused), and the run badge lifts on hover.
 
 const CRB_RUN_ID = "071a8e3b-5c4d-4e2f-9a10-3b7c1d2e4f56";
 const CRB_COUNCIL_ID = "c0ffee11-2233-4455-8677-99aabbccddee";
@@ -49017,6 +49023,14 @@ const CRB_RUN_NAME = "Close the tree's picked rows";
 const CRB_COUNCIL_FEATURE = "Chat compact work";
 const CRB_NAME_A = "ref badges main";
 const CRB_NAME_B = "ref badges asking";
+// the conversation seeded into the archive's atom, and the finished initiative seeded into the initiatives' atom (neither is on disk)
+const CRB_SESSION_ID = "9f31c2a4-7b58-4d06-8e1a-5c0d3b2a6f71";
+const CRB_SESSION_TASK = "Ref badges conversation\nmore";
+const CRB_SESSION_NAME = "Ref badges conversation";
+const CRB_DONE_EFFORT_ID = "d0e5b3a1-4c27-49f8-b6d1-8a3e7c5f2b90";
+const CRB_DONE_NAME = "Ref badges done";
+// the real initiative the arrange creates (two chunks, none done)
+const CRB_EFFORT_TITLE = "Ref badges initiative";
 
 function crbRoster(ctx) {
     const now = Date.now();
@@ -49041,34 +49055,92 @@ function crbRoster(ctx) {
     ];
 }
 
-// The project's run and council, put in the app's own stores (a non-null atom is not read again by useResolvedRef). projectRunsAtom
-// is keyed by the exact path string, so it is the one the page's config holds for the project, which is what the chat resolves with.
-// Typing `@` in the box reads both again over the seed (useRefItems), so a step that follows one seeds again.
-const crbSeed = (h, project) =>
+// What the badges resolve against, put in the app's own stores (a non-null atom is not read again by useResolvedRef):
+// - the project's run and council. projectRunsAtom is keyed by the exact path string, so it is the one the page's config holds for
+//   the project, which is what the chat resolves with;
+// - one conversation prepended to the archive's atom (`session:` and the `@conv` rows read it; the scan the Agent tree makes on
+//   its own would drop it, as it is not on disk), dated two hours before now so its age reads `2h` whenever the step runs;
+// - the real initiative `ctx.effortId` (the arrange made it) read into refEffortsAtom, with one finished initiative put in front
+//   of the real list (`2/2`; `effort:<id>` resolves it, and it is not in the store, so nothing opens it).
+// Typing `@` in the box reads the runs, the councils and the initiatives again over the seed (useRefItems), so a step that follows
+// one seeds again (crbReseedUntil when what it reads must hold for a moment).
+const crbSeed = (h, ctx) =>
     AC.agentPage(
         h,
         `const P = await mod("app/view/agents/projectsstore.ts");
-        const path = globalStore.get(P.projectsAtom)[${JSON.stringify(project)}]?.path;
-        if (!path) throw new Error("the page's config has no path for the project " + ${JSON.stringify(project)});
+        const path = globalStore.get(P.projectsAtom)[${JSON.stringify(ctx.project)}]?.path;
+        if (!path) throw new Error("the page's config has no path for the project " + ${JSON.stringify(ctx.project)});
         const H = await mod("app/view/agents/projecthistorystore.ts");
         const C = await mod("app/view/agents/councilstore.ts");
+        const S = await mod("app/view/agents/sessionsarchivestore.ts");
+        const E = await mod("app/view/agents/refmentionstore.ts");
         const now = Date.now();
         globalStore.set(H.projectRunsAtom(path), { runs: [{ oid: ${JSON.stringify(CRB_RUN_ID)}, goal: ${JSON.stringify(CRB_RUN_GOAL)} }], error: null });
         globalStore.set(C.councilListAtom(path), [
             { id: ${JSON.stringify(CRB_COUNCIL_ID)}, project: path, feature: ${JSON.stringify(CRB_COUNCIL_FEATURE)}, experts: [], state: "done", round: 1, tokens: 0, calls: 0, created: now, updated: now },
         ]);
+        const then = now - 2 * 3_600_000;
+        const conversation = {
+            id: ${JSON.stringify(CRB_SESSION_ID)}, runtime: "claude", projectpath: path, projectname: ${JSON.stringify(ctx.project)}, branch: "",
+            task: ${JSON.stringify(CRB_SESSION_TASK)}, model: "", tokenstotal: 0, lastactivets: then, resumecommand: "", transcriptpath: "",
+            status: "done", startedts: then - 60_000, durationms: 60_000, events: [],
+        };
+        globalStore.set(S.sessionsArchiveAtom, [conversation, ...(globalStore.get(S.sessionsArchiveAtom) ?? []).filter((s) => s.id !== conversation.id)]);
+        // the real list first: loadRefEfforts makes no second request while one is on its way, so ask until the real one is in
+        const real = ${JSON.stringify(ctx.effortId ? `effort:${ctx.effortId}` : "")};
+        const holdsReal = () => real === "" || (globalStore.get(E.refEffortsAtom) ?? []).some((e) => e.oref === real);
+        for (let tries = 0; tries < 30 && !holdsReal(); tries++) {
+            await E.loadRefEfforts();
+            if (!holdsReal()) await nap(250);
+        }
+        if (!holdsReal()) throw new Error("the initiatives' list never held " + real);
+        const finished = { oref: "effort:" + ${JSON.stringify(CRB_DONE_EFFORT_ID)}, title: ${JSON.stringify(CRB_DONE_NAME)}, project: ${JSON.stringify(ctx.project)}, status: "active", done: 2, total: 2, updatedts: now };
+        globalStore.set(E.refEffortsAtom, [finished, ...(globalStore.get(E.refEffortsAtom) ?? []).filter((e) => e.oref !== finished.oref)]);
         return path;`
     );
 
+// the seed, again and again until an expression reads true: a read the page made after it (the picker's, a badge's) put the real
+// stores back over it, so what a step reads is seeded again between two looks. False when it never held.
+async function crbReseedUntil(h, ctx, expr, ms = 10000) {
+    const end = Date.now() + ms;
+    do {
+        await crbSeed(h, ctx);
+        if (await polishWaitFor(h, expr, 1500)) return true;
+    } while (Date.now() < end);
+    return false;
+}
+
 // What the box holds as the agent receives it, read from Lexical's own state: a badge draws a name, so the box's innerText (acVal)
-// is not the text. A ref node is its token as written (raw), a line break is a newline, paragraphs are lines.
+// is not the text. A ref node is its token as written (raw), a file pill is its mention (`@path`, `@"path"` when the path holds a
+// space: mentionText), a line break is a newline, paragraphs are lines.
 const crbBoxText = (boxExpr) =>
     `((e) => {
         const ed = e?.__lexicalEditor;
         if (!ed) return null;
-        const text = (n) => (n.type === "ref-mention" ? n.raw : n.type === "linebreak" ? "\\n" : typeof n.text === "string" ? n.text : (n.children ?? []).map(text).join(""));
+        const text = (n) =>
+            n.type === "ref-mention" ? n.raw
+            : n.type === "file-mention" ? (/\\s/.test(n.path) ? '@"' + n.path + '"' : "@" + n.path)
+            : n.type === "linebreak" ? "\\n"
+            : typeof n.text === "string" ? n.text
+            : (n.children ?? []).map(text).join("");
         return ed.getEditorState().toJSON().root.children.map(text).join("\\n");
     })(${boxExpr})`;
+
+// Text typed into a box with real key events, one key down and up per character (the box's own input path: Chrome turns a keyDown
+// with `text` into the insertion, as a person's key does), not a value set from outside. ASCII only. Nothing is pressed after
+// the last character: a token typed last has no space or punctuation after it yet.
+async function crbTypeKeys(h, boxExpr, text) {
+    await h.ev(`(${boxExpr})?.focus()`);
+    for (const ch of text) {
+        const letter = /[a-z]/i.test(ch);
+        const digit = /[0-9]/.test(ch);
+        const code = ch === " " ? "Space" : letter ? `Key${ch.toUpperCase()}` : digit ? `Digit${ch}` : undefined;
+        const windowsVirtualKeyCode = ch === " " ? 32 : letter ? ch.toUpperCase().charCodeAt(0) : digit ? ch.charCodeAt(0) : 0;
+        const key = { key: ch, ...(code ? { code } : {}), windowsVirtualKeyCode };
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", ...key, text: ch, unmodifiedText: ch });
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...key });
+    }
+}
 
 // what one badge shows, from the element carrying data-chat-ref (an expression that finds it); null when it is not there
 const crbReadBadge = (h, badgeExpr) =>
@@ -49076,11 +49148,14 @@ const crbReadBadge = (h, badgeExpr) =>
         const el = ${badgeExpr};
         if (!el) return null;
         const cs = getComputedStyle(el);
+        const meta = el.querySelector("[data-ref-meta]");
         return {
             state: el.getAttribute("data-ref-state"),
             mark: el.getAttribute("data-ref-mark"),
             selected: el.getAttribute("data-ref-selected"),
             name: el.querySelector("[data-ref-name]")?.textContent ?? null,
+            meta: meta?.textContent ?? null,
+            metaColor: meta ? getComputedStyle(meta).color : null,
             text: el.textContent,
             dots: [...el.querySelectorAll("[data-ref-dot]")].map((d) => d.getAttribute("data-ref-dot")),
             title: el.getAttribute("title"),
@@ -49107,6 +49182,15 @@ const chatRefBadges = {
             await h.rpc("createproject", { name: ctx.project, path: ctx.dir });
             ctx.projectMade = true;
             await waitForProjectInConfig(h, ctx.project);
+            // a real initiative (two chunks, none done), so a click on its badge has something to open; the teardown deletes it
+            at = "creating the initiative";
+            const made = await h.rpc("effortcreate", {
+                title: CRB_EFFORT_TITLE,
+                project: ctx.project,
+                chunks: [{ label: "Draw the badge" }, { label: "Check the badge" }],
+            });
+            ctx.effortId = made?.effortoid;
+            if (!ctx.effortId) throw new Error("effortcreate answered no initiative id");
             at = "resetting the grid";
             await h.ev(`localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`);
             await h.ev(`localStorage.removeItem("agent.chatmode")`);
@@ -49123,15 +49207,17 @@ const chatRefBadges = {
             const o = (sec) => ({ cwd: ctx.dir, ts: new Date(base + sec * 1000).toISOString() });
             ctx.transcript = AC.writeTranscript(ctx.dir, "ref-badges", [
                 AC.userText(
-                    `Hỏi agent:${B.slice(0, 8)} xem run:${CRB_RUN_ID.slice(0, 8)} và council:${CRB_COUNCIL_ID.slice(0, 8)}, còn run:deadbeef thì sao.`,
+                    `Hỏi agent:${B.slice(0, 8)} xem run:${CRB_RUN_ID.slice(0, 8)} và council:${CRB_COUNCIL_ID.slice(0, 8)}, còn run:deadbeef thì sao. ` +
+                        `Rồi đọc session:${CRB_SESSION_ID.slice(0, 8)} và effort:${ctx.effortId.slice(0, 8)} và effort:${CRB_DONE_EFFORT_ID.slice(0, 8)}, ` +
+                        `rồi session:77aa01fe và effort:deadbeef.`,
                     { ...o(0), uuid: "u1" }
                 ),
                 AC.assistantText("Mình sẽ hỏi lại từng cái.", { ...o(2), uuid: "a1" }),
             ]);
             at = "setting the roster";
             await AC.setRoster(h, crbRoster(ctx));
-            at = "seeding the project's run and council";
-            ctx.projectPath = await crbSeed(h, ctx.project);
+            at = "seeding the project's run and council, the conversation and the initiatives";
+            ctx.projectPath = await crbSeed(h, ctx);
         } catch (e) {
             ctx.arrangeError = `${at}: ${String(e?.message ?? e)}`;
         }
@@ -49148,8 +49234,19 @@ const chatRefBadges = {
         const B = ctx.tabs.second.tabId;
         const B8 = B.slice(0, 8);
         const tokens = { agent: `agent:${B8}`, run: `run:${CRB_RUN_ID.slice(0, 8)}`, council: `council:${CRB_COUNCIL_ID.slice(0, 8)}`, missing: "run:deadbeef" };
+        // the conversation, the real initiative, the finished one, and a conversation and an initiative that are not there
+        const S8 = CRB_SESSION_ID.slice(0, 8);
+        const E8 = ctx.effortId.slice(0, 8);
+        const D8 = CRB_DONE_EFFORT_ID.slice(0, 8);
+        const more = { session: `session:${S8}`, effort: `effort:${E8}`, done: `effort:${D8}`, noSession: "session:77aa01fe", noEffort: "effort:deadbeef" };
         const inBubble = (token) => `document.querySelector('[data-agent-chat="${A}"] [data-chat-conversation] [data-chat-ref="${token}"]')`;
         const inBox = `${acBox(A)}?.querySelector('[data-chat-ref]')`;
+        // The `@` a step types reads the runs, councils and initiatives again over the seed, so the bubble behind a picker or a
+        // typed token shows the seeded run, council and finished initiative unresolved. Before such a shot, once the load has
+        // settled, the seed goes back and stays back until the bubble's seeded run badge reads resolved, so the shot shows what a
+        // person sees. True when it held.
+        const reseedForShot = () =>
+            crbReseedUntil(h, ctx, `${inBubble(tokens.run)}?.getAttribute("data-ref-state") === "resolved"`, 8000);
         const focused = () => AC.agentPage(h, `return globalStore.get(agentsModel().focusIdAtom);`);
         const waitFocus = async (id, ms = 8000) => {
             for (let waited = 0; waited < ms; waited += 250) {
@@ -49170,7 +49267,7 @@ const chatRefBadges = {
         try {
             const shown = await showChat();
             // anything that read the project's runs or councils since the arrange is put back under the seed
-            await crbSeed(h, ctx.project);
+            await crbSeed(h, ctx);
             const drawn = await polishWaitFor(
                 h,
                 `${Object.values(tokens).map((t) => `!!${inBubble(t)}`).join(" && ")} && ${inBubble(tokens.run)}.getAttribute("data-ref-state") === "resolved" && ${inBubble(tokens.council)}.getAttribute("data-ref-state") === "resolved"`,
@@ -49207,6 +49304,108 @@ const chatRefBadges = {
             // the bubble alone for the contact sheet, before `@` in the box reads the project's runs and councils again
             await polishNap(300);
             await h.shot("cdp-shots/chat-ref-badges.png");
+
+            // 4a-4e: the conversation and the initiatives in the same bubble. A scan or a read the page made since the seed puts the
+            // real stores back over it, so each look is under a fresh seed (crbReseedUntil), and each state has its own shot with
+            // its badge scrolled to the middle.
+            const stateOf = (token) => `${inBubble(token)}?.getAttribute("data-ref-state") === "resolved"`;
+            const bringIn = (token) => h.ev(`${inBubble(token)}?.scrollIntoView({ block: "center" })`);
+            // the colour text-success paints, read off a probe wearing the class: the finished initiative's chunk count wears it
+            const successColor = await h.ev(`(() => {
+                const p = document.createElement("span");
+                p.className = "text-success";
+                document.body.appendChild(p);
+                const c = getComputedStyle(p).color;
+                p.remove();
+                return c;
+            })()`);
+
+            const sessionReady = await crbReseedUntil(h, ctx, stateOf(more.session));
+            const session = await crbReadBadge(h, inBubble(more.session));
+            await bringIn(more.session);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-session.png");
+            rec(
+                "4a. session:<id> is a resolved conversation badge: its mark, the conversation's first line as the name, `2h` beside it, a title naming it and offering to open it, in a role=button (not clicked: opening a conversation reopens it as a live agent)",
+                sessionReady && session?.state === "resolved" && session.mark === "session" && session.name === CRB_SESSION_NAME && session.meta === "2h" &&
+                    session.title?.startsWith(`${CRB_SESSION_NAME} · conversation`) === true && session.title.includes(`conversation ${S8}`) &&
+                    session.title.endsWith("(click to open)") && session.parentRole === "button",
+                { sessionReady, session }
+            );
+
+            const effortReady = await crbReseedUntil(h, ctx, stateOf(more.effort));
+            const effort = await crbReadBadge(h, inBubble(more.effort));
+            await bringIn(more.effort);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-effort.png");
+            rec(
+                "4b. effort:<id> is a resolved initiative badge: its mark, the initiative's title as the name, `0/2` beside it (not in the success colour), a title with its chunks done and the offer to open it, in a role=button",
+                effortReady && effort?.state === "resolved" && effort.mark === "effort" && effort.name === CRB_EFFORT_TITLE && effort.meta === "0/2" &&
+                    typeof successColor === "string" && effort.metaColor !== successColor &&
+                    effort.title === `${CRB_EFFORT_TITLE} · initiative ${E8} · 0 of 2 chunks done (click to open)` && effort.parentRole === "button",
+                { effortReady, effort, successColor }
+            );
+
+            const doneReady = await crbReseedUntil(h, ctx, stateOf(more.done));
+            const done = await crbReadBadge(h, inBubble(more.done));
+            await bringIn(more.done);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-done.png");
+            rec(
+                "4c. an initiative with every chunk done shows `2/2` in the success colour (the computed colour of a text-success probe), unlike the unfinished one's",
+                doneReady && done?.state === "resolved" && done.mark === "effort" && done.name === CRB_DONE_NAME && done.meta === "2/2" &&
+                    typeof successColor === "string" && done.metaColor === successColor && done.metaColor !== effort?.metaColor &&
+                    done.title === `${CRB_DONE_NAME} · initiative ${D8} · 2 of 2 chunks done (click to open)`,
+                { doneReady, done, successColor, unfinishedMeta: effort?.metaColor }
+            );
+
+            await crbSeed(h, ctx);
+            const missingDrawn = await polishWaitFor(h, `!!${inBubble(more.noSession)} && !!${inBubble(more.noEffort)}`, 5000);
+            const noSession = await crbReadBadge(h, inBubble(more.noSession));
+            const noEffort = await crbReadBadge(h, inBubble(more.noEffort));
+            await bringIn(more.noEffort);
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-unresolved.png");
+            rec(
+                "4d. session:77aa01fe and effort:deadbeef are unresolved: their tokens as the text, dashed, no role, titled \"No conversation 77aa01fe in the loaded history\" and \"No initiative deadbeef\"",
+                missingDrawn && noSession?.state === "unresolved" && noSession.text === more.noSession && noSession.borderStyle === "dashed" && noSession.role == null &&
+                    noSession.parentRole !== "button" && noSession.title === "No conversation 77aa01fe in the loaded history" &&
+                    noEffort?.state === "unresolved" && noEffort.text === more.noEffort && noEffort.borderStyle === "dashed" && noEffort.role == null &&
+                    noEffort.parentRole !== "button" && noEffort.title === "No initiative deadbeef",
+                { missingDrawn, noSession, noEffort }
+            );
+
+            // 4e. a click on the initiative's badge opens it in the Brief's sheet: the surface and the selected subject are the page's
+            // atoms (jarvis, effort:<oid>), read as the focus is for the agent badge's click. The sheet is put away and A's chat is
+            // brought back for the steps that follow.
+            await crbSeed(h, ctx);
+            const effortUp = await polishWaitFor(h, stateOf(more.effort), 5000);
+            const pressedEffort = effortUp && (await press(inBubble(more.effort)));
+            const sheetState = () =>
+                AC.agentPage(
+                    h,
+                    `const J = await mod("app/view/jarvis/jarvissubjectstore.ts");
+                    const B = await mod("app/view/jarvis/jarvisstore.ts");
+                    const subject = globalStore.get(J.activeSubjectAtom);
+                    return { surface: globalStore.get(agentsModel().surfaceAtom), kind: subject?.kind ?? null, id: subject?.id ?? null, sheet: globalStore.get(B.briefSheetOpenAtom) };`
+                );
+            let sheet = null;
+            for (let waited = 0; pressedEffort && waited < 10000; waited += 250) {
+                sheet = await sheetState();
+                if (sheet.surface === "jarvis" && sheet.id === ctx.effortId) break;
+                await polishNap(250);
+            }
+            const sheetDrawn = await polishWaitFor(h, `!!document.querySelector('[data-jarvis-brief-sheet="effort"]')`, 8000);
+            await polishNap(400);
+            await h.shot("cdp-shots/chat-ref-badges-effort-open.png");
+            await AC.agentPage(h, `const B = await mod("app/view/jarvis/jarvisstore.ts"); globalStore.set(B.briefSheetOpenAtom, false); return true;`);
+            await h.goto("agent");
+            const backShown = await showChat();
+            rec(
+                "4e. a click on the initiative's badge opens it: the Brief's surface shows with that initiative selected and its sheet open; the Agent surface and A's chat come back after",
+                pressedEffort && sheet?.surface === "jarvis" && sheet.kind === "effort" && sheet.id === ctx.effortId && sheet.sheet === true && backShown,
+                { effortUp, pressedEffort, sheet, sheetDrawn, backShown }
+            );
 
             const clicked = await press(inBubble(tokens.agent));
             const byClick = clicked && (await waitFocus(B));
@@ -49256,7 +49455,7 @@ const chatRefBadges = {
             const selected = await polishWaitFor(h, `${inBox}?.getAttribute("data-ref-selected") === "true"`, 3000);
             const kept = await h.ev(crbBoxText(acBox(A)));
             // the `@` read the project's runs and councils again over the seed: put back, so the shot's bubble badges resolve
-            await crbSeed(h, ctx.project);
+            await crbSeed(h, ctx);
             await polishWaitFor(h, `${inBubble(tokens.run)}?.getAttribute("data-ref-state") === "resolved"`, 5000);
             await polishNap(300);
             await h.shot("cdp-shots/chat-ref-badges-box.png");
@@ -49266,15 +49465,138 @@ const chatRefBadges = {
             const acValLeft = await h.ev(acVal(acBox(A)));
             await acClear(h, acBox(A));
             rec(
-                "7. with the caret right after the badge, Backspace selects it (data-ref-selected) and leaves the text as it was; Backspace again takes the whole token and its badge away",
-                selected && kept === want && gone && typeof left === "string" && !left.includes("agent:") && !left.includes(B8),
+                "7. with the caret right after the badge, Backspace selects it (data-ref-selected) and leaves the text as it was; Backspace again takes the whole token and its badge away and leaves one space where it was (`đọc `, not `đọc  `)",
+                selected && kept === want && gone && left === "đọc ",
                 { selected, kept, gone, left, acValLeft }
             );
 
-            // the bubble's badges again, with real mouse events at a badge's centre (the box is empty now, and step 7's `@` read the
-            // project's runs and councils over the seed, so put it back first)
+            // 7a-7f: part 2 in the box. The picker lists a conversation and an initiative, a reference or an `@path` typed with key
+            // events becomes a badge or a file pill once a space follows it, a token with nothing after it stays text, and the caret
+            // stays before a badge formed at the start of the box.
+            // The conversation and the initiatives are seeded first; typing `@` reads the initiatives again, so the seed goes back
+            // before each shot (reseedForShot: the typed badge below resolves a run, and that read the runs, too).
+            await crbSeed(h, ctx);
+            await acClear(h, acBox(A));
+            await acType(h, acBox(A), "đọc @init", false);
+            const effortKey = `ref:effort:${ctx.effortId}`;
+            const effortListed = await polishWaitFor(h, `!!document.querySelector('[data-chat-mention="${effortKey}"]')`, 8000);
+            const effortList = await acMentionState(h);
+            await polishNap(300);
+            const effortSeeded = await reseedForShot();
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-picker-effort.png");
+            const effortRow = (effortList?.rows ?? []).find((r) => r.key === effortKey);
+            await acClear(h, acBox(A));
+            rec(
+                "7a. `@init` lists a row for the initiative, naming it",
+                effortListed && effortRow != null && effortRow.text.includes(CRB_EFFORT_TITLE),
+                { effortListed, effortSeeded, effortList }
+            );
+
+            await crbSeed(h, ctx);
+            await acType(h, acBox(A), "đọc @conv", false);
+            const sessionKey = `ref:session:${CRB_SESSION_ID}`;
+            const sessionListed = await polishWaitFor(h, `!!document.querySelector('[data-chat-mention="${sessionKey}"]')`, 8000);
+            const sessionList = await acMentionState(h);
+            await polishNap(300);
+            const sessionSeeded = await reseedForShot();
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-picker-session.png");
+            const sessionRow = (sessionList?.rows ?? []).find((r) => r.key === sessionKey);
+            await acClear(h, acBox(A));
+            rec(
+                "7b. `@conv` lists a row for the conversation, naming it",
+                sessionListed && sessionRow != null && sessionRow.text.includes(CRB_SESSION_NAME),
+                { sessionListed, sessionSeeded, sessionList }
+            );
+
+            // 7c. the run is typed with key events into an empty box; typing `@` above read the runs again over the seed, so it goes
+            // back (and stays back until the badge has drawn the run's name)
+            await polishNap(500);
+            const runToken = tokens.run;
+            await crbSeed(h, ctx);
+            await crbTypeKeys(h, acBox(A), `xem ${runToken} `);
+            const typedBadge = await polishWaitFor(h, `!!${inBox}`, 3000);
+            const typedNamed = await crbReseedUntil(h, ctx, `${inBox}?.querySelector("[data-ref-name]")?.textContent === ${JSON.stringify(CRB_RUN_NAME)}`, 8000);
+            const typedBadgeRead = await crbReadBadge(h, inBox);
+            const typedText = await h.ev(crbBoxText(acBox(A)));
+            const typedCount = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? -1`);
+            rec(
+                "7c. `xem run:<id> ` typed key by key becomes a badge when the space is typed: the box holds one badge, the run's resolved one, and its text is exactly what was typed",
+                typedBadge && typedNamed && typedBadgeRead?.state === "resolved" && typedBadgeRead.mark === "run" && typedBadgeRead.name === CRB_RUN_NAME &&
+                    typedCount === 1 && typedText === `xem ${runToken} `,
+                { typedBadge, typedNamed, typedBadgeRead, typedCount, typedText }
+            );
+
+            // 7d. `agent:<A>` typed last, with nothing after it, is still text: no second badge, and the text is the two tokens
+            await crbTypeKeys(h, acBox(A), `agent:${A.slice(0, 8)}`);
+            await polishNap(400);
+            const stillText = await h.ev(crbBoxText(acBox(A)));
+            const stillCount = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? -1`);
+            const stillSeeded = await reseedForShot();
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-typed.png");
+            rec(
+                "7d. `agent:<id>` typed after it, with no character after, adds no badge: the box still holds the run's one, and the token is text",
+                stillCount === 1 && stillText === `xem ${runToken} agent:${A.slice(0, 8)}`,
+                { stillCount, stillSeeded, stillText }
+            );
+            await acClear(h, acBox(A));
+
+            // 7e. an `@path` typed key by key becomes a file pill when the space is typed (it need not exist: the box reads the text)
+            const mention = "@../arcterm/cdp-shots";
+            await crbTypeKeys(h, acBox(A), `xem ${mention} `);
+            const pilled = await polishWaitFor(h, `${acBox(A)}?.querySelectorAll("[data-chat-pill]").length === 1`, 3000);
+            await polishNap(300);
+            const pills = await acPills(h, acBox(A));
+            const pillText = await h.ev(crbBoxText(acBox(A)));
+            const pillRefs = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? -1`);
+            const pillSeeded = await reseedForShot();
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-typed-pill.png");
+            await acClear(h, acBox(A));
+            rec(
+                "7e. `xem @../arcterm/cdp-shots ` typed key by key holds one file pill (no badge) and its text is exactly what was typed",
+                pilled && pills.length === 1 && pills[0].path === "../arcterm/cdp-shots" && pillRefs === 0 && pillText === `xem ${mention} `,
+                { pilled, pillSeeded, pills, pillRefs, pillText }
+            );
+
+            // 7f. the caret before a badge formed at it: `xagent:<A> ` is only text (the `x` makes it no reference), Home puts the caret
+            // at 0 and Delete takes the `x` away, which leaves a finished token starting at offset 0 with the caret at 0. The badge forms
+            // and the caret stays before it, as a typed token's caret goes back where it was in the text (a replaced node would carry it
+            // to the badge's far side). A `y` typed next stands before the badge: `y agent:<A> ` (the box's gap rule gives it a space
+            // against the badge) or `yagent:<A> `, never `agent:<A> y`.
+            const caretToken = `agent:${A.slice(0, 8)}`;
+            const homeKey = { key: "Home", code: "Home", windowsVirtualKeyCode: 36 };
+            const deleteKey = { key: "Delete", code: "Delete", windowsVirtualKeyCode: 46 };
+            await crbTypeKeys(h, acBox(A), `x${caretToken} `);
+            await polishNap(300);
+            const asText = await h.ev(crbBoxText(acBox(A)));
+            const asTextRefs = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? -1`);
+            await acKey(h, homeKey);
+            await polishNap(150);
+            await acKey(h, deleteKey);
+            const formedAtStart = await polishWaitFor(h, `${acBox(A)}?.querySelectorAll("[data-chat-ref]").length === 1`, 3000);
+            const formedText = await h.ev(crbBoxText(acBox(A)));
+            await crbTypeKeys(h, acBox(A), "y");
+            await polishNap(300);
+            const caretText = await h.ev(crbBoxText(acBox(A)));
+            const caretRefs = await h.ev(`${acBox(A)}?.querySelectorAll("[data-chat-ref]").length ?? -1`);
+            const caretSeeded = await reseedForShot();
+            await polishNap(300);
+            await h.shot("cdp-shots/chat-ref-badges-caret.png");
+            await acClear(h, acBox(A));
+            rec(
+                "7f. `xagent:<id> ` is text; with the caret at the start, Delete takes the `x` away and the token becomes one badge with the caret still before it: a `y` typed next stands ahead of the badge (`y agent:<id> `), not after it",
+                asText === `x${caretToken} ` && asTextRefs === 0 && formedAtStart && formedText === `${caretToken} ` && caretRefs === 1 &&
+                    (caretText === `y ${caretToken} ` || caretText === `y${caretToken} `),
+                { asText, asTextRefs, formedAtStart, formedText, caretText, caretRefs, caretSeeded }
+            );
+
+            // the bubble's badges again, with real mouse events at a badge's centre (the box is empty now, and the steps above read
+            // the project's runs and councils over the seed, so put it back first)
             await showChat();
-            await crbSeed(h, ctx.project);
+            await crbSeed(h, ctx);
             const bubbleBadges = await polishWaitFor(
                 h,
                 `!!${inBubble(tokens.agent)} && ${inBubble(tokens.run)}?.getAttribute("data-ref-state") === "resolved"`,
@@ -49387,6 +49709,11 @@ const chatRefBadges = {
                 return true;
             })()`)
         );
+        // the real initiative the arrange made (the seeded conversation and finished initiative live in the page's atoms, which the
+        // reload below drops)
+        if (ctx.effortId) {
+            await step("delete the initiative", () => h.rpc("effortdelete", { effortoid: ctx.effortId }));
+        }
         if (ctx.projectMade) {
             // deleteproject leaves the channel createproject made, so that goes too
             await step("remove the project", async () => {
