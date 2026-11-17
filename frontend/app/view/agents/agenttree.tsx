@@ -317,7 +317,7 @@ import { unreadLabel } from "./unreadagents";
 import { attentionAtom, splitAttention } from "./attentionstore";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { showServiceMenu } from "./servicemenu";
-import { canRestart, serviceRowWords, treeServiceInput } from "./servicesmodel";
+import { canRestart, serviceHeaderLine, serviceRowWords, serviceTreeWords, treeServiceInput } from "./servicesmodel";
 import { ensureServicesFeed, openService, restartService, servicesAtom } from "./servicesstore";
 import { showTerminalMenu, splitCellMenuItems, ToolGlyph } from "./terminalsrail";
 import { PanelWeb, TreeSpider } from "./themedecorview";
@@ -798,8 +798,8 @@ function RunningBadge({ n }: { n: number }) {
 // What a folded folder holds, the nav rail's agent mark and a terminal's, each with its number, so it fits beside the
 // name and the badges; folderCounts' words are its label. It is the part of the far end that gives way: a mark that
 // finds no room wraps onto a hidden second line, whole.
-function FolderCounts({ agents, terminals }: { agents: number; terminals: number }) {
-    const label = folderCounts(agents, terminals);
+function FolderCounts({ agents, terminals, services }: { agents: number; terminals: number; services: number }) {
+    const label = folderCounts(agents, terminals, services);
     if (label === "") {
         return null;
     }
@@ -820,6 +820,12 @@ function FolderCounts({ agents, terminals }: { agents: number; terminals: number
                 <span className="flex h-[14px] flex-none items-center gap-[3px]">
                     <SquareTerminal size={11} aria-hidden />
                     {terminals}
+                </span>
+            ) : null}
+            {services > 0 ? (
+                <span className="flex h-[14px] flex-none items-center gap-[3px]">
+                    <AppWindow size={11} aria-hidden />
+                    {services}
                 </span>
             ) : null}
         </span>
@@ -2728,6 +2734,11 @@ function openFolderMenu(model: AgentsViewModel, project: string, e: React.MouseE
         terminals: globalStore.get(model.terminalsAtom),
         lineage: globalStore.get(model.lineageAtom),
         serviceTabs: treeServiceInput(globalStore.get(servicesAtom) ?? [], null).serviceTabs,
+        roots: new Map(
+            Object.entries(globalStore.get(projectsAtom) ?? {}).flatMap(([name, p]) =>
+                p?.path ? [[name, p.path]] : []
+            )
+        ),
     });
     if (close.agents.length + close.terminals.length > 0) {
         items.push(
@@ -3210,6 +3221,9 @@ function ServiceRow({
         return null;
     }
     const w = serviceRowWords(service, now);
+    // the narrow row's words; the whole sentence is the row's title
+    const words = serviceTreeWords(service, now);
+    const line = serviceHeaderLine(service, now);
     const tone = SERVICE_TONE[w.tone];
     const select = () => {
         if (service.tabid) {
@@ -3228,6 +3242,7 @@ function ServiceRow({
         <div
             data-service-row={service.id}
             data-service-state={service.state}
+            title={`${service.name} · ${line}`}
             onClick={select}
             onContextMenu={(e) => showServiceMenu(model, service, e)}
             className={cn(
@@ -3242,23 +3257,21 @@ function ServiceRow({
             </DigitHint>
             <span
                 data-service-name
-                title={service.name}
                 className={cn(
                     "truncate text-[13px]",
                     // the name keeps its width and the words give way; a row with no words lets the name fill it
-                    w.words !== "" ? "max-w-[60%] flex-none" : "min-w-0 flex-1",
+                    words !== "" ? "max-w-[60%] flex-none" : "min-w-0 flex-1",
                     selected ? "text-primary" : "text-secondary"
                 )}
             >
                 {service.name}
             </span>
-            {w.words !== "" ? (
+            {words !== "" ? (
                 <span
                     data-service-words
-                    title={w.words}
                     className={cn("min-w-0 flex-1 truncate whitespace-nowrap text-[11px]", tone.text)}
                 >
-                    {w.words}
+                    {words}
                 </span>
             ) : null}
             {w.port != null ? (
@@ -4303,7 +4316,11 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                         {r.running > 0 ? <RunningBadge n={r.running} /> : null}
                                                         {r.attn > 0 ? <AskingBadge n={r.attn} /> : null}
                                                         {r.open ? null : (
-                                                            <FolderCounts agents={r.agents} terminals={r.terminals} />
+                                                            <FolderCounts
+                                                                agents={r.agents}
+                                                                terminals={r.terminals}
+                                                                services={r.services}
+                                                            />
                                                         )}
                                                     </>
                                                 }

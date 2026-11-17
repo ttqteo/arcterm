@@ -33,6 +33,61 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Typing in the find bar of a long session no longer lags: each key took up to a few tenths of a second on a session
   with a million characters of conversation, and now takes a few milliseconds.
+- A Claude agent left idle on screen is compacted again before its prompt cache goes cold when Claude Code's own idle
+  compaction is off (auto-compact or `idleCompaction` turned off): since 1.0.7 nothing compacted it, and the next turn
+  after an hour re-read the whole conversation at the full rate.
+- An agent or terminal started in No folder from the New dialog sits in No folder in the Agent tree, rather than in a
+  second folder named Home beside it. A project of yours named Home keeps its own folder.
+- A project you add or remove shows in the cockpit as soon as it is saved, also when the machine is busy: arcterm
+  waited for the config file's change event, which under load came half a minute or more later.
+
+### Changed
+
+- Agents with no project now sit in No folder in the Agent tree, with the terminals that have none, rather than in a
+  separate "ungrouped" folder.
+- An app's row in the Agent tree says its state in a word or two (external, port taken, no page, retry in 8s), so it
+  is no longer cut off. Hover the row for the full sentence.
+- → Sonnet in the Consumers panel re-runs a working run worker's task on Sonnet, after a confirm: a model switch
+  would only land when its turn ends, which for a worker is the end of its task.
+- A terminal in a split shows a terminal mark in its bar, and Move to the panel, as it does when it is the one in focus.
+
+### Fixed
+
+- The Consumers panel no longer shows a pi or codex agent as using no tokens: it says it cannot tell, since it reads
+  only Claude's transcripts.
+- Picking No folder for a tool in the New dialog opens it in your home folder even when you have a project named Home.
+- A folded project folder that holds only apps says how many it holds, rather than looking empty.
+- Changing where a built-in tool opens (Setup → Tools) no longer fixes its command in `tools.json`, so a later
+  arcterm that changes the tool's command still reaches you.
+- Changing Opens in or Shows right after turning Keep running on or off no longer undoes that Keep running click.
+- Opening an app and starting it at nearly the same moment no longer leaves an extra tab behind.
+- A server in the agent's rail that refuses to stop (access denied) says why on its row, and an app that refuses Stop
+  or Restart from its menu says so, rather than the click seeming to do nothing.
+- A terminal on another machine is no longer marked as in a removed folder because a local folder with the same path
+  was deleted.
+### Added
+
+- The Task box of New agent works like Chat's box: `@` names an agent, a run, a council, a past conversation or an
+  initiative as well as a file, `/` lists Claude Code's commands, and any file can be attached (paste, drop, the
+  paperclip or Cmd+U / Ctrl+U), not only images.
+- A Jarvis theme in Settings → Appearance: a deep navy ground, thin cyan-tinted edges and a cyan accent, like a
+  heads-up display.
+
+### Changed
+
+- Clicking a file in the card that ends a turn in Chat opens it in the rail beside the terminal, in a tab of its own;
+  See all still opens the Diff.
+- Switching back to an agent in Chat shows a skeleton while it reads what the agent wrote meanwhile, then draws the
+  conversation at once, instead of opening each of those rows one by one.
+- Chat no longer draws commit suggestion cards: an agent that has to ask before committing asks in plain words again.
+
+### Fixed
+
+- Switching between HTML files no longer flashes white before the page shows.
+- On a Mac, Sidecar is a native window like the main one: rounded corners, a shadow and the traffic lights, whose
+  green button takes it full screen in both its forms.
+- A file an agent edited on your other machine (a session started on Windows and resumed on the Mac) opens from the
+  card at a turn's end, found in the agent's folder here, instead of "This file no longer exists".
 
 ## 1.3.0 — 2026-11-17
 

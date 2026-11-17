@@ -20,6 +20,7 @@ import {
     scrollKey,
 } from "@/app/view/code/codescroll";
 import { getWebServerEndpoint } from "@/util/endpoints";
+import { cn } from "@/util/util";
 import { useEffect, useRef, useState } from "react";
 
 // the served path never changes for a file while wavesrv runs, so each is asked for once
@@ -65,6 +66,9 @@ export function HtmlFrame({
     // otherwise overwrite where the reader was. Only its first load takes the offset back, not a page in its folder
     // the reader follows a link to
     const restoredRef = useRef(false);
+    // the frame stays invisible until its page has loaded: its canvas is white (a page with no background is drawn
+    // on white), and a new frame (each file switch) would otherwise flash that white before the page paints
+    const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
     const key = scrollKey("html", path);
     const url =
         src == null || src.path !== path
@@ -118,6 +122,7 @@ export function HtmlFrame({
             title={title}
             src={url}
             onLoad={() => {
+                setLoadedUrl(url);
                 if (restoredRef.current) {
                     return;
                 }
@@ -130,7 +135,7 @@ export function HtmlFrame({
             // the page runs its own scripts (a slide deck's navigation) at wavesrv's origin, never the app's, and
             // reaches nothing but its own folder: the token in its path is not the auth key
             sandbox="allow-scripts allow-same-origin"
-            className="min-h-0 w-full flex-1 border-0 bg-page-canvas"
+            className={cn("min-h-0 w-full flex-1 border-0 bg-page-canvas", loadedUrl !== url && "invisible")}
         />
     );
 }

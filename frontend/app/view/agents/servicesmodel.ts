@@ -65,6 +65,29 @@ export function serviceRowWords(s: ServiceStatus, nowMs: number): ServiceRowWord
     }
 }
 
+/** Pure: the row words for the Agent tree, whose 248 px row cut the long ones to "cra…" with no hint until hover. The
+ *  same state as serviceRowWords in a word or two (the tone and the dot are its), the full sentence left to the row's
+ *  title and the page header (serviceHeaderLine): "external", "retry in 8s", "crashed", "port taken", "no page". */
+export function serviceTreeWords(s: ServiceStatus, nowMs: number): string {
+    if (s.state === "sleeping" && s.off) {
+        return "stopped";
+    }
+    switch (s.state) {
+        case "elsewhere":
+            return "external";
+        case "retrying":
+            return retryIn(s, nowMs);
+        case "crashed":
+            return "crashed";
+        case "porttaken":
+            return "port taken";
+        case "nopage":
+            return "no page";
+        default:
+            return serviceRowWords(s, nowMs).words;
+    }
+}
+
 /** How long a service has been up: 40s, 5m, 2h 14m. */
 export function upFor(ms: number): string {
     const secs = Math.max(0, Math.floor(ms / 1000));

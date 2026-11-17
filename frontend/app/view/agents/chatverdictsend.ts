@@ -1,9 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// What the verdict card's Fix and Skip buttons do, and the commit card's Commit (chatcommitcard.tsx): send the one line
-// to the agent as a prompt (a sleeping agent is woken with it), the way a brainstorm line goes (brainstormsend.ts), then
-// keep the record that pairs the line with the user message it causes, so Chat folds the card into its ✓ row and draws that message nothing. The record is kept only once
+// What the verdict card's Fix and Skip buttons do: send the one line to the agent as a prompt (a sleeping agent is woken
+// with it), the way a brainstorm line goes (brainstormsend.ts), then keep the record that pairs the line with the user
+// message it causes, so Chat folds the card into its ✓ row and draws that message nothing. The record is kept only once
 // the send succeeded: a failure throws with the agent's name and leaves the card as it was.
 
 import type { AgentVM } from "./agentsviewmodel";

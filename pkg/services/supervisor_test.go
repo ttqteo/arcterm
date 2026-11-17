@@ -6,9 +6,11 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1308,5 +1310,81 @@ func TestWakeReusesRememberedPort(t *testing.T) {
 	}
 	if h.freeCalls != 1 {
 		t.Errorf("FreePort called %d times, want once", h.freeCalls)
+	}
+}
+
+// A service whose page never answered has no busy baseline: the processes its start launched are younger than the
+// stamp a start puts in startedMs (the waiting card counts from it), and must not read as work that keeps it awake.
+func TestStartingServiceIsNeverBusy(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.seen("portfolio")
+	h.wantState("portfolio", StateStarting)
+	started := h.status("portfolio").StartedMs
+
+	h.seen()
+	h.procs["blk-portfolio"] = []Proc{{Pid: 7, StartMs: started + 1000}} // npm and node, started by the start itself
+	h.advance(IdleSleep)
+	h.wantState("portfolio", StateSleeping)
+	if !slices.Equal(h.stops, []string{"blk-portfolio"}) {
+		t.Errorf("stops = %v, want one: a service that never answered slept late", h.stops)
+	}
+}
+
+// Two overlapping first opens of a service that has no tab yet (an Open and a Start, from two clicks) make one tab:
+// Ensure runs one call at a time per service, and the second finds the tab the first made.
+func TestOverlappingFirstOpensMakeOneTab(t *testing.T) {
+	h := newHarness(t)
+	var mu sync.Mutex
+	made := 0
+	inFirst := make(chan struct{})
+	release := make(chan struct{})
+	d := h.deps()
+	d.Ensure = func(_ context.Context, def Def) (string, string, error) {
+		mu.Lock()
+		if def.TabId != "" && def.BlockId != "" {
+			mu.Unlock()
+			return def.TabId, def.BlockId, nil
+		}
+		made++
+		n := made
+		mu.Unlock()
+		if n == 1 {
+			close(inFirst)
+			<-release
+		}
+		return fmt.Sprintf("tab-%d", n), fmt.Sprintf("blk-%d", n), nil
+	}
+	d.Publish = func(wshrpc.ServicesData) {}
+	d.After = func(time.Duration, func()) func() { return func() {} }
+	d.Start = func(context.Context, string, string) error { return nil }
+	d.Probe = func(context.Context, string) bool { return false }
+	sup := New(d)
+	sup.SetTools(context.Background(), []arctools.Tool{demandTool("portfolio", dashURL)}, nil, "")
+	sup.Boot(context.Background())
+
+	opened := make(chan error, 1)
+	go func() {
+		_, err := sup.Open(context.Background(), "portfolio")
+		opened <- err
+	}()
+	<-inFirst
+	started := make(chan error, 1)
+	go func() { started <- sup.Start(context.Background(), "portfolio") }()
+	time.Sleep(20 * time.Millisecond) // let the Start reach its Ensure and wait there
+	close(release)
+	if err := <-opened; err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := <-started; err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if made != 1 {
+		t.Fatalf("made %d tabs for one service, want 1", made)
+	}
+	for _, st := range sup.Status() {
+		if st.Id == "portfolio" && st.TabId != "tab-1" {
+			t.Errorf("the service's tab is %q, want tab-1", st.TabId)
+		}
 	}
 }

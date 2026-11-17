@@ -20,6 +20,8 @@ import {
     ramLabel,
     runRowName,
     sleepingByProject,
+    sonnetRerunMessage,
+    sonnetVia,
     staleLine,
     stopWorkerMessage,
     switchToastText,
@@ -516,6 +518,20 @@ describe("copy", () => {
         const row = { name: "arcterm", dag: { channelid: "ch", runid: "85548d0b-aaaa", taskid: "t-3" } } as ConsumerRow;
         expect(stopWorkerMessage(row)).toBe(
             "Stop worker t-3 of run 85548d0b? Its task stops and is not retried; tasks after it wait until you Retry or Skip it in the run."
+        );
+    });
+
+    it("sonnetVia re-runs a working worker and switches any other row with /model", () => {
+        const dag = { channelid: "ch", runid: "85548d0b-aaaa", taskid: "t-3" };
+        expect(sonnetVia({ dag, state: "working" })).toBe("rerun");
+        expect(sonnetVia({ dag, state: "idle" })).toBe("model");
+        expect(sonnetVia({ state: "working" })).toBe("model");
+    });
+
+    it("sonnetRerunMessage names the task and says it starts over", () => {
+        const row = { name: "arcterm", dag: { channelid: "ch", runid: "85548d0b-aaaa", taskid: "t-3" } } as ConsumerRow;
+        expect(sonnetRerunMessage(row)).toMatch(
+            /^Re-run worker t-3 of run 85548d0b on Sonnet\? .*starts over on Sonnet/
         );
     });
 

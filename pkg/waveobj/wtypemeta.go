@@ -131,6 +131,7 @@ type ParkedLaunch struct {
 	ResumeTitle string   `json:"resumetitle,omitempty"` // the resumed session's title, which names a held resume with no task
 	Task        string   `json:"task"`
 	Images      []string `json:"images,omitempty"` // the pasted or dropped images, kept under ~/.arc/attachments
+	Files       []string `json:"files,omitempty"`  // the other attached files: a pasted or dropped one's kept copy, a picked one where it is
 	Ts          int64    `json:"ts"`               // UnixMilli it was held
 	Reason      string   `json:"reason,omitempty"` // why it was held ("Memory pressure is high")
 }

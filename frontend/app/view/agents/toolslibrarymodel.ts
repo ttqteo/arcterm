@@ -275,16 +275,27 @@ export const SHOWS_OPTIONS = [
 
 // ---- tools.json ----
 
-// A tools.json entry replaces the whole entry of its id and needs a command, so a change to one field is written on top
-// of the rest. A tool of yours is its entry: every field it has comes back from its status. A built-in's entry is only
-// what the user overrode, read from the config; with none yet it starts from the built-in's own command.
+// A tools.json entry replaces the whole entry of its id, so a change to one field is written on top of the rest. A tool
+// of yours is its entry and needs a command: every field it has comes back from its status, except Keep running, which
+// the config entry holds as soon as the file reloads while the status of that click can still be on its way. A
+// built-in's entry is only what the user overrode, read from the config, and needs no command: wavesrv lays it over the
+// built-in, whose own command stays unpinned.
 export function overrideKeywords(
     tool: ToolStatus,
     current: ToolKeywords | undefined,
     patch: Pick<ToolKeywords, "opensin" | "shows">
 ): ToolKeywords {
-    const base = tool.category === YOURS ? keywordsFromTool(tool) : (current ?? {});
-    return { ...base, command: base.command || tool.command, ...patch };
+    if (tool.category !== YOURS) {
+        return { ...(current ?? {}), ...patch };
+    }
+    const base = keywordsFromTool(tool);
+    if (current != null) {
+        delete base.autostart;
+        if (current.autostart === true) {
+            base.autostart = true;
+        }
+    }
+    return { ...base, ...patch };
 }
 
 function keywordsFromTool(tool: ToolStatus): ToolKeywords {

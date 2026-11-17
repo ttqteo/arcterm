@@ -3,7 +3,6 @@ import {
     composeTaskWithImages,
     imageFilesOf,
     imageRoom,
-    imagesHoldLaunch,
     imagesPending,
     MAX_TASK_IMAGES,
     splitAttachedImages,
@@ -38,20 +37,6 @@ describe("imagesPending", () => {
                 { id: "2", previewUrl: "", error: "e" },
             ])
         ).toBe(false);
-    });
-});
-
-describe("imagesHoldLaunch", () => {
-    const writing = [{ id: "1", previewUrl: "" }];
-    it("holds an agent's launch while an image is being written", () => {
-        expect(imagesHoldLaunch("claude", writing)).toBe(true);
-        expect(imagesHoldLaunch("codex", writing)).toBe(true);
-    });
-    it("never holds a terminal's, which sends no task", () => {
-        expect(imagesHoldLaunch("terminal", writing)).toBe(false);
-    });
-    it("lets a launch go once every image is written or failed", () => {
-        expect(imagesHoldLaunch("claude", [{ id: "1", previewUrl: "", path: "p" }])).toBe(false);
     });
 });
 

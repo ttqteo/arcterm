@@ -16,6 +16,14 @@ list (its number is not reused).
 Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) ·
 [part 4](hand-checks-4.md) · [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **An awake agent is compacted when Claude Code's idle compaction is off.** With `autoCompactEnabled`
+  false in `~/.claude.json`, leave a Claude agent with 100k+ of context idle on screen for about 55 minutes: it gets one
+  `/compact` (its summary lands, the composer's draft is untouched) and is not put to sleep; the next turn after an
+  hour writes only the summary's cache (Usage → Cold resumes does not count it). Commit e2f38fb4f.
+- [ ] (arcterm) **No white flash switching between HTML files.** Lint and the typecheck only. Open two dark HTML
+  pages as tabs in the File pane (or Code), switch back and forth: the pane stays dark until the page draws, a page
+  with no background still shows on white, and a kept scroll position still comes back.
+
 - [ ] (arcterm) **Session search on your real transcripts.** The three `session-search-*` scenarios answer the search
   from a mock; nothing has run `SearchSessions` over real transcripts in the app. Agent → Conversation History → type a
   word you remember from an old Claude conversation → "N results" (with "· indexing…" the first time, clearing on its
@@ -23,6 +31,28 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   hit, Enter / Shift+Enter step through the matches, Esc closes the bar. New agent → Claude → `/` or the Session
   column's magnifier → the same word lists title and "Matched by content" rows. Note how long the first search takes.
   `conversationhistory.tsx`, `launcherresumelist.tsx`, `sessionsdetail.tsx`; commits 4b9814411, c7fdf4883, 104a440a8.
+- [ ] (arcterm) **A refused Stop says why: on a dev server's rail row, and in a toast from an app's menu.** The
+  `rail-servers` scenario fails at its first step on main too, so the row's new error line was never drawn. Run a
+  server as admin (an elevated shell: `npx http-server -p 8099`), let an agent in a normal arcterm list it in its rail,
+  then Stop, Stop? → a red "Couldn't stop it: Access is denied." line under that server's row, which stays listed. An
+  app (Setup → Tools service) whose Stop wavesrv refuses → a toast "Couldn't stop <name>". Commit: fix(servers) a
+  refused Stop says why
+- [ ] (arcterm) **Keep running, then Opens in at once, keeps Keep running; a built-in's Opens in writes no command.**
+  Setup → Tools, a tool of yours with a page: click Keep running, then at once change Shows → reopen Setup → Keep
+  running is still on, and `tools.json` has `"autostart": true`. Then lazygit: change Opens in → its `tools.json`
+  entry has `opensin` and no `command`. An entry an older arcterm wrote keeps its command until Reset. Commit:
+  fix(services,tools) one tab per service, built-in overrides without a command
+- [ ] (arcterm) **An agent with no project sits in No folder, with the terminals that have none.** Start a Claude agent
+  from a folder that is no project (New → No folder) and open a terminal with no project → one No folder folder at the
+  bottom of the Agent tree holds both, agent first, a divider, then the terminal; there is no "ungrouped" folder. No
+  folder has no right-click menu, so such agents have no Close project. Commit: fix(agent tree) one No folder
+- [ ] (arcterm) **No folder in the New dialog's Tool row opens in home with a project named Home.** Add a project named
+  `Home` (any folder), then New → Tool → No folder → lazygit (Opens in: root) → it opens in your home folder, under No
+  folder in the tree, not in that project's folder. Commit: fix(agent tree) explicit Home pick
+- [ ] (arcterm) **A remote terminal never reads as in a removed folder.** With an SSH connection, open a remote
+  terminal in `/tmp/x` and a local Git Bash one in `/tmp/x` too, then delete the local folder → only the local
+  terminal shows the folder-gone card. Commit: fix(servers) remote terminals never read as in a gone folder
+
 - [ ] (arcterm) **Closing Sidecar frees its two window icons; a reopen still draws the badge.** Windows only; the code is
   unit-tested but was never run in an app. Open Task Manager → Details, add the "GDI objects" and "USER objects"
   columns, then open and close Sidecar (Ctrl+P → Open Sidecar) ten times → arcterm's counts come back to the same
@@ -99,14 +129,6 @@ Older parts: [part 7](hand-checks-7.md) · [part 6](hand-checks-6.md) · [part 5
   Still untried: launch a new Claude agent and start a run worker; each works as before and has no `powershell.exe`
   above its `claude.exe`. A pi or codex agent (a `.cmd` shim) still has its PowerShell. If something only your
   PowerShell profile set is now missing for an agent, that is this change (`shellexec.directProgram`).
-- [ ] (arcterm) **Commit card from a real agent.** The `chat-commit` scenario drives the card from a fixture transcript;
-  a live agent writing the block was never tried. In a Claude agent in a repo whose rules say to ask before committing
-  (e.g. SIEM), have it finish a change: instead of a prose "commit?" its reply ends in a Commit suggestion card
-  (message box, a tick per file, Commit). Edit the message, untick a file, press Commit → the card folds into
-  "Commit suggestion · N files — Commit sent", the agent commits exactly that message and those files
-  (`git show --stat HEAD`) and reports the hash. In arcterm itself (where the agent commits on its own) no card shows.
-  Also check the first prompt of a new session carries the full "Commit asks in arcterm" line and later ones the short
-  reminder (`commitask-core.ts`, `skills/commit/SKILL.md`, `chatcommitcard.tsx`).
 - [ ] (arcterm) **No `/compact` loop before a sleep.** Unit tests only; never tried in the app. Have a Claude agent
   with 100k+ of context go idle (sleep on, After idle for short), off screen, so the sleep loop compacts it: Chat
   shows one `/compact Keep: …` and the agent sleeps once it lands. Run `/compact` by hand right before so the loop's

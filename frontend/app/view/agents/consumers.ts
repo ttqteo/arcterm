@@ -484,6 +484,20 @@ export function stopWorkerMessage(row: ConsumerRow): string {
     return `Stop worker ${dag.taskid} of run ${dag.runid.slice(0, 8)}? Its task stops and is not retried; tasks after it wait until you Retry or Skip it in the run.`;
 }
 
+/** How → Sonnet moves a row to Sonnet. `/model` waits for the running turn to end (the mod runs it as a slash command,
+ *  which Claude Code queues until the session is idle), and a run worker does its whole task in one turn: so a working
+ *  worker is re-run on Sonnet instead (spec decision 9's fallback: Stop, then the dag's escalate), its task starting
+ *  over. Any other row gets `/model`, its progress kept. */
+export function sonnetVia(row: Pick<ConsumerRow, "dag" | "state">): "model" | "rerun" {
+    return row.dag != null && row.state === "working" ? "rerun" : "model";
+}
+
+/** The confirm a worker's re-run on Sonnet asks. Only called for a row with a dag. */
+export function sonnetRerunMessage(row: ConsumerRow): string {
+    const dag = row.dag as ConsumerDag;
+    return `Re-run worker ${dag.taskid} of run ${dag.runid.slice(0, 8)} on Sonnet? Its worker stops and the task starts over on Sonnet: a /model switch would only land when its turn ends, which for a worker is the end of its task.`;
+}
+
 /** The toast after → Sonnet: the switch lands now unless the session was mid-turn and /model waits for the turn. */
 export function switchToastText(name: string, midTurn: boolean, appliesMidTurn: boolean): string {
     return midTurn && !appliesMidTurn ? `${name} switches to Sonnet from its next turn` : `${name} switched to Sonnet`;

@@ -173,3 +173,43 @@ func TestDecideLeavesAnAwakeAgentsCacheToClaudeCode(t *testing.T) {
 		}
 	}
 }
+
+func TestDecideCompactsAnAwakeAgentWhenClaudeCodeCannot(t *testing.T) {
+	awake := compactOn
+	awake.CompactAwake = true
+	at := func(idleFor time.Duration, change func(*Candidate), s Settings) Plan {
+		c := big("a", idleFor)
+		c.Viewing = true // on screen, so no sleep takes it
+		if change != nil {
+			change(&c)
+		}
+		return Decide([]Candidate{c}, t0, s, plentyOfRAM)
+	}
+	compact := Plan{Compact: []Compaction{{TabId: "a"}}}
+	if got := at(55*time.Minute, nil, awake); !reflect.DeepEqual(got, compact) {
+		t.Fatalf("5 min left got %+v, want %+v", got, compact)
+	}
+	// sleep switched off: the cache rule still holds
+	if got := at(56*time.Minute, nil, Settings{Compact: true, CompactAt: CompactAtDefault, CompactAwake: true}); !reflect.DeepEqual(got, compact) {
+		t.Fatalf("sleep off got %+v, want %+v", got, compact)
+	}
+	for name, tc := range map[string]struct {
+		idle   time.Duration
+		change func(*Candidate)
+		s      Settings
+	}{
+		"6 min left":           {54 * time.Minute, nil, awake},
+		"gone":                 {60 * time.Minute, nil, awake},
+		"five-minute cache":    {4 * time.Minute, func(c *Candidate) { c.Cache.OneHour = false }, awake},
+		"working":              {55 * time.Minute, func(c *Candidate) { c.Idle = false }, awake},
+		"a run's":              {55 * time.Minute, func(c *Candidate) { c.RunOwned = true }, awake},
+		"already asked":        {55 * time.Minute, func(c *Candidate) { c.CompactSent = t0.Add(-time.Minute) }, awake},
+		"gave up at this turn": {55 * time.Minute, func(c *Candidate) { c.CompactFailed = true }, awake},
+		"compaction off":       {55 * time.Minute, nil, Settings{Enabled: true, After: 30 * time.Minute, CompactAt: CompactAtDefault, CompactAwake: true}},
+		"Claude Code does it":  {55 * time.Minute, nil, compactOn},
+	} {
+		if got := at(tc.idle, tc.change, tc.s); !reflect.DeepEqual(got, Plan{}) {
+			t.Errorf("%s: got %+v, want nothing", name, got)
+		}
+	}
+}

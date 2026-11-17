@@ -77,7 +77,6 @@ import chatInitiativeBandScenarios from "./scenarios-chat-initiative-band.mjs";
 import chatRedesignScenarios from "./scenarios-chat-redesign.mjs";
 import chatCodeBoxScenarios from "./scenarios-chat-code-box.mjs";
 import chatVerdictHandoffScenarios from "./scenarios-chat-verdict-handoff.mjs";
-import chatCommitScenarios from "./scenarios-chat-commit.mjs";
 import chatCouncilScenarios from "./scenarios-chat-council.mjs";
 import codeBlameDraftScenarios from "./scenarios-code-blame-draft.mjs";
 import codeFixesSessionScenarios from "./scenarios-code-fixes-session.mjs";
@@ -26484,10 +26483,12 @@ const LAUNCHER_PROJECT = "verify-launcher";
 const LAUNCHER_PROJECT_B = "verify-launcher-b";
 
 // what the dialog shows, read in one evaluate. The pick (start) is the Start column's checked row
-const launcherState = `(() => {
+const launcherState = `(async () => {
+    ${agentPageFixtures.PAGE_LIB}
+    const L = await mod("app/view/agents/launcherstore.ts");
     const d = ${LAUNCHER};
     if (!d) return null;
-    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    // flat comes with PAGE_LIB
     const active = document.activeElement;
     const primary = [...d.querySelectorAll('button')].find((b) => /^(Launch agent|Open terminal|Start run|Starting…)/.test(flat(b)));
     const startCol = d.querySelector('[data-launcher-column="start"]');
@@ -26502,12 +26503,27 @@ const launcherState = `(() => {
         focusPrimary: !!primary && active === primary,
         filter: d.querySelector('[data-launcher-filter]') ? flat(d.querySelector('[data-launcher-filter]')) : null,
         restored: !!d.querySelector('[data-launcher-restored]'),
-        task: d.querySelector('#launcher-task')?.value ?? null,
+        // the Task box is the chat editor (promptbox.ts), whose text is the store's
+        task: d.querySelector('#launcher-task') ? globalStore.get(L.launcherTaskAtom) : null,
         goal: d.querySelector('textarea[aria-label="Goal"]')?.value ?? null,
         primary: primary ? { text: flat(primary), disabled: primary.disabled } : null,
         footer: flat(d.querySelector('[data-launcher-footer]')),
         footerError: d.querySelector('[data-launcher-footer]')?.getAttribute('data-launcher-footer') === 'error',
     };
+})()`;
+
+// The Task box's text, read and set through the store: the box is the chat editor (promptbox.ts), a contenteditable
+// that draws the store's text, with no value to set
+const TASK_TEXT = `(async () => {
+    ${agentPageFixtures.PAGE_LIB}
+    const L = await mod("app/view/agents/launcherstore.ts");
+    return globalStore.get(L.launcherTaskAtom);
+})()`;
+const setTaskExpr = (value) => `(async () => {
+    ${agentPageFixtures.PAGE_LIB}
+    const L = await mod("app/view/agents/launcherstore.ts");
+    globalStore.set(L.launcherTaskAtom, ${JSON.stringify(value)});
+    return true;
 })()`;
 
 // sets a field the way React reads typing: through its own prototype's value setter, then an input event
@@ -26975,12 +26991,12 @@ const launcherScenario = {
             s.focus === "launcher-task" && s.task === `${taskBefore}x` && s.filter === null && s.project === LAUNCHER_PROJECT_B,
             JSON.stringify({ taskBefore, ...s })
         );
-        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('#launcher-task')`, taskBefore));
+        await h.ev(setTaskExpr(taskBefore));
         await h.ev(`[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => /^Launch agent/.test((b.textContent ?? '').trim()))?.focus()`);
         await launcherPress(h, "Tab");
         const tabbedTo = (await state()).focus;
         const FLAG_BUTTON = `${LAUNCHER}?.querySelector('[data-launcher-task-row] button[title="Add a flag"]')`;
-        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('#launcher-task')`, "verify launcher: kept draft"));
+        await h.ev(setTaskExpr("verify launcher: kept draft"));
         await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-task-row] button[role="switch"]')?.click()`);
         const hasFlags = await h.ev(`!!${FLAG_BUTTON}`);
         if (hasFlags) await h.ev(`${FLAG_BUTTON}?.click()`);
@@ -27176,7 +27192,7 @@ const launcherScenario = {
         const launchRows = await launcherStartRows(h);
         const agentPick = launchRows.includes("claude") ? "claude" : launchRows[0];
         await launcherPickStart(h, agentPick);
-        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('#launcher-task')`, "verify launcher: launched task"));
+        await h.ev(setTaskExpr("verify launcher: launched task"));
         // React commits the click's update after the evaluated script returns, so the read is a second evaluate
         await h.ev(`(() => {
             const sw = ${LAUNCHER}?.querySelector('button[role="switch"]');
@@ -27407,7 +27423,7 @@ const launcherResumeState = `(() => {
         // the command input is drawn only while Command › is open (launcherOpenCommand)
         cmd: d.querySelector('#launcher-cmd')?.value ?? null,
         cmdReadOnly: d.querySelector('#launcher-cmd')?.readOnly ?? null,
-        taskHint: d.querySelector('#launcher-task')?.placeholder ?? null,
+        taskHint: d.querySelector('[data-launcher-task-hint]')?.getAttribute('data-launcher-task-hint') ?? null,
         worktreeSwitch: !!d.querySelector('[data-launcher-task-row] button[role="switch"]'),
         // a picked Claude session replaces the three columns with the resume step: the sessions at 272px and the
         // session's Quick look beside them, Back in the footer (the Transcript button is the columns' own)
@@ -28908,15 +28924,14 @@ const launcherResumeOlder = {
             await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
             await polishWaitFor(h, `${rowCount} > 0`, 8000);
             await polishNap(300);
-            const taskField = `${LAUNCHER}?.querySelector('#launcher-task')`;
-            const taskBefore = await h.ev(`${taskField}?.value ?? ''`);
+            const taskBefore = (await h.ev(TASK_TEXT)) ?? "";
             const rowsBefore = (await state()).ids.length;
             await h.ev(`${LAUNCHER}?.querySelector('[data-resume-new]')?.focus()`);
             for (const ch of "older") {
                 await launcherPress(h, ch, { type: true });
             }
             s = await state();
-            const typed = await h.ev(`({ task: ${taskField}?.value ?? null, focus: document.activeElement?.id || null })`);
+            const typed = { task: await h.ev(TASK_TEXT), focus: await h.ev(`document.activeElement?.id || null`) };
             await h.shot("cdp-shots/launcher-resume-older-6-typed.png");
             rec(
                 "6. closed and reopened, older typed on the New session row goes into the Task box, which takes focus; the Session column keeps every row",
@@ -28927,7 +28942,7 @@ const launcherResumeOlder = {
                     s.ids.length === rowsBefore,
                 JSON.stringify({ closed, taskBefore, ...typed, rowsBefore, rows: s.ids.length })
             );
-            await h.ev(setFieldExpr(taskField, taskBefore));
+            await h.ev(setTaskExpr(taskBefore));
             await h.shot("cdp-shots/launcher-resume-older-6-picked.png");
         } catch (e) {
             rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
@@ -29187,17 +29202,18 @@ const historyOlder = {
     },
 };
 
-// --- launcher-images: images pasted or dropped into the New agent dialog's Task box
-// (docs/superpowers/specs/2026-10-09-launcher-resume-and-images-design.md). The events are dispatched on the textarea
-// with a DataTransfer, as a browser makes them. A synthetic paste has no default action, so what the textarea does
-// with pasted text is not asserted, only that the handler left the event alone. It never presses Launch: that would
-// start a real agent.
+// --- launcher-images: files pasted or dropped into the New agent dialog's Task box, which takes them as Chat's box does
+// (promptbox.ts, composerattachments.ts; first written for docs/superpowers/specs/2026-10-09-launcher-resume-and-images-design.md).
+// The events are dispatched on the Task box's editor with a DataTransfer, as a browser makes them. It never presses
+// Launch: that would start a real agent.
 const LAUNCHER_IMAGES_PROJECT = "verify-launcher-images";
 const LAUNCHER_IMAGES_CAP_BYTES = 3.5 * 1024 * 1024; // MAX_UPLOAD_BYTES (uploadfile.ts)
 const LAUNCHER_PRIMARY_LABEL = "/^(Launch agent|Resume agent|Open terminal|Start run|Starting…)/";
+// the Task box empty: three lines of 13px at the editor's 1.9 line height (TASK_MIN_H, launcheragentfields.tsx)
+const LAUNCHER_TASK_MIN_H = 74;
 
-// page side: a PNG File (a flat colour, or random pixels PNG cannot shrink) and the two events. paste and drop return
-// dispatchEvent's answer: false means the handler took the event (preventDefault), true means the browser keeps it.
+// page side: a PNG File (a flat colour, or random pixels PNG cannot shrink), a plain file, and the two events. paste and
+// drop return dispatchEvent's answer: false means a handler took the event (preventDefault), true means it was left.
 const launcherImagesPage = `(() => {
     const task = () => document.querySelector('#launcher-task');
     const png = async ({ size = 32, noise = false, hue = 200 } = {}) => {
@@ -29236,39 +29252,45 @@ const pasteImageExpr = (opts) => `(async () => {
     return { notPrevented: p.paste(p.holding(await p.png(${JSON.stringify(opts)}))) };
 })()`;
 
-const launcherImagesState = `(() => {
+// a file that is not an image, pasted: a chip with a file icon and its size
+const pasteFileExpr = (name, bytes) => `(() => {
+    const p = ${launcherImagesPage};
+    const f = new File([new Uint8Array(${bytes})], ${JSON.stringify(name)}, { type: 'application/octet-stream' });
+    return { notPrevented: p.paste(p.holding(f)) };
+})()`;
+
+const launcherImagesState = `(async () => {
+    ${agentPageFixtures.PAGE_LIB}
+    const L = await mod("app/view/agents/launcherstore.ts");
     const d = ${LAUNCHER};
     if (!d) return null;
-    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    // flat comes with PAGE_LIB
     const primary = [...d.querySelectorAll('button')].find((b) => ${LAUNCHER_PRIMARY_LABEL}.test(flat(b)));
     const box = d.querySelector('#launcher-task');
-    const boxBottom = box?.getBoundingClientRect().bottom ?? 0;
-    const tiles = [...d.querySelectorAll('[data-task-image]')];
+    const chips = [...d.querySelectorAll('[data-launcher-task-row] [data-attachment-chip]')];
     return {
         box: !!box,
-        tiles: tiles.map((t) => t.getAttribute('data-task-image-state')),
-        srcs: tiles.map((t) => t.querySelector('img')?.getAttribute('src') ?? null),
-        errors: [...d.querySelectorAll('[data-task-image-error]')].map((e) => ({
-            text: flat(e),
-            warning: e.classList.contains('text-warning'),
-            belowBox: e.getBoundingClientRect().top >= boxBottom,
-        })),
+        tiles: chips.map((c) => c.getAttribute('data-attachment-chip')),
+        images: chips.map((c) => !!c.querySelector('img')),
+        srcs: chips.map((c) => c.querySelector('img')?.getAttribute('src') ?? null),
+        errors: chips.filter((c) => c.getAttribute('data-attachment-chip') === 'error').map((c) => c.getAttribute('title') ?? ''),
         restored: !!d.querySelector('[data-launcher-restored]'),
-        task: box?.value ?? null,
-        // the Task hint is the field's placeholder
-        hint: box?.placeholder ?? '',
+        task: box ? globalStore.get(L.launcherTaskAtom) : null,
+        hint: d.querySelector('[data-launcher-task-hint]')?.getAttribute('data-launcher-task-hint') ?? '',
         boxH: Math.round(box?.getBoundingClientRect().height ?? 0),
         rowH: Math.round(d.querySelector('[data-launcher-task-row]')?.getBoundingClientRect().height ?? 0),
         primary: primary ? { text: flat(primary), disabled: primary.disabled } : null,
+        footer: flat(d.querySelector('[data-launcher-footer]')),
+        slash: !!document.querySelector('[data-chat-slash]'),
     };
 })()`;
 
-// n tiles on screen, every one past pending
+// n chips in the Task row, every one past uploading
 const imageTilesSettled = (n) =>
-    `(() => { const t = [...(${LAUNCHER}?.querySelectorAll('[data-task-image]') ?? [])]; return t.length === ${n} && t.every((x) => x.getAttribute('data-task-image-state') !== 'pending'); })()`;
+    `(() => { const t = [...(${LAUNCHER}?.querySelectorAll('[data-launcher-task-row] [data-attachment-chip]') ?? [])]; return t.length === ${n} && t.every((x) => x.getAttribute('data-attachment-chip') !== 'uploading'); })()`;
 
 // Pastes a ~2.4 MB noise PNG (under the 3.5 MB cap) and looks, in the same evaluate and from the paste's own tick, for
-// a pending tile: React has committed it by the time dispatchEvent returns or within a few ms, and the write (a read,
+// an uploading chip: React has committed it by the time dispatchEvent returns or within a few ms, and the write (a read,
 // a base64 pass and an RPC) takes longer, so a short poll catches it without racing the render.
 const pendingProbeExpr = `(async () => {
     const p = ${launcherImagesPage};
@@ -29279,14 +29301,18 @@ const pendingProbeExpr = `(async () => {
     const notPrevented = p.paste(p.holding(file));
     let seen = null;
     for (const t0 = performance.now(); performance.now() - t0 < 1000; ) {
-        if (d.querySelector('[data-task-image-state="pending"]')) {
-            seen = { primaryDisabled: primary()?.disabled ?? null };
+        if (d.querySelector('[data-attachment-chip="uploading"]')) {
+            seen = { primaryDisabled: primary()?.disabled ?? null, footer: flat(d.querySelector('[data-launcher-footer]')) };
             break;
         }
         await new Promise((r) => setTimeout(r, 4));
     }
     return { bytes: file.size, notPrevented, seen };
 })()`;
+
+// the chips' remove buttons, the nth or all
+const removeChipExpr = (nth) =>
+    `[...(${LAUNCHER}?.querySelectorAll('[data-launcher-task-row] [data-attachment-chip] button[title="Remove"]') ?? [])]${nth == null ? ".forEach((b) => b.click())" : `[${nth}]?.click()`}`;
 
 const launcherImages = {
     name: "launcher-images",
@@ -29330,7 +29356,7 @@ const launcherImages = {
             rec("0. the dialog opens", false, "no dialog");
             return steps;
         }
-        // any agent row with a Task box will do; Terminal has none
+        // claude first: its Task box also lists Claude Code's commands on `/` (step 8); Terminal has no Task box
         const offered = await launcherStartRows(h);
         const agent = ["claude", "codex", "opencode", "pi", "agy"].find((id) => offered.includes(id));
         if (agent == null) {
@@ -29342,16 +29368,16 @@ const launcherImages = {
         await polishNap(300);
         let s = await state();
         if (!s?.box || s.tiles.length !== 0) {
-            rec("0. the Task box is there and holds no image yet", false, JSON.stringify(s));
+            rec("0. the Task box is there and holds no attachment yet", false, JSON.stringify(s));
             return steps;
         }
         // the field's height, empty and with four lines; it is emptied again, as step 7 reads an empty task
         const empty = { boxH: s.boxH, rowH: s.rowH };
-        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('#launcher-task')`, "verify line 1\nverify line 2\nverify line 3\nverify line 4"));
+        await h.ev(setTaskExpr("verify line 1\nverify line 2\nverify line 3\nverify line 4"));
         await polishNap(250);
         const lines = await state();
         await h.shot("cdp-shots/launcher-images-0-lines.png");
-        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('#launcher-task')`, ""));
+        await h.ev(setTaskExpr(""));
         await polishNap(250);
         const emptied = await state();
 
@@ -29361,51 +29387,51 @@ const launcherImages = {
         s = await state();
         await h.shot("cdp-shots/launcher-images-1-one.png");
         rec(
-            "1. pasting one image shows one tile that reaches ready, and the hint (the field's placeholder) says paste or drop images",
+            "1. pasting one image shows one image chip that reaches ready, and the hint says paste or drop files, @ and /",
             first.notPrevented === false &&
                 settled1 &&
-                s.tiles.length === 1 &&
-                s.tiles[0] === "ready" &&
-                s.hint.includes("paste or drop images"),
+                s.tiles.join() === "ready" &&
+                s.images[0] === true &&
+                s.hint.includes("paste or drop files") &&
+                s.hint.includes("@ to mention") &&
+                (agent !== "claude" || s.hint.includes("/ for commands")),
             JSON.stringify({ first, s })
         );
         rec(
-            "1b. the empty Task field is three lines (69px), and grows with longer text and an attached image",
-            empty.boxH === 69 &&
-                lines.boxH > 69 &&
+            `1b. the empty Task field is three lines (${LAUNCHER_TASK_MIN_H}px), and grows with longer text and an attachment`,
+            empty.boxH === LAUNCHER_TASK_MIN_H &&
+                lines.boxH > LAUNCHER_TASK_MIN_H &&
                 lines.rowH > empty.rowH &&
-                emptied.boxH === 69 &&
+                emptied.boxH === LAUNCHER_TASK_MIN_H &&
                 emptied.task === "" &&
-                s.boxH === 69 &&
+                s.boxH === LAUNCHER_TASK_MIN_H &&
                 s.rowH > empty.rowH,
             JSON.stringify({ empty, lines: { boxH: lines.boxH, rowH: lines.rowH }, emptied: { boxH: emptied.boxH, task: emptied.task }, image: { boxH: s.boxH, rowH: s.rowH } })
         );
 
-        // 2. a text-only paste is left to the browser
-        const text = await h.ev(`(() => {
+        // 2. a text-only paste adds no chip
+        await h.ev(`(() => {
             const dt = new DataTransfer();
             dt.setData('text/plain', 'hello');
-            return { notPrevented: document.querySelector('#launcher-task').dispatchEvent(
-                new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })) };
+            document.querySelector('#launcher-task').dispatchEvent(
+                new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+            return true;
         })()`);
         await polishNap(300);
         s = await state();
-        rec(
-            "2. a paste of plain text only is not cancelled and adds no tile",
-            text.notPrevented === true && s.tiles.length === 1,
-            JSON.stringify({ text, tiles: s.tiles })
-        );
+        rec("2. a paste of plain text only adds no chip", s.tiles.length === 1, JSON.stringify({ tiles: s.tiles }));
+        await h.ev(setTaskExpr(""));
 
         // 3. a second image, then the first one's ✕
         await h.ev(pasteImageExpr({ hue: 20 }));
         const settled2 = await polishWaitFor(h, imageTilesSettled(2), 10000);
         const two = await state();
-        await h.ev(`${LAUNCHER}.querySelectorAll('[data-task-image] button[aria-label="Remove image"]')[0]?.click()`);
+        await h.ev(removeChipExpr(0));
         await polishNap(300);
         s = await state();
         await h.shot("cdp-shots/launcher-images-2-row.png");
         rec(
-            "3. a second image makes two tiles; the first one's ✕ leaves the second",
+            "3. a second image makes two chips; the first one's ✕ leaves the second",
             settled2 && two.tiles.length === 2 && s.tiles.length === 1 && s.srcs[0] === two.srcs[1],
             JSON.stringify({ two: two.srcs, after: s.srcs })
         );
@@ -29418,66 +29444,88 @@ const launcherImages = {
         const settled3 = await polishWaitFor(h, imageTilesSettled(2), 10000);
         s = await state();
         rec(
-            "4. dropping an image on the Task box is taken (not left to the browser) and adds a tile that reaches ready",
+            "4. dropping an image on the Task box is taken (not left to the browser) and adds a chip that reaches ready",
             dropped.notPrevented === false && settled3 && s.tiles.join() === "ready,ready",
             JSON.stringify({ dropped, tiles: s.tiles })
         );
 
-        // 5. a launch waits for an image still being written
+        // 5. a launch waits for a file still being attached
         const probe = await h.ev(pendingProbeExpr);
         await h.shot("cdp-shots/launcher-images-3-pending.png");
         const left = await polishWaitFor(h, imageTilesSettled(3), 15000);
         s = await state();
         rec(
-            "5. a large image is pending while it is written, the primary button disabled until it is ready",
+            "5. a large image is uploading while it is written, the primary button disabled and the footer saying Attaching… until it is ready",
             probe.bytes < LAUNCHER_IMAGES_CAP_BYTES &&
                 probe.notPrevented === false &&
                 probe.seen?.primaryDisabled === true &&
+                /Attaching/.test(probe.seen?.footer ?? "") &&
                 left &&
                 s.tiles.join() === "ready,ready,ready" &&
                 s.primary?.disabled === false,
             JSON.stringify({ probe, left, tiles: s.tiles, primary: s.primary })
         );
 
-        // 6. a file the writer refuses keeps its tile and says why
-        await h.ev(`(() => {
-            const dt = new DataTransfer();
-            dt.items.add(new File([new Uint8Array([1, 2, 3, 4])], 'x.bin', { type: 'image/x-none' }));
-            document.querySelector('#launcher-task').dispatchEvent(
-                new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
-            return true;
-        })()`);
-        const errored = await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-task-image-state="error"]')`, 10000);
+        // 6. a file that is not an image is a file chip; one over the cap fails at once and holds the launch until removed
+        await h.ev(pasteFileExpr("verify-notes.bin", 64));
+        const fileSettled = await polishWaitFor(h, imageTilesSettled(4), 10000);
+        const withFile = await state();
+        await h.ev(pasteFileExpr("verify-big.bin", LAUNCHER_IMAGES_CAP_BYTES + 1024));
+        const errored = await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-attachment-chip="error"]')`, 10000);
         await polishNap(200);
         s = await state();
         await h.shot("cdp-shots/launcher-images-4-error.png");
         rec(
-            "6. an unsupported image keeps a tile in the error state with a warning line below the box, and does not hold the launch",
-            errored &&
-                s.tiles.join() === "ready,ready,ready,error" &&
+            "6. a plain file is a ready file chip; a file over 3.5 MB is an error chip saying why, and the primary button waits on it",
+            fileSettled &&
+                withFile.tiles.join() === "ready,ready,ready,ready" &&
+                withFile.images[3] === false &&
+                errored &&
+                s.tiles.join() === "ready,ready,ready,ready,error" &&
                 s.errors.length === 1 &&
-                s.errors[0].warning &&
-                s.errors[0].belowBox &&
-                /image\/x-none/.test(s.errors[0].text) &&
-                s.primary?.disabled === false,
-            JSON.stringify({ tiles: s.tiles, errors: s.errors, primary: s.primary })
+                /verify-big\.bin is over/.test(s.errors[0]) &&
+                s.primary?.disabled === true &&
+                /Retry or remove/.test(s.footer),
+            JSON.stringify({ withFile: withFile.tiles, tiles: s.tiles, errors: s.errors, primary: s.primary, footer: s.footer })
+        );
+        await h.ev(removeChipExpr(4));
+        await polishNap(300);
+        s = await state();
+        rec(
+            "6b. removing the failed chip lets the launch go again",
+            s.tiles.join() === "ready,ready,ready,ready" && s.primary?.disabled === false,
+            JSON.stringify({ tiles: s.tiles, primary: s.primary, footer: s.footer })
         );
 
-        // 7. a close keeps the images
+        // 7. a close keeps the attachments
         const before = s.tiles.join();
         await h.ev(focusColumn("project"));
         await launcherPress(h, "Escape");
         const closed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
         await h.ev(OPEN_NEW_AGENT);
-        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-task-image]')`, 5000);
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-attachment-chip]')`, 5000);
         await polishNap(400);
         s = await state();
         await h.shot("cdp-shots/launcher-images-5-reopen.png");
         rec(
-            "7. Escape and reopen: the same tiles are there, and the dialog says draft restored though the task is empty",
+            "7. Escape and reopen: the same chips are there, and the dialog says draft restored though the task is empty",
             closed && s != null && s.tiles.join() === before && s.restored && s.task === "",
             JSON.stringify({ closed, before, s })
         );
+
+        // 8. a `/` typed in claude's Task box lists Claude Code's commands, as Chat's box does
+        if (agent === "claude") {
+            await h.ev(`document.querySelector('#launcher-task')?.focus()`);
+            await polishNap(150);
+            await h.cdp("Input.insertText", { text: "/" });
+            const listed = await polishWaitFor(h, `!!document.querySelector('[data-chat-slash]')`, 5000);
+            s = await state();
+            await h.shot("cdp-shots/launcher-images-6-slash.png");
+            rec("8. a / in the Task box opens the command list", listed && s.task === "/", JSON.stringify({ listed, task: s.task }));
+            await launcherPress(h, "Escape");
+            await h.ev(setTaskExpr(""));
+            await polishNap(200);
+        }
         return steps;
     },
     async teardown(h, ctx) {
@@ -29488,16 +29536,14 @@ const launcherImages = {
                 console.error(`launcher-images teardown: ${what} failed: ${e?.message ?? e}`);
             }
         };
-        // 8. never Launch: take every tile off, run the dialog's Clear (clearLauncherDraft) and close it
-        await step("clear the images and the draft", async () => {
+        // 9. never Launch: take every chip off, run the dialog's Clear (clearLauncherDraft) and close it
+        await step("clear the attachments and the draft", async () => {
             if (!(await h.ev(`!!${LAUNCHER}`))) {
                 await h.ev(OPEN_NEW_AGENT);
                 await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
                 await polishNap(300);
             }
-            await h.ev(
-                `[...${LAUNCHER}.querySelectorAll('[data-task-image] button[aria-label="Remove image"]')].forEach((b) => b.click())`
-            );
+            await h.ev(removeChipExpr());
             await polishNap(200);
             await h.ev(`${LAUNCHER}.querySelector('[data-launcher-restored] button')?.click()`);
             await polishNap(200);
@@ -41950,6 +41996,8 @@ const CONSUMERS_READING = {
 };
 const CONSUMERS_STOP_WORKER =
     "Stop worker t-3 of run 85548d0b? Its task stops and is not retried; tasks after it wait until you Retry or Skip it in the run.";
+// → Sonnet on a working worker re-runs its task on Sonnet (sonnetRerunMessage): /model would wait for its turn
+const CONSUMERS_SONNET_RERUN = "Re-run worker t-3 of run 85548d0b on Sonnet?";
 const CONSUMERS_STOP_MINE = `End the session for "${CONSUMERS_MINE}"? This stops the agent and can't be undone.`;
 const CONSUMERS_STOP_LIVE = `End the session for "${CONSUMERS_LIVE}"? This stops the agent and can't be undone.`;
 
@@ -42233,13 +42281,21 @@ const consumersPopover = {
             JSON.stringify(tokens)
         );
 
+        // the worker is working: /model would only land when its turn, its whole task, ends, so → Sonnet asks to re-run
+        // the task on Sonnet, then stops the worker and escalates the task to Sonnet
         await h.ev(`${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-sonnet]")?.click()`);
-        const sonnetToast = await polishWaitFor(h, consumersToastExpr("arcterm switch", "Sonnet"), 3000);
-        const sonnetCall = (await calls()).find((c) => c.command === "agentssetmodel");
+        const rerunConfirm = await polishWaitFor(h, `!!${consumersDialogExpr(CONSUMERS_SONNET_RERUN)}`, 3000);
+        await h.shot("cdp-shots/consumers-sonnet-rerun.png");
+        await h.ev(`[...(${consumersDialogExpr(CONSUMERS_SONNET_RERUN)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim().startsWith("Re-run on Sonnet"))?.click()`);
+        const sonnetToast = await polishWaitFor(h, consumersToastExpr("Worker t-3 re-runs on Sonnet"), 3000);
+        const sonnetCalls = (await calls()).filter((c) => c.command === "dagaction").map((c) => c.data);
+        const task = { channelid: "fx-ch", runid: "85548d0b-fx", taskid: "t-3" };
         rec(
-            "7. → Sonnet sends /model sonnet to the worker's tab and a toast says so",
-            sonnetToast && sonnetCall?.data?.tab === "fx-consumers-worker" && sonnetCall?.data?.model === "sonnet",
-            JSON.stringify({ sonnetToast, sonnetCall })
+            "7. → Sonnet on the working worker asks to re-run its task on Sonnet, then stops it and escalates the task to sonnet",
+            rerunConfirm && sonnetToast &&
+                JSON.stringify(sonnetCalls) === JSON.stringify([{ ...task, action: "stop" }, { ...task, action: "escalate", model: "sonnet" }]) &&
+                !(await calls()).some((c) => c.command === "agentssetmodel"),
+            JSON.stringify({ rerunConfirm, sonnetToast, sonnetCalls })
         );
 
         await h.ev(`${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-stop]")?.click()`);
@@ -42247,7 +42303,8 @@ const consumersPopover = {
         await h.shot("cdp-shots/consumers-stop-worker.png");
         await h.ev(`[...(${consumersDialogExpr(CONSUMERS_STOP_WORKER)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim().startsWith("Stop worker"))?.click()`);
         const stopToast = await polishWaitFor(h, consumersToastExpr("Worker t-3 stopped"), 3000);
-        const stopCall = (await calls()).find((c) => c.command === "dagaction");
+        // the newest: step 7's re-run sent a stop and an escalate before it
+        const stopCall = (await calls()).filter((c) => c.command === "dagaction").at(-1);
         rec(
             "8. Stop on a worker asks the run confirm, then sends the stop dag action for its task",
             workerConfirm && stopToast &&
@@ -61169,11 +61226,12 @@ const servicesStates = {
         // trouble, so they are read from their Setup → Tools pages below
         const want = {
             "svc-ok": { words: "", port: `:${byId["svc-ok"].port}`, dot: "solid" },
-            "svc-else": { words: "not started by arcterm", port: `:${ctx.p1}`, dot: "hollow" },
-            "svc-taken": { words: new RegExp(`^${ctx.p2} is held by \\S+`), port: "", dot: "solid" },
-            "svc-crash": { words: "crashed · exit 1", port: "", dot: "solid" },
+            // the tree's short words (serviceTreeWords); the whole sentence is the row's title
+            "svc-else": { words: "external", port: `:${ctx.p1}`, dot: "hollow" },
+            "svc-taken": { words: "port taken", port: "", dot: "solid" },
+            "svc-crash": { words: "crashed", port: "", dot: "solid" },
             "svc-slow": { words: "starting…", port: "", dot: "pulse" },
-            "svc-flaky": { words: /^crashed · retry in \d+s$/, port: "", dot: "solid" },
+            "svc-flaky": { words: /^retry in \d+s$/, port: "", dot: "solid" },
         };
         const same = (got, exp) => (exp instanceof RegExp ? exp.test(got) : got === exp);
         const judge = (rows) => {
@@ -61205,7 +61263,7 @@ const servicesStates = {
         const v6 = rows.find((r) => r.id === "svc-v6");
         rec(
             "2. svc-v6 reads no page",
-            v6?.state === "nopage" && v6.words === "running, no page after 30s" && v6.dot === "solid" && byId["svc-v6"].state === "nopage",
+            v6?.state === "nopage" && v6.words === "no page" && v6.dot === "solid" && byId["svc-v6"].state === "nopage",
             JSON.stringify({ v6, status: byId["svc-v6"] })
         );
 
@@ -61421,7 +61479,8 @@ const servicesTree = {
                 freed &&
                 stillAsleep &&
                 fixedRow?.state === "sleeping" &&
-                fixedRow.words === "sleeping",
+                // a service the person stopped reads stopped, not sleeping (serviceTreeWords: wavesrv's Off)
+                fixedRow.words === "stopped",
             JSON.stringify({ openedFixed, heldBefore, stopped: stopped.ok, freed, stillAsleep, fixedRow })
         );
 
@@ -73272,7 +73331,6 @@ export const SCENARIOS = [
     ...chatBrainstormBandScenarios(CR_KIT),
     ...chatBrainstormReviewScenarios(CBR_KIT),
     ...chatVerdictHandoffScenarios(CBR_KIT),
-    ...chatCommitScenarios(CBR_KIT),
     ...chatCouncilScenarios(CR_KIT),
     ...overlaysFrostScenarios(OF_KIT),
     ...surfacesSpringScenarios(SS_KIT),

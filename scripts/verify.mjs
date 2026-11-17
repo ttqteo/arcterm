@@ -303,9 +303,12 @@ function xmlAttr(attrs, name) {
 }
 
 // failedVitestTests reads vitest's JUnit report for the test cases that failed, each { file, name }, or returns
-// null when rerunning them alone cannot settle the failure: the report is missing or not XML, it names no failed
-// case (a crash, or a failure outside any test), or a failed case is a whole file's (vitest reports a collection
-// error as a case named for its file), so a rerun of the other files would hide it.
+// null when rerunning them alone cannot settle the failure: the report is missing or not XML, or it names no failed
+// case (a crash, or a failure outside any test). A whole file's failure (vitest reports a collection error as a case
+// named for its file) is one to rerun too, named LOAD_FAILED: under low RAM a file can time out while it loads, and
+// loads alone; one that fails to load again is broken, and the rerun of its file says so.
+export const LOAD_FAILED = "failed to load";
+
 export function failedVitestTests(xml) {
     if (typeof xml !== "string") {
         return null;
@@ -317,10 +320,10 @@ export function failedVitestTests(xml) {
         }
         const file = xmlAttr(m[1], "classname");
         const name = xmlAttr(m[1], "name");
-        if (!file || !name || name === file) {
+        if (!file || !name) {
             return null;
         }
-        failed.push({ file, name });
+        failed.push({ file, name: name === file ? LOAD_FAILED : name });
     }
     return failed.length > 0 ? failed : null;
 }

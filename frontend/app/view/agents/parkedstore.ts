@@ -22,12 +22,18 @@ import { fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect } from "react";
 import { centerModeAtom, heldSelAtom, showTerminal } from "./agentcenter";
+import {
+    attachmentsFromPaths,
+    composeLaunchTask,
+    draftAttachments,
+    patchDraftAttachment,
+    setDraftAttachments,
+} from "./composerattachments";
 import { runtimeStartupCommand, sessionIdFromTranscript, type Runtime } from "./launch";
 import { HOME_NAME, HOME_PICK } from "./launcher";
-import { composeTaskWithImages, type TaskImage } from "./launcherimages";
 import {
     clearLauncherDraft,
-    launcherImagesAtom,
+    LAUNCHER_DRAFT,
     launcherParkedIdAtom,
     launcherRestoredAtom,
     launcherResumeAtom,
@@ -82,6 +88,7 @@ export async function parkLaunch(input: {
     resumeTitle?: string;
     task: string;
     images: string[];
+    files: string[];
     reason: string | null;
 }): Promise<ParkedLaunch> {
     const entry: ParkedLaunch = {
@@ -97,6 +104,7 @@ export async function parkLaunch(input: {
         ...(input.resumeTitle ? { resumetitle: input.resumeTitle } : {}),
         task: input.task,
         ...(input.images.length > 0 ? { images: input.images } : {}),
+        ...(input.files.length > 0 ? { files: input.files } : {}),
         ts: Date.now(),
         ...(input.reason ? { reason: input.reason } : {}),
     };
@@ -140,12 +148,12 @@ export async function removeParkedWithUndo(p: ParkedLaunch): Promise<void> {
     });
 }
 
-/** Start now: the agent starts as New would have started it (its project, command, branch, task and images), and the
+/** Start now: the agent starts as New would have started it (its project, command, branch, task and attachments), and the
  *  held entry goes. A failed start leaves the entry, and its toast says why. */
 export async function startHeld(model: AgentsViewModel, p: ParkedLaunch): Promise<void> {
     const runtime = p.runtime as Runtime;
     const resuming = !!p.resumeof;
-    const { task, extraArgs } = composeTaskWithImages(runtime, p.task, p.images ?? [], resuming);
+    const { task, extraArgs } = composeLaunchTask(runtime, p.task, p.images ?? [], p.files ?? [], resuming);
     try {
         await launchAgent(model, {
             runtime,
@@ -238,7 +246,7 @@ async function previewOf(path: string): Promise<string> {
     return URL.createObjectURL(typedBlob(await resp.blob(), resp.headers.get("content-type")));
 }
 
-/** Edit in New…: the New dialog filled from a held agent (its project, agent, task and images) in place of the draft.
+/** Edit in New…: the New dialog filled from a held agent (its project, agent, task and attachments) in place of the draft.
  *  Launch agent then starts it, or holds it again, in its place, while the machine is still busy. */
 export function openParked(model: LauncherModel, p: ParkedLaunch): void {
     clearLauncherDraft();
@@ -248,24 +256,28 @@ export function openParked(model: LauncherModel, p: ParkedLaunch): void {
     globalStore.set(launcherResumeAtom, p.resumeof ? (sessionIdFromTranscript(p.resumeof) ?? null) : null);
     globalStore.set(launcherParkedIdAtom, p.id);
     globalStore.set(launcherRestoredAtom, false);
-    const images: TaskImage[] = (p.images ?? []).map((path) => ({ id: crypto.randomUUID(), previewUrl: "", path }));
-    globalStore.set(launcherImagesAtom, images);
-    for (const img of images) {
-        previewOf(img.path).then(
+    // the held files come back as the Task box's chips: each image's preview is read back from its file
+    const atts = attachmentsFromPaths([...(p.images ?? []), ...(p.files ?? [])], []);
+    setDraftAttachments(LAUNCHER_DRAFT, atts);
+    for (const a of atts) {
+        if (a.kind !== "image" || a.path == null) {
+            continue;
+        }
+        previewOf(a.path).then(
             (url) => {
                 // removed (or the dialog cleared) while it loaded: nothing shows it
-                if (!globalStore.get(launcherImagesAtom).some((i) => i.id === img.id)) {
+                if (!draftAttachments(LAUNCHER_DRAFT).some((d) => d.id === a.id)) {
                     URL.revokeObjectURL(url);
                     return;
                 }
-                globalStore.set(launcherImagesAtom, (prev) =>
-                    prev.map((i) => (i.id === img.id ? { ...i, previewUrl: url } : i))
-                );
+                patchDraftAttachment(LAUNCHER_DRAFT, a.id, { previewUrl: url });
             },
             (e) =>
-                globalStore.set(launcherImagesAtom, (prev) =>
-                    prev.map((i) => (i.id === img.id ? { ...i, path: undefined, error: String(e?.message ?? e) } : i))
-                )
+                patchDraftAttachment(LAUNCHER_DRAFT, a.id, {
+                    status: "error",
+                    path: undefined,
+                    error: String(e?.message ?? e),
+                })
         );
     }
 }

@@ -339,3 +339,37 @@ export function fileWhere(path: string, cwd: string | null | undefined): { name:
     const absolute = /^(?:[a-z]:)?\//i.test(norm);
     return { name, folder: absolute ? (dir.split("/").pop() ?? "") : dir };
 }
+
+/** Pure: where a turn's file is on disk, to open it: an absolute path as written, a relative one read against the agent's
+ *  directory (in that directory's separator), or null when it is relative and the directory is not known. */
+export function turnFileAbs(path: string, cwd: string | null | undefined): string | null {
+    if (/^(?:[a-z]:)?[\\/]/i.test(path)) {
+        return path;
+    }
+    if (cwd == null || cwd === "") {
+        return null;
+    }
+    const sep = cwd.includes("\\") && !cwd.includes("/") ? "\\" : "/";
+    return `${cwd.replace(/[\\/]+$/, "")}${sep}${path.replace(/^\.[\\/]/, "")}`;
+}
+
+/** Pure: where a file the agent edited on another machine may be here, longest guess first. A session started on Windows
+ *  and resumed on a Mac (or the other way) keeps the other machine's absolute paths in its transcript (`d:\proj\a\b.html`),
+ *  which this machine cannot open; the project is the agent's directory here, under another name and parent, so each tail
+ *  of the path (`proj\a\b.html`, `a\b.html`, `b.html`) is read against it and the first that exists is the file. Empty
+ *  for a path this machine can open as written, or with no directory to read it against. */
+export function foreignPathGuesses(path: string, cwd: string | null | undefined, windows: boolean): string[] {
+    const foreign = windows ? /^\/(?!\/)/.test(path) : /^[a-z]:[\\/]/i.test(path);
+    if (!foreign || cwd == null || cwd === "") {
+        return [];
+    }
+    const parts = path
+        .replace(/^[a-z]:/i, "")
+        .split(/[\\/]+/)
+        .filter((p) => p !== "");
+    const out: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+        out.push(turnFileAbs(parts.slice(i).join(windows ? "\\" : "/"), cwd)!);
+    }
+    return out;
+}

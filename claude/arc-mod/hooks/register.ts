@@ -11,7 +11,6 @@ import { cacheMissNotice, transcriptEntries } from "./cache-core";
 import { MATH_SECTION, MATH_SECTION_ID, mathContext } from "./chatmath-core";
 import { claudeConfigDir, memoryDir, transcriptFile } from "./claudepaths-core";
 import { claudecmdsArgs, commandsPayload } from "./commands-core";
-import { commitAskContext } from "./commitask-core";
 import type { Turn } from "./control-core";
 import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
 import { absolutePath, editTarget, foreignReason, needsAsk, parentDirs, repoKey, repoRoot } from "./foreignrepo-core";
@@ -42,8 +41,6 @@ let active = false;
 let isInteractive = true;
 let isMathComposed = false;
 let hasToldMath = false;
-// Chat's commit card (commitask-core.ts): whether a prompt carried the whole ask, so the next ones carry the reminder
-let hasToldCommitAsk = false;
 
 // the session's transcript, worked out at its latest prompt; a status report carries it so a cockpit that
 // replays the report still follows the file. null after a reload until the next prompt
@@ -796,18 +793,7 @@ export const register: Register = (on) => {
             // an id the person names ("đọc agent 5065bd8c", council:<id>) is read with wsh read; not the ids in a
             // subagent's hand-back, a peer's message or a background task's report
             const refs = active && !e.command && endsTurnSay(e.origin.kind) ? refsContext(e.text) : null;
-            // where the repo's rules make claude ask before a commit, the ask is an arc-commit block Chat draws as a card
-            const commitAsk = commitAskContext({
-                isActive: active,
-                isInteractive,
-                isCommand: !!e.command,
-                isPersonTurn: endsTurnSay(e.origin.kind),
-                hasTold: hasToldCommitAsk,
-            });
-            if (commitAsk !== null) {
-                hasToldCommitAsk = true;
-            }
-            const added = [math, refs, commitAsk].filter((c): c is string => c !== null);
+            const added = [math, refs].filter((c): c is string => c !== null);
             if (added.length > 0) {
                 return next({ ...e, context: [...(e.context ?? []), ...added] });
             }

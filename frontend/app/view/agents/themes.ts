@@ -321,6 +321,35 @@ export const THEMES: ThemeDef[] = [
             ansiBlue: "#88b4dc",
         },
     },
+    {
+        id: "jarvis",
+        name: "Jarvis",
+        // A HUD look: a deep navy ground, regions parted by blue-tinted steps, edges that read as faint cyan lines,
+        // ice-white text and a cyan accent, after the "Jarvis command center" dashboards. Cyan is the accent, so the
+        // terminal's blue is a softer azure that still parts from it; the status colours are lifted to clear 4.5:1 on
+        // the navy. No claudeMark: the accent is not Claude's clay.
+        palette: {
+            bg: "#060b14",
+            surface: "#0a1320",
+            surfaceRaised: "#0f1b2c",
+            surfaceHover: "#132236",
+            surfaceSelected: "#182b44",
+            code: "#050911",
+            border: "#13243a",
+            edgeMid: "#183049",
+            edgeStrong: "#22476a",
+            edgeFaint: "#0f1c2d",
+            text: "#dcf2ff",
+            secondary: "#b3cfe2",
+            muted: "#7f9db5",
+            inkFaint: "#5c7890",
+            accent: "#3fd0ff",
+            success: "#3ee0a4",
+            warning: "#ffc24a",
+            error: "#ff6b86",
+            ansiBlue: "#6a9cff",
+        },
+    },
 ];
 
 // Accent quick-picks for the Custom colors card (ports the mockup accentPalette; the first

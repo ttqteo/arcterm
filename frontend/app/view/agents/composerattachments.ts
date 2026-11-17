@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Attachments on the New run goal and the chat box: a pasted file is persisted to a wavesrv temp file via
+// Attachments on the New run goal, the chat box and the New agent's Task box: a pasted file is persisted to a wavesrv temp file via
 // WriteTempFileCommand, a file picked in the native dialog is referenced where it is, and either reaches the run or the
 // agent as a path in its text. Pure helpers below are unit-tested (composerattachments.test.ts); the
 // useComposerAttachments hook (impure: RPC + object URLs) is verified over CDP by the new-run-attachments scenario.
@@ -14,7 +14,8 @@ import { fireAndForget } from "@/util/util";
 import base64 from "base64-js";
 import { atom, useAtomValue } from "jotai";
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent } from "react";
-import { composeTaskWithImages } from "./launcherimages";
+import type { Runtime } from "./launch";
+import { composeTaskWithImages, type TaskWithImages } from "./launcherimages";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "./uploadfile";
 
 // The pasted or dropped file travels base64 in one websocket message, so the cap is uploadfile.ts's (see the reason there).
@@ -54,25 +55,53 @@ export function isOversize(size: number): boolean {
 // Appends a trailing "read these files" block listing every ready attachment's absolute path. Returns
 // `text` unchanged when nothing is ready; when the base text is blank, returns just the block.
 export function appendAttachments(text: string, atts: Attachment[]): string {
-    const ready = atts.filter((a) => a.status === "ready" && a.path);
-    if (ready.length === 0) {
+    return appendFilePaths(
+        text,
+        readyOf(atts).map((a) => a.path)
+    );
+}
+
+function readyOf(atts: Attachment[]): (Attachment & { path: string })[] {
+    return atts.filter((a): a is Attachment & { path: string } => a.status === "ready" && !!a.path);
+}
+
+// the "read these files" block under `text` for these paths; `text` unchanged for none
+export function appendFilePaths(text: string, paths: string[]): string {
+    if (paths.length === 0) {
         return text;
     }
-    const block = `${FILES_HEADER}\n` + ready.map((a) => `- ${a.path}`).join("\n");
+    const block = `${FILES_HEADER}\n` + paths.map((p) => `- ${p}`).join("\n");
     return text.trim() ? `${text}\n\n${block}` : block;
+}
+
+// the paths of the ready attachments, images apart from the other files
+export function readyPaths(atts: Attachment[]): { images: string[]; files: string[] } {
+    const ready = readyOf(atts);
+    return {
+        images: ready.filter((a) => a.kind === "image").map((a) => a.path),
+        files: ready.filter((a) => a.kind !== "image").map((a) => a.path),
+    };
+}
+
+// A new agent's first prompt with what rides it (the New dialog's launch, and a held agent's Start now): the other files
+// as the "read these files" block, then the images as composeTaskWithImages puts them (codex starting fresh takes them as
+// --image after the prompt, the rest as the "Attached images:" block)
+export function composeLaunchTask(
+    runtime: Runtime,
+    task: string,
+    images: string[],
+    files: string[],
+    resuming: boolean
+): TaskWithImages {
+    return composeTaskWithImages(runtime, appendFilePaths(task.trim(), files), images, resuming);
 }
 
 // A message to an agent with its attachments: other files as the "read these files" block (appendAttachments), and
 // images last as the "Attached images:" block a launch's task carries (composeTaskWithImages), which chat draws as
 // pictures in your bubble (splitAttachedImages reads it back only as the message's last lines). Ready ones only.
 export function messageWithAttachments(text: string, atts: Attachment[]): string {
-    const ready = atts.filter((a) => a.status === "ready" && a.path);
-    const images = ready.filter((a) => a.kind === "image").map((a) => a.path);
-    const withFiles = appendAttachments(
-        text,
-        ready.filter((a) => a.kind !== "image")
-    );
-    return composeTaskWithImages("claude", withFiles, images, false).task;
+    const { images, files } = readyPaths(atts);
+    return composeTaskWithImages("claude", appendFilePaths(text, files), images, false).task;
 }
 
 // Picked files are referenced in place, so they are ready at once and carry no size cap. A path already
@@ -149,6 +178,53 @@ function useAttachmentList(draftKey: string | undefined): [Attachment[], (u: Lis
 }
 
 const NO_ATTACHMENTS: Attachment[] = [];
+
+/** A box's chips read from outside the box (the New dialog's launch and hold read the Task box's). */
+export function draftAttachments(draftKey: string): Attachment[] {
+    return globalStore.get(attachmentDraftsAtom).get(draftKey) ?? NO_ATTACHMENTS;
+}
+
+/** Puts these chips in a box's draft in place of what it held (a held agent opened in New brings its files back). */
+export function setDraftAttachments(draftKey: string, atts: Attachment[]): void {
+    clearDraftAttachments(draftKey);
+    if (atts.length === 0) {
+        return;
+    }
+    const m = new Map(globalStore.get(attachmentDraftsAtom));
+    m.set(draftKey, atts);
+    globalStore.set(attachmentDraftsAtom, m);
+}
+
+/** Patches one chip of a box's draft; a chip removed meanwhile is left gone. */
+export function patchDraftAttachment(draftKey: string, id: string, patch: Partial<Attachment>): void {
+    const cur = draftAttachments(draftKey);
+    if (!cur.some((a) => a.id === id)) {
+        return;
+    }
+    const m = new Map(globalStore.get(attachmentDraftsAtom));
+    m.set(
+        draftKey,
+        cur.map((a) => (a.id === id ? { ...a, ...patch } : a))
+    );
+    globalStore.set(attachmentDraftsAtom, m);
+}
+
+/** Empties a box's draft (a Clear, a launch): its previews are freed, and the Files kept for retry go. */
+export function clearDraftAttachments(draftKey: string): void {
+    const cur = globalStore.get(attachmentDraftsAtom).get(draftKey);
+    if (cur == null) {
+        return;
+    }
+    for (const a of cur) {
+        if (a.previewUrl) {
+            URL.revokeObjectURL(a.previewUrl);
+        }
+        draftFiles.delete(a.id);
+    }
+    const m = new Map(globalStore.get(attachmentDraftsAtom));
+    m.delete(draftKey);
+    globalStore.set(attachmentDraftsAtom, m);
+}
 
 // Owns attachment state and its two sources: paste (a temp copy) and picked paths (referenced in place). `keep` writes
 // the copies under ~/.arc/attachments, which no temp sweep removes: a chat message names the file, and its bubble shows

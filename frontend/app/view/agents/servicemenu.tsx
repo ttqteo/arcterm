@@ -6,6 +6,7 @@
 // starts it. Its entries and their order are servicesmodel.ts's (serviceMenuChoices); this gives each its icon and
 // click. Stop and Restart wait for wavesrv's `services:changed` event to show the result; nothing here writes the row.
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -21,11 +22,22 @@ import { canStop, serviceMenuChoices, type ServiceMenuKey } from "./servicesmode
 import { restartService, servicesAtom, setServiceAutostart, stopService } from "./servicesstore";
 import { openSetupTool } from "./setupstore";
 
+// Stop and Restart show wavesrv's refusal: the row only changes on `services:changed`, so a refused one would
+// otherwise look like a click that did nothing
+async function serviceAction(s: ServiceStatus, verb: "stop" | "restart"): Promise<void> {
+    try {
+        await (verb === "stop" ? stopService(s.id) : restartService(s.id));
+    } catch (e) {
+        const text = (e instanceof Error ? e.message : String(e)).replace(/^Error:\s*/, "");
+        pushToast({ title: `Couldn't ${verb} ${s.name}`, message: text, level: "error" });
+    }
+}
+
 // Hide: an up service is stopped, and the selection moves off its tab to the row beside it (as a closed tab hands its
 // place on), so treeServiceInput, which keeps a sleeping service only while its tab is selected, drops the row.
 function hideService(model: AgentsViewModel, s: ServiceStatus): void {
     if (canStop(s)) {
-        fireAndForget(() => stopService(s.id));
+        fireAndForget(() => serviceAction(s, "stop"));
     }
     if (s.tabid == null || globalStore.get(model.focusIdAtom) !== s.tabid) {
         return;
@@ -48,8 +60,8 @@ export function serviceMenuItems(model: AgentsViewModel, s: ServiceStatus): Cont
     const pins = globalStore.get(railPinsAtom);
     const pinned = railPins(pins, services).some((p) => p.id === s.id);
     const act: Record<ServiceMenuKey, Pick<ContextMenuItem, "icon" | "type" | "click">> = {
-        stop: { icon: <Square size={15} />, click: () => fireAndForget(() => stopService(s.id)) },
-        restart: { icon: <RotateCcw size={15} />, click: () => fireAndForget(() => restartService(s.id)) },
+        stop: { icon: <Square size={15} />, click: () => fireAndForget(() => serviceAction(s, "stop")) },
+        restart: { icon: <RotateCcw size={15} />, click: () => fireAndForget(() => serviceAction(s, "restart")) },
         hide: { icon: <EyeOff size={15} />, click: () => hideService(model, s) },
         browser: { icon: <ExternalLink size={15} />, click: () => getApi().openExternal(s.url!) },
         keepRunning: {

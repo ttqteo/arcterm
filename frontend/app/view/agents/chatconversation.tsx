@@ -36,6 +36,7 @@ import { MOTION } from "@/app/element/motiontokens";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { openOrPeek } from "@/app/view/jarvis/openref";
+import { isWindows } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import {
@@ -55,6 +56,7 @@ import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type Rea
 import { parseMarks } from "../../../../claude/skim-mod/hooks/highlight-core";
 import { getProcExitAtom } from "./agentcontrollerstore";
 import { agentDiffScope, openDiff } from "./agentdiffnav";
+import { openFileInPanel } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
 import {
     conversationText,
@@ -117,15 +119,14 @@ import { withMarks } from "./chatskim";
 import { useSkimFold } from "./chatskimstore";
 import { placeStepLists, stepsPartKey, type AgentNow } from "./chatsteplist";
 import { ChatStepsHost, StepsPart } from "./chatsteplistview";
-import { turnFiles } from "./chatsteps";
+import { foreignPathGuesses, turnFileAbs, turnFiles } from "./chatsteps";
 import { ChatSteps } from "./chatstepsview";
 import { TaggedPromptText } from "./chattagblock";
 import { ChatTurnFiles } from "./chatturnfiles";
-import { commitMode, type CommitMode } from "./chatcommit";
-import { ChatCommitCard } from "./chatcommitcard";
 import { VERDICT_TOPIC, verdictMode, type VerdictMode } from "./chatverdict";
 import { ChatVerdictCard } from "./chatverdictcard";
 import { CouncilText } from "./councilchat";
+import { firstExistingFile } from "./filetabload";
 import { CompactionDivider, InterruptedDivider, PromptImages, TaskNotificationRow } from "./narrationtimeline";
 import { pinnedLabel } from "./pinnedlabel";
 import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
@@ -894,9 +895,9 @@ export function ChatConversation({
     // latest. Nothing to pair, nothing computed
     const sentAnswers = brainstorm?.answers;
     const sentTopic = brainstorm?.topic;
-    // The agent's send records, which hold the Fix and Skip lines of verdict cards and the Commit lines of commit cards
-    // (under VERDICT_TOPIC, sharing the brainstorm's store): such a card finds its record by its key and folds, and the
-    // line it sent draws nothing, so those pair with their own messages beside the brainstorm's.
+    // The agent's send records, which hold the Fix and Skip lines of verdict cards (under VERDICT_TOPIC, sharing the
+    // brainstorm's store): a verdict card finds its record by its key and folds, and the line it sent draws nothing, so
+    // those pair with their own messages beside the brainstorm's.
     const records = useAtomValue(brainstormAnswersAtom(agent?.id ?? ""));
     const verdictRecords = useMemo(() => {
         const byKey = new Map<string, SentAnswer>();
@@ -1285,11 +1286,32 @@ export function ChatConversation({
     const forkRef = useRef<((p: ForkPoint) => void) | null>(null);
     forkRef.current = canFork ? (p) => forkFromChat(model!, agent!, p) : null;
     const forkHere = useCallback((p: ForkPoint) => forkRef.current?.(p), []);
-    // the card of a finished turn's files opens the Diff on the agent's working tree, on a file or on all of it; only with
-    // the cockpit and the agent around (a transcript of an ended session has no Diff to open), through a ref as above
+    // the card of a finished turn's files opens a file in the rail, in a tab of its own beside the terminal, and See all
+    // the Diff on the agent's working tree (a relative path with no cwd to read it against falls back to the Diff on it);
+    // only with the cockpit and the agent around (a transcript of an ended session has nothing to open them in), through
+    // a ref as above
     const canOpenDiff = !!model && !!agent;
     const diffRef = useRef<((path?: string) => void) | null>(null);
-    diffRef.current = canOpenDiff ? (path) => openDiff(model!, agentDiffScope(agent!.id, agent!.name), path) : null;
+    diffRef.current = canOpenDiff
+        ? (path) => {
+              const abs = path == null ? null : turnFileAbs(path, cwd);
+              if (abs == null) {
+                  openDiff(model!, agentDiffScope(agent!.id, agent!.name), path);
+                  return;
+              }
+              // reread: the agent may have changed it since its tab was last open
+              const open = (at: string) =>
+                  openFileInPanel(model!, agent!.id, { abs: at, root: cwd || null, reread: Date.now() });
+              // a path the session wrote on the other machine (Windows `d:\…` read on a Mac) is looked for under the
+              // agent's directory here; found nowhere, it opens as written and the tab says the file is gone
+              const guesses = foreignPathGuesses(abs, cwd, isWindows());
+              if (guesses.length === 0) {
+                  open(abs);
+                  return;
+              }
+              fireAndForget(async () => open((await firstExistingFile(guesses)) ?? abs));
+          }
+        : null;
     const openTurnDiff = useCallback((path?: string) => diffRef.current?.(path), []);
     // Add to initiative… is offered in a live Claude agent's Chat (a caller that passed the cockpit and the agent). It
     // opens a card after the last item as it is when asked, so the item key and the agent go through a ref as well
@@ -1372,21 +1394,6 @@ export function ChatConversation({
             record: verdictRecords.get(part.key) ?? null,
             v: part.verdict,
         });
-    // what a commit card is doing: the verdict card's rules (chatcommit.ts commitMode), its record kept beside theirs
-    const commitModeOf = (
-        item: Extract<ChatItem, { kind: "agent" }>,
-        part: Extract<AgentPart, { kind: "commit" }>,
-        p: number,
-        ctx: ItemCtx
-    ): CommitMode =>
-        commitMode({
-            last: ctx.lastDrawn && !agentWentOn(entries, item.parts, p),
-            live: !exited,
-            working: toolsLive,
-            nextIsYou: ctx.nextIsYou,
-            record: verdictRecords.get(part.key) ?? null,
-            c: part.commit,
-        });
     // Everything an item's cards draw from that the item itself does not hold, as one string for the kept element to be
     // compared by: whether the agent exited, the agent fields a card sends and opens through (a kept element would hold a
     // stale one), each verdict's mode, for each run call the place its run draws at and the run-ended message that folds
@@ -1402,8 +1409,6 @@ export function ChatConversation({
         item.parts.forEach((part, p) => {
             if (part.kind === "verdict") {
                 out.push(JSON.stringify(verdictModeOf(item, part, p, ctx)));
-            } else if (part.kind === "commit") {
-                out.push(JSON.stringify(commitModeOf(item, part, p, ctx)));
             } else if (part.kind === "handoff") {
                 out.push("handoff");
             } else if (part.kind === "docreview") {
@@ -1419,7 +1424,7 @@ export function ChatConversation({
                 }
             }
         });
-        // the card of the turn's files: its folders read against the cwd, its rows open the Diff only with an agent
+        // the card of the turn's files: its folders read against the cwd, its rows open (the rail, the Diff) only with an agent
         if (item.parts.some((part) => part.kind === "work")) {
             out.push(`files:${cwd ?? ""}:${canOpenDiff}`);
         }
@@ -1507,16 +1512,6 @@ export function ChatConversation({
                         agent={agent}
                         model={model}
                         reviewer={part.reviewer}
-                    />
-                );
-            // a commit suggestion: a card while it waits on you (or the agent works, or has exited), its ✓ row once folded
-            case "commit":
-                return (
-                    <ChatCommitCard
-                        commitKey={part.key}
-                        commit={part.commit}
-                        mode={commitModeOf(item, part, p, ctx)}
-                        agent={agent}
                     />
                 );
             // the plan handoff: answered, its ✓ row. Unanswered, the live card is the dock's (chatpane.tsx), where the agent
