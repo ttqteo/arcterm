@@ -4,7 +4,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
-import { loadSleeperTitle, sleepersToTitle, titleKey, transcriptTitlesAtom } from "./sleepertitles";
+import { loadSleeperTitle, sleeperTitleQueue, sleepersToTitle, titleKey, transcriptTitlesAtom } from "./sleepertitles";
 
 const getTranscript = vi.fn();
 vi.mock("@/app/store/wshclientapi", () => ({
@@ -56,5 +56,63 @@ describe("loadSleeperTitle", () => {
         getTranscript.mockResolvedValueOnce({ lines: [JSON.stringify({ type: "user" })] });
         await loadSleeperTitle("/t/untitled.jsonl", "claude");
         expect(globalStore.get(transcriptTitlesAtom)[titleKey("/t/untitled.jsonl")]).toBeUndefined();
+    });
+});
+
+describe("sleeperTitleQueue", () => {
+    const flush = () => new Promise((r) => setTimeout(r, 0));
+
+    it("reads one transcript at a time, in order", async () => {
+        const started: string[] = [];
+        const finish: (() => void)[] = [];
+        const read = (path: string) =>
+            new Promise<void>((r) => {
+                started.push(path);
+                finish.push(r);
+            });
+        const enqueue = sleeperTitleQueue(read, () => {});
+        enqueue([{ path: "/a" }, { path: "/b" }]);
+        await flush();
+        expect(started).toEqual(["/a"]);
+        finish[0]();
+        await flush();
+        expect(started).toEqual(["/a", "/b"]);
+    });
+
+    it("tries a failed read again after a wait, then stops after four tries", async () => {
+        const reads: string[] = [];
+        const waits: number[] = [];
+        const timers: (() => void)[] = [];
+        const read = async (path: string) => {
+            reads.push(path);
+            throw new Error("timeout");
+        };
+        const enqueue = sleeperTitleQueue(read, (fn, ms) => {
+            waits.push(ms);
+            timers.push(fn);
+        });
+        enqueue([{ path: "/a" }]);
+        for (let i = 0; i < 5; i++) {
+            await flush();
+            timers.shift()?.();
+        }
+        await flush();
+        expect(reads).toEqual(["/a", "/a", "/a", "/a"]);
+        expect(waits).toEqual([15_000, 30_000, 45_000]);
+    });
+
+    it("a failure does not hold up the reads behind it", async () => {
+        const reads: string[] = [];
+        const read = async (path: string) => {
+            reads.push(path);
+            if (path === "/a") {
+                throw new Error("dropped");
+            }
+        };
+        const enqueue = sleeperTitleQueue(read, () => {});
+        enqueue([{ path: "/a" }, { path: "/b" }]);
+        await flush();
+        await flush();
+        expect(reads).toEqual(["/a", "/b"]);
     });
 });

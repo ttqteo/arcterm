@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Sleeping agents keep their titles across a restart.** Vitest and the typecheck only. With several
+  agents asleep (some on transcripts of a few MB), restart arcterm a few times → every sleeping row in the Agent tree
+  shows its conversation's title, none its project's name; if a row starts as the project's name it turns into the
+  title within a minute (`sleepertitles.ts`, the read queue that retries).
 - [ ] (arcterm) **Sidecar keeps asks, answers the ask you saw, and fills a high-scale screen.** Vitest and the
   typecheck only; no dev app ran (branch `fix/sidecar-council`). (1) Set the Cockpit's project filter to one project,
   or send an agent to Background, and have that agent ask a 2-option question: it shows on Sidecar's wall and in the

@@ -89,6 +89,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A sleeping agent keeps its conversation's title after arcterm restarts, instead of now and then reading as its
+  project's name until the next restart.
 - A run's Final verification shows a long output line whole, wrapped in its box, instead of cutting it off at the
   box's right edge.
 - Sidecar shows every agent that is asking you, even one in another project than the Cockpit's filter or in the
