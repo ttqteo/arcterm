@@ -723,8 +723,12 @@ func (ws *WshServer) CouncilBenchStopCommand(ctx context.Context) (*wshrpc.Counc
 	if run == nil {
 		return &wshrpc.CouncilBenchStopRtnData{}, nil
 	}
+	// read the council in flight before the cancel: the cancelled Wait clears it on its way out, and on a busy machine
+	// it got there first and this stopped nothing (TestCouncilBenchStop, 1 of 800 runs at GOMAXPROCS 4 and 16). A
+	// council started after the read is stopped by benchWaitCouncil, which stops its own when the bench ends.
+	id := run.inflightId()
 	run.cancel()
-	if id := run.inflightId(); id != "" {
+	if id != "" {
 		if _, err := councilRunner.Stop(id); err != nil {
 			log.Printf("[council-bench] council %s not stopped: %v", id, err)
 		}

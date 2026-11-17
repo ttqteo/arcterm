@@ -69,6 +69,8 @@ func (ws *WshServer) CreateProjectCommand(ctx context.Context, data wshrpc.Comma
 	if err := wconfig.SetProjectConfigValue(name, waveobj.MetaMapType{"path": path}); err != nil {
 		return err
 	}
+	// the caller (the launcher, a CDP arrange) reads the config next and must find the project there
+	wconfig.GetWatcher().Reload()
 	// the config watcher would make the channel too, but asynchronously; the caller refreshes its channel
 	// list as soon as this returns and must find the new project's channel there
 	if _, err := wstore.EnsureChannelAtPath(ctx, name, path); err != nil {
@@ -82,7 +84,11 @@ func (ws *WshServer) DeleteProjectCommand(ctx context.Context, data wshrpc.Comma
 	if name == "" {
 		return fmt.Errorf("project name is required")
 	}
-	return wconfig.DeleteProjectConfigValue(name)
+	if err := wconfig.DeleteProjectConfigValue(name); err != nil {
+		return err
+	}
+	wconfig.GetWatcher().Reload()
+	return nil
 }
 
 // SetProjectClaudeAccountCommand ties a registered project to a Claude account, so what launches into it from now on

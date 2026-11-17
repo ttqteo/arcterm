@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
@@ -45,6 +46,27 @@ func TestCreateProjectCommandWritesValid(t *testing.T) {
 	ch, err := wstore.ChannelAtPath(context.Background(), dir)
 	if err != nil || ch == nil {
 		t.Fatalf("no channel for the registered project (err %v)", err)
+	}
+}
+
+// The caller reads the config as soon as the command returns (the launcher, a CDP arrange's getfullconfig): the
+// project must be in it then, not when the watcher gets to the file event. The watcher watches TestMain's config
+// dir, not this test's, so here no event ever comes.
+func TestProjectCommandsPublishTheConfigBeforeReturning(t *testing.T) {
+	withConfigHome(t, t.TempDir())
+	ws := &WshServer{}
+	dir := t.TempDir()
+	if err := ws.CreateProjectCommand(context.Background(), wshrpc.CommandCreateProjectData{Name: "proj", Path: dir}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, ok := wconfig.GetWatcher().GetFullConfig().Projects["proj"]; !ok {
+		t.Fatal("createproject returned before its project was in the config")
+	}
+	if err := ws.DeleteProjectCommand(context.Background(), wshrpc.CommandDeleteProjectData{Name: "proj"}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, ok := wconfig.GetWatcher().GetFullConfig().Projects["proj"]; ok {
+		t.Fatal("deleteproject returned with its project still in the config")
 	}
 }
 
