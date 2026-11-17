@@ -600,3 +600,8 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   the agent's tree row shows a green server mark with `:<port>`, and folding its project's folder shows the port on the
   folder. From a plain terminal, the row reads `terminal · <name>` and Log opens the file, not the pane. Close the agent
   → the row keeps its name. Unit-tested only (`pkg/devservers/detached.go`, `treeservers.ts`), not tried in the app.
+- [ ] (arcterm) Chat ref badges with real data: in a live agent's Chat, pick an agent, a run and a council from `@` →
+  each shows as a tinted badge with its name (the box keeps the text `agent:<8>`); send → the bubble's badges open the
+  agent's terminal, the run in Jarvis, the council's discussion; Ctrl-click peeks; a working agent's badge pulses green
+  and an asking one shows an amber ring. A token typed or pasted into the box stays text (badges only in the bubble).
+  Checked only with seeded atoms in the `chat-ref-badges` CDP scenario, not against a real project's runs and councils.
