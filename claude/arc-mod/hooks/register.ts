@@ -1,33 +1,33 @@
 // arcterm's Claude Code mod. `wsh install-agent-hooks` writes it to ~/.arc/claude-mod with the wsh path
 // substituted and lists that folder in CLAUDE_CODE_PLUGIN_DIRS, so every claude launch loads it.
 // outside an arcterm block every hook passes straight through, but the memory lint.
-import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register, Timer } from "claude-code";
+import { atom, read, update } from "claude-code";
 import type { AskQuestion } from "./ask-core";
 import { askPayload, cardAnswer, cardCanAsk, parseAskReply, settleAsk } from "./ask-core";
 import { btwNotice, btwPrompt, forkFailure, type BtwReply } from "./btw-core";
 import { drawCacheMiss } from "./cache-band";
-import { drawGoal } from "./goal-band";
-import { goalState, type GoalEntry, type GoalState } from "./goal-core";
 import { cacheMissNotice, transcriptEntries } from "./cache-core";
 import { MATH_SECTION, MATH_SECTION_ID, mathContext } from "./chatmath-core";
+import { claudeConfigDir, memoryDir, transcriptFile } from "./claudepaths-core";
 import { claudecmdsArgs, commandsPayload } from "./commands-core";
-import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
 import type { Turn } from "./control-core";
-import { ALL_CATEGORIES, applyEdit, goalpostNote, goalpostRole, inspectChange, inspectCommand } from "./goalpost-core";
-import type { GoalpostFinding } from "./goalpost-core";
+import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
 import { absolutePath, editTarget, foreignReason, needsAsk, parentDirs, repoKey, repoRoot } from "./foreignrepo-core";
+import { drawGoal } from "./goal-band";
+import { goalState, type GoalEntry, type GoalState } from "./goal-core";
+import type { GoalpostFinding } from "./goalpost-core";
+import { ALL_CATEGORIES, applyEdit, goalpostNote, goalpostRole, inspectChange, inspectCommand } from "./goalpost-core";
 import { denial, isEngineTree } from "./guard-core";
 import { heavyArgs, heldInBackground, heldOriginal, jobslotArgs, jobslotLine } from "./jobslot-core";
-import { claudeConfigDir, memoryDir, transcriptFile } from "./claudepaths-core";
-import { LiveGather, liveFile, serialWriter } from "./live-core";
+import { liveFile, LiveGather, serialWriter } from "./live-core";
 import { lintContext, lintMemory, parseMemory, referencedPaths, shouldReport, taskNames } from "./memlint-core";
 import type { Ran } from "./mention-core";
 import { leadingMention, mentionRefusal, sendArgs, sendOutcome } from "./mention-core";
 import { refsContext } from "./refs-core";
 import { idleArgs, TurnStatus } from "./status-core";
-import { createSpawnGate, endsTurnSay, RUN_VERDICT, tokengateArgs, tokengateLine } from "./tokengate-core";
 import type { Group, SpawnVerdict } from "./tokengate-core";
+import { createSpawnGate, endsTurnSay, RUN_VERDICT, tokengateArgs, tokengateLine } from "./tokengate-core";
 import { isCommit, isLiveCheck, uiCheckReminder, uiFiles } from "./uicheck-core";
 import { usageArgs } from "./usage-core";
 
@@ -73,7 +73,9 @@ async function reportStatus($: EngineInterface, args: string[]): Promise<void> {
     try {
         const ran = await $.process.run([WSH, ...args]);
         if (ran.exitCode !== 0) {
-            $.ui.log(`arc: wsh ${args.slice(0, 3).join(" ")} exited ${ran.exitCode}: ${ran.stderr.trim()}`, { to: "debug" });
+            $.ui.log(`arc: wsh ${args.slice(0, 3).join(" ")} exited ${ran.exitCode}: ${ran.stderr.trim()}`, {
+                to: "debug",
+            });
         }
     } catch (err) {
         // an idle missed here is still corrected by the idle notification, later
@@ -279,6 +281,33 @@ async function steerTurn($: EngineInterface, text: string) {
 async function refusal($: EngineInterface, command: string, background?: boolean): Promise<string | null> {
     return active ? denial(command, await $.session.cwd(), background === true) : null;
 }
+
+// a gating hook that fails is skipped and the event goes on as if it were absent. that is what most of arc's hooks
+// want: arcterm's own trouble (wsh gone, a slow read) must not hold the person's work. written out on each such hook
+// so the choice is visible, and a gate added later shows in `claude plugin validate` until someone makes it
+function passOn<E, R>(_$: EngineInterface, e: E, next: (e: E) => R): R {
+    return next(e);
+}
+
+// the shell guard threw before the command went on, so nothing decided whether it may run
+function guardFailed(message: string | undefined): string {
+    const why = message ? ` (${message})` : "";
+    return `Refused by arcterm: its command check failed${why}, so the command did not run. Run it again; if it fails again, tell the person.`;
+}
+
+// the shell hooks' .catch. a throw before the command went on means the guard never decided, so it does not run; a
+// timeout is a long wait (the job queue) after the check, and a hook that had called next keeps the tool's result
+function shellGuardFailed<E, R>(
+    _$: EngineInterface,
+    e: E,
+    next: ((e: E) => R) & { called: boolean; error: { kind: string; message?: string } }
+): R | { deny: string } {
+    return next.called || next.error.kind === "timeout" ? next(e) : { deny: guardFailed(next.error.message) };
+}
+
+// the foreign-repo check failed, so whether the file sits in another repo is unknown: the person decides
+const FOREIGN_CHECK_FAILED =
+    "arcterm could not check whether this file is in another repo than the session's own, so it asks before the edit.";
 
 // a repo as git names it: its key, and the folder the person knows it by
 type Repo = { key: string; root: string };
@@ -653,7 +682,9 @@ async function lintMemoryDir($: EngineInterface, cwd: string): Promise<void> {
     const entries = await $.fs.list(dir);
     const files = entries.filter((f) => f.kind === "file" && f.name.endsWith(".md") && f.name !== "MEMORY.md");
     const memories = await Promise.all(
-        files.map(async (f) => parseMemory({ name: f.name, text: await $.fs.read(`${dir}/${f.name}`), mtimeMs: f.mtimeMs }))
+        files.map(async (f) =>
+            parseMemory({ name: f.name, text: await $.fs.read(`${dir}/${f.name}`), mtimeMs: f.mtimeMs })
+        )
     );
     const missingPaths = new Set<string>();
     for (const p of new Set(memories.flatMap((m) => referencedPaths(m.body)))) {
@@ -693,7 +724,9 @@ export const register: Register = (on) => {
         isKnownNonWorker = false;
         const started = await next(e);
         // inside arcterm or not: a memory goes stale wherever claude runs
-        await lintMemoryDir($, e.cwd).catch((err) => $.ui.log(`arc: memory lint failed: ${String(err)}`, { to: "debug" }));
+        await lintMemoryDir($, e.cwd).catch((err) =>
+            $.ui.log(`arc: memory lint failed: ${String(err)}`, { to: "debug" })
+        );
         // only the block's own session: a `claude -p` it runs inherits WAVETERM_BLOCKID, and its stream would
         // replace the session's, so a lead's tell went to the nested run (run 0ea46b22)
         if (active && isInteractive) {
@@ -711,7 +744,9 @@ export const register: Register = (on) => {
             try {
                 const ran = await $.process.run([WSH, ...args]);
                 if (ran.exitCode !== 0) {
-                    $.ui.log(`arc: wsh agentstatus --usage exited ${ran.exitCode}: ${ran.stderr.trim()}`, { to: "debug" });
+                    $.ui.log(`arc: wsh agentstatus --usage exited ${ran.exitCode}: ${ran.stderr.trim()}`, {
+                        to: "debug",
+                    });
                 }
             } catch (err) {
                 // a dropped measurement self-heals on the next one, as a dropped statusLine publish did
@@ -784,6 +819,14 @@ export const register: Register = (on) => {
             putBack();
         }
         return { drop: out.notice };
+    }).catch(($, e, next) => {
+        // an @mention that failed on its way to the other agent must not reach this one's model instead
+        const m = !next.called && active && e.origin.kind === "composer" ? leadingMention(e.text) : null;
+        if (m === null) {
+            return next(e);
+        }
+        void $.prompt.fill({ text: e.text }).catch(() => undefined);
+        return { drop: `arc: not sent to @${m.id}: ${next.error.message ?? next.error.kind}` };
     });
 
     on("turn.start", async ($, e, next) => {
@@ -850,7 +893,9 @@ export const register: Register = (on) => {
             return next(e);
         }
         const els = $.ui.resolve(e);
-        return shown ? drawGoal(els, shown, (await read($, goalNow)) || Date.now(), notice) : drawCacheMiss(els, notice!);
+        return shown
+            ? drawGoal(els, shown, (await read($, goalNow)) || Date.now(), notice)
+            : drawCacheMiss(els, notice!);
     });
 
     // an evaluator's verdict lands mid-turn (the goal not met yet sends Claude on): read the goal again then
@@ -860,15 +905,17 @@ export const register: Register = (on) => {
             void refreshGoal($);
         }
         return kept;
-    });
+    }).catch(passOn);
 
     // a goal the model proposes shows while the person answers its dialog, and its answer is read back after. the band
-    // is a nicety: a failed write of it never holds the call
-    on("tool.call", { tool: "ProposeGoal" }, async ($, e, next) => {
-        if (!e.agentId && typeof e.condition === "string") {
+    // is a nicety: a failed write of it never holds the call. ProposeGoal is in the typed tool list only when the claude
+    // launch that wrote the types offered it, so the matcher is cast as Task's is and e read as a plain record
+    on("tool.call", { tool: "ProposeGoal" as "Agent" }, async ($, e, next) => {
+        const condition = (e as unknown as Record<string, unknown>).condition;
+        if (!e.agentId && typeof condition === "string") {
             const proposed: GoalState = {
                 phase: "proposed",
-                condition: e.condition,
+                condition,
                 setAt: Date.now(),
                 checks: [],
                 settledBeforePrompt: false,
@@ -880,7 +927,7 @@ export const register: Register = (on) => {
         const result = await next(e);
         void refreshGoal($);
         return result;
-    });
+    }).catch(passOn);
 
     // a tool's result means another request follows, and it carries every row joined so far.
     // ponytail: a text joined between the last result and a final answer's request is read and then
@@ -890,7 +937,7 @@ export const register: Register = (on) => {
             turn.unread = [];
         }
         return next(e);
-    });
+    }).catch(passOn);
 
     on("turn.complete", async ($, e, next) => {
         const wasAskInDialog = isAskInDialog && !e.agentId;
@@ -898,9 +945,11 @@ export const register: Register = (on) => {
             isAskInDialog = false;
         }
         for (const text of e.agentId ? [] : endTurn(turn)) {
-            void $.prompt.submit({ text, asUser: true }).catch((err) =>
-                $.ui.log(`arc: submitting an unread mid-turn text failed: ${String(err)}`, { to: "debug" })
-            );
+            void $.prompt
+                .submit({ text, asUser: true })
+                .catch((err) =>
+                    $.ui.log(`arc: submitting an unread mid-turn text failed: ${String(err)}`, { to: "debug" })
+                );
         }
         await turnStatus.ended(active ? idleArgs(e, transcriptPath, wasAskInDialog) : null, (args) =>
             reportStatus($, args)
@@ -939,7 +988,7 @@ export const register: Register = (on) => {
         return withJobSlot($, e.command, next.signal, () =>
             withUiCheck($, e.command, () => withGoalposts($, findings, e, next))
         );
-    });
+    }).catch(shellGuardFailed);
 
     // a background command heldInBackground wrapped is decided as the model wrote it: the rules and the mode judge
     // the command, not the wsh call in front of it
@@ -947,7 +996,7 @@ export const register: Register = (on) => {
         const input = e.input as { command?: unknown } | null;
         const original = typeof input?.command === "string" ? heldOriginal(WSH, input.command) : null;
         return original === null ? next(e) : next({ ...e, input: { ...input, command: original } });
-    });
+    }).catch(passOn);
 
     on("tool.call", { tool: "PowerShell" }, async ($, e, next) => {
         const why = await refusal($, e.command, e.run_in_background);
@@ -958,7 +1007,7 @@ export const register: Register = (on) => {
         return withJobSlot($, e.command, next.signal, () =>
             withUiCheck($, e.command, () => withGoalposts($, findings, e, next))
         );
-    });
+    }).catch(shellGuardFailed);
 
     on("tool.call", { tool: "Edit" }, async ($, e, next) => {
         const findings = await goalposts($, async () => {
@@ -967,7 +1016,7 @@ export const register: Register = (on) => {
             return after === null ? [] : inspectChange({ path: e.file_path, before, after }, ALL_CATEGORIES);
         });
         return allowingRepo($, e, () => withGoalposts($, findings, e, next));
-    });
+    }).catch(passOn);
 
     on("tool.call", { tool: "Write" }, async ($, e, next) => {
         const findings = await goalposts($, async () =>
@@ -977,9 +1026,10 @@ export const register: Register = (on) => {
             )
         );
         return allowingRepo($, e, () => withGoalposts($, findings, e, next));
-    });
+    }).catch(passOn);
 
-    on("tool.call", { tool: "NotebookEdit" }, ($, e, next) => allowingRepo($, e, () => next(e)));
+    // the edit hooks above and this one only note a repo the person allowed and the goalposts: the asking is tool.check's
+    on("tool.call", { tool: "NotebookEdit" }, ($, e, next) => allowingRepo($, e, () => next(e))).catch(passOn);
 
     // an edit in a repo other than the session's own goes to the person, whatever the mode: a session once
     // edited another project's checkout unasked. in every session, Arc's or not. where nobody can be asked the
@@ -996,12 +1046,17 @@ export const register: Register = (on) => {
             }
             const reason = foreignReason(foreign.file, foreign.target.root, foreign.own.root, e.approver !== undefined);
             return { decision: "ask", reason };
+        }).catch(async ($, e, next) => {
+            // nothing has run yet, so a failed check asks rather than let the edit through unseen
+            const verdict = await next(e);
+            return verdict.decision === "deny" ? verdict : { decision: "ask" as const, reason: FOREIGN_CHECK_FAILED };
         });
     }
 
     // a costly spawn waits on the person's card; refused in code, as the shell is. always runs outside arcterm
     // Task is the Agent tool's old name, gone from the typed tool list but still matched by an Agent call; the matcher
-    // is typed per tool, so the cast names one, and the hook reads e as a plain record
+    // is typed per tool, so the cast names one, and the hook reads e as a plain record. a gate that fails lets the
+    // spawn go: the card is the person's say over cost, not a safety guard
     for (const tool of ["Agent", "Task", "Workflow"] as const) {
         on("tool.call", { tool: tool as "Agent" }, async ($, e, next) => {
             const why = active
@@ -1014,12 +1069,13 @@ export const register: Register = (on) => {
                   )
                 : null;
             return why === null ? next(e) : { deny: why };
-        });
+        }).catch(passOn);
     }
 
     // claude's own dialog asks in the terminal while the cockpit card asks beside it, and the first answer
     // wins. a hook that settles before next(e) takes the dialog down (probed on 2.1.291), so the terminal
-    // is always claude's current dialog, previews and all, and the mod draws no picker of its own
+    // is always claude's current dialog, previews and all, and the mod draws no picker of its own. a failed race
+    // leaves that dialog, which still asks
     on("tool.call", { tool: "AskUserQuestion" }, async ($, e, next) => {
         if (!racesCard(e.questions)) {
             return next(e);
@@ -1073,7 +1129,7 @@ export const register: Register = (on) => {
             $.ui.log(`arc: wsh ask --clear failed: ${String(err)}`, { to: "debug" });
         }
         return fromDialog;
-    });
+    }).catch(passOn);
 
     // the settings hooks arcterm installs for AskUserQuestion project a keystroke-answered card of their own
     // (`wsh ask`), which would stand over the one the call above is waiting on. answering here without
@@ -1081,7 +1137,9 @@ export const register: Register = (on) => {
     // an org that manages Claude Code (Team, Enterprise) passes this and the PostToolUse hook below over, so the
     // server keeps a waited ask when the settings hook projects the same questions, and settleAsk lets the
     // dialog's answer win over the cancel the settings hooks then send
-    on("classic.PreToolUse", { tool: "AskUserQuestion" }, ($, e, next) => (racesCard(e.questions) ? {} : next(e)));
+    on("classic.PreToolUse", { tool: "AskUserQuestion" }, ($, e, next) =>
+        racesCard(e.questions) ? {} : next(e)
+    ).catch(passOn);
 
     // an answer in claude's dialog runs the PostToolUse hooks inside the tool.call's next(e), before it
     // resolves, and both settings hooks there cancel the card's waiter: `wsh ask --clear` directly, and
@@ -1090,5 +1148,5 @@ export const register: Register = (on) => {
     // raced call leaves the dialog's answer to win; tool.call's own teardown takes the card down
     on("classic.PostToolUse", { tool_name: "AskUserQuestion" }, ($, e, next) =>
         racing.has(e.tool_use_id) ? {} : next(e)
-    );
+    ).catch(passOn);
 };

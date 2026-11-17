@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The arc mod's gating hooks carry a `.catch`.** Vitest, the mod typecheck and `claude plugin validate`
+  only (all 15 now listed "with .catch"). The handlers run only when a hook fails, so day to day nothing should change:
+  after `wsh install-agent-hooks` (or a launch), in a Claude session in arcterm run a Bash command, edit a file in the
+  session's repo, send `@<tab id> hi` to another agent and start a subagent → each behaves as before, with no `arc:`
+  hook failure line in the transcript. Commit: the `chore(arc-mod): .catch …` one.
 - [ ] (arcterm) **The Token burn gate gathers parallel spawns on `$.clock.sleep`.** Vitest and the mod typecheck only.
   The gate's gather wait used `setTimeout`, which a mod's declared environment does not have; whether it was missing at
   run time was never seen. After `wsh install-agent-hooks` (or a launch), have a Claude session in arcterm start 3
