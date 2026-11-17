@@ -233,18 +233,25 @@ function turnStartOf(agent: AgentVM | undefined): number | undefined {
     ];
 }
 
-// the sent line after a poll, and the check send it leaves behind once the agent has taken it
+// the sent line after a poll, the check send it leaves behind once the agent has taken it, and Approve's start mark,
+// which goes once the file records a run: kept, it would bring back a finished run's card (withStartingRun) after the
+// agent set `run` back to null to keep designing, and that folded card hid every card after it
 export function settleBrainstorm(
-    cur: Pick<BrainstormState, "sent" | "sentCheckAt" | "file" | "modifiedMs">,
+    cur: Pick<BrainstormState, "sent" | "sentCheckAt" | "file" | "modifiedMs" | "starting">,
     patch: Partial<BrainstormState>,
     agent: AgentVM | undefined,
     turnStartMs: number | undefined
-): Pick<BrainstormState, "sent" | "sentCheckAt"> {
+): Pick<BrainstormState, "sent" | "sentCheckAt" | "starting"> {
     const modifiedMs = patch.modifiedMs !== undefined ? patch.modifiedMs : cur.modifiedMs;
     const file = patch.file ?? cur.file;
     const settled = settleSent(cur.sent, modifiedMs, agent);
     const sent = settled ?? (file != null ? terminalAnswer(file, modifiedMs, agent, turnStartMs) : null);
-    return { sent, sentCheckAt: nextSentCheckAt(cur.sentCheckAt, cur.sent, settled, agent?.builderCheck) };
+    const starting = file?.run != null ? null : (cur.starting ?? null);
+    return {
+        sent,
+        sentCheckAt: nextSentCheckAt(cur.sentCheckAt, cur.sent, settled, agent?.builderCheck),
+        starting,
+    };
 }
 
 // A result that lands after the brainstorm was detached or replaced is dropped rather than written over it. The
@@ -263,7 +270,12 @@ export async function pollAndMerge(agentId: string, agent: AgentVM | undefined, 
         return;
     }
     const settled = settleBrainstorm(cur, patch, agent, turnStartOf(agent));
-    if (Object.keys(patch).length > 0 || settled.sent !== cur.sent || settled.sentCheckAt !== cur.sentCheckAt) {
+    if (
+        Object.keys(patch).length > 0 ||
+        settled.sent !== cur.sent ||
+        settled.sentCheckAt !== cur.sentCheckAt ||
+        settled.starting !== (cur.starting ?? null)
+    ) {
         updateBrainstorm(agentId, (c) => (c.path === s.path ? { ...c, ...patch, ...settled } : c));
     }
     if (patch.file != null) {

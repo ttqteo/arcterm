@@ -38,6 +38,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A queue tag in the Agent tree (`#1`, `×2`) opens the Heavy jobs popover with that row's jobs selected, so you see at
+  once which one is yours.
+- The agent header no longer shows the Alt+C keycap, and Mark done no longer shows its `m` keycap (its tooltip still
+  names it); both keys still work.
 - Selected text in Chat that wraps over several lines is highlighted as one shape: the corners where one line meets
   the next are square, and only its outer corners are rounded.
 - A project's Overview fits the screen: the header and Activity stay put, and Now and History each scroll on their
@@ -49,6 +53,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Commit to have the agent commit exactly that.
 - On Windows each Claude agent uses about 56 MB less memory: it now starts on its own instead of under a PowerShell
   kept open for it. Agents installed as a `.cmd` (npm shims) still start through PowerShell.
+- Claude Code's "trust this folder?" prompt shows in Chat as a card with No, exit and Yes, I trust this folder, where
+  Chat used to stay on the agent's last step while the terminal waited for an answer.
 
 ### Changed
 
@@ -75,6 +81,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Chat's quick pick card now shows when an agent names its canvas options as "**A, chip trầm**", with a comma
   after the letter, instead of leaving you only the guessed reply chips.
+- A brainstorm you keep talking in after its run finished shows its cards in Chat again (a builder question, Confirm the
+  design), instead of none until arcterm restarted.
 - Chat no longer shows a "Waiting on you in the terminal" card quoting only Claude Code's mode line while an agent
   waits on you, and the mode chip under the chat box follows Shift+Tab again. A permission dialog's card also stops
   showing the dashed lines around a command as part of its text.

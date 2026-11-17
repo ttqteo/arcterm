@@ -229,7 +229,7 @@ describe("settleBrainstorm", () => {
 
     it("keeps a check's send time once the agent's turn settles it", () => {
         const r = settleBrainstorm(state({ sent: check, modifiedMs: 500 }), {}, agent(), undefined);
-        expect(r).toEqual({ sent: null, sentCheckAt: 1000 });
+        expect(r).toEqual({ sent: null, sentCheckAt: 1000, starting: null });
     });
 
     it("keeps nothing while the check line is still pending, nor for a line that was not a check", () => {
@@ -237,6 +237,7 @@ describe("settleBrainstorm", () => {
         expect(settleBrainstorm(state({ sent: check, modifiedMs: 500 }), {}, working, undefined)).toEqual({
             sent: check,
             sentCheckAt: null,
+            starting: null,
         });
         const line = { ...check, kind: "line" as const };
         expect(settleBrainstorm(state({ sent: line, modifiedMs: 500 }), {}, agent(), undefined).sentCheckAt).toBeNull();
@@ -247,6 +248,23 @@ describe("settleBrainstorm", () => {
         expect(settleBrainstorm(state({ sentCheckAt: 1000 }), {}, newer, undefined).sentCheckAt).toBeNull();
         const older = agent({ builderCheck: { state: "failed", ts: 800, reason: "x" } });
         expect(settleBrainstorm(state({ sentCheckAt: 1000 }), {}, older, undefined).sentCheckAt).toBe(1000);
+    });
+
+    it("drops Approve's start mark once the file records a run, so a run set back to null stays gone", () => {
+        const starting = { runId: "r-1" };
+        const asked = parseBrainstorm(JSON.stringify({ v: 1, title: "T", parts: [] }));
+        const recorded = parseBrainstorm(JSON.stringify({ v: 1, title: "T", parts: [], run: "r-1" }));
+        if (!asked.ok || !recorded.ok) {
+            throw new Error("fixture did not parse");
+        }
+        // the file has not recorded it yet: the mark still stands in for the run
+        expect(settleBrainstorm(state({ file: asked.file, starting }), {}, agent(), undefined).starting).toBe(starting);
+        // a poll that reads the run in the file clears it
+        const read = state({ file: asked.file, starting });
+        expect(settleBrainstorm(read, { file: recorded.file }, agent(), undefined).starting).toBeNull();
+        // the agent then sets run back to null: nothing brings the old run back
+        const back = state({ file: recorded.file, starting: null });
+        expect(settleBrainstorm(back, { file: asked.file }, agent(), undefined).starting).toBeNull();
     });
 });
 

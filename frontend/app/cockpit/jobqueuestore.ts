@@ -20,10 +20,13 @@ export const jobQueueAtom = atom<JobQueueData | null>(null) as PrimitiveAtom<Job
 export const jobQueueOpenAtom = atom(false) as PrimitiveAtom<boolean>;
 // the control that opened the popover, which it hangs from (panelPlacement); null when code opened it
 export const jobQueueOpenerAtom = atom<Element | null>(null) as PrimitiveAtom<Element | null>;
+// the jobs the opener stands for, drawn selected in the popover: a tree row's tag names its own (an agent's one, a run's
+// several); the app bar's chip names none
+export const jobQueueFocusAtom = atom<readonly string[]>([]) as PrimitiveAtom<readonly string[]>;
 
-/** The chip's click: opens the popover from the chip, or closes it when it is open. It closes the Consumers and Servers
- * popovers, so only one of them is open. */
-export function toggleJobQueue(opener: Element | null = null): void {
+/** The chip's or a tag's click: opens the popover from it, its jobs (`focus`) selected, or closes it when it is open. It
+ * closes the Consumers and Servers popovers, so only one of them is open. */
+export function toggleJobQueue(opener: Element | null = null, focus: readonly string[] = []): void {
     globalStore.set(machineServersOpenAtom, false);
     globalStore.set(consumersOpenAtom, null);
     if (globalStore.get(jobQueueOpenAtom)) {
@@ -31,6 +34,7 @@ export function toggleJobQueue(opener: Element | null = null): void {
         return;
     }
     globalStore.set(jobQueueOpenerAtom, opener);
+    globalStore.set(jobQueueFocusAtom, focus);
     globalStore.set(jobQueueOpenAtom, true);
 }
 

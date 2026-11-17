@@ -298,7 +298,12 @@ async function round2(h, ctx, rec) {
         15_000
     );
     const placed = (await threadReplies(h)).find((m) => m.mine && m.text.includes(REPLY_TEXT));
-    const cleared = (await h.ev(`document.querySelector(${sel(`${THREAD_COMPOSER} [data-council-composer-input]`)})?.value ?? null`)) === "";
+    // the box empties when replyCouncil answers, and wavesrv's change event can draw the message before that answer
+    // lands, so the box is waited on, not read once
+    const cleared = await until(
+        h,
+        `document.querySelector(${sel(`${THREAD_COMPOSER} [data-council-composer-input]`)})?.value === ""`
+    );
     rec(
         "round 2: sending posts it for real, as a message of the person's in P2's thread that `replies`, and the box empties",
         posted && cleared && placed?.label === "replies",

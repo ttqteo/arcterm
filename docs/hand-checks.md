@@ -171,6 +171,13 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   bubble leaves the conversation. A plain permission prompt still shows only the permission card. With an MCP form or
   another unnumbered screen up while the agent reads waiting, Chat shows "Waiting on you in the terminal" with the foot
   of the screen in mono; it never shows while Claude Code's prompt and mode line are up.
+- [ ] (arcterm) **Claude Code's folder trust prompt shows in Chat as a card.** Unit tests on a screen written from a
+  screenshot only, no dev app ran (commit "fix(chat): Claude Code's folder trust prompt shows as a card"). Resume a Claude
+  agent in a folder Claude Code does not trust yet (another drive-letter case of a trusted one did it on 2026-11-17):
+  Chat shows a yellow card titled `Accessing workspace:` with its text and two buttons, `No, exit` and `Yes, I trust
+  this folder` (no numbers), the second one highlighted. Yes picks it (the terminal moves on past the prompt) and the
+  card goes. If no card shows, the prompt has no solid rule over it on the real screen: capture its PTY output for
+  `tuiscreen.fixtures.json`.
 - [ ] (arcterm) **A council an agent ran ends as a card at the end of Chat, its summary in a council panel.** The CDP
   scenario `chat-council` covers fixture transcripts only (commit "feat(chat): an ended council stays a card at the end,
   its summary in a council panel", 2026-11-16). Ask a Claude agent for a council (/arc:council) and let it wait in the
@@ -560,3 +567,13 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) Canvas quick pick with a comma: have an agent draw A-/B-/C- option boards and end its reply with
   bullets like "**A, chip trầm** (…)" and a question → the quick pick card shows rows A, B, C instead of only the
   "A đi" chips. Unit-tested only (`chatcanvaspick.ts` `namedLetters`), not tried in the app.
+- [ ] (arcterm) A brainstorm's cards after its run: Approve a brainstorm and let the run finish, then, without
+  restarting arcterm, keep talking until the agent sets `run` back to null and asks again (a question or a builder
+  check) → Chat shows that card. Before, Approve's in-memory start mark brought the finished run back and its folded
+  card hid every later one. Unit-tested only (`brainstormpoller.ts` `settleBrainstorm`), not tried in the app.
+- [ ] (arcterm) Heavy jobs popover from a tree tag: with a job queued, click an agent's `#1` (or a run's `×2`) in the
+  Agent tree → the popover opens with that agent's (or run's) job rows drawn selected and scrolled into view; the app
+  bar's Jobs chip opens it with none selected. Unit-tested only (`jobqueuestore.ts` `toggleJobQueue`), not tried in the app.
+- [ ] (arcterm) No keycaps beside the view switch and Mark done: open an agent with a canvas → no Alt+C keycap in the
+  header, Alt+C still walks the views; an agent on an initiative chunk → the band's and the ◇ popover's Mark done show
+  no `m`, and `m` still marks it done. Typecheck only, not tried in the app.

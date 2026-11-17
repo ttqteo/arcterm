@@ -112,6 +112,10 @@ describe("dialogPickKeys", () => {
     it("walks the arrows past 9", () => {
         expect(dialogPickKeys({ cursor: 8 }, 10)).toBe("\x1b[B\x1b[B\r");
     });
+    it("walks the arrows in a plain list, which takes no digit", () => {
+        expect(dialogPickKeys({ cursor: 2, plain: true }, 1)).toBe("\x1b[A\r");
+        expect(dialogPickKeys({ cursor: 2, plain: true }, 2)).toBe("\r");
+    });
 });
 
 describe("editsPrompt", () => {
