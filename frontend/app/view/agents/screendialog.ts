@@ -62,10 +62,10 @@ export function sameDialog(a: TuiDialog | null, b: TuiDialog | null): boolean {
     );
 }
 
-/** Pure: the key that picks option `n`: its digit, which a Claude Code select takes at once. Past 9 there is no digit,
- *  so the arrows walk from the cursor and Enter picks. */
-export function dialogPickKeys(dialog: Pick<TuiDialog, "cursor">, n: number): string {
-    if (n >= 1 && n <= 9) {
+/** Pure: the key that picks option `n`: its digit, which a numbered Claude Code select takes at once. Past 9, or in a
+ *  plain list (the folder trust prompt), there is no digit, so the arrows walk from the cursor and Enter picks. */
+export function dialogPickKeys(dialog: Pick<TuiDialog, "cursor" | "plain">, n: number): string {
+    if (!dialog.plain && n >= 1 && n <= 9) {
         return String(n);
     }
     const moves = n - dialog.cursor;

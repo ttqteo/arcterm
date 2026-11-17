@@ -53,6 +53,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Commit to have the agent commit exactly that.
 - On Windows each Claude agent uses about 56 MB less memory: it now starts on its own instead of under a PowerShell
   kept open for it. Agents installed as a `.cmd` (npm shims) still start through PowerShell.
+- Claude Code's "trust this folder?" prompt shows in Chat as a card with No, exit and Yes, I trust this folder, where
+  Chat used to stay on the agent's last step while the terminal waited for an answer.
 
 ### Changed
 
