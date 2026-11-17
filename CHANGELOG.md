@@ -40,6 +40,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   separate "ungrouped" folder.
 - An app's row in the Agent tree says its state in a word or two (external, port taken, no page, retry in 8s), so it
   is no longer cut off. Hover the row for the full sentence.
+- → Sonnet in the Consumers panel re-runs a working run worker's task on Sonnet, after a confirm: a model switch
+  would only land when its turn ends, which for a worker is the end of its task.
 - A terminal in a split shows a terminal mark in its bar, and Move to the panel, as it does when it is the one in focus.
 
 ### Fixed
