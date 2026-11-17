@@ -405,7 +405,7 @@ type CommandGetSessionsActivityRtnData struct {
 }
 
 type CommandSearchSessionsData struct {
-	Query       string `json:"query"`                 // the person's words: terms, "quoted phrases", -excluded
+	Query       string `json:"query"`                 // the person's words: terms and "quoted phrases"
 	Runtime     string `json:"runtime,omitempty"`     // only this runtime's sessions ("claude" or "pi"); "" searches both
 	ProjectPath string `json:"projectpath,omitempty"` // only the sessions of this project folder; "" searches every project
 	RunAgents   bool   `json:"runagents,omitempty"`   // keep the sessions of a run's workers, reviewers and the like; off, only a run's lead shows
