@@ -35,6 +35,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   together, asking first when one is working. Agents working for a run stay; close those from their run.
 - A link in Chat shows a copy button at its end when you hover it, and a right-click on it offers Copy link: either
   copies its url without selecting the text.
+- References to agents, runs and councils you write in Chat (`agent:7cd99627`, or picked from `@`) show as badges with
+  their name, tinted by kind, with a live agent's state; click one to open it.
 
 ### Changed
 
