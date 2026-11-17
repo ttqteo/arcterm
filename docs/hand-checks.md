@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The When row's choices are pill badges.** Prettier only. + Run → a project → the third column's
+  When row shows Run now, After run… and Queue as separate rounded pills (wrapping on a narrow column, "After run…"
+  never cut off), the picked one accent-tinted, and the one Jarvis suggests carries a small "Jarvis" badge inside it
+  instead of a "Jarvis suggests" line under the label; `task verify:ui -- run-start-choice` still passes.
+  `launcherwhenrow.tsx`.
 - [ ] (arcterm) **A pencil marks an agent with an unsent message.** Vitest and the typecheck only. Type half a message
   (or attach a file) in one agent's Chat box, pick another agent → the first one's row in the Agent tree shows a small
   accent pencil after its name (also in a split row's cell); pick it again → the pencil is gone while you are on it;

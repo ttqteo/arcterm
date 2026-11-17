@@ -44,6 +44,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The run launcher's When choices (Run now, After run…, Queue) are pill badges now, so none gets cut off, and the one
+  Jarvis suggests carries a small Jarvis badge.
 - A turn in Chat reads calmer: a stretch of one command reads as what the agent said it does ("Checked the working
   tree") instead of "Ran a command", a running stretch stays one folded line with its spinner until you open it, the
   Working line no longer repeats the running call, and a finished stretch shows its time only from 10 s up. A finished
