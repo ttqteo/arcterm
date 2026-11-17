@@ -226,7 +226,8 @@ export function useSlashMenu({
                             <span className="font-mono text-muted">Tab</span> complete
                         </span>
                         <span>
-                            <span className="font-mono text-muted">Enter</span> run
+                            {/* with no onRun (the New dialog's Task box) a pick only puts the command in the text */}
+                            <span className="font-mono text-muted">Enter</span> {onRun != null ? "run" : "pick"}
                         </span>
                         <span className="flex-1" />
                         {count}

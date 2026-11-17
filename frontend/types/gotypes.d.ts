@@ -4235,6 +4235,7 @@ declare global {
         resumetitle?: string;
         task: string;
         images?: string[];
+        files?: string[];
         ts: number;
         reason?: string;
     };

@@ -9,11 +9,10 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { prefillToLaunch, type NewRunPrefill, type RunHandback } from "@/app/view/jarvis/newrun";
-import { createTempFileFromBlob, createTempFileFromFile } from "@/app/view/term/termutil";
 import { atom, type PrimitiveAtom } from "jotai";
+import { clearDraftAttachments, draftAttachments } from "./composerattachments";
 import type { Runtime } from "./launch";
 import { draftShown, type LauncherKind } from "./launcher";
-import { imageRoom, type TaskImage } from "./launcherimages";
 import { appendPage, RESUME_PAGE, resumeScopeKey } from "./launcherresume";
 import {
     applySuggestion,
@@ -73,8 +72,9 @@ export const launcherPageAtom = atom({ key: "", cursor: "", loading: false }) as
 }>;
 // the session to resume, by id; honored only while it is among the choices (launcherresume.ts pickedResume)
 export const launcherResumeAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
-// the images pasted or dropped into the Task box, each with its temp file once written (launcherimages.ts)
-export const launcherImagesAtom = atom<TaskImage[]>([]) as PrimitiveAtom<TaskImage[]>;
+// The Task box's attachments are a chip draft under this key (composerattachments.ts attachmentDraftsAtom), so a close
+// keeps them as it keeps the text, and the launch and the hold read them from outside the box.
+export const LAUNCHER_DRAFT = "launcher";
 // The parked launch (parkedstore.ts) the draft was filled from, so a start or a park from it settles that entry and adds
 // none. It lasts as the draft does: a close and a reopen are still that entry; a Clear or a launch ends it.
 export const launcherParkedIdAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
@@ -99,7 +99,7 @@ function keptDraft() {
         goal: globalStore.get(launcherGoalAtom),
         planPath: globalStore.get(planPathAtom),
         prototype: globalStore.get(launcherPrototypeAtom),
-        images: globalStore.get(launcherImagesAtom).length,
+        attachments: draftAttachments(LAUNCHER_DRAFT).length,
     };
 }
 
@@ -174,40 +174,9 @@ export function clearLauncherDraft(): void {
     globalStore.set(launcherBranchAtom, null);
     globalStore.set(launcherResumeAtom, null);
     globalStore.set(launcherAccountAtom, null);
-    for (const img of globalStore.get(launcherImagesAtom)) {
-        URL.revokeObjectURL(img.previewUrl);
-    }
-    globalStore.set(launcherImagesAtom, []);
+    clearDraftAttachments(LAUNCHER_DRAFT);
     globalStore.set(launcherParkedIdAtom, null);
     globalStore.set(launcherRestoredAtom, false);
-}
-
-function patchImage(id: string, patch: Partial<TaskImage>): void {
-    globalStore.set(launcherImagesAtom, (prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
-}
-
-// A paste is a bare blob (createTempFileFromBlob names it); a drop keeps its file name (createTempFileFromFile). Both are
-// kept (~/.arc/attachments), not temp: the task names the file, and the transcript shows it from there long after a
-// temp sweep would have removed it.
-export function addTaskImages(files: File[], from: "paste" | "drop"): void {
-    const room = imageRoom(globalStore.get(launcherImagesAtom).length, files.length);
-    for (const f of files.slice(0, room)) {
-        const id = crypto.randomUUID();
-        globalStore.set(launcherImagesAtom, (prev) => [...prev, { id, previewUrl: URL.createObjectURL(f) }]);
-        const write = from === "paste" ? createTempFileFromBlob(f, true) : createTempFileFromFile(f, true);
-        write.then(
-            (path) => patchImage(id, { path }),
-            (e) => patchImage(id, { error: String(e?.message ?? e) })
-        );
-    }
-}
-
-export function removeTaskImage(id: string): void {
-    const img = globalStore.get(launcherImagesAtom).find((i) => i.id === id);
-    if (img != null) {
-        URL.revokeObjectURL(img.previewUrl);
-    }
-    globalStore.set(launcherImagesAtom, (prev) => prev.filter((i) => i.id !== id));
 }
 
 // A launch consumed the draft. Hand-edited commands go with it, and so does the When pick (Clear leaves it, as it leaves

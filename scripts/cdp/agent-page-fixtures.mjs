@@ -47,6 +47,10 @@ const LIB = `
 
 export const agentPage = (h, body) => h.ev(`(async () => { ${LIB} ${body} })()`);
 
+// the same library, for an expression of a scenario's own that reads the app's modules (it must be an async function's
+// body: LIB awaits)
+export const PAGE_LIB = LIB;
+
 // the roster the page held before the first setRoster stays in the page, so a second scenario cannot overwrite it
 export const setRoster = (h, roster) =>
     agentPage(

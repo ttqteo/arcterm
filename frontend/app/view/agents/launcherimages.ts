@@ -1,11 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Images pasted or dropped into the New launcher's Task box: which files count, how many fit, and how their temp
-// paths ride the launch (docs/superpowers/specs/2026-10-09-launcher-resume-and-images-design.md). Pure; the temp
-// writes are launcherstore.ts's.
+// Images on a prompt: which files count and how many fit (a council's boxes), and how their paths ride a new agent's
+// launch and a chat message (docs/superpowers/specs/2026-10-09-launcher-resume-and-images-design.md). Pure. The New
+// dialog's Task box takes its attachments as Chat's box does (composerattachments.ts).
 
-import { runtimeShowsTask, type Runtime } from "./launch";
+import type { Runtime } from "./launch";
 
 export const MAX_TASK_IMAGES = 8;
 
@@ -28,12 +28,6 @@ export function imageRoom(existing: number, incoming: number): number {
 
 export function imagesPending(images: TaskImage[]): boolean {
     return images.some((i) => i.path == null && i.error == null);
-}
-
-// An image still being written holds the launch only for a runtime that takes the task: a terminal sends none, so its
-// images (left from an agent picked before) are never waited on.
-export function imagesHoldLaunch(runtime: Runtime, images: TaskImage[]): boolean {
-    return runtimeShowsTask(runtime) && imagesPending(images);
 }
 
 export interface TaskWithImages {

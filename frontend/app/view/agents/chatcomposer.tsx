@@ -19,7 +19,8 @@
 // useAgentSend's (agentcomposer.tsx), the same path as the compact composer; this adds attachments
 // (composerattachments.ts: a pasted or dropped image is kept and goes as the "Attached images:" block your bubble draws
 // as a picture; Ctrl+U, Cmd+U on a Mac, opens the file dialog), the `/` command menu (slashmenu.tsx) and the `@` file
-// picker (filemention.tsx), Stop, and the look. A text that starts with `!` is a bash command (chatmodel.ts `bashMode`): the
+// picker (filemention.tsx), Stop, and the look. The attachments' ways in, the two menus and the text-and-caret plumbing
+// are the core it shares with the New dialog's Task box (promptbox.ts). A text that starts with `!` is a bash command (chatmodel.ts `bashMode`): the
 // box draws it in a shell well under a "Bash" caption, with the newest `!` command of Claude Code's history that starts so
 // as grey ghost text, which → or Tab takes (chatbash.ts has the rules, chatbashstore.ts the history); with no ghost text
 // Tab completes the word under the caret (commands, `$variables`, files) in a list over the box (bashcomplete.tsx). Callers key it by agent id:
@@ -57,7 +58,7 @@ import {
     type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { canStop, useAgentSend } from "./agentcomposer";
 import type { AgentsViewModel } from "./agents";
 import { sleepingLine, wakeAgent, wakeErrorToast } from "./agentsleep";
@@ -70,7 +71,7 @@ import { bashGhost } from "./chatbash";
 import { noteBashRun, useBashHistory } from "./chatbashstore";
 import { ChatBgLine } from "./chatbgline";
 import { boxLayout, boxState, boxTabPlaceholder, type BoxState, type HintPart } from "./chatboxstate";
-import { ChatEditor, type EditorLike, type KeyLike } from "./chateditor";
+import { ChatEditor, type KeyLike } from "./chateditor";
 import { ChatFooter, Fold, usePartMotion } from "./chatfooter";
 import { boxAnswersAsk } from "./chathandoff";
 import { SWITCH_NOTE } from "./chatinitiative";
@@ -133,15 +134,12 @@ import { mergeTaken, takeBackPlan, takenBackOf } from "./chattakeback";
 import { noteTakenBack, takeBack } from "./chattakebackstore";
 import { attachmentBlocker, useComposerAttachments } from "./composerattachments";
 import { fallAsleepLabel } from "./fallasleepstore";
-import { useFileMention } from "./filemention";
 import { chatFilesRoot, recentMentionPaths } from "./launchermention";
-import { isPathsDrag, pathsFromDrop } from "./pathdrop";
 import { permissionBoxKey } from "./permissionmodel";
 import { permissionCardKey, usePermission } from "./permissionstore";
 import { projectsAtom } from "./projectsstore";
-import { useRefItems } from "./refmentionstore";
+import { usePromptBox } from "./promptbox";
 import { opensTui } from "./slashcommands";
-import { useSlashMenu } from "./slashmenu";
 
 // one line of the editor (14px at line-height 1.9): the one-row box's text; grows as the text wraps, then scrolls
 const ChatMinH = 27;
@@ -149,36 +147,9 @@ const ChatMaxH = 200;
 // in bash mode the editor sits in a well with 8px of padding above and below, so one line of it is about the box's height
 const ChatBashMinH = 25;
 
-const dragHasFiles = (dt: DataTransfer | null) => Array.from(dt?.types ?? []).includes("Files");
-// a drag that may name files by path (pathsFromDrop decides at the drop, when the data is readable)
-const dragNamesPaths = (dt: DataTransfer | null) => {
-    const types = Array.from(dt?.types ?? []);
-    return isPathsDrag(types) || types.includes("text/uri-list");
-};
-
 const NO_BLOCK: Atom<Block | undefined> = atom(undefined as Block | undefined);
 const NO_CHIPS: ChatChip[] = [];
 const NO_ACTS: RunningActions = { diff: false, terminal: false, terminalAt: null };
-
-let picking = false; // the native dialog takes a moment to appear; a second click must not open another
-
-async function pickPaths(): Promise<string[]> {
-    if (picking) {
-        return [];
-    }
-    picking = true;
-    try {
-        const { open } = await import("@tauri-apps/plugin-dialog");
-        const picked = await open({ multiple: true, title: "Attach files" });
-        return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
-    } catch (err) {
-        console.error("chat composer: file picker failed", err);
-        pushToast({ title: "Couldn't open the file picker", message: String(err), level: "error" });
-        return [];
-    } finally {
-        picking = false;
-    }
-}
 
 // how long after an Esc that stopped a turn another Esc is swallowed, while the agent's state catches up
 const INTERRUPT_SETTLE_MS = 1_500;
@@ -356,18 +327,6 @@ function ComposerBox({
         });
     // `!` first: Claude Code runs the text as a bash command, so the box says so as its own box does (chatmodel.ts)
     const bash = bashMode(text);
-    const editorRef = useRef<EditorLike>(null);
-    // The text the box was last given or said (every edit goes out through `onChange`, which skips a call that changes
-    // nothing: a click that only moves the caret says the same text again), and the caret an outside change asks for
-    // (setTextAt): the editor places it as it draws the text, and a mention it ends stays text rather than a pill.
-    const told = useRef(text);
-    told.current = text;
-    const outsideCaret = useRef<{ text: string; caret: number } | null>(null);
-    const setTextAt = (t: string, caret?: number) => {
-        outsideCaret.current = caret == null ? null : { text: t, caret };
-        told.current = t;
-        setText(t);
-    };
     const block = useAtomValue(
         agent.blockId ? WOS.getWaveObjectAtom<Block>(WOS.makeORef("block", agent.blockId)) : NO_BLOCK
     );
@@ -378,31 +337,51 @@ function ComposerBox({
     // the whole message box: the frosted suggestion panels (the `/` and `@` lists) stand just above it as wide as it is,
     // and Tab's list in bash mode opens over it
     const boxRef = useRef<HTMLDivElement>(null);
-    // a `/` as the box's first character lists Claude Code's commands; a recalled "/compact" is a message to resend, not
-    // a command being typed, so the menu stays closed over it until it is edited
-    const slash = useSlashMenu({
+    const cwd = block?.meta?.["cmd:cwd"];
+    const filesRoot = chatFilesRoot(cwd, agent.project, projects);
+    // the files this agent read or wrote lead the `@` list, newest first
+    const recentFiles = useMemo(() => recentMentionPaths(entries, filesRoot), [entries, filesRoot]);
+    // The core the New dialog's Task box shares (promptbox.ts): the editor's handle (`editorRef`), the text the box was
+    // last given or said (every edit goes out through `onChange`, which skips a call that changes nothing: a click that
+    // only moves the caret says the same text again), the caret an outside change asks for (setTextAt: the editor places
+    // it as it draws the text, and a mention it ends stays text rather than a pill), the `/` menu, the `@` picker (files,
+    // and the live agents, the project's runs and councils, the past conversations and the initiatives), the drop zone
+    // and the file dialog.
+    const promptBox = usePromptBox({
         text,
-        setText: setTextAt,
-        cwd: block?.meta?.["cmd:cwd"] ?? "",
-        blockId: agent.blockId,
-        inputRef: editorRef,
-        off: recalled.current.at != null && text === recalled.current.shown,
+        setText,
+        name: "chat",
+        att,
+        filesRoot,
+        cwd,
+        projectName: agent.project ?? "",
+        projectPath: projects[agent.project ?? ""]?.path ?? "",
+        selfId: agent.id,
+        recent: recentFiles,
         look: "frosted",
         frame: boxRef,
-        // the box answers /usage, /context… itself only when Chat takes local commands, and a pick of one runs it at once:
-        // it goes through the one send path, as Enter on the typed command would
-        inChat: onLocal != null ? answersInChat : undefined,
-        onRun: (name) => {
-            const typed = `/${name}`;
-            if (typed === text) {
-                submitRef.current();
-                return;
-            }
-            submitNext.current = true;
-            setTextAt(typed);
+        // a bash command has no @mentions: the picker is shut while the text starts with `!`
+        mentionOff: bash,
+        slash: {
+            // a recalled "/compact" is a message to resend, not a command being typed, so the menu stays closed over it
+            // until it is edited
+            off: recalled.current.at != null && text === recalled.current.shown,
+            blockId: agent.blockId,
+            // the box answers /usage, /context… itself only when Chat takes local commands, and a pick of one runs it at
+            // once: it goes through the one send path, as Enter on the typed command would
+            inChat: onLocal != null ? answersInChat : undefined,
+            onRun: (name) => {
+                const typed = `/${name}`;
+                if (typed === text) {
+                    submitRef.current();
+                    return;
+                }
+                submitNext.current = true;
+                promptBox.setTextAt(typed);
+            },
         },
     });
-    const cwd = block?.meta?.["cmd:cwd"];
+    const { editorRef, told, outsideCaret, setTextAt, slash, mention, attach, dragging } = promptBox;
     // Bash mode's ghost text (as Claude Code's TUI has it): the newest `!` command from its history that starts with what
     // is typed, shown after the caret at the end of the text. `saidCaret` is the caret the editor last said, with its text;
     // a text that came from outside (a recall, a pick, the ghost taken) has the caret where setTextAt put it, or at the end.
@@ -418,31 +397,6 @@ function ComposerBox({
     const bashList = useBashComplete({ text, setText: setTextAt, cwd, inputRef: editorRef, boxRef, on: bash });
     // the ghost text steps aside while the Tab list is open, so → and Tab do not offer two things at once
     const ghost = bash && !waking && !bashList.shown ? bashGhost(bashHistory, text, caretNow) : "";
-    const filesRoot = chatFilesRoot(cwd, agent.project, projects);
-    // the files this agent read or wrote lead the `@` list, newest first
-    const recentFiles = useMemo(() => recentMentionPaths(entries, filesRoot), [entries, filesRoot]);
-    // the live agents, the project's runs and councils, the past conversations and the initiatives an `@` can also name,
-    // read while the text holds one; the project's path orders the conversations, its name the initiatives
-    const refItems = useRefItems(
-        filesRoot,
-        agent.project ?? "",
-        projects[agent.project ?? ""]?.path ?? "",
-        agent.id,
-        !bash && text.includes("@")
-    );
-    const mention = useFileMention({
-        // a bash command has no @mentions: the picker is shut while the text starts with `!`
-        text: bash ? "" : text,
-        setText: setTextAt,
-        filesRoot,
-        cwd,
-        inputRef: editorRef,
-        name: "chat",
-        recent: recentFiles,
-        look: "frosted",
-        frame: boxRef,
-        refs: refItems,
-    });
     // An Alt-drop's @mention lands here (chatinsert.ts): at the caret, through the text state, which the editor draws
     // from; the caret is put after it once the new text is drawn.
     const latest = useRef({ text, setText: setTextAt });
@@ -471,8 +425,7 @@ function ComposerBox({
             box.setSelectionRange(caret, caret);
             // the menus read the caret from events, and a caret set from code may raise none before the next key: a `/`
             // put in the box by the + menu opens the `/` list at once
-            slash.onCaret(box);
-            mention.onCaret(box);
+            promptBox.onCaret(box);
         }
     }, [text]);
     // A visual in the conversation (chatvisualview.tsx) reads the box, sends a text through it and appends to it. A send
@@ -881,78 +834,6 @@ function ComposerBox({
         return true;
     };
     interruptRef.current = interrupt;
-    const attach = () => {
-        fireAndForget(async () => {
-            const paths = await pickPaths();
-            if (paths.length > 0) {
-                att.addPaths(paths);
-            }
-            editorRef.current?.focus();
-        });
-    };
-    // A drag of files over the box, awake or asleep, turns it into the drop zone. dragenter and dragleave fire for every
-    // child the drag crosses, so `dragDepth` counts the enters not yet left: the zone goes when the count is back to zero
-    // (the drag left the box), and a drop or a dragend ends it at once. A dragover alone starts it too, so a box that
-    // missed the enter (the drag began over it) still shows the zone.
-    const [dragging, setDragging] = useState(false);
-    const dragDepth = useRef(0);
-    const endDrag = () => {
-        dragDepth.current = 0;
-        setDragging(false);
-    };
-    useEffect(() => {
-        if (!dragging) {
-            return;
-        }
-        // a drop elsewhere, or a drag cancelled with Escape, may never raise a dragleave on the box
-        window.addEventListener("drop", endDrag, true);
-        window.addEventListener("dragend", endDrag, true);
-        return () => {
-            window.removeEventListener("drop", endDrag, true);
-            window.removeEventListener("dragend", endDrag, true);
-        };
-    }, [dragging]);
-    const offersFiles = (dt: DataTransfer | null) => dragHasFiles(dt) || dragNamesPaths(dt);
-    const onDragEnter = (e: DragEvent<HTMLElement>) => {
-        if (offersFiles(e.dataTransfer)) {
-            dragDepth.current++;
-            setDragging(true);
-        }
-    };
-    const onDragLeave = () => {
-        if (dragDepth.current > 0 && --dragDepth.current === 0) {
-            setDragging(false);
-        }
-    };
-    // the webview's own drag-drop is off, so a file dropped unhandled would navigate it to the file: any drag that holds
-    // files is taken here
-    const onDragOver = (e: DragEvent<HTMLElement>) => {
-        if (offersFiles(e.dataTransfer)) {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "copy";
-            dragDepth.current = Math.max(dragDepth.current, 1);
-            setDragging(true);
-        }
-    };
-    // Explorer hands over real files (copied, as a paste is); arcterm's tree, VS Code, Obsidian and "Copy as path"
-    // hand over paths as text, which the box would otherwise take as typed text: those attach in place
-    const onDrop = (e: DragEvent<HTMLElement>) => {
-        endDrag();
-        const dt = e.dataTransfer;
-        if (dragHasFiles(dt)) {
-            e.preventDefault();
-            att.addFiles(Array.from(dt.files));
-            return;
-        }
-        const paths = pathsFromDrop(Array.from(dt.types), (type) => dt.getData(type));
-        if (paths == null || paths.length === 0) {
-            return;
-        }
-        e.preventDefault();
-        e.stopPropagation();
-        att.addPaths(paths);
-        editorRef.current?.focus();
-    };
     // not while a Sleep is under way: Esc would cut short the compaction the sleep waits on
     const showStop = !asleep && !dozing && agent.blockId != null && canStop(agent.state, agent.sleeping);
     // the finished turn's suggested replies: they stay while the person types (a click over typed text asks first,
@@ -1039,7 +920,7 @@ function ComposerBox({
         asleep,
         running: showStop,
         dragging,
-        suggesting: slash.shown || mention.shown,
+        suggesting: promptBox.menuShown,
         bash,
     });
     useLayoutEffect(() => {
@@ -1134,10 +1015,7 @@ function ComposerBox({
                     data-chat-box-state={state}
                     data-chat-box-layout={grown ? "grown" : "row"}
                     data-chat-bash-mode={bash ? "" : undefined}
-                    onDragEnter={onDragEnter}
-                    onDragOver={onDragOver}
-                    onDragLeave={onDragLeave}
-                    onDrop={onDrop}
+                    {...promptBox.dropProps}
                     initial={false}
                     animate={{ height: contentH ?? "auto" }}
                     transition={contentH == null || reduceMotion ? { duration: 0 } : MOTION.spring}
@@ -1270,18 +1148,13 @@ function ComposerBox({
                                         );
                                         const box = editorRef.current;
                                         if (box != null) {
-                                            slash.onCaret(box);
-                                            mention.onCaret(box);
+                                            promptBox.onCaret(box);
                                             bashList.onCaret(box);
                                         }
                                     }}
                                     // a click outside the box closes bash mode's Tab list (a click on a row keeps the focus here)
                                     onBlur={bashList.onBlur}
-                                    onPasteFiles={(e) => {
-                                        // att.onPaste takes the files and calls preventDefault, or leaves the paste to the editor
-                                        att.onPaste(e as never);
-                                        return e.defaultPrevented;
-                                    }}
+                                    onPasteFiles={promptBox.onPasteFiles}
                                     onKeyDown={(e) => {
                                         // → or Tab at the end of a bash command with the ghost text showing takes it, as Claude Code's does;
                                         // the ghost is never shown while the Tab list is open, so this Tab is not a completion's
@@ -1313,10 +1186,7 @@ function ComposerBox({
                                             bashList.onKeyDown(e);
                                         }
                                         if (!e.defaultPrevented) {
-                                            slash.onKeyDown(e);
-                                        }
-                                        if (!e.defaultPrevented) {
-                                            mention.onKeyDown(e);
+                                            promptBox.menuKeys(e);
                                         }
                                         if (e.defaultPrevented) {
                                             return;
@@ -1376,7 +1246,7 @@ function ComposerBox({
                                             !e.shiftKey &&
                                             (isMacOS() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
                                         if (addFilesKey) {
-                                            if (!waking && !slash.shown && !mention.shown) {
+                                            if (!waking && !promptBox.menuShown) {
                                                 e.preventDefault();
                                                 attach();
                                             }

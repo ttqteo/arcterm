@@ -29,6 +29,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- The Task box of New agent works like Chat's box: `@` names an agent, a run, a council, a past conversation or an
+  initiative as well as a file, `/` lists Claude Code's commands, and any file can be attached (paste, drop, the
+  paperclip or Cmd+U / Ctrl+U), not only images.
+
 ### Changed
 
 - Clicking a file in the card that ends a turn in Chat opens it in the rail beside the terminal, in a tab of its own;

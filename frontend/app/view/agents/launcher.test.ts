@@ -296,7 +296,7 @@ describe("stepIndex", () => {
 });
 
 describe("draftShown", () => {
-    const empty = { task: "", goal: "", planPath: "", prototype: "", images: 0 };
+    const empty = { task: "", goal: "", planPath: "", prototype: "", attachments: 0 };
     it("a kept task, goal, plan path or prototype is a draft, whichever pick opens", () => {
         expect(draftShown({ ...empty, task: "fix it" })).toBe(true);
         expect(draftShown({ ...empty, goal: "fix it" })).toBe(true);
@@ -304,7 +304,7 @@ describe("draftShown", () => {
         expect(draftShown({ ...empty, prototype: "/c/Main.dc.html" })).toBe(true);
     });
     it("draftShown counts images", () => {
-        expect(draftShown({ ...empty, images: 1 })).toBe(true);
+        expect(draftShown({ ...empty, attachments: 1 })).toBe(true);
     });
     it("nothing kept, or only whitespace, is no draft", () => {
         expect(draftShown(empty)).toBe(false);

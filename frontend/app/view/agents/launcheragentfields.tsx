@@ -7,9 +7,12 @@
 // always there (it hid behind "+ Start with a task") so Tab lands in it. The command shows only while Command › is open,
 // which is this component's state, so every opening of the dialog starts folded; a terminal has no task and shows it
 // open. Whether the flag menu or the branch list is open lives in launcherstore, so the dialog's one key handler closes
-// the open one on Escape wherever focus is, and the dialog stays. Images pasted or dropped into the task show as a row
-// of tiles inside the Task row (launcherimages.ts holds the rules, launcherstore.ts the temp writes). An `@` typed in the
-// task lists the project's files under the Task row, and a pick puts `@<path>` in the task (filemention.tsx).
+// the open one on Escape wherever focus is, and the dialog stays.
+//
+// The task field is the editor Chat's box draws its text in (chateditor.tsx), with the core they share (promptbox.ts): an
+// `@` lists the project's files and the agents, runs, councils, conversations and initiatives it can name, a `/` (for
+// claude) Claude Code's commands, and a file pasted, dropped or picked (the paperclip, or Ctrl+U / Cmd+U) is a chip in the
+// tray under the field, the same chips Chat's box shows (composerattachments.ts, kept under LAUNCHER_DRAFT).
 
 import { composerReveal } from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
@@ -17,12 +20,15 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { formatChordString } from "@/util/keysym";
+import { isMacOS } from "@/util/platformutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, ChevronRight, Flag, GitBranch, Loader2, SquareTerminal, TriangleAlert, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Flag, GitBranch, Paperclip, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState, type ClipboardEvent, type DragEvent, type RefObject } from "react";
-import { useFileMention } from "./filemention";
+import { useEffect, useState, type RefObject } from "react";
+import { AttachmentTray } from "./attachmenttray";
+import { ChatEditor, type EditorLike } from "./chateditor";
+import { useComposerAttachments } from "./composerattachments";
 import {
     RUNTIME_FLAGS,
     runtimeShowsTask,
@@ -31,20 +37,22 @@ import {
     worktreeOutcome,
     type Runtime,
 } from "./launch";
-import { imageFilesOf } from "./launcherimages";
 import { resumeLaunchSpec } from "./launcherresume";
 import {
-    addTaskImages,
+    LAUNCHER_DRAFT,
     launcherBranchAtom,
     launcherBranchListAtom,
     launcherCommandAtom,
     launcherFlagMenuAtom,
-    launcherImagesAtom,
     launcherTaskAtom,
     launcherWorktreeAtom,
-    removeTaskImage,
 } from "./launcherstore";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
+import { usePromptBox } from "./promptbox";
+
+// the Task box's editor: three lines when empty (13px at the editor's 1.9 line height), about ten before it scrolls
+const TASK_MIN_H = 74;
+const TASK_MAX_H = 240;
 
 export const LAUNCHER_LABEL = "text-[10px] font-semibold uppercase tracking-[0.1em] text-muted";
 
@@ -102,110 +110,6 @@ export function useProjectBranches(
     return { currentBranch, branches };
 }
 
-// an OS file drag; the webview's own drag-drop is off, so a file dropped unhandled would navigate it to the file
-const dragHasFiles = (dt: DataTransfer | null) => Array.from(dt?.types ?? []).includes("Files");
-
-// A pasted text is left to the browser; a paste that carries images takes them and inserts any text beside them.
-function pasteIntoTask(e: ClipboardEvent<HTMLTextAreaElement>): void {
-    const files = imageFilesOf(e.clipboardData?.files);
-    if (files.length === 0) {
-        return;
-    }
-    e.preventDefault();
-    addTaskImages(files, "paste");
-    const text = e.clipboardData.getData("text/plain");
-    if (text !== "") {
-        const el = e.currentTarget;
-        el.setRangeText(text, el.selectionStart, el.selectionEnd, "end");
-        globalStore.set(launcherTaskAtom, el.value);
-    }
-}
-
-function dropIntoTask(e: DragEvent<HTMLTextAreaElement>): void {
-    if (!dragHasFiles(e.dataTransfer)) {
-        return;
-    }
-    e.preventDefault();
-    addTaskImages(imageFilesOf(e.dataTransfer.files), "drop");
-}
-
-// a click on a thumbnail shows that image larger under the row, another click (on either) shrinks it back
-function TaskImages() {
-    const images = useAtomValue(launcherImagesAtom);
-    const [openId, setOpenId] = useState<string | null>(null);
-    if (images.length === 0) {
-        return null;
-    }
-    const shown = images.find((i) => i.id === openId);
-    const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
-    return (
-        <div className="flex flex-col gap-2 pb-2 pr-2">
-            <div className="flex flex-wrap gap-2">
-                {images.map((img) => {
-                    const state = img.error != null ? "error" : img.path != null ? "ready" : "pending";
-                    return (
-                        <div
-                            key={img.id}
-                            data-task-image
-                            data-task-image-state={state}
-                            className="relative h-12 w-12 shrink-0"
-                        >
-                            <img
-                                // a parked launch's image has no preview until its file is read back (parkedstore.ts)
-                                src={img.previewUrl || undefined}
-                                alt=""
-                                onClick={() => toggle(img.id)}
-                                className={cn(
-                                    "h-full w-full rounded-[8px] border object-cover",
-                                    img.id === openId ? "cursor-zoom-out" : "cursor-zoom-in",
-                                    state === "error"
-                                        ? "border-warning"
-                                        : img.id === openId
-                                          ? "border-accent"
-                                          : "border-edge-mid"
-                                )}
-                            />
-                            {state === "pending" ? (
-                                <span className="absolute inset-0 flex items-center justify-center rounded-[8px] bg-background/60">
-                                    <Loader2
-                                        size={14}
-                                        className="animate-spin text-primary motion-reduce:animate-none"
-                                    />
-                                </span>
-                            ) : null}
-                            <button
-                                type="button"
-                                tabIndex={-1}
-                                aria-label="Remove image"
-                                onClick={() => removeTaskImage(img.id)}
-                                className="absolute -right-1.5 -top-1.5 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border border-edge-mid bg-surface text-muted hover:text-primary"
-                            >
-                                <X size={10} strokeWidth={2.4} />
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-            {shown != null ? (
-                <img
-                    data-task-image-open
-                    src={shown.previewUrl || undefined}
-                    alt=""
-                    onClick={() => setOpenId(null)}
-                    className="max-h-[40vh] max-w-full cursor-zoom-out self-start rounded-[8px] border border-edge-mid object-contain"
-                />
-            ) : null}
-            {images.map((img) =>
-                img.error != null ? (
-                    <span key={img.id} data-task-image-error className="text-[12px] text-warning">
-                        {img.error}
-                    </span>
-                ) : null
-            )}
-        </div>
-    );
-}
-
 interface AgentFieldsProps {
     runtime: Runtime;
     currentBranch: string;
@@ -217,8 +121,10 @@ interface AgentFieldsProps {
     home: boolean;
     // the picked project's folder, whose files an `@` in the task lists; empty in Home (too big to walk) or with none
     filesRoot: string;
+    // the picked project's name, which orders the runs, councils and initiatives an `@` can name; empty in Home
+    projectName: string;
     // a letter typed in the Start column moves focus here
-    taskRef: RefObject<HTMLTextAreaElement>;
+    taskRef: RefObject<EditorLike | null>;
 }
 
 export function AgentFields({
@@ -229,15 +135,28 @@ export function AgentFields({
     resume,
     home,
     filesRoot,
+    projectName,
     taskRef,
 }: AgentFieldsProps) {
     const task = useAtomValue(launcherTaskAtom);
-    const mention = useFileMention({
+    // the chips are a draft under LAUNCHER_DRAFT: a close keeps them, and the launch reads them (launchermodal.tsx)
+    const att = useComposerAttachments({ keep: true, draftKey: LAUNCHER_DRAFT });
+    // the core Chat's box shares (promptbox.ts): `@` for files and the agents, runs, councils, conversations and
+    // initiatives, `/` for Claude Code's commands, and the attachments' paste, drop and file dialog
+    const box = usePromptBox({
         text: task,
         setText: (t) => globalStore.set(launcherTaskAtom, t),
-        filesRoot,
-        inputRef: taskRef,
         name: "launcher",
+        editorRef: taskRef,
+        att,
+        filesRoot,
+        cwd: filesRoot || undefined,
+        projectName,
+        projectPath: filesRoot,
+        // no agent yet for the list to leave out
+        selfId: "",
+        // the commands are Claude Code's; a pick puts `/name ` in the task, which the agent runs as its first prompt
+        slash: { off: runtime !== "claude" },
     });
     const commands = useAtomValue(launcherCommandAtom);
     const naFlags = useAtomValue(naFlagsAtom);
@@ -271,10 +190,9 @@ export function AgentFields({
     const effectiveBranch = branchPick ?? currentBranch;
     const branchNames = branches.map((b) => b.name);
     const taskHint =
-        (resume
-            ? `optional · sent as the next message · ${formatChordString("Shift:Enter")} for a new line · paste or drop images`
-            : `optional · sent as the first prompt · ${formatChordString("Shift:Enter")} for a new line · paste or drop images`) +
-        (filesRoot !== "" ? " · @ for a file" : "");
+        (resume ? "optional · sent as the next message · " : "optional · sent as the first prompt · ") +
+        `${formatChordString("Shift:Enter")} for a new line · paste or drop files · @ to mention` +
+        (runtime === "claude" ? " · / for commands" : "");
     const showTask = runtimeShowsTask(runtime);
     const showWorktree = runtimeSupportsWorktree(runtime) && resume == null && !home;
     const outcome = worktreeOutcome({ branch: effectiveBranch, currentBranch, branchNames });
@@ -283,48 +201,88 @@ export function AgentFields({
     return (
         <>
             {showTask ? (
+                // a drag of files over the row makes it the drop zone: its border says so
                 <div
                     data-launcher-task-row
-                    className="flex min-w-0 flex-col rounded-[10px] border border-edge-mid bg-surface pl-3 focus-within:border-accent-700"
+                    data-launcher-dragging={box.dragging ? "" : undefined}
+                    {...box.dropProps}
+                    className={cn(
+                        "flex min-w-0 flex-col rounded-[10px] border bg-surface pl-3 focus-within:border-accent-700",
+                        box.dragging ? "border-dashed border-accent-700" : "border-edge-mid"
+                    )}
                 >
                     <div className="flex min-w-0 items-start gap-1 py-[3px] pr-1">
-                        <label
-                            htmlFor="launcher-task"
+                        <span
+                            onClick={() => taskRef.current?.focus()}
                             className={cn(LAUNCHER_LABEL, "flex h-[31px] shrink-0 items-center pr-1")}
                         >
                             Task
-                        </label>
-                        {/* three lines when empty, the dialog's first thing; grows as the text wraps, up to about eleven
-                        lines, then scrolls */}
-                        <textarea
-                            ref={taskRef}
-                            id="launcher-task"
-                            rows={1}
-                            value={task}
-                            onChange={(e) => {
-                                globalStore.set(launcherTaskAtom, e.target.value);
-                                mention.onCaret(e.target);
-                            }}
-                            onSelect={(e) => mention.onCaret(e.currentTarget)}
-                            onKeyDown={mention.onKeyDown}
-                            onPaste={pasteIntoTask}
-                            onDragOver={(e) => {
-                                if (dragHasFiles(e.dataTransfer)) {
-                                    e.preventDefault();
-                                }
-                            }}
-                            onDrop={dropIntoTask}
-                            placeholder={taskHint}
+                        </span>
+                        {/* three lines when empty, the dialog's first thing; grows as the text wraps, up to about ten lines,
+                        then scrolls. Enter launches: the dialog's key handler, which the key goes on to, does it */}
+                        <div
+                            data-launcher-task-hint={taskHint}
                             title={task === "" ? taskHint : undefined}
-                            className={cn(
-                                "block field-sizing-content max-h-[240px] min-w-[140px] flex-1 resize-none bg-transparent px-1 py-[6px] text-[13px] leading-[19px] text-primary outline-none placeholder:truncate placeholder:text-muted",
-                                // the placeholder would size the field and wrap it; empty, it is three lines
-                                task === "" ? "h-[69px] overflow-hidden" : "min-h-[69px] overflow-y-auto"
-                            )}
-                        />
+                            className="min-w-[140px] flex-1 px-1 py-[3px]"
+                        >
+                            <ChatEditor
+                                ref={taskRef}
+                                value={task}
+                                outsideCaret={box.outsideCaret.current}
+                                minHeight={TASK_MIN_H}
+                                maxHeight={TASK_MAX_H}
+                                placeholder={taskHint}
+                                className="text-[13px] text-primary"
+                                dataAttrs={{ id: "launcher-task", "data-launcher-task": "" }}
+                                onChange={(t) => {
+                                    if (t !== box.told.current) {
+                                        box.told.current = t;
+                                        globalStore.set(launcherTaskAtom, t);
+                                    }
+                                    const ed = taskRef.current;
+                                    if (ed != null) {
+                                        box.onCaret(ed);
+                                    }
+                                }}
+                                onPasteFiles={box.onPasteFiles}
+                                onKeyDown={(e) => {
+                                    box.menuKeys(e);
+                                    if (e.defaultPrevented || e.nativeEvent.isComposing) {
+                                        return;
+                                    }
+                                    // Ctrl+U (Cmd+U on a Mac) is Add files, as in Chat's box
+                                    if (
+                                        e.key.toLowerCase() === "u" &&
+                                        !e.altKey &&
+                                        !e.shiftKey &&
+                                        (isMacOS() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey)
+                                    ) {
+                                        e.preventDefault();
+                                        box.attach();
+                                        return;
+                                    }
+                                    // Enter (and Mod+Enter) launches, which the dialog does: the editor must not take it
+                                    // as a new line. Shift+Enter is the new line.
+                                    if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
+                                        e.preventDefault();
+                                    }
+                                }}
+                            />
+                        </div>
                         {/* the buttons are tabIndex -1, for the pointer: Tab goes from the Task box to the Project column */}
                         {/* icons only, so the hint keeps the row's width: the names are in their titles */}
                         <div className="flex h-[31px] shrink-0 items-center gap-0.5">
+                            <button
+                                type="button"
+                                tabIndex={-1}
+                                data-launcher-attach
+                                aria-label="Attach files"
+                                title={`Attach files (${formatChordString("Mod:u")})`}
+                                onClick={box.attach}
+                                className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-ink-mid hover:bg-surface-hover hover:text-primary"
+                            >
+                                <Paperclip size={14} strokeWidth={2} />
+                            </button>
                             {flagCatalog.length > 0 ? (
                                 <button
                                     type="button"
@@ -422,10 +380,15 @@ export function AgentFields({
                             ))}
                         </div>
                     ) : null}
-                    <TaskImages />
+                    {att.attachments.length > 0 ? (
+                        <div className="pb-2 pr-2">
+                            <AttachmentTray items={att.attachments} onRemove={att.remove} onRetry={att.retry} />
+                        </div>
+                    ) : null}
                 </div>
             ) : null}
-            {showTask ? mention.list : null}
+            {showTask ? box.slash.list : null}
+            {showTask ? box.mention.list : null}
             <AnimatePresence>
                 {flagMenuOpen && flagCatalog.length > 0 && (
                     <motion.div
