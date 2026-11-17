@@ -35,6 +35,7 @@ import {
     runProgress,
     runRoleOf,
     runTitle,
+    runTreeAgent,
     stageLabel,
     taskAgentOf,
     taskElapsed,
@@ -222,6 +223,29 @@ describe("run facts", () => {
         expect(leadRunTabIds(lineage, agents, "alone")).toBeUndefined();
         expect(leadRunTabIds(lineage, agents, "w")).toBeUndefined();
         expect(leadRunTabIds(lineage, agents, "plain")).toBeUndefined();
+    });
+
+    it("opens a run's link in the tree on its lead, else the tab that asks or works, else nowhere", () => {
+        const lineage = {
+            roles: {
+                l: { kind: "lead", runId: "r1" },
+                ask: { kind: "worker", leadRunId: "r1", taskId: "t-1" },
+                other: { kind: "lead", runId: "r2" },
+                gone: { kind: "lead", runId: "r3" },
+            },
+            runs: {},
+        } as const;
+        const tab = (id: string, state: AgentVM["state"], blockId: string | null = `b-${id}`) =>
+            ({ id, state, blockId: blockId ?? undefined }) as const;
+        // the lead even while a worker asks: the run shows under the lead's row
+        expect(runTreeAgent(lineage, [tab("ask", "asking"), tab("l", "idle"), tab("other", "working")], "r1")?.id).toBe(
+            "l"
+        );
+        // no lead tab: the one asking
+        expect(runTreeAgent(lineage, [tab("ask", "asking"), tab("other", "working")], "r1")?.id).toBe("ask");
+        // a lead with no terminal is no tab to show; nothing else of r3 is in the tree
+        expect(runTreeAgent(lineage, [tab("gone", "idle", null)], "r3")).toBeUndefined();
+        expect(runTreeAgent(lineage, [tab("other", "working")], "r9")).toBeUndefined();
     });
 
     it("opens a lead-less run on the tab that asks, else the one at work, never one with no terminal", () => {

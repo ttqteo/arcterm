@@ -187,6 +187,12 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   asking" (Go tests, and the scanner on that agent's real stored output, only), the agent also reads asking in the
   tree and counts in Needs you while the prompt waits, even unopened (`waveapp.log`: "shows Claude Code's folder trust
   prompt; reading it asking"); after Yes it reads idle, or working on the restore's nudge, and after No, exit idle.
+- [ ] (arcterm) **Opening a run from an agent shows it in the Agent tree, not Jarvis.** Unit tests (`runTreeAgent`) and
+  typecheck only, no dev app ran (commit "fix(agents): a run opened from an agent shows in the Agent tree"). With a
+  brainstorm whose approved run is under way: click its run line in the tree (`working · …`, title Show the run in the
+  tree), its pane's Open run, and Open run on Chat's run card → each stays on Agent, selects the run's lead (or, with no
+  lead tab, the run's agent that asks or works) and unfolds the run's lanes under it. With the lead closed and no task
+  at work, each opens the run in Jarvis as before.
 - [ ] (arcterm) **A canvas board's screenshot button shows a camera.** Typecheck only, no dev app ran (commit
   "fix(canvas): the board's screenshot button shows a camera"). Open an agent's Canvas: the board's top-right button
   reads a camera icon then `Copy`; a click turns it into ✓ `Copied` and puts the board's picture on the clipboard.

@@ -9,7 +9,6 @@
 // (landed, complete, cancelled) or its `[arc] Run … landed|held` message came, the card folds in place into a ✓ row; a
 // landed run that still holds sessions offers ✓ Close run at that row's end (landedclose.tsx).
 
-import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import { ArrowUpRight, Play } from "lucide-react";
@@ -24,6 +23,7 @@ import { queuedLabel, runCardFolded, runEndedLine, type RunCardSlot, type RunEnd
 import { landedCloseSuggestion } from "./donesuggest";
 import { LandedClose, useRunTabIds } from "./landedclose";
 import { useRunInfo } from "./runlineagestore";
+import { openRunFromAgent } from "./runopen";
 import { queuedRowsAtom, runQueueAtom, runQueueStartedAtom, useRunQueueFeed } from "./runqueuestore";
 import type { StageTone } from "./runstage";
 
@@ -69,7 +69,7 @@ export function RunCardBox({
             <button
                 type="button"
                 data-chat-bscard-run-open
-                onClick={() => fireAndForget(() => openTarget(model, { kind: "run", runId }))}
+                onClick={() => fireAndForget(() => openRunFromAgent(model, runId))}
                 className={cn(SMALL_BTN, FOCUS_RING, "font-semibold text-primary")}
             >
                 Open run

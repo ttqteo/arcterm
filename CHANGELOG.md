@@ -42,6 +42,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Opening a run from an agent (a brainstorm's run line in the Agent tree, its Open run, or Open run on Chat's run card)
+  shows it in the Agent tree first, its lead selected and its lanes unfolded, instead of switching to Jarvis; a run with
+  no agent left in the tree still opens in Jarvis.
 - A canvas board's screenshot button (Copy, at the board's top right) shows a camera instead of the copy icon.
 - A queue tag in the Agent tree (`#1`, `×2`) opens the Heavy jobs popover with that row's jobs selected, so you see at
   once which one is yours.

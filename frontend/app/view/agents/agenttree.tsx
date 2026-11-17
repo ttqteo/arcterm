@@ -220,6 +220,7 @@ import {
 } from "./councilstore";
 import { projectsAtom } from "./projectsstore";
 import { useRunObjects } from "./runobjects";
+import { openRunFromAgent } from "./runopen";
 import { runtimeMeta } from "./runtimemeta";
 import { loadSessionsArchive, sessionsArchiveAtom, sessionsErrorAtom } from "./sessionsarchivestore";
 import { liveTokensAtom, useLiveTokens } from "./livetokensstore";
@@ -747,9 +748,9 @@ function BrainstormTreeLine({ model, f, asking }: { model: AgentsViewModel; f: B
                     type="button"
                     onClick={(e) => {
                         e.stopPropagation();
-                        fireAndForget(() => openTarget(model, { kind: "run", runId: line.runId! }));
+                        fireAndForget(() => openRunFromAgent(model, line.runId!));
                     }}
-                    title="Open the run"
+                    title="Show the run in the tree"
                     className="min-w-0 cursor-pointer truncate text-left text-ink-mid hover:underline"
                 >
                     {line.text}
