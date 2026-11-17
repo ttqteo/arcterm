@@ -606,5 +606,7 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) Chat ref badges with real data: in a live agent's Chat, pick an agent, a run and a council from `@` →
   each shows as a tinted badge with its name (the box keeps the text `agent:<8>`); send → the bubble's badges open the
   agent's terminal, the run in Jarvis, the council's discussion; Ctrl-click peeks; a working agent's badge pulses green
-  and an asking one shows an amber ring. A token typed or pasted into the box stays text (badges only in the bubble).
+  and an asking one shows an amber ring. A token or an @path typed or pasted into the box becomes a badge or a file pill
+  once a space or punctuation follows it; deleting one leaves one space.
   Checked only with seeded atoms in the `chat-ref-badges` CDP scenario, not against a real project's runs and councils.
+- [ ] (arcterm) Chat ref badges: a session: of a recent conversation shows its title and age and a click reopens it as an agent; an effort: whose chunks are all done shows its done/total in green
