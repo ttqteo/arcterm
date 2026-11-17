@@ -92,6 +92,9 @@ export type AgentEntry =
           kind: "action";
           verb: string;
           target: string;
+          // a command call's command line when `target` is its description instead (Claude's Bash with a `description`), so
+          // the step line can tell the two apart before the result lands; absent when the target is the command itself
+          command?: string;
           path?: string; // the file the tool touched, in full, when it names one; target keeps the base name
           // blocked: refused before it ran (a hook, a permission rule, the person declining it), which is not a failure
           outcome?: "ok" | "fail" | "blocked";

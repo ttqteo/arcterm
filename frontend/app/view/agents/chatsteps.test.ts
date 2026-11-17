@@ -84,10 +84,10 @@ describe("stepOf", () => {
         expect(s.chips).toEqual([{ kind: "file", path: "/r/n.ts" }]);
     });
 
-    it("runs: the verb Ran and the command as a chip, from the detail when it is there", () => {
+    it("runs: a command with no description is the verb Ran and its first line as a chip, before and after the result", () => {
         const done = stepOf(
             action("ran", {
-                target: "run the tests",
+                target: "npx vitest run sticktobottom",
                 outcome: "ok",
                 detail: { kind: "bash", command: "npx vitest run sticktobottom", output: "18 passed", exit: 0 },
             }),
@@ -97,17 +97,60 @@ describe("stepOf", () => {
         expect(done.icon).toBe("run");
         expect(done.chips).toEqual([{ kind: "command", text: "npx vitest run sticktobottom" }]);
 
-        // before the result lands there is no detail: the target stands in
+        // before the result lands there is no detail: the target (pi, codex, opencode: the command) stands in
         const pending = stepOf(action("ran", { target: "go build ./..." }), true);
+        expect(pending.verb).toBe("Ran");
         expect(pending.chips).toEqual([{ kind: "command", text: "go build ./..." }]);
     });
 
-    it("runs: a multi-line command is its first line", () => {
+    it("runs: a command with a description shows the description in place of the verb, before and after the result", () => {
+        const done = stepOf(
+            action("ran", {
+                target: "Run the tests",
+                command: "npx vitest run sticktobottom",
+                outcome: "ok",
+                detail: { kind: "bash", command: "npx vitest run sticktobottom", output: "18 passed", exit: 0 },
+            }),
+            false
+        );
+        expect(done.verb).toBe("");
+        expect(done.icon).toBe("run");
+        expect(done.chips).toEqual([
+            { kind: "description", text: "Run the tests", command: "npx vitest run sticktobottom" },
+        ]);
+
+        // before the result: the Claude projection keeps the command on the action when the target is its description
+        const pending = stepOf(action("ran", { target: "Run the tests", command: "npm test" }), true);
+        expect(pending.verb).toBe("");
+        expect(pending.chips).toEqual([{ kind: "description", text: "Run the tests", command: "npm test" }]);
+    });
+
+    it("runs: a tool whose detail is a command and whose target is a summary (agy) shows the summary", () => {
         const s = stepOf(
-            action("ran", { detail: { kind: "bash", command: "cd x\n  && make", output: "", exit: 0 } }),
+            action("run_command", {
+                target: "Listing the repo",
+                detail: { kind: "bash", command: "ls -la", output: "", exit: 0 },
+            }),
+            false
+        );
+        expect(s.verb).toBe("");
+        expect(s.chips).toEqual([{ kind: "description", text: "Listing the repo", command: "ls -la" }]);
+    });
+
+    it("runs: a multi-line command is its first line; an empty target falls back to the command", () => {
+        const s = stepOf(
+            action("ran", {
+                target: "cd x\n  && make",
+                detail: { kind: "bash", command: "cd x\n  && make", output: "", exit: 0 },
+            }),
             false
         );
         expect(s.chips).toEqual([{ kind: "command", text: "cd x" }]);
+        const bare = stepOf(
+            action("ran", { target: "", detail: { kind: "bash", command: "make", output: "", exit: 0 } }),
+            false
+        );
+        expect(bare.chips).toEqual([{ kind: "command", text: "make" }]);
     });
 
     it("searches: a grep with hits is one file chip per distinct file, in order of first hit, then +N", () => {
