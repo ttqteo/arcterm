@@ -24,7 +24,16 @@ import (
 	"unicode/utf8"
 )
 
-const gitTimeout = 10 * time.Second
+// gitTimeout bounds one git call. A var only so a test package can raise it (UseTimeoutForTest).
+var gitTimeout = 10 * time.Second
+
+// UseTimeoutForTest sets the per-call git budget and returns the restore func. Call it from TestMain, before any
+// test runs: a merge Verify's load stretched one git status in a tiny temp repo past the 10 s the app allows.
+func UseTimeoutForTest(d time.Duration) (restore func()) {
+	prev := gitTimeout
+	gitTimeout = d
+	return func() { gitTimeout = prev }
+}
 
 type Changes struct {
 	Branch  string
@@ -116,12 +125,22 @@ func readRepoFacts(ctx context.Context, cwd string) repoFacts {
 	return repoFacts{isRepo: true, prefix: strings.TrimSpace(prefix), head: head, branch: strings.TrimSpace(branch)}
 }
 
+// noRepo is a read's "not a repository" answer, unless its time ran out: then the git calls that said so failed for
+// want of time, and the answer is the timeout. An empty list in its place reads as a real one (a run's evidence
+// seal froze one into its snapshot).
+func noRepo(ctx context.Context) (*Changes, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("git: %w", err)
+	}
+	return &Changes{IsRepo: false}, nil
+}
+
 func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 	facts := readRepoFacts(ctx, cwd)
 	if !facts.isRepo {
-		return &Changes{IsRepo: false}, nil
+		return noRepo(ctx)
 	}
 	branch, head := facts.branch, facts.head
 	up, ahead, behind := upstreamCounts(ctx, cwd)
@@ -180,6 +199,11 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 		refNumstatError = describeGitError(refNumstatArgs, nerr)
 	}
 	numstat += untrackedNumstat(cwd, untrackedZ)
+	// the name-status error is not checked (a ref git cannot diff leaves the untracked rows), but one that ran out of
+	// time dropped every tracked change
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("git: %w", err)
+	}
 	return &Changes{Branch: strings.TrimSpace(branch), StatusZ: trackedZ + untrackedZ, Numstat: numstat, IsRepo: true, Head: head,
 		Upstream: up, UpstreamAhead: ahead, UpstreamBehind: behind, NumstatError: refNumstatError}, nil
 }
@@ -195,7 +219,7 @@ func GetRangeChanges(ctx context.Context, cwd, base, end string) (*Changes, erro
 	defer cancel()
 	inside, err := run(ctx, cwd, "rev-parse", "--is-inside-work-tree")
 	if err != nil || strings.TrimSpace(inside) != "true" {
-		return &Changes{IsRepo: false}, nil
+		return noRepo(ctx)
 	}
 	rangeSpec := base + ".." + end
 	nameStatus, err := run(ctx, cwd, "diff", "--name-status", "-z", "--relative", rangeSpec)
@@ -250,7 +274,7 @@ func GetTrailerCommitsChanges(ctx context.Context, cwd, from, to, trailerKey str
 	defer cancel()
 	inside, err := run(logCtx, cwd, "rev-parse", "--is-inside-work-tree")
 	if err != nil || strings.TrimSpace(inside) != "true" {
-		return &Changes{IsRepo: false}, nil
+		return noRepo(logCtx)
 	}
 	out, err := run(logCtx, cwd, "log", "--reverse", "--format=%H%x00%P%x00%(trailers:key="+trailerKey+",valueonly)%x1e", from+".."+to)
 	if err != nil {
