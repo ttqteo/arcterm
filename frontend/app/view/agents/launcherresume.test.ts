@@ -6,6 +6,7 @@ import {
     resumeLaunchSpec,
     resumeListKey,
     resumeScopeKey,
+    sessionSearchable,
 } from "./launcherresume";
 
 function s(over: Partial<SessionInfo>): SessionInfo {
@@ -57,6 +58,29 @@ describe("pickedResume", () => {
         expect(pickedResume([s({})], "gone")).toBeNull();
         expect(pickedResume([s({})], null)).toBeNull();
     });
+    describe("a session that came only from a search", () => {
+        const found = s({ id: "found", task: "from the search" });
+        const scope = resumeScopeKey("claude", "D:\\x\\proj");
+        it("is found when it is the pick and is in the list's scope", () => {
+            expect(pickedResume([s({})], "found", found, scope)?.task).toBe("from the search");
+            expect(pickedResume([], "found", found, scope)?.id).toBe("found");
+        });
+        it("is not found for another id, another project or another agent", () => {
+            expect(pickedResume([s({})], "a", found, scope)?.id).toBe("a");
+            expect(pickedResume([s({})], "other", found, scope)).toBeNull();
+            expect(pickedResume([], "found", found, resumeScopeKey("claude", "D:\\x\\other"))).toBeNull();
+            expect(pickedResume([], "found", found, resumeScopeKey("codex", "D:\\x\\proj"))).toBeNull();
+            expect(pickedResume([], "found", found)).toBeNull();
+        });
+        it("is not found with no pick, or with no searched session", () => {
+            expect(pickedResume([], null, found, scope)).toBeNull();
+            expect(pickedResume([], "found", null, scope)).toBeNull();
+        });
+        it("gives way to the loaded session of the same id", () => {
+            const loaded = s({ id: "found", task: "loaded copy" });
+            expect(pickedResume([loaded], "found", found, scope)?.task).toBe("loaded copy");
+        });
+    });
 });
 
 describe("resumeLaunchSpec", () => {
@@ -105,6 +129,31 @@ describe("resumeListKey", () => {
         expect(resumeListKey(key("v", true), at(3))).toEqual({ kind: "none" });
         expect(resumeListKey(key("Process"), at(3))).toEqual({ kind: "none" });
         expect(resumeListKey(key(" "), at(3))).toEqual({ kind: "none" });
+    });
+    it("/ opens the search box for an agent whose sessions can be searched, and does nothing for another", () => {
+        expect(resumeListKey(key("/"), { rows: 3, searchable: true })).toEqual({ kind: "search" });
+        expect(resumeListKey(key("/"), { rows: 3, searchable: true, searchOpen: true })).toEqual({ kind: "search" });
+        expect(resumeListKey(key("/"), { rows: 3, searchable: false })).toEqual({ kind: "none" });
+        expect(resumeListKey(key("/"), at(3))).toEqual({ kind: "none" });
+        expect(resumeListKey(key("/", true), { rows: 3, searchable: true })).toEqual({ kind: "none" });
+    });
+    it("Escape closes an open search box first, and is the dialog's with none open", () => {
+        expect(resumeListKey(key("Escape"), { rows: 3, searchable: true, searchOpen: true })).toEqual({
+            kind: "search-close",
+        });
+        expect(resumeListKey(key("Escape"), { rows: 3, searchable: true, searchOpen: false })).toEqual({
+            kind: "none",
+        });
+    });
+});
+
+describe("sessionSearchable", () => {
+    it("is true for claude and pi alone: the runtimes whose transcripts are digested", () => {
+        expect(sessionSearchable("claude")).toBe(true);
+        expect(sessionSearchable("pi")).toBe(true);
+        for (const runtime of ["codex", "agy", "opencode", "terminal", ""]) {
+            expect(sessionSearchable(runtime)).toBe(false);
+        }
     });
 });
 

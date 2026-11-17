@@ -373,6 +373,8 @@ export interface LauncherKeyCtx {
     resumePicked: boolean;
     // the resume step shows (launcherpeek.ts): the picked Claude session read beside the list, in place of the columns
     stepShown?: boolean;
+    // the Project column's search box is open: Escape closes it, with its filter, before it closes the dialog
+    projectSearchOpen?: boolean;
     // the pick has a Task box (an agent that takes one) or a Goal box (a run started from a goal)
     textField: boolean;
 }
@@ -402,6 +404,7 @@ export type LauncherKeyAction =
     | { kind: "move"; column: "start" | "project" | "tools"; delta: 1 | -1 }
     | { kind: "column"; to: "start" | "project" | "third" }
     | { kind: "filter"; next: string }
+    | { kind: "search-project" }
     | { kind: "write" }
     | { kind: "launch" }
     | { kind: "resume-secondary" }
@@ -432,8 +435,10 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
         if (ctx.accountMenuOpen) {
             return { kind: "dismiss-inner", what: "account" };
         }
-        // the filter clears when focus leaves the Project column, so a filter means focus is there
-        return ctx.filter !== "" ? { kind: "dismiss-inner", what: "filter" } : { kind: "close" };
+        // the filter clears, and its box closes, when focus leaves the Project column, so either means focus is there
+        return ctx.filter !== "" || ctx.projectSearchOpen
+            ? { kind: "dismiss-inner", what: "filter" }
+            : { kind: "close" };
     }
     // a paste outside a text field goes to the Task or Goal box: focus moves there and the browser's paste lands in it,
     // images included. A text field takes its own paste.
@@ -515,6 +520,10 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
         return ctx.textField && startsTask(k.key) ? WRITE : NONE;
     }
     if (zone === "project") {
+        // / opens the column's search box, whether or not there is a Task box: it is no letter of a task
+        if (k.key === "/") {
+            return { kind: "search-project" };
+        }
         if (k.key === "Backspace") {
             return ctx.filter === "" ? NONE : { kind: "filter", next: ctx.filter.slice(0, -1) };
         }

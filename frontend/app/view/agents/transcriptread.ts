@@ -23,10 +23,15 @@ export const TAIL_LINES = 2000;
 /** Pure: the question to put to the file. The tail while no window is held, or when the held one has no complete line to
  *  read on from (frombyte 0 reads as no offset, and the answer would be a tail the window would take for an append);
  *  otherwise the bytes after the window's end. Pi's parent-linked active branch needs every line, so it reads the whole
- *  file, which never slides. */
-export function transcriptAsk(path: string, runtime: string, win: LoadedWindow | null): CommandGetAgentTranscriptData {
+ *  file, which never slides; `full` asks the same of any runtime (a search hit can sit in the first turn). */
+export function transcriptAsk(
+    path: string,
+    runtime: string,
+    win: LoadedWindow | null,
+    full = false
+): CommandGetAgentTranscriptData {
     if (win == null || win.end <= 0) {
-        return { path, maxlines: runtime === "pi" ? -1 : TAIL_LINES };
+        return { path, maxlines: runtime === "pi" || full ? -1 : TAIL_LINES };
     }
     return { path, frombyte: win.end };
 }
@@ -53,11 +58,16 @@ export function windowAfter(
 
 // the window grown by what the file gained since it was read (the same window back when nothing is new), or its tail read
 // again when it cannot be joined
-async function readWindow(path: string, runtime: string, win: LoadedWindow | null): Promise<LoadedWindow> {
+async function readWindow(
+    path: string,
+    runtime: string,
+    win: LoadedWindow | null,
+    full: boolean
+): Promise<LoadedWindow> {
     let held = win;
     // a tail read never says "reread", so this is at most two reads
     for (;;) {
-        const asked = transcriptAsk(path, runtime, held);
+        const asked = transcriptAsk(path, runtime, held, full);
         const answer = await RpcApi.GetAgentTranscriptCommand(TabRpcClient, asked);
         const next = windowAfter(held, asked, answer);
         if (next !== "reread") {
@@ -90,31 +100,49 @@ function useTranscriptChanges(
 interface Reader {
     path?: string;
     runtime?: string;
+    full: boolean; // the whole file is read, not its tail
     win: LoadedWindow | null; // the lines read so far; null before the first read lands
     busy: boolean; // a read is in flight
     again: boolean; // a change came while it was: one more read follows it
     token: number; // changes with the session, so an answer for an older one is dropped
 }
 
+/** Pure: whether the reader holds another read than the one asked for now, which drops its window and reads afresh. A
+ *  session open on its tail that a find then targets reads the whole file: it must not keep the tail window and only
+ *  append to it, so `full` flipping resets the reader as a change of path does. */
+export function readChanged(
+    r: Pick<Reader, "path" | "runtime" | "full">,
+    path: string | undefined,
+    runtime: string | undefined,
+    full: boolean
+): boolean {
+    return r.path !== path || r.runtime !== runtime || r.full !== full;
+}
+
 /** The projected transcript at `path`, null while the first read is in flight and [] when there is none. `live` reads
  *  what is written after the window as it grows: the entries already there keep their index, so a pane that keys on it
- *  (CompactTranscript's drawn window and open folds) keeps its place. */
+ *  (CompactTranscript's drawn window and open folds) keeps its place. `full` reads the whole file instead of its tail,
+ *  which Conversation History asks for a session a search hit opened. */
 export function useTranscriptRead(
     path: string | undefined,
     runtime: string | undefined,
-    live: boolean
+    live: boolean,
+    full = false
 ): AgentEntry[] | null {
-    const [entries, setEntries] = useState<AgentEntry[] | null>(null);
+    // the entries carry the `full` they were read under: the render in which `full` flips, before the effect below resets
+    // the reader, must not hand back the other read's entries (a find would count its matches over the tail)
+    const [read, setRead] = useState<{ entries: AgentEntry[] | null; full: boolean }>({ entries: null, full });
     const changed = useTranscriptChanges(path, runtime, live);
-    const reader = useRef<Reader>({ win: null, busy: false, again: false, token: 0 });
+    const reader = useRef<Reader>({ full: false, win: null, busy: false, again: false, token: 0 });
     // Each change reads once more, one read at a time: a change that comes while the first read is in flight (the stream's
     // first chunk lands within it) asks for one more after it instead of cancelling it and reading the tail again.
     useEffect(() => {
         const r = reader.current;
-        if (r.path !== path || r.runtime !== runtime) {
+        const setEntries = (entries: AgentEntry[] | null) => setRead({ entries, full });
+        if (readChanged(r, path, runtime, full)) {
             // a new session starts from the skeleton and from its own first read; a re-read of the same one keeps showing
             // the last read until it lands
-            Object.assign(r, { path, runtime, win: null, busy: false, again: false, token: r.token + 1 });
+            Object.assign(r, { path, runtime, full, win: null, busy: false, again: false, token: r.token + 1 });
             setEntries(null);
         }
         if (!path || !runtime) {
@@ -131,7 +159,7 @@ export function useTranscriptRead(
             try {
                 for (;;) {
                     r.again = false;
-                    const next = await readWindow(path, runtime, r.win);
+                    const next = await readWindow(path, runtime, r.win, full);
                     if (mine !== r.token) {
                         return;
                     }
@@ -147,7 +175,7 @@ export function useTranscriptRead(
                 console.warn(`reading transcript ${path} failed`, e);
                 // a failed append leaves what is drawn; a failed first read leaves an empty transcript
                 if (mine === r.token) {
-                    setEntries((prev) => prev ?? []);
+                    setRead((prev) => ({ entries: prev.entries ?? [], full }));
                 }
             } finally {
                 if (mine === r.token) {
@@ -155,6 +183,6 @@ export function useTranscriptRead(
                 }
             }
         });
-    }, [path, runtime, changed]);
-    return entries;
+    }, [path, runtime, full, changed]);
+    return read.full === full ? read.entries : null;
 }

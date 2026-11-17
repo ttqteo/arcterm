@@ -187,15 +187,15 @@ func (t *tailTurns) line(line []byte) {
 		!bytes.Contains(line, []byte(`"queued_command"`)) {
 		return
 	}
-	var rec claudePromptLine
+	var rec claudeLine
 	if json.Unmarshal(line, &rec) != nil {
 		return
 	}
 	if rec.Type == "assistant" {
-		if rec.IsSidechain || t.answered {
+		if t.answered {
 			return
 		}
-		if text := textBlocks(rec.Message.Content); text != "" {
+		if text := claudeReplyText(rec); text != "" {
 			t.add("assistant", text, rec.Timestamp)
 			t.answered = true
 		}

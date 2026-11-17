@@ -16,6 +16,7 @@ type AgentCommands interface {
 	GetUsageInsightsCommand(ctx context.Context) (*UsageInsights, error)                                                 // the last saved usage analysis; the zero value when there is none
 	GetRecentSessionsCommand(ctx context.Context, data CommandGetRecentSessionsData) (*CommandGetRecentSessionsRtnData, error)
 	GetSessionsActivityCommand(ctx context.Context, data CommandGetSessionsActivityData) (*CommandGetSessionsActivityRtnData, error)
+	SearchSessionsCommand(ctx context.Context, data CommandSearchSessionsData) (*CommandSearchSessionsRtnData, error)             // past claude and pi conversations that say the query, with the passages that match
 	GetProjectActivityCommand(ctx context.Context, data CommandGetProjectActivityData) (*CommandGetProjectActivityRtnData, error) // a project's per-day tokens, sessions, runs and councils for the Overview's Activity card
 	GetTranscriptUsageCommand(ctx context.Context, data CommandGetTranscriptUsageData) (*CommandGetTranscriptUsageRtnData, error)
 	GetContextBreakdownCommand(ctx context.Context, data CommandGetContextBreakdownData) (*ContextBreakdown, error) // what /context reports loads in a fresh Claude session in a folder, for the Agent rail's breakdown
@@ -401,6 +402,39 @@ type CommandGetSessionsActivityData struct {
 type CommandGetSessionsActivityRtnData struct {
 	Sessions   []SessionActivity `json:"sessions"`
 	NextCursor string            `json:"nextcursor,omitempty"` // "" when no older session is left
+}
+
+type CommandSearchSessionsData struct {
+	Query       string `json:"query"`                 // the person's words: terms and "quoted phrases"
+	Runtime     string `json:"runtime,omitempty"`     // only this runtime's sessions ("claude" or "pi"); "" searches both
+	ProjectPath string `json:"projectpath,omitempty"` // only the sessions of this project folder; "" searches every project
+	RunAgents   bool   `json:"runagents,omitempty"`   // keep the sessions of a run's workers, reviewers and the like; off, only a run's lead shows
+	MaxHits     int    `json:"maxhits,omitempty"`     // passages kept per session; 0 is the default (20)
+	Limit       int    `json:"limit,omitempty"`       // sessions returned, newest first; 0 is the default (200)
+}
+
+type CommandSearchSessionsRtnData struct {
+	Results    []SessionSearchResult `json:"results"`              // newest first
+	Terms      []string              `json:"terms"`                // the query as parsed, so the view marks what the backend matched
+	Incomplete bool                  `json:"incomplete,omitempty"` // some transcripts had no digest yet: the warm-up is building them, ask again
+	Truncated  bool                  `json:"truncated,omitempty"`  // more sessions matched than Limit
+}
+
+// SessionSearchResult is one past session the query matches, with the passages that matched.
+type SessionSearchResult struct {
+	Session   SessionActivity `json:"session"`
+	Hits      []SessionHit    `json:"hits"`      // at most MaxHits passages, in transcript order
+	TurnHits  int             `json:"turnhits"`  // how many turns matched in all, however many Hits carry
+	EventHits int             `json:"eventhits"` // how many events matched in all
+}
+
+// SessionHit is one matching passage: a turn of the conversation or an event of the session.
+type SessionHit struct {
+	Kind    string  `json:"kind"`    // "turn" or "event"
+	Speaker string  `json:"speaker"` // a turn: "user" or "agent"; an event: the event's type
+	Ord     int     `json:"ord"`     // a turn: its position among the session's turn hits; an event: its index in Session.Events
+	Text    string  `json:"text"`    // the passage, clipped around the match
+	Marks   [][]int `json:"marks"`   // [start, end) UTF-16 offsets into Text of each matched term
 }
 
 type CommandGetTranscriptUsageData struct {

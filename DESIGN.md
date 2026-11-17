@@ -54,6 +54,7 @@ colors:
   success-soft: "#95d6a3"
   on-warning: "#1a1301"
   askingbg: "rgba(255, 193, 7, 0.12)"
+  errorbg: "rgba(255, 107, 128, 0.14)"
   pill: "rgba(255, 255, 255, 0.05)"
   # identity (theme-agnostic by design)
   skill: "#c58cff"
@@ -248,7 +249,9 @@ against `background`; `muted` on a hovered row (`surface-hover`) is 4.74:1.
   `#ffc107`** (amber), **`error` `#ff6b80`** (red), each with a `-soft`
   variant for tinted fills; **`on-warning` `#1a1301`** for text on filled
   amber badges, **`askingbg` `rgba(255,193,7,0.12)`** for asking-tint fills
-  (theme-derived like `accentbg`), and **`pill` `rgba(255,255,255,0.05)`**
+  (theme-derived like `accentbg`), **`errorbg` `rgba(255,107,128,0.14)`** for a
+  failed row's tint (Sidecar's Needs you; theme-derived like `askingbg`), and
+  **`pill` `rgba(255,255,255,0.05)`**
   for faint pill/chip overlays (preserved across themes with the neutral
   overlays). Status is always paired with an icon, label, or dot — color
   alone never carries meaning. `working` and `success` are one green, so what
@@ -500,6 +503,12 @@ Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
   change (first load, a filter switch, 3+ items at once) shows at once
   (`element/springbatch.ts`); other surfaces keep their tweens until they are moved
   on purpose.
+- **Sidecar** (the second window, drawn as P and Q) makes one exception to "motion
+  only for a change": it is read from across the room, so a waiting item pings (a
+  1.8 s ring, `animate-sidecar-ping`) until it is answered. It is a CSS animation of
+  `transform` and `opacity` only, so the compositor draws it and nothing repaints,
+  and it draws no ring under reduced motion. No other repeating motion in Sidecar,
+  and no radar sweep (it kept the GPU busy on a screen that had not changed).
 - **Chat's floating box** (the message box and conversation of an agent's Chat)
   makes three deliberate exceptions, and only there:
   - the box is a floating pill at **radius 22px** with `shadow-popover-soft`,

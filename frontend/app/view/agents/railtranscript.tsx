@@ -31,6 +31,7 @@ import {
     prependChunk,
     shouldStream,
     showsCompactions,
+    tailWindow,
     type LoadedWindow,
     type ReadAnswer,
 } from "./railtranscriptmodel";
@@ -358,6 +359,15 @@ export function useTranscriptWindow(path: string, runtime: string | undefined) {
             if (timer.current != null) {
                 window.clearTimeout(timer.current);
                 timer.current = undefined;
+            }
+            // what the reader loaded back stays only while it is read: the cache keeps the tail a fresh read would hold
+            const left = viewRef.current;
+            if (left != null && left.path === path && !wholeFile(runtime, path)) {
+                const win = tailWindow(left.win, CHUNK_LINES);
+                if (win !== left.win) {
+                    const entries = projectorFor(runtime, path).project(win.lines);
+                    viewCache.put(path, runtime, { path, win, entries, keyOffset: 0, epoch: ++nextEpoch });
+                }
             }
         };
     }, [path, runtime]);

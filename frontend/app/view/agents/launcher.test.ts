@@ -554,6 +554,31 @@ describe("launcherKey", () => {
         expect(launcherKey(at("textarea"), key("Escape"))).toEqual({ kind: "close" });
         expect(launcherKey(at("other"), key("Escape"))).toEqual({ kind: "close" });
     });
+    it("/ in the Project column opens its search box, with a Task box or without one", () => {
+        expect(launcherKey(at("project"), key("/"))).toEqual({ kind: "search-project" });
+        expect(launcherKey({ ...at("project"), textField: false }, key("/"))).toEqual({ kind: "search-project" });
+        // with a filter already typed, / still opens the box rather than joining the filter
+        expect(launcherKey({ ...at("project", "oki"), textField: false }, key("/"))).toEqual({
+            kind: "search-project",
+        });
+    });
+    it("/ outside the Project column is not a search key: Start's starts the task, a box types it", () => {
+        expect(launcherKey(at("start"), key("/"))).toEqual({ kind: "write" });
+        expect(launcherKey(at("resume"), key("/"))).toEqual({ kind: "write" });
+        expect(launcherKey(at("input"), key("/"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("project"), key("/", { mod: true }))).toEqual({ kind: "none" });
+    });
+    it("Escape with the Project box open closes it first, with or without a filter, then the dialog", () => {
+        const open = (filter: string): LauncherKeyCtx => ({ ...at("project", filter), projectSearchOpen: true });
+        expect(launcherKey(open(""), key("Escape"))).toEqual({ kind: "dismiss-inner", what: "filter" });
+        expect(launcherKey(open("oki"), key("Escape"))).toEqual({ kind: "dismiss-inner", what: "filter" });
+        // a menu is still the innermost thing
+        expect(launcherKey({ ...open("oki"), flagMenuOpen: true }, key("Escape"))).toEqual({
+            kind: "dismiss-inner",
+            what: "flags",
+        });
+        expect(launcherKey({ ...at("project"), projectSearchOpen: false }, key("Escape"))).toEqual({ kind: "close" });
+    });
     it("Escape in the resume step closes the menus first, then the dialog at once", () => {
         const step = (extra: Partial<LauncherKeyCtx> = {}): LauncherKeyCtx => ({
             ...at("resume", "", { resumePicked: true }),

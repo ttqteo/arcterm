@@ -4,27 +4,60 @@
 // What the cockpit sends the Sidecar window and what it sends back (spec 2026-11-13-sidecar-design.md). The Sidecar
 // page (frontend/tauri/sidecar.tsx) holds no store of its own: the main window's bridge builds a SidecarSnapshot from
 // the cockpit's stores and emits it as sidecar:snapshot; the page emits each click as a SidecarAct on sidecar:act, and
-// the host tells the main window the Sidecar window is gone with sidecar:closed, and the main window answers an older
-// act (scrollback) with sidecar:older. Plain data only: it crosses a Tauri event.
+// the host tells the main window the Sidecar window is gone with sidecar:closed. Plain data only: it crosses a Tauri event.
 
 export const SIDECAR_SNAPSHOT_EVENT = "sidecar:snapshot"; // main → sidecar window
 export const SIDECAR_ACT_EVENT = "sidecar:act"; // sidecar page → main
 export const SIDECAR_CLOSED_EVENT = "sidecar:closed"; // host → main, when the Sidecar window is destroyed
-export const SIDECAR_OLDER_EVENT = "sidecar:older"; // main → sidecar window: the answer to an older act
 
 export type SidecarTileState = "asking" | "working" | "review" | "idle" | "asleep";
-
-/** One row of a tile: what the agent said, then the tool it ran. Either may be missing, never both. */
-export interface SidecarMessage {
-    say?: string;
-    tool?: { verb: string; target: string; outcome?: "ok" | "fail" | "blocked" };
-}
 
 export interface SidecarAsk {
     question: string;
     options: string[];
     answerable: boolean; // one question, not multi-select, 1 to 9 options, and a key: 1-9 answers it from the tile
     key?: string; // the ask's identity (askSentKey): an answer names it, so a new ask never takes an answer meant for the old
+}
+
+/** One stretch of an agent's state on the 2-hour timeline. `to` absent: still in it. UnixMilli. */
+export type SidecarSpanState = "working" | "asking" | "finished" | "failed";
+export interface SidecarSpan {
+    state: SidecarSpanState;
+    from: number;
+    to?: number;
+}
+
+/** One row of Needs you: an ask, a finished agent's question, or something Jarvis holds for you. */
+export type SidecarNeedKind = "ask" | "question" | "jarvis";
+export interface SidecarNeed {
+    key: string; // ask: "ask:<agent id>"; question: "q:<agent id>"; jarvis: the AttentionItem's key
+    kind: SidecarNeedKind;
+    id?: string; // the agent, for ask and question rows
+    who: string; // the agent's name, or the item's channel / source
+    since: number; // UnixMilli it began waiting; the list is oldest first
+    text: string; // the question in its own words, or the item's text
+    word?: string; // jarvis rows: kindWord(kind, retry), "gate", "blocked", "due"…
+    failed?: boolean; // a run held at Final or with a failed task
+    options?: string[]; // ask rows
+    answerable?: boolean; // ask rows: 1-9 answers it here
+    askKey?: string; // ask rows: SidecarAsk.key
+    sent?: boolean; // ask rows: the answer went out
+}
+
+export interface SidecarRunBox {
+    id: string;
+    leadId?: string; // the lead agent's tile id, whose node and lane carry the run
+    title: string;
+    done: number;
+    total: number;
+    failed: boolean;
+    since?: number; // run created, UnixMilli
+    due?: string; // the first due chunk's label
+}
+
+export interface SidecarUsage {
+    fiveHourPct?: number;
+    weekPct?: number;
 }
 
 export interface SidecarTile {
@@ -35,9 +68,11 @@ export interface SidecarTile {
     state: SidecarTileState;
     since?: number; // UnixMilli the state began, for the age
     ctxPct?: number;
-    messages: SidecarMessage[];
     ask?: SidecarAsk;
     sent?: boolean; // the answer to its ask has gone out and the agent has not moved on yet
+    failed?: boolean; // the agent's run failed, or it holds a failed need
+    diff?: { adds: number; dels: number }; // the lines its work added and removed
+    spans?: SidecarSpan[]; // its state over the last 2 hours, oldest first
 }
 
 export type StrainLevel = "amber" | "red";
@@ -77,23 +112,19 @@ export interface SidecarSnapshot {
     tiles: SidecarTile[];
     machine?: SidecarMachine;
     strain?: SidecarStrain;
+    needs?: SidecarNeed[]; // what waits on the person, oldest first
+    run?: SidecarRunBox; // the newest active orchestrator run
+    usage?: SidecarUsage; // the 5-hour and weekly plan rings
+    more?: number; // agents past the orbit's eight, for the core's "+N"
 }
 
 export type SidecarAct =
     | { kind: "hello" }
     | { kind: "open"; id: string }
+    | { kind: "need"; key: string } // a Jarvis row: must be a need of the last snapshot
     | { kind: "answer"; id: string; option: number; key: string } // key: the ask the page showed (SidecarAsk.key)
-    | { kind: "older"; id: string; before: string | null; count: number } // count 1..50
     | { kind: "stop"; id: string; pid: number } // must match a heavy row's process
     | { kind: "sleep"; id: string }; // must be a heavy row
-
-/** The answer to an older act, main → sidecar window: rows oldest first, `next` null when nothing is earlier. */
-export interface SidecarOlder {
-    id: string;
-    before: string | null;
-    rows: SidecarMessage[];
-    next: string | null;
-}
 
 /** What the host's sidecar_form command answers: whether the window is in its small form and pinned on top. */
 export interface SidecarForm {

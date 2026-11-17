@@ -41,7 +41,8 @@ asked for a mini dashboard, with a cinematic look, that reacts as things change.
 
 ### Q, the compact window (small layout today)
 
-The same story at 380 px wide, pinned beside your work: the core shrunk to 112 px with the figures beside it, the
+The same story at the small form's 340 × 440 (the host's `SMALL_SIZE`, unchanged; the board is drawn at 380 px),
+pinned beside your work: the core shrunk to 112 px with the figures beside it, the
 strain as one line with the heaviest job's Stop and Sleep, the Needs you rows, and at the bottom one dot per agent in
 the orbit's order (its colour, its name and state on hover) beside `Run 7 of 9 · 1h 34m`. No timeline. With nothing
 waiting: `All clear` and `Nothing waits on you.` The frame follows the same rule at 2 px.
@@ -63,7 +64,8 @@ The core's number and the Needs you rows are one list, built in the bridge:
    adds a 1–9 answer.
 3. **What waits on you in Jarvis**: `attentionAtom` (`view/agents/attentionstore.ts:18`, computed by
    `pkg/jarvis/attention.go` and polled) minus the asks (`splitAttention`'s `jarvis` half: gates, blocked tasks, runs
-   to confirm or land, escalations, due chunks). Each row says its kind and opens through `openTarget` on Enter. A run
+   to confirm or land, escalations, due chunks). Each row says its kind and, on Enter, opens the target the tray's
+   peek row opens (`rowPeekTarget`) through the router's `openAddress`. A run
    held at Final or with a failed task is a row with **Failed**: kind `run-unverified`, or `dag-blocked` with `retry`
    (what `kindWord` already words "failed").
 
@@ -155,6 +157,6 @@ lanes. Unit tests: `sidecarneeds.ts` (the three sources, the question heuristic,
 - The question heuristic will misfire on a rhetorical question at the end of a report. Measure on a week of real
   transcripts before trusting it; a miss only puts a row in Needs you, and answering or opening it clears it.
 - Whether a Jarvis row's Enter should also act in place (a gate's Approve). The first build opens it in the main window
-  through `openTarget`, nothing more.
+  through the router's `openAddress`, nothing more.
 - Which icon Windows draws for a window whose AppUserModelID has no shortcut: the window's own (`WM_SETICON`) or the
   exe's. Only a packaged build shows it (the dev app shares the exe's icon either way); a hand check.

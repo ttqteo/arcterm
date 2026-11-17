@@ -85,6 +85,35 @@ func candidatesNamed(cands []candidate, ids []string) []candidate {
 	return out
 }
 
+// collectCandidates walks the providers' transcripts of the window (stat only), unsorted. A non-empty rt keeps only
+// that runtime's providers, and a non-empty projectPath only its project's.
+func collectCandidates(providers []provider, rt, projectPath string, windowDays int) []candidate {
+	var cands []candidate
+	for _, p := range providers {
+		if rt != "" && p.runtime != rt {
+			continue
+		}
+		if p.beginScan != nil {
+			p.beginScan()
+		}
+		// a project's own folder holds its sessions, so a project with few of them is not a parse of every transcript
+		// on disk. One with no folder by that name (a slug Claude Code shortened) walks the whole root.
+		if projectPath != "" && p.projectDir != nil {
+			found := false
+			if dir := p.projectDir(projectPath); dir != "" {
+				if info, err := os.Stat(dir); err == nil && info.IsDir() {
+					p.root, found = dir, true
+				}
+			}
+			if !found && p.archive {
+				continue
+			}
+		}
+		cands = append(cands, walkCandidates(p, windowDays)...)
+	}
+	return cands
+}
+
 func scanPageFrom(providers []provider, opts PageOpts, tempDir string) (Page, error) {
 	var curNano int64
 	var curPath string
@@ -95,29 +124,7 @@ func scanPageFrom(providers []provider, opts PageOpts, tempDir string) (Page, er
 			return Page{}, err
 		}
 	}
-	var cands []candidate
-	for _, p := range providers {
-		if opts.Runtime != "" && p.runtime != opts.Runtime {
-			continue
-		}
-		if p.beginScan != nil {
-			p.beginScan()
-		}
-		// a project's own folder holds its sessions, so a project with few of them is not a parse of every transcript
-		// on disk. One with no folder by that name (a slug Claude Code shortened) walks the whole root.
-		if opts.ProjectPath != "" && p.projectDir != nil {
-			found := false
-			if dir := p.projectDir(opts.ProjectPath); dir != "" {
-				if info, err := os.Stat(dir); err == nil && info.IsDir() {
-					p.root, found = dir, true
-				}
-			}
-			if !found && p.archive {
-				continue
-			}
-		}
-		cands = append(cands, walkCandidates(p, opts.WindowDays)...)
-	}
+	cands := collectCandidates(providers, opts.Runtime, opts.ProjectPath, opts.WindowDays)
 	if len(opts.Ids) > 0 {
 		cands = candidatesNamed(cands, opts.Ids)
 	}

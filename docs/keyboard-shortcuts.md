@@ -87,12 +87,14 @@ brings the columns back.
 | `→` / `←` | Step Start, Project, then the Session or Tool column, and back. In the resume step, `←` from the Session list goes back to the columns |
 | `Alt`+`←` | In the resume step, from anywhere (the Task box too): Back to the columns |
 | letters | In the Start, Project or Session column, start typing the task (or a run's goal): focus moves to that box with the letter in it. A pick with no such box (a terminal, a tool, a council, a run from a plan file) filters the Project column by name instead; `Backspace` shortens the filter |
+| `/` | In the Project column, or the Session column of Claude Code or Pi: open the column's search box in place of its header (the magnifier at the header's right does the same). The Project box filters by name; the Session box filters by title at once, then adds the sessions whose conversation holds the words under "Matched by content", each with its snippet. The digits number across both groups |
+| `↓` / `Esc` in the search box | `↓` goes to the column's first row. `Esc` (or the box's ×) closes the box, clears its filter and puts focus back on the column; `Esc` again closes the dialog |
 | `a`…`z` | In the Tool column (with the Tool row picked): pick the nth tool. `↑` / `↓` walk the list, `Enter` opens the tool |
 | `Tab` / `Shift`+`Tab` | Next / previous: the task or goal box, Project, the Session or Tool column, Cancel, the launch button, and round again. With a box, Start is no stop (`Alt`+`1`…`9` picks there); the Task row's + Flag, Worktree and Command are for the pointer, and the fields they open (the flag list, the command, the branch) are stops while open. A run's own fields (route, width…) sit between its goal and Project |
 | `Enter` | Launch, from the task or goal box, a column, the Tool list or a one-line field. While the machine is busy (memory pressure high or critical, or the CPU over 85% two readings running), launching an agent with a task holds it instead: it waits as a dashed row among its project's agents, task and images kept, and a click on the row shows it with Start now and Add to the initiative it matches |
 | `Shift`+`Enter` | In the task or goal box: a new line. Elsewhere, with a session picked in the columns: read its transcript instead of resuming it. In the resume step it does nothing, as the session is read beside the list |
 | `Mod`+`Enter` | Launch, from anywhere in the dialog |
-| `Esc` | Close the open menu or the Project column's filter first, then the dialog. What you typed is kept for the next open |
+| `Esc` | Close the open menu, a column's search box or the Project column's filter first, then the dialog. What you typed in the task box is kept for the next open |
 
 ## Open a tool (`Mod`+`Shift`+`O`)
 
@@ -283,6 +285,9 @@ that act on the focused agent stand down while either is open: `j` / `k`, the ar
 `Mod`+`Enter` (send marks, send review) and the `Esc` that goes back to the Cockpit. In History `j` / `k` (or `↓` / `↑`) move the list cursor,
 `Enter` jumps to a live session or resumes an ended one, and `Esc` returns to the terminal. The `Ctrl`+`Tab` switcher still works and brings
 the terminal back. An ended session opened from the sidebar covers the terminal the same way, and `Esc` leaves it.
+
+A search result opened from History's search box shows its session with a find bar over the transcript ("2 / 7"): `Enter` / `Shift`+`Enter`
+step to the next / previous match, and `Esc` closes the bar.
 
 ### Agent: Canvas gallery
 

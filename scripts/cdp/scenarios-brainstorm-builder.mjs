@@ -336,11 +336,15 @@ export default function (kit) {
     // to the atom's value after the write, or null when the app's modules cannot be reached
     const setDetailsRail = (h, open) =>
         h.ev(`(async () => {
-            const names = performance.getEntriesByType("resource").map((e) => e.name.split("?")[0]);
-            const base = names.find((n) => n.endsWith("/app/store/jotaiStore.ts"));
-            if (base == null) return null;
-            const store = names.filter((n) => n.endsWith("/app/view/agents/railstore.ts")).pop();
-            const { globalStore } = await import(base);
+            // the urls as loaded, ?t= stamps kept: a module Vite hot-updated before the page loaded is served stamped,
+            // and importing it bare loads a second instance whose atoms the app never reads
+            const names = performance.getEntriesByType("resource").map((e) => e.name);
+            const bare = (n) => n.split("?")[0];
+            const own = names.filter((n) => bare(n).endsWith("/app/store/jotaiStore.ts")).pop();
+            if (own == null) return null;
+            const base = bare(own);
+            const store = names.filter((n) => bare(n).endsWith("/app/view/agents/railstore.ts")).pop();
+            const { globalStore } = await import(own);
             const { railVisibleAtom } = await import(store ?? base.replace("app/store/jotaiStore.ts", "app/view/agents/railstore.ts"));
             globalStore.set(railVisibleAtom, ${open ? "true" : "false"});
             return globalStore.get(railVisibleAtom) === true;
