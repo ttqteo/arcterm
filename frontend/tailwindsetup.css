@@ -360,6 +360,12 @@
        colours, so theme-agnostic like syntax (not mirrored in themes.ts) */
     --color-mark-run: #5cc8d8;
     --color-mark-council: #c58cff;
+    /* a run's and a council's badge in Chat (chatrefbadge.tsx): its fill and border in the mark's colour, as an
+       agent's badge takes its runtime's rt-*-soft / rt-*-line; identity like the marks, so not mirrored in themes.ts */
+    --color-mark-run-soft: rgba(92, 200, 216, 0.12);
+    --color-mark-run-line: rgba(92, 200, 216, 0.34);
+    --color-mark-council-soft: rgba(197, 140, 255, 0.12);
+    --color-mark-council-line: rgba(197, 140, 255, 0.34);
 
     /* git diff added/removed (diff bands, +N/-N counts). Deliberately not success/error: a deleted
        line is not a failure, and the two need tuning independently. Theme-agnostic like syntax. */
