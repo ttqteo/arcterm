@@ -23,6 +23,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/memusage"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -301,7 +302,9 @@ func newSleepLoop(notify func(wshrpc.NotifyCommandData)) *sleepLoop {
 
 // currentSleepSettings is the person's settings in force (agentsleep.FromConfig). A var so tests set them.
 var currentSleepSettings = func() agentsleep.Settings {
-	return agentsleep.FromConfig(wconfig.GetWatcher().GetFullConfig().Settings)
+	s := agentsleep.FromConfig(wconfig.GetWatcher().GetFullConfig().Settings)
+	s.CompactAwake = !agentsleep.ReadClaudeIdleCompacts(wavebase.GetHomeDir(), os.LookupEnv)
+	return s
 }
 
 // tick is one check: it watches every live agent's idleness and CPU, and puts to sleep the ones agentsleep.Pick
@@ -314,9 +317,9 @@ func (l *sleepLoop) tick(ctx context.Context) {
 		// for that stretch, whatever the trackers last saw
 		l.idle.Forget(nil)
 		l.cpu.Forget(nil)
-		// a person's Sleep waiting on a compaction still ends in a sleep (an awake agent's compaction is Claude
-		// Code's own: agentsleep.IdleCompactVar)
-		if !compactsWaiting() {
+		// a person's Sleep waiting on a compaction still ends in a sleep, and an awake agent is still compacted when
+		// Claude Code's own idle compaction cannot run (agentsleep.Settings.CompactAwake)
+		if !(s.Compact && s.CompactAwake) && !compactsWaiting() {
 			return
 		}
 	}
