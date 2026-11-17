@@ -269,12 +269,12 @@ describe("settingsSections", () => {
 });
 
 describe("settings pages", () => {
-    it("has nine pages in order, About last and at the foot", () => {
+    it("has ten pages in order, About last and at the foot", () => {
         expect(sections().map((s) => s.id)).toEqual([
-            "general", "appearance", "agents", "runs", "terminal", "headless", "jarvis", "storage", "about",
+            "general", "remote", "appearance", "agents", "runs", "terminal", "headless", "jarvis", "storage", "about",
         ]);
         expect(sections().map((s) => s.name)).toEqual([
-            "General", "Appearance", "Agents", "Runs & limits", "Terminal", "Background AI", "Jarvis & Office", "Storage & sync", "About",
+            "General", "Remote", "Appearance", "Agents", "Runs & limits", "Terminal", "Background AI", "Jarvis & Office", "Storage & sync", "About",
         ]);
         expect(sections().filter((s) => s.foot).map((s) => s.id)).toEqual(["about"]);
     });
@@ -285,6 +285,7 @@ describe("settings pages", () => {
         );
         expect(Object.keys(cards)).toEqual([
             "general/startup", "general/menubar", "general/notifications",
+            "remote/remotemode", "remote/remotesetup",
             "appearance/theme", "appearance/colors", "appearance/fonts", "appearance/agentrows", "appearance/agentheader", "appearance/chat",
             "agents/claudeaccount", "agents/sleep", "agents/flags",
             "runs/runs", "runs/whilework", "runs/dume", "runs/tokenburn",
@@ -299,6 +300,10 @@ describe("settings pages", () => {
         expect(cards["general/menubar"]).toEqual(["app.tray", "app.traymemory"]);
         expect(cards["general/notifications"]).toEqual([
             "notifications.os", "notifications.toast", "notifications.reply", "notifications.telegram",
+        ]);
+        expect(cards["remote/remotemode"]).toEqual(["remote.mode", "remote.status"]);
+        expect(cards["remote/remotesetup"]).toEqual([
+            "remote.tunneltoken", "remote.hostname", "remote.port", "remote.team", "remote.aud", "remote.email",
         ]);
         expect(cards["appearance/theme"]).toEqual(["appearance.theme"]);
         expect(cards["appearance/colors"]).toEqual([
@@ -363,8 +368,8 @@ describe("settings pages", () => {
         expect(new Set(ids).size).toBe(ids.length);
         // today's 60, the nine rows the reorganization added, the two compaction rows, the pet's stay row, Chat's fold
         // , the agent row's RAM, the pet's form and hologram size, and About's build commit, less the two Radar rows
-        // that went with Radar, plus DUM-E's toggle and the agent header's three buttons
-        expect(ids).toHaveLength(79 + RUNTIME_FLAGS.claude.length);
+        // that went with Radar, plus DUM-E's toggle, the agent header's three buttons and Remote's eight rows
+        expect(ids).toHaveLength(87 + RUNTIME_FLAGS.claude.length);
     });
 
     it("finds moved rows by search", () => {

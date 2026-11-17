@@ -74,7 +74,7 @@ self.addEventListener("push", (event) => {
         // an unreadable payload still notifies, so the owner knows to look
     }
     event.waitUntil(
-        self.registration.showNotification(note.title || "Arc", {
+        self.registration.showNotification(note.title || "arcterm", {
             body: note.body || "Something is waiting on you.",
             tag: note.key || undefined,
             icon: "/icon.png",

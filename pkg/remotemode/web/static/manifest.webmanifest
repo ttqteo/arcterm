@@ -1,6 +1,6 @@
 {
-  "name": "Arc",
-  "short_name": "Arc",
+  "name": "arcterm",
+  "short_name": "arcterm",
   "description": "What is waiting on you in Arc, while remote mode is on.",
   "start_url": "/",
   "scope": "/",

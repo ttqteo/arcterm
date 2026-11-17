@@ -29,7 +29,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
-### Fixed
+### Added
+
+- **Your phone as a remote for arcterm**: with your own Cloudflare tunnel set up in Settings → Remote (or
+  `wsh remote setup`), an installed web app on your phone lists what waits on you, pushes a notification when an agent
+  asks, and answers its questions. Hand a Claude or pi agent to the phone (`p`, or More → Hand to phone) to read its
+  transcript, send the next prompt, stop a turn and approve a permission prompt from the phone. It runs only while you
+  turn it on; a Remote chip in the footer shows it. <!-- big -->
 
 - Typing in the find bar of a long session no longer lags: each key took up to a few tenths of a second on a session
   with a million characters of conversation, and now takes a few milliseconds.

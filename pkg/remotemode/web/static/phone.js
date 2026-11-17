@@ -202,7 +202,7 @@ async function turnOnNotifications() {
             });
             const res = await post("/api/subscribe", sub);
             if (!res.ok) {
-                throw new Error(`Arc answered ${res.status}`);
+                throw new Error(`arcterm answered ${res.status}`);
             }
             state.subscribed = true;
         }
@@ -397,7 +397,7 @@ async function turnOff() {
     }
     state.confirmOff = false;
     if (!res?.ok) {
-        state.notice = "Remote mode did not turn off: Arc did not answer. Try again.";
+        state.notice = "Remote mode did not turn off: arcterm did not answer. Try again.";
         render();
         return;
     }
@@ -483,7 +483,7 @@ function unreachableView() {
             "main",
             { class: "main main-blank" },
             noticeLine(),
-            h("div", { class: "blank-title" }, "Arc is not reachable."),
+            h("div", { class: "blank-title" }, "arcterm is not reachable."),
             h(
                 "div",
                 { class: "blank-text" },
@@ -663,8 +663,8 @@ async function sendAnswer(button, errorLine) {
         return;
     }
     errorLine.textContent = res
-        ? `Not sent: Arc refused the answer (${res.status || "login expired"}). Try again.`
-        : "Not sent: Arc is not reachable. Try again.";
+        ? `Not sent: arcterm refused the answer (${res.status || "login expired"}). Try again.`
+        : "Not sent: arcterm is not reachable. Try again.";
     errorLine.hidden = false;
     a.sending = false;
     button.disabled = false;

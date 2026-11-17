@@ -96,6 +96,7 @@ import {
     historyScrollAtom,
     refreshHistory,
 } from "@/app/view/agents/githistorystore";
+import { canHandToPhone } from "@/app/view/agents/handtophone";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
 import { toggleBandPart } from "@/app/view/agents/initiativebandstore";
 import { initiativePopoverAtom, openInitiativeLinkPicker } from "@/app/view/agents/initiativepopover";
@@ -120,6 +121,7 @@ import {
     terminalDockFoldedAtom,
     terminalFullscreenAtom,
 } from "@/app/view/agents/railstore";
+import { toggleHandToPhone } from "@/app/view/agents/remotestore";
 import { activeReviewAtom, toggleOpenFile } from "@/app/view/agents/reviewmarks";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
@@ -1928,6 +1930,24 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                     return false;
                 }
                 openReview(model, id);
+            },
+        },
+        {
+            id: "agent:hand-to-phone",
+            keys: "p",
+            group: "Agent",
+            label: "Hand to phone, or take back",
+            // like agent:review, the focused agent lives in model atoms, so run() lets the key pass when the agent
+            // cannot be handed over (a run's worker, a codex session, a terminal)
+            paletteHidden: true,
+            when: agentNav,
+            run: () => {
+                const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
+                const role = agent == null ? null : globalStore.get(model.lineageAtom).roles[agent.id];
+                if (agent == null || !canHandToPhone(agent, role)) {
+                    return false;
+                }
+                toggleHandToPhone(agent.id);
             },
         },
         {

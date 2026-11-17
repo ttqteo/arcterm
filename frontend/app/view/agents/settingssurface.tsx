@@ -73,6 +73,7 @@ import { AppearancePage } from "./settingspages/appearance";
 import { BackgroundAIPage } from "./settingspages/backgroundai";
 import { GeneralPage } from "./settingspages/general";
 import { JarvisPage } from "./settingspages/jarvis";
+import { RemotePage } from "./settingspages/remote";
 import { RunsPage } from "./settingspages/runs";
 import { StoragePage } from "./settingspages/storage";
 import { TerminalPage } from "./settingspages/terminal";
@@ -465,6 +466,8 @@ function SectionBody({
     switch (id) {
         case "general":
             return <GeneralPage />;
+        case "remote":
+            return <RemotePage />;
         case "appearance":
             return <AppearancePage />;
         case "terminal":

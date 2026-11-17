@@ -13,6 +13,7 @@ lists what each version changed for the user.
 | `deferred.md` | Append-only log of intentionally-deferred work and why. Append at the top, then mirror a one-line row into `open-issues.md`. |
 | `orchestrator-redesign-flaws.md` | Living flaws tracker for the orchestrator engine; resolved rows kept as one-line summaries. |
 | `keyboard-shortcuts.md` | Human-readable mirror of the keybinding registry (`frontend/app/store/keybindings/` is the source of truth). |
+| `remote-phone.md` | Remote mode: setting up the Cloudflare tunnel and Access, the phone web app, and handing an agent to the phone. |
 
 ## Directories
 

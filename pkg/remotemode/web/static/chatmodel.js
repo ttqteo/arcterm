@@ -170,7 +170,8 @@ function actionItem(e) {
         verb: capitalize(e.verb),
         target: e.target ?? "",
         summary: e.summary || duration(e.durationMs),
-        startedTs: e.startedTs,
+        // arcterm's projectors stamp every call with its tool_use time; only a live row reads it
+        startedTs: e.startedAt,
     };
     if (e.detail?.kind === "edit") {
         item.adds = e.detail.files.reduce((n, f) => n + (f.adds ?? 0), 0);

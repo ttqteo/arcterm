@@ -419,8 +419,8 @@ export function openChat(root, tab, ui) {
             st.notice = MOVED_ON;
         } else {
             st.error = res
-                ? `Not sent: Arc refused it (${res.status || "login expired"}). Try again.`
-                : "Not sent: Arc is not reachable. Try again.";
+                ? `Not sent: arcterm refused it (${res.status || "login expired"}). Try again.`
+                : "Not sent: arcterm is not reachable. Try again.";
         }
         draw();
     }

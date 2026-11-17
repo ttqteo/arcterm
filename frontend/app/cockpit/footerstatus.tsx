@@ -5,16 +5,18 @@ import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { MachineServersChip } from "@/app/view/agents/machineserverschip";
 import { CircleHelp } from "lucide-react";
+import { RemoteReadout } from "./remotereadout";
 import { cheatsheetOpenAtom } from "./shortcuts-cheatsheet";
 import { VersionTag } from "./versiontag";
 
-// The right end of a hints bar: servers on the machine, the shortcuts button, then the app's version, which opens What's
+// The right end of a hints bar: remote mode (only once it is set up), servers on the machine, the shortcuts button, then the app's version, which opens What's
 // new (plan usage and free RAM sit in the app bar). Both hints bars draw it (the global footer and the Cockpit surface's
 // own), so it reads the same on every surface. The `?` button is the cheat sheet's door with the mouse: Shift+? drops
 // while typing in a terminal, and the button is there in every posture.
 export function FooterStatus({ model }: { model: AgentsViewModel }) {
     return (
         <div className="ml-auto flex shrink-0 items-center gap-3">
+            <RemoteReadout model={model} />
             <MachineServersChip model={model} />
             <button
                 type="button"

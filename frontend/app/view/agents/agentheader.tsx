@@ -51,6 +51,7 @@ import {
     PictureInPicture2,
     Plus,
     RotateCw,
+    Smartphone,
     SquareTerminal,
     Workflow,
     Wrench,
@@ -83,6 +84,7 @@ import { fallAsleepLabel, useFallingAsleep } from "./fallasleepstore";
 import { isFinalStageId } from "./finalstage";
 import { floatModeAtom, toggleFloat } from "./floatstore";
 import { agentGridAtom, currentGrid, eligibleIds, gridProjects, openInSplit, removeFromGrid } from "./gridstore";
+import { canHandToPhone, isHandedOver } from "./handtophone";
 import { inHeader } from "./headerbuttons";
 import { headerButtonsAtom } from "./headerbuttonsstore";
 import {
@@ -109,6 +111,7 @@ import { planEditChunks } from "./planreviewmodel";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
 import { openRailSection } from "./railsection";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
+import { remoteStatusAtom, toggleHandToPhone } from "./remotestore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
 import { finishedRun, startedRunsShown } from "./runorigin";
 import { hiddenRunIdsAtom, hideStartedRuns, openRunOrigin, useRunOrigin, useRunsStartedBy } from "./runoriginstore";
@@ -609,6 +612,10 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const splitInHeader = inHeader(headerButtons, "split", folded);
     const floatInHeader = inHeader(headerButtons, "float", folded);
     const fullscreenInHeader = inHeader(headerButtons, "fullscreen", folded);
+    // Hand to phone (remote mode, pkg/remotemode): an action in More; while the agent is on the phone the header says so
+    // and its pill takes it back
+    const handable = canHandToPhone(agent, useAtomValue(model.lineageAtom).roles[agent.id]);
+    const handed = handable && isHandedOver(useAtomValue(remoteStatusAtom), agent.id);
 
     // The visible way to a second cell: every other live agent and terminal of this agent's project (a split holds one
     // project's), and what to do with none (dragging a sidebar row onto the terminal works too, but nothing on screen
@@ -781,6 +788,16 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 accel: "f",
                 click: () => globalStore.set(terminalFullscreenAtom, !fullscreen),
             });
+            if (handable) {
+                items.push({
+                    label: handed ? "Take back from the phone" : "Hand to phone",
+                    sublabel: handed ? undefined : "drive it from your phone; turns remote mode on",
+                    icon: <Smartphone size={15} />,
+                    accel: "p",
+                    attrs: { "data-more-hand-to-phone": "" },
+                    click: () => toggleHandToPhone(agent.id),
+                });
+            }
             if (!floatInHeader) {
                 // nor a Float button
                 items.push({
@@ -1118,6 +1135,20 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                         · {formatTokens(sessionTokens)} tok
                                     </span>
                                 ) : null}
+                            </button>
+                        ) : null}
+                        {handed ? (
+                            <button
+                                type="button"
+                                data-hand-to-phone
+                                onClick={() => toggleHandToPhone(agent.id)}
+                                title={`On the phone: take it back (${formatChordString("p")})`}
+                                aria-label="Take back from the phone"
+                                aria-pressed
+                                className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-accent bg-accentbg px-[9px] py-[5px] text-[12px] font-semibold text-accent"
+                            >
+                                <Smartphone size={14} strokeWidth={1.9} aria-hidden />
+                                {words ? "On phone · Take back" : null}
                             </button>
                         ) : null}
                         {/* each in the header or only in More, by the setting; a narrow header folds both into More */}

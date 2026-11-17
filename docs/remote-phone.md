@@ -31,7 +31,8 @@ Cloudflare API token; it holds only the tunnel token, in its secret store.
    Type the token at the `Tunnel token:` prompt, or pipe it in. Setup prints the status; a re-setup
    keeps the stored phone subscription.
 5. **Turn it on:** `wsh remote on`. `wsh remote status` shows whether the tunnel is `up`, and
-   `wsh remote off` turns it off. The cockpit shows the same state.
+   `wsh remote off` turns it off. The cockpit shows the same state: Settings → Remote, and a Remote chip
+   in the footer once setup is complete.
 6. **On the iPhone**, open `https://arc.example.com` in Safari and log in. Share, Add to Home
    Screen. Open Arc from the new home-screen icon (push only works from the installed app), and tap
    **Turn on notifications**.
@@ -75,9 +76,9 @@ A handed-over claude or pi agent shows on the phone page under **Handed over**. 
 transcript, send the next prompt, stop a turn, and approve or deny a Claude Code permission prompt.
 What you type reaches the session as your own input.
 
-- **From the cockpit:** the phone icon (**Hand to phone**) beside the fullscreen button in the agent's
-  header, or `p` with the agent focused. Handing an agent over turns remote mode on if it is off.
-  **On phone · Take back** (or `p` again) returns it.
+- **From the cockpit:** **Hand to phone** in the agent header's More (⋯) menu, or `p` with the agent
+  focused. Handing an agent over turns remote mode on if it is off. While it is on the phone the header
+  shows **On phone · Take back**, which (or `p` again) returns it.
 - **From a terminal:** `wsh remote hand [tab]` and `wsh remote take-back [tab]`. The tab is an id or a
   unique prefix. With no tab, `wsh` acts on the agent in the terminal it runs in, so an agent can hand
   itself over.
@@ -100,5 +101,5 @@ on at start. Re-running `wsh remote setup` restarts the listener but keeps them.
 
 ## Turning it off
 
-`wsh remote off`, the cockpit's remote switch, or **Turn off remote mode** at the foot of the phone
+`wsh remote off`, the switch in Settings → Remote, or **Turn off remote mode** at the foot of the phone
 page. The page then goes offline and the PC may sleep again.
