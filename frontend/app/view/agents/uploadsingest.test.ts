@@ -401,13 +401,18 @@ describe("pickAndAttach", () => {
 
     it("opens one dialog when Attach is clicked twice before the first one closes", async () => {
         let close!: (picked: string[]) => void;
-        mocks.open.mockReturnValue(
-            new Promise<string[]>((resolve) => {
+        let opened!: () => void;
+        const dialogOpened = new Promise<void>((resolve) => (opened = resolve));
+        mocks.open.mockImplementation(() => {
+            opened();
+            return new Promise<string[]>((resolve) => {
                 close = resolve;
-            })
-        );
+            });
+        });
         const first = pickAndAttach(BLOCK);
-        await vi.waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(1));
+        // the dialog is a dynamic import, which takes real time: wait until it opens, however long the test allows
+        // (vi.waitFor gave it 1 s, which a loaded machine outlasted)
+        await dialogOpened;
         const second = pickAndAttach(BLOCK);
         await vi.advanceTimersByTimeAsync(0);
         expect(mocks.open).toHaveBeenCalledTimes(1);
