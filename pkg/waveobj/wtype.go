@@ -278,8 +278,9 @@ type Run struct {
 	// EffortRef links a run to the effort chunk it executes (set by the composer's effort picker or
 	// `wsh effort chunk attach --run`). Advisory: the run never ticks the chunk automatically.
 	EffortRef *RunEffortRef `json:"effortref,omitempty"`
-	// DagORef links an orchestrator run to its TaskGroup ("dag:<id>"); set by DagSubmitCommand,
-	// copied onto child runs so the engine can resolve the group from any run in the DAG.
+	// DagORef links an orchestrator run to its TaskGroup by the group's bare OID (no "dag:" prefix); set by
+	// DagSubmitCommand (wstore.CreateDagForRun), copied onto child runs and stage sessions so the engine can
+	// resolve the group from any run in the DAG.
 	DagORef string `json:"dagoref,omitempty"`
 	// SessionId is the session id the engine launched a dag child's worker with (--session-id). The
 	// worker's transcript is named by it, so liveness and evidence open that file. Empty for runs the
