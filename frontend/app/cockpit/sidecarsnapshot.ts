@@ -269,6 +269,41 @@ export function wallAgentIds(agents: AgentVM[], scope: CockpitScope): Set<string
     return ids;
 }
 
+/** The orbit holds this many agents (spec "The orbit's capacity"). */
+export const ORBIT_MAX = 8;
+
+function orbitRank(t: SidecarTile, waiting: ReadonlySet<string>): number {
+    if (t.state === "asking" || t.failed || waiting.has(t.id)) {
+        return 0;
+    }
+    if (t.state === "working") {
+        return 1;
+    }
+    return t.state === "asleep" ? 3 : 2;
+}
+
+/**
+ * The agents the orbit draws: every one that is not asleep, in the snapshot's order, when they fit; past `max`, those
+ * that wait on you or failed (`waiting` holds the agents with a question row), then working, then finished, each group
+ * in the snapshot's order, up to `max`. Asleep agents are never drawn. `more` counts the rest, for the core's `+N`.
+ */
+export function orbitTiles(
+    tiles: SidecarTile[],
+    waiting: ReadonlySet<string>,
+    max = ORBIT_MAX
+): { tiles: SidecarTile[]; more: number } {
+    const awake = tiles.filter((t) => t.state !== "asleep");
+    const drawn =
+        awake.length <= max
+            ? awake
+            : awake
+                  .map((t, i) => ({ t, i, r: orbitRank(t, waiting) }))
+                  .sort((x, y) => x.r - y.r || x.i - y.i)
+                  .slice(0, max)
+                  .map((x) => x.t);
+    return { tiles: drawn, more: tiles.length - drawn.length };
+}
+
 /** The snapshot with only the tiles `ids` names, in its order; the counts stay the whole roster's. */
 export function scopeTiles(snap: SidecarSnapshot, ids: ReadonlySet<string>): SidecarSnapshot {
     return { ...snap, tiles: snap.tiles.filter((t) => ids.has(t.id)) };

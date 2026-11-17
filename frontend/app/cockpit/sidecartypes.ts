@@ -27,6 +27,47 @@ export interface SidecarAsk {
     key?: string; // the ask's identity (askSentKey): an answer names it, so a new ask never takes an answer meant for the old
 }
 
+/** One stretch of an agent's state on the 2-hour timeline. `to` absent: still in it. UnixMilli. */
+export type SidecarSpanState = "working" | "asking" | "finished" | "failed";
+export interface SidecarSpan {
+    state: SidecarSpanState;
+    from: number;
+    to?: number;
+}
+
+/** One row of Needs you: an ask, a finished agent's question, or something Jarvis holds for you. */
+export type SidecarNeedKind = "ask" | "question" | "jarvis";
+export interface SidecarNeed {
+    key: string; // ask: "ask:<agent id>"; question: "q:<agent id>"; jarvis: the AttentionItem's key
+    kind: SidecarNeedKind;
+    id?: string; // the agent, for ask and question rows
+    who: string; // the agent's name, or the item's channel / source
+    since: number; // UnixMilli it began waiting; the list is oldest first
+    text: string; // the question in its own words, or the item's text
+    word?: string; // jarvis rows: kindWord(kind, retry), "gate", "blocked", "due"…
+    failed?: boolean; // a run held at Final or with a failed task
+    options?: string[]; // ask rows
+    answerable?: boolean; // ask rows: 1-9 answers it here
+    askKey?: string; // ask rows: SidecarAsk.key
+    sent?: boolean; // ask rows: the answer went out
+}
+
+export interface SidecarRunBox {
+    id: string;
+    leadId?: string; // the lead agent's tile id, whose node and lane carry the run
+    title: string;
+    done: number;
+    total: number;
+    failed: boolean;
+    since?: number; // run created, UnixMilli
+    due?: string; // the first due chunk's label
+}
+
+export interface SidecarUsage {
+    fiveHourPct?: number;
+    weekPct?: number;
+}
+
 export interface SidecarTile {
     id: string;
     name: string;
@@ -38,6 +79,9 @@ export interface SidecarTile {
     messages: SidecarMessage[];
     ask?: SidecarAsk;
     sent?: boolean; // the answer to its ask has gone out and the agent has not moved on yet
+    failed?: boolean; // the agent's run failed, or it holds a failed need
+    diff?: { adds: number; dels: number }; // the lines its work added and removed
+    spans?: SidecarSpan[]; // its state over the last 2 hours, oldest first
 }
 
 export type StrainLevel = "amber" | "red";
@@ -77,11 +121,16 @@ export interface SidecarSnapshot {
     tiles: SidecarTile[];
     machine?: SidecarMachine;
     strain?: SidecarStrain;
+    needs?: SidecarNeed[]; // what waits on the person, oldest first
+    run?: SidecarRunBox; // the newest active orchestrator run
+    usage?: SidecarUsage; // the 5-hour and weekly plan rings
+    more?: number; // agents past the orbit's eight, for the core's "+N"
 }
 
 export type SidecarAct =
     | { kind: "hello" }
     | { kind: "open"; id: string }
+    | { kind: "need"; key: string } // a Jarvis row: must be a need of the last snapshot
     | { kind: "answer"; id: string; option: number; key: string } // key: the ask the page showed (SidecarAsk.key)
     | { kind: "older"; id: string; before: string | null; count: number } // count 1..50
     | { kind: "stop"; id: string; pid: number } // must match a heavy row's process

@@ -6,12 +6,13 @@ import { describe, expect, it } from "vitest";
 import {
     keptMessages,
     messageRows,
+    orbitTiles,
     scopeTiles,
     sidecarSnapshot,
     wallAgentIds,
     type CockpitScope,
 } from "./sidecarsnapshot";
-import type { SidecarMessage } from "./sidecartypes";
+import type { SidecarMessage, SidecarTile, SidecarTileState } from "./sidecartypes";
 
 const NOW = 1_800_000_000_000;
 
@@ -469,5 +470,61 @@ describe("scopeTiles", () => {
         const scoped = scopeTiles(snap, new Set(["a", "c"]));
         expect(scoped.tiles.map((t) => t.id)).toEqual(["c", "a"]);
         expect(scoped.counts).toEqual(snap.counts);
+    });
+});
+
+describe("orbitTiles", () => {
+    const t = (id: string, state: SidecarTileState, failed = false): SidecarTile => ({
+        id,
+        name: id,
+        runtime: "Claude",
+        state,
+        messages: [],
+        ...(failed ? { failed } : {}),
+    });
+    it("keeps all of 8 or fewer, in order", () => {
+        const tiles = [t("a", "working"), t("b", "asking")];
+        expect(orbitTiles(tiles, new Set(), 8)).toEqual({ tiles, more: 0 });
+    });
+    it("past 8: waiting or failed first, then working, then finished, in snapshot order", () => {
+        const tiles = [
+            t("w1", "working"),
+            t("r1", "review"),
+            t("a1", "asking"),
+            t("w2", "working"),
+            t("i1", "idle"),
+            t("f1", "working", true),
+            t("w3", "working"),
+            t("r2", "review"),
+            t("q1", "review"),
+            t("i2", "idle"),
+        ];
+        const r = orbitTiles(tiles, new Set(["q1"]), 8); // q1 has a question row: it waits on you
+        expect(r.tiles.map((x) => x.id)).toEqual(["a1", "f1", "q1", "w1", "w2", "w3", "r1", "i1"]);
+        expect(r.more).toBe(2);
+    });
+    it("leaves asleep agents out of the orbit and counts them in more", () => {
+        const r = orbitTiles([t("s1", "asleep"), t("w1", "working")], new Set(), 8);
+        expect(r.tiles.map((x) => x.id)).toEqual(["w1"]);
+        expect(r.more).toBe(1);
+    });
+    it("ranks only past 8: nine awake tiles with an asking one last put it first", () => {
+        const tiles = [
+            t("w1", "working"),
+            t("w2", "working"),
+            t("w3", "working"),
+            t("w4", "working"),
+            t("w5", "working"),
+            t("w6", "working"),
+            t("w7", "working"),
+            t("w8", "working"),
+            t("a1", "asking"),
+        ];
+        const r = orbitTiles(tiles, new Set(), 8);
+        expect(r.tiles.map((x) => x.id)).toEqual(["a1", "w1", "w2", "w3", "w4", "w5", "w6", "w7"]);
+        expect(r.more).toBe(1);
+        // exactly 8 are never ranked: the asking one stays where the snapshot put it
+        const eight = [...tiles.slice(0, 7), t("a2", "asking")];
+        expect(orbitTiles(eight, new Set(), 8).tiles.map((x) => x.id)).toEqual(eight.map((x) => x.id));
     });
 });
