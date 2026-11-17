@@ -236,7 +236,8 @@ fn use_resource_window_icons(hwnd: isize) {
 // Sidecar's window takes its own icon, not the exe's: arcterm's mark with a small screen badge, which the exe
 // carries as bytes (sidecar::SIDECAR_ICO) rather than as a resource, since the resource is the exe's own icon. Same
 // as above: the frame made for each size Windows draws (the small icon in the title bar, the big one on the taskbar),
-// at the DPI of the window. CreateIconFromResourceEx takes a PNG frame as it is.
+// at the DPI of the window. CreateIconFromResourceEx takes a PNG frame as it is. Windows never frees an icon given with
+// WM_SETICON, so the two handles go to sidecar::keep_window_icons, which destroys them when Sidecar's window is.
 #[cfg(windows)]
 fn use_sidecar_icons(hwnd: isize) {
     use windows_sys::Win32::Foundation::HWND;
@@ -248,15 +249,18 @@ fn use_sidecar_icons(hwnd: isize) {
     unsafe {
         let hwnd = hwnd as HWND;
         let dpi = GetDpiForWindow(hwnd);
+        let mut made = Vec::new();
         for (which, metric) in [(ICON_BIG, SM_CXICON), (ICON_SMALL, SM_CXSMICON)] {
-            // the window keeps the icon for as long as it lives, so nothing frees it here
+            // the window draws the icon for as long as it lives, so nothing frees it here
             match sidecar::make_icon(GetSystemMetricsForDpi(metric, dpi)) {
                 Ok(icon) => {
                     SendMessageW(hwnd, WM_SETICON, which as usize, icon as isize);
+                    made.push(icon);
                 }
                 Err(why) => applog::log_line(&format!("[sidecar] {why}")),
             }
         }
+        sidecar::keep_window_icons(hwnd as isize, made);
     }
 }
 

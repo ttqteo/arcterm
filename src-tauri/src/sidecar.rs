@@ -666,7 +666,8 @@ pub fn pick_ico_frame(ico: &[u8], size: u32) -> Option<(usize, usize)> {
 }
 
 /// An icon of Sidecar's icon at `size` px, made from the frame that draws best at it (a PNG frame goes in as it is).
-/// The caller owns it: a window's icon lives as long as the window.
+/// The caller owns it: a window's icon lives as long as the window, so the caller hands it to `keep_window_icons`,
+/// which frees it when the window is destroyed.
 #[cfg(windows)]
 pub fn make_icon(size: i32) -> Result<windows_sys::Win32::UI::WindowsAndMessaging::HICON, String> {
     use windows_sys::Win32::UI::WindowsAndMessaging::{CreateIconFromResourceEx, LR_DEFAULTCOLOR};
@@ -692,6 +693,73 @@ pub fn make_icon(size: i32) -> Result<windows_sys::Win32::UI::WindowsAndMessagin
         return Err(format!("making its {size}px icon failed"));
     }
     Ok(icon)
+}
+
+/// The icons made for one Sidecar window and the window they were set on. The HICONs are held as integers: a raw
+/// pointer is not `Send`, and a static must be.
+#[cfg(windows)]
+struct WindowIcons {
+    hwnd: isize,
+    icons: Vec<isize>,
+}
+
+// Each open of the Sidecar window makes its two icons (`make_icon`), and Windows never frees an icon it was given with
+// WM_SETICON. They are kept here, with the window, until that window is destroyed: one Sidecar window exists at a time,
+// and its `WindowEvent::Destroyed` (`on_window_event`) runs on the main thread before a later open can build the next
+// one, so a close and reopen leaves no icon behind. The main window's icons are not kept: they live as long as the app.
+#[cfg(windows)]
+static WINDOW_ICONS: Mutex<Vec<WindowIcons>> = Mutex::new(Vec::new());
+
+#[cfg(windows)]
+fn window_icons() -> MutexGuard<'static, Vec<WindowIcons>> {
+    WINDOW_ICONS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Keep the icons that were set on the Sidecar window `hwnd`, to be freed when that window is destroyed
+/// (`free_window_icons`). They must stay alive until then: the window draws them.
+#[cfg(windows)]
+pub fn keep_window_icons(
+    hwnd: isize,
+    icons: Vec<windows_sys::Win32::UI::WindowsAndMessaging::HICON>,
+) {
+    if icons.is_empty() {
+        return;
+    }
+    let icons = icons.into_iter().map(|icon| icon as isize).collect();
+    window_icons().push(WindowIcons { hwnd, icons });
+}
+
+/// Free every icon kept for a Sidecar window, once it is destroyed; how many were freed. It runs in the window's
+/// WM_DESTROY (the window is hidden by then, but its handle still answers), so each window is first taken off the icons,
+/// then they are destroyed: nothing frees an icon a window still names. A second call finds nothing and frees nothing.
+#[cfg(windows)]
+pub fn free_window_icons() -> usize {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        DestroyIcon, IsWindow, SendMessageW, HICON, ICON_BIG, ICON_SMALL, WM_SETICON,
+    };
+
+    // taken out of the list first, so the lock is not held while Windows is called
+    let kept = std::mem::take(&mut *window_icons());
+    let mut freed = 0;
+    for WindowIcons { hwnd, icons } in kept {
+        unsafe {
+            let window = hwnd as HWND;
+            if IsWindow(window) != 0 {
+                for which in [ICON_BIG, ICON_SMALL] {
+                    SendMessageW(window, WM_SETICON, which as usize, 0);
+                }
+            }
+            for icon in icons {
+                if DestroyIcon(icon as HICON) != 0 {
+                    freed += 1;
+                } else {
+                    log_line("[sidecar] freeing one of its window's icons failed");
+                }
+            }
+        }
+    }
+    freed
 }
 
 /// The AppUserModelID of the Sidecar window: the app's identifier with `.sidecar` on the end (`-dev` first in a dev
@@ -993,6 +1061,9 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
     match (window.label(), event) {
         (crate::MAIN_WINDOW_LABEL, WindowEvent::Destroyed) => close_with_main(window.app_handle()),
         (SIDECAR_LABEL, WindowEvent::Destroyed) => {
+            // its taskbar and title bar icons (Windows): the window is gone, so nothing draws them any more
+            #[cfg(windows)]
+            free_window_icons();
             apply(Change::Destroyed);
             let _ = window
                 .app_handle()
@@ -2118,6 +2189,72 @@ mod tests {
         assert!(make_icon(30).is_ok());
         assert!(make_icon(0).is_err());
         assert!(make_icon(-1).is_err());
+    }
+
+    // the two icons set on the Sidecar window are kept with it, and freed when it is destroyed: the window is taken off
+    // them first. A real window (the default window procedure, hidden) stands in for Sidecar's. This is the one test
+    // that touches the kept list, which every window shares.
+    #[cfg(windows)]
+    #[test]
+    fn windows_frees_the_icons_kept_for_a_sidecar_window_when_it_is_destroyed() {
+        use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, SendMessageW,
+            UnregisterClassW, ICON_BIG, ICON_SMALL, WM_GETICON, WM_SETICON, WNDCLASSW,
+        };
+        let class: Vec<u16> = "arcterm_sidecar_icons_test\0".encode_utf16().collect();
+        unsafe {
+            let module = GetModuleHandleW(std::ptr::null());
+            let mut def: WNDCLASSW = std::mem::zeroed();
+            def.lpfnWndProc = Some(DefWindowProcW);
+            def.hInstance = module;
+            def.lpszClassName = class.as_ptr();
+            assert!(RegisterClassW(&def) != 0, "registering the test window's class");
+            let hwnd = CreateWindowExW(
+                0,
+                class.as_ptr(),
+                class.as_ptr(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                module,
+                std::ptr::null(),
+            );
+            assert!(!hwnd.is_null(), "creating the test window");
+
+            // what use_sidecar_icons does with them
+            let mut made = Vec::new();
+            for (which, size) in [(ICON_BIG, 32), (ICON_SMALL, 16)] {
+                let icon = make_icon(size).expect("an icon");
+                SendMessageW(hwnd, WM_SETICON, which as usize, icon as isize);
+                made.push(icon);
+            }
+            keep_window_icons(hwnd as isize, made);
+            // nothing to keep is not an entry
+            keep_window_icons(hwnd as isize, Vec::new());
+            for which in [ICON_BIG, ICON_SMALL] {
+                assert_ne!(SendMessageW(hwnd, WM_GETICON, which as usize, 0), 0, "kept: the window draws it");
+            }
+
+            // destroyed: both are freed, and the window no longer names either
+            assert_eq!(free_window_icons(), 2);
+            for which in [ICON_BIG, ICON_SMALL] {
+                assert_eq!(SendMessageW(hwnd, WM_GETICON, which as usize, 0), 0, "freed: the window let go of it");
+            }
+            // nothing is left, so a second destroy frees nothing twice
+            assert_eq!(free_window_icons(), 0);
+
+            // an icon kept for a window that is already gone is freed all the same
+            let gone = make_icon(16).expect("an icon");
+            DestroyWindow(hwnd);
+            keep_window_icons(hwnd as isize, vec![gone]);
+            assert_eq!(free_window_icons(), 1);
+            UnregisterClassW(class.as_ptr(), module);
+        }
     }
 
     #[test]
