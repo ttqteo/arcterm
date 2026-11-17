@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **Close on the Agent tree's picked rows.** The `tree-multi-close` scenario reads the menu and the
+  confirm on a fixture roster and cancels; nothing was ever closed. In the app, Ctrl+click two idle agents (no run) in
+  the sidebar, right-click one → Close 2 agents closes both at once, a toast says "Closed 2 agents", the picks clear,
+  and both sit under Conversations to resume. With one working, it asks first naming it; with a run's lead picked too,
+  the item says "1 in a run stays" and the lead stays open. Commit 21e72f9cd.
 - [ ] (arcterm) **No terminal card over a prompt that is up.** Vitest only (fixtures with their rules joined, as
   `readTermLines` gives them); never tried in the app. In a Claude agent in auto mode, let it stop and wait on you
   (a Notification, or a brainstorm question): Chat shows no "Waiting on you in the terminal" card quoting
