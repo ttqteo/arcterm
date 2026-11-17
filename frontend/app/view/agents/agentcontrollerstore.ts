@@ -52,13 +52,31 @@ export function getStartErrorAtom(blockId: string): PrimitiveAtom<string | undef
     return errAtom;
 }
 
+// set by devmock.ts while a dev fixture roster stands in for the live one (a CDP scenario's): its agents name blocks
+// that do not exist. This module never imports devmock.ts, which a production build leaves out.
+let fixtureRoster = false;
+export function setFixtureRoster(on: boolean) {
+    fixtureRoster = on;
+}
+
+// Pure: whether a refused start is a fixture's made-up block rather than an agent that failed. The surface starts the
+// controller of whichever agent it focuses, and a fixture's block is never there, so each focused fixture agent read
+// "failed to start" (idle, red) and a scenario about its working state failed on it.
+export function fixtureBlockMissing(fixture: boolean, message: string): boolean {
+    return fixture && /error getting block\b.*\bnot found/i.test(message);
+}
+
 // every controller start goes through here, so a refusal reaches the roster instead of only the console
 export async function resyncController(data: CommandControllerResyncData): Promise<void> {
     const errAtom = getStartErrorAtom(data.blockid);
     try {
         await RpcApi.ControllerResyncCommand(TabRpcClient, data);
     } catch (e) {
-        globalStore.set(errAtom, e instanceof Error ? e.message : String(e));
+        const message = e instanceof Error ? e.message : String(e);
+        if (fixtureBlockMissing(fixtureRoster, message)) {
+            return;
+        }
+        globalStore.set(errAtom, message);
         throw e;
     }
     globalStore.set(errAtom, undefined);

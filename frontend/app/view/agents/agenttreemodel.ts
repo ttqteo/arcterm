@@ -28,6 +28,7 @@ import {
     endedReviewerVM,
     endedWorkerId,
     holdsTask,
+    isCurrentLead,
     isEndedWorkerId,
     mergeGateLine,
     NO_LINEAGE,
@@ -442,6 +443,19 @@ export interface RunGroups {
     stages: Map<string, StageAgent[]>; // each run's judging sessions
 }
 
+/** Pure: whether `agent`, stamped as `run`'s lead, is a tab an earlier lead left: the run names another tab (`lead`)
+ *  as its lead now and not this one. It gets no row of its own, unless it asks something. */
+export function staleLead(run: RunInfo | undefined, lead: AgentVM | undefined, agent: AgentVM): boolean {
+    return (
+        run != null &&
+        lead != null &&
+        lead !== agent &&
+        isCurrentLead(run, lead) &&
+        !isCurrentLead(run, agent) &&
+        agent.state !== "asking"
+    );
+}
+
 /** Pure: the agents of a lineage's runs sorted into each run's lead, task tabs and stage sessions, in the order
  *  given. An agent whose run the lineage does not know is in none: it is a plain agent. */
 export function groupRunAgents(agents: readonly AgentVM[], lineage: Lineage): RunGroups {
@@ -450,8 +464,16 @@ export function groupRunAgents(agents: readonly AgentVM[], lineage: Lineage): Ru
     const stages = new Map<string, StageAgent[]>();
     for (const a of agents) {
         const role = lineage.roles[a.id];
-        if (role?.kind === "lead" && lineage.runs[role.runId] && !leads.has(role.runId)) {
-            leads.set(role.runId, a);
+        if (role?.kind === "lead" && lineage.runs[role.runId]) {
+            // a relaunched lead runs in a new tab while the old one lives on stamped with the run: the tab the run
+            // names now leads it, whichever comes first in the roster (isCurrentLead)
+            const held = leads.get(role.runId);
+            if (
+                held == null ||
+                (!isCurrentLead(lineage.runs[role.runId], held) && isCurrentLead(lineage.runs[role.runId], a))
+            ) {
+                leads.set(role.runId, a);
+            }
         } else if (role?.kind === "stage" && lineage.runs[role.leadRunId]) {
             stages.set(role.leadRunId, [
                 ...(stages.get(role.leadRunId) ?? []),
@@ -555,6 +577,9 @@ export function buildAgentTree(
         if (role?.kind === "lead" && leads.get(role.runId) === a) {
             placedRuns.add(role.runId);
             push({ kind: "lead", agent: a, project: projectOf(a) || UNGROUPED_PROJECT, run: lineage.runs[role.runId] });
+        } else if (role?.kind === "lead" && staleLead(lineage.runs[role.runId], leads.get(role.runId), a)) {
+            // the tab a relaunch left behind: its run's row already holds the lead that replaced it
+            continue;
         } else if ((role?.kind === "worker" || role?.kind === "stage") && lineage.runs[role.leadRunId]) {
             if (leads.has(role.leadRunId) || placedRuns.has(role.leadRunId)) {
                 continue;

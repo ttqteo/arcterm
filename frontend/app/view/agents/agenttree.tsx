@@ -128,7 +128,7 @@ import { dockedTerminalAtom } from "./railstore";
 import { renamingRowAtom } from "./rowrenameatom";
 import { cancellingRunIdsAtom, resumePausedRun, resumingRunIdsAtom } from "./runactions";
 import { runEventsAtom } from "./runeventstore";
-import { hideableOriginRuns, originLinks, type OriginLink } from "./runorigin";
+import { brainstormRunSuperseded, hideableOriginRuns, originLinks, type OriginLink } from "./runorigin";
 import {
     hiddenRunIdsAtom,
     hideStartedRuns,
@@ -739,9 +739,24 @@ function PaneTag({ model, id }: { model: AgentsViewModel; id: string }) {
 
 // replaces a row's model and branch while the agent brainstorms (its chip names it): the question it asks, or the
 // work it is at; once the person approved, the run it started, the run's own state leading, which links to it
-function BrainstormTreeLine({ model, f, asking }: { model: AgentsViewModel; f: BrainstormFile; asking: boolean }) {
+// A cancelled run gives way to the run chip once that names something newer (brainstormRunSuperseded): the line goes,
+// rather than read `cancelled` beside the plan queued to run again.
+function BrainstormTreeLine({
+    model,
+    f,
+    asking,
+    originLink,
+}: {
+    model: AgentsViewModel;
+    f: BrainstormFile;
+    asking: boolean;
+    originLink: OriginLink | null;
+}) {
     const info = useRunInfo(f.run);
     const view = f.run != null ? runStepView(f.run, info.run, info.loaded) : null;
+    if (brainstormRunSuperseded(f.run ?? undefined, info.run?.status, originLink)) {
+        return null;
+    }
     const line = treeLine(f, asking, view ? runTreeText(f.run!, view) : undefined);
     return (
         <span data-brainstorm-tree-line className="flex min-w-0 items-baseline">
@@ -991,8 +1006,8 @@ function RunResumeButton({ run }: { run: RunInfo }) {
     );
 }
 
-// RunSubline is a run row's second line: a chip folding its workers away, and how far the plan is. It starts under
-// the title, as an agent's second line does (UNDER_GLYPH).
+// RunSubline is a run row's second line: a chip folding its workers away, and how far the plan is. Like every second
+// line in the tree it starts at the row's left edge, under the glyph: it is information, not a column of titles.
 // a lead's second line: its workers chip and progress, then `note` (what the lead asks you), then `from <session>` when
 // a session started the run, then `trailing` (the lead's own badges and its columns) at its right end
 function RunSubline({
@@ -1025,7 +1040,7 @@ function RunSubline({
         // a finished bounded run's lead row reading planning for good, the same misreading of an absent
         // dag the engine had in ShouldCloseOrchestratorLead.
         return (
-            <div className={cn("mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums", UNDER_GLYPH)}>
+            <div className="mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums">
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
                 ) : run.land?.state === "pending" ? (
@@ -1060,12 +1075,7 @@ function RunSubline({
     return (
         <>
             {/* @container: a narrow line keeps the chip's count and drops its word, so the progress is not cut */}
-            <div
-                className={cn(
-                    "@container mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums",
-                    UNDER_GLYPH
-                )}
-            >
+            <div className="@container mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums">
                 <FoldChip
                     label={String(workers ? live : total)}
                     word={workers ? (live === 1 ? "worker" : "workers") : "tasks"}
@@ -1084,10 +1094,13 @@ function RunSubline({
                     // two are siblings in the line itself, not one box holding both: a box that may shrink lets its
                     // count spill out under the next thing (the ↰), and one that may not keeps "Working" from cutting.
                     // The count pulls back over the line's gap and keeps its own space (a leading one would collapse).
+                    // Below 240px the word cannot show whole beside the columns, so it goes, with the count's "·",
+                    // rather than read "W…": the count's tone says the stage and its tooltip has it in words
+                    // (agent-tree-rail step 7 measures it).
                     <>
                         <span
                             data-run-paused={paused ? "" : undefined}
-                            className={cn("min-w-0 truncate", PROGRESS_TEXT[runStage(run).tone])}
+                            className={cn("hidden min-w-0 truncate @[240px]:block", PROGRESS_TEXT[runStage(run).tone])}
                             title={progress.title}
                         >
                             {progressParts.head}
@@ -1096,12 +1109,13 @@ function RunSubline({
                             <span
                                 data-run-progress-count
                                 className={cn(
-                                    "-ml-[6px] flex-none whitespace-nowrap",
+                                    "flex-none whitespace-nowrap @[240px]:-ml-[6px]",
                                     PROGRESS_TEXT[runStage(run).tone]
                                 )}
                                 title={progress.title}
                             >
-                                {" " + progressParts.tail.slice(1)}
+                                <span className="hidden @[240px]:inline">{" · "}</span>
+                                {progressParts.tail.slice(3)}
                             </span>
                         ) : null}
                     </>
@@ -1635,7 +1649,7 @@ function ParentRow({
                     // chip and its badges; while it brainstorms, the brainstorm's line in place of the model and the
                     // branch. @container: the subagents chip drops its word when this line is narrow, and the model
                     // truncates
-                    <div className={cn(CONVERSATION_META, "@container mt-[3px]", UNDER_GLYPH, dim && "text-ink-faint")}>
+                    <div className={cn(CONVERSATION_META, "@container mt-[3px]", dim && "text-ink-faint")}>
                         {askNote}
                         {waitsFor ? (
                             <span className="flex min-w-0 items-center gap-[3px]" title={`Waiting on ${waitsFor}`}>
@@ -1649,6 +1663,7 @@ function ParentRow({
                                 model={model}
                                 f={brainstormFile}
                                 asking={asking && waitsOnUser(brainstormFile)}
+                                originLink={originLink}
                             />
                         ) : (
                             <>
@@ -2293,8 +2308,6 @@ function RowCols({ cells, ram }: { cells: RowCell[]; ram?: { attrs: Record<strin
         </span>
     );
 }
-// a second line starts under the title, past the runtime glyph and the gap after it
-const UNDER_GLYPH = "pl-[18px]";
 
 // the runtime's glyph at the head of a row, in a slot as wide as the run icon so titles line up. On an agent's row it
 // also carries the agent's state, where a dot used to: working pulses in the working green, asking in the warning colour, and
@@ -2508,7 +2521,7 @@ const ConversationRow = memo(function ConversationRow({
                 }
             />
             {branch || started ? (
-                <div className={cn(CONVERSATION_META, UNDER_GLYPH)}>
+                <div className={CONVERSATION_META}>
                     {branch ? <BranchLabel branch={branch} /> : null}
                     {branch && started ? (
                         <span aria-hidden className="flex-none text-ink-faint">
@@ -2555,7 +2568,7 @@ const RunConversationRow = memo(function RunConversationRow({
                 tokens={runTokens(row.group)}
                 icon={<Workflow size={12} strokeWidth={1.8} aria-hidden className="flex-none text-ink-mid" />}
             />
-            <div className={cn(CONVERSATION_META, UNDER_GLYPH)}>
+            <div className={CONVERSATION_META}>
                 {view.complete ? (
                     <span className="flex min-w-0 items-center gap-[4px] text-success">
                         <Check size={11} aria-hidden className="flex-none" />

@@ -47,6 +47,18 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A reference or an `@path` you type or paste into Chat's box becomes a badge or a file pill as soon as a space or
   punctuation follows it, and deleting one leaves a single space.
+- The run launcher's When choices (Run now, After run…, Queue) are pill badges now, so none gets cut off, and the one
+  Jarvis suggests carries a small Jarvis badge.
+- A turn in Chat reads calmer: a stretch of one command reads as what the agent said it does ("Checked the working
+  tree") instead of "Ran a command", a running stretch stays one folded line with its spinner until you open it, the
+  Working line no longer repeats the running call, and a finished stretch shows its time only from 10 s up. A finished
+  turn that changed files ends in a card of those files with their +/− lines; click a file to open it in the Diff, or
+  See all for every change.
+- The second line of each row in the Agent tree (a run's workers chip and progress, an agent's model and badges, a
+  conversation's details) starts at the row's left edge, under its icon, so a narrow tree shows more of it: a run's
+  "Working · 0/3" now reads whole from a 240 px tree instead of 300 px. Narrower than that, the run's line leaves out
+  the stage word rather than cutting it to "W…": it shows the count alone, coloured by the stage, with the stage in its
+  tooltip.
 - Opening a run from an agent (a brainstorm's run line in the Agent tree, its Open run, or Open run on Chat's run card)
   shows it in the Agent tree first, its lead selected and its lanes unfolded, instead of switching to Jarvis; a run with
   no agent left in the tree still opens in Jarvis.
@@ -78,6 +90,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Chat's Working dot crackles with current while the agent works: bolts strike out from its core at a new angle,
   length and zigzag each time, the core flickers, and now and then the dot and the Working words jolt and flare. With
   reduced motion it stays still, as before.
+- An agent with more than two servers running shows the first two ports and `+N` beside its server mark
+  (`:5175 :9230 +2`) instead of every port; hovering the mark still lists them all.
+- When an agent's header is too narrow for everything, its buttons on the right (Chat, Terminal, Ship, Close) show
+  only their icons, so the name, project and model keep their room and no longer run under the buttons; the words
+  come back once there is space. Hover a button for its name, and Close for the session's tokens.
 
 ### Changed
 
@@ -103,6 +120,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run whose lead was started again (after arcterm restarted, or when the lead's process died) keeps its new lead
+  on the run's row in the Agent tree, instead of the old lead's sleeping tab holding the row and the new lead showing
+  as a separate agent.
+- An agent whose run you cancelled and then queued again reads only the queued plan, not `cancelled` beside it.
+- The Heavy jobs popover stays where it opened after Run now, instead of jumping to the bottom right corner when the
+  queue tag you opened it from goes away.
 - A sleeping agent keeps its conversation's title after arcterm restarts, instead of now and then reading as its
   project's name until the next restart.
 - Selecting text in Chat that runs over a `code` span highlights it in the same colour as the words around it, instead

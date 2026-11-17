@@ -500,29 +500,14 @@ export function compactingNow(state: AgentState, activity: string | undefined): 
     return state === "working" && activity?.trim() === COMPACTING_ACTIVITY;
 }
 
-/** Pure: the agent side's "working" line while the agent works, null otherwise. */
+/** Pure: the agent side's "working" line while the agent works, null otherwise: "Working", its turn stats after it
+ *  (turnStatsLabel). It names neither the activity nor the running tool: the running stretch's own line names it
+ *  (chatstepsummary.ts), and saying it twice more read as noise. */
 export function workingLine(state: AgentState, activity: string | undefined): string | null {
     if (state !== "working") {
         return null;
     }
-    if (compactingNow(state, activity)) {
-        return "Compacting…";
-    }
-    const what = activity?.trim();
-    return what ? `Working · ${what}` : "Working…";
-}
-
-/** Pure: the working line, naming the running tool's own description when the last entry is a tool with no result yet. */
-export function workingText(state: AgentState, activity: string | undefined, entries: AgentEntry[]): string | null {
-    const line = workingLine(state, activity);
-    if (line == null || compactingNow(state, activity)) {
-        return line;
-    }
-    const last = entries[entries.length - 1];
-    if (last?.kind === "action" && last.outcome == null && last.target.trim() !== "") {
-        return `Working · ${last.target.trim()}`;
-    }
-    return line;
+    return compactingNow(state, activity) ? "Compacting…" : "Working";
 }
 
 /** How many more items a "Show earlier" reveals, and how many the view starts with. */

@@ -16,6 +16,11 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **The When row's choices are pill badges.** Prettier only. + Run → a project → the third column's
+  When row shows Run now, After run… and Queue as separate rounded pills (wrapping on a narrow column, "After run…"
+  never cut off), the picked one accent-tinted, and the one Jarvis suggests carries a small "Jarvis" badge inside it
+  instead of a "Jarvis suggests" line under the label; `task verify:ui -- run-start-choice` still passes.
+  `launcherwhenrow.tsx`.
 - [ ] (arcterm) **A pencil marks an agent with an unsent message.** Vitest and the typecheck only. Type half a message
   (or attach a file) in one agent's Chat box, pick another agent → the first one's row in the Agent tree shows a small
   accent pencil after its name (also in a split row's cell); pick it again → the pencil is gone while you are on it;
@@ -629,6 +634,21 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
 - [ ] (arcterm) The Agent sidebar is 280px with RAM and Tokens on and Age off (`agentTreeWidth`, `rowfields.ts`): in
   Settings → Appearance → Agent sidebar turn Age off; the sidebar stays 280px and a lead's second line reads its words
   (`Working · 0/7`), not `W… · 0/7`. Turn Tokens off too and it narrows to 248px.
+- [ ] (arcterm) The agent header drops its button words when short of room (`nextHeaderLabels`, `headermodel.ts`):
+  with an agent that has Ship and Close, narrow the window or open a split until the header crowds; Chat, Terminal,
+  Ship and Close become icons, the model and context (`opus 120k`) never draw under the Chat switch, and widening
+  brings the words back without flicker. Hovering Close names the session's tokens.
+- [ ] (arcterm) A relaunched lead stays on its run's row (`isCurrentLead`, `staleLead`, `runlineage.ts` /
+  `agenttreemodel.ts`): with an orchestrator run executing, restart arcterm (or let its lead die so the engine
+  relaunches it); the run's row in the Agent tree is the new lead's, working, and the old lead's sleeping tab has no
+  row of its own. An agent whose brainstorm run was cancelled and queued again reads `plan queued #N` alone, with no
+  `cancelled · run …` beside it.
+- [ ] (arcterm) The Heavy jobs popover keeps its place after Run now (`usePanelPlacement`, `consumerspanel.tsx`): open
+  it from a waiting agent's `≡#1` tag in the Agent tree and press Run now on that job; the tag goes, and the popover
+  stays hanging where it opened, not in the bottom right corner. The same from the app bar's jobs chip.
+- [ ] (arcterm) A server mark keeps two ports (`shortPortsLabel`, `devserversmodel.ts`): an agent or run row in the
+  Agent tree whose background servers listen on four ports reads `:5175 :9230 +2` beside the green server glyph, and
+  hovering it lists all four ports with their commands.
 - [ ] (arcterm) Chat's Working dot crackles (`workingglyph.tsx`, `pulse.ts` noise pulses): with a live agent working,
   watch the dot for ten seconds: bolts strike at different angles and lengths, the core flickers, the dot and the
   `Working…` words jolt now and then but stay readable, and it does not feel frantic. The CPU in Task Manager stays
@@ -641,3 +661,9 @@ Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4
   Checked only with seeded atoms in the `chat-ref-badges` CDP scenario, not against a real project's runs and councils.
 - [ ] (arcterm) Chat ref badges: a session: of a recent conversation shows its title and age and a click reopens it as an agent; an effort: whose chunks are all done shows its done/total in green
 - [ ] (arcterm) Chat box: a token finished through Telex (the IME's composition end) becomes a badge, and a real clipboard paste of `xem run:<id> agent:<id> ` gives two badges; the scenario types with key events only, so neither path ran in a live app
+- [ ] (arcterm) A calmer turn in Chat with a live agent (`chatsteps.ts`, `chatstepsummary.ts`, `chatturnfiles.tsx`): while
+  it works, a running stretch stays one folded line with its spinner and opens only on a click, and the Working line
+  reads `Working` and its stats with no `· <activity>` tail; a stretch of one described command reads as its
+  description; a finished stretch under 10 s shows no time. When a turn that edited files ends, a card lists them with
+  their +/− lines; a row opens the Diff on that file and See all opens the agent's whole Diff. Checked only in the
+  `agent-chat` CDP scenario with fixture turns.

@@ -9,6 +9,7 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
+import { setFixtureRoster } from "./agentcontrollerstore";
 import type { AgentVM } from "./agentsviewmodel";
 import { liveAgentsAtom } from "./liveagents";
 
@@ -36,6 +37,8 @@ export async function loadDevMockRoster(): Promise<void> {
         const data = await res.json();
         if (Array.isArray(data)) {
             globalStore.set(devMockAgentsAtom, data as AgentVM[]);
+            // the fixture's blocks are made up: a start that finds none is not the agent failing
+            setFixtureRoster(true);
         }
     } catch {
         // no fixture served (or the dev server returned index.html) -> stay on the live roster

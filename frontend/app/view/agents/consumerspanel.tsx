@@ -916,9 +916,12 @@ function CompactOwn({ view }: { view: ConsumersView | null }) {
     );
 }
 
-// measured from the opener while open, and again when the window resizes, which moves the opener
+// measured from the opener while open, and again when the window resizes, which moves the opener. An opener drawn
+// again while the panel is open (the app bar's jobs chip after a Run now changes the queue) leaves the page: the panel
+// stays where it last hung from it, rather than drop to the footer's corner as one opened from code does
 export function usePanelPlacement(open: boolean, opener: Element | null) {
     const [, setSize] = useState(0);
+    const lastRect = useRef<{ opener: Element; rect: DOMRect } | null>(null);
     useEffect(() => {
         if (!open) {
             return;
@@ -927,7 +930,14 @@ export function usePanelPlacement(open: boolean, opener: Element | null) {
         window.addEventListener("resize", onResize);
         return () => window.removeEventListener("resize", onResize);
     }, [open]);
-    const rect = opener?.isConnected ? opener.getBoundingClientRect() : null;
+    let rect = opener?.isConnected ? opener.getBoundingClientRect() : null;
+    if (!open || opener == null) {
+        lastRect.current = null;
+    } else if (rect != null) {
+        lastRect.current = { opener, rect };
+    } else if (lastRect.current?.opener === opener) {
+        rect = lastRect.current.rect;
+    }
     return panelPlacement(rect, { width: window.innerWidth, height: window.innerHeight });
 }
 

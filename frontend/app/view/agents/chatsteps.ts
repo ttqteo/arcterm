@@ -5,9 +5,11 @@
 // skill"…), what the call touched (`+N` past the third) and a muted meta ("25 lines", a failed call's error); a command is
 // its description alone, or its first line. One step per call, as WorkItem.actions holds them (compacttimeline.ts), built
 // only from the transcript entry, with no Thought lines (the projection skips thinking blocks). stepRows folds a run of
-// calls with the same verb on the same one file into one row ("Edited a.ts ×4"), which opens to its calls. Pure.
+// calls with the same verb on the same one file into one row ("Edited a.ts ×4"), which opens to its calls. turnFiles is
+// what a finished turn's edits changed, for the card at its end (chatturnfiles.tsx). Pure.
 
 import type { AgentActionEntry } from "./agentsviewmodel";
+import type { AgentPart } from "./chatmodel";
 import { inFlight } from "./compacttimeline";
 
 /** A line shows at most this many chips; the rest of what the call touched is its `more`. */
@@ -275,4 +277,65 @@ export function stepOf(action: AgentActionEntry, live: boolean): Step {
         running,
         failed,
     };
+}
+
+/** A file a turn changed, with the lines its edits added and removed over the turn. */
+export interface TurnFile {
+    path: string; // as the first call that touched it named it
+    adds: number;
+    dels: number;
+}
+
+/** Pure: the call did what it set out to: it neither failed nor was refused. */
+export const succeeded = (a: AgentActionEntry) =>
+    a.outcome !== "fail" && a.outcome !== "blocked" && a.verb !== "blocked";
+
+/** Pure: every file a turn's edits and creates changed, once each, in the order first touched, its lines summed over the
+ *  turn: the card at a finished turn's end (chatturnfiles.tsx). A call that failed or was refused adds nothing, and so do
+ *  reads, commands and other tools (a command that wrote a file is not seen). */
+export function turnFiles(parts: readonly AgentPart[]): TurnFile[] {
+    const byPath = new Map<string, TurnFile>();
+    for (const part of parts) {
+        if (part.kind !== "work") {
+            continue;
+        }
+        for (const a of part.work.actions) {
+            if (a.detail?.kind !== "edit" || !succeeded(a)) {
+                continue;
+            }
+            for (const f of a.detail.files) {
+                if (f.path === "") {
+                    continue;
+                }
+                const key = f.path.replace(/\\/g, "/");
+                const seen = byPath.get(key);
+                if (seen != null) {
+                    seen.adds += f.adds;
+                    seen.dels += f.dels;
+                } else {
+                    byPath.set(key, { path: f.path, adds: f.adds, dels: f.dels });
+                }
+            }
+        }
+    }
+    return [...byPath.values()];
+}
+
+/** Pure: a file as the card's row names it: its name, and its folder relative to the agent's working directory ("" at
+ *  its root), or the folder's own name when the file is outside it or the directory is not known. */
+export function fileWhere(path: string, cwd: string | null | undefined): { name: string; folder: string } {
+    const norm = path.replace(/\\/g, "/");
+    const cut = norm.lastIndexOf("/");
+    const name = norm.slice(cut + 1);
+    const dir = cut > 0 ? norm.slice(0, cut) : "";
+    const root = (cwd ?? "").replace(/\\/g, "/").replace(/\/+$/, "");
+    if (root !== "" && dir.toLowerCase() === root.toLowerCase()) {
+        return { name, folder: "" };
+    }
+    if (root !== "" && dir.toLowerCase().startsWith(`${root.toLowerCase()}/`)) {
+        return { name, folder: dir.slice(root.length + 1) };
+    }
+    // a relative path keeps its folder as written; an absolute one outside the directory, its folder's own name
+    const absolute = /^(?:[a-z]:)?\//i.test(norm);
+    return { name, folder: absolute ? (dir.split("/").pop() ?? "") : dir };
 }

@@ -66,6 +66,25 @@ export function foldsIntoMore(width: HeaderWidth): boolean {
     return width !== "wide";
 }
 
+// Whether the buttons on the header's right keep their words (Chat, Terminal, Ship, Close · 6.3M tok) or stand as their
+// icons alone, the words in their titles. Read from what the header measures, not a fixed width: the words go as soon
+// as the left side no longer fits beside them (it would run under the buttons), and come back once the header is as
+// wide as it was with them on plus what overflowed then (`need`), so it never flips between the two.
+export type HeaderLabels = { shown: boolean; need: number | null };
+
+export function nextHeaderLabels(labels: HeaderLabels, width: number, overflow: number): HeaderLabels {
+    if (width <= 0) {
+        return labels;
+    }
+    if (labels.shown) {
+        return overflow > 0.5 ? { shown: false, need: width + overflow } : labels;
+    }
+    if (labels.need != null && width >= labels.need + 1) {
+        return { shown: true, need: null };
+    }
+    return labels;
+}
+
 export type RunRef = { oid: string; goal?: string; status: string; createdts?: number };
 
 const shortId = (id: string) => id.slice(0, 8);

@@ -17,7 +17,6 @@ import {
     shownItems,
     turnStatsLabel,
     workingLine,
-    workingText,
     type AgentPart,
     type ChatItem,
 } from "./chatmodel";
@@ -471,14 +470,11 @@ describe("send now", () => {
 });
 
 describe("workingLine", () => {
-    it("says Working… while the agent works with nothing to report", () => {
-        expect(workingLine("working", undefined)).toBe("Working…");
-        expect(workingLine("working", "")).toBe("Working…");
-        expect(workingLine("working", "   ")).toBe("Working…");
-    });
-
-    it("adds the activity when it has one", () => {
-        expect(workingLine("working", "Bash: npm test")).toBe("Working · Bash: npm test");
+    it("says Working while the agent works, whatever its activity", () => {
+        expect(workingLine("working", undefined)).toBe("Working");
+        expect(workingLine("working", "   ")).toBe("Working");
+        // the running call is named by its stretch's own line, not again here
+        expect(workingLine("working", "Bash: npm test")).toBe("Working");
     });
 
     it("says Compacting… while a compaction runs", () => {
@@ -492,35 +488,6 @@ describe("workingLine", () => {
         expect(workingLine("idle", "Bash: npm test")).toBeNull();
         expect(workingLine("asking", "Bash: npm test")).toBeNull();
         expect(workingLine("idle", undefined)).toBeNull();
-    });
-});
-
-describe("workingText", () => {
-    it("names the running tool's own description when the last entry is one with no result", () => {
-        const entries: AgentEntry[] = [{ kind: "user", text: "go" }, action("ran", { target: "go build ./..." })];
-        expect(workingText("working", "running B=$(…", entries)).toBe("Working · go build ./...");
-    });
-
-    it("keeps the activity line when the last tool has its result, or the last entry is not a tool", () => {
-        const done = [action("ran", { target: "go build", outcome: "ok" })];
-        expect(workingText("working", "Bash: npm test", done)).toBe("Working · Bash: npm test");
-        const said: AgentEntry[] = [action("ran", { target: "go build" }), { kind: "message", text: "done" }];
-        expect(workingText("working", undefined, said)).toBe("Working…");
-    });
-
-    it("says Compacting… over a tool with no result", () => {
-        const entries: AgentEntry[] = [action("ran", { target: "go build ./..." })];
-        expect(workingText("working", "compacting", entries)).toBe("Compacting…");
-    });
-
-    it("is null when the agent is not working, whatever the entries", () => {
-        expect(workingText("idle", "x", [action("ran", { target: "go build" })])).toBeNull();
-    });
-
-    it("falls back to the activity line when the running tool has no target", () => {
-        expect(workingText("working", "Bash: npm test", [action("ran", { target: "" })])).toBe(
-            "Working · Bash: npm test"
-        );
     });
 });
 

@@ -486,6 +486,33 @@ Gaps and fixes:
   said nothing of what was stuck (t-8) and a dag lock held 5–28 s with no phase named (t-7; its re-measure is due
   2026-11-26, `open-issues.md`). Spec `docs/superpowers/specs/2026-11-12-run-self-heal-design.md`.
 
+## Incident — run 7f6b1b32's lead was lost before it submitted a plan, and nothing could reopen the run (2026-11-17)
+
+Run 7f6b1b32 (a calmer Chat turn, sections 1–5 of `2026-11-17-chat-calm-turn-design.md`, autonomous) sat `blocked`
+with its work done but uncommitted, and was merged into `main` by hand (`41ebae0b5`).
+
+- The lead never submitted a DAG: it built all five sections itself in the landing tree and was running the
+  `agent-chat` Final when the person switched Claude accounts, which ends every running claude with code 1.
+- On that exit `failRunningPhase` (`outcome.go`) failed the run's only phase, because a run with no `DagORef` has no
+  task to hand over. The run read `blocked`.
+- Nothing could move it on:
+  - `wsh runs relaunch-lead` refused with `run has no dag`, since it serves only a run whose plan is submitted.
+  - `wsh runs resume` refused with `is not paused`.
+  - `wsh agents send` to the lead's tab restarted the session, and the lead fixed the scenario, passed Final (85/85)
+    and committed `295a141a8`. Its `wsh jarvis complete` then refused with `phase 0 is "failed", not running`
+    (`jarvis/run.go`).
+  - `wsh runs land` refused with `only a done run lands`, so the branch was merged by hand.
+- Queued entries that named the run in `--after` (q-0b62) can never see it land and need `start-now`.
+
+Gaps, not fixed:
+
+- **A lead lost before its plan cannot be relaunched.** A lead lost mid-planning on an autonomous run should get the
+  same `leadDiedLocked` hand-over as one lost after its submit: relaunch it into its session and landing tree.
+- **A failed phase cannot be reopened.** A live lead in that run's tab, or a relaunched one, should be able to
+  complete the run, so that its land runs and its `--after` dependents start.
+- **An account switch is a mass lead death.** It ends every claude at once. Treat it like a pause (hold the wakes,
+  resume each session), not as one death per run.
+
 ## Constraints carried into the redesign
 
 - KISS/YAGNI: no new subsystems, no per-task timeout policies, no message bus. Only the failure modes

@@ -218,6 +218,20 @@ export function originLinks(
     };
 }
 
+/** Pure: whether a brainstorm's run line should give way to the session's run chip: its run was cancelled and the
+ *  chip already names something newer (a plan queued to run again, another run), so the row would otherwise read two
+ *  states at once, `plan queued #1` beside `cancelled · run b0f9b964`. */
+export function brainstormRunSuperseded(
+    runId: string | undefined,
+    status: string | undefined,
+    link: OriginLink | null
+): boolean {
+    if (runId == null || status !== "cancelled" || link == null) {
+        return false;
+    }
+    return !(link.target.kind === "run" && link.target.runId === runId);
+}
+
 /** Pure: the runs the session `agentId`'s chip counts (originLinks, with the same `hidden`) that a Hide would take off
  *  it: the finished ones. Empty when the chip shows only work still going, so it offers no Hide. */
 export function hideableOriginRuns(
