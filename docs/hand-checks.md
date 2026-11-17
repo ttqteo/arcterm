@@ -16,6 +16,10 @@ list (its number is not reused).
 Older parts: [part 6](hand-checks-6.md) · [part 5](hand-checks-5.md) · [part 4](hand-checks-4.md) ·
 [part 3](hand-checks-3.md) · [part 2](hand-checks-2.md) (oldest).
 
+- [ ] (arcterm) **`chat-initiative-band` step 3 now asserts that `i` puts the focus in the band.** Never run: no dev app
+  was up. With one running, `task verify:ui -- chat-initiative-band` → step "3. band expanded" passes; if it fails only
+  on `viaKey.focused`, the band opens on `i` without taking the focus, which `chatband.tsx` says it does (a bug, not the
+  scenario). Commit: the `test(cdp): chat-initiative-band …` one.
 - [ ] (arcterm) **A council's Summary uses the Discussion's `canSummarize`.** Vitest and typecheck only. Open a council
   whose only idea is a held draft (Summary, no summary yet) → no Summarize button; one with a sent idea that is done,
   stopped or failed in round 1 → Summarize shows, and Summarize again is on once there is a summary. Commit: the

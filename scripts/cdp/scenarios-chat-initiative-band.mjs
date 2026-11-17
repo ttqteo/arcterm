@@ -515,7 +515,7 @@ export default function (kit) {
                 const survives = await polishWaitFor(h, `${bandOf(A)}?.hasAttribute("data-band-open") === true`, SHORT_MS);
                 await setBand(h, A, false);
                 rec(
-                    `${name}: a click on [data-band-toggle] opens the band (focus in it) on rows done (struck) · mine "this agent" · next · next · other (tagged "${NAME_B}"); All chunks (7) lists the whole plan; its bottom is at or above the conversation's top; the latest note, Add note and Open in Jarvis show; Esc collapses and the message box takes the focus; i opens it again; picking another agent and back keeps it open`,
+                    `${name}: a click on [data-band-toggle] opens the band (focus in it) on rows done (struck) · mine "this agent" · next · next · other (tagged "${NAME_B}"); All chunks (7) lists the whole plan; its bottom is at or above the conversation's top; the latest note, Add note and Open in Jarvis show; Esc collapses and the message box takes the focus; i opens it again (focus in it); picking another agent and back keeps it open`,
                     clicked &&
                         open &&
                         win?.focused === true &&
@@ -531,8 +531,9 @@ export default function (kit) {
                         afterEsc.box &&
                         reopened &&
                         viaKey?.open === true &&
+                        viaKey?.focused === true &&
                         survives,
-                    { clicked, open, win, rowsOk, allUp, allOk, geo, pushes, collapsed, afterEsc, reopened, survives }
+                    { clicked, open, win, rowsOk, allUp, allOk, geo, pushes, collapsed, afterEsc, reopened, viaKey, survives }
                 );
             });
 
